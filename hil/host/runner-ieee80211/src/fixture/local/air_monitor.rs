@@ -14,14 +14,16 @@ use std::{
 };
 
 use crate::{
-    Result, fixture::openwrt::evidence::resolve_station_mac,
+    Result,
+    evidence::air::{self, AirFrame, FrameKind, MacAddress},
+    fixture::openwrt::evidence::resolve_station_mac,
     fixture::openwrt::tx_monitor::MacFrameKey,
 };
 use hil_core::lab::config::OpenWrtConfig;
 
 const MONITOR_INTERFACE: &str = "mon0";
 const MAX_CAPTURE_BYTES: u64 = 128 * 1024 * 1024;
-const RETRY_GROUP_SECONDS: f64 = 0.100;
+const RETRY_GROUP_MICROS: u64 = 100_000;
 
 /// Exercise monitor setup, capture readiness, decoding and restoration without
 /// contacting a target. The synthetic MAC is only a parser filter, never TX.
@@ -286,54 +288,34 @@ pub(in crate::fixture) fn parse_capture(
     path: &Path,
     target_mac: &str,
 ) -> Result<LocalAirMonitorEvidence> {
-    let output = Command::new("tshark")
-        .args(["-r"])
-        .arg(path)
-        .args([
-            "-Y",
-            &format!("wlan.fc.type == 2 && wlan.da == {target_mac}"),
-            "-T",
-            "fields",
-            "-E",
-            "separator=\t",
-            "-e",
-            "frame.time_epoch",
-            "-e",
-            "wlan.seq",
-            "-e",
-            "wlan.frag",
-            "-e",
-            "wlan.qos.tid",
-            "-e",
-            "wlan.fc.retry",
-        ])
-        .supervised_output()?;
-    if !output.status.success() {
-        return Err(crate::fixture::Error::new(format!(
-            "cannot decode independent laptop capture: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-        .into());
-    }
+    let frames = air::decode(
+        path,
+        &format!(
+            "(wlan.fc.type == 2 && (wlan.da == {target_mac} || wlan.ta == {target_mac})) || \
+             (wlan.fc.type_subtype == 0x0019 && (wlan.ta == {target_mac} || wlan.ra == {target_mac}))"
+        ),
+        air::Payload::Omit,
+    )?;
+    Ok(analyze(&frames, target_mac.parse()?))
+}
+
+fn analyze(frames: &[AirFrame], target: MacAddress) -> LocalAirMonitorEvidence {
     let mut evidence = LocalAirMonitorEvidence::default();
-    let mut last_observed = BTreeMap::<MacFrameKey, f64>::new();
-    for line in String::from_utf8(output.stdout)?.lines() {
-        let mut fields = line.splitn(5, '\t');
-        let timestamp = fields.next().and_then(|value| value.parse::<f64>().ok());
-        let sequence = fields.next().and_then(|value| value.parse::<u16>().ok());
-        let fragment = fields.next().and_then(|value| value.parse::<u8>().ok());
-        let tid = fields
-            .next()
-            .and_then(|value| value.parse::<u8>().ok())
-            .or(Some(u8::MAX));
-        let retry = fields.next().is_some_and(parse_retry_flag);
-        let Some((timestamp, key)) = timestamp.zip(sequence.zip(fragment).zip(tid).map(
-            |((sequence, fragment), tid)| MacFrameKey {
-                tid,
+    let mut last_observed = BTreeMap::<MacFrameKey, u64>::new();
+    for frame in frames
+        .iter()
+        .filter(|frame| frame.kind.is_data() && frame.destination == Some(target))
+    {
+        let retry = frame.retry == Some(true);
+        let Some(key) = frame
+            .sequence
+            .zip(frame.fragment)
+            .map(|(sequence, fragment)| MacFrameKey {
+                tid: frame.tid.unwrap_or(u8::MAX),
                 sequence,
                 fragment,
-            },
-        )) else {
+            })
+        else {
             evidence.missing_mac_metadata = evidence.missing_mac_metadata.saturating_add(1);
             continue;
         };
@@ -343,57 +325,34 @@ pub(in crate::fixture) fn parse_capture(
         let is_new = !retry
             || last_observed
                 .get(&key)
-                .is_none_or(|previous| timestamp - previous > RETRY_GROUP_SECONDS);
-        last_observed.insert(key, timestamp);
+                .is_none_or(|previous| frame.time_micros - previous > RETRY_GROUP_MICROS);
+        last_observed.insert(key, frame.time_micros);
         if is_new {
             evidence.logical_data_units = evidence.logical_data_units.saturating_add(1);
             let count = evidence.mac_units.entry(key).or_default();
             *count = count.saturating_add(1);
         }
     }
-    parse_block_ack_capture(path, target_mac, &mut evidence)?;
-    evidence.target_egress = parse_target_egress_capture(path, target_mac)?;
-    Ok(evidence)
-}
-
-fn parse_target_egress_capture(
-    path: &Path,
-    target_mac: &str,
-) -> Result<TargetEgressAirTimingEvidence> {
-    let output = Command::new("tshark")
-        .args(["-r"])
-        .arg(path)
-        .args([
-            "-Y",
-            &format!(
-                "(wlan.fc.type == 2 && wlan.ta == {target_mac}) || \
-                 (wlan.fc.type == 1 && wlan.fc.subtype == 9 && wlan.ra == {target_mac})"
-            ),
-            "-T",
-            "fields",
-            "-E",
-            "separator=\t",
-            "-e",
-            "frame.time_epoch",
-            "-e",
-            "wlan.fc.type",
-            "-e",
-            "wlan.fc.subtype",
-        ])
-        .supervised_output()?;
-    if !output.status.success() {
-        return Err(crate::fixture::Error::new(format!(
-            "cannot decode target-egress air timing: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-        .into());
+    let mut tracker = BlockAckTracker::default();
+    for block_ack in frames
+        .iter()
+        .filter(|frame| frame.kind == FrameKind::BLOCK_ACK && frame.transmitter == Some(target))
+        .filter_map(|frame| frame.block_ack)
+    {
+        tracker.observe(block_ack.start_sequence, block_ack.bitmap);
     }
-    Ok(target_egress_timing_from_fields(&String::from_utf8(
-        output.stdout,
-    )?))
+    evidence.block_ack_frames = tracker.frames;
+    evidence.full_block_ack_frames = tracker.full_frames;
+    evidence.tail_block_ack_frames = tracker.tail_frames;
+    evidence.hole_block_ack_frames = tracker.hole_frames;
+    evidence.unique_block_acked_mpdus =
+        u32::try_from(tracker.acknowledged.len()).unwrap_or(u32::MAX);
+    evidence.backward_block_ack_starts = tracker.backward_starts;
+    evidence.target_egress = target_egress_timing(frames, target);
+    evidence
 }
 
-fn target_egress_timing_from_fields(fields: &str) -> TargetEgressAirTimingEvidence {
+fn target_egress_timing(frames: &[AirFrame], target: MacAddress) -> TargetEgressAirTimingEvidence {
     let mut target_data_frames = 0_u32;
     let mut peer_block_ack_frames = 0_u32;
     let mut last_target_data = None;
@@ -403,42 +362,33 @@ fn target_egress_timing_from_fields(fields: &str) -> TargetEgressAirTimingEviden
     let mut data_to_block_ack = Vec::new();
     let mut block_ack_to_next_data = Vec::new();
 
-    for line in fields.lines() {
-        let mut fields = line.splitn(3, '\t');
-        let Some(timestamp) = fields.next().and_then(epoch_micros) else {
-            continue;
-        };
-        let frame_type = fields.next().and_then(parse_tshark_u8);
-        let subtype = fields.next().and_then(parse_tshark_u8);
-        match (frame_type, subtype) {
-            (Some(2), _) => {
-                target_data_frames = target_data_frames.saturating_add(1);
-                if let Some(block_ack) = pending_block_ack.take()
-                    && let Some(interval) = timestamp.checked_sub(block_ack)
-                {
-                    block_ack_to_next_data.push(interval);
-                }
-                // An A-MPDU can be exposed as multiple MPDU records. Keeping
-                // the final data timestamp before the BlockAck measures from
-                // the observed end of the PPDU, not from its first subframe.
-                last_target_data = Some(timestamp);
+    for frame in frames {
+        let timestamp = frame.time_micros;
+        if frame.kind.is_data() && frame.transmitter == Some(target) {
+            target_data_frames = target_data_frames.saturating_add(1);
+            if let Some(block_ack) = pending_block_ack.take()
+                && let Some(interval) = timestamp.checked_sub(block_ack)
+            {
+                block_ack_to_next_data.push(interval);
             }
-            (Some(1), Some(9)) => {
-                peer_block_ack_frames = peer_block_ack_frames.saturating_add(1);
-                if let Some(previous) = previous_block_ack
-                    && let Some(interval) = timestamp.checked_sub(previous)
-                {
-                    peer_block_ack_interarrival.push(interval);
-                }
-                previous_block_ack = Some(timestamp);
-                if let Some(target_data) = last_target_data.take()
-                    && let Some(interval) = timestamp.checked_sub(target_data)
-                {
-                    data_to_block_ack.push(interval);
-                    pending_block_ack = Some(timestamp);
-                }
+            // An A-MPDU can be exposed as multiple MPDU records. Keeping the
+            // final data timestamp before the BlockAck measures from the
+            // observed end of the PPDU, not from its first subframe.
+            last_target_data = Some(timestamp);
+        } else if frame.kind == FrameKind::BLOCK_ACK && frame.receiver == Some(target) {
+            peer_block_ack_frames = peer_block_ack_frames.saturating_add(1);
+            if let Some(previous) = previous_block_ack
+                && let Some(interval) = timestamp.checked_sub(previous)
+            {
+                peer_block_ack_interarrival.push(interval);
             }
-            _ => {}
+            previous_block_ack = Some(timestamp);
+            if let Some(target_data) = last_target_data.take()
+                && let Some(interval) = timestamp.checked_sub(target_data)
+            {
+                data_to_block_ack.push(interval);
+                pending_block_ack = Some(timestamp);
+            }
         }
     }
 
@@ -456,36 +406,6 @@ fn target_egress_timing_from_fields(fields: &str) -> TargetEgressAirTimingEviden
             .then(|| summarize_intervals(block_ack_to_next_data))
             .flatten(),
     }
-}
-
-fn epoch_micros(value: &str) -> Option<u64> {
-    let (seconds, fraction) = value.trim().split_once('.').unwrap_or((value.trim(), ""));
-    let seconds = seconds.parse::<u64>().ok()?;
-    let mut micros = 0_u64;
-    let mut digits = 0_u8;
-    for byte in fraction.bytes().take(6) {
-        if !byte.is_ascii_digit() {
-            return None;
-        }
-        micros = micros
-            .checked_mul(10)?
-            .checked_add(u64::from(byte - b'0'))?;
-        digits += 1;
-    }
-    while digits < 6 {
-        micros = micros.checked_mul(10)?;
-        digits += 1;
-    }
-    seconds.checked_mul(1_000_000)?.checked_add(micros)
-}
-
-fn parse_tshark_u8(value: &str) -> Option<u8> {
-    let value = value.trim();
-    value.parse().ok().or_else(|| {
-        value
-            .strip_prefix("0x")
-            .and_then(|value| u8::from_str_radix(value, 16).ok())
-    })
 }
 
 fn summarize_intervals(mut intervals: Vec<u64>) -> Option<AirIntervalSummary> {
@@ -508,57 +428,6 @@ fn summarize_intervals(mut intervals: Vec<u64>) -> Option<AirIntervalSummary> {
 fn nearest_rank(sorted: &[u64], percentile: usize) -> u64 {
     let rank = sorted.len().saturating_mul(percentile).div_ceil(100).max(1);
     sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
-}
-
-fn parse_block_ack_capture(
-    path: &Path,
-    target_mac: &str,
-    evidence: &mut LocalAirMonitorEvidence,
-) -> Result<()> {
-    let output = Command::new("tshark")
-        .args(["-r"])
-        .arg(path)
-        .args([
-            "-Y",
-            &format!("wlan.fc.type == 1 && wlan.fc.subtype == 9 && wlan.ta == {target_mac}"),
-            "-T",
-            "fields",
-            "-E",
-            "separator=\t",
-            "-e",
-            "wlan.fixed.ssc.sequence",
-            "-e",
-            "wlan.ba.bm",
-        ])
-        .supervised_output()?;
-    if !output.status.success() {
-        return Err(crate::fixture::Error::new(format!(
-            "cannot decode independent BlockAck capture: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-        .into());
-    }
-    let mut tracker = BlockAckTracker::default();
-    for line in String::from_utf8(output.stdout)?.lines() {
-        let Some((sequence, bitmap)) = line.split_once('\t') else {
-            continue;
-        };
-        let Some(sequence) = sequence.parse::<u16>().ok() else {
-            continue;
-        };
-        let Some(bitmap) = decode_block_ack_bitmap(bitmap) else {
-            continue;
-        };
-        tracker.observe(sequence, bitmap);
-    }
-    evidence.block_ack_frames = tracker.frames;
-    evidence.full_block_ack_frames = tracker.full_frames;
-    evidence.tail_block_ack_frames = tracker.tail_frames;
-    evidence.hole_block_ack_frames = tracker.hole_frames;
-    evidence.unique_block_acked_mpdus =
-        u32::try_from(tracker.acknowledged.len()).unwrap_or(u32::MAX);
-    evidence.backward_block_ack_starts = tracker.backward_starts;
-    Ok(())
 }
 
 #[derive(Default)]
@@ -626,21 +495,6 @@ fn block_ack_bitmap_has_internal_hole(bitmap: [u8; 8]) -> bool {
         }
     }
     false
-}
-
-fn decode_block_ack_bitmap(value: &str) -> Option<[u8; 8]> {
-    if value.len() != 16 {
-        return None;
-    }
-    let mut bitmap = [0_u8; 8];
-    for (index, byte) in bitmap.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(value.get(index * 2..index * 2 + 2)?, 16).ok()?;
-    }
-    Some(bitmap)
-}
-
-fn parse_retry_flag(value: &str) -> bool {
-    matches!(value, "1" | "true" | "True")
 }
 
 fn helper_action(action: &str) -> Result<()> {

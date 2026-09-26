@@ -1,15 +1,45 @@
 use super::*;
+use crate::evidence::air::tests::{frame, mac};
+
+const TARGET: &str = "02:00:00:00:00:01";
+const PEER: &str = "02:00:00:00:00:02";
+
+/// Target data (`D`) and peer BlockAck (`B`) records at microsecond times.
+fn egress(records: &[(u64, char)]) -> TargetEgressAirTimingEvidence {
+    let frames = records
+        .iter()
+        .map(|&(time, kind)| {
+            let mut record = frame(
+                time,
+                if kind == 'D' {
+                    FrameKind(0x28)
+                } else {
+                    FrameKind::BLOCK_ACK
+                },
+            );
+            if kind == 'D' {
+                record.transmitter = Some(mac(TARGET));
+                record.destination = Some(mac(PEER));
+            } else {
+                record.transmitter = Some(mac(PEER));
+                record.receiver = Some(mac(TARGET));
+            }
+            record
+        })
+        .collect::<Vec<_>>();
+    target_egress_timing(&frames, mac(TARGET))
+}
 
 #[test]
 fn target_egress_timing_pairs_ppdu_tail_block_ack_and_next_ppdu() {
-    let evidence = target_egress_timing_from_fields(
-        "100.000000\t2\t8\n\
-         100.000100\t2\t8\n\
-         100.000140\t1\t9\n\
-         100.000300\t2\t8\n\
-         100.000500\t1\t9\n\
-         100.000900\t2\t8\n",
-    );
+    let evidence = egress(&[
+        (100_000_000, 'D'),
+        (100_000_100, 'D'),
+        (100_000_140, 'B'),
+        (100_000_300, 'D'),
+        (100_000_500, 'B'),
+        (100_000_900, 'D'),
+    ]);
 
     assert_eq!(evidence.target_data_frames, 4);
     assert_eq!(evidence.peer_block_ack_frames, 2);
@@ -54,12 +84,12 @@ fn target_egress_timing_pairs_ppdu_tail_block_ack_and_next_ppdu() {
 
 #[test]
 fn block_ack_cadence_survives_missing_target_data_decode() {
-    let evidence = target_egress_timing_from_fields(
-        "100.000000\t2\t8\n\
-         100.000100\t1\t9\n\
-         100.000500\t1\t9\n\
-         100.001100\t1\t9\n",
-    );
+    let evidence = egress(&[
+        (100_000_000, 'D'),
+        (100_000_100, 'B'),
+        (100_000_500, 'B'),
+        (100_001_100, 'B'),
+    ]);
 
     assert_eq!(evidence.target_data_frames, 1);
     assert_eq!(evidence.peer_block_ack_frames, 3);
@@ -82,13 +112,13 @@ fn block_ack_cadence_survives_missing_target_data_decode() {
 
 #[test]
 fn unpaired_block_ack_disables_pair_derived_timing_even_with_many_data_records() {
-    let evidence = target_egress_timing_from_fields(
-        "100.000000\t2\t8\n\
-         100.000010\t2\t8\n\
-         100.000020\t2\t8\n\
-         100.000100\t1\t9\n\
-         100.000500\t1\t9\n",
-    );
+    let evidence = egress(&[
+        (100_000_000, 'D'),
+        (100_000_010, 'D'),
+        (100_000_020, 'D'),
+        (100_000_100, 'B'),
+        (100_000_500, 'B'),
+    ]);
 
     assert_eq!(evidence.target_data_frames, 3);
     assert_eq!(evidence.peer_block_ack_frames, 2);
@@ -98,35 +128,31 @@ fn unpaired_block_ack_disables_pair_derived_timing_even_with_many_data_records()
 }
 
 #[test]
-fn epoch_parser_is_integer_and_microsecond_bounded() {
-    assert_eq!(epoch_micros("12"), Some(12_000_000));
-    assert_eq!(epoch_micros("12.3"), Some(12_300_000));
-    assert_eq!(epoch_micros("12.345678999"), Some(12_345_678));
-    assert_eq!(epoch_micros("broken"), None);
-    assert_eq!(parse_tshark_u8("0x09"), Some(9));
-}
-
-#[test]
 fn retry_grouping_counts_one_logical_mpdu() {
-    let key = MacFrameKey {
-        tid: 0,
-        sequence: 12,
-        fragment: 0,
+    let data = |time, retry| {
+        let mut record = frame(time, FrameKind(0x28));
+        record.transmitter = Some(mac(PEER));
+        record.destination = Some(mac(TARGET));
+        record.sequence = Some(12);
+        record.fragment = Some(0);
+        record.tid = Some(0);
+        record.retry = Some(retry);
+        record
     };
-    let mut last = BTreeMap::new();
-    last.insert(key, 1.0_f64);
-    assert!(1.02 - last[&key] <= RETRY_GROUP_SECONDS);
-    assert!(1.2 - last[&key] > RETRY_GROUP_SECONDS);
-}
-
-#[test]
-fn accepts_tshark_boolean_and_numeric_retry_values() {
-    assert!(parse_retry_flag("1"));
-    assert!(parse_retry_flag("True"));
-    assert!(parse_retry_flag("true"));
-    assert!(!parse_retry_flag("0"));
-    assert!(!parse_retry_flag("False"));
-    assert!(!parse_retry_flag(""));
+    let mut unsequenced = data(1_500_000, false);
+    unsequenced.sequence = None;
+    let evidence = analyze(
+        &[
+            data(1_000_000, false),
+            data(1_020_000, true),
+            data(1_200_000, true),
+            unsequenced,
+        ],
+        mac(TARGET),
+    );
+    assert_eq!(evidence.logical_data_units, 2);
+    assert_eq!(evidence.retry_attempts, 2);
+    assert_eq!(evidence.missing_mac_metadata, 1);
 }
 
 #[test]
@@ -174,10 +200,9 @@ fn block_ack_tracker_unwraps_windows_and_deduplicates_overlap() {
 }
 
 #[test]
-fn decodes_little_bit_order_block_ack_bitmap_bytes() {
-    let bitmap = decode_block_ack_bitmap("7f00000000000000").unwrap();
+fn block_ack_bitmap_bytes_use_little_bit_order() {
     let mut tracker = BlockAckTracker::default();
-    tracker.observe(1, bitmap);
+    tracker.observe(1, [0x7f, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(tracker.tail_frames, 1);
     assert_eq!(tracker.hole_frames, 0);
     assert_eq!(tracker.acknowledged.len(), 7);

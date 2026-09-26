@@ -1,5 +1,6 @@
 //! Opt-in packet evidence from the OpenWrt AP's own TX monitor tap.
 
+use crate::evidence::air;
 use crate::fixture::openwrt::capture::{RemoteCapture, ssh};
 use oer_process::CommandExt as _;
 use std::{
@@ -162,67 +163,31 @@ fn parse_capture(
     port: u16,
     expected_units: u64,
 ) -> Result<OpenWrtTxMonitorEvidence> {
-    let output = Command::new("tshark")
-        .args(["-r"])
-        .arg(path)
-        .args([
-            "-Y",
-            "wlan.fc.type == 2",
-            "-T",
-            "fields",
-            "-E",
-            "separator=\t",
-            "-e",
-            "wlan.seq",
-            "-e",
-            "wlan.frag",
-            "-e",
-            "wlan.qos.tid",
-            "-e",
-            "wlan.fc.retry",
-            "-e",
-            "radiotap.data_retries",
-            "-e",
-            "data.data",
-        ])
-        .supervised_output()?;
-    if !output.status.success() {
-        return Err(crate::fixture::Error::new(format!(
-            "cannot decode OpenWrt TX-monitor capture: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-        .into());
-    }
+    let frames = air::decode(path, "wlan.fc.type == 2", air::Payload::Include)?;
     let expected_units = u32::try_from(expected_units)?;
     let mut tracker = SequenceTracker::default();
-    for line in String::from_utf8(output.stdout)?.lines() {
-        let mut fields = line.splitn(6, '\t');
-        let mac_sequence = fields.next().and_then(|value| value.parse::<u16>().ok());
-        let mac_fragment = fields.next().and_then(|value| value.parse::<u8>().ok());
-        let mac_tid = fields
-            .next()
-            .and_then(|value| value.parse::<u8>().ok())
-            .or(Some(u8::MAX));
-        let _retry = fields.next();
-        let retries = fields
-            .next()
-            .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or(0);
-        let Some(raw) = fields.next().and_then(decode_hex) else {
+    for frame in frames {
+        let Some(sequence) = frame
+            .payload
+            .as_deref()
+            .and_then(|raw| udp_sequence(raw, target, port))
+        else {
             continue;
         };
-        let Some(sequence) = udp_sequence(&raw, target, port) else {
-            continue;
-        };
-        let mac = mac_sequence
-            .zip(mac_fragment)
-            .zip(mac_tid)
-            .map(|((sequence, fragment), tid)| MacFrameKey {
-                tid,
+        let mac = frame
+            .sequence
+            .zip(frame.fragment)
+            .map(|(sequence, fragment)| MacFrameKey {
+                tid: frame.tid.unwrap_or(u8::MAX),
                 sequence,
                 fragment,
             });
-        tracker.observe(sequence, mac, retries, expected_units);
+        tracker.observe(
+            sequence,
+            mac,
+            frame.transmit_retries.unwrap_or(0),
+            expected_units,
+        );
     }
     Ok(tracker.finish(expected_units))
 }
@@ -306,21 +271,6 @@ fn udp_sequence(raw: &[u8], target: Ipv4Addr, port: u16) -> Option<i32> {
         ));
     }
     None
-}
-
-fn decode_hex(value: &str) -> Option<Vec<u8>> {
-    if !value.len().is_multiple_of(2) {
-        return None;
-    }
-    value
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| {
-            let high = (pair[0] as char).to_digit(16)?;
-            let low = (pair[1] as char).to_digit(16)?;
-            Some(((high << 4) | low) as u8)
-        })
-        .collect()
 }
 
 #[cfg(test)]

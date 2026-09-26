@@ -300,6 +300,13 @@ setup, capture readiness, tshark decoding and managed-interface restoration;
 `fixture-monitor.json` retains the capture result. This passive check uses a
 synthetic parser filter and sends no target traffic.
 It does not establish target associations or qualify target throughput.
+
+Every 802.11 air observer (the laptop monitor, the OpenWrt TX-monitor tap and
+the probe-load management capture) decodes its capture through
+`hil_wifi::evidence::air`: one tshark run with a fixed field set yields typed
+`AirFrame` records, and each analyzer works on those frames in memory. A
+malformed record, unparsable field or invalid timestamp fails the whole
+capture; absent fields stay absent.
 `doctor` checks available tools and capabilities without applying a profile;
 a successful doctor result does not assert that current radio settings already
 match the selected scenario.

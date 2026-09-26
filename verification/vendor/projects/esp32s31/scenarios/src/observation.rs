@@ -242,16 +242,6 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
-        reason: "action payloads the calibration-tracking dispatch builds and discards: the \
-            executor and target port call the out-of-line `action()` only for its variant, \
-            `begin_*` lowers the action again and `commit` builds its own inlined outcome, \
-            whose instructions are observed",
-        places: &[(
-            "phy/src/tracking/calibration.rs",
-            "threshold: self.threshold,",
-        )],
-    },
-    Decision {
         reason: "async future bookkeeping attributed to signatures and closing braces: \
             state-discriminant and local stores into the future frame, register restores, and \
             the ready-flag take of a completed delay future at its `.await`; the probes poll \
@@ -316,6 +306,19 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "the grant-protect port lent to the PHY maintenance ports: the PHY-archive \
+            comparison lends the zero-sized `WeakPhyGrantProtect`, whose hooks have no effect \
+            like the archive's weak `phy_acquire_grant_protect` and \
+            `phy_release_grant_protect`, so passing it carries no data",
+        places: &[
+            (
+                "phy/src/target_port.rs",
+                "grant: &mut impl PhyGrantProtectPort,",
+            ),
+            ("phy/src/target_port.rs", "&mut *self.grant,"),
+        ],
+    },
+    Decision {
         reason: "temperature acquisition provenance, a production scheduling record with no \
             vendor counterpart; the temperature and sensor index are compared",
         places: &[(
@@ -344,10 +347,6 @@ pub const DECISIONS: &[Decision] = &[
             (
                 "phy/src/target_port/rfpll.rs",
                 ") -> Result<rfpll::Outcome, PhyTargetPortError> {",
-            ),
-            (
-                "phy/src/target_port/rfpll.rs",
-                ".ok_or(PhyTargetPortError::UnexpectedBinding)",
             ),
         ],
     },

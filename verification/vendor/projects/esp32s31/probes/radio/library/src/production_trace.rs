@@ -868,6 +868,16 @@ fn enter_common_force_level(
     parent: &mut oer_esp32s31_phy::tracking::calibration::PhyCalibrationTrackingTransition,
 ) -> Option<()> {
     use oer_esp32s31_phy::analog::pbus::{PhyForceTxRxAction, PhyForceTxRxCompletion};
+    use oer_esp32s31_phy::tracking::calibration::{
+        PhyCalibrationTrackingAction, PhyCalibrationTrackingCompletion,
+    };
+    // The PHY archive is compared without the coexistence archive, so its
+    // weak grant-protect hook returns without effect.
+    if parent.action() == (PhyCalibrationTrackingAction::SetGrantProtect { enabled: true }) {
+        parent
+            .advance(PhyCalibrationTrackingCompletion::GrantProtectSet { enabled: true })
+            .ok()?;
+    }
     let mut force = parent.begin_force_txrx().ok()?;
     let completion = loop {
         let completion = match force.action() {

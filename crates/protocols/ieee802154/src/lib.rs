@@ -23,6 +23,8 @@ extern crate std;
 
 /// Bounded IEEE 802.15.4 MAC byte representations.
 pub mod mac {
+    /// Enhanced acknowledgement of IEEE 802.15.4-2015 frames.
+    pub mod enhanced_ack;
     /// Owned and borrowed MAC frames without platform DMA framing.
     pub mod frame;
     /// MAC header inspection of `[PHR, PSDU...]` images.
@@ -34,6 +36,9 @@ pub mod mac {
 /// Hardware-independent radio command/event and state contracts.
 pub mod radio;
 
+pub use mac::enhanced_ack::{
+    EnhancedAck, EnhancedAckError, EnhancedAckSecurity, KeyIdMode, MacKeys, generate_enhanced_ack,
+};
 pub use mac::frame::{Frame, FrameError, FrameView, MAX_MAC_FRAME_LEN, MIN_MAC_FRAME_LEN};
 pub use mac::header::{AddressMode, FrameAddress, FrameType, FrameVersion, PhrFrame};
 pub use mac::pending::{AckPending, AutoPendingMode, PendingTable, PendingTableFull, ack_pending};

@@ -15,6 +15,12 @@ startup_artifact = "target/hil/esp32s31/startup-artifact.bin"
 [bluetooth]
 adapter = "hci0"
 
+# Optional, used only by IEEE 802.15.4 peer workloads: the ESP32-C5 flashed
+# with hil/peers/esp32c5-ieee802154. Prefer a stable /dev/serial/by-id path.
+[ieee802154_peer]
+id = "esp32c5-peer-01"
+serial = "/dev/ttyUSB0"
+
 [station]
 ssid = "laboratory-ssid"
 passphrase = "replace-me"

@@ -233,6 +233,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
             captured_unix_millis: 150,
             definition: LabDefinition {
                 bluetooth_adapter: None,
+                ieee802154_peer: None,
                 cell_id: String::from("cell-1"),
                 device_id: device_id.to_owned(),
                 station_ipv4: StationIpv4Definition::Dhcp,

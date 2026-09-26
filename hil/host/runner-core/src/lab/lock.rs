@@ -132,6 +132,13 @@ fn resource_keys(
                 .ok_or("missing Bluetooth fixture adapter")?,
         )?);
     }
+    if required.ieee802154_peer {
+        keys.push(ieee802154_peer_key(
+            lab.ieee802154_peer
+                .as_ref()
+                .ok_or("missing IEEE 802.15.4 peer fixture")?,
+        )?);
+    }
     if required.local_radio() {
         keys.push(local_radio_key(Path::new("/sys/class/net/wlan0"))?);
     }
@@ -241,6 +248,15 @@ fn bluetooth_key(adapter: oer_hil_fixture::bluetooth::model::Adapter) -> Result<
             .join(adapter.to_string())
             .canonicalize()?
             .display()
+    ))
+}
+
+/// The peer's serial device, resolved through symlinks such as
+/// `/dev/serial/by-id`, identifies it across aliases.
+fn ieee802154_peer_key(peer: &super::config::Ieee802154PeerConfig) -> Result<String> {
+    Ok(format!(
+        "ieee802154-peer:{}",
+        peer.serial.canonicalize()?.display()
     ))
 }
 

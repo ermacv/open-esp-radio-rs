@@ -43,6 +43,9 @@ pub struct LabDefinition {
     pub device_id: String,
     #[serde(default)]
     pub bluetooth_adapter: Option<String>,
+    /// Stable identity of the IEEE 802.15.4 reference peer.
+    #[serde(default)]
+    pub ieee802154_peer: Option<String>,
     pub station_ipv4: StationIpv4Definition,
     pub access_point: AccessPointDefinition,
     pub station_fixture: StationFixtureDefinition,
@@ -323,6 +326,7 @@ impl LabDefinition {
             cell_id: lab.cell_id().to_owned(),
             device_id: lab.device.id.clone(),
             bluetooth_adapter: lab.bluetooth_adapter.map(|adapter| adapter.to_string()),
+            ieee802154_peer: lab.ieee802154_peer.as_ref().map(|peer| peer.id.clone()),
             station_ipv4,
             access_point: AccessPointDefinition {
                 channel: lab.access_point.channel(),

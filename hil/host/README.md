@@ -76,6 +76,11 @@ Their first boot may create or replace it; every later boot must report
 `Restored` before the station lifecycle can qualify. This makes cold PHY cache
 replay an asserted transition rather than an informational UART message.
 
+IEEE 802.15.4 peer scenarios exchange frames with a reference ESP32-C5 flashed
+with [the peer firmware](../peers/esp32c5-ieee802154/README.md). Name its
+stable identity and serial port in the `[ieee802154_peer]` table; the runner
+leases that port for the scenario and resets the peer before each use.
+
 ## Build and run
 
 `cargo hil plan <scenario> --out target/hil/plan.json` prepares an executable

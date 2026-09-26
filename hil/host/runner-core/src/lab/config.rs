@@ -24,6 +24,8 @@ pub struct LabConfig {
     cell_id: String,
     pub device: DeviceConfig,
     pub bluetooth_adapter: Option<oer_hil_fixture::bluetooth::model::Adapter>,
+    /// The IEEE 802.15.4 reference peer (`hil/peers/esp32c5-ieee802154`).
+    pub ieee802154_peer: Option<Ieee802154PeerConfig>,
     pub station: StationConfig,
     pub access_point: AccessPointConfig,
     pub station_fixture: StationFixtureConfig,
@@ -46,6 +48,7 @@ struct RawLabConfig {
     lab: RawLabIdentity,
     device: RawDeviceConfig,
     bluetooth: Option<RawBluetoothConfig>,
+    ieee802154_peer: Option<RawIeee802154PeerConfig>,
     station: RawStationConfig,
     access_point: RawAccessPointConfig,
     station_fixture: RawStationFixtureConfig,
@@ -57,6 +60,20 @@ struct RawLabConfig {
 #[serde(deny_unknown_fields)]
 struct RawBluetoothConfig {
     adapter: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawIeee802154PeerConfig {
+    id: String,
+    serial: PathBuf,
+}
+
+/// The IEEE 802.15.4 reference peer: a stable identity and its serial port.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ieee802154PeerConfig {
+    pub id: String,
+    pub serial: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -411,6 +428,19 @@ impl LabConfig {
                 .bluetooth
                 .map(|config| config.adapter.parse())
                 .transpose()?,
+            ieee802154_peer: raw
+                .ieee802154_peer
+                .map(|config| {
+                    if config.id.trim().is_empty() {
+                        Err("IEEE 802.15.4 peer id is empty")
+                    } else {
+                        Ok(Ieee802154PeerConfig {
+                            id: config.id,
+                            serial: config.serial,
+                        })
+                    }
+                })
+                .transpose()?,
             device: DeviceConfig {
                 id: raw.device.id,
                 serial: raw.device.serial,
@@ -529,6 +559,7 @@ impl LabConfig {
             legacy_bss: None,
             cell_id: String::from("test-cell"),
             bluetooth_adapter: None,
+            ieee802154_peer: None,
             device: DeviceConfig {
                 id: String::from("test-device"),
                 serial: PathBuf::from("/dev/ttyACM0"),

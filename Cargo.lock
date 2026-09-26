@@ -2804,6 +2804,7 @@ dependencies = [
  "oer-hil-runner-core",
  "serde",
  "serde_json",
+ "serialport",
  "toml",
 ]
 

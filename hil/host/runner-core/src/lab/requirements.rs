@@ -13,6 +13,9 @@ pub struct Requirements {
     pub station_network: bool,
     #[serde(default)]
     pub bluetooth_adapter: bool,
+    /// The IEEE 802.15.4 reference peer.
+    #[serde(default)]
+    pub ieee802154_peer: bool,
     pub station_control: bool,
     pub station_udp_rx_capture: bool,
     pub station_udp_tx_capture: bool,
@@ -41,6 +44,7 @@ impl Requirements {
             .fold(Self::default(), |required, next| Self {
                 station_network: required.station_network | next.station_network,
                 bluetooth_adapter: required.bluetooth_adapter | next.bluetooth_adapter,
+                ieee802154_peer: required.ieee802154_peer | next.ieee802154_peer,
                 station_control: required.station_control | next.station_control,
                 station_udp_rx_capture: required.station_udp_rx_capture
                     | next.station_udp_rx_capture,

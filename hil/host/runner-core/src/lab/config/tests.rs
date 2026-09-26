@@ -175,3 +175,29 @@ fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
         .unwrap();
     assert!(LabConfig::load(file.path()).is_err());
 }
+
+#[test]
+fn the_ieee802154_peer_is_optional_and_needs_an_identity() {
+    use std::io::Write;
+    let raw: toml::Value = toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    let load = |value: &toml::Value| {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(toml::to_string(value).unwrap().as_bytes())
+            .unwrap();
+        LabConfig::load(file.path())
+    };
+    let lab = load(&raw).unwrap();
+    assert_eq!(
+        lab.ieee802154_peer,
+        Some(Ieee802154PeerConfig {
+            id: String::from("esp32c5-peer-01"),
+            serial: std::path::PathBuf::from("/dev/ttyUSB0"),
+        })
+    );
+    let mut absent = raw.clone();
+    absent.as_table_mut().unwrap().remove("ieee802154_peer");
+    assert_eq!(load(&absent).unwrap().ieee802154_peer, None);
+    let mut anonymous = raw.clone();
+    anonymous["ieee802154_peer"]["id"] = toml::Value::String(String::from(" "));
+    assert!(load(&anonymous).is_err());
+}

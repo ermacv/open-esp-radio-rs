@@ -73,6 +73,7 @@ const SKIPPED_DC_SUCCESSORS: [u32; 2] = [0x2010_088c, 0x2010_702c];
 const SKIPPED_DC_SNAPSHOTS: u32 = 1;
 /// Production RX entry compared with `phy_set_rx_gain_table`.
 const PRODUCTION_ENTRY: &str = "open_phy_calibration_trace_rx_gain";
+const ARBITER_INIT_ENTRY: &str = "open_phy_validation_arbiter_init";
 /// DC estimator readiness (bit 16), signed samples and activity.
 const ESTIMATOR_READY: u32 = 0x2010_047c;
 const ESTIMATOR_DONE: u32 = 0x10000;
@@ -714,6 +715,14 @@ impl RxGain {
         Ok(phase)
     }
 
+    /// Build the probe's session arbiter before the compared root.
+    fn arbiter_init(&self) -> Result<Invocation> {
+        let probe = self
+            .probes
+            .invoke(ARBITER_INIT_ENTRY, vec![], vec![], vec![])?;
+        Ok(self.enter_probe(probe))
+    }
+
     fn rows(&self, profile: &Profile) -> Result<Vec<ExecutionCase>> {
         let image = parameter_image(profile);
         let mut root = case(
@@ -741,10 +750,12 @@ impl RxGain {
                     SessionReset::Cold,
                     false,
                 ),
+                // Production builds its arbiter at boot, not in the compared
+                // root, whose step budget therefore excludes the construction.
                 case(
                     "install-captured-callbacks",
                     self.install_callbacks(INSTALLED_CALLBACK_SLOT)?,
-                    Some(self.noop()),
+                    Some(self.arbiter_init()?),
                     SessionReset::Warm,
                     false,
                 ),

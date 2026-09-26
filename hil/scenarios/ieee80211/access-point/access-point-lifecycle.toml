@@ -8,7 +8,7 @@ image = "correctness"
 
 [wifi.workload]
 kind = "access-point"
-cycles = 4
+cycles = 3
 boots = 5
 timeout_seconds = 90
 

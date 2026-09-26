@@ -1,7 +1,6 @@
 schema = 5
 id = "diagnostic-ap-45-45-cold-epoch"
 description = "Temporary AP 45+45 Mbit/s cold-epoch control for role-transition leakage"
-repetitions = 2
 transfer = "identical-image"
 tags = ["diagnostic-ap-lifecycle", "diagnostic-ap-rx-disposition"]
 

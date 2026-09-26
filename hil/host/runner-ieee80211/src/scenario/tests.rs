@@ -512,3 +512,75 @@ fn access_point_protection_needs_a_non_ht_laptop_and_ht_transmission() {
     // A non-HT laptop without an observed protection contract is ordinary.
     valid(&ap(&format!("clients = {non_ht}\n"), MULTI_TX));
 }
+
+/// Hardware time bounds iteration: a Wi-Fi scenario runs at most three
+/// traffic phases (repetitions times cycles), each at most 16 seconds long.
+/// Only scenarios whose purpose is duration itself, tagged `soak` or
+/// `thermal`, are exempt.
+#[test]
+fn catalog_scenarios_fit_the_hardware_run_budget() {
+    fn files(directory: &std::path::Path, found: &mut std::vec::Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files(&path, found);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension == "toml")
+            {
+                found.push(path);
+            }
+        }
+    }
+    fn longest_duration(value: &toml::Value) -> i64 {
+        match value {
+            toml::Value::Table(table) => table
+                .iter()
+                .map(|(key, value)| match value {
+                    toml::Value::Integer(seconds) if key == "duration_seconds" => *seconds,
+                    value => longest_duration(value),
+                })
+                .max()
+                .unwrap_or(0),
+            _ => 0,
+        }
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/ieee80211");
+    let mut paths = std::vec::Vec::new();
+    files(&root, &mut paths);
+    assert!(!paths.is_empty());
+    let mut over = std::vec::Vec::new();
+    for path in paths {
+        let scenario: toml::Value =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let exempt = scenario["tags"].as_array().is_some_and(|tags| {
+            tags.iter()
+                .any(|tag| matches!(tag.as_str(), Some("soak" | "thermal")))
+        });
+        if exempt {
+            continue;
+        }
+        let repetitions = scenario
+            .get("repetitions")
+            .and_then(toml::Value::as_integer)
+            .unwrap_or(1);
+        let wifi = &scenario["wifi"];
+        let cycles = wifi
+            .get("workload")
+            .and_then(|workload| workload.get("cycles"))
+            .and_then(toml::Value::as_integer)
+            .unwrap_or(1);
+        let duration = longest_duration(wifi);
+        if repetitions * cycles > 3 || duration > 16 {
+            over.push(format!(
+                "{}: repetitions={repetitions} cycles={cycles} duration_seconds={duration}",
+                path.display()
+            ));
+        }
+    }
+    assert!(
+        over.is_empty(),
+        "scenarios exceed the run budget:\n{}",
+        over.join("\n")
+    );
+}

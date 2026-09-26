@@ -1,7 +1,6 @@
 schema = 5
 id = "access-point-non-ht-client-ceiling-tx"
 description = "Observer-free HT40 AP sustained UDP transmit gate toward one non-HT laptop client"
-repetitions = 3
 transfer = "identical-image"
 tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "non-ht", "ht40", "split-core", "ceiling", "tx"]
 

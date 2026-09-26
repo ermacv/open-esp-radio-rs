@@ -1,7 +1,6 @@
 schema = 5
 id = "access-point-load-rx"
 description = "Sustained two-flow AP inbound fairness baseline with exact delivery"
-repetitions = 5
 transfer = "identical-image"
 tags = ["qualification", "wifi", "access-point", "network", "load", "rx"]
 
@@ -17,7 +16,7 @@ clients = { kind = "laptop-and-openwrt" }
 
 [wifi.workload.traffic]
 kind = "udp-multi-client"
-duration_seconds = 60
+duration_seconds = 16
 payload_bytes = 1400
 offer = { rx_bps = 16000000 }
 

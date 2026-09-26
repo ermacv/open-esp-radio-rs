@@ -1,7 +1,6 @@
 schema = 5
 id = "access-point-single-client-ceiling-bidirectional"
 description = "Observer-free single-client AP HT40 saturated bidirectional UDP gate"
-repetitions = 3
 transfer = "identical-image"
 tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "bidirectional"]
 

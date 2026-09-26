@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-bidirectional-ht40-split-baseline"
 description = "Stable CPU0-radio/CPU1-network HT40 full-duplex baseline"
-repetitions = 5
+repetitions = 3
 transfer = "identical-image"
 tags = ["qualification", "udp", "station", "full-duplex", "ht40", "split-core", "baseline"]
 

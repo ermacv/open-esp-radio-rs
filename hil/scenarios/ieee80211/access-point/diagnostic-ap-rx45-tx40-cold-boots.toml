@@ -1,7 +1,6 @@
 schema = 5
 id = "diagnostic-ap-rx45-tx40-cold-boots"
-description = "Temporary AP 45/40 Mbit/s control comparing first and second epochs across hardware resets"
-repetitions = 4
+description = "Temporary AP 45/40 Mbit/s control comparing first and second epochs after a hardware reset"
 transfer = "identical-image"
 tags = ["diagnostic-ap-lifecycle", "diagnostic-ap-rx-disposition"]
 

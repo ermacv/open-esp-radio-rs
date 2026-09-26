@@ -18,7 +18,7 @@ clients = { kind = "laptop-and-openwrt" }
 
 [wifi.workload.traffic]
 kind = "udp-multi-client"
-duration_seconds = 22
+duration_seconds = 16
 payload_bytes = 1472
 offer = { tx_bps = 130000000 }
 

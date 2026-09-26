@@ -1972,7 +1972,13 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         promiscuous: true,
     };
     assert!(config.validate());
-    assert!(!Ieee802154SessionConfig { channel: 10, ..config }.validate());
+    assert!(
+        !Ieee802154SessionConfig {
+            channel: 10,
+            ..config
+        }
+        .validate()
+    );
     assert!(
         !Ieee802154SessionTransmitRequest {
             frame: Ieee802154SessionFrame::from_slice(&[1, 2]).unwrap(),

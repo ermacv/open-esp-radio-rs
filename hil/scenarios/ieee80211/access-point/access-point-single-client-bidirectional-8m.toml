@@ -16,7 +16,7 @@ timeout_seconds = 120
 
 [wifi.workload.traffic]
 kind = "udp"
-duration_seconds = 30
+duration_seconds = 16
 payload_bytes = 1400
 offer = { rx_bps = 8000000, tx_bps = 8000000 }
 

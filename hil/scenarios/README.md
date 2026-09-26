@@ -25,7 +25,7 @@ image = "correctness"
 [wifi.workload]
 kind = "station-udp"
 link = { phy = "he20" }
-duration_seconds = 30
+duration_seconds = 16
 payload_bytes = 1472
 offer = { rx_bps = 50000000 }
 
@@ -51,6 +51,12 @@ The family owns every executable value:
 
 Every table rejects unknown fields. Relations that remain between the image,
 the data path and the workload are validated by the family.
+
+Hardware time bounds every iteration. A Wi-Fi scenario runs at most three
+traffic phases, counting `repetitions` times workload `cycles`, and no
+`duration_seconds` exceeds 16. Only scenarios whose purpose is duration
+itself, tagged `soak` or `thermal`, are exempt. A catalog test enforces this
+budget.
 
 ## Controlled experiments
 

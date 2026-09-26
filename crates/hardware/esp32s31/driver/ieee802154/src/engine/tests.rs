@@ -15,7 +15,7 @@ use oer_esp32s31_hal::ieee802154::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
         Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReasonObservation,
     },
-    pib::Ieee802154PibDefaults,
+    pib::{Ieee802154MultipanIndex, Ieee802154PibDefaults},
 };
 
 use super::{
@@ -74,6 +74,13 @@ enum Call {
     DisableEtm(Ieee802154EtmChannel),
     EnableEtm(Ieee802154EtmChannel),
     EtmRoute(Ieee802154EtmRoute),
+    SetPanId(u16),
+    SetShortAddress(u16),
+    SetExtendedAddress([u8; 8]),
+    SetAckTimeout(u16),
+    SecurityAddress([u8; 8]),
+    SecurityKey([u8; 16]),
+    SecurityOffset(u8),
 }
 
 /// Register model: getters return the last value set.
@@ -92,6 +99,10 @@ struct Hw {
     ed_rss: i8,
     cca_busy: bool,
     rx_address: Option<u32>,
+    panid: u16,
+    short_address: u16,
+    extended_address: [u8; 8],
+    ack_timeout: u16,
 }
 
 impl Default for Hw {
@@ -111,6 +122,10 @@ impl Default for Hw {
             ed_rss: 0,
             cca_busy: false,
             rx_address: None,
+            panid: 0,
+            short_address: 0,
+            extended_address: [0; 8],
+            ack_timeout: 0,
         }
     }
 }
@@ -287,6 +302,46 @@ impl Ieee802154LowLevel for Hw {
     }
     fn set_etm_route(&mut self, route: Ieee802154EtmRoute) {
         self.calls.push(Call::EtmRoute(route));
+    }
+    fn set_multipan_panid(&mut self, index: Ieee802154MultipanIndex, panid: u16) {
+        assert_eq!(index, Ieee802154MultipanIndex::CONTEXT0);
+        self.calls.push(Call::SetPanId(panid));
+        self.panid = panid;
+    }
+    fn multipan_panid(&mut self, _: Ieee802154MultipanIndex) -> u16 {
+        self.panid
+    }
+    fn set_multipan_short_address(&mut self, index: Ieee802154MultipanIndex, address: u16) {
+        assert_eq!(index, Ieee802154MultipanIndex::CONTEXT0);
+        self.calls.push(Call::SetShortAddress(address));
+        self.short_address = address;
+    }
+    fn multipan_short_address(&mut self, _: Ieee802154MultipanIndex) -> u16 {
+        self.short_address
+    }
+    fn set_multipan_extended_address(&mut self, index: Ieee802154MultipanIndex, address: [u8; 8]) {
+        assert_eq!(index, Ieee802154MultipanIndex::CONTEXT0);
+        self.calls.push(Call::SetExtendedAddress(address));
+        self.extended_address = address;
+    }
+    fn multipan_extended_address(&mut self, _: Ieee802154MultipanIndex) -> [u8; 8] {
+        self.extended_address
+    }
+    fn set_ack_timeout(&mut self, units: u16) {
+        self.calls.push(Call::SetAckTimeout(units));
+        self.ack_timeout = units;
+    }
+    fn ack_timeout(&mut self) -> u16 {
+        self.ack_timeout
+    }
+    fn set_security_address(&mut self, address: &[u8; 8]) {
+        self.calls.push(Call::SecurityAddress(*address));
+    }
+    fn set_security_key(&mut self, key: &[u8; 16]) {
+        self.calls.push(Call::SecurityKey(*key));
+    }
+    fn set_security_offset(&mut self, offset: u8) {
+        self.calls.push(Call::SecurityOffset(offset));
     }
 }
 
@@ -933,4 +988,57 @@ fn an_elapsed_receive_window_is_skipped() {
         .receive_at(&mut bench.hw, &mut bench.env, 100, 50);
     assert_eq!(bench.hw.calls, []);
     assert_eq!(bench.engine.state(), Ieee802154State::Idle);
+}
+
+/// Identity setters write interface zero; the ACK timeout rounds up to the
+/// 16-microsecond unit (`esp_ieee802154.c` L173-L223).
+#[test]
+fn identity_and_ack_timeout_address_interface_zero() {
+    let mut bench = Bench::enabled();
+    let (engine, hw) = (&mut bench.engine, &mut bench.hw);
+    engine.set_panid(hw, 0x1234);
+    engine.set_short_address(hw, 0x5678);
+    engine.set_extended_address(hw, [1, 2, 3, 4, 5, 6, 7, 8]);
+    engine.set_ack_timeout(hw, 200);
+    assert_eq!(
+        hw.calls,
+        [
+            Call::SetPanId(0x1234),
+            Call::SetShortAddress(0x5678),
+            Call::SetExtendedAddress([1, 2, 3, 4, 5, 6, 7, 8]),
+            Call::SetAckTimeout(13),
+        ]
+    );
+    assert_eq!(engine.panid(hw), 0x1234);
+    assert_eq!(engine.short_address(hw), 0x5678);
+    assert_eq!(engine.extended_address(hw), [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(engine.ack_timeout(hw), 208);
+}
+
+/// `ieee802154_transmit_security_config` programs address, key and the
+/// secured payload offset, then enables transmit security; `TX_DONE` clears
+/// it (esp_ieee802154_sec.c L12-L25).
+#[test]
+fn transmit_security_is_armed_for_one_transmission() {
+    let mut bench = Bench::enabled();
+    let mut secured = DATA_NO_ACK;
+    secured[1] |= 0x08;
+    secured[10] = 0x25;
+    let key = [7; 16];
+    let address = [9; 8];
+    bench
+        .engine
+        .set_transmit_security(&mut bench.hw, &secured, &key, &address);
+    assert_eq!(
+        bench.hw.calls,
+        [
+            Call::SecurityAddress(address),
+            Call::SecurityKey(key),
+            Call::SecurityOffset(10),
+            Call::SetTransmitSecurity(true),
+        ]
+    );
+    bench.transmit(&secured, false);
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    assert!(bench.hw.calls.contains(&Call::SetTransmitSecurity(false)));
 }

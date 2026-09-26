@@ -38,6 +38,10 @@ use buffers::DmaFrame;
 /// Pending-table entries per address kind (`CONFIG_IEEE802154_PENDING_TABLE_SIZE`).
 pub const PENDING_TABLE_SIZE: usize = 20;
 
+/// ESP32-S31 `IEEE802154_RX_SENSITIVITY` in dBm
+/// (`esp_ieee802154_get_receive_sensitivity`).
+pub const RECEIVE_SENSITIVITY_DBM: i8 = -104;
+
 /// ESP32-S31 `IEEE802154_RSSI_COMPENSATION_VALUE`.
 const RSSI_COMPENSATION: i8 = 0;
 /// `CCA_DETECTION_TIME` in 16-microsecond symbols.
@@ -282,6 +286,75 @@ impl<'storage> Ieee802154Engine<'storage> {
     /// The frame-pending table of interface zero.
     pub fn pending_table(&mut self) -> &mut PendingTable<PENDING_TABLE_SIZE> {
         &mut self.pending_table
+    }
+
+    /// `esp_ieee802154_set_panid`: PAN ID of interface zero.
+    pub fn set_panid<L: Ieee802154LowLevel + ?Sized>(&mut self, ll: &mut L, panid: u16) {
+        ll.set_multipan_panid(Ieee802154MultipanIndex::CONTEXT0, panid);
+    }
+
+    /// `esp_ieee802154_get_panid`.
+    pub fn panid<L: Ieee802154LowLevel + ?Sized>(&mut self, ll: &mut L) -> u16 {
+        ll.multipan_panid(Ieee802154MultipanIndex::CONTEXT0)
+    }
+
+    /// `esp_ieee802154_set_short_address` of interface zero.
+    pub fn set_short_address<L: Ieee802154LowLevel + ?Sized>(&mut self, ll: &mut L, address: u16) {
+        ll.set_multipan_short_address(Ieee802154MultipanIndex::CONTEXT0, address);
+    }
+
+    /// `esp_ieee802154_get_short_address`.
+    pub fn short_address<L: Ieee802154LowLevel + ?Sized>(&mut self, ll: &mut L) -> u16 {
+        ll.multipan_short_address(Ieee802154MultipanIndex::CONTEXT0)
+    }
+
+    /// `esp_ieee802154_set_extended_address` of interface zero, in frame
+    /// (little-endian) byte order.
+    pub fn set_extended_address<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        address: [u8; 8],
+    ) {
+        ll.set_multipan_extended_address(Ieee802154MultipanIndex::CONTEXT0, address);
+    }
+
+    /// `esp_ieee802154_get_extended_address`.
+    pub fn extended_address<L: Ieee802154LowLevel + ?Sized>(&mut self, ll: &mut L) -> [u8; 8] {
+        ll.multipan_extended_address(Ieee802154MultipanIndex::CONTEXT0)
+    }
+
+    /// `esp_ieee802154_set_ack_timeout`: microseconds rounded up to the
+    /// 16-microsecond unit and truncated to the sixteen-bit field.
+    pub fn set_ack_timeout<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        microseconds: u32,
+    ) {
+        ll.set_ack_timeout((microseconds.wrapping_add(15) / 16) as u16);
+    }
+
+    /// `esp_ieee802154_get_ack_timeout` in microseconds.
+    pub fn ack_timeout<L: Ieee802154LowLevel + ?Sized>(&mut self, ll: &mut L) -> u32 {
+        u32::from(ll.ack_timeout()) * 16
+    }
+
+    /// `esp_ieee802154_set_transmit_security`: arm transmit security for the
+    /// secured `frame` image the next transmission sends. The vendor asserts
+    /// that the frame enables security; an unparseable header programs its
+    /// invalid offset `0xff` truncated to the seven-bit field.
+    pub fn set_transmit_security<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        frame: &[u8],
+        key: &[u8; 16],
+        address: &[u8; 8],
+    ) {
+        let frame = PhrFrame::new(frame);
+        vendor_assert!(frame.security_enabled());
+        ll.set_security_address(address);
+        ll.set_security_key(key);
+        ll.set_security_offset(frame.security_payload_offset().unwrap_or(0xff));
+        ll.set_transmit_security(true);
     }
 
     /// `ieee802154_get_recent_lqi`.

@@ -16,6 +16,7 @@ use crate::ieee802154::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReasonObservation,
         Ieee802154TxAbortReasonObservation,
     },
+    pib::Ieee802154MultipanIndex,
     policy::Ieee802154CcaMode,
     tx_power::Ieee802154ResolvedTxPower,
 };
@@ -89,6 +90,23 @@ impl Ieee802154LowLevel for Recorder {
         set_ed_duration(u16);
         notify_enhanced_ack_generated();
         disable_rx_aborts(Ieee802154RxAbortEnableSet);
+        set_multipan_panid(Ieee802154MultipanIndex, u16);
+        multipan_panid(Ieee802154MultipanIndex) -> u16;
+        set_multipan_short_address(Ieee802154MultipanIndex, u16);
+        multipan_short_address(Ieee802154MultipanIndex) -> u16;
+        set_multipan_extended_address(Ieee802154MultipanIndex, [u8; 8]);
+        multipan_extended_address(Ieee802154MultipanIndex) -> [u8; 8];
+        set_ack_timeout(u16);
+        ack_timeout() -> u16;
+        set_security_offset(u8);
+    }
+
+    fn set_security_address(&mut self, _: &[u8; 8]) {
+        unreachable!("set_security_address is not a HAL helper accessor")
+    }
+
+    fn set_security_key(&mut self, _: &[u8; 16]) {
+        unreachable!("set_security_key is not a HAL helper accessor")
     }
 
     fn enable_all_events(&mut self) {

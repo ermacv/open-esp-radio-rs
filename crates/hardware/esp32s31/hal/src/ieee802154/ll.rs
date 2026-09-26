@@ -19,7 +19,10 @@ use oer_esp32s31_pac::{
     Ieee802154TxPowerCode as PacTxPowerCode,
 };
 
-use oer_esp32s31_pac::Ieee802154MacCommand as PacMacCommand;
+use oer_esp32s31_pac::{
+    Ieee802154AckTimeoutUnits as PacAckTimeoutUnits, Ieee802154MacCommand as PacMacCommand,
+    Ieee802154SecurityPayloadOffset as PacSecurityPayloadOffset,
+};
 
 pub use oer_esp32s31_pac::{
     Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
@@ -35,6 +38,7 @@ use crate::ieee802154::{
         Ieee802154RxAbortReasonObservation, Ieee802154TaskOwner,
         Ieee802154TxAbortReasonObservation,
     },
+    pib::Ieee802154MultipanIndex,
     policy::Ieee802154CcaMode,
     tx_power::Ieee802154ResolvedTxPower,
 };
@@ -122,6 +126,29 @@ pub trait Ieee802154LowLevel {
     fn notify_enhanced_ack_generated(&mut self);
     /// `ieee802154_ll_disable_rx_abort_events`.
     fn disable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet);
+    /// `ieee802154_ll_set_multipan_panid`, which also enables the context.
+    fn set_multipan_panid(&mut self, index: Ieee802154MultipanIndex, panid: u16);
+    /// `ieee802154_ll_get_multipan_panid`.
+    fn multipan_panid(&mut self, index: Ieee802154MultipanIndex) -> u16;
+    /// `ieee802154_ll_set_multipan_short_addr`, which also enables the context.
+    fn set_multipan_short_address(&mut self, index: Ieee802154MultipanIndex, address: u16);
+    /// `ieee802154_ll_get_multipan_short_addr`.
+    fn multipan_short_address(&mut self, index: Ieee802154MultipanIndex) -> u16;
+    /// `ieee802154_ll_set_multipan_ext_addr`, which also enables the context.
+    fn set_multipan_extended_address(&mut self, index: Ieee802154MultipanIndex, address: [u8; 8]);
+    /// `ieee802154_ll_get_multipan_ext_addr`.
+    fn multipan_extended_address(&mut self, index: Ieee802154MultipanIndex) -> [u8; 8];
+    /// `ieee802154_ll_set_ack_timeout` in 16-microsecond units.
+    fn set_ack_timeout(&mut self, units: u16);
+    /// `ieee802154_ll_get_ack_timeout` in 16-microsecond units.
+    fn ack_timeout(&mut self) -> u16;
+    /// `ieee802154_ll_set_security_addr`.
+    fn set_security_address(&mut self, address: &[u8; 8]);
+    /// `ieee802154_ll_set_security_key`.
+    fn set_security_key(&mut self, key: &[u8; 16]);
+    /// `ieee802154_ll_set_security_offset`: the seven-bit field keeps the low
+    /// seven bits, as the vendor bitfield assignment does.
+    fn set_security_offset(&mut self, offset: u8);
     /// `ieee802154_ll_enable_events(IEEE802154_EVENT_MASK)`.
     fn enable_all_events(&mut self);
     /// `ieee802154_ll_enable_events` of one event.
@@ -355,6 +382,56 @@ impl Ieee802154LowLevel for Ieee802154MacPort<'_> {
 
     fn disable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet) {
         self.task.lease().disable_rx_aborts(set);
+    }
+
+    fn set_multipan_panid(&mut self, index: Ieee802154MultipanIndex, panid: u16) {
+        self.task.lease().set_multipan_pan_id(index, panid);
+    }
+
+    fn multipan_panid(&mut self, index: Ieee802154MultipanIndex) -> u16 {
+        self.task.lease().multipan_pan_id(index)
+    }
+
+    fn set_multipan_short_address(&mut self, index: Ieee802154MultipanIndex, address: u16) {
+        self.task.lease().set_multipan_short_address(index, address);
+    }
+
+    fn multipan_short_address(&mut self, index: Ieee802154MultipanIndex) -> u16 {
+        self.task.lease().multipan_short_address(index)
+    }
+
+    fn set_multipan_extended_address(&mut self, index: Ieee802154MultipanIndex, address: [u8; 8]) {
+        self.task
+            .lease()
+            .set_multipan_extended_address(index, address);
+    }
+
+    fn multipan_extended_address(&mut self, index: Ieee802154MultipanIndex) -> [u8; 8] {
+        self.task.lease().multipan_extended_address(index)
+    }
+
+    fn set_ack_timeout(&mut self, units: u16) {
+        self.task
+            .lease()
+            .set_ack_timeout(PacAckTimeoutUnits::new(units));
+    }
+
+    fn ack_timeout(&mut self) -> u16 {
+        self.task.lease().ack_timeout().value()
+    }
+
+    fn set_security_address(&mut self, address: &[u8; 8]) {
+        self.task.lease().set_security_address(address);
+    }
+
+    fn set_security_key(&mut self, key: &[u8; 16]) {
+        self.task.lease().set_security_key(key);
+    }
+
+    fn set_security_offset(&mut self, offset: u8) {
+        let offset = PacSecurityPayloadOffset::new(offset & PacSecurityPayloadOffset::MAX)
+            .expect("seven bits fit the payload-offset field");
+        self.task.lease().set_security_payload_offset(offset);
     }
 
     fn enable_all_events(&mut self) {

@@ -137,7 +137,8 @@ use crate::{
 mod concurrent;
 pub use concurrent::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
-    maintain_concurrent_phy, register_concurrent_phy,
+    ConcurrentRfError, close_concurrent_rf, maintain_concurrent_phy, register_concurrent_phy,
+    wake_concurrent_rf,
 };
 mod domain;
 pub use domain::{

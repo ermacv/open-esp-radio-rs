@@ -13,9 +13,14 @@
 //! [`ClientQuiescence`] proof, and it must finish before the earliest window
 //! any proof grants. A failed or cancelled tracking transaction poisons the
 //! domain until reset.
+//!
+//! The domain also owns its modem clock modules, as ESP-IDF's `esp_phy_enable`
+//! and `esp_phy_disable` do: `PHY` is held while RF is open, and
+//! `PHY_CALIBRATION` only while registration or RF wake runs. After the last
+//! client leaves, closing RF releases `PHY`; waking RF takes it again.
 
 use oer_esp32s31_hal::shared_radio::{
-    ClientQuiescence, QuiescentSpan, RadioClient, SharedRadioLease,
+    ClientQuiescence, ModemClockError, QuiescentSpan, RadioClient, SharedRadioLease,
 };
 
 use crate::{
@@ -38,8 +43,10 @@ pub(crate) enum Slot {
     /// No registration yet.
     #[default]
     Empty,
-    /// Registered, with every active client settled.
+    /// Registered with RF open, with every active client settled.
     Registered(PhyDomain),
+    /// Registered with RF closed and no client.
+    RfClosed(PhyDomain),
     /// A tracking request must run before clients continue.
     Pending {
         registered: RegisteredPhyState,
@@ -60,8 +67,20 @@ pub enum ConcurrentPhyError {
     TrackingPending,
     /// No tracking is pending.
     NoTrackingPending,
-    /// Tracking failed earlier; the domain requires reset.
+    /// Tracking, RF close or RF wake failed earlier; the domain requires
+    /// reset.
     Poisoned,
+    /// RF is closed; it must be woken before clients enter.
+    RfClosed,
+    /// RF is open; only a closed domain can be woken.
+    RfOpen,
+    /// The shared-PHY borrow belongs to another registration; no register
+    /// access ran.
+    EpochMismatch,
+    /// Clients are still active; RF closes only after the last one left.
+    ClientsActive,
+    /// The domain's modem clock module could not change.
+    Clock(ModemClockError),
     /// The client set rejected the acquisition.
     Acquire(PhyClientAcquireError),
     /// The client set rejected the release.
@@ -162,9 +181,15 @@ impl ConcurrentPhy {
     pub fn client_snapshot(&self) -> Option<PhyClientSnapshot> {
         match &self.slot {
             Slot::Registered(domain) => Some(domain.client_snapshot()),
+            Slot::RfClosed(domain) => Some(domain.client_snapshot()),
             Slot::Pending { pending, .. } => Some(pending.snapshot()),
             Slot::Empty | Slot::Poisoned => None,
         }
+    }
+
+    /// Whether the domain is registered with RF closed.
+    pub const fn rf_closed(&self) -> bool {
+        matches!(self.slot, Slot::RfClosed(_))
     }
 
     /// Whether tracking must run before clients continue.
@@ -176,6 +201,10 @@ impl ConcurrentPhy {
         match core::mem::take(&mut self.slot) {
             Slot::Registered(domain) => Ok(domain),
             Slot::Empty => Err(ConcurrentPhyError::NotRegistered),
+            closed @ Slot::RfClosed(_) => {
+                self.slot = closed;
+                Err(ConcurrentPhyError::RfClosed)
+            }
             pending @ Slot::Pending { .. } => {
                 self.slot = pending;
                 Err(ConcurrentPhyError::TrackingPending)
@@ -192,6 +221,7 @@ impl ConcurrentPhy {
         match &self.slot {
             Slot::Registered(domain) => Ok(domain),
             Slot::Empty => Err(ConcurrentPhyError::NotRegistered),
+            Slot::RfClosed(_) => Err(ConcurrentPhyError::RfClosed),
             Slot::Pending { .. } => Err(ConcurrentPhyError::TrackingPending),
             Slot::Poisoned => Err(ConcurrentPhyError::Poisoned),
         }
@@ -201,10 +231,44 @@ impl ConcurrentPhy {
         &mut self.slot
     }
 
+    /// Take the RF-open domain with no active client, for RF close.
+    pub(crate) fn idle_domain(&mut self) -> Result<PhyDomain, ConcurrentPhyError> {
+        let domain = self.settled_domain()?;
+        if domain.client_snapshot().is_empty() {
+            Ok(domain)
+        } else {
+            self.slot = Slot::Registered(domain);
+            Err(ConcurrentPhyError::ClientsActive)
+        }
+    }
+
+    /// Take the RF-closed domain, for RF wake.
+    pub(crate) fn closed_domain(&mut self) -> Result<PhyDomain, ConcurrentPhyError> {
+        match core::mem::take(&mut self.slot) {
+            Slot::RfClosed(domain) => Ok(domain),
+            Slot::Empty => Err(ConcurrentPhyError::NotRegistered),
+            Slot::Poisoned => {
+                self.slot = Slot::Poisoned;
+                Err(ConcurrentPhyError::Poisoned)
+            }
+            other => {
+                self.slot = other;
+                Err(ConcurrentPhyError::RfOpen)
+            }
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn registered_for_test(domain: PhyDomain) -> Self {
         Self {
             slot: Slot::Registered(domain),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rf_closed_for_test(domain: PhyDomain) -> Self {
+        Self {
+            slot: Slot::RfClosed(domain),
         }
     }
 }
@@ -327,6 +391,7 @@ pub fn admit_maintenance(
     match &lease.attachment().slot {
         Slot::Pending { pending, .. } => admit(pending.snapshot(), proofs, now_micros),
         Slot::Poisoned => Err(ConcurrentPhyError::Poisoned),
+        Slot::RfClosed(_) => Err(ConcurrentPhyError::RfClosed),
         Slot::Empty => Err(ConcurrentPhyError::NotRegistered),
         Slot::Registered(_) => Err(ConcurrentPhyError::NoTrackingPending),
     }

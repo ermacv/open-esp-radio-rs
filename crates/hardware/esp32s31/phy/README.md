@@ -206,7 +206,14 @@ Every operation takes the arbiter's lease, so the domain and the shared PHY are
 serialized by one mechanism:
 
 - `register_concurrent_phy` registers the domain once through the lease's
-  shared-PHY borrow;
+  shared-PHY borrow. As ESP-IDF's calibrating first `esp_phy_enable`, it
+  enables the `PHY` and `PHY_CALIBRATION` modem clock modules through the
+  arbiter and releases `PHY_CALIBRATION` after calibration;
+- `close_concurrent_rf` runs `phy_close_rf` after the last client left and
+  releases `PHY`, as the last `esp_phy_disable` does. `wake_concurrent_rf`
+  takes `PHY` and `PHY_CALIBRATION` again, restores the retained
+  registration by `phy_wakeup_init` without calibration and releases
+  `PHY_CALIBRATION`. A closed domain admits no client;
 - `acquire_client` and `release_client` enter and leave Wi-Fi, Bluetooth and
   IEEE 802.15.4 as clients of the one client set;
 - `evaluate_periodic_tracking` and an acquisition that needs initial tracking

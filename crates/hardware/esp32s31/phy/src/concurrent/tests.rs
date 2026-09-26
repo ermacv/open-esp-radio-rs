@@ -35,6 +35,23 @@ fn registered_arbiter() -> SharedRadio<ConcurrentPhy> {
     radio
 }
 
+/// An arbiter whose registered domain has RF closed.
+fn rf_closed_arbiter() -> SharedRadio<ConcurrentPhy> {
+    let (radio, _partitions) =
+        RadioHardware::for_validation().into_concurrent(ConcurrentPhy::new());
+    {
+        let mut lease = radio
+            .try_acquire()
+            .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
+        let epoch = lease.phy_hal().begin_registration_epoch();
+        *lease.attachment_mut() = ConcurrentPhy::rf_closed_for_test(PhyDomain::new(
+            RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production())),
+            PhyClientState::for_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS, epoch),
+        ));
+    }
+    radio
+}
+
 fn until(client: RadioClient, issued_at: u64, release_by: u64) -> ClientQuiescence<'static> {
     ClientQuiescence::for_validation(
         client,
@@ -189,4 +206,65 @@ fn admission_takes_the_earliest_window_and_ignores_inactive_clients() {
         admit(active, &[wifi_stopped, stopped()], 10).map(MaintenanceAdmission::release_by_micros),
         Ok(None)
     );
+}
+
+#[test]
+fn a_closed_domain_admits_no_client_until_rf_wakes() {
+    let radio = rf_closed_arbiter();
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+    assert!(lease.attachment().rf_closed());
+    assert_eq!(
+        lease
+            .attachment()
+            .client_snapshot()
+            .map(|set| set.is_empty()),
+        Some(true)
+    );
+    assert_eq!(
+        acquire_client(&mut lease, PhyModemClient::Ieee802154, &mut Clock(0)),
+        Err(ConcurrentPhyError::RfClosed)
+    );
+    assert_eq!(
+        evaluate_periodic_tracking(&mut lease, &mut Clock(0)),
+        Err(ConcurrentPhyError::RfClosed)
+    );
+    assert_eq!(
+        admit_maintenance(&lease, &[], 0),
+        Err(ConcurrentPhyError::RfClosed)
+    );
+    // RF close takes only an open domain; the closed one stays closed.
+    assert!(matches!(
+        lease.attachment_mut().idle_domain(),
+        Err(ConcurrentPhyError::RfClosed)
+    ));
+    assert!(lease.attachment().rf_closed());
+    assert!(lease.attachment_mut().closed_domain().is_ok());
+}
+
+#[test]
+fn rf_closes_only_after_the_last_client_left() {
+    let radio = registered_arbiter();
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+    assert!(matches!(
+        lease.attachment_mut().closed_domain(),
+        Err(ConcurrentPhyError::RfOpen)
+    ));
+    assert_eq!(
+        acquire_client(&mut lease, PhyModemClient::Bluetooth, &mut Clock(0)),
+        Ok(ConcurrentAcquire::Settled)
+    );
+    assert!(matches!(
+        lease.attachment_mut().idle_domain(),
+        Err(ConcurrentPhyError::ClientsActive)
+    ));
+    // The rejected close leaves the client in the open domain.
+    assert_eq!(
+        release_client(&mut lease, PhyModemClient::Bluetooth),
+        Ok(true)
+    );
+    assert!(lease.attachment_mut().idle_domain().is_ok());
 }

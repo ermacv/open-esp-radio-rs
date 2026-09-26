@@ -210,3 +210,20 @@ fn a_client_cannot_disable_modem_clocks_it_never_enabled() {
     drop(lease);
     assert!(radio.into_parts().is_ok());
 }
+
+#[test]
+fn the_phy_domain_cannot_disable_a_clock_module_it_never_enabled() {
+    let radio = arbiter();
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+    // Rejected before any register access, per module slot.
+    for module in [PhyClockModule::Phy, PhyClockModule::Calibration] {
+        assert_eq!(
+            lease.disable_phy_modem_clocks(module, &mut NoPlatform),
+            Err(ModemClockError::NotEnabled)
+        );
+    }
+    drop(lease);
+    assert!(radio.into_parts().is_ok());
+}

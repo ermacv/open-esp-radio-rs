@@ -132,7 +132,7 @@ static CONCURRENT_CLOCK_IDENTITY: ModemClockPlannerIdentity = ModemClockPlannerI
 enum ModemClocks {
     Ready {
         planner: ModemClockPlanner<'static>,
-        leases: [Option<ModemClockLease<'static>>; 3],
+        leases: [Option<ModemClockLease<'static>>; CLOCK_SLOTS],
     },
     /// A transaction failed at a physical edge; the retained owner prevents
     /// any further modem clock change.
@@ -148,7 +148,7 @@ impl ModemClocks {
     const fn new() -> Self {
         Self::Ready {
             planner: ModemClockPlanner::for_concurrent_radio(&CONCURRENT_CLOCK_IDENTITY),
-            leases: [None, None, None],
+            leases: [const { None }; CLOCK_SLOTS],
         }
     }
 
@@ -160,12 +160,12 @@ impl ModemClocks {
     }
 }
 
-/// Why a client's modem clocks cannot change.
+/// Why a module's modem clocks cannot change.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModemClockError {
-    /// The client already holds its modem clocks.
+    /// The module already holds its modem clocks.
     AlreadyEnabled,
-    /// The client does not hold its modem clocks.
+    /// The module does not hold its modem clocks.
     NotEnabled,
     /// The planner rejected the request before any register access.
     Rejected,
@@ -173,6 +173,21 @@ pub enum ModemClockError {
     /// poisoned until reset.
     Poisoned,
 }
+
+/// Modem clock modules the shared PHY domain requests for itself.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyClockModule {
+    /// `PERIPH_PHY_MODULE`: ESP-IDF's `wifi_bt_common_module_enable`, held
+    /// from the first `esp_phy_enable` until the last `esp_phy_disable`
+    /// closes RF.
+    Phy,
+    /// `PERIPH_PHY_CALIBRATION_MODULE`: ESP-IDF's `phy_module_enable`, held
+    /// only while the first client's calibration or RF wake runs.
+    Calibration,
+}
+
+/// One lease slot per protocol client and per PHY-domain module.
+const CLOCK_SLOTS: usize = 5;
 
 const fn client_index(client: RadioClient) -> usize {
     match client {
@@ -187,6 +202,20 @@ const fn client_module(client: RadioClient) -> ModemClockModule {
         RadioClient::Wifi => ModemClockModule::Wifi,
         RadioClient::Bluetooth => ModemClockModule::Bluetooth,
         RadioClient::Ieee802154 => ModemClockModule::Ieee802154,
+    }
+}
+
+const fn phy_index(module: PhyClockModule) -> usize {
+    match module {
+        PhyClockModule::Phy => 3,
+        PhyClockModule::Calibration => 4,
+    }
+}
+
+const fn phy_module(module: PhyClockModule) -> ModemClockModule {
+    match module {
+        PhyClockModule::Phy => ModemClockModule::Phy,
+        PhyClockModule::Calibration => ModemClockModule::PhyCalibration,
     }
 }
 
@@ -616,7 +645,58 @@ impl<T> SharedRadioLease<'_, T> {
         _owner: &O,
         platform: &mut impl PlatformClockProvider,
     ) -> Result<(), ModemClockError> {
-        let index = client_index(O::CLIENT);
+        self.enable_slot(client_index(O::CLIENT), client_module(O::CLIENT), platform)
+    }
+
+    /// Disable the modem clocks of the protocol that owns `owner`; only
+    /// dependencies no other module holds are disabled.
+    ///
+    /// # Errors
+    ///
+    /// The client does not hold its clocks, the planner rejected the release
+    /// before any access, or a platform request failed and poisoned the modem
+    /// clocks.
+    pub fn disable_modem_clocks<O: RadioClientOwner>(
+        &mut self,
+        _owner: &O,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), ModemClockError> {
+        self.disable_slot(client_index(O::CLIENT), platform)
+    }
+
+    /// Enable a modem clock module of the shared PHY domain, with the same
+    /// reference-counted transaction as a client's module.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::enable_modem_clocks`], for the PHY module's own slot.
+    pub fn enable_phy_modem_clocks(
+        &mut self,
+        module: PhyClockModule,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), ModemClockError> {
+        self.enable_slot(phy_index(module), phy_module(module), platform)
+    }
+
+    /// Disable a modem clock module of the shared PHY domain.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::disable_modem_clocks`], for the PHY module's own slot.
+    pub fn disable_phy_modem_clocks(
+        &mut self,
+        module: PhyClockModule,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), ModemClockError> {
+        self.disable_slot(phy_index(module), platform)
+    }
+
+    fn enable_slot(
+        &mut self,
+        index: usize,
+        module: ModemClockModule,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), ModemClockError> {
         let state = self.state_mut();
         let (planner, mut leases) =
             match core::mem::replace(&mut state.clocks, ModemClocks::InFlight) {
@@ -630,7 +710,7 @@ impl<T> SharedRadioLease<'_, T> {
             state.clocks = ModemClocks::Ready { planner, leases };
             return Err(ModemClockError::AlreadyEnabled);
         }
-        let prepared = match planner.prepare_module_acquire(client_module(O::CLIENT)) {
+        let prepared = match planner.prepare_module_acquire(module) {
             Ok(prepared) => prepared,
             Err(failure) => {
                 state.clocks = ModemClocks::Ready {
@@ -660,20 +740,11 @@ impl<T> SharedRadioLease<'_, T> {
         }
     }
 
-    /// Disable the modem clocks of the protocol that owns `owner`; only
-    /// dependencies no other client holds are disabled.
-    ///
-    /// # Errors
-    ///
-    /// The client does not hold its clocks, the planner rejected the release
-    /// before any access, or a platform request failed and poisoned the modem
-    /// clocks.
-    pub fn disable_modem_clocks<O: RadioClientOwner>(
+    fn disable_slot(
         &mut self,
-        _owner: &O,
+        index: usize,
         platform: &mut impl PlatformClockProvider,
     ) -> Result<(), ModemClockError> {
-        let index = client_index(O::CLIENT);
         let state = self.state_mut();
         let (planner, mut leases) =
             match core::mem::replace(&mut state.clocks, ModemClocks::InFlight) {

@@ -28,10 +28,10 @@ fn shared_phy(
     oer_esp32s31_hal::owner::ValidationSharedPhy::new(registers)
 }
 
-/// Borrow an isolated Wi-Fi PHY partition.
+/// Borrow an isolated shared radio-PHY partition.
 /// The closure cannot return a borrow of this temporary validation capability.
 fn with_phy<R>(call: impl FnOnce(&mut RadioPhyRegisters) -> R) -> R {
-    let mut registers = oer_esp32s31_pac::validation::wifi_radio_registers();
+    let mut registers = oer_esp32s31_pac::validation::shared_radio_registers();
     call(registers.radio_phy_mut())
 }
 

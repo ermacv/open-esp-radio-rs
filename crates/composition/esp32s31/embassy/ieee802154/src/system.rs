@@ -624,7 +624,9 @@ impl Ieee802154System {
         let mut guard = radio.lock().await;
         {
             let prepared = core::pin::pin!(guard.prepare_phy());
-            prepared.await.map_err(Ieee802154RfError::Wake)?;
+            // The domain stayed registered while asleep, so preparation only
+            // wakes RF; there is no registration report to keep.
+            let _woken = prepared.await.map_err(Ieee802154RfError::Wake)?;
         }
         let Some(Route::Asleep(route)) = self.route.take() else {
             unreachable!("the client was asleep");

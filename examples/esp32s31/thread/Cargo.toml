@@ -18,7 +18,6 @@ heapless = "0.9.3"
 log = "0.4"
 oer-esp32s31-executor-embassy = { path = "../../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }
 oer-esp32s31-hal = { path = "../../../crates/hardware/esp32s31/hal" }
-oer-esp32s31-ieee80211-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
 oer-esp32s31-ieee802154 = { path = "../../../crates/hardware/esp32s31/driver/ieee802154" }
 oer-esp32s31-ieee802154-openthread = { path = "../../../crates/adapters/openthread/esp32s31/ieee802154" }
 oer-esp32s31-ieee802154-system = { path = "../../../crates/composition/esp32s31/embassy/ieee802154" }

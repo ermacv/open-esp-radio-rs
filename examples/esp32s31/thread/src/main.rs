@@ -23,7 +23,6 @@ use esp_hal::{
 use log::{error, info};
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 use oer_esp32s31_hal::root::RadioHardware;
-use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
 use oer_esp32s31_ieee802154_openthread::{
     OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
@@ -32,7 +31,7 @@ use oer_esp32s31_ieee802154_system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154Parked, Ieee802154System, start,
 };
 use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
-use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
+use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
 use oer_esp32s31_radio_runtime::RadioSystem;
 use openthread::{OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket};
 use static_cell::{ConstStaticCell, StaticCell};
@@ -41,7 +40,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use oer_esp32s31_hal::ieee802154::ll::Ieee802154MacOwners;
 use tinyrlibc as _;
 
-type Radio = RadioSystem<EspHalRadioPeripheral, EspHalRadioClocks>;
+type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
 /// Frames OpenThread has not taken yet while it transmits or scans.
 const RX_QUEUE: usize = 8;
 type ThreadRadio = OpenThreadRadio<
@@ -118,8 +117,7 @@ extern "C" fn runtime_main() -> ! {
     platform_executor::init(OneShotTimer::new(timer_group.timer0));
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
     let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
-    let platform = EspHalRadioPeripheral::new(
-        peripherals.WIFI,
+    let platform = EspHalRadioPlatform::new(
         peripherals.MODEM_SYSCON,
         peripherals.MODEM_LPCON,
         peripherals.HP_SYS_CLKRST,
@@ -146,7 +144,7 @@ extern "C" fn runtime_main() -> ! {
 #[embassy_executor::task]
 async fn thread_task(
     spawner: embassy_executor::Spawner,
-    platform: EspHalRadioPeripheral,
+    platform: EspHalRadioPlatform,
     trng: Trng,
 ) {
     let hardware = RadioHardware::take().expect("the radio hardware is taken once");

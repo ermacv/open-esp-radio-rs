@@ -1448,7 +1448,6 @@ dependencies = [
  "log",
  "oer-esp32s31-executor-embassy",
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211-esp-hal",
  "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-openthread",
  "oer-esp32s31-ieee802154-system",
@@ -1481,54 +1480,6 @@ version = "0.1.0"
 dependencies = [
  "oer-esp32s31-pac",
  "oer-memory",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-phy",
- "oer-ieee80211-mac",
- "oer-ieee80211-softmac",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-dma"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-memory",
- "pin-project",
- "vcell",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-phy",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-mac"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211-dma",
- "oer-ieee80211-mac",
- "oer-ieee80211-softmac",
- "oer-memory",
- "pin-project",
- "subtle",
- "zeroize",
 ]
 
 [[package]]
@@ -1673,18 +1624,6 @@ dependencies = [
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
-]
-
-[[package]]
-name = "oer-ieee80211-mac"
-version = "0.1.0"
-
-[[package]]
-name = "oer-ieee80211-softmac"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-mac",
- "zeroize",
 ]
 
 [[package]]
@@ -2108,12 +2047,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "subtle"
-version = "2.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
-
-[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2411,26 +2344,6 @@ dependencies = [
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
 source = "git+https://github.com/ermacv/esp-hal?rev=a228e85823b40e79c3a4e93fe006bed6c99dd2b8#a228e85823b40e79c3a4e93fe006bed6c99dd2b8"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "zeroize"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
-dependencies = [
- "zeroize_derive",
-]
-
-[[package]]
-name = "zeroize_derive"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -198,24 +198,10 @@ fn validate_final_image_report(
         }
         Ok(path)
     };
-    let runtime_elf = required("runtime_elf", None, false)?;
-    let bootstrap_elf = required("bootstrap_elf", None, false)?;
-    for (field, path, stage) in [
-        ("runtime_elf", &runtime_elf, "runtime"),
-        ("bootstrap_elf", &bootstrap_elf, "bootstrap"),
-    ] {
-        if path.parent()
-            != Some(
-                base.join("cargo")
-                    .join(stage)
-                    .join(TARGET)
-                    .join("release")
-                    .as_path(),
-            )
-        {
-            return Err(format!("HIL report {field} has the wrong target output path").into());
-        }
-    }
+    // Builds copy both ELFs out of the shared compile cache into the
+    // class-owned output, so each report names a fresh class-owned copy.
+    let runtime_elf = required("runtime_elf", Some(base.join("runtime.elf")), true)?;
+    required("bootstrap_elf", Some(base.join("bootstrap.elf")), true)?;
     required("runtime_bin", Some(base.join("runtime.bin")), true)?;
     required(
         "runtime_stack_report",

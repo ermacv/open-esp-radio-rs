@@ -7,18 +7,20 @@ use std::{
 
 fn fixture_report(root: &Path, class: FinalImageClass, start: &Path) -> serde_json::Value {
     fs::write(start, b"start").unwrap();
+    // Artifacts written right after the marker must be strictly newer, as
+    // a real build's are; coarse timestamps would otherwise make them equal.
+    fs::File::options()
+        .write(true)
+        .open(start)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(1))
+        .unwrap();
     let base = root.join("target/hil/esp32s31").join(format!(
         "{FINAL_IMAGE_PROFILE}-{}-{FINAL_IMAGE_NETWORK}",
         class.id()
     ));
-    let runtime_elf = base
-        .join("cargo/runtime")
-        .join(TARGET)
-        .join("release/runtime.elf");
-    let bootstrap_elf = base
-        .join("cargo/bootstrap")
-        .join(TARGET)
-        .join("release/bootstrap.elf");
+    let runtime_elf = base.join("runtime.elf");
+    let bootstrap_elf = base.join("bootstrap.elf");
     let make = |path: &Path| {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, b"fixture").unwrap();

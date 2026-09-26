@@ -212,6 +212,32 @@ fn he_retry_rates_follow_the_owned_dot11ax_schedule_and_preserve_ldpc() {
 }
 
 #[test]
+fn he_rate_control_codes_round_trip_through_the_dot11ax_arena() {
+    for index in 0..=9 {
+        let mcs = HeMcs::from_index(index).unwrap();
+        for gi_ltf in [
+            HeGuardIntervalAndLtf::TwoLtf1600Ns,
+            HeGuardIntervalAndLtf::OneLtf800Ns,
+            HeGuardIntervalAndLtf::TwoLtf800Ns,
+        ] {
+            let rate = TxPhyRate::He(HeRate::new(mcs, gi_ltf));
+            let code = rate.rate_control_code().unwrap();
+            assert_eq!(
+                TxPhyRate::from_rate_control_code(
+                    RateScheduleKind::Dot11Ax,
+                    code,
+                    HtChannelWidth::Mhz20,
+                    gi_ltf,
+                ),
+                Some(rate)
+            );
+        }
+    }
+    let long = HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::FourLtf3200Ns);
+    assert_eq!(TxPhyRate::He(long).rate_control_code(), None);
+}
+
+#[test]
 fn rate_control_code_is_decoded_in_its_ht_or_he_arena() {
     let ht = TxPhyRate::from_rate_control_code(
         RateScheduleKind::Dot11N,

@@ -285,6 +285,36 @@ fn ordinary_retry_limit_collision_and_abort_restore_the_minimum_cw() {
 }
 
 #[test]
+fn ordinary_he_retries_walk_the_dot11ax_record() {
+    use crate::rx::HeGuardIntervalAndLtf;
+    use crate::tx::{HeMcs, HeRate};
+    let counters = |failures| OrdinaryRetryCounters {
+        mpdu: failures,
+        short: 0,
+        long: 0,
+    };
+    let mcs9 = TxPhyRate::He(HeRate::new(
+        HeMcs::Mcs9,
+        HeGuardIntervalAndLtf::TwoLtf1600Ns,
+    ));
+    assert_eq!(select_ordinary_retry_rate(mcs9, counters(0)), Ok(mcs9));
+    assert_eq!(
+        select_ordinary_retry_rate(mcs9, counters(2)),
+        Ok(TxPhyRate::He(HeRate::new(
+            HeMcs::Mcs7,
+            HeGuardIntervalAndLtf::TwoLtf1600Ns,
+        )))
+    );
+    assert_eq!(
+        select_ordinary_retry_rate(mcs9, counters(4)),
+        Ok(TxPhyRate::Legacy(LegacyRate::Ofdm6M))
+    );
+    // An 800-ns rate below MCS9 has no record and keeps its rate.
+    let mcs8 = TxPhyRate::He(HeRate::new(HeMcs::Mcs8, HeGuardIntervalAndLtf::OneLtf800Ns));
+    assert_eq!(select_ordinary_retry_rate(mcs8, counters(4)), Ok(mcs8));
+}
+
+#[test]
 fn p2p_ht20_sgi_mcs0_through_mcs6_enter_same_mcs_lgi_retry_records() {
     for mcs_index in 0..=6 {
         let mcs = HtMcs::from_index(mcs_index).unwrap();

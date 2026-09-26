@@ -629,7 +629,11 @@ pub fn select_ordinary_retry_rate(
         TxPhyRate::Ht(rate) => Ok(rate
             .vendor_retry_rate(retry_index)
             .unwrap_or(TxPhyRate::Ht(rate))),
-        TxPhyRate::He(rate) => Ok(TxPhyRate::He(rate)),
+        // An HE single-MPDU walks its 802.11ax record like HT, and may leave
+        // the HE domain; a rate without a record keeps its rate.
+        TxPhyRate::He(rate) => Ok(rate
+            .vendor_retry_rate(retry_index)
+            .unwrap_or(TxPhyRate::He(rate))),
     }
 }
 

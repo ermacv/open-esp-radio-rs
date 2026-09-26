@@ -2483,6 +2483,23 @@ impl TxPhyRate {
         Self::from_code(code, ht_width)
     }
 
+    /// The rate-control byte of this rate: the inverse of
+    /// [`Self::from_rate_control_code`]. Legacy and HT bytes are their queue
+    /// codes; an HE byte carries the guard interval, `0x10 + MCS` for
+    /// 1600 ns and `0x1a + MCS` for 800 ns, and 3200 ns has none.
+    pub const fn rate_control_code(self) -> Option<u8> {
+        match self {
+            Self::Legacy(rate) => Some(rate.code()),
+            Self::Ht(rate) => Some(rate.code()),
+            Self::He(rate) => match rate.guard_interval_and_ltf() {
+                crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => Some(0x10 + rate.mcs().index()),
+                crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+                | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => Some(0x1a + rate.mcs().index()),
+                crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => None,
+            },
+        }
+    }
+
     /// Decode the primary rate of one complete Rust-owned schedule record.
     pub fn from_rate_control_schedule(
         schedule: RateScheduleRef,

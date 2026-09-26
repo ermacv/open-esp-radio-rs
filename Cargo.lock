@@ -2244,66 +2244,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-bluetooth-controller"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "oer-bluetooth-hci",
- "oer-bluetooth-ll",
- "oer-esp32s31-bluetooth",
- "oer-esp32s31-bluetooth-memory",
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
-]
-
-[[package]]
 name = "oer-esp32s31-bluetooth-memory"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
  "pin-project",
  "vcell",
-]
-
-[[package]]
-name = "oer-esp32s31-bluetooth-runtime"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "oer-bluetooth-hci",
- "oer-bluetooth-ll",
- "oer-esp32s31-bluetooth",
- "oer-esp32s31-bluetooth-controller",
- "oer-esp32s31-phy",
-]
-
-[[package]]
-name = "oer-esp32s31-bluetooth-system"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "embedded-io 0.7.1",
- "esp-hal",
- "oer-bluetooth-hci",
- "oer-bluetooth-ll",
- "oer-esp32s31-bluetooth",
- "oer-esp32s31-bluetooth-controller",
- "oer-esp32s31-bluetooth-memory",
- "oer-esp32s31-bluetooth-runtime",
- "oer-esp32s31-phy",
- "oer-esp32s31-phy-runtime",
- "oer-esp32s31-radio-esp-hal",
- "oer-esp32s31-soc-esp-hal",
- "static_cell",
- "trouble-host",
 ]
 
 [[package]]
@@ -2635,7 +2581,6 @@ dependencies = [
  "esp-hal",
  "oer-bluetooth-hci",
  "oer-esp32s31-bluetooth",
- "oer-esp32s31-bluetooth-controller",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
 ]
@@ -3126,8 +3071,6 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
- "oer-esp32s31-bluetooth-controller",
- "oer-esp32s31-bluetooth-system",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211-ap",
  "oer-esp32s31-ieee80211-mac",

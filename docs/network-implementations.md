@@ -190,8 +190,8 @@ whereas library features describe the adapter contract.
 Example builds also accept the corresponding `--no-default-features --features`
 spelling. The builder resolves that to the same implementation identity and
 rejects conflicting network selections. Bundle directories and `network.txt`
-record the resolved name, including when no `--network` was supplied. Monitor
-and Bluetooth examples have no IP-stack selection.
+record the resolved name, including when no `--network` was supplied. The
+monitor example has no IP-stack selection.
 
 Aliases `upstream` and `udp-backpressure` remain accepted for `upstream-xarxa`
 and `patched-xarxa`. New image reports use canonical names. `cargo hil image

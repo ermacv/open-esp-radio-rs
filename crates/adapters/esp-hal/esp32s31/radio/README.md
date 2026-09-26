@@ -61,20 +61,7 @@ slot. Successful extraction does not release the storage reservation: old
 static Controller borrows still exist, so another publication is rejected even
 when both slots are empty. Board reset is the only current reservation reset.
 
-The recovered post-route owner can join the retired Controller task through
-`try_release_controller_output`. Busy scheduler, published heads, an in-flight
-time latch or primary faults reject without releasing output. Success masks
-dynamic sources, disables RUN, acknowledges its residual sources and performs
-the reviewed output-release transaction. `release_physical` then composes the
-matching retired timer/task/platform with last-client RF close, temperature
-power-down, Bluetooth reset and checked clock restoration. It returns the
-actual cold radio, retaining the separate closed software epoch. Storage remains
-reserved; physical cold return alone does not authorize a second publication.
-
-`RetiredEspHalBluetoothInterruptRegisters::maintain_phy` lends the actual
-unrouted bank to the idle Controller maintenance transition. Both ISR owners
-return atomically to the original claimed storage before the same service can
-bind routes again. The same atomic restoration supports completed powered
-restart. Restoration rejects live routes or occupied slots; it never releases
-the reservation or issues another publication lease. See the
-[Controller lifecycle](../../../../roles/esp32s31/bluetooth/controller/README.md#quiescent-phy-maintenance).
+`RetiredEspHalBluetoothInterruptRegisters::into_output_owner` hands the
+recovered post-route owner to the Controller composition. Output release,
+physical cold return and PHY maintenance belong to that composition; this
+adapter exposes no route reactivation on the recovered owner.

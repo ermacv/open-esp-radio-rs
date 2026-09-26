@@ -6,10 +6,9 @@
 //! the modem low-power timer, and the hardware scheduler with its timeline,
 //! finished lists and single-item primitives. It knows no Link Layer role.
 //!
-//! The LE Controller and its roles (DTM, advertising, scanning, peripheral
-//! connection) compose these primitives in `oer-esp32s31-bluetooth-controller`.
-//! Shared single-item completion and timed preparation engines implement the
-//! common hardware protocol; RX/recycle and packet policy remain role-specific.
+//! No LE Controller currently composes these primitives. The shared
+//! single-item completion and timed preparation engines implement the common
+//! hardware protocol; RX/recycle and packet policy belong to the caller.
 //! The public lifecycle begins with one [`resources::BluetoothStopped`] aggregate retaining
 //! the platform lease and neutral radio root. Initialization and scheduler RUN
 //! are not RF evidence.

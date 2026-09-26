@@ -33,8 +33,8 @@ and [secure peripheral GATT](../../../../../qualification/targets/esp32s31/bluet
 select the narrower product criteria in the
 [product catalog](../../../../../qualification/catalog/esp32s31/bluetooth-products.toml).
 The secure program includes the peripheral lifecycle through dependencies.
-The complete LE program above retains its wider requirements. Current source
-subsets and existing plaintext ACL workloads do not qualify either product.
+The complete LE program above retains its wider requirements. No LE Controller
+composition currently exists, so neither product has a source implementation.
 
 ## Qualification scope mapping
 
@@ -46,26 +46,23 @@ independent of that implemented lower handoff.
 ## Legacy advertising and scanning
 
 The canonical sections `bluetooth-legacy-advertising-scanning` and
-`bluetooth-le-roles-connections-reliability` retain the single-channel
-connectable boundary, passive-scanning limits and their distinction from
-extended or connected PHY support.
+`bluetooth-le-roles-connections-reliability` record the portable advertising,
+scanning and connection owners and the absence of a Controller composition.
 
 ## Capability advertisement
 
 The canonical `bluetooth-capability-advertisement` section records the exact
-optional LE feature bits exposed by production. Catalog migration does not
-change the bitmap or infer support from DTM-only PHY paths.
+optional LE feature bits returned by the portable bootstrap and the rule that
+each bit requires a complete production Controller operation.
 
 ## Ownership
 
 The canonical `bluetooth-ownership` section records the PAC, HAL, Controller
-memory, portable Link Layer, chip-role, Embassy runtime and integration
-boundaries. Shared scheduling machinery does not compose a missing role or
-transfer protocol policy between roles.
+memory, engine and portable HCI/Link Layer boundaries. Shared scheduling
+machinery does not compose a role.
 
 ## Peripheral timing limits
 
-The canonical `bluetooth-peripheral-timing-limits` section retains completion,
-backpressure, cancellation, credit, handle-generation, supervision and clock
-accuracy requirements. A compiled lifecycle remains distinct from successful
-over-air behavior and current hardware evidence.
+The canonical `bluetooth-peripheral-timing-limits` section records the clock
+accuracy and captured-anchor requirements that a peripheral composition must
+satisfy.

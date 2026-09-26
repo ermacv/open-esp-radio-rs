@@ -192,8 +192,9 @@ Both routes' HIL recovery across a switch remains a separate gate.
 The Wi-Fi driver composes the handoff as `WifiStopped::release_retained` and
 `resume_esp32s31_radio`, which runs the ordinary client, tracking, channel and
 MAC initialization tail after the retained wake; its report records
-`WifiPhyEntry::RetainedWake` instead of a registration. The Bluetooth
-Controller composes it as `release_retained` and `resume_common_phy`.
+`WifiPhyEntry::RetainedWake` instead of a registration. The Bluetooth engine
+provides `BluetoothStopped::from_retained` and the retained release after PHY
+close; no LE Controller currently composes the Bluetooth side of the handoff.
 
 Protocol runtimes must first return their real TX, RX DMA, IRQ, MAC/LL and
 per-protocol receive-enable owners to the composition. Consequently neither

@@ -20,19 +20,6 @@ pub(super) fn init(timg: esp_hal::peripherals::TIMG1<'static>) -> &'static Deadl
     SERVICE.init(DeadlineWatchdog::new(timg))
 }
 
-#[cfg(feature = "bluetooth-radio")]
-pub(super) fn bluetooth(
-    service: &'static DeadlineWatchdog,
-) -> &'static oer_esp32s31_bluetooth_system::WatchdogConfig {
-    static CONFIG: StaticCell<oer_esp32s31_bluetooth_system::WatchdogConfig> = StaticCell::new();
-    CONFIG.init(oer_esp32s31_bluetooth_system::WatchdogConfig::new(
-        service,
-        STARTUP,
-        MAINTENANCE,
-        SHUTDOWN,
-    ))
-}
-
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 pub(super) fn wifi(
     service: &'static DeadlineWatchdog,

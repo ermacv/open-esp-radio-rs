@@ -1,6 +1,5 @@
 # ESP32-S31 HIL target
 
-- [Bluetooth images and workloads](bluetooth.md)
 - [System and PHY watchdogs](watchdogs.md)
 - [PHY pause and timing profiles](phy.md)
 - [Copy benchmarks and stack measurements](memory.md)
@@ -258,45 +257,6 @@ the watchpoint. Fatal CPU exceptions report the hart, faulting instruction,
 fault address and saved return address through the ROM console. Watchpoints
 and stack painting complement the frame audit; individual frame sizes alone
 cannot prove the maximum depth of nested or indirect calls.
-
-Before admitting console commands, the Bluetooth image exercises three live
-runner handoffs and timer retirement/resume cycles. Each cycle queues HCI Reset
-before requesting idle handoff and delays Host response reads. The production
-runner must process Reset and wait for the Host to consume its completion before
-returning. The returned owner then disables all IRQ routes, requires drained
-timer work, removes the actual HAL timer owner from ISR storage, restores that
-owner and rebinds the routes.
-The same Controller and timer epoch remain retained; the started hardware
-counter and radio are not powered down.
-
-`cargo hil run bluetooth-peripheral-active-phy-maintenance` selects the separate
-`bluetooth-phy-maintenance` image and calls the production automatic runner.
-Every ACL cycle must advance the typed active-maintenance counter, exchange
-ACL data, apply connection/channel-map updates and recover after peer Reset.
-The [diagnostic policy constructor](runtime/src/bluetooth/retirement.rs) owns its
-explicit engineering budgets; these are not qualified thermal or execution
-limits. A completed tracking transaction does not imply that every
-condition-dependent calibration branch ran. This scenario does not yet prove
-intentional event omission or DTM hard-deadline RF shutdown. The current S31
-fail-stop fallback is a full SoC reset, not an IRQ-only quarantine.
-
-The `bluetooth-peripheral-retirement` scenario uses `retire_after = true` to add
-terminal ownership retirement after two real peer Reset/ACL recovery cycles.
-It requires successful HCI Reset and live handoff, timer/IRQ/HCI retirement,
-shared primary/NRT register-owner extraction and checked output release,
-platform affinity join, last-client RF close, temperature power-down, Bluetooth
-reset and checked clock restoration into a cold radio. Command, event and
-ACL-credit authorities must all remain closed. Empty ISR slots stay reserved against
-a second publication while old static Controller borrows remain live.
-The host records the final structured response in `bluetooth-peripheral.json`.
-The actual cold owner and old software borrows stay retained until board reset.
-A second powered start and reuse of static storage are outside this diagnostic.
-
-Bluetooth peripheral snapshots enforce the same CPU0 stack-headroom policy
-as network HIL and include the measured `stack_free` in diagnostic detail.
-They measure the active CPU0 stack; the standalone Bluetooth image does not
-start CPU1. A failed reserve check stops the HIL image before a successful
-snapshot can be returned.
 
 `data_plane` is selected by the startup command, not by rebuilding. Every
 repository scenario selects the production `split-radio-network` topology: it

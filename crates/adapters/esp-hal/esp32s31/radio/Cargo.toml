@@ -18,7 +18,6 @@ critical-section = "1.2.0"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "unstable"], optional = true }
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
-oer-esp32s31-bluetooth-controller = { path = "../../../../roles/esp32s31/bluetooth/controller" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
 

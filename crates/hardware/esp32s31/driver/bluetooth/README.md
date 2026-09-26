@@ -4,25 +4,15 @@ This crate owns chip hardware sequencing and affine radio publication states
 below the Link Layer: clocks, Controller HAL and time, the BLE PHY, interrupts,
 the modem low-power timer and the hardware scheduler with its timeline,
 finished lists, post-unlink handoff and single-item completion primitives. It
-knows no LE role. The [LE Controller](../../../../roles/esp32s31/bluetooth/controller/)
-composes these primitives into DTM, advertising, scanning and peripheral
-connection roles and owns the Controller lifecycle.
+knows no LE role. No LE Controller currently composes these primitives, so no
+Controller lifecycle, executor runtime or final integration exists.
 
 Portable HCI policy and LE Link Layer codecs live in
-[`crates/protocols/bluetooth`](../../../../protocols/bluetooth/). Concrete Embassy
-waiting and session execution live in the
-[runtime](../../../../runtime/esp32s31/bluetooth/), and final storage and
-hardware composition live in
-[integration](../../../../composition/esp32s31/embassy/bluetooth/).
+[`crates/protocols/bluetooth`](../../../../protocols/bluetooth/).
 
-## Choose a reading path
-
-- Controller bootstrap, role lifecycles, retirement, physical release and PHY
-  maintenance are documented with the
-  [LE Controller](../../../../roles/esp32s31/bluetooth/controller/).
-- The module table below is the engine API map. `FEATURES.md` links current
-  limitations to the generated qualification view; it is not a second
-  readiness inventory.
+The module table below is the engine API map. `FEATURES.md` links current
+limitations to the generated qualification view; it is not a second readiness
+inventory.
 
 | Module under `src/` | Responsibility |
 | --- | --- |

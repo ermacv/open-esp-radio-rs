@@ -38,6 +38,7 @@ hil-requirements = [
   { scenario = "bluetooth-peripheral-maintenance-backpressure", minimum-repetitions = 3 },
 ]
 gaps = [
+  { axis = "implementation", id = "le-controller-rewrite-composition-missing" },
   { axis = "implementation", id = "peripheral-first-advertising-rejection-and-terminal-event-disposition-incomplete" },
   { axis = "host", id = "peripheral-virtual-time-delayed-irq-control-maintenance-collision-coverage-incomplete" },
   { axis = "hil", id = "peripheral-qualified-phy-execution-restoration-and-observer-free-timing-bounds-missing" },
@@ -51,22 +52,6 @@ source-fact-refs = [
   "bluetooth-periodic-phy-maintenance",
   "bluetooth-idle-powered-release",
   "bluetooth-same-storage-powered-restart",
-]
-
-[[capabilities.source-contracts]]
-id = "peripheral-acl-current-composition"
-composition = "production"
-scope = "The Controller owner slot, legacy connectable role, recurring peripheral session and HCI endpoints retain one physical owner while handling connection commands and packet progress"
-limits = "The product also requires bounded ISR and timer work, exclusive packet-list publication, rejection of a second connection or exhausted queue before mutation, retention of cancelled-command obligations, and complete fault/stop cleanup. Logical Disconnect or HCI Reset is not powered release. The active Host-to-Controller ACL owner retains one packet while further advertised credits remain backed by the HCI queue; capacity-aware intake and readiness preserve queued data and allow commands to bypass it. The dedicated ACL calibration workload checks all four credits, exact sequenced notifications and repeated common RX/Bluetooth TX maintenance at 7.5 ms, then restores its diagnostic thresholds and retires the cold owner. Encrypted traffic belongs to the separate peripheral-link-security scenario"
-source-paths = [
-  "crates/runtime/esp32s31/bluetooth/src/controller/owner.rs",
-  "crates/runtime/esp32s31/bluetooth/src/controller/dispatch.rs",
-  "crates/runtime/esp32s31/bluetooth/src/controller/dispatch/connectable.rs",
-  "crates/runtime/esp32s31/bluetooth/src/controller/dispatch/peripheral.rs",
-  "crates/runtime/esp32s31/bluetooth/src/session/peripheral/active.rs",
-  "crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/connection.rs",
-  "crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/deadlines.rs",
-  "crates/composition/esp32s31/embassy/bluetooth/src/system/runner.rs",
 ]
 
 [capabilities.development]
@@ -108,6 +93,7 @@ hil-requirements = [
   { scenario = "bluetooth-peripheral-active-data-mic", minimum-repetitions = 3 },
 ]
 gaps = [
+  { axis = "implementation", id = "le-controller-rewrite-composition-missing" },
   { axis = "implementation", id = "encrypted-peripheral-controller-host-lifecycle-integration-incomplete" },
   { axis = "host", id = "encrypted-peripheral-key-counter-backpressure-and-retransmission-boundary-tests-missing" },
   { axis = "vendor", id = "peripheral-encrypted-packet-sram-length-completion-and-retirement-traces-missing" },
@@ -119,11 +105,10 @@ gaps = [
 id = "peripheral-security-current-primitives"
 composition = "production"
 scope = "Portable LL security and HCI security procedures supply the existing key, encryption and packet-authentication primitives"
-limits = "The fixed-key encrypted ACL scenario exercises the composed peripheral boundary with exact bidirectional echoes, updates, reconnect and cold release. A separate key-refresh scenario requires a replacement LTK on the same handle and post-refresh traffic. Separate initial missing-key and wrong-key scenarios require exact failure evidence followed by encrypted recovery. Missing refresh-key coverage requires initial encryption, termination with PIN or Key Missing and encrypted recovery. Active-data MIC coverage uses an explicit diagnostic RX-input injection before production authentication; it requires zero Host delivery, MIC-failure termination and encrypted recovery, but does not inject an invalid MIC over the air. Encrypted maintenance requires ordered bidirectional traffic, guarded PHY restoration on the same encrypted connection and later acknowledged traffic; it does not establish worst-case timing or thermal/RF-quality bounds. Hardware evidence is evaluated independently. The broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
+limits = "No LE Controller composition currently exists. HCI key delivery, the encrypted peripheral lifecycle and key retirement are absent. The listed HIL scenarios define the required acceptance evidence; the broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
 source-paths = [
   "crates/protocols/bluetooth/le/ll/src/security.rs",
   "crates/protocols/bluetooth/hci/src/lib.rs",
-  "crates/runtime/esp32s31/bluetooth/src/session/peripheral/active.rs",
 ]
 
 [capabilities.development]
@@ -156,6 +141,7 @@ hil-requirements = [
   { scenario = "bluetooth-trouble-secure-gatt-hci-read-failure", minimum-repetitions = 3 },
 ]
 gaps = [
+  { axis = "implementation", id = "le-controller-rewrite-composition-missing" },
   { axis = "implementation", id = "secure-gatt-terminal-host-controller-fault-disposition-incomplete" },
   { axis = "host", id = "smp-att-permissions-bond-restore-and-security-downgrade-regressions-missing" },
   { axis = "hil", id = "secure-gatt-pairing-access-control-bonded-reconnect-and-failure-evidence-incomplete" },
@@ -166,12 +152,12 @@ gaps = [
 [[capabilities.source-contracts]]
 id = "secure-gatt-current-host-boundary"
 composition = "production"
-scope = "The Trouble composition retains the Host stack and hardware runner for the same Controller epoch using caller-owned bounded storage"
-limits = "The standalone secure application enforces Numeric Comparison with explicit boot/request-bound console confirmation, authenticated ATT read/write/notify, caller-owned asynchronous bond storage and a bounded RAM backend. Bond insertion must succeed before application authorization; restored encryption must match the retained record. Bonds do not require Controller privacy. RAM bonds survive Controller restart, not SoC reset; imported metadata does not prove pairing-method provenance. The reusable Host epoch runner preserves an outstanding bootstrap Reset until acknowledgement, drops producers, then awaits a distinct final Reset before physical retirement. The automated HIL scenario checks denied plaintext ATT, explicit pairing rejection, independent Numeric Comparison, authenticated traffic and notifications, then bonded reconnect before and after checked physical cold shutdown/restart with unchanged SoC boot identity and a closed old HCI handle. It removes only its temporary Linux bond during cleanup. The HIL operator does not prove human presence or durable storage. After a Host/application failure and successful final Reset, the HIL composition performs checked cold release without automatic restart. Unacknowledged bootstrap Reset, failed drain and failed final Reset retain physical execution without release/restart authorization. The scenario also injects a one-shot application bond-load error after an encrypted disconnect and requires the preserved cause, distinct successful Reset, checked terminal cold release, rejected restart and unchanged boot/epoch. This does not inject RF/IRQ failure or prove RF-stop timing. A HIL-only wrapper can hold the sole shutdown HCI reader while the real Reset and hardware runner remain live, then release that same reader. The scenario requires unchanged boot/epoch and no cold release during the hold, followed by checked restart and encrypted traffic after release. A separate scenario injects a distinct HCI read error at the reached gate, requires the preserved stop cause and Retain disposition without another cold release, restart or SoC reset, and removes the temporary Linux bond during cleanup. The real queued response is not consumed. This does not model a hung PHY or lost silicon IRQ; retained ownership is not an RF-off proof. Broader terminal-error and security/cancellation coverage remain incomplete. Repeated eligible evidence is required; source coverage and an engineering PASS do not qualify the product"
-source-paths = ["crates/composition/esp32s31/embassy/bluetooth/src/trouble.rs", "examples/bluetooth-gatt/src/security/gatt.rs", "examples/bluetooth-gatt/src/security/epoch.rs", "examples/bluetooth-gatt/src/security/bonds.rs", "examples/bluetooth-gatt/src/security/comparison.rs", "examples/bluetooth-gatt/src/security/console.rs"]
+scope = "The portable GATT application owns Numeric Comparison policy with console confirmation, authenticated ATT access, caller-owned asynchronous bond storage with a bounded RAM backend and the Host epoch runner"
+limits = "No LE Controller composition currently exists. Host/Controller construction, coordinated shutdown, physical release and restart are absent. Bond insertion must succeed before application authorization; restored encryption must match the retained record. RAM bonds do not survive SoC reset; imported metadata does not prove pairing-method provenance. Repeated eligible evidence is required; source coverage does not qualify the product"
+source-paths = ["examples/bluetooth-gatt/src/security/gatt.rs", "examples/bluetooth-gatt/src/security/epoch.rs", "examples/bluetooth-gatt/src/security/bonds.rs", "examples/bluetooth-gatt/src/security/comparison.rs", "examples/bluetooth-gatt/src/security/console.rs"]
 
 [capabilities.development]
-knowledge = ["crates/composition/esp32s31/embassy/bluetooth/src/trouble.rs", "examples/bluetooth-gatt/src/security/gatt.rs"]
+knowledge = ["examples/bluetooth-gatt/src/security/gatt.rs"]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"

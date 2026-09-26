@@ -19,20 +19,12 @@ compile_error!("select one network contract: upstream-network, embassy-network o
 #[cfg(not(any(
     feature = "boot-smoke",
     feature = "open-radio-hil",
-    feature = "bluetooth-hil",
-    feature = "bluetooth-gatt",
     feature = "system-watchdog"
 )))]
-compile_error!(
-    "select boot-smoke, open-radio-hil, bluetooth-hil, bluetooth-gatt or system-watchdog"
-);
+compile_error!("select boot-smoke, open-radio-hil or system-watchdog");
 #[cfg(all(
     feature = "system-watchdog",
-    any(
-        feature = "boot-smoke",
-        feature = "open-radio-hil",
-        feature = "bluetooth-radio"
-    )
+    any(feature = "boot-smoke", feature = "open-radio-hil")
 ))]
 compile_error!("system-watchdog requires an exclusive radio-free image");
 #[cfg(all(feature = "boot-smoke", feature = "open-radio-hil"))]
@@ -73,13 +65,6 @@ use esp_hal::{
 use oer_esp32s31_executor_embassy::Executor;
 use static_cell::StaticCell;
 
-#[cfg(feature = "bluetooth-hil")]
-mod bluetooth;
-#[cfg(feature = "bluetooth-gatt")]
-mod bluetooth_gatt;
-#[cfg(all(feature = "bluetooth-hil", feature = "bluetooth-gatt"))]
-compile_error!("diagnostic Host and Trouble Host require exclusive HCI ownership");
-
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
@@ -87,35 +72,20 @@ mod capabilities;
 #[cfg(feature = "open-radio-hil")]
 mod console;
 mod exception;
-#[cfg(any(
-    feature = "bluetooth-hil",
-    all(feature = "open-radio-hil", not(feature = "memory-benchmark"))
-))]
-mod phy_evidence;
-#[cfg(any(feature = "bluetooth-hil", feature = "open-radio-hil"))]
-mod phy_fault;
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
-mod stack_evidence;
-#[cfg(any(
-    feature = "system-watchdog",
-    feature = "bluetooth-radio",
-    feature = "open-radio-hil"
-))]
-mod system;
-#[cfg(any(
-    feature = "bluetooth-radio",
-    all(feature = "open-radio-hil", not(feature = "memory-benchmark"))
-))]
-mod watchdog;
-#[cfg(all(
-    feature = "bluetooth-radio",
-    any(feature = "boot-smoke", feature = "open-radio-hil")
-))]
-compile_error!("Bluetooth requires exclusive radio composition");
 #[cfg(feature = "gdma-mem2mem-probe")]
 mod gdma_mem2mem_probe;
 #[cfg(feature = "memory-benchmark")]
 mod memory_benchmark;
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+mod phy_evidence;
+#[cfg(feature = "open-radio-hil")]
+mod phy_fault;
+#[cfg(feature = "open-radio-hil")]
+mod stack_evidence;
+#[cfg(any(feature = "system-watchdog", feature = "open-radio-hil"))]
+mod system;
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+mod watchdog;
 #[cfg(all(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
 compile_error!(
     "memory-benchmark and the startup GDMA probe require exclusive DMA channel ownership"
@@ -132,11 +102,11 @@ const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
 const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
 #[cfg(not(feature = "psram-task-stack"))]
 const INTERNAL_STACK_END: u32 = INTERNAL_SRAM_END;
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(feature = "open-radio-hil")]
 const STACK_PAINT_WORD: u32 = 0xa55a_a55a;
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(feature = "open-radio-hil")]
 const STACK_PAINT_MARGIN_BYTES: u32 = 256;
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(feature = "open-radio-hil")]
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
 // CPU1 runs the Embassy network executor in split images. Its nested async call
@@ -259,22 +229,8 @@ use oer_esp32s31_platform_runtime as _;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
-    #[cfg(not(any(feature = "open-radio-hil", feature = "bluetooth-radio")))]
+    #[cfg(not(feature = "open-radio-hil"))]
     let _ = info;
-    #[cfg(feature = "bluetooth-radio")]
-    {
-        use core::fmt::Write as _;
-        // Terminal-only output: retain the origin without depending on the
-        // stopped asynchronous HCI/console tasks or allocating a log queue.
-        let mut detail = heapless::String::<384>::new();
-        let _ = write!(&mut detail, "OPEN_RADIO_HIL panic info={info}");
-        // This ROM formatter supports %s, but not precision-limited %.*s.
-        let mut terminated = [0_u8; 385];
-        terminated[..detail.len()].copy_from_slice(detail.as_bytes());
-        unsafe {
-            ets_printf(c"%s\r\n".as_ptr(), terminated.as_ptr());
-        }
-    }
     #[cfg(feature = "open-radio-hil")]
     {
         console::panic_origin(info);
@@ -339,10 +295,7 @@ extern "C" fn runtime_main() -> ! {
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0));
-    #[cfg(any(
-        feature = "bluetooth-radio",
-        all(feature = "open-radio-hil", not(feature = "memory-benchmark"))
-    ))]
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let watchdog_service = watchdog::init(peripherals.TIMG1);
 
     #[cfg(feature = "open-radio-hil")]
@@ -391,52 +344,6 @@ extern "C" fn runtime_main() -> ! {
     // SAFETY: bootstrap intentionally hands MIE over clear, and timer and
     // software wake interrupt ownership is complete at this point.
     unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
-
-    #[cfg(feature = "bluetooth-gatt")]
-    bluetooth_gatt::start(
-        executor,
-        oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
-            peripherals.MODEM_SYSCON,
-            peripherals.MODEM_LPCON,
-            peripherals.HP_SYS_CLKRST,
-            peripherals.PMU,
-            peripherals.LP_AON_CLK_RST,
-            peripherals.LP_PERI,
-            peripherals.LP_TSENS,
-            peripherals.I2C_ANA_MST,
-        ),
-        peripherals.USB_DEVICE,
-        peripherals.RNG,
-        watchdog_service,
-    );
-
-    #[cfg(feature = "bluetooth-hil")]
-    bluetooth::start(
-        executor,
-        oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
-            peripherals.MODEM_SYSCON,
-            peripherals.MODEM_LPCON,
-            peripherals.HP_SYS_CLKRST,
-            peripherals.PMU,
-            peripherals.LP_AON_CLK_RST,
-            peripherals.LP_PERI,
-            peripherals.LP_TSENS,
-            peripherals.I2C_ANA_MST,
-        ),
-        peripherals.USB_DEVICE,
-        peripherals.RNG,
-        watchdog_service,
-        {
-            #[cfg(feature = "bluetooth-watchdog-reset")]
-            {
-                bluetooth::diagnostic_watchdog(watchdog_service)
-            }
-            #[cfg(not(feature = "bluetooth-watchdog-reset"))]
-            {
-                None
-            }
-        },
-    );
 
     #[cfg(feature = "system-watchdog")]
     system::console::start(
@@ -725,7 +632,7 @@ pub(crate) fn cpu1_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     )
 }
 
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(feature = "open-radio-hil")]
 pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
     let cpu0_top = symbol(ptr::addr_of!(_stack_start));
@@ -741,7 +648,7 @@ pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     )
 }
 
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(feature = "open-radio-hil")]
 fn measure_stack(
     bottom: u32,
     paint_start: u32,
@@ -770,7 +677,7 @@ fn measure_stack(
     }
 }
 
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(feature = "open-radio-hil")]
 fn stack_minimum_free_bytes(cpu: u8) -> u32 {
     let value = match cpu {
         0 => option_env!("OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES"),

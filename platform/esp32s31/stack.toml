@@ -37,25 +37,11 @@ reported_frame_count = 30
 # runtime high-water observations cover exercised aggregate call chains only.
 # Selectors omit crate hashes so the policy survives ordinary rebuilds.
 [[reviewed_frames]]
-function_contains = "::le::peripheral::active::PeripheralConnectionActiveSession<"
-source_ends_with = ["crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/active/lifecycle.rs"]
-max_bytes = 10752
-execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "the finite radio step retains the complete session, exact HCI order and successor/fault result while updating LL, encryption and ACL state. Radio execution and timeout retirement use separate call frames on CPU0; this is the same bounded production transition reviewed in the Bluetooth HIL policy, not an IRQ-stack allowance or a whole-call-chain proof"
-
-[[reviewed_frames]]
 function_contains = "::target_port::run_target_bluetooth_phy_register::<"
 source_ends_with = ["crates/hardware/esp32s31/phy/src/target_port.rs"]
 max_bytes = 9728
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
 reason = "Bluetooth registration retains the actual calibration transition and registered-owner result while borrowing the stopped outer Controller. The same production operation is reviewed in the Bluetooth HIL policy; this local CPU0 frame bound does not imply standalone aggregate-stack or RF qualification"
-
-[[reviewed_frames]]
-function_contains = "::active::maintenance::PeripheralPhyMaintenancePending<"
-source_ends_with = ["crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/active/maintenance.rs"]
-max_bytes = 10240
-execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "one finite acquisition check retains the original connection and HCI owner across natural-gap admission, LL-gated budgeted successor proposals and lossless cancellation; there is no physical PHY execution in this frame. It runs inside the separately reviewed CPU0 dispatch and retains the existing Bluetooth HIL per-frame ceiling"
 
 [[reviewed_frames]]
 function_contains = "::station::StaLifecycleService<"
@@ -239,37 +225,3 @@ max_bytes = 14336
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
 reason = "the station application composes initialization, role control and the network endpoint on CPU0; the radio hardware runner has a separate static task"
 
-[[reviewed_frames]]
-function_contains = "::controller::owner::ControllerCommandTask<"
-source_ends_with = ["crates/runtime/esp32s31/bluetooth/src/controller/dispatch.rs"]
-max_bytes = 50176
-execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "Bluetooth command dispatch retains typed mutually exclusive controller transitions, including the bounded bidirectional ACL owners and 64-octet Supported Commands response, on CPU0; the fixed 192-KiB application stack also accommodates its caller and interrupt handling uses SRAM"
-
-[[reviewed_frames]]
-function_contains = "::le::peripheral::active::PeripheralConnectionActiveSession<"
-source_ends_with = ["crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/active/hci.rs"]
-max_bytes = 11264
-execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "active peripheral command routing consumes the live connection graph and returns one typed route while retaining one Host ACL packet, the bounded two-packet Controller ACL queue, the pre-RUN receive reservation and finite completion/controller-time stop frontiers across HCI backpressure"
-
-[[reviewed_frames]]
-function_contains = "::cold_start::start_esp32s31_bluetooth"
-source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/cold_start.rs"]
-max_bytes = 33792
-execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "one-time Bluetooth cold start transfers the configured controller ownership graph to its statically stored application future on CPU0"
-
-[[reviewed_frames]]
-function_contains = "Join3<oer_esp32s31_example_bluetooth_controller"
-source_ends_with = ["embassy-futures-0.1.2/src/join.rs"]
-max_bytes = 14336
-execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "the Bluetooth application concurrently polls typed HCI commands, events and a pinned hardware runner on CPU0"
-
-[[reviewed_frames]]
-function_contains = "TaskStorage<oer_esp32s31_example_bluetooth_controller"
-source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
-max_bytes = 18432
-execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "the statically stored Bluetooth application future retains typed advertising commands and a pinned hardware runner across await points on CPU0"

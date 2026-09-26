@@ -103,8 +103,6 @@ The shared platform paints dedicated SRAM IRQ stacks before interrupt admission.
 HIL samples each on its own hart in thread mode. The CPU1 sampler also returns
 its task watermark, so the console does not inspect live foreign stack storage.
 Both IRQ measurements accompany Wi-Fi session evidence and stack queries.
-Bluetooth's separate IRQ query covers CPU0 only and remains available after
-Controller retirement. The host validates its result after peripheral commands.
 
 The [stack policy](stack.toml) sets `runtime_irq_minimum_free_bytes`; its current
 reserve is an engineering guard, not a qualified nesting bound. A sampling

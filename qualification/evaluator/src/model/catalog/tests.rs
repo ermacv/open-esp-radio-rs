@@ -901,12 +901,12 @@ fn bluetooth_lifecycle_facts_reach_all_views_without_promoting_products() {
     .unwrap();
     let domains = BTreeSet::from(["bluetooth", "phy", "whole-radio"]);
     for (fact_id, expected) in [
-        ("bluetooth-idle-phy-maintenance", SourceStatus::Implemented),
-        ("bluetooth-periodic-phy-maintenance", SourceStatus::Partial),
-        ("bluetooth-idle-powered-release", SourceStatus::Implemented),
+        ("bluetooth-idle-phy-maintenance", SourceStatus::Absent),
+        ("bluetooth-periodic-phy-maintenance", SourceStatus::Absent),
+        ("bluetooth-idle-powered-release", SourceStatus::Absent),
         (
             "bluetooth-same-storage-powered-restart",
-            SourceStatus::Implemented,
+            SourceStatus::Absent,
         ),
     ] {
         let fact = &catalog.source_facts[fact_id];

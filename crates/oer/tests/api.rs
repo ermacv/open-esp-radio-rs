@@ -64,35 +64,8 @@ fn ieee802154_facade_preserves_channel_type_identity() {
 
 #[cfg(feature = "esp32s31-bluetooth")]
 #[test]
-fn chip_bluetooth_namespace_preserves_backend_type_identity() {
-    use oer::chips::esp32s31::driver::bluetooth;
-
-    let _: fn(
-        chip_bluetooth_controller::le::dtm::DtmDefaultTxPowerDbm,
-    ) -> bluetooth::le::dtm::DtmDefaultTxPowerDbm = |power| power;
-}
-
-#[cfg(feature = "embassy-esp32s31-bluetooth")]
-#[test]
-fn bluetooth_system_namespace_preserves_composition_type_identity() {
-    use oer::systems::esp32s31::embassy::bluetooth;
-
-    let _: fn(bluetooth_composition::BluetoothBlePhyMemory) -> bluetooth::BluetoothBlePhyMemory =
-        |memory| memory;
-}
-
-#[cfg(feature = "esp32s31-bluetooth")]
-#[test]
 fn bluetooth_backend_preserves_stopped_resource_ownership() {
     let _: fn(
         chip_bluetooth::resources::BluetoothStopped<()>,
     ) -> oer::chips::esp32s31::driver::bluetooth::resources::BluetoothStopped<()> = |owner| owner;
-}
-
-#[cfg(feature = "embassy-esp32s31-bluetooth")]
-#[test]
-fn bluetooth_composition_preserves_resource_ownership() {
-    let _: fn(
-        bluetooth_composition::BluetoothDtmMemory,
-    ) -> oer::systems::esp32s31::embassy::bluetooth::BluetoothDtmMemory = |storage| storage;
 }

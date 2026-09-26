@@ -65,7 +65,7 @@ enum Check {
 enum Build {
     /// Build and audit a bootable example with the shared ESP32-S31 bootstrap.
     Firmware {
-        #[arg(value_parser = ["station", "access-point", "monitor", "bluetooth-controller"])]
+        #[arg(value_parser = ["station", "access-point", "monitor"])]
         example: String,
         #[arg(long)]
         flash: bool,

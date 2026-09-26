@@ -183,9 +183,6 @@ jobs:
           - example: esp32s31/access-point
             profiles: default owned-network embassy-network
             host-tests: true
-          - example: esp32s31/bluetooth-controller
-            profiles: default advertising-smoke trouble-gatt trouble-secure-gatt gatt-application secure-gatt-application
-            host-tests: true
           - example: esp32s31/monitor
             profiles: default
           - example: esp32s31/station

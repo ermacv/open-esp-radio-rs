@@ -55,10 +55,10 @@ From the repository root:
 ```console
 cargo xtask build firmware monitor
 cargo xtask build firmware station --no-default-features --features embassy-network
-cargo xtask build firmware bluetooth-controller --flash --monitor --port /dev/ttyACM0
+cargo xtask build firmware access-point --flash --monitor --port /dev/ttyACM0
 ```
 
-Select `station`, `access-point`, `monitor` or `bluetooth-controller`. Application
+Select `station`, `access-point` or `monitor`. Application
 credentials remain environment configuration of the example; HIL credentials
 remain lab configuration. Each successful invocation retains a separate bundle
 under `target/firmware/esp32s31-<example>/<network-or-none>/build-<id>/`:

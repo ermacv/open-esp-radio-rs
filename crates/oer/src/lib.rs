@@ -38,12 +38,9 @@ pub mod chips {
         pub use chip_hal as hal;
 
         pub mod driver {
-            /// Bluetooth hardware engine with the LE Controller roles composed over it.
+            /// Bluetooth hardware engine.
             #[cfg(feature = "esp32s31-bluetooth")]
-            pub mod bluetooth {
-                pub use chip_bluetooth::*;
-                pub use chip_bluetooth_controller::{controller, le};
-            }
+            pub use chip_bluetooth as bluetooth;
 
             #[cfg(feature = "esp32s31-wifi")]
             pub mod ieee80211 {
@@ -66,22 +63,12 @@ pub mod embassy {
 #[cfg(any(
     feature = "upstream-xarxa",
     feature = "owned-xarxa",
-    feature = "embassy-smoltcp",
-    feature = "embassy-esp32s31-bluetooth"
+    feature = "embassy-smoltcp"
 ))]
 pub mod systems {
     pub mod esp32s31 {
         pub mod embassy {
-            #[cfg(any(
-                feature = "upstream-xarxa",
-                feature = "owned-xarxa",
-                feature = "embassy-smoltcp"
-            ))]
             pub use wifi_composition as wifi;
-
-            /// Controller composition; API availability does not establish RF readiness.
-            #[cfg(feature = "embassy-esp32s31-bluetooth")]
-            pub use bluetooth_composition as bluetooth;
         }
     }
 }

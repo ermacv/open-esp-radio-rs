@@ -20,7 +20,6 @@ const WIFI: &[&str] = &[
 const BACKENDS: &[&str] = &[
     "oer-esp32s31-hal",
     "oer-esp32s31-bluetooth",
-    "oer-esp32s31-bluetooth-controller",
     "oer-esp32s31-ieee80211-mac",
     "oer-esp32s31-ieee80211-sta",
     "oer-esp32s31-ieee80211-ap",
@@ -29,9 +28,6 @@ const BLUETOOTH: &[&str] = &[
     "oer-bluetooth-hci",
     "oer-bluetooth-ll",
     "oer-esp32s31-bluetooth",
-    "oer-esp32s31-bluetooth-controller",
-    "oer-esp32s31-bluetooth-system",
-    "oer-esp32s31-bluetooth-runtime",
 ];
 const IEEE802154: &[&str] = &["oer-ieee802154"];
 
@@ -84,7 +80,6 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             features: Some("esp32s31-bluetooth"),
             required: &[
                 "oer-esp32s31-bluetooth",
-                "oer-esp32s31-bluetooth-controller",
                 "oer-bluetooth-hci",
                 "oer-bluetooth-ll",
             ],
@@ -94,14 +89,6 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             features: Some("ieee802154,esp32s31"),
             required: &["oer-ieee802154", "oer-esp32s31-hal"],
             forbidden: &[WIFI, BLUETOOTH],
-        },
-        Profile {
-            features: Some("embassy-esp32s31-bluetooth"),
-            required: &[
-                "oer-esp32s31-bluetooth-system",
-                "oer-esp32s31-bluetooth-runtime",
-            ],
-            forbidden: &[WIFI],
         },
     ] {
         let flags = match profile.features {
@@ -114,10 +101,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             ],
         };
         let graph = cargo::isolated_graph(ctx, &manifest, &flags, Some(TARGET))?;
-        if matches!(
-            profile.features,
-            Some("bluetooth" | "esp32s31-bluetooth" | "embassy-esp32s31-bluetooth")
-        ) {
+        if matches!(profile.features, Some("bluetooth" | "esp32s31-bluetooth")) {
             super::reject_wifi_in_bluetooth(&graph, &manifest)?;
         }
         let packages = closure(&graph, &graph.root(&manifest)?)?;

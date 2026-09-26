@@ -46,7 +46,7 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 | Use the public `oer` API | [Radio facade](crates/oer/README.md) |
 | Choose a network stack and understand its patches | [Network implementations](docs/network-implementations.md) |
 | Build a station application | [Station example](examples/esp32s31/station/README.md) |
-| Build another radio role | [AP](examples/esp32s31/access-point/README.md), [monitor](examples/esp32s31/monitor/README.md), [Bluetooth controller](examples/esp32s31/bluetooth-controller/README.md) |
+| Build another radio role | [AP](examples/esp32s31/access-point/README.md) and [monitor](examples/esp32s31/monitor/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
 | See implementation, knowledge, observations and next work | [Project capability map](qualification/README.md#everyday-status-and-next-work) |
 | Assess a selected STA or BLE scope | [Qualification programs](qualification/README.md) |

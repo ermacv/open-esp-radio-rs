@@ -20,27 +20,16 @@ Chip selection and protocol backends are separate:
 | --- | --- |
 | `esp32s31` | `chips::esp32s31::hal`; no Wi-Fi STA/AP or Bluetooth driver selection |
 | `esp32s31-wifi` | Wi-Fi protocols and `chips::esp32s31::driver::ieee80211::{mac,sta,ap}` |
-| `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth`: the hardware engine with its `controller` and `le` roles |
+| `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth`: the hardware engine |
 | `upstream-xarxa`, `owned-xarxa` or `embassy-smoltcp` | Wi-Fi backend, `embassy::radio` service mailbox and `systems::esp32s31::embassy::wifi` with the selected network stack |
-| `embassy-esp32s31-bluetooth` | Bluetooth backend and `systems::esp32s31::embassy::bluetooth` |
 
 Each backend feature includes its chip and portable protocol feature. Selecting
 `wifi,esp32s31` exposes portable Wi-Fi and HAL; select `esp32s31-wifi` to add the
 Wi-Fi backend. Raw PAC authority requires an explicit restricted dependency.
 
-Disable defaults when selecting a Bluetooth-only application:
-
-```toml
-# From an application under examples/; adjust the path for another checkout.
-oer = { package = "open-esp-radio", path = "../../crates/oer", default-features = false, features = ["embassy-esp32s31-bluetooth"] }
-```
-
-That composition does not require Wi-Fi STA/AP, Embassy networking or Xarxa.
-`systems::esp32s31::embassy::bluetooth` also reexports the cold-start inputs
-that the driver path lacks: scheduler allocation and default TX power values,
-`DtmRecheckPeriod`, the esp-hal radio platform, the deadline watchdog and SoC
-`entropy::Entropy`. The [Bluetooth controller example](../../examples/esp32s31/bluetooth-controller/)
-uses only the facade besides its board runtime and executor.
+No Bluetooth LE Controller or Embassy Bluetooth composition is currently
+exposed; the facade provides only the portable protocols and the hardware
+engine.
 Cargo features are additive: another dependency enabling `wifi` on the same
 facade also enables portable Wi-Fi in the final feature union.
 
@@ -56,10 +45,9 @@ in [network implementations](../../docs/network-implementations.md).
 `composition/` owns the source-level binding of components; `systems::` exposes
 those ready-to-construct owners in the public API. Stack and executor adapters
 are separate integrations. Availability through the facade does not establish
-hardware readiness or concurrent-radio operation. Bluetooth cold start, HCI
-and RF support retain the limitations of the [Bluetooth capability map](../hardware/esp32s31/driver/bluetooth/FEATURES.md)
+hardware readiness or concurrent-radio operation. Bluetooth support retains the
+limitations of the [Bluetooth capability map](../hardware/esp32s31/driver/bluetooth/FEATURES.md)
 and [qualification contract](../../qualification/targets/esp32s31/bluetooth-le.toml).
-The facade does not promise successful Bluetooth startup on hardware.
 
 Architecture checks resolve isolated consumers to catch unwanted dependencies,
 compile no-default/default and declared feature profiles, and test the public

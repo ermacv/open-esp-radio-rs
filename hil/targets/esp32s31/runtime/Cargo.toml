@@ -19,19 +19,10 @@ profile-sram-data = []
 psram-task-stack = ["oer-esp32s31-platform-runtime/psram-task-stack"]
 boot-smoke = []
 system-watchdog = ["dep:oer-hil-protocol", "dep:embedded-io-async"]
-# Explicit diagnostic policy; no production thermal budget is implied.
-bluetooth-phy-maintenance = ["bluetooth-hil"]
-# Autonomous MWDT fault injection; never selects automatic maintenance.
-bluetooth-watchdog-reset = ["bluetooth-hil", "phy-fault-injection"]
 phy-fault-injection = [
     "oer-esp32s31-phy/lifecycle-fault-injection",
-    "oer-esp32s31-bluetooth-system?/lifecycle-fault-injection",
     "oer-esp32s31-ieee80211-system?/lifecycle-fault-injection",
 ]
-bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-controller", "dep:oer-esp32s31-bluetooth-runtime", "dep:oer-esp32s31-bluetooth-system", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:oer-hil-protocol", "oer-hil-target-core/bluetooth"]
-bluetooth-hil = ["bluetooth-radio", "oer-esp32s31-bluetooth-controller/dtm-diagnostics", "oer-esp32s31-bluetooth-controller/rx-fault-injection"]
-bluetooth-gatt = ["bluetooth-radio", "dep:gatt-application", "dep:trouble-host"]
-bluetooth-secure-gatt = ["bluetooth-gatt", "gatt-application/secure", "dep:embassy-sync", "oer-hil-target-core/secure-gatt"]
 upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-ieee80211-system/upstream-network", "oer-hil-target-core?/upstream-network"]
 embassy-network = ["dep:embassy-net-released", "oer-esp32s31-ieee80211-system/embassy-network", "oer-hil-target-core?/embassy-network"]
 owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-ieee80211-system/owned-network", "oer-hil-target-core?/owned-network"]
@@ -142,16 +133,6 @@ ieee802154-ed-event-probe = [
 
 [dependencies]
 oer-esp32s31-ieee80211-dma = { path = "../../../../crates/hardware/esp32s31/driver/ieee80211/dma", optional = true, features = ["rx-ownership-observation"] }
-gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../../../examples/bluetooth-gatt", optional = true }
-trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
-bt-hci = { version = "=0.10.1", optional = true }
-oer-bluetooth-ll = { path = "../../../../crates/protocols/bluetooth/le/ll", optional = true }
-oer-esp32s31-bluetooth = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth", optional = true }
-oer-esp32s31-bluetooth-controller = { path = "../../../../crates/roles/esp32s31/bluetooth/controller", optional = true }
-oer-esp32s31-bluetooth-runtime = { path = "../../../../crates/runtime/esp32s31/bluetooth", optional = true }
-oer-esp32s31-bluetooth-system = { path = "../../../../crates/composition/esp32s31/embassy/bluetooth", optional = true }
-oer-esp32s31-bluetooth-memory = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth/memory", optional = true }
-oer-esp32s31-radio-esp-hal = { path = "../../../../crates/adapters/esp-hal/esp32s31/radio", optional = true, features = ["esp32s31"] }
 oer-ieee80211-softmac = { workspace = true, optional = true }
 oer-esp32s31-ieee80211-mac = { workspace = true, optional = true }
 oer-esp32s31-ieee80211-runtime = { workspace = true, optional = true }
@@ -200,6 +181,4 @@ chip = "esp32s31"
 default-configuration = false
 supported-feature-profiles = [
     "open-radio-hil,upstream-network,psram-task-stack,code-psram,profile-psram-data",
-    "bluetooth-gatt,psram-task-stack,code-psram,profile-psram-data",
-    "bluetooth-secure-gatt,psram-task-stack,code-psram,profile-psram-data",
 ]

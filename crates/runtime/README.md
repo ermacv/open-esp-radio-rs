@@ -1,7 +1,7 @@
 # Radio execution
 
-`esp32s31/{ieee80211,bluetooth,ieee802154}` (`oer-esp32s31-ieee80211-runtime`,
-`oer-esp32s31-bluetooth-runtime`, `oer-esp32s31-ieee802154-runtime`) contains
+`esp32s31/{ieee80211,ieee802154}` (`oer-esp32s31-ieee80211-runtime`,
+`oer-esp32s31-ieee802154-runtime`) contains
 concrete radio execution as executor-independent `async` code; `ieee80211` (`oer-ieee80211-runtime`) holds the
 chip-independent Wi-Fi execution primitives they share. Directory boundaries describe the execution
 responsibility of each package.
@@ -31,8 +31,6 @@ not assume which executor wakes its timers.
 | `esp32s31/ieee802154/src/` | Acknowledged IEEE 802.15.4 IRQ queue and cancellation-safe operation/DMA owners; unlike Wi-Fi notifications, acknowledged events are queued individually, and overflow fails the operation closed |
 | `esp32s31/ieee80211/src/datapath/owned.rs` | The only `owned-network` code: owned-adapter RX/link bindings, single and dual owned networks and the pinned-SRAM `DatapathTxConsumer` |
 | `esp32s31/ieee80211/src/diagnostics/` | Optional execution observation |
-| `esp32s31/bluetooth/src/controller/` | One controller epoch, command/response boundaries and timer progress |
-| `esp32s31/bluetooth/src/session/` | Finite DTM, advertising, scanning and peripheral sessions |
 | `esp32s31/phy/` | The one `embassy-time` implementation of the PHY delay, tracking clock and tracking timer used by every radio composition |
 
 Hardware transactions and finite chip state remain below these packages. A
@@ -41,17 +39,17 @@ resources on rejection and preserves terminal owners when quiescence is not
 proven. A composed owner alone does not establish hardware qualification.
 
 The PHY time leaves are adapters inside the execution packages. The Wi-Fi
-binding supplies a direct `embassy-time` delay; Bluetooth also validates the timebase
-and handles overflow. The two bindings have distinct time contracts. The platform
+binding supplies a direct `embassy-time` delay; the checked `EmbassyPhyTime`
+binding also validates the timebase and rejects deadline overflow. The two
+bindings have distinct time contracts. The platform
 executor/time ABI remains in [adapters](../adapters/embassy/README.md).
 
 The [integration layer](../composition/esp32s31/embassy/) chooses memory budgets,
 claims static resources and owns protocol lifecycle composition within the
-[documented capability boundaries](../hardware/esp32s31/driver/FEATURES.md). Bluetooth
-`system/{construction,runner,quarantine}` separates assembly, the one hardware
-loop and fail-stop retention. Wi-Fi's supervisor owns shared physical resources
-and transitions between roles. Neither product composition depends on a second
-runtime owner hidden in a task or network handle.
+[documented capability boundaries](../hardware/esp32s31/driver/FEATURES.md).
+Wi-Fi's supervisor owns shared physical resources and transitions between roles.
+No product composition depends on a second runtime owner hidden in a task or
+network handle.
 
 Portable protocol policy cannot depend on this execution domain. The
 architecture audit follows transitive normal/build dependencies to enforce

@@ -55,10 +55,10 @@ do not establish the same ownership here.
 ## Module and API names
 
 Use path context instead of repeating a chip/protocol prefix on every private
-type. For example, chip Bluetooth procedures live under
-`le/{dtm,advertising,scanning,peripheral}`; their shared controller, IRQ and
-scheduler remain outside those procedure modules. Each procedure retains its
-own lifecycle owner.
+type. For example, portable Bluetooth LE procedures live under
+`bluetooth/le/ll/{advertising,scanning,connection}`; the chip IRQ and scheduler
+remain in the hardware engine, outside those procedure modules. Each procedure
+retains its own lifecycle owner.
 
 Encoding a frame does not authorize installing a key or publishing DMA work.
 WPA2 secrets and zeroization remain with their state owner; association

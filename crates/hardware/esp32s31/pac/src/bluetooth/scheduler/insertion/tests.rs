@@ -96,17 +96,45 @@ fn execution_lock_preserves_idle_ready_and_result_short_circuits() {
         ]
     );
 
-    recorder.operations.clear();
-    recorder.lock_result = 3;
-    assert_eq!(
-        execute_execution_lock_observation(&mut recorder, scheduler(true)),
-        BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead
-    );
-    recorder.lock_result = 2;
-    assert_eq!(
-        execute_execution_lock_observation(&mut recorder, scheduler(true)),
-        BluetoothSchedulerExecutionLockDisposition::UnsupportedHardwareResult
-    );
+    // The vendor body asserts on results one, three and four and treats the
+    // other nonzero results as a failed lock followed by reconciliation.
+    for (result, expected) in [
+        (
+            1,
+            BluetoothSchedulerExecutionLockDisposition::UnsupportedHardwareResult,
+        ),
+        (
+            2,
+            BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead,
+        ),
+        (
+            3,
+            BluetoothSchedulerExecutionLockDisposition::UnsupportedHardwareResult,
+        ),
+        (
+            4,
+            BluetoothSchedulerExecutionLockDisposition::UnsupportedHardwareResult,
+        ),
+        (
+            5,
+            BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead,
+        ),
+        (
+            6,
+            BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead,
+        ),
+        (
+            7,
+            BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead,
+        ),
+    ] {
+        recorder.lock_result = result;
+        assert_eq!(
+            execute_execution_lock_observation(&mut recorder, scheduler(true)),
+            expected,
+            "result {result}"
+        );
+    }
 }
 
 #[test]

@@ -57,11 +57,12 @@ pub enum BluetoothSchedulerExecutionLockDisposition {
     Pending,
     /// Result zero retains command-zero execution lock for begin outcome four.
     ExecutionLockRetained,
-    /// Scheduler idle or a reviewed nonzero result requires current-head
-    /// reconciliation through command one.
+    /// Scheduler idle or a nonzero result that the complete vendor body
+    /// treats as a failed lock requires current-head reconciliation through
+    /// command one.
     ReconcileCurrentHead,
-    /// Hardware returned a positional value outside the three nonzero values
-    /// accepted by the complete vendor body.
+    /// Hardware returned one of the three positional values on which the
+    /// complete vendor body asserts.
     UnsupportedHardwareResult,
 }
 
@@ -197,8 +198,8 @@ fn execute_execution_lock_observation(
     }
     match control.observe_execution_lock_result() {
         0 => BluetoothSchedulerExecutionLockDisposition::ExecutionLockRetained,
-        1 | 3 | 4 => BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead,
-        _ => BluetoothSchedulerExecutionLockDisposition::UnsupportedHardwareResult,
+        1 | 3 | 4 => BluetoothSchedulerExecutionLockDisposition::UnsupportedHardwareResult,
+        _ => BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead,
     }
 }
 

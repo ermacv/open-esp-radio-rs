@@ -1,5 +1,5 @@
-//! Protocol-neutral radio root, the exclusive Wi-Fi and Bluetooth routes and
-//! the concurrent split.
+//! Protocol-neutral radio root, the exclusive Bluetooth route and the
+//! concurrent split.
 //!
 //! The restricted PAC supplies opaque register partitions and register sets
 //! without any route policy. This module owns the complete neutral root,
@@ -13,14 +13,14 @@
 use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
     BluetoothTaskRegisters, Ieee802154Partition, MacInterruptSetup, RadioPartitions,
-    SharedRadioParts, SharedRadioRegisters, WifiMacPartition, WifiRadioRegisters,
+    SharedRadioParts, SharedRadioRegisters, WifiMacPartition,
 };
 
 pub use crate::clock::CommonPhyPowerError;
 use crate::{
     clock::CommonPhyPower,
     phy::{registration::PhyRegistration, restore::PhyRouteState},
-    route_registers::{BluetoothRegisters, WifiRegisters},
+    route_registers::BluetoothRegisters,
     shared_radio::{SharedRadio, SharedRadioReleaseError},
 };
 
@@ -76,21 +76,6 @@ impl RadioHardware {
         }
     }
 
-    /// Consume the root into the exclusive Wi-Fi route. This performs no MMIO.
-    pub(crate) fn into_wifi(self) -> WifiRoute {
-        wifi_route(self.partitions, PhyRouteState::new(self.phy_registration))
-    }
-
-    /// Reconstruct the root from a Wi-Fi route whose leases were released.
-    pub(crate) fn from_wifi(
-        registers: WifiRegisters,
-        interrupts: MacInterruptSetup,
-        phy: PhyRouteState,
-        retained: RetainedBluetooth,
-    ) -> Self {
-        Self::returned(wifi_partitions(registers, interrupts, retained), phy)
-    }
-
     /// Consume the root into the exclusive Bluetooth route.
     ///
     /// This transition is ownership-only. It performs no controller reset,
@@ -111,68 +96,6 @@ impl RadioHardware {
             bluetooth_partitions(task, modem_lp_timer, interrupts, retained),
             phy,
         )
-    }
-}
-
-fn wifi_route(partitions: RadioPartitions, phy: PhyRouteState) -> WifiRoute {
-    let RadioPartitions {
-        wifi_mac,
-        wifi_interrupts,
-        radio_phy,
-        coexistence,
-        bluetooth,
-        bluetooth_modem_lp_timer,
-        bluetooth_interrupts,
-        shared_radio,
-        ieee802154,
-    } = partitions;
-    WifiRoute {
-        registers: WifiRegisters::new(
-            WifiRadioRegisters::new(wifi_mac),
-            SharedRadioRegisters::new(SharedRadioParts {
-                radio_phy,
-                coexistence,
-                shared_radio,
-            }),
-        ),
-        interrupts: wifi_interrupts,
-        phy,
-        retained: RetainedBluetooth {
-            bluetooth,
-            modem_lp_timer: bluetooth_modem_lp_timer,
-            interrupts: bluetooth_interrupts,
-            ieee802154,
-        },
-    }
-}
-
-fn wifi_partitions(
-    registers: WifiRegisters,
-    interrupts: MacInterruptSetup,
-    retained: RetainedBluetooth,
-) -> RadioPartitions {
-    let (registers, shared) = registers.into_parts();
-    let SharedRadioParts {
-        radio_phy,
-        coexistence,
-        shared_radio,
-    } = shared.into_parts();
-    let RetainedBluetooth {
-        bluetooth,
-        modem_lp_timer,
-        interrupts: bluetooth_interrupts,
-        ieee802154,
-    } = retained;
-    RadioPartitions {
-        wifi_mac: registers.into_partition(),
-        wifi_interrupts: interrupts,
-        radio_phy,
-        coexistence,
-        bluetooth,
-        bluetooth_modem_lp_timer: modem_lp_timer,
-        bluetooth_interrupts,
-        shared_radio,
-        ieee802154,
     }
 }
 
@@ -447,24 +370,6 @@ impl RetainedRadioHardware {
         self.phy.registration_epoch()
     }
 
-    pub(crate) fn from_wifi(
-        registers: WifiRegisters,
-        interrupts: MacInterruptSetup,
-        phy: PhyRouteState,
-        retained: RetainedBluetooth,
-        common: CommonPhyPower,
-    ) -> Self {
-        Self {
-            partitions: wifi_partitions(registers, interrupts, retained),
-            phy,
-            common,
-        }
-    }
-
-    pub(crate) fn into_wifi(self) -> (WifiRoute, CommonPhyPower) {
-        (wifi_route(self.partitions, self.phy), self.common)
-    }
-
     pub(crate) fn from_bluetooth(
         task: BluetoothRegisters,
         modem_lp_timer: BluetoothModemLpTimerRegisters,
@@ -541,14 +446,6 @@ pub(crate) fn check_phy_restore_complete(
     Ok(())
 }
 
-/// Registers and interrupt setup of one exclusive Wi-Fi route.
-pub(crate) struct WifiRoute {
-    pub(crate) registers: WifiRegisters,
-    pub(crate) interrupts: MacInterruptSetup,
-    pub(crate) phy: PhyRouteState,
-    pub(crate) retained: RetainedBluetooth,
-}
-
 /// Registers and inactive interrupt bank of one exclusive Bluetooth route.
 pub(crate) struct BluetoothRoute {
     pub(crate) task: BluetoothRegisters,
@@ -556,15 +453,6 @@ pub(crate) struct BluetoothRoute {
     pub(crate) interrupts: BluetoothInterruptSetup,
     pub(crate) phy: PhyRouteState,
     pub(crate) retained: RetainedWifi,
-}
-
-/// Bluetooth and IEEE 802.15.4 partitions retained, but not exposed, while
-/// Wi-Fi is exclusive.
-pub(crate) struct RetainedBluetooth {
-    bluetooth: BluetoothControllerPartition,
-    modem_lp_timer: BluetoothModemLpTimerRegisters,
-    interrupts: BluetoothInterruptSetup,
-    ieee802154: Ieee802154Partition,
 }
 
 /// Wi-Fi partitions retained, but not exposed, while Bluetooth is exclusive.

@@ -5,13 +5,14 @@ terminology and the ownership relationship with protocol runtimes and coex.
 
 This module owns the source-derived tracking algorithms and read-only demand.
 It does not grant RF access, stop protocol runtimes, or implement coexistence.
-The registered PHY and physical-radio owner must remain coupled throughout
-execution. A network queue credit, scheduler pause or CPU mutex alone is not
+The registered domain and the shared PHY must remain under one owner
+throughout execution: the radio arbiter lease for the concurrent domain, the
+lent borrow for the exclusive Bluetooth route. A network queue credit, scheduler pause or CPU mutex alone is not
 permission to mutate the shared PHY.
 
 ## Inspecting conditions
 
-The registered radio and Wi-Fi owners expose `inspect_tracking(now_micros)`.
+The registered Bluetooth owner exposes `inspect_tracking(now_micros)`.
 The [inspection contract](inspection/README.md) separates evaluation deadlines,
 retained thermal conditions and physical admission. It reuses the executor's
 predicates and does not replace its ordered, consuming decision process.
@@ -39,13 +40,6 @@ sample order and timestamp updates. It runs only when the caller commits to
 execution; it must not be used merely to ask whether work is due. Its pending
 owner remains pending until the selected target children complete.
 
-`RegisteredPhyRadio::wait_for_tracking_demand` borrows the registered owner
-while an absolute timer is pending. It returns demand without creating a
-pending hardware transaction. Cancelling this wait or observing a clock error
-leaves the physical owner intact; a later client release remains possible.
-Cancellation after starting the consuming target operation is a different
-boundary and still requires the documented failure/reset handling.
-
 `PhyPendingTrackingOwner::track`, for a route that lends its shared-PHY
 registers, optionally accepts a [`TrackingDeadline`](deadline.rs) in the
 executor's monotonic clock domain. It checks time before and after polling the
@@ -63,79 +57,19 @@ how long maintenance demand may remain deferred. The Bluetooth idle-maintenance
 composition accepts this optional deadline; `None` explicitly selects the
 existing unbounded idle operation.
 
-The Wi-Fi supervisor uses this read-only observation at completed role
-boundaries. Its existing `WifiStopped::maintain_phy` path requires stopped DMA
-and an inactive IRQ owner. A standalone connected station supports a MAC/RX/IRQ pause round trip,
-including an explicit HIL request. This round trip withdraws the runtime
-register owner from its arena, admits and releases PHY access, then republishes
-the owner into the same arena before RX/IRQ resume. An explicit tracking request
-consumes the registered PHY/platform owner while this access is held, reobserves
-due work and restores MAC stop before release.
-The station receive-policy snapshot must remain unchanged; RX resume separately
-checks its saved descriptor cursor. `RadioConfig` starts the
-[observation-driven service](service/README.md) at a one-second cadence by
-default for each connected epoch and permits an explicit alternative or disable.
-Joint Wi-Fi/BLE/IEEE 802.15.4 grants are not implemented.
-
-## Exclusive Wi-Fi access
-
-HAL `owner::maintenance::WifiAccess` retains the existing
-`RadioRuntimeOwner` and a closed interrupt-authority type: `MacInterruptSetup`
-for a terminated epoch or `MacInterruptCheckpoint` for a paused one. It does
-not create another PHY owner. `try_into_phy_maintenance` consumes those resources and checks inactive
-MAC and disabled RX walker before exposing PHY operations. A failed admission
-returns the original resources with an explicit reason and makes no writes.
-The Wi-Fi composition treats a failed stopped precondition as a fault.
-
-The checkpoint holds both returned MAC and WDEVPWR capabilities without
-peripheral writes. The ESP-HAL route owns CPU detachment and same-core resume;
-HAL owns the checkpoint representation. Checkpoint completion preserves the
-interrupt-owner type: checked maintenance release cannot turn a paused route
-into a cold setup. A timer request cannot implement the sealed
-`InterruptAuthority` contract.
-
-`RegisteredWifiPhy::maintain` consumes this access together with the registered
-PHY across all awaits. An error retains both in an opaque failure; cancellation
-does not return either owner. Success returns access for restoration, then
-`try_release` rechecks MAC and RX walker before releasing register and IRQ
-resources. Restoration failure retains the physical access and requires reset.
-The driver distinguishes admission, PHY execution and restoration failures.
-
-`WifiRoleOwner::maintain_phy` consumes the active role's logical PHY/platform
-owner with already admitted physical access. It retains channel and startup
-context and returns the same interrupt-authority type. It leaves restoration
-to the paused role: the terminal `WifiStopped` path's disabling of both RX
-policies is not appropriate for preserving an active station. The IRQ runtime's
-`PausedInterruptEpoch::try_with_authority` retains the detached route and its
-pending work while an owned operation holds the checkpoint. Failure and
-cancellation expose no resumable epoch.
-
-MAC restoration belongs to the Wi-Fi execution boundary. The terminal stopped
-path disables both role receive policies and requests MAC stop after tracking.
-The paused connected path preserves those policies and waits for MAC stop before
-checking release. HAL checks the resulting hardware state; it does not silently
-stop a live descriptor epoch to make admission succeed. The outer composition
-must retain idle TX resources and either stopped RX ownership or the paused RX
-owner with all outstanding leases preserved. Readback is not a substitute for
-those ownership transitions.
-
-The access contract is specific to the exclusive Wi-Fi route. The consuming
-radio root makes other protocol owners unavailable; an application must not
-infer this authority merely from a Wi-Fi client count or PTI value. This
-exclusive route needs no invented coex acknowledgement. A future joint-radio
-composition needs its own qualified admission contract, and cannot reuse this
-permission while other physical clients remain active.
-Coexistence timer programming does not certify a grant, and no equivalent
-BLE/IEEE 802.15.4 maintenance admission is exposed. Low-level `SharedPhyHal`
-continues to be a narrow register borrow, not an independently valid runtime
-maintenance permission.
+The concurrent domain runs the vendor periodic tracking: the radio system
+calls `track_concurrent_phy` every tracking period under the arbiter lease,
+and the domain's admission policy decides whether due work starts. By default
+it follows the vendor and pauses no protocol; the tracking graph brackets its
+RF-sensitive regions with the grant-protect request. There is no
+protocol-selected maintenance of individual operations.
 
 ## Operations and hardware effects
 
 The following effects are implemented source operations. They are not a list
 of operations qualified for concurrent radio use. Child operations are
 ordered inside the outer transition; completing one child does not release
-the outer owner's exclusive access.
+the outer owner's lease.
 
 | Operation | Selection and effects | Commit / restoration boundary |
 | --- | --- | --- |
@@ -143,7 +77,7 @@ the outer owner's exclusive access.
 | [Power compensation](power.rs) | Computes a temperature decision; changed enabled gain publishes the selected class's gain through BBPLL calibration enable/disable edges. | Gain/temperature outcome follows the child and BBPLL tail. An unchanged decision does not publish gain. Live gain publication atomicity is not qualified. |
 | [Wi-Fi I2C tracking](i2c.rs) | A temperature-band change executes two bounded masked analog-I2C writes. | The new band is committed only after both writes. No band change means no writes. The analog bus must have one transaction owner. Safe overlap with active TX/RX is not established. |
 | [Temperature sampling](../analog/temperature.rs) | Reads PHY-I2C range and sensor code; may also write a new range. This is not an unconditional read-only operation. | The sensor transition carries matching completions. Concurrent sensor/range access is not qualified. |
-| [Current measured RFPLL correction](rfpll/README.md) | Bounded capacitor search, signed correction of the installed frequency-memory table, and current baseband-mode entry/restoration. Production runs it as the RFPLL child of the parameter-tracking graph; `target_port::rfpll::{search, correct, maintain, track}` drive the same child leaves directly for vendor comparison under `validation-probes`. | Registered tracking and the connected observation service select the thermal predicate. Compiled comparisons cover command/memory effects and vendor-policy boundaries; timing and physical range limits remain unqualified. |
+| [Current measured RFPLL correction](rfpll/README.md) | Bounded capacitor search, signed correction of the installed frequency-memory table, and current baseband-mode entry/restoration. Production runs it as the RFPLL child of the parameter-tracking graph; `target_port::rfpll::{search, correct, maintain, track}` drive the same child leaves directly for vendor comparison under `validation-probes`. | Registered tracking selects the thermal predicate. Compiled comparisons cover command/memory effects and vendor-policy boundaries; timing and physical range limits remain unqualified. |
 | [Common calibration](calibration.rs) | A temperature threshold selects DCODE, RX-gain calibration and channel restoration. | The branch restores MAC baseband and TX gain compensation before committing the common reference or entering class calibration. |
 | [Shared TX calibration](calibration.rs) | A shared TX threshold selects software frequency control, forced gain/TX-RX state, TXDC/PWDET and class gain publication. | The graph restores its baseband/control and gain-compensation state. This is not proof that every protocol's MAC, key, TSF or DMA context is unchanged. No selected branch means no hardware actions in this child. |
 
@@ -353,11 +287,11 @@ snapshot. Diagnostics-off images have no timing observer.
 
 ## Physical ownership and errors
 
-The existing stopped Wi-Fi path is a conservative admission contract for that
-composition. It does not establish that all tracking operations physically
-require disabling MAC, DMA and IRQ, nor that a smaller exclusion scope is
-safe. No active-radio operation is admitted based only on its name or on a
-similar driver for another chip.
+The vendor admission runs tracking with protocols active under the lease and
+the grant-protect brackets; the `Quiesced` policy is a stricter local mode.
+Neither establishes that a smaller exclusion scope is safe for an operation
+the vendor does not run that way. No active-radio operation is admitted based
+only on its name or on a similar driver for another chip.
 
 A CPU critical section does not stop DMA. The async target executor must not
 hold a CPU critical section across timer waits. The outer owner instead
@@ -379,18 +313,6 @@ child outcomes remain the algorithm's completion authority.
 RX and requested TX calibration branches. Invoking a calibration child below its thermal
 threshold leaves the corresponding flag false. Wrong-class or incomplete child
 completions cannot publish this progress. These flags do not measure RF quality.
-
-`WifiPhyMaintenanceRequest::Calibrate` selects a zero calibration threshold for
-one due maintenance pass. It uses the existing common and Wi-Fi child graph
-with real sensor readings; the stored policy and deadline remain unchanged.
-It is an explicit diagnostic operation, not automatic periodic recalibration.
-An early call still returns no work. Completion flags must confirm both branches
-before a caller claims that calibration executed.
-
-During a connected pause the non-runnable datapath remains in permanent cold
-storage beside its worker mailbox while PHY futures execute. Only the restored
-arena capability permits consuming this parked state. Failure or cancellation
-retains it without hardware authority; no `RefCell` borrow spans an await.
 
 Runtime Dcode passes an explicit delay factory through both its direct PHY-I2C
 bindings and its nested RFPLL frequency transitions. The report keeps three

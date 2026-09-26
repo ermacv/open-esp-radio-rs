@@ -44,26 +44,20 @@ fn cold_mac_init_orders_semantic_hardware_transactions() {
     assert_eq!(
         *clock_trace.borrow(),
         [
-            ColdStartClockEdge::EnableWifiMacClocks,
-            ColdStartClockEdge::RetainCoexistenceClock,
-            ColdStartClockEdge::ConfigureModemSourceClocks,
             ColdStartClockEdge::SetWifiMacReset(true),
             ColdStartClockEdge::SetWifiMacReset(false),
         ]
     );
     assert_eq!(
-        &mmio.operations()[..6],
+        &mmio.operations()[..3],
         [
-            Operation::EnableWifiMacClocks,
-            Operation::RetainCoexistenceClock,
-            Operation::ConfigureModemSourceClocks,
             Operation::SetWifiMacReset(true),
             Operation::SetWifiMacReset(false),
             Operation::BeginColdHandshake(4),
         ]
     );
     assert_eq!(
-        &mmio.operations()[6..12],
+        &mmio.operations()[3..9],
         [
             Operation::InitializeTxRxPrefix,
             Operation::InitializeTxRxCallbacks(MacDelaySlot::from_random(7)),
@@ -74,11 +68,11 @@ fn cold_mac_init_orders_semantic_hardware_transactions() {
         ]
     );
     assert!(matches!(
-        mmio.operations()[12],
+        mmio.operations()[9],
         Operation::InitializeTxPower(_)
     ));
     assert_eq!(
-        &mmio.operations()[13..19],
+        &mmio.operations()[10..16],
         [
             Operation::InitializeHeSuffix,
             Operation::InitializeLastRxBufferTable,
@@ -92,11 +86,11 @@ fn cold_mac_init_orders_semantic_hardware_transactions() {
         ]
     );
     assert!(matches!(
-        mmio.operations()[19],
+        mmio.operations()[16],
         Operation::InitializeColdCoex(_)
     ));
     assert_eq!(
-        &mmio.operations()[20..],
+        &mmio.operations()[17..],
         [
             Operation::EnableMacInterrupts(MacInterruptMask::COLD_RX),
             Operation::ProgramInterfaceAddress(MacInterface::Station, station),
@@ -160,9 +154,6 @@ fn cold_mac_handshake_timeout_stops_mac_initialization() {
     assert_eq!(
         mmio.operations(),
         [
-            Operation::EnableWifiMacClocks,
-            Operation::RetainCoexistenceClock,
-            Operation::ConfigureModemSourceClocks,
             Operation::SetWifiMacReset(true),
             Operation::SetWifiMacReset(false),
             Operation::BeginColdHandshake(2),

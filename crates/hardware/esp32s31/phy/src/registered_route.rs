@@ -160,16 +160,9 @@ impl PhyDomain {
 /// Closed set of protocol routes that own a registered PHY epoch.
 pub trait PhyRoute: sealed::PhyRoute {}
 
-/// Wi-Fi route: the registration stays coupled to the powered radio.
-pub struct WifiRoute<P>(
-    core::convert::Infallible,
-    core::marker::PhantomData<fn() -> P>,
-);
-
 /// Bluetooth route: the Controller keeps its hardware outside PHY.
 pub enum BluetoothRoute {}
 
-impl<P> PhyRoute for WifiRoute<P> {}
 impl PhyRoute for BluetoothRoute {}
 
 type Hardware<R> = <R as sealed::PhyRoute>::Hardware;
@@ -227,9 +220,9 @@ pub(crate) fn release<R: PhyRoute>(
     } = domain;
     match clients.release(<R as sealed::PhyRoute>::CLIENT) {
         Ok(outcome) => Ok(PhyClientRelease {
-            hardware,
             registered,
             outcome,
+            route: core::marker::PhantomData,
         }),
         Err(failure) => Err(PhyClientReleaseFailureOwner {
             hardware,
@@ -354,9 +347,9 @@ impl<R: PhyRoute> PhyClientAcquireFailureOwner<R> {
 /// close, and a non-final release keeps the other clients running.
 #[must_use = "client release retains the registered PHY owner"]
 pub struct PhyClientRelease<R: PhyRoute> {
-    pub(crate) hardware: Hardware<R>,
     pub(crate) registered: RegisteredPhyState,
     pub(crate) outcome: PhyClientReleaseOutcome,
+    route: core::marker::PhantomData<fn() -> R>,
 }
 
 impl<R: PhyRoute> PhyClientRelease<R> {
@@ -532,9 +525,9 @@ impl<R: PhyRoute> PhyPendingTrackOwner<R> {
     /// Enter fail-stop state without attempting target tracking work.
     pub fn fail(self) -> PhyTrackPoisonedOwner<R> {
         PhyTrackPoisonedOwner {
-            hardware: self.hardware,
             registered: self.registered,
             poisoned: self.pending.fail(),
+            route: core::marker::PhantomData,
         }
     }
 }
@@ -598,9 +591,9 @@ impl<R: PhyRoute> PhyPendingTrackingOwner<R> {
     /// Consume ambiguous work into a non-recoverable owner.
     pub fn fail(self) -> PhyTrackPoisonedOwner<R> {
         PhyTrackPoisonedOwner {
-            hardware: self.hardware,
             registered: self.registered,
             poisoned: self.pending.fail(),
+            route: core::marker::PhantomData,
         }
     }
 }
@@ -619,9 +612,9 @@ where
 /// Fail-stop registered epoch after ambiguous tracking hardware work.
 #[must_use = "failed tracking poisons the registered PHY epoch"]
 pub struct PhyTrackPoisonedOwner<R: PhyRoute> {
-    pub(crate) hardware: Hardware<R>,
     registered: RegisteredPhyState,
     poisoned: PhyTrackPoisoned,
+    route: core::marker::PhantomData<fn() -> R>,
 }
 
 impl<R: PhyRoute> PhyTrackPoisonedOwner<R> {

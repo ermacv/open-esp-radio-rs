@@ -53,10 +53,6 @@ use crate::{
         PhyCalibrationTrackingPort, PhyParamTrackingPort, PhyRegisterPort,
         run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
     },
-    registered_radio::{
-        RegisteredPhyPendingTracking, RegisteredPhyRadio, RegisteredPhyTrackPoisoned,
-        TargetRegisteredPhyEpoch,
-    },
     rx::{
         dc_offset::{
             PhyRxDcMinimumCompletion, PhyRxDcMinimumExternalBinding, PhyRxDcoCompletion,
@@ -148,16 +144,11 @@ pub use domain::{
 };
 
 mod radio_lifecycle;
+pub(crate) use radio_lifecycle::PhyRfCloseTemperatureFailure;
 #[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub(crate) use radio_lifecycle::reset_wake_i2c_master;
-pub(crate) use radio_lifecycle::{
-    PhyRfCloseTemperatureFailure, execute_rf_close, execute_rf_wake,
-    observe_temperature_before_rf_close,
-};
 
-use oer_esp32s31_hal::owner::{
-    PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext, state::Powered,
-};
+use oer_esp32s31_hal::owner::{PhyInitializationAccess, SharedPhyAccess, SharedPhyContext};
 
 /// The maintaining owner's PHY grant-protect request.
 ///
@@ -305,180 +296,11 @@ pub struct PhyTargetPortCounters {
     pub baseband_operations: u32,
 }
 
-/// Opaque fresh target registration attempt.
-///
-/// The powered radio and inner model transition are deliberately inseparable.
-/// Callers can construct only a fresh production attempt and pass it once to
-/// [`run_target_phy_register`]. There is no conversion from a caller-driven
-/// `PhyRegisterTransition`, because such a transition may already contain
-/// synthetic completions.
-#[must_use = "a target PHY attempt uniquely owns the powered radio"]
-pub struct TargetPhyRegisterAttempt<P> {
-    radio: Radio<P, Powered>,
-    transition: PhyRegisterTransition,
-}
-
-impl<P> TargetPhyRegisterAttempt<P> {
-    /// Start one fresh production registration without calibration persistence.
-    pub const fn with_production_config(radio: Radio<P, Powered>) -> Self {
-        Self {
-            radio,
-            transition: PhyRegisterTransition::with_production_config(),
-        }
-    }
-
-    /// Start one fresh production registration with caller-owned persistence.
-    pub const fn with_production_config_and_calibration(
-        radio: Radio<P, Powered>,
-        identity: PhyCalibrationIdentity,
-        cache: Option<PhyCalibrationCache>,
-    ) -> Self {
-        Self {
-            radio,
-            transition: PhyRegisterTransition::with_production_config_and_calibration(
-                identity, cache,
-            ),
-        }
-    }
-
-    /// Inspect the currently retained ordinary model state.
-    pub fn state(&self) -> Option<&PhyState> {
-        self.transition.state()
-    }
-}
-
-/// Result of one complete source-owned target registration path.
-///
-/// This owner records execution through the concrete ESP32-S31 target port. It
-/// does not claim RF qualification or operational link readiness.
-pub struct TargetPhyRegisterSuccess<P> {
-    registered_epoch: TargetRegisteredPhyEpoch<P>,
-    calibration_cache: Option<PhyCalibrationCache>,
-    outcome: PhyRegisterOutcome,
-    counters: PhyTargetPortCounters,
-}
-
-impl<P> TargetPhyRegisterSuccess<P> {
-    /// Inspect the target-registered state without releasing its radio epoch.
-    pub const fn state(&self) -> &PhyState {
-        self.registered_epoch.state()
-    }
-
-    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
-        self.calibration_cache.as_ref()
-    }
-
-    pub const fn outcome(&self) -> PhyRegisterOutcome {
-        self.outcome
-    }
-
-    pub const fn counters(&self) -> PhyTargetPortCounters {
-        self.counters
-    }
-
-    /// Preserve target-registration authority for a proof-aware role owner.
-    ///
-    /// The returned [`RegisteredPhyRadio`] keeps the powered radio and proof
-    /// inseparable. The calibration cache is persistable output from the same
-    /// terminally successful registration run.
-    pub fn into_registered_parts(
-        self,
-    ) -> (
-        RegisteredPhyRadio<P>,
-        Option<PhyCalibrationCache>,
-        PhyRegisterOutcome,
-        PhyTargetPortCounters,
-    ) {
-        (
-            self.registered_epoch.into_registered_radio(),
-            self.calibration_cache,
-            self.outcome,
-            self.counters,
-        )
-    }
-}
-
 /// Failure from the concrete target registration runner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TargetPhyRegisterError {
     Run(PhyRegisterRunError<PhyTargetPortError>),
     MissingCompletedModelOwner,
-}
-
-/// Ordinary owners released after a terminal target-registration failure.
-///
-/// This payload contains no registration proof. It is available only through
-/// [`TargetPhyRegisterFailure::into_terminal_parts`], after the transition has
-/// demonstrated its terminal failed phase and completed cleanup.
-pub type TargetPhyRegisterTerminalParts<P> = (
-    Radio<P, Powered>,
-    PhyState,
-    Option<PhyCalibrationCache>,
-    PhyTargetPortCounters,
-    TargetPhyRegisterError,
-);
-
-/// Exact opaque radio/transition owner returned after a target failure.
-///
-/// A port error may follow a partially completed hardware edge, so this owner
-/// deliberately has no public path back to [`TargetPhyRegisterAttempt`]. Safe
-/// code cannot reissue an ambiguous operation or reset per-run safety counters.
-/// Only a transition which completed its failure cleanup can release ordinary
-/// owners through [`Self::into_terminal_parts`].
-pub struct TargetPhyRegisterFailure<P> {
-    attempt: TargetPhyRegisterAttempt<P>,
-    counters: PhyTargetPortCounters,
-    error: TargetPhyRegisterError,
-}
-
-impl<P> TargetPhyRegisterFailure<P> {
-    /// Whether the real target transition completed its failure cleanup.
-    /// The powered radio remains owned by this failure until explicitly consumed.
-    pub fn failure_cleanup_completed(&self) -> bool {
-        self.attempt.transition.failure_cleanup_completed()
-    }
-
-    pub const fn error(&self) -> TargetPhyRegisterError {
-        self.error
-    }
-
-    pub const fn counters(&self) -> PhyTargetPortCounters {
-        self.counters
-    }
-
-    pub fn state(&self) -> Option<&PhyState> {
-        self.attempt.state()
-    }
-
-    /// Recover ordinary owners only after the model reached terminal failure.
-    ///
-    /// Port, transition and target-success invariant errors may still describe
-    /// a partially active hardware epoch. Those paths return this exact opaque
-    /// failure unchanged, so safe code cannot separate or rerun its powered
-    /// radio and transition. A genuine terminal radio failure has completed
-    /// cleanup and may release the ordinary PHY state and caller retry cache.
-    #[allow(
-        clippy::result_large_err,
-        reason = "nonterminal failure must retain the exact allocation-free radio/PHY owner"
-    )]
-    pub fn into_terminal_parts(self) -> Result<TargetPhyRegisterTerminalParts<P>, Self> {
-        let Self {
-            attempt,
-            counters,
-            error,
-        } = self;
-        let TargetPhyRegisterAttempt { radio, transition } = attempt;
-        match transition.into_failed_parts() {
-            Ok((state, calibration_cache)) => {
-                Ok((radio, state, calibration_cache, counters, error))
-            }
-            Err(transition) => Err(Self {
-                attempt: TargetPhyRegisterAttempt { radio, transition },
-                counters,
-                error,
-            }),
-        }
-    }
 }
 
 /// Private witness accepted by the sole [`crate::RegisteredPhyState`] constructor.
@@ -530,29 +352,6 @@ pub struct TargetPhyParamTrackingPort<'a, P, R, G, D, O = NoopPhyTargetObserver>
     delay: PhantomData<D>,
 }
 
-/// Terminal successful outer periodic-tracking request.
-///
-/// The refreshed semantic state remains inseparable from the exact powered
-/// radio epoch on which the target bindings executed.
-pub struct TargetPhyParamTrackingSuccess<P> {
-    registered_radio: RegisteredPhyRadio<P>,
-    outcome: PhyParamTrackingOutcome,
-}
-
-impl<P> TargetPhyParamTrackingSuccess<P> {
-    pub const fn registered_radio(&self) -> &RegisteredPhyRadio<P> {
-        &self.registered_radio
-    }
-
-    pub const fn outcome(&self) -> PhyParamTrackingOutcome {
-        self.outcome
-    }
-
-    pub fn into_parts(self) -> (RegisteredPhyRadio<P>, PhyParamTrackingOutcome) {
-        (self.registered_radio, self.outcome)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TargetPhyParamTrackingError {
     /// The registration no longer describes the borrowed PHY partition; the
@@ -561,31 +360,6 @@ pub enum TargetPhyParamTrackingError {
     Run(PhyParamTrackingRunError<PhyTargetPortError>),
     Deadline(crate::tracking::deadline::TrackingDeadlineError),
     MissingCompletedOwner,
-}
-
-/// Fail-stop result retaining the poisoned PHY-client epoch.
-#[must_use = "failed periodic PHY tracking poisons its unique client owner"]
-pub struct TargetPhyParamTrackingFailure<P> {
-    poisoned: RegisteredPhyTrackPoisoned<P>,
-    error: TargetPhyParamTrackingError,
-}
-
-impl<P> TargetPhyParamTrackingFailure<P> {
-    pub const fn error(&self) -> TargetPhyParamTrackingError {
-        self.error
-    }
-
-    pub const fn poisoned(&self) -> &RegisteredPhyTrackPoisoned<P> {
-        &self.poisoned
-    }
-
-    /// Inspect the last committed semantic state for fail-stop diagnostics.
-    ///
-    /// No extractor is provided: target hardware may have advanced beyond
-    /// this state, so the registered epoch cannot be retried or resumed.
-    pub const fn state(&self) -> &PhyState {
-        self.poisoned.phy_state()
-    }
 }
 
 struct TargetCompleter<D>(PhantomData<D>);
@@ -2351,66 +2125,6 @@ impl<P, R: PhyInitializationAccess, G: PhyGrantProtectPort, D: PhyAsyncDelay, O:
     }
 }
 
-/// Execute one complete affine periodic-tracking request on ESP32-S31.
-///
-/// This is the fail-closed production boundary. It consumes the exact
-/// [`RegisteredPhyPendingTracking`] whose platform, PAC capability, semantic
-/// state, client set, and scheduler request all belong to one epoch. Success
-/// returns the ordinary coupled radio only after the outer transition is terminal.
-/// Any child, port or transition error consumes the request into
-/// [`RegisteredPhyTrackPoisoned`] and retains the registered radio in an opaque
-/// failure, so ambiguous hardware work cannot be paired with another state or
-/// retried.
-///
-/// # Cancellation
-///
-/// Once polled, this future must run to a terminal result. Dropping it also
-/// drops the unique pending client owner and therefore cannot create a retry
-/// path, but the hardware epoch must be reset before reuse.
-#[must_use = "periodic PHY tracking must be driven to a terminal result"]
-#[allow(
-    clippy::result_large_err,
-    reason = "the allocation-free failure must retain the complete poisoned hardware epoch"
-)]
-pub async fn run_target_phy_param_tracking<P, D, O>(
-    mut tracking: RegisteredPhyPendingTracking<P>,
-    observer: O,
-) -> Result<TargetPhyParamTrackingSuccess<P>, TargetPhyParamTrackingFailure<P>>
-where
-    D: PhyAsyncDelay,
-    O: PhyTargetObserver,
-{
-    let result = {
-        let (platform, mut registers, mut grant, state, pending) = tracking.target_tracking_parts();
-        let mut port = TargetPhyParamTrackingPort::<_, _, _, D, _>::new(
-            platform,
-            &mut registers,
-            &mut grant,
-            observer,
-        );
-        run_phy_param_tracking(pending, state, &mut port).await
-    };
-    let outcome = match result {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            return Err(TargetPhyParamTrackingFailure {
-                poisoned: tracking.fail(),
-                error: TargetPhyParamTrackingError::Run(error),
-            });
-        }
-    };
-    match tracking.into_client_owner() {
-        Ok(registered_radio) => Ok(TargetPhyParamTrackingSuccess {
-            registered_radio,
-            outcome,
-        }),
-        Err(tracking) => Err(TargetPhyParamTrackingFailure {
-            poisoned: tracking.fail(),
-            error: TargetPhyParamTrackingError::MissingCompletedOwner,
-        }),
-    }
-}
-
 impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyRegisterPort
     for TargetPhyRegisterPort<'_, P, R, D, O>
 {
@@ -2483,82 +2197,11 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyR
     }
 }
 
-/// Drive one opaque fresh attempt through the concrete ESP32-S31 target port.
-///
-/// Unlike the model driver `run_phy_register`, this function does not accept a caller-
-/// supplied port or a raw caller-driven transition. The exact transition that
-/// receives every concrete target completion and the exact powered radio epoch
-/// remain hidden inside `attempt`. Terminal success produces one result which
-/// retains that radio and [`crate::RegisteredPhyState`]. Any other result retains a
-/// poisoned opaque owner unless the transition completed its failure cleanup.
-///
-/// # Cancellation
-///
-/// Integrations must run this future to completion. Once polled, cancelling or
-/// dropping it may leave a hardware edge partially applied and destroys the
-/// only software owner; it never returns registration proof. The peripheral or
-/// chip must be reset out of band before a new `Radio` owner is established.
-#[must_use = "target PHY registration must be driven to a terminal result"]
-pub async fn run_target_phy_register<P, D, O>(
-    mut attempt: TargetPhyRegisterAttempt<P>,
-    observer: O,
-) -> Result<TargetPhyRegisterSuccess<P>, TargetPhyRegisterFailure<P>>
-where
-    D: PhyAsyncDelay,
-    O: PhyTargetObserver,
-{
-    let (result, counters, witness) = {
-        let (platform, registers) = attempt.radio.phy_hal_parts();
-        domain::execute_registration::<_, _, D, _>(
-            &mut attempt.transition,
-            platform,
-            registers,
-            observer,
-        )
-        .await
-    };
-
-    let outcome = match result {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            return Err(TargetPhyRegisterFailure {
-                attempt,
-                counters,
-                error: TargetPhyRegisterError::Run(error),
-            });
-        }
-    };
-
-    let (state, calibration_cache) = match attempt.transition.into_model_parts() {
-        Ok(parts) => parts,
-        Err(transition) => {
-            return Err(TargetPhyRegisterFailure {
-                attempt: TargetPhyRegisterAttempt {
-                    radio: attempt.radio,
-                    transition,
-                },
-                counters,
-                error: TargetPhyRegisterError::MissingCompletedModelOwner,
-            });
-        }
-    };
-    Ok(TargetPhyRegisterSuccess {
-        registered_epoch: TargetRegisteredPhyEpoch::from_target_completion(
-            attempt.radio,
-            state,
-            witness,
-        ),
-        calibration_cache,
-        outcome,
-        counters,
-    })
-}
-
 /// Select a PHY channel with the same finite target contract used by cold
 /// registration, through a temporary borrow of the complete HAL owner.
 ///
 /// The raw state is not a registration proof, so this entry stays inside the
-/// crate; callers select channels through a registered owner.
+/// crate; callers select channels through the concurrent domain.
 pub(crate) async fn select_phy_channel_with_hal<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
     state: &mut PhyState,
     channel_or_frequency: u16,
@@ -2568,54 +2211,6 @@ pub(crate) async fn select_phy_channel_with_hal<D: PhyAsyncDelay, P, O: PhyTarge
 ) -> Result<(), PhyTargetPortError> {
     TargetCompleter::<D>::select_channel_hal(state, channel_or_frequency, cbw, channel, observer)
         .await
-}
-
-/// Select a channel while retaining Wi-Fi's registered state and scheduler.
-///
-/// A registration that no longer describes the channel HAL's PHY partition
-/// is rejected before any hardware access.
-pub async fn select_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
-    phy: &mut crate::RegisteredWifiPhy,
-    channel_or_frequency: u16,
-    cbw: u8,
-    channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
-    observer: &mut O,
-) -> Result<(), PhyTargetPortError> {
-    if !phy.domain.clients.describes(&*channel) {
-        return Err(PhyTargetPortError::RegistrationEpochMismatch);
-    }
-    select_phy_channel_with_hal::<D, _, _>(
-        phy.domain.registered.target_state_mut(),
-        channel_or_frequency,
-        cbw,
-        channel,
-        observer,
-    )
-    .await
-}
-
-/// Stopped-role channel transition without exposing replaceable PHY state.
-///
-/// A registration that no longer describes the channel HAL's PHY partition
-/// is rejected before any hardware access.
-pub async fn switch_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
-    phy: &mut crate::RegisteredWifiPhy,
-    channel_or_frequency: u16,
-    cbw: u8,
-    channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
-    observer: &mut O,
-) -> Result<(), PhyTargetPortError> {
-    if !phy.domain.clients.describes(&*channel) {
-        return Err(PhyTargetPortError::RegistrationEpochMismatch);
-    }
-    switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
-        phy.domain.registered.target_state_mut(),
-        channel_or_frequency,
-        cbw,
-        channel,
-        observer,
-    )
-    .await
 }
 
 /// Stop, retune and restart through a temporary borrow of the HAL owner.

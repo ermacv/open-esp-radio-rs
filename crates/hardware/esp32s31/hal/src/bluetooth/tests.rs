@@ -1,4 +1,4 @@
-use crate::{owner::WifiColdRegisters, root::RadioHardware};
+use crate::root::RadioHardware;
 
 use super::{
     ColdOwner, ControllerHalBorrow, ControllerPublicAddress, ControllerRandomAddress,
@@ -109,9 +109,9 @@ fn untouched_task_owner_reconstructs_the_neutral_root() {
         .release()
         .expect("an untouched Bluetooth route can be released");
 
-    // Re-entering Wi-Fi proves that the finite HAL borrow neither moved nor
-    // duplicated any protocol-neutral owner.
-    let _wifi = WifiColdRegisters::from_hardware(hardware);
+    // Splitting the root again proves that the finite HAL borrow neither
+    // moved nor duplicated any protocol-neutral owner.
+    let _split = hardware.into_concurrent(());
 }
 
 #[test]
@@ -171,85 +171,6 @@ fn unfinished_controller_time_latch_blocks_neutral_reunion() {
     assert_eq!(
         failure.error(),
         TaskOwnerReuniteError::ControllerTimeLatchInFlight
-    );
-    let _retained_owners = failure.into_parts();
-}
-
-#[test]
-fn retained_handoff_keeps_the_registration_epoch_across_routes() {
-    let mut wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
-        .with_common_power_for_test();
-    let epoch = wifi.phy_state_mut().begin_registration_epoch();
-
-    let retained = wifi
-        .release_retained()
-        .unwrap_or_else(|_| panic!("a powered Wi-Fi route hands over its PHY"));
-    assert_eq!(retained.registration_epoch(), Some(epoch));
-
-    let bluetooth = ColdOwner::from_retained(retained);
-    assert!(bluetooth.clocks.common_inherited());
-    let retained = bluetooth
-        .release_retained()
-        .unwrap_or_else(|_| panic!("an inherited Bluetooth route hands the PHY back"));
-    assert_eq!(retained.registration_epoch(), Some(epoch));
-
-    let wifi = WifiColdRegisters::from_retained(retained);
-    assert_eq!(wifi.phy_state().registration_epoch(), Some(epoch));
-}
-
-#[test]
-fn retained_handoff_rejects_a_pending_calibration_restore() {
-    let mut wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
-        .with_common_power_for_test();
-    wifi.phy_state_mut().occupy_txdc_for_test();
-    let Err((_wifi, error)) = wifi.release_retained() else {
-        panic!("a pending restore must keep the Wi-Fi route");
-    };
-    assert_eq!(
-        error,
-        crate::root::RetainedRadioReleaseError::Restore(
-            crate::root::RadioPhyReleaseError::TxDcPwdetRestorePending
-        )
-    );
-}
-
-#[test]
-fn unpowered_route_cannot_enter_the_retained_root() {
-    let wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
-    let Err((_wifi, error)) = wifi.release_retained() else {
-        panic!("an unpowered Wi-Fi route has no common power to hand over");
-    };
-    assert_eq!(
-        error,
-        crate::root::RetainedRadioReleaseError::CommonPhyPower(
-            crate::root::CommonPhyPowerError::NotPowered
-        )
-    );
-}
-
-#[test]
-fn inherited_route_skips_the_common_power_sequence_and_cold_reunion() {
-    let cold = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
-    let (task, _interrupts) = cold.separate_interrupt_owner();
-    assert!(!task.common_phy_inherited());
-
-    let wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
-        .with_common_power_for_test();
-    let retained = wifi
-        .release_retained()
-        .unwrap_or_else(|_| panic!("a powered Wi-Fi route hands over its PHY"));
-    let (mut task, interrupts) = ColdOwner::from_retained(retained).separate_interrupt_owner();
-    assert!(task.common_phy_inherited());
-
-    // The validation root has no register block, so any power-sequence MMIO
-    // would fault here.
-    assert_eq!(task.prepare_common_phy_power(), Ok(()));
-    let Err(failure) = task.into_cold(interrupts) else {
-        panic!("an inherited route cannot fabricate the cold radio root");
-    };
-    assert_eq!(
-        failure.error(),
-        TaskOwnerReuniteError::HardwareLifecycleNotRestored
     );
     let _retained_owners = failure.into_parts();
 }

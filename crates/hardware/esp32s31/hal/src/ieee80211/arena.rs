@@ -6,13 +6,13 @@
 //! Consumers can obtain only narrow HAL operations; no generic register
 //! callback or PAC owner escapes this module.
 
-use crate::route_registers::WifiRegisters;
 use core::{
     cell::{RefCell, RefMut},
     sync::atomic::{AtomicU8, Ordering},
 };
+use oer_esp32s31_pac::WifiRadioRegisters;
 
-use crate::owner::RadioRuntimeOwner;
+use crate::{owner::RadioRuntimeOwner, shared_radio::SharedRadioLease};
 
 const EMPTY: u8 = 0;
 const PUBLISHED: u8 = 1;
@@ -131,13 +131,45 @@ impl RadioOwnerArena {
         RadioOwnerArenaState::decode(self.state.load(Ordering::Acquire))
     }
 
-    /// Borrow the published owner only through the narrow channel capability.
-    /// The dynamic borrow is the serialization guard and remains held across
-    /// the complete asynchronous channel transaction.
-    pub fn try_channel_hal<'arena, P>(
+    /// Borrow the published owner only through the narrow channel capability,
+    /// with the shared PHY borrowed from the arbiter lease. The dynamic borrow
+    /// is the serialization guard and remains held across the complete
+    /// asynchronous channel transaction.
+    pub fn try_channel_hal<'arena, P, T>(
         &'arena self,
         platform: &'arena mut P,
+        lease: &'arena mut SharedRadioLease<'_, T>,
     ) -> Result<crate::ieee80211::channel::RadioChannelHal<'arena, P>, RadioOwnerArenaError> {
+        let mac = self.try_published_mac()?;
+        let (phy, restore) = lease.phy_parts_mut();
+        Ok(crate::ieee80211::channel::RadioChannelHal::from_published(
+            platform, mac, phy, restore,
+        ))
+    }
+
+    /// [`Self::try_channel_hal`] together with the arbiter's attachment, for
+    /// a PHY channel operation that updates the shared domain's state.
+    pub fn try_channel_hal_with_attachment<'arena, P, T>(
+        &'arena self,
+        platform: &'arena mut P,
+        lease: &'arena mut SharedRadioLease<'_, T>,
+    ) -> Result<
+        (
+            crate::ieee80211::channel::RadioChannelHal<'arena, P>,
+            &'arena mut T,
+        ),
+        RadioOwnerArenaError,
+    > {
+        let mac = self.try_published_mac()?;
+        let (phy, restore, attachment) = lease.phy_parts_with_attachment();
+        Ok((
+            crate::ieee80211::channel::RadioChannelHal::from_published(platform, mac, phy, restore),
+            attachment,
+        ))
+    }
+
+    /// Borrow the published MAC registers for one serialized transaction.
+    fn try_published_mac(&self) -> Result<RefMut<'_, WifiRadioRegisters>, RadioOwnerArenaError> {
         match self.state() {
             RadioOwnerArenaState::Empty => {
                 return Err(RadioOwnerArenaError::MissingOwner);
@@ -153,10 +185,7 @@ impl RadioOwnerArena {
             .map_err(|_| RadioOwnerArenaError::Borrowed)?;
         let owner = RefMut::filter_map(slot, Option::as_mut)
             .map_err(|_| RadioOwnerArenaError::MissingOwner)?;
-        let (registers, restore) = RefMut::map_split(owner, RadioRuntimeOwner::channel_parts_mut);
-        Ok(crate::ieee80211::channel::RadioChannelHal::from_published(
-            platform, registers, restore,
-        ))
+        Ok(RefMut::map(owner, RadioRuntimeOwner::pac_mut))
     }
 
     /// Borrow the published owner only through the closed Wi-Fi MAC
@@ -219,7 +248,7 @@ impl RadioOwnerArena {
     /// an async suspension.
     fn try_with_ref<T>(
         &self,
-        transaction: impl FnOnce(&WifiRegisters) -> T,
+        transaction: impl FnOnce(&WifiRadioRegisters) -> T,
     ) -> Result<T, RadioOwnerArenaError> {
         match self.state() {
             RadioOwnerArenaState::Empty => {
@@ -243,7 +272,7 @@ impl RadioOwnerArena {
     /// arena back into an unrestricted PAC callback API.
     fn try_with_mut<T>(
         &self,
-        transaction: impl FnOnce(&mut WifiRegisters) -> T,
+        transaction: impl FnOnce(&mut WifiRadioRegisters) -> T,
     ) -> Result<T, RadioOwnerArenaError> {
         match self.state() {
             RadioOwnerArenaState::Empty => {
@@ -293,7 +322,7 @@ impl RadioOwnerArena {
         bssid: [u8; 6],
     ) -> Result<(), RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
-            crate::ieee80211::mac::WifiMacHal::from_owned(registers)
+            crate::ieee80211::mac::WifiMacHal::from_mac(registers)
                 .configure_station_receive_policy(bssid);
         })
     }
@@ -305,7 +334,7 @@ impl RadioOwnerArena {
         bssid: [u8; 6],
     ) -> Result<(), RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
-            let mut hal = crate::ieee80211::mac::WifiMacHal::from_owned(registers);
+            let mut hal = crate::ieee80211::mac::WifiMacHal::from_mac(registers);
             hal.configure_station_receive_policy(bssid);
             hal.configure_station_policy_six(bssid, crate::types::MacStaPolicyMode::Mode2);
         })
@@ -324,7 +353,7 @@ impl RadioOwnerArena {
         temporal_key: &[u8; 16],
     ) -> Result<crate::ieee80211::mac::MacKeyInstallOutcome, RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
-            crate::ieee80211::mac::WifiMacHal::from_owned(registers).install_station_ccmp_entry(
+            crate::ieee80211::mac::WifiMacHal::from_mac(registers).install_station_ccmp_entry(
                 index,
                 identity,
                 temporal_key,
@@ -345,22 +374,25 @@ impl RadioOwnerArena {
         temporal_key: &[u8; 16],
     ) -> Result<crate::ieee80211::mac::MacKeyInstallOutcome, RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
-            crate::ieee80211::mac::WifiMacHal::from_owned(registers)
-                .install_access_point_ccmp_entry(index, identity, temporal_key)
+            crate::ieee80211::mac::WifiMacHal::from_mac(registers).install_access_point_ccmp_entry(
+                index,
+                identity,
+                temporal_key,
+            )
         })
     }
 
     /// Clear one CCMP table entry under the runtime serialization owner.
     pub fn try_clear_ccmp_entry(&self, index: u8) -> Result<(), RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
-            crate::ieee80211::mac::WifiMacHal::from_owned(registers).clear_ccmp_entry(index);
+            crate::ieee80211::mac::WifiMacHal::from_mac(registers).clear_ccmp_entry(index);
         })
     }
 
     /// Observe one CCMP validity bit without exposing register authority.
     pub fn try_ccmp_entry_is_valid(&self, index: u8) -> Result<Option<bool>, RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
-            crate::ieee80211::mac::WifiMacHal::from_owned(registers).ccmp_entry_is_valid(index)
+            crate::ieee80211::mac::WifiMacHal::from_mac(registers).ccmp_entry_is_valid(index)
         })
     }
 
@@ -466,11 +498,29 @@ pub struct RadioAccess<'arena> {
 }
 
 impl<'arena> RadioAccess<'arena> {
-    pub fn try_channel_hal<'access, P>(
+    /// Start one serialized channel transaction with the shared PHY borrowed
+    /// from the arbiter lease.
+    pub fn try_channel_hal<'access, P, T>(
         &'access self,
         platform: &'access mut P,
+        lease: &'access mut SharedRadioLease<'_, T>,
     ) -> Result<crate::ieee80211::channel::RadioChannelHal<'access, P>, RadioOwnerArenaError> {
-        self.arena.try_channel_hal(platform)
+        self.arena.try_channel_hal(platform, lease)
+    }
+
+    /// [`Self::try_channel_hal`] together with the arbiter's attachment.
+    pub fn try_channel_hal_with_attachment<'access, P, T>(
+        &'access self,
+        platform: &'access mut P,
+        lease: &'access mut SharedRadioLease<'_, T>,
+    ) -> Result<
+        (
+            crate::ieee80211::channel::RadioChannelHal<'access, P>,
+            &'access mut T,
+        ),
+        RadioOwnerArenaError,
+    > {
+        self.arena.try_channel_hal_with_attachment(platform, lease)
     }
 
     /// Start one serialized Wi-Fi MAC transaction without exposing the

@@ -7,8 +7,9 @@
 //! so the next prepare fails closed until an explicit restore or the
 //! enclosing hardware-reset lifecycle replaces the route.
 
-use crate::route_registers::WifiRegisters;
+use crate::ieee80211::MacBorrow;
 use core::cell::RefMut;
+use oer_esp32s31_pac::WifiRadioRegisters;
 
 use oer_esp32s31_pac::{
     StaModemWakeConfig, StaModemWakeRestore, StaTbttWakeGateBaselineUnsupported, StaTbttWakeRestore,
@@ -95,29 +96,29 @@ impl StationWakeState {
     }
 }
 
-enum StationWakeRegisters<'registers> {
-    Owned(
-        &'registers mut WifiRegisters,
-        &'registers mut StationWakeState,
-    ),
-    Published(
-        RefMut<'registers, WifiRegisters>,
-        RefMut<'registers, StationWakeState>,
-    ),
+struct StationWakeRegisters<'registers> {
+    mac: MacBorrow<'registers>,
+    state: StateBorrow<'registers>,
+}
+
+enum StateBorrow<'registers> {
+    Owned(&'registers mut StationWakeState),
+    Published(RefMut<'registers, StationWakeState>),
 }
 
 impl StationWakeRegisters<'_> {
-    fn parts_mut(&mut self) -> (&mut WifiRegisters, &mut StationWakeState) {
-        match self {
-            Self::Owned(registers, state) => (registers, state),
-            Self::Published(registers, state) => (registers, state),
-        }
+    fn parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut StationWakeState) {
+        let state = match &mut self.state {
+            StateBorrow::Owned(state) => &mut **state,
+            StateBorrow::Published(state) => &mut **state,
+        };
+        (&mut self.mac, state)
     }
 
     fn state(&self) -> &StationWakeState {
-        match self {
-            Self::Owned(_, state) => state,
-            Self::Published(_, state) => state,
+        match &self.state {
+            StateBorrow::Owned(state) => state,
+            StateBorrow::Published(state) => state,
         }
     }
 }
@@ -132,20 +133,26 @@ pub struct StationWakeHal<'registers> {
 
 impl<'registers> StationWakeHal<'registers> {
     pub(crate) fn from_owned(
-        registers: &'registers mut WifiRegisters,
+        registers: &'registers mut WifiRadioRegisters,
         state: &'registers mut StationWakeState,
     ) -> Self {
         Self {
-            registers: StationWakeRegisters::Owned(registers, state),
+            registers: StationWakeRegisters {
+                mac: MacBorrow::Owned(registers),
+                state: StateBorrow::Owned(state),
+            },
         }
     }
 
     pub(crate) fn from_published(
-        registers: RefMut<'registers, WifiRegisters>,
+        registers: RefMut<'registers, WifiRadioRegisters>,
         state: RefMut<'registers, StationWakeState>,
     ) -> Self {
         Self {
-            registers: StationWakeRegisters::Published(registers, state),
+            registers: StationWakeRegisters {
+                mac: MacBorrow::Published(registers),
+                state: StateBorrow::Published(state),
+            },
         }
     }
 

@@ -11,15 +11,6 @@ use crate::tracking::parameters::PhyCalibrationTrackClass;
 
 pub mod decision;
 
-/// Which measurement branch is selected; each branch retains its complete
-/// hardware restoration sequence before returning maintenance access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Scope {
-    Both,
-    Common,
-    Transmit,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingParameters {
     pub current_temperature: i16,
@@ -332,7 +323,6 @@ pub(crate) const CALIBRATION_TRACKING_ACTION_LIMIT: u8 = 33;
 /// The shared TX reference advances once after all requested classes restore.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingTransition {
-    scope: Scope,
     request: PhyCalibrationTrackingRequest,
     parameters: PhyCalibrationTrackingParameters,
     threshold: u8,
@@ -353,25 +343,23 @@ impl PhyCalibrationTrackingTransition {
         request: PhyCalibrationTrackingRequest,
         parameters: PhyCalibrationTrackingParameters,
     ) -> Self {
-        Self::selected(request, parameters, Scope::Both)
+        Self::start(request, parameters)
     }
 
-    pub(crate) const fn selected(
+    pub(crate) const fn start(
         request: PhyCalibrationTrackingRequest,
         parameters: PhyCalibrationTrackingParameters,
-        scope: Scope,
     ) -> Self {
         let decision = parameters.decision();
         let threshold = decision.common.threshold;
-        let step = if !matches!(scope, Scope::Transmit) && decision.common.is_due() {
+        let step = if decision.common.is_due() {
             Step::CommonAcquireGrant
-        } else if !matches!(scope, Scope::Common) && decision.transmit.is_due() {
+        } else if decision.transmit.is_due() {
             Step::TxAcquireGrant
         } else {
             Step::Complete
         };
         Self {
-            scope,
             request,
             parameters,
             threshold,
@@ -769,7 +757,7 @@ impl PhyCalibrationTrackingTransition {
     }
 
     const fn first_transmit_step(self) -> Step {
-        if !matches!(self.scope, Scope::Common) && self.parameters.decision().transmit.is_due() {
+        if self.parameters.decision().transmit.is_due() {
             Step::TxAcquireGrant
         } else {
             Step::Complete

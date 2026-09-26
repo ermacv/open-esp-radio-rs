@@ -355,10 +355,12 @@ pub struct PhyRegisterTransition {
 }
 
 impl PhyRegisterTransition {
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn new(config: crate::state::PhyConfig) -> Self {
         Self::new_on_channel(config, 11)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn new_on_channel(
         config: crate::state::PhyConfig,
         channel_or_frequency: u16,
@@ -415,6 +417,7 @@ impl PhyRegisterTransition {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn with_production_config() -> Self {
         Self::new(crate::state::PhyConfig::production())
     }
@@ -531,6 +534,7 @@ impl PhyRegisterTransition {
         clippy::result_large_err,
         reason = "non-failure paths must return the unique allocation-free registration owner"
     )]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn into_failed_parts(
         mut self,
     ) -> Result<

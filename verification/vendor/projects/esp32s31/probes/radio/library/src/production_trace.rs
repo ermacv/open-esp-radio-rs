@@ -51,11 +51,12 @@ oer_probe_macros::probe! {
     /// The wrapper constructs its isolated PHY owner; no search policy lives
     /// in this ABI wrapper.
     pub fn open_phy_rfpll_trace_search() -> i32 {
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::search::<
             RfpllTraceDelay,
-        >(radio.phy_hal_mut()))
+        >(&mut phy))
         .map_or(i32::MIN, |outcome| i32::from(outcome.delta()))
     }
 }
@@ -67,12 +68,13 @@ oer_probe_macros::probe! {
     /// negative code for a transition failure (-1) or an executor failure
     /// (`i32::MIN`).
     pub fn open_phy_rfpll_trace_program(frequency_code: u16, crystal_selector: u8, offset: u8) -> i32 {
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         match embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::program::<
             RfpllTraceDelay,
         >(
-            radio.phy_hal_mut(),
+            &mut phy,
             oer_esp32s31_phy::analog::rfpll::RfpllFrequencyRequest {
                 crystal_selector,
                 frequency_code,
@@ -91,11 +93,12 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     /// Production frequency-control envelope; no grant or parent policy is modeled here.
     pub fn open_phy_rfpll_trace_maintain(channel: u16) -> i32 {
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::maintain::<
             RfpllTraceDelay,
-        >(radio.phy_hal_mut(), channel))
+        >(&mut phy, channel))
         .map_or(i32::MIN, |outcome| i32::from(outcome.search.delta()))
     }
 }
@@ -146,11 +149,12 @@ oer_probe_macros::probe! {
     /// `i32::MIN` when the transition fails closed or its executor fails.
     /// Publishes no temperature observation.
     pub fn open_phy_trace_temperature_sample(output: &mut [u16; 1]) -> i32 {
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         match embassy_futures::block_on(oer_esp32s31_phy::target_port::temperature::sample::<
             ProductionTraceDelay,
-        >(radio.phy_hal_mut()))
+        >(&mut phy))
         {
             Ok(Ok(outcome)) => {
                 output[0] = u16::from(outcome.sensor_index);
@@ -241,9 +245,14 @@ fn trace_channel(
         peripherals.LP_TSENS,
         peripherals.I2C_ANA_MST,
     );
-    let radio = oer_esp32s31_hal::owner::Radio::claim_for_validation(platform);
-    let mut radio = radio.assume_powered_for_validation();
-    let mut channel = radio.channel_hal();
+    let (radio, partitions) =
+        oer_esp32s31_hal::root::RadioHardware::for_validation().into_concurrent(());
+    let mut lease = acquire(&radio);
+    let mut clocked = oer_esp32s31_hal::ieee80211::client::WifiClocked::for_validation(
+        oer_esp32s31_hal::ieee80211::client::WifiCold::from_partition(partitions.wifi),
+    );
+    let mut platform = platform;
+    let mut channel = clocked.channel_hal(&mut platform, &mut lease);
     let mut state = oer_esp32s31_phy::PhyState::default();
     state.set_dot11p_configuration(dot11p_enabled, dot11p_configuration);
     let mut observer = oer_esp32s31_phy::target_port::NoopPhyTargetObserver;
@@ -277,11 +286,12 @@ oer_probe_macros::probe! {
             output_72: input[30..46].try_into().unwrap(),
             config: input[46] as u16,
         };
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         let binding =
             PhyChipChannelMmioBinding::new(PhyChipChannelAction::PublishTxGain(image)).unwrap();
-        binding.execute_target(&mut (), radio.phy_hal_mut());
+        binding.execute_target(&mut (), &mut phy);
         0
     }
 }
@@ -329,14 +339,15 @@ oer_probe_macros::probe! {
             calibration::bluetooth::{PhyBluetoothTxGainChild, PhyBluetoothTxGainPublication},
         };
         let image = bluetooth_gain_projection(input, output);
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         // A standalone gain child holds no caller's force-TX/RX level.
         match PhyBluetoothTxGainChild::new(
             PhyBluetoothTxGainPublication::new(image),
             PhyForceTxRxDepth::OUTERMOST,
         )
-        .execute_target::<oer_esp32s31_phy::RomShortDelay>(radio.phy_hal_mut())
+        .execute_target::<oer_esp32s31_phy::RomShortDelay>(&mut phy)
         {
             Ok(()) => 0,
             Err(_) => 1,
@@ -367,12 +378,13 @@ oer_probe_macros::probe! {
         } else {
             PhyTxDcPwdetTransition::new(parameters)
         };
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         let mut observer = NoopPhyTargetObserver;
         match calibration::tx_dc_pwdet_init::<oer_esp32s31_phy::RomShortDelay, _>(
             &mut child,
-            radio.phy_hal_mut(),
+            &mut phy,
             &core::cell::RefCell::new(&mut observer),
             || None,
         ) {
@@ -403,9 +415,10 @@ oer_probe_macros::probe! {
     /// Execute the same complete PBus-clear child used by runtime RX calibration.
     /// Only the parent request and isolated register capability are supplied here.
     pub fn open_phy_calibration_trace_pbus_clear() -> u32 {
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
-        let registers = radio.phy_hal_mut();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
+        let registers = &mut phy;
         use oer_esp32s31_phy::tracking::{calibration::*, parameters::PhyParamTrackRequest};
         let parent = PhyCalibrationTrackingTransition::new(
             PhyCalibrationTrackingRequest {
@@ -458,9 +471,10 @@ oer_probe_macros::probe! {
             target_port::{NoopPhyTargetObserver, calibration},
             tracking::{calibration::*, parameters::PhyParamTrackRequest},
         };
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
-        let registers = radio.phy_hal_mut();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
+        let registers = &mut phy;
         let mut parent = PhyCalibrationTrackingTransition::new(
             PhyCalibrationTrackingRequest {
                 clients: PhyParamTrackRequest::new(true, false),
@@ -526,8 +540,9 @@ oer_probe_macros::probe! {
             calibration::baseband::PhyRxGainMemoryParameters,
             rx::{gain::*, gain_calibration::PhyRxGainDcParameters},
         };
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         let mut child = if flags & 2 != 0 {
             PhyRxGainInitTransition::with_initialized_tables()
         } else {
@@ -551,7 +566,7 @@ oer_probe_macros::probe! {
         match oer_esp32s31_phy::target_port::calibration::rx_gain_init::<
             oer_esp32s31_phy::RomShortDelay,
             _,
-        >(&mut child, &mut (), radio.phy_hal_mut(), |_, _| {}, |_| {})
+        >(&mut child, &mut (), &mut phy, |_, _| {}, |_| {})
         {
             Ok(()) => {}
             Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => return 2,
@@ -603,8 +618,9 @@ oer_probe_macros::probe! {
         });
         let [shared_last, wifi_last] = input[7].to_le_bytes();
         validation::seed_rx_table_last_indices(&mut state, shared_last, wifi_last);
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         let mut observer = oer_esp32s31_phy::NoopPhyTargetObserver;
         let mut platform = ();
         // The PHY archive is compared without the coexistence archive, so its
@@ -616,7 +632,7 @@ oer_probe_macros::probe! {
             _,
             ProductionTraceDelay,
             _,
-        >::new(&mut platform, radio.phy_hal_mut(), &mut grant, &mut observer);
+        >::new(&mut platform, &mut phy, &mut grant, &mut observer);
         let mut progress = 0;
         let status = {
             let mut child = validation::calibration_tracking(
@@ -793,8 +809,9 @@ oer_probe_macros::probe! {
                 calibration: input[14] != 0,
             },
         );
-        let mut radio =
-            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        let radio = validation_radio();
+        let mut lease = acquire(&radio);
+        let mut phy = lease.phy_hal();
         let mut platform = ();
         // The PHY archive is compared without the coexistence archive, so its
         // weak grant-protect hooks return without effect.
@@ -802,7 +819,7 @@ oer_probe_macros::probe! {
         let mut port =
             oer_esp32s31_phy::TargetPhyParamTrackingPort::<_, _, _, ProductionTraceDelay, _>::new(
                 &mut platform,
-                radio.phy_hal_mut(),
+                &mut phy,
                 &mut grant,
                 oer_esp32s31_phy::NoopPhyTargetObserver,
             );
@@ -898,4 +915,20 @@ fn enter_common_force_level(
         force.advance(completion).ok()?;
     };
     parent.advance(completion).ok()
+}
+
+/// The arbiter of an isolated validation radio.
+fn validation_radio() -> oer_esp32s31_hal::shared_radio::SharedRadio<()> {
+    oer_esp32s31_hal::root::RadioHardware::for_validation()
+        .into_concurrent(())
+        .0
+}
+
+/// The lease of a fresh validation arbiter; nothing else can hold it.
+fn acquire(
+    radio: &oer_esp32s31_hal::shared_radio::SharedRadio<()>,
+) -> oer_esp32s31_hal::shared_radio::SharedRadioLease<'_, ()> {
+    radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a fresh validation arbiter grants its lease"))
 }

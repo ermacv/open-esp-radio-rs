@@ -1,13 +1,14 @@
 //! Compiled vendor-comparison entry points over an isolated HAL owner.
 //!
-//! Each call claims the validation radio owner, borrows its coexistence
-//! timer bank and runs the production core or timer sequence against it.
+//! Each call splits the validation radio root, borrows the coexistence timer
+//! bank through the arbiter lease and runs the production core or timer
+//! sequence against it.
 
 use core::cell::RefCell;
 
 use oer_esp32s31_hal::{
     coex::{CoexPolicyTimer, CoexTimerBank},
-    owner::RadioRuntimeOwner,
+    root::RadioHardware,
     types::{CoexTimerClientValue, CoexTimerPtiValue},
 };
 
@@ -114,12 +115,20 @@ impl CoexTimerHardware for TimerPort<'_, '_> {
     }
 }
 
+/// Borrow the timer bank of an isolated validation radio for one call.
+fn with_bank<R>(operation: impl FnOnce(CoexTimerBank<'_>) -> R) -> R {
+    let (radio, _partitions) = RadioHardware::for_validation().into_concurrent(());
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a fresh validation arbiter grants its lease"));
+    operation(lease.coex_timer_bank())
+}
+
 fn with_timer(index: u32, operation: impl FnOnce(&mut CoexTimerBank<'_>, CoexPolicyTimer)) {
     let Some(timer) = CoexPolicyTimer::new(index as u8) else {
         return;
     };
-    let mut owner = RadioRuntimeOwner::claim_for_validation();
-    operation(&mut owner.coex_timer_bank(), timer);
+    with_bank(|mut bank| operation(&mut bank, timer));
 }
 
 pub fn enable_timer(index: u32) {
@@ -148,20 +157,21 @@ pub fn program_timer(
     latency: u32,
     duration: u32,
 ) -> Result<(), CoexError> {
-    let mut owner = RadioRuntimeOwner::claim_for_validation();
-    let shared = SharedBank {
-        bank: RefCell::new(owner.coex_timer_bank()),
-        real_chip,
-    };
-    crate::program_timer(
-        &mut TimerPort { shared: &shared },
-        &mut ClockPort { shared: &shared },
-        index,
-        client,
-        pti,
-        latency,
-        duration,
-    )
+    with_bank(|bank| {
+        let shared = SharedBank {
+            bank: RefCell::new(bank),
+            real_chip,
+        };
+        crate::program_timer(
+            &mut TimerPort { shared: &shared },
+            &mut ClockPort { shared: &shared },
+            index,
+            client,
+            pti,
+            latency,
+            duration,
+        )
+    })
 }
 
 /// Execute one enabled core request. The boolean selects Bluetooth (`false`)
@@ -173,30 +183,32 @@ pub fn core_request(
 ) -> Result<(), CoexError> {
     let mut core = CoexCore::new();
     core.enable();
-    let mut owner = RadioRuntimeOwner::claim_for_validation();
-    let shared = SharedBank {
-        bank: RefCell::new(owner.coex_timer_bank()),
-        real_chip,
-    };
-    let mut timer = TimerPort { shared: &shared };
-    let mut clock = ClockPort { shared: &shared };
-    if wifi {
-        core.request_wifi(&mut timer, &mut clock, request)
-            .map(|_| ())
-    } else {
-        core.request_bluetooth(&mut timer, &mut clock, request)
-            .map(|_| ())
-    }
+    with_bank(|bank| {
+        let shared = SharedBank {
+            bank: RefCell::new(bank),
+            real_chip,
+        };
+        let mut timer = TimerPort { shared: &shared };
+        let mut clock = ClockPort { shared: &shared };
+        if wifi {
+            core.request_wifi(&mut timer, &mut clock, request)
+                .map(|_| ())
+        } else {
+            core.request_bluetooth(&mut timer, &mut clock, request)
+                .map(|_| ())
+        }
+    })
 }
 
 /// Execute one core release.
 pub fn core_release(event: CoexEventId) -> Result<(), CoexError> {
     let mut core = CoexCore::new();
-    let mut owner = RadioRuntimeOwner::claim_for_validation();
-    let shared = SharedBank {
-        bank: RefCell::new(owner.coex_timer_bank()),
-        real_chip: true,
-    };
-    core.release(&mut TimerPort { shared: &shared }, event)
-        .map(|_| ())
+    with_bank(|bank| {
+        let shared = SharedBank {
+            bank: RefCell::new(bank),
+            real_chip: true,
+        };
+        core.release(&mut TimerPort { shared: &shared }, event)
+    })
+    .map(|_| ())
 }

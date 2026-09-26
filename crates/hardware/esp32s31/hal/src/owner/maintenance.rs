@@ -1,13 +1,14 @@
-//! Shared-PHY access while the physical radio belongs exclusively to Wi-Fi.
+//! Shared-PHY maintenance admission and the stopped Wi-Fi MAC check.
 //!
-//! This transfers the existing physical owner, rather than minting an RF
-//! permission from a timer, client snapshot or mutex. The caller must first
-//! drain active TX and stop or pause its RX descriptor epoch. MAC and walker
-//! readbacks check that prerequisite; they do not retire software DMA leases.
-//! No BLE/IEEE 802.15.4 timeslot or concurrent coexistence grant is implied.
+//! Exclusive Bluetooth maintenance transfers the existing physical owner,
+//! rather than minting an RF permission from a timer, client snapshot or
+//! mutex. Wi-Fi reaches the shared PHY only through the arbiter lease; its
+//! stopped-MAC check confirms the final-client shutdown boundary. MAC and
+//! walker readbacks check that prerequisite; they do not retire software DMA
+//! leases.
 
 use super::{MacInterruptCheckpoint, MacInterruptSetup, RadioRuntimeOwner, SharedPhyHal, route};
-use crate::coex::{CoexPtiTable, PHY_GRANT_PROTECT_EVENT, PhyGrantProtect};
+use crate::coex::PhyGrantProtect;
 use crate::ieee80211::mac::WifiMacHal;
 
 mod sealed {
@@ -29,9 +30,8 @@ pub trait InterruptAuthority: sealed::InterruptAuthority {}
 
 /// Checked physical admission to shared-PHY maintenance for one protocol.
 ///
-/// Each protocol mints its access only after its own hardware quiescence
-/// check: Wi-Fi through [`RadioRuntimeOwner::try_into_phy_maintenance`], and
-/// Bluetooth through
+/// A protocol mints its access only after its own hardware quiescence
+/// check: Bluetooth through
 /// [`InterruptOutputAfterRoutesOwner::try_phy_maintenance`](crate::bluetooth::InterruptOutputAfterRoutesOwner::try_phy_maintenance).
 /// The access lends the shared PHY only under its own route, so a PHY
 /// operation can require the matching protocol. It is not a coexistence
@@ -67,25 +67,6 @@ pub trait PhyMaintenanceAccess: sealed::PhyMaintenanceAccess {
     fn phy_hal_with_grant(&mut self) -> (SharedPhyHal<'_, Self::Route>, PhyGrantProtect<'_>);
 }
 
-/// The cold PHY grant-protect priority of an exclusive route.
-const fn exclusive_grant_pti() -> crate::coex::CoexPti {
-    CoexPtiTable::VENDOR.pti(PHY_GRANT_PROTECT_EVENT)
-}
-
-impl<I: InterruptAuthority> sealed::PhyMaintenanceAccess for WifiAccess<I> {}
-
-impl<I: InterruptAuthority> PhyMaintenanceAccess for WifiAccess<I> {
-    type Route = route::Wifi;
-
-    fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Wifi> {
-        WifiAccess::phy_hal(self)
-    }
-
-    fn phy_hal_with_grant(&mut self) -> (SharedPhyHal<'_, route::Wifi>, PhyGrantProtect<'_>) {
-        WifiAccess::phy_hal_with_grant(self)
-    }
-}
-
 impl sealed::PhyMaintenanceAccess for crate::bluetooth::BluetoothMaintenanceAccess<'_> {}
 
 impl PhyMaintenanceAccess for crate::bluetooth::BluetoothMaintenanceAccess<'_> {
@@ -104,12 +85,8 @@ impl InterruptAuthority for MacInterruptCheckpoint {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
-    MacActive {
-        state: u8,
-    },
+    MacActive { state: u8 },
     RxWalkerEnabled,
-    /// The PHY grant-protect request is still programmed.
-    GrantProtectHeld,
 }
 
 /// Original resources retained when admission has made no hardware changes.
@@ -117,45 +94,6 @@ pub struct AdmissionFailure<I: InterruptAuthority = MacInterruptSetup> {
     pub error: Error,
     pub registers: RadioRuntimeOwner,
     pub interrupts: I,
-}
-
-/// Non-cloneable physical access retained until PHY execution and restoration
-/// finish. Pass this value **by ownership** across the maintenance future.
-/// Returning a `SharedPhyHal` borrow alone would leave a reusable radio owner
-/// outside a cancelled hardware operation.
-///
-/// The complete IRQ authority is retained here, so the runtime cannot install its route
-/// while the operation owns the registers. There is no arena publication or
-/// register-owner extraction except checked release.
-///
-/// ```compile_fail
-/// use oer_esp32s31_hal::owner::maintenance::WifiAccess;
-/// fn duplicate(access: WifiAccess) -> (WifiAccess, WifiAccess) {
-///     (access, access)
-/// }
-/// ```
-///
-/// ```compile_fail
-/// use oer_esp32s31_hal::owner::{MacInterruptSetup, RadioRuntimeOwner};
-/// fn reuse(mut registers: RadioRuntimeOwner, setup: MacInterruptSetup) {
-///     let access = registers.try_into_phy_maintenance(setup);
-///     let mac = registers.wifi_mac_hal();
-/// }
-/// ```
-/// A paused route cannot be released as a cold setup:
-///
-/// ```compile_fail
-/// use oer_esp32s31_hal::owner::{MacInterruptCheckpoint, MacInterruptSetup, maintenance::WifiAccess};
-/// fn discard_epoch(access: WifiAccess<MacInterruptCheckpoint>) -> MacInterruptSetup {
-///     let (_, setup) = access.try_release().ok().unwrap();
-///     setup
-/// }
-/// ```
-#[must_use = "physical maintenance access must be restored and explicitly released"]
-pub struct WifiAccess<I: InterruptAuthority = MacInterruptSetup> {
-    registers: RadioRuntimeOwner,
-    interrupts: I,
-    grant_protected: bool,
 }
 
 impl RadioRuntimeOwner {
@@ -166,17 +104,6 @@ impl RadioRuntimeOwner {
         interrupts: I,
     ) -> Result<(Self, I), AdmissionFailure<I>> {
         confirm_stopped(self, interrupts, |registers| {
-            check_stopped(&mut registers.wifi_mac_hal())
-        })
-    }
-
-    /// Transfer stopped or paused physical ownership into PHY maintenance. This does
-    /// not stop the MAC, DMA or CPU interrupt route on the caller's behalf.
-    pub fn try_into_phy_maintenance<I: InterruptAuthority>(
-        self,
-        interrupts: I,
-    ) -> Result<WifiAccess<I>, AdmissionFailure<I>> {
-        admit(self, interrupts, |registers| {
             check_stopped(&mut registers.wifi_mac_hal())
         })
     }
@@ -195,83 +122,6 @@ fn confirm_stopped<I: InterruptAuthority>(
         });
     }
     Ok((registers, interrupts))
-}
-
-// These private transfers keep the production check and ownership branches
-// together. Tests inject readback outcomes, never replacement radio behavior.
-fn admit<I: InterruptAuthority>(
-    mut registers: RadioRuntimeOwner,
-    interrupts: I,
-    check: impl FnOnce(&mut RadioRuntimeOwner) -> Result<(), Error>,
-) -> Result<WifiAccess<I>, AdmissionFailure<I>> {
-    if let Err(error) = check(&mut registers) {
-        return Err(AdmissionFailure {
-            error,
-            registers,
-            interrupts,
-        });
-    }
-    Ok(WifiAccess {
-        registers,
-        interrupts,
-        grant_protected: false,
-    })
-}
-
-impl<I: InterruptAuthority> WifiAccess<I> {
-    /// Narrow PHY borrow within the retained physical operation.
-    pub fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Wifi> {
-        let (registers, restore) = self.registers.phy_parts_mut();
-        SharedPhyHal::new(registers, restore)
-    }
-
-    /// Narrow PHY borrow together with this access's PHY grant-protect
-    /// request. Release is refused while the request is programmed.
-    pub fn phy_hal_with_grant(&mut self) -> (SharedPhyHal<'_, route::Wifi>, PhyGrantProtect<'_>) {
-        let (registers, restore, timers) = self.registers.phy_and_coex_timer_parts_mut();
-        (
-            SharedPhyHal::new(registers, restore),
-            PhyGrantProtect::new(timers, exclusive_grant_pti(), &mut self.grant_protected),
-        )
-    }
-
-    /// Restore the caller's MAC postconditions after PHY children which may
-    /// alter baseband enables. Descriptor and IRQ owners remain unavailable.
-    pub fn wifi_mac_hal(&mut self) -> WifiMacHal<'_> {
-        self.registers.wifi_mac_hal()
-    }
-
-    /// Release only after the completed operation has restored stopped MAC
-    /// and DMA. A failed readback retains the entire access, requiring reset;
-    /// it cannot yield an apparently stopped owner.
-    pub fn try_release(self) -> Result<(RadioRuntimeOwner, I), ReleaseFailure<I>> {
-        self.release_with(|registers| check_stopped(&mut registers.wifi_mac_hal()))
-    }
-
-    fn release_with(
-        mut self,
-        check: impl FnOnce(&mut RadioRuntimeOwner) -> Result<(), Error>,
-    ) -> Result<(RadioRuntimeOwner, I), ReleaseFailure<I>> {
-        if self.grant_protected {
-            return Err(ReleaseFailure {
-                error: Error::GrantProtectHeld,
-                _access: self,
-            });
-        }
-        if let Err(error) = check(&mut self.registers) {
-            return Err(ReleaseFailure {
-                error,
-                _access: self,
-            });
-        }
-        Ok((self.registers, self.interrupts))
-    }
-}
-
-#[must_use = "failed restoration retains the physical radio and requires reset"]
-pub struct ReleaseFailure<I: InterruptAuthority = MacInterruptSetup> {
-    pub error: Error,
-    _access: WifiAccess<I>,
 }
 
 // Closed readback interface: tests exercise the actual admission/release

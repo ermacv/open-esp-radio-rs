@@ -3,8 +3,7 @@
 use core::mem::size_of;
 
 use crate::{
-    PhyCalibrationCache, PhyState, RegisteredPhyPoweredIdle, RegisteredPhyRadio,
-    RegisteredPhyRfClosed, RegisteredPhyState, RegisteredWifiPhy,
+    PhyCalibrationCache, PhyState, RegisteredPhyState,
     calibration::{baseband::PhyBbInitTransition, registration::PhyRegisterTransition},
     rx::{
         gain::{PhyRxGainInitExternalBinding, PhyRxGainInitTransition, PhyRxGainPublishTransition},
@@ -21,9 +20,9 @@ use crate::{
 // layouts; they prevent a return to an opaque 508-byte state plus a 524-byte
 // duplicate without making compiler padding part of the API.
 const PHY_STATE_LIMIT: usize = 384;
-// This covers the coupled proof/radio overhead; an integration token `P` may
-// add its own platform-defined storage.
-const REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT: usize = 448;
+// The shared domain retains the registration plus the bounded client
+// scheduler.
+const CONCURRENT_PHY_LIMIT: usize = 448;
 const PHY_CALIBRATION_CACHE_LIMIT: usize = 320;
 const PHY_REGISTER_TRANSITION_LIMIT: usize = 2_560;
 const PHY_BB_INIT_TRANSITION_LIMIT: usize = 1_600;
@@ -40,11 +39,7 @@ const _: () = {
     assert!(size_of::<PhyRxDcCalibrationExternalBinding>() <= RX_EXTERNAL_BINDING_LIMIT);
     assert!(size_of::<PhyState>() <= PHY_STATE_LIMIT);
     assert!(size_of::<RegisteredPhyState>() <= PHY_STATE_LIMIT);
-    // Runtime retains the registration plus the same bounded client scheduler.
-    assert!(size_of::<RegisteredWifiPhy>() <= REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT);
-    assert!(size_of::<RegisteredPhyRadio<()>>() <= REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT);
-    assert!(size_of::<RegisteredPhyPoweredIdle<()>>() <= REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT);
-    assert!(size_of::<RegisteredPhyRfClosed<()>>() <= REGISTERED_PHY_RADIO_UNIT_PLATFORM_LIMIT);
+    assert!(size_of::<crate::concurrent::ConcurrentPhy>() <= CONCURRENT_PHY_LIMIT);
     assert!(size_of::<PhyCalibrationCache>() <= PHY_CALIBRATION_CACHE_LIMIT);
     assert!(size_of::<PhyRegisterTransition>() <= PHY_REGISTER_TRANSITION_LIMIT);
     assert!(size_of::<PhyBbInitTransition>() <= PHY_BB_INIT_TRANSITION_LIMIT);

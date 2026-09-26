@@ -23,12 +23,14 @@
 //! semantic register access come from the HAL; protocol roles and executors
 //! live above this layer.
 //!
-//! Start with [`PhyConfig`] and the registration state machine, then use
-//! [`RegisteredPhyRadio`] to acquire a Wi-Fi, Bluetooth, or IEEE 802.15.4
-//! client. [`RegisteredWifiPhy`] and [`RegisteredBluetoothPhy`] keep the
-//! registration identity and tracking state attached to the live client.
-//! Releasing a non-final client returns a still-powered shared owner; only the
-//! final-client close path may proceed toward a cold owner.
+//! Start with [`PhyConfig`] and the registration state machine. Concurrent
+//! protocols share one PHY domain through the radio arbiter:
+//! [`register_concurrent_phy`] registers it for the first client, and
+//! [`wifi_client`] and [`ieee802154_client`] join and leave it.
+//! [`RegisteredBluetoothPhy`] keeps the registration identity and tracking
+//! state attached to the exclusive Bluetooth client. Releasing a non-final
+//! client keeps the domain powered; only the final-client close path closes
+//! RF.
 //!
 //! # Ownership and cancellation
 //!
@@ -90,17 +92,9 @@ mod tx;
 pub mod concurrent;
 pub mod ieee802154_client;
 mod registered_bluetooth;
-mod registered_radio;
 pub mod registered_route;
-mod registered_wifi;
 mod retained;
 pub mod wifi_client;
-pub use registered_wifi::{
-    RegisteredWifiPhy, RegisteredWifiPhyClientReleaseError, RegisteredWifiPhyClientReleaseFailure,
-    WifiPhyMaintenanceRequest,
-};
-#[cfg(target_arch = "riscv32")]
-pub use registered_wifi::{WifiPhyMaintenanceError, WifiPhyMaintenanceFailure};
 pub use retained::{RetainedPhy, RetainedPhyMismatch};
 mod size_limits;
 #[cfg(feature = "validation-probes")]
@@ -144,19 +138,6 @@ pub use registered_bluetooth::{
     RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure,
     RegisteredBluetoothPhyTrackPoisoned,
 };
-pub use registered_radio::{
-    RegisteredPhyClientAcquire, RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,
-    RegisteredPhyClientReleaseDisposition, RegisteredPhyClientReleaseFailure,
-    RegisteredPhyPendingTrack, RegisteredPhyPendingTracking, RegisteredPhyPoweredIdle,
-    RegisteredPhyRadio, RegisteredPhyRetainedReleaseFailure, RegisteredPhyRfClosed,
-    RegisteredPhyTrackEvaluation, RegisteredPhyTrackEvaluationFailure, RegisteredPhyTrackPoisoned,
-};
-#[cfg(target_arch = "riscv32")]
-pub use registered_radio::{
-    RegisteredPhyColdReleaseFailure, RegisteredPhyColdReleased, RegisteredPhyRfCloseFailure,
-    RegisteredPhyRfClosePoisoned, RegisteredPhyRfClosePreparationFailure,
-    RegisteredPhyRfWakePoisoned,
-};
 pub use state::{
     PHY_CALIBRATION_SNAPSHOT_SCHEMA, PhyBluetoothCalibration, PhyCalibrationCache,
     PhyCalibrationSnapshot, PhyCommonCalibration, PhyConfig, PhyState, PhyWifiCalibration,
@@ -193,10 +174,7 @@ pub use target_port::{
     NoopPhyTargetObserver, PhyDomainRegisterFailure, PhyDomainRegistered, PhyGrantProtectPort,
     PhyRegisterConfig, PhyRfBoundary, PhyRfCloseFailure, PhyRfWakeFailure, PhyRfWakePoisoned,
     PhyTargetObserver, PhyTargetPortCounters, PhyTrackingFailure, PhyTrackingSuccess,
-    TargetPhyParamTrackingError, TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess,
-    TargetPhyRegisterAttempt, TargetPhyRegisterError, TargetPhyRegisterFailure,
-    TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts, run_target_phy_param_tracking,
-    run_target_phy_register, select_registered_wifi_channel, switch_registered_wifi_channel,
+    TargetPhyParamTrackingError, TargetPhyRegisterError,
 };
 #[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub use target_port::{

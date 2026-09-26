@@ -191,22 +191,6 @@ pub(crate) struct CommonPhyPower {
     power: PowerEpoch,
 }
 
-#[cfg(test)]
-impl CommonPhyPower {
-    /// Established common power for ownership tests that must not touch MMIO.
-    pub(crate) fn for_test() -> Self {
-        Self {
-            phy_i2c: GateLease {
-                gate: SharedModemClockGate::PhyI2cMaster,
-                baseline: true,
-            },
-            power: PowerEpoch {
-                baseline: Some(WifiPowerBaseline::for_validation(false)),
-            },
-        }
-    }
-}
-
 /// Why a route cannot hand its common PHY power to another route.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommonPhyPowerError {
@@ -215,19 +199,6 @@ pub enum CommonPhyPowerError {
 }
 
 impl SharedClockLeases {
-    /// Release this route's coexistence lease and keep the PHY-I2C lease for
-    /// the common PHY power.
-    fn into_common(
-        self,
-        port: &mut impl ClockPort,
-        power: PowerEpoch,
-    ) -> Result<CommonPhyPower, (Self, PowerEpoch, CommonPhyPowerError)> {
-        if !Self::powered(&self, &power) {
-            return Err((self, power, CommonPhyPowerError::NotPowered));
-        }
-        Ok(self.into_powered_common(port, power))
-    }
-
     fn powered(&self, power: &PowerEpoch) -> bool {
         self.phy_i2c.is_some() && power.baseline.is_some()
     }
@@ -625,37 +596,6 @@ impl BluetoothClocks {
     ) -> Result<(), WifiPowerRestoreCheckpoint> {
         let pll_retained = self.platform_pll.is_some();
         self.power.restore(port, pll_retained)
-    }
-}
-
-/// Clock leases and the cold-power baseline retained by the Wi-Fi route.
-#[derive(Default)]
-pub(crate) struct WifiClocks {
-    pub(crate) shared: SharedClockLeases,
-    pub(crate) power: PowerEpoch,
-}
-
-impl WifiClocks {
-    /// Keep the common PHY power for another route and release Wi-Fi's own
-    /// coexistence lease.
-    pub(crate) fn into_common(
-        self,
-        port: &mut impl ClockPort,
-    ) -> Result<CommonPhyPower, (Self, CommonPhyPowerError)> {
-        self.shared
-            .into_common(port, self.power)
-            .map_err(|(shared, power, error)| (Self { shared, power }, error))
-    }
-
-    /// Whether [`Self::into_common`] would accept this route; no MMIO.
-    pub(crate) fn common_powered(&self) -> bool {
-        self.shared.powered(&self.power)
-    }
-
-    /// Enter the Wi-Fi route with the common PHY power already in effect.
-    pub(crate) fn from_common(common: CommonPhyPower) -> Self {
-        let (shared, power) = SharedClockLeases::from_common(common);
-        Self { shared, power }
     }
 }
 

@@ -9,8 +9,7 @@ use oer_esp32s31_pac::{
 
 use super::{
     BluetoothClocks, BluetoothSysconClocks, ClockPort, CommonPhyPowerError, CommonRadioPower,
-    CommonRadioPowerError, PowerEpoch, RadioClient, SharedClockLeases, WifiClocks,
-    WifiPowerRestoreCheckpoint,
+    CommonRadioPowerError, PowerEpoch, RadioClient, SharedClockLeases, WifiPowerRestoreCheckpoint,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -263,57 +262,6 @@ fn bluetooth_route_releases_every_lease_in_teardown_order() {
     );
 }
 
-/// A Wi-Fi route after its power sequence and MAC coexistence retention.
-fn powered_wifi(port: &mut Port) -> WifiClocks {
-    let mut clocks = WifiClocks::default();
-    clocks.power.prepare(port);
-    clocks.shared.retain_phy_i2c(port);
-    clocks.shared.retain_coexistence(port);
-    clocks
-}
-
-#[test]
-fn wifi_handoff_keeps_common_power_for_bluetooth_to_restore_once() {
-    let cold = WifiPowerBaseline::for_validation(false);
-    let mut port = Port::new();
-    port.power = cold;
-    let wifi = powered_wifi(&mut port);
-    port.operations.clear();
-
-    let common = match wifi.into_common(&mut port) {
-        Ok(common) => common,
-        Err(_) => panic!("a powered Wi-Fi route hands over its common PHY power"),
-    };
-    // Only Wi-Fi's coexistence lease is released; PHY-I2C and the baseline stay.
-    assert_eq!(
-        port.operations,
-        [Operation::SetGate(SharedModemClockGate::Coexistence, false)]
-    );
-
-    // Bluetooth inherits the power; its own later capture must not replace
-    // the first route's cold baseline.
-    port.operations.clear();
-    port.power = WifiPowerBaseline::for_validation(true);
-    let mut bluetooth = BluetoothClocks::from_common(common);
-    assert!(bluetooth.common_inherited());
-    bluetooth.prepare_power_epoch(&port);
-    bluetooth.retain_platform_pll_source(&mut port);
-    bluetooth.retain_coexistence(&mut port);
-    bluetooth.release_all(&mut port);
-    assert_eq!(bluetooth.restore_power_epoch(&mut port), Ok(()));
-    assert_eq!(
-        port.operations,
-        [
-            Operation::ConfigurePll,
-            Operation::SetGate(SharedModemClockGate::Coexistence, true),
-            Operation::SetGate(SharedModemClockGate::PhyI2cMaster, false),
-            Operation::SetGate(SharedModemClockGate::Coexistence, false),
-            Operation::RestorePll,
-            Operation::RestorePower(cold),
-        ]
-    );
-}
-
 #[test]
 fn bluetooth_handoff_releases_its_own_leases_and_supersedes_the_pll_source() {
     let cold = WifiPowerBaseline::for_validation(false);
@@ -329,7 +277,7 @@ fn bluetooth_handoff_releases_its_own_leases_and_supersedes_the_pll_source() {
     clocks.shared_mut().retain_phy_i2c(&mut port);
     port.operations.clear();
 
-    let common = match clocks.into_common(&mut port) {
+    let _common = match clocks.into_common(&mut port) {
         Ok(common) => common,
         Err(_) => panic!("a powered Bluetooth route hands over its common PHY power"),
     };
@@ -344,29 +292,11 @@ fn bluetooth_handoff_releases_its_own_leases_and_supersedes_the_pll_source() {
         .chain([Operation::SetGate(SharedModemClockGate::Coexistence, false)])
         .collect::<Vec<_>>()
     );
-
-    // Wi-Fi inherits the power and restores the PHY-I2C gate and the cold
-    // baseline once when it finally returns the cold root.
-    port.operations.clear();
-    let mut wifi = WifiClocks::from_common(common);
-    wifi.shared.release_all(&mut port);
-    assert_eq!(wifi.power.restore(&mut port, false), Ok(()));
-    assert_eq!(
-        port.operations,
-        [
-            Operation::SetGate(SharedModemClockGate::PhyI2cMaster, false),
-            Operation::RestorePower(cold),
-        ]
-    );
 }
 
 #[test]
 fn unpowered_routes_cannot_hand_over_common_phy_power() {
     let mut port = Port::new();
-    let Err((_clocks, error)) = WifiClocks::default().into_common(&mut port) else {
-        panic!("an unpowered Wi-Fi route must keep its clocks");
-    };
-    assert_eq!(error, CommonPhyPowerError::NotPowered);
     let Err((_clocks, error)) = BluetoothClocks::default().into_common(&mut port) else {
         panic!("an unpowered Bluetooth route must keep its clocks");
     };

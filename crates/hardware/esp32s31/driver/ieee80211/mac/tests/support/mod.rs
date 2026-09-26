@@ -21,9 +21,6 @@ pub(super) enum Operation {
     InitializeHePrefix,
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
-    RetainCoexistenceClock,
-    ConfigureModemSourceClocks,
-    EnableWifiMacClocks,
     SetWifiMacReset(bool),
     InitializeRxBufferPrefix,
     ConfigureRxDescriptorWindow,
@@ -47,9 +44,6 @@ pub(super) enum Operation {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ColdStartClockEdge {
-    EnableWifiMacClocks,
-    RetainCoexistenceClock,
-    ConfigureModemSourceClocks,
     SetWifiMacReset(bool),
 }
 
@@ -135,22 +129,7 @@ impl MockMmio {
     }
 }
 
-impl MacSharedClockHardware for MockMmio {
-    fn retain_coexistence_clock(&mut self) {
-        self.record_clock_edge(ColdStartClockEdge::RetainCoexistenceClock);
-        self.operations.push(Operation::RetainCoexistenceClock);
-    }
-
-    fn configure_modem_source_clocks(&mut self) {
-        self.record_clock_edge(ColdStartClockEdge::ConfigureModemSourceClocks);
-        self.operations.push(Operation::ConfigureModemSourceClocks);
-    }
-
-    fn enable_wifi_mac_clocks(&mut self) {
-        self.record_clock_edge(ColdStartClockEdge::EnableWifiMacClocks);
-        self.operations.push(Operation::EnableWifiMacClocks);
-    }
-
+impl MacResetHardware for MockMmio {
     fn set_wifi_mac_reset(&mut self, asserted: bool) {
         self.record_clock_edge(ColdStartClockEdge::SetWifiMacReset(asserted));
         self.operations.push(Operation::SetWifiMacReset(asserted));

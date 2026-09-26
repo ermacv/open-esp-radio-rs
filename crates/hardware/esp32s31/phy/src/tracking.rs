@@ -30,10 +30,6 @@ pub mod temperature;
 #[cfg(not(feature = "validation-probes"))]
 pub(crate) mod temperature;
 
-pub mod maintenance;
-
-pub mod service;
-
 /// Terminal shared-PHY policy and its required hardware postcondition.
 pub mod fail_stop;
 

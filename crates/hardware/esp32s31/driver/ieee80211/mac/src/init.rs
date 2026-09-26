@@ -89,24 +89,15 @@ impl MacRuntimeStopHardware for oer_esp32s31_hal::owner::RadioRuntimeOwner {
     }
 }
 
-/// Route-owned shared clock operations required before touching MAC-local MMIO.
-pub trait MacSharedClockHardware {
-    fn retain_coexistence_clock(&mut self);
-    fn configure_modem_source_clocks(&mut self);
-    fn enable_wifi_mac_clocks(&mut self);
+/// The Wi-Fi MAC reset pulse, which runs through the shared radio owner.
+///
+/// The Wi-Fi module clocks (`wifi_clock_enable()`) are already on: the
+/// clocked Wi-Fi client of the radio arbiter proves them.
+pub trait MacResetHardware {
     fn set_wifi_mac_reset(&mut self, asserted: bool);
 }
 
-impl MacSharedClockHardware for oer_esp32s31_hal::ieee80211::mac::WifiMacColdHal<'_> {
-    fn retain_coexistence_clock(&mut self) {
-        self.retain_coexistence_clock();
-    }
-    fn configure_modem_source_clocks(&mut self) {
-        self.configure_modem_source_clocks();
-    }
-    fn enable_wifi_mac_clocks(&mut self) {
-        self.enable_wifi_mac_clocks();
-    }
+impl MacResetHardware for oer_esp32s31_hal::ieee80211::mac::WifiMacColdHal<'_> {
     fn set_wifi_mac_reset(&mut self, asserted: bool) {
         self.set_wifi_mac_reset(asserted);
     }
@@ -162,21 +153,19 @@ pub fn initialize_wifi_mac<
         + MacColdTxRxHardware
         + MacInterfaceAddressHardware
         + MacLowRateHardware
-        + MacSharedClockHardware,
+        + MacResetHardware,
     P: MacCoexPtiSource + MacDelayEntropy + MacSlowClockCalibrationSource + MacTxPowerSource,
 >(
     platform: &mut P,
     mmio: &mut M,
     config: MacColdStartConfig,
 ) -> Result<MacColdStartOutcome, MacColdStartError> {
-    // Match the vendor lifecycle's `wifi_clock_enable()` followed by
-    // `wifi_reset_mac()`. The earlier PHY-owner reset can occur while the MAC
-    // functional clock is still gated, so it is not sufficient to establish
-    // a cold MAC register state after a warm SoC reset. Reset only WIFIMAC
-    // here; the calibrated Wi-Fi baseband remains live.
-    mmio.enable_wifi_mac_clocks();
-    mmio.retain_coexistence_clock();
-    mmio.configure_modem_source_clocks();
+    // Match the vendor lifecycle's `wifi_reset_mac()` after
+    // `wifi_clock_enable()`, which the clocked Wi-Fi client already proves.
+    // An earlier reset can occur while the MAC functional clock is still
+    // gated, so it is not sufficient to establish a cold MAC register state
+    // after a warm SoC reset. Reset only WIFIMAC here; the calibrated Wi-Fi
+    // baseband remains live.
     mmio.set_wifi_mac_reset(true);
     mmio.set_wifi_mac_reset(false);
 

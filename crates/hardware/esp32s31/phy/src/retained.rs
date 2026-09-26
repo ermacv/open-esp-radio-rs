@@ -77,15 +77,6 @@ impl RetainedPhy {
     pub fn into_rf_closed<R: PhyRoute>(self) -> (RetainedRadioHardware, PhyRfClosed<R>) {
         (self.hardware, PhyRfClosed::new(self.domain))
     }
-
-    /// Enter the Wi-Fi route. The returned owner still has RF closed; wake it
-    /// with [`crate::RegisteredPhyRfClosed::wake_rf`].
-    pub fn into_wifi<P>(self, peripheral: P) -> crate::RegisteredPhyRfClosed<P> {
-        crate::RegisteredPhyRfClosed::from_retained(
-            oer_esp32s31_hal::owner::Radio::from_retained(peripheral, self.hardware),
-            self.domain,
-        )
-    }
 }
 
 /// A closed domain presented with a root of another registration.

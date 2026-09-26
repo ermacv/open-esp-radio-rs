@@ -168,14 +168,9 @@ fn ap_availability_qualifies_only_selected_functional_transitions() {
         .unwrap();
     assert_eq!(
         recovery.implementation,
-        crate::model::ImplementationProof::Incomplete
+        crate::model::ImplementationProof::Complete
     );
-    assert!(
-        recovery
-            .gaps
-            .iter()
-            .any(|gap| { gap.id == "ordinary-tx-protection-required-unimplemented" })
-    );
+    assert!(recovery.gaps.is_empty());
     assert!(
         recovery.hil_requirements[0]
             .checks

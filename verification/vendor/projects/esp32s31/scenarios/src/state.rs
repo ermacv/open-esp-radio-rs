@@ -54,9 +54,19 @@ const RX_GAIN: Claim = (
 const CHANNEL: Claim = ("phy_chip_set_chan", "open_phy_channel_trace_state");
 const RFPLL_MAINTAIN: Claim = ("phy_rfpll_cap_track_new", "open_phy_rfpll_trace_maintain");
 const RFPLL_THERMAL: Claim = ("phy_rfpll_cap_track_new", "open_phy_rfpll_trace_track");
+const AP_TSF_START: Claim = (
+    "hal_mac_tsf_reset",
+    "open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset",
+);
 
 /// Reviewed unprojected vendor state.
 pub const DECISIONS: &[Decision] = &[
+    Decision {
+        reason: "`wdev.o` beacon-schedule cursor `BcnSendTick` that a fresh AP TSF epoch clears \
+            for `wDev_Get_Next_TBTT`: production keeps the TBTT cursor in the AP engine's beacon \
+            state, which each started engine creates empty, not in the MAC TSF leaf",
+        places: &[place(AP_TSF_START, "BcnSendTick", 0, 4)],
+    },
     Decision {
         reason: "`phy_track.o` static `s_track_result`, named by its section anchor: a debug \
             copy of the current, power, common and transmit reference temperatures, the RFPLL \

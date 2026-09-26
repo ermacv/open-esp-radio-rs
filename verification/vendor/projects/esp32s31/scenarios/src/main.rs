@@ -6,7 +6,7 @@ use oer_esp32s31_vendor_scenarios::{
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
-    harness_edges, i2c, i2c_transport, observation,
+    harness_edges, i2c, i2c_transport, mac, observation,
     phy::PhyOptions,
     research, rfpll, rx_gain, session, state, tracking, tx_dc,
 };
@@ -71,9 +71,20 @@ enum Scenario {
         /// Authenticated `librftest.a` (RF-test power producer).
         #[arg(long)]
         rftest: PathBuf,
+        /// Authenticated `libpp.a` (Wi-Fi MAC HAL leaves).
+        #[arg(long)]
+        libpp: PathBuf,
         /// Write the native evidence index qualification reads.
         #[arg(long)]
         index: Option<PathBuf>,
+    },
+    /// Wi-Fi MAC HAL leaves of `libpp.a` over every radio register fill.
+    WifiMac {
+        #[command(flatten)]
+        common: Common,
+        /// Authenticated `libpp.a`.
+        #[arg(long)]
+        libpp: PathBuf,
     },
     /// Combined calibration and parameter tracking parents with their real
     /// children, RFPLL corrections and failed-TX containment.
@@ -458,6 +469,28 @@ fn channel(common: Common) -> Result<Outcome> {
     ))
 }
 
+fn wifi_mac(common: Common, libpp: PathBuf) -> Result<Outcome> {
+    let options = mac::MacOptions {
+        binary: common.binary,
+        libpp,
+        rom: common.rom,
+        production: common.production,
+        linker: common.linker,
+        output: common.output,
+        budget: common.budget,
+        patches: common.patches,
+    };
+    let mut ctx = mac::Mac::new(&options)?;
+    mac::exercise(&mut ctx)?;
+    let claims = ctx
+        .session
+        .claims("wifi-mac", &ctx.roots, &mac::claims(), coverage::DECISIONS)?;
+    Ok((
+        finish(&[], "authenticated Wi-Fi MAC HAL leaves passed", &ctx.run),
+        claims,
+    ))
+}
+
 fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = rx_gain::RxGain::new(&common.phy(), &phy_sdk)?;
     rx_gain::exercise(&mut ctx)?;
@@ -592,7 +625,7 @@ mod evidence {
 
     pub fn index(
         common: &Common,
-        optional: &[&PathBuf; 3],
+        optional: &[&PathBuf; 4],
         entries: Vec<Entry>,
         untriaged: Vec<evidence_index::Location>,
         unobserved: Vec<evidence_index::SourceLine>,
@@ -607,6 +640,7 @@ mod evidence {
             ("sdk", optional[0]),
             ("phy-sdk", optional[1]),
             ("rftest", optional[2]),
+            ("libpp", optional[3]),
         ] {
             inputs.insert(role.to_owned(), sha256(path)?);
         }
@@ -647,6 +681,7 @@ fn all(
     sdk: PathBuf,
     phy_sdk: PathBuf,
     rftest: PathBuf,
+    libpp: PathBuf,
     index: Option<PathBuf>,
 ) -> Result<ExitCode> {
     if !common.patches.is_empty() {
@@ -685,6 +720,10 @@ fn all(
         (
             "tracking",
             Box::new(|| tracking(within("tracking"), phy_sdk.clone())),
+        ),
+        (
+            "wifi-mac",
+            Box::new(|| wifi_mac(within("wifi-mac"), libpp.clone())),
         ),
     ];
     // Scenarios share no state: each owns its session and output directory.
@@ -795,7 +834,7 @@ fn all(
     if let Some(path) = index {
         let index = evidence::index(
             &common,
-            &[&sdk, &phy_sdk, &rftest],
+            &[&sdk, &phy_sdk, &rftest, &libpp],
             entries,
             coverage::uncovered_everywhere(&closures, untriaged)
                 .into_iter()
@@ -829,13 +868,15 @@ fn main() -> ExitCode {
         Scenario::RxGain { common, phy_sdk } => single(rx_gain(common, phy_sdk)),
         Scenario::TxDc { common, phy_sdk } => single(tx_dc(common, phy_sdk)),
         Scenario::Tracking { common, phy_sdk } => single(tracking(common, phy_sdk)),
+        Scenario::WifiMac { common, libpp } => single(wifi_mac(common, libpp)),
         Scenario::All {
             common,
             sdk,
             phy_sdk,
             rftest,
+            libpp,
             index,
-        } => all(common, sdk, phy_sdk, rftest, index),
+        } => all(common, sdk, phy_sdk, rftest, libpp, index),
         Scenario::Research {
             binary,
             library,

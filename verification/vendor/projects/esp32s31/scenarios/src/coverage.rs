@@ -58,6 +58,31 @@ pub struct Decision {
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "MAC selectors outside the claimed bounded features: `hal_mac_tsf_reset` \
+            selector 1 (the mesh TSF `wDev_Mesh_Enable_Tsf` enables), 3 and other values, and \
+            `hal_mac_clr_txq_state` selectors other than 2; production has no mesh role and \
+            implements only the fresh AP epoch and the ordinary transmit-completion clear",
+        places: &[
+            // The selector dispatch and the other epochs after the fresh one.
+            Place::Range {
+                function: "hal_mac_tsf_reset",
+                start: 0x2,
+                end: 0xe,
+            },
+            Place::Range {
+                function: "hal_mac_tsf_reset",
+                start: 0x5e,
+                end: 0xf8,
+            },
+            // Every arm before the selector-2 clear.
+            Place::Range {
+                function: "hal_mac_clr_txq_state",
+                start: 0x0,
+                end: 0x2e,
+            },
+        ],
+    },
+    Decision {
         reason: "vendor diagnostic formatting; production emits no vendor console output",
         places: &[
             Place::Function("ets_printf"),

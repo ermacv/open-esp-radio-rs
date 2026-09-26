@@ -11,7 +11,7 @@ use crate::calibration::registration::{
     PhyRegisterLocalStep, PhyRegisterOutcome, PhyRegisterTransition, PhyRegisterTransitionError,
 };
 
-const CALIBRATION_TRACKING_PARENT_EDGE_LIMIT: u8 = 32;
+use crate::tracking::calibration::CALIBRATION_TRACKING_ACTION_LIMIT;
 const PARAM_TRACKING_PARENT_EDGE_LIMIT: u8 = 16;
 
 /// Async completion boundary for one identity-bound PHY hardware operation.
@@ -167,7 +167,7 @@ pub async fn run_phy_calibration_tracking<P: PhyCalibrationTrackingPort>(
     transition: &mut crate::tracking::parameters::PhyParamTrackingCalibrationTransition<'_>,
     port: &mut P,
 ) -> Result<(), PhyCalibrationTrackingRunError<P::Error>> {
-    for _ in 0..CALIBRATION_TRACKING_PARENT_EDGE_LIMIT {
+    for _ in 0..CALIBRATION_TRACKING_ACTION_LIMIT {
         match transition.action() {
             crate::tracking::calibration::PhyCalibrationTrackingAction::Complete(_) => {
                 return Ok(());

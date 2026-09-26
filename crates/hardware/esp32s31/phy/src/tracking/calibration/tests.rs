@@ -173,7 +173,7 @@ fn run(
 ) -> Vec<PhyCalibrationTrackingAction> {
     let mut transition = PhyCalibrationTrackingTransition::new(request, parameters);
     let mut actions = Vec::new();
-    for _ in 0..40 {
+    for _ in 0..CALIBRATION_TRACKING_ACTION_LIMIT {
         let action = transition.action();
         actions.push(action);
         if matches!(
@@ -1226,6 +1226,27 @@ fn zero_threshold_runs_both_branches_without_changing_temperature() {
 }
 
 mod selection;
+
+#[test]
+fn the_longest_path_fills_the_driver_action_bound() {
+    let actions = run(
+        PhyCalibrationTrackingRequest {
+            clients: crate::tracking::parameters::PhyParamTrackRequest::new(true, true),
+        },
+        PhyCalibrationTrackingParameters {
+            threshold_override: Some(0),
+            ..PARAMETERS
+        },
+    );
+    assert!(matches!(
+        actions.last(),
+        Some(PhyCalibrationTrackingAction::Complete(_))
+    ));
+    assert_eq!(
+        actions.len(),
+        usize::from(CALIBRATION_TRACKING_ACTION_LIMIT)
+    );
+}
 
 #[test]
 fn both_clients_share_one_tx_envelope_and_keep_distinct_results() {

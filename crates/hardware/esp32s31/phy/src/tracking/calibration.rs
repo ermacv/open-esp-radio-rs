@@ -322,6 +322,12 @@ enum Step {
     Failed,
 }
 
+/// Actions of the longest calibration-tracking path, its terminal action
+/// included: the common branch and the transmit branch with both classes,
+/// each bracketed by a grant-protect request. A driver that observes this
+/// many actions without a terminal one has left the finite graph.
+pub(crate) const CALIBRATION_TRACKING_ACTION_LIMIT: u8 = 33;
+
 /// Finite RX/TX parent for the current three-argument vendor child.
 /// The shared TX reference advances once after all requested classes restore.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

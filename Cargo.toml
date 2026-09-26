@@ -33,6 +33,7 @@ members = [
     "crates/protocols/bluetooth/hci",
     "examples/bluetooth-gatt",
     "crates/protocols/bluetooth/le/ll",
+    "crates/protocols/bluetooth/le/radio",
     "crates/protocols/ieee802154",
     "crates/protocols/ieee80211/ap",
     "crates/protocols/ieee80211/sta",

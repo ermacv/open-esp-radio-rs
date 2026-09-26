@@ -2208,6 +2208,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-radio"
+version = "0.1.0"
+
+[[package]]
 name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [

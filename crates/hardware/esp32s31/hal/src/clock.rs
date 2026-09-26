@@ -165,6 +165,86 @@ impl SharedClockLeases {
     }
 }
 
+/// Common PHY power held between two protocol routes.
+///
+/// The first route's power sequence installs the modem clocks, resets and the
+/// PHY-I2C gate that every route needs, and captures the cold-power baseline.
+/// A route that hands its registered PHY to another route keeps these instead
+/// of restoring them, and releases only its protocol-specific leases. The next
+/// route inherits them without repeating the power sequence, which would reset
+/// the baseband. The baseline is restored once, by the route that finally
+/// returns the neutral root.
+pub(crate) struct CommonPhyPower {
+    phy_i2c: GateLease,
+    power: PowerEpoch,
+}
+
+#[cfg(test)]
+impl CommonPhyPower {
+    /// Established common power for ownership tests that must not touch MMIO.
+    pub(crate) fn for_test() -> Self {
+        Self {
+            phy_i2c: GateLease {
+                gate: SharedModemClockGate::PhyI2cMaster,
+                baseline: true,
+            },
+            power: PowerEpoch {
+                baseline: Some(WifiPowerBaseline::for_validation(false)),
+            },
+        }
+    }
+}
+
+/// Why a route cannot hand its common PHY power to another route.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommonPhyPowerError {
+    /// The route never completed the common PHY power sequence.
+    NotPowered,
+}
+
+impl SharedClockLeases {
+    /// Release this route's coexistence lease and keep the PHY-I2C lease for
+    /// the common PHY power.
+    fn into_common(
+        self,
+        port: &mut impl ClockPort,
+        power: PowerEpoch,
+    ) -> Result<CommonPhyPower, (Self, PowerEpoch, CommonPhyPowerError)> {
+        if !Self::powered(&self, &power) {
+            return Err((self, power, CommonPhyPowerError::NotPowered));
+        }
+        Ok(self.into_powered_common(port, power))
+    }
+
+    fn powered(&self, power: &PowerEpoch) -> bool {
+        self.phy_i2c.is_some() && power.baseline.is_some()
+    }
+
+    /// Caller has checked [`Self::powered`].
+    fn into_powered_common(
+        mut self,
+        port: &mut impl ClockPort,
+        power: PowerEpoch,
+    ) -> CommonPhyPower {
+        self.release_coexistence(port);
+        let phy_i2c = self
+            .phy_i2c
+            .take()
+            .expect("a powered route retains its PHY-I2C lease");
+        CommonPhyPower { phy_i2c, power }
+    }
+
+    fn from_common(common: CommonPhyPower) -> (Self, PowerEpoch) {
+        (
+            Self {
+                phy_i2c: Some(common.phy_i2c),
+                coexistence: None,
+            },
+            common.power,
+        )
+    }
+}
+
 /// Cold-power baseline captured before the first route power edge.
 #[derive(Default)]
 pub(crate) struct PowerEpoch {
@@ -283,9 +363,49 @@ pub(crate) struct BluetoothClocks {
     syscon: BluetoothSysconClocks,
     syscon_controller_retained: bool,
     syscon_apb_retained: bool,
+    /// The common PHY power sequence was inherited from another route.
+    common_inherited: bool,
 }
 
 impl BluetoothClocks {
+    /// Keep the common PHY power for another route and release every lease
+    /// Bluetooth retained for itself.
+    ///
+    /// The platform PLL-source lease configures the same modem source clocks
+    /// as the common power sequence and was taken after the cold-power
+    /// baseline was captured. It is therefore superseded rather than restored:
+    /// the final cold-power restoration returns those fields.
+    pub(crate) fn into_common(
+        mut self,
+        port: &mut impl ClockPort,
+    ) -> Result<CommonPhyPower, (Self, CommonPhyPowerError)> {
+        if !self.shared.powered(&self.power) {
+            return Err((self, CommonPhyPowerError::NotPowered));
+        }
+        self.release_low_power_timer(port);
+        self.release_syscon_apb_clocks(port);
+        self.release_syscon_controller_clocks(port);
+        self.platform_pll = None;
+        let Self { shared, power, .. } = self;
+        Ok(shared.into_powered_common(port, power))
+    }
+
+    /// Enter the Bluetooth route with the common PHY power already in effect.
+    pub(crate) fn from_common(common: CommonPhyPower) -> Self {
+        let (shared, power) = SharedClockLeases::from_common(common);
+        Self {
+            shared,
+            power,
+            common_inherited: true,
+            ..Self::default()
+        }
+    }
+
+    /// Whether the common PHY power sequence was inherited from another route.
+    pub(crate) const fn common_inherited(&self) -> bool {
+        self.common_inherited
+    }
+
     pub(crate) fn shared_mut(&mut self) -> &mut SharedClockLeases {
         &mut self.shared
     }
@@ -396,6 +516,25 @@ impl BluetoothClocks {
 pub(crate) struct WifiClocks {
     pub(crate) shared: SharedClockLeases,
     pub(crate) power: PowerEpoch,
+}
+
+impl WifiClocks {
+    /// Keep the common PHY power for another route and release Wi-Fi's own
+    /// coexistence lease.
+    pub(crate) fn into_common(
+        self,
+        port: &mut impl ClockPort,
+    ) -> Result<CommonPhyPower, (Self, CommonPhyPowerError)> {
+        self.shared
+            .into_common(port, self.power)
+            .map_err(|(shared, power, error)| (Self { shared, power }, error))
+    }
+
+    /// Enter the Wi-Fi route with the common PHY power already in effect.
+    pub(crate) fn from_common(common: CommonPhyPower) -> Self {
+        let (shared, power) = SharedClockLeases::from_common(common);
+        Self { shared, power }
+    }
 }
 
 #[cfg(test)]

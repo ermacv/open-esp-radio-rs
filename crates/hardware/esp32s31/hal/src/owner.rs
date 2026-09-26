@@ -1097,6 +1097,74 @@ impl<P> Radio<P, state::Powered> {
     }
 }
 
+/// Rejected hand-over of a closed radio to the retained root.
+#[must_use = "failed retained release still owns the powered radio"]
+pub struct RetainedReleaseFailure<P> {
+    radio: Radio<P, state::Powered>,
+    error: crate::root::RetainedRadioReleaseError,
+}
+
+impl<P> RetainedReleaseFailure<P> {
+    pub const fn error(&self) -> crate::root::RetainedRadioReleaseError {
+        self.error
+    }
+
+    /// Recover the unchanged powered radio.
+    pub fn into_radio(self) -> Radio<P, state::Powered> {
+        self.radio
+    }
+}
+
+impl<P> Radio<P, state::Powered> {
+    /// Enter the Wi-Fi route from a retained root.
+    ///
+    /// The common PHY power sequence of the previous route stays in effect,
+    /// so this powered owner skips [`Radio::power_up`]; the registration epoch
+    /// of the retained PHY stays current.
+    pub fn from_retained(peripheral: P, hardware: crate::root::RetainedRadioHardware) -> Self {
+        Radio {
+            peripheral,
+            state: state::Powered {
+                registers: PhyHal {
+                    registers: WifiColdRegisters::from_retained(hardware),
+                },
+            },
+        }
+    }
+
+    /// Hand a physically closed radio to the retained root.
+    ///
+    /// The PHY layer must complete RF close and temperature-sensor power-down
+    /// first; ordinary application flow reaches it only through the registered
+    /// PHY retained release. Wi-Fi's own leases are released, and the common
+    /// PHY power stays in effect for the next route.
+    #[doc(hidden)]
+    #[allow(
+        clippy::result_large_err,
+        reason = "rejection returns the complete powered radio without allocation"
+    )]
+    pub fn release_retained_after_phy_close(
+        self,
+    ) -> Result<(P, crate::root::RetainedRadioHardware), RetainedReleaseFailure<P>> {
+        let Radio {
+            peripheral,
+            state: state::Powered { registers },
+        } = self;
+        match registers.registers.release_retained() {
+            Ok(hardware) => Ok((peripheral, hardware)),
+            Err((registers, error)) => Err(RetainedReleaseFailure {
+                radio: Radio {
+                    peripheral,
+                    state: state::Powered {
+                        registers: PhyHal { registers },
+                    },
+                },
+                error,
+            }),
+        }
+    }
+}
+
 impl<P> Radio<P, state::Powered> {
     /// Complete the one-way ownership transition after cold MAC setup.
     pub fn into_running(self) -> Radio<P, state::Running> {

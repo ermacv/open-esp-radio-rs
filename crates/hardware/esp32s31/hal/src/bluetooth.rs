@@ -133,6 +133,74 @@ impl ColdOwner {
         }
     }
 
+    /// Enter the exclusive Bluetooth route from a retained root.
+    ///
+    /// The previous route's common PHY power, cold-power baseline and
+    /// registration epoch stay in effect. [`TaskOwner::prepare_common_phy_power`]
+    /// therefore does not repeat the power sequence on this route.
+    pub fn from_retained(hardware: crate::root::RetainedRadioHardware) -> Self {
+        let (
+            BluetoothRoute {
+                task,
+                modem_lp_timer,
+                interrupts,
+                phy,
+                retained,
+            },
+            common,
+        ) = hardware.into_bluetooth();
+        Self {
+            task,
+            modem_lp_timer,
+            interrupts,
+            retained,
+            clocks: BluetoothClocks::from_common(common),
+            phy_state: phy,
+        }
+    }
+
+    /// Hand the registered PHY to the retained root.
+    ///
+    /// Bluetooth releases every lease it retained for itself but keeps the
+    /// common PHY power, the cold-power baseline and the registration epoch.
+    fn release_retained(
+        self,
+    ) -> Result<crate::root::RetainedRadioHardware, (Self, crate::root::RetainedRadioReleaseError)>
+    {
+        if let Err(error) = crate::root::check_phy_restore_complete(&self.phy_state) {
+            return Err((self, crate::root::RetainedRadioReleaseError::Restore(error)));
+        }
+        let Self {
+            mut task,
+            modem_lp_timer,
+            interrupts,
+            retained,
+            clocks,
+            phy_state,
+        } = self;
+        match clocks.into_common(task.radio_phy_mut()) {
+            Ok(common) => Ok(crate::root::RetainedRadioHardware::from_bluetooth(
+                task,
+                modem_lp_timer,
+                interrupts,
+                phy_state,
+                retained,
+                common,
+            )),
+            Err((clocks, error)) => Err((
+                Self {
+                    task,
+                    modem_lp_timer,
+                    interrupts,
+                    retained,
+                    clocks,
+                    phy_state,
+                },
+                crate::root::RetainedRadioReleaseError::CommonPhyPower(error),
+            )),
+        }
+    }
+
     /// Return the unchanged protocol-neutral radio root.
     ///
     /// Release drops every retained clock lease, restores the cold-power
@@ -308,14 +376,38 @@ impl TaskOwner {
     ) -> Result<RadioHardware, BluetoothPhysicalReleaseFailure> {
         shutdown::release_after_phy_close(self, output.registers, timer.timer)
     }
+
+    /// Complete the physical Controller release after last-client RF close and
+    /// temperature power-down, but hand the registered PHY to the retained
+    /// root instead of the cold root.
+    ///
+    /// The Controller reset is the same as in
+    /// [`Self::release_after_phy_close`]. Bluetooth's own clock leases are
+    /// released; the common PHY power stays in effect for the next route.
+    #[doc(hidden)]
+    pub fn release_retained_after_phy_close(
+        self,
+        output: InterruptOutputReleasedOwner,
+        timer: ModemLpTimerInterruptReadyOwner,
+    ) -> Result<crate::root::RetainedRadioHardware, BluetoothPhysicalReleaseFailure> {
+        shutdown::release_retained_after_phy_close(self, output.registers, timer.timer)
+    }
     /// Establish the shared modem/PHY power, reset and calibration clocks.
     ///
     /// Call once before common PHY registration on the exclusive cold route.
     /// The inactive Wi-Fi partition remains retained; no Wi-Fi MAC clock or
     /// protocol role is started. Success and failure both retain the PHY I2C
     /// lease and revoke cold reunion until physical teardown is implemented.
+    ///
+    /// When the route was entered from a retained root, the common power
+    /// sequence of the previous route is still in effect. Repeating it would
+    /// reset the baseband, so this returns without any register access.
     #[doc(hidden)]
     pub fn prepare_common_phy_power(&mut self) -> Result<(), crate::power::PowerError> {
+        if self.clocks.common_inherited() {
+            self.reunitable = false;
+            return Ok(());
+        }
         crate::power::execute_bluetooth_owned(
             &mut self.reunitable,
             &mut crate::power::RoutePower {

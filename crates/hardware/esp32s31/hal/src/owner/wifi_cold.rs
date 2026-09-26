@@ -10,7 +10,10 @@ use crate::{
     ieee80211::station_wake::StationWakeState,
     phy::restore::PhyRouteState,
     power::RoutePower,
-    root::{RadioHardware, RadioPhyReleaseError, RetainedBluetooth, WifiRoute},
+    root::{
+        RadioHardware, RadioPhyReleaseError, RetainedBluetooth, RetainedRadioHardware,
+        RetainedRadioReleaseError, WifiRoute,
+    },
     types::{MacInterruptEnableState, MacInterruptMask},
 };
 
@@ -118,6 +121,78 @@ impl WifiColdRegisters {
         ))
     }
 
+    /// Hand the registered PHY to the retained root after RF close.
+    ///
+    /// Wi-Fi releases its coexistence lease but keeps the common PHY power,
+    /// the cold-power baseline and the registration epoch for the next route.
+    /// The PHY layer must have closed RF and powered down the temperature
+    /// sensor first.
+    ///
+    /// # Errors
+    ///
+    /// Returns this owner while a PHY calibration still owns a restore
+    /// obligation, or when the route never established common PHY power.
+    pub(crate) fn release_retained(
+        self,
+    ) -> Result<RetainedRadioHardware, (Self, RetainedRadioReleaseError)> {
+        if let Err(error) = crate::root::check_phy_restore_complete(&self.route.phy_state) {
+            return Err((self, RetainedRadioReleaseError::Restore(error)));
+        }
+        let Self {
+            mut registers,
+            interrupts,
+            route:
+                WifiRouteState {
+                    retained,
+                    clocks,
+                    phy_state,
+                    station_wake,
+                },
+        } = self;
+        match clocks.into_common(registers.radio_phy_mut()) {
+            Ok(common) => Ok(RetainedRadioHardware::from_wifi(
+                registers, interrupts, phy_state, retained, common,
+            )),
+            Err((clocks, error)) => Err((
+                Self {
+                    registers,
+                    interrupts,
+                    route: WifiRouteState {
+                        retained,
+                        clocks,
+                        phy_state,
+                        station_wake,
+                    },
+                },
+                RetainedRadioReleaseError::CommonPhyPower(error),
+            )),
+        }
+    }
+
+    /// Enter the Wi-Fi route from a retained root. The common PHY power is
+    /// already in effect and the registration epoch stays current.
+    pub(crate) fn from_retained(hardware: RetainedRadioHardware) -> Self {
+        let (
+            WifiRoute {
+                registers,
+                interrupts,
+                phy,
+                retained,
+            },
+            common,
+        ) = hardware.into_wifi();
+        Self {
+            registers,
+            interrupts,
+            route: WifiRouteState {
+                retained,
+                clocks: WifiClocks::from_common(common),
+                phy_state: phy,
+                station_wake: StationWakeState::default(),
+            },
+        }
+    }
+
     /// Capture the reversible Wi-Fi power baseline before the first mutation.
     pub(crate) fn prepare_wifi_power_epoch(&mut self) {
         self.route.clocks.power.prepare(self.registers.radio_phy());
@@ -157,6 +232,13 @@ impl WifiColdRegisters {
     #[cfg(test)]
     pub(crate) fn phy_state_mut(&mut self) -> &mut PhyRouteState {
         &mut self.route.phy_state
+    }
+
+    /// Install established common PHY power without touching MMIO.
+    #[cfg(test)]
+    pub(crate) fn with_common_power_for_test(mut self) -> Self {
+        self.route.clocks = WifiClocks::from_common(crate::clock::CommonPhyPower::for_test());
+        self
     }
 
     pub(crate) fn radio(&self) -> &WifiRadioRegisters {

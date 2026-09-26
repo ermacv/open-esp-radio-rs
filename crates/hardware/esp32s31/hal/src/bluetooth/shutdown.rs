@@ -17,6 +17,7 @@ pub enum BluetoothPhysicalReleaseError {
     TimerOwnerPresent,
     ControllerReset,
     Radio(RadioPhyReleaseError),
+    Retained(crate::root::RetainedRadioReleaseError),
 }
 
 enum Retained {
@@ -139,6 +140,53 @@ pub(super) fn release_after_phy_close(
             _retained: Retained::Cold { _owner: owner },
         }
     })
+}
+
+/// Reunite the drained timer, reset Bluetooth and hand the registered PHY to
+/// the retained root.
+///
+/// Admission and the Controller reset are the same as
+/// [`release_after_phy_close`]; only the final route release differs.
+pub(super) fn release_retained_after_phy_close(
+    mut task: TaskOwner,
+    output: BluetoothInterruptSetup,
+    mut timer: BluetoothModemLpTimerRegisters,
+) -> Result<crate::root::RetainedRadioHardware, BluetoothPhysicalReleaseFailure> {
+    if let Err(error) = prepare(&mut Hardware {
+        task: &mut task,
+        timer: &mut timer,
+    }) {
+        return Err(BluetoothPhysicalReleaseFailure {
+            error,
+            _retained: Retained::Before {
+                _task: task,
+                _output: output,
+                _timer: timer,
+            },
+        });
+    }
+    let TaskOwner {
+        registers,
+        modem_lp_timer: _,
+        retained,
+        clocks,
+        phy_state,
+        time_latch: _,
+        reunitable: _,
+    } = task;
+    let cold = ColdOwner {
+        task: registers,
+        modem_lp_timer: timer,
+        interrupts: output,
+        retained,
+        clocks,
+        phy_state,
+    };
+    cold.release_retained()
+        .map_err(|(owner, error)| BluetoothPhysicalReleaseFailure {
+            error: BluetoothPhysicalReleaseError::Retained(error),
+            _retained: Retained::Cold { _owner: owner },
+        })
 }
 
 #[cfg(test)]

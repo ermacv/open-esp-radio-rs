@@ -174,3 +174,55 @@ fn unfinished_controller_time_latch_blocks_neutral_reunion() {
     );
     let _retained_owners = failure.into_parts();
 }
+
+#[test]
+fn retained_handoff_keeps_the_registration_epoch_across_routes() {
+    let mut wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
+        .with_common_power_for_test();
+    let epoch = wifi.phy_state_mut().begin_registration_epoch();
+
+    let retained = wifi
+        .release_retained()
+        .unwrap_or_else(|_| panic!("a powered Wi-Fi route hands over its PHY"));
+    assert_eq!(retained.registration_epoch(), Some(epoch));
+
+    let bluetooth = ColdOwner::from_retained(retained);
+    assert!(bluetooth.clocks.common_inherited());
+    let retained = bluetooth
+        .release_retained()
+        .unwrap_or_else(|_| panic!("an inherited Bluetooth route hands the PHY back"));
+    assert_eq!(retained.registration_epoch(), Some(epoch));
+
+    let wifi = WifiColdRegisters::from_retained(retained);
+    assert_eq!(wifi.phy_state().registration_epoch(), Some(epoch));
+}
+
+#[test]
+fn retained_handoff_rejects_a_pending_calibration_restore() {
+    let mut wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
+        .with_common_power_for_test();
+    wifi.phy_state_mut().occupy_txdc_for_test();
+    let Err((_wifi, error)) = wifi.release_retained() else {
+        panic!("a pending restore must keep the Wi-Fi route");
+    };
+    assert_eq!(
+        error,
+        crate::root::RetainedRadioReleaseError::Restore(
+            crate::root::RadioPhyReleaseError::TxDcPwdetRestorePending
+        )
+    );
+}
+
+#[test]
+fn unpowered_route_cannot_enter_the_retained_root() {
+    let wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
+    let Err((_wifi, error)) = wifi.release_retained() else {
+        panic!("an unpowered Wi-Fi route has no common power to hand over");
+    };
+    assert_eq!(
+        error,
+        crate::root::RetainedRadioReleaseError::CommonPhyPower(
+            crate::root::CommonPhyPowerError::NotPowered
+        )
+    );
+}

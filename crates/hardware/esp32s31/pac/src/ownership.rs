@@ -562,17 +562,6 @@ impl WifiRadioRegisters {
         }
     }
 
-    /// Prepare the shared state maps and retain the PHY-I2C clock for this
-    /// complete Wi-Fi route epoch.
-    pub fn prepare_shared_modem_clock_map(&mut self) {
-        self.peripherals.radio_phy.prepare_shared_modem_clock_map();
-    }
-
-    /// Read the route-owned shared clock checkpoint.
-    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
-        self.peripherals.radio_phy.shared_modem_clock_observation()
-    }
-
     /// Preserve the vendor two-read coexistence clock sampling rule.
     #[doc(hidden)]
     pub fn sample_coexistence_low_power_clock(
@@ -689,77 +678,6 @@ impl Ieee802154TaskRegisters {
             bluetooth: BluetoothControllerPartition(bluetooth),
             shared_radio: SharedRadioPartition(shared_radio),
         }
-    }
-
-    pub fn prepare_shared_modem_clock_map(&mut self) {
-        self.peripherals.radio_phy.prepare_shared_modem_clock_map();
-    }
-    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
-        self.peripherals.radio_phy.shared_modem_clock_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn select_hp_active_modem_icg(&mut self) {
-        self.peripherals.radio_phy.select_hp_active_modem_icg();
-    }
-
-    #[doc(hidden)]
-    pub fn apply_modem_icg_selection(&mut self) {
-        self.peripherals.radio_phy.apply_modem_icg_selection();
-    }
-
-    #[doc(hidden)]
-    pub fn apply_sleep_icg_selection(&mut self) {
-        self.peripherals.radio_phy.apply_sleep_icg_selection();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_modem_register_bus_clock(&mut self) {
-        self.peripherals.radio_phy.enable_modem_register_bus_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn configure_modem_source_clocks(&mut self) {
-        self.peripherals.radio_phy.configure_modem_source_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.peripherals
-            .radio_phy
-            .platform_clock_power_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        self.peripherals
-            .radio_phy
-            .set_wifi_baseband_and_mac_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        self.peripherals.radio_phy.set_wifi_baseband_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn configure_wifi_power_clock_map(&mut self) {
-        self.peripherals.radio_phy.configure_wifi_power_clock_map();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_phy_calibration_clocks(&mut self) {
-        self.peripherals.radio_phy.enable_phy_calibration_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn select_phy_i2c_160mhz_source(&mut self) {
-        self.peripherals.radio_phy.select_phy_i2c_160mhz_source();
-    }
-
-    #[doc(hidden)]
-    pub fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
-        self.peripherals.radio_phy.modem_syscon_power_observation()
     }
 
     #[doc(hidden)]
@@ -910,76 +828,6 @@ impl BluetoothTaskRegisters {
             coexistence: CoexistencePartition(self.coexistence),
             shared_radio: SharedRadioPartition(self.shared_radio),
         }
-    }
-
-    #[doc(hidden)]
-    pub fn select_hp_active_modem_icg(&mut self) {
-        self.radio_phy.select_hp_active_modem_icg();
-    }
-
-    #[doc(hidden)]
-    pub fn apply_modem_icg_selection(&mut self) {
-        self.radio_phy.apply_modem_icg_selection();
-    }
-
-    #[doc(hidden)]
-    pub fn apply_sleep_icg_selection(&mut self) {
-        self.radio_phy.apply_sleep_icg_selection();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_modem_register_bus_clock(&mut self) {
-        self.radio_phy.enable_modem_register_bus_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn configure_modem_source_clocks(&mut self) {
-        self.radio_phy.configure_modem_source_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        self.radio_phy.set_wifi_baseband_and_mac_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        self.radio_phy.set_wifi_baseband_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn configure_wifi_power_clock_map(&mut self) {
-        self.radio_phy.configure_wifi_power_clock_map();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_phy_calibration_clocks(&mut self) {
-        self.radio_phy.enable_phy_calibration_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn select_phy_i2c_160mhz_source(&mut self) {
-        self.radio_phy.select_phy_i2c_160mhz_source();
-    }
-
-    #[doc(hidden)]
-    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.radio_phy.platform_clock_power_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
-        self.radio_phy.modem_syscon_power_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
-        self.radio_phy.shared_modem_clock_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn prepare_shared_modem_clock_map(&mut self) {
-        self.radio_phy.prepare_shared_modem_clock_map();
     }
 
     #[doc(hidden)]

@@ -1,7 +1,7 @@
 use crate::{
     COEX_TIMER_COUNT, CoexClient, CoexClientRequest, CoexClockHardware, CoexError,
-    CoexEventDurations, CoexEventId, CoexPti, CoexPtiTable, CoexTimerHardware, CoexTimerIndex,
-    model::CoexRequest, program_timer,
+    CoexEventDurations, CoexEventId, CoexTimerHardware, CoexTimerIndex, model::CoexRequest,
+    program_timer, timer_index,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,17 +18,17 @@ pub struct CoexCore {
     enabled: bool,
     active: [Option<CoexRequest>; COEX_TIMER_COUNT],
     uncertain_timers: u8,
-    pti: CoexPtiTable,
     durations: CoexEventDurations,
 }
 
 impl CoexCore {
-    pub const fn new(pti: CoexPtiTable) -> Self {
+    /// A disabled core. Event priorities are read from the radio arbiter's
+    /// table through [`CoexTimerHardware::pti`] when a request is programmed.
+    pub const fn new() -> Self {
         Self {
             enabled: false,
             active: [None; COEX_TIMER_COUNT],
             uncertain_timers: 0,
-            pti,
             durations: CoexEventDurations::reviewed_vendor(),
         }
     }
@@ -85,17 +85,18 @@ impl CoexCore {
         if self.uncertain_timers != 0 {
             return Err(CoexError::RecoveryRequired);
         }
-        let index = request.event.timer_index().ok_or(CoexError::InvalidEvent)?;
+        let index = timer_index(request.event).ok_or(CoexError::InvalidEvent)?;
         // Any fallible backend call may have written hardware before failing.
         // Record the cleanup obligation before the first such call, including
         // clock failures after configuration and failed publication itself.
         self.uncertain_timers |= timer_bit(index);
+        let pti = hardware.pti(request.event);
         program_timer(
             hardware,
             clock,
             index,
             client,
-            self.pti.pti(request.event),
+            pti,
             request.latency,
             request.duration,
         )?;
@@ -110,7 +111,7 @@ impl CoexCore {
         hardware: &mut H,
         event: CoexEventId,
     ) -> Result<CoexTimerIndex, CoexError> {
-        let index = event.timer_index().ok_or(CoexError::InvalidEvent)?;
+        let index = timer_index(event).ok_or(CoexError::InvalidEvent)?;
         self.disable_timer(hardware, index)?;
         Ok(index)
     }
@@ -141,16 +142,14 @@ impl CoexCore {
         }
     }
 
-    pub const fn pti(&self) -> &CoexPtiTable {
-        &self.pti
-    }
-
-    pub fn set_pti(&mut self, event: CoexEventId, pti: CoexPti) {
-        self.pti.set(event, pti);
-    }
-
     pub const fn event_duration(&self, event: CoexEventId) -> Option<u32> {
         self.durations.duration(event)
+    }
+}
+
+impl Default for CoexCore {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

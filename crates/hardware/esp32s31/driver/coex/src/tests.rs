@@ -15,6 +15,10 @@ struct TimerModel {
 }
 
 impl CoexTimerHardware for TimerModel {
+    fn pti(&mut self, event: CoexEventId) -> CoexPti {
+        CoexPtiTable::VENDOR.pti(event)
+    }
+
     fn configure_request(
         &mut self,
         index: CoexTimerIndex,
@@ -90,19 +94,6 @@ impl CoexClockHardware for ClockModel {
 }
 
 #[test]
-fn reviewed_pti_table_is_complete_and_four_bit_clean() {
-    let mut table = CoexPtiTable::reviewed_vendor();
-    assert_eq!(table.as_bytes().len(), 48);
-    assert!(table.as_bytes().iter().all(|value| *value <= 0x0f));
-    assert_eq!(table.pti(CoexEventId::new(1).unwrap()).value(), 5);
-    assert_eq!(table.pti(CoexEventId::new(3).unwrap()).value(), 7);
-    assert_eq!(table.pti(CoexEventId::new(10).unwrap()).value(), 3);
-    assert_eq!(table.pti(CoexEventId::new(15).unwrap()).value(), 1);
-    table.set(CoexEventId::new(47).unwrap(), CoexPti::new(3).unwrap());
-    assert_eq!(table.pti(CoexEventId::new(47).unwrap()).value(), 3);
-}
-
-#[test]
 fn reviewed_event_durations_match_the_vendor_parameter_object() {
     let durations = CoexEventDurations::reviewed_vendor();
     assert_eq!(
@@ -128,14 +119,12 @@ fn reviewed_event_durations_match_the_vendor_parameter_object() {
 fn timer_map_rejects_ff_entries_and_reaches_every_timer() {
     let mapped: [u8; 6] = [1, 2, 36, 38, 45, 46];
     let indices = mapped.map(|event| {
-        CoexEventId::new(event)
-            .unwrap()
-            .timer_index()
+        crate::timer_index(CoexEventId::new(event).unwrap())
             .unwrap()
             .value()
     });
     assert_eq!(indices, [0, 1, 4, 2, 3, 3]);
-    assert_eq!(CoexEventId::new(3).unwrap().timer_index(), None);
+    assert_eq!(crate::timer_index(CoexEventId::new(3).unwrap()), None);
 }
 
 #[test]
@@ -157,7 +146,7 @@ fn clock_conversion_matches_instruction_level_constants() {
 
 #[test]
 fn request_programs_then_enables_and_release_disables() {
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let operations = OperationTrace::default();
     let mut hardware = TimerModel {
         operations: operations.clone(),
@@ -203,7 +192,7 @@ fn request_programs_then_enables_and_release_disables() {
 
 #[test]
 fn unmapped_events_return_vendor_invalid_event_without_hardware_effects() {
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hardware = TimerModel::default();
     let mut clock = ClockModel {
         clock: CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector8, 0, 40, true),
@@ -234,7 +223,7 @@ fn unmapped_events_return_vendor_invalid_event_without_hardware_effects() {
 
 #[test]
 fn unsupported_clock_never_publishes_an_active_timer() {
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hardware = TimerModel::default();
     core.enable();
 

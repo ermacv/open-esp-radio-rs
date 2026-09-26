@@ -17,6 +17,10 @@ struct Hardware {
 }
 
 impl CoexTimerHardware for Hardware {
+    fn pti(&mut self, event: CoexEventId) -> CoexPti {
+        CoexPtiTable::VENDOR.pti(event)
+    }
+
     fn configure_request(
         &mut self,
         _index: CoexTimerIndex,
@@ -80,7 +84,7 @@ impl CoexClockHardware for Clock {
 fn single_owner_serializes_request_release_and_shutdown() {
     let mut resources = CoexResources::<NoopRawMutex, 2>::new();
     let (mut control, owner) = resources.split();
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hardware = Hardware::default();
     let mut clock = Clock(CoexTimerClock::from_hardware_fields(
         CoexClockSelector::Selector8,
@@ -134,7 +138,7 @@ fn cancelled_commands_settle_before_publishing_the_next_command() {
     };
     let mut resources = CoexResources::<NoopRawMutex, 2>::new();
     let (mut control, owner) = resources.split();
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hardware = Hardware::default();
     let mut clock = Clock(CoexTimerClock::from_hardware_fields(
         CoexClockSelector::Selector8,
@@ -185,7 +189,7 @@ fn a_new_epoch_discards_abandoned_commands_and_responses() {
     };
     for process_old_command in [false, true] {
         let mut resources = CoexResources::<NoopRawMutex, 2>::new();
-        let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+        let mut core = CoexCore::new();
         let mut hardware = Hardware::default();
         let mut clock = Clock(CoexTimerClock::from_hardware_fields(
             CoexClockSelector::Selector8,
@@ -229,7 +233,7 @@ fn cancelled_shutdown_ends_the_control_epoch_without_waiting_for_a_dead_owner() 
     };
     let mut resources = CoexResources::<NoopRawMutex, 2>::new();
     let (mut control, owner) = resources.split();
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hardware = Hardware::default();
     let mut clock = Clock(CoexTimerClock::from_hardware_fields(
         CoexClockSelector::Selector8,
@@ -313,7 +317,7 @@ fn cancellation_preserves_a_published_result_but_does_not_claim_cleanup() {
     };
     let mut resources = CoexResources::<NoopRawMutex, 1>::new();
     let (mut control, owner) = resources.split();
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hardware = Hardware::default();
     let mut clock = Clock(CoexTimerClock::from_hardware_fields(
         CoexClockSelector::Selector8,

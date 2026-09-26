@@ -1,11 +1,6 @@
-pub const COEX_EVENT_COUNT: usize = 48;
-pub const COEX_TIMER_COUNT: usize = 5;
+pub use oer_esp32s31_hal::coex::{COEX_EVENT_COUNT, CoexEventId, CoexPti, CoexPtiTable};
 
-const REVIEWED_PRIORITY_TABLE: [u8; COEX_EVENT_COUNT] = [
-    0x0a, 0x05, 0x07, 0x07, 0x0a, 0x01, 0x01, 0x01, 0x01, 0x07, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01,
-    0x04, 0x09, 0x04, 0x04, 0x09, 0x04, 0x09, 0x04, 0x04, 0x05, 0x05, 0x05, 0x05, 0x04, 0x04, 0x04,
-    0x04, 0x02, 0x02, 0x02, 0x0f, 0x0a, 0x04, 0x0e, 0x00, 0x0c, 0x08, 0x03, 0x01, 0x0a, 0x0a, 0x0f,
-];
+pub const COEX_TIMER_COUNT: usize = 5;
 
 // Complete `coex_core_timer_idx_get` switch image. Element zero corresponds
 // to event one; 0xff means that the event has no hardware timer.
@@ -31,73 +26,20 @@ pub enum CoexError {
     Hardware,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CoexEventId(u8);
-
-impl CoexEventId {
-    pub const fn new(value: u8) -> Result<Self, CoexError> {
-        if (value as usize) < COEX_EVENT_COUNT {
-            Ok(Self(value))
-        } else {
-            Err(CoexError::InvalidEvent)
-        }
+/// The hardware timer a vendor core request for `event` programs, or `None`
+/// for an event without a timer.
+pub const fn timer_index(event: CoexEventId) -> Option<CoexTimerIndex> {
+    let value = event.value();
+    if value == 0 || value > 46 {
+        return None;
     }
-
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-
-    pub const fn timer_index(self) -> Option<CoexTimerIndex> {
-        if self.0 == 0 || self.0 > 46 {
-            return None;
-        }
-        match REVIEWED_TIMER_MAP[(self.0 - 1) as usize] {
-            0 => Some(CoexTimerIndex::Timer0),
-            1 => Some(CoexTimerIndex::Timer1),
-            2 => Some(CoexTimerIndex::Timer2),
-            3 => Some(CoexTimerIndex::Timer3),
-            4 => Some(CoexTimerIndex::Timer4),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CoexPti(u8);
-
-impl CoexPti {
-    pub const fn new(value: u8) -> Result<Self, CoexError> {
-        if value <= 0x0f {
-            Ok(Self(value))
-        } else {
-            Err(CoexError::InvalidPti)
-        }
-    }
-
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CoexPtiTable([u8; COEX_EVENT_COUNT]);
-
-impl CoexPtiTable {
-    pub const fn reviewed_vendor() -> Self {
-        Self(REVIEWED_PRIORITY_TABLE)
-    }
-
-    pub const fn pti(self, event: CoexEventId) -> CoexPti {
-        // Every byte of the reviewed table is four-bit clean.
-        CoexPti(self.0[event.0 as usize])
-    }
-
-    pub fn set(&mut self, event: CoexEventId, pti: CoexPti) {
-        self.0[event.0 as usize] = pti.0;
-    }
-
-    pub const fn as_bytes(&self) -> &[u8; COEX_EVENT_COUNT] {
-        &self.0
+    match REVIEWED_TIMER_MAP[(value - 1) as usize] {
+        0 => Some(CoexTimerIndex::Timer0),
+        1 => Some(CoexTimerIndex::Timer1),
+        2 => Some(CoexTimerIndex::Timer2),
+        3 => Some(CoexTimerIndex::Timer3),
+        4 => Some(CoexTimerIndex::Timer4),
+        _ => None,
     }
 }
 

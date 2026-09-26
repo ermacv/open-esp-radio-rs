@@ -258,7 +258,8 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     /// Compiled production-path probe for the complete `coex_core_pti_get`
     /// contract. The vendor ABI returns `0x102` for a null output pointer and
-    /// otherwise copies one entry from its reviewed 48-byte priority table.
+    /// otherwise copies one entry from its priority table, which the radio
+    /// arbiter owns.
     ///
     /// # Safety
     /// A non-null `output` must point to one exclusively writable byte.
@@ -266,10 +267,10 @@ oer_probe_macros::probe! {
         if output.is_null() {
             return 0x102;
         }
-        let Ok(event) = oer_esp32s31_coex::CoexEventId::new(event as u8) else {
+        let Some(event) = oer_esp32s31_coex::CoexEventId::new(event as u8) else {
             return 0x102;
         };
-        let pti = oer_esp32s31_coex::CoexPtiTable::reviewed_vendor().pti(event);
+        let pti = oer_esp32s31_coex::CoexPtiTable::VENDOR.pti(event);
         // SAFETY: verification profiles provide a writable caller-owned output
         // byte and compare its final state with the vendor execution.
         unsafe { output.write(pti.value()) };
@@ -290,7 +291,6 @@ oer_probe_macros::probe! {
             return u32::MAX;
         }
         let duration = oer_esp32s31_coex::CoexEventId::new(event as u8)
-            .ok()
             .and_then(|event| oer_esp32s31_coex::CoexEventDurations::reviewed_vendor().duration(event));
         // SAFETY: verification profiles provide a writable caller-owned output
         // word and compare its final state with the vendor execution.
@@ -303,12 +303,10 @@ oer_probe_macros::probe! {
     /// Compiled production-path projection of the complete vendor event-to-timer
     /// switch. `0xff` is the exact unmapped sentinel returned by the vendor leaf.
     pub fn open_coex_core_trace_timer_idx_get(event: u32) -> u32 {
-        let Ok(event) = oer_esp32s31_coex::CoexEventId::new(event as u8) else {
+        let Some(event) = oer_esp32s31_coex::CoexEventId::new(event as u8) else {
             return 0xff;
         };
-        event
-            .timer_index()
-            .map_or(0xff, |index| u32::from(index.value()))
+        oer_esp32s31_coex::timer_index(event).map_or(0xff, |index| u32::from(index.value()))
     }
 }
 
@@ -330,7 +328,7 @@ oer_probe_macros::probe! {
         let Ok(index) = CoexTimerIndex::new(index as u8) else {
             return;
         };
-        let Ok(pti) = CoexPti::new(pti as u8) else {
+        let Some(pti) = CoexPti::new(pti as u8) else {
             return;
         };
         let client = if client == 0 {
@@ -361,7 +359,7 @@ oer_probe_macros::probe! {
     ) -> u32 {
         use oer_esp32s31_coex::{CoexClientRequest, CoexError, CoexEventId};
 
-        let Ok(event) = CoexEventId::new(event as u8) else {
+        let Some(event) = CoexEventId::new(event as u8) else {
             return 0x102;
         };
         let request = CoexClientRequest {
@@ -385,7 +383,7 @@ oer_probe_macros::probe! {
     pub fn open_coex_core_trace_release(_client: u32, event: u32) -> u32 {
         use oer_esp32s31_coex::{CoexError, CoexEventId};
 
-        let Ok(event) = CoexEventId::new(event as u8) else {
+        let Some(event) = CoexEventId::new(event as u8) else {
             return 0x102;
         };
         match oer_esp32s31_coex::validation::core_release(event) {

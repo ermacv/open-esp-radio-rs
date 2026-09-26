@@ -28,6 +28,10 @@ impl Hardware {
 }
 
 impl CoexTimerHardware for Hardware {
+    fn pti(&mut self, event: CoexEventId) -> CoexPti {
+        CoexPtiTable::VENDOR.pti(event)
+    }
+
     fn configure_request(
         &mut self,
         index: CoexTimerIndex,
@@ -86,7 +90,7 @@ fn every_failed_programming_edge_retains_a_cleanup_obligation() {
         Step::Secondary,
         Step::Enable,
     ] {
-        let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+        let mut core = CoexCore::new();
         let mut hw = Hardware {
             fail: Some(step),
             ..Hardware::default()
@@ -127,7 +131,7 @@ fn every_failed_programming_edge_retains_a_cleanup_obligation() {
 
 #[test]
 fn a_clock_error_after_configuration_still_needs_cleanup() {
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hw = Hardware::default();
     core.enable();
     assert_eq!(
@@ -142,7 +146,7 @@ fn a_clock_error_after_configuration_still_needs_cleanup() {
 
 #[test]
 fn failed_cleanup_is_not_mistaken_for_stopped_hardware() {
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hw = Hardware::default();
     core.enable();
     core.request_wifi(&mut hw, &mut clock(), request()).unwrap();
@@ -162,7 +166,7 @@ fn failed_cleanup_is_not_mistaken_for_stopped_hardware() {
 
 #[test]
 fn failed_release_of_an_untracked_timer_is_retried_by_shutdown() {
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hw = Hardware {
         fail: Some(Step::Disable),
         ..Hardware::default()

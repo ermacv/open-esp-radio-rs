@@ -40,6 +40,7 @@ use oer_esp32s31_pac::{
 };
 
 pub use crate::clock::{CommonRadioPowerError, RadioClient};
+use crate::coex::{CoexEventId, CoexPti, CoexPtiTable, CoexTimerBank};
 use crate::power::clock::{
     ModemClockLease, ModemClockModule, ModemClockPlanner, ModemClockPlannerIdentity,
     PoisonedModemClockAcquire, PoisonedModemClockRelease, execute_acquire, execute_release,
@@ -118,6 +119,7 @@ struct SharedRadioState<T> {
     power: CommonRadioPower,
     btbb_clients: u8,
     clocks: ModemClocks,
+    coex_pti: CoexPtiTable,
     attachment: T,
 }
 
@@ -257,6 +259,7 @@ impl<T> SharedRadio<T> {
                 power: CommonRadioPower::default(),
                 btbb_clients: 0,
                 clocks: ModemClocks::new(),
+                coex_pti: CoexPtiTable::VENDOR,
                 attachment,
             }),
         }
@@ -780,6 +783,29 @@ impl<T> SharedRadioLease<'_, T> {
                 Err(ModemClockError::Poisoned)
             }
         }
+    }
+
+    /// The current coexistence priority of `event`.
+    pub fn coex_pti(&self, event: CoexEventId) -> CoexPti {
+        self.state().coex_pti.pti(event)
+    }
+
+    /// The complete coexistence priority table.
+    pub fn coex_pti_table(&self) -> CoexPtiTable {
+        self.state().coex_pti
+    }
+
+    /// Replace the coexistence priority of `event`, as `coex_pti_set` does.
+    ///
+    /// Only the table changes; a protocol republishes its MAC PTI registers
+    /// from the new value.
+    pub fn set_coex_pti(&mut self, event: CoexEventId, pti: CoexPti) {
+        self.state_mut().coex_pti.set(event, pti);
+    }
+
+    /// Borrow the coexistence timer bank for one policy transaction.
+    pub fn coex_timer_bank(&mut self) -> CoexTimerBank<'_> {
+        CoexTimerBank::from_owned(&mut self.state_mut().registers)
     }
 
     /// Borrow the upper layer's attachment.

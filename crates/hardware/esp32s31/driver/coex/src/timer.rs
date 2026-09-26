@@ -1,4 +1,4 @@
-use crate::{CoexClient, CoexClockHardware, CoexError, CoexPti, CoexTimerIndex};
+use crate::{CoexClient, CoexClockHardware, CoexError, CoexEventId, CoexPti, CoexTimerIndex};
 
 /// Finite hardware transactions, not RF admission.
 ///
@@ -7,6 +7,8 @@ use crate::{CoexClient, CoexClockHardware, CoexError, CoexPti, CoexTimerIndex};
 /// completion of the backend's withdrawal transaction, not an observed RF
 /// grant revocation or whole-radio quiescence.
 pub trait CoexTimerHardware {
+    /// The radio arbiter's current priority of `event`.
+    fn pti(&mut self, event: CoexEventId) -> CoexPti;
     fn configure_request(
         &mut self,
         index: CoexTimerIndex,

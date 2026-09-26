@@ -19,6 +19,7 @@ use esp_hal::{
     system::Cpu,
 };
 
+use oer_esp32s31_hal::coex::CoexPtiTable;
 use oer_esp32s31_phy::PhyTxTargetPowerProfile;
 
 use oer_esp32s31_ieee80211::mac_start::WifiMacPlatform;
@@ -156,8 +157,8 @@ impl MacCoexPtiSource for EspHalRadioPeripheral {
         // TX (PTI one) outrank an immediate response: RX-only HIL passed, but
         // concurrent TX produced thousands of WDEVRX_ABORT_FCS_PASS events.
         //
-        // SOURCE: complete `libcoexist.a[coexist_core.o]::
-        // coex_pti_tab` and `libpp.a[hal_mac.o,hal_coex.o]`.
-        event.cold_vendor_pti()
+        // The exclusive route has no radio arbiter yet, so it reads the
+        // arbiter's cold table (`coex_pti_tab`) directly.
+        MacCoexPti::from_osi_value(CoexPtiTable::VENDOR.pti(event.coex_event()).value())
     }
 }

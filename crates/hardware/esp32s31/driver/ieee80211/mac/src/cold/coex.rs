@@ -1,6 +1,6 @@
 //! Ownership boundary for the complete cold COEX/PTI transaction.
 
-use oer_esp32s31_hal::ieee80211::mac::WifiMacColdHal;
+use oer_esp32s31_hal::{coex::CoexEventId, ieee80211::mac::WifiMacColdHal};
 
 /// The four OSI coexistence event numbers queried by complete cold init.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -13,28 +13,24 @@ pub enum MacCoexEvent {
 }
 
 impl MacCoexEvent {
-    /// Return the cold PTI published by the complete vendor table.
+    /// The shared coexistence event this MAC query reads.
     ///
-    /// These values are still required in a Wi-Fi-only build. Complete
-    /// `libpp.a[hal_mac.o]::hal_init` passes event three to
+    /// Its priority comes from the radio arbiter's table, never from a Wi-Fi
+    /// constant. The cold values are still required in a Wi-Fi-only build.
+    /// Complete `libpp.a[hal_mac.o]::hal_init` passes event three to
     /// `hal_set_rx_ack_pti`, which directly programs the MAC's immediate
     /// RX-ACK scheduler priority. It is not merely a request to a running
     /// Bluetooth coexistence task: keeping RX-ACK at zero lets a pending
     /// ordinary EDCA queue outrank the response transaction.
     ///
-    /// SOURCE: complete
-    /// `libcoexist.a[coexist_core.o]::coex_pti_tab` and
-    /// `libpp.a[hal_mac.o,hal_coex.o]::{
+    /// SOURCE: complete `libpp.a[hal_mac.o,hal_coex.o]::{
     /// hal_init,hal_set_rx_ack_pti,hal_set_wifi_default_pti,
     /// hal_set_ofdma_sequence_pti}`.
-    pub const fn cold_vendor_pti(self) -> MacCoexPti {
-        let value = match self {
-            Self::Event1 => 5,
-            Self::Event3 => 7,
-            Self::Event10 => 3,
-            Self::Event15 => 1,
-        };
-        MacCoexPti::from_osi_value(value)
+    pub const fn coex_event(self) -> CoexEventId {
+        match CoexEventId::new(self as u8) {
+            Some(event) => event,
+            None => unreachable!(),
+        }
     }
 }
 

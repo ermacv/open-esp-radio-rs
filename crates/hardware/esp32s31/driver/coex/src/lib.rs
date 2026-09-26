@@ -3,11 +3,13 @@
 
 //! Executor-neutral coexistence policy, clock conversion and timer state.
 //!
-//! Register ownership deliberately lives outside this crate. The radio HAL
-//! owns the COEX timer bank and the reviewed shared modem clock fields; this
-//! crate implements [`CoexClockHardware`] for the HAL's Wi-Fi MAC capabilities
-//! and drives the timer bank only from validation images. Live protocol
-//! runtimes do not compose this core into an operational coexistence service.
+//! Register ownership deliberately lives outside this crate. The radio
+//! arbiter owns the COEX timer bank, the event priority table and the reviewed
+//! shared modem clock fields; this crate is the policy that drives them
+//! through its ports. It implements [`CoexClockHardware`] for the HAL's Wi-Fi
+//! MAC capabilities and drives the timer bank only from validation images.
+//! Live protocol runtimes do not compose this core into an operational
+//! coexistence service.
 
 #[cfg(test)]
 extern crate std;
@@ -23,7 +25,7 @@ pub use clock::{CoexClockHardware, CoexClockSelector, CoexTimerClock};
 pub use core::{CoexCore, CoexStatus};
 pub use model::{
     COEX_EVENT_COUNT, COEX_TIMER_COUNT, CoexClient, CoexClientRequest, CoexError,
-    CoexEventDurations, CoexEventId, CoexPti, CoexPtiTable, CoexTimerIndex,
+    CoexEventDurations, CoexEventId, CoexPti, CoexPtiTable, CoexTimerIndex, timer_index,
 };
 pub use scheduler::{CoexPhase, CoexSchedule, CoexScheduler};
 pub use timer::{CoexTimerHardware, program_timer};

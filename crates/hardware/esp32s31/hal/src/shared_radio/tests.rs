@@ -227,3 +227,27 @@ fn the_phy_domain_cannot_disable_a_clock_module_it_never_enabled() {
     drop(lease);
     assert!(radio.into_parts().is_ok());
 }
+
+#[test]
+fn the_arbiter_keeps_one_coexistence_priority_table_across_leases() {
+    use crate::coex::{CoexEventId, CoexPti, CoexPtiTable};
+
+    let radio = arbiter();
+    let rx_ack = CoexEventId::new(3).unwrap_or_else(|| panic!("event 3 exists"));
+    {
+        let mut lease = radio
+            .try_acquire()
+            .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+        assert_eq!(lease.coex_pti_table(), CoexPtiTable::VENDOR);
+        lease.set_coex_pti(
+            rx_ack,
+            CoexPti::new(9).unwrap_or_else(|| panic!("9 is a priority")),
+        );
+    }
+    let lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a released arbiter grants its lease"));
+    assert_eq!(lease.coex_pti(rx_ack).value(), 9);
+    drop(lease);
+    assert!(radio.into_parts().is_ok());
+}

@@ -94,11 +94,11 @@ scope-and-limitations = "Typed priority and timer client fields exist; a configu
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-48-event-pti-lookup"
 section = "coex-internal-arbitration-hardware-and-models"
-title = "48-event PTI lookup"
+title = "Event PTI table"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "[Model](src/model.rs) owns the reviewed table, event validation and four-bit PTI domain. This is a source lookup, not live priority scheduling."
-packages = ["oer-esp32s31-coex"]
+scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) owns the 49-event `coex_pti_tab` of esp-coex-lib `02c57071`, event validation and the four-bit PTI domain; the core and the Wi-Fi cold MAC queries read priorities from it. This is a shared table, not live priority scheduling."
+packages = ["oer-esp32s31-hal", "oer-esp32s31-coex"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-event-to-timer-mapping"

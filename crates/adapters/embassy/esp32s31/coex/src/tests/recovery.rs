@@ -4,7 +4,7 @@ use super::*;
 fn shutdown_retires_a_failed_publication_and_does_not_hide_cleanup_failure() {
     let mut resources = CoexResources::<NoopRawMutex, 2>::new();
     let (mut control, owner) = resources.split();
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut hardware = Hardware {
         fail_enable_once: true,
         fail_disable_once: true,

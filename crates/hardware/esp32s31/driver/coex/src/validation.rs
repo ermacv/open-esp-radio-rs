@@ -48,6 +48,12 @@ impl CoexClockHardware for ClockPort<'_, '_> {
 }
 
 impl CoexTimerHardware for TimerPort<'_, '_> {
+    fn pti(&mut self, event: CoexEventId) -> CoexPti {
+        // The isolated validation owner has no arbiter; it carries the
+        // arbiter's cold table.
+        CoexPtiTable::VENDOR.pti(event)
+    }
+
     fn configure_request(
         &mut self,
         index: CoexTimerIndex,
@@ -165,7 +171,7 @@ pub fn core_request(
     wifi: bool,
     request: CoexClientRequest,
 ) -> Result<(), CoexError> {
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     core.enable();
     let mut owner = RadioRuntimeOwner::claim_for_validation();
     let shared = SharedBank {
@@ -185,7 +191,7 @@ pub fn core_request(
 
 /// Execute one core release.
 pub fn core_release(event: CoexEventId) -> Result<(), CoexError> {
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut core = CoexCore::new();
     let mut owner = RadioRuntimeOwner::claim_for_validation();
     let shared = SharedBank {
         bank: RefCell::new(owner.coex_timer_bank()),

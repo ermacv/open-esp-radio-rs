@@ -128,6 +128,92 @@ pub const DECISIONS: &[Decision] = &[
                 "target_port/temperature.rs",
                 "registers: &mut impl SharedPhyAccess,",
             ),
+            (
+                "validation.rs",
+                "channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,",
+            ),
+            ("validation.rs", "observer: &mut O,"),
+            (
+                "validation.rs",
+                "crate::target_port::select_phy_channel_with_hal::<D, _, _>(",
+            ),
+            (
+                "target_port.rs",
+                "TargetCompleter::<D>::select_channel_hal(state, channel_or_frequency, cbw, channel, observer)",
+            ),
+        ],
+    },
+    Decision {
+        reason: "action payloads the calibration-tracking dispatch builds and discards: the \
+            executor and target port call the out-of-line `action()` only for its variant, \
+            `begin_*` lowers the action again and `commit` builds its own inlined outcome, \
+            whose instructions are observed",
+        places: &[
+            (
+                "tracking/calibration.rs",
+                "channel: self.parameters.current_channel,",
+            ),
+            (
+                "tracking/calibration.rs",
+                "cbw: self.parameters.channel_bandwidth,",
+            ),
+            ("tracking/calibration.rs", "class: self.active_class,"),
+            (
+                "tracking/calibration.rs",
+                "let current = self.parameters.current_temperature;",
+            ),
+            ("tracking/calibration.rs", "clients: self.request.clients,"),
+            ("tracking/calibration.rs", "threshold: self.threshold,"),
+            ("tracking/calibration.rs", "self.dcode"),
+            ("tracking/calibration.rs", "self.channel"),
+            ("tracking/calibration.rs", "self.tx_dc_pwdet[0]"),
+        ],
+    },
+    Decision {
+        reason: "async future bookkeeping attributed to signatures and closing braces: \
+            state-discriminant and local stores into the future frame and register restores; \
+            the probes poll each future to completion without suspension, so no resume reads \
+            them",
+        places: &[
+            ("target_port.rs", "}"),
+            ("target_port/rfpll.rs", "}"),
+            (
+                "target_port/temperature.rs",
+                ") -> Result<Result<PhyTemperatureOutcome, PhyTemperatureFailure>, PhyTargetPortError> {",
+            ),
+        ],
+    },
+    Decision {
+        reason: "temperature acquisition provenance, a production scheduling record with no \
+            vendor counterpart; the temperature and sensor index are compared",
+        places: &[("tracking/temperature.rs", "Acquisition::Undated => Self {")],
+    },
+    Decision {
+        reason: "RFPLL correction report: the search and frequency-memory outcome reach only \
+            the observer and the maintenance result, the counterpart of the vendor's optional \
+            diagnostic `phy_printf`; state keeps only whether a correction happened, and the \
+            capacitor and frequency-memory writes are compared",
+        places: &[
+            (
+                "analog/frequency.rs",
+                "PhyFrequencyCapMemoryAction::Complete(PhyFrequencyCapMemoryOutcome {",
+            ),
+            (
+                "analog/frequency.rs",
+                "correction: self.request.correction,",
+            ),
+            ("tracking/rfpll.rs", "search: *search,"),
+            ("tracking/rfpll/thermal.rs", "self.request"),
+            ("tracking/parameters.rs", "self.child.request()"),
+            ("target_port.rs", "let request = child.request();"),
+            (
+                "target_port/rfpll.rs",
+                ") -> Result<rfpll::Outcome, PhyTargetPortError> {",
+            ),
+            (
+                "target_port/rfpll.rs",
+                ".ok_or(PhyTargetPortError::UnexpectedBinding)",
+            ),
         ],
     },
     Decision {

@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::WifiRadioRegisters;
+use crate::{SharedRadioRegisters, WifiRadioRegisters};
 
 impl WifiRadioRegisters {
     /// Apply all three ordered fresh-read updates of complete rev0 ROM
@@ -126,7 +126,7 @@ impl WifiRadioRegisters {
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac.o]::mac_txrx_init`,
     /// offsets `0xee..0x16e`.
-    pub fn initialize_mac_txrx_suffix(&mut self) {
+    pub fn initialize_mac_txrx_suffix(&mut self, shared: &mut SharedRadioRegisters) {
         let callbacks = &self.peripherals.wifi_mac.wifi_mac_txrx_callbacks;
         callbacks
             .bb_rx_hang_control()
@@ -137,7 +137,7 @@ impl WifiRadioRegisters {
         let init = &self.peripherals.wifi_mac.wifi_mac_txrx_suffix;
         init.default_image_a()
             .modify(|_, w| w.low_image_unknown().set(0x0f0));
-        self.peripherals
+        shared
             .shared_radio
             .shared_radio_init_control
             .control()

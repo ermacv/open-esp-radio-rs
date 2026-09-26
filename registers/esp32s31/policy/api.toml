@@ -16,6 +16,8 @@ peripherals = [
     "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST",
     "WIFI_MAC_BEAMFORMING_REPORT",
     "WIFI_MAC_BSSID_POLICY",
+    "WIFI_MAC_COEX_INIT",
+    "WIFI_MAC_COEX_RUNTIME",
     "WIFI_MAC_COLD_HANDSHAKE",
     "WIFI_MAC_CONTROL",
     "WIFI_MAC_CORE_ENABLE",
@@ -108,12 +110,10 @@ peripherals = [
 [[ownership-partitions]]
 name = "CoexistencePeripherals"
 member = "coexistence"
-description = "Shared coexistence register views owned by the radio arbitration service rather than either protocol role."
+description = "Shared coexistence arbitration register views owned by the radio arbitration service rather than any protocol role; per-protocol priority configuration belongs to that protocol's partition."
 peripherals = [
     "COEX_HW_TIMER",
     "PHY_FECOEX_RECOVERED",
-    "WIFI_MAC_COEX_INIT",
-    "WIFI_MAC_COEX_RUNTIME",
 ]
 
 [[ownership-partitions]]

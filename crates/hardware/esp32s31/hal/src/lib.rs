@@ -19,7 +19,6 @@ use core::future::Future;
 use oer_esp32s31_pac::{
     MacInterruptRegisters as PacMacInterruptRegisters, MacInterruptSetup as PacMacInterruptSetup,
     MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioPhyRegisters,
-    WifiRadioRegisters,
 };
 
 use root::{RadioHardware, RadioPhyReleaseError};
@@ -27,6 +26,7 @@ use root::{RadioHardware, RadioPhyReleaseError};
 pub mod bluetooth;
 
 mod clock;
+mod route_registers;
 
 pub mod coex;
 

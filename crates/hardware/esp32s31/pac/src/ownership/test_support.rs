@@ -2,6 +2,7 @@
 
 use super::{
     Ieee802154InterruptSetup, Ieee802154TaskParts, Ieee802154TaskRegisters, RadioPartitions,
+    SharedRadioParts, SharedRadioRegisters,
 };
 
 pub(crate) fn ieee802154_task() -> (Ieee802154TaskRegisters, Ieee802154InterruptSetup) {
@@ -15,9 +16,11 @@ pub(crate) fn ieee802154_task() -> (Ieee802154TaskRegisters, Ieee802154Interrupt
     } = RadioPartitions::for_validation();
     Ieee802154TaskRegisters::new(Ieee802154TaskParts {
         ieee802154,
-        radio_phy,
-        coexistence,
+        shared: SharedRadioRegisters::new(SharedRadioParts {
+            radio_phy,
+            coexistence,
+            shared_radio,
+        }),
         bluetooth,
-        shared_radio,
     })
 }

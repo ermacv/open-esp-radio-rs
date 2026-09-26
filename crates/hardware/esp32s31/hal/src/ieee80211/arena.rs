@@ -6,14 +6,13 @@
 //! Consumers can obtain only narrow HAL operations; no generic register
 //! callback or PAC owner escapes this module.
 
+use crate::route_registers::WifiRegisters;
 use core::{
     cell::{RefCell, RefMut},
     sync::atomic::{AtomicU8, Ordering},
 };
 
 use crate::owner::RadioRuntimeOwner;
-
-use oer_esp32s31_pac::WifiRadioRegisters;
 
 const EMPTY: u8 = 0;
 const PUBLISHED: u8 = 1;
@@ -220,7 +219,7 @@ impl RadioOwnerArena {
     /// an async suspension.
     fn try_with_ref<T>(
         &self,
-        transaction: impl FnOnce(&WifiRadioRegisters) -> T,
+        transaction: impl FnOnce(&WifiRegisters) -> T,
     ) -> Result<T, RadioOwnerArenaError> {
         match self.state() {
             RadioOwnerArenaState::Empty => {
@@ -244,7 +243,7 @@ impl RadioOwnerArena {
     /// arena back into an unrestricted PAC callback API.
     fn try_with_mut<T>(
         &self,
-        transaction: impl FnOnce(&mut WifiRadioRegisters) -> T,
+        transaction: impl FnOnce(&mut WifiRegisters) -> T,
     ) -> Result<T, RadioOwnerArenaError> {
         match self.state() {
             RadioOwnerArenaState::Empty => {

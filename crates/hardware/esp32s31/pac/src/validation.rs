@@ -17,17 +17,19 @@ use crate::{BluetoothPhyEnvironmentAddress, BluetoothPhyRegisterInitInputs};
 /// Construct the ordinary task-owned register set for one probe image.
 #[inline(always)]
 pub fn wifi_radio_registers() -> crate::WifiRadioRegisters {
+    crate::WifiRadioRegisters::new(RadioPartitions::for_validation().wifi_mac)
+}
+
+/// Construct the shared radio owner for one probe image.
+#[inline(always)]
+pub fn shared_radio_registers() -> crate::SharedRadioRegisters {
     let RadioPartitions {
-        wifi_mac,
         radio_phy,
         coexistence,
         shared_radio,
-        ieee802154,
         ..
     } = RadioPartitions::for_validation();
-    crate::WifiRadioRegisters::new(crate::WifiRadioParts {
-        wifi_mac,
-        ieee802154,
+    crate::SharedRadioRegisters::new(crate::SharedRadioParts {
         radio_phy,
         coexistence,
         shared_radio,
@@ -81,18 +83,10 @@ fn bluetooth_task() -> (
     let RadioPartitions {
         bluetooth,
         bluetooth_interrupts,
-        radio_phy,
-        coexistence,
-        shared_radio,
         ..
     } = RadioPartitions::for_validation();
     (
-        crate::BluetoothTaskRegisters::new(crate::BluetoothTaskParts {
-            bluetooth,
-            radio_phy,
-            coexistence,
-            shared_radio,
-        }),
+        crate::BluetoothTaskRegisters::new(bluetooth),
         bluetooth_interrupts,
     )
 }
@@ -120,8 +114,9 @@ fn bluetooth_task() -> (
 #[inline(always)]
 pub unsafe fn initialize_bluetooth_baseband_v2(gain_parameter: u8) {
     let (mut task, interrupts) = bluetooth_task();
-    task.initialize_baseband_v2_arg_one(gain_parameter);
-    let _powered_owners = (task, interrupts);
+    let mut shared = shared_radio_registers();
+    task.initialize_baseband_v2_arg_one(&mut shared, gain_parameter);
+    let _powered_owners = (task, shared, interrupts);
 }
 
 /// Execute the complete recovered BTDM controller HAL-init body inside one

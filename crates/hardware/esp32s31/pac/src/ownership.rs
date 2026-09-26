@@ -9,13 +9,9 @@ pub const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivider =
         None => panic!("reviewed Bluetooth low-power divider exceeds its PAC field"),
     };
 
-/// Private Wi-Fi and shared-radio owners used by one Wi-Fi register set.
+/// Private Wi-Fi MAC owners used by one Wi-Fi register set.
 pub(crate) struct WifiRadioPeripheralOwners {
     pub(crate) wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
-    pub(crate) ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
-    pub(crate) radio_phy: RadioPhyRegisters,
-    pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
-    pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
 }
 
 /// Physical owners used by one IEEE 802.15.4 task register set.
@@ -47,6 +43,72 @@ pub(crate) struct Ieee802154BtbbPeripheralOwners {
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
+}
+
+/// Unique owner of every radio register partition shared by more than one
+/// protocol: the radio PHY, coexistence arbitration and shared baseband.
+///
+/// Protocol register sets contain only their own partitions. A transaction
+/// that touches both protocol and shared registers borrows this owner
+/// explicitly, so the HAL decides whether one exclusive route holds it or an
+/// arbiter serializes it between concurrently running routes.
+#[must_use = "the shared radio owner must remain inside its radio domain"]
+pub struct SharedRadioRegisters {
+    pub(crate) radio_phy: RadioPhyRegisters,
+    pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
+    pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
+}
+
+/// Partitions consumed by the shared radio owner.
+pub struct SharedRadioParts {
+    pub radio_phy: RadioPhyRegisters,
+    pub coexistence: CoexistencePartition,
+    pub shared_radio: SharedRadioPartition,
+}
+
+impl SharedRadioRegisters {
+    /// Assemble the shared radio owner. This performs no MMIO.
+    pub fn new(parts: SharedRadioParts) -> Self {
+        let SharedRadioParts {
+            radio_phy,
+            coexistence: CoexistencePartition(coexistence),
+            shared_radio: SharedRadioPartition(shared_radio),
+        } = parts;
+        Self {
+            radio_phy,
+            coexistence,
+            shared_radio,
+        }
+    }
+
+    /// Return the partitions. This performs no MMIO.
+    pub fn into_parts(self) -> SharedRadioParts {
+        SharedRadioParts {
+            radio_phy: self.radio_phy,
+            coexistence: CoexistencePartition(self.coexistence),
+            shared_radio: SharedRadioPartition(self.shared_radio),
+        }
+    }
+
+    /// Preserve the vendor two-read coexistence clock sampling rule.
+    #[doc(hidden)]
+    pub fn sample_coexistence_low_power_clock(
+        &self,
+    ) -> Option<CoexistenceLowPowerClockObservation> {
+        self.radio_phy.sample_coexistence_low_power_clock()
+    }
+
+    /// Borrow the shared PHY component without exposing another owner.
+    #[doc(hidden)]
+    pub const fn radio_phy(&self) -> &RadioPhyRegisters {
+        &self.radio_phy
+    }
+
+    /// Mutably borrow the shared PHY component without exposing another owner.
+    #[doc(hidden)]
+    pub fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
+        &mut self.radio_phy
+    }
 }
 
 /// Opaque Wi-Fi MAC register partition.
@@ -442,74 +504,18 @@ pub struct WifiRadioRegisters {
     pub(crate) peripherals: WifiRadioPeripheralOwners,
 }
 
-/// Partitions consumed by one Wi-Fi register set.
-pub struct WifiRadioParts {
-    pub wifi_mac: WifiMacPartition,
-    pub ieee802154: Ieee802154Partition,
-    pub radio_phy: RadioPhyRegisters,
-    pub coexistence: CoexistencePartition,
-    pub shared_radio: SharedRadioPartition,
-}
-
 impl WifiRadioRegisters {
     /// Assemble the Wi-Fi register set. This performs no MMIO.
-    pub fn new(parts: WifiRadioParts) -> Self {
-        let WifiRadioParts {
-            wifi_mac: WifiMacPartition(wifi_mac),
-            ieee802154: Ieee802154Partition(ieee802154),
-            radio_phy,
-            coexistence: CoexistencePartition(coexistence),
-            shared_radio: SharedRadioPartition(shared_radio),
-        } = parts;
+    pub fn new(wifi_mac: WifiMacPartition) -> Self {
+        let WifiMacPartition(wifi_mac) = wifi_mac;
         Self {
-            peripherals: WifiRadioPeripheralOwners {
-                wifi_mac,
-                ieee802154,
-                radio_phy,
-                coexistence,
-                shared_radio,
-            },
+            peripherals: WifiRadioPeripheralOwners { wifi_mac },
         }
     }
 
-    /// Return the partitions. This performs no MMIO.
-    pub fn into_parts(self) -> WifiRadioParts {
-        let WifiRadioPeripheralOwners {
-            wifi_mac,
-            ieee802154,
-            radio_phy,
-            coexistence,
-            shared_radio,
-        } = self.peripherals;
-        WifiRadioParts {
-            wifi_mac: WifiMacPartition(wifi_mac),
-            ieee802154: Ieee802154Partition(ieee802154),
-            radio_phy,
-            coexistence: CoexistencePartition(coexistence),
-            shared_radio: SharedRadioPartition(shared_radio),
-        }
-    }
-
-    /// Preserve the vendor two-read coexistence clock sampling rule.
-    #[doc(hidden)]
-    pub fn sample_coexistence_low_power_clock(
-        &self,
-    ) -> Option<CoexistenceLowPowerClockObservation> {
-        self.peripherals
-            .radio_phy
-            .sample_coexistence_low_power_clock()
-    }
-
-    /// Borrow the shared PHY component without exposing another owner.
-    #[doc(hidden)]
-    pub fn radio_phy(&self) -> &RadioPhyRegisters {
-        &self.peripherals.radio_phy
-    }
-
-    /// Mutably borrow the shared PHY component without exposing another owner.
-    #[doc(hidden)]
-    pub fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
-        &mut self.peripherals.radio_phy
+    /// Return the partition. This performs no MMIO.
+    pub fn into_partition(self) -> WifiMacPartition {
+        WifiMacPartition(self.peripherals.wifi_mac)
     }
 
     /// Order descriptor memory and MMIO at a hardware ownership boundary.
@@ -540,10 +546,8 @@ pub struct Ieee802154TaskRegisters {
 /// Partitions consumed by one IEEE 802.15.4 task register set.
 pub struct Ieee802154TaskParts {
     pub ieee802154: Ieee802154Partition,
-    pub radio_phy: RadioPhyRegisters,
-    pub coexistence: CoexistencePartition,
+    pub shared: SharedRadioRegisters,
     pub bluetooth: BluetoothControllerPartition,
-    pub shared_radio: SharedRadioPartition,
 }
 
 impl Ieee802154TaskRegisters {
@@ -552,10 +556,13 @@ impl Ieee802154TaskRegisters {
     pub fn new(parts: Ieee802154TaskParts) -> (Self, Ieee802154InterruptSetup) {
         let Ieee802154TaskParts {
             ieee802154: Ieee802154Partition(ieee802154),
-            radio_phy,
-            coexistence: CoexistencePartition(coexistence),
+            shared:
+                SharedRadioRegisters {
+                    radio_phy,
+                    coexistence,
+                    shared_radio,
+                },
             bluetooth: BluetoothControllerPartition(bluetooth),
-            shared_radio: SharedRadioPartition(shared_radio),
         } = parts;
         let svd::peripheral_ownership::Ieee802154Peripherals {
             ieee802154_mac,
@@ -601,10 +608,12 @@ impl Ieee802154TaskRegisters {
                 ieee802154_mac,
                 ieee802154_interrupt_route,
             }),
-            radio_phy,
-            coexistence: CoexistencePartition(coexistence),
+            shared: SharedRadioRegisters {
+                radio_phy,
+                coexistence,
+                shared_radio,
+            },
             bluetooth: BluetoothControllerPartition(bluetooth),
-            shared_radio: SharedRadioPartition(shared_radio),
         }
     }
 
@@ -709,95 +718,57 @@ pub struct Ieee802154InterruptRegisters {
     pub(crate) registers: crate::ieee802154::ownership::InterruptRegisters,
 }
 
-/// Ordinary task-side owner for one exclusive standalone Bluetooth route.
+/// Ordinary task-side owner of the Bluetooth controller partition.
 ///
-/// Wi-Fi and all shared resources remain retained privately. Methods on this
-/// owner are individually reviewed register transactions; possessing it does
-/// not itself prove that common PHY, BTBB or controller lifecycle prerequisites
-/// have run.
+/// It contains no shared radio partition: a transaction that also touches the
+/// radio PHY, coexistence or shared baseband borrows [`SharedRadioRegisters`]
+/// explicitly. Methods on this owner are individually reviewed register
+/// transactions; possessing it does not itself prove that common PHY, BTBB or
+/// controller lifecycle prerequisites have run.
 #[must_use = "the Bluetooth task owner must be reunited before release"]
 pub struct BluetoothTaskRegisters {
     pub(crate) bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
-    pub(crate) radio_phy: RadioPhyRegisters,
-    pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
-    pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
-}
-
-/// Partitions consumed by one Bluetooth task register set.
-pub struct BluetoothTaskParts {
-    pub bluetooth: BluetoothControllerPartition,
-    pub radio_phy: RadioPhyRegisters,
-    pub coexistence: CoexistencePartition,
-    pub shared_radio: SharedRadioPartition,
 }
 
 impl BluetoothTaskRegisters {
     /// Assemble the Bluetooth task register set. This performs no MMIO.
-    pub fn new(parts: BluetoothTaskParts) -> Self {
-        let BluetoothTaskParts {
-            bluetooth: BluetoothControllerPartition(bluetooth),
-            radio_phy,
-            coexistence: CoexistencePartition(coexistence),
-            shared_radio: SharedRadioPartition(shared_radio),
-        } = parts;
-        Self {
-            bluetooth,
-            radio_phy,
-            coexistence,
-            shared_radio,
-        }
+    pub fn new(bluetooth: BluetoothControllerPartition) -> Self {
+        let BluetoothControllerPartition(bluetooth) = bluetooth;
+        Self { bluetooth }
     }
 
-    /// Return the partitions. This performs no MMIO.
-    pub fn into_parts(self) -> BluetoothTaskParts {
-        BluetoothTaskParts {
-            bluetooth: BluetoothControllerPartition(self.bluetooth),
-            radio_phy: self.radio_phy,
-            coexistence: CoexistencePartition(self.coexistence),
-            shared_radio: SharedRadioPartition(self.shared_radio),
-        }
+    /// Return the partition. This performs no MMIO.
+    pub fn into_partition(self) -> BluetoothControllerPartition {
+        BluetoothControllerPartition(self.bluetooth)
     }
 
     #[doc(hidden)]
     pub fn bluetooth_shared_clock_observation(
         &self,
+        shared: &SharedRadioRegisters,
     ) -> (
         SharedModemClockObservation,
         BluetoothLowPowerClockObservation,
     ) {
         (
-            self.radio_phy.shared_modem_clock_observation(),
-            self.radio_phy.bluetooth_low_power_clock_observation(),
+            shared.radio_phy.shared_modem_clock_observation(),
+            shared.radio_phy.bluetooth_low_power_clock_observation(),
         )
     }
 
     /// Reset the Bluetooth controller domains and fence the reset edge.
     #[doc(hidden)]
-    pub fn reset_controller_domains(&mut self) {
-        self.radio_phy.reset_bluetooth_controller_domains();
+    pub fn reset_controller_domains(&mut self, shared: &mut SharedRadioRegisters) {
+        shared.radio_phy.reset_bluetooth_controller_domains();
         device_fence();
     }
 
     /// Whether the Bluetooth controller domain resets read back released.
-    pub fn controller_resets_released(&self) -> bool {
-        self.radio_phy
+    pub fn controller_resets_released(&self, shared: &SharedRadioRegisters) -> bool {
+        shared
+            .radio_phy
             .bluetooth_clock_observation()
             .controller_resets_released
-    }
-
-    /// Borrow the protocol-neutral PHY partition for one read-only HAL scope.
-    #[doc(hidden)]
-    pub const fn radio_phy(&self) -> &RadioPhyRegisters {
-        &self.radio_phy
-    }
-
-    /// Borrow the protocol-neutral PHY partition for one named HAL scope.
-    ///
-    /// The returned owner cannot be taken, released, or retained after this
-    /// task owner is reunited with its interrupt bank.
-    #[doc(hidden)]
-    pub fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
-        &mut self.radio_phy
     }
 }
 

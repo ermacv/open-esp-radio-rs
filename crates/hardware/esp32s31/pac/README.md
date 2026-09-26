@@ -3,10 +3,16 @@
 This package owns the restricted radio-register interface. `RadioPartitions`
 acquires the generated singleton once as opaque register partitions; register
 sets such as `WifiRadioRegisters` and `BluetoothTaskRegisters` are assembled
-from those partitions and carry the reviewed domain transactions. The PAC
-holds no protocol route: the HAL owns the neutral radio root, decides which
-partitions each exclusive route consumes, retains the others and supplies
-multi-register sequencing, polling, delay, recovery and lifecycle policy.
+from those partitions and carry the reviewed domain transactions. Protocol
+register sets contain only their protocol's partitions. The radio PHY,
+coexistence arbitration and shared baseband partitions form the separate
+`SharedRadioRegisters` owner; a transaction touching both protocol and shared
+registers takes it as an explicit argument, and the coexistence timer bank
+belongs to it. Per-protocol coexistence priority registers stay with that
+protocol's partition. The PAC holds no protocol route: the HAL owns the
+neutral radio root, decides which partitions each route consumes and where
+the shared owner lives, retains the others and supplies multi-register
+sequencing, polling, delay, recovery and lifecycle policy.
 
 Every handwritten PAC operation is a single transaction: it keeps no state
 between calls, has no phases, never polls and never routes. A straight-line

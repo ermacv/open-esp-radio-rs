@@ -9,8 +9,9 @@
 use oer_esp32s31_pac::{
     BluetoothDirectionFindingDisabledBaselinePrepared, BluetoothInterruptRegisters,
     BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
-    BluetoothTaskRegisters as PacBluetoothTaskRegisters,
 };
+
+use crate::route_registers::BluetoothRegisters;
 
 use crate::{
     clock::BluetoothClocks,
@@ -73,7 +74,7 @@ pub use oer_esp32s31_pac::{
 /// protocol-neutral radio root.
 #[must_use = "the cold Bluetooth HAL owner retains the complete radio root"]
 pub struct ColdOwner {
-    task: PacBluetoothTaskRegisters,
+    task: BluetoothRegisters,
     modem_lp_timer: BluetoothModemLpTimerRegisters,
     interrupts: PacBluetoothInterruptSetup,
     retained: RetainedWifi,
@@ -354,7 +355,7 @@ impl ColdOwner {
 /// Opaque HAL owner for ordinary Bluetooth task-side controller registers.
 #[must_use = "the Bluetooth task owner must be reunited during verified teardown"]
 pub struct TaskOwner {
-    registers: PacBluetoothTaskRegisters,
+    registers: BluetoothRegisters,
     modem_lp_timer: Option<BluetoothModemLpTimerRegisters>,
     retained: RetainedWifi,
     clocks: BluetoothClocks,
@@ -506,8 +507,8 @@ impl TaskOwner {
     )]
     pub unsafe fn initialize_baseband_v2_arg_one(&mut self, gain_parameter: u8) {
         self.reunitable = false;
-        self.registers
-            .initialize_baseband_v2_arg_one(gain_parameter);
+        let (task, shared) = self.registers.parts_mut();
+        task.initialize_baseband_v2_arg_one(shared, gain_parameter);
     }
 
     /// Execute the complete reviewed BLE base-stack task-enable hardware transaction.
@@ -628,7 +629,7 @@ impl ModemLpTimerRegistersPreparedOwner {
     ) -> ModemLpTimerLowPowerHardwareInitializedOwner {
         task.reunitable = false;
         let mut timer = self.timer;
-        let runtime_control = timer.initialize_low_power_hardware(&task.registers);
+        let runtime_control = timer.initialize_low_power_hardware(task.registers.shared());
         ModemLpTimerLowPowerHardwareInitializedOwner {
             timer,
             runtime_control,
@@ -1102,7 +1103,7 @@ pub struct InterruptOutputReleasedOwner {
 /// constructor. New operations belong here only after their PAC transaction
 /// and lifecycle prerequisites are independently bounded.
 pub struct ControllerHal<'registers> {
-    registers: &'registers mut PacBluetoothTaskRegisters,
+    registers: &'registers mut BluetoothRegisters,
     time_latch: &'registers mut ControllerTimeLatch,
 }
 
@@ -1229,7 +1230,7 @@ fn execute_rx_memory_list_initial_publication(
 }
 
 struct PacBluetoothRxMemoryListInitialPublication<'registers> {
-    registers: &'registers mut PacBluetoothTaskRegisters,
+    registers: &'registers mut BluetoothRegisters,
     selector: BluetoothMemoryListSelector,
     head: BluetoothControllerSramAddress,
 }

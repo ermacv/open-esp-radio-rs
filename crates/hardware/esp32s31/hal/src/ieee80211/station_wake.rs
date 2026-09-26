@@ -7,11 +7,11 @@
 //! so the next prepare fails closed until an explicit restore or the
 //! enclosing hardware-reset lifecycle replaces the route.
 
+use crate::route_registers::WifiRegisters;
 use core::cell::RefMut;
 
 use oer_esp32s31_pac::{
-    StaModemWakeConfig, StaModemWakeRestore, StaTbttWakeGateBaselineUnsupported,
-    StaTbttWakeRestore, WifiRadioRegisters,
+    StaModemWakeConfig, StaModemWakeRestore, StaTbttWakeGateBaselineUnsupported, StaTbttWakeRestore,
 };
 
 /// A second modem-wakeup transaction cannot overlap the first one.
@@ -97,17 +97,17 @@ impl StationWakeState {
 
 enum StationWakeRegisters<'registers> {
     Owned(
-        &'registers mut WifiRadioRegisters,
+        &'registers mut WifiRegisters,
         &'registers mut StationWakeState,
     ),
     Published(
-        RefMut<'registers, WifiRadioRegisters>,
+        RefMut<'registers, WifiRegisters>,
         RefMut<'registers, StationWakeState>,
     ),
 }
 
 impl StationWakeRegisters<'_> {
-    fn parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut StationWakeState) {
+    fn parts_mut(&mut self) -> (&mut WifiRegisters, &mut StationWakeState) {
         match self {
             Self::Owned(registers, state) => (registers, state),
             Self::Published(registers, state) => (registers, state),
@@ -132,7 +132,7 @@ pub struct StationWakeHal<'registers> {
 
 impl<'registers> StationWakeHal<'registers> {
     pub(crate) fn from_owned(
-        registers: &'registers mut WifiRadioRegisters,
+        registers: &'registers mut WifiRegisters,
         state: &'registers mut StationWakeState,
     ) -> Self {
         Self {
@@ -141,7 +141,7 @@ impl<'registers> StationWakeHal<'registers> {
     }
 
     pub(crate) fn from_published(
-        registers: RefMut<'registers, WifiRadioRegisters>,
+        registers: RefMut<'registers, WifiRegisters>,
         state: RefMut<'registers, StationWakeState>,
     ) -> Self {
         Self {

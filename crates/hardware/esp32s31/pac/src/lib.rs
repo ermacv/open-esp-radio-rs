@@ -245,11 +245,12 @@ pub use ownership::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER;
 
 pub use ownership::{
     BluetoothControllerPartition, BluetoothInterruptRegisters, BluetoothInterruptSetup,
-    BluetoothTaskParts, BluetoothTaskRegisters, CoexistencePartition, Ieee802154InterruptRegisters,
+    BluetoothTaskRegisters, CoexistencePartition, Ieee802154InterruptRegisters,
     Ieee802154InterruptSetup, Ieee802154Partition, Ieee802154TaskParts, Ieee802154TaskRegisters,
     MacInterruptEvents, MacInterruptObservation, MacInterruptSnapshot,
     MacPowerInterruptObservation, MacPowerInterruptSnapshot, RadioPartitions, RadioPhyRegisters,
-    SharedRadioPartition, WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
+    SharedRadioPartition, SharedRadioParts, SharedRadioRegisters, WifiMacPartition,
+    WifiRadioRegisters,
 };
 
 pub(crate) use ownership::device_fence;

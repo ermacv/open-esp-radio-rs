@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::WifiRadioRegisters;
+use crate::{SharedRadioRegisters, WifiRadioRegisters};
 
 /// One hardware TX MPDU-length link-table entry.
 ///
@@ -93,7 +93,7 @@ impl WifiRadioRegisters {
     /// reached leaves recorded as `BLOB_LIBPP_HAL_HE_INIT_SUFFIX`. The order
     /// below is 163 writes/RMWs plus both conditional multi-BSSID guard reads.
     /// It starts after the separate `dbg_read_tx_power` traversal.
-    pub fn initialize_mac_he_suffix(&mut self) {
+    pub fn initialize_mac_he_suffix(&mut self, shared: &mut SharedRadioRegisters) {
         let init = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
 
         // Complete hal_he_set_ersu(0), followed by its complete
@@ -108,7 +108,7 @@ impl WifiRadioRegisters {
         ack.modify(|_, w| w.rate_3().set(0x80));
 
         // Complete hal_set_tx_min_pwr(-11), then the parent field update.
-        self.peripherals
+        shared
             .radio_phy
             .peripherals
             .phy_frequency_channel_oracle
@@ -151,7 +151,7 @@ impl WifiRadioRegisters {
         uora.modify(|_, w| w.low_window().set(7));
         uora.modify(|_, w| w.high_window().set(31));
 
-        self.peripherals
+        shared
             .radio_phy
             .peripherals
             .phy_frequency_channel_oracle

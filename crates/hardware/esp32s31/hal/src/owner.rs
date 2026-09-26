@@ -13,6 +13,7 @@ use crate::{
 use super::*;
 
 use crate::phy::restore::PhyRouteState;
+use crate::route_registers::WifiRegisters;
 
 mod interrupt_checkpoint;
 pub mod maintenance;
@@ -543,7 +544,7 @@ impl<P> core::fmt::Debug for RadioReleaseFailure<P> {
 /// callback. Finite hardware transactions are borrowed through HAL
 /// capabilities.
 pub struct RadioRuntimeOwner {
-    pub(crate) registers: WifiRadioRegisters,
+    pub(crate) registers: WifiRegisters,
     route: WifiRouteState,
 }
 
@@ -566,7 +567,7 @@ impl RadioRuntimeOwner {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn coex_timer_bank(&mut self) -> crate::coex::CoexTimerBank<'_> {
-        crate::coex::CoexTimerBank::from_owned(&mut self.registers)
+        crate::coex::CoexTimerBank::from_owned(self.registers.shared_mut())
     }
 
     pub fn channel_hal<'owner, P>(
@@ -638,20 +639,20 @@ impl RadioRuntimeOwner {
         self.registers.he_trigger_receive_diagnostics()
     }
 
-    pub(crate) fn from_pac(registers: WifiRadioRegisters, route: WifiRouteState) -> Self {
+    pub(crate) fn from_pac(registers: WifiRegisters, route: WifiRouteState) -> Self {
         Self { registers, route }
     }
 
-    pub(crate) fn pac(&self) -> &WifiRadioRegisters {
+    pub(crate) fn pac(&self) -> &WifiRegisters {
         &self.registers
     }
 
-    pub(crate) fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
+    pub(crate) fn pac_mut(&mut self) -> &mut WifiRegisters {
         &mut self.registers
     }
 
     /// Borrow the Wi-Fi register set together with the route restore slot.
-    pub(crate) fn channel_parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut PhyRouteState) {
+    pub(crate) fn channel_parts_mut(&mut self) -> (&mut WifiRegisters, &mut PhyRouteState) {
         (&mut self.registers, self.route.phy_state_mut())
     }
 
@@ -664,7 +665,7 @@ impl RadioRuntimeOwner {
     pub(crate) fn station_wake_parts_mut(
         &mut self,
     ) -> (
-        &mut WifiRadioRegisters,
+        &mut WifiRegisters,
         &mut crate::ieee80211::station_wake::StationWakeState,
     ) {
         (&mut self.registers, self.route.station_wake_mut())
@@ -708,7 +709,7 @@ impl MacInterruptRegisters {
 
     pub(crate) fn prepare_connected_sta_with_pac(
         &mut self,
-        registers: &mut WifiRadioRegisters,
+        registers: &mut WifiRegisters,
     ) -> ConnectedStaInterruptPrepared {
         let _ = self
             .inner
@@ -806,7 +807,7 @@ impl MacInterruptSetup {
 
     pub(crate) fn prepare_connected_sta_with_pac(
         &mut self,
-        registers: &mut WifiRadioRegisters,
+        registers: &mut WifiRegisters,
     ) -> ConnectedStaInterruptPrepared {
         let _ = self
             .inner

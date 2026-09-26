@@ -1,73 +1,74 @@
 use super::{
-    BluetoothTaskParts, BluetoothTaskRegisters, Ieee802154TaskParts, Ieee802154TaskRegisters,
-    MacInterruptMask, RadioPartitions, WifiRadioParts, WifiRadioRegisters,
+    BluetoothTaskRegisters, Ieee802154TaskParts, Ieee802154TaskRegisters, MacInterruptMask,
+    RadioPartitions, SharedRadioParts, SharedRadioRegisters, WifiRadioRegisters,
 };
 
 fn wifi_registers(partitions: RadioPartitions) -> (WifiRadioRegisters, super::MacInterruptSetup) {
     let RadioPartitions {
         wifi_mac,
         wifi_interrupts,
-        radio_phy,
-        coexistence,
-        shared_radio,
-        ieee802154,
         ..
     } = partitions;
-    (
-        WifiRadioRegisters::new(WifiRadioParts {
-            wifi_mac,
-            ieee802154,
-            radio_phy,
-            coexistence,
-            shared_radio,
-        }),
-        wifi_interrupts,
-    )
+    (WifiRadioRegisters::new(wifi_mac), wifi_interrupts)
 }
 
-#[test]
-fn wifi_register_set_returns_every_consumed_partition() {
-    let (registers, _interrupts) = wifi_registers(RadioPartitions::for_validation());
-    let WifiRadioParts { .. } = registers.into_parts();
-}
-
-#[test]
-fn bluetooth_register_set_returns_every_consumed_partition() {
+fn shared_registers(partitions: RadioPartitions) -> SharedRadioRegisters {
     let RadioPartitions {
-        bluetooth,
         radio_phy,
         coexistence,
         shared_radio,
         ..
-    } = RadioPartitions::for_validation();
-    let registers = BluetoothTaskRegisters::new(BluetoothTaskParts {
-        bluetooth,
+    } = partitions;
+    SharedRadioRegisters::new(SharedRadioParts {
         radio_phy,
         coexistence,
         shared_radio,
-    });
-    let _parts = registers.into_parts();
+    })
+}
+
+#[test]
+fn wifi_register_set_returns_its_mac_partition() {
+    let (registers, _interrupts) = wifi_registers(RadioPartitions::for_validation());
+    let _partition = registers.into_partition();
+}
+
+#[test]
+fn bluetooth_register_set_returns_its_controller_partition() {
+    let RadioPartitions { bluetooth, .. } = RadioPartitions::for_validation();
+    let registers = BluetoothTaskRegisters::new(bluetooth);
+    let _partition = registers.into_partition();
+}
+
+#[test]
+fn shared_radio_owner_returns_every_shared_partition() {
+    let shared = shared_registers(RadioPartitions::for_validation());
+    let SharedRadioParts { .. } = shared.into_parts();
 }
 
 #[test]
 fn ieee802154_register_set_reunites_its_interrupt_owner() {
+    let partitions = RadioPartitions::for_validation();
     let RadioPartitions {
         ieee802154,
+        bluetooth,
         radio_phy,
         coexistence,
-        bluetooth,
         shared_radio,
         ..
-    } = RadioPartitions::for_validation();
+    } = partitions;
     let (task, interrupts) = Ieee802154TaskRegisters::new(Ieee802154TaskParts {
         ieee802154,
-        radio_phy,
-        coexistence,
+        shared: SharedRadioRegisters::new(SharedRadioParts {
+            radio_phy,
+            coexistence,
+            shared_radio,
+        }),
         bluetooth,
-        shared_radio,
     });
-    let Ieee802154TaskParts { ieee802154, .. } = task.into_parts(interrupts);
-    let _ = ieee802154;
+    let Ieee802154TaskParts {
+        ieee802154, shared, ..
+    } = task.into_parts(interrupts);
+    let _ = (ieee802154, shared.into_parts());
 }
 
 #[test]

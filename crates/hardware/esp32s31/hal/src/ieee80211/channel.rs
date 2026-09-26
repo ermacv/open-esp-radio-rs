@@ -1,10 +1,11 @@
 //! Narrow register capability for one PHY channel transaction.
 
+use crate::route_registers::WifiRegisters;
 use core::cell::RefMut;
 
 use crate::{owner::SharedPhyAccess, phy::restore::PhyRouteState};
 
-use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
+use oer_esp32s31_pac::RadioPhyRegisters;
 
 /// Temporary channel-programming borrow from the unique [`crate::owner::Radio`] owner.
 ///
@@ -12,23 +13,20 @@ use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
 /// the radio owner. No PAC owner or generic register accessor is exposed.
 #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
 enum ChannelRegisters<'radio> {
-    Owned(&'radio mut WifiRadioRegisters, &'radio mut PhyRouteState),
-    Published(
-        RefMut<'radio, WifiRadioRegisters>,
-        RefMut<'radio, PhyRouteState>,
-    ),
+    Owned(&'radio mut WifiRegisters, &'radio mut PhyRouteState),
+    Published(RefMut<'radio, WifiRegisters>, RefMut<'radio, PhyRouteState>),
 }
 
 #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
 impl ChannelRegisters<'_> {
-    fn get(&self) -> &WifiRadioRegisters {
+    fn get(&self) -> &WifiRegisters {
         match self {
             Self::Owned(registers, _) => registers,
             Self::Published(registers, _) => registers,
         }
     }
 
-    fn get_mut(&mut self) -> &mut WifiRadioRegisters {
+    fn get_mut(&mut self) -> &mut WifiRegisters {
         match self {
             Self::Owned(registers, _) => registers,
             Self::Published(registers, _) => registers,
@@ -60,7 +58,7 @@ pub struct RadioChannelHal<'radio, P> {
 impl<'radio, P> RadioChannelHal<'radio, P> {
     pub(crate) fn from_owned(
         platform: &'radio mut P,
-        registers: &'radio mut WifiRadioRegisters,
+        registers: &'radio mut WifiRegisters,
         restore: &'radio mut PhyRouteState,
     ) -> Self {
         Self {
@@ -71,7 +69,7 @@ impl<'radio, P> RadioChannelHal<'radio, P> {
 
     pub(crate) fn from_published(
         platform: &'radio mut P,
-        registers: RefMut<'radio, WifiRadioRegisters>,
+        registers: RefMut<'radio, WifiRegisters>,
         restore: RefMut<'radio, PhyRouteState>,
     ) -> Self {
         Self {

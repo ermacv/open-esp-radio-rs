@@ -4,6 +4,7 @@
 //! physical registers belong to the 802.11 MAC and are not reusable by
 //! Bluetooth, BLE or IEEE 802.15.4 PHY paths.
 
+use crate::route_registers::WifiRegisters;
 use core::cell::RefMut;
 
 pub use crate::types::{
@@ -28,7 +29,7 @@ use crate::types::{
 
 use oer_memory::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 
-use oer_esp32s31_pac::{CoexistenceLowPowerClockObservation, WifiRadioRegisters};
+use oer_esp32s31_pac::CoexistenceLowPowerClockObservation;
 
 use crate::owner::WifiColdRegisters;
 
@@ -200,7 +201,8 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 
     pub fn initialize_he_prefix(&mut self) {
-        self.registers.radio_mut().initialize_mac_he_prefix();
+        let (mac, shared) = self.registers.radio_mut().parts_mut();
+        mac.initialize_mac_he_prefix(shared);
     }
 
     pub fn initialize_tx_power(&mut self, table: &MacTxPowerTable) {
@@ -208,7 +210,8 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 
     pub fn initialize_he_suffix(&mut self) {
-        self.registers.radio_mut().initialize_mac_he_suffix();
+        let (mac, shared) = self.registers.radio_mut().parts_mut();
+        mac.initialize_mac_he_suffix(shared);
     }
 
     pub fn initialize_last_rx_buffer_table(&mut self) {
@@ -234,7 +237,8 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 
     pub fn initialize_txrx_suffix(&mut self) {
-        self.registers.radio_mut().initialize_mac_txrx_suffix();
+        let (mac, shared) = self.registers.radio_mut().parts_mut();
+        mac.initialize_mac_txrx_suffix(shared);
     }
 
     pub fn program_interface_address(&mut self, interface: MacInterface, address: [u8; 6]) {
@@ -276,22 +280,22 @@ impl WifiMacColdHal<'_> {
 
 /// Closed HAL authority for reviewed runtime Wi-Fi MAC transactions.
 ///
-/// This type intentionally exposes neither the contained [`WifiRadioRegisters`]
+/// This type intentionally exposes neither the contained [`WifiRegisters`]
 /// nor `Deref`. LMAC code can request only the finite operations defined here.
 enum WifiMacRegisters<'registers> {
-    Owned(&'registers mut WifiRadioRegisters),
-    Published(RefMut<'registers, WifiRadioRegisters>),
+    Owned(&'registers mut WifiRegisters),
+    Published(RefMut<'registers, WifiRegisters>),
 }
 
 impl WifiMacRegisters<'_> {
-    fn pac(&self) -> &WifiRadioRegisters {
+    fn pac(&self) -> &WifiRegisters {
         match self {
             Self::Owned(registers) => registers,
             Self::Published(registers) => registers,
         }
     }
 
-    fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
+    fn pac_mut(&mut self) -> &mut WifiRegisters {
         match self {
             Self::Owned(registers) => registers,
             Self::Published(registers) => registers,
@@ -304,23 +308,23 @@ pub struct WifiMacHal<'registers> {
 }
 
 impl<'registers> WifiMacHal<'registers> {
-    pub(crate) fn from_owned(registers: &'registers mut WifiRadioRegisters) -> Self {
+    pub(crate) fn from_owned(registers: &'registers mut WifiRegisters) -> Self {
         Self {
             registers: WifiMacRegisters::Owned(registers),
         }
     }
 
-    pub(crate) fn from_published(registers: RefMut<'registers, WifiRadioRegisters>) -> Self {
+    pub(crate) fn from_published(registers: RefMut<'registers, WifiRegisters>) -> Self {
         Self {
             registers: WifiMacRegisters::Published(registers),
         }
     }
 
-    fn pac(&self) -> &WifiRadioRegisters {
+    fn pac(&self) -> &WifiRegisters {
         self.registers.pac()
     }
 
-    fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
+    fn pac_mut(&mut self) -> &mut WifiRegisters {
         self.registers.pac_mut()
     }
 
@@ -880,13 +884,13 @@ pub fn validation_configure_role_receive_policy(policy: MacRoleReceivePolicy) {
 
 /// Apply complete rev0 ROM `phy_enable_cca` or `phy_disable_cca`.
 #[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
-fn set_cca_enabled(registers: &mut WifiRadioRegisters, enabled: bool) {
+fn set_cca_enabled(registers: &mut WifiRegisters, enabled: bool) {
     registers.set_phy_wifi_cca_enabled(enabled);
 }
 
 /// Apply complete rev0 ROM `phy_sifs_reg_init`.
 #[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
-fn initialize_sifs(registers: &mut WifiRadioRegisters) {
+fn initialize_sifs(registers: &mut WifiRegisters) {
     registers.initialize_phy_wifi_sifs();
 }
 

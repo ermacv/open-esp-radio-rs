@@ -10,7 +10,7 @@ impl WifiRadioRegisters {
     /// SOURCE: complete pinned
     /// `libpp.a[hal_coex.o]::hal_set_rx_beacon_pti`.
     pub fn set_rx_beacon_pti(&mut self, beacon: MacPti, shared: MacPti) {
-        let runtime = &self.peripherals.coexistence.wifi_mac_coex_runtime;
+        let runtime = &self.peripherals.wifi_mac.wifi_mac_coex_runtime;
         crate::generated::publish_mac_rx_beacon_pti(
             runtime,
             crate::generated::MacRxBeaconPtiMaskedInput::new(beacon.get() << 12),
@@ -28,7 +28,7 @@ impl WifiRadioRegisters {
     /// `libpp.a[hal_coex.o]::hal_clear_rx_beacon_pti`.
     pub fn clear_rx_beacon_pti(&mut self) {
         crate::generated::request_mac_rx_beacon_clear(
-            &self.peripherals.coexistence.wifi_mac_coex_runtime,
+            &self.peripherals.wifi_mac.wifi_mac_coex_runtime,
             crate::generated::MacRxBeaconClearRequest::Beacon,
         );
     }
@@ -40,7 +40,7 @@ impl WifiRadioRegisters {
     /// byte, while the shared-PTI edge preserves bits 31:4 and replaces only
     /// bits 3:0.
     pub fn set_itwt_pti(&mut self, argument_is_zero: bool, shared: MacPti) {
-        let runtime = &self.peripherals.coexistence.wifi_mac_coex_runtime;
+        let runtime = &self.peripherals.wifi_mac.wifi_mac_coex_runtime;
         crate::generated::publish_mac_itwt_control(
             runtime,
             crate::generated::MacItwtControlMaskedInput::new(u32::from(argument_is_zero)),
@@ -57,7 +57,7 @@ impl WifiRadioRegisters {
     /// exposes the five-bit shift domain implemented by the instruction.
     pub fn clear_itwt_pti(&mut self, index: MacItwtClearIndex) {
         crate::generated::request_mac_itwt_clear(
-            &self.peripherals.coexistence.wifi_mac_coex_runtime,
+            &self.peripherals.wifi_mac.wifi_mac_coex_runtime,
             index,
         );
     }

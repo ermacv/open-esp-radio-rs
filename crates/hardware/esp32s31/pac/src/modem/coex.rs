@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickInput, WifiRadioRegisters};
+use crate::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickInput, SharedRadioRegisters};
 
 pub const COEX_TIMER_COUNT: u8 = 5;
 
@@ -41,11 +41,11 @@ impl CoexTimerRegister {
     }
 }
 
-impl WifiRadioRegisters {
+impl SharedRadioRegisters {
     /// Enable one timer in the exact disable-clear/enable-set order.
     pub fn enable_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
-        let timers = &self.peripherals.coexistence.coex_hw_timer;
+        let timers = &self.coexistence.coex_hw_timer;
         crate::generated::clear_coex_timer_disable(timers, index);
         crate::generated::set_coex_timer_enable(timers, index);
     }
@@ -53,7 +53,7 @@ impl WifiRadioRegisters {
     /// Disable one timer in the exact enable-clear/disable-set order.
     pub fn disable_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
-        let timers = &self.peripherals.coexistence.coex_hw_timer;
+        let timers = &self.coexistence.coex_hw_timer;
         crate::generated::clear_coex_timer_enable(timers, index);
         crate::generated::set_coex_timer_disable(timers, index);
     }
@@ -61,13 +61,13 @@ impl WifiRadioRegisters {
     /// Force one timer by clearing only its low 24-bit tick image.
     pub fn force_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
-        crate::generated::force_coex_timer(&self.peripherals.coexistence.coex_hw_timer, index);
+        crate::generated::force_coex_timer(&self.coexistence.coex_hw_timer, index);
     }
 
     /// Remove the force condition using the vendor's exact value of 1000.
     pub fn unforce_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
-        crate::generated::unforce_coex_timer(&self.peripherals.coexistence.coex_hw_timer, index);
+        crate::generated::unforce_coex_timer(&self.coexistence.coex_hw_timer, index);
     }
 
     /// Program the first two fresh-read RMW edges of `coex_hw_timer_set`.
@@ -82,7 +82,7 @@ impl WifiRadioRegisters {
         parameter_2: CoexTimerPtiValue,
     ) {
         let index = timer.index();
-        let timers = &self.peripherals.coexistence.coex_hw_timer;
+        let timers = &self.coexistence.coex_hw_timer;
         crate::generated::configure_coex_timer_client(timers, index, parameter_1);
         crate::generated::configure_coex_timer_pti(timers, index, parameter_2);
     }
@@ -98,7 +98,7 @@ impl WifiRadioRegisters {
         let primary_tick_input = CoexTimerTickInput::new(primary_tick_image)
             .expect("every u32 belongs to the reviewed COEX timer input domain");
         crate::generated::configure_coex_timer_primary_target(
-            &self.peripherals.coexistence.coex_hw_timer,
+            &self.coexistence.coex_hw_timer,
             index,
             primary_tick_input,
         );
@@ -115,7 +115,7 @@ impl WifiRadioRegisters {
         let secondary_tick_input = CoexTimerTickInput::new(secondary_tick_image)
             .expect("every u32 belongs to the reviewed COEX timer input domain");
         crate::generated::configure_coex_timer_secondary_target(
-            &self.peripherals.coexistence.coex_hw_timer,
+            &self.coexistence.coex_hw_timer,
             index,
             secondary_tick_input,
         );

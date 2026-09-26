@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::WifiRadioRegisters;
+use crate::{SharedRadioRegisters, WifiRadioRegisters};
 
 impl WifiRadioRegisters {
     /// Apply the complete prefix through `hal_init_tb_tx`.
@@ -11,7 +11,7 @@ impl WifiRadioRegisters {
     /// leaves recorded as `BLOB_LIBPP_HAL_HE_INIT_PREFIX`. The transaction is
     /// twenty-two fresh-read RMW edges plus one final volatile status/sync read.
     /// It stops immediately before the parent calls `hal_init_tx_pwr`.
-    pub fn initialize_mac_he_prefix(&mut self) {
+    pub fn initialize_mac_he_prefix(&mut self, shared: &mut SharedRadioRegisters) {
         let init = &self.peripherals.wifi_mac.wifi_mac_he_init_prefix;
         let options = self
             .peripherals
@@ -89,8 +89,7 @@ impl WifiRadioRegisters {
         // The complete leaf performs this read after all BF writes even though
         // its value is unused. Preserve it because MMIO reads may acknowledge
         // or synchronize hardware state.
-        let _ = self
-            .peripherals
+        let _ = shared
             .radio_phy
             .peripherals
             .phy_agc_oracle

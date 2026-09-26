@@ -9,7 +9,9 @@
 
 #![deny(unsafe_code)]
 
-use crate::{BluetoothTaskRegisters, Ieee802154TaskRegisters, device_fence, svd};
+use crate::{
+    BluetoothTaskRegisters, Ieee802154TaskRegisters, SharedRadioRegisters, device_fence, svd,
+};
 
 impl BluetoothTaskRegisters {
     /// Execute only the exact MMIO path of vendor `bt_bb_v2_init_cmplx(1)`.
@@ -26,11 +28,15 @@ impl BluetoothTaskRegisters {
     /// lifecycle above HAL is the only safe production caller and retains
     /// those owners while this finite register transaction executes.
     #[doc(hidden)]
-    pub fn initialize_baseband_v2_arg_one(&mut self, gain_parameter: u8) {
+    pub fn initialize_baseband_v2_arg_one(
+        &mut self,
+        shared: &mut SharedRadioRegisters,
+        gain_parameter: u8,
+    ) {
         let mut port = BluetoothBasebandV2Transaction {
             bluetooth: &self.bluetooth,
-            radio_phy: &self.radio_phy.peripherals,
-            shared_radio: &self.shared_radio,
+            radio_phy: &shared.radio_phy.peripherals,
+            shared_radio: &shared.shared_radio,
         };
         execute_standalone_bluetooth_transition(&mut port, gain_parameter);
     }

@@ -1,8 +1,9 @@
 //! Cold Wi-Fi route before the task/ISR split.
 
+use crate::route_registers::WifiRegisters;
 use oer_esp32s31_pac::{
     CoexistenceLowPowerClockObservation, MacInterruptSetup as PacMacInterruptSetup,
-    RadioPhyRegisters, WifiRadioRegisters,
+    RadioPhyRegisters,
 };
 
 use crate::{
@@ -42,7 +43,7 @@ impl WifiRouteState {
 /// interrupt banks to the runtime setup token; a closed ISR epoch can return
 /// the same ownership through [`Self::from_running`].
 pub(crate) struct WifiColdRegisters {
-    registers: WifiRadioRegisters,
+    registers: WifiRegisters,
     interrupts: PacMacInterruptSetup,
     route: WifiRouteState,
 }
@@ -72,7 +73,7 @@ impl WifiColdRegisters {
     ///
     /// This operation performs no MMIO. The returned setup token keeps MAC
     /// interrupts masked until its consuming activation transaction.
-    pub(crate) fn into_running(self) -> (WifiRadioRegisters, PacMacInterruptSetup, WifiRouteState) {
+    pub(crate) fn into_running(self) -> (WifiRegisters, PacMacInterruptSetup, WifiRouteState) {
         (self.registers, self.interrupts, self.route)
     }
 
@@ -80,7 +81,7 @@ impl WifiColdRegisters {
     /// setup. The caller must first disable the CPU routes and recover the
     /// setup from the finite ISR epoch. This conversion performs no MMIO.
     pub(crate) fn from_running(
-        registers: WifiRadioRegisters,
+        registers: WifiRegisters,
         interrupts: PacMacInterruptSetup,
         route: WifiRouteState,
     ) -> Self {
@@ -238,7 +239,7 @@ impl WifiColdRegisters {
     }
 
     /// Borrow the Wi-Fi register set together with the route restore slot.
-    pub(crate) fn radio_parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut PhyRouteState) {
+    pub(crate) fn radio_parts_mut(&mut self) -> (&mut WifiRegisters, &mut PhyRouteState) {
         (&mut self.registers, &mut self.route.phy_state)
     }
 
@@ -254,11 +255,11 @@ impl WifiColdRegisters {
         self
     }
 
-    pub(crate) fn radio(&self) -> &WifiRadioRegisters {
+    pub(crate) fn radio(&self) -> &WifiRegisters {
         &self.registers
     }
 
-    pub(crate) fn radio_mut(&mut self) -> &mut WifiRadioRegisters {
+    pub(crate) fn radio_mut(&mut self) -> &mut WifiRegisters {
         &mut self.registers
     }
 

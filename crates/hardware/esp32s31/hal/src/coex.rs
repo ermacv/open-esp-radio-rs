@@ -1,6 +1,6 @@
 //! Closed HAL capability for the radio-owned coexistence timer bank.
 //!
-//! [`CoexTimerBank`] borrows the running Wi-Fi register owner and exposes
+//! [`CoexTimerBank`] borrows the shared radio owner and exposes
 //! only named timer transactions and the shared low-power clock sample.
 //! Coexistence policy, tick conversion and cleanup bookkeeping belong to the
 //! coexistence driver, which consumes this capability through its own ports.
@@ -11,7 +11,7 @@
 
 use oer_esp32s31_pac::{
     CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister,
-    CoexistenceLowPowerClockObservation, WifiRadioRegisters,
+    CoexistenceLowPowerClockObservation, SharedRadioRegisters,
 };
 
 /// Borrowed authority over the five coexistence hardware timers.
@@ -19,11 +19,11 @@ use oer_esp32s31_pac::{
 /// Every method is one finite register transaction. A write does not report
 /// RF admission or grant revocation.
 pub struct CoexTimerBank<'registers> {
-    registers: &'registers mut WifiRadioRegisters,
+    registers: &'registers mut SharedRadioRegisters,
 }
 
 impl<'registers> CoexTimerBank<'registers> {
-    pub(crate) fn from_owned(registers: &'registers mut WifiRadioRegisters) -> Self {
+    pub(crate) fn from_owned(registers: &'registers mut SharedRadioRegisters) -> Self {
         Self { registers }
     }
 

@@ -58368,6 +58368,8 @@ pub mod peripheral_ownership {
         pub wifi_mac_beamforming_feedback_test: crate::WifiMacBeamformingFeedbackTest,
         pub wifi_mac_beamforming_report: crate::WifiMacBeamformingReport,
         pub wifi_mac_bssid_policy: crate::WifiMacBssidPolicy,
+        pub wifi_mac_coex_init: crate::WifiMacCoexInit,
+        pub wifi_mac_coex_runtime: crate::WifiMacCoexRuntime,
         pub wifi_mac_cold_handshake: crate::WifiMacColdHandshake,
         pub wifi_mac_control: crate::WifiMacControl,
         pub wifi_mac_core_enable: crate::WifiMacCoreEnable,
@@ -58451,12 +58453,10 @@ pub mod peripheral_ownership {
         pub phy_rx_dco_oracle: crate::PhyRxDcoOracle,
     }
 
-    /// Shared coexistence register views owned by the radio arbitration service rather than either protocol role.
+    /// Shared coexistence arbitration register views owned by the radio arbitration service rather than any protocol role; per-protocol priority configuration belongs to that protocol's partition.
     pub struct CoexistencePeripherals {
         pub coex_hw_timer: crate::CoexHwTimer,
         pub phy_fecoex_recovered: crate::PhyFecoexRecovered,
-        pub wifi_mac_coex_init: crate::WifiMacCoexInit,
-        pub wifi_mac_coex_runtime: crate::WifiMacCoexRuntime,
     }
 
     /// Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle.
@@ -58514,7 +58514,7 @@ pub mod peripheral_ownership {
         pub wifi_interrupts: WifiInterruptPeripherals,
         /// Role-neutral RF and PHY register views serialized by the shared radio lifecycle.
         pub radio_phy: RadioPhyPeripherals,
-        /// Shared coexistence register views owned by the radio arbitration service rather than either protocol role.
+        /// Shared coexistence arbitration register views owned by the radio arbitration service rather than any protocol role; per-protocol priority configuration belongs to that protocol's partition.
         pub coexistence: CoexistencePeripherals,
         /// Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle.
         pub bluetooth: BluetoothControllerPeripherals,
@@ -58651,6 +58651,8 @@ pub mod peripheral_ownership {
                 wifi_mac_beamforming_feedback_test,
                 wifi_mac_beamforming_report,
                 wifi_mac_bssid_policy,
+                wifi_mac_coex_init,
+                wifi_mac_coex_runtime,
                 wifi_mac_cold_handshake,
                 wifi_mac_control,
                 wifi_mac_core_enable,
@@ -58732,8 +58734,6 @@ pub mod peripheral_ownership {
             coexistence: CoexistencePeripherals {
                 coex_hw_timer,
                 phy_fecoex_recovered,
-                wifi_mac_coex_init,
-                wifi_mac_coex_runtime,
             },
             bluetooth: BluetoothControllerPeripherals {
                 ble_controller_address_slots,

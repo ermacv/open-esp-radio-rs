@@ -16,7 +16,7 @@ impl WifiRadioRegisters {
     /// Read back the priorities that arbitrate ordinary Wi-Fi work and the
     /// immediate RX response transaction.
     pub fn mac_coex_priority_snapshot(&self) -> MacCoexPrioritySnapshot {
-        let coex = &self.peripherals.coexistence.wifi_mac_coex_init;
+        let coex = &self.peripherals.wifi_mac.wifi_mac_coex_init;
         let rx = coex.rx_pti().read();
         MacCoexPrioritySnapshot {
             rx_active: rx.rx_active().bits(),
@@ -38,7 +38,7 @@ impl WifiRadioRegisters {
         beamforming: [u8; 3],
         multi_target: [u8; 2],
     ) {
-        let coex = &self.peripherals.coexistence.wifi_mac_coex_init;
+        let coex = &self.peripherals.wifi_mac.wifi_mac_coex_init;
 
         coex.default_control()
             .modify(|_, w| w.coex_pti_init_unknown().set_bit());

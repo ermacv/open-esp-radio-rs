@@ -13,7 +13,7 @@
 
 #![deny(unsafe_code)]
 
-use crate::{BluetoothTaskRegisters, device_fence, svd};
+use crate::{SharedRadioRegisters, device_fence, svd};
 
 /// Disjoint register owner for the Bluetooth modem low-power timer.
 ///
@@ -554,14 +554,14 @@ impl BluetoothModemLpTimerRegisters {
     /// samples `CONTROL_2`, and conditionally publishes `CONTROL_1` from a
     /// fresh read. A device fence closes this restricted-PAC transaction.
     ///
-    /// The task register set supplies the shared `MODEM_ETM`; this partition
-    /// supplies only `BTDM_RUNTIME_CONTROL`. Neither register block can alias.
+    /// The shared radio owner supplies `MODEM_ETM`; this partition supplies
+    /// only `BTDM_RUNTIME_CONTROL`. Neither register block can alias.
     pub fn initialize_low_power_hardware(
         &mut self,
-        task: &BluetoothTaskRegisters,
+        shared: &SharedRadioRegisters,
     ) -> BluetoothLowPowerRuntimeControlObservation {
         let mut transaction = HardwareModemLpTimerLowPowerInitTransaction {
-            config: &task.shared_radio.modem_etm,
+            config: &shared.shared_radio.modem_etm,
             runtime_control: &self.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_low_power_init(&mut transaction)

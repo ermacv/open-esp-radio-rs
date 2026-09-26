@@ -8,15 +8,16 @@
 
 use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
-    BluetoothTaskParts, BluetoothTaskRegisters, Ieee802154InterruptSetup, Ieee802154Partition,
-    Ieee802154TaskParts, Ieee802154TaskRegisters, MacInterruptSetup, RadioPartitions,
-    WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
+    BluetoothTaskRegisters, Ieee802154InterruptSetup, Ieee802154Partition, Ieee802154TaskParts,
+    Ieee802154TaskRegisters, MacInterruptSetup, RadioPartitions, SharedRadioParts,
+    SharedRadioRegisters, WifiMacPartition, WifiRadioRegisters,
 };
 
 pub use crate::clock::CommonPhyPowerError;
 use crate::{
     clock::CommonPhyPower,
     phy::{registration::PhyRegistration, restore::PhyRouteState},
+    route_registers::{BluetoothRegisters, WifiRegisters},
 };
 
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
@@ -78,7 +79,7 @@ impl RadioHardware {
 
     /// Reconstruct the root from a Wi-Fi route whose leases were released.
     pub(crate) fn from_wifi(
-        registers: WifiRadioRegisters,
+        registers: WifiRegisters,
         interrupts: MacInterruptSetup,
         phy: PhyRouteState,
         retained: RetainedBluetooth,
@@ -96,7 +97,7 @@ impl RadioHardware {
 
     /// Reconstruct the root from a Bluetooth route.
     pub(crate) fn from_bluetooth(
-        task: BluetoothTaskRegisters,
+        task: BluetoothRegisters,
         modem_lp_timer: BluetoothModemLpTimerRegisters,
         interrupts: BluetoothInterruptSetup,
         phy: PhyRouteState,
@@ -131,10 +132,12 @@ impl RadioHardware {
         let phy = PhyRouteState::new(self.phy_registration);
         let (task, interrupts) = Ieee802154TaskRegisters::new(Ieee802154TaskParts {
             ieee802154,
-            radio_phy,
-            coexistence,
+            shared: SharedRadioRegisters::new(SharedRadioParts {
+                radio_phy,
+                coexistence,
+                shared_radio,
+            }),
             bluetooth,
-            shared_radio,
         });
         Ieee802154Route {
             task,
@@ -165,11 +168,14 @@ impl RadioHardware {
         } = route;
         let Ieee802154TaskParts {
             ieee802154,
+            shared,
+            bluetooth,
+        } = task.into_parts(interrupts);
+        let SharedRadioParts {
             radio_phy,
             coexistence,
-            bluetooth,
             shared_radio,
-        } = task.into_parts(interrupts);
+        } = shared.into_parts();
         Self::returned(
             RadioPartitions {
                 wifi_mac,
@@ -200,42 +206,44 @@ fn wifi_route(partitions: RadioPartitions, phy: PhyRouteState) -> WifiRoute {
         ieee802154,
     } = partitions;
     WifiRoute {
-        registers: WifiRadioRegisters::new(WifiRadioParts {
-            wifi_mac,
-            ieee802154,
-            radio_phy,
-            coexistence,
-            shared_radio,
-        }),
+        registers: WifiRegisters::new(
+            WifiRadioRegisters::new(wifi_mac),
+            SharedRadioRegisters::new(SharedRadioParts {
+                radio_phy,
+                coexistence,
+                shared_radio,
+            }),
+        ),
         interrupts: wifi_interrupts,
         phy,
         retained: RetainedBluetooth {
             bluetooth,
             modem_lp_timer: bluetooth_modem_lp_timer,
             interrupts: bluetooth_interrupts,
+            ieee802154,
         },
     }
 }
 
 fn wifi_partitions(
-    registers: WifiRadioRegisters,
+    registers: WifiRegisters,
     interrupts: MacInterruptSetup,
     retained: RetainedBluetooth,
 ) -> RadioPartitions {
-    let WifiRadioParts {
-        wifi_mac,
-        ieee802154,
+    let (registers, shared) = registers.into_parts();
+    let SharedRadioParts {
         radio_phy,
         coexistence,
         shared_radio,
-    } = registers.into_parts();
+    } = shared.into_parts();
     let RetainedBluetooth {
         bluetooth,
         modem_lp_timer,
         interrupts: bluetooth_interrupts,
+        ieee802154,
     } = retained;
     RadioPartitions {
-        wifi_mac,
+        wifi_mac: registers.into_partition(),
         wifi_interrupts: interrupts,
         radio_phy,
         coexistence,
@@ -260,12 +268,14 @@ fn bluetooth_route(partitions: RadioPartitions, phy: PhyRouteState) -> Bluetooth
         ieee802154,
     } = partitions;
     BluetoothRoute {
-        task: BluetoothTaskRegisters::new(BluetoothTaskParts {
-            bluetooth,
-            radio_phy,
-            coexistence,
-            shared_radio,
-        }),
+        task: BluetoothRegisters::new(
+            BluetoothTaskRegisters::new(bluetooth),
+            SharedRadioRegisters::new(SharedRadioParts {
+                radio_phy,
+                coexistence,
+                shared_radio,
+            }),
+        ),
         modem_lp_timer: bluetooth_modem_lp_timer,
         interrupts: bluetooth_interrupts,
         phy,
@@ -278,17 +288,17 @@ fn bluetooth_route(partitions: RadioPartitions, phy: PhyRouteState) -> Bluetooth
 }
 
 fn bluetooth_partitions(
-    task: BluetoothTaskRegisters,
+    task: BluetoothRegisters,
     modem_lp_timer: BluetoothModemLpTimerRegisters,
     interrupts: BluetoothInterruptSetup,
     retained: RetainedWifi,
 ) -> RadioPartitions {
-    let BluetoothTaskParts {
-        bluetooth,
+    let (task, shared) = task.into_parts();
+    let SharedRadioParts {
         radio_phy,
         coexistence,
         shared_radio,
-    } = task.into_parts();
+    } = shared.into_parts();
     let RetainedWifi {
         wifi_mac,
         interrupts: wifi_interrupts,
@@ -299,7 +309,7 @@ fn bluetooth_partitions(
         wifi_interrupts,
         radio_phy,
         coexistence,
-        bluetooth,
+        bluetooth: task.into_partition(),
         bluetooth_modem_lp_timer: modem_lp_timer,
         bluetooth_interrupts: interrupts,
         shared_radio,
@@ -335,7 +345,7 @@ impl RetainedRadioHardware {
     }
 
     pub(crate) fn from_wifi(
-        registers: WifiRadioRegisters,
+        registers: WifiRegisters,
         interrupts: MacInterruptSetup,
         phy: PhyRouteState,
         retained: RetainedBluetooth,
@@ -353,7 +363,7 @@ impl RetainedRadioHardware {
     }
 
     pub(crate) fn from_bluetooth(
-        task: BluetoothTaskRegisters,
+        task: BluetoothRegisters,
         modem_lp_timer: BluetoothModemLpTimerRegisters,
         interrupts: BluetoothInterruptSetup,
         phy: PhyRouteState,
@@ -430,7 +440,7 @@ pub(crate) fn check_phy_restore_complete(
 
 /// Registers and interrupt setup of one exclusive Wi-Fi route.
 pub(crate) struct WifiRoute {
-    pub(crate) registers: WifiRadioRegisters,
+    pub(crate) registers: WifiRegisters,
     pub(crate) interrupts: MacInterruptSetup,
     pub(crate) phy: PhyRouteState,
     pub(crate) retained: RetainedBluetooth,
@@ -438,7 +448,7 @@ pub(crate) struct WifiRoute {
 
 /// Registers and inactive interrupt bank of one exclusive Bluetooth route.
 pub(crate) struct BluetoothRoute {
-    pub(crate) task: BluetoothTaskRegisters,
+    pub(crate) task: BluetoothRegisters,
     pub(crate) modem_lp_timer: BluetoothModemLpTimerRegisters,
     pub(crate) interrupts: BluetoothInterruptSetup,
     pub(crate) phy: PhyRouteState,
@@ -453,11 +463,13 @@ pub(crate) struct Ieee802154Route {
     pub(crate) retained: RetainedIeee802154,
 }
 
-/// Bluetooth partitions retained, but not exposed, while Wi-Fi is exclusive.
+/// Bluetooth and IEEE 802.15.4 partitions retained, but not exposed, while
+/// Wi-Fi is exclusive.
 pub(crate) struct RetainedBluetooth {
     bluetooth: BluetoothControllerPartition,
     modem_lp_timer: BluetoothModemLpTimerRegisters,
     interrupts: BluetoothInterruptSetup,
+    ieee802154: Ieee802154Partition,
 }
 
 /// Wi-Fi partitions retained, but not exposed, while Bluetooth is exclusive.

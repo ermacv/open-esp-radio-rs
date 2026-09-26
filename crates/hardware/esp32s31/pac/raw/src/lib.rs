@@ -43055,9 +43055,9 @@ pub mod bluetooth_controller_core {
         pub type HardwareListMaskR = crate::FieldReader<u16>;
         #[doc = "Field `HARDWARE_LIST_MASK` writer - "]
         pub type HardwareListMaskW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
-        #[doc = "Field `OPAQUE_16` reader - "]
+        #[doc = "Field `OPAQUE_16` reader - Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
         pub type Opaque16R = crate::BitReader;
-        #[doc = "Field `OPAQUE_16` writer - "]
+        #[doc = "Field `OPAQUE_16` writer - Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
         pub type Opaque16W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `STATUS_17` reader - "]
         pub type Status17R = crate::BitReader;
@@ -43085,7 +43085,7 @@ pub mod bluetooth_controller_core {
             pub fn hardware_list_mask(&self) -> HardwareListMaskR {
                 HardwareListMaskR::new((self.bits & 0xffff) as u16)
             }
-            #[doc = "Bit 16"]
+            #[doc = "Bit 16 - Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
             #[inline(always)]
             pub fn opaque_16(&self) -> Opaque16R {
                 Opaque16R::new(((self.bits >> 16) & 1) != 0)
@@ -43122,7 +43122,7 @@ pub mod bluetooth_controller_core {
             pub fn hardware_list_mask(&mut self) -> HardwareListMaskW<'_, SchedulerCommand1Spec> {
                 HardwareListMaskW::new(self, 0)
             }
-            #[doc = "Bit 16"]
+            #[doc = "Bit 16 - Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
             #[inline(always)]
             pub fn opaque_16(&mut self) -> Opaque16W<'_, SchedulerCommand1Spec> {
                 Opaque16W::new(self, 16)
@@ -62933,6 +62933,30 @@ pub mod zero_based_field_write {
                         .start()
                         .bit(start_value)
                 });
+        }
+    }
+
+    /// Write `HARDWARE_LIST_MASK`, `OPAQUE_16`, `START` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_1` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_execution_modify_list_deletion_request(
+        registers: &crate::BluetoothControllerCore,
+        hardware_list_mask_value: u16,
+        opaque_16_value: bool,
+        start_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.scheduler_command_1().write_with_zero(|writer| {
+                writer
+                    .hardware_list_mask()
+                    .set(hardware_list_mask_value)
+                    .opaque_16()
+                    .bit(opaque_16_value)
+                    .start()
+                    .bit(start_value)
+            });
         }
     }
 }

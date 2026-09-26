@@ -10487,3 +10487,10 @@ peripheral = "BLUETOOTH_INTERRUPT_BANK"
 register = "IRQ_CLEAR_0"
 value = 0x00000080
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[zero-based-field-writes]]
+name = "publish_bluetooth_scheduler_execution_modify_list_deletion_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_1"
+fields = ["HARDWARE_LIST_MASK", "OPAQUE_16", "START"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_LIST_DELETION", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_DELETION_ROLE"]

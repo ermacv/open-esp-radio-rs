@@ -18217,6 +18217,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
             </field>
             <field>
               <name>OPAQUE_16</name>
+              <description>Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>1</bitWidth>
             </field>

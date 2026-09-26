@@ -1471,6 +1471,15 @@ impl ControllerHal<'_> {
             .observe_scheduler_hardware_list_head_retirement(run)
     }
 
+    /// Read the current head of one hardware list once, followed by a
+    /// device fence.
+    pub fn observe_scheduler_hardware_list_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerHardwareListHead {
+        self.registers.observe_scheduler_hardware_list_head(index)
+    }
+
     /// Order prior descriptor writes and publish one scheduler hardware-list
     /// head through the restricted PAC.
     ///
@@ -1571,6 +1580,31 @@ impl ControllerHal<'_> {
         // SAFETY: forwarded unchanged from this function's `# Safety` contract,
         // which states the PAC transaction's prerequisites.
         unsafe { self.registers.publish_scheduler_execution_modify(index) }
+    }
+
+    /// Publish execution modify with its list-deletion mode bit through the
+    /// restricted PAC. Its observation and START clear are shared with
+    /// insertion.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the deletion of `index` and exclusive list
+    /// ownership until it clears command-one START.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains list deletion and list serialization"
+    )]
+    pub unsafe fn publish_scheduler_execution_modify_list_deletion(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerExecutionModifyPublished {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
+        unsafe {
+            self.registers
+                .publish_scheduler_execution_modify_list_deletion(index)
+        }
     }
 
     /// Perform one finite typed command-one observation in its reviewed

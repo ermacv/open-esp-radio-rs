@@ -4,8 +4,8 @@ use super::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockRequest,
     BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerInsertionExecutionControl,
     BluetoothSchedulerInsertionExecutionObservationControl, execute_execution_lock_observation,
-    execute_execution_lock_publication, execute_execution_modify_observation,
-    execute_execution_modify_publication,
+    execute_execution_lock_publication, execute_execution_modify_list_deletion_publication,
+    execute_execution_modify_observation, execute_execution_modify_publication,
 };
 use crate::{
     BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
@@ -173,6 +173,7 @@ fn execution_modify_reads_rejection_only_on_a_terminal_edge() {
 enum Operation {
     PublishLock(BluetoothSchedulerExecutionLockRequest),
     PublishModify(BluetoothSchedulerHardwareListIndex),
+    PublishModifyListDeletion(BluetoothSchedulerHardwareListIndex),
     DeviceFence,
 }
 
@@ -187,6 +188,14 @@ impl BluetoothSchedulerInsertionExecutionControl for Recorder {
 
     fn publish_execution_modify(&mut self, index: BluetoothSchedulerHardwareListIndex) {
         self.operations.push(Operation::PublishModify(index));
+    }
+
+    fn publish_execution_modify_list_deletion(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) {
+        self.operations
+            .push(Operation::PublishModifyListDeletion(index));
     }
 
     fn order_after_publication(&mut self) {
@@ -206,6 +215,7 @@ fn each_execution_command_is_followed_by_its_device_fence() {
 
     let _lock = execute_execution_lock_publication(&mut recorder, request);
     let _modify = execute_execution_modify_publication(&mut recorder, index);
+    let _deletion = execute_execution_modify_list_deletion_publication(&mut recorder, index);
 
     assert_eq!(
         recorder.operations,
@@ -213,6 +223,8 @@ fn each_execution_command_is_followed_by_its_device_fence() {
             Operation::PublishLock(request),
             Operation::DeviceFence,
             Operation::PublishModify(index),
+            Operation::DeviceFence,
+            Operation::PublishModifyListDeletion(index),
             Operation::DeviceFence,
         ]
     );

@@ -88,6 +88,10 @@ pub enum BluetoothSchedulerExecutionModifyDisposition {
 trait BluetoothSchedulerInsertionExecutionControl {
     fn publish_execution_lock(&mut self, request: BluetoothSchedulerExecutionLockRequest);
     fn publish_execution_modify(&mut self, index: BluetoothSchedulerHardwareListIndex);
+    fn publish_execution_modify_list_deletion(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    );
     fn order_after_publication(&mut self);
 }
 
@@ -115,34 +119,50 @@ impl BluetoothSchedulerInsertionExecutionControl
     }
 
     fn publish_execution_modify(&mut self, index: BluetoothSchedulerHardwareListIndex) {
-        let list = match index.get() {
-            0 => 0x0001,
-            1 => 0x0002,
-            2 => 0x0004,
-            3 => 0x0008,
-            4 => 0x0010,
-            5 => 0x0020,
-            6 => 0x0040,
-            7 => 0x0080,
-            8 => 0x0100,
-            9 => 0x0200,
-            10 => 0x0400,
-            11 => 0x0800,
-            12 => 0x1000,
-            13 => 0x2000,
-            14 => 0x4000,
-            15 => 0x8000,
-            _ => panic!("typed scheduler list index exceeded its PAC domain"),
-        };
         crate::svd::zero_based_field_write::publish_bluetooth_scheduler_execution_modify_request(
             self.registers,
-            list,
+            list_mask(index),
+            true,
+        );
+    }
+
+    fn publish_execution_modify_list_deletion(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) {
+        crate::svd::zero_based_field_write::publish_bluetooth_scheduler_execution_modify_list_deletion_request(
+            self.registers,
+            list_mask(index),
+            true,
             true,
         );
     }
 
     fn order_after_publication(&mut self) {
         device_fence();
+    }
+}
+
+/// One-hot command-one selection mask of one hardware list.
+const fn list_mask(index: BluetoothSchedulerHardwareListIndex) -> u16 {
+    match index.get() {
+        0 => 0x0001,
+        1 => 0x0002,
+        2 => 0x0004,
+        3 => 0x0008,
+        4 => 0x0010,
+        5 => 0x0020,
+        6 => 0x0040,
+        7 => 0x0080,
+        8 => 0x0100,
+        9 => 0x0200,
+        10 => 0x0400,
+        11 => 0x0800,
+        12 => 0x1000,
+        13 => 0x2000,
+        14 => 0x4000,
+        15 => 0x8000,
+        _ => panic!("typed scheduler list index exceeded its PAC domain"),
     }
 }
 
@@ -182,6 +202,15 @@ fn execute_execution_modify_publication(
     index: BluetoothSchedulerHardwareListIndex,
 ) -> BluetoothSchedulerExecutionModifyPublished {
     control.publish_execution_modify(index);
+    control.order_after_publication();
+    BluetoothSchedulerExecutionModifyPublished { _private: () }
+}
+
+fn execute_execution_modify_list_deletion_publication(
+    control: &mut impl BluetoothSchedulerInsertionExecutionControl,
+    index: BluetoothSchedulerHardwareListIndex,
+) -> BluetoothSchedulerExecutionModifyPublished {
+    control.publish_execution_modify_list_deletion(index);
     control.order_after_publication();
     BluetoothSchedulerExecutionModifyPublished { _private: () }
 }
@@ -275,6 +304,29 @@ impl BluetoothTaskRegisters {
             registers: &self.bluetooth.bluetooth_controller_core,
         };
         execute_execution_modify_publication(&mut control, index)
+    }
+
+    /// Publish command one with its list-deletion mode bit for exactly one
+    /// hardware list and return after its trailing device fence. The
+    /// command-one observation and START clear are shared with insertion.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the deletion of `index` and exclusive access to
+    /// that list until it clears command-one START.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains list deletion and list serialization"
+    )]
+    pub unsafe fn publish_scheduler_execution_modify_list_deletion(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerExecutionModifyPublished {
+        let mut control = HardwareBluetoothSchedulerInsertionExecutionControl {
+            registers: &self.bluetooth.bluetooth_controller_core,
+        };
+        execute_execution_modify_list_deletion_publication(&mut control, index)
     }
 
     /// Perform one finite command-one observation in the reviewed

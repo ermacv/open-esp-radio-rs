@@ -416,6 +416,19 @@ impl BluetoothTaskRegisters {
         BluetoothSchedulerHardwareListHead::from_compressed_image(image)
     }
 
+    /// Read the current head of one hardware list once, then fence.
+    ///
+    /// SOURCE: same-chip named `r_btdm_sched_delete_specified_items`, instruction-identical
+    /// to current `r_sym_bt_qkNMymdnaJnYUfzpKgEp`, reads the head once
+    /// while the scheduler is busy and compares chained item start times
+    /// against it before skipping them.
+    pub fn observe_scheduler_hardware_list_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerHardwareListHead {
+        execute_scheduler_hardware_list_head_observation(self, index)
+    }
+
     /// Observe whether the hardware list admitted by one RUN is now empty.
     ///
     /// SOURCE: the post-picker tail of current

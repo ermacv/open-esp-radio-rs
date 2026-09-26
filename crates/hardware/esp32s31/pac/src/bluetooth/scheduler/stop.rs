@@ -14,6 +14,15 @@ pub struct BluetoothSchedulerStopped {
     _private: (),
 }
 
+impl BluetoothSchedulerStopped {
+    /// Construct a stopped receipt for host validation of its owners.
+    #[cfg(any(feature = "validation-probes", test))]
+    #[doc(hidden)]
+    pub const fn for_validation() -> Self {
+        Self { _private: () }
+    }
+}
+
 /// Exact stopped item after fenced hardware-head retirement. This affine
 /// capability authorizes one bound memory status sample, not CPU recycling.
 #[derive(Debug)]

@@ -32,10 +32,11 @@ owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-ieee8
 bluetooth-radio = [
     "dep:oer-bluetooth-controller",
     "dep:oer-bluetooth-hci",
-    "dep:oer-esp32s31-bluetooth",
     "dep:oer-esp32s31-bluetooth-system",
+    "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-phy",
     "dep:oer-esp32s31-radio-esp-hal",
+    "dep:oer-esp32s31-radio-system",
     "dep:embassy-futures",
     "dep:embassy-sync",
     "dep:embedded-io",

@@ -1,8 +1,10 @@
 //! Bluetooth LE images over the production composition and its HCI
 //! Controller.
 //!
-//! Every image starts the powered radio epoch, runs the radio runner and the
-//! HCI service on their own tasks and serves the typed HIL console. The
+//! Every image splits the radio for concurrent clients, starts the Bluetooth
+//! client on the shared radio system, runs the radio runner, the HCI service
+//! and the radio system's periodic PHY tracking on their own tasks and serves
+//! the typed HIL console. The
 //! `bluetooth-hil` image drives Direct Test Mode with HCI commands; the
 //! `bluetooth-gatt` image runs the Trouble Host and the GATT application.
 //! Both reach the radio only through the HCI transport.
@@ -14,12 +16,13 @@ mod dtm;
 mod gatt;
 
 use oer_bluetooth_controller::LeVersionInformation;
-use oer_esp32s31_bluetooth::resources::BluetoothRadioHardware;
 use oer_esp32s31_bluetooth_system::{
-    BluetoothEntropy, BluetoothHciService, BluetoothHostTransport, BluetoothRunner,
-    start_bluetooth_hci, start_esp32s31_bluetooth,
+    BluetoothEntropy, BluetoothHciService, BluetoothHostTransport, BluetoothParked,
+    BluetoothSystem, start_bluetooth_hci,
 };
-use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
+use oer_esp32s31_hal::root::{ConcurrentPartitions, RadioHardware};
+use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
+use oer_esp32s31_radio_system::RadioSystem;
 use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 use static_cell::StaticCell;
 
@@ -27,7 +30,10 @@ use static_cell::StaticCell;
 /// 5.4, the unassigned company value and subversion 1.
 const VERSION: LeVersionInformation = LeVersionInformation::new(0x0d, 0xffff, 1);
 
-static PLATFORM: StaticCell<EspHalRadioPlatform> = StaticCell::new();
+type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+
+static RADIO: StaticCell<Radio> = StaticCell::new();
+static SYSTEM: StaticCell<BluetoothSystem> = StaticCell::new();
 static ENTROPY: StaticCell<BluetoothEntropy<'static>> = StaticCell::new();
 
 pub(super) fn start(
@@ -36,41 +42,60 @@ pub(super) fn start(
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     rng: esp_hal::peripherals::RNG<'static>,
 ) -> ! {
-    let platform = PLATFORM.init(platform);
     let entropy = Entropy::new(rng);
     let boot = u64::from_le_bytes(entropy.random_bytes().expect("HIL boot entropy")).max(1);
     let entropy = ENTROPY.init(BluetoothEntropy::new(entropy));
-    let hardware = BluetoothRadioHardware::take().expect("unique Bluetooth hardware");
+    let identity = platform.phy_calibration_identity();
+    let public_address = platform.bluetooth_public_address();
+    let hardware = RadioHardware::take().expect("unique radio hardware");
+    let (radio, partitions) =
+        RadioSystem::new(hardware, platform, EspHalRadioClocks::new(), identity);
+    let radio = RADIO.init(radio);
     executor.run(|spawner| {
-        spawner
-            .spawn(main(spawner, platform, hardware, entropy, usb, boot).expect("Bluetooth task"));
+        spawner.spawn(
+            main(
+                spawner,
+                radio,
+                partitions,
+                public_address,
+                entropy,
+                usb,
+                boot,
+            )
+            .expect("Bluetooth task"),
+        );
     })
 }
 
 #[embassy_executor::task]
 #[allow(
     large_assignments,
-    reason = "the cold-start result crosses one poll boundary; the linked-image stack-frame audit bounds this task"
+    reason = "the start result crosses one poll boundary; the linked-image stack-frame audit bounds this task"
 )]
 async fn main(
     spawner: embassy_executor::Spawner,
-    platform: &'static EspHalRadioPlatform,
-    hardware: BluetoothRadioHardware,
+    radio: &'static Radio,
+    partitions: ConcurrentPartitions,
+    public_address: oer_bluetooth_hci::BluetoothPublicDeviceAddress,
     entropy: &'static BluetoothEntropy<'static>,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     boot: u64,
 ) {
-    let system = match start_esp32s31_bluetooth(platform, hardware, None).await {
-        Ok(system) => system,
-        Err(_) => super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-cold-start\r\n"),
+    let ConcurrentPartitions {
+        wifi: _wifi,
+        bluetooth,
+        ieee802154: _ieee802154,
+    } = partitions;
+    let Ok(parked) = BluetoothParked::new(bluetooth) else {
+        super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
-    let hci = start_bluetooth_hci(
-        system.runtime,
-        system.public_address,
-        Some(VERSION),
-        entropy,
-    );
-    spawner.spawn(runner(system.runner).expect("Bluetooth runner task"));
+    let system = match oer_esp32s31_bluetooth_system::start(radio, parked, public_address).await {
+        Ok(system) => SYSTEM.init(system),
+        Err(_) => super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-start\r\n"),
+    };
+    let hci = start_bluetooth_hci(system.runtime(), public_address, Some(VERSION), entropy);
+    spawner.spawn(tracking(radio).expect("PHY tracking task"));
+    spawner.spawn(runner(system).expect("Bluetooth runner task"));
     spawner.spawn(service(hci.service).expect("Bluetooth HCI task"));
     image(spawner, hci.host, usb, boot).await;
 }
@@ -96,8 +121,14 @@ async fn image(
 }
 
 #[embassy_executor::task]
-async fn runner(runner: BluetoothRunner) {
-    let _fault = runner.run().await;
+async fn tracking(radio: &'static Radio) {
+    let _error = radio.run_tracking().await;
+    super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=phy-tracking\r\n");
+}
+
+#[embassy_executor::task]
+async fn runner(system: &'static mut BluetoothSystem) {
+    let _fault = system.run().await;
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n");
 }
 

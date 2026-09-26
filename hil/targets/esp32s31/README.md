@@ -14,9 +14,10 @@ are archived beside each image. The [network implementation guide](../../../docs
 explains the crates, source policy, memory and UDP admission differences.
 
 The Bluetooth images reach the radio only through HCI.
-`runtime/src/bluetooth.rs` starts the production composition, runs its radio
-runner and its HCI Controller service on their own tasks and serves the typed
-console. The `bluetooth-dtm` image (`bluetooth-hil`) serves the
+`runtime/src/bluetooth.rs` splits the radio into the shared radio system,
+starts the production Bluetooth client on it, runs the radio runner, the HCI
+Controller service and the system's periodic PHY tracking on their own tasks
+and serves the typed console. The `bluetooth-dtm` image (`bluetooth-hil`) serves the
 `bluetooth-dtm-*` scenarios: `bluetooth/dtm.rs` resets the Controller and turns
 each DTM operation into LE Transmitter Test v1 (channel 0, 37-byte PRBS9), LE
 Receiver Test v1 (channel 0), LE Test End or HCI Reset, reporting the Test End
@@ -24,8 +25,8 @@ packet count. The `bluetooth-gatt` image serves `bluetooth-trouble-gatt`:
 `bluetooth/gatt.rs` runs the Trouble Host and the plaintext GATT application
 over the Host end of the transport. Both images use the development Controller
 identity Core 5.4, company `0xffff`, subversion 1, and a 500-ppm sleep-clock
-bound. No image serves `bluetooth-secure-gatt` yet: it needs Controller epoch
-restart, which the one-shot composition does not provide.
+bound. No image serves `bluetooth-secure-gatt` yet: the composition stops and
+restarts the Controller, but its HCI Controller is still created once per boot.
 
 `runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
 API bindings and diagnostic wrappers. All implementations use the same traffic

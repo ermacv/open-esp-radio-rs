@@ -130,11 +130,11 @@ const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
 const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
 #[cfg(not(feature = "psram-task-stack"))]
 const INTERNAL_STACK_END: u32 = INTERNAL_SRAM_END;
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-gatt"))]
 const STACK_PAINT_WORD: u32 = 0xa55a_a55a;
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-gatt"))]
 const STACK_PAINT_MARGIN_BYTES: u32 = 256;
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-gatt"))]
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
 // CPU1 runs the Embassy network executor in split images. Its nested async call
@@ -677,7 +677,7 @@ pub(crate) fn cpu1_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     )
 }
 
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-gatt"))]
 pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
     let cpu0_top = symbol(ptr::addr_of!(_stack_start));
@@ -693,7 +693,7 @@ pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     )
 }
 
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-gatt"))]
 fn measure_stack(
     bottom: u32,
     paint_start: u32,
@@ -722,7 +722,7 @@ fn measure_stack(
     }
 }
 
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-gatt"))]
 fn stack_minimum_free_bytes(cpu: u8) -> u32 {
     let value = match cpu {
         0 => option_env!("OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES"),

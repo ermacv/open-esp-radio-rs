@@ -37,11 +37,11 @@ reported_frame_count = 30
 # runtime high-water observations cover exercised aggregate call chains only.
 # Selectors omit crate hashes so the policy survives ordinary rebuilds.
 [[reviewed_frames]]
-function_contains = "::system::start_esp32s31_bluetooth"
-source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/system.rs"]
-max_bytes = 12288
+function_contains = "::target_port::concurrent::register_concurrent_phy::<"
+source_ends_with = ["crates/hardware/esp32s31/phy/src/target_port/concurrent.rs"]
+max_bytes = 9728
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "one-time Bluetooth cold start moves the powered Controller typestate through the common-PHY and BLE-PHY transitions before placing it in static storage; it runs once on the 192-KiB CPU0 task stack before any radio task"
+reason = "first-client shared PHY registration under the radio arbiter's lease retains the calibration transition and registered-domain result across bounded hardware awaits; it runs once per registration epoch on the 192-KiB CPU0 task stack, inside the opaque poll boundary of the client's start, and runtime painting independently bounds the full initialization chain"
 
 [[reviewed_frames]]
 function_contains = "::hci::start_bluetooth_hci"

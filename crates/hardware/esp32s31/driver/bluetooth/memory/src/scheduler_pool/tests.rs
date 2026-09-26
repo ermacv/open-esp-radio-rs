@@ -237,3 +237,17 @@ fn a_pool_larger_than_its_numbers_is_refused() {
         Err(SchedulerPoolBindError::AllocationNumbers)
     ));
 }
+
+#[test]
+fn only_submitted_items_resolve_from_their_link() {
+    let mut pool = pool();
+    let instance = pool.acquire().unwrap();
+    prepare(&mut pool, &instance);
+    let listed = pool.submit(&instance, 1).unwrap();
+    let space = SchedulerItemSpace::new().with(&pool);
+    assert_eq!(space.listed_item(space.link(listed)), Some(listed));
+    assert_eq!(space.listed_item(space.link(instance.item(0))), None);
+    pool.retire(listed).unwrap();
+    let space = SchedulerItemSpace::new().with(&pool);
+    assert_eq!(space.listed_item(space.link(listed)), None);
+}

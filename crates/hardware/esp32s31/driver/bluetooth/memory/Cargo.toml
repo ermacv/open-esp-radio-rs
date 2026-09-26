@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 description = "ESP32-S31 Bluetooth controller-memory layouts and ownership"
 
+[features]
+# Validation hooks that dependent crates' host tests use to emulate hardware.
+validation-probes = []
+
 [dependencies]
 oer-esp32s31-hal = { path = "../../../hal" }
 pin-project = "1.1.13"

@@ -578,6 +578,8 @@ pub trait SchedulerItemSource: sealed::Sealed {
     fn item_link(&self, id: SchedulerItemId) -> ControllerSramLinkAddress;
     #[doc(hidden)]
     fn item_words(&self, id: SchedulerItemId) -> &[VolatileCell<u32>];
+    #[doc(hidden)]
+    fn listed_item(&self, link: ControllerSramLinkAddress) -> Option<SchedulerItemId>;
 }
 
 impl<S: SchedulerRoleStorage, const N: usize> sealed::Sealed for SchedulerRolePool<S, N> {}
@@ -597,6 +599,18 @@ impl<S: SchedulerRoleStorage, const N: usize> SchedulerItemSource for SchedulerR
             "the executor addresses only listed items"
         );
         self.graph(id.instance()).item_words(id.item())
+    }
+
+    fn listed_item(&self, link: ControllerSramLinkAddress) -> Option<SchedulerItemId> {
+        (0..N)
+            .flat_map(|instance| {
+                (0..S::ITEMS).map(move |item| SchedulerItemId {
+                    kind: S::KIND,
+                    instance: instance as u8,
+                    item: item as u8,
+                })
+            })
+            .find(|id| self.is_listed(*id) && self.item_link(*id) == link)
     }
 }
 
@@ -632,6 +646,17 @@ impl<'pools> SchedulerItemSpace<'pools> {
         self.source(id).item_link(id)
     }
 
+    /// The submitted item whose controller link is `link`.
+    ///
+    /// Pool storage is bound for `'static`, so a link found here stays valid
+    /// memory for as long as hardware may follow it.
+    pub fn listed_item(&self, link: ControllerSramLinkAddress) -> Option<SchedulerItemId> {
+        self.sources
+            .iter()
+            .flatten()
+            .find_map(|source| source.listed_item(link))
+    }
+
     /// Prepare a listed item for insertion; see the scheduler item header.
     pub fn prepare_for_list(
         &self,
@@ -653,6 +678,13 @@ impl<'pools> SchedulerItemSpace<'pools> {
     /// Recorded status, or `None` while hardware has not executed the item.
     pub fn completion_status(&self, id: SchedulerItemId) -> Option<SchedulerItemCompletionStatus> {
         self.header(id).completion_status()
+    }
+
+    /// Record a status as hardware does when it executes a listed item.
+    #[cfg(any(feature = "validation-probes", test))]
+    #[doc(hidden)]
+    pub fn record_status_for_validation(&self, id: SchedulerItemId, status: u32) {
+        self.header(id).set_status(status);
     }
 
     /// Mark a listed item deleted before it leaves the list.

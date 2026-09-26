@@ -690,6 +690,23 @@ impl<const N: usize> PeripheralConnectionPool<N> {
         Ok(outcome)
     }
 
+    /// Emulate hardware receiving `pdu` into the private chain.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn emulate_receive_for_validation(
+        &mut self,
+        instance: &SchedulerRoleInstance,
+        pdu: &[u8],
+    ) -> bool {
+        let Ok(cpu) = self.cpu(instance) else {
+            return false;
+        };
+        let Some(rx) = cpu.state.rx.as_mut() else {
+            return false;
+        };
+        rx.view(&cpu.graph.rx).emulate_receive(pdu, 0)
+    }
+
     /// Latest hardware receive time; the creation seed until a valid
     /// reception updates it.
     pub fn receive_time(

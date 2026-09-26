@@ -60,7 +60,6 @@ fn input() -> LegacyConnectableAdvertisingMemoryInput<'static> {
         LegacyConnectableScanResponsePacketInput::try_from_encoded_extent(&SCAN_RESPONSE_PDU, 6)
             .unwrap(),
         LegacyConnectableAdvertisingOwnAddress::Random(ADVERTISER),
-        LegacyAdvertisingPrimaryChannel::Channel38,
     )
 }
 
@@ -79,10 +78,6 @@ fn preparation_chains_both_pdus_and_joins_the_non_scanning_chain() {
     assert_eq!(
         pool.scan_response_pdu(&instance),
         Some(&SCAN_RESPONSE_PDU[..])
-    );
-    assert_eq!(
-        pool.primary_channel(&instance),
-        Some(LegacyAdvertisingPrimaryChannel::Channel38)
     );
     assert_eq!(
         pool.post_anchor_duration(&instance).unwrap().as_micros(),
@@ -149,7 +144,14 @@ fn an_event_lowers_the_item_and_finishing_restores_it() {
         pool.submit(&instance, 0),
         Err(SchedulerPoolError::NotPrepared)
     );
-    pool.prepare_event(&instance, 6_000, 6_200, 214).unwrap();
+    pool.prepare_event(
+        &instance,
+        LegacyAdvertisingPrimaryChannel::Channel38,
+        6_000,
+        6_200,
+        214,
+    )
+    .unwrap();
     {
         let (graph, _, _) = pool.shared(&instance).unwrap();
         let header = graph.item.header();
@@ -196,7 +198,13 @@ fn a_scanning_chain_and_early_events_are_refused() {
         Err(LegacyConnectableAdvertisingError::ForeignReceiveClass)
     );
     assert_eq!(
-        pool.prepare_event(&instance, 0, 1, 0),
+        pool.prepare_event(
+            &instance,
+            LegacyAdvertisingPrimaryChannel::Channel37,
+            0,
+            1,
+            0
+        ),
         Err(LegacyConnectableAdvertisingError::State)
     );
     assert_eq!(pool.adv_ind_pdu(&instance), None);

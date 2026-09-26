@@ -232,7 +232,7 @@ impl LeRxBufferHeaderStorage {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub(crate) fn emulate_hardware_completion(&self) {
         self.words[3].set(self.words[3].get() | Self::COMPLETION_GATE);
     }
@@ -379,7 +379,7 @@ impl LeRxPacketStorage {
         ((word >> ((offset % 4) * 8)) & 0xff) as u8
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub(crate) fn emulate_hardware_receive(&self, pdu: &[u8], rssi_dbm: i8, captured_time: u32) {
         assert!((2..=BLUETOOTH_LE_RX_PAYLOAD_CAPACITY + 2).contains(&pdu.len()));
         assert_eq!(usize::from(pdu[1]) + 2, pdu.len());
@@ -397,7 +397,7 @@ impl LeRxPacketStorage {
         self.words[Self::RESULT_WORD].set(Self::UPPER_DISPATCH_BLOCKING_FLAGS);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     fn write_byte(&self, offset: usize, value: u8) {
         let shift = (offset % 4) * 8;
         let word = self.words[offset / 4].get();
@@ -419,7 +419,7 @@ impl LeRxPacketStorage {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub(crate) fn emulate_receive_tag(&self, tag: u16) {
         let word = self.words[Self::EPOCH_WORD].get() & !Self::EPOCH_REARM_SENTINEL;
         self.words[Self::EPOCH_WORD].set(word | u32::from(tag));

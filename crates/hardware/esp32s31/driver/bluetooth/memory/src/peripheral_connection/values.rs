@@ -296,6 +296,11 @@ impl PeripheralConnectionSchedulerPriority {
     /// Baseline restored before an ordinary recurring event.
     pub const RECURRING_BASELINE: Self = Self(8);
 
+    /// A priority from 0 to 15; the connection policy chooses it.
+    pub const fn new(value: u8) -> Option<Self> {
+        if value <= 15 { Some(Self(value)) } else { None }
+    }
+
     pub const fn value(self) -> u8 {
         self.0
     }

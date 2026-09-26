@@ -192,7 +192,6 @@ pub struct LegacyConnectableAdvertisingMemoryInput<'a> {
     adv_ind: LegacyConnectableAdvIndPacketInput<'a>,
     scan_response: LegacyConnectableScanResponsePacketInput<'a>,
     own_address: LegacyConnectableAdvertisingOwnAddress,
-    primary_channel: LegacyAdvertisingPrimaryChannel,
 }
 
 impl<'a> LegacyConnectableAdvertisingMemoryInput<'a> {
@@ -200,13 +199,11 @@ impl<'a> LegacyConnectableAdvertisingMemoryInput<'a> {
         adv_ind: LegacyConnectableAdvIndPacketInput<'a>,
         scan_response: LegacyConnectableScanResponsePacketInput<'a>,
         own_address: LegacyConnectableAdvertisingOwnAddress,
-        primary_channel: LegacyAdvertisingPrimaryChannel,
     ) -> Self {
         Self {
             adv_ind,
             scan_response,
             own_address,
-            primary_channel,
         }
     }
 }
@@ -426,7 +423,6 @@ pub struct LegacyConnectableAdvertisingBinding {
 pub struct LegacyConnectableAdvertisingPrepared {
     adv_ind: AdvertisingTxPacketLength,
     scan_response: AdvertisingTxPacketLength,
-    primary_channel: LegacyAdvertisingPrimaryChannel,
 }
 
 /// Preparation state of one instance.
@@ -570,16 +566,16 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
             LegacyConnectableAdvertisingState::Prepared(LegacyConnectableAdvertisingPrepared {
                 adv_ind,
                 scan_response,
-                primary_channel: input.primary_channel,
             });
         Ok(())
     }
 
-    /// Lower the item on the prepared primary channel. `raw_sequence_lead`
-    /// is the scheduler's accepted preparation lead.
+    /// Lower the item on `channel`. `raw_sequence_lead` is the scheduler's
+    /// accepted preparation lead.
     pub fn prepare_event(
         &mut self,
         instance: &SchedulerRoleInstance,
+        channel: LegacyAdvertisingPrimaryChannel,
         raw_start: u32,
         raw_end: u32,
         raw_sequence_lead: u32,
@@ -596,7 +592,7 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
         }
         let words = graph.item.reviewed_words().prepare_event_item(
             graph.link_state.reviewed_words(),
-            prepared.primary_channel,
+            channel,
             None,
             raw_start,
             raw_end,
@@ -669,14 +665,6 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
                 .scan_response_packet
                 .prepared_pdu(prepared.scan_response)
         })
-    }
-
-    pub fn primary_channel(
-        &self,
-        instance: &SchedulerRoleInstance,
-    ) -> Option<LegacyAdvertisingPrimaryChannel> {
-        self.prepared(instance)
-            .map(|(_, prepared)| prepared.primary_channel)
     }
 
     pub fn post_anchor_duration(

@@ -469,7 +469,7 @@ impl<const PACKETS: usize> LeRxRingView<'_, PACKETS> {
             .ok_or(LeRxChainError::ForeignLink)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub(crate) fn emulate_receive(&self, pdu: &[u8], tag: u16) -> bool {
         // Hardware writes the successor of the last completed header.
         let mut current = self.ring.head;
@@ -601,7 +601,14 @@ impl<const PACKETS: usize> LeRxChain<PACKETS> {
         self.with_view(|view| view.emulate_receive(pdu, tag))
     }
 
-    #[cfg(test)]
+    /// Emulate hardware receiving `pdu` for `source`.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn emulate_receive_for_validation(&mut self, pdu: &[u8], source: LeRxSource) -> bool {
+        self.with_view(|view| view.emulate_receive(pdu, source.tag.number()))
+    }
+
+    #[cfg(any(test, feature = "validation-probes"))]
     fn with_view<R>(&mut self, f: impl FnOnce(&mut LeRxRingView<'_, PACKETS>) -> R) -> R {
         let storage = self.storage.as_ref().get_ref();
         f(&mut self.ring.view(&storage.nodes))

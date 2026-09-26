@@ -483,6 +483,10 @@ impl Ieee802154LowLevel for PortLl {
     fn etm_channel_enabled(&mut self, channel: Ieee802154EtmChannel) -> bool {
         self.0.borrow_mut().read(ETM_CHEN) & (1 << etm_channel(channel)) != 0
     }
+    // The production PAC writes only the channel bit to the write-trigger
+    // set and clear words; the vendor reads the word first. Both write the
+    // same image while a trigger word reads as zero, which is the model's
+    // value for an unwritten word.
     fn disable_etm_channel(&mut self, channel: Ieee802154EtmChannel) {
         let mut shared = self.0.borrow_mut();
         let value = shared.read(ETM_CHENCLR) | 1 << etm_channel(channel);

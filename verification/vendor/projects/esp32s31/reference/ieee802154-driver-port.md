@@ -113,7 +113,7 @@ frame semantics belong to the protocol crate.
 | `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver engine | implemented without test mode, multi-PAN and software coexistence |
 | RX buffer ring, `set_next_rx_buffer`, frame info | driver engine | implemented: twenty engine-owned receive buffers, the stub buffer, a copied transmit frame and the enhanced-ACK frame; DMA-capable placement is the composition's obligation |
 | `esp_ieee802154_timer.c` | HAL `ll` timers, driver engine callbacks | implemented |
-| `ieee802154_transmit_at`, `receive_at` (timer and ETM) | driver engine over HAL `ll` | implemented on the shared `MODEM_ETM` |
+| `ieee802154_transmit_at`, `receive_at` (timer and ETM) | driver engine over HAL `ll` | implemented on the IEEE 802.15.4 channels zero and one of `MODEM_ETM`; the write-trigger semantics of the set and clear words is not yet verified on hardware |
 | `esp_ieee802154_ack.c` pending table and `ack_config_pending_bit` | protocol pending table, driver engine | implemented for interface zero |
 | `esp_ieee802154_frame.c` | protocol `mac::header` | implemented over `[PHR, PSDU...]` images; malformed headers report absent fields where the vendor reads outside the frame |
 | `esp_ieee802154_sec.c` | driver engine over HAL `ll` | implemented |

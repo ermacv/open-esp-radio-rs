@@ -190,14 +190,22 @@ pub struct PhyRxDcCalibrationTransition {
     threshold: i32,
     iteration: u8,
     low: crate::calibration::estimator::PhyDcIqEstimate,
+    measurement: crate::calibration::estimator::PhyDcIqEstimate,
     readiness_activity_edges: u16,
 }
 
+/// ROM `phy_pbus_rx_dco_cal_1step_new` keeps one output slot for the
+/// baseband low search and one for the radio or baseband high search. Both
+/// start cleared and keep the last search's estimate across iterations,
+/// because `phy_rxdc_est_min` writes a slot only for an admitted estimate.
+/// The ROM never initializes the radio slot, so it reads stack contents
+/// before the first admitted radio estimate; Rust starts it cleared.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PhyRxDcCalibrationPolicyState {
     current: [u16; 2],
     iteration: u8,
     low: crate::calibration::estimator::PhyDcIqEstimate,
+    measurement: crate::calibration::estimator::PhyDcIqEstimate,
     readiness_activity_edges: u16,
 }
 
@@ -212,6 +220,11 @@ impl PhyRxDcCalibrationPolicyState {
                 q: 0,
                 power: 0,
             },
+            measurement: crate::calibration::estimator::PhyDcIqEstimate {
+                i: 0,
+                q: 0,
+                power: 0,
+            },
             readiness_activity_edges: 0,
         }
     }
@@ -222,35 +235,35 @@ impl PhyRxDcCalibrationPolicyState {
         population: u8,
         threshold: i32,
         high: bool,
-        outcome: PhyRxDcMinimumOutcome,
+        estimate: crate::calibration::estimator::PhyDcIqEstimate,
+        readiness_activity_edges: u16,
     ) -> Option<PhyRxDcCalibrationOutcome> {
         self.readiness_activity_edges = self
             .readiness_activity_edges
-            .wrapping_add(outcome.readiness_activity_edges);
+            .wrapping_add(readiness_activity_edges);
         if request.stage == PhyRxDcCalibrationStage::Baseband && !high {
-            self.low = outcome.estimate;
+            self.low = estimate;
             return None;
         }
+        self.measurement = estimate;
 
         let (delta_i, delta_q, power, shift) = match request.stage {
             PhyRxDcCalibrationStage::Radio => (
-                outcome.estimate.i,
-                outcome.estimate.q,
-                outcome.estimate.power,
+                estimate.i,
+                estimate.q,
+                estimate.power,
                 population.max(2) - 2,
             ),
             PhyRxDcCalibrationStage::Baseband => (
-                outcome
-                    .estimate
+                estimate
                     .i
                     .wrapping_sub(self.low.i)
                     .wrapping_sub(i32::from(request.reference_delta[0])),
-                outcome
-                    .estimate
+                estimate
                     .q
                     .wrapping_sub(self.low.q)
                     .wrapping_sub(i32::from(request.reference_delta[1])),
-                outcome.estimate.power.max(self.low.power),
+                estimate.power.max(self.low.power),
                 if request.shared_radio {
                     3
                 } else if self.iteration >= 2 {
@@ -410,9 +423,7 @@ impl PhyRxDcCalibrationTransition {
                 break Terminal::Failed(PhyRxDcCalibrationFailure::PbusForceTimedOut(force_q));
             }
 
-            let (low, low_activity_edges) = if self.request.stage
-                == PhyRxDcCalibrationStage::Baseband
-            {
+            let low = if self.request.stage == PhyRxDcCalibrationStage::Baseband {
                 let level = PhyPbusForceTest::new(1, 2, 0);
                 if !force_pbus_direct(registers, level) {
                     break Terminal::Failed(PhyRxDcCalibrationFailure::PbusForceTimedOut(level));
@@ -422,25 +433,18 @@ impl PhyRxDcCalibrationTransition {
                 }
                 stats.settle_10us += 1;
                 match execute_minimum_target::<D>(
-                    Self::minimum_request_at(self.request, policy.iteration, false),
+                    Self::minimum_request_at(self.request, policy.iteration, false, policy.low),
                     registers,
                     budget,
                     &mut stats,
                 )? {
-                    Ok(outcome) => (outcome.estimate, outcome.readiness_activity_edges),
+                    Ok(outcome) => Some((outcome.estimate, outcome.readiness_activity_edges)),
                     Err(failure) => {
                         break Terminal::Failed(PhyRxDcCalibrationFailure::Minimum(failure));
                     }
                 }
             } else {
-                (
-                    crate::calibration::estimator::PhyDcIqEstimate {
-                        i: 0,
-                        q: 0,
-                        power: 0,
-                    },
-                    0,
-                )
+                None
             };
 
             let measurement = if self.request.stage == PhyRxDcCalibrationStage::Baseband {
@@ -453,7 +457,12 @@ impl PhyRxDcCalibrationTransition {
                 }
                 stats.settle_10us += 1;
                 match execute_minimum_target::<D>(
-                    Self::minimum_request_at(self.request, policy.iteration, true),
+                    Self::minimum_request_at(
+                        self.request,
+                        policy.iteration,
+                        true,
+                        policy.measurement,
+                    ),
                     registers,
                     budget,
                     &mut stats,
@@ -469,7 +478,12 @@ impl PhyRxDcCalibrationTransition {
                 }
                 stats.settle_10us += 1;
                 match execute_minimum_target::<D>(
-                    Self::minimum_request_at(self.request, policy.iteration, false),
+                    Self::minimum_request_at(
+                        self.request,
+                        policy.iteration,
+                        false,
+                        policy.measurement,
+                    ),
                     registers,
                     budget,
                     &mut stats,
@@ -481,19 +495,25 @@ impl PhyRxDcCalibrationTransition {
                 }
             };
 
-            if self.request.stage == PhyRxDcCalibrationStage::Baseband {
-                let low_outcome = PhyRxDcMinimumOutcome {
-                    request: Self::minimum_request_at(self.request, policy.iteration, false),
-                    estimate: low,
-                    attempts: 0,
-                    readiness_activity_edges: low_activity_edges,
-                };
-                let _ = policy.accept(self.request, population, threshold, false, low_outcome);
+            if let Some((low, low_activity_edges)) = low {
+                let _ = policy.accept(
+                    self.request,
+                    population,
+                    threshold,
+                    false,
+                    low,
+                    low_activity_edges,
+                );
             }
             let high = self.request.stage == PhyRxDcCalibrationStage::Baseband;
-            if let Some(outcome) =
-                policy.accept(self.request, population, threshold, high, measurement)
-            {
+            if let Some(outcome) = policy.accept(
+                self.request,
+                population,
+                threshold,
+                high,
+                measurement.estimate,
+                measurement.readiness_activity_edges,
+            ) {
                 break Terminal::Complete(outcome);
             }
         };
@@ -579,6 +599,11 @@ impl PhyRxDcCalibrationTransition {
                 q: 0,
                 power: 0,
             },
+            measurement: crate::calibration::estimator::PhyDcIqEstimate {
+                i: 0,
+                q: 0,
+                power: 0,
+            },
             readiness_activity_edges: 0,
         }
     }
@@ -592,13 +617,19 @@ impl PhyRxDcCalibrationTransition {
     }
 
     const fn minimum_request(&self, high: bool) -> PhyRxDcMinimumRequest {
-        Self::minimum_request_at(self.request, self.iteration, high)
+        let previous = if matches!(self.request.stage, PhyRxDcCalibrationStage::Baseband) && !high {
+            self.low
+        } else {
+            self.measurement
+        };
+        Self::minimum_request_at(self.request, self.iteration, high, previous)
     }
 
     const fn minimum_request_at(
         request: PhyRxDcCalibrationRequest,
         iteration: u8,
         high: bool,
+        previous: crate::calibration::estimator::PhyDcIqEstimate,
     ) -> PhyRxDcMinimumRequest {
         PhyRxDcMinimumRequest {
             measurement: iteration.wrapping_mul(2).wrapping_add(high as u8),
@@ -608,6 +639,7 @@ impl PhyRxDcCalibrationTransition {
             // `phy_dc_iq_est`; its second argument is unused.
             mode: 0,
             rx_saturation_detected: request.rx_saturation_detected,
+            previous,
         }
     }
 
@@ -679,12 +711,21 @@ impl PhyRxDcCalibrationTransition {
             current: self.current,
             iteration: self.iteration,
             low: self.low,
+            measurement: self.measurement,
             readiness_activity_edges: self.readiness_activity_edges,
         };
-        let terminal = policy.accept(self.request, self.population, self.threshold, high, outcome);
+        let terminal = policy.accept(
+            self.request,
+            self.population,
+            self.threshold,
+            high,
+            outcome.estimate,
+            outcome.readiness_activity_edges,
+        );
         self.current = policy.current;
         self.iteration = policy.iteration;
         self.low = policy.low;
+        self.measurement = policy.measurement;
         self.readiness_activity_edges = policy.readiness_activity_edges;
         if self.request.stage == PhyRxDcCalibrationStage::Baseband && !high {
             self.step = Step::ForceRadioLevel { high: true };
@@ -1589,7 +1630,12 @@ impl PhyRxGainDcTransition {
         }
     }
 
-    const fn reference_minimum_request(bank: PhyRxGainDcBank, high: bool) -> PhyRxDcMinimumRequest {
+    /// `phy_rxdc_est_delta` clears both output slots before its two searches.
+    const fn reference_minimum_request(
+        bank: PhyRxGainDcBank,
+        high: bool,
+        rx_saturation_detected: bool,
+    ) -> PhyRxDcMinimumRequest {
         PhyRxDcMinimumRequest {
             measurement: match (bank, high) {
                 (PhyRxGainDcBank::Shared, false) => 0,
@@ -1603,7 +1649,12 @@ impl PhyRxGainDcTransition {
             // unused-by-the-child argument and must not be confused with
             // the estimator mode.
             mode: 0,
-            rx_saturation_detected: false,
+            rx_saturation_detected,
+            previous: crate::calibration::estimator::PhyDcIqEstimate {
+                i: 0,
+                q: 0,
+                power: 0,
+            },
         }
     }
 
@@ -1844,7 +1895,9 @@ impl PhyRxGainDcTransition {
                     bank,
                     high,
                     transition: PhyRxDcMinimumTransition::new(Self::reference_minimum_request(
-                        bank, high,
+                        bank,
+                        high,
+                        self.parameters.rx_saturation_detected,
                     )),
                 };
             }

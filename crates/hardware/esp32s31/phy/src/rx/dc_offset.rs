@@ -101,6 +101,11 @@ pub struct PhyRxDcMinimumRequest {
     pub mode: u8,
     /// Rust-owned replacement for `phy_param[0x1ae] == 1`.
     pub rx_saturation_detected: bool,
+    /// Estimate the caller's output slot holds before the search. ROM
+    /// `phy_rxdc_est_min` writes that slot only for an admitted estimate, so a
+    /// search that admits none returns these I/Q values with the exhausted
+    /// power sentinel.
+    pub previous: PhyDcIqEstimate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -175,14 +180,10 @@ enum PhyRxDcMinimumDecision {
 
 impl PhyRxDcMinimumPolicyState {
     #[cfg(any(target_arch = "riscv32", test))]
-    const fn new() -> Self {
+    const fn new(previous: PhyDcIqEstimate) -> Self {
         Self {
             attempts: 0,
-            best: PhyDcIqEstimate {
-                i: 0,
-                q: 0,
-                power: 100,
-            },
+            best: previous,
             minimum_power: 100,
             readiness_activity_edges: 0,
         }
@@ -309,7 +310,7 @@ impl PhyRxDcMinimumTargetTransaction {
             -> Result<crate::calibration::estimator::PhyDcIqTargetCompletion, E>,
     ) -> Result<Option<PhyRxDcMinimumTargetCompletion>, E> {
         let mut operations = 0_u32;
-        let mut policy = PhyRxDcMinimumPolicyState::new();
+        let mut policy = PhyRxDcMinimumPolicyState::new(self.request.previous);
         loop {
             let available = maximum_operations.saturating_sub(operations);
             let complete_estimator_allowance = u32::from(crate::HARDWARE_EDGE_LIMIT) + 8;
@@ -361,11 +362,7 @@ impl PhyRxDcMinimumTransition {
                 Self::estimate_request(request, 0),
             )),
             attempt: 0,
-            best: PhyDcIqEstimate {
-                i: 0,
-                q: 0,
-                power: 100,
-            },
+            best: request.previous,
             minimum_power: 100,
             readiness_activity_edges: 0,
         }

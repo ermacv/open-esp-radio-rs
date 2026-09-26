@@ -204,6 +204,11 @@ const MINIMUM_REQUEST: PhyRxDcMinimumRequest = PhyRxDcMinimumRequest {
     control: 0x0fa0,
     mode: 0,
     rx_saturation_detected: false,
+    previous: PhyDcIqEstimate {
+        i: 0,
+        q: 0,
+        power: 0,
+    },
 };
 
 fn minimum_outcome(
@@ -243,6 +248,37 @@ fn rx_dc_minimum_completes_immediately_below_36() {
             attempts: 1,
             readiness_activity_edges: 0,
         })
+    );
+}
+
+#[test]
+fn unadmitted_minimum_returns_the_previous_slot_with_the_sentinel_power() {
+    let previous = PhyDcIqEstimate {
+        i: 17,
+        q: -9,
+        power: 3,
+    };
+    let request = PhyRxDcMinimumRequest {
+        previous,
+        ..MINIMUM_REQUEST
+    };
+    let mut transition = PhyRxDcMinimumTransition::new(request);
+    // Readiness activity without a detected saturation admits no estimate,
+    // however low its power.
+    for attempt in 0..8 {
+        transition.accept_outcome(minimum_outcome(attempt, 1, 1));
+    }
+    let PhyRxDcMinimumAction::Complete(outcome) = transition.action() else {
+        panic!("RX-DC minimum did not exhaust its attempts");
+    };
+    assert_eq!(outcome.attempts, 8);
+    assert_eq!(
+        outcome.estimate,
+        PhyDcIqEstimate {
+            i: 17,
+            q: -9,
+            power: 0x38,
+        }
     );
 }
 

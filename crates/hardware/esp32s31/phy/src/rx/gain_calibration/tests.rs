@@ -48,7 +48,8 @@ fn gain_tables_and_reference_mode_match_vendor_rodata_and_calls() {
     assert_eq!(shared_mixer_dgain(9), 4);
     assert_eq!(shared_mixer_dgain(10), 7);
     assert_eq!(
-        PhyRxGainDcTransition::reference_minimum_request(PhyRxGainDcBank::Shared, false).mode,
+        PhyRxGainDcTransition::reference_minimum_request(PhyRxGainDcBank::Shared, false, false)
+            .mode,
         0
     );
 }
@@ -214,6 +215,11 @@ fn minimum_outcome_shape_is_owned_not_pointer_backed() {
         control: RADIO.control,
         mode: 0,
         rx_saturation_detected: false,
+        previous: crate::calibration::estimator::PhyDcIqEstimate {
+            i: 0,
+            q: 0,
+            power: 0,
+        },
     };
     let child = PhyDcIqEstimateOutcome {
         request: crate::calibration::estimator::PhyDcIqEstimateRequest {
@@ -344,6 +350,7 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
     let minimum = PhyRxDcMinimumTransition::new(PhyRxGainDcTransition::reference_minimum_request(
         PhyRxGainDcBank::Shared,
         false,
+        false,
     ));
     let PhyRxDcMinimumAction::DcIq(PhyDcIqAction::Configure(request)) = minimum.action() else {
         panic!("estimator configure");
@@ -471,9 +478,12 @@ fn borrowed_minimum_matches_stepwise_parent_and_preserves_cleanup() {
     };
     for timeout in [false, true] {
         for high in [false, true] {
-            let minimum = PhyRxDcMinimumTransition::new(
-                PhyRxGainDcTransition::reference_minimum_request(PhyRxGainDcBank::Shared, high),
-            );
+            let minimum =
+                PhyRxDcMinimumTransition::new(PhyRxGainDcTransition::reference_minimum_request(
+                    PhyRxGainDcBank::Shared,
+                    high,
+                    false,
+                ));
             let mut calibration = PhyRxDcCalibrationTransition::new(RADIO);
             calibration.step = Step::Minimum {
                 high,
@@ -660,4 +670,49 @@ fn parent_retains_convergence_and_baseband_limit_outcome_separately() {
     let published = parent.outcome();
     assert!(published.quality.wifi_baseband()[3]);
     assert!(!published.quality.wifi_baseband()[5]);
+}
+
+#[test]
+fn minimum_searches_start_from_the_previous_estimate_of_their_slot() {
+    let cleared = PhyDcIqEstimate {
+        i: 0,
+        q: 0,
+        power: 0,
+    };
+    let mut radio = PhyRxDcCalibrationTransition::new(RADIO);
+    assert_eq!(radio.minimum_request(false).previous, cleared);
+    // A large residual keeps the radio stage iterating.
+    radio.accept_measurement(false, outcome(radio.minimum_request(false), 40, -30, 20));
+    assert_eq!(
+        radio.minimum_request(false).previous,
+        PhyDcIqEstimate {
+            i: 40,
+            q: -30,
+            power: 20
+        }
+    );
+
+    let baseband = PhyRxDcCalibrationRequest {
+        stage: PhyRxDcCalibrationStage::Baseband,
+        ..RADIO
+    };
+    let mut transition = PhyRxDcCalibrationTransition::new(baseband);
+    transition.accept_measurement(false, outcome(transition.minimum_request(false), 3, 4, 10));
+    let low = PhyDcIqEstimate {
+        i: 3,
+        q: 4,
+        power: 10,
+    };
+    assert_eq!(transition.minimum_request(false).previous, low);
+    assert_eq!(transition.minimum_request(true).previous, cleared);
+    transition.accept_measurement(true, outcome(transition.minimum_request(true), 60, 60, 10));
+    assert_eq!(transition.minimum_request(false).previous, low);
+    assert_eq!(
+        transition.minimum_request(true).previous,
+        PhyDcIqEstimate {
+            i: 60,
+            q: 60,
+            power: 10
+        }
+    );
 }

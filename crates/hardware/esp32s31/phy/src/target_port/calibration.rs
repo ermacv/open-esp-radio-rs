@@ -400,6 +400,7 @@ fn rx_gain_one_step_direct<D: PhyShortDelay>(
 fn rx_gain_reference_direct<D: PhyShortDelay>(
     bank: crate::rx::gain_calibration::PhyRxGainDcBank,
     measurement_base: u8,
+    rx_saturation_detected: bool,
     registers: &mut impl SharedPhyContext,
     budget: &mut crate::target_executor::DirectOperationBudget,
     execution: &mut crate::tracking::observation::RxGainExecution,
@@ -417,7 +418,13 @@ fn rx_gain_reference_direct<D: PhyShortDelay>(
             measurement: measurement_base,
             control: 0x800,
             mode: 0,
-            rx_saturation_detected: false,
+            // `phy_rxdc_est_delta` clears both output slots.
+            rx_saturation_detected,
+            previous: crate::calibration::estimator::PhyDcIqEstimate {
+                i: 0,
+                q: 0,
+                power: 0,
+            },
         },
         registers,
         budget,
@@ -437,7 +444,12 @@ fn rx_gain_reference_direct<D: PhyShortDelay>(
             measurement: measurement_base + 1,
             control: 0x800,
             mode: 0,
-            rx_saturation_detected: false,
+            rx_saturation_detected,
+            previous: crate::calibration::estimator::PhyDcIqEstimate {
+                i: 0,
+                q: 0,
+                power: 0,
+            },
         },
         registers,
         budget,
@@ -536,6 +548,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
         let shared_reference = rx_gain_reference_direct::<D>(
             PhyRxGainDcBank::Shared,
             0,
+            parameters.rx_saturation_detected,
             registers,
             budget,
             execution,
@@ -657,8 +670,14 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                 ];
             }
         }
-        let wifi_reference =
-            rx_gain_reference_direct::<D>(PhyRxGainDcBank::Wifi, 2, registers, budget, execution)?;
+        let wifi_reference = rx_gain_reference_direct::<D>(
+            PhyRxGainDcBank::Wifi,
+            2,
+            parameters.rx_saturation_detected,
+            registers,
+            budget,
+            execution,
+        )?;
         for index in 0..WIFI_CALIBRATION_GAIN.len() as u8 {
             let previous = if index == 0 {
                 [0x100; 2]

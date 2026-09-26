@@ -7,18 +7,28 @@ use oer_esp32s31_ieee802154_runtime::{
     Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent, Ieee802154Runtime,
 };
 use oer_ieee802154::{
-    Channel, CommandError, Configuration, EnergyScanRequest, FrameView, RadioCommand, RadioState,
-    RequestId, TxMode, TxRequest, TxSecurity,
+    AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView,
+    RadioCommand, RadioState, RequestId, TxMode, TxRequest, TxSecurity,
 };
 use openthread::{
-    Capabilities, Config, MacCapabilities, PsduMeta, Radio, RadioCaps, RadioErrorKind,
-    SrcMatchConfig,
+    AckSecurity, Capabilities, Config, FrameCounterUpdate, MacCapabilities, MacKeys, PsduMeta,
+    Radio, RadioCaps, RadioErrorKind, SentAck, SrcMatchConfig, TxFrame,
 };
 
 use crate::frames::{
-    TransmitFailure, extended_address, extended_pending_address, pending_mode, psdu_mac,
-    scan_micros, short_pending_address, transmit_failure, write_psdu,
+    PORT_INITIAL_KEYS, TransmitFailure, extended_address, extended_pending_address, pending_mode,
+    psdu_mac, scan_micros, sent_ack_security, set_frame_counter, set_mac_keys,
+    short_pending_address, transmit_failure, tx_security, write_applied_security, write_psdu,
 };
+
+/// The PHY capabilities the radio reports, as ESP-IDF's OpenThread port
+/// reports them (`otPlatRadioGetCaps`) apart from timed transmission and
+/// reception, which are not composed. Declare them to OpenThread before its
+/// instance is built (`OtResources::set_radio_caps`).
+pub const OPEN_THREAD_RADIO_CAPABILITIES: Capabilities = Capabilities::ACK_TIMEOUT
+    .union(Capabilities::ENERGY_SCAN)
+    .union(Capabilities::SLEEP_TO_TX)
+    .union(Capabilities::TRANSMIT_SEC);
 
 /// Figures the radio reports to OpenThread.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -139,6 +149,83 @@ where
         let id = self.id();
         self.submit(RadioCommand::Configure { id, configuration })
     }
+
+    /// Transmit `psdu` under `security`; also report the security header
+    /// fields the radio wrote, whatever the outcome.
+    async fn send(
+        &mut self,
+        psdu: &[u8],
+        number: u8,
+        power: i8,
+        cca_threshold: Option<i8>,
+        security: TxSecurity,
+        ack_psdu_buf: Option<&mut [u8]>,
+    ) -> (
+        Result<Option<PsduMeta>, RadioErrorKind>,
+        Option<AppliedSecurity>,
+    ) {
+        self.settle().await;
+        let channel = match channel(number) {
+            Ok(channel) => channel,
+            Err(error) => return (Err(error), None),
+        };
+        let Some(frame) = psdu_mac(psdu).and_then(|mac| FrameView::new(mac).ok()) else {
+            return (Err(RadioErrorKind::TxInvalid), None);
+        };
+        let id = self.id();
+        // The threshold stays the radio's own; its presence asks for a CCA.
+        let mode = if cca_threshold.is_some() {
+            TxMode::ClearChannelAssessment
+        } else {
+            TxMode::Direct
+        };
+        if let Err(error) = self.submit(RadioCommand::Transmit(TxRequest {
+            id,
+            frame,
+            channel,
+            mode,
+            transmit_power_dbm: Some(power),
+            max_frame_retries: 0,
+            security,
+        })) {
+            return (Err(error), None);
+        }
+        self.pending = Some(id);
+        let terminal = self.terminal(id).await;
+        self.pending = None;
+        let Terminal::Transmitted(Ieee802154RadioEvent::TransmitDone {
+            status,
+            acknowledgement,
+            security,
+            ..
+        }) = terminal
+        else {
+            return (Err(RadioErrorKind::Other), None);
+        };
+        if let Some(failure) = transmit_failure(status) {
+            let error = match failure {
+                TransmitFailure::ChannelAccess => RadioErrorKind::TxFailed,
+                TransmitFailure::NoAcknowledgement => RadioErrorKind::RxAckTimeout,
+                TransmitFailure::InvalidAcknowledgement => RadioErrorKind::RxAckInvalid,
+                TransmitFailure::InvalidFrame => RadioErrorKind::TxInvalid,
+                TransmitFailure::Other => RadioErrorKind::Other,
+            };
+            return (Err(error), security);
+        }
+        let ack = match (acknowledgement, ack_psdu_buf) {
+            (Some(ack), Some(buffer)) => {
+                write_psdu(ack.frame.as_bytes(), buffer).map(|len| PsduMeta {
+                    len,
+                    channel: ack.metadata.channel.get(),
+                    rssi: Some(ack.metadata.rssi_dbm),
+                    lqi: Some(ack.metadata.link_quality),
+                    ack: None,
+                })
+            }
+            _ => None,
+        };
+        (Ok(ack), security)
+    }
 }
 
 fn channel(number: u8) -> Result<Channel, RadioErrorKind> {
@@ -163,15 +250,18 @@ where
             )) => {}
             Err(_) => return Err(RadioErrorKind::Other),
         }
-        // 2015 frames are acknowledged; OpenThread passes no keys, so
-        // secured ones are not.
+        // The radio secures frames and enhanced ACKs with OpenThread's keys,
+        // starting from the port's zeroed ones.
+        self.runtime
+            .with_mac_keys(|keys| {
+                keys.get_or_insert(PORT_INITIAL_KEYS);
+            })
+            .map_err(|_| RadioErrorKind::Other)?;
         self.runtime
             .with_enhanced_ack(|generator| *generator = Some(Ieee802154EnhancedAckGenerator::new()))
             .map_err(|_| RadioErrorKind::Other)?;
         Ok(RadioCaps {
-            phy: Capabilities::ACK_TIMEOUT
-                .union(Capabilities::ENERGY_SCAN)
-                .union(Capabilities::SLEEP_TO_TX),
+            phy: OPEN_THREAD_RADIO_CAPABILITIES,
             mac: MacCapabilities::all(),
             receive_sensitivity: self.defaults.receive_sensitivity_dbm,
             default_tx_power: self.defaults.tx_power_dbm,
@@ -241,6 +331,7 @@ where
         }
     }
 
+    /// Transmit `psdu` as given: the radio does not secure it.
     async fn transmit(
         &mut self,
         psdu: &[u8],
@@ -249,58 +340,59 @@ where
         cca_threshold: Option<i8>,
         ack_psdu_buf: Option<&mut [u8]>,
     ) -> Result<Option<PsduMeta>, Self::Error> {
-        self.settle().await;
-        let channel = channel(number)?;
-        let frame = psdu_mac(psdu)
-            .and_then(|mac| FrameView::new(mac).ok())
-            .ok_or(RadioErrorKind::TxInvalid)?;
-        let id = self.id();
-        // The threshold stays the radio's own; its presence asks for a CCA.
-        let mode = if cca_threshold.is_some() {
-            TxMode::ClearChannelAssessment
-        } else {
-            TxMode::Direct
-        };
-        self.submit(RadioCommand::Transmit(TxRequest {
-            id,
-            frame,
-            channel,
-            mode,
-            transmit_power_dbm: Some(power),
-            max_frame_retries: 0,
-            security: TxSecurity::Radio,
-        }))?;
-        self.pending = Some(id);
-        let terminal = self.terminal(id).await;
-        self.pending = None;
-        let Terminal::Transmitted(Ieee802154RadioEvent::TransmitDone {
-            status,
-            acknowledgement,
-            ..
-        }) = terminal
-        else {
-            return Err(RadioErrorKind::Other);
-        };
-        if let Some(failure) = transmit_failure(status) {
-            return Err(match failure {
-                TransmitFailure::ChannelAccess => RadioErrorKind::TxFailed,
-                TransmitFailure::NoAcknowledgement => RadioErrorKind::RxAckTimeout,
-                TransmitFailure::InvalidAcknowledgement => RadioErrorKind::RxAckInvalid,
-                TransmitFailure::InvalidFrame => RadioErrorKind::TxInvalid,
-                TransmitFailure::Other => RadioErrorKind::Other,
-            });
+        let security = TxSecurity::Processed;
+        self.send(psdu, number, power, cca_threshold, security, ack_psdu_buf)
+            .await
+            .0
+    }
+
+    async fn transmit_frame(
+        &mut self,
+        frame: &mut TxFrame<'_>,
+        ack_psdu_buf: Option<&mut [u8]>,
+    ) -> Result<Option<PsduMeta>, Self::Error> {
+        let security = tx_security(frame.retransmission, frame.security_processed);
+        let (result, applied) = self
+            .send(
+                frame.psdu,
+                frame.channel,
+                frame.power,
+                frame.cca_threshold,
+                security,
+                ack_psdu_buf,
+            )
+            .await;
+        if let Some(applied) = applied {
+            frame.header_updated = write_applied_security(applied, frame.psdu);
         }
-        Ok(match (acknowledgement, ack_psdu_buf) {
-            (Some(ack), Some(buffer)) => {
-                write_psdu(ack.frame.as_bytes(), buffer).map(|len| PsduMeta {
-                    len,
-                    channel: ack.metadata.channel.get(),
-                    rssi: Some(ack.metadata.rssi_dbm),
-                    lqi: Some(ack.metadata.link_quality),
-                })
-            }
-            _ => None,
-        })
+        result
+    }
+
+    async fn set_mac_keys(&mut self, keys: &MacKeys) -> Result<(), Self::Error> {
+        self.runtime
+            .with_mac_keys(|installed| {
+                set_mac_keys(
+                    installed,
+                    keys.key_id,
+                    keys.previous,
+                    keys.current,
+                    keys.next,
+                );
+            })
+            .map_err(|_| RadioErrorKind::Other)
+    }
+
+    async fn set_mac_frame_counter(
+        &mut self,
+        update: FrameCounterUpdate,
+    ) -> Result<(), Self::Error> {
+        let (counter, if_larger) = match update {
+            FrameCounterUpdate::Set(counter) => (counter, false),
+            FrameCounterUpdate::SetIfLarger(counter) => (counter, true),
+        };
+        self.runtime
+            .with_mac_keys(|keys| set_frame_counter(keys, counter, if_larger))
+            .map_err(|_| RadioErrorKind::Other)
     }
 
     async fn receive(&mut self, psdu_buf: &mut [u8]) -> Result<PsduMeta, Self::Error> {
@@ -322,11 +414,19 @@ where
             }
         };
         let len = write_psdu(frame.frame.as_bytes(), psdu_buf).ok_or(RadioErrorKind::RxInvalid)?;
+        let sent = frame.metadata.sent_acknowledgement;
         Ok(PsduMeta {
             len,
             channel: frame.metadata.channel.get(),
             rssi: Some(frame.metadata.rssi_dbm),
             lqi: Some(frame.metadata.link_quality),
+            ack: Some(SentAck {
+                frame_pending: sent.frame_pending,
+                security: sent_ack_security(sent).map(|(frame_counter, key_id)| AckSecurity {
+                    frame_counter,
+                    key_id,
+                }),
+            }),
         })
     }
 }

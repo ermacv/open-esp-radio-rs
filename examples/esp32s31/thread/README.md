@@ -46,9 +46,10 @@ compiler flags change; delete its build directory under the example's
 
 ## Limits
 
-The adapter implements the `openthread` crate's `Radio` trait as published.
-That trait carries no MAC keys, so OpenThread secures frames in software and
-the radio's transmit security is not used; the trait's capabilities and
-limits are described in the adapter README. The device is a minimal end
+The example uses the adapter's fork of the `openthread` crate, whose radio
+trait carries OpenThread's MAC keys and frame counter: the radio secures
+frames and enhanced ACKs as ESP-IDF's OpenThread port does. The
+capabilities and limits are described in the
+[adapter README](../../../crates/adapters/openthread/esp32s31/ieee802154/README.md). The device is a minimal end
 device of an existing network: it neither forms a network nor commissions
 joiners. On-air Thread operation is not yet qualified by HIL evidence.

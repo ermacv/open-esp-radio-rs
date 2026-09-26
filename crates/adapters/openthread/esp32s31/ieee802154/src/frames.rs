@@ -1,7 +1,10 @@
 //! The translations between OpenThread's radio values and the portable
 //! IEEE 802.15.4 contract.
 
-use oer_ieee802154::{AutoPendingMode, FrameAddress, TxStatus};
+use oer_ieee802154::{
+    AppliedSecurity, AutoPendingMode, FrameAddress, MAX_MAC_FRAME_LEN, MacKeys,
+    SentAcknowledgement, TxSecurity, TxStatus,
+};
 
 /// Bytes of the FCS OpenThread counts in every PSDU; the MAC appends it on
 /// transmission and replaces it with RSSI and LQI on reception.
@@ -92,6 +95,74 @@ pub const fn transmit_failure(status: TxStatus) -> Option<TransmitFailure> {
 /// An energy scan's duration in microseconds.
 pub const fn scan_micros(duration_millis: u16) -> u32 {
     duration_millis as u32 * 1_000
+}
+
+/// The MAC keys and frame counter of ESP-IDF's OpenThread port before
+/// OpenThread sets any: its zeroed statics.
+pub const PORT_INITIAL_KEYS: MacKeys = MacKeys::new(0, [0; 16], [0; 16], [0; 16], 0);
+
+/// Who secures a frame, from its OpenThread transmit information: nobody
+/// when the stack secured it (`mIsSecurityProcessed`), the radio under the
+/// frame's own counter and key index for a retransmission (`mIsARetx`),
+/// otherwise the radio with new ones.
+pub const fn tx_security(retransmission: bool, security_processed: bool) -> TxSecurity {
+    if security_processed {
+        TxSecurity::Processed
+    } else if retransmission {
+        TxSecurity::Retransmission
+    } else {
+        TxSecurity::Radio
+    }
+}
+
+/// Write the security header fields the radio assigned into the PSDU
+/// OpenThread gave it, as `otMacFrameSetFrameCounter` and
+/// `otMacFrameSetKeyId` write them into the port's frame. Returns `false`
+/// when the PSDU has no auxiliary security header to write.
+pub fn write_applied_security(applied: AppliedSecurity, psdu: &mut [u8]) -> bool {
+    let length = psdu.len();
+    if length > MAX_MAC_FRAME_LEN + FCS_SIZE {
+        return false;
+    }
+    // The portable writer reads the frame as a `[PHR, PSDU...]` image.
+    let mut image = [0; 1 + MAX_MAC_FRAME_LEN + FCS_SIZE];
+    image[0] = length as u8;
+    image[1..=length].copy_from_slice(psdu);
+    if !applied.write(&mut image[..=length]) {
+        return false;
+    }
+    psdu.copy_from_slice(&image[1..=length]);
+    true
+}
+
+/// Replace the keys (`otPlatRadioSetMacKey`), keeping the frame counter.
+pub fn set_mac_keys(
+    keys: &mut Option<MacKeys>,
+    key_id: u8,
+    previous: [u8; 16],
+    current: [u8; 16],
+    next: [u8; 16],
+) {
+    keys.get_or_insert(PORT_INITIAL_KEYS)
+        .set_keys(key_id, previous, current, next);
+}
+
+/// Replace the frame counter (`otPlatRadioSetMacFrameCounter`), or raise it
+/// (`otPlatRadioSetMacFrameCounterIfLarger`).
+pub fn set_frame_counter(keys: &mut Option<MacKeys>, frame_counter: u32, if_larger: bool) {
+    let keys = keys.get_or_insert(PORT_INITIAL_KEYS);
+    if if_larger {
+        keys.set_frame_counter_if_larger(frame_counter);
+    } else {
+        keys.set_frame_counter(frame_counter);
+    }
+}
+
+/// The frame counter and key index of the secured enhanced ACK a received
+/// frame was sent (`mAckFrameCounter`, `mAckKeyId`).
+pub fn sent_ack_security(sent: SentAcknowledgement) -> Option<(u32, u8)> {
+    let security = sent.security?;
+    Some((security.frame_counter, security.key_id?))
 }
 
 #[cfg(test)]

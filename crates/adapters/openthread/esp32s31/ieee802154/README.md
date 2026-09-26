@@ -1,17 +1,32 @@
 # ESP32-S31 IEEE 802.15.4 OpenThread radio
 
 `oer-esp32s31-ieee802154-openthread` implements the `Radio` trait of the
-[`openthread`](https://crates.io/crates/openthread) crate (0.4) over the
-ESP32-S31 IEEE 802.15.4 runtime, so the OpenThread stack that crate binds can
-run on the composed client.
+[`openthread`](https://crates.io/crates/openthread) crate over the ESP32-S31
+IEEE 802.15.4 runtime, so the OpenThread stack that crate binds can run on
+the composed client.
+
+It depends on the repository's fork of that crate,
+[`ermacv/openthread`](https://github.com/ermacv/openthread/tree/oer/radio-security)
+at a pinned revision on branch `oer/radio-security`, based on the 0.4.0
+release. The fork extends the trait with what OpenThread hands a radio that
+claims `OT_RADIO_CAPS_TRANSMIT_SEC` and reads back from it: the MAC keys and
+frame counter (`set_mac_keys`, `set_mac_frame_counter`), each frame's
+transmit information (`transmit_frame`: `mIsARetx`, `mIsSecurityProcessed`,
+and the frame counter and key index the radio wrote), the acknowledgement
+sent for a received frame (`PsduMeta::ack`) and the capabilities declared
+before the instance is built (`OtResources::set_radio_caps`).
 
 ## Use
 
 Start the IEEE 802.15.4 composition, then hand its runtime to
 `OpenThreadRadio::new` with the transmit power, CCA threshold and receive
 sensitivity to report, and give the radio to the `openthread` crate. The
-radio enables the runtime, installs an enhanced-ACK generator and serves
-OpenThread's operations through the runtime's commands and events. The
+radio enables the runtime, installs the port's zeroed MAC keys and an
+enhanced-ACK generator and serves OpenThread's operations through the
+runtime's commands and events. Declare `OPEN_THREAD_RADIO_CAPABILITIES`
+with `OtResources::set_radio_caps` before building the OpenThread instance:
+OpenThread's `SubMac` reads the capabilities once, when the instance is
+built, and leaves transmit security to the radio only when it saw it there. The
 application still supplies what the `openthread` crate asks of a platform:
 entropy, settings storage and the C library functions OpenThread links.
 
@@ -19,21 +34,29 @@ entropy, settings storage and the C library functions OpenThread links.
 
 The capabilities are the ones the radio keeps under this trait:
 
-- PHY: ACK timeout, energy scan and transmission from sleep, as ESP-IDF's
-  OpenThread port reports them (`otPlatRadioGetCaps`).
+- PHY: ACK timeout, energy scan, transmission from sleep and transmit
+  security, as ESP-IDF's OpenThread port reports them
+  (`otPlatRadioGetCaps`); its timed transmission and reception are not
+  composed.
 - MAC: hardware acknowledgement in both directions, PAN ID, short and
   extended address filtering, promiscuous mode and source matching. A
   disabled source-match table answers every poll with frame pending; an
   enabled one uses the enhanced pending mode ESP-IDF's port selects for
   Thread 1.2 and later.
 
-The trait passes no MAC keys, frame counters, per-frame CSMA-CA or retry
-parameters and no enhanced-ACK content. OpenThread's `SubMac` therefore runs
-CSMA-CA backoffs and retries itself, as it does over ESP-IDF's radio, and
-secures frames in software; each of its attempts reaches the radio as one
-transmission, with a CCA at the radio's own threshold when OpenThread asks
-for one. The radio's transmit security, CSMA-CA and retries stay unused. 2015
-frames get unsecured enhanced ACKs; secured 2015 frames get none, and the
+As over ESP-IDF's radio, OpenThread's `SubMac` runs CSMA-CA backoffs and
+retries itself; each of its attempts reaches the radio as one transmission,
+with a CCA at the radio's own threshold when OpenThread asks for one, so the
+radio's own CSMA-CA and retries stay unused. The radio secures each attempt
+as the port's `otPlatRadioTransmit` does: a new frame counter and the
+current key index for a first transmission, the frame's own for
+`SubMac`'s retransmission, nothing for a frame OpenThread secured itself.
+The frame counter and key index it wrote go back into OpenThread's frame,
+where `SubMac` reads the used counter. 2015 frames get enhanced ACKs,
+secured ones with the same keys and counter; the received frame reports the
+ACK's counter and key index and its frame-pending bit, as the port's
+receive information does. Unlike the port, which reports the counter after
+the one the ACK carried, the radio reports the one the ACK carried. The
 radio acknowledges no second short address.
 
 Frames that arrive during a transmission or energy scan wait in a bounded

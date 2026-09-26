@@ -25,7 +25,9 @@ use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 use oer_esp32s31_hal::root::RadioHardware;
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
-use oer_esp32s31_ieee802154_openthread::{OpenThreadRadio, OpenThreadRadioDefaults};
+use oer_esp32s31_ieee802154_openthread::{
+    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+};
 use oer_esp32s31_ieee802154_system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154Parked, Ieee802154System, start,
 };
@@ -170,11 +172,15 @@ async fn thread_task(
     spawner.spawn(tracking_task(radio).expect("tracking task storage must be available once"));
 
     let ot_settings = OT_SETTINGS.init(SimpleRamSettings::new(OT_SETTINGS_BUFFER.take()));
+    // OpenThread's `SubMac` reads the radio capabilities when the instance
+    // is built: transmit security then stays with the radio.
+    let ot_resources = OT_RESOURCES.init(OtResources::new());
+    ot_resources.set_radio_caps(OPEN_THREAD_RADIO_CAPABILITIES);
     let ot = OpenThread::new_with_udp(
         ieee_eui64(),
         TRNG.init(trng),
         ot_settings,
-        OT_RESOURCES.init(OtResources::new()),
+        ot_resources,
         OT_UDP.init(OtUdpResources::new()),
     )
     .expect("OpenThread must initialize once");

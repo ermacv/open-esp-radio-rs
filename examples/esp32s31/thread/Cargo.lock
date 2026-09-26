@@ -1710,8 +1710,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 [[package]]
 name = "openthread"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32f23a66e2d87e32fbdf90a412e1ba9f518fca9dbefc88a06c7a0e992d4b81df"
+source = "git+https://github.com/ermacv/openthread?rev=fea16f635b4541c45757462c5833d9ad80e0d3e7#fea16f635b4541c45757462c5833d9ad80e0d3e7"
 dependencies = [
  "bitflags 2.13.2",
  "embassy-futures",
@@ -1726,8 +1725,7 @@ dependencies = [
 [[package]]
 name = "openthread-sys"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "927f035d6bf333e1167c64b6cf3be96126f5f0859dc78dd4f4348891e2f0b406"
+source = "git+https://github.com/ermacv/openthread?rev=fea16f635b4541c45757462c5833d9ad80e0d3e7#fea16f635b4541c45757462c5833d9ad80e0d3e7"
 dependencies = [
  "anyhow",
  "bindgen",

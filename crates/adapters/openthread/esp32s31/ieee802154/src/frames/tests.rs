@@ -1,8 +1,11 @@
-use oer_ieee802154::{AutoPendingMode, FrameAddress, TxStatus};
+use oer_ieee802154::{
+    AppliedSecurity, AutoPendingMode, FrameAddress, SentAcknowledgement, TxSecurity, TxStatus,
+};
 
 use super::{
-    TransmitFailure, extended_address, extended_pending_address, pending_mode, psdu_mac,
-    scan_micros, short_pending_address, transmit_failure, write_psdu,
+    PORT_INITIAL_KEYS, TransmitFailure, extended_address, extended_pending_address, pending_mode,
+    psdu_mac, scan_micros, sent_ack_security, set_frame_counter, set_mac_keys,
+    short_pending_address, transmit_failure, tx_security, write_applied_security, write_psdu,
 };
 
 #[test]
@@ -73,4 +76,73 @@ fn transmit_statuses_map_to_openthread_failures() {
         Some(TransmitFailure::Other)
     );
     assert_eq!(scan_micros(20), 20_000);
+}
+
+/// The port's transmit information decides who secures the frame.
+#[test]
+fn transmit_information_selects_the_security() {
+    assert_eq!(tx_security(false, false), TxSecurity::Radio);
+    assert_eq!(tx_security(true, false), TxSecurity::Retransmission);
+    assert_eq!(tx_security(false, true), TxSecurity::Processed);
+    assert_eq!(tx_security(true, true), TxSecurity::Processed);
+}
+
+/// The counter and key index the radio wrote land in OpenThread's PSDU at
+/// the auxiliary security header, leaving payload and FCS as given.
+#[test]
+fn applied_security_is_written_into_the_psdu() {
+    // 2006 data frame, ENC-MIC-32 in key identifier mode 1, one payload
+    // byte, MIC and FCS.
+    let mut psdu = [
+        0x69, 0x98, 0x07, 0x34, 0x12, 0x02, 0x00, 0x01, 0x00, 0x0d, 0, 0, 0, 0, 0, 0xaa, 1, 2, 3,
+        4, 0xf1, 0xf2,
+    ];
+    let applied = AppliedSecurity {
+        frame_counter: 0x0403_0201,
+        key_id: Some(7),
+    };
+    assert!(write_applied_security(applied, &mut psdu));
+    assert_eq!(psdu[10..15], [1, 2, 3, 4, 7]);
+    assert_eq!(psdu[15..], [0xaa, 1, 2, 3, 4, 0xf1, 0xf2]);
+
+    let mut plain = [
+        0x41, 0x98, 0x07, 0x34, 0x12, 0xff, 0xff, 0x02, 0x00, 0xaa, 0, 0,
+    ];
+    let before = plain;
+    assert!(!write_applied_security(applied, &mut plain));
+    assert_eq!(plain, before);
+}
+
+/// Keys and counter updates start from the port's zeroed state and keep
+/// each other.
+#[test]
+fn keys_and_counter_updates_keep_each_other() {
+    let mut keys = None;
+    set_frame_counter(&mut keys, 40, true);
+    set_mac_keys(&mut keys, 2, [1; 16], [2; 16], [3; 16]);
+    let mut installed = keys.unwrap();
+    assert_eq!(installed.frame_counter(), 40);
+    let security = installed.transmit_security(false);
+    assert_eq!((security.key_id, security.key), (Some(2), [2; 16]));
+
+    set_frame_counter(&mut keys, 30, true);
+    assert_eq!(keys.unwrap().frame_counter(), 40);
+    set_frame_counter(&mut keys, 30, false);
+    assert_eq!(keys.unwrap().frame_counter(), 30);
+    assert_eq!(PORT_INITIAL_KEYS.frame_counter(), 0);
+}
+
+/// Only a secured enhanced ACK of key identifier mode 1 reports its fields.
+#[test]
+fn sent_ack_security_needs_a_key_index() {
+    let sent = |key_id| SentAcknowledgement {
+        frame_pending: true,
+        security: Some(AppliedSecurity {
+            frame_counter: 9,
+            key_id,
+        }),
+    };
+    assert_eq!(sent_ack_security(sent(Some(3))), Some((9, 3)));
+    assert_eq!(sent_ack_security(sent(None)), None);
+    assert_eq!(sent_ack_security(SentAcknowledgement::NONE), None);
 }

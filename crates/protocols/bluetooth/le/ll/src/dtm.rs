@@ -131,6 +131,11 @@ impl DtmSession {
         !matches!(self.phase, Phase::Idle)
     }
 
+    /// The event in progress, when one is.
+    pub const fn outstanding(&self) -> Option<EventId> {
+        self.outstanding
+    }
+
     /// Counters of the current or last test.
     pub const fn counters(&self) -> DtmCounters {
         self.counters

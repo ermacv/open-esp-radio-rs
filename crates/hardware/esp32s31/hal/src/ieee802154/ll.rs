@@ -23,7 +23,8 @@ use oer_esp32s31_pac::Ieee802154MacCommand as PacMacCommand;
 
 pub use oer_esp32s31_pac::{
     Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
-    Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154TxAbortEnableSet,
+    Ieee802154RxAbortEnableSet, Ieee802154RxStateCode, Ieee802154RxStatus,
+    Ieee802154TxAbortEnableSet,
 };
 
 use crate::ieee802154::{

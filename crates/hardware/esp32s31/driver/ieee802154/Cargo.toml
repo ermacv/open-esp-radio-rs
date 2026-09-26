@@ -15,6 +15,7 @@ oer-esp32s31-ieee802154-dma = { path = "dma" }
 oer-esp32s31-ieee802154-irq = { path = "irq" }
 oer-esp32s31-ieee802154-mac = { path = "mac" }
 oer-esp32s31-hal = { path = "../../hal" }
+oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
 
 [dev-dependencies]
 oer-esp32s31-ieee802154-irq = { path = "irq", features = ["validation-probes"] }

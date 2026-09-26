@@ -2493,6 +2493,7 @@ dependencies = [
  "oer-esp32s31-ieee802154-dma",
  "oer-esp32s31-ieee802154-irq",
  "oer-esp32s31-ieee802154-mac",
+ "oer-ieee802154",
 ]
 
 [[package]]

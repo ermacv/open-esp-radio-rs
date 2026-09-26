@@ -1121,6 +1121,15 @@ impl Ieee802154EventObservation {
         )
     }
 
+    /// An observation of exactly the named `events`, as a register model
+    /// reports it. Observations grant no write authority.
+    pub const fn from_named(events: Ieee802154EventMask) -> Self {
+        Self {
+            events,
+            has_unclassified: false,
+        }
+    }
+
     /// Return whether the complete observed event field is clear.
     pub const fn is_clear(self) -> bool {
         self.events.is_empty() && !self.has_unclassified
@@ -1379,6 +1388,15 @@ impl Ieee802154RxStateCode {
 
     const fn from_field(value: u8) -> Self {
         Self(value)
+    }
+
+    /// A three-bit state observation, as a register model reports it.
+    pub const fn new(value: u8) -> Option<Self> {
+        if value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
     }
 
     #[cfg(any(test, feature = "validation-probes"))]

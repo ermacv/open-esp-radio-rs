@@ -39,6 +39,8 @@ use oer_esp32s31_ieee802154_mac::{
 
 mod command_executor;
 
+pub mod engine;
+
 pub use command_executor::{
     IEEE802154_ACK_WATCHDOG_MICROSECONDS, Ieee802154CommandError, Ieee802154CommandExecutor,
     Ieee802154MonotonicMicrosecondClock, ieee802154_ack_watchdog_threshold,

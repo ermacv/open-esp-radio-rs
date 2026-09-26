@@ -78,6 +78,26 @@ pub struct Ieee802154RxStatus {
 }
 
 impl Ieee802154RxStatus {
+    /// One observation, as a register model reports it. Observations grant
+    /// no write authority.
+    pub const fn new(
+        filter_fail_reason: u8,
+        abort_reason: Ieee802154RxAbortReasonObservation,
+        state: Ieee802154RxStateCode,
+        current_channel_index: bool,
+        preamble_match: bool,
+        sfd_match: bool,
+    ) -> Self {
+        Self {
+            filter_fail_reason,
+            abort_reason,
+            state,
+            current_channel_index,
+            preamble_match,
+            sfd_match,
+        }
+    }
+
     /// Raw four-bit filter-failure reason; no values are classified.
     pub const fn filter_fail_reason(&self) -> u8 {
         self.filter_fail_reason

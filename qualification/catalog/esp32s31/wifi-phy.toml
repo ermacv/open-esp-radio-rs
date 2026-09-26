@@ -112,8 +112,8 @@ level = "lower-primitive"
 [source-facts.source-contract]
 id = "wifi-interrupt-epoch-owners"
 composition = "production"
-scope = "Typed MAC acknowledgement and priority dispatch, finite platform route lifetime, retained pause/resume and Embassy wake coalescing"
-limits = "IRQ pause does not establish MAC or DMA idle; the station supervisor must compose it with physical stop and retained receive ownership"
+scope = "Typed MAC acknowledgement and priority dispatch, finite platform route lifetime and Embassy wake coalescing"
+limits = "Route quiescence does not establish MAC or DMA idle; the supervisor composes it with physical stop and receive ownership"
 source-paths = [
   "crates/hardware/esp32s31/driver/ieee80211/mac/src/irq.rs",
   "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch.rs",
@@ -121,7 +121,6 @@ source-paths = [
   "crates/runtime/esp32s31/ieee80211/src/datapath/irq/epoch.rs",
   "crates/runtime/esp32s31/ieee80211/src/datapath/irq/mac_runtime.rs",
   "crates/runtime/esp32s31/ieee80211/src/datapath/irq/power_runtime.rs",
-  "crates/runtime/esp32s31/ieee80211/src/datapath/irq/pause.rs",
 ]
 
 [[source-facts]]
@@ -137,7 +136,7 @@ source-paths = [
   "crates/protocols/ieee80211/sta/src/link_monitor.rs",
   "crates/runtime/esp32s31/ieee80211/src/roles/station/control.rs",
   "crates/runtime/esp32s31/ieee80211/src/datapath/scheduler.rs",
-  "crates/runtime/esp32s31/ieee80211/src/datapath/maintenance.rs",
+  "crates/runtime/esp32s31/ieee80211/src/datapath/stop.rs",
   "crates/hardware/esp32s31/phy/src/executor.rs",
   "crates/hardware/esp32s31/phy/src/executor/wait/poll.rs",
   "crates/hardware/esp32s31/phy/src/executor/wait/tx.rs",
@@ -151,16 +150,10 @@ level = "lower-primitive"
 [source-facts.source-contract]
 id = "connected-calibration-owners"
 composition = "production"
-scope = "Temperature-selected calibration transaction, exclusive connected-station physical admission and restoration through the production supervisor"
-limits = "These owners implement the mechanism and retained station composition; neither successful IP exchange nor host transition tests establish RF quality, throughput ceilings or a physical pause bound"
+scope = "Temperature-selected calibration transaction"
+limits = "The transaction does not by itself establish RF quality or throughput ceilings"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-  "crates/hardware/esp32s31/phy/src/tracking/service.rs",
-  "crates/hardware/esp32s31/phy/src/registered_wifi/maintenance.rs",
-  "crates/composition/esp32s31/embassy/ieee80211/src/maintenance_policy.rs",
-  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/maintenance.rs",
-  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/pause.rs",
-  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/pause/access.rs",
 ]
 
 [[capabilities]]
@@ -592,26 +585,19 @@ vendor-roots = [
 vendor-evidence = [
   { suite = "tracking", source = "archive", symbol = "phy_param_track_tot" },
 ]
-hil-requirements = [
-  { scenario = "diagnostic-station-phy-rxcal-delivery-rx", minimum-repetitions = 3 },
-  { scenario = "diagnostic-station-phy-txcal-delivery-rx", minimum-repetitions = 3 },
-  { scenario = "diagnostic-station-phy-combined-delivery-rx", minimum-repetitions = 3 },
-  { scenario = "diagnostic-station-phy-rxcal-high-load-delivery-rx", minimum-repetitions = 3 },
-  { scenario = "diagnostic-station-phy-txcal-high-load-delivery-rx", minimum-repetitions = 3 },
-  { scenario = "diagnostic-station-phy-combined-high-load-delivery-rx", minimum-repetitions = 3, checks = ["wifi.maintenance.transaction-valid", "wifi.maintenance.same-link", "udp.rx.target-rate", "udp.rx.maximum-silence"] },
-  { scenario = "diagnostic-station-phy-calibration-task-poll", minimum-repetitions = 3 },
-]
 gaps = [
+  { axis = "hil", id = "shared-tracking-calibration-under-traffic-scenario-missing" },
   { axis = "hil", id = "repeated-current-clean-rf-quality-cells-missing" },
 ]
 
 
 [capabilities.development]
-knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md", "crates/hardware/esp32s31/phy/src/tracking/service/README.md"]
+knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md"]
 host-tests = [
   { manifest = "crates/hardware/esp32s31/phy/Cargo.toml", filter = "tracking::calibration::tests", source = "crates/hardware/esp32s31/phy/src/tracking/calibration/tests.rs" },
 ]
 gap-work = [
+  { gap = "shared-tracking-calibration-under-traffic-scenario-missing", kind = "experiment", reason = "Calibration now runs in the shared radio's periodic tracking without pausing Wi-Fi; a scenario must observe a committed calibration during connected traffic." },
   { gap = "repeated-current-clean-rf-quality-cells-missing", kind = "measurement-method", reason = "Separate connection-continuity observations from RF-quality claims and identify a suitable measurement method for the latter before planning repeated cells." },
 ]
 
@@ -624,49 +610,6 @@ composition = "connected-phy-maintenance"
 level = "lower-primitive"
 activation-boundary = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute under exclusive physical admission, publish one coherent semantic outcome and restore the connected station epoch"
 limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
-
-[[capabilities]]
-id = "station-phy-maintenance-continuity"
-title = "Station IP exchange after PHY maintenance"
-scope = "One HT20 WPA2 station epoch: receive UDP, complete admitted combined calibration, then exchange three fresh ICMP requests/replies without restart, reassociation or beacon loss"
-implementation = "complete"
-host = "covered"
-async = "bounded"
-vendor-not-applicable = "retained-station-ip-continuity-is-an-integration-contract"
-hil-reviews = ["qualification/reviews/station-maintenance-captured-functional-build.toml"]
-source-fact-refs = ["connected-calibration-owners", "wifi-interrupt-epoch-owners", "wifi-bounded-wait-owners"]
-hil-requirements = [
-  { scenario = "station-phy-maintenance-continuity", minimum-repetitions = 3, checks = ["wifi.maintenance.transaction-valid", "wifi.maintenance.same-link", "wifi.maintenance.ip-exchange-resumed"] },
-]
-
-[[capabilities.source-contracts]]
-id = "retained-station-datapath"
-composition = "production"
-scope = "Retain the connected station, RX DMA walker and packet publication owners around admitted maintenance"
-limits = "The claim is a composed functional exchange through the existing production owners; it does not qualify every DMA storage mode, AP-loss recovery, all wait paths or the wider runtime-phy-calibration scope"
-source-paths = [
-  "crates/runtime/esp32s31/ieee80211/src/datapath/rx/dma/pause.rs",
-  "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-  "crates/roles/esp32s31/ieee80211/sta/src/connected_control.rs",
-  "crates/runtime/esp32s31/ieee80211/src/roles/station/connected/rx_service.rs",
-]
-
-[capabilities.development]
-knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md", "crates/runtime/esp32s31/ieee80211/src/datapath/irq.rs"]
-host-tests = [
-  { manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::irq::tests::pause", source = "crates/runtime/esp32s31/ieee80211/src/datapath/irq/tests/pause/operation.rs" },
-  { manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::maintenance::tests", source = "crates/runtime/esp32s31/ieee80211/src/datapath/maintenance/tests.rs" },
-]
-
-[capabilities.catalog-scope]
-chip = "esp32s31"
-role = "station"
-phy = "ht20"
-security = ["wpa2-personal"]
-composition = "connected-station-maintenance-ip-exchange"
-level = "composed-product"
-activation-boundary = "Within one connected station epoch across combined PHY calibration, from pre-maintenance UDP progress to post-maintenance ICMP exchange"
-limitations = "2 Mbit/s offered UDP load with a 100 kbit/s liveness floor; packet loss is allowed. Post-maintenance exchange is ICMP, not a separate proof of resumed UDP throughput. No HT40/HE20 coverage, RF-quality claim, pause bound, high-load or complete lifecycle qualification is implied. Broader calibration and recovery capabilities retain their independent requirements"
 
 [[capabilities]]
 id = "station-ap-loss-recovery"
@@ -746,11 +689,8 @@ vendor-roots = [
 vendor-evidence = [
   { suite = "tracking", source = "archive", symbol = "phy_param_track_tot" },
 ]
-hil-requirements = [
-  { scenario = "diagnostic-station-phy-rfpll-observed", minimum-repetitions = 3 },
-  { scenario = "diagnostic-station-phy-rfpll-thermal-observed", minimum-repetitions = 1 },
-]
 gaps = [
+  { axis = "hil", id = "shared-tracking-rfpll-under-traffic-scenario-missing" },
   { axis = "hil", id = "opposite-thermal-correction-and-radiated-rf-quality-missing" },
 ]
 
@@ -761,7 +701,8 @@ host-tests = [
   { manifest = "crates/hardware/esp32s31/phy/Cargo.toml", filter = "tracking::rfpll::tests", source = "crates/hardware/esp32s31/phy/src/tracking/rfpll/tests.rs" },
 ]
 gap-work = [
-  { gap = "opposite-thermal-correction-and-radiated-rf-quality-missing", kind = "measurement-method", reason = "The existing thermal scenario observes correction behavior; radiated RF quality needs a separately identified observer and measurement procedure." },
+  { gap = "shared-tracking-rfpll-under-traffic-scenario-missing", kind = "experiment", reason = "RFPLL correction now runs in the shared radio's periodic tracking without pausing Wi-Fi; a scenario must observe a committed correction during connected traffic." },
+  { gap = "opposite-thermal-correction-and-radiated-rf-quality-missing", kind = "measurement-method", reason = "A thermal scenario must observe correction behavior; radiated RF quality needs a separately identified observer and measurement procedure." },
 ]
 
 [[capabilities.source-contracts]]
@@ -813,15 +754,12 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 
 [[capabilities]]
 id = "radio-cold-restart"
-title = "Final-client RF close and cached cold restart"
-scope = "A connected station returns every role-local owner, the final Wi-Fi client closes RF, cold registration selects the final-state cache, and a new station epoch reconnects with a working data path"
+title = "Wi-Fi restart on the shared radio with RF close and wake"
+scope = "A connected station returns every role-local owner, Wi-Fi leaves the shared radio and closes RF as the last PHY client, rejoining wakes RF without re-registration, and a new station epoch reconnects with a working data path"
 implementation = "complete"
 host = "covered"
 async = "bounded"
 depends-on = ["cold-registration", "radio-cold-start", "timeout-error-recovery"]
-vendor-roots = [
-  { source = "archive", symbol = "register_chipv7_phy" },
-]
 vendor-anchors = [
   "registers/esp32s31/evidence/vendor-radio-libraries.toml",
 ]
@@ -829,9 +767,20 @@ hil-requirements = [
   { scenario = "wifi-radio-restart", minimum-repetitions = 3 },
 ]
 gaps = [
-  { axis = "vendor", id = "rf-close-clock-reset-and-calibration-cache-replay-traces-missing" },
+  { axis = "vendor", id = "rf-close-wake-and-register-restoration-traces-missing" },
 ]
 
+[[capabilities.source-contracts]]
+id = "wifi-restart-rf-cycle"
+composition = "production"
+scope = "Quiesce the idle Wi-Fi frontier, release the Wi-Fi PHY client, close RF when no client remains, then wake RF and bring Wi-Fi up again under the arbiter lease"
+limits = "This is an explicitly requested idle restart; it does not implement timed modem sleep or connected station power save, and it has no radiated-RF qualification claim"
+source-paths = [
+  "crates/hardware/esp32s31/driver/ieee80211/src/runtime.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/src/startup.rs",
+  "crates/runtime/esp32s31/radio/src/system.rs",
+  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs",
+]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -840,48 +789,8 @@ phy = "wifi-2g4"
 security = ["independent-of-link-security"]
 composition = "radio-cold-restart"
 level = "composed-product"
-activation-boundary = "A connected station returns every role-local owner, the final Wi-Fi client closes RF, cold registration selects the final-state cache, and a new station epoch reconnects with a working data path"
-limitations = "Vendor proof covers RF close, clock/reset transitions and hardware calibration cache replay with their physical preconditions. Rust owner return, restart admission, epoch reconstruction and reconnect use their own host and HIL contracts"
-
-[[capabilities]]
-id = "radio-retained-wake"
-title = "Retained RF close and wake"
-scope = "A connected station returns every role-local owner, the final Wi-Fi client closes and restores RF without retiring the registered PHY epoch, and a new station epoch reconnects with a working data path"
-implementation = "complete"
-host = "covered"
-async = "bounded"
-depends-on = ["radio-cold-start", "timeout-error-recovery"]
-vendor-anchors = [
-  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
-]
-hil-requirements = [
-  { scenario = "wifi-radio-retained-cycle", minimum-repetitions = 3 },
-]
-gaps = [
-  { axis = "vendor", id = "retained-rf-close-wake-and-register-restoration-traces-missing" },
-]
-
-[[capabilities.source-contracts]]
-id = "wifi-retained-rf-cycle"
-composition = "production"
-scope = "Quiesce the idle Wi-Fi frontier, release the final PHY client, execute RF close and wake to terminal completion inside the owner actor, reacquire Wi-Fi and reconstruct stopped runtime ownership"
-limits = "This is an explicitly requested immediate idle cycle; it does not implement timed modem sleep, connected station power save, Bluetooth or IEEE 802.15.4 resume, and it has no radiated-RF qualification claim"
-source-paths = [
-  "crates/hardware/esp32s31/phy/src/registered_radio.rs",
-  "crates/hardware/esp32s31/driver/ieee80211/src/runtime.rs",
-  "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs",
-]
-
-
-[capabilities.catalog-scope]
-chip = "esp32s31"
-role = "station"
-phy = "wifi-2g4"
-security = ["independent-of-link-security"]
-composition = "radio-retained-wake"
-level = "composed-product"
-activation-boundary = "A connected station returns every role-local owner, the final Wi-Fi client closes and restores RF without retiring the registered PHY epoch, and a new station epoch reconnects with a working data path"
-limitations = "Vendor proof covers physical RF close/wake, retained calibration inputs and register restoration before RX reactivation. Rust client ownership, retained epoch continuity and runtime reconstruction use their own host and HIL contracts"
+activation-boundary = "A connected station returns every role-local owner, Wi-Fi leaves the shared radio and closes RF as the last PHY client, rejoining wakes RF without re-registration, and a new station epoch reconnects with a working data path"
+limitations = "Vendor proof covers physical RF close/wake and register restoration before RX reactivation. Rust client ownership, restart admission, epoch reconstruction and reconnect use their own host and HIL contracts"
 
 [[capabilities]]
 id = "timeout-error-recovery"

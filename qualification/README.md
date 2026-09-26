@@ -116,7 +116,6 @@ secure peripheral GATT. Their definitions share canonical capability declaration
 
 | Program | Required product boundary |
 | --- | --- |
-| [Wi-Fi maintenance continuity](targets/esp32s31/wifi-maintenance-continuity.toml) | One HT20 station epoch across combined calibration and fresh post-maintenance ICMP exchange; independent of RF-quality and throughput-ceiling claims |
 | [Wi-Fi AP availability](targets/esp32s31/wifi-ap-availability.toml) | Controlled AP-loss recovery with fresh IP exchange, and bounded initial no-candidate exhaustion |
 | [Wi-Fi STA](targets/esp32s31/wifi-sta.toml) | Station association/WPA2, datapath, recovery and PHY/power lifecycle |
 | [BLE peripheral/ACL](targets/esp32s31/bluetooth-peripheral-acl.toml) | One LE 1M connection, bidirectional ACL, recovery and terminal powered release |
@@ -347,8 +346,8 @@ its property scope. It performs no build, test or hardware action. The HIL
 runner consumes this through `cargo hil plan --qualification <program>` and
 refreshes it before resuming; already satisfied obligations do not rerun.
 Unknown impact requests review rather than silently inheriting success. A focused
-capability plan includes only its own obligations and necessary controls;
-prerequisite capabilities remain context, not additional execution requests.
+capability plan includes only its own obligations; prerequisite capabilities
+remain context, not additional execution requests.
 
 ## Declared and derived axes
 
@@ -419,12 +418,7 @@ comparison truth; the HIL runner owns hardware execution truth; qualification
 maps both into the declared capability graph.
 
 Capability dependencies describe readiness, not instructions to re-execute
-every prerequisite scenario. Controlled HIL experiments instead declare their
-execution control in the scenario catalog. The independent evaluator validates
-that only the supported intervention differs, and requires a passing control
-in the same eligible run with the same number of repetitions. An older baseline
-or a result from another PHY/profile cannot substitute for that control. The
-pair establishes its absolute checks, not a relative non-regression verdict.
+every prerequisite scenario.
 
 HIL requirements may select named `checks` in addition to the scenario and
 minimum repetitions. The scenario owns thresholds; requirements reference
@@ -449,7 +443,7 @@ cannot be hidden by selecting a later PASS. The status is `unresolved-failure`
 until an explicit [failure disposition](evidence-reviews.md#resolving-a-failure)
 binds its resolution or explains why it does not apply. `broken`, `blocked`, `skipped` and `interrupted` alone are
 neither PASS nor a product failure, but they do not erase a different repetition's
-explicit failure. Controlled experiments also retain their control's decision.
+explicit failure.
 
 The supported completion boundary remains one complete scenario repetition set.
 Named checks are not independently sealed lifecycle phases: a successful early
@@ -510,36 +504,13 @@ The console `INPUT` row and JSON `evidence_inputs` object expose how many
 verification rows and HIL directories were observed, how many are incomplete
 or current, together with repository dirty state and source applicability. `hil-qualifying` / `hil.qualifying` counts
 eligible runs containing at least one passed scenario, not qualified products;
-per-obligation decisions still enforce checks, repetitions, controls and failures.
+per-obligation decisions still enforce checks, repetitions and failures.
 `hil-current-source-producer` / `hil.current_source_producer` counts direct
 source bindings independently of dirty state.
 
 See the canonical
 [verification and qualification contract](../docs/verification-and-qualification.md)
 for evidence strength and the release workflow.
-
-## Functional station maintenance scope
-
-`station-phy-maintenance-continuity` is a separately selected composed capability.
-Its reviewed source facts link the calibration, IRQ and bounded-wait owners;
-its retained-datapath contract links the RX and station owners. These are code
-and hardware-contract dependencies. The focused program does not assert the
-broader `interrupt-recovery`, `async-deadlines`, DMA-mode or RF-calibration
-qualification promises. Those records retain their own requirements and gaps.
-
-The [scenario](../hil/scenarios/ieee80211/station/station-phy-maintenance-continuity.toml)
-requires three complete repetitions: UDP progress before combined maintenance,
-a successful physical transaction, fresh ICMP requests/replies afterwards, and
-no station-epoch change. It uses HT20, a 2 Mbit/s offered stream and a 100 kbit/s
-liveness floor. Loss is allowed. Fresh ICMP exchange establishes bidirectional
-IP reachability after maintenance, not resumed UDP throughput. RF quality,
-physical execution time, high-load continuity and other PHY profiles remain
-separate claims under `runtime-phy-calibration` and its existing scenarios.
-
-```console
-cargo qualification status --manifest qualification/targets/esp32s31/wifi-maintenance-continuity.toml --details
-cargo qualification next --manifest qualification/targets/esp32s31/wifi-maintenance-continuity.toml
-```
 
 ## Functional AP availability
 

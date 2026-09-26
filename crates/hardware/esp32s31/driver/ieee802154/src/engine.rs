@@ -14,6 +14,7 @@
 //! vendor defaults: no software coexistence, no RF power gating, no
 //! multi-PAN, no test mode and no statistics.
 
+use crate::pib::{Ieee802154MultipanIndex, Ieee802154Pib, Ieee802154PibDefaults};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154Channel, Ieee802154TxPowerLevels,
     ll::{
@@ -26,7 +27,6 @@ use oer_esp32s31_hal::ieee802154::{
         Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReason,
         Ieee802154TxAbortReasonObservation,
     },
-    pib::{Ieee802154MultipanIndex, Ieee802154Pib, Ieee802154PibDefaults},
 };
 use oer_ieee802154::{FrameAddress, FrameType, FrameVersion, PendingTable, PhrFrame, ack_pending};
 
@@ -1647,4 +1647,4 @@ impl<'storage> Ieee802154Engine<'storage> {
 #[cfg(test)]
 mod multipan_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

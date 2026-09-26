@@ -10,8 +10,6 @@ pub mod mac;
 
 pub(crate) mod operation;
 
-pub mod pib;
-
 pub(crate) mod policy;
 
 pub(crate) mod role;
@@ -19,6 +17,8 @@ pub(crate) mod role;
 pub(crate) mod tx_power;
 
 pub(crate) mod validation;
+
+pub use oer_esp32s31_pac::Ieee802154MultipanIndex;
 
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]

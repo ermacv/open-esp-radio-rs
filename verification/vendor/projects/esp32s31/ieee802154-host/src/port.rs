@@ -23,8 +23,8 @@ use oer_esp32s31_hal::ieee802154::{
         Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReason,
         Ieee802154TxAbortReasonObservation,
     },
-    pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults},
 };
+use oer_esp32s31_ieee802154::pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults};
 use oer_esp32s31_ieee802154::engine::{
     FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Environment,
     Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,

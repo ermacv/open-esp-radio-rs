@@ -2301,7 +2301,6 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "oer-esp32s31-pac",
- "oer-ieee802154",
  "oer-memory",
 ]
 

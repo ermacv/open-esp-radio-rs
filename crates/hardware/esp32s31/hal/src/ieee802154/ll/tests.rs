@@ -11,12 +11,12 @@ use super::{
     target_time_expired, timer_fire_at, timer_threshold,
 };
 use crate::ieee802154::{
+    Ieee802154MultipanIndex,
     lifecycle::Ieee802154Channel,
     mac::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReasonObservation,
         Ieee802154TxAbortReasonObservation,
     },
-    pib::Ieee802154MultipanIndex,
     policy::Ieee802154CcaMode,
     tx_power::Ieee802154ResolvedTxPower,
 };

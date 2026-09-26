@@ -3,6 +3,7 @@
 
 use std::{boxed::Box, vec, vec::Vec};
 
+use crate::pib::{Ieee802154MultipanIndex, Ieee802154PibDefaults};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154CcaMode, Ieee802154Channel, Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels,
     ll::{
@@ -15,7 +16,6 @@ use oer_esp32s31_hal::ieee802154::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
         Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReasonObservation,
     },
-    pib::{Ieee802154MultipanIndex, Ieee802154PibDefaults},
 };
 
 use super::{
@@ -28,7 +28,7 @@ static LEVELS: [i8; 4] = [-9, -3, 4, 10];
 
 /// Recorded register accessor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Call {
+pub(crate) enum Call {
     Command(Ieee802154LlCommand),
     Events,
     ClearEvents(Ieee802154EventMask),
@@ -84,8 +84,8 @@ enum Call {
 }
 
 /// Register model: getters return the last value set.
-struct Hw {
-    calls: Vec<Call>,
+pub(crate) struct Hw {
+    pub(crate) calls: Vec<Call>,
     events: Ieee802154EventMask,
     rx_abort: Ieee802154RxAbortReasonObservation,
     tx_abort: Ieee802154TxAbortReasonObservation,

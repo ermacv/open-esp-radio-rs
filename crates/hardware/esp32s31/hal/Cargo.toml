@@ -15,7 +15,6 @@ ll-model = []
 [dependencies]
 oer-memory = { path = "../../../memory" }
 oer-esp32s31-pac = { path = "../pac" }
-oer-ieee802154 = { path = "../../../protocols/ieee802154" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

@@ -8,9 +8,9 @@ use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154TxPowerLevels, ll::model::Ieee802154LlModel, mac::Ieee802154Event,
-    pib::Ieee802154PibDefaults,
 };
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers};
+use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
     Channel, CommandError, FrameView, RadioCommand, RadioState, RequestId, RestingState, TxMode,
     TxRequest, TxStatus,

@@ -11,9 +11,9 @@ use oer_esp32s31_hal::ieee802154::{
         Ieee802154Event, Ieee802154RxAbortReason, Ieee802154RxAbortReasonObservation,
         Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
     },
-    pib::Ieee802154PibDefaults,
 };
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers};
+use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
     Channel, CommandError, Configuration, EnergyScanRequest, FramePending, FrameView,
     RadioCapabilities, RadioCommand, RadioEvent, RadioState, RequestId, RestingState, TxMode,

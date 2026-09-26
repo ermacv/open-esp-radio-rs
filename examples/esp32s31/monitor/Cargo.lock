@@ -1209,7 +1209,6 @@ name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-pac",
- "oer-ieee802154",
  "oer-memory",
 ]
 
@@ -1469,10 +1468,6 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
 ]
-
-[[package]]
-name = "oer-ieee802154"
-version = "0.1.0"
 
 [[package]]
 name = "oer-memory"

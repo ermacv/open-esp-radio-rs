@@ -31,6 +31,7 @@ pub use oer_esp32s31_pac::{
 };
 
 use crate::ieee802154::{
+    Ieee802154MultipanIndex,
     backend::ed_duration_units,
     lifecycle::{COEX_DISABLED_PTI, Ieee802154Channel},
     mac::{
@@ -38,7 +39,6 @@ use crate::ieee802154::{
         Ieee802154RxAbortReasonObservation, Ieee802154TaskOwner,
         Ieee802154TxAbortReasonObservation,
     },
-    pib::Ieee802154MultipanIndex,
     policy::Ieee802154CcaMode,
     tx_power::Ieee802154ResolvedTxPower,
 };

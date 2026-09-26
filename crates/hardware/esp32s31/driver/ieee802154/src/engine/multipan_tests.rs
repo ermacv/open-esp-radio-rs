@@ -4,11 +4,11 @@
 
 use std::{boxed::Box, vec, vec::Vec};
 
+use crate::pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154TxPowerLevels,
     ll::{Ieee802154MultipanEnableState, Ieee802154RxStatus, model::Ieee802154LlModel},
     mac::Ieee802154Event,
-    pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults},
 };
 use oer_ieee802154::FrameAddress;
 

@@ -2,12 +2,9 @@
 use std::vec::Vec;
 
 use super::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154Pib, Ieee802154PibDefaults};
-use crate::ieee802154::{
-    lifecycle::Ieee802154Channel,
-    ll::tests::{Call, Recorder},
-    policy::Ieee802154CcaMode,
-    tx_power::Ieee802154TxPowerLevels,
-};
+use oer_esp32s31_hal::ieee802154::{Ieee802154CcaMode, Ieee802154Channel, Ieee802154TxPowerLevels};
+
+use crate::engine::tests::{Call, Hw};
 
 const LEVELS: [i8; 4] = [-9, -3, 4, 10];
 
@@ -20,7 +17,7 @@ fn channel(number: u8) -> Ieee802154Channel {
 }
 
 fn published(pib: &mut Ieee802154Pib) -> Vec<Call> {
-    let mut ll = Recorder::default();
+    let mut ll = Hw::default();
     pib.update(&mut ll, levels());
     ll.calls
 }
@@ -38,10 +35,7 @@ fn initial_pib_publishes_the_vendor_defaults_in_order() {
         published(&mut pib),
         [
             Call::SetChannel(11),
-            Call::SetTxPower {
-                channel: 11,
-                index: 3
-            },
+            Call::SetTxPower(3),
             Call::SetCcaMode(Ieee802154CcaMode::EnergyDetection),
             Call::SetCcaThreshold(-75),
             Call::SetTxAutoAck(true),
@@ -85,10 +79,9 @@ fn power_follows_the_current_channel() {
     pib.set_power_for_channel(channel(20), 0);
     pib.set_channel(channel(20));
     assert_eq!(pib.power(), 0);
-    assert!(published(&mut pib).contains(&Call::SetTxPower {
-        channel: 20,
-        index: 1
-    }));
+    let calls = published(&mut pib);
+    assert!(calls.contains(&Call::SetChannel(20)));
+    assert!(calls.contains(&Call::SetTxPower(1)));
 }
 
 /// The one-bit hardware selector is set when any interface uses the enhanced

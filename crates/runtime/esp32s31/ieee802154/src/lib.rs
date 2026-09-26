@@ -24,8 +24,9 @@ use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
     channel::Channel,
 };
-use oer_esp32s31_hal::ieee802154::{ll::Ieee802154LowLevel, pib::Ieee802154PibDefaults};
+use oer_esp32s31_hal::ieee802154::ll::Ieee802154LowLevel;
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
+use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
     AcceptedCommand, CommandError, Frame, PendingTable, RadioCommand, RadioEvent, RadioFault,

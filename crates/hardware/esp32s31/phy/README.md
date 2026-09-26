@@ -231,11 +231,12 @@ serialized by one mechanism:
     the earliest `release_by` window.
 - `track_concurrent_phy` is one tick of the vendor `phy_track_pll`: it
   evaluates the clients' tracking period and runs due tracking under the
-  vendor policy, or reports that the quiesced policy awaits proofs.
-  `run_concurrent_phy_tracking` is the vendor periodic timer: every tracking
-  period it takes the lease, waiting while another holder owns it, and runs
-  one tick. The composition that owns the arbiter runs it for the lifetime of
-  the shared domain.
+  vendor policy, or reports that the quiesced policy awaits proofs. The
+  vendor periodic timer that calls it belongs to the composition that owns
+  the arbiter, as it belongs to ESP-IDF's `esp_phy` component:
+  [`oer-esp32s31-radio-system`](../../../composition/esp32s31/embassy/radio/README.md)
+  runs it for the shared radio. `run_concurrent_phy_tracking` is the same
+  timer for a caller that owns the platform token itself.
 
 IEEE 802.15.4 composes these steps in [its client module](src/ieee802154_client.rs).
 `join_ieee802154` runs on the HAL `Ieee802154Clocked` owner: it checks that the

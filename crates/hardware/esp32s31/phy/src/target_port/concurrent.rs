@@ -496,7 +496,10 @@ where
 /// Retry interval while another holder owns the arbiter lease.
 const LEASE_RETRY_MICROS: u64 = 1_000;
 
-/// ESP-IDF's periodic `phy_track_pll` timer for the shared domain.
+/// ESP-IDF's periodic `phy_track_pll` timer for a caller that owns the
+/// platform token for the lifetime of the domain. A composition that shares
+/// the token with its clients runs the timer itself, as
+/// `oer-esp32s31-radio-system` does.
 ///
 /// Every [`DEFAULT_PLL_TRACK_PERIOD_MICROS`] it takes the arbiter lease,
 /// waiting while another holder owns it as the vendor callback waits for its

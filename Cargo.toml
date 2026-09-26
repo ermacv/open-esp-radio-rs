@@ -33,6 +33,7 @@ members = [
     "crates/adapters/esp-hal/esp32s31/radio",
     "crates/adapters/esp-hal/esp32s31/ieee802154",
     "crates/composition/esp32s31/embassy/ieee802154",
+    "crates/composition/esp32s31/embassy/radio",
     "crates/adapters/esp-hal/esp32s31/ieee80211",
     "crates/protocols/bluetooth/hci",
     "examples/bluetooth-gatt",

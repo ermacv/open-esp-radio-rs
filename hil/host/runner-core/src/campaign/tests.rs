@@ -5,43 +5,30 @@ pub(super) fn catalog() -> Catalog<TestFamily> {
     test_family::catalog()
 }
 
-const EXPERIMENT: &str = "experiment";
-const CONTROL: &str = "baseline";
-
 #[test]
-fn selecting_an_experiment_adds_only_its_control() {
+fn selection_is_exactly_the_requested_scenarios() {
     let catalog = catalog();
-    let experiment = catalog.get(EXPERIMENT).unwrap();
-    let plan = Plan::create(&catalog, &[experiment], Integration::UpstreamXarxa).unwrap();
+    let throughput = catalog.get("throughput").unwrap();
+    let silence = catalog.get("silence").unwrap();
+    let plan = Plan::create(&catalog, &[silence, throughput], Integration::UpstreamXarxa).unwrap();
     let (selected, _) = plan.resolve(&catalog).unwrap();
     assert_eq!(
         selected.iter().map(|s| s.id()).collect::<Vec<_>>(),
-        [CONTROL, EXPERIMENT]
+        ["silence", "throughput"]
     );
-    assert_eq!(
-        plan.scenarios[0].reasons,
-        vec![Reason::ControlFor {
-            experiment: EXPERIMENT.into()
-        }]
+    assert!(
+        plan.scenarios
+            .iter()
+            .all(|entry| entry.reasons == [Reason::Requested])
     );
     assert!(plan.requirements.station_network);
     let roundtrip: Plan = serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
     assert_eq!(plan, roundtrip);
+    assert!(Plan::create(&catalog, &[silence, silence], Integration::UpstreamXarxa).is_err());
 }
 
 #[test]
-fn selecting_control_directly_does_not_duplicate_it() {
-    let catalog = catalog();
-    let experiment = catalog.get(EXPERIMENT).unwrap();
-    let control = catalog.get(CONTROL).unwrap();
-    let plan = Plan::create(&catalog, &[control, experiment], Integration::UpstreamXarxa).unwrap();
-    assert_eq!(plan.scenarios.len(), 2);
-    assert_eq!(plan.scenarios[0].reasons.len(), 2);
-    assert!(Plan::create(&catalog, &[control, control], Integration::UpstreamXarxa).is_err());
-}
-
-#[test]
-fn named_check_selection_is_scoped_and_does_not_promote_controls() {
+fn named_check_selection_is_scoped_to_the_scenarios_that_publish_it() {
     let catalog = catalog();
     let selected = catalog
         .all()
@@ -52,26 +39,18 @@ fn named_check_selection_is_scoped_and_does_not_promote_controls() {
         &catalog,
         &selected,
         Integration::UpstreamXarxa,
-        &["wifi.maintenance.same-link".into()],
+        &["udp.rx.maximum-silence".into()],
     )
     .unwrap();
     let (resolved, _) = plan.resolve(&catalog).unwrap();
-    assert_eq!(resolved.len(), 2);
-    assert_eq!(plan.requested, [EXPERIMENT]);
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(plan.requested, ["silence"]);
     assert!(
-        !plan.scenarios[0]
-            .supported_checks
-            .contains(&"wifi.maintenance.same-link".into())
-    );
-    assert!(
-        matches!(&plan.scenarios[1].reasons[1], Reason::ProvidesChecks { checks } if checks == &["wifi.maintenance.same-link"])
+        matches!(&plan.scenarios[0].reasons[1], Reason::ProvidesChecks { checks } if checks == &["udp.rx.maximum-silence"])
     );
     for checks in [
         vec!["not-a-check".into()],
-        vec![
-            "wifi.maintenance.same-link".into(),
-            "udp.rx.maximum-silence".into(),
-        ],
+        vec!["udp.rx.maximum-silence".into(), "not-a-check".into()],
     ] {
         assert!(
             Plan::create_for_checks(&catalog, &selected, Integration::UpstreamXarxa, &checks)

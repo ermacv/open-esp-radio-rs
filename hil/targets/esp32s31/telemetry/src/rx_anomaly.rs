@@ -2,9 +2,6 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Sample {
     pub observed_us: u64,
-    /// 0: normal, 1: maintenance requested/in progress, 2: request completed.
-    /// This brackets the control request, not the exact physical exclusion.
-    pub phase: u32,
     pub udp_sequence: Option<i32>,
     pub ip_bytes: usize,
     /// QoS TID and MAC sequence number of the frame, when present.
@@ -65,7 +62,6 @@ mod tests {
         let mut r = Records::<2>::new();
         let mut s = Sample {
             observed_us: 1,
-            phase: 0,
             udp_sequence: Some(-1),
             ip_bytes: 36,
             qos: None,

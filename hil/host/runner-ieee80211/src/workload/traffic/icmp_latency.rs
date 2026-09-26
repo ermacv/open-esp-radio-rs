@@ -204,23 +204,6 @@ fn measurements(options: Config, summary: &LatencySummary) -> Vec<Measurement> {
     measurements
 }
 
-/// Called only after successful maintenance and completion of the original RX
-/// session, while its capture and station epoch remain live. A fresh socket
-/// prevents a previously queued reply from satisfying this new exchange.
-pub fn post_maintenance_echo(device: Ipv4Addr, output: &Path) -> Result<()> {
-    let result = fresh_echo(device);
-    fs::write(
-        output.join("post-maintenance-echo.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "schema":1, "target":device, "requested_replies":3,
-            "after":"completed-maintenance-and-original-rx-session",
-            "passed":result.is_ok(), "failure":result.as_ref().err().map(ToString::to_string),
-            "scope":"fresh ICMP exchange in the retained station epoch; no UDP rate or RF timing claim"
-        }))?,
-    )?;
-    result
-}
-
 /// Three new requests on a newly opened socket; no queued replies are reused.
 pub fn fresh_echo(device: Ipv4Addr) -> Result<()> {
     let socket = IcmpSocket::connect(device)?;

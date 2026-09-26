@@ -21,7 +21,6 @@ boot-smoke = []
 system-watchdog = ["dep:oer-hil-protocol", "dep:embedded-io-async"]
 phy-fault-injection = [
     "oer-esp32s31-phy/lifecycle-fault-injection",
-    "oer-esp32s31-ieee80211-system?/lifecycle-fault-injection",
 ]
 upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-ieee80211-system/upstream-network", "oer-hil-target-core?/upstream-network"]
 embassy-network = ["dep:embassy-net-released", "oer-esp32s31-ieee80211-system/embassy-network", "oer-hil-target-core?/embassy-network"]

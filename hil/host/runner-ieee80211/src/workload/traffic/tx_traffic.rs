@@ -23,7 +23,6 @@ use crate::{
     Result, fixture::local::evidence::LocalLinuxTxCapture,
     fixture::local::evidence::LocalLinuxTxEvidence, fixture::openwrt::evidence::ChannelUtilization,
     fixture::openwrt::evidence::OpenWrtStationLinkEvidence,
-    fixture::openwrt::evidence::OpenWrtTxCapture,
     fixture::openwrt::evidence::require_idle_channel_utilization,
     fixture::openwrt::evidence::station_link, fixture::station_fixture::require_ht40_mcs7,
     workload::traffic::bidirectional::AmpduEvidence,
@@ -49,11 +48,6 @@ const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Config {
-    pub require_nonzero_rfpll_correction: bool,
-    pub station_pause: Option<oer_hil_protocol::StationPauseOperation>,
-    pub station_pause_after: Duration,
-    pub station_pause_attempts: u8,
-    pub station_pause_interval: Duration,
     pub device: Ipv4Addr,
     pub port: u16,
     pub duration: Duration,
@@ -218,14 +212,6 @@ pub fn run(
             return capture.finish_with(Err(error));
         }
     };
-    if options.station_pause.is_some()
-        && !capture
-            .request_capabilities(DEVICE_READY_TIMEOUT)?
-            .features
-            .station_pause
-    {
-        return capture.finish_with(Err("image does not support station pause".into()));
-    }
     options.device = discovered_address.address;
     let host_route =
         match BenchmarkIpv4Route::discover(options.device, &context.lab.station_fixture) {
@@ -281,21 +267,6 @@ pub fn run(
         StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,
     };
 
-    // PHY pause diagnostics observe delivery on both sides of the managed AP.
-    // Ordinary ceiling runs keep their existing observation cost.
-    let openwrt_delivery = match (&context.lab.station_fixture, options.station_pause) {
-        (StationFixtureConfig::OpenWrt(config), Some(_)) => Some(OpenWrtTxCapture::start(
-            config,
-            options.device,
-            host_address,
-            (DEVICE_SOURCE_PORT, options.port),
-            options.payload,
-            options.duration,
-            output,
-        )?),
-        _ => None,
-    };
-
     let timeout = options.duration.saturating_add(Duration::from_secs(5));
     let receiver = Receiver::start(
         &socket,
@@ -304,7 +275,6 @@ pub fn run(
         output,
         "station",
     )?;
-    let station_cursor = capture.station_lifecycle_cursor();
     let session = match capture.start_session(SessionConfig {
         network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -334,26 +304,6 @@ pub fn run(
             return capture.finish_with(Err(error));
         }
     };
-    let pause = if let Some(operation) = options.station_pause {
-        let result = receiver
-            .wait_started(Duration::from_secs(3))
-            .and_then(|before| {
-                super::maintenance::wait_after_progress(options.station_pause_after);
-                super::maintenance::run(
-                    &capture,
-                    operation,
-                    options.require_nonzero_rfpll_correction,
-                    options.station_pause_attempts,
-                    options.station_pause_interval,
-                    output,
-                    serde_json::json!({"host_rx_datagrams": before}),
-                )?;
-                Ok(())
-            });
-        Some(result)
-    } else {
-        None
-    };
     let structured = capture.wait_for_session(session, timeout);
     let bursts = receiver.finish(
         structured
@@ -361,18 +311,6 @@ pub fn run(
             .ok()
             .map(|evidence| evidence.transport.tx_units),
     );
-    if let Some(delivery) = openwrt_delivery {
-        let host_unique = bursts.as_ref().ok().map(|bursts| {
-            bursts
-                .iter()
-                .map(|burst| burst.datagrams - burst.duplicates)
-                .sum()
-        });
-        delivery.finish(output, host_unique)?;
-    }
-    if let Some(Err(error)) = pause {
-        return capture.finish_with(Err(error));
-    }
     let structured = match structured {
         Ok(evidence) => evidence,
         Err(error) => return capture.finish_with(Err(error)),
@@ -399,9 +337,6 @@ pub fn run(
     if let Some(evidence) = local_ingress.as_ref() {
         write_local_ingress_evidence(output, evidence)?;
     }
-    let continuity = options
-        .station_pause
-        .map(|_| capture.require_station_unchanged_since(station_cursor));
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
     let log = capture.finish()?;
     let delivery = progress::DeliveryProgress::new(structured.transport.tx_units, &bursts, &log);
@@ -411,9 +346,6 @@ pub fn run(
     )?;
     if delivery.host_received_datagrams == 0 {
         return Err(delivery.no_delivery_message().into());
-    }
-    if let Some(result) = continuity {
-        result?;
     }
     if let Some(result) = beacon_loss {
         result?;
@@ -754,11 +686,6 @@ fn require_performance_link(
 impl Default for Config {
     fn default() -> Self {
         Self {
-            require_nonzero_rfpll_correction: false,
-            station_pause: None,
-            station_pause_after: Duration::ZERO,
-            station_pause_attempts: 1,
-            station_pause_interval: Duration::ZERO,
             device: Ipv4Addr::UNSPECIFIED,
             port: DEFAULT_PORT,
             duration: DEFAULT_DURATION,

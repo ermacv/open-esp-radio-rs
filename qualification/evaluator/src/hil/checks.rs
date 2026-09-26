@@ -143,17 +143,6 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
             },
         );
     }
-    if let Some(maintenance) = field("maintenance").filter(|v| !v.is_null()) {
-        exactly_once(&mut checks, "wifi.maintenance.transaction-valid");
-        exactly_once(&mut checks, "wifi.maintenance.same-link");
-        if maintenance
-            .get("require_post_maintenance_echo")
-            .and_then(Value::as_bool)
-            == Some(true)
-        {
-            exactly_once(&mut checks, "wifi.maintenance.ip-exchange-resumed");
-        }
-    }
     Ok(checks)
 }
 
@@ -218,7 +207,7 @@ mod tests {
     }
 
     fn observed(value: u64) -> Value {
-        json!({"name": "wifi.maintenance.same-link", "value": value, "unit": "count", "threshold": {"comparison": "exactly", "value": 1}, "verdict": "passed"})
+        json!({"name": "wifi.station.control-responsive", "value": value, "unit": "count", "threshold": {"comparison": "exactly", "value": 1}, "verdict": "passed"})
     }
 
     #[test]
@@ -279,24 +268,10 @@ mod tests {
     }
 
     #[test]
-    fn unchanged_link_does_not_substitute_for_post_maintenance_exchange() {
-        let name = "wifi.maintenance.ip-exchange-resumed";
-        let mut document = json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":1000},
-            "maintenance":{"operation":"calibration","require_post_maintenance_echo":true}}}});
-        let contract = contracts(&document).unwrap();
-        assert!(contract.contains_key(name));
-        assert!(!passes(name, &contract[name], &[observed(1)]));
-        let mut echo = observed(1);
-        echo["name"] = json!(name);
-        assert!(passes(name, &contract[name], &[echo]));
-        document["wifi"]["workload"]["maintenance"]["require_post_maintenance_echo"] = json!(false);
-        assert!(!contracts(&document).unwrap().contains_key(name));
-    }
-
-    #[test]
     fn independently_checks_values_units_thresholds_duplicates_and_missing_data() {
-        let contracts = contracts(&json!({"wifi": {"workload": {"kind": "station-udp", "offer": {"rx_bps": 1000}, "maintenance": {"operation": "calibration"}}}})).unwrap();
-        let name = "wifi.maintenance.same-link";
+        let contracts =
+            contracts(&json!({"wifi": {"workload": {"kind": "station-ap-loss"}}})).unwrap();
+        let name = "wifi.station.control-responsive";
         let contract = &contracts[name];
         assert!(passes(name, contract, &[observed(1)]));
         assert!(!passes(name, contract, &[observed(0)]));
@@ -344,8 +319,8 @@ mod tests {
     fn every_repetition_must_contain_the_requested_proof() {
         let catalog = catalog();
         let requirement = HilRequirement {
-            scenario: "diagnostic-station-phy-rxcal-delivery-rx".into(),
-            checks: vec!["wifi.maintenance.same-link".into()],
+            scenario: "station-ap-loss".into(),
+            checks: vec!["wifi.station.control-responsive".into()],
             minimum_repetitions: 3,
         };
         catalog.validate_requirement(&requirement).unwrap();
@@ -357,7 +332,7 @@ mod tests {
             index
                 .evidence_for(&requirement, &catalog)
                 .unwrap()
-                .contains(":checks=wifi.maintenance.same-link")
+                .contains(":checks=wifi.station.control-responsive")
         );
         index.scenarios.get_mut(&requirement.scenario).unwrap()[0].measurements[1].clear();
         assert!(index.evidence_for(&requirement, &catalog).is_none());
@@ -368,7 +343,7 @@ mod tests {
         let catalog = catalog();
         let mut requirement = HilRequirement {
             scenario: "udp-rx-he20-ceiling".into(),
-            checks: vec!["wifi.maintenance.same-link".into()],
+            checks: vec!["wifi.station.control-responsive".into()],
             minimum_repetitions: 1,
         };
         assert!(catalog.validate_requirement(&requirement).is_err());
@@ -382,10 +357,10 @@ mod tests {
     fn individual_proofs_from_different_runs_do_not_satisfy_one_obligation() {
         let catalog = catalog();
         let requirement = HilRequirement {
-            scenario: "diagnostic-station-phy-rxcal-delivery-rx".into(),
+            scenario: "station-ap-loss".into(),
             checks: vec![
-                "wifi.maintenance.same-link".into(),
-                "wifi.maintenance.transaction-valid".into(),
+                "wifi.station.control-responsive".into(),
+                "wifi.station.ap-loss-reconnected".into(),
             ],
             minimum_repetitions: 1,
         };
@@ -394,7 +369,7 @@ mod tests {
         entries[0].measurements = vec![vec![observed(1)]];
         let mut other = entries[0].clone();
         other.run_id = "another-run".into();
-        other.measurements[0][0]["name"] = "wifi.maintenance.transaction-valid".into();
+        other.measurements[0][0]["name"] = "wifi.station.ap-loss-reconnected".into();
         entries.push(other);
         for check in &requirement.checks {
             let single = HilRequirement {

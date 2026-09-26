@@ -281,8 +281,8 @@ impl PreparedTxSchedulerTimingCounters {
     fn record(&self, completion_micros: u32, trace: PreparedTxSchedulerTrace) {
         let active_return =
             trace.active_service_returned_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
-        let first_scheduler_loop = trace.first_scheduler_loop_resumed_micros as u32
-            & AggregateTxCounters::IRQ_TIME_MASK;
+        let first_scheduler_loop =
+            trace.first_scheduler_loop_resumed_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
         let scheduler_loop =
             trace.scheduler_loop_resumed_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
         let stop_poll =
@@ -907,9 +907,8 @@ impl AggregateTxCounters {
                     &self.completion_to_publication_lifetime_max_micros,
                     u64::from(elapsed),
                 );
-                self.completion_to_publication_histogram
-                    [completion_to_publication_bucket(elapsed)]
-                .fetch_add(1, Ordering::Relaxed);
+                self.completion_to_publication_histogram[completion_to_publication_bucket(elapsed)]
+                    .fetch_add(1, Ordering::Relaxed);
                 if prepared_scheduler.is_none() {
                     // The successor did not enter through the prepared path:
                     // the scheduler collected, claimed or waited for it.
@@ -1225,8 +1224,7 @@ impl AggregateTxObserver for AggregateTxCounters {
                     let mut positions = missing_original_indices;
                     while positions != 0 {
                         let position = positions.trailing_zeros() as usize;
-                        self.partial_missing_by_position[position]
-                            .fetch_add(1, Ordering::Relaxed);
+                        self.partial_missing_by_position[position].fetch_add(1, Ordering::Relaxed);
                         positions &= positions - 1;
                     }
                 }

@@ -37,13 +37,7 @@ const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Config {
-    pub require_post_maintenance_echo: bool,
     pub maximum_rx_silence_ms: Option<u32>,
-    pub require_nonzero_rfpll_correction: bool,
-    pub station_pause: Option<oer_hil_protocol::StationPauseOperation>,
-    pub station_pause_after: Duration,
-    pub station_pause_attempts: u8,
-    pub station_pause_interval: Duration,
     pub address: Ipv4Addr,
     pub port: u16,
     pub rate_bps: u64,
@@ -215,10 +209,6 @@ pub fn run(
         None
     };
     let duration_millis = u32::try_from(options.duration.as_millis())?;
-    if options.station_pause.is_some() {
-        super::maintenance::require(&capture)?;
-    }
-    let station_cursor = capture.station_lifecycle_cursor();
     let session = capture.start_session(SessionConfig {
         network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -240,52 +230,13 @@ pub fn run(
         ],
         link_requirements: SessionLinkRequirements::NONE,
     })?;
-    let (host_result, pause_result) = if let Some(operation) = options.station_pause {
-        std::thread::scope(|scope| {
-            let sender = scope.spawn(|| {
-                send_paced_udp(PacedUdpConfig {
-                    address: options.address,
-                    port: options.port,
-                    rate_bps: options.rate_bps,
-                    duration: options.duration,
-                    payload: options.payload,
-                })
-            });
-            let pause = (|| {
-                let device_rx = capture.wait_for_udp_rx_started(session, Duration::from_secs(3))?;
-                super::maintenance::wait_after_progress(options.station_pause_after);
-                let host_rx: Option<u64> = None;
-                let result = super::maintenance::run(
-                    &capture,
-                    operation,
-                    options.require_nonzero_rfpll_correction,
-                    options.station_pause_attempts,
-                    options.station_pause_interval,
-                    output,
-                    serde_json::json!({"device_rx_datagrams": device_rx, "host_rx_datagrams": host_rx}),
-                );
-                context
-                    .measurements
-                    .check("wifi.maintenance.transaction-valid", result.is_ok());
-                result
-            })();
-            let host = sender
-                .join()
-                .unwrap_or_else(|_| Err("UDP sender thread panicked".into()));
-            (host, pause)
-        })
-    } else {
-        (
-            send_paced_udp(PacedUdpConfig {
-                address: options.address,
-                port: options.port,
-                rate_bps: options.rate_bps,
-                duration: options.duration,
-                payload: options.payload,
-            }),
-            Ok(()),
-        )
-    };
+    let host_result = send_paced_udp(PacedUdpConfig {
+        address: options.address,
+        port: options.port,
+        rate_bps: options.rate_bps,
+        duration: options.duration,
+        payload: options.payload,
+    });
     let host = host_result?;
     host_route.verify_socket_source(host.source)?;
     host_route.record(output, options.address, host.source)?;
@@ -300,25 +251,6 @@ pub fn run(
     };
     if let Err(error) = capture.acknowledge_session(session) {
         return capture.finish_with(Err(error));
-    }
-    if let Err(error) = pause_result {
-        return capture.finish_with(Err(error));
-    }
-    if options.require_post_maintenance_echo {
-        let resumed = super::icmp_latency::post_maintenance_echo(options.address, output);
-        context
-            .measurements
-            .check("wifi.maintenance.ip-exchange-resumed", resumed.is_ok());
-        if let Err(error) = resumed {
-            return capture.finish_with(Err(error));
-        }
-    }
-    if options.station_pause.is_some() {
-        let same_link = capture.require_station_unchanged_since(station_cursor);
-        context
-            .measurements
-            .check("wifi.maintenance.same-link", same_link.is_ok());
-        same_link?;
     }
     if let Some(wire) = host_wire_capture {
         wire.finish()?;
@@ -875,13 +807,7 @@ fn rx_air_evidence_markdown(
 impl Default for Config {
     fn default() -> Self {
         Self {
-            require_post_maintenance_echo: false,
             maximum_rx_silence_ms: None,
-            require_nonzero_rfpll_correction: false,
-            station_pause: None,
-            station_pause_after: Duration::ZERO,
-            station_pause_attempts: 1,
-            station_pause_interval: Duration::ZERO,
             address: Ipv4Addr::UNSPECIFIED,
             port: DEFAULT_PORT,
             rate_bps: DEFAULT_RATE_BPS,

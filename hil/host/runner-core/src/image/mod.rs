@@ -107,10 +107,7 @@ pub fn classify_flashed_capabilities(
         });
     }
     if features.phy_fault_injection {
-        let mut control = *features;
-        control.phy_fault_injection = false;
-        return (classify_flashed_capabilities(&control) == Some(ImageClass::Correctness))
-            .then_some(ImageClass::DiagnosticPhyFault);
+        return None;
     }
     if features.rx_ownership_evidence {
         let mut control = *features;
@@ -128,10 +125,7 @@ pub fn classify_flashed_capabilities(
         .then_some(ImageClass::DiagnosticIeee802154Radio);
     }
     if features.phy_rx_hot_sram {
-        let mut control = *features;
-        control.phy_rx_hot_sram = false;
-        return (classify_flashed_capabilities(&control) == Some(ImageClass::DiagnosticRxDelivery))
-            .then_some(ImageClass::DiagnosticRxDeliveryPhyHotSram);
+        return None;
     }
     classify_image_signature(ImageCapabilitySignature {
         driver_observation: features.driver_observation_evidence,
@@ -928,13 +922,11 @@ fn audit_radio_observers<'a>(
     let aggregate_required = matches!(
         class,
         ImageClass::Correctness
-            | ImageClass::DiagnosticPhyFault
             | ImageClass::DiagnosticMacIrq
             | ImageClass::DiagnosticTxWait
             | ImageClass::DiagnosticTaskPoll
             | ImageClass::DiagnosticCore0RxCycles
             | ImageClass::DiagnosticRxDelivery
-            | ImageClass::DiagnosticRxDeliveryPhyHotSram
     );
     let range = critical.ok_or("missing critical data for HIL radio observers")?;
     let symbols: Vec<_> = symbols.collect();

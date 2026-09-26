@@ -576,34 +576,3 @@ fn completed_numeric_observation_is_reassessed_but_absence_is_not_a_failure() {
     );
     assert_eq!(index.scenarios[id][0].measurements[0][0], measurement);
 }
-
-#[test]
-fn unresolved_control_is_explained_and_cannot_be_replaced_by_an_old_passing_pair() {
-    let mut index = HilEvidenceIndex::synthetic(&[("control", 1), ("experiment", 1)]);
-    index.scenarios.get_mut("control").unwrap()[0].run_id = "pair".into();
-    index.scenarios.get_mut("experiment").unwrap()[0].run_id = "pair".into();
-    let catalog = ScenarioCatalog {
-        controls: BTreeMap::from([("experiment".into(), "control".into())]),
-        ..Default::default()
-    };
-    assert_eq!(
-        index
-            .decision_for(&requirement("experiment", 1), &catalog)
-            .status,
-        EvidenceStatus::Satisfied
-    );
-    let mut failure = index.scenarios["control"][0].clone();
-    failure.run_id = "later-control".into();
-    failure.outcome = Outcome::Failed;
-    index.scenarios.get_mut("control").unwrap().push(failure);
-    let decision = index.decision_for(&requirement("experiment", 1), &catalog);
-    assert!(decision.evidence.is_none());
-    assert_eq!(
-        decision.next_work().unwrap().0,
-        crate::model::WorkKind::InvestigateFailure
-    );
-    assert_eq!(
-        decision.control.unwrap().status,
-        EvidenceStatus::UnresolvedFailure
-    );
-}

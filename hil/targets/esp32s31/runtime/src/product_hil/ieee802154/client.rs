@@ -4,13 +4,13 @@ use core::pin::pin;
 
 use esp_hal::{efuse, time::Instant};
 use oer_esp32s31_hal::root::RadioHardware;
-use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
 use oer_esp32s31_phy::{
     PhyCalibrationIdentity, concurrent::MaintenancePolicy, phy_get_rf_cal_version,
 };
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
+use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{Ieee802154AirTxOutcome, Ieee802154SessionMaintenancePolicy};
 use oer_ieee802154::TxStatus;
@@ -36,13 +36,13 @@ fn calibration_identity() -> PhyCalibrationIdentity {
 /// The concurrently split radio and the IEEE 802.15.4 client's owners. The
 /// images are terminal: the radio stays split.
 pub(super) struct Client {
-    pub(super) radio: RadioSystem<EspHalRadioPeripheral, EspHalRadioClocks>,
+    pub(super) radio: RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>,
     pub(super) defaults: Ieee802154PibDefaults,
 }
 
 impl Client {
     /// Claim the radio once for this image.
-    pub(super) fn claim(platform: EspHalRadioPeripheral) -> Option<(Self, Ieee802154Parked)> {
+    pub(super) fn claim(platform: EspHalRadioPlatform) -> Option<(Self, Ieee802154Parked)> {
         let hardware = RadioHardware::take()?;
         let buffers = BUFFERS.try_take()?;
         let (radio, partitions) = RadioSystem::new(

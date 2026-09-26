@@ -152,6 +152,17 @@ pub struct BluetoothPhyOperation {
 }
 
 /// Measurements from actual PHY execution and guarded RUN, in microseconds.
+/// Per-search convergence of the most recently completed RX DC product.
+/// False baseband entries identify initial coefficient pairs reused after the
+/// iteration limit; false fine radio entries retain the last correction.
+/// All-false is a completed product with no converged search, not missing data.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PhyRxGainQualityEvidence {
+    pub shared_baseband: [bool; 11],
+    pub wifi_baseband: [bool; 8],
+    pub wifi_fine: [bool; 5],
+}
+
 /// Operation elapsed times nest; observed maxima are not worst-case bounds.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BluetoothPhyMaintenanceEvidence {
@@ -160,7 +171,7 @@ pub struct BluetoothPhyMaintenanceEvidence {
     pub common_calibrations: u32,
     /// Latest completed RX DC product, retained across subsequent light tracking.
     #[serde(default)]
-    pub latest_rx_quality: Option<crate::PhyRxGainQualityEvidence>,
+    pub latest_rx_quality: Option<PhyRxGainQualityEvidence>,
     pub bluetooth_calibrations: u32,
     pub maximum_execution_micros: u32,
     pub maximum_restoration_micros: u32,
@@ -650,7 +661,7 @@ mod tests {
                         restored: u32::MAX,
                         common_calibrations: u32::MAX,
                         bluetooth_calibrations: u32::MAX,
-                        latest_rx_quality: Some(crate::PhyRxGainQualityEvidence::default()),
+                        latest_rx_quality: Some(PhyRxGainQualityEvidence::default()),
                         maximum_execution_micros: u32::MAX,
                         maximum_restoration_micros: u32::MAX,
                         maximum_to_run_micros: u32::MAX,

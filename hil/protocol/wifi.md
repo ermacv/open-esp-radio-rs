@@ -93,12 +93,11 @@ Wi-Fi commands admit only operations valid for the current `WifiIdle`,
 `WifiStation`, `WifiAccessPoint` or `WifiMonitor` owner. Admission, successful
 completion and terminal role failure are distinct request-correlated events.
 
-The cold-restart and retained-cycle reports carry the radio actor's PHY
-registration generation immediately before and after the operation. Cold
-restart requires wrapping increment by one and `RestoredCache`; retained wake
-requires exact equality, including its first cycle. Both also require the next
-radio-role generation after station stop. These logical generations do not by
-themselves prove physical RF restoration or quiescence. Station lifecycle
+The restart report carries the next radio-role generation after station stop
+and what the shared radio did: `ClosedAndWoken` when Wi-Fi was the last PHY
+client, or `KeptOpen` when another client kept RF open. A Wi-Fi-only image
+requires `ClosedAndWoken`. These logical values do not by themselves prove
+physical RF restoration or quiescence. Station lifecycle
 generation is a separate link-epoch counter: a stopped connected STA must
 publish a fresh `LinkPolicy` disconnect for the previous link epoch, then a
 new `Connected` edge in the next link epoch. A connected edge includes the

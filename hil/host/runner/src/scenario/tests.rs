@@ -41,24 +41,6 @@ fn a_document_names_exactly_one_known_family() {
 }
 
 #[test]
-fn only_wifi_defines_a_controlled_comparison() {
-    let catalog = catalog();
-    let experiment = catalog
-        .get("diagnostic-station-phy-combined-high-load-delivery-rx")
-        .unwrap();
-    let control = catalog.get(experiment.control().unwrap()).unwrap();
-    experiment.family.validate_control(&control.family).unwrap();
-    let boot = catalog.get("boot-smoke").unwrap();
-    assert!(boot.family.validate_control(&boot.family).is_err());
-    let experiments = catalog
-        .all()
-        .iter()
-        .filter(|scenario| scenario.control().is_some())
-        .count();
-    assert!(experiments > 0);
-}
-
-#[test]
 fn every_image_class_is_reached_by_a_family_plan() {
     let catalog = catalog();
     for class in ImageClass::ALL {

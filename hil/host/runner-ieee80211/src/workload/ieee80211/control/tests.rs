@@ -12,7 +12,7 @@ fn role_transition_is_exact() {
 }
 
 #[test]
-fn radio_restart_requires_idle_ownership_and_the_next_generation() {
+fn radio_restart_requires_the_next_generation_and_a_closed_and_woken_rf() {
     let stopped = WifiRoleTransitionEvidence {
         previous: WifiRole::Station,
         current: WifiRole::Idle,
@@ -20,11 +20,9 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
     };
     let restarted = WifiRadioRestartEvidence {
         generation: 8,
-        previous_phy_registration_generation: 0,
-        phy_registration_generation: 1,
-        calibration_path: WifiRadioCalibrationPath::RestoredCache,
+        rf: WifiRadioRestartRf::ClosedAndWoken,
     };
-    assert!(require_radio_restart(stopped, restarted, None).is_ok());
+    assert!(require_radio_restart(stopped, restarted).is_ok());
     assert!(
         require_radio_restart(
             stopped,
@@ -32,7 +30,6 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
                 generation: 7,
                 ..restarted
             },
-            None,
         )
         .is_err()
     );
@@ -40,12 +37,12 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
         require_radio_restart(
             stopped,
             WifiRadioRestartEvidence {
-                calibration_path: WifiRadioCalibrationPath::Full,
+                rf: WifiRadioRestartRf::KeptOpen,
                 ..restarted
             },
-            None,
         )
-        .is_err()
+        .is_err(),
+        "the last PHY client's release must close RF"
     );
 }
 
@@ -53,9 +50,7 @@ fn radio_restart_requires_idle_ownership_and_the_next_generation() {
 fn station_after_radio_restart_requires_the_next_generation() {
     let restarted = WifiRadioRestartEvidence {
         generation: 8,
-        previous_phy_registration_generation: 0,
-        phy_registration_generation: 1,
-        calibration_path: WifiRadioCalibrationPath::RestoredCache,
+        rf: WifiRadioRestartRf::ClosedAndWoken,
     };
     let started = WifiRoleTransitionEvidence {
         previous: WifiRole::Idle,
@@ -72,53 +67,6 @@ fn station_after_radio_restart_requires_the_next_generation() {
             }
         )
         .is_err()
-    );
-}
-
-#[test]
-fn retained_radio_cycle_requires_the_next_generation_and_preserves_phy_epoch() {
-    let stopped = WifiRoleTransitionEvidence {
-        previous: WifiRole::Station,
-        current: WifiRole::Idle,
-        generation: 7,
-    };
-    let retained = WifiRadioRetainedCycleEvidence {
-        generation: 8,
-        previous_phy_registration_generation: 3,
-        phy_registration_generation: 3,
-    };
-    assert!(require_retained_radio_cycle(stopped, retained, None).is_ok());
-    assert!(require_retained_radio_cycle(stopped, retained, Some(3)).is_ok());
-    assert!(
-        require_retained_radio_cycle(
-            stopped,
-            WifiRadioRetainedCycleEvidence {
-                generation: 7,
-                ..retained
-            },
-            Some(3),
-        )
-        .is_err()
-    );
-    assert!(require_retained_radio_cycle(stopped, retained, Some(2)).is_err());
-}
-
-#[test]
-fn first_retained_cycle_must_not_establish_its_own_phy_baseline() {
-    let stopped = WifiRoleTransitionEvidence {
-        previous: WifiRole::Station,
-        current: WifiRole::Idle,
-        generation: 7,
-    };
-    let first_cycle_after_an_unobserved_phy_change = WifiRadioRetainedCycleEvidence {
-        generation: 8,
-        previous_phy_registration_generation: 3,
-        phy_registration_generation: 4,
-    };
-    assert!(
-        require_retained_radio_cycle(stopped, first_cycle_after_an_unobserved_phy_change, None)
-            .is_err(),
-        "a missing pre-operation PHY anchor cannot prove retention on cycle one"
     );
 }
 
@@ -186,60 +134,27 @@ fn lifecycle_connected_link_requires_negotiated_phy_and_security() {
 }
 
 #[test]
-fn all_three_cold_and_retained_cycles_require_continuous_owner_epochs() {
+fn three_restart_cycles_require_continuous_role_generations() {
     let mut role_generation = u32::MAX - 1;
-    let mut cold_phy_generation = u32::MAX - 1;
-    let retained_phy_generation = 17;
     for _cycle in 1..=3 {
         let stopped = WifiRoleTransitionEvidence {
             previous: WifiRole::Station,
             current: WifiRole::Idle,
             generation: role_generation,
         };
-        let cold = WifiRadioRestartEvidence {
+        let restarted = WifiRadioRestartEvidence {
             generation: role_generation.wrapping_add(1),
-            previous_phy_registration_generation: cold_phy_generation,
-            phy_registration_generation: cold_phy_generation.wrapping_add(1),
-            calibration_path: WifiRadioCalibrationPath::RestoredCache,
+            rf: WifiRadioRestartRf::ClosedAndWoken,
         };
-        assert!(require_radio_restart(stopped, cold, Some(cold_phy_generation)).is_ok());
-        let retained = WifiRadioRetainedCycleEvidence {
-            generation: role_generation.wrapping_add(1),
-            previous_phy_registration_generation: retained_phy_generation,
-            phy_registration_generation: retained_phy_generation,
-        };
-        assert!(
-            require_retained_radio_cycle(stopped, retained, Some(retained_phy_generation)).is_ok()
-        );
+        assert!(require_radio_restart(stopped, restarted).is_ok());
         let started = WifiRoleTransitionEvidence {
             previous: WifiRole::Idle,
             current: WifiRole::Station,
             generation: role_generation.wrapping_add(2),
         };
-        assert!(require_station_after_lifecycle(cold.generation, started).is_ok());
+        assert!(require_station_after_lifecycle(restarted.generation, started).is_ok());
         role_generation = started.generation;
-        cold_phy_generation = cold.phy_registration_generation;
     }
-
-    let stale_cold = WifiRadioRestartEvidence {
-        generation: role_generation.wrapping_add(1),
-        previous_phy_registration_generation: cold_phy_generation.wrapping_sub(1),
-        phy_registration_generation: cold_phy_generation,
-        calibration_path: WifiRadioCalibrationPath::RestoredCache,
-    };
-    assert!(
-        require_radio_restart(
-            WifiRoleTransitionEvidence {
-                previous: WifiRole::Station,
-                current: WifiRole::Idle,
-                generation: role_generation,
-            },
-            stale_cold,
-            Some(cold_phy_generation),
-        )
-        .is_err(),
-        "a missing predecessor cycle cannot supply the current PHY baseline"
-    );
 }
 
 #[test]

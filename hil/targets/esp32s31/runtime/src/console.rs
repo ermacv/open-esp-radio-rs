@@ -155,10 +155,6 @@ static WIFI_CONTROL_REQUESTS: Channel<CriticalSectionRawMutex, WifiControlReques
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WifiControlRequest {
-    Pause {
-        request_id: u32,
-        operation: oer_hil_protocol::StationPauseOperation,
-    },
     Cycle {
         request_id: u32,
     },
@@ -170,9 +166,6 @@ pub enum WifiControlRequest {
         credentials: NetworkCredentials,
     },
     RestartRadio {
-        request_id: u32,
-    },
-    CycleRetainedRadio {
         request_id: u32,
     },
     Scan {
@@ -1728,27 +1721,6 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                         }
                     }
-                    Command::PauseStation { operation } => {
-                        let response = if !capabilities.features.station_pause {
-                            Event::Rejected(RejectReason::Unsupported)
-                        } else if !initialized
-                            || session_id != 0
-                            || !wifi_role_is(WifiRole::Station)
-                        {
-                            Event::Rejected(RejectReason::InvalidState)
-                        } else if WIFI_CONTROL_REQUESTS
-                            .try_send(WifiControlRequest::Pause {
-                                request_id,
-                                operation,
-                            })
-                            .is_err()
-                        {
-                            Event::Rejected(RejectReason::Busy)
-                        } else {
-                            Event::Accepted
-                        };
-                        publish_event_reliably(session_id, request_id, response).await;
-                    }
                     Command::CycleStationEpoch => {
                         let response = if !capabilities.features.station_epoch_control {
                             Event::Rejected(RejectReason::Unsupported)
@@ -1826,26 +1798,6 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::RestartRadio { request_id })
-                            .is_err()
-                        {
-                            Event::Rejected(RejectReason::Busy)
-                        } else {
-                            Event::Accepted
-                        };
-                        publish_event_reliably(session_id, request_id, response).await;
-                    }
-                    Command::CycleRetainedRadio => {
-                        let response = if !capabilities.features.wifi_role_control {
-                            Event::Rejected(RejectReason::Unsupported)
-                        } else if !initialized
-                            || state != SessionState::Idle
-                            || sessions.iter().any(Option::is_some)
-                            || session_id != 0
-                            || !wifi_role_is(WifiRole::Idle)
-                        {
-                            Event::Rejected(RejectReason::InvalidState)
-                        } else if WIFI_CONTROL_REQUESTS
-                            .try_send(WifiControlRequest::CycleRetainedRadio { request_id })
                             .is_err()
                         {
                             Event::Rejected(RejectReason::Busy)
@@ -2358,7 +2310,6 @@ fn confirms_wifi_serialization(event: &Event) -> bool {
         Event::StationLifecycle(_)
             | Event::WifiRoleTransitioned(_)
             | Event::WifiRadioRestarted(_)
-            | Event::WifiRadioRetainedCycled(_)
             | Event::WifiScanCompleted(_)
             | Event::WifiMonitorStarted(_)
             | Event::WifiMonitorStopped(_)

@@ -14,9 +14,6 @@ use hil_core::{
     lab::config::OpenWrtConfig, lab::link::HtGuardIntervalExpectation, lab::link::PhyExpectation,
 };
 
-mod tx;
-pub use tx::OpenWrtTxCapture;
-
 const PRE_WORKLOAD_CHANNEL_SAMPLE: Duration = Duration::from_secs(12);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

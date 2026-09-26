@@ -72,10 +72,6 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
                     hil_wifi::fixture::openwrt::evidence::doctor_tools(config)?;
                 }
-                if matches!(&scenario.family, Family::Wifi(wifi) if wifi.requires_packet_decoder())
-                {
-                    hil_core::image::require_program(std::ffi::OsStr::new("tshark"))?;
-                }
             }
             StationFixtureConfig::LocalLinux(config) => {
                 hil_wifi::fixture::local::ap::check(

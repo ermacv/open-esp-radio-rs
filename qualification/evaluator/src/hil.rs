@@ -3,7 +3,6 @@
 mod attempt;
 mod build_record;
 mod checks;
-mod comparison;
 mod decision;
 mod measurement;
 mod observer;
@@ -60,7 +59,6 @@ pub(crate) struct HilRequirement {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ScenarioCatalog {
     repetitions: BTreeMap<String, u8>,
-    controls: BTreeMap<String, String>,
     checks: BTreeMap<String, BTreeMap<String, checks::Contract>>,
     definitions: BTreeMap<String, serde_json::Value>,
 }
@@ -96,14 +94,12 @@ impl ScenarioCatalog {
         if repetitions.is_empty() {
             return Err(format!("HIL scenario catalog is empty: {}", directory.display()).into());
         }
-        let controls = comparison::validate(&documents)?;
         let checks = documents
             .iter()
             .map(|(id, document)| Ok((id.clone(), checks::contracts(document)?)))
             .collect::<Result<_>>()?;
         Ok(Self {
             repetitions,
-            controls,
             checks,
             definitions: documents,
         })
@@ -182,10 +178,6 @@ impl ScenarioCatalog {
             documents.insert(document.id, value);
         }
         Ok(())
-    }
-
-    pub(crate) fn control_for(&self, scenario: &str) -> Option<&str> {
-        self.controls.get(scenario).map(String::as_str)
     }
 
     pub(crate) fn validate_requirement(&self, requirement: &HilRequirement) -> Result<()> {

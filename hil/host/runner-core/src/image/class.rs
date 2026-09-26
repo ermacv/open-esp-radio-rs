@@ -11,7 +11,6 @@ pub enum ImageClass {
     BluetoothSecureGatt,
     BluetoothPhyMaintenance,
     BluetoothWatchdogReset,
-    DiagnosticPhyFault,
     BootSmoke,
     Performance,
     Correctness,
@@ -24,7 +23,6 @@ pub enum ImageClass {
     DiagnosticCore0RxCycles,
     DiagnosticRxDelivery,
     DiagnosticRxOwnership,
-    DiagnosticRxDeliveryPhyHotSram,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
     DiagnosticIeee802154Radio,
@@ -49,11 +47,10 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 22] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
-        Self::DiagnosticPhyFault,
         Self::BluetoothDtm,
         Self::BluetoothPhyMaintenance,
         Self::BluetoothWatchdogReset,
@@ -69,7 +66,6 @@ impl ImageClass {
         Self::DiagnosticCore0RxCycles,
         Self::DiagnosticRxDelivery,
         Self::DiagnosticRxOwnership,
-        Self::DiagnosticRxDeliveryPhyHotSram,
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
         Self::DiagnosticIeee802154Radio,
@@ -84,7 +80,6 @@ impl ImageClass {
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::BluetoothPhyMaintenance => "bluetooth-phy-maintenance",
             Self::BluetoothWatchdogReset => "bluetooth-watchdog-reset",
-            Self::DiagnosticPhyFault => "diagnostic-phy-fault",
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "performance",
             Self::Correctness => "correctness",
@@ -97,7 +92,6 @@ impl ImageClass {
             Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
             Self::DiagnosticRxOwnership => "diagnostic-rx-ownership",
-            Self::DiagnosticRxDeliveryPhyHotSram => "diagnostic-rx-delivery-phy-hot-sram",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
             Self::DiagnosticIeee802154Radio => "diagnostic-ieee802154-radio",
@@ -113,9 +107,6 @@ impl ImageClass {
             }
             Self::SystemWatchdog => {
                 "system-watchdog,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticPhyFault => {
-                "open-radio-hil,driver-observation,phy-fault-injection,psram-task-stack,code-psram,profile-psram-data"
             }
             Self::BluetoothDtm => {
                 "bluetooth-hil,phy-rx-hot-sram,psram-task-stack,code-psram,profile-psram-data"
@@ -155,9 +146,6 @@ impl ImageClass {
             Self::DiagnosticCore0RxCycles => {
                 "open-radio-hil,psram-task-stack,core0-rx-cycle-telemetry,code-psram,profile-psram-data"
             }
-            Self::DiagnosticRxDeliveryPhyHotSram => {
-                "open-radio-hil,psram-task-stack,rx-delivery-telemetry,phy-rx-hot-sram,code-psram,profile-psram-data"
-            }
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
             }
@@ -182,7 +170,6 @@ impl ImageClass {
             | Self::BluetoothGatt
             | Self::BluetoothSecureGatt
             | Self::BluetoothDtm
-            | Self::DiagnosticPhyFault
             | Self::BluetoothPhyMaintenance
             | Self::BluetoothWatchdogReset
             | Self::BootSmoke
@@ -197,7 +184,6 @@ impl ImageClass {
             | Self::DiagnosticCore0RxCycles
             | Self::DiagnosticRxDelivery
             | Self::DiagnosticRxOwnership
-            | Self::DiagnosticRxDeliveryPhyHotSram
             | Self::DiagnosticIeee802154EventStatus
             | Self::DiagnosticMemoryBenchmark
             | Self::DiagnosticIeee802154EdEvent
@@ -239,7 +225,6 @@ impl ImageClass {
             self,
             Self::Correctness
                 | Self::Performance
-                | Self::DiagnosticPhyFault
                 | Self::DiagnosticMacIrq
                 | Self::DiagnosticTxWait
                 | Self::DiagnosticTaskResidence
@@ -249,7 +234,6 @@ impl ImageClass {
                 | Self::DiagnosticCore0RxCycles
                 | Self::DiagnosticRxDelivery
                 | Self::DiagnosticRxOwnership
-                | Self::DiagnosticRxDeliveryPhyHotSram
         )
     }
 

@@ -1,7 +1,7 @@
 # ESP32-S31 HIL target
 
 - [System and PHY watchdogs](watchdogs.md)
-- [PHY pause and timing profiles](phy.md)
+- [RX delivery observations](rx-delivery.md)
 - [Copy benchmarks and stack measurements](memory.md)
 - [Host setup and fixture installation](../../host/README.md)
 - [Wire and evidence contracts](../../protocol/README.md)

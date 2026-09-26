@@ -9,9 +9,9 @@
 //! target-monotonic times; the host judges them.
 
 use embassy_time::{Duration, Timer, with_timeout};
-use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154_runtime::Ieee802154RadioEvent;
 use oer_esp32s31_ieee802154_system::Ieee802154System;
+use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_hil_protocol::{
     Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence, Ieee802154AirCheckRequest,
     Ieee802154AirCheckStop, Ieee802154AirCycle, Ieee802154AirEnergyOutcome, Ieee802154AirTransmit,
@@ -39,7 +39,7 @@ struct Stop(Ieee802154AirCheckStop);
 
 /// Run the air check. The image is terminal: the radio stays split.
 pub(in crate::product_hil) async fn run_air_check(
-    platform: EspHalRadioPeripheral,
+    platform: EspHalRadioPlatform,
     request: Ieee802154AirCheckRequest,
 ) -> Ieee802154AirCheckEvidence {
     let mut evidence = Ieee802154AirCheckEvidence::default();

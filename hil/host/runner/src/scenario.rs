@@ -44,13 +44,6 @@ impl ScenarioFamily for Family {
             Self::Ieee802154(scenario) => scenario.plan(),
         }
     }
-
-    fn validate_control(&self, control: &Self) -> Result<()> {
-        match (self, control) {
-            (Self::Wifi(experiment), Self::Wifi(control)) => experiment.validate_control(control),
-            _ => Err("only Wi-Fi scenarios define a controlled comparison".into()),
-        }
-    }
 }
 
 impl Family {

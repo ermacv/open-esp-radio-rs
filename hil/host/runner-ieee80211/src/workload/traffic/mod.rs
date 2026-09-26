@@ -2,7 +2,6 @@ pub mod bidirectional;
 mod continuity;
 pub mod host_network;
 pub mod icmp_latency;
-pub mod maintenance;
 pub mod offered_load;
 pub mod paced_tcp;
 pub mod paced_udp;

@@ -628,37 +628,30 @@ fn finish_writes_all_views_and_completes_manifest() {
 }
 
 #[test]
-fn campaign_and_unavailable_comparison_are_part_of_the_sealed_inventory() {
+fn campaign_is_part_of_the_sealed_inventory() {
     let catalog = crate::scenario::test_family::catalog();
-    let experiment = catalog.get("experiment").unwrap();
+    let scenario = catalog.get("silence").unwrap();
     let plan = crate::campaign::Plan::create(
         &catalog,
-        &[experiment],
+        &[scenario],
         crate::image::Integration::UpstreamXarxa,
     )
     .unwrap();
-    let report = crate::evidence::comparison::collect(&[experiment], &[]).unwrap();
     let root = temporary_directory("campaign-seal");
     let session = integrated_session(&root);
     session.write_campaign(&plan).unwrap();
-    session.write_comparisons(&report).unwrap();
     let (_, completion) = session.finish(failed_suite().scenarios).unwrap();
     let integrity: IntegrityIndex =
         serde_json::from_slice(&fs::read(&completion.integrity_report).unwrap()).unwrap();
-    for name in ["campaign.json", "comparisons.json"] {
-        let entry = integrity
-            .files
-            .iter()
-            .find(|entry| entry.path == Path::new(name))
-            .unwrap();
-        assert_eq!(
-            entry.sha256,
-            sha256_file(&completion.run_directory.join(name)).unwrap()
-        );
-    }
-    let serialized = fs::read_to_string(completion.run_directory.join("comparisons.json")).unwrap();
-    assert!(serialized.contains("unavailable"));
-    assert!(serialized.contains("not-evaluated"));
+    let entry = integrity
+        .files
+        .iter()
+        .find(|entry| entry.path == Path::new("campaign.json"))
+        .unwrap();
+    assert_eq!(
+        entry.sha256,
+        sha256_file(&completion.run_directory.join("campaign.json")).unwrap()
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

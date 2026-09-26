@@ -173,17 +173,6 @@ pub(crate) fn apply<'a>(
                 checks: r.checks.clone(),
                 minimum_repetitions: r.minimum_repetitions,
             })
-            .or_else(|| {
-                document
-                    .hil_requirements
-                    .iter()
-                    .find(|r| catalog.control_for(&r.scenario) == Some(&review.scenario))
-                    .map(|r| HilRequirement {
-                        scenario: review.scenario.clone(),
-                        checks: Vec::new(),
-                        minimum_repetitions: r.minimum_repetitions,
-                    })
-            })
             .ok_or("review scenario is not part of the capability")?;
         let binding = property(document, declarations, &requirement, catalog, root)?;
         let link = ReviewLink {

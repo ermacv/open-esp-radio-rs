@@ -28,8 +28,8 @@ use oer_hil_protocol::{
     StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
     TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface,
-    WifiRadioRestartEvidence, WifiRadioRetainedCycleEvidence, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    WifiRadioRestartEvidence, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    evidence_crc32c,
 };
 use zeroize::Zeroizing;
 

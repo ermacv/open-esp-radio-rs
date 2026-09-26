@@ -81,38 +81,6 @@ fn station_udp_criteria_must_measure_an_offered_direction() {
 }
 
 #[test]
-fn maintenance_owns_its_schedule_and_rfpll_qualification() {
-    let scenario = valid(&udp_rx(
-        "[workload.maintenance]\noperation = 'calibration'\nrequire_post_maintenance_echo = true\n",
-    ));
-    assert_eq!(
-        scenario.plan().checks,
-        [
-            "wifi.maintenance.ip-exchange-resumed",
-            "wifi.maintenance.same-link",
-            "wifi.maintenance.transaction-valid",
-        ]
-    );
-    assert!(scenario.requires_packet_decoder());
-    for maintenance in [
-        "operation = 'calibration'\nrequire_nonzero_rfpll_correction = true\n",
-        "operation = 'rfpll-observed'\nrequire_nonzero_rfpll_correction = true\nattempts = { count = 3, interval_millis = 500 }\n",
-        "operation = 'rfpll-observed'\nrequire_nonzero_rfpll_correction = true\nafter_millis = 14001\n",
-        "operation = 'rfpll-observed'\nafter_millis = 1000\nattempts = { count = 3, interval_millis = 500 }\n",
-        "operation = { synthetic = { duration_micros = 0, notify_ap = false } }\n",
-    ] {
-        invalid(&udp_rx(&format!("[workload.maintenance]\n{maintenance}")));
-    }
-    valid(&udp_rx(
-        "[workload.maintenance]\noperation = 'rfpll-observed'\nrequire_nonzero_rfpll_correction = true\nafter_millis = 1000\nattempts = { count = 3, interval_millis = 500 }\n",
-    ));
-    invalid(
-        &udp_rx("[workload.maintenance]\noperation = 'calibration'\n")
-            .replace("duration_seconds = 16", "duration_seconds = 11"),
-    );
-}
-
-#[test]
 fn receive_checks_are_published_only_for_their_criteria() {
     assert!(valid(UDP_RX).plan().checks.is_empty());
     let checks = valid(&udp_rx(
@@ -220,12 +188,7 @@ fn datapath_diagnostics_are_restricted_to_their_measurements() {
 #[test]
 fn images_accept_only_their_workloads() {
     invalid(&UDP_RX.replace("correctness", "bluetooth-dtm"));
-    invalid(&UDP_RX.replace("correctness", "diagnostic-phy-fault"));
     invalid(&UDP_RX.replace("correctness", "diagnostic-rx-ownership"));
-    valid(
-        "image = 'diagnostic-phy-fault'\n[workload]\nkind = 'phy-watchdog'\nlink = { phy = 'ht40' }\n",
-    );
-    invalid("image = 'correctness'\n[workload]\nkind = 'phy-watchdog'\nlink = { phy = 'ht40' }\n");
     invalid(
         "image = 'performance'\n[workload]\nkind = 'station-reconnect'\nlink = { phy = 'ht40' }\ncycles = 1\nboots = 1\ntimeout_seconds = 30\n",
     );
@@ -412,40 +375,6 @@ fn paired_station_access_point_uses_the_laptop_client() {
     assert!(paired.requirements.laptop_client && !paired.requirements.station_control);
     let reconnect = valid("image = 'correctness'\n[workload]\nkind = 'station-access-point-reconnect'\nlink = { phy = 'ht40' }\ntimeout_seconds = 60\n").plan();
     assert!(reconnect.requirements.laptop_client && reconnect.requirements.station_control);
-}
-
-#[test]
-fn a_control_differs_from_its_experiment_only_by_maintenance() {
-    let control = valid(UDP_RX);
-    let experiment = valid(&udp_rx(
-        "[workload.maintenance]\noperation = 'calibration'\n",
-    ));
-    experiment.validate_control(&control).unwrap();
-    assert!(control.validate_control(&experiment).is_err());
-    for changed in [
-        UDP_RX.replace("'ht40'", "'he20'"),
-        UDP_RX.replace("payload_bytes = 1472", "payload_bytes = 512"),
-        udp_rx("[workload.criteria]\nminimum_rx_bps = 1000\n"),
-        udp_rx("[datapath]\nplacement = 'single-core'\n"),
-        UDP_RX.replace("correctness", "diagnostic-rx-delivery"),
-    ] {
-        assert!(
-            experiment.validate_control(&valid(&changed)).is_err(),
-            "{changed}"
-        );
-    }
-    let transmit = valid(&UDP_RX.replace(
-        "offer = { rx_bps = 50000000 }",
-        "offer = { tx_bps = 50000000 }",
-    ));
-    let transmit_experiment = valid(&format!(
-        "{}[workload.maintenance]\noperation = 'calibration'\n",
-        UDP_RX.replace(
-            "offer = { rx_bps = 50000000 }",
-            "offer = { tx_bps = 50000000 }"
-        )
-    ));
-    assert!(transmit_experiment.validate_control(&transmit).is_err());
 }
 
 #[test]

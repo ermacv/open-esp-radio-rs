@@ -175,6 +175,33 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "the other `wifi_set_rx_policy` jump-table arms serve vendor lifecycles \
+            production does not have: the station scan start and end (3, 4), join (5) and \
+            leave (7) policies of a scan through receive queue zero, while production scans \
+            and authenticates through queue three's promiscuous admission (`hal_sniffer`), \
+            enters the link with policy six through `apply_sta_link_receive_policy` and leaves \
+            with policy two; and the remain-on-channel (13, ended by 1) and NAN (10 to 12) \
+            policies, which have no production owner. The control-mode-two receive filter of \
+            `hal_mac_rx_set_policy` serves only policies 10 and 13",
+        places: &[
+            Place::Range {
+                function: "wifi_set_rx_policy",
+                start: 0x30,
+                end: 0x32,
+            },
+            Place::Range {
+                function: "hal_mac_rx_set_policy",
+                start: 0x98,
+                end: 0x9c,
+            },
+            Place::Range {
+                function: "hal_mac_rx_set_policy",
+                start: 0xbc,
+                end: 0xc4,
+            },
+        ],
+    },
+    Decision {
         reason: "vendor diagnostic formatting; production emits no vendor console output",
         places: &[
             Place::Function("wifi_log"),

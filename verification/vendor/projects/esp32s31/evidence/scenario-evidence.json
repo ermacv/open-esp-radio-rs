@@ -155,7 +155,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "9870b4a47cfd9b82a887e501628a3fdce442590465252f83a39348d0eb701caa"
+      "sha256": "665b45b3aa4647a8a7ea59cbe3cef4001bcdbe3bf06eec46a8191458fd4a4360"
     },
     {
       "path": "verification/vendor/schema",
@@ -2165,8 +2165,8 @@
           "total": 48
         },
         "open": 5,
-        "excluded": 35,
-        "untriaged": 3
+        "excluded": 38,
+        "untriaged": 0
       },
       "observation": {
         "executed": 73,
@@ -2199,8 +2199,8 @@
           "total": 18
         },
         "open": 1,
-        "excluded": 6,
-        "untriaged": 14
+        "excluded": 10,
+        "untriaged": 10
       },
       "observation": {
         "executed": 30,
@@ -4210,16 +4210,6 @@
     {
       "function": "hal_mac_rx_get_last_dscr",
       "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_rx_set_policy",
-      "offset": 152,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_rx_set_policy",
-      "offset": 188,
       "kind": "block"
     },
     {
@@ -21746,11 +21736,6 @@
       "function": "wifi_rf_phy_enable",
       "offset": 138,
       "kind": "block"
-    },
-    {
-      "function": "wifi_set_rx_policy",
-      "offset": 48,
-      "kind": "followed"
     },
     {
       "function": "wl_is_ap_no_lr",

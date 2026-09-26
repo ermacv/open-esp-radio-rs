@@ -3,8 +3,9 @@
 
 use std::{vec, vec::Vec};
 
-use super::{EnhancedAckError, KeyIdMode, MacKeys, generate_enhanced_ack};
+use super::{EnhancedAckError, KeyIdMode, generate_enhanced_ack};
 use crate::FrameView;
+use crate::mac::security::MacKeys;
 
 const EXT_DST: [u8; 8] = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17];
 const EXT_SRC: [u8; 8] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27];

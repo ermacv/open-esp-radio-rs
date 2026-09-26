@@ -35,6 +35,8 @@ pub mod mac {
     pub mod pending;
     /// Frame retransmission after a failed attempt.
     pub mod retransmission;
+    /// MAC keys, frame counter and transmit security of the radio.
+    pub mod security;
 }
 
 /// Hardware-independent radio command/event and state contracts.
@@ -42,12 +44,13 @@ pub mod radio;
 
 pub use mac::csma::CsmaCa;
 pub use mac::enhanced_ack::{
-    EnhancedAck, EnhancedAckError, EnhancedAckSecurity, KeyIdMode, MacKeys, generate_enhanced_ack,
+    EnhancedAck, EnhancedAckError, EnhancedAckSecurity, KeyIdMode, generate_enhanced_ack,
 };
 pub use mac::frame::{Frame, FrameError, FrameView, MAX_MAC_FRAME_LEN, MIN_MAC_FRAME_LEN};
 pub use mac::header::{AddressMode, FrameAddress, FrameType, FrameVersion, PhrFrame};
 pub use mac::pending::{AckPending, AutoPendingMode, PendingTable, PendingTableFull, ack_pending};
 pub use mac::retransmission::{AttemptFailure, FrameRetries, RetryStart};
+pub use mac::security::{MacKeys, TransmitSecurity};
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
 pub use radio::command::{

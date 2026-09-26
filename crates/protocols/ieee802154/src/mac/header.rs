@@ -274,7 +274,9 @@ impl<'image> PhrFrame<'image> {
         Some(size)
     }
 
-    const fn security_header_offset(self) -> Option<u8> {
+    /// The image offset of the auxiliary security header, whether or not
+    /// security is enabled.
+    pub const fn security_header_offset(self) -> Option<u8> {
         if !self.frame_type().is_supported() {
             return None;
         }

@@ -13,7 +13,7 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Index format.
-pub const SCHEMA: u32 = 4;
+pub const SCHEMA: u32 = 5;
 /// Producer command recorded in every index.
 pub const COMMAND: &str = "vendor-scenario all";
 /// The only verdict an entry carries: a claim exists only when its root
@@ -39,6 +39,31 @@ pub struct Index {
     /// Executed production PHY source lines that no compared observation
     /// depends on and no reviewed decision covers yet, ascending and unique.
     pub unobserved: Vec<SourceLine>,
+    /// Persistent vendor bytes a claim's cases write without comparing them
+    /// and no reviewed decision covers, coalesced by data symbol, ascending.
+    pub unprojected: Vec<StateRange>,
+}
+
+/// Persistent vendor bytes a claim's compared cases wrote: those every
+/// writing case compares, and the others by whether a reviewed decision
+/// covers them.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct State {
+    pub written: u64,
+    pub compared: u64,
+    pub reviewed: u64,
+    pub untriaged: u64,
+}
+
+/// Bytes `offset..offset + length` of a vendor data symbol; bytes outside
+/// every sized data symbol are named by their hexadecimal address.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct StateRange {
+    pub symbol: String,
+    pub offset: u32,
+    pub length: u32,
 }
 
 /// Production PHY source lines a claim's executions executed, by whether a
@@ -129,6 +154,7 @@ pub struct Entry {
     pub reviews: Vec<String>,
     pub coverage: Coverage,
     pub observation: Observation,
+    pub state: State,
 }
 
 /// SHA-256 over every file below `relative`, excluding `target` and hidden
@@ -228,6 +254,14 @@ impl Index {
                 )
                 .into());
             }
+            let s = &entry.state;
+            if s.compared + s.reviewed + s.untriaged != s.written {
+                return Err(format!(
+                    "entry {} {} has inconsistent state",
+                    entry.source, entry.symbol
+                )
+                .into());
+            }
             if !seen.insert((
                 &entry.suite,
                 &entry.source,
@@ -244,6 +278,16 @@ impl Index {
             || self.unobserved.iter().any(|l| !is_relative(&l.path))
         {
             return Err("unobserved lines are not relative, ascending and unique".into());
+        }
+        if self.unprojected.iter().any(|r| r.length == 0)
+            || self.unprojected.windows(2).any(|w| {
+                w[0].symbol > w[1].symbol
+                    || (w[0].symbol == w[1].symbol
+                        && u64::from(w[0].offset) + u64::from(w[0].length)
+                            >= u64::from(w[1].offset))
+            })
+        {
+            return Err("unprojected state is not coalesced, ascending and unique".into());
         }
         Ok(())
     }

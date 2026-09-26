@@ -246,10 +246,17 @@ pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> Nati
                     reviewed: 0,
                     untriaged: 0,
                 },
+                state: scenario_evidence::State {
+                    written: 1,
+                    compared: 1,
+                    reviewed: 0,
+                    untriaged: 0,
+                },
             })
             .collect(),
         untriaged: vec![],
         unobserved: vec![],
+        unprojected: vec![],
     };
     index.validate("test-radio").unwrap();
     let current = index.is_current(root);
@@ -356,6 +363,7 @@ pub(crate) fn assert_reviewed_hil(
             entries: vec![],
             untriaged: vec![],
             unobserved: vec![],
+            unprojected: vec![],
         },
         current: false,
     };
@@ -409,6 +417,35 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
     // Listed locations are ascending and unique.
     listed.untriaged = vec![location(4), location(4)];
     assert!(listed.validate("test-radio").is_err());
+}
+
+#[test]
+fn native_index_state_must_account_for_every_written_byte() {
+    let fixture = fixture_root("state");
+    let evidence = native_evidence(&fixture.0, &[("radio", "archive", "set_channel")]);
+    // A written byte neither compared, reviewed nor untriaged.
+    let mut index = evidence.index.clone();
+    index.entries[0].state.written = 2;
+    assert!(index.validate("test-radio").is_err());
+    let range = |offset, length| scenario_evidence::StateRange {
+        symbol: "phy_param".into(),
+        offset,
+        length,
+    };
+    let mut listed = evidence.index.clone();
+    listed.entries[0].state.written = 2;
+    listed.entries[0].state.untriaged = 1;
+    listed.unprojected = vec![range(0x16, 1), range(0x11e, 1)];
+    listed.validate("test-radio").unwrap();
+    // Listed ranges are nonempty, ascending and coalesced.
+    for ranges in [
+        vec![range(0x16, 0)],
+        vec![range(0x11e, 1), range(0x16, 1)],
+        vec![range(0x16, 1), range(0x17, 1)],
+    ] {
+        listed.unprojected = ranges;
+        assert!(listed.validate("test-radio").is_err());
+    }
 }
 
 #[test]

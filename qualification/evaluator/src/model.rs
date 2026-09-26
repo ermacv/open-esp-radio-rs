@@ -1157,6 +1157,7 @@ impl NativeEvidence {
                         entries: vec![],
                         untriaged: vec![],
                         unobserved: vec![],
+                        unprojected: vec![],
                     },
                     current: false,
                 });

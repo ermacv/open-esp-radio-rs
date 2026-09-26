@@ -119,12 +119,19 @@ native evidence index
   untriaged. It also counts the production PHY source lines those
   comparisons executed, the lines a compared observation depends on (Blobray
   observation dependence), and how many of the rest a reviewed decision
-  covers or remain untriaged;
+  covers or remain untriaged. Finally it counts the persistent vendor bytes
+  those comparisons wrote (Blobray written ranges), the bytes every writing
+  case compares through a projection field, memory pair or write timeline,
+  and how many of the rest a reviewed decision covers or remain untriaged;
 - every untriaged uncovered location of the claimed closures that no claim
   whose closure contains its function reaches, by vendor function, offset
   and kind (block, taken or fallthrough direction);
 - every executed production PHY line that no scenario's compared observations
   depend on and no reviewed decision covers, by path and line;
+- every persistent vendor byte a claim's cases write without comparing it and
+  no reviewed decision covers, coalesced by data symbol and offset; a byte
+  outside every sized data symbol is named by the address of the nearest
+  symbol below it;
 - SHA-256 identities of the authenticated private inputs and the production
   probe ELF;
 - directory digests of every source the verdicts depend on: the probe ELF's
@@ -135,11 +142,12 @@ The index carries identities and verdicts only, never vendor bytes.
 Qualification reads the index named by the program's `[verification]
 evidence-index` (catalogs name it in `[validation] evidence-index`), checks
 schema, producer command and chip target, requires every entry to be a MATCH
-claim with compared cases whose coverage accounts for every uncovered location
-and whose observation counts account for every executed line, and recomputes
-every recorded directory digest. Coverage and observation are reported, not
-readiness gates: they show which vendor behavior the comparisons never
-exercised and which executed production lines they cannot notice. Any
+claim with compared cases whose coverage accounts for every uncovered location,
+whose observation counts account for every executed line and whose state
+counts account for every written byte, and recomputes every recorded directory
+digest. Coverage, observation and state are reported, not readiness gates: they
+show which vendor behavior the comparisons never exercised, which executed
+production lines they cannot notice and which vendor state they never compare. Any
 change to those sources makes the whole index stale: stale evidence supports
 no claim until the scenarios run again. An absent index means no vendor
 evidence is available: affected capabilities remain unqualified while status

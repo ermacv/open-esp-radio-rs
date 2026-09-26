@@ -8,7 +8,7 @@ use oer_esp32s31_vendor_scenarios::{
     harness::{Budget, Result},
     harness_edges, i2c, i2c_transport, observation,
     phy::PhyOptions,
-    research, rfpll, rx_gain, session, tracking, tx_dc,
+    research, rfpll, rx_gain, session, state, tracking, tx_dc,
 };
 use std::{
     path::{Path, PathBuf},
@@ -596,6 +596,7 @@ mod evidence {
         entries: Vec<Entry>,
         untriaged: Vec<evidence_index::Location>,
         unobserved: Vec<evidence_index::SourceLine>,
+        unprojected: Vec<evidence_index::StateRange>,
     ) -> Result<Index> {
         let root = root()?;
         let mut inputs = std::collections::BTreeMap::new();
@@ -633,6 +634,7 @@ mod evidence {
             entries,
             untriaged,
             unobserved,
+            unprojected,
         };
         index.validate(TARGET)?;
         Ok(index)
@@ -716,6 +718,7 @@ fn all(
     let mut untriaged = std::collections::BTreeSet::new();
     let mut closures = vec![];
     let mut lines = observation::Lines::default();
+    let mut unprojected = std::collections::BTreeSet::new();
     let mut failed = None;
     for (name, seconds, outcome) in outcomes {
         elapsed.push((name, seconds));
@@ -725,6 +728,7 @@ fn all(
                 untriaged.extend(claims.untriaged);
                 closures.extend(claims.closures);
                 lines.extend(&claims.lines);
+                unprojected.extend(claims.unprojected);
             }
             Ok((code, _)) => {
                 println!("scenario {name} did not pass");
@@ -770,6 +774,15 @@ fn all(
     // Decisions are shared by every scenario, so one is stale only when no
     // scenario's closures leave a location it excludes uncovered.
     coverage::Observed::of(&closures).check("all", coverage::DECISIONS)?;
+    // A state decision is stale when no claim writes a byte it reviews
+    // without comparing it.
+    state::check(state::DECISIONS, &unprojected)?;
+    let (reviewed_state, unprojected) = state::classify(state::DECISIONS, &unprojected);
+    println!(
+        "{} unprojected vendor state bytes reviewed, {} untriaged",
+        reviewed_state.len(),
+        unprojected.len()
+    );
     if let Some(path) = index {
         let index = evidence::index(
             &common,
@@ -781,6 +794,14 @@ fn all(
             unobserved
                 .into_iter()
                 .map(|(path, line)| evidence_index::SourceLine { path, line })
+                .collect(),
+            state::ranges(&unprojected)
+                .into_iter()
+                .map(|(symbol, offset, length)| evidence_index::StateRange {
+                    symbol,
+                    offset,
+                    length,
+                })
                 .collect(),
         )?;
         let mut bytes = serde_json::to_vec_pretty(&index)?;

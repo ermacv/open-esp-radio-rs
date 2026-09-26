@@ -697,8 +697,10 @@ impl RxGain {
                 ("input", Buffer::new(INPUT, input).into()),
                 (
                     "flags",
-                    i64::from(profile.flags | (u8::from(profile.rx_saturation) * RX_SATURATION_FLAG))
-                        .into(),
+                    i64::from(
+                        profile.flags | (u8::from(profile.rx_saturation) * RX_SATURATION_FLAG),
+                    )
+                    .into(),
                 ),
                 ("crystal_selector", 0.into()),
                 ("pbus_rx_path", i64::from(RX_PATH).into()),

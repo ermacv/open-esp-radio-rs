@@ -55,6 +55,8 @@ pub struct Claims {
     pub closures: Vec<crate::coverage::Closure>,
     /// Production PHY lines the claims' executions executed and observed.
     pub lines: crate::observation::Lines,
+    /// Vendor bytes a claim's cases write without comparing them.
+    pub unprojected: std::collections::BTreeSet<crate::state::Byte>,
 }
 
 /// Production PHY lines of the claims of one scenario.
@@ -64,6 +66,8 @@ struct ClaimLines {
     sources: crate::observation::Sources,
     /// Lines of every claim so far.
     lines: crate::observation::Lines,
+    /// Unprojected vendor bytes of every claim so far.
+    unprojected: std::collections::BTreeSet<crate::state::Byte>,
 }
 
 /// One compared case of a retained execution.
@@ -553,6 +557,14 @@ impl Session {
         verdict: Option<blobray_domain::ComparisonVerdict>,
         events: bool,
     ) -> Result<&Artifact> {
+        // Compared cases report the persistent vendor bytes they write.
+        let mut request = request.clone();
+        for case in &mut request.cases {
+            if case.relation.is_some() && case.replacement.is_some() {
+                case.vendor.observe_timeline.written = true;
+            }
+        }
+        let request = &request;
         let started = std::time::Instant::now();
         let result = self
             .verify(request)
@@ -758,6 +770,44 @@ impl Session {
             instructions.effect.extend(&o.effect);
             instructions.state.extend(&o.state);
         }
+        // Vendor state the pair's cases write without comparing it.
+        let symbols = crate::state::Symbols::of(&executables)?;
+        let (mut written, mut unprojected) = (
+            std::collections::BTreeSet::new(),
+            std::collections::BTreeSet::new(),
+        );
+        for artifact in &selected {
+            let cases: std::collections::BTreeSet<u32> = artifact
+                .request
+                .cases
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    c.relation.is_some()
+                        && c.vendor.entry == vendor
+                        && c.replacement.as_ref().map(|r| r.entry) == Some(production)
+                })
+                .map(|(i, _)| i as u32)
+                .collect();
+            let (w, u) = crate::state::written(
+                &artifact.request.cases,
+                &cases,
+                &artifact.records,
+                &self.projections,
+            )?;
+            written.extend(w.into_iter().map(|a| symbols.name(a)));
+            unprojected.extend(u.into_iter().map(|a| symbols.name(a)));
+        }
+        let compared = written.len() - unprojected.len();
+        let (reviewed_state, untriaged_state) =
+            crate::state::classify(crate::state::DECISIONS, &unprojected);
+        let state = evidence_index::State {
+            written: written.len() as u64,
+            compared: compared as u64,
+            reviewed: reviewed_state.len() as u64,
+            untriaged: untriaged_state.len() as u64,
+        };
+        lines.unprojected.extend(unprojected);
         let claim_lines = lines.map.lines(&instructions);
         let (reviewed, untriaged) = lines.sources.classify(
             &lines.root,
@@ -781,6 +831,7 @@ impl Session {
             reviews: reviews.into_iter().collect(),
             coverage,
             observation,
+            state,
         })
     }
 
@@ -808,6 +859,7 @@ impl Session {
             root,
             sources: Default::default(),
             lines: Default::default(),
+            unprojected: Default::default(),
         };
         let entries = list
             .iter()
@@ -848,6 +900,7 @@ impl Session {
             untriaged,
             closures: observed.closures,
             lines: lines.lines,
+            unprojected: lines.unprojected,
         })
     }
 

@@ -1,5 +1,5 @@
 {
-  "schema": 4,
+  "schema": 5,
   "command": "vendor-scenario all",
   "target": "esp32s31",
   "inputs": {
@@ -109,7 +109,7 @@
     },
     {
       "path": "tools/blobray/crates/application",
-      "sha256": "e0ab49c04edb83e7b9fd2edd158d47bc6de720cde659fd1ae0129c3d59c28d2e"
+      "sha256": "a6e5bee958e61bf38ad2751df34232b38b8fab1aba1d2587418be37293716d96"
     },
     {
       "path": "tools/blobray/crates/artifacts",
@@ -117,7 +117,7 @@
     },
     {
       "path": "tools/blobray/crates/domain",
-      "sha256": "570a1bf725c3909d5e95f3657f383c262e67da9e49a0d6912240b6fc91c85e9b"
+      "sha256": "5d36fe93086dbb851ca177137f4160381238096b39da4013b1b5ee4f736f5748"
     },
     {
       "path": "tools/blobray/crates/knowledge",
@@ -129,15 +129,15 @@
     },
     {
       "path": "tools/blobray/crates/store",
-      "sha256": "4a535deb7497cb6e908758c2bc70261e2fba80f0b29b6f75ac729e7eb0efc2f9"
+      "sha256": "451c274d4d40c9deaad61b0235178dfd8f47d261fb38babaf44f24ae0fd7b9f0"
     },
     {
       "path": "tools/blobray/crates/verification",
-      "sha256": "4bcadd4c56b2cf8d41e619ae6504bbb226c9ce235d0afbd084e3717f82bdc69a"
+      "sha256": "a928683b003f8d01fd965eb5e62a63bfc4336700e5d99df7ed235f1f95f172ea"
     },
     {
       "path": "tools/blobray/next",
-      "sha256": "309ae360723d446cbfe7525aae6ffc364d37fdaf13e5bac9bc04e399a92bec60"
+      "sha256": "dd43b1e571067a399539b0ca97711611d72b1c068e3b433c55ab367e68684e72"
     },
     {
       "path": "verification/vendor/harness/codegen",
@@ -157,11 +157,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "918752b00ca8d0cff8df7182a0df9b72e68dda44b8f718adb7edb0b28ff80b38"
+      "sha256": "d1740c5bc6ee7c7d22ac2935098be5cef10159c5a40c46db83f3bff278fb0efb"
     },
     {
       "path": "verification/vendor/schema",
-      "sha256": "50ef5afc7d8e9904f875f4c1d28b33e8f6a1f0ee4e23af8b770e33f422e58886"
+      "sha256": "a11183ecd67a813ff619c2fc7f7d6e7f53eb2ed3f9c0fdf9a839c15245bf9681"
     }
   ],
   "entries": [
@@ -188,6 +188,12 @@
       "observation": {
         "executed": 40,
         "observed": 40,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
         "reviewed": 0,
         "untriaged": 0
       }
@@ -217,6 +223,12 @@
         "observed": 27,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -242,6 +254,12 @@
       "observation": {
         "executed": 41,
         "observed": 41,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 80,
+        "compared": 80,
         "reviewed": 0,
         "untriaged": 0
       }
@@ -271,6 +289,12 @@
         "observed": 41,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -298,6 +322,12 @@
         "observed": 15,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -308,7 +338,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "d885260c8c8e2e5ca96b45dedc54dde01332d45f2e625da5669ac1d65a17d51e"
+        "6b2260fb43e0c404f789033fadd998302cb04b0f2c7b5bc18feea6439a55c374"
       ],
       "coverage": {
         "blocks": {
@@ -327,6 +357,12 @@
         "observed": 39,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -337,7 +373,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "bf988a61d29edfa6beef29788d7a1c5ba9c8b1db7be7b90364640248f6f50478"
+        "6a73578c9e231c2b55f2dd0ee0d2405c7436f9182f8f0e6ecbb6d08191ac9e51"
       ],
       "coverage": {
         "blocks": {
@@ -356,6 +392,12 @@
         "observed": 39,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -366,7 +408,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "f56f42d24c80c81fc24040ba67fc3da67ce3228f2139795c0f1dda2ee3b06423"
+        "ef38150b28f9086952e7a8c438313d47df9a2719ad0ee3fb2b6ff95de627b480"
       ],
       "coverage": {
         "blocks": {
@@ -385,6 +427,12 @@
         "observed": 39,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -395,7 +443,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "3fde9c9f6b68f85609f40b5e46fae70f7b1c6b32b9cdc9801c0f8a23a4cdb39c"
+        "09cad27362043c997ee3e2b2b18c2a6e08bbcdd0b3573f57d680d5ffb1ec7c4e"
       ],
       "coverage": {
         "blocks": {
@@ -414,6 +462,12 @@
         "observed": 39,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -424,7 +478,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "4c57b82f8aaffeb1f661a9b83a3ca502672326549415010b29a8ecb5c1b3a54d"
+        "623cc807922a108b4de72ec640724695200f895fa8b3e82a4252097afeef4e7e"
       ],
       "coverage": {
         "blocks": {
@@ -443,6 +497,12 @@
         "observed": 39,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -453,7 +513,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "1996ffb429a3a58d36185b66f7299f124d53c8c5f92a0006fb5dc12a2c4dc140"
+        "877f2c4664c98ea433981a7b3db0de0a68a08738e51e3aecd2a3fc241810c8fd"
       ],
       "coverage": {
         "blocks": {
@@ -470,6 +530,12 @@
       "observation": {
         "executed": 39,
         "observed": 39,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
         "reviewed": 0,
         "untriaged": 0
       }
@@ -499,6 +565,12 @@
         "observed": 46,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -524,6 +596,12 @@
       "observation": {
         "executed": 3,
         "observed": 3,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
         "reviewed": 0,
         "untriaged": 0
       }
@@ -553,6 +631,12 @@
         "observed": 3,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -578,6 +662,12 @@
       "observation": {
         "executed": 3,
         "observed": 3,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
         "reviewed": 0,
         "untriaged": 0
       }
@@ -607,6 +697,12 @@
         "observed": 3,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -617,7 +713,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "b8290fca6677ff4db11d61ad586358dcbedd8d6409e4592cc51043880570b030"
+        "e460e4ac962095f15f648501feb97ab334b43e94042fa643600d5083bf162d14"
       ],
       "coverage": {
         "blocks": {
@@ -636,6 +732,12 @@
         "observed": 105,
         "reviewed": 0,
         "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -646,7 +748,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "1f035963ef3d93f48e7386f9e23adeece650948805db6153e17259f26cca0df8"
+        "bb3ce83d1da4ec1cb9ec21615bbb6e04bfb86a9a03287c9bd8efb34d16054b33"
       ],
       "coverage": {
         "blocks": {
@@ -665,6 +767,12 @@
         "observed": 190,
         "reviewed": 7,
         "untriaged": 2
+      },
+      "state": {
+        "written": 5,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 5
       }
     },
     {
@@ -675,7 +783,7 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "4aab8508509850cda9f330ae3c9cbfb22b05ac8531ab87931fb1e6c93819e989"
+        "19dda91adf04c87c04dc4326b954e006752c68a14daf446a3f3b546ae2ca7963"
       ],
       "coverage": {
         "blocks": {
@@ -694,6 +802,12 @@
         "observed": 146,
         "reviewed": 2,
         "untriaged": 1
+      },
+      "state": {
+        "written": 5,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 5
       }
     },
     {
@@ -704,7 +818,7 @@
       "verdict": "match",
       "cases": 100,
       "reviews": [
-        "39e9eb268cb0a7abb801f7936a1eb0ff2469c1134d1d716ee2b3273c5f5c7c67"
+        "77a166d054d2b11a3e1a23b33871f20a01c3d81ddedb6c246b28d517929614d3"
       ],
       "coverage": {
         "blocks": {
@@ -723,6 +837,12 @@
         "observed": 178,
         "reviewed": 1,
         "untriaged": 2
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -733,8 +853,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "43a1fdd3a11a5c52564544d38ee15f0a02ea33b8f6c9392922a22ad02b5c8b17",
-        "a69636e398818e102edd7f1bc27084e8c0fa1b87bcbc16543ab66ed772ed059e"
+        "b138bfdefaeec10a70df9bc273a5dadf8292524da319c408d66a70e0d494a42b",
+        "b4e37028e86b131ee6b1443c60fc3c5ea787dfac1b0ceaa2074dad02955848df"
       ],
       "coverage": {
         "blocks": {
@@ -753,6 +873,12 @@
         "observed": 358,
         "reviewed": 7,
         "untriaged": 3
+      },
+      "state": {
+        "written": 9,
+        "compared": 7,
+        "reviewed": 0,
+        "untriaged": 2
       }
     },
     {
@@ -763,7 +889,7 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "ffaa95eb7ca61d68b48c4fc3d648d1f6048d20050b63fe8518ebe159ee5f9ae3"
+        "9c0369543d0b4f0f00b14f51fa5fd2b63b485bbb67b011f1ac5030ff1740eb56"
       ],
       "coverage": {
         "blocks": {
@@ -782,6 +908,12 @@
         "observed": 91,
         "reviewed": 2,
         "untriaged": 2
+      },
+      "state": {
+        "written": 1,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 1
       }
     },
     {
@@ -792,9 +924,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "05256804f55b385d54954c7e0479c2de48e5da5d1ce6bc8452b8711fd60ccd76",
-        "4c50a3730276cdcb6a46c6385d3b510bfc2a2be879e4e4ba013b67518195cba5",
-        "fde08786e7291b802b60cbd9f19fc8ce4e402b1c700974b6a182d50b59c2f279"
+        "264f231844f0b397932104ab0690f408b23ee0bc34306bfd54c56538d1becb89",
+        "671ab29161fa71cce75ad14d30b10cead949a7f4550d144260c27adfb941961c",
+        "fae596df8afaa889841a49c62dac86da72ba78f4f2fc737f823f1d6ddb3d449e"
       ],
       "coverage": {
         "blocks": {
@@ -813,6 +945,12 @@
         "observed": 432,
         "reviewed": 13,
         "untriaged": 7
+      },
+      "state": {
+        "written": 114,
+        "compared": 106,
+        "reviewed": 0,
+        "untriaged": 8
       }
     },
     {
@@ -823,8 +961,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "36785e6a0ebeed58ef60f66bcb6550496b2c6f443d05c96f13dd2275e9643480",
-        "ffea66eba80625c16f81edf654ace6ddef419221446e38a32ff1ac997ca4aa4f"
+        "7bc62d6e3158283f8bc20202a4ed077d0675ac6a1b3493197f7d88fdc4dc9433",
+        "bcd6d8c4ece745e4324ab9c72021f45a2a774ff9179d0417d0c55b89a5b7e439"
       ],
       "coverage": {
         "blocks": {
@@ -843,6 +981,12 @@
         "observed": 163,
         "reviewed": 5,
         "untriaged": 2
+      },
+      "state": {
+        "written": 24,
+        "compared": 24,
+        "reviewed": 0,
+        "untriaged": 0
       }
     },
     {
@@ -853,8 +997,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "256e5b9ca649797237b7963dabb1b028ecc607254e3c50e0ad4605ce64dd9711",
-        "5bc8bac71dd133bd5b7084e99ea6bce37975b1d3cd12a61151ae6d482a92206f"
+        "c01e84bd415af4c8c01e797adf8711b602de4bb2db801ff79bfdaa2ac1a64801",
+        "f94baf42457b254a70bb74df5e46f3a1345aa45be994a937482bca9909bc9ce5"
       ],
       "coverage": {
         "blocks": {
@@ -873,6 +1017,12 @@
         "observed": 1340,
         "reviewed": 32,
         "untriaged": 16
+      },
+      "state": {
+        "written": 157,
+        "compared": 151,
+        "reviewed": 0,
+        "untriaged": 6
       }
     },
     {
@@ -883,8 +1033,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "c1348a63d906b1e58ac53ab890003688e26f4c5b004999780b370cd767972143",
-        "f368628707e118740f799c30c8fa796339e020806232ad60d470874406e13366"
+        "48d741557b7c77c17be3dc2165312ba89b6ccad06f83c8f63cebb750f8083f3a",
+        "e244ae9caec10ec0630827710282ebf0bbdfff4926fdf23cd5a544e6da21e105"
       ],
       "coverage": {
         "blocks": {
@@ -903,9 +1053,62 @@
         "observed": 1744,
         "reviewed": 61,
         "untriaged": 18
+      },
+      "state": {
+        "written": 180,
+        "compared": 159,
+        "reviewed": 0,
+        "untriaged": 21
       }
     }
   ],
   "untriaged": [],
-  "unobserved": []
+  "unobserved": [],
+  "unprojected": [
+    {
+      "symbol": "0x20000204",
+      "offset": 0,
+      "length": 14
+    },
+    {
+      "symbol": "phy_param",
+      "offset": 22,
+      "length": 1
+    },
+    {
+      "symbol": "phy_param",
+      "offset": 164,
+      "length": 4
+    },
+    {
+      "symbol": "phy_param",
+      "offset": 286,
+      "length": 1
+    },
+    {
+      "symbol": "phy_param",
+      "offset": 304,
+      "length": 2
+    },
+    {
+      "symbol": "phy_param",
+      "offset": 400,
+      "length": 2
+    },
+    {
+      "symbol": "phy_param",
+      "offset": 404,
+      "length": 1
+    },
+    {
+      "symbol": "phy_param",
+      "offset": 428,
+      "length": 2
+    },
+    {
+      "symbol": "phy_param",
+      "offset": 510,
+      "length": 2
+    }
+  ]
 }

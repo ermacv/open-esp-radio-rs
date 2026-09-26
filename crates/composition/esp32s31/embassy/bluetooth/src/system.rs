@@ -1,59 +1,74 @@
-//! Static placement, cold start, interrupt dispatch and the runner.
+//! Static placement, start and stop on the shared radio, interrupt dispatch
+//! and the runner.
 
-use core::{
-    cell::Cell,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::cell::Cell;
 
 use critical_section::Mutex;
 use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
+use embassy_time::Instant;
+use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
 use oer_esp32s31_bluetooth::{
-    ble_phy::ControllerBlePhyEngineInitialized,
-    clock::ClockEnableFailure,
+    ble_phy::{BlePhyRetainedOwners, BlePhyRuntime},
+    controller_hal::ControllerHalInitialized,
     interrupt::{
-        InterruptOwnerStorage, PrimaryPublishedInterruptStep, SchedulerWakeCell,
-        SchedulerWakePublication,
+        InterruptOwnerRestartStorage, InterruptOwnerStorage, PrimaryPublishedInterruptStep,
+        SchedulerWakeCell, SchedulerWakePublication,
     },
-    low_power::ControllerLowPowerHardwareInitializationFailure,
+    low_power::{ControllerLowPowerHardwareInitializationFailure, ControllerRuntimeEndpoints},
     modem_lp_timer_queue::{
         ModemLpTimerPublishedInterruptStep, ModemLpTimerWorkerWakeCell,
         ModemLpTimerWorkerWakePublication,
     },
     modem_timer::{ControllerModemTimerTask, ModemLpTimerInterruptDispatchStorage},
-    phy::{
-        ControllerPhyClientAcquireFailure, ControllerPhyInitializationFailure,
-        ControllerPhyTrackingFailure, PhyInitializationConfig,
+    phy::{ControllerPhyJoinFailure, ControllerPhyJoined},
+    runtime_resources::{ControllerEventCells, ControllerRuntimeResources},
+    shutdown::{
+        ControllerRetired, ControllerShutDown, ControllerShutdownError, ControllerShutdownFailure,
+        retire,
     },
-    resources::{BluetoothRadioHardware, BluetoothStopped},
-    runtime_resources::ControllerRuntimeResources,
 };
 use oer_esp32s31_bluetooth_memory::{
-    BlePhyEngineBindFailure, BlePhyEngineStorage, DirectionFindingWorkspaceBindFailure,
+    BlePhyEngineBindFailure, BlePhyEngineCpuOwned, BlePhyEngineStorage,
+    DirectionFindingWorkspaceBindFailure, DirectionFindingWorkspaceCpuOwned,
     DirectionFindingWorkspaceStorage, DtmPool, DtmStorage, LeRxChain, LeRxChainBindError,
     LeRxChainStorage, LegacyAdvertisingPool, LegacyAdvertisingStorage,
     LegacyConnectableAdvertisingPool, LegacyConnectableAdvertisingStorage, PassiveScanPool,
     PassiveScanStorage, PeripheralConnectionPool, PeripheralConnectionStorage, RxMemoryListClass,
     SchedulerAllocationConfig, SchedulerPoolBindError, SchedulerRolePoolStorage,
 };
-use oer_esp32s31_bluetooth_radio::BluetoothRadioMemory;
+use oer_esp32s31_bluetooth_radio::{BluetoothRadio, BluetoothRadioMemory};
 use oer_esp32s31_bluetooth_runtime::{
     BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeFault, LiveBluetoothHardware,
-    ModemTimerFault, run_modem_timer,
+    ModemTimerFault, run_modem_timer, settle_modem_timer,
 };
-use oer_esp32s31_hal::bluetooth::BluetoothPrimaryFaultSources;
-use oer_esp32s31_phy::{NoopPhyTargetObserver, PhyCalibrationCache, PhyCalibrationSnapshot};
-use oer_esp32s31_phy_runtime::{EmbassyPhyTime, EmbassyPhyTimeError};
+use oer_esp32s31_hal::{
+    bluetooth::{
+        BluetoothClockError, BluetoothPrimaryFaultSources, ClockedOwner, ColdOwner,
+        InterruptRegistersOwner, ModemLpTimerInterruptReadyOwner, PoweredOwner,
+    },
+    root::BluetoothPartition,
+    shared_radio::{
+        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
+    },
+};
+use oer_esp32s31_phy::{
+    ConcurrentPhyTrackingError, ConcurrentRfError, NoopPhyTargetObserver,
+    bluetooth_client::BluetoothPhyClientError,
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
+    maintain_concurrent_phy,
+};
+use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_esp32s31_radio_esp_hal::{
-    BluetoothPlatformBusy, BoundEspHalBluetoothInterruptEpoch, EspHalBluetoothInterruptDisposition,
+    BoundEspHalBluetoothInterruptEpoch, EspHalBluetoothInterruptDisposition,
     EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptSource,
-    EspHalBluetoothInterruptStorage, EspHalBluetoothModemLpTimerStorageError,
-    EspHalBluetoothNrtInterruptStep, EspHalBluetoothPlatform, EspHalBluetoothPrimaryInterruptStep,
-    EspHalRadioPlatform, PublishedEspHalBluetoothInterruptOwners,
+    EspHalBluetoothInterruptStorage, EspHalBluetoothInterruptStorageError,
+    EspHalBluetoothModemLpTimerStorageError, EspHalBluetoothNrtInterruptStep,
+    EspHalBluetoothPrimaryInterruptStep, EspHalBluetoothSchedulerRunInterruptError,
+    PublishedEspHalBluetoothInterruptOwners,
 };
+use oer_esp32s31_radio_system::{RadioPhyError, RadioSystem};
 use static_cell::{ConstStaticCell, StaticCell};
-
-type Platform = EspHalBluetoothPlatform<'static>;
 
 /// Slots of the source-127 software timer queue.
 pub const MODEM_TIMER_CAPACITY: usize = 4;
@@ -71,11 +86,17 @@ const RX_PACKETS: usize = 4;
 /// Worst-case accuracy of the board's sleep clock. 500 ppm is the largest
 /// value the Link Layer defines; the qualified secure GATT peripheral used it.
 const LOCAL_SLEEP_CLOCK_PPM: u16 = 500;
+/// Window the joining Controller grants shared PHY tracking. No scheduler
+/// work can start before the BLE PHY engine is initialized, so the bound
+/// only limits how long tracking may hold the shared PHY.
+const TRACKING_WINDOW_MICROS: u64 = 1_000_000;
+
+type Storage = PublishedEspHalBluetoothInterruptOwners;
 
 /// The radio runtime of this composition.
 pub type BluetoothSystemRuntime = BluetoothRuntime<
     CriticalSectionRawMutex,
-    LiveBluetoothHardware<'static, BoundEspHalBluetoothInterruptEpoch<'static>>,
+    LiveBluetoothHardware<'static, Storage>,
     LEGACY,
     CONNECTABLE,
     SCANNERS,
@@ -90,12 +111,9 @@ pub type BluetoothSystemRuntime = BluetoothRuntime<
 pub type BluetoothSystemMemory =
     BluetoothRadioMemory<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS>;
 
-type Engine = ControllerBlePhyEngineInitialized<Platform, MODEM_TIMER_CAPACITY>;
-type ModemTimerTask = ControllerModemTimerTask<
-    'static,
-    BoundEspHalBluetoothInterruptEpoch<'static>,
-    MODEM_TIMER_CAPACITY,
->;
+type Radio =
+    BluetoothRadio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>;
+type ModemTimerTask = ControllerModemTimerTask<'static, Storage, MODEM_TIMER_CAPACITY>;
 
 // Controller memory. The board linker places `.dma.data.*` in internal SRAM,
 // initialized from the image; every bind still validates its extent.
@@ -131,78 +149,269 @@ controller_memory!(SCANNING_CHAIN: LeRxChainStorage<SCAN_PACKETS> = LeRxChainSto
 controller_memory!(NON_SCANNING_CHAIN: LeRxChainStorage<RX_PACKETS> = LeRxChainStorage::new(),
     ".dma.data.open_radio_bluetooth_non_scanning_chain");
 
-static STARTED: AtomicBool = AtomicBool::new(false);
-static ENGINE: StaticCell<Engine> = StaticCell::new();
-static PUBLISHED: StaticCell<PublishedEspHalBluetoothInterruptOwners> = StaticCell::new();
-static BOUND: StaticCell<BoundEspHalBluetoothInterruptEpoch<'static>> = StaticCell::new();
+static CELLS: ControllerEventCells = ControllerEventCells::new();
+static PUBLISHED: StaticCell<Storage> = StaticCell::new();
 static RUNTIME: BluetoothSystemRuntime = BluetoothRuntime::new();
 static MODEM_TIMER_WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static INTERRUPT_FAULT: Signal<CriticalSectionRawMutex, BluetoothInterruptFault> = Signal::new();
 static DISPATCH: Mutex<Cell<Option<Dispatch>>> = Mutex::new(Cell::new(None));
 
-/// Why cold start stopped. Failures from `Clock` on retain their powered
-/// owners, which keep the hardware in its fail-stop state.
-#[allow(
-    clippy::large_enum_variant,
-    reason = "the no-alloc error retains exact affine hardware owners"
-)]
-pub enum BluetoothStartError {
-    /// A cold start already ran in this boot.
-    AlreadyStarted(BluetoothRadioHardware),
-    /// The Embassy timebase cannot drive PHY timing.
-    Timebase(EmbassyPhyTimeError, BluetoothRadioHardware),
-    /// The retained calibration snapshot has another schema.
-    CalibrationSnapshot(BluetoothRadioHardware),
-    /// Another radio holds the platform.
-    PlatformBusy(BluetoothPlatformBusy, BluetoothRadioHardware),
+/// Why the static controller memory could not be claimed.
+#[derive(Debug)]
+pub enum BluetoothMemoryError {
+    /// The memory was claimed before in this boot.
+    AlreadyClaimed,
     /// Linker placement failed the BLE PHY environment contract.
-    BlePhyMemory(BlePhyEngineBindFailure),
+    BlePhy(BlePhyEngineBindFailure),
     /// Linker placement failed the direction-finding workspace contract.
-    DirectionFindingMemory(DirectionFindingWorkspaceBindFailure),
+    DirectionFinding(DirectionFindingWorkspaceBindFailure),
     /// Linker placement failed a role pool.
-    PoolMemory(SchedulerPoolBindError),
+    Pool(SchedulerPoolBindError),
     /// Linker placement failed a receive chain.
-    ChainMemory(LeRxChainBindError),
-    /// Clock and reset setup failed and rolled back.
-    Clock(ClockEnableFailure<Platform>),
+    Chain(LeRxChainBindError),
+}
+
+/// The controller memory of the composition, reused by every epoch.
+struct ControllerMemory {
+    ble_phy: BlePhyEngineCpuOwned,
+    direction_finding: DirectionFindingWorkspaceCpuOwned,
+    radio: BluetoothSystemMemory,
+}
+
+/// The Bluetooth partition and the controller memory while the Controller
+/// is stopped.
+#[must_use = "the parked Bluetooth client retains its partition and memory"]
+pub struct BluetoothParked {
+    partition: BluetoothPartition,
+    memory: ControllerMemory,
+    /// Interrupt-owner storage published by an earlier epoch of this boot.
+    published: Option<&'static Storage>,
+}
+
+impl BluetoothParked {
+    /// Claim the static controller memory once per boot and park it with
+    /// `partition`.
+    ///
+    /// # Errors
+    ///
+    /// The memory was claimed before, or the linker placement fails its
+    /// contract.
+    pub fn new(partition: BluetoothPartition) -> Result<Self, BluetoothMemoryError> {
+        let numbers =
+            SchedulerAllocationConfig::new((LEGACY + CONNECTABLE) as u16, CONNECTIONS as u16, 0)
+                .expect("the product profile numbers fit their field");
+        let pool = BluetoothMemoryError::Pool;
+        fn claim<T>(cell: Option<T>) -> Result<T, BluetoothMemoryError> {
+            cell.ok_or(BluetoothMemoryError::AlreadyClaimed)
+        }
+        let ble_phy = BlePhyEngineStorage::pin_static(claim(BLE_PHY.try_take())?)
+            .map_err(BluetoothMemoryError::BlePhy)?;
+        let direction_finding =
+            DirectionFindingWorkspaceStorage::pin_static(claim(DIRECTION_FINDING.try_take())?)
+                .map_err(BluetoothMemoryError::DirectionFinding)?;
+        let radio = BluetoothSystemMemory {
+            legacy: LegacyAdvertisingPool::bind(
+                claim(LEGACY_POOL.try_take())?,
+                numbers
+                    .advertising(0, LEGACY as u16)
+                    .expect("within the profile"),
+            )
+            .map_err(pool)?,
+            connectable: LegacyConnectableAdvertisingPool::bind(
+                claim(CONNECTABLE_POOL.try_take())?,
+                numbers
+                    .advertising(LEGACY as u16, CONNECTABLE as u16)
+                    .expect("within the profile"),
+            )
+            .map_err(pool)?,
+            scanners: PassiveScanPool::bind(claim(SCANNER_POOL.try_take())?, numbers.scanning())
+                .map_err(pool)?,
+            connections: PeripheralConnectionPool::bind(
+                claim(CONNECTION_POOL.try_take())?,
+                numbers.connections(),
+            )
+            .map_err(pool)?,
+            dtm: DtmPool::bind(claim(DTM_POOL.try_take())?, numbers.direct_test_mode())
+                .map_err(pool)?,
+            scanning: LeRxChain::bind(
+                claim(SCANNING_CHAIN.try_take())?,
+                RxMemoryListClass::Scanning,
+            )
+            .map_err(BluetoothMemoryError::Chain)?,
+            non_scanning: LeRxChain::bind(
+                claim(NON_SCANNING_CHAIN.try_take())?,
+                RxMemoryListClass::NonScanning,
+            )
+            .map_err(BluetoothMemoryError::Chain)?,
+            direction_finding: direction_finding.binding().link(),
+        };
+        Ok(Self {
+            partition,
+            memory: ControllerMemory {
+                ble_phy,
+                direction_finding,
+                radio,
+            },
+            published: None,
+        })
+    }
+
+    /// Return the partition, giving up the controller memory for this boot.
+    pub fn into_partition(self) -> BluetoothPartition {
+        self.partition
+    }
+}
+
+/// Why bring-up stopped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothStartError {
+    /// Common radio power could not be entered.
+    Power(CommonRadioPowerError),
+    /// The Bluetooth clocks, resets or low-power clock could not be set up.
+    Clocks(BluetoothClockError),
     /// The source-127 low-power hardware refused initialization.
-    LowPower(ControllerLowPowerHardwareInitializationFailure<Platform, MODEM_TIMER_CAPACITY>),
-    /// Common-PHY registration failed.
-    PhyInitialization(ControllerPhyInitializationFailure<Platform, MODEM_TIMER_CAPACITY>),
-    /// The registered PHY refused the Bluetooth client.
-    PhyClientAcquire(ControllerPhyClientAcquireFailure<Platform, MODEM_TIMER_CAPACITY>),
-    /// Initial PHY tracking failed.
-    PhyTracking(ControllerPhyTrackingFailure<Platform, MODEM_TIMER_CAPACITY>),
+    LowPower,
+    /// The shared PHY domain could not be registered or woken.
+    Phy(RadioPhyError),
+    /// Bluetooth could not join the shared PHY domain or BTBB.
+    PhyClient(BluetoothPhyClientError),
+    /// Tracking due at the join was rejected before it started.
+    Tracking(ConcurrentPhyError),
+    /// Tracking due at the join failed after it started.
+    TrackingFailed,
     /// Interrupt storage refused both owners.
-    InterruptPublication,
+    InterruptPublication(EspHalBluetoothInterruptStorageError),
     /// ESP-HAL refused the three CPU routes.
     InterruptRoutes(EspHalBluetoothInterruptRouteError),
     /// The runtime refused the radio.
     Install(BluetoothInstallError),
 }
 
-impl core::fmt::Debug for BluetoothStartError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let name = match self {
-            Self::AlreadyStarted(_) => "AlreadyStarted",
-            Self::Timebase(..) => "Timebase",
-            Self::CalibrationSnapshot(_) => "CalibrationSnapshot",
-            Self::PlatformBusy(..) => "PlatformBusy",
-            Self::BlePhyMemory(_) => "BlePhyMemory",
-            Self::DirectionFindingMemory(_) => "DirectionFindingMemory",
-            Self::PoolMemory(_) => "PoolMemory",
-            Self::ChainMemory(_) => "ChainMemory",
-            Self::Clock(_) => "Clock",
-            Self::LowPower(_) => "LowPower",
-            Self::PhyInitialization(_) => "PhyInitialization",
-            Self::PhyClientAcquire(_) => "PhyClientAcquire",
-            Self::PhyTracking(_) => "PhyTracking",
-            Self::InterruptPublication => "InterruptPublication",
-            Self::InterruptRoutes(_) => "InterruptRoutes",
-            Self::Install(_) => "Install",
-        };
-        formatter.write_str(name)
+/// Owners retained after a failure that may have left hardware in an
+/// unknown state. They are never returned; the chip must be reset.
+#[must_use = "a fail-stop owner keeps the radio until the chip resets"]
+pub struct BluetoothFailStop {
+    _owner: FailStopOwner,
+}
+
+type Controller = oer_esp32s31_bluetooth::low_power::ControllerLowPowerHardwareInitialized<
+    'static,
+    MODEM_TIMER_CAPACITY,
+>;
+type TaskRuntime = oer_esp32s31_bluetooth::runtime_resources::ControllerPoweredTaskRuntime<'static>;
+
+#[allow(
+    dead_code,
+    clippy::large_enum_variant,
+    reason = "the retained owners are never read or moved again"
+)]
+enum FailStopOwner {
+    Powered(PoweredOwner, ControllerMemory),
+    Clocked(ClockedOwner, ControllerMemory),
+    LowPower(
+        ControllerLowPowerHardwareInitializationFailure<'static, MODEM_TIMER_CAPACITY>,
+        ControllerMemory,
+    ),
+    Controller(Controller, ControllerMemory),
+    PhyJoin(
+        ControllerPhyJoinFailure<'static, MODEM_TIMER_CAPACITY>,
+        ControllerMemory,
+    ),
+    Joined(
+        ControllerPhyJoined<'static, MODEM_TIMER_CAPACITY>,
+        ControllerMemory,
+    ),
+    Published {
+        task: TaskRuntime,
+        modem_timer: ModemTimerTask,
+        retained: BlePhyRetainedOwners,
+        bound: Option<BoundEspHalBluetoothInterruptEpoch<'static>>,
+        memory: BluetoothSystemMemory,
+    },
+    Unpublished {
+        endpoints: ControllerRuntimeEndpoints<'static, MODEM_TIMER_CAPACITY>,
+        retained: BlePhyRetainedOwners,
+        interrupts: InterruptRegistersOwner,
+        timer: ModemLpTimerInterruptReadyOwner,
+        memory: BluetoothSystemMemory,
+    },
+    Installed(Epoch),
+    TimerRetired {
+        role: Radio,
+        task: TaskRuntime,
+        timer: ModemLpTimerInterruptReadyOwner,
+        retained: BlePhyRetainedOwners,
+    },
+    Uninstalled {
+        role: Radio,
+        task: TaskRuntime,
+        modem_timer: ModemTimerTask,
+        bound: Option<BoundEspHalBluetoothInterruptEpoch<'static>>,
+        retained: BlePhyRetainedOwners,
+    },
+    Shutdown(Radio, ControllerShutdownFailure),
+    Retired(Radio, ControllerRetired),
+}
+
+fn fail_stop(error: BluetoothStartError, owner: FailStopOwner) -> BluetoothStartFailure {
+    BluetoothStartFailure {
+        error,
+        owner: Err(BluetoothFailStop { _owner: owner }),
     }
+}
+
+fn stop_fail(error: BluetoothStopError, owner: FailStopOwner) -> BluetoothStopFailure {
+    BluetoothStopFailure {
+        error,
+        owner: BluetoothFailStop { _owner: owner },
+    }
+}
+
+/// Failed bring-up.
+#[must_use = "a failed start still owns the partition or keeps it fail-stop"]
+pub struct BluetoothStartFailure {
+    /// The first error.
+    pub error: BluetoothStartError,
+    /// The parked client when every earlier step was rolled back, or the
+    /// fail-stop owner otherwise.
+    pub owner: Result<BluetoothParked, BluetoothFailStop>,
+}
+
+/// Why teardown stopped.
+#[derive(Debug)]
+pub enum BluetoothStopError {
+    /// The runtime could not stop the scheduler.
+    Runtime(BluetoothRuntimeFault<EspHalBluetoothSchedulerRunInterruptError>),
+    /// The source-127 task could not return its owner to storage.
+    ModemTimer(
+        ModemTimerFault<
+            EspHalBluetoothModemLpTimerStorageError,
+            EspHalBluetoothModemLpTimerStorageError,
+        >,
+    ),
+    /// The CPU routes must be removed on their binding core.
+    Routes(EspHalBluetoothInterruptRouteError),
+    /// Stable storage did not return the source-127 timer owner.
+    TimerStorage,
+    /// Stable storage did not return the controller interrupt owner.
+    InterruptStorage,
+    /// The Controller shutdown failed.
+    Shutdown(ControllerShutdownError),
+    /// Shared RF could not be closed after the last PHY client left.
+    PhyClose(ConcurrentRfError),
+    /// The Bluetooth clocks could not be released.
+    Clocks(BluetoothClockError),
+    /// Common radio power could not be left.
+    Power(CommonRadioPowerError),
+}
+
+/// Failed teardown. The Controller cannot run again in this boot.
+#[must_use = "a failed stop keeps the radio fail-stop"]
+pub struct BluetoothStopFailure {
+    /// The first error.
+    pub error: BluetoothStopError,
+    /// The fail-stop owner.
+    pub owner: BluetoothFailStop,
 }
 
 /// First fatal interrupt-service result of the live epoch.
@@ -222,11 +431,7 @@ pub enum BluetoothInterruptFault {
 #[derive(Debug)]
 pub enum BluetoothRunnerFault {
     /// The radio runtime stopped on a hardware fault.
-    Radio(
-        BluetoothRuntimeFault<
-            oer_esp32s31_radio_esp_hal::EspHalBluetoothSchedulerRunInterruptError,
-        >,
-    ),
+    Radio(BluetoothRuntimeFault<EspHalBluetoothSchedulerRunInterruptError>),
     /// The source-127 task could not exchange its owner with storage.
     ModemTimer(
         ModemTimerFault<
@@ -238,39 +443,39 @@ pub enum BluetoothRunnerFault {
     Interrupt(BluetoothInterruptFault),
 }
 
-/// The installed radio and its runner.
-pub struct BluetoothSystem {
-    /// Admits requests and yields outcomes.
-    pub runtime: &'static BluetoothSystemRuntime,
-    /// Spawn [`BluetoothRunner::run`] on one task for the whole epoch.
-    pub runner: BluetoothRunner,
-    /// How the common PHY was obtained.
-    pub phy: oer_esp32s31_bluetooth::common_phy_state::ControllerPhyEntry,
-    /// Calibration result of this epoch, for the next cold start.
-    pub calibration: Option<PhyCalibrationSnapshot>,
-    /// The device's public address.
-    pub public_address: oer_bluetooth_hci::BluetoothPublicDeviceAddress,
-}
-
-/// Drives the radio runtime and the source-127 timer task.
-pub struct BluetoothRunner {
+/// The owners of one running epoch outside the runtime.
+struct Epoch {
     modem_timer: ModemTimerTask,
-    _platform: oer_esp32s31_bluetooth::resources::platform_retirement::ControllerPlatformLease<
-        'static,
-        Platform,
-    >,
-    _physical: oer_esp32s31_bluetooth::resources::runtime_owner::RuntimeOwnerLease<
-        'static,
-        oer_esp32s31_bluetooth::ble_phy::BlePhyRetainedOwners,
-    >,
+    bound: BoundEspHalBluetoothInterruptEpoch<'static>,
+    retained: BlePhyRetainedOwners,
+    published: &'static Storage,
 }
 
-impl BluetoothRunner {
-    /// Run until the radio, the timer task or an interrupt service faults.
-    pub async fn run(mut self) -> BluetoothRunnerFault {
+/// The running Bluetooth client.
+///
+/// The radio role and the task-side Controller live in the runtime; this
+/// value keeps the PHY membership, the BLE PHY graph, the source-127 task and
+/// the bound CPU routes until [`Self::stop`].
+#[must_use = "the running Bluetooth client must be stopped"]
+pub struct BluetoothSystem {
+    epoch: Epoch,
+}
+
+impl BluetoothSystem {
+    /// The radio runtime: admits requests and yields outcomes.
+    pub fn runtime(&self) -> &'static BluetoothSystemRuntime {
+        &RUNTIME
+    }
+
+    /// Drive the radio runtime and the source-127 timer task until a fault
+    /// stops either or an interrupt service fails.
+    ///
+    /// Cancel it before [`Self::stop`]; the stop settles whatever work the
+    /// cancelled future left.
+    pub async fn run(&mut self) -> BluetoothRunnerFault {
         let workers = select(
             RUNTIME.run(),
-            run_modem_timer(&mut self.modem_timer, &MODEM_TIMER_WAKE),
+            run_modem_timer(&mut self.epoch.modem_timer, &MODEM_TIMER_WAKE),
         );
         match select(workers, INTERRUPT_FAULT.wait()).await {
             Either::First(Either::First(fault)) => BluetoothRunnerFault::Radio(fault),
@@ -278,11 +483,163 @@ impl BluetoothRunner {
             Either::Second(fault) => BluetoothRunnerFault::Interrupt(fault),
         }
     }
+
+    /// Stop the Controller and leave the shared radio.
+    ///
+    /// The steps reverse [`start`]: stop the scheduler and take the radio
+    /// out of the runtime, settle the source-127 task, remove the CPU routes
+    /// and recover both interrupt owners, release the Controller output and
+    /// leave the shared PHY domain and BTBB (the radio system closes RF after
+    /// the last PHY client), reset the Controller, release the clocks and
+    /// leave common power. The controller memory returns to its
+    /// allocation-time image for the next [`start`].
+    ///
+    /// # Errors
+    ///
+    /// A step failed; the Controller cannot run again in this boot.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the allocation-free failure retains every owner of the epoch"
+    )]
+    pub async fn stop<P, C: PlatformClockProvider>(
+        self,
+        radio: &RadioSystem<P, C>,
+    ) -> Result<BluetoothParked, BluetoothStopFailure> {
+        let epoch = self.epoch;
+        let (role, hardware) = match RUNTIME.uninstall().await {
+            Ok(parts) => parts,
+            Err(error) => {
+                return Err(stop_fail(
+                    BluetoothStopError::Runtime(error),
+                    FailStopOwner::Installed(epoch),
+                ));
+            }
+        };
+        let Epoch {
+            mut modem_timer,
+            bound,
+            retained,
+            published,
+        } = epoch;
+        let task = hardware.into_task();
+        let uninstalled = |role, task, modem_timer, bound, retained| FailStopOwner::Uninstalled {
+            role,
+            task,
+            modem_timer,
+            bound,
+            retained,
+        };
+        if let Err(error) = settle_modem_timer(&mut modem_timer).await {
+            return Err(stop_fail(
+                BluetoothStopError::ModemTimer(error),
+                uninstalled(role, task, modem_timer, Some(bound), retained),
+            ));
+        }
+        if let Err(failure) = bound.disable() {
+            let (error, bound) = failure.into_parts();
+            return Err(stop_fail(
+                BluetoothStopError::Routes(error),
+                uninstalled(role, task, modem_timer, Some(bound), retained),
+            ));
+        }
+        critical_section::with(|cs| DISPATCH.borrow(cs).set(None));
+        let timer = match modem_timer.try_retire() {
+            Ok(retired) => retired.into_shutdown_parts().0,
+            Err((_, modem_timer)) => {
+                return Err(stop_fail(
+                    BluetoothStopError::TimerStorage,
+                    uninstalled(role, task, modem_timer, None, retained),
+                ));
+            }
+        };
+        let output = match published.retire_interrupt_registers_after_routes_disabled() {
+            Ok(output) => output.into_output_owner(),
+            Err(_) => {
+                // The timer owner is out of storage; nothing restarts it.
+                return Err(stop_fail(
+                    BluetoothStopError::InterruptStorage,
+                    FailStopOwner::TimerRetired {
+                        role,
+                        task,
+                        timer,
+                        retained,
+                    },
+                ));
+            }
+        };
+
+        let mut guard = radio.lock().await;
+        let (retired, last) = match retire(guard.lease(), task, retained, output, timer) {
+            Ok(retired) => retired,
+            Err(failure) => {
+                return Err(stop_fail(
+                    BluetoothStopError::Shutdown(failure.error()),
+                    FailStopOwner::Shutdown(role, failure),
+                ));
+            }
+        };
+        if last && let Err(error) = guard.close_phy_if_idle().await {
+            return Err(stop_fail(
+                BluetoothStopError::PhyClose(error),
+                FailStopOwner::Retired(role, retired),
+            ));
+        }
+        let (lease, _, clocks) = guard.parts();
+        let shut_down = match retired.shut_down(lease, &CELLS) {
+            Ok(shut_down) => shut_down,
+            Err(failure) => {
+                return Err(stop_fail(
+                    BluetoothStopError::Shutdown(failure.error()),
+                    FailStopOwner::Shutdown(role, failure),
+                ));
+            }
+        };
+        let ControllerShutDown {
+            clocked,
+            ble_phy,
+            direction_finding,
+            reset,
+        } = shut_down;
+        let radio_memory = role.into_memory(&reset);
+        let powered = match clocked.disable_clocks(lease, clocks) {
+            Ok(powered) => powered,
+            Err(failure) => {
+                let error = failure.error();
+                return Err(stop_fail(
+                    BluetoothStopError::Clocks(error),
+                    FailStopOwner::Clocked(
+                        failure.into_owner(),
+                        ControllerMemory {
+                            ble_phy,
+                            direction_finding,
+                            radio: radio_memory,
+                        },
+                    ),
+                ));
+            }
+        };
+        let memory = ControllerMemory {
+            ble_phy,
+            direction_finding,
+            radio: radio_memory,
+        };
+        match powered.power_down(lease) {
+            Ok(cold) => Ok(BluetoothParked {
+                partition: cold.into_partition(),
+                memory,
+                published: Some(published),
+            }),
+            Err(failure) => Err(stop_fail(
+                BluetoothStopError::Power(failure.error()),
+                FailStopOwner::Powered(failure.into_owner(), memory),
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 struct Dispatch {
-    published: &'static PublishedEspHalBluetoothInterruptOwners,
+    published: &'static Storage,
     scheduler_wake: &'static SchedulerWakeCell,
     modem_timer_wake: &'static ModemLpTimerWorkerWakeCell,
 }
@@ -354,196 +711,279 @@ fn dispatch(source: EspHalBluetoothInterruptSource) -> EspHalBluetoothInterruptD
     }
 }
 
-/// Claimed controller memory, bound at its linked addresses.
-struct ClaimedMemory {
-    ble_phy: oer_esp32s31_bluetooth_memory::BlePhyEngineCpuOwned,
-    direction_finding: oer_esp32s31_bluetooth_memory::DirectionFindingWorkspaceCpuOwned,
-    legacy: LegacyAdvertisingPool<LEGACY>,
-    connectable: LegacyConnectableAdvertisingPool<CONNECTABLE>,
-    scanners: PassiveScanPool<SCANNERS>,
-    connections: PeripheralConnectionPool<CONNECTIONS>,
-    dtm: DtmPool<1>,
-    scanning: LeRxChain<SCAN_PACKETS>,
-    non_scanning: LeRxChain<RX_PACKETS>,
+fn unwind_powered(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    powered: PoweredOwner,
+    memory: ControllerMemory,
+    published: Option<&'static Storage>,
+    error: BluetoothStartError,
+) -> BluetoothStartFailure {
+    match powered.power_down(lease) {
+        Ok(cold) => BluetoothStartFailure {
+            error,
+            owner: Ok(BluetoothParked {
+                partition: cold.into_partition(),
+                memory,
+                published,
+            }),
+        },
+        Err(failure) => fail_stop(error, FailStopOwner::Powered(failure.into_owner(), memory)),
+    }
 }
 
-#[allow(
-    clippy::result_large_err,
-    reason = "the no-alloc error retains exact affine hardware owners"
-)]
-fn claim_memory() -> Result<ClaimedMemory, BluetoothStartError> {
-    let numbers =
-        SchedulerAllocationConfig::new((LEGACY + CONNECTABLE) as u16, CONNECTIONS as u16, 0)
-            .expect("the product profile numbers fit their field");
-    let pool = BluetoothStartError::PoolMemory;
-    Ok(ClaimedMemory {
-        ble_phy: BlePhyEngineStorage::pin_static(BLE_PHY.take())
-            .map_err(BluetoothStartError::BlePhyMemory)?,
-        direction_finding: DirectionFindingWorkspaceStorage::pin_static(DIRECTION_FINDING.take())
-            .map_err(BluetoothStartError::DirectionFindingMemory)?,
-        legacy: LegacyAdvertisingPool::bind(
-            LEGACY_POOL.take(),
-            numbers
-                .advertising(0, LEGACY as u16)
-                .expect("within the profile"),
-        )
-        .map_err(pool)?,
-        connectable: LegacyConnectableAdvertisingPool::bind(
-            CONNECTABLE_POOL.take(),
-            numbers
-                .advertising(LEGACY as u16, CONNECTABLE as u16)
-                .expect("within the profile"),
-        )
-        .map_err(pool)?,
-        scanners: PassiveScanPool::bind(SCANNER_POOL.take(), numbers.scanning()).map_err(pool)?,
-        connections: PeripheralConnectionPool::bind(CONNECTION_POOL.take(), numbers.connections())
-            .map_err(pool)?,
-        dtm: DtmPool::bind(DTM_POOL.take(), numbers.direct_test_mode()).map_err(pool)?,
-        scanning: LeRxChain::bind(SCANNING_CHAIN.take(), RxMemoryListClass::Scanning)
-            .map_err(BluetoothStartError::ChainMemory)?,
-        non_scanning: LeRxChain::bind(NON_SCANNING_CHAIN.take(), RxMemoryListClass::NonScanning)
-            .map_err(BluetoothStartError::ChainMemory)?,
-    })
-}
-
-/// Cold-start the Bluetooth radio once per boot and install its runtime.
+/// Bring the Bluetooth Controller up as a client of the shared radio.
 ///
-/// `retained_calibration` is the snapshot of an earlier epoch, if any. Once
-/// the first Controller write happens the operation is not cancellable.
+/// The steps follow the reviewed ESP32-S31 Controller init and enable:
+///
+/// 1. enter common radio power; enable the Bluetooth module clocks, reset the
+///    Controller domains and select the low-power timer clock;
+/// 2. run the Controller HAL, scheduler and modem low-power initialization;
+/// 3. prepare the shared PHY through the radio system (register the domain
+///    when no client did, or wake its closed RF), join it and the shared
+///    BTBB baseband, and run PHY tracking inside the Controller's quiescence
+///    window when the join makes it due;
+/// 4. enable the BLE base stack and publish the public address;
+/// 5. prepare the Controller output, start the runtime timer, publish both
+///    interrupt owners and bind the three CPU routes to one dispatcher;
+/// 6. install the radio role in the runtime.
+///
+/// # Errors
+///
+/// A step failed. Power and clock failures roll back and return the parked
+/// client; every failure after the first Controller write is fail-stop.
 #[allow(
     clippy::result_large_err,
-    reason = "the no-alloc error retains exact affine hardware owners"
+    reason = "the allocation-free failure returns the parked partition and memory"
 )]
 #[allow(
     large_assignments,
     reason = "the powered owner graph crosses the PHY poll boundaries once; the linked-image stack-frame audit independently bounds this future"
 )]
-pub async fn start_esp32s31_bluetooth(
-    platform_root: &'static EspHalRadioPlatform,
-    hardware: BluetoothRadioHardware,
-    retained_calibration: Option<PhyCalibrationSnapshot>,
-) -> Result<BluetoothSystem, BluetoothStartError> {
-    if STARTED.swap(true, Ordering::AcqRel) {
-        return Err(BluetoothStartError::AlreadyStarted(hardware));
-    }
-    if let Err(error) = EmbassyPhyTime::validate_timebase() {
-        return Err(BluetoothStartError::Timebase(error, hardware));
-    }
-    let calibration_cache = match retained_calibration {
-        Some(snapshot) => match PhyCalibrationCache::from_snapshot(snapshot) {
-            Some(cache) => Some(cache),
-            None => return Err(BluetoothStartError::CalibrationSnapshot(hardware)),
-        },
-        None => None,
-    };
-    let platform = match platform_root.try_bluetooth() {
-        Ok(platform) => platform,
-        Err(error) => return Err(BluetoothStartError::PlatformBusy(error, hardware)),
-    };
-    let calibration_identity = platform.phy_calibration_identity();
-    let public_address = platform.bluetooth_public_address();
-    let memory = claim_memory()?;
+pub async fn start<P, C: PlatformClockProvider>(
+    radio: &RadioSystem<P, C>,
+    parked: BluetoothParked,
+    public_address: BluetoothPublicDeviceAddress,
+) -> Result<BluetoothSystem, BluetoothStartFailure> {
+    let BluetoothParked {
+        partition,
+        memory,
+        published,
+    } = parked;
+    let mut guard = radio.lock().await;
+    let (lease, _, clocks) = guard.parts();
 
-    let clocked = BluetoothStopped::from_hardware(platform, hardware)
-        .enable_clocks()
-        .map_err(BluetoothStartError::Clock)?;
-    let low_power = clocked
-        .initialize_controller_hal()
-        .initialize_scheduler(ControllerRuntimeResources::<MODEM_TIMER_CAPACITY>::new())
+    let powered = match ColdOwner::from_partition(partition).power_up(lease) {
+        Ok(powered) => powered,
+        Err(failure) => {
+            return Err(BluetoothStartFailure {
+                error: BluetoothStartError::Power(failure.error()),
+                owner: Ok(BluetoothParked {
+                    partition: failure.into_owner().into_partition(),
+                    memory,
+                    published,
+                }),
+            });
+        }
+    };
+    let clocked = match powered.enable_clocks(lease, clocks) {
+        Ok(clocked) => clocked,
+        Err(failure) => {
+            let error = BluetoothStartError::Clocks(failure.error());
+            if failure.error() == BluetoothClockError::ModemClocks(ModemClockError::Poisoned) {
+                return Err(fail_stop(
+                    error,
+                    FailStopOwner::Powered(failure.into_owner(), memory),
+                ));
+            }
+            return Err(unwind_powered(
+                lease,
+                failure.into_owner(),
+                memory,
+                published,
+                error,
+            ));
+        }
+    };
+
+    let controller = match ControllerHalInitialized::initialize(clocked)
+        .initialize_scheduler(ControllerRuntimeResources::<MODEM_TIMER_CAPACITY>::new(
+            &CELLS,
+        ))
         .initialize_modem_lp_timer_hardware()
-        .map_err(BluetoothStartError::LowPower)?;
-    let mut phy_config = PhyInitializationConfig::new(calibration_identity);
-    if let Some(cache) = calibration_cache {
-        phy_config = phy_config.with_calibration_cache(cache);
-    }
-    let registered = match low_power
-        .initialize_common_phy::<EmbassyPhyTime, NoopPhyTargetObserver>(
-            phy_config,
-            NoopPhyTargetObserver,
-        )
-        .await
     {
-        Ok(registered) => registered,
-        Err(failure) => return Err(BluetoothStartError::PhyInitialization(failure)),
+        Ok(controller) => controller,
+        Err(failure) => {
+            return Err(fail_stop(
+                BluetoothStartError::LowPower,
+                FailStopOwner::LowPower(failure, memory),
+            ));
+        }
     };
-    let acquisition = match registered.acquire_phy_client(&mut EmbassyPhyTime) {
-        Ok(acquisition) => acquisition,
-        Err(failure) => return Err(BluetoothStartError::PhyClientAcquire(failure)),
+
+    if let Err(error) = guard.prepare_phy().await {
+        return Err(fail_stop(
+            BluetoothStartError::Phy(error),
+            FailStopOwner::Controller(controller, memory),
+        ));
+    }
+    let (lease, platform, _) = guard.parts();
+    let (mut joined, acquired) = match controller.join_phy(lease, &mut EmbassyPhyTime) {
+        Ok(joined) => joined,
+        Err(failure) => {
+            let error = BluetoothStartError::PhyClient(failure.error());
+            return Err(fail_stop(error, FailStopOwner::PhyJoin(failure, memory)));
+        }
     };
-    let initialized = match acquisition.into_owner() {
-        Ok(initialized) => initialized,
-        Err(pending) => match pending
-            .begin_tracking()
-            .complete_tracking::<EmbassyPhyTime, NoopPhyTargetObserver>(NoopPhyTargetObserver)
-            .await
-        {
-            Ok(initialized) => initialized,
-            Err(failure) => return Err(BluetoothStartError::PhyTracking(failure)),
+    if acquired == ConcurrentAcquire::TrackingDue {
+        let issued_at = Instant::now().as_micros();
+        let tracked = match joined.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
+            Ok(proof) => {
+                maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
+                    lease,
+                    platform,
+                    &[proof],
+                    NoopPhyTargetObserver,
+                )
+                .await
+            }
+            Err(_) => Err(ConcurrentPhyTrackingError::Rejected(
+                ConcurrentPhyError::WindowClosed,
+            )),
+        };
+        match tracked {
+            Ok(_outcome) => {}
+            Err(ConcurrentPhyTrackingError::Rejected(error)) => {
+                return Err(fail_stop(
+                    BluetoothStartError::Tracking(error),
+                    FailStopOwner::Joined(joined, memory),
+                ));
+            }
+            Err(ConcurrentPhyTrackingError::Failed(_)) => {
+                return Err(fail_stop(
+                    BluetoothStartError::TrackingFailed,
+                    FailStopOwner::Joined(joined, memory),
+                ));
+            }
+        }
+    }
+    let (lease, _, _) = guard.parts();
+    let ControllerMemory {
+        ble_phy,
+        direction_finding,
+        radio: radio_memory,
+    } = memory;
+    let runtime = joined
+        .initialize_ble_phy_engine(lease, ble_phy, direction_finding, public_address)
+        .activate();
+    drop(guard);
+
+    publish_and_install(runtime, radio_memory, published).await
+}
+
+// Keep interrupt publication, route binding and installation out of the PHY
+// poll frame of `start`.
+#[inline(never)]
+async fn publish_and_install(
+    runtime: BlePhyRuntime<'static, MODEM_TIMER_CAPACITY>,
+    radio_memory: BluetoothSystemMemory,
+    published: Option<&'static Storage>,
+) -> Result<BluetoothSystem, BluetoothStartFailure> {
+    let BlePhyRuntime {
+        endpoints,
+        output,
+        timer,
+        timing: _,
+        retained,
+        direction_finding: _,
+    } = runtime;
+    let interrupts = output.stage_for_cpu_routes();
+    let timer = timer.start_runtime_timer().stage_for_interrupt();
+    let published = match published {
+        Some(published) => {
+            match published.restore_initialized_interrupt_owners(interrupts, timer) {
+                Ok(()) => published,
+                Err((error, interrupts, timer)) => {
+                    return Err(fail_stop(
+                        BluetoothStartError::InterruptPublication(error),
+                        FailStopOwner::Unpublished {
+                            endpoints,
+                            retained,
+                            interrupts,
+                            timer,
+                            memory: radio_memory,
+                        },
+                    ));
+                }
+            }
+        }
+        None => match EspHalBluetoothInterruptStorage::new().publish(interrupts, timer) {
+            Ok(published) => PUBLISHED.init(published),
+            Err((error, _, interrupts, timer)) => {
+                return Err(fail_stop(
+                    BluetoothStartError::InterruptPublication(error),
+                    FailStopOwner::Unpublished {
+                        endpoints,
+                        retained,
+                        interrupts,
+                        timer,
+                        memory: radio_memory,
+                    },
+                ));
+            }
         },
     };
-    let phy = initialized.phy_entry();
-    let calibration = initialized
-        .calibration_cache()
-        .map(|cache| *cache.snapshot());
-    let engine = ENGINE.init(initialized.initialize_baseband().initialize_ble_phy_engine(
-        memory.ble_phy,
-        memory.direction_finding,
-        public_address,
-    ));
-
-    let (output, timer) = engine.take_activation_owners_with_output_prepared();
-    let published = match EspHalBluetoothInterruptStorage::new().publish(
-        output.stage_for_cpu_routes(),
-        timer.start_runtime_timer().stage_for_interrupt(),
-    ) {
-        Ok(published) => PUBLISHED.init(published),
-        Err(_) => return Err(BluetoothStartError::InterruptPublication),
-    };
-    let split = engine
-        .split_runtime()
-        .expect("the one-shot epoch splits once");
-    let endpoints = split.endpoints;
+    let ControllerRuntimeEndpoints {
+        interrupt,
+        task,
+        modem_timer,
+    } = endpoints;
+    let modem_timer = ControllerModemTimerTask::new(published, modem_timer);
     critical_section::with(|cs| {
         DISPATCH.borrow(cs).set(Some(Dispatch {
             published,
-            scheduler_wake: endpoints.interrupt.scheduler_wake(),
-            modem_timer_wake: endpoints.interrupt.modem_lp_timer_worker_wake(),
+            scheduler_wake: interrupt.scheduler_wake(),
+            modem_timer_wake: interrupt.modem_lp_timer_worker_wake(),
         }));
     });
-    let bound = BOUND.init(
-        published
-            .bind_routes(dispatch)
-            .map_err(BluetoothStartError::InterruptRoutes)?,
-    );
-
-    let radio_memory = BluetoothSystemMemory {
-        legacy: memory.legacy,
-        connectable: memory.connectable,
-        scanners: memory.scanners,
-        connections: memory.connections,
-        dtm: memory.dtm,
-        scanning: memory.scanning,
-        non_scanning: memory.non_scanning,
-        direction_finding: split.direction_finding,
+    let bound = match published.bind_routes(dispatch) {
+        Ok(bound) => bound,
+        Err(error) => {
+            return Err(fail_stop(
+                BluetoothStartError::InterruptRoutes(error),
+                FailStopOwner::Published {
+                    task,
+                    modem_timer,
+                    retained,
+                    bound: None,
+                    memory: radio_memory,
+                },
+            ));
+        }
     };
-    if let Err((error, _, _)) = RUNTIME
+    if let Err((error, radio_memory, hardware)) = RUNTIME
         .install(
             radio_memory,
-            LiveBluetoothHardware::new(endpoints.task, bound, LOCAL_SLEEP_CLOCK_PPM),
+            LiveBluetoothHardware::new(task, published, LOCAL_SLEEP_CLOCK_PPM),
         )
         .await
     {
-        return Err(BluetoothStartError::Install(error));
+        return Err(fail_stop(
+            BluetoothStartError::Install(error),
+            FailStopOwner::Published {
+                task: hardware.into_task(),
+                modem_timer,
+                retained,
+                bound: Some(bound),
+                memory: radio_memory,
+            },
+        ));
     }
     Ok(BluetoothSystem {
-        runtime: &RUNTIME,
-        runner: BluetoothRunner {
-            modem_timer: ControllerModemTimerTask::new(bound, endpoints.modem_timer),
-            _platform: endpoints.platform,
-            _physical: split.physical,
+        epoch: Epoch {
+            modem_timer,
+            bound,
+            retained,
+            published,
         },
-        phy,
-        calibration,
-        public_address,
     })
 }

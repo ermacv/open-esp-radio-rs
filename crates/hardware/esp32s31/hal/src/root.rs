@@ -1,5 +1,5 @@
-//! Protocol-neutral radio root, the exclusive Wi-Fi and Bluetooth routes and
-//! the concurrent split.
+//! Protocol-neutral radio root, the exclusive Wi-Fi route and the concurrent
+//! split.
 //!
 //! The restricted PAC supplies opaque register partitions and register sets
 //! without any route policy. This module owns the complete neutral root,
@@ -12,32 +12,32 @@
 
 use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
-    BluetoothTaskRegisters, Ieee802154Partition, MacInterruptSetup, RadioPartitions,
-    SharedRadioParts, SharedRadioRegisters, WifiMacPartition, WifiRadioRegisters,
+    Ieee802154Partition, MacInterruptSetup, RadioPartitions, SharedRadioParts,
+    SharedRadioRegisters, WifiMacPartition, WifiRadioRegisters,
 };
 
 pub use crate::clock::CommonPhyPowerError;
 use crate::{
     clock::CommonPhyPower,
     phy::{registration::PhyRegistration, restore::PhyRouteState},
-    route_registers::{BluetoothRegisters, WifiRegisters},
+    route_registers::WifiRegisters,
     shared_radio::{SharedRadio, SharedRadioReleaseError},
 };
 
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
 ///
 /// This is the sole production acquisition root. It can be consumed by
-/// exactly one exclusive protocol route; no route can manufacture a second
-/// owner. Every route returns the complete root after its task and interrupt
+/// exactly one exclusive protocol route or one concurrent split; neither can
+/// manufacture a second owner. Every route returns the complete root after its task and interrupt
 /// capabilities have been reunited. Protocol-specific cached state is
 /// deliberately not retained in this neutral owner.
 ///
 /// ```compile_fail
-/// use oer_esp32s31_hal::{bluetooth::ColdOwner, root::RadioHardware};
+/// use oer_esp32s31_hal::root::RadioHardware;
 ///
 /// let hardware = RadioHardware::take().unwrap();
-/// let _first = ColdOwner::from_radio_hardware(hardware);
-/// let _second = ColdOwner::from_radio_hardware(hardware);
+/// let _first = hardware.into_concurrent(());
+/// let _second = hardware.into_concurrent(());
 /// ```
 #[must_use = "dropping the radio root permanently loses the unique hardware capability"]
 pub struct RadioHardware {
@@ -89,28 +89,6 @@ impl RadioHardware {
         retained: RetainedBluetooth,
     ) -> Self {
         Self::returned(wifi_partitions(registers, interrupts, retained), phy)
-    }
-
-    /// Consume the root into the exclusive Bluetooth route.
-    ///
-    /// This transition is ownership-only. It performs no controller reset,
-    /// clock, interrupt, or enable transaction.
-    pub(crate) fn into_bluetooth(self) -> BluetoothRoute {
-        bluetooth_route(self.partitions, PhyRouteState::new(self.phy_registration))
-    }
-
-    /// Reconstruct the root from a Bluetooth route.
-    pub(crate) fn from_bluetooth(
-        task: BluetoothRegisters,
-        modem_lp_timer: BluetoothModemLpTimerRegisters,
-        interrupts: BluetoothInterruptSetup,
-        phy: PhyRouteState,
-        retained: RetainedWifi,
-    ) -> Self {
-        Self::returned(
-            bluetooth_partitions(task, modem_lp_timer, interrupts, retained),
-            phy,
-        )
     }
 }
 
@@ -176,68 +154,6 @@ fn wifi_partitions(
     }
 }
 
-fn bluetooth_route(partitions: RadioPartitions, phy: PhyRouteState) -> BluetoothRoute {
-    let RadioPartitions {
-        wifi_mac,
-        wifi_interrupts,
-        radio_phy,
-        coexistence,
-        bluetooth,
-        bluetooth_modem_lp_timer,
-        bluetooth_interrupts,
-        shared_radio,
-        ieee802154,
-    } = partitions;
-    BluetoothRoute {
-        task: BluetoothRegisters::new(
-            BluetoothTaskRegisters::new(bluetooth),
-            SharedRadioRegisters::new(SharedRadioParts {
-                radio_phy,
-                coexistence,
-                shared_radio,
-            }),
-        ),
-        modem_lp_timer: bluetooth_modem_lp_timer,
-        interrupts: bluetooth_interrupts,
-        phy,
-        retained: RetainedWifi {
-            wifi_mac,
-            interrupts: wifi_interrupts,
-            ieee802154,
-        },
-    }
-}
-
-fn bluetooth_partitions(
-    task: BluetoothRegisters,
-    modem_lp_timer: BluetoothModemLpTimerRegisters,
-    interrupts: BluetoothInterruptSetup,
-    retained: RetainedWifi,
-) -> RadioPartitions {
-    let (task, shared) = task.into_parts();
-    let SharedRadioParts {
-        radio_phy,
-        coexistence,
-        shared_radio,
-    } = shared.into_parts();
-    let RetainedWifi {
-        wifi_mac,
-        interrupts: wifi_interrupts,
-        ieee802154,
-    } = retained;
-    RadioPartitions {
-        wifi_mac,
-        wifi_interrupts,
-        radio_phy,
-        coexistence,
-        bluetooth: task.into_partition(),
-        bluetooth_modem_lp_timer: modem_lp_timer,
-        bluetooth_interrupts: interrupts,
-        shared_radio,
-        ieee802154,
-    }
-}
-
 /// Wi-Fi MAC partition and its interrupt setup, taken from a concurrent split.
 #[must_use = "dropping a radio partition permanently loses its register authority"]
 pub struct WifiPartition {
@@ -262,6 +178,30 @@ pub struct BluetoothPartition {
     controller: BluetoothControllerPartition,
     modem_lp_timer: BluetoothModemLpTimerRegisters,
     interrupts: BluetoothInterruptSetup,
+}
+
+impl BluetoothPartition {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerPartition,
+        BluetoothModemLpTimerRegisters,
+        BluetoothInterruptSetup,
+    ) {
+        (self.controller, self.modem_lp_timer, self.interrupts)
+    }
+
+    pub(crate) const fn from_parts(
+        controller: BluetoothControllerPartition,
+        modem_lp_timer: BluetoothModemLpTimerRegisters,
+        interrupts: BluetoothInterruptSetup,
+    ) -> Self {
+        Self {
+            controller,
+            modem_lp_timer,
+            interrupts,
+        }
+    }
 }
 
 /// IEEE 802.15.4 MAC partition, taken from a concurrent split.
@@ -464,25 +404,6 @@ impl RetainedRadioHardware {
     pub(crate) fn into_wifi(self) -> (WifiRoute, CommonPhyPower) {
         (wifi_route(self.partitions, self.phy), self.common)
     }
-
-    pub(crate) fn from_bluetooth(
-        task: BluetoothRegisters,
-        modem_lp_timer: BluetoothModemLpTimerRegisters,
-        interrupts: BluetoothInterruptSetup,
-        phy: PhyRouteState,
-        retained: RetainedWifi,
-        common: CommonPhyPower,
-    ) -> Self {
-        Self {
-            partitions: bluetooth_partitions(task, modem_lp_timer, interrupts, retained),
-            phy,
-            common,
-        }
-    }
-
-    pub(crate) fn into_bluetooth(self) -> (BluetoothRoute, CommonPhyPower) {
-        (bluetooth_route(self.partitions, self.phy), self.common)
-    }
 }
 
 /// Why a cold protocol route cannot release the neutral radio root.
@@ -518,8 +439,6 @@ pub enum WifiPowerRestoreCheckpoint {
     ModemSourceClocks,
     /// The modem register bus clock did not read back.
     ModemRegisterBusClock,
-    /// The route still retains its platform PLL-source lease.
-    PlatformPllLease,
 }
 
 /// Reject release while a PHY calibration still owns a restore obligation.
@@ -549,28 +468,12 @@ pub(crate) struct WifiRoute {
     pub(crate) retained: RetainedBluetooth,
 }
 
-/// Registers and inactive interrupt bank of one exclusive Bluetooth route.
-pub(crate) struct BluetoothRoute {
-    pub(crate) task: BluetoothRegisters,
-    pub(crate) modem_lp_timer: BluetoothModemLpTimerRegisters,
-    pub(crate) interrupts: BluetoothInterruptSetup,
-    pub(crate) phy: PhyRouteState,
-    pub(crate) retained: RetainedWifi,
-}
-
 /// Bluetooth and IEEE 802.15.4 partitions retained, but not exposed, while
 /// Wi-Fi is exclusive.
 pub(crate) struct RetainedBluetooth {
     bluetooth: BluetoothControllerPartition,
     modem_lp_timer: BluetoothModemLpTimerRegisters,
     interrupts: BluetoothInterruptSetup,
-    ieee802154: Ieee802154Partition,
-}
-
-/// Wi-Fi partitions retained, but not exposed, while Bluetooth is exclusive.
-pub(crate) struct RetainedWifi {
-    wifi_mac: WifiMacPartition,
-    interrupts: MacInterruptSetup,
     ieee802154: Ieee802154Partition,
 }
 

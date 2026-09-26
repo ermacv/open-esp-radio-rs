@@ -1,25 +1,27 @@
+use oer_esp32s31_hal::{bluetooth::ClockedOwner, root::RadioHardware};
+
 use crate::{
-    clock::ClockedResources,
-    resources::{BluetoothRadioHardware, BluetoothStopped},
-    runtime_resources::ControllerRuntimeResources,
+    controller_hal::ControllerHalInitialized,
+    runtime_resources::{ControllerEventCells, ControllerRuntimeResources},
     scheduler::SchedulerInitialized,
 };
 
-fn scheduler() -> SchedulerInitialized<(), 4> {
-    let stopped = BluetoothStopped::from_hardware((), BluetoothRadioHardware::for_validation());
-    let (registers, platform) = stopped.into_parts();
-    ClockedResources::for_validation(registers, platform)
-        .initialize_controller_hal_with(|_, _| {})
-        .initialize_scheduler_for_validation(ControllerRuntimeResources::new())
+fn scheduler(cells: &ControllerEventCells) -> SchedulerInitialized<'_, 4> {
+    let (_shared, partitions) = RadioHardware::for_validation().into_concurrent(());
+    ControllerHalInitialized::initialize_for_validation(
+        ClockedOwner::for_validation(partitions.bluetooth),
+        |_, _| {},
+    )
+    .initialize_scheduler_for_validation(ControllerRuntimeResources::new(cells))
 }
 
 #[test]
 fn scheduler_runtime_split_contains_only_hardware_services() {
-    let mut scheduler = scheduler();
+    let cells = ControllerEventCells::new();
+    let mut scheduler = scheduler(&cells);
     assert!(scheduler.runtime_is_pristine());
-    let (interrupt, task, modem_timer, _platform) = scheduler
-        .split_runtime()
-        .expect("first task owner transfer");
+    let _interrupts = scheduler.take_interrupt_owner();
+    let (interrupt, task, modem_timer) = scheduler.split_runtime();
     assert!(core::ptr::eq(
         interrupt.scheduler_wake(),
         task.scheduler_wake()
@@ -33,7 +35,8 @@ fn scheduler_runtime_split_contains_only_hardware_services() {
 
 #[test]
 fn low_power_hardware_stays_in_the_same_pristine_controller_epoch() {
-    let (mut controller, timer_hardware) = match scheduler()
+    let cells = ControllerEventCells::new();
+    let (mut controller, timer_hardware) = match scheduler(&cells)
         .try_initialize_low_power_hardware_with(|_| Ok::<_, ()>("timer-hardware"))
     {
         Ok(initialized) => initialized,
@@ -43,9 +46,8 @@ fn low_power_hardware_stays_in_the_same_pristine_controller_epoch() {
     assert_eq!(timer_hardware, "timer-hardware");
     assert!(controller.runtime_is_pristine());
     assert_eq!(controller.modem_timer_capacity(), 4);
-    let (interrupt, task, _, _platform) = controller
-        .split_runtime()
-        .expect("first task owner transfer");
+    let _interrupts = controller.take_interrupt_owner();
+    let (interrupt, task, _) = controller.split_runtime();
     assert!(core::ptr::eq(
         interrupt.scheduler_wake(),
         task.scheduler_wake()
@@ -54,7 +56,8 @@ fn low_power_hardware_stays_in_the_same_pristine_controller_epoch() {
 
 #[test]
 fn low_power_hardware_failure_returns_the_complete_scheduler_epoch() {
-    let (controller, error) = match scheduler()
+    let cells = ControllerEventCells::new();
+    let (controller, error) = match scheduler(&cells)
         .try_initialize_low_power_hardware_with(|_| Err::<(), _>("timer-owner-separated"))
     {
         Ok(_) => panic!("the injected lower failure must remain visible"),
@@ -67,32 +70,20 @@ fn low_power_hardware_failure_returns_the_complete_scheduler_epoch() {
 }
 
 #[test]
-fn dropping_runtime_never_recreates_the_transferred_task_owner() {
-    let mut scheduler = scheduler();
-    {
-        let endpoints = scheduler.split_runtime().expect("first transfer");
-        drop(endpoints);
-    }
-    assert!(scheduler.split_runtime().is_none());
-    assert!(
-        scheduler.runtime_is_pristine(),
-        "no software work was fabricated"
-    );
-    assert!(
-        scheduler.split_runtime().is_none(),
-        "rejection must remain sticky"
-    );
+#[should_panic(expected = "the interrupt bank is activated before the runtime splits")]
+fn the_runtime_cannot_split_before_the_interrupt_bank_is_activated() {
+    let cells = ControllerEventCells::new();
+    let _endpoints = scheduler(&cells).split_runtime();
 }
 
 #[test]
-fn task_hardware_outlives_software_storage_without_recovering_a_borrow() {
-    let hardware = {
-        let mut scheduler = scheduler();
-        let (_, mut task, _, _platform) = scheduler.split_runtime().expect("first transfer");
-        // Moving this field must transfer the actual owner, not a reference
-        // whose lifetime would force the original scheduler to remain alive.
-        let (hardware, ()) = task.task.try_retire(|| Ok::<_, ()>(())).unwrap();
-        hardware
+fn the_task_endpoint_returns_the_actual_task_owner_once_idle() {
+    let cells = ControllerEventCells::new();
+    let mut scheduler = scheduler(&cells);
+    let _interrupts = scheduler.take_interrupt_owner();
+    let (_, task, _) = scheduler.split_runtime();
+    let Ok(hardware) = task.retire() else {
+        panic!("an idle task endpoint retires");
     };
     assert_eq!(
         hardware.controller_time_phase(),

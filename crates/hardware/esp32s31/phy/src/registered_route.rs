@@ -166,11 +166,7 @@ pub struct WifiRoute<P>(
     core::marker::PhantomData<fn() -> P>,
 );
 
-/// Bluetooth route: the Controller keeps its hardware outside PHY.
-pub enum BluetoothRoute {}
-
 impl<P> PhyRoute for WifiRoute<P> {}
-impl PhyRoute for BluetoothRoute {}
 
 type Hardware<R> = <R as sealed::PhyRoute>::Hardware;
 type Unclaimed<R> = <R as sealed::PhyRoute>::Unclaimed;

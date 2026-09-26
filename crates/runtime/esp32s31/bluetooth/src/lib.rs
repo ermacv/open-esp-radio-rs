@@ -51,7 +51,7 @@ pub use hardware::LiveBluetoothHardware;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use hardware::{BluetoothRadioHardware, RxChainPublicationError};
 #[cfg(target_arch = "riscv32")]
-pub use modem_timer::{ModemTimerFault, run_modem_timer};
+pub use modem_timer::{ModemTimerFault, run_modem_timer, settle_modem_timer};
 pub use outcome::{BluetoothOutcome, BluetoothReceivedPdu, MAX_PDU_BYTES};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime::{

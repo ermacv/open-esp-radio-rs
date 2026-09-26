@@ -26,23 +26,67 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 use crate::scheduler::hardware::{SchedulerHardware, live::HalPublications};
 
+/// Event cells shared between the Controller's interrupt handlers and its
+/// task-side workers.
+///
+/// The handlers reach them through stable references, so they live in
+/// static storage for the whole boot and serve every Controller epoch. An
+/// epoch starts only while no notification is pending.
+pub struct ControllerEventCells {
+    scheduler_wake: SchedulerWakeCell,
+    modem_lp_timer_worker_wake: ModemLpTimerWorkerWakeCell,
+    modem_lp_timer_events: ModemLpTimerEventCell,
+}
+
+impl ControllerEventCells {
+    /// Construct quiet cells without allocation or MMIO.
+    pub const fn new() -> Self {
+        Self {
+            scheduler_wake: SchedulerWakeCell::new(),
+            modem_lp_timer_worker_wake: ModemLpTimerWorkerWakeCell::new(),
+            modem_lp_timer_events: ModemLpTimerEventCell::new(),
+        }
+    }
+
+    /// Whether no notification or expiration is pending.
+    pub fn is_quiet(&self) -> bool {
+        !self.scheduler_wake.is_pending()
+            && !self.modem_lp_timer_worker_wake.is_pending()
+            && !self.modem_lp_timer_events.is_pending()
+    }
+
+    /// Coalesced readiness notifications are not work ownership. Discard
+    /// them only after the Controller was reset, with every IRQ route of its
+    /// epoch removed, so the next epoch starts quiet.
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    pub(crate) fn clear_notifications_after_reset(&self) {
+        let _ = self.scheduler_wake.take();
+        let _ = self.modem_lp_timer_worker_wake.take();
+    }
+}
+
+impl Default for ControllerEventCells {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Allocation-free event and worker storage for exactly one Controller epoch.
 ///
-/// The aggregate is intentionally neither `Copy` nor `Clone`. Moving the
-/// complete value is allowed before stable ISR publication.
+/// The workers are owned by value and move with their endpoints; only the
+/// interrupt-shared [`ControllerEventCells`] are borrowed. The aggregate is
+/// intentionally neither `Copy` nor `Clone`.
 #[must_use = "Controller runtime resources must remain owned by their hardware epoch"]
-pub struct ControllerRuntimeResources<const MODEM_TIMER_CAPACITY: usize> {
-    scheduler_wake: SchedulerWakeCell,
+pub struct ControllerRuntimeResources<'cells, const MODEM_TIMER_CAPACITY: usize> {
+    cells: &'cells ControllerEventCells,
     scheduler_finished_lists: SchedulerFinishedListWorker,
     #[cfg(target_arch = "riscv32")]
     scheduler_hardware: SchedulerHardware<HalPublications>,
     modem_lp_timer_queue: ModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
     modem_lp_timer_epoch: BluetoothModemLpTimerEpoch,
-    modem_lp_timer_worker_wake: ModemLpTimerWorkerWakeCell,
-    modem_lp_timer_events: ModemLpTimerEventCell,
 }
 
-/// Shared interrupt-side publications for one borrowed Controller epoch.
+/// Shared interrupt-side publications of one Controller epoch.
 ///
 /// This endpoint can only be produced together with the matching
 /// [`ControllerTaskRuntime`]. It deliberately exposes no timer queue or
@@ -61,9 +105,9 @@ pub struct ControllerInterruptRuntime<'runtime> {
 /// timer task.
 #[must_use = "the modem-timer runtime must remain paired with its Controller epoch"]
 pub struct ControllerModemTimerRuntime<'runtime, const MODEM_TIMER_CAPACITY: usize> {
-    pub(crate) queue: &'runtime mut ModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
+    pub(crate) queue: ModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
     #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
-    pub(crate) epoch: &'runtime mut BluetoothModemLpTimerEpoch,
+    pub(crate) epoch: BluetoothModemLpTimerEpoch,
     pub(crate) worker_wake: &'runtime ModemLpTimerWorkerWakeCell,
     pub(crate) events: &'runtime ModemLpTimerEventCell,
 }
@@ -83,12 +127,6 @@ impl<const MODEM_TIMER_CAPACITY: usize> ControllerModemTimerRuntime<'_, MODEM_TI
     pub fn queue_is_empty(&self) -> bool {
         self.queue.is_empty()
     }
-
-    /// Restore the started modem-timer epoch returned by a physical restart.
-    #[cfg(target_arch = "riscv32")]
-    pub fn restore_epoch(&mut self, epoch: BluetoothModemLpTimerEpoch) {
-        *self.epoch = epoch;
-    }
 }
 
 impl<'runtime> ControllerInterruptRuntime<'runtime> {
@@ -103,28 +141,28 @@ impl<'runtime> ControllerInterruptRuntime<'runtime> {
     }
 }
 
-/// Task-side events and workers for the same borrowed Controller epoch.
+/// Task-side events and workers of one Controller epoch.
 ///
-/// The mutable worker references make a second task endpoint impossible. The
-/// scheduler wake is shared only with the matching interrupt endpoint returned
-/// by the same [`ControllerRuntimeResources::split`] call.
+/// The endpoint owns the only workers of its epoch. The scheduler wake is
+/// shared with the matching interrupt endpoint returned by the same
+/// [`ControllerRuntimeResources::split`] call.
 #[must_use = "the task endpoint must remain paired with its interrupt endpoint"]
 pub struct ControllerTaskRuntime<'runtime> {
-    scheduler_wake: &'runtime SchedulerWakeCell,
-    scheduler_finished_lists: &'runtime mut SchedulerFinishedListWorker,
+    cells: &'runtime ControllerEventCells,
+    scheduler_finished_lists: SchedulerFinishedListWorker,
     #[cfg(target_arch = "riscv32")]
-    scheduler_hardware: &'runtime mut SchedulerHardware<HalPublications>,
+    scheduler_hardware: SchedulerHardware<HalPublications>,
 }
 
 impl ControllerTaskRuntime<'_> {
     /// Durable scheduler handoff for this epoch.
     pub const fn scheduler_wake(&self) -> &SchedulerWakeCell {
-        self.scheduler_wake
+        &self.cells.scheduler_wake
     }
 
     /// The sole bounded finished-list worker for this epoch.
     pub fn scheduler_finished_lists(&mut self) -> &mut SchedulerFinishedListWorker {
-        self.scheduler_finished_lists
+        &mut self.scheduler_finished_lists
     }
 
     /// Whether scheduler workers hold no transaction that retirement would
@@ -140,39 +178,40 @@ impl ControllerTaskRuntime<'_> {
         }
         Ok(())
     }
-
-    /// Coalesced readiness notifications are not work ownership. Discard only
-    /// after physical cold release, with the original IRQ routes still absent.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-    pub(crate) fn clear_notifications_after_cold_release(&self) {
-        let _ = self.scheduler_wake.take();
-    }
 }
 
 /// Task-side software and register ownership for one powered Controller epoch.
 ///
 /// This endpoint is produced only by the initialized scheduler lifecycle. It
-/// joins borrowed software workers with an exclusive lease of the task-side HAL
-/// slot, so a live worker step never requires an independently recovered
-/// register capability.
+/// owns the software workers together with the task-side HAL owner, so a live
+/// worker step never requires an independently recovered register
+/// capability, and [`Self::retire`] returns both for the Controller shutdown.
 #[must_use = "the powered task endpoint retains the Controller task owner"]
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub struct ControllerPoweredTaskRuntime<'runtime> {
     pub(crate) runtime: ControllerTaskRuntime<'runtime>,
-    pub(crate) task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
+    pub(crate) task: TaskResources,
     pub(crate) time_scale: oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale,
-    pub(crate) _standalone_dtm_profile:
-        &'runtime crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
+    pub(crate) _standalone_dtm_profile: crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
     pub(crate) config: crate::scheduler::SchedulerSoftwareConfig,
+}
+
+/// Why the powered task endpoint cannot be retired yet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControllerTaskRetirementError {
+    /// A scheduler worker still holds work.
+    Runtime(ControllerRuntimeRetirementError),
+    /// The controller-time worker holds a request or faulted.
+    ControllerTime(crate::controller_time::ControllerTimeRetirementError),
 }
 
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl<'runtime> ControllerPoweredTaskRuntime<'runtime> {
     pub(crate) const fn new(
         runtime: ControllerTaskRuntime<'runtime>,
-        task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
+        task: TaskResources,
         time_scale: oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale,
-        standalone_dtm_profile: &'runtime crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
+        standalone_dtm_profile: crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
         config: crate::scheduler::SchedulerSoftwareConfig,
     ) -> Self {
         Self {
@@ -184,11 +223,25 @@ impl<'runtime> ControllerPoweredTaskRuntime<'runtime> {
         }
     }
 
-    /// The HAL task owner lease of this powered Controller epoch.
-    pub fn task_owner(
-        &mut self,
-    ) -> &mut crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources> {
+    /// The HAL task owner of this powered Controller epoch.
+    pub fn task_owner(&mut self) -> &mut TaskResources {
         &mut self.task
+    }
+
+    /// Return the task owner once no worker and no controller-time request
+    /// holds work; the rejection returns the unchanged endpoint.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the rejection returns the complete affine endpoint"
+    )]
+    pub fn retire(self) -> Result<TaskResources, (ControllerTaskRetirementError, Self)> {
+        if let Err(error) = self.runtime.retirement_ready() {
+            return Err((ControllerTaskRetirementError::Runtime(error), self));
+        }
+        if let Err(error) = self.task.controller_time_retirement_ready() {
+            return Err((ControllerTaskRetirementError::ControllerTime(error), self));
+        }
+        Ok(self.task)
     }
 
     #[cfg(test)]
@@ -206,12 +259,6 @@ impl<'runtime> ControllerPoweredTaskRuntime<'runtime> {
     /// Whether scheduler workers hold no transaction that retirement would lose.
     pub fn runtime_retirement_ready(&self) -> Result<(), ControllerRuntimeRetirementError> {
         self.runtime.retirement_ready()
-    }
-
-    /// Discard coalesced readiness notifications after physical cold release,
-    /// with the original IRQ routes still absent.
-    pub fn clear_notifications_after_cold_release(&self) {
-        self.runtime.clear_notifications_after_cold_release();
     }
 
     /// Scheduler time scale retained by this exact powered Controller epoch.
@@ -237,22 +284,23 @@ impl<'runtime> ControllerPoweredTaskRuntime<'runtime> {
     }
 }
 
-impl<const MODEM_TIMER_CAPACITY: usize> ControllerRuntimeResources<MODEM_TIMER_CAPACITY> {
-    /// Construct one pristine runtime epoch without allocation or MMIO.
-    pub const fn new() -> Self {
+impl<'cells, const MODEM_TIMER_CAPACITY: usize>
+    ControllerRuntimeResources<'cells, MODEM_TIMER_CAPACITY>
+{
+    /// Construct one pristine runtime epoch over `cells` without allocation
+    /// or MMIO.
+    pub const fn new(cells: &'cells ControllerEventCells) -> Self {
         assert!(
             MODEM_TIMER_CAPACITY > 0,
             "a Controller runtime needs at least one modem timer slot"
         );
         Self {
-            scheduler_wake: SchedulerWakeCell::new(),
+            cells,
             scheduler_finished_lists: SchedulerFinishedListWorker::new(),
             #[cfg(target_arch = "riscv32")]
             scheduler_hardware: SchedulerHardware::new(),
             modem_lp_timer_queue: ModemLpTimerQueue::new(),
             modem_lp_timer_epoch: BluetoothModemLpTimerEpoch::new(),
-            modem_lp_timer_worker_wake: ModemLpTimerWorkerWakeCell::new(),
-            modem_lp_timer_events: ModemLpTimerEventCell::new(),
         }
     }
 
@@ -270,68 +318,48 @@ impl<const MODEM_TIMER_CAPACITY: usize> ControllerRuntimeResources<MODEM_TIMER_C
         #[cfg(not(target_arch = "riscv32"))]
         let scheduler_hardware_is_pristine = true;
 
-        !self.scheduler_wake.is_pending()
+        self.cells.is_quiet()
             && !self.scheduler_finished_lists.is_active()
             && scheduler_hardware_is_pristine
             && self.modem_lp_timer_queue.is_empty()
             && self.modem_lp_timer_epoch.high_byte() == 0
-            && !self.modem_lp_timer_worker_wake.is_pending()
-            && !self.modem_lp_timer_events.is_pending()
     }
 
-    /// Borrow the only interrupt publisher and task worker endpoints for this
-    /// runtime epoch.
+    /// Hand out the only interrupt publisher, task worker and modem-timer
+    /// endpoints of this runtime epoch.
     ///
-    /// Keeping both endpoints alive retains the mutable borrow of the
-    /// aggregate, so the same event cells and workers cannot be split into a
-    /// second executor/interrupt pair.
+    /// The workers move into their endpoints, so the same workers cannot be
+    /// split into a second executor/interrupt pair.
     pub fn split(
-        &mut self,
+        self,
     ) -> (
-        ControllerInterruptRuntime<'_>,
-        ControllerTaskRuntime<'_>,
-        ControllerModemTimerRuntime<'_, MODEM_TIMER_CAPACITY>,
+        ControllerInterruptRuntime<'cells>,
+        ControllerTaskRuntime<'cells>,
+        ControllerModemTimerRuntime<'cells, MODEM_TIMER_CAPACITY>,
     ) {
-        let scheduler_wake = &self.scheduler_wake;
-        let modem_lp_timer_worker_wake = &self.modem_lp_timer_worker_wake;
-        let modem_lp_timer_events = &self.modem_lp_timer_events;
+        let cells = self.cells;
         (
             ControllerInterruptRuntime {
-                scheduler_wake,
-                modem_lp_timer_worker_wake,
+                scheduler_wake: &cells.scheduler_wake,
+                modem_lp_timer_worker_wake: &cells.modem_lp_timer_worker_wake,
             },
             ControllerTaskRuntime {
-                scheduler_wake,
-                scheduler_finished_lists: &mut self.scheduler_finished_lists,
+                cells,
+                scheduler_finished_lists: self.scheduler_finished_lists,
                 #[cfg(target_arch = "riscv32")]
-                scheduler_hardware: &mut self.scheduler_hardware,
+                scheduler_hardware: self.scheduler_hardware,
             },
             ControllerModemTimerRuntime {
-                queue: &mut self.modem_lp_timer_queue,
-                epoch: &mut self.modem_lp_timer_epoch,
-                worker_wake: modem_lp_timer_worker_wake,
-                events: modem_lp_timer_events,
+                queue: self.modem_lp_timer_queue,
+                epoch: self.modem_lp_timer_epoch,
+                worker_wake: &cells.modem_lp_timer_worker_wake,
+                events: &cells.modem_lp_timer_events,
             },
         )
     }
 }
 
-impl<const MODEM_TIMER_CAPACITY: usize> Default
-    for ControllerRuntimeResources<MODEM_TIMER_CAPACITY>
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<const MT: usize> ControllerRuntimeResources<MT> {
-    pub fn into_started_modem_epoch(self) -> BluetoothModemLpTimerEpoch {
-        self.modem_lp_timer_epoch
-    }
-}
-
-/// Actual software ownership preventing a cold restart boundary.
+/// Software work that prevents the Controller shutdown.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControllerRuntimeRetirementError {
     /// A captured finished-list set is not drained.

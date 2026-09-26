@@ -63,3 +63,43 @@ pub async fn run_modem_timer<
         }
     }
 }
+
+/// Advance the task until it holds no software work, without waiting for an
+/// interrupt: a published wake is taken, a step or rearm in progress
+/// completes and an expiration is discarded.
+///
+/// The Controller shutdown calls this after the runtime stopped and before
+/// the CPU routes are removed, so the timer owner returns to stable storage.
+///
+/// # Errors
+///
+/// Stable storage refused the owner.
+pub async fn settle_modem_timer<S: ModemLpTimerSoftwareOwnerStorage, const CAPACITY: usize>(
+    task: &mut ControllerModemTimerTask<'_, S, CAPACITY>,
+) -> Result<(), ModemTimerFault<S::TakeError, S::RestoreError>> {
+    loop {
+        match task.readiness().class() {
+            ControllerModemTimerReadinessClass::Interrupt => {
+                if !task.readiness().is_ready() {
+                    return Ok(());
+                }
+                if let ControllerModemTimerBegin::StorageRejected(error) = task.begin() {
+                    return Err(ModemTimerFault::Take(error));
+                }
+            }
+            ControllerModemTimerReadinessClass::Step => {
+                if let ControllerModemTimerStep::Recheck = task.step() {
+                    Timer::after(HARDWARE_RECHECK).await;
+                }
+            }
+            ControllerModemTimerReadinessClass::EventCapacity => {
+                let _ = task.take_expiration();
+            }
+            ControllerModemTimerReadinessClass::Rearm => {
+                if let ControllerModemTimerRearm::StorageRejected(error) = task.rearm() {
+                    return Err(ModemTimerFault::Restore(error));
+                }
+            }
+        }
+    }
+}

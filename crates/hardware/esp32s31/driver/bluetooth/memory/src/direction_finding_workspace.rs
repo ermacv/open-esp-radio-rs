@@ -19,6 +19,7 @@ use oer_esp32s31_hal::types::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
 };
 
+use oer_esp32s31_hal::bluetooth::BluetoothControllerReset;
 use vcell::VolatileCell;
 
 /// Bytes retained by the recovered controller-global direction-finding environment.
@@ -205,6 +206,23 @@ impl DirectionFindingWorkspaceCpuOwned {
         &self.binding
     }
 
+    /// Return the workspace to its allocation-time image after the Controller
+    /// that used it was reset.
+    pub fn reset_after_controller_reset(&mut self, _reset: &BluetoothControllerReset) {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .initialize_disabled_baseline();
+    }
+
+    /// Model hardware overwriting the workspace during an epoch.
+    #[cfg(test)]
+    fn emulate_hardware_clear(&self) {
+        for word in &self.storage.as_ref().get_ref().words {
+            word.set(0);
+        }
+    }
+
     /// Confirm the source-owned disabled-CTE initialization is still present.
     pub fn is_disabled_baseline_initialized(&self) -> bool {
         let storage = self.storage.as_ref().get_ref();
@@ -258,15 +276,22 @@ impl DirectionFindingWorkspaceStorage {
                 return Err(DirectionFindingWorkspaceBindFailure::new(storage, error));
             }
         };
-        for word in &storage.words {
-            word.set(0);
-        }
-        storage.words[LINK_STATE_CONFIGURATION_WORD].set(1);
-        storage.words[DISABLED_CTE_DESCRIPTOR_WORD].set(1);
+        storage.initialize_disabled_baseline();
         Ok(DirectionFindingWorkspaceCpuOwned {
             storage: Pin::static_mut(storage),
             binding,
         })
+    }
+}
+
+impl DirectionFindingWorkspaceStorage {
+    /// Write the zeroed workspace with the source-owned disabled-CTE words.
+    fn initialize_disabled_baseline(&self) {
+        for word in &self.words {
+            word.set(0);
+        }
+        self.words[LINK_STATE_CONFIGURATION_WORD].set(1);
+        self.words[DISABLED_CTE_DESCRIPTOR_WORD].set(1);
     }
 }
 

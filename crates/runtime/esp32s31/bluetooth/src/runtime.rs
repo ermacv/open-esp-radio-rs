@@ -460,6 +460,62 @@ impl<
         result
     }
 
+    /// Stop the scheduler, take the radio and its hardware out of the
+    /// runtime, and stop the runner.
+    ///
+    /// A list transaction in progress finishes first, and a controller-time
+    /// request that a cancelled [`Self::run`] left in flight is drained.
+    /// Events still listed stay with the stopped radio, which returns its
+    /// memory only after the Controller reset
+    /// ([`BluetoothRadio::into_memory`]); outcomes already queued stay
+    /// readable. [`Self::run`] then returns
+    /// [`BluetoothRuntimeFault::NotInstalled`].
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed, or the scheduler could not be stopped; the
+    /// radio then stays installed and faulted.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the role's pool capacities stay visible in the returned radio"
+    )]
+    pub async fn uninstall(
+        &self,
+    ) -> Result<
+        (
+            Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
+            H,
+        ),
+        BluetoothRuntimeFault<H::StartError>,
+    > {
+        let mut slot = self.installed.lock().await;
+        let installed = slot.as_mut().ok_or(BluetoothRuntimeFault::NotInstalled)?;
+        if let Err(fault) = self.stop_scheduler(installed).await {
+            installed.faulted = true;
+            return Err(fault);
+        }
+        // A cancelled runner may have left a controller-time request in
+        // flight; the task owner retires only once it completed.
+        loop {
+            match installed.hardware.drain_time() {
+                Ok(ControllerTimeEventStep::Waiting) => Timer::after(HARDWARE_RECHECK).await,
+                Ok(_) => break,
+                Err(error) => {
+                    installed.faulted = true;
+                    return Err(BluetoothRuntimeFault::Time(BluetoothTimeError::Event(
+                        error,
+                    )));
+                }
+            }
+        }
+        let Installed {
+            radio, hardware, ..
+        } = slot.take().expect("the radio is installed");
+        drop(slot);
+        self.work.signal(());
+        Ok((radio, hardware))
+    }
+
     async fn quiesce_installed<T>(
         &self,
         installed: &mut Installed<
@@ -474,6 +530,40 @@ impl<
         >,
         maintenance: impl FnOnce(ClientQuiescence<'_>) -> T,
     ) -> Result<T, BluetoothRuntimeFault<H::StartError>> {
+        self.stop_scheduler(installed).await?;
+        let result = maintenance(
+            installed
+                .radio
+                .quiescence()
+                .expect("the radio holds the stopped receipt"),
+        );
+        // The radio stays stopped, and the runtime faulted, without a sample
+        // to judge which events have passed.
+        let sample = sample_time(&mut installed.hardware)
+            .await
+            .map_err(BluetoothRuntimeFault::Time)?;
+        installed
+            .radio
+            .resume(&sample)
+            .expect("the radio holds the stopped receipt");
+        Ok(result)
+    }
+
+    /// Finish the list transaction in progress, stop the scheduler, report
+    /// what it finished and hand the stopped receipt to the radio.
+    async fn stop_scheduler(
+        &self,
+        installed: &mut Installed<
+            H,
+            LEGACY,
+            CONNECTABLE,
+            SCANNERS,
+            CONNECTIONS,
+            SCAN_PACKETS,
+            RX_PACKETS,
+            ITEMS,
+        >,
+    ) -> Result<(), BluetoothRuntimeFault<H::StartError>> {
         while installed.awaiting.is_some() {
             if let Pass::Recheck = self.pass(installed)? {
                 Timer::after(HARDWARE_RECHECK).await;
@@ -498,25 +588,10 @@ impl<
         {
             drain_finished_lists(installed, &mut sink);
         }
-        if installed.radio.enter_stopped(stopped).is_err() {
-            return Err(BluetoothRuntimeFault::Stop);
-        }
-        let result = maintenance(
-            installed
-                .radio
-                .quiescence()
-                .expect("the radio holds the stopped receipt"),
-        );
-        // The radio stays stopped, and the runtime faulted, without a sample
-        // to judge which events have passed.
-        let sample = sample_time(&mut installed.hardware)
-            .await
-            .map_err(BluetoothRuntimeFault::Time)?;
         installed
             .radio
-            .resume(&sample)
-            .expect("the radio holds the stopped receipt");
-        Ok(result)
+            .enter_stopped(stopped)
+            .map_err(|_| BluetoothRuntimeFault::Stop)
     }
 
     fn sink(&self) -> QueueSink<'_, M, EVENTS> {

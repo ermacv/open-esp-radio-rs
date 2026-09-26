@@ -421,3 +421,38 @@ fn as_a_radio_port_a_refusal_answers_and_a_missing_radio_ends_service() {
         Err(BluetoothRuntimeError::NotInstalled)
     );
 }
+
+#[test]
+fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(async {
+        runtime.request(configure()).await.unwrap();
+        runtime.request(advertise(1, 10_000)).await.unwrap();
+    });
+    // The event is listed and running when the epoch ends.
+    model.0.borrow_mut().defer_execution = true;
+    block_on(async {
+        let Either::Second(()) = select(runtime.run(), Timer::after_millis(1)).await else {
+            panic!("the runtime keeps running")
+        };
+    });
+    let (radio, hardware) = block_on(runtime.uninstall()).unwrap();
+    assert_eq!(model.0.borrow().stops, 1);
+    assert!(matches!(
+        block_on(runtime.run()),
+        crate::BluetoothRuntimeFault::NotInstalled
+    ));
+    assert_eq!(
+        block_on(runtime.request(configure())),
+        Err(BluetoothRuntimeError::NotInstalled)
+    );
+
+    let memory =
+        radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
+    model.0.borrow_mut().chains_published = false;
+    block_on(runtime.install(memory, hardware))
+        .unwrap_or_else(|_| panic!("the next epoch installs"));
+    assert!(model.0.borrow().chains_published);
+    block_on(runtime.request(configure())).unwrap();
+}

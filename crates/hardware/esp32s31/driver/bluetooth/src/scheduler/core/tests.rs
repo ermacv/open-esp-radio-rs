@@ -1,41 +1,29 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
-
 use crate::{
-    clock::ClockedResources,
-    resources::{BluetoothRadioHardware, BluetoothStopped},
-    runtime_resources::ControllerRuntimeResources,
+    controller_hal::ControllerHalInitialized,
+    runtime_resources::{ControllerEventCells, ControllerRuntimeResources},
 };
 
 use std::{cell::RefCell, rc::Rc, vec::Vec};
 
-use oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListsCleared;
-
-static PLATFORM_DROPS: AtomicUsize = AtomicUsize::new(0);
-
-struct FakePlatform;
-
-impl Drop for FakePlatform {
-    fn drop(&mut self) {
-        PLATFORM_DROPS.fetch_add(1, Ordering::Relaxed);
-    }
-}
+use oer_esp32s31_hal::{
+    bluetooth::{BluetoothSchedulerHardwareListsCleared, ClockedOwner},
+    root::RadioHardware,
+};
 
 #[test]
-fn controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop() {
-    PLATFORM_DROPS.store(0, Ordering::Relaxed);
-    let stopped =
-        BluetoothStopped::from_hardware(FakePlatform, BluetoothRadioHardware::for_validation());
-    let (registers, platform) = stopped.into_parts();
-    let clocked = ClockedResources::for_validation(registers, platform);
+fn controller_hal_precedes_complete_scheduler_init() {
+    let (_shared, partitions) = RadioHardware::for_validation().into_concurrent(());
+    let clocked = ClockedOwner::for_validation(partitions.bluetooth);
     let operations = Rc::new(RefCell::new(Vec::new()));
     let hal_operations = Rc::clone(&operations);
-    let initialized = clocked.initialize_controller_hal_with(|_, _| {
+    let initialized = ControllerHalInitialized::initialize_for_validation(clocked, |_, _| {
         hal_operations.borrow_mut().push("controller-hal");
     });
     let time_scale = initialized.controller_time_scale();
     let scheduler_operations = Rc::clone(&operations);
+    let cells = ControllerEventCells::new();
     let mut scheduler =
-        initialized.initialize_scheduler_with(ControllerRuntimeResources::<4>::new(), |_| {
+        initialized.initialize_scheduler_with(ControllerRuntimeResources::<4>::new(&cells), |_| {
             scheduler_operations.borrow_mut().push("scheduler-hardware");
             BluetoothSchedulerHardwareListsCleared::for_validation()
         });
@@ -51,9 +39,8 @@ fn controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop() {
     assert!(!scheduler.controller_time_needs_recheck());
     assert_eq!(scheduler.modem_timer_capacity(), 4);
     assert!(scheduler.runtime_is_pristine());
-    let (interrupt, task, modem_timer, _platform) = scheduler
-        .split_runtime()
-        .expect("first task owner transfer");
+    let _interrupts = scheduler.take_interrupt_owner();
+    let (interrupt, task, _modem_timer) = scheduler.split_runtime();
     assert!(core::ptr::eq(
         interrupt.scheduler_wake(),
         task.scheduler_wake()
@@ -63,7 +50,4 @@ fn controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop() {
         crate::controller_time::ControllerTimeWorkerPhase::Idle
     );
     assert!(!task.controller_time_needs_recheck());
-    drop((interrupt, task, modem_timer));
-    drop(scheduler);
-    assert_eq!(PLATFORM_DROPS.load(Ordering::Relaxed), 0);
 }

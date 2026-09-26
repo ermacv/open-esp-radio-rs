@@ -6,14 +6,11 @@
 //! replaced by Rust-owned runtime resources rather than copied into this
 //! hardware typestate.
 
-use crate::{
-    clock::ClockedResources,
-    resources::{
-        InterruptBankOwner, TaskResources, TeardownPendingPlatform, separate_interrupt_owner,
-    },
-};
+use crate::resources::{InterruptBankOwner, TaskResources, separate_interrupt_owner};
 
-use oer_esp32s31_hal::bluetooth::{BluetoothControllerHalInitConfig, BluetoothControllerTimeScale};
+use oer_esp32s31_hal::bluetooth::{
+    BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, ClockedOwner,
+};
 
 /// Controller time scale of the reviewed standalone HAL configuration.
 pub const fn reviewed_standalone_time_scale() -> BluetoothControllerTimeScale {
@@ -51,38 +48,38 @@ impl StandaloneAlwaysAwakeDtmProfile {
 /// interrupts, PHY, BTBB, Link Layer, HCI or a running controller. Dropping it
 /// is fail-stop because no verified rollback exists after the first write.
 #[must_use = "the controller HAL state retains every powered Bluetooth owner"]
-pub struct ControllerHalInitialized<P> {
+pub struct ControllerHalInitialized {
     pub(crate) task: TaskResources,
     pub(crate) interrupts: InterruptBankOwner,
-    pub(crate) platform: TeardownPendingPlatform<P>,
     pub(crate) time_scale: BluetoothControllerTimeScale,
     pub(crate) standalone_dtm_profile: StandaloneAlwaysAwakeDtmProfile,
 }
 
-impl<P> ControllerHalInitialized<P> {
+impl ControllerHalInitialized {
     /// Return the scheduler scale established for this hardware epoch.
     pub const fn controller_time_scale(&self) -> BluetoothControllerTimeScale {
         self.time_scale
     }
 }
 
-impl<P> ClockedResources<P> {
-    /// Execute the complete reviewed standalone controller HAL component.
+impl ControllerHalInitialized {
+    /// Execute the complete reviewed standalone controller HAL component on
+    /// the clocked Bluetooth client.
     ///
-    /// This consumes the reversible clock state and arms fail-stop ownership
-    /// before the first controller write. The result must continue through
+    /// This consumes the clocked client and arms fail-stop ownership before
+    /// the first controller write. The result must continue through
     /// scheduler and interrupt initialization before it can run radio work.
     #[cfg(target_arch = "riscv32")]
     #[allow(
         unsafe_code,
-        reason = "the affine clocked state discharges the HAL transaction's external prerequisites"
+        reason = "the clocked client discharges the HAL transaction's external prerequisites"
     )]
-    pub fn initialize_controller_hal(self) -> ControllerHalInitialized<P> {
-        self.into_controller_hal_initialized(|task, config| {
-            // SAFETY: `ClockedResources` retains the exact enabled
-            // clock/reset owner, this transition uniquely owns the task and
-            // inactive interrupt partitions, and the fixed S31 SRAM-prefix
-            // profile is retained by the returned affine state.
+    pub fn initialize(clocked: ClockedOwner) -> Self {
+        Self::initialize_with(clocked, |task, config| {
+            // SAFETY: `ClockedOwner` proves the enabled Bluetooth clocks and
+            // released controller resets, this transition uniquely owns the
+            // task and inactive interrupt partitions, and the fixed S31
+            // SRAM-prefix profile is retained by the returned affine state.
             unsafe {
                 task.initialize_controller_hal(config);
             }
@@ -90,29 +87,25 @@ impl<P> ClockedResources<P> {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn initialize_controller_hal_with(
-        self,
+    pub fn initialize_for_validation(
+        clocked: ClockedOwner,
         initialize: impl FnOnce(&mut TaskResources, BluetoothControllerHalInitConfig),
-    ) -> ControllerHalInitialized<P> {
-        self.into_controller_hal_initialized(initialize)
+    ) -> Self {
+        Self::initialize_with(clocked, initialize)
     }
 
-    fn into_controller_hal_initialized(
-        self,
+    fn initialize_with(
+        clocked: ClockedOwner,
         initialize: impl FnOnce(&mut TaskResources, BluetoothControllerHalInitConfig),
-    ) -> ControllerHalInitialized<P> {
+    ) -> Self {
         let config = BluetoothControllerHalInitConfig::reviewed_standalone();
         let standalone_dtm_profile = StandaloneAlwaysAwakeDtmProfile::mint();
         let time_scale = config.controller_time_scale();
-        let (registers, platform) = self.into_parts();
-        // Arm fail-stop ownership before the first controller MMIO mutation.
-        let platform = TeardownPendingPlatform::new(platform);
-        let (mut task, interrupts) = separate_interrupt_owner(registers);
+        let (mut task, interrupts) = separate_interrupt_owner(clocked);
         initialize(&mut task, config);
-        ControllerHalInitialized {
+        Self {
             task,
             interrupts,
-            platform,
             time_scale,
             standalone_dtm_profile,
         }

@@ -15,6 +15,9 @@
 
 use core::{marker::PhantomPinned, pin::Pin};
 
+use oer_esp32s31_hal::bluetooth::BluetoothControllerReset;
+use vcell::VolatileCell;
+
 use crate::{BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW};
 
 use oer_esp32s31_hal::types::{
@@ -103,11 +106,11 @@ const fn rx_address_delays_micros() -> [u8; 4] {
 /// advertising, scanning, or connection readiness.
 #[repr(C, align(4))]
 pub struct BlePhyEngineStorage {
-    environment: [u8; BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES],
+    environment: [VolatileCell<u8>; BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES],
     channel_frequency_offsets_mhz: [u8; CHANNEL_FREQUENCY_OFFSETS_BYTES],
     packet_start_offsets_micros: [u16; 4],
     rx_address_delays_micros: [u8; RX_ADDRESS_DELAYS_BYTES],
-    resolving_list: [u8; BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES],
+    resolving_list: [VolatileCell<u8>; BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES],
     _pin: PhantomPinned,
 }
 
@@ -346,17 +349,48 @@ impl BlePhyEngineCpuOwned {
             rx_address_delay_micros: storage.rx_address_delays_micros[LE_1M_PHY_MODE_INDEX],
         }
     }
+
+    /// The environment and resolving-list bytes, for host models.
+    #[cfg(test)]
+    fn image(&self) -> std::vec::Vec<u8> {
+        let storage = self.storage.as_ref().get_ref();
+        storage
+            .environment
+            .iter()
+            .chain(&storage.resolving_list)
+            .map(VolatileCell::get)
+            .collect()
+    }
+
+    /// Model hardware writing the environment during an epoch.
+    #[cfg(test)]
+    fn emulate_hardware_writes(&self) {
+        let storage = self.storage.as_ref().get_ref();
+        for cell in storage.environment.iter().chain(&storage.resolving_list) {
+            cell.set(0xa5);
+        }
+    }
+
+    /// Return the environment and resolving list to their allocation-time
+    /// image after the Controller that used them was reset.
+    pub fn reset_after_controller_reset(&mut self, _reset: &BluetoothControllerReset) {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .initialize_reviewed_allocation(&self.binding);
+    }
 }
 
 impl BlePhyEngineStorage {
     /// Reserve storage for the BLE PHY engine and its reviewed immutable data.
     pub const fn new() -> Self {
         Self {
-            environment: [0; BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES],
+            environment: [const { VolatileCell::new(0) }; BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES],
             channel_frequency_offsets_mhz: channel_frequency_offsets_mhz(),
             packet_start_offsets_micros: packet_start_offsets_micros(),
             rx_address_delays_micros: rx_address_delays_micros(),
-            resolving_list: [0; BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES],
+            resolving_list: [const { VolatileCell::new(0) };
+                BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES],
             _pin: PhantomPinned,
         }
     }
@@ -473,26 +507,37 @@ impl BlePhyEngineStorage {
         })
     }
 
-    fn initialize_reviewed_allocation(&mut self, binding: &BlePhyEngineBinding) {
-        let publish_pointer = |environment: &mut [u8], offset: usize, address: u32| {
-            environment[offset..offset + 4].copy_from_slice(&address.to_le_bytes());
+    /// Write the allocation-time image: a zeroed environment and resolving
+    /// list with the reviewed table pointers and resolving-list head.
+    fn initialize_reviewed_allocation(&self, binding: &BlePhyEngineBinding) {
+        let write = |cells: &[VolatileCell<u8>], offset: usize, bytes: [u8; 4]| {
+            for (cell, byte) in cells[offset..offset + 4].iter().zip(bytes) {
+                cell.set(byte);
+            }
         };
-        publish_pointer(
-            &mut self.environment,
+        for cell in self.environment.iter().chain(&self.resolving_list) {
+            cell.set(0);
+        }
+        write(
+            &self.environment,
             CHANNEL_FREQUENCY_OFFSETS_POINTER_OFFSET,
-            binding.channel_frequency_offsets.address(),
+            binding.channel_frequency_offsets.address().to_le_bytes(),
         );
-        publish_pointer(
-            &mut self.environment,
+        write(
+            &self.environment,
             PACKET_START_OFFSETS_POINTER_OFFSET,
-            binding.packet_start_offsets.address(),
+            binding.packet_start_offsets.address().to_le_bytes(),
         );
-        publish_pointer(
-            &mut self.environment,
+        write(
+            &self.environment,
             RX_ADDRESS_DELAYS_POINTER_OFFSET,
-            binding.rx_address_delays.address(),
+            binding.rx_address_delays.address().to_le_bytes(),
         );
-        self.resolving_list[..4].copy_from_slice(&RESOLVING_LIST_INITIAL_HEAD_IMAGE.to_le_bytes());
+        write(
+            &self.resolving_list,
+            0,
+            RESOLVING_LIST_INITIAL_HEAD_IMAGE.to_le_bytes(),
+        );
     }
 }
 

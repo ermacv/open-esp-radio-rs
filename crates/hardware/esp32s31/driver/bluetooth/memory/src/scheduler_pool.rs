@@ -19,6 +19,7 @@
 
 use core::{marker::PhantomPinned, pin::Pin};
 
+use oer_esp32s31_hal::bluetooth::BluetoothControllerReset;
 use oer_esp32s31_hal::types::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
 };
@@ -401,6 +402,16 @@ impl<S: SchedulerRoleStorage, const N: usize> SchedulerRolePool<S, N> {
             pool.reinitialize(instance);
         }
         Ok(pool)
+    }
+
+    /// Free every instance and return its graph to the allocation-time image
+    /// after the Controller that followed it was reset, including instances
+    /// whose items were withheld.
+    pub fn reset_after_controller_reset(&mut self, _reset: &BluetoothControllerReset) {
+        for instance in 0..N {
+            self.reinitialize(instance);
+            self.states[instance] = InstanceState::Free;
+        }
     }
 
     /// Acquire a free instance.

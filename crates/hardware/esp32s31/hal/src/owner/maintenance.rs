@@ -29,25 +29,24 @@ pub trait InterruptAuthority: sealed::InterruptAuthority {}
 
 /// Checked physical admission to shared-PHY maintenance for one protocol.
 ///
-/// Each protocol mints its access only after its own hardware quiescence
-/// check: Wi-Fi through [`RadioRuntimeOwner::try_into_phy_maintenance`], and
-/// Bluetooth through
-/// [`InterruptOutputAfterRoutesOwner::try_phy_maintenance`](crate::bluetooth::InterruptOutputAfterRoutesOwner::try_phy_maintenance).
-/// The access lends the shared PHY only under its own route, so a PHY
-/// operation can require the matching protocol. It is not a coexistence
+/// Wi-Fi mints its access only after its own hardware quiescence check,
+/// through [`RadioRuntimeOwner::try_into_phy_maintenance`]. The access lends
+/// the shared PHY only under its own route, so a PHY operation can require
+/// the matching protocol. Concurrent clients maintain the PHY through the
+/// shared radio arbiter instead. It is not a coexistence
 /// grant: no other protocol may use RF while it is held.
 ///
 /// ```compile_fail
 /// use oer_esp32s31_hal::owner::{SharedPhyHal, maintenance::PhyMaintenanceAccess, route};
 /// struct Forged;
 /// impl PhyMaintenanceAccess for Forged {
-///     type Route = route::Bluetooth;
-///     fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
+///     type Route = route::Wifi;
+///     fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Wifi> {
 ///         unimplemented!()
 ///     }
 ///     fn phy_hal_with_grant(
 ///         &mut self,
-///     ) -> (SharedPhyHal<'_, route::Bluetooth>, oer_esp32s31_hal::coex::PhyGrantProtect<'_>) {
+///     ) -> (SharedPhyHal<'_, route::Wifi>, oer_esp32s31_hal::coex::PhyGrantProtect<'_>) {
 ///         unimplemented!()
 ///     }
 /// }
@@ -86,19 +85,6 @@ impl<I: InterruptAuthority> PhyMaintenanceAccess for WifiAccess<I> {
     }
 }
 
-impl sealed::PhyMaintenanceAccess for crate::bluetooth::BluetoothMaintenanceAccess<'_> {}
-
-impl PhyMaintenanceAccess for crate::bluetooth::BluetoothMaintenanceAccess<'_> {
-    type Route = route::Bluetooth;
-
-    fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
-        crate::owner::SharedPhyBorrow::borrow_shared_phy(self.task)
-    }
-
-    fn phy_hal_with_grant(&mut self) -> (SharedPhyHal<'_, route::Bluetooth>, PhyGrantProtect<'_>) {
-        self.task.shared_phy_hal_with_grant()
-    }
-}
 impl InterruptAuthority for MacInterruptSetup {}
 impl InterruptAuthority for MacInterruptCheckpoint {}
 

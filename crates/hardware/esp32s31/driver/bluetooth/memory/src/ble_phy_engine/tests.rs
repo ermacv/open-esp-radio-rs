@@ -34,3 +34,21 @@ fn le_1m_calibration_preserves_elapsed_controller_time() {
     );
     assert_eq!(second.wrapping_sub(first), 1);
 }
+
+#[test]
+fn a_controller_reset_restores_the_allocation_image() {
+    let storage = std::boxed::Box::leak(std::boxed::Box::new(BlePhyEngineStorage::new()));
+    let base = BlePhyEngineModelAddress::new(0x2f00_0100)
+        .expect("model base uses the controller-SRAM encoding");
+    let mut owner = BlePhyEngineStorage::pin_static_model(storage, base)
+        .expect("complete model storage fits physical SRAM");
+    let initial = owner.image();
+    owner.emulate_hardware_writes();
+    assert_ne!(owner.image(), initial);
+
+    owner.reset_after_controller_reset(
+        &oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation(),
+    );
+
+    assert_eq!(owner.image(), initial);
+}

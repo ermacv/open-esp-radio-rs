@@ -2,6 +2,7 @@ use super::*;
 struct Model {
     pending: bool,
     separated: bool,
+    btbb: bool,
     reset_ok: bool,
     compare_enabled: bool,
     counter_running: bool,
@@ -13,6 +14,9 @@ impl Control for Model {
     }
     fn timer_separated(&self) -> bool {
         self.separated
+    }
+    fn btbb_held(&self) -> bool {
+        self.btbb
     }
     fn disable_compare(&mut self) {
         self.compare_enabled = false;
@@ -32,22 +36,26 @@ impl Control for Model {
     }
 }
 #[test]
-fn outstanding_time_and_missing_timer_partition_prevent_shutdown_mutation() {
-    for (pending, separated, error) in [
+fn outstanding_time_timer_or_baseband_prevent_shutdown_mutation() {
+    for (pending, separated, btbb, error) in [
         (
             true,
             true,
-            BluetoothPhysicalReleaseError::ControllerTimePending,
+            false,
+            BluetoothShutdownError::ControllerTimePending,
         ),
         (
             false,
             false,
-            BluetoothPhysicalReleaseError::TimerOwnerPresent,
+            false,
+            BluetoothShutdownError::TimerOwnerPresent,
         ),
+        (false, true, true, BluetoothShutdownError::BtbbHeld),
     ] {
         let mut model = Model {
             pending,
             separated,
+            btbb,
             reset_ok: true,
             compare_enabled: true,
             counter_running: true,
@@ -64,6 +72,7 @@ fn reset_readback_is_required_before_returning_hardware_ownership() {
         let mut model = Model {
             pending: false,
             separated: true,
+            btbb: false,
             reset_ok,
             compare_enabled: true,
             counter_running: true,
@@ -74,7 +83,7 @@ fn reset_readback_is_required_before_returning_hardware_ownership() {
             if reset_ok {
                 Ok(())
             } else {
-                Err(BluetoothPhysicalReleaseError::ControllerReset)
+                Err(BluetoothShutdownError::ControllerReset)
             }
         );
         assert!(!model.compare_enabled);

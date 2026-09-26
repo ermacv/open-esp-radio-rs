@@ -64,8 +64,10 @@ fn ieee802154_facade_preserves_channel_type_identity() {
 
 #[cfg(feature = "esp32s31-bluetooth")]
 #[test]
-fn bluetooth_backend_preserves_stopped_resource_ownership() {
+fn bluetooth_backend_preserves_controller_event_cell_identity() {
     let _: fn(
-        chip_bluetooth::resources::BluetoothStopped<()>,
-    ) -> oer::chips::esp32s31::driver::bluetooth::resources::BluetoothStopped<()> = |owner| owner;
+        chip_bluetooth::runtime_resources::ControllerEventCells,
+    )
+        -> oer::chips::esp32s31::driver::bluetooth::runtime_resources::ControllerEventCells =
+        |cells| cells;
 }

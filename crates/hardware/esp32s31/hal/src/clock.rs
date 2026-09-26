@@ -8,11 +8,7 @@
 //! reconstructed.
 
 use oer_esp32s31_pac::{
-    BLUETOOTH_APB_CLOCKS, BLUETOOTH_CLOCK_COUNT, BLUETOOTH_CONTROLLER_CLOCKS,
-    BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER, BluetoothClockBaseline,
-    BluetoothLowPowerTimerConfiguration, ModemLowPowerClockDivider, ModemLowPowerClockSource,
-    ModemSysconBluetoothClock, PlatformPllSourceBaseline, RadioPhyRegisters, SharedModemClockGate,
-    WifiPowerBaseline, WifiPowerRestoreReadback,
+    RadioPhyRegisters, SharedModemClockGate, WifiPowerBaseline, WifiPowerRestoreReadback,
 };
 
 use crate::root::WifiPowerRestoreCheckpoint;
@@ -21,29 +17,11 @@ use crate::root::WifiPowerRestoreCheckpoint;
 pub(crate) trait ClockPort {
     fn gate_enabled(&self, gate: SharedModemClockGate) -> bool;
     fn set_gate(&mut self, gate: SharedModemClockGate, enabled: bool);
-    fn low_power_timer_configuration(&self) -> BluetoothLowPowerTimerConfiguration;
-    fn configure_low_power_timer(
-        &mut self,
-        source: ModemLowPowerClockSource,
-        divider: ModemLowPowerClockDivider,
-    );
-    fn restore_low_power_timer(&mut self, configuration: BluetoothLowPowerTimerConfiguration);
-    fn pll_source_baseline(&self) -> PlatformPllSourceBaseline;
-    fn configure_modem_source_clocks(&mut self);
-    fn restore_pll_source(&mut self, baseline: PlatformPllSourceBaseline);
     fn capture_power_baseline(&self) -> WifiPowerBaseline;
     fn restore_power_baseline(
         &mut self,
         baseline: WifiPowerBaseline,
     ) -> Result<(), WifiPowerRestoreReadback>;
-    fn prepare_syscon_clock_map(&mut self);
-    fn bluetooth_clock_baselines(&self) -> [BluetoothClockBaseline; BLUETOOTH_CLOCK_COUNT];
-    fn enable_bluetooth_clock(&mut self, clock: ModemSysconBluetoothClock);
-    fn restore_bluetooth_clock(
-        &mut self,
-        clock: ModemSysconBluetoothClock,
-        baseline: BluetoothClockBaseline,
-    );
     /// Run the common modem/PHY power sequence, retaining the PHY-I2C gate
     /// in `leases` at its exact late edge.
     fn run_common_power_sequence(
@@ -59,28 +37,6 @@ impl ClockPort for RadioPhyRegisters {
     fn set_gate(&mut self, gate: SharedModemClockGate, enabled: bool) {
         self.set_shared_modem_clock_gate(gate, enabled);
     }
-    fn low_power_timer_configuration(&self) -> BluetoothLowPowerTimerConfiguration {
-        self.bluetooth_low_power_timer_configuration()
-    }
-    fn configure_low_power_timer(
-        &mut self,
-        source: ModemLowPowerClockSource,
-        divider: ModemLowPowerClockDivider,
-    ) {
-        self.configure_bluetooth_low_power_timer(source, divider);
-    }
-    fn restore_low_power_timer(&mut self, configuration: BluetoothLowPowerTimerConfiguration) {
-        self.restore_bluetooth_low_power_timer_configuration(configuration);
-    }
-    fn pll_source_baseline(&self) -> PlatformPllSourceBaseline {
-        self.platform_pll_source_baseline()
-    }
-    fn configure_modem_source_clocks(&mut self) {
-        RadioPhyRegisters::configure_modem_source_clocks(self);
-    }
-    fn restore_pll_source(&mut self, baseline: PlatformPllSourceBaseline) {
-        self.restore_platform_pll_source_baseline(baseline);
-    }
     fn capture_power_baseline(&self) -> WifiPowerBaseline {
         self.capture_wifi_power_baseline()
     }
@@ -89,22 +45,6 @@ impl ClockPort for RadioPhyRegisters {
         baseline: WifiPowerBaseline,
     ) -> Result<(), WifiPowerRestoreReadback> {
         self.restore_wifi_power_baseline(baseline)
-    }
-    fn prepare_syscon_clock_map(&mut self) {
-        self.prepare_modem_syscon_clock_map();
-    }
-    fn bluetooth_clock_baselines(&self) -> [BluetoothClockBaseline; BLUETOOTH_CLOCK_COUNT] {
-        RadioPhyRegisters::bluetooth_clock_baselines(self)
-    }
-    fn enable_bluetooth_clock(&mut self, clock: ModemSysconBluetoothClock) {
-        RadioPhyRegisters::enable_bluetooth_clock(self, clock);
-    }
-    fn restore_bluetooth_clock(
-        &mut self,
-        clock: ModemSysconBluetoothClock,
-        baseline: BluetoothClockBaseline,
-    ) {
-        RadioPhyRegisters::restore_bluetooth_clock(self, clock, baseline);
     }
     fn run_common_power_sequence(
         &mut self,
@@ -354,7 +294,7 @@ impl CommonRadioPower {
         if self.clients == client.bit() {
             self.leases.release_all(port);
             self.power
-                .restore(port, false)
+                .restore(port)
                 .map_err(CommonRadioPowerError::Restore)?;
         }
         self.clients &= !client.bit();
@@ -386,14 +326,10 @@ impl PowerEpoch {
     pub(crate) fn restore(
         &mut self,
         port: &mut impl ClockPort,
-        pll_retained: bool,
     ) -> Result<(), WifiPowerRestoreCheckpoint> {
         let Some(baseline) = self.baseline else {
             return Ok(());
         };
-        if pll_retained {
-            return Err(WifiPowerRestoreCheckpoint::PlatformPllLease);
-        }
         port.restore_power_baseline(baseline)
             .map_err(|readback| match readback {
                 WifiPowerRestoreReadback::ModemSyscon => WifiPowerRestoreCheckpoint::ModemSyscon,
@@ -406,225 +342,6 @@ impl PowerEpoch {
             })?;
         self.baseline = None;
         Ok(())
-    }
-}
-
-/// Bluetooth low-power timer configuration and gate retained by one route.
-struct LowPowerTimerLease {
-    configuration: BluetoothLowPowerTimerConfiguration,
-    gate: GateLease,
-}
-
-/// Logical MODEM_SYSCON clock groups retained by the Bluetooth route.
-///
-/// The controller and APB sets overlap. A group is enabled on its first
-/// retain and restored to its sampled baseline on its last release.
-#[derive(Default)]
-pub(crate) struct BluetoothSysconClocks {
-    counts: [u8; BLUETOOTH_CLOCK_COUNT],
-    baselines: [Option<BluetoothClockBaseline>; BLUETOOTH_CLOCK_COUNT],
-}
-
-impl BluetoothSysconClocks {
-    fn retain_set(&mut self, port: &mut impl ClockPort, clocks: &[ModemSysconBluetoothClock]) {
-        port.prepare_syscon_clock_map();
-        let samples = clocks
-            .iter()
-            .any(|clock| self.counts[clock.index()] == 0)
-            .then(|| port.bluetooth_clock_baselines());
-        for &clock in clocks {
-            let index = clock.index();
-            if self.counts[index] == 0 {
-                let baseline =
-                    samples.expect("first group retain sampled the clock registers")[index];
-                self.baselines[index] = Some(baseline);
-                self.counts[index] = 1;
-                if !baseline.all_enabled(clock) {
-                    port.enable_bluetooth_clock(clock);
-                }
-            } else {
-                self.counts[index] = self.counts[index]
-                    .checked_add(1)
-                    .expect("Bluetooth route MODEM_SYSCON reference count cannot overflow");
-            }
-        }
-    }
-
-    fn release_set(&mut self, port: &mut impl ClockPort, clocks: &[ModemSysconBluetoothClock]) {
-        for &clock in clocks {
-            let index = clock.index();
-            assert!(
-                self.counts[index] != 0,
-                "unbalanced Bluetooth MODEM_SYSCON release"
-            );
-            self.counts[index] -= 1;
-            if self.counts[index] == 0 {
-                let baseline = self.baselines[index]
-                    .take()
-                    .expect("a retained group keeps its first-retain baseline");
-                if !baseline.all_enabled(clock) {
-                    port.restore_bluetooth_clock(clock, baseline);
-                }
-            }
-        }
-    }
-}
-
-/// Every clock lease and baseline retained by the Bluetooth route.
-#[derive(Default)]
-pub(crate) struct BluetoothClocks {
-    shared: SharedClockLeases,
-    power: PowerEpoch,
-    low_power_timer: Option<LowPowerTimerLease>,
-    platform_pll: Option<PlatformPllSourceBaseline>,
-    syscon: BluetoothSysconClocks,
-    syscon_controller_retained: bool,
-    syscon_apb_retained: bool,
-    /// The common PHY power sequence was inherited from another route.
-    common_inherited: bool,
-}
-
-impl BluetoothClocks {
-    /// Keep the common PHY power for another route and release every lease
-    /// Bluetooth retained for itself.
-    ///
-    /// The platform PLL-source lease configures the same modem source clocks
-    /// as the common power sequence and was taken after the cold-power
-    /// baseline was captured. It is therefore superseded rather than restored:
-    /// the final cold-power restoration returns those fields.
-    pub(crate) fn into_common(
-        mut self,
-        port: &mut impl ClockPort,
-    ) -> Result<CommonPhyPower, (Self, CommonPhyPowerError)> {
-        if !self.shared.powered(&self.power) {
-            return Err((self, CommonPhyPowerError::NotPowered));
-        }
-        self.release_low_power_timer(port);
-        self.release_syscon_apb_clocks(port);
-        self.release_syscon_controller_clocks(port);
-        self.platform_pll = None;
-        let Self { shared, power, .. } = self;
-        Ok(shared.into_powered_common(port, power))
-    }
-
-    /// Enter the Bluetooth route with the common PHY power already in effect.
-    pub(crate) fn from_common(common: CommonPhyPower) -> Self {
-        let (shared, power) = SharedClockLeases::from_common(common);
-        Self {
-            shared,
-            power,
-            common_inherited: true,
-            ..Self::default()
-        }
-    }
-
-    /// Whether the common PHY power sequence was inherited from another route.
-    pub(crate) const fn common_inherited(&self) -> bool {
-        self.common_inherited
-    }
-
-    pub(crate) fn shared_mut(&mut self) -> &mut SharedClockLeases {
-        &mut self.shared
-    }
-
-    pub(crate) fn prepare_power_epoch(&mut self, port: &impl ClockPort) {
-        self.power.prepare(port);
-    }
-    pub(crate) fn retain_coexistence(&mut self, port: &mut impl ClockPort) {
-        self.shared.retain_coexistence(port);
-    }
-
-    pub(crate) fn release_coexistence(&mut self, port: &mut impl ClockPort) {
-        self.shared.release_coexistence(port);
-    }
-
-    /// Select the main crystal for the Bluetooth low-power timer and retain
-    /// its gate, restoring the captured configuration on release.
-    pub(crate) fn retain_main_xtal_low_power_timer(&mut self, port: &mut impl ClockPort) {
-        if self.low_power_timer.is_none() {
-            let configuration = port.low_power_timer_configuration();
-            port.configure_low_power_timer(
-                ModemLowPowerClockSource::Crystal,
-                BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER,
-            );
-            let gate = GateLease::retain(port, SharedModemClockGate::LowPowerTimer);
-            self.low_power_timer = Some(LowPowerTimerLease {
-                configuration,
-                gate,
-            });
-        }
-    }
-
-    pub(crate) fn release_low_power_timer(&mut self, port: &mut impl ClockPort) {
-        if let Some(LowPowerTimerLease {
-            configuration,
-            gate,
-        }) = self.low_power_timer.take()
-        {
-            port.restore_low_power_timer(configuration);
-            gate.release(port);
-        }
-    }
-
-    pub(crate) fn retain_platform_pll_source(&mut self, port: &mut impl ClockPort) {
-        if self.platform_pll.is_none() {
-            let baseline = port.pll_source_baseline();
-            port.configure_modem_source_clocks();
-            self.platform_pll = Some(baseline);
-        }
-    }
-
-    pub(crate) fn release_platform_pll_source(&mut self, port: &mut impl ClockPort) {
-        if let Some(baseline) = self.platform_pll.take() {
-            port.restore_pll_source(baseline);
-        }
-    }
-
-    pub(crate) fn retain_syscon_controller_clocks(&mut self, port: &mut impl ClockPort) {
-        if !self.syscon_controller_retained {
-            self.syscon.retain_set(port, &BLUETOOTH_CONTROLLER_CLOCKS);
-            self.syscon_controller_retained = true;
-        }
-    }
-
-    pub(crate) fn retain_syscon_apb_clocks(&mut self, port: &mut impl ClockPort) {
-        if !self.syscon_apb_retained {
-            self.syscon.retain_set(port, &BLUETOOTH_APB_CLOCKS);
-            self.syscon_apb_retained = true;
-        }
-    }
-
-    pub(crate) fn release_syscon_apb_clocks(&mut self, port: &mut impl ClockPort) {
-        if self.syscon_apb_retained {
-            self.syscon.release_set(port, &BLUETOOTH_APB_CLOCKS);
-            self.syscon_apb_retained = false;
-        }
-    }
-
-    pub(crate) fn release_syscon_controller_clocks(&mut self, port: &mut impl ClockPort) {
-        if self.syscon_controller_retained {
-            self.syscon.release_set(port, &BLUETOOTH_CONTROLLER_CLOCKS);
-            self.syscon_controller_retained = false;
-        }
-    }
-
-    /// Release every lease in the reviewed Bluetooth teardown order.
-    pub(crate) fn release_all(&mut self, port: &mut impl ClockPort) {
-        self.shared.release_phy_i2c(port);
-        self.release_low_power_timer(port);
-        self.shared.release_coexistence(port);
-        self.release_syscon_apb_clocks(port);
-        self.release_syscon_controller_clocks(port);
-        self.release_platform_pll_source(port);
-    }
-
-    /// Restore the cold-power baseline after [`Self::release_all`].
-    pub(crate) fn restore_power_epoch(
-        &mut self,
-        port: &mut impl ClockPort,
-    ) -> Result<(), WifiPowerRestoreCheckpoint> {
-        let pll_retained = self.platform_pll.is_some();
-        self.power.restore(port, pll_retained)
     }
 }
 

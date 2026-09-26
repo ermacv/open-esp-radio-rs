@@ -6,12 +6,11 @@
 //! the modem low-power timer, and the hardware scheduler with its timeline,
 //! finished lists and single-item primitives. It knows no Link Layer role.
 //!
-//! No LE Controller currently composes these primitives. The shared
-//! single-item completion and timed preparation engines implement the common
-//! hardware protocol; RX/recycle and packet policy belong to the caller.
-//! The public lifecycle begins with one [`resources::BluetoothStopped`] aggregate retaining
-//! the platform lease and neutral radio root. Initialization and scheduler RUN
-//! are not RF evidence.
+//! The shared single-item completion and timed preparation engines
+//! implement the common hardware protocol; RX/recycle and packet policy
+//! belong to the caller. An epoch begins from the HAL's clocked Bluetooth
+//! client of the shared radio and ends in [`shutdown`], which returns it.
+//! Initialization and scheduler RUN are not RF evidence.
 //!
 //! See the chip `FEATURES.md` for implemented scopes, unsupported operations
 //! and the distinction between source coverage and hardware qualification.
@@ -29,12 +28,7 @@
 #[cfg(test)]
 extern crate std;
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-pub mod baseband;
 pub mod ble_phy;
-pub mod clock;
-#[cfg(target_arch = "riscv32")]
-pub mod common_phy_state;
 /// Controller HAL component initialization after clock setup.
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod controller_hal;
@@ -55,6 +49,9 @@ pub mod phy;
 pub mod resources;
 pub mod runtime_resources;
 pub mod scheduler;
+/// Retirement and reset of a stopped Controller epoch.
+#[cfg(target_arch = "riscv32")]
+pub mod shutdown;
 /// Controller-time preparation shared by timed scheduler admissions.
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod timed_preparation;

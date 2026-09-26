@@ -160,6 +160,34 @@ fn a_withheld_item_keeps_its_instance_forever() {
 }
 
 #[test]
+fn a_controller_reset_frees_even_withheld_instances() {
+    let mut pool = pool();
+    let withheld = pool.acquire().unwrap();
+    prepare(&mut pool, &withheld);
+    let id = pool.submit(&withheld, 0).unwrap();
+    pool.withhold(id).unwrap();
+    let listed = pool.acquire().unwrap();
+    prepare(&mut pool, &listed);
+    let listed_id = pool.submit(&listed, 1).unwrap();
+
+    pool.reset_after_controller_reset(
+        &oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation(),
+    );
+
+    assert!(!pool.is_listed(id));
+    assert!(!pool.is_listed(listed_id));
+    let first = pool
+        .acquire()
+        .expect("the reset freed the withheld instance");
+    let second = pool.acquire().expect("the reset freed the listed instance");
+    assert_ne!(first.index(), second.index());
+    assert!(
+        pool.submit(&first, 0).is_err(),
+        "no event survives the reset"
+    );
+}
+
+#[test]
 fn the_space_edits_only_scheduler_fields_of_listed_items() {
     let mut pool = pool();
     let instance = pool.acquire().unwrap();

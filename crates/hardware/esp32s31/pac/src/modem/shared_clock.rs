@@ -235,6 +235,22 @@ impl RadioPhyRegisters {
         );
     }
 
+    /// Deselect every Bluetooth low-power timer source, keeping the divider.
+    ///
+    /// This is `modem_clock_hal_deselect_all_ble_rtc_timer_lpclk_source`: the
+    /// four source selectors are cleared and the divider field is untouched.
+    #[doc(hidden)]
+    pub fn deselect_bluetooth_low_power_timer_sources(&mut self) {
+        let configuration = self.bluetooth_low_power_timer_configuration();
+        self.restore_bluetooth_low_power_timer_configuration(BluetoothLowPowerTimerConfiguration {
+            slow_oscillator_selected: false,
+            fast_oscillator_selected: false,
+            crystal_selected: false,
+            crystal_32khz_selected: false,
+            divider_minus_one: configuration.divider_minus_one,
+        });
+    }
+
     #[doc(hidden)]
     pub fn bluetooth_low_power_clock_observation(&self) -> BluetoothLowPowerClockObservation {
         let registers = &self.peripherals.modem_lpcon_shared_clock;

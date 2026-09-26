@@ -679,3 +679,34 @@ fn resuming_cancels_passed_events_and_restarts_the_rest() {
         panic!("the listed event restarts")
     };
 }
+
+#[test]
+fn a_reset_controller_returns_pools_free_for_the_next_epoch() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    configure_legacy(&mut radio, &mut sink);
+    radio
+        .request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink)
+        .unwrap();
+    let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
+        panic!("an idle scheduler starts at once")
+    };
+    // The epoch ends with the event still listed in hardware.
+    let memory =
+        radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
+
+    let mut next = Radio::new(
+        memory,
+        SchedulerSoftwareConfig::reviewed_standalone(),
+        BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
+        &ControllerTimeSample::for_validation(0),
+        500,
+    );
+    configure_legacy(&mut next, &mut sink);
+    next.request(advertise(2, 10_000, AdvertisingChannels::ALL), &mut sink)
+        .unwrap();
+    let RadioStep::Start(_) = next.drive(view(false), &mut sink) else {
+        panic!("the next epoch starts from free pools")
+    };
+    assert_eq!(next.executor.list().len(), 3);
+}

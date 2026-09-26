@@ -1,22 +1,35 @@
-//! Narrow borrowed HAL capability for ESP32-S31 Bluetooth controller MMIO.
+//! ESP32-S31 Bluetooth controller partition as a client of the shared radio.
 //!
-//! The Bluetooth lifecycle retains the unique PAC task owner. Lower layers
-//! receive only this finite borrow and named operations; they cannot recover,
-//! move or duplicate the underlying register partition.
+//! The chain starts from the [`BluetoothPartition`] of a concurrent split and
+//! holds only the controller, its modem low-power timer and its interrupt
+//! bank. Common radio power, the module clocks, the controller domain resets
+//! and the low-power timer clock live in the shared radio registers, so each
+//! of those transitions borrows the arbiter's [`SharedRadioLease`] for its
+//! duration and never retains it.
+//!
+//! [`ColdOwner`] enters common power as [`PoweredOwner`], which enables the
+//! Bluetooth module clocks as [`ClockedOwner`]. That owner separates into the
+//! task-side [`TaskOwner`] and the inactive [`InterruptSetupOwner`]; the
+//! lifecycle returns to it by pristine reunion or by the verified Controller
+//! shutdown. Lower layers receive only finite borrows and named operations;
+//! they cannot recover, move or duplicate the underlying register partition.
 
 #![deny(unsafe_code)]
+
+use core::fmt;
 
 use oer_esp32s31_pac::{
     BluetoothDirectionFindingDisabledBaselinePrepared, BluetoothInterruptRegisters,
     BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
+    BluetoothTaskRegisters,
 };
 
-use crate::route_registers::BluetoothRegisters;
-
 use crate::{
-    clock::BluetoothClocks,
-    phy::restore::PhyRouteState,
-    root::{BluetoothRoute, RadioHardware, RadioPhyReleaseError, RetainedWifi},
+    root::BluetoothPartition,
+    shared_radio::{
+        BtbbAcquired, BtbbError, ClientQuiescence, CommonRadioPowerError, EmptyQuiescentWindow,
+        LowPowerClockError, ModemClockError, PlatformClockProvider, SharedRadioLease,
+    },
 };
 
 mod controller_time;
@@ -31,7 +44,7 @@ pub use controller_time::{
     BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
 };
 pub use scheduler_stop::{BluetoothSchedulerStop, BluetoothSchedulerStopStep};
-pub use shutdown::{BluetoothPhysicalReleaseError, BluetoothPhysicalReleaseFailure};
+pub use shutdown::{BluetoothControllerReset, BluetoothShutdownError, BluetoothShutdownFailure};
 
 pub use oer_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
@@ -71,266 +84,244 @@ pub use oer_esp32s31_pac::{
     ModemSysconBluetoothObservation, PlatformClockPowerObservation, SharedModemClockObservation,
 };
 
-/// Opaque HAL owner for the exclusive Bluetooth route before task/IRQ split.
-///
-/// The wrapped restricted PAC capability never crosses this boundary. The
-/// state performs no MMIO and can therefore be returned losslessly to the
-/// protocol-neutral radio root.
-#[must_use = "the cold Bluetooth HAL owner retains the complete radio root"]
-pub struct ColdOwner {
-    task: BluetoothRegisters,
+/// The Bluetooth partition split into its task registers, modem low-power
+/// timer and inactive interrupt bank.
+struct Partition {
+    task: BluetoothTaskRegisters,
     modem_lp_timer: BluetoothModemLpTimerRegisters,
     interrupts: PacBluetoothInterruptSetup,
-    retained: RetainedWifi,
-    clocks: BluetoothClocks,
-    phy_state: PhyRouteState,
 }
 
-/// Failed cold Bluetooth release retaining the complete HAL owner.
-#[must_use = "failed Bluetooth release still owns the complete cold route"]
-pub struct ColdOwnerReleaseFailure {
-    owner: ColdOwner,
-    error: RadioPhyReleaseError,
-}
-
-impl ColdOwnerReleaseFailure {
-    pub const fn error(&self) -> RadioPhyReleaseError {
-        self.error
-    }
-
-    pub fn into_parts(self) -> (ColdOwner, RadioPhyReleaseError) {
-        (self.owner, self.error)
-    }
-}
-
-impl core::fmt::Debug for ColdOwnerReleaseFailure {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("ColdOwnerReleaseFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
+/// Unpowered Bluetooth client holding its partition.
+///
+/// Construction splits the partition without touching MMIO. It proves
+/// neither power nor clocks, common-PHY, BTBB, IRQ or Controller readiness.
+#[must_use = "the cold Bluetooth client retains its radio partition"]
+pub struct ColdOwner {
+    partition: Partition,
 }
 
 impl ColdOwner {
-    /// Capture the shared power baseline before Bluetooth retains any clocks.
-    #[doc(hidden)]
-    pub fn prepare_shared_power_epoch(&mut self) {
-        self.clocks.prepare_power_epoch(self.task.radio_phy());
-    }
-
-    /// Enter the exclusive Bluetooth route without touching hardware.
-    pub fn from_radio_hardware(hardware: RadioHardware) -> Self {
-        let BluetoothRoute {
-            task,
-            modem_lp_timer,
-            interrupts,
-            phy,
-            retained,
-        } = hardware.into_bluetooth();
+    /// Take the partition of a concurrent split. This performs no MMIO.
+    pub fn from_partition(partition: BluetoothPartition) -> Self {
+        let (controller, modem_lp_timer, interrupts) = partition.into_parts();
         Self {
-            task,
-            modem_lp_timer,
-            interrupts,
-            retained,
-            clocks: BluetoothClocks::default(),
-            phy_state: phy,
-        }
-    }
-
-    /// Enter the exclusive Bluetooth route from a retained root.
-    ///
-    /// The previous route's common PHY power, cold-power baseline and
-    /// registration epoch stay in effect. [`TaskOwner::prepare_common_phy_power`]
-    /// therefore does not repeat the power sequence on this route.
-    pub fn from_retained(hardware: crate::root::RetainedRadioHardware) -> Self {
-        let (
-            BluetoothRoute {
-                task,
+            partition: Partition {
+                task: BluetoothTaskRegisters::new(controller),
                 modem_lp_timer,
                 interrupts,
-                phy,
-                retained,
             },
-            common,
-        ) = hardware.into_bluetooth();
-        Self {
+        }
+    }
+
+    /// Return the partition. This performs no MMIO.
+    pub fn into_partition(self) -> BluetoothPartition {
+        let Partition {
             task,
             modem_lp_timer,
             interrupts,
-            retained,
-            clocks: BluetoothClocks::from_common(common),
-            phy_state: phy,
-        }
+        } = self.partition;
+        BluetoothPartition::from_parts(task.into_partition(), modem_lp_timer, interrupts)
     }
 
-    /// Hand the registered PHY to the retained root.
+    /// Enter common radio power as the Bluetooth client.
     ///
-    /// Bluetooth releases every lease it retained for itself but keeps the
-    /// common PHY power, the cold-power baseline and the registration epoch.
-    fn release_retained(
-        self,
-    ) -> Result<crate::root::RetainedRadioHardware, (Self, crate::root::RetainedRadioReleaseError)>
-    {
-        if let Err(error) = crate::root::check_phy_restore_complete(&self.phy_state) {
-            return Err((self, crate::root::RetainedRadioReleaseError::Restore(error)));
-        }
-        let Self {
-            mut task,
-            modem_lp_timer,
-            interrupts,
-            retained,
-            clocks,
-            phy_state,
-        } = self;
-        match clocks.into_common(task.radio_phy_mut()) {
-            Ok(common) => Ok(crate::root::RetainedRadioHardware::from_bluetooth(
-                task,
-                modem_lp_timer,
-                interrupts,
-                phy_state,
-                retained,
-                common,
-            )),
-            Err((clocks, error)) => Err((
-                Self {
-                    task,
-                    modem_lp_timer,
-                    interrupts,
-                    retained,
-                    clocks,
-                    phy_state,
-                },
-                crate::root::RetainedRadioReleaseError::CommonPhyPower(error),
-            )),
-        }
-    }
-
-    /// Return the unchanged protocol-neutral radio root.
-    ///
-    /// Release drops every retained clock lease, restores the cold-power
-    /// baseline captured by [`Self::prepare_shared_power_epoch`] and only then
-    /// reconstructs the neutral root.
+    /// Only the first client runs the modem/PHY power sequence.
     ///
     /// # Errors
     ///
-    /// Returns [`ColdOwnerReleaseFailure`] retaining this owner while
-    /// TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power control still awaits
-    /// restoration, or when a cold-power baseline fails readback.
-    pub fn release(mut self) -> Result<RadioHardware, ColdOwnerReleaseFailure> {
-        if let Err(error) = crate::root::check_phy_restore_complete(&self.phy_state) {
-            return Err(ColdOwnerReleaseFailure { owner: self, error });
+    /// The client already holds power or the first client's sequence failed a
+    /// read-back checkpoint; the unchanged owner is returned.
+    pub fn power_up<T>(
+        self,
+        lease: &mut SharedRadioLease<'_, T>,
+    ) -> Result<PoweredOwner, PowerTransitionFailure<Self>> {
+        match lease.enter_common_power(&self.partition.task) {
+            Ok(()) => Ok(PoweredOwner {
+                partition: self.partition,
+            }),
+            Err(error) => Err(PowerTransitionFailure { owner: self, error }),
         }
-        let phy = self.task.radio_phy_mut();
-        self.clocks.release_all(phy);
-        if let Err(checkpoint) = self.clocks.restore_power_epoch(phy) {
-            return Err(ColdOwnerReleaseFailure {
+    }
+}
+
+/// Bluetooth client inside common radio power.
+///
+/// It proves only membership in the common modem/PHY power; the module
+/// clocks, the controller resets and the low-power timer clock are the next
+/// stage.
+#[must_use = "the powered Bluetooth client must leave common power"]
+pub struct PoweredOwner {
+    partition: Partition,
+}
+
+impl PoweredOwner {
+    /// Leave common radio power; the last client restores the cold baseline.
+    ///
+    /// # Errors
+    ///
+    /// The baseline did not read back; the client stays entered and the
+    /// unchanged owner is returned for a retry.
+    pub fn power_down<T>(
+        self,
+        lease: &mut SharedRadioLease<'_, T>,
+    ) -> Result<ColdOwner, PowerTransitionFailure<Self>> {
+        match lease.exit_common_power(&self.partition.task) {
+            Ok(()) => Ok(ColdOwner {
+                partition: self.partition,
+            }),
+            Err(error) => Err(PowerTransitionFailure { owner: self, error }),
+        }
+    }
+
+    /// Enable the Bluetooth module clocks, reset the controller domains and
+    /// select the low-power timer clock.
+    ///
+    /// This is the reviewed S31 Controller clock prerequisite:
+    /// `modem_clock_module_enable(PERIPH_BT_MODULE)` through the shared
+    /// planner, `modem_clock_module_mac_reset(PERIPH_BT_MODULE)`, and the
+    /// main-crystal low-power timer clock at the S31 Bluetooth divider. The
+    /// resulting clock sets, resets and low-power clock must read back before
+    /// the owner advances.
+    ///
+    /// # Errors
+    ///
+    /// The planner or low-power clock selection rejected the request, or a
+    /// read-back failed; every step already taken is rolled back and the
+    /// owner is returned. After [`ModemClockError::Poisoned`] no further modem
+    /// clock change succeeds until reset.
+    pub fn enable_clocks<T>(
+        self,
+        lease: &mut SharedRadioLease<'_, T>,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<ClockedOwner, ClockTransitionFailure<Self>> {
+        let task = &self.partition.task;
+        if let Err(error) = lease.enable_modem_clocks(task, platform) {
+            return Err(ClockTransitionFailure {
                 owner: self,
-                error: RadioPhyReleaseError::WifiPowerRestore(checkpoint),
+                error: BluetoothClockError::ModemClocks(error),
             });
         }
-        Ok(RadioHardware::from_bluetooth(
-            self.task,
-            self.modem_lp_timer,
-            self.interrupts,
-            self.phy_state,
-            self.retained,
-        ))
+        let mut partition = self.partition;
+        partition
+            .task
+            .reset_controller_domains(lease.registers_mut());
+        let task = &partition.task;
+        if let Err(error) = lease.select_bluetooth_low_power_clock(task) {
+            let _ = lease.disable_modem_clocks(task, platform);
+            return Err(ClockTransitionFailure {
+                owner: Self { partition },
+                error: BluetoothClockError::LowPowerClock(error),
+            });
+        }
+        let shared = lease.registers_mut();
+        let clocks = task.controller_clock_observation(shared);
+        let (_, low_power) = task.bluetooth_shared_clock_observation(shared);
+        if let Some(checkpoint) = clock_checkpoint(clocks, low_power) {
+            let _ = lease.deselect_bluetooth_low_power_clock(task);
+            let _ = lease.disable_modem_clocks(task, platform);
+            return Err(ClockTransitionFailure {
+                owner: Self { partition },
+                error: BluetoothClockError::Readback(checkpoint),
+            });
+        }
+        Ok(ClockedOwner { partition })
     }
+}
 
-    #[doc(hidden)]
-    pub fn prepare_shared_modem_clock_map(&mut self) {
-        self.task.radio_phy_mut().prepare_shared_modem_clock_map();
+/// First Controller clock read-back that failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothClockCheckpoint {
+    /// The controller dependency clock set did not read back enabled.
+    ControllerClocks,
+    /// The APB dependency clock set did not read back enabled.
+    ApbClocks,
+    /// At least one controller domain reset remained asserted.
+    ControllerReset,
+    /// The low-power timer clock was not sourced from the main crystal.
+    LowPowerClockSource,
+    /// The low-power timer divider did not match the S31 Bluetooth profile.
+    LowPowerClockDivider,
+    /// The low-power timer clock gate did not read back enabled.
+    LowPowerTimerClock,
+}
+
+/// Why the Bluetooth clock stage cannot change.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothClockError {
+    /// The shared modem clock planner rejected or poisoned the request.
+    ModemClocks(ModemClockError),
+    /// The low-power timer clock selection was already in the other state.
+    LowPowerClock(LowPowerClockError),
+    /// A clock or reset did not read back.
+    Readback(BluetoothClockCheckpoint),
+}
+
+fn clock_checkpoint(
+    clocks: ModemSysconBluetoothObservation,
+    low_power: BluetoothLowPowerClockObservation,
+) -> Option<BluetoothClockCheckpoint> {
+    if !clocks.controller_clocks_enabled {
+        Some(BluetoothClockCheckpoint::ControllerClocks)
+    } else if !clocks.apb_clocks_enabled {
+        Some(BluetoothClockCheckpoint::ApbClocks)
+    } else if !clocks.controller_resets_released {
+        Some(BluetoothClockCheckpoint::ControllerReset)
+    } else if !low_power.exclusive_main_xtal_selected {
+        Some(BluetoothClockCheckpoint::LowPowerClockSource)
+    } else if !low_power.bluetooth_divider_configured {
+        Some(BluetoothClockCheckpoint::LowPowerClockDivider)
+    } else if !low_power.timer_enabled {
+        Some(BluetoothClockCheckpoint::LowPowerTimerClock)
+    } else {
+        None
     }
+}
 
-    #[doc(hidden)]
-    pub fn retain_coexistence_clock(&mut self) {
-        self.clocks.retain_coexistence(self.task.radio_phy_mut());
-    }
+/// Bluetooth client whose module clocks, released controller resets and
+/// low-power timer clock are in effect.
+///
+/// It separates into the task and interrupt owners that initialize and run
+/// the Controller, and is where the lifecycle returns before the clocks are
+/// released.
+#[must_use = "the clocked Bluetooth client must release its clocks"]
+pub struct ClockedOwner {
+    partition: Partition,
+}
 
-    #[doc(hidden)]
-    pub fn release_coexistence_clock(&mut self) {
-        self.clocks.release_coexistence(self.task.radio_phy_mut());
-    }
-
-    #[doc(hidden)]
-    pub fn retain_main_xtal_bluetooth_low_power_clock(&mut self) {
-        self.clocks
-            .retain_main_xtal_low_power_timer(self.task.radio_phy_mut());
-    }
-
-    #[doc(hidden)]
-    pub fn release_bluetooth_low_power_timer(&mut self) {
-        self.clocks
-            .release_low_power_timer(self.task.radio_phy_mut());
-    }
-
-    #[doc(hidden)]
-    pub fn bluetooth_shared_clock_observation(
-        &self,
-    ) -> (
-        SharedModemClockObservation,
-        BluetoothLowPowerClockObservation,
-    ) {
-        self.task.bluetooth_shared_clock_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn retain_platform_pll_source(&mut self) {
-        self.clocks
-            .retain_platform_pll_source(self.task.radio_phy_mut());
-    }
-
-    #[doc(hidden)]
-    pub fn release_platform_pll_source(&mut self) {
-        self.clocks
-            .release_platform_pll_source(self.task.radio_phy_mut());
-    }
-
-    #[doc(hidden)]
-    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.task.radio_phy().platform_clock_power_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn prepare_modem_syscon_clock_map(&mut self) {
-        self.task.radio_phy_mut().prepare_modem_syscon_clock_map();
-    }
-
-    #[doc(hidden)]
-    pub fn reset_modem_syscon_bluetooth_domains(&mut self) {
-        self.task
-            .radio_phy_mut()
-            .reset_bluetooth_controller_domains();
-    }
-
-    #[doc(hidden)]
-    pub fn modem_syscon_bluetooth_observation(&self) -> ModemSysconBluetoothObservation {
-        self.task.radio_phy().bluetooth_clock_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn retain_modem_syscon_controller_clocks(&mut self) {
-        self.clocks
-            .retain_syscon_controller_clocks(self.task.radio_phy_mut());
-    }
-
-    #[doc(hidden)]
-    pub fn retain_modem_syscon_apb_clocks(&mut self) {
-        self.clocks
-            .retain_syscon_apb_clocks(self.task.radio_phy_mut());
-    }
-
-    #[doc(hidden)]
-    pub fn release_modem_syscon_apb_clocks(&mut self) {
-        self.clocks
-            .release_syscon_apb_clocks(self.task.radio_phy_mut());
-    }
-
-    #[doc(hidden)]
-    pub fn release_modem_syscon_controller_clocks(&mut self) {
-        self.clocks
-            .release_syscon_controller_clocks(self.task.radio_phy_mut());
+impl ClockedOwner {
+    /// Deselect the low-power timer clock and disable the Bluetooth module
+    /// clocks; only dependencies no other module holds are disabled.
+    ///
+    /// # Errors
+    ///
+    /// The planner rejected or poisoned the release; the owner is returned
+    /// with the low-power clock already deselected, and a retry continues
+    /// with the module clocks.
+    pub fn disable_clocks<T>(
+        self,
+        lease: &mut SharedRadioLease<'_, T>,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<PoweredOwner, ClockTransitionFailure<Self>> {
+        let task = &self.partition.task;
+        // A retry after a planner failure finds the clock already deselected.
+        if lease.bluetooth_low_power_clock_selected()
+            && let Err(error) = lease.deselect_bluetooth_low_power_clock(task)
+        {
+            return Err(ClockTransitionFailure {
+                owner: self,
+                error: BluetoothClockError::LowPowerClock(error),
+            });
+        }
+        match lease.disable_modem_clocks(task, platform) {
+            Ok(()) => Ok(PoweredOwner {
+                partition: self.partition,
+            }),
+            Err(error) => Err(ClockTransitionFailure {
+                owner: self,
+                error: BluetoothClockError::ModemClocks(error),
+            }),
+        }
     }
 
     /// Split ordinary task ownership from the inactive controller IRQ bank.
@@ -338,104 +329,136 @@ impl ColdOwner {
     /// This conversion performs no MMIO and does not claim that the hardware
     /// interrupt route has been configured or enabled.
     pub fn separate_interrupt_owner(self) -> (TaskOwner, InterruptSetupOwner) {
+        let Partition {
+            task,
+            modem_lp_timer,
+            interrupts,
+        } = self.partition;
         (
             TaskOwner {
-                registers: self.task,
-                modem_lp_timer: Some(self.modem_lp_timer),
-                retained: self.retained,
-                clocks: self.clocks,
-                phy_state: self.phy_state,
+                registers: task,
+                modem_lp_timer: Some(modem_lp_timer),
                 time_latch: ControllerTimeLatch::new(),
-                grant_protected: false,
                 reunitable: true,
             },
             InterruptSetupOwner {
-                registers: self.interrupts,
+                registers: interrupts,
                 reunitable: true,
             },
         )
+    }
+}
+
+#[cfg(any(test, feature = "validation-probes"))]
+impl ClockedOwner {
+    /// Assume the clock stage for a validation or host-test image, without
+    /// any MMIO.
+    #[doc(hidden)]
+    pub fn for_validation(partition: BluetoothPartition) -> Self {
+        Self {
+            partition: ColdOwner::from_partition(partition).partition,
+        }
+    }
+
+    /// Leave the assumed clock stage without any MMIO.
+    #[doc(hidden)]
+    pub fn into_partition_for_validation(self) -> BluetoothPartition {
+        ColdOwner {
+            partition: self.partition,
+        }
+        .into_partition()
+    }
+}
+
+/// Failed common-power transition retaining the unchanged owner.
+#[must_use = "a failed Bluetooth power transition still owns the partition"]
+pub struct PowerTransitionFailure<Owner> {
+    owner: Owner,
+    error: CommonRadioPowerError,
+}
+
+impl<Owner> PowerTransitionFailure<Owner> {
+    pub const fn error(&self) -> CommonRadioPowerError {
+        self.error
+    }
+
+    /// Recover the owner for a retry.
+    pub fn into_owner(self) -> Owner {
+        self.owner
+    }
+}
+
+impl<Owner> fmt::Debug for PowerTransitionFailure<Owner> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PowerTransitionFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Failed clock-stage transition retaining the owner.
+#[must_use = "a failed Bluetooth clock transition still owns the partition"]
+pub struct ClockTransitionFailure<Owner> {
+    owner: Owner,
+    error: BluetoothClockError,
+}
+
+impl<Owner> ClockTransitionFailure<Owner> {
+    pub const fn error(&self) -> BluetoothClockError {
+        self.error
+    }
+
+    /// Recover the owner.
+    pub fn into_owner(self) -> Owner {
+        self.owner
+    }
+}
+
+impl<Owner> fmt::Debug for ClockTransitionFailure<Owner> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ClockTransitionFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
     }
 }
 
 /// Opaque HAL owner for ordinary Bluetooth task-side controller registers.
-#[must_use = "the Bluetooth task owner must be reunited during verified teardown"]
+///
+/// It exists only between [`ClockedOwner::separate_interrupt_owner`] and the
+/// return to [`ClockedOwner`], so it proves the Bluetooth module clocks.
+#[must_use = "the Bluetooth task owner must return to the clocked owner"]
 pub struct TaskOwner {
-    registers: BluetoothRegisters,
+    registers: BluetoothTaskRegisters,
     modem_lp_timer: Option<BluetoothModemLpTimerRegisters>,
-    retained: RetainedWifi,
-    clocks: BluetoothClocks,
-    phy_state: PhyRouteState,
     time_latch: ControllerTimeLatch,
-    /// Whether this exclusive route's PHY grant-protect request is programmed.
-    grant_protected: bool,
     reunitable: bool,
 }
 
 impl TaskOwner {
-    /// Complete the physical release after last-client RF close and temperature
-    /// power-down. The output token proves post-route scheduler quiescence; the
-    /// outer Controller retains the drained timer and every published memory
-    /// owner until reset and checked clock restoration return the neutral root.
+    /// Reset the stopped Controller, reunite the drained timer and return to
+    /// the clocked owner with the proof of the reset.
+    ///
+    /// The caller has released Controller output, drained the source-127
+    /// owner and left the shared PHY domain and BTBB baseband. The Controller
+    /// retains every published memory owner until this operation completes.
     #[doc(hidden)]
-    pub fn release_after_phy_close(
+    pub fn shut_down<T>(
         self,
+        lease: &mut SharedRadioLease<'_, T>,
         output: InterruptOutputReleasedOwner,
         timer: ModemLpTimerInterruptReadyOwner,
-    ) -> Result<RadioHardware, BluetoothPhysicalReleaseFailure> {
-        shutdown::release_after_phy_close(self, output.registers, timer.timer)
+    ) -> Result<(ClockedOwner, BluetoothControllerReset), BluetoothShutdownFailure> {
+        shutdown::shut_down(self, lease, output.registers, timer.timer)
     }
 
-    /// Complete the physical Controller release after last-client RF close and
-    /// temperature power-down, but hand the registered PHY to the retained
-    /// root instead of the cold root.
-    ///
-    /// The Controller reset is the same as in
-    /// [`Self::release_after_phy_close`]. Bluetooth's own clock leases are
-    /// released; the common PHY power stays in effect for the next route.
-    #[doc(hidden)]
-    pub fn release_retained_after_phy_close(
-        self,
-        output: InterruptOutputReleasedOwner,
-        timer: ModemLpTimerInterruptReadyOwner,
-    ) -> Result<crate::root::RetainedRadioHardware, BluetoothPhysicalReleaseFailure> {
-        shutdown::release_retained_after_phy_close(self, output.registers, timer.timer)
-    }
-    /// Whether this route entered from a retained root, so the common PHY
-    /// power and registration of the previous route are still in effect.
-    pub const fn common_phy_inherited(&self) -> bool {
-        self.clocks.common_inherited()
-    }
-
-    /// Establish the shared modem/PHY power, reset and calibration clocks.
-    ///
-    /// Call once before common PHY registration on the exclusive cold route.
-    /// The inactive Wi-Fi partition remains retained; no Wi-Fi MAC clock or
-    /// protocol role is started. Success and failure both retain the PHY I2C
-    /// lease and revoke cold reunion until physical teardown is implemented.
-    ///
-    /// When the route was entered from a retained root, the common power
-    /// sequence of the previous route is still in effect. Repeating it would
-    /// reset the baseband, so this returns without any register access.
-    #[doc(hidden)]
-    pub fn prepare_common_phy_power(&mut self) -> Result<(), crate::power::PowerError> {
-        if self.clocks.common_inherited() {
-            self.reunitable = false;
-            return Ok(());
-        }
-        crate::power::execute_bluetooth_owned(
-            &mut self.reunitable,
-            &mut crate::power::RoutePower {
-                phy: self.registers.radio_phy_mut(),
-                leases: self.clocks.shared_mut(),
-            },
-        )
-    }
-
-    /// Reunite a quiescent task with the exact inactive interrupt partition.
-    pub fn into_cold(
+    /// Reunite a quiescent, untouched task with the exact inactive interrupt
+    /// partition.
+    pub fn into_clocked(
         self,
         interrupts: InterruptSetupOwner,
-    ) -> Result<ColdOwner, TaskOwnerReuniteFailure> {
+    ) -> Result<ClockedOwner, TaskOwnerReuniteFailure> {
         if !self.reunitable {
             return Err(TaskOwnerReuniteFailure {
                 task: self,
@@ -470,99 +493,96 @@ impl TaskOwner {
         let TaskOwner {
             registers,
             modem_lp_timer,
-            retained,
-            clocks,
-            phy_state,
             time_latch: _,
-            grant_protected: _,
             reunitable: _,
         } = self;
-        Ok(ColdOwner {
-            task: registers,
-            modem_lp_timer: modem_lp_timer
-                .expect("an unseparated task owner retains its modem LP-timer partition"),
-            interrupts: interrupts.registers,
-            retained,
-            clocks,
-            phy_state,
+        Ok(ClockedOwner {
+            partition: Partition {
+                task: registers,
+                modem_lp_timer: modem_lp_timer
+                    .expect("an unseparated task owner retains its modem LP-timer partition"),
+                interrupts: interrupts.registers,
+            },
         })
     }
 
-    /// Borrow the shared PHY and route restore slot, arming fail-stop reunion.
-    pub(crate) fn phy_parts_mut(
+    /// Promise that Bluetooth performs no RF and does not touch the shared
+    /// PHY until `release_by_micros` (PHY monotonic clock).
+    ///
+    /// The proof borrows this owner mutably, so no Controller operation can
+    /// start while it lives.
+    ///
+    /// # Errors
+    ///
+    /// The window is empty.
+    pub fn quiescence(
         &mut self,
-    ) -> (&mut oer_esp32s31_pac::RadioPhyRegisters, &mut PhyRouteState) {
-        self.reunitable = false;
-        (self.registers.radio_phy_mut(), &mut self.phy_state)
+        issued_at_micros: u64,
+        release_by_micros: u64,
+    ) -> Result<ClientQuiescence<'_>, EmptyQuiescentWindow> {
+        ClientQuiescence::until(&mut self.registers, issued_at_micros, release_by_micros)
     }
 
-    /// Borrow the shared PHY together with this route's PHY grant-protect
-    /// request. The exclusive route has no radio arbiter; the request carries
-    /// the arbiter's cold event-48 priority.
-    pub fn shared_phy_hal_with_grant(
-        &mut self,
-    ) -> (
-        crate::owner::SharedPhyHal<'_, crate::owner::route::Bluetooth>,
-        crate::coex::PhyGrantProtect<'_>,
-    ) {
-        self.reunitable = false;
-        let (phy, timers) = self.registers.shared_mut().radio_phy_and_coex_timers_mut();
-        (
-            crate::owner::SharedPhyHal::new(phy, &mut self.phy_state),
-            crate::coex::PhyGrantProtect::new(
-                timers,
-                crate::coex::CoexPtiTable::VENDOR.pti(crate::coex::PHY_GRANT_PROTECT_EVENT),
-                &mut self.grant_protected,
-            ),
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn phy_state_mut(&mut self) -> &mut PhyRouteState {
-        &mut self.phy_state
-    }
-
-    /// Execute the reviewed BTBB-v2 component for the lifecycle owner that
-    /// retains the completed common-PHY state.
+    /// Take the shared BTBB baseband as the Bluetooth client.
+    ///
+    /// This owner holds the Bluetooth module clocks, which include the BTBB
+    /// clocks. Only the first holder runs `bt_bb_v2_init_cmplx(1)`.
+    ///
+    /// # Errors
+    ///
+    /// As [`SharedRadioLease::btbb_acquire`].
     ///
     /// # Safety
     ///
-    /// The caller must retain enabled Bluetooth clocks and the completed
-    /// common-PHY owner for this exact task partition.
-    #[doc(hidden)]
+    /// The shared PHY registration must be complete and `gain_parameter` must
+    /// be the byte at offset `0x120` of that registration's `phy_param`
+    /// state.
     #[allow(
         unsafe_code,
-        reason = "the caller must retain the external common-PHY and powered-clock owners"
+        reason = "the unsafe signature carries the arbiter's common-PHY prerequisite"
     )]
-    pub unsafe fn initialize_baseband_v2_arg_one(&mut self, gain_parameter: u8) {
-        self.reunitable = false;
-        self.registers
-            .shared_mut()
-            .initialize_btbb_v2_arg_one(gain_parameter);
+    pub unsafe fn acquire_btbb<T>(
+        &self,
+        lease: &mut SharedRadioLease<'_, T>,
+        gain_parameter: u8,
+    ) -> Result<BtbbAcquired, BtbbError> {
+        // SAFETY: this owner holds the Bluetooth module clocks; the caller
+        // upholds the registration and gain provenance.
+        unsafe { lease.btbb_acquire(&self.registers, gain_parameter) }
+    }
+
+    /// Leave the shared BTBB baseband.
+    ///
+    /// # Errors
+    ///
+    /// Bluetooth does not hold BTBB.
+    pub fn release_btbb<T>(&self, lease: &mut SharedRadioLease<'_, T>) -> Result<(), BtbbError> {
+        lease.btbb_release(&self.registers)
     }
 
     /// Execute the complete reviewed BLE base-stack task-enable hardware transaction.
     ///
     /// # Safety
     ///
-    /// The caller must retain the completed common-PHY and BTBB owners, the
-    /// initialized source-owned controller software, an inactive IRQ route,
-    /// and both pointed storage objects for every hardware consumer.
+    /// The caller must retain the completed common-PHY and BTBB membership,
+    /// the initialized source-owned controller software, an inactive IRQ
+    /// route, and both pointed storage objects for every hardware consumer.
     #[doc(hidden)]
     #[allow(
         unsafe_code,
         reason = "the caller must retain external lifecycle and pointed-storage owners"
     )]
-    pub unsafe fn enable_ble_base_stack_hardware(
+    pub unsafe fn enable_ble_base_stack_hardware<T>(
         &mut self,
+        lease: &mut SharedRadioLease<'_, T>,
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
         self.reunitable = false;
         // SAFETY: forwarded unchanged from this function's `# Safety` contract,
         // which states the PAC transaction's prerequisites.
         unsafe {
-            let (task, shared) = self.registers.parts_mut();
-            task.enable_ble_base_stack_hardware(shared, inputs);
+            self.registers
+                .enable_ble_base_stack_hardware(lease.registers_mut(), inputs);
         }
     }
 
@@ -571,13 +591,13 @@ impl TaskOwner {
     ///
     /// # Safety
     ///
-    /// The caller must retain enabled controller clocks, the selected
-    /// controller-SRAM prefix and the inactive interrupt bank. It must not
-    /// infer scheduler, PHY, BTBB, Link-Layer or HCI readiness from return.
+    /// The caller must retain the selected controller-SRAM prefix and the
+    /// inactive interrupt bank. It must not infer scheduler, PHY, BTBB,
+    /// Link-Layer or HCI readiness from return.
     #[doc(hidden)]
     #[allow(
         unsafe_code,
-        reason = "the caller must retain the external clock, SRAM-prefix and interrupt owners"
+        reason = "the caller must retain the external SRAM-prefix and interrupt owners"
     )]
     pub unsafe fn initialize_controller_hal_transaction(
         &mut self,
@@ -1051,31 +1071,7 @@ pub struct InterruptOutputAfterRoutesOwner {
     _registers: oer_esp32s31_pac::BluetoothInterruptOutputPrepared,
 }
 
-/// Shared-PHY maintenance access while the Bluetooth Controller is idle.
-///
-/// It borrows the task owner and the prepared, unrouted interrupt output for
-/// its whole lifetime, so the output cannot be reactivated or released while
-/// PHY maintenance holds the radio.
-#[must_use = "Bluetooth PHY maintenance access admits one shared-PHY operation"]
-pub struct BluetoothMaintenanceAccess<'owner> {
-    pub(crate) task: &'owner mut TaskOwner,
-    _output: &'owner InterruptOutputAfterRoutesOwner,
-}
-
 impl InterruptOutputAfterRoutesOwner {
-    /// Admit shared-PHY maintenance after the same idle-Controller check as
-    /// [`Self::validate_idle_controller`].
-    pub fn try_phy_maintenance<'owner>(
-        &'owner self,
-        task: &'owner mut TaskOwner,
-    ) -> Result<BluetoothMaintenanceAccess<'owner>, BluetoothControllerOutputReleaseError> {
-        self.validate_idle_controller(task)?;
-        Ok(BluetoothMaintenanceAccess {
-            task,
-            _output: self,
-        })
-    }
-
     /// Observe quiescence while retaining the prepared, unrouted output bank.
     pub fn validate_idle_controller(
         &self,
@@ -1144,7 +1140,7 @@ pub struct InterruptOutputReleasedOwner {
 /// constructor. New operations belong here only after their PAC transaction
 /// and lifecycle prerequisites are independently bounded.
 pub struct ControllerHal<'registers> {
-    registers: &'registers mut BluetoothRegisters,
+    registers: &'registers mut BluetoothTaskRegisters,
     time_latch: &'registers mut ControllerTimeLatch,
 }
 
@@ -1271,7 +1267,7 @@ fn execute_rx_memory_list_initial_publication(
 }
 
 struct PacBluetoothRxMemoryListInitialPublication<'registers> {
-    registers: &'registers mut BluetoothRegisters,
+    registers: &'registers mut BluetoothTaskRegisters,
     selector: BluetoothMemoryListSelector,
     head: BluetoothControllerSramAddress,
 }

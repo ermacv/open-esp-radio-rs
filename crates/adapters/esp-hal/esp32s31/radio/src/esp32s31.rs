@@ -1,8 +1,4 @@
 //! ESP32-S31 official singleton witnesses behind a role-neutral platform owner.
-//!
-//! The Bluetooth lease follows the pinned ESP-IDF controller lifecycle in
-//! `components/bt/controller/esp32s31/bt.c`, `btdm_lp.c`, and the S31 modem
-//! clock implementation. These paths define semantics; the PAC stays private.
 
 use esp_hal::{
     efuse,
@@ -14,18 +10,15 @@ use esp_hal::{
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
 use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
 
-use crate::{
-    bluetooth_address::bluetooth_public_address_from_base,
-    coordinator::{BluetoothPlatformBusy, BluetoothPlatformLease, ClockCoordinator},
-};
+use crate::bluetooth_address::bluetooth_public_address_from_base;
 
 /// Sole safe owner of the ESP32-S31 shared radio-platform singletons.
 ///
 /// Construction consumes the official ESP-HAL singleton tokens. The tokens
-/// stay private for the coordinator's whole lifetime; safe code can only issue
-/// semantic leases. Existing Wi-Fi code cannot be composed simultaneously
-/// until it too consumes a lease from this coordinator, because its current
-/// separate adapter requires these same non-duplicable tokens.
+/// stay private for the owner's whole lifetime; the radio system holds it as
+/// the platform its PHY target port borrows. It performs no register access
+/// itself: every clock transaction and reference count lives in the custom
+/// PAC route.
 pub struct EspHalRadioPlatform {
     _modem_syscon: MODEM_SYSCON<'static>,
     _modem_lpcon: MODEM_LPCON<'static>,
@@ -35,7 +28,6 @@ pub struct EspHalRadioPlatform {
     _lp_peri: LP_PERI<'static>,
     _lp_tsens: LP_TSENS<'static>,
     _i2c_ana_mst: I2C_ANA_MST<'static>,
-    coordinator: ClockCoordinator,
 }
 
 impl EspHalRadioPlatform {
@@ -63,37 +55,14 @@ impl EspHalRadioPlatform {
             _lp_peri: lp_peri,
             _lp_tsens: lp_tsens,
             _i2c_ana_mst: i2c_ana_mst,
-            coordinator: ClockCoordinator::new(),
         }
     }
 
-    /// Reserve the only standalone Bluetooth clock lifecycle slot.
-    ///
-    /// Every clock dependency is retained by the affine custom-PAC route; this
-    /// reservation only keeps the official singleton witnesses exclusive.
-    pub fn try_bluetooth(&self) -> Result<EspHalBluetoothPlatform<'_>, BluetoothPlatformBusy> {
-        self.coordinator
-            .try_bluetooth()
-            .map(|inner| EspHalBluetoothPlatform { _inner: inner })
-    }
-}
-
-/// Affine ESP-HAL platform witness consumed by Bluetooth typestate.
-///
-/// This type deliberately exposes neither peripheral singleton tokens nor PAC
-/// register blocks. Dropping it releases only the behavioral reservation;
-/// custom-PAC typestate owns all hardware cleanup.
-pub struct EspHalBluetoothPlatform<'a> {
-    _inner: BluetoothPlatformLease<'a>,
-}
-
-impl EspHalBluetoothPlatform<'_> {
-    /// Derive the common-PHY calibration identity from the retained chip.
+    /// Derive the common-PHY calibration identity from the chip.
     ///
     /// The radio-calibration version is source-owned, while both identity
     /// fields come from ESP-HAL's safe eFuse accessors. Applications therefore
-    /// do not copy hardware identity into an otherwise generic cold-start
-    /// configuration.
+    /// do not copy hardware identity into an otherwise generic configuration.
     pub fn phy_calibration_identity(&self) -> PhyCalibrationIdentity {
         let base = efuse::base_mac_address();
         let bytes = base.as_bytes();

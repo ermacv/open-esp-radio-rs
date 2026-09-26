@@ -84,17 +84,6 @@ impl PowerSequenceBackend for RoutePower<'_> {
     }
 }
 
-/// Starting common PHY preparation ends the reversible Controller-clock epoch.
-/// The caller retains the task owner, including the I2C clock lease, on every
-/// readback failure. Full physical shutdown is required before cold reunion.
-pub(crate) fn execute_bluetooth_owned(
-    reunitable: &mut bool,
-    registers: &mut impl PowerSequenceBackend,
-) -> Result<(), PowerError> {
-    *reunitable = false;
-    execute_owned(registers)
-}
-
 /// Semantic read-back state captured after the cold clock/reset sequence.
 ///
 /// Route-owned field decoding stays in the custom PAC; remaining platform

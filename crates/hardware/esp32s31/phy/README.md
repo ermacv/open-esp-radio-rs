@@ -67,7 +67,7 @@ reset or retained-sleep wakeup replay.
 | [Calibration](src/calibration/registration.rs), [analog](src/analog.rs), [RX](src/rx.rs), [TX](src/tx.rs) | Finite measurements, searches, ordered hardware actions and their results | No network sockets or protocol scheduling policy |
 | [PHY state](src/state.rs) | Configuration, calibration results, temperature references and cache values | Values do not grant register access |
 | [Client state](src/state/client.rs) and [tracking schedule](src/tracking/schedule.rs) | Active clients, source intervals and read-only demand | Wi-Fi and BT/154 are scheduling classes; BT and 154 remain distinct clients |
-| [Registered domain and routes](src/registered_route.rs) | One `PhyDomain` per registration: calibration state and the shared client set. Each protocol route (Wi-Fi, Bluetooth) couples the domain to its physical owner and acquires or releases only its own client through one shared lifecycle | A domain cannot be cloned, rebuilt or paired with another epoch; detached owners check the registration epoch before hardware access |
+| [Registered domain and routes](src/registered_route.rs) | One `PhyDomain` per registration: calibration state and the shared client set. The exclusive Wi-Fi route couples the domain to its physical owner and acquires or releases only its own client through one shared lifecycle | A domain cannot be cloned, rebuilt or paired with another epoch; detached owners check the registration epoch before hardware access |
 | [Registered radio](src/registered_radio.rs) | Wi-Fi route owners that keep the powered radio beside its domain; the private [Wi-Fi handoff](src/registered_radio/wifi_integration.rs) holds only protocol-specific typed transfer and receive-enable methods | Cannot split proof from its hardware epoch |
 | [Tracking graphs](src/tracking.rs) and [executor](src/executor.rs) | Execute selected children and validate their completions | No independent RF arbitration |
 | [Target port](src/target_port.rs) and [HAL PHY](../hal/src/phy.rs) | Typed MMIO, analog buses, hardware completion and bounded waits | Hardware access is borrowed from the admitted owner |
@@ -194,9 +194,7 @@ Both routes' HIL recovery across a switch remains a separate gate.
 The Wi-Fi driver composes the handoff as `WifiStopped::release_retained` and
 `resume_esp32s31_radio`, which runs the ordinary client, tracking, channel and
 MAC initialization tail after the retained wake; its report records
-`WifiPhyEntry::RetainedWake` instead of a registration. The Bluetooth engine
-provides `BluetoothStopped::from_retained` and the retained release after PHY
-close; no LE Controller currently composes the Bluetooth side of the handoff.
+`WifiPhyEntry::RetainedWake` instead of a registration.
 
 ### Concurrent clients
 
@@ -218,7 +216,8 @@ serialized by one mechanism:
   IEEE 802.15.4 as clients of the one client set;
   `wifi_client::join_wifi` and `leave_wifi` do this for Wi-Fi on the HAL's
   clocked Wi-Fi owner (`esp_phy_enable`/`esp_phy_disable(PHY_MODEM_WIFI)`),
-  as `ieee802154_client` does for IEEE 802.15.4 with its BTBB reference;
+  as `ieee802154_client` does for IEEE 802.15.4 and `bluetooth_client` for the
+  Bluetooth Controller's task owner, each with its BTBB reference;
 - `select_concurrent_wifi_channel` and `switch_concurrent_wifi_channel` tune
   the shared domain for Wi-Fi through the HAL Wi-Fi client's channel HAL,
   which it lends together with the arbiter attachment; the switch stops and

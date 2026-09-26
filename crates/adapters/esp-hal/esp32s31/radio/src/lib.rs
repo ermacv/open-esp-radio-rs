@@ -1,19 +1,14 @@
 #![no_std]
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
-//! ESP-HAL ownership coordinator for shared ESP32-S31 radio platform resources.
+//! ESP-HAL platform of the shared ESP32-S31 radio.
 //!
-//! The neutral coordinator is the sole owner of the official system PAC
-//! singletons used by modem clocking and common PHY initialization. A
-//! Bluetooth platform handle is an affine reservation: raw register blocks
-//! cannot escape through it, while every clock transaction and reference
-//! count lives in the custom PAC route.
-//! This is the boundary required for a later Wi-Fi/Bluetooth
-//! coexistence composition; the current Wi-Fi adapter must be migrated onto
-//! the same coordinator before simultaneous use.
-
-#[cfg(any(feature = "esp32s31", test))]
-mod coordinator;
+//! [`EspHalRadioPlatform`] retains the official system PAC singletons that
+//! modem clocking and common PHY initialization touch, so no other safe
+//! owner can be constructed from them while the radio system holds it;
+//! [`EspHalRadioClocks`] supplies the platform clock sources of the modem
+//! clocks. The module also binds the Bluetooth Controller's interrupt
+//! sources to their CPU routes and stable ISR storage.
 
 #[cfg(feature = "esp32s31")]
 mod bluetooth_interrupt;
@@ -29,9 +24,6 @@ mod esp32s31;
 
 #[cfg(feature = "esp32s31")]
 mod platform_clocks;
-
-#[cfg(feature = "esp32s31")]
-pub use coordinator::BluetoothPlatformBusy;
 
 #[cfg(feature = "esp32s31")]
 pub use bluetooth_interrupt::{
@@ -50,7 +42,7 @@ pub use bluetooth_route_policy::{
 };
 
 #[cfg(feature = "esp32s31")]
-pub use esp32s31::{EspHalBluetoothPlatform, EspHalRadioPlatform};
+pub use esp32s31::EspHalRadioPlatform;
 #[cfg(feature = "esp32s31")]
 pub use platform_clocks::EspHalRadioClocks;
 

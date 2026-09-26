@@ -37,7 +37,8 @@ use oer_esp32s31_bluetooth_memory::{
     SchedulerRoleKind,
 };
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothControllerLatchedTime, BluetoothControllerTimeScale, BluetoothSchedulerStopped,
+    BluetoothControllerLatchedTime, BluetoothControllerReset, BluetoothControllerTimeScale,
+    BluetoothSchedulerStopped,
 };
 use oer_esp32s31_hal::shared_radio::ClientQuiescence;
 
@@ -324,6 +325,28 @@ impl<
     /// The item memory of every pool.
     pub fn item_space(&self) -> SchedulerItemSpace<'_> {
         space(&self.memory)
+    }
+
+    /// Take the pools and chains back after the Controller of this epoch was
+    /// reset.
+    ///
+    /// Every operation ends without an outcome. The pools, withheld items
+    /// included, and the receive chains return to their allocation-time
+    /// image, ready for the next epoch.
+    pub fn into_memory(
+        self,
+        reset: &BluetoothControllerReset,
+    ) -> BluetoothRadioMemory<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS>
+    {
+        let mut memory = self.memory;
+        memory.legacy.reset_after_controller_reset(reset);
+        memory.connectable.reset_after_controller_reset(reset);
+        memory.scanners.reset_after_controller_reset(reset);
+        memory.connections.reset_after_controller_reset(reset);
+        memory.dtm.reset_after_controller_reset(reset);
+        memory.scanning.reset_after_controller_reset(reset);
+        memory.non_scanning.reset_after_controller_reset(reset);
+        memory
     }
 
     /// Admit one request.

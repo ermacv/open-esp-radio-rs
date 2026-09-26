@@ -1,5 +1,6 @@
 #![no_std]
-// The `ieee802154_client` module is the sole scoped override.
+// The `bluetooth_client` and `ieee802154_client` modules hold the only scoped
+// overrides.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 // The registration and tracking graphs run only through the chip target
 // ports, which exist only for `riscv32`. Host builds type-check the graphs and
@@ -24,9 +25,11 @@
 //! live above this layer.
 //!
 //! Start with [`PhyConfig`] and the registration state machine, then use
-//! [`RegisteredPhyRadio`] to acquire a Wi-Fi, Bluetooth, or IEEE 802.15.4
-//! client. [`RegisteredWifiPhy`] and [`RegisteredBluetoothPhy`] keep the
-//! registration identity and tracking state attached to the live client.
+//! [`RegisteredPhyRadio`] to acquire the exclusive Wi-Fi client;
+//! [`RegisteredWifiPhy`] keeps the registration identity and tracking state
+//! attached to the live client. Concurrent Bluetooth and IEEE 802.15.4 enter
+//! the registered domain under the shared radio arbiter through
+//! [`bluetooth_client`] and [`ieee802154_client`].
 //! Releasing a non-final client returns a still-powered shared owner; only the
 //! final-client close path may proceed toward a cold owner.
 //!
@@ -87,9 +90,9 @@ pub mod tx;
 #[cfg(not(feature = "validation-probes"))]
 mod tx;
 
+pub mod bluetooth_client;
 pub mod concurrent;
 pub mod ieee802154_client;
-mod registered_bluetooth;
 mod registered_radio;
 pub mod registered_route;
 mod registered_wifi;
@@ -131,18 +134,6 @@ pub use executor::{PhyCalibrationTrackingRunError, PhyParamTrackingRunError, Phy
 pub use lifecycle::{
     PhyRfWakeAction, PhyRfWakeCompletion, PhyRfWakeOperation, PhyRfWakeOutcome,
     PhyRfWakeTransition, PhyRfWakeTransitionError,
-};
-#[cfg(target_arch = "riscv32")]
-pub use registered_bluetooth::{
-    BluetoothPhyMaintenanceFailure, BluetoothPhyRfCloseFailure, BluetoothPhyRfWakeFailure,
-};
-pub use registered_bluetooth::{
-    RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
-    RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyClientRelease,
-    RegisteredBluetoothPhyClientReleaseFailure, RegisteredBluetoothPhyPendingTrack,
-    RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyRfClosed,
-    RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure,
-    RegisteredBluetoothPhyTrackPoisoned,
 };
 pub use registered_radio::{
     RegisteredPhyClientAcquire, RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,

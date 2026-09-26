@@ -46,7 +46,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `adapters/embassy-net/{owned,upstream}/`, `adapters/embassy-net/esp32s31/ieee80211-upstream/` | Owned-packet and released-interface network adapters; the chip bridge binds the released interface to Wi-Fi execution |
 | `adapters/xarxa/upstream/`, `adapters/xarxa/esp32s31/ieee80211-upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure; the chip bridge binds it to Wi-Fi execution |
 | `../experiments/network-engine/` | Experimental synchronous network engine; no production package depends on it, and its host tests drive the STA TX owner |
-| `composition/esp32s31/embassy/{ieee80211,bluetooth,ieee802154}/` | Static resources, one-time claims, final bindings and the concrete whole-radio lifecycle runners; Bluetooth adds its HCI Controller over the radio runtime; IEEE 802.15.4 runs as a client of the shared radio arbiter |
+| `composition/esp32s31/embassy/{ieee80211,bluetooth,ieee802154,radio}/` | Static resources, one-time claims, final bindings and the concrete lifecycle runners; `radio` is the shared radio system (arbiter, PHY domain and periodic tracking); Bluetooth and IEEE 802.15.4 start and stop as its clients, and Bluetooth adds its HCI Controller over the radio runtime |
 
 `memory` owns backing stability, range proofs and affine handoff; chip DMA
 modules own hardware descriptors and controller transitions. `network/interface`

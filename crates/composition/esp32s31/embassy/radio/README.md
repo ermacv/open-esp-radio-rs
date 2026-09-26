@@ -30,8 +30,8 @@ protocol compositions are clients of the system:
   `RadioSystem::run_tracking_until` ends when a stop future completes, which
   it polls only between ticks so a started tick always finishes.
 
-The IEEE 802.15.4 composition is the first client. Wi-Fi and Bluetooth still
-own the radio through their exclusive routes.
+The IEEE 802.15.4 and Bluetooth compositions are clients of the system. The
+Wi-Fi composition still owns the radio through its exclusive route.
 
 ## Limits
 

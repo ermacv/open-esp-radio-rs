@@ -208,7 +208,7 @@ where
                 self.runtime.worker_wake.take();
                 self.phase = ControllerModemTimerTaskPhase::Work(ModemLpTimerSoftwareState::begin(
                     owner,
-                    self.runtime.epoch,
+                    &mut self.runtime.epoch,
                 ));
                 ControllerModemTimerBegin::Started
             }
@@ -222,7 +222,7 @@ where
         match phase {
             ControllerModemTimerTaskPhase::Idle => ControllerModemTimerStep::Idle,
             ControllerModemTimerTaskPhase::Work(work) => {
-                match work.step(self.runtime.queue, self.runtime.epoch) {
+                match work.step(&mut self.runtime.queue, &mut self.runtime.epoch) {
                     ModemLpTimerSoftwareStateStep::Expiration(pending) => {
                         let event = pending.event();
                         self.phase = ControllerModemTimerTaskPhase::Expiration(pending);

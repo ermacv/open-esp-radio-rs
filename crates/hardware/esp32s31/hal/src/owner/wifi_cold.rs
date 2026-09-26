@@ -108,7 +108,7 @@ impl WifiColdRegisters {
         }
         let phy = self.registers.radio_phy_mut();
         self.route.clocks.shared.release_all(phy);
-        if let Err(checkpoint) = self.route.clocks.power.restore(phy, false) {
+        if let Err(checkpoint) = self.route.clocks.power.restore(phy) {
             return Err((self, RadioPhyReleaseError::WifiPowerRestore(checkpoint)));
         }
         Ok(RadioHardware::from_wifi(

@@ -661,10 +661,16 @@ impl BluetoothTaskRegisters {
 
     /// Whether the Bluetooth controller domain resets read back released.
     pub fn controller_resets_released(&self, shared: &SharedRadioRegisters) -> bool {
-        shared
-            .radio_phy
-            .bluetooth_clock_observation()
+        self.controller_clock_observation(shared)
             .controller_resets_released
+    }
+
+    /// Read back the Bluetooth controller and APB clock sets and resets.
+    pub fn controller_clock_observation(
+        &self,
+        shared: &SharedRadioRegisters,
+    ) -> ModemSysconBluetoothObservation {
+        shared.radio_phy.bluetooth_clock_observation()
     }
 }
 

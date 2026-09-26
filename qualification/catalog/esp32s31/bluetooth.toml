@@ -165,10 +165,11 @@ source-fact-refs = [
 [[capabilities.source-contracts]]
 id = "bluetooth-phy-demand-and-release"
 composition = "production"
-scope = "Retain the registered Bluetooth PHY client while inspecting or cancellation-safely waiting for periodic demand, consume due or periodic evaluation into the exact pending tracking request, and release the client without discarding the saved last-client fact"
+scope = "Enter and leave the shared PHY domain and BTBB as the Bluetooth client of the radio arbiter; the arbiter's domain turns due or periodic evaluation into the exact pending tracking request, and the release reports the last-client fact that lets the radio system close RF"
 limits = "These lower transitions acquire no Controller or shared-RF permission. The referenced idle maintenance and powered-release facts own their composed subsets; periodic active-role service retains its separate incomplete fact"
 source-paths = [
-  "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
+  "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
+  "crates/hardware/esp32s31/phy/src/concurrent.rs",
   "crates/hardware/esp32s31/phy/src/state/client.rs",
 ]
 

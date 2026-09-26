@@ -93,14 +93,11 @@ fn unpowered_owner_releases_platform_and_neutral_radio_roots() {
         .expect("an untouched Wi-Fi route can be released");
     assert_eq!(peripheral, TestPeripheral { id: 9, ready: true });
 
-    let hardware = crate::bluetooth::ColdOwner::from_radio_hardware(hardware)
-        .release()
-        .expect("an untouched Bluetooth route can be released");
     let _wifi = WifiColdRegisters::from_hardware(hardware);
 }
 
 #[test]
-fn released_hardware_reenters_wifi_after_exclusive_bluetooth_route() {
+fn released_hardware_reenters_wifi_after_a_concurrent_split() {
     let owned = Radio::claim(TestPeripheral {
         id: 12,
         ready: true,
@@ -109,9 +106,10 @@ fn released_hardware_reenters_wifi_after_exclusive_bluetooth_route() {
     let (peripheral, hardware) = owned
         .release()
         .expect("an untouched Wi-Fi route can be released");
-    let hardware = crate::bluetooth::ColdOwner::from_radio_hardware(hardware)
-        .release()
-        .expect("an untouched Bluetooth route can be released");
+    let (shared, partitions) = hardware.into_concurrent(());
+    let Ok((hardware, ())) = crate::root::RadioHardware::from_concurrent(shared, partitions) else {
+        panic!("an untouched concurrent split reunites");
+    };
 
     let returned = Radio::from_hardware(peripheral, hardware);
     require_owned(&returned);
@@ -145,4 +143,49 @@ fn failed_power_transition_can_only_retry_the_unique_owner() {
         Err(failure) => failure,
     };
     assert_eq!(retried.error(), first_error);
+}
+
+#[test]
+fn retained_handoff_keeps_the_registration_epoch_across_routes() {
+    let mut wifi = WifiColdRegisters::from_hardware(crate::root::RadioHardware::for_validation())
+        .with_common_power_for_test();
+    let epoch = wifi.phy_state_mut().begin_registration_epoch();
+
+    let retained = wifi
+        .release_retained()
+        .unwrap_or_else(|_| panic!("a powered Wi-Fi route hands over its PHY"));
+    assert_eq!(retained.registration_epoch(), Some(epoch));
+
+    let wifi = WifiColdRegisters::from_retained(retained);
+    assert_eq!(wifi.phy_state().registration_epoch(), Some(epoch));
+}
+
+#[test]
+fn retained_handoff_rejects_a_pending_calibration_restore() {
+    let mut wifi = WifiColdRegisters::from_hardware(crate::root::RadioHardware::for_validation())
+        .with_common_power_for_test();
+    wifi.phy_state_mut().occupy_txdc_for_test();
+    let Err((_wifi, error)) = wifi.release_retained() else {
+        panic!("a pending restore must keep the Wi-Fi route");
+    };
+    assert_eq!(
+        error,
+        crate::root::RetainedRadioReleaseError::Restore(
+            crate::root::RadioPhyReleaseError::TxDcPwdetRestorePending
+        )
+    );
+}
+
+#[test]
+fn unpowered_route_cannot_enter_the_retained_root() {
+    let wifi = WifiColdRegisters::from_hardware(crate::root::RadioHardware::for_validation());
+    let Err((_wifi, error)) = wifi.release_retained() else {
+        panic!("an unpowered Wi-Fi route has no common power to hand over");
+    };
+    assert_eq!(
+        error,
+        crate::root::RetainedRadioReleaseError::CommonPhyPower(
+            crate::root::CommonPhyPowerError::NotPowered
+        )
+    );
 }

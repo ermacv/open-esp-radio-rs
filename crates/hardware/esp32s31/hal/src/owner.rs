@@ -1,7 +1,6 @@
 //! Hardware ownership, capabilities, and affine lifecycle transitions.
 
 use crate::{
-    bluetooth::TaskOwner,
     ieee80211::{channel, mac as wifi_mac},
     power::PowerError,
     types::{
@@ -57,9 +56,9 @@ impl WifiBasebandEnableObservation {
 /// Protocol routes that can lend the shared radio PHY.
 ///
 /// The route is part of every [`SharedPhyHal`] type, so an operation that is
-/// valid only for one protocol cannot accept a borrow minted by another. For
-/// example, Wi-Fi maintenance access cannot register or close the Bluetooth
-/// PHY client.
+/// valid only for one route cannot accept a borrow minted by another. For
+/// example, Wi-Fi maintenance access cannot stand in for a lease of the
+/// shared radio arbiter.
 pub mod route {
     mod sealed {
         pub trait Route {}
@@ -70,16 +69,12 @@ pub mod route {
 
     /// Borrowed from checked Wi-Fi maintenance access.
     pub enum Wifi {}
-    /// Borrowed from the Bluetooth task owner.
-    pub enum Bluetooth {}
     /// Borrowed through a lease of the shared radio arbiter.
     pub enum Shared {}
 
     impl sealed::Route for Wifi {}
-    impl sealed::Route for Bluetooth {}
     impl sealed::Route for Shared {}
     impl Route for Wifi {}
-    impl Route for Bluetooth {}
     impl Route for Shared {}
 }
 
@@ -101,7 +96,7 @@ pub mod route {
 ///
 /// ```compile_fail
 /// use oer_esp32s31_hal::owner::{SharedPhyHal, route};
-/// fn relabel(phy: SharedPhyHal<'_, route::Wifi>) -> SharedPhyHal<'_, route::Bluetooth> {
+/// fn relabel(phy: SharedPhyHal<'_, route::Wifi>) -> SharedPhyHal<'_, route::Shared> {
 ///     phy
 /// }
 /// ```
@@ -126,21 +121,9 @@ impl<'owner, R: route::Route> SharedPhyHal<'owner, R> {
 
 pub(crate) mod sealed {
 
-    use crate::{
-        bluetooth::TaskOwner, owner::WifiBasebandEnableObservation, phy::restore::PhyRouteState,
-    };
+    use crate::{owner::WifiBasebandEnableObservation, phy::restore::PhyRouteState};
 
     use super::RadioPhyRegisters;
-
-    pub trait SharedPhyBorrow {
-        fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState);
-    }
-
-    impl SharedPhyBorrow for TaskOwner {
-        fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
-            self.phy_parts_mut()
-        }
-    }
 
     pub trait SharedPhyAccess {
         fn pac(&self) -> &RadioPhyRegisters;
@@ -157,26 +140,6 @@ pub(crate) mod sealed {
 
     pub trait PhyInitializationAccess {}
 }
-
-/// Sealed conversion from the exclusive Bluetooth task owner to one narrow
-/// shared-PHY borrow.
-///
-/// The implementing PAC owner remains private to the Bluetooth hardware
-/// boundary. Callers can neither implement this trait for another owner nor
-/// recover the underlying register partition from the returned capability.
-#[doc(hidden)]
-pub trait SharedPhyBorrow: sealed::SharedPhyBorrow {
-    /// Borrow the shared PHY for one finite Bluetooth lower-layer scope.
-    ///
-    /// The returned capability samples shared Wi-Fi-baseband state through
-    /// the retained route PAC owner.
-    fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
-        let (registers, restore) = sealed::SharedPhyBorrow::phy_parts_mut(self);
-        SharedPhyHal::new(registers, restore)
-    }
-}
-
-impl SharedPhyBorrow for TaskOwner {}
 
 /// Sealed protocol-neutral port accepted by named PHY HAL operations.
 ///
@@ -338,7 +301,7 @@ pub trait SharedPhyContext: SharedPhyAccess + sealed::SharedPhyContext {
 /// Common PHY-initialization port that tracks temporary Wi-Fi-BB edges.
 ///
 /// `register_chipv7_phy` temporarily drives the physical Wi-Fi-BB enable state
-/// even when entered by the standalone Bluetooth lifecycle. Implementations
+/// even when entered by a concurrent Bluetooth or IEEE 802.15.4 client. Implementations
 /// sample it through the retained PAC owner; this capability conveys no Wi-Fi
 /// MAC or protocol-role ownership.
 pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationAccess {
@@ -931,8 +894,8 @@ impl<P> Radio<P, state::Owned> {
     /// Bind an already-owned neutral radio root to the standalone Wi-Fi HAL.
     ///
     /// This is the consuming re-entry after [`Self::release`] or after a
-    /// mutually exclusive Bluetooth lifecycle has returned the same root. It
-    /// does not acquire another singleton and performs no MMIO.
+    /// concurrent split has been reunited into the same root. It does not
+    /// acquire another singleton and performs no MMIO.
     pub fn from_hardware(peripheral: P, hardware: RadioHardware) -> Self {
         Self {
             peripheral,
@@ -960,8 +923,8 @@ impl<P> Radio<P, state::Owned> {
     /// Release a radio that has not crossed into the powered state.
     ///
     /// Both singleton authorities are returned. Dropping the neutral radio
-    /// root would permanently make the Wi-Fi and Bluetooth routes
-    /// unavailable for this boot.
+    /// root would permanently make every radio route unavailable for this
+    /// boot.
     ///
     /// # Errors
     ///

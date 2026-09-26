@@ -68,6 +68,27 @@ fn the_chain_starts_at_a_completed_packetless_cursor() {
 }
 
 #[test]
+fn a_controller_reset_returns_the_chain_to_its_bound_image() {
+    let mut chain = chain();
+    let initial = chain.with_view(|view| view.chain());
+    assert!(chain.emulate_receive(&pdu(5), A.number()));
+    assert!(chain.emulate_receive(&pdu(6), A.number()));
+    assert_eq!(received(chain.take(source(A)).unwrap()), 5);
+    assert_ne!(chain.with_view(|view| view.chain()), initial);
+
+    chain.reset_after_controller_reset(
+        &oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation(),
+    );
+
+    assert_eq!(chain.with_view(|view| view.chain()), initial);
+    assert!(
+        matches!(chain.take(source(A)), Ok(None)),
+        "no packet survives the reset"
+    );
+    assert_conserved(&mut chain);
+}
+
+#[test]
 fn packets_return_in_order_and_the_current_node_keeps_its_header() {
     let mut chain = chain();
     assert_eq!(chain.take(source(A)), Ok(None));

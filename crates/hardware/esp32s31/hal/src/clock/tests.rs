@@ -1,35 +1,21 @@
 use std::vec::Vec;
 
-use oer_esp32s31_pac::{
-    BLUETOOTH_APB_CLOCKS, BLUETOOTH_CLOCK_COUNT, BLUETOOTH_CONTROLLER_CLOCKS,
-    BluetoothClockBaseline, BluetoothLowPowerTimerConfiguration, ModemLowPowerClockDivider,
-    ModemLowPowerClockSource, ModemSysconBluetoothClock, PlatformPllSourceBaseline,
-    SharedModemClockGate, WifiPowerBaseline, WifiPowerRestoreReadback,
-};
+use oer_esp32s31_pac::{SharedModemClockGate, WifiPowerBaseline, WifiPowerRestoreReadback};
 
 use super::{
-    BluetoothClocks, BluetoothSysconClocks, ClockPort, CommonPhyPowerError, CommonRadioPower,
-    CommonRadioPowerError, PowerEpoch, RadioClient, SharedClockLeases, WifiClocks,
-    WifiPowerRestoreCheckpoint,
+    ClockPort, CommonPhyPowerError, CommonRadioPower, CommonRadioPowerError, PowerEpoch,
+    RadioClient, SharedClockLeases, WifiClocks, WifiPowerRestoreCheckpoint,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
     SetGate(SharedModemClockGate, bool),
-    ConfigureTimer,
-    RestoreTimer,
-    ConfigurePll,
-    RestorePll,
     RestorePower(WifiPowerBaseline),
-    PrepareMap,
-    EnableGroup(ModemSysconBluetoothClock),
-    RestoreGroup(ModemSysconBluetoothClock),
     PowerSequence,
 }
 
 struct Port {
     gates: [bool; 3],
-    groups: [BluetoothClockBaseline; BLUETOOTH_CLOCK_COUNT],
     power: WifiPowerBaseline,
     power_readback: Result<(), WifiPowerRestoreReadback>,
     power_sequence_failure: Option<crate::power::PowerError>,
@@ -40,7 +26,6 @@ impl Port {
     fn new() -> Self {
         Self {
             gates: [false; 3],
-            groups: [BluetoothClockBaseline::default(); BLUETOOTH_CLOCK_COUNT],
             power: WifiPowerBaseline::for_validation(false),
             power_readback: Ok(()),
             power_sequence_failure: None,
@@ -65,29 +50,6 @@ impl ClockPort for Port {
         self.operations.push(Operation::SetGate(gate, enabled));
         self.gates[Self::gate_index(gate)] = enabled;
     }
-    fn low_power_timer_configuration(&self) -> BluetoothLowPowerTimerConfiguration {
-        BluetoothLowPowerTimerConfiguration::default()
-    }
-    fn configure_low_power_timer(
-        &mut self,
-        source: ModemLowPowerClockSource,
-        _divider: ModemLowPowerClockDivider,
-    ) {
-        assert_eq!(source, ModemLowPowerClockSource::Crystal);
-        self.operations.push(Operation::ConfigureTimer);
-    }
-    fn restore_low_power_timer(&mut self, _configuration: BluetoothLowPowerTimerConfiguration) {
-        self.operations.push(Operation::RestoreTimer);
-    }
-    fn pll_source_baseline(&self) -> PlatformPllSourceBaseline {
-        PlatformPllSourceBaseline::default()
-    }
-    fn configure_modem_source_clocks(&mut self) {
-        self.operations.push(Operation::ConfigurePll);
-    }
-    fn restore_pll_source(&mut self, _baseline: PlatformPllSourceBaseline) {
-        self.operations.push(Operation::RestorePll);
-    }
     fn capture_power_baseline(&self) -> WifiPowerBaseline {
         self.power
     }
@@ -97,22 +59,6 @@ impl ClockPort for Port {
     ) -> Result<(), WifiPowerRestoreReadback> {
         self.operations.push(Operation::RestorePower(baseline));
         self.power_readback
-    }
-    fn prepare_syscon_clock_map(&mut self) {
-        self.operations.push(Operation::PrepareMap);
-    }
-    fn bluetooth_clock_baselines(&self) -> [BluetoothClockBaseline; BLUETOOTH_CLOCK_COUNT] {
-        self.groups
-    }
-    fn enable_bluetooth_clock(&mut self, clock: ModemSysconBluetoothClock) {
-        self.operations.push(Operation::EnableGroup(clock));
-    }
-    fn restore_bluetooth_clock(
-        &mut self,
-        clock: ModemSysconBluetoothClock,
-        _baseline: BluetoothClockBaseline,
-    ) {
-        self.operations.push(Operation::RestoreGroup(clock));
     }
     fn run_common_power_sequence(
         &mut self,
@@ -162,11 +108,11 @@ fn power_retry_preserves_the_original_cold_baseline_until_commit() {
     epoch.prepare(&port);
     port.power = retry_observation;
     epoch.prepare(&port);
-    assert_eq!(epoch.restore(&mut port, false), Ok(()));
+    assert_eq!(epoch.restore(&mut port), Ok(()));
     assert_eq!(port.operations, [Operation::RestorePower(original)]);
 
     epoch.prepare(&port);
-    assert_eq!(epoch.restore(&mut port, false), Ok(()));
+    assert_eq!(epoch.restore(&mut port), Ok(()));
     assert_eq!(
         port.operations[1..],
         [Operation::RestorePower(retry_observation)]
@@ -179,88 +125,14 @@ fn power_restore_failure_retains_the_baseline_for_retry() {
     let mut epoch = PowerEpoch::default();
     epoch.prepare(&port);
 
-    assert_eq!(
-        epoch.restore(&mut port, true),
-        Err(WifiPowerRestoreCheckpoint::PlatformPllLease)
-    );
-    assert!(port.operations.is_empty());
-
     port.power_readback = Err(WifiPowerRestoreReadback::ModemSourceClocks);
     assert_eq!(
-        epoch.restore(&mut port, false),
+        epoch.restore(&mut port),
         Err(WifiPowerRestoreCheckpoint::ModemSourceClocks)
     );
     port.power_readback = Ok(());
-    assert_eq!(epoch.restore(&mut port, false), Ok(()));
+    assert_eq!(epoch.restore(&mut port), Ok(()));
     assert_eq!(port.operations.len(), 2);
-}
-
-#[test]
-fn overlapping_apb_release_keeps_controller_dependencies_retained() {
-    let mut port = Port::new();
-    let mut clocks = BluetoothSysconClocks::default();
-    clocks.retain_set(&mut port, &BLUETOOTH_CONTROLLER_CLOCKS);
-    clocks.retain_set(&mut port, &BLUETOOTH_APB_CLOCKS);
-    let enabled = port
-        .operations
-        .iter()
-        .filter(|operation| matches!(operation, Operation::EnableGroup(_)))
-        .count();
-    assert_eq!(enabled, BLUETOOTH_CONTROLLER_CLOCKS.len());
-
-    port.operations.clear();
-    clocks.release_set(&mut port, &BLUETOOTH_APB_CLOCKS);
-    assert!(port.operations.is_empty());
-    clocks.release_set(&mut port, &BLUETOOTH_CONTROLLER_CLOCKS);
-    assert_eq!(
-        port.operations,
-        BLUETOOTH_CONTROLLER_CLOCKS.map(Operation::RestoreGroup)
-    );
-}
-
-#[test]
-fn preexisting_clock_group_is_neither_enabled_nor_restored() {
-    let mut port = Port::new();
-    port.groups = [BluetoothClockBaseline::all_enabled_for_validation(); BLUETOOTH_CLOCK_COUNT];
-    let mut clocks = BluetoothSysconClocks::default();
-    clocks.retain_set(&mut port, &BLUETOOTH_APB_CLOCKS);
-    clocks.release_set(&mut port, &BLUETOOTH_APB_CLOCKS);
-    assert_eq!(port.operations, [Operation::PrepareMap]);
-}
-
-#[test]
-#[should_panic(expected = "unbalanced Bluetooth MODEM_SYSCON release")]
-fn unbalanced_clock_group_release_is_rejected() {
-    let mut port = Port::new();
-    BluetoothSysconClocks::default().release_set(&mut port, &BLUETOOTH_APB_CLOCKS);
-}
-
-#[test]
-fn bluetooth_route_releases_every_lease_in_teardown_order() {
-    let mut port = Port::new();
-    let mut clocks = BluetoothClocks::default();
-    clocks.retain_platform_pll_source(&mut port);
-    clocks.retain_syscon_controller_clocks(&mut port);
-    clocks.retain_syscon_apb_clocks(&mut port);
-    clocks.retain_coexistence(&mut port);
-    clocks.retain_main_xtal_low_power_timer(&mut port);
-    clocks.shared_mut().retain_phy_i2c(&mut port);
-    port.operations.clear();
-
-    clocks.release_all(&mut port);
-    assert_eq!(
-        port.operations,
-        [
-            Operation::SetGate(SharedModemClockGate::PhyI2cMaster, false),
-            Operation::RestoreTimer,
-            Operation::SetGate(SharedModemClockGate::LowPowerTimer, false),
-            Operation::SetGate(SharedModemClockGate::Coexistence, false),
-        ]
-        .into_iter()
-        .chain(BLUETOOTH_CONTROLLER_CLOCKS.map(Operation::RestoreGroup))
-        .chain([Operation::RestorePll])
-        .collect::<Vec<_>>()
-    );
 }
 
 /// A Wi-Fi route after its power sequence and MAC coexistence retention.
@@ -273,7 +145,7 @@ fn powered_wifi(port: &mut Port) -> WifiClocks {
 }
 
 #[test]
-fn wifi_handoff_keeps_common_power_for_bluetooth_to_restore_once() {
+fn wifi_handoff_keeps_common_power_for_the_next_route_to_restore_once() {
     let cold = WifiPowerBaseline::for_validation(false);
     let mut port = Port::new();
     port.power = cold;
@@ -290,67 +162,14 @@ fn wifi_handoff_keeps_common_power_for_bluetooth_to_restore_once() {
         [Operation::SetGate(SharedModemClockGate::Coexistence, false)]
     );
 
-    // Bluetooth inherits the power; its own later capture must not replace
-    // the first route's cold baseline.
+    // The next route inherits the power; its own later capture must not
+    // replace the first route's cold baseline.
     port.operations.clear();
     port.power = WifiPowerBaseline::for_validation(true);
-    let mut bluetooth = BluetoothClocks::from_common(common);
-    assert!(bluetooth.common_inherited());
-    bluetooth.prepare_power_epoch(&port);
-    bluetooth.retain_platform_pll_source(&mut port);
-    bluetooth.retain_coexistence(&mut port);
-    bluetooth.release_all(&mut port);
-    assert_eq!(bluetooth.restore_power_epoch(&mut port), Ok(()));
-    assert_eq!(
-        port.operations,
-        [
-            Operation::ConfigurePll,
-            Operation::SetGate(SharedModemClockGate::Coexistence, true),
-            Operation::SetGate(SharedModemClockGate::PhyI2cMaster, false),
-            Operation::SetGate(SharedModemClockGate::Coexistence, false),
-            Operation::RestorePll,
-            Operation::RestorePower(cold),
-        ]
-    );
-}
-
-#[test]
-fn bluetooth_handoff_releases_its_own_leases_and_supersedes_the_pll_source() {
-    let cold = WifiPowerBaseline::for_validation(false);
-    let mut port = Port::new();
-    port.power = cold;
-    let mut clocks = BluetoothClocks::default();
-    clocks.prepare_power_epoch(&port);
-    clocks.retain_platform_pll_source(&mut port);
-    clocks.retain_syscon_controller_clocks(&mut port);
-    clocks.retain_syscon_apb_clocks(&mut port);
-    clocks.retain_coexistence(&mut port);
-    clocks.retain_main_xtal_low_power_timer(&mut port);
-    clocks.shared_mut().retain_phy_i2c(&mut port);
-    port.operations.clear();
-
-    let common = match clocks.into_common(&mut port) {
-        Ok(common) => common,
-        Err(_) => panic!("a powered Bluetooth route hands over its common PHY power"),
-    };
-    assert_eq!(
-        port.operations,
-        [
-            Operation::RestoreTimer,
-            Operation::SetGate(SharedModemClockGate::LowPowerTimer, false),
-        ]
-        .into_iter()
-        .chain(BLUETOOTH_CONTROLLER_CLOCKS.map(Operation::RestoreGroup))
-        .chain([Operation::SetGate(SharedModemClockGate::Coexistence, false)])
-        .collect::<Vec<_>>()
-    );
-
-    // Wi-Fi inherits the power and restores the PHY-I2C gate and the cold
-    // baseline once when it finally returns the cold root.
-    port.operations.clear();
-    let mut wifi = WifiClocks::from_common(common);
-    wifi.shared.release_all(&mut port);
-    assert_eq!(wifi.power.restore(&mut port, false), Ok(()));
+    let mut next = WifiClocks::from_common(common);
+    next.power.prepare(&port);
+    next.shared.release_all(&mut port);
+    assert_eq!(next.power.restore(&mut port), Ok(()));
     assert_eq!(
         port.operations,
         [
@@ -365,10 +184,6 @@ fn unpowered_routes_cannot_hand_over_common_phy_power() {
     let mut port = Port::new();
     let Err((_clocks, error)) = WifiClocks::default().into_common(&mut port) else {
         panic!("an unpowered Wi-Fi route must keep its clocks");
-    };
-    assert_eq!(error, CommonPhyPowerError::NotPowered);
-    let Err((_clocks, error)) = BluetoothClocks::default().into_common(&mut port) else {
-        panic!("an unpowered Bluetooth route must keep its clocks");
     };
     assert_eq!(error, CommonPhyPowerError::NotPowered);
     assert!(port.operations.is_empty());

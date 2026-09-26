@@ -1,10 +1,33 @@
-use crate::{owner::WifiColdRegisters, root::RadioHardware};
+use oer_esp32s31_pac::{BluetoothLowPowerClockObservation, ModemSysconBluetoothObservation};
+
+use crate::{
+    root::{ConcurrentPartitions, Ieee802154RadioPartition, RadioHardware, WifiPartition},
+    shared_radio::{LowPowerClockError, SharedRadio},
+};
 
 use super::{
-    ColdOwner, ControllerHalBorrow, ControllerPublicAddress, ControllerRandomAddress,
-    RxMemoryListInitialPublication, RxPacketControl, TaskOwnerReuniteError,
-    execute_rx_memory_list_initial_publication,
+    BluetoothClockCheckpoint, ClockedOwner, ControllerHalBorrow, ControllerPublicAddress,
+    ControllerRandomAddress, RxMemoryListInitialPublication, RxPacketControl,
+    TaskOwnerReuniteError, clock_checkpoint, execute_rx_memory_list_initial_publication,
 };
+
+/// The other partitions of a concurrent split.
+type Others = (WifiPartition, Ieee802154RadioPartition);
+
+/// A concurrent split whose Bluetooth partition is assumed clocked.
+fn clocked() -> (SharedRadio, Others, ClockedOwner) {
+    let (shared, partitions) = RadioHardware::for_validation().into_concurrent(());
+    let ConcurrentPartitions {
+        wifi,
+        bluetooth,
+        ieee802154,
+    } = partitions;
+    (
+        shared,
+        (wifi, ieee802154),
+        ClockedOwner::for_validation(bluetooth),
+    )
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RxListPublicationStep {
@@ -100,29 +123,34 @@ fn public_and_hci_random_forms_converge_on_one_controller_identity() {
 }
 
 #[test]
-fn untouched_task_owner_reconstructs_the_neutral_root() {
-    let cold = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
-    let (task, interrupts) = cold.separate_interrupt_owner();
-    let hardware = task
-        .into_cold(interrupts)
-        .expect("an untouched task owner can be reunited")
-        .release()
-        .expect("an untouched Bluetooth route can be released");
+fn untouched_task_owner_returns_the_partition_to_the_neutral_root() {
+    let (shared, (wifi, ieee802154), clocked) = clocked();
+    let (task, interrupts) = clocked.separate_interrupt_owner();
+    let clocked = task
+        .into_clocked(interrupts)
+        .expect("an untouched task owner can be reunited");
+    let partitions = ConcurrentPartitions {
+        wifi,
+        bluetooth: clocked.into_partition_for_validation(),
+        ieee802154,
+    };
 
-    // Re-entering Wi-Fi proves that the finite HAL borrow neither moved nor
-    // duplicated any protocol-neutral owner.
-    let _wifi = WifiColdRegisters::from_hardware(hardware);
+    // Reuniting the split proves that the finite HAL borrows neither moved
+    // nor duplicated any partition.
+    let Ok(_root) = RadioHardware::from_concurrent(shared, partitions) else {
+        panic!("the untouched partitions reunite");
+    };
 }
 
 #[test]
 fn mutable_controller_borrow_arms_fail_stop_reunion() {
-    let cold = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
-    let (mut task, interrupts) = cold.separate_interrupt_owner();
+    let (_shared, _partitions, clocked) = clocked();
+    let (mut task, interrupts) = clocked.separate_interrupt_owner();
     {
         let _controller = task.borrow_bluetooth_controller();
     }
 
-    let failure = match task.into_cold(interrupts) {
+    let failure = match task.into_clocked(interrupts) {
         Ok(_) => panic!("hardware rollback is required after a mutable HAL borrow"),
         Err(failure) => failure,
     };
@@ -134,16 +162,16 @@ fn mutable_controller_borrow_arms_fail_stop_reunion() {
 }
 
 #[test]
-fn non_pristine_interrupt_history_blocks_neutral_reunion() {
-    let cold = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
-    let (task, mut interrupts) = cold.separate_interrupt_owner();
+fn non_pristine_interrupt_history_blocks_reunion() {
+    let (_shared, _partitions, clocked) = clocked();
+    let (task, mut interrupts) = clocked.separate_interrupt_owner();
 
     // This private state mutation isolates the ownership rule without
     // issuing target MMIO from a host test. The actual prepare/release
     // methods are the only production constructors of this dirty setup.
     interrupts.reunitable = false;
 
-    let failure = match task.into_cold(interrupts) {
+    let failure = match task.into_clocked(interrupts) {
         Ok(_) => panic!("interrupt MMIO history requires verified rollback"),
         Err(failure) => failure,
     };
@@ -155,16 +183,16 @@ fn non_pristine_interrupt_history_blocks_neutral_reunion() {
 }
 
 #[test]
-fn unfinished_controller_time_latch_blocks_neutral_reunion() {
-    let cold = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
-    let (mut task, interrupts) = cold.separate_interrupt_owner();
+fn unfinished_controller_time_latch_blocks_reunion() {
+    let (_shared, _partitions, clocked) = clocked();
+    let (mut task, interrupts) = clocked.separate_interrupt_owner();
 
     // The HAL latch state is the only record of a published request; a
-    // cancelled async step must not let the route be reunited or released.
+    // cancelled async step must not let the partition be reunited.
     task.time_latch.begin_for_test();
     assert!(task.time_latch.in_flight());
 
-    let failure = match task.into_cold(interrupts) {
+    let failure = match task.into_clocked(interrupts) {
         Ok(_) => panic!("an unfinished latch request requires draining"),
         Err(failure) => failure,
     };
@@ -176,80 +204,86 @@ fn unfinished_controller_time_latch_blocks_neutral_reunion() {
 }
 
 #[test]
-fn retained_handoff_keeps_the_registration_epoch_across_routes() {
-    let mut wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
-        .with_common_power_for_test();
-    let epoch = wifi.phy_state_mut().begin_registration_epoch();
-
-    let retained = wifi
-        .release_retained()
-        .unwrap_or_else(|_| panic!("a powered Wi-Fi route hands over its PHY"));
-    assert_eq!(retained.registration_epoch(), Some(epoch));
-
-    let bluetooth = ColdOwner::from_retained(retained);
-    assert!(bluetooth.clocks.common_inherited());
-    let retained = bluetooth
-        .release_retained()
-        .unwrap_or_else(|_| panic!("an inherited Bluetooth route hands the PHY back"));
-    assert_eq!(retained.registration_epoch(), Some(epoch));
-
-    let wifi = WifiColdRegisters::from_retained(retained);
-    assert_eq!(wifi.phy_state().registration_epoch(), Some(epoch));
+fn clock_readback_names_the_first_failed_checkpoint() {
+    let clocks = ModemSysconBluetoothObservation {
+        controller_clocks_enabled: true,
+        apb_clocks_enabled: true,
+        controller_resets_released: true,
+    };
+    let low_power = BluetoothLowPowerClockObservation {
+        exclusive_main_xtal_selected: true,
+        bluetooth_divider_configured: true,
+        timer_enabled: true,
+    };
+    assert_eq!(clock_checkpoint(clocks, low_power), None);
+    let cases = [
+        (
+            ModemSysconBluetoothObservation {
+                controller_clocks_enabled: false,
+                apb_clocks_enabled: false,
+                ..clocks
+            },
+            low_power,
+            BluetoothClockCheckpoint::ControllerClocks,
+        ),
+        (
+            ModemSysconBluetoothObservation {
+                apb_clocks_enabled: false,
+                ..clocks
+            },
+            low_power,
+            BluetoothClockCheckpoint::ApbClocks,
+        ),
+        (
+            ModemSysconBluetoothObservation {
+                controller_resets_released: false,
+                ..clocks
+            },
+            BluetoothLowPowerClockObservation {
+                timer_enabled: false,
+                ..low_power
+            },
+            BluetoothClockCheckpoint::ControllerReset,
+        ),
+        (
+            clocks,
+            BluetoothLowPowerClockObservation {
+                exclusive_main_xtal_selected: false,
+                ..low_power
+            },
+            BluetoothClockCheckpoint::LowPowerClockSource,
+        ),
+        (
+            clocks,
+            BluetoothLowPowerClockObservation {
+                bluetooth_divider_configured: false,
+                ..low_power
+            },
+            BluetoothClockCheckpoint::LowPowerClockDivider,
+        ),
+        (
+            clocks,
+            BluetoothLowPowerClockObservation {
+                timer_enabled: false,
+                ..low_power
+            },
+            BluetoothClockCheckpoint::LowPowerTimerClock,
+        ),
+    ];
+    for (clocks, low_power, checkpoint) in cases {
+        assert_eq!(clock_checkpoint(clocks, low_power), Some(checkpoint));
+    }
 }
 
 #[test]
-fn retained_handoff_rejects_a_pending_calibration_restore() {
-    let mut wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
-        .with_common_power_for_test();
-    wifi.phy_state_mut().occupy_txdc_for_test();
-    let Err((_wifi, error)) = wifi.release_retained() else {
-        panic!("a pending restore must keep the Wi-Fi route");
-    };
+fn an_unselected_low_power_clock_cannot_be_deselected() {
+    let (shared, _partitions, clocked) = clocked();
+    let (task, _interrupts) = clocked.separate_interrupt_owner();
+    let mut lease = shared.try_acquire().expect("the arbiter is free");
+    // Rejected before any register access, so the validation root is safe.
     assert_eq!(
-        error,
-        crate::root::RetainedRadioReleaseError::Restore(
-            crate::root::RadioPhyReleaseError::TxDcPwdetRestorePending
-        )
+        lease.deselect_bluetooth_low_power_clock(&task.registers),
+        Err(LowPowerClockError::NotSelected)
     );
-}
-
-#[test]
-fn unpowered_route_cannot_enter_the_retained_root() {
-    let wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
-    let Err((_wifi, error)) = wifi.release_retained() else {
-        panic!("an unpowered Wi-Fi route has no common power to hand over");
-    };
-    assert_eq!(
-        error,
-        crate::root::RetainedRadioReleaseError::CommonPhyPower(
-            crate::root::CommonPhyPowerError::NotPowered
-        )
-    );
-}
-
-#[test]
-fn inherited_route_skips_the_common_power_sequence_and_cold_reunion() {
-    let cold = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
-    let (task, _interrupts) = cold.separate_interrupt_owner();
-    assert!(!task.common_phy_inherited());
-
-    let wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
-        .with_common_power_for_test();
-    let retained = wifi
-        .release_retained()
-        .unwrap_or_else(|_| panic!("a powered Wi-Fi route hands over its PHY"));
-    let (mut task, interrupts) = ColdOwner::from_retained(retained).separate_interrupt_owner();
-    assert!(task.common_phy_inherited());
-
-    // The validation root has no register block, so any power-sequence MMIO
-    // would fault here.
-    assert_eq!(task.prepare_common_phy_power(), Ok(()));
-    let Err(failure) = task.into_cold(interrupts) else {
-        panic!("an inherited route cannot fabricate the cold radio root");
-    };
-    assert_eq!(
-        failure.error(),
-        TaskOwnerReuniteError::HardwareLifecycleNotRestored
-    );
-    let _retained_owners = failure.into_parts();
+    assert!(!lease.bluetooth_low_power_clock_selected());
 }

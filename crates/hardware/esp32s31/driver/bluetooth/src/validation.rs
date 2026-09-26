@@ -13,6 +13,20 @@ pub use oer_esp32s31_hal::bluetooth::{
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
 };
 
+/// Task and interrupt owners of a clocked Bluetooth client in the isolated
+/// image, with the arbiter of the shared registers.
+fn validation_owners() -> (
+    oer_esp32s31_hal::shared_radio::SharedRadio,
+    crate::resources::TaskResources,
+    crate::resources::InterruptBankOwner,
+) {
+    let (shared, partitions) =
+        oer_esp32s31_hal::root::RadioHardware::for_validation().into_concurrent(());
+    let clocked = oer_esp32s31_hal::bluetooth::ClockedOwner::for_validation(partitions.bluetooth);
+    let (task, interrupts) = crate::resources::separate_interrupt_owner(clocked);
+    (shared, task, interrupts)
+}
+
 /// Execute the exact production NRT acknowledgement transaction.
 #[inline(always)]
 pub fn capture_and_acknowledge_interrupts() {
@@ -22,32 +36,29 @@ pub fn capture_and_acknowledge_interrupts() {
 /// Execute the exact production scheduler hardware-list head clear transaction.
 #[inline(always)]
 pub fn clear_scheduler_hardware_list_heads() {
-    let cold = oer_esp32s31_hal::bluetooth::ColdOwner::from_radio_hardware(
-        oer_esp32s31_hal::root::RadioHardware::for_validation(),
-    );
-    let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
+    let (shared, mut task, interrupts) = validation_owners();
     let cleared_lists = task.clear_scheduler_hardware_list_heads();
     // The comparison image deliberately retains the mutated partitions; it
     // must not reconstruct cold ownership without the missing rollback.
-    let _powered_owners = (task, interrupts, cleared_lists);
+    let _powered_owners = (shared, task, interrupts, cleared_lists);
 }
 
-/// Execute the production PHY-I2C host selection through the standalone
-/// Bluetooth route's shared-PHY owner.
+/// Execute the production PHY-I2C host selection through the shared radio
+/// arbiter's PHY borrow, as the Bluetooth client reaches it.
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
 pub fn configure_and_select_phy_i2c_host(block: u8) -> u32 {
-    let cold = oer_esp32s31_hal::bluetooth::ColdOwner::from_radio_hardware(
-        oer_esp32s31_hal::root::RadioHardware::for_validation(),
-    );
-    let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
+    let (shared, task, interrupts) = validation_owners();
     let host = {
-        let mut shared_phy = task.shared_phy_hal();
+        let Ok(mut lease) = shared.try_acquire() else {
+            unreachable!("the isolated image holds no other lease");
+        };
+        let mut shared_phy = lease.phy_hal();
         oer_esp32s31_phy::validation::configure_and_select_phy_i2c_host(&mut shared_phy, block)
     };
     // Host selection mutates shared PHY state. The isolated comparison image
-    // retains both partitions and must not advertise a reusable cold owner.
-    let _powered_owners = (task, interrupts);
+    // retains every partition and must not advertise a reusable cold owner.
+    let _powered_owners = (shared, task, interrupts);
     host
 }
 
@@ -55,11 +66,10 @@ pub fn configure_and_select_phy_i2c_host(block: u8) -> u32 {
 /// `bt_bb_v2_init_cmplx(1)` with the reviewed linked `phy_param` byte.
 ///
 /// This validation-only bridge cannot bypass the production Bluetooth
-/// lifecycle in an ordinary build because it is absent there. The production
-/// edge consumes `ControllerPhyInitialized` after target common-PHY
-/// registration, Bluetooth-client acquisition and any required initial
-/// tracking, then projects this byte from the owned PHY state; no earlier
-/// production transition is exposed.
+/// lifecycle in an ordinary build because it is absent there. In
+/// production the first BTBB holder runs it when the Bluetooth client joins
+/// the registered shared PHY domain, which projects this byte from the
+/// registration that describes the lease.
 ///
 /// # Safety
 ///
@@ -96,16 +106,13 @@ pub unsafe fn initialize_baseband_v2(gain_parameter: u8) {
 )]
 #[inline(always)]
 pub unsafe fn initialize_controller_hal_reviewed_standalone() {
-    let cold = oer_esp32s31_hal::bluetooth::ColdOwner::from_radio_hardware(
-        oer_esp32s31_hal::root::RadioHardware::for_validation(),
-    );
-    let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
+    let (shared, mut task, interrupts) = validation_owners();
     // SAFETY: forwarded unchanged from this function's `# Safety` contract,
     // which states the lower transaction's prerequisites.
     unsafe {
         task.initialize_controller_hal(BluetoothControllerHalInitConfig::reviewed_standalone());
     }
-    let _powered_owners = (task, interrupts);
+    let _powered_owners = (shared, task, interrupts);
 }
 
 /// Apply the exact modem low-power timer register prefix before source 127.
@@ -125,15 +132,16 @@ pub unsafe fn initialize_controller_hal_reviewed_standalone() {
 )]
 #[inline(always)]
 pub unsafe fn prepare_modem_lp_timer_registers() {
-    let cold = oer_esp32s31_hal::bluetooth::ColdOwner::from_radio_hardware(
-        oer_esp32s31_hal::root::RadioHardware::for_validation(),
-    );
-    let (mut task, interrupts) = cold.separate_interrupt_owner();
+    let (shared, partitions) =
+        oer_esp32s31_hal::root::RadioHardware::for_validation().into_concurrent(());
+    let (mut task, interrupts) =
+        oer_esp32s31_hal::bluetooth::ClockedOwner::for_validation(partitions.bluetooth)
+            .separate_interrupt_owner();
     // SAFETY: forwarded unchanged from this function's `# Safety` contract,
     // which states the lower transaction's prerequisites.
     let prepared = unsafe { task.prepare_modem_lp_timer_registers() }
         .expect("a fresh Bluetooth task retains the modem LP-timer partition");
-    let _terminal_owners = (task, prepared, interrupts);
+    let _terminal_owners = (shared, task, prepared, interrupts);
 }
 
 /// Execute one exact production memory-list pointer publication in an

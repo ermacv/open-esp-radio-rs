@@ -19,6 +19,8 @@
 
 use core::{marker::PhantomPinned, pin::Pin};
 
+use oer_esp32s31_hal::bluetooth::BluetoothControllerReset;
+
 use oer_esp32s31_hal::types::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
 };
@@ -515,6 +517,7 @@ impl<const PACKETS: usize> LeRxRingView<'_, PACKETS> {
 pub struct LeRxChain<const PACKETS: usize> {
     storage: Pin<&'static mut LeRxChainStorage<PACKETS>>,
     class: RxMemoryListClass,
+    nodes_base: u32,
     ring: LeRxRing<PACKETS>,
 }
 
@@ -551,15 +554,25 @@ impl<const PACKETS: usize> LeRxChain<PACKETS> {
         {
             return Err(LeRxChainBindError::ExtentOutsidePhysicalSram);
         }
-        let nodes = core::mem::offset_of!(LeRxChainStorage<PACKETS>, nodes) as u32;
+        let nodes_base = base + core::mem::offset_of!(LeRxChainStorage<PACKETS>, nodes) as u32;
         let mut chain = Self {
-            ring: LeRxRing::bind(base + nodes)?,
+            ring: LeRxRing::bind(nodes_base)?,
             storage: Pin::static_mut(storage),
             class,
+            nodes_base,
         };
         let storage = chain.storage.as_ref().get_ref();
         chain.ring.view(&storage.nodes).initialize();
         Ok(chain)
+    }
+
+    /// Return every node to the chain in its allocation-time order after the
+    /// Controller that received into it was reset. Packets not yet taken
+    /// are discarded.
+    pub fn reset_after_controller_reset(&mut self, _reset: &BluetoothControllerReset) {
+        self.ring = LeRxRing::bind(self.nodes_base).expect("the chain bound at this base before");
+        let storage = self.storage.as_ref().get_ref();
+        self.ring.view(&storage.nodes).initialize();
     }
 
     /// The class that hardware selects for these packets.

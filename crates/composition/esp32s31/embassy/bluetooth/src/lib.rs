@@ -3,21 +3,30 @@
 
 //! ESP32-S31 Bluetooth LE radio composition over Embassy-compatible time.
 //!
-//! [`start_esp32s31_bluetooth`] runs one powered Controller epoch from the
-//! stopped radio root to an installed radio runtime:
+//! The Bluetooth Controller is a client of the shared radio
+//! (`oer-esp32s31-radio-system`). [`BluetoothParked::new`] claims the static
+//! controller memory once per boot: the BLE PHY environment, the
+//! direction-finding workspace, one pool per role and both global receive
+//! chains, all placed in internal SRAM. [`start`] then runs one Controller
+//! epoch from the parked partition to an installed radio runtime:
 //!
-//! 1. claims the static controller memory once: the BLE PHY environment, the
-//!    direction-finding workspace, one pool per role and both global receive
-//!    chains, all placed in internal SRAM;
-//! 2. enables clocks and runs Controller HAL, scheduler, modem low-power,
-//!    common PHY, BTBB and BLE PHY initialization;
-//! 3. prepares Controller output, starts the runtime timer, publishes both
+//! 1. enters common radio power and enables the Bluetooth module clocks,
+//!    Controller resets and low-power timer clock;
+//! 2. runs Controller HAL, scheduler and modem low-power initialization;
+//! 3. prepares the shared PHY through the radio system, joins it and the
+//!    shared BTBB baseband, tracking the PHY when the join makes it due;
+//! 4. enables the BLE base stack and publishes the public address;
+//! 5. prepares Controller output, starts the runtime timer, publishes both
 //!    interrupt owners and binds the three CPU routes to one dispatcher;
-//! 4. installs the radio role in the runtime.
+//! 6. installs the radio role in the runtime.
 //!
 //! The dispatcher services source 124, 127 and 133 and forwards the scheduler
-//! and source-127 worker wakes. [`BluetoothSystem::runner`] drives the radio
+//! and source-127 worker wakes. [`BluetoothSystem::run`] drives the radio
 //! runtime and the source-127 timer task until a fault stops either.
+//! [`BluetoothSystem::stop`] reverses the epoch and returns the parked
+//! partition with the controller memory back at its allocation-time image,
+//! ready for the next [`start`]. Periodic PHY tracking belongs to the radio
+//! system (`RadioSystem::run_tracking`).
 //!
 //! [`start_bluetooth_hci`] then creates the HCI Controller over that runtime:
 //! the in-process transport, whose Host end goes to the Host stack, and the
@@ -25,9 +34,8 @@
 //! radio. [`BluetoothEntropy`] binds the SoC entropy service as its random
 //! source.
 //!
-//! The epoch is one-shot: there is no teardown or restart, and periodic PHY
-//! tracking maintenance is not composed yet. Any failure after the first
-//! Controller write retains its owners in the returned error.
+//! Power and clock failures roll back to the parked client; any failure
+//! after the first Controller write keeps its owners fail-stop.
 
 #[cfg(target_arch = "riscv32")]
 mod hci;
@@ -41,7 +49,8 @@ pub use hci::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use system::{
-    BluetoothInterruptFault, BluetoothRunner, BluetoothRunnerFault, BluetoothStartError,
-    BluetoothSystem, BluetoothSystemMemory, BluetoothSystemRuntime, EVENTS, ITEMS,
-    MODEM_TIMER_CAPACITY, start_esp32s31_bluetooth,
+    BluetoothFailStop, BluetoothInterruptFault, BluetoothMemoryError, BluetoothParked,
+    BluetoothRunnerFault, BluetoothStartError, BluetoothStartFailure, BluetoothStopError,
+    BluetoothStopFailure, BluetoothSystem, BluetoothSystemMemory, BluetoothSystemRuntime, EVENTS,
+    ITEMS, MODEM_TIMER_CAPACITY, start,
 };

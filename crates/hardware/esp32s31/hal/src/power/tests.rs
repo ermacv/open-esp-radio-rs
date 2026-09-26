@@ -181,7 +181,7 @@ fn failed_semantic_readback_names_the_exact_checkpoint() {
 }
 
 #[test]
-fn bluetooth_preparation_retains_the_epoch_on_success_and_each_readback_failure() {
+fn power_sequence_retains_the_i2c_lease_on_success_and_each_readback_failure() {
     for failed in [
         None,
         Some(PowerCheckpoint::ResetReleased),
@@ -215,8 +215,7 @@ fn bluetooth_preparation_retains_the_epoch_on_success_and_each_readback_failure(
                 PowerCheckpoint::I2cClock => &mut shared.observation.phy_i2c_master_clock_enabled,
             } = false;
         }
-        let mut reunitable = true;
-        let result = super::execute_bluetooth_owned(&mut reunitable, &mut shared);
+        let result = super::execute_owned(&mut shared);
         assert_eq!(
             result,
             failed.map_or(Ok(()), |checkpoint| Err(PowerError {
@@ -224,10 +223,6 @@ fn bluetooth_preparation_retains_the_epoch_on_success_and_each_readback_failure(
                 expected: true,
                 observed: false,
             }))
-        );
-        assert!(
-            !reunitable,
-            "a partially powered PHY cannot return a cold owner"
         );
         assert_eq!(
             shared.retain_calls, 1,

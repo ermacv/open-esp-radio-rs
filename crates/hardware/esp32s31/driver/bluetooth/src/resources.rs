@@ -1,19 +1,17 @@
-//! Lossless ownership transitions for standalone Bluetooth hardware.
-
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-pub mod platform_retirement;
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-pub mod runtime_owner;
-
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-use core::mem::ManuallyDrop;
+//! Task and interrupt owners of one powered Controller epoch.
+//!
+//! The epoch starts from the HAL's clocked Bluetooth client, which proves
+//! common radio power, the Bluetooth module clocks, the released controller
+//! resets and the low-power timer clock. [`separate_interrupt_owner`] splits
+//! it into the task-side [`TaskResources`] and the inactive
+//! [`InterruptBankOwner`]; [`TaskResources::shut_down`] resets the stopped
+//! Controller and returns the clocked client.
 
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListsCleared;
 
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use oer_esp32s31_hal::bluetooth::BluetoothControllerHalInitConfig;
-use oer_esp32s31_hal::bluetooth::ColdOwner as HalBluetoothColdOwner;
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use oer_esp32s31_hal::bluetooth::ControllerHalBorrow;
 #[cfg(test)]
@@ -26,10 +24,9 @@ use oer_esp32s31_hal::bluetooth::TaskOwnerReuniteFailure;
     feature = "validation-probes"
 ))]
 use oer_esp32s31_hal::bluetooth::{
-    InterruptSetupOwner as HalBluetoothInterruptSetupOwner, TaskOwner as HalBluetoothTaskOwner,
+    ClockedOwner, InterruptSetupOwner as HalBluetoothInterruptSetupOwner,
+    TaskOwner as HalBluetoothTaskOwner,
 };
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-use oer_esp32s31_hal::owner::{SharedPhyBorrow, SharedPhyHal, route};
 #[cfg(target_arch = "riscv32")]
 use {
     oer_esp32s31_hal::bluetooth::BluetoothModemLpTimerOwnerError,
@@ -38,11 +35,10 @@ use {
     oer_esp32s31_hal::bluetooth::DirectionFindingDisabledBaselineOwner,
     oer_esp32s31_hal::bluetooth::InterruptOutputPreparedOwner,
     oer_esp32s31_hal::bluetooth::ModemLpTimerLowPowerHardwareInitializedOwner,
+    oer_esp32s31_hal::shared_radio::SharedRadioLease,
     oer_esp32s31_hal::types::BluetoothControllerSramAddress,
     oer_esp32s31_hal::types::BluetoothPhyRegisterInitInputs,
 };
-
-use oer_esp32s31_hal::root::{RadioHardware, RadioPhyReleaseError};
 
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use crate::controller_time::ControllerTimeWorker;
@@ -53,175 +49,9 @@ use crate::controller_time::{
     ControllerTimeEventError, ControllerTimeEventStep, ControllerTimeRequest,
     ControllerTimeRequestError,
 };
-/// Opaque singleton root for one standalone Bluetooth lifecycle.
-///
-/// The protocol-neutral PAC owner is captured inside the chip crate. Product
-/// composition can acquire and move this affine value, but cannot reach PAC
-/// register partitions or depend on the PAC crate directly.
-#[must_use = "the Bluetooth radio root is the unique hardware owner"]
-pub struct BluetoothRadioHardware {
-    hardware: RadioHardware,
-}
 
-impl BluetoothRadioHardware {
-    #[cfg(target_arch = "riscv32")]
-    pub fn from_released(hardware: RadioHardware) -> Self {
-        Self { hardware }
-    }
-    /// Acquire the restricted radio singleton for standalone Bluetooth.
-    pub fn take() -> Option<Self> {
-        RadioHardware::take().map(|hardware| Self { hardware })
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn for_validation() -> Self {
-        Self {
-            hardware: RadioHardware::for_validation(),
-        }
-    }
-
-    fn into_inner(self) -> RadioHardware {
-        self.hardware
-    }
-}
-
-/// Complete cold Bluetooth owner before any powered lifecycle transaction.
-///
-/// This is the only public entry to and exit from the standalone Bluetooth
-/// lifecycle. Keeping the platform lease and restricted radio root in one
-/// affine value prevents owners from unrelated epochs being paired during
-/// clock enable or rollback.
-#[must_use = "stopped Bluetooth retains the platform and radio owners"]
-pub struct BluetoothStopped<P> {
-    registers: HalBluetoothColdOwner,
-    platform: P,
-}
-
-/// Failed stopped-route transition retaining the complete Bluetooth owner.
-#[must_use = "failed Bluetooth route transition retains the platform and radio owners"]
-pub struct StoppedReleaseFailure<P> {
-    stopped: BluetoothStopped<P>,
-    error: RadioPhyReleaseError,
-}
-
-impl<P> StoppedReleaseFailure<P> {
-    pub const fn error(&self) -> RadioPhyReleaseError {
-        self.error
-    }
-
-    pub fn into_parts(self) -> (BluetoothStopped<P>, RadioPhyReleaseError) {
-        (self.stopped, self.error)
-    }
-}
-
-impl<P> core::fmt::Debug for StoppedReleaseFailure<P> {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("StoppedReleaseFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
-}
-
-impl<P> BluetoothStopped<P> {
-    /// Bind one platform lease to the exact restricted Bluetooth radio root.
-    ///
-    /// This transition performs no MMIO. Once constructed, the pair can only
-    /// move together through the typed Bluetooth lifecycle.
-    pub fn from_hardware(platform: P, hardware: BluetoothRadioHardware) -> Self {
-        Self {
-            registers: HalBluetoothColdOwner::from_radio_hardware(hardware.into_inner()),
-            platform,
-        }
-    }
-
-    /// Bind one platform lease to a root another protocol route handed over
-    /// with its registered PHY retained and RF closed.
-    ///
-    /// This transition performs no MMIO. The Controller boot then skips the
-    /// common power sequence and wakes RF instead of registering the PHY.
-    pub fn from_retained(
-        platform: P,
-        hardware: oer_esp32s31_hal::root::RetainedRadioHardware,
-    ) -> Self {
-        Self {
-            registers: HalBluetoothColdOwner::from_retained(hardware),
-            platform,
-        }
-    }
-
-    /// Release an unpowered Bluetooth owner for caller-controlled rebinding.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoppedReleaseFailure`] retaining the complete
-    /// stopped owner when TX-DC PWDET fields still await restoration.
-    pub fn release(self) -> Result<(P, BluetoothRadioHardware), StoppedReleaseFailure<P>> {
-        let Self {
-            registers,
-            platform,
-        } = self;
-        match registers.release() {
-            Ok(hardware) => Ok((platform, BluetoothRadioHardware { hardware })),
-            Err(failure) => {
-                let (registers, error) = failure.into_parts();
-                Err(StoppedReleaseFailure {
-                    stopped: Self {
-                        registers,
-                        platform,
-                    },
-                    error,
-                })
-            }
-        }
-    }
-
-    pub fn into_parts(self) -> (HalBluetoothColdOwner, P) {
-        (self.registers, self.platform)
-    }
-
-    pub(crate) const fn from_parts(registers: HalBluetoothColdOwner, platform: P) -> Self {
-        Self {
-            registers,
-            platform,
-        }
-    }
-}
-
-/// Platform owner retained after the first non-reversible powered mutation.
-///
-/// Once PHY or controller initialization has started, releasing the ordinary
-/// platform reservation would advertise a reusable Bluetooth lifecycle even
-/// though no verified hardware teardown occurred. This wrapper deliberately
-/// suppresses `P::drop`; a future verified teardown transaction must recover
-/// the platform owner and release the reservation.
-#[must_use = "the powered platform remains retained until verified PHY teardown"]
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-pub struct TeardownPendingPlatform<P> {
-    _platform: ManuallyDrop<P>,
-}
-
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-impl<P> TeardownPendingPlatform<P> {
-    pub(crate) const fn new(platform: P) -> Self {
-        Self {
-            _platform: ManuallyDrop::new(platform),
-        }
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn platform_mut(&mut self) -> &mut P {
-        &mut self._platform
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn into_platform_after_shutdown(self) -> P {
-        ManuallyDrop::into_inner(self._platform)
-    }
-}
-
-/// Separate the cold HAL owner into the controller lifecycle's task and IRQ
-/// owners without exposing either partition publicly.
+/// Separate the clocked HAL client into the controller lifecycle's task and
+/// IRQ owners without exposing either partition publicly.
 ///
 /// This transition performs no MMIO. In particular it does not configure
 /// controller masks or a CPU interrupt route.
@@ -232,9 +62,9 @@ impl<P> TeardownPendingPlatform<P> {
     feature = "validation-probes"
 ))]
 pub(crate) fn separate_interrupt_owner(
-    registers: HalBluetoothColdOwner,
+    clocked: ClockedOwner,
 ) -> (TaskResources, InterruptBankOwner) {
-    let (task, interrupts) = registers.separate_interrupt_owner();
+    let (task, interrupts) = clocked.separate_interrupt_owner();
     (
         TaskResources {
             registers: task,
@@ -247,11 +77,11 @@ pub(crate) fn separate_interrupt_owner(
     )
 }
 
-/// Ordinary task-side owner of the standalone Bluetooth controller region.
+/// Ordinary task-side owner of the Bluetooth controller region.
 ///
 /// No MMIO operation is exposed until its finite lifecycle transaction has
 /// independent vendor evidence.
-#[must_use = "the Bluetooth task owner must be reunited before release"]
+#[must_use = "the Bluetooth task owner must return to the clocked client"]
 #[cfg(any(
     target_arch = "riscv32",
     test,
@@ -267,40 +97,38 @@ pub struct TaskResources {
 
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl TaskResources {
+    /// The HAL task owner, which proves the Bluetooth module clocks to the
+    /// shared PHY domain and BTBB.
     #[cfg(target_arch = "riscv32")]
-    pub fn maintenance_registers(&mut self) -> &mut HalBluetoothTaskOwner {
+    pub(crate) const fn hal(&self) -> &HalBluetoothTaskOwner {
+        &self.registers
+    }
+
+    /// The HAL task owner for a quiescence proof.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn hal_mut(&mut self) -> &mut HalBluetoothTaskOwner {
         &mut self.registers
     }
 
+    /// Reset the stopped Controller, reunite the drained timer and return the
+    /// clocked client.
+    ///
+    /// The caller has released Controller output and left the shared PHY
+    /// domain and BTBB; the controller-time worker holds no request.
     #[cfg(target_arch = "riscv32")]
-    pub fn release_after_phy_close(
+    pub(crate) fn shut_down<T>(
         self,
+        lease: &mut SharedRadioLease<'_, T>,
         output: oer_esp32s31_hal::bluetooth::InterruptOutputReleasedOwner,
         timer: oer_esp32s31_hal::bluetooth::ModemLpTimerInterruptReadyOwner,
     ) -> Result<
-        oer_esp32s31_hal::root::RadioHardware,
-        oer_esp32s31_hal::bluetooth::BluetoothPhysicalReleaseFailure,
+        (
+            ClockedOwner,
+            oer_esp32s31_hal::bluetooth::BluetoothControllerReset,
+        ),
+        oer_esp32s31_hal::bluetooth::BluetoothShutdownFailure,
     > {
-        self.registers.release_after_phy_close(output, timer)
-    }
-
-    /// Hand the powered, registered PHY to the retained root after RF close
-    /// and temperature power-down, instead of returning to the cold root.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        clippy::result_large_err,
-        reason = "failure retains the complete no-allocation physical frontier"
-    )]
-    pub fn release_retained_after_phy_close(
-        self,
-        output: oer_esp32s31_hal::bluetooth::InterruptOutputReleasedOwner,
-        timer: oer_esp32s31_hal::bluetooth::ModemLpTimerInterruptReadyOwner,
-    ) -> Result<
-        oer_esp32s31_hal::root::RetainedRadioHardware,
-        oer_esp32s31_hal::bluetooth::BluetoothPhysicalReleaseFailure,
-    > {
-        self.registers
-            .release_retained_after_phy_close(output, timer)
+        self.registers.shut_down(lease, output, timer)
     }
 
     /// Preserve pending or faulted time ownership before any terminal extraction.
@@ -476,90 +304,33 @@ impl TaskResources {
         }
     }
 
-    /// Borrow the protocol-neutral radio PHY for one finite lower-layer scope.
-    ///
-    /// The returned HAL derives shared baseband state from the route PAC;
-    /// selecting the Bluetooth route alone is not treated as proof that the
-    /// shared settle condition is false.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-    pub fn shared_phy_hal(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
-        self.registers.borrow_shared_phy()
-    }
-
-    /// Borrow the radio PHY together with this route's PHY grant-protect
-    /// request, for maintenance that brackets its hardware regions with it.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-    pub fn shared_phy_hal_with_grant(
-        &mut self,
-    ) -> (
-        SharedPhyHal<'_, route::Bluetooth>,
-        oer_esp32s31_hal::coex::PhyGrantProtect<'_>,
-    ) {
-        self.registers.shared_phy_hal_with_grant()
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn prepare_common_phy_power(
-        &mut self,
-    ) -> Result<(), oer_esp32s31_hal::power::PowerError> {
-        self.registers.prepare_common_phy_power()
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn common_phy_inherited(&self) -> bool {
-        self.registers.common_phy_inherited()
-    }
-
-    /// Execute the reviewed finite BT baseband-v2 initialization transaction.
-    ///
-    /// This crate-private bridge exists so only the lifecycle typestate can
-    /// reach the PAC transaction in an ordinary production build.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the matching target-registered common-PHY owner
-    /// with a settled Bluetooth client and completed initial tracking, derive
-    /// `gain_parameter` from that terminal state, and preserve every hardware
-    /// owner until verified last-owner teardown.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "the unsafe signature retains the PAC common-PHY prerequisite across the crate boundary"
-    )]
-    pub(crate) unsafe fn initialize_baseband_v2(&mut self, gain_parameter: u8) {
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the lower transaction's prerequisites.
-        unsafe {
-            self.registers
-                .initialize_baseband_v2_arg_one(gain_parameter);
-        }
-    }
-
     /// Execute the complete BLE base-stack task-enable hardware transaction
     /// for a lifecycle that retains both address-bound storage objects.
     ///
     /// # Safety
     ///
-    /// The caller must retain the exact completed common-PHY and BTBB owner,
-    /// the inactive interrupt bank, and the storage represented by `inputs`
-    /// until all controller consumers are stopped by a verified transition.
+    /// The caller must retain the Bluetooth membership of the shared PHY
+    /// domain and BTBB, the inactive interrupt bank, and the storage
+    /// represented by `inputs` until all controller consumers are stopped by
+    /// a verified transition.
     #[cfg(target_arch = "riscv32")]
     #[allow(
         unsafe_code,
         reason = "the upper typestate retains the complete PAC lifecycle and storage prerequisites"
     )]
-    pub(crate) unsafe fn enable_ble_base_stack_hardware(
+    pub(crate) unsafe fn enable_ble_base_stack_hardware<T>(
         &mut self,
+        lease: &mut SharedRadioLease<'_, T>,
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
         // SAFETY: forwarded unchanged from this function's `# Safety` contract,
         // which states the lower transaction's prerequisites.
         unsafe {
-            self.registers.enable_ble_base_stack_hardware(inputs);
+            self.registers.enable_ble_base_stack_hardware(lease, inputs);
         }
     }
 
-    /// Publish this cold epoch's public Controller identity after BLE PHY init.
+    /// Publish this epoch's public Controller identity after BLE PHY init.
     ///
     /// The caller retains the sole powered task owner and invokes this before
     /// controller IRQ output, runtime-timer start or any radio consumer becomes
@@ -600,12 +371,12 @@ impl TaskResources {
     pub(crate) fn reunite(
         self,
         interrupts: InterruptBankOwner,
-    ) -> Result<HalBluetoothColdOwner, TaskOwnerReuniteFailure> {
+    ) -> Result<ClockedOwner, TaskOwnerReuniteFailure> {
         assert!(
             self.controller_time.is_reunitable(),
-            "controller-time fault or transaction prevents cold reunion"
+            "controller-time fault or transaction prevents reunion"
         );
-        self.registers.into_cold(interrupts._registers)
+        self.registers.into_clocked(interrupts._registers)
     }
 }
 

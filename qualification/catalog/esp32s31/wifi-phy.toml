@@ -34,12 +34,12 @@ level = "lower-primitive"
 [source-facts.source-contract]
 id = "bluetooth-initial-phy-handoff"
 composition = "production"
-scope = "Common-PHY power reset and calibration-clock preparation with semantic readback and retained I2C clock lease followed by borrowed registration Bluetooth-client acquisition terminal initial tracking and settled-client-only baseband initialization"
-limits = "This bounded handoff retains fail-stop ownership on power or calibration failure; the parent also requires periodic maintenance and final physical release"
+scope = "Common radio power and Bluetooth module clocks through the shared radio arbiter, arbiter-owned PHY registration or RF wake, then Bluetooth-client and BTBB membership with initial tracking inside the Controller's quiescence window when due at the join"
+limits = "This bounded handoff retains fail-stop ownership after the first Controller write; the parent also requires periodic maintenance and final physical release"
 source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
-  "crates/hardware/esp32s31/hal/src/power.rs",
-  "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
+  "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system.rs",
 ]
 
 [[source-facts]]
@@ -68,7 +68,7 @@ composition = "production"
 scope = "Idle-first periodic shared-PHY maintenance with bounded deferral throughout the Bluetooth Controller lifetime, a time-budgeted pause across eligible established ACL events per transaction, and no preemption of active DTM TX/RX"
 limits = "No LE Controller composition currently exists. The listed sources are the remaining lower primitives that such a composition must use; they do not implement this contract"
 source-paths = [
-  "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
+  "crates/composition/esp32s31/embassy/radio/src/system.rs",
   "crates/protocols/bluetooth/le/ll/src/connection/maintenance.rs",
   "crates/hardware/esp32s31/phy/src/tracking/fail_stop.rs",
   "crates/adapters/esp-hal/esp32s31/soc/src/reset.rs",
@@ -1014,7 +1014,7 @@ id = "phy-protocol-consumer-composition"
 domain = "phy"
 title = "Protocol consumer composition"
 source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
-overview = "Statuses here apply to protocol composition, independently of primitive status.\n`PARTIAL` can mean an available target entry point without a public operational\ncaller. Shared registration does not prove that every calibration branch is\nselected, every channel is usable or all radio clients can run concurrently.\n\n\nThe relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),\n[Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),\n[registered shared radio](src/registered_radio.rs),\n[registered Bluetooth](src/registered_bluetooth.rs) and\n[the IEEE 802.15.4 PHY client](src/ieee802154_client.rs).\nIEEE 802.15.4 joins the shared PHY domain and BTBB baseband as an arbiter\nclient; membership alone is not RF readiness."
+overview = "Statuses here apply to protocol composition, independently of primitive status.\n`PARTIAL` can mean an available target entry point without a public operational\ncaller. Shared registration does not prove that every calibration branch is\nselected, every channel is usable or all radio clients can run concurrently.\n\n\nThe relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),\n[Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),\n[registered shared radio](src/registered_radio.rs),\n[the Bluetooth PHY client](src/bluetooth_client.rs) and\n[the IEEE 802.15.4 PHY client](src/ieee802154_client.rs).\nBluetooth and IEEE 802.15.4 join the shared PHY domain and BTBB baseband as\narbiter clients; membership alone is not RF readiness."
 packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-ieee80211", "oer-esp32s31-phy"]
 
 [[sections]]

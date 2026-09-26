@@ -1,5 +1,5 @@
 use super::{RadioHardware, RadioPhyReleaseError};
-use crate::{bluetooth::ColdOwner, owner::WifiColdRegisters, phy::restore::PhyRouteState};
+use crate::{owner::WifiColdRegisters, phy::restore::PhyRouteState};
 
 #[derive(Clone, Copy)]
 enum Restore {
@@ -51,17 +51,6 @@ fn pending_restore_survives_same_route_transitions_and_blocks_every_release() {
             panic!("Wi-Fi released a pending restore");
         };
         assert_eq!(error, restore.error());
-
-        let bluetooth = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
-        let (mut task, interrupts) = bluetooth.separate_interrupt_owner();
-        restore.occupy(task.phy_state_mut());
-        let bluetooth = task
-            .into_cold(interrupts)
-            .expect("an idle Bluetooth task owner can be reunited");
-        let Err(failure) = bluetooth.release() else {
-            panic!("Bluetooth released a pending restore");
-        };
-        assert_eq!(failure.error(), restore.error());
     }
 }
 
@@ -74,23 +63,8 @@ fn wifi_route_roundtrip_returns_the_complete_root() {
         panic!("an untouched cold route can be released");
     };
 
-    let _hardware = ColdOwner::from_radio_hardware(hardware)
-        .release()
-        .expect("an untouched Bluetooth route can be released");
-}
-
-#[test]
-fn bluetooth_task_and_interrupt_owners_roundtrip_without_mmio() {
-    let bluetooth = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
-    let (task, setup) = bluetooth.separate_interrupt_owner();
-    let hardware = task
-        .into_cold(setup)
-        .expect("an idle Bluetooth task owner can be reunited")
-        .release()
-        .expect("an untouched Bluetooth route can be released");
-
     let Ok(_hardware) = WifiColdRegisters::from_hardware(hardware).release() else {
-        panic!("an untouched Wi-Fi route can be released");
+        panic!("the returned root enters Wi-Fi again");
     };
 }
 
@@ -105,22 +79,16 @@ fn registration_epoch_is_replaced_by_registration_and_retired_by_every_route_rel
     assert_ne!(first, second);
     assert_eq!(phy.registration_epoch(), Some(second));
 
-    let mut bluetooth =
+    let mut wifi =
         RadioHardware::from_wifi(wifi.registers, wifi.interrupts, wifi.phy, wifi.retained)
-            .into_bluetooth();
-    let phy = &mut bluetooth.phy;
+            .into_wifi();
+    let phy = &mut wifi.phy;
     assert_eq!(phy.registration_epoch(), None);
     let third = phy.begin_registration_epoch();
     assert!(third != first && third != second);
 
-    let wifi = RadioHardware::from_bluetooth(
-        bluetooth.task,
-        bluetooth.modem_lp_timer,
-        bluetooth.interrupts,
-        bluetooth.phy,
-        bluetooth.retained,
-    )
-    .into_wifi();
+    let wifi = RadioHardware::from_wifi(wifi.registers, wifi.interrupts, wifi.phy, wifi.retained)
+        .into_wifi();
     assert_eq!(wifi.phy.registration_epoch(), None);
 }
 

@@ -118,7 +118,7 @@ frame semantics belong to the protocol crate.
 | `esp_ieee802154_frame.c` | protocol `mac::header` | implemented over `[PHR, PSDU...]` images; malformed headers report absent fields where the vendor reads outside the frame |
 | `esp_ieee802154_sec.c` | driver engine over HAL `ll` | implemented |
 | `esp_ieee802154_multipan.c`, `update_mpf_index`, per-interface pending tables | driver engine | implemented for one to four interfaces; the radio role and runtime serve interface zero |
-| `esp_ieee802154_event.c` callbacks | driver engine environment, runtime event queue | implemented; the enhanced-ACK generator is a platform function |
+| `esp_ieee802154_event.c` callbacks | driver engine environment, runtime event queue | implemented; the enhanced-ACK generator is the radio role's port of the OpenThread port generator over the portable formatter, and the engine arms transmit security for a secured ACK |
 | `esp_ieee802154_util.c` coexistence scenes, channel conversion | HAL, driver engine | implemented: scene levels with the default configuration, channel conversion |
 | `ieee802154_sleep`, `rf_enable` / `rf_disable`, sleep retention | driver engine, HAL and PHY | partial: engine sleep state; RF gating (off in the default build) and retention absent |
 | `esp_ieee802154_debug.c` | not ported: optional statistics | absent |

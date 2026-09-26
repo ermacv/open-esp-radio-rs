@@ -126,6 +126,20 @@ fn receive_with_enhanced_ack() -> Vec<Step> {
     ]
 }
 
+/// Secured enhanced ACK returned by the application generator with its key:
+/// ACK, security enabled, 2015, short destination; ENC-MIC-32 with key index
+/// 1 after frame counter 0x01020304, then the MIC and FCS placeholders.
+fn secured_enhanced_ack_inputs() -> Inputs {
+    Inputs {
+        enhanced_ack: Some(vec![
+            0x13, 0x0a, 0x28, 0x01, 0x34, 0x12, 0x78, 0x56, 0x0d, 0x04, 0x03, 0x02, 0x01, 0x01, 0,
+            0, 0, 0, 0, 0,
+        ]),
+        enhanced_ack_key: Some([0x42; 16]),
+        ..Inputs::default()
+    }
+}
+
 fn receive_2015_without_enhanced_ack() -> Vec<Step> {
     vec![
         Step::Enable,
@@ -555,6 +569,11 @@ pub const SCENARIOS: &[Scenario] = &[
     Scenario {
         name: "receive-with-enhanced-ack",
         inputs: enhanced_ack_inputs,
+        steps: receive_with_enhanced_ack,
+    },
+    Scenario {
+        name: "receive-with-secured-enhanced-ack",
+        inputs: secured_enhanced_ack_inputs,
         steps: receive_with_enhanced_ack,
     },
     Scenario {

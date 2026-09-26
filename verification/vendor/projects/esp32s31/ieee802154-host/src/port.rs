@@ -31,8 +31,9 @@ use oer_esp32s31_hal::{
     ieee802154::coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
 };
 use oer_esp32s31_ieee802154::engine::{
-    FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Environment,
-    Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,
+    FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
+    Ieee802154Environment, Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot,
+    Ieee802154TxError,
 };
 use oer_esp32s31_ieee802154::pib::{
     AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults,
@@ -701,9 +702,10 @@ impl Ieee802154Environment for PortEnv {
         frame: &[u8; FRAME_SIZE],
         _info: &Ieee802154FrameInfo,
         ack: &mut [u8; FRAME_SIZE],
-    ) -> bool {
+    ) -> Ieee802154EnhancedAck {
         let mut shared = self.0.borrow_mut();
         let generated = shared.model.inputs.enhanced_ack.clone();
+        let key = shared.model.inputs.enhanced_ack_key;
         shared.event(
             "enh_ack_generator",
             Vec::new(),
@@ -714,9 +716,11 @@ impl Ieee802154Environment for PortEnv {
             Some(image) => {
                 let length = image.len().min(FRAME_SIZE);
                 ack[..length].copy_from_slice(&image[..length]);
-                true
+                key.map_or(Ieee802154EnhancedAck::Generated, |key| {
+                    Ieee802154EnhancedAck::Secured { key }
+                })
             }
-            None => false,
+            None => Ieee802154EnhancedAck::Refused,
         }
     }
 }

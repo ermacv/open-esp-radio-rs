@@ -130,6 +130,9 @@ pub struct Inputs {
     pub values: BTreeMap<String, u64>,
     /// Return value of `esp_ieee802154_enh_ack_generator`; `None` refuses.
     pub enhanced_ack: Option<Vec<u8>>,
+    /// The key of a secured enhanced ACK, which the generator arms as the
+    /// OpenThread port does.
+    pub enhanced_ack_key: Option<[u8; 16]>,
 }
 
 /// The register-layer value model shared by the vendor recorder and the port
@@ -396,7 +399,12 @@ extern "C" fn oer_host_event(
 
 /// Answer the application enhanced-ACK generator from the scenario.
 #[unsafe(no_mangle)]
-extern "C" fn oer_host_enh_ack(frame: *const u8, frame_len: u32, enhack_frame: *mut u8) -> i32 {
+extern "C" fn oer_host_enh_ack(
+    frame: *const u8,
+    frame_len: u32,
+    enhack_frame: *mut u8,
+    key: *mut u8,
+) -> i32 {
     let frame = bytes_of(frame, frame_len);
     with_state(|state| {
         state.records.push(Record::Event {
@@ -410,7 +418,14 @@ extern "C" fn oer_host_enh_ack(frame: *const u8, frame_len: u32, enhack_frame: *
                 // SAFETY: the driver passes its 128-byte enhanced-ACK buffer,
                 // and scenarios supply at most 128 bytes.
                 unsafe { std::ptr::copy_nonoverlapping(ack.as_ptr(), enhack_frame, ack.len()) };
-                0
+                match state.model.inputs.enhanced_ack_key {
+                    Some(secured) => {
+                        // SAFETY: the shim passes a sixteen-byte key buffer.
+                        unsafe { std::ptr::copy_nonoverlapping(secured.as_ptr(), key, 16) };
+                        1
+                    }
+                    None => 0,
+                }
             }
             None => -1,
         }

@@ -228,3 +228,26 @@ fn energy_detection_and_cca_report_their_ed_done_sample() {
         ],
     );
 }
+
+/// A secured enhanced ACK is armed before the driver publishes it: the
+/// OpenThread port reads the extended address, configures transmit security
+/// over the ACK, then the driver publishes the ACK and notifies the hardware
+/// (esp_openthread_radio.c `enh_ack_set_security_addr_and_key`,
+/// esp_ieee802154_sec.c L16-L25, esp_ieee802154_dev.c L564-L573); the ACK's
+/// `TX_DONE` clears the security.
+#[test]
+fn a_secured_enhanced_ack_is_armed_before_it_is_published() {
+    assert_subsequence(
+        &trace("receive-with-secured-enhanced-ack"),
+        &[
+            "ll ieee802154_ll_get_multipan_ext_addr(0x0, [0000000000000000])",
+            "ll ieee802154_ll_set_security_addr([0000000000000000])",
+            "ll ieee802154_ll_set_security_key([42424242424242424242424242424242])",
+            "ll ieee802154_ll_set_security_offset(0xd)",
+            "ll ieee802154_ll_set_transmit_security(0x1)",
+            "ll ieee802154_ll_set_tx_addr(buf#1)",
+            "ll ieee802154_ll_enhack_generate_done_notify()",
+            "ll ieee802154_ll_set_transmit_security(0x0)",
+        ],
+    );
+}

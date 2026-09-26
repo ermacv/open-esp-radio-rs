@@ -22,7 +22,8 @@ uint64_t oer_host_record(const char *name, const uint64_t *arguments, uint32_t c
 void oer_host_event(const char *name, const uint64_t *arguments, uint32_t count,
                     const uint8_t *first, uint32_t first_len, const uint8_t *second,
                     uint32_t second_len);
-int32_t oer_host_enh_ack(const uint8_t *frame, uint32_t frame_len, uint8_t *enhack_frame);
+int32_t oer_host_enh_ack(const uint8_t *frame, uint32_t frame_len, uint8_t *enhack_frame,
+                         uint8_t *key);
 void oer_host_interrupt_handler(intr_handler_t handler, void *arg);
 
 #define RECORD0(name) (void)oer_host_record(name, 0, 0, 0)
@@ -155,9 +156,25 @@ void esp_ieee802154_ed_failed(uint16_t error)
 
 void esp_ieee802154_receive_at_done(void) { oer_host_event("receive_at_done", 0, 0, 0, 0, 0, 0); }
 
+/* The application generator. A secured ACK is armed as ESP-IDF's OpenThread
+ * port arms it from its generator (esp_openthread_radio.c
+ * `enh_ack_set_security_addr_and_key`): read the extended address, then
+ * configure transmit security over the ACK. */
 esp_err_t esp_ieee802154_enh_ack_generator(uint8_t *frame, esp_ieee802154_frame_info_t *frame_info,
                                            uint8_t *enhack_frame)
 {
+    uint8_t key[16];
+    uint8_t address[8];
+    int32_t generated;
+
     (void)frame_info;
-    return (esp_err_t)oer_host_enh_ack(frame, frame_bytes(frame), enhack_frame);
+    generated = oer_host_enh_ack(frame, frame_bytes(frame), enhack_frame, key);
+    if (generated < 0) {
+        return ESP_FAIL;
+    }
+    if (generated == 1) {
+        esp_ieee802154_get_extended_address(address);
+        esp_ieee802154_set_transmit_security(enhack_frame, key, address);
+    }
+    return ESP_OK;
 }

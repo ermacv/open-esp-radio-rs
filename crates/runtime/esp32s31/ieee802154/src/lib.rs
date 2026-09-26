@@ -30,7 +30,7 @@ use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
     AcceptedCommand, AutoPendingMode, CommandError, Frame, PendingTable, RadioCommand, RadioEvent,
-    RadioFault, RadioState, ReceivedFrame, RequestId, RxMetadata, TxStatus,
+    RadioFault, RadioState, ReceivedFrame, RequestId, RestingState, RxMetadata, TxStatus,
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
@@ -201,6 +201,43 @@ struct Installed<'storage, H> {
     hardware: H,
 }
 
+/// Why the runtime could not pause.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154PauseError {
+    /// No radio is installed.
+    NotInstalled,
+    /// A transmission, energy scan or CCA is still running.
+    Busy,
+}
+
+/// The radio role and its hardware held outside the runtime while the MAC is
+/// stopped, for example across shared PHY maintenance.
+///
+/// While paused the runtime rejects commands as not installed and its
+/// interrupt entry does nothing, so the platform CPU route must stay closed
+/// until [`Ieee802154Runtime::resume`].
+#[must_use = "a paused radio must be resumed"]
+pub struct Ieee802154RuntimePaused<'storage, H> {
+    installed: Installed<'storage, H>,
+    receiving: Option<oer_ieee802154::Channel>,
+}
+
+impl<H> Ieee802154RuntimePaused<'_, H> {
+    /// Borrow the hardware, for example to prove the MAC quiescent.
+    pub fn hardware_mut(&mut self) -> &mut H {
+        &mut self.installed.hardware
+    }
+
+    /// The channel receive mode resumes on, if the radio was receiving.
+    pub const fn receiving(&self) -> Option<oer_ieee802154::Channel> {
+        self.receiving
+    }
+}
+
+/// Correlation identifier of the runtime's own stop and resume of receive
+/// mode; neither produces an event.
+const PAUSE_REQUEST: RequestId = RequestId::new(u32::MAX);
+
 /// The sink of one locked entry: events go to the queue.
 struct QueueSink<'a, M: RawMutex, const EVENTS: usize> {
     events: &'a Channel<M, Ieee802154RadioEvent, EVENTS>,
@@ -304,6 +341,103 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         while self.events.try_receive().is_ok() {}
         self.lost.store(false, Ordering::Release);
         parts
+    }
+
+    /// Stop the MAC and take the radio out of the runtime.
+    ///
+    /// A resting radio pauses: receive mode is left, and resumed by
+    /// [`Self::resume`]. The caller then closes the platform CPU route.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed, or an operation with a pending terminal event
+    /// is running; nothing changes.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc runtime moves the paused owners by value"
+    )]
+    pub fn pause(&self) -> Result<Ieee802154RuntimePaused<'storage, H>, Ieee802154PauseError> {
+        self.installed.lock(|installed| {
+            let mut installed = installed.borrow_mut();
+            let receiving = match installed
+                .as_ref()
+                .ok_or(Ieee802154PauseError::NotInstalled)?
+                .radio
+                .state()
+            {
+                RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
+                RadioState::Resting(RestingState::Sleeping) | RadioState::Disabled => None,
+                _ => return Err(Ieee802154PauseError::Busy),
+            };
+            let mut paused = installed.take().expect("checked above");
+            if receiving.is_some() {
+                let mut sink = QueueSink {
+                    events: &self.events,
+                    lost: &self.lost,
+                };
+                let Installed { radio, hardware } = &mut paused;
+                if radio
+                    .submit(
+                        hardware,
+                        RadioCommand::Sleep { id: PAUSE_REQUEST },
+                        &mut sink,
+                    )
+                    .is_err()
+                {
+                    *installed = Some(paused);
+                    return Err(Ieee802154PauseError::Busy);
+                }
+            }
+            Ok(Ieee802154RuntimePaused {
+                installed: paused,
+                receiving,
+            })
+        })
+    }
+
+    /// Put a paused radio back, entering receive mode again if it was
+    /// receiving. The caller opens the platform CPU route afterwards.
+    ///
+    /// # Errors
+    ///
+    /// Another radio is installed; the paused radio is returned.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc runtime returns the paused owners by value"
+    )]
+    pub fn resume(
+        &self,
+        paused: Ieee802154RuntimePaused<'storage, H>,
+    ) -> Result<(), Ieee802154RuntimePaused<'storage, H>> {
+        self.installed.lock(|installed| {
+            let mut installed = installed.borrow_mut();
+            if installed.is_some() {
+                return Err(paused);
+            }
+            let Ieee802154RuntimePaused {
+                installed: mut resumed,
+                receiving,
+            } = paused;
+            if let Some(channel) = receiving {
+                let mut sink = QueueSink {
+                    events: &self.events,
+                    lost: &self.lost,
+                };
+                let Installed { radio, hardware } = &mut resumed;
+                // The paused state is the sleeping state it left, so the
+                // receive admission cannot be rejected.
+                let _ = radio.submit(
+                    hardware,
+                    RadioCommand::Receive {
+                        id: PAUSE_REQUEST,
+                        channel,
+                    },
+                    &mut sink,
+                );
+            }
+            *installed = Some(resumed);
+            Ok(())
+        })
     }
 
     fn with_radio<T>(

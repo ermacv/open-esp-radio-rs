@@ -230,3 +230,90 @@ fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
     });
     assert_eq!(mode, oer_ieee802154::AutoPendingMode::Enhanced);
 }
+
+#[test]
+fn pausing_leaves_receive_mode_and_resuming_enters_it_again() {
+    let runtime = enabled::<4>();
+    runtime
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(15),
+        })
+        .unwrap();
+    let mut paused = runtime.pause().unwrap();
+    assert_eq!(paused.receiving(), Some(channel(15)));
+    assert_eq!(
+        paused.installed.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+    let _hardware: &mut Ieee802154LlModel = paused.hardware_mut();
+    // Nothing reaches the paused radio.
+    assert_eq!(runtime.state(), Err(Ieee802154RuntimeError::NotInstalled));
+    assert_eq!(
+        runtime.submit(RadioCommand::Sleep {
+            id: RequestId::new(3)
+        }),
+        Err(Ieee802154RuntimeError::NotInstalled)
+    );
+    runtime.on_interrupt();
+
+    runtime
+        .resume(paused)
+        .unwrap_or_else(|_| panic!("the runtime is empty"));
+    assert_eq!(
+        runtime.state(),
+        Ok(RadioState::Resting(RestingState::Receiving {
+            channel: channel(15)
+        }))
+    );
+    assert!(
+        runtime.events.try_receive().is_err(),
+        "pausing emits no event"
+    );
+}
+
+#[test]
+fn a_sleeping_radio_resumes_asleep() {
+    let runtime = enabled::<4>();
+    let paused = runtime.pause().unwrap();
+    assert_eq!(paused.receiving(), None);
+    runtime
+        .resume(paused)
+        .unwrap_or_else(|_| panic!("the runtime is empty"));
+    assert_eq!(
+        runtime.state(),
+        Ok(RadioState::Resting(RestingState::Sleeping))
+    );
+}
+
+#[test]
+fn a_running_operation_or_a_missing_radio_refuses_the_pause() {
+    use super::Ieee802154PauseError;
+    assert_eq!(
+        Runtime::<4>::new().pause().err(),
+        Some(Ieee802154PauseError::NotInstalled)
+    );
+    let runtime = enabled::<4>();
+    runtime
+        .submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(5),
+            frame: FrameView::new(&MAC).unwrap(),
+            channel: channel(20),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+        }))
+        .unwrap();
+    assert_eq!(runtime.pause().err(), Some(Ieee802154PauseError::Busy));
+    assert!(matches!(
+        runtime.state(),
+        Ok(RadioState::Transmitting { .. })
+    ));
+}
+
+#[test]
+fn resuming_over_an_installed_radio_returns_the_paused_one() {
+    let first = enabled::<4>();
+    let paused = first.pause().unwrap();
+    let occupied = enabled::<4>();
+    assert!(occupied.resume(paused).is_err());
+}

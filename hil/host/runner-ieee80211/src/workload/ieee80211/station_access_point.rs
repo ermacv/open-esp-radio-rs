@@ -18,12 +18,18 @@ use oer_hil_protocol::{
 use serde::Serialize;
 
 use crate::{
-    Result, fixture::local::air_monitor::LocalAirMonitorCapture,
-    fixture::local::air_monitor::LocalAirMonitorEvidence, fixture::local::client::ControlledClient,
-    workload::ieee80211::control::report_stack, workload::ieee80211::control::require_transition,
-    workload::ieee80211::control::stop_station, workload::traffic::paced_udp::Config as UdpConfig,
-    workload::traffic::paced_udp::HostTransmission, workload::traffic::paced_udp::send as send_udp,
-    workload::traffic::tx_traffic::Burst, workload::traffic::tx_traffic::Receiver,
+    Result,
+    fixture::local::air_monitor::LocalAirMonitorCapture,
+    fixture::local::air_monitor::LocalAirMonitorEvidence,
+    fixture::local::client::{ClientNetwork, ClientPhy, ControlledClient},
+    workload::ieee80211::control::report_stack,
+    workload::ieee80211::control::require_transition,
+    workload::ieee80211::control::stop_station,
+    workload::traffic::paced_udp::Config as UdpConfig,
+    workload::traffic::paced_udp::HostTransmission,
+    workload::traffic::paced_udp::send as send_udp,
+    workload::traffic::tx_traffic::Burst,
+    workload::traffic::tx_traffic::Receiver,
 };
 use hil_core::{
     session::SerialCapture, session::SessionEvidence, session::probe_udp_rx_ready_via,
@@ -141,8 +147,10 @@ fn qualify(
     require_transition(started, WifiRole::Idle, WifiRole::StationAccessPoint)?;
 
     let (station_target, access_point_target) = wait_for_endpoints(capture, config.timeout)?;
-    let client =
-        ControlledClient::connect(&context.lab.access_point, &output.join("linux-client"))?;
+    let client = ControlledClient::connect(
+        &ClientNetwork::target_access_point(&context.lab.access_point, ClientPhy::Ht),
+        &output.join("linux-client"),
+    )?;
     let readiness = probe_udp_rx_ready_via(
         capture,
         WifiNetworkInterface::Station,

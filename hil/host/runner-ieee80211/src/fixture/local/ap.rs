@@ -238,7 +238,7 @@ fn profile(
         write!(hex, "{byte:02x}")?;
     }
     Ok(Zeroizing::new(format!(
-        "{hex}\n{passphrase}\n{}\n{}\n{}\n{}\n{}/{}\n{start},{end},{mask}\n{}\n",
+        "{hex}\n{passphrase}\n{}\n{}\n{}\n{}\n{}/{}\n{start},{end},{mask}\n{}\nht\n",
         config.country,
         config.channel,
         geometry(config, phy).iw_width()?,

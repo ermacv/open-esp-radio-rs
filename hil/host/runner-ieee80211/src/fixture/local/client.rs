@@ -10,7 +10,70 @@ use std::{
 use zeroize::Zeroizing;
 
 use crate::Result;
-use hil_core::lab::config::AccessPointConfig;
+use hil_core::lab::config::{AccessPointConfig, StationConfig};
+
+/// The PHY capabilities the laptop station advertises.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClientPhy {
+    /// HT with the adapter's full capabilities.
+    Ht,
+    /// A Clause 18 ERP-OFDM station without HT, VHT or HE capability.
+    NonHt,
+}
+
+/// The BSS the laptop joins and the station it presents there.
+pub struct ClientNetwork<'a> {
+    ssid: &'a str,
+    passphrase: &'a str,
+    /// The laptop's IPv4 address; a membership-only peer carries none.
+    address: Option<String>,
+    frequency_mhz: u16,
+    phy: ClientPhy,
+}
+
+impl<'a> ClientNetwork<'a> {
+    /// A traffic client of the target's AP.
+    pub fn target_access_point(config: &'a AccessPointConfig, phy: ClientPhy) -> Self {
+        let (ssid, passphrase) = config.credentials();
+        Self {
+            ssid,
+            passphrase,
+            address: Some(config.client_cidr()),
+            frequency_mhz: config.frequency_mhz(),
+            phy,
+        }
+    }
+
+    /// A membership-only station of the laboratory AP on `channel`.
+    pub fn station_fixture(station: &'a StationConfig, channel: u8, phy: ClientPhy) -> Self {
+        let (ssid, passphrase) = station.credentials();
+        Self {
+            ssid,
+            passphrase,
+            address: None,
+            frequency_mhz: 2407 + u16::from(channel) * 5,
+            phy,
+        }
+    }
+
+    fn helper_input(&self) -> Zeroizing<Vec<u8>> {
+        let mut input = Zeroizing::new(Vec::new());
+        for line in [
+            self.ssid,
+            self.passphrase,
+            self.address.as_deref().unwrap_or("none"),
+            &self.frequency_mhz.to_string(),
+            match self.phy {
+                ClientPhy::Ht => "ht",
+                ClientPhy::NonHt => "non-ht",
+            },
+        ] {
+            input.extend_from_slice(line.as_bytes());
+            input.push(b'\n');
+        }
+        input
+    }
+}
 
 pub fn doctor() -> Result<()> {
     crate::fixture::local::network_helper::doctor()
@@ -21,23 +84,10 @@ pub struct ControlledClient {
 }
 
 impl ControlledClient {
-    pub fn connect(config: &AccessPointConfig, output: &Path) -> Result<Self> {
+    pub fn connect(network: &ClientNetwork<'_>, output: &Path) -> Result<Self> {
         std::fs::create_dir_all(output)?;
         let log = std::fs::File::create(output.join("helper.log"))?;
-        let (ssid, passphrase) = config.credentials();
-        let frequency_mhz = config.frequency_mhz();
-        let mut input = Zeroizing::new(Vec::with_capacity(
-            ssid.len() + passphrase.len() + config.client_cidr().len() + 9,
-        ));
-        input.extend_from_slice(ssid.as_bytes());
-        input.push(b'\n');
-        input.extend_from_slice(passphrase.as_bytes());
-        input.push(b'\n');
-        input.extend_from_slice(config.client_cidr().as_bytes());
-        input.push(b'\n');
-        input.extend_from_slice(frequency_mhz.to_string().as_bytes());
-        input.push(b'\n');
-
+        let input = network.helper_input();
         let owner = Self { restored: false };
         let mut child = Command::new("sudo")
             .args(["-n", crate::fixture::local::network_helper::PATH, "client"])

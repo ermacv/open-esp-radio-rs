@@ -1,9 +1,10 @@
 //! Independent passive capture on a dedicated, initially idle OpenWrt PHY.
 //! Uses the same event-driven capture owner and air decoder as other fixtures.
 use crate::Result;
+use crate::evidence::air::{self, AirFrame, FrameKind, MacAddress};
 use crate::fixture::{
     local,
-    openwrt::capture::{RemoteCapture, ssh_target},
+    openwrt::capture::{RemoteCapture, ssh, ssh_target},
 };
 use hil_core::{lab::config::LabConfig, lab::config::StationFixtureConfig};
 use oer_process::CommandExt as _;
@@ -106,4 +107,53 @@ impl Capture {
             }
         }
     }
+}
+
+/// The BSSID of the station fixture AP.
+pub fn fixture_bssid(ap: &hil_core::lab::config::OpenWrtConfig) -> Result<MacAddress> {
+    let output = ssh(
+        ap,
+        &format!("cat /sys/class/net/{}/address", ap.wireless_interface),
+    )
+    .supervised_output()?;
+    if !output.status.success() {
+        return Err("cannot read the station fixture BSSID".into());
+    }
+    Ok(std::str::from_utf8(&output.stdout)?.trim().parse()?)
+}
+
+/// Beacons of `bssid` observed by the independent observer on the station
+/// fixture channel during `duration`.
+pub fn observe_beacons(
+    lab: &LabConfig,
+    bssid: MacAddress,
+    duration: Duration,
+    output: &Path,
+) -> Result<Vec<AirFrame>> {
+    let observer = lab
+        .air_observer
+        .as_ref()
+        .ok_or("beacon observation requires the independent air observer")?;
+    let StationFixtureConfig::OpenWrt(ap) = &lab.station_fixture else {
+        return Err("beacon observation requires the OpenWrt station fixture".into());
+    };
+    let geometry = local::air_monitor::resolve_observer_action(ap)?;
+    fs::create_dir_all(output)?;
+    let mut remote = RemoteCapture::start_independent(
+        observer,
+        geometry,
+        &format!("type mgt subtype beacon and wlan addr2 {bssid}"),
+        output.join("beacons.pcap"),
+        duration,
+    )?;
+    std::thread::sleep(duration);
+    remote.finish_capture()?;
+    Ok(air::decode(
+        remote.output_path(),
+        "wlan.fc.type_subtype == 0x0008",
+        air::Payload::Omit,
+    )?
+    .into_iter()
+    .filter(|frame| frame.kind == FrameKind::BEACON && frame.transmitter == Some(bssid))
+    .collect())
 }

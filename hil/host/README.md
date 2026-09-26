@@ -301,6 +301,18 @@ setup, capture readiness, tshark decoding and managed-interface restoration;
 synthetic parser filter and sends no target traffic.
 It does not establish target associations or qualify target throughput.
 
+A station UDP workload may declare `induced_protection`. The laptop radio
+then acts as a real, standard-conformant peer of the OpenWrt station fixture:
+`non-ht-member` joins its BSS with HT, VHT and HE disabled, so the AP must
+advertise non-HT mixed HT protection; `overlapping-legacy-bss` hosts an
+802.11b BSS (1, 2, 5.5 and 11 Mb/s, no ERP or HT element) on the AP's channel,
+so the AP must set ERP Use_Protection. No AP setting is forced. Before the
+workload, the independent air observer must see every beacon of a two-second
+window carry the expected protection within ten seconds; otherwise the run is
+blocked with `protection-peer/fixture-protection.json`. The legacy BSS needs
+the laptop's regulatory domain in the optional `[legacy_bss] country` lab
+section and the schema-13 network helper.
+
 Every 802.11 air observer (the laptop monitor, the OpenWrt TX-monitor tap and
 the probe-load management capture) decodes its capture through
 `hil_wifi::evidence::air`: one tshark run with a fixed field set yields typed

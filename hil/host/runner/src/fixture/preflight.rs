@@ -26,6 +26,26 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
         )
         .into());
     }
+    if required.air_observer && lab.air_observer.is_none() {
+        return Err(hil_core::fixture::Error::new(
+            "scenario requires the independent [air_observer]",
+        )
+        .into());
+    }
+    if (required.non_ht_member || required.legacy_bss)
+        && !matches!(lab.station_fixture, StationFixtureConfig::OpenWrt(_))
+    {
+        return Err(hil_core::fixture::Error::new(
+            "induced BSS protection requires the OpenWrt station fixture",
+        )
+        .into());
+    }
+    if required.legacy_bss && lab.legacy_bss.is_none() {
+        return Err(hil_core::fixture::Error::new(
+            "scenario requires the [legacy_bss] laboratory capability",
+        )
+        .into());
+    }
     if required.probe_load {
         if !std::path::Path::new("/usr/local/libexec/open-radio-probe").is_file() {
             return Err(hil_core::fixture::Error::new(

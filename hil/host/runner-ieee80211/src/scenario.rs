@@ -32,8 +32,8 @@ pub mod station;
 
 pub use access_point::{AccessPoint, AccessPointClients, AccessPointTraffic};
 pub use station::{
-    AirObservation, RoleOperation, StationIcmp, StationMaintenance, StationReconnect, StationTcp,
-    StationUdp,
+    AirObservation, InducedProtection, RoleOperation, StationIcmp, StationMaintenance,
+    StationReconnect, StationTcp, StationUdp,
 };
 
 // Diagnostic phase totals use u32 cycle accumulators. At 320 MHz, 12 seconds
@@ -461,6 +461,17 @@ impl WifiScenario {
                 requirements.station_udp_tx_capture = workload.offer.tx_bps.is_some();
                 requirements.openwrt_tx_monitor = workload.observation.openwrt_tx_monitor;
                 requirements.laptop_air_monitor = workload.observation.independent_air_monitor;
+                if let Some(induced) = workload.induced_protection {
+                    requirements.air_observer = true;
+                    match induced {
+                        station::InducedProtection::NonHtMember => {
+                            requirements.non_ht_member = true;
+                        }
+                        station::InducedProtection::OverlappingLegacyBss => {
+                            requirements.legacy_bss = true;
+                        }
+                    }
+                }
                 workload.checks(&mut checks);
             }
             WifiWorkload::AccessPoint(workload) => {

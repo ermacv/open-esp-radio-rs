@@ -174,7 +174,11 @@ read_ap_profile() {
     IFS= read -r ap_address
     IFS= read -r ap_dhcp
     IFS= read -r ap_noscan
+    IFS= read -r ap_phy
     case "$ap_noscan" in 0) ;; 1) case "$ap_width" in HT40+|HT40-) ;; *) return 64;; esac;; *) return 64;; esac
+    # `dsss` is a Clause 16 (802.11b) BSS without ERP or HT: a real non-ERP
+    # overlapping BSS for neighbouring ERP/HT protection experiments.
+    case "$ap_phy" in ht) ;; dsss) test "$ap_width" = HT20 || return 64;; *) return 64;; esac
     case "$ap_ssid_hex" in ''|*[!0-9a-f]*) return 64;; esac
     test "${#ap_ssid_hex}" -le 64
     test "$(( ${#ap_ssid_hex} % 2 ))" -eq 0
@@ -189,7 +193,12 @@ read_ap_profile() {
         HT40-) test "$ap_channel" -ge 5; ap_ht='[HT40-][SHORT-GI-20][SHORT-GI-40]';;
         *) return 64;;
     esac
-    case "$ap_he" in 0) ;; 1) test "$ap_width" = HT20;; *) return 64;; esac
+    case "$ap_he" in 0) ;; 1) if test "$ap_width" != HT20 || test "$ap_phy" != ht; then return 64; fi;; *) return 64;; esac
+    # A DSSS BSS only exists on the air: it carries no network service.
+    if test "$ap_phy" = dsss; then
+        if test "$ap_address" != none || test "$ap_dhcp" != none; then return 64; fi
+        return 0
+    fi
     # Validate the small network argument grammar before touching the radio.
     # ip/dnsmasq additionally validate address and mask semantics.
     case "$ap_address" in ''|*[!0-9./]*) return 64;; esac
@@ -200,8 +209,13 @@ read_ap_profile() {
 
 write_ap_profile() {
     printf 'interface=wlan0\ndriver=nl80211\nctrl_interface=%s\nctrl_interface_group=network\n' "$CTRL_DIR"
-    printf 'ssid2=%s\ncountry_code=%s\nhw_mode=g\nchannel=%s\n' "$ap_ssid_hex" "$ap_country" "$ap_channel"
-    printf 'ieee80211n=1\nht_capab=%s\nieee80211ax=%s\nwmm_enabled=1\n' "$ap_ht" "$ap_he"
+    if test "$ap_phy" = dsss; then
+        printf 'ssid2=%s\ncountry_code=%s\nhw_mode=b\nchannel=%s\n' "$ap_ssid_hex" "$ap_country" "$ap_channel"
+        printf 'supported_rates=10 20 55 110\nbasic_rates=10 20\nwmm_enabled=0\n'
+    else
+        printf 'ssid2=%s\ncountry_code=%s\nhw_mode=g\nchannel=%s\n' "$ap_ssid_hex" "$ap_country" "$ap_channel"
+        printf 'ieee80211n=1\nht_capab=%s\nieee80211ax=%s\nwmm_enabled=1\n' "$ap_ht" "$ap_he"
+    fi
     printf 'noscan=%s\nht_coex=1\n' "$ap_noscan"
     printf 'auth_algs=1\nwpa=2\nwpa_passphrase=%s\nwpa_key_mgmt=WPA-PSK\nrsn_pairwise=CCMP\n' "$ap_passphrase"
 }
@@ -232,13 +246,15 @@ start_ap() {
         </dev/null >"$CTRL_DIR/hostapd.log" 2>&1 &
     printf '%s\n' "$!" >"$HOSTAPD_PID"
     # The Rust owner attaches to hostapd's control socket and waits for ENABLED.
-    /usr/bin/ip address add "$ap_address" dev wlan0
-    (exec 9<&-; /usr/bin/dnsmasq \
-        --conf-file=/dev/null \
-        --interface=wlan0 \
-        --bind-interfaces \
-        --dhcp-range="$ap_dhcp,1h" \
-        --pid-file="$DNSMASQ_PID")
+    if test "$ap_phy" != dsss; then
+        /usr/bin/ip address add "$ap_address" dev wlan0
+        (exec 9<&-; /usr/bin/dnsmasq \
+            --conf-file=/dev/null \
+            --interface=wlan0 \
+            --bind-interfaces \
+            --dhcp-range="$ap_dhcp,1h" \
+            --pid-file="$DNSMASQ_PID")
+    fi
 }
 
 start_monitor() {
@@ -269,10 +285,14 @@ start_client() {
     IFS= read -r passphrase
     IFS= read -r address
     IFS= read -r frequency
+    IFS= read -r client_phy
     test -n "$ssid"
     test -n "$passphrase"
-    /usr/bin/printf '%s\n' "$address" | /usr/bin/grep -Eq '^[0-9.]+/[0-9]+$'
+    # `none` associates without an IPv4 address: a peer that only changes
+    # the BSS membership (for example a non-HT station) needs no traffic.
+    test "$address" = none || /usr/bin/printf '%s\n' "$address" | /usr/bin/grep -Eq '^[0-9.]+/[0-9]+$'
     /usr/bin/printf '%s\n' "$frequency" | /usr/bin/grep -Eq '^24[0-9][0-9]$'
+    case "$client_phy" in ht|non-ht) ;; *) return 64;; esac
 
     take_network_manager_ownership
     remember_wifi_identity
@@ -318,13 +338,20 @@ start_client() {
         # without weakening AP discovery: the client
         # must still receive a valid beacon or probe response before joining.
         /usr/bin/printf '    scan_freq=%s\n' "$frequency"
+        if test "$client_phy" = non-ht; then
+            # A Clause 18 ERP-OFDM station: it advertises no HT, VHT or HE
+            # capability, so the AP must count it as a non-HT member.
+            /usr/bin/printf '    disable_ht=1\n    disable_vht=1\n    disable_he=1\n'
+        fi
         /usr/bin/printf '}\n'
     } >"$WPA_CONFIG"
     /bin/chmod 0600 "$WPA_CONFIG"
     (exec 9<&-; /usr/bin/wpa_supplicant -B -P "$WPA_PID" -i wlan0 -c "$WPA_CONFIG")
     # The Rust owner subscribes before ENABLE_NETWORK and waits on events.
     /usr/bin/iw dev wlan0 set power_save off
-    /usr/bin/ip address add "$address" dev wlan0
+    if test "$address" != none; then
+        /usr/bin/ip address add "$address" dev wlan0
+    fi
 }
 
 restore_managed() {
@@ -363,7 +390,7 @@ fi
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=12 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1 rfkill=restore\n'
+        /usr/bin/printf 'schema=13 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht observer=20,40 managed=1 rfkill=restore\n'
         ;;
     identity)
         if test -e /sys/class/net/wlan0/phy80211; then

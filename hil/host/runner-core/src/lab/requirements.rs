@@ -22,6 +22,15 @@ pub struct Requirements {
     pub laptop_air_monitor: bool,
     #[serde(default)]
     pub probe_load: bool,
+    /// The laptop joins the station fixture AP as a non-HT member.
+    #[serde(default)]
+    pub non_ht_member: bool,
+    /// The laptop hosts a non-ERP BSS on the station fixture's channel.
+    #[serde(default)]
+    pub legacy_bss: bool,
+    /// The dedicated independent air observer.
+    #[serde(default)]
+    pub air_observer: bool,
 }
 
 impl Requirements {
@@ -42,6 +51,9 @@ impl Requirements {
                 openwrt_tx_monitor: required.openwrt_tx_monitor | next.openwrt_tx_monitor,
                 laptop_air_monitor: required.laptop_air_monitor | next.laptop_air_monitor,
                 probe_load: required.probe_load | next.probe_load,
+                non_ht_member: required.non_ht_member | next.non_ht_member,
+                legacy_bss: required.legacy_bss | next.legacy_bss,
+                air_observer: required.air_observer | next.air_observer,
             })
     }
 
@@ -54,10 +66,13 @@ impl Requirements {
             || self.openwrt_client
             || self.openwrt_tx_monitor
             || self.laptop_air_monitor
+            || self.non_ht_member
+            || self.legacy_bss
+            || self.air_observer
     }
 
     pub fn local_radio(self) -> bool {
-        self.laptop_client || self.laptop_air_monitor
+        self.laptop_client || self.laptop_air_monitor || self.non_ht_member || self.legacy_bss
     }
 }
 

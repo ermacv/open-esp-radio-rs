@@ -8,7 +8,8 @@ use oer_hil_protocol::WifiAccessPointSecurity;
 use crate::scenario::AccessPointClients;
 use crate::workload::ieee80211::access_point::with_cleanup_errors;
 use crate::{
-    Result, fixture::local::client::ControlledClient,
+    Result,
+    fixture::local::client::{ClientNetwork, ClientPhy, ControlledClient},
     fixture::openwrt::client::ControlledOpenWrtClient,
     fixture::openwrt::client::OpenWrtClientLinkObservation,
 };
@@ -138,7 +139,7 @@ pub(super) fn connect_clients(
                     _ => None,
                 };
                 let result = ControlledClient::connect(
-                    &context.lab.access_point,
+                    &ClientNetwork::target_access_point(&context.lab.access_point, ClientPhy::Ht),
                     &output.join("linux-client"),
                 );
                 match result {

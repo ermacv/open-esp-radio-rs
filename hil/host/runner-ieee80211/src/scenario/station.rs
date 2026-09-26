@@ -27,8 +27,25 @@ pub struct StationUdp {
     pub fixed_fixture_guard_interval: bool,
     #[serde(default)]
     pub observation: AirObservation,
+    /// A real laboratory peer that makes the station fixture AP advertise
+    /// BSS protection for the whole workload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub induced_protection: Option<InducedProtection>,
     #[serde(default)]
     pub criteria: StationUdpCriteria,
+}
+
+/// A standard-conformant peer that obliges the station fixture AP to
+/// advertise protection. Both use the laptop radio.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InducedProtection {
+    /// The laptop joins the AP without HT capability: HT Protection becomes
+    /// non-HT mixed.
+    NonHtMember,
+    /// The laptop hosts an 802.11b BSS on the AP's channel: the AP observes
+    /// an overlapping legacy BSS and sets ERP Use_Protection.
+    OverlappingLegacyBss,
 }
 
 /// A PHY maintenance transaction requested while station UDP flows.
@@ -175,6 +192,12 @@ impl StationUdp {
                 || !observation.independent_air_monitor)
         {
             return Err("a fixed OpenWrt guard interval requires a strict HT guard-interval expectation and both air observers".into());
+        }
+        if self.induced_protection.is_some() && observation.independent_air_monitor {
+            return Err(
+                "induced protection uses the laptop radio, which cannot also observe the air"
+                    .into(),
+            );
         }
         if direction == Direction::Tx && self.link.phy == PhyExpectation::Ht20 {
             return Err("station UDP TX requires HE20 or HT40".into());

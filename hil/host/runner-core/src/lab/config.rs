@@ -28,6 +28,16 @@ pub struct LabConfig {
     pub access_point: AccessPointConfig,
     pub station_fixture: StationFixtureConfig,
     pub air_observer: Option<AirObserverConfig>,
+    pub legacy_bss: Option<LegacyBssConfig>,
+}
+
+/// The laptop radio may host a non-ERP (802.11b) BSS on the laboratory AP's
+/// channel. Its regulatory domain is explicit because the laboratory AP
+/// configuration carries none.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyBssConfig {
+    pub country: String,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +50,7 @@ struct RawLabConfig {
     access_point: RawAccessPointConfig,
     station_fixture: RawStationFixtureConfig,
     air_observer: Option<AirObserverConfig>,
+    legacy_bss: Option<LegacyBssConfig>,
 }
 
 #[derive(Deserialize)]
@@ -385,9 +396,16 @@ impl LabConfig {
             secondary_client_address: secondary_client_address.map(|(address, _)| address),
             prefix_length: target_prefix,
         };
+        if let Some(legacy) = &raw.legacy_bss
+            && (legacy.country.len() != 2
+                || !legacy.country.bytes().all(|byte| byte.is_ascii_uppercase()))
+        {
+            return Err("legacy BSS country must be a two-letter uppercase country code".into());
+        }
         Ok(Self {
             path: path.to_owned(),
             air_observer: raw.air_observer,
+            legacy_bss: raw.legacy_bss,
             cell_id: raw.lab.id,
             bluetooth_adapter: raw
                 .bluetooth
@@ -508,6 +526,7 @@ impl LabConfig {
         Self {
             path: PathBuf::from("hil/local.toml"),
             air_observer: None,
+            legacy_bss: None,
             cell_id: String::from("test-cell"),
             bluetooth_adapter: None,
             device: DeviceConfig {

@@ -10,8 +10,11 @@ use oer_hil_protocol::{
 };
 
 use crate::{
-    Result, fixture::controlled_ap::ControlledAp, fixture::local::client::ControlledClient,
-    workload::ieee80211::control::report_stack, workload::ieee80211::control::require_transition,
+    Result,
+    fixture::controlled_ap::ControlledAp,
+    fixture::local::client::{ClientNetwork, ClientPhy, ControlledClient},
+    workload::ieee80211::control::report_stack,
+    workload::ieee80211::control::require_transition,
     workload::ieee80211::control::stop_station,
     workload::ieee80211::station_access_point::wait_for_endpoints,
 };
@@ -69,7 +72,7 @@ fn qualify(
     let first = start_pair(capture, timeout, context)?;
     let first_generation = expect_connected(capture, &mut lifecycle_cursor, timeout)?;
     let first_client = ControlledClient::connect(
-        &context.lab.access_point,
+        &ClientNetwork::target_access_point(&context.lab.access_point, ClientPhy::Ht),
         &output.join("linux-client-first"),
     )?;
     require_both_endpoints(capture, timeout)?;
@@ -127,7 +130,7 @@ fn qualify(
         .into());
     }
     let second_client = ControlledClient::connect(
-        &context.lab.access_point,
+        &ClientNetwork::target_access_point(&context.lab.access_point, ClientPhy::Ht),
         &output.join("linux-client-second"),
     )?;
     require_both_endpoints(capture, timeout)?;

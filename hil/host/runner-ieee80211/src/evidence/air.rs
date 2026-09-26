@@ -53,6 +53,7 @@ pub struct FrameKind(pub u16);
 impl FrameKind {
     pub const PROBE_REQUEST: Self = Self(0x04);
     pub const PROBE_RESPONSE: Self = Self(0x05);
+    pub const BEACON: Self = Self(0x08);
     pub const BLOCK_ACK: Self = Self(0x19);
     pub const RTS: Self = Self(0x1b);
     pub const CTS: Self = Self(0x1c);
@@ -122,6 +123,12 @@ pub struct AirFrame {
     pub phy: Option<AirPhy>,
     pub rate_kbps: Option<u32>,
     pub block_ack: Option<BlockAckBitmap>,
+    /// MAC time (TSFT) of the first bit of the MPDU, when the capture has it.
+    pub mac_time_micros: Option<u64>,
+    /// ERP Information element payload of a beacon or probe response.
+    pub erp_information: Option<u8>,
+    /// HT Protection field of an HT Operation element.
+    pub ht_protection: Option<u8>,
     /// Frame body bytes, decoded only when requested.
     pub payload: Option<Vec<u8>>,
 }
@@ -133,7 +140,7 @@ pub enum Payload {
     Include,
 }
 
-const FIELDS: [&str; 16] = [
+const FIELDS: [&str; 19] = [
     "frame.time_epoch",
     "wlan.fc.type_subtype",
     "wlan.ta",
@@ -149,6 +156,9 @@ const FIELDS: [&str; 16] = [
     "wlan_radio.data_rate",
     "wlan.fixed.ssc.sequence",
     "wlan.ba.bm",
+    "radiotap.mactime",
+    "wlan.erp_info",
+    "wlan.ht.info.ht_protection",
     "data.data",
 ];
 
@@ -235,8 +245,11 @@ fn frame(fields: &[&str]) -> Result<AirFrame> {
                 start_sequence,
                 bitmap,
             }),
+        mac_time_micros: optional(fields[15])?,
+        erp_information: optional(fields[16])?,
+        ht_protection: optional(fields[17])?,
         payload: fields
-            .get(15)
+            .get(18)
             .and_then(|value| present(value))
             .map(decode_hex)
             .transpose()?,

@@ -1,0 +1,21 @@
+schema = 5
+id = "station-protection-legacy-bss-tx"
+description = "HT40 station UDP TX while an overlapping 802.11b BSS obliges the AP to require ERP protection"
+transfer = "unchanged-functional-contract"
+tags = ["qualification", "wifi", "station", "protection", "udp", "tx", "ht40"]
+
+[wifi]
+image = "correctness"
+
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
+duration_seconds = 16
+payload_bytes = 1472
+offer = { tx_bps = 16000000 }
+induced_protection = "overlapping-legacy-bss"
+
+[wifi.workload.criteria]
+exact_delivery = true
+require_no_beacon_loss = true
+minimum_tx_bps = 15000000

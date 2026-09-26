@@ -231,7 +231,12 @@ fn run(
             .enumerate()
         {
             let executables = sides[side].unwrap_or_default();
-            resolved[side] = Some(resolve_goal(&invocation.goal, executables, memory, control)?);
+            resolved[side] = Some(resolve_goal(
+                &invocation.goal,
+                executables,
+                memory,
+                control,
+            )?);
         }
         if let Some(relation) = &case.relation {
             if let Some(selected) = selected_effect_contract(Some(relation), &effects)? {

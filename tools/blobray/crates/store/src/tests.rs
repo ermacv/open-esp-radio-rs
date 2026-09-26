@@ -563,6 +563,7 @@ fn image_and_completed_run_publish_atomically_without_advancing_current() {
             version: "LLD 22.1.8".into(),
             executable: payload.clone(),
         },
+        absent: vec![],
     };
     let plan = LinkPlanDescription {
         id: ArtifactId::of_bytes(&serde_json::to_vec(&recipe).unwrap())

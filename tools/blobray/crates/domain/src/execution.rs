@@ -576,9 +576,10 @@ impl ExecutionRequest {
                     case.vendor.goal,
                     ExecutionGoal::ObserveCall { .. } | ExecutionGoal::ReachSymbol { .. }
                 ) && other.goal == ExecutionGoal::Return
-                    && case.relation.as_ref().is_some_and(|r| {
-                        !r.returns.low && !r.returns.high && !r.observes_calls()
-                    }))
+                    && case
+                        .relation
+                        .as_ref()
+                        .is_some_and(|r| !r.returns.low && !r.returns.high && !r.observes_calls()))
             {
                 return Err(bad());
             }

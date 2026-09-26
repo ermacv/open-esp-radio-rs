@@ -131,6 +131,7 @@ pub(crate) fn resolve(
             entry,
             roots: Vec::new(),
             layout: request.layout,
+            absent: vec![],
         }),
         search.count,
         inventory.complete(),

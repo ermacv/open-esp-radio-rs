@@ -451,9 +451,14 @@ impl<'a> Session<'a> {
                 (MAX_WRITTEN_RANGES * std::mem::size_of::<WrittenRange>()) as u64,
                 c.position(),
             )?;
-            self.written.try_reserve_exact(MAX_WRITTEN_RANGES).map_err(|_| {
-                Error::new(ErrorCode::ResourceLimited, "written-range allocation refused")
-            })?;
+            self.written
+                .try_reserve_exact(MAX_WRITTEN_RANGES)
+                .map_err(|_| {
+                    Error::new(
+                        ErrorCode::ResourceLimited,
+                        "written-range allocation refused",
+                    )
+                })?;
             self.written_capacity = Some(reservation);
         }
         if let Some(profile) = &input.observe_calls {
@@ -711,7 +716,11 @@ impl<'a> Session<'a> {
         let (mut start, mut end) = (u64::from(address), u64::from(address) + u64::from(width));
         let first = self.written.partition_point(|r| r.end() < start);
         let mut last = first;
-        while let Some(r) = self.written.get(last).filter(|r| u64::from(r.address) <= end) {
+        while let Some(r) = self
+            .written
+            .get(last)
+            .filter(|r| u64::from(r.address) <= end)
+        {
             start = start.min(u64::from(r.address));
             end = end.max(r.end());
             last += 1;

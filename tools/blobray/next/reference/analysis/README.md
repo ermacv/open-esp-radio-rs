@@ -340,6 +340,12 @@ blobray analyze-project --project research --image IMAGE_ID --limit-mode watchdo
 blobray research --project research --id IMAGE_PUBLICATION --name phy_set_ftm_en --abi-contract riscv-integer --companion-publication SOURCE_PUBLICATION --limit-mode watchdog
 ```
 
+`LinkRequest.absent` and `LinkRecipe.absent` name at most 64 undefined
+symbols no captured input defines, such as a C library routine only a
+never-reached diagnostic path calls. Each resolves to the unmapped
+`ABSENT_SYMBOL_ADDRESS`, so executing or accessing it stops with an execution
+gap; an absent name that is also a companion fails.
+
 `LinkRequest.companions` and `LinkRecipe.companions` contain exact input/symbol
 selectors. Named CLI selection must be unique. At most 64 definitions are allowed;
 undefined symbols, symbols that are neither functions nor data objects, duplicate

@@ -200,6 +200,7 @@ fn fixture(thin: bool, dependency: bool) -> Fixture {
                 length: 65536,
             },
         },
+        absent: vec![],
     };
     Fixture {
         dir,
@@ -551,6 +552,7 @@ fn custom_fixture(inputs: Vec<(&str, Vec<u8>)>, entry_input: usize, member: usiz
                 length: 65536,
             },
         },
+        absent: vec![],
     };
     Fixture {
         dir,

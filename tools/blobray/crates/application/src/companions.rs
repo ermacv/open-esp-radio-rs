@@ -68,8 +68,12 @@ pub(crate) fn resolve(
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
 ) -> Result<Vec<(String, u32)>> {
+    let absent = request
+        .absent
+        .iter()
+        .map(|name| (name.clone(), ABSENT_SYMBOL_ADDRESS));
     if request.companions.is_empty() {
-        return Ok(Vec::new());
+        return Ok(absent.collect());
     }
     if request.companions.len() > 64 {
         return Err(Error::new(
@@ -120,5 +124,14 @@ pub(crate) fn resolve(
         definitions.push((name, address));
     }
     project.read_inventory(request.revision.as_ref(), memory, c, &mut scan)?;
+    for (name, address) in absent {
+        if definitions.iter().any(|(old, _)| *old == name) {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "an absent name is also a companion",
+            ));
+        }
+        definitions.push((name, address));
+    }
     Ok(definitions)
 }

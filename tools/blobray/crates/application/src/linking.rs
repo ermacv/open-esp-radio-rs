@@ -229,6 +229,7 @@ pub fn validate_link_plan(plan: &LinkPlanDescription) -> Result<()> {
         entry: recipe.entry.clone(),
         roots: recipe.roots.clone(),
         layout: recipe.layout,
+        absent: recipe.absent.clone(),
     })?;
     let mut bytes = Vec::new();
     write_control_message(&mut bytes, recipe)?;
@@ -278,6 +279,18 @@ fn validate_request(request: &LinkRequest) -> Result<()> {
         if root == &request.entry || request.roots[..index].contains(root) {
             return Err(invalid("duplicate link root"));
         }
+    }
+    if request.absent.len() > MAX_ABSENT_SYMBOLS
+        || request.absent.iter().enumerate().any(|(index, name)| {
+            name.is_empty()
+                || name.len() > 512
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'$'))
+                || request.absent[..index].contains(name)
+        })
+    {
+        return Err(invalid("absent names must be distinct linker identifiers"));
     }
     Ok(())
 }
@@ -539,6 +552,7 @@ pub(crate) fn make_link_plan(
         roots: request.roots.clone(),
         layout: request.layout,
         linker: tool,
+        absent: request.absent.clone(),
     };
     let mut bytes = Vec::new();
     write_control_message(&mut bytes, &recipe)?;
@@ -573,6 +587,7 @@ fn request_from(plan: &LinkPlanDescription) -> LinkRequest {
         entry: p.entry.clone(),
         roots: p.roots.clone(),
         layout: p.layout,
+        absent: p.absent.clone(),
     }
 }
 struct Outputs {
@@ -908,6 +923,26 @@ mod root_limit_tests {
                     length: 0x10_0000,
                 },
             },
+            absent: vec![],
+        }
+    }
+
+    #[test]
+    fn absent_names_are_distinct_bounded_linker_identifiers() {
+        let mut named = request(0);
+        named.absent = vec!["putchar".into(), "puts".into()];
+        validate_request(&named).unwrap();
+        for absent in [
+            vec!["putchar".to_owned(), "putchar".to_owned()],
+            vec![String::new()],
+            vec!["bad name".to_owned()],
+            (0..=MAX_ABSENT_SYMBOLS).map(|i| format!("n{i}")).collect(),
+        ] {
+            named.absent = absent;
+            assert_eq!(
+                validate_request(&named).unwrap_err().code,
+                ErrorCode::InvalidRequest
+            );
         }
     }
 

@@ -76,6 +76,11 @@ pub struct LinkRequest {
     #[serde(default)]
     pub roots: Vec<EntrySelection>,
     pub layout: ImageLayout,
+    /// Undefined names no captured input defines, deliberately bound to
+    /// `ABSENT_SYMBOL_ADDRESS`: executing or reading one stops with an
+    /// execution gap, so only never-reached references may name them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub absent: Vec<String>,
 }
 /// Companions proposed for a link request by a trial link. Every name the
 /// selected closure leaves unresolved is either resolved to exactly one defined
@@ -117,6 +122,10 @@ pub struct LinkerIdentity {
 }
 /// Roots of one linked image: the entry and every additional root.
 pub const MAX_IMAGE_ROOTS: usize = 64;
+/// Unmapped address every absent name resolves to.
+pub const ABSENT_SYMBOL_ADDRESS: u32 = 0xffff_fff0;
+/// Absent names one link request may declare.
+pub const MAX_ABSENT_SYMBOLS: usize = 64;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkRecipe {
@@ -131,6 +140,9 @@ pub struct LinkRecipe {
     pub roots: Vec<EntrySelection>,
     pub layout: ImageLayout,
     pub linker: LinkerIdentity,
+    /// Names bound to `ABSENT_SYMBOL_ADDRESS`; see `LinkRequest::absent`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub absent: Vec<String>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

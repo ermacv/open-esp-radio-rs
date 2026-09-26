@@ -13,7 +13,8 @@ use blobray_domain::{
     CallBinding, CallBoundary, CallDeclaration, CallOutput, CallOutputScope, CallRepetition,
     CallResponse, ComparisonVerdict, EffectContractRef, EffectDisposition, EffectPattern,
     EffectRule, EffectSelector, EffectValue, ExecutionCase, ExecutionGoal, ExecutionSymbol,
-    ExecutionTarget, LinkRequest, ObjectId, ObjectLocation, RegionLifetime, SessionReset,
+    ExecutionTarget, LinkRequest, MemoryPair, ObjectId, ObjectLocation, RegionLifetime,
+    SessionReset,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -105,6 +106,9 @@ pub struct Leaf {
     pub vendor_abi: Option<VendorAbi>,
     /// The vendor function is a ROM symbol rather than a `libpp.a` root.
     pub rom: bool,
+    /// Object states the builder receives after the probe words: a further
+    /// case dimension that reaches the probe only through the objects.
+    pub states: &'static [u32],
 }
 
 /// Objects of one case: vendor argument words, initialized vendor and
@@ -115,10 +119,14 @@ pub struct Objects {
     pub vendor: Vec<(u32, Vec<u8>)>,
     pub production: Vec<(u32, Vec<u8>)>,
     pub calls: Vec<CallDeclaration>,
+    /// Object bytes both sides share and the relation compares after the
+    /// leaf, as (address, length); each side receives the same objects.
+    pub compared: Vec<(u32, u32)>,
 }
 
-/// Builds a case's objects from the semantic probe words; `rom` resolves a
-/// ROM data symbol's address.
+/// Builds a case's objects from the semantic probe words, followed by the
+/// object state when the leaf has states; `resolve` gives the address of a
+/// linked-image or ROM symbol.
 pub type VendorAbi = fn(&[u32], &dyn Fn(&str) -> Result<u32>) -> Result<Objects>;
 
 const fn leaf(
@@ -136,6 +144,7 @@ const fn leaf(
         prefix_until: None,
         vendor_abi: None,
         rom: false,
+        states: &[],
     }
 }
 
@@ -150,6 +159,11 @@ const fn ordered(leaf: Leaf, fences: u32) -> Leaf {
         ordering_fences: fences,
         ..leaf
     }
+}
+
+/// A leaf whose objects also take each of `states`.
+const fn stated(leaf: Leaf, states: &'static [u32]) -> Leaf {
+    Leaf { states, ..leaf }
 }
 
 /// A leaf whose vendor reads its semantic arguments from objects `abi` builds.
@@ -363,7 +377,100 @@ fn ppdu_abi(_words: &[u32], rom: &dyn Fn(&str) -> Result<u32>) -> Result<Objects
         vendor,
         production: vec![(INPUT, words(&PPDU_CANONICAL))],
         calls: vec![clamp],
+        compared: vec![],
     })
+}
+
+/// `rcGetRate` fixture of the normal 802.11g 54M schedule: the rate context
+/// at `RATE_CONTEXT`, whose schedule flags at 0x0c select no fixed rate, and
+/// the transmit descriptor at `RATE_DESCRIPTOR`, whose word 1 carries the
+/// MPDU, short and long retry counters in bytes 1..3, whose byte 0x0c
+/// receives the selected rate and whose word at 0x1c points to the rate
+/// schedule record.
+const RATE_CONTEXT: u32 = 0x3fff_1100;
+const RATE_DESCRIPTOR: u32 = 0x3fff_1000;
+const RATE_SCHEDULE: u32 = 0x3fff_1200;
+/// The 54M schedule record: primary and fallback rate codes.
+const RATE_SCHEDULE_WORDS: [u32; 2] = [0x0208_020c, 0x1906_030b];
+/// Retry-counter words: initial publication, second publication, first-rate
+/// fallback and a short counter dominating the MPDU counter.
+const RATE_COUNTERS: &[u32] = &[0, 0x0001_0100, 0x0002_0200, 0x0004_0200];
+/// Descriptor byte that receives the selected rate.
+const RATE_SELECTED: u32 = RATE_DESCRIPTOR + 0x0c;
+
+fn rate_abi(words: &[u32], resolve: &dyn Fn(&str) -> Result<u32>) -> Result<Objects> {
+    let [_, _, counters] = words else {
+        unreachable!("rate words: context, descriptor, counter state")
+    };
+    let mut descriptor = [0u32; 8];
+    descriptor[1] = *counters;
+    // The selected-rate byte starts all set, so both sides must write it.
+    descriptor[3] = u32::MAX;
+    descriptor[7] = RATE_SCHEDULE;
+    let objects = vec![
+        (RATE_DESCRIPTOR, self::words(&descriptor)),
+        (RATE_CONTEXT, vec![0; 16]),
+        (RATE_SCHEDULE, self::words(&RATE_SCHEDULE_WORDS)),
+    ];
+    let assert = CallDeclaration {
+        id: "wifi-assert".into(),
+        applicability: "a vendor assertion the reviewed schedule never fails".into(),
+        lifetime: RegionLifetime::Phase,
+        binding: CallBinding {
+            address: resolve("wifi_assert")?,
+            boundary: CallBoundary::Unmapped,
+            allow_tail: false,
+        },
+        argument_words: 1,
+        responses: vec![CallResponse {
+            return_words: [Some(0), None],
+            outputs: vec![],
+            allocation: None,
+            delay_micros: None,
+        }],
+        repetition: CallRepetition::Unbounded,
+    };
+    Ok(Objects {
+        vendor_words: vec![RATE_CONTEXT, RATE_DESCRIPTOR],
+        vendor: objects.clone(),
+        production: objects,
+        calls: vec![assert],
+        compared: vec![(RATE_SELECTED, 1)],
+    })
+}
+
+/// Initial bytes of each compared range, from the vendor objects covering it.
+fn compared_bytes(objects: &[(u32, Vec<u8>)], compared: &[(u32, u32)]) -> Result<Vec<u8>> {
+    let mut bytes = vec![];
+    for (address, length) in compared {
+        let (start, object) = objects
+            .iter()
+            .find(|(start, object)| {
+                *start <= *address && address + length <= start + object.len() as u32
+            })
+            .ok_or_else(|| invalid(format!("compared range {address:#x} has no object")))?;
+        let offset = (address - start) as usize;
+        bytes.extend_from_slice(&object[offset..offset + *length as usize]);
+    }
+    Ok(bytes)
+}
+
+/// Addresses of the named symbols of the linked image, including the
+/// absolute companion definitions.
+fn image_symbols(elf: &std::path::Path) -> Result<BTreeMap<String, u32>> {
+    use object::{Object, ObjectSymbol};
+    let bytes = std::fs::read(elf)?;
+    let file = object::File::parse(&*bytes)?;
+    let mut symbols = BTreeMap::new();
+    for symbol in file.symbols() {
+        if let (Ok(name), Ok(address)) = (symbol.name(), u32::try_from(symbol.address()))
+            && !name.is_empty()
+            && !symbol.is_undefined()
+        {
+            symbols.entry(name.to_owned()).or_insert(address);
+        }
+    }
+    Ok(symbols)
 }
 
 /// A leaf compared only up to the vendor's call of `callee`.
@@ -650,6 +757,24 @@ pub const LEAVES: &[Leaf] = &[
         ),
         ppdu_abi,
     ),
+    prefix(
+        stated(
+            objects(
+                leaf(
+                    "rcGetRate",
+                    "open_libpp_tx_retry_trace_rc_get_rate",
+                    &[
+                        ("_rate_context", Domain::Words(&[RATE_CONTEXT])),
+                        ("descriptor_address", Domain::Words(&[RATE_DESCRIPTOR])),
+                    ],
+                    false,
+                ),
+                rate_abi,
+            ),
+            RATE_COUNTERS,
+        ),
+        "rcGetSMPDURate",
+    ),
 ];
 
 /// Linked `libpp.a` image with its captured roots and both execution targets.
@@ -806,8 +931,11 @@ impl Mac {
         )
     }
 
-    /// Both sides of `leaf` for every argument combination and fill.
-    fn cases(&mut self, leaf: &Leaf) -> Result<Vec<ExecutionCase>> {
+    /// Both sides of `leaf` for every argument combination, object state and
+    /// fill.
+    /// Each case carries the initial bytes of the objects it compares.
+    fn cases(&mut self, leaf: &Leaf) -> Result<Vec<(ExecutionCase, Vec<u8>)>> {
+        let image_symbols = image_symbols(&self.session.run.join("image/image.elf"))?;
         let effects = if leaf.ordering_fences != 0 {
             Some(self.ordering_contract(leaf)?)
         } else {
@@ -879,6 +1007,9 @@ impl Mac {
                     .collect::<Result<Vec<_>>>()
             };
             let rom = |name: &str| -> Result<u32> {
+                if let Some(address) = image_symbols.get(name) {
+                    return Ok(*address);
+                }
                 Ok(u32::try_from(
                     crate::harness::symbol(
                         &self.session.inventory,
@@ -888,63 +1019,101 @@ impl Mac {
                     .value,
                 )?)
             };
-            let (vendor_words, mut vendor_memory, production_memory, vendor_calls) =
-                match leaf.vendor_abi {
+            let states: Vec<Option<u32>> = if leaf.states.is_empty() {
+                vec![None]
+            } else {
+                leaf.states.iter().copied().map(Some).collect()
+            };
+            for state in states {
+                let (
+                    vendor_words,
+                    mut vendor_memory,
+                    production_memory,
+                    vendor_calls,
+                    compared,
+                    initial,
+                ) = match leaf.vendor_abi {
                     Some(abi) => {
-                        let objects = abi(&words, &rom)?;
+                        let mut semantic = words.clone();
+                        semantic.extend(state);
+                        let objects = abi(&semantic, &rom)?;
+                        let initial = compared_bytes(&objects.vendor, &objects.compared)?;
                         (
                             objects.vendor_words,
                             regions(&objects.vendor)?,
                             regions(&objects.production)?,
                             objects.calls,
+                            objects.compared,
+                            initial,
                         )
                     }
-                    None => (words.clone(), memory.clone(), vec![], vec![]),
+                    None => (
+                        words.clone(),
+                        memory.clone(),
+                        vec![],
+                        vec![],
+                        vec![],
+                        vec![],
+                    ),
                 };
-            vendor_memory.extend(output_memory.clone());
-            for fill in LEAF_FILLS {
-                let mut vendor = direct(
-                    self.vendor_entry(leaf)?,
-                    &vendor_words,
-                    vendor_memory.clone(),
-                    vec![radio_aperture(fill)],
-                    observe.clone(),
-                );
-                vendor.calls = vendor_calls.clone();
-                if let Some(callee) = leaf.prefix_until {
-                    vendor.goal = ExecutionGoal::ObserveCall {
-                        target: ExecutionSymbol {
-                            source: self.vendor.source.clone(),
-                            symbol: image_symbol_id(
-                                &self.session.run.join("image/image.elf"),
-                                &self.image_object,
-                                callee,
-                            )?,
-                        },
-                        include_tail: false,
-                    };
+                let initial = [vec![OUTPUT_FILL; output.unwrap_or(0) as usize], initial].concat();
+                let compared: Vec<_> = compared
+                    .iter()
+                    .map(|(address, length)| selection(*address, *length))
+                    .collect();
+                vendor_memory.extend(output_memory.clone());
+                let observed = [observe.clone(), compared].concat();
+                let state_label = state.map_or(String::new(), |state| format!("-s{state:x}"));
+                for fill in LEAF_FILLS {
+                    let mut vendor = direct(
+                        self.vendor_entry(leaf)?,
+                        &vendor_words,
+                        vendor_memory.clone(),
+                        vec![radio_aperture(fill)],
+                        observed.clone(),
+                    );
+                    vendor.calls = vendor_calls.clone();
+                    if let Some(callee) = leaf.prefix_until {
+                        vendor.goal = ExecutionGoal::ObserveCall {
+                            target: ExecutionSymbol {
+                                source: self.vendor.source.clone(),
+                                symbol: image_symbol_id(
+                                    &self.session.run.join("image/image.elf"),
+                                    &self.image_object,
+                                    callee,
+                                )?,
+                            },
+                            include_tail: false,
+                        };
+                    }
+                    let mut production = self.session.probes.invoke(
+                        leaf.probe,
+                        arguments.clone(),
+                        vec![radio_aperture(fill)],
+                        observed.clone(),
+                    )?;
+                    production.memory.extend(output_memory.clone());
+                    production.memory.extend(production_memory.clone());
+                    production.arguments.resize(8, Some(0));
+                    let mut row = case(
+                        format!("{}{label}{state_label}-{fill:02x}", leaf.vendor),
+                        vendor,
+                        Some(production),
+                        SessionReset::Cold,
+                        false,
+                    );
+                    row.stack_fill = Some(fill);
+                    let relation = row.relation.as_mut().unwrap();
+                    relation.returns.low = leaf.returns;
+                    relation.effects = effects.clone();
+                    relation.memory = (0..observed.len() as u16)
+                        .map(|index| MemoryPair {
+                            vendor: index,
+                            replacement: index,
+                        })
+                        .collect();
+                    rows.push((row, initial.clone()));
                 }
-                let mut production = self.session.probes.invoke(
-                    leaf.probe,
-                    arguments.clone(),
-                    vec![radio_aperture(fill)],
-                    observe.clone(),
-                )?;
-                production.memory.extend(output_memory.clone());
-                production.memory.extend(production_memory.clone());
-                production.arguments.resize(8, Some(0));
-                let mut row = case(
-                    format!("{}{label}-{fill:02x}", leaf.vendor),
-                    vendor,
-                    Some(production),
-                    SessionReset::Cold,
-                    output.is_some(),
-                );
-                row.stack_fill = Some(fill);
-                let relation = row.relation.as_mut().unwrap();
-                relation.returns.low = leaf.returns;
-                relation.effects = effects.clone();
-                rows.push(row);
             }
         }
         Ok(rows)
@@ -954,7 +1123,7 @@ impl Mac {
 /// Compare every leaf; each must MATCH in every case and record effects.
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
     for leaf in LEAVES {
-        let rows = ctx.cases(leaf)?;
+        let (rows, initial): (Vec<_>, Vec<_>) = ctx.cases(leaf)?.into_iter().unzip();
         let count = rows.len() as u32;
         let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
         let records = ctx
@@ -974,11 +1143,16 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
                     )));
                 }
             }
+            // A leaf must act: a register effect, or a write that changes an
+            // object it is compared through.
+            let initial = &initial[case as usize];
             if crate::evidence::phy_effects(&crate::evidence::events(&records, case, false))
                 .is_empty()
+                && (initial.is_empty()
+                    || crate::evidence::output(&records, case, false) == *initial)
             {
                 return Err(invalid(format!(
-                    "{} case {case} has no register effect",
+                    "{} case {case} has no register effect and changes no compared object",
                     leaf.vendor
                 )));
             }

@@ -154,7 +154,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "52680741c841aad4c7cbf3dc34b2a23a1ffd7be5514afd5df23b05817e83e932"
+      "sha256": "d102a04f9d9fec128b6bd0d0b772c796bca4adc455312bf1aaa8e18d1d9ab8c6"
     },
     {
       "path": "verification/vendor/schema",
@@ -1167,7 +1167,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "c3b474ea5e14e237c8fb4447bc7e7c12e0dbf40d8f3f4bd34f3bf3fbd2c83204"
+        "c003e9fdc279cef13cf7f3f658768bad4dd33a49cafce7be61ad0e777f05c86c"
       ],
       "coverage": {
         "blocks": {
@@ -1235,7 +1235,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "a9560bb953a0f54e79e11d9116162db95c8a1d450e9d4f429615f9ac2e210e08"
+        "ddf83f4614bf1e041685f96a505061dc0241b2d335d912f6b390f87fd49fdf84"
       ],
       "coverage": {
         "blocks": {
@@ -1864,7 +1864,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "6f13a1dcc282f5902f783dd764705f1ab084ae40519cb15e3ba870304aca3119"
+        "76855311777fdfd915da603d4c61d7303cef5ff9cc17fad48eb8f1a01deddf40"
       ],
       "coverage": {
         "blocks": {
@@ -2015,6 +2015,39 @@
         "observed": 76,
         "reviewed": 1,
         "untriaged": 6
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "rcGetRate",
+      "production": "open_libpp_tx_retry_trace_rc_get_rate",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 8,
+          "total": 17
+        },
+        "directions": {
+          "reached": 7,
+          "total": 18
+        },
+        "excluded": 0,
+        "untriaged": 20
+      },
+      "observation": {
+        "executed": 18,
+        "observed": 18,
+        "reviewed": 0,
+        "untriaged": 0
       },
       "state": {
         "written": 0,
@@ -4103,6 +4136,106 @@
     {
       "function": "rate2str",
       "offset": 62,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 32,
+      "kind": "taken"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 36,
+      "kind": "taken"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 44,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 46,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 48,
+      "kind": "taken"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 48,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 50,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 54,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 58,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 70,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 78,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 82,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 176,
+      "kind": "taken"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 176,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 178,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 190,
+      "kind": "taken"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 190,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 194,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 202,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 206,
       "kind": "block"
     },
     {

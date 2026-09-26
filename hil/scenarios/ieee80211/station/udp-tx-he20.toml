@@ -1,23 +1,20 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-tx-he20"
 description = "Sustained HE20 UDP station-to-host transmission"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "udp", "station"]
 
-[link]
-phy = "he20"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "udp"
-direction = "tx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "he20" }
 duration_seconds = 16
-tx_rate_bps = 100000000
 payload_bytes = 1472
+offer = { tx_bps = 100000000 }
 
-[criteria]
+[wifi.workload.criteria]
 exact_delivery = true
-minimum_tx_bps = 70000000
 require_no_beacon_loss = true
+minimum_tx_bps = 70000000

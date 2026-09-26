@@ -4,13 +4,13 @@ use serde::Serialize;
 
 use oer_hil_protocol::{Ipv4Endpoint, SESSION_FLOW_CAPACITY};
 
+use crate::scenario::Direction;
 use crate::{
     fixture::local::air_monitor::LocalAirMonitorEvidence,
     fixture::openwrt::client::OpenWrtClientFixturePreparation,
     fixture::openwrt::client::OpenWrtClientLinkEvidence,
     fixture::openwrt::client::SecondaryClientProbeEvidence,
 };
-use hil_core::scenario::Direction;
 
 pub(super) const ACCESS_POINT_REPORT_SCHEMA: u8 = 6;
 

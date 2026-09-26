@@ -5,13 +5,14 @@ use std::net::Ipv4Addr;
 
 use oer_hil_protocol::WifiAccessPointSecurity;
 
+use crate::scenario::AccessPointClients;
 use crate::workload::ieee80211::access_point::with_cleanup_errors;
 use crate::{
     Result, fixture::local::client::ControlledClient,
     fixture::openwrt::client::ControlledOpenWrtClient,
     fixture::openwrt::client::OpenWrtClientLinkObservation,
 };
-use hil_core::{lab::config::StationFixtureConfig, scenario::AccessPointClient};
+use hil_core::{lab::config::StationFixtureConfig, lab::link::HtGuardIntervalExpectation};
 
 pub(super) enum ConnectedClients {
     Laptop {
@@ -72,10 +73,24 @@ pub(super) fn connect_clients(
     context: &Context<'_>,
     output: &std::path::Path,
 ) -> Result<ConnectedClients> {
-    let client = config.client;
     let security = config.security;
-    let openwrt_client_fixed_ht_mcs = config.openwrt_client_fixed_ht_mcs;
-    let openwrt_client_fixed_guard_interval = config.openwrt_client_fixed_guard_interval;
+    let (openwrt_client_fixed_ht_mcs, openwrt_client_fixed_guard_interval) = match config.clients {
+        AccessPointClients::OpenWrt {
+            fixed_ht_mcs,
+            fixed_guard_interval: true,
+        } => (
+            fixed_ht_mcs,
+            config
+                .link
+                .map_or(HtGuardIntervalExpectation::Any, |link| link.guard_interval),
+        ),
+        AccessPointClients::OpenWrt { fixed_ht_mcs, .. } => {
+            (fixed_ht_mcs, HtGuardIntervalExpectation::Any)
+        }
+        AccessPointClients::Laptop {} | AccessPointClients::LaptopAndOpenWrt {} => {
+            (None, HtGuardIntervalExpectation::Any)
+        }
+    };
     let timeout = config.timeout;
     let openwrt_fixture = || -> Result<&hil_core::lab::config::OpenWrtConfig> {
         match &context.lab.station_fixture {
@@ -83,8 +98,8 @@ pub(super) fn connect_clients(
             _ => Err("AP OpenWrt client requires the OpenWrt station fixture".into()),
         }
     };
-    match client {
-        AccessPointClient::OpenWrt => Ok(ConnectedClients::OpenWrt {
+    match config.clients {
+        AccessPointClients::OpenWrt { .. } => Ok(ConnectedClients::OpenWrt {
             primary: ControlledOpenWrtClient::connect_primary(
                 &context.lab.access_point,
                 openwrt_fixture()?,
@@ -93,7 +108,7 @@ pub(super) fn connect_clients(
                 openwrt_client_fixed_guard_interval,
             )?,
         }),
-        AccessPointClient::Laptop => {
+        AccessPointClients::Laptop {} | AccessPointClients::LaptopAndOpenWrt {} => {
             // Associate the observable OpenWrt peer first in two-client runs.
             // This gives debugfs evidence for the first BA bank and exercises
             // the laptop on the next independently allocated peer slot.

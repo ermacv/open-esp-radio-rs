@@ -1,29 +1,26 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-station-phy-access-high-load-delivery-rx"
 description = "Access-only PHY maintenance control during high-load HT40 RX delivery"
 repetitions = 3
-image = "diagnostic-rx-delivery"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["phy-maintenance", "diagnostic", "station", "pause", "udp", "ht40", "high-load"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-rx-delivery"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-rx_rate_bps = 100000000
 payload_bytes = 1472
-station_pause = "access"
+offer = { rx_bps = 100000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.maintenance]
+operation = "access"
+
+[wifi.workload.observation]
+openwrt_tx_monitor = true
+
+[wifi.workload.criteria]
 minimum_rx_bps = 95000000
 maximum_rx_silence_ms = 50
-require_no_beacon_loss = false
-
-[evidence]
-openwrt_tx_monitor_rx = true

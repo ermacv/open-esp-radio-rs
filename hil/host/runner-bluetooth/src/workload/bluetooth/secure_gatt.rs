@@ -3,11 +3,11 @@ mod comparison;
 mod read_failure;
 mod reset_gate;
 mod shutdown;
+use crate::scenario::SecureGattShutdown;
 use crate::{
     Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress,
     fixture::bluetooth::secure_gatt::Owner,
 };
-use hil_core::scenario::SecureGattShutdown;
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::BluetoothSecureGattEvidence as Evidence;
 use std::{
@@ -15,9 +15,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum IrqSampling {
+    #[default]
     EverySnapshot,
     BoundaryOnly,
 }

@@ -1,33 +1,28 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-two-client-ceiling-tx"
 description = "Observer-free two-client AP HT40 saturated UDP transmit fairness ceiling"
 repetitions = 3
-image = "performance"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "characterization", "wifi", "access-point", "multi-client", "ht40", "split-core", "ceiling", "tx", "fairness"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "performance"
 
-[workload]
+[wifi.workload]
 kind = "access-point"
+link = { phy = "ht40" }
 cycles = 2
 boots = 1
 timeout_seconds = 150
-client = "laptop"
+clients = { kind = "laptop-and-openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp-multi-client"
-direction = "tx"
 duration_seconds = 16
-tx_rate_bps_per_flow = 65000000
 payload_bytes = 1472
+offer = { tx_bps = 65000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_tx_bps = 105000000
 minimum_bps_per_flow = 48000000
 maximum_flow_skew_percent = 15
-minimum_concurrent_ap_clients = 2

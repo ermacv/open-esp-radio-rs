@@ -1,13 +1,11 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-retirement"
 description = "Two real BLE peripheral ACL/update/recovery cycles, then Reset, live runner handoff, timer/IRQ/HCI retirement, shared IRQ output release, last-client RF close and checked physical cold-owner return with all Host authorities closed"
-image = "bluetooth-dtm"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "lifecycle", "retirement"]
 
-[workload]
-kind = "bluetooth-peripheral"
+[bluetooth]
+kind = "peripheral"
 boots = 1
 connections = 2
 hold_millis = 100

@@ -12,9 +12,10 @@ use hil_core::{
     evidence::run::PlanDisposition, evidence::run::PlanEntry, evidence::run::PlannedFirmware,
     evidence::run::RUN_SCHEMA, evidence::run::RepetitionResult, evidence::run::RunPlan,
     evidence::run::RunSession, evidence::run::ScenarioResult, image::ImageClass,
-    image::Integration, lab::config::LabConfig, lab::requirements::Requirements, scenario::Catalog,
-    scenario::Scenario,
+    image::Integration, lab::config::LabConfig,
 };
+
+use crate::scenario::{Catalog, Scenario, requirements};
 
 use super::{
     firmware::{self, RunFirmware},
@@ -88,7 +89,7 @@ pub(crate) fn run_one(
         lab,
         catalog,
         &selected_entries,
-        format!("scenario: {}", selected.id),
+        format!("scenario: {}", selected.id()),
         Some(firmware.plan()),
         invocation,
     )?;
@@ -175,7 +176,7 @@ fn execute_selected(
             if let Some(failure) = effects.preflight(scenario) {
                 session.record_event(
                     "scenario-blocked",
-                    Some(&scenario.id),
+                    Some(scenario.id()),
                     Some(class),
                     Some(Outcome::Blocked),
                 )?;
@@ -191,7 +192,7 @@ fn execute_selected(
             for scenario in executable {
                 session.record_event(
                     "scenario-blocked",
-                    Some(&scenario.id),
+                    Some(scenario.id()),
                     Some(class),
                     Some(Outcome::Blocked),
                 )?;
@@ -201,12 +202,12 @@ fn execute_selected(
         }
         for scenario in executable {
             effects.check_cancelled()?;
-            session.record_event("scenario-started", Some(&scenario.id), Some(class), None)?;
+            session.record_event("scenario-started", Some(scenario.id()), Some(class), None)?;
             let result = effects.execute_scenario(scenario, session)?;
             session.seal_scenario(scenario, &result)?;
             session.record_event(
                 "scenario-finished",
-                Some(&scenario.id),
+                Some(scenario.id()),
                 Some(class),
                 Some(result.outcome),
             )?;
@@ -224,33 +225,33 @@ fn execute_one(
     if let Some(failure) = effects.preflight(selected) {
         session.record_event(
             "scenario-blocked",
-            Some(&selected.id),
-            Some(selected.image),
+            Some(selected.id()),
+            Some(selected.image()),
             Some(Outcome::Blocked),
         )?;
         return Ok(vec![write_blocked_scenario(session, selected, failure)?]);
     }
-    if let Some(failure) = effects.prepare_image(selected.image, session)? {
+    if let Some(failure) = effects.prepare_image(selected.image(), session)? {
         session.record_event(
             "scenario-blocked",
-            Some(&selected.id),
-            Some(selected.image),
+            Some(selected.id()),
+            Some(selected.image()),
             Some(Outcome::Blocked),
         )?;
         return Ok(vec![write_blocked_scenario(session, selected, failure)?]);
     }
     session.record_event(
         "scenario-started",
-        Some(&selected.id),
-        Some(selected.image),
+        Some(selected.id()),
+        Some(selected.image()),
         None,
     )?;
     let result = effects.execute_scenario(selected, session)?;
     session.seal_scenario(selected, &result)?;
     session.record_event(
         "scenario-finished",
-        Some(&selected.id),
-        Some(selected.image),
+        Some(selected.id()),
+        Some(selected.image()),
         Some(result.outcome),
     )?;
     Ok(vec![result])
@@ -263,7 +264,7 @@ fn group_selected_scenarios<'a>(selected: &[&'a Scenario]) -> Vec<(ImageClass, V
             let scenarios = selected
                 .iter()
                 .copied()
-                .filter(|entry| entry.image == class)
+                .filter(|entry| entry.image() == class)
                 .collect::<Vec<_>>();
             (!scenarios.is_empty()).then_some((class, scenarios))
         })
@@ -296,18 +297,18 @@ fn start_run(
         .all()
         .iter()
         .map(|scenario| {
-            let is_selected = selected.iter().any(|entry| entry.id == scenario.id);
+            let is_selected = selected.iter().any(|entry| entry.id() == scenario.id());
             PlanEntry {
-                scenario: scenario.id.clone(),
-                image: scenario.image,
-                repetitions: scenario.repetitions,
+                scenario: scenario.id().to_owned(),
+                image: scenario.image(),
+                repetitions: scenario.repetitions(),
                 disposition: if is_selected {
                     PlanDisposition::Selected
                 } else {
                     PlanDisposition::Filtered
                 },
                 reason: (!is_selected).then(|| format!("excluded by `{selection}`")),
-                requirements: Some(Requirements::for_scenario(scenario)),
+                requirements: Some(scenario.requirements()),
             }
         })
         .collect();
@@ -320,11 +321,11 @@ fn start_run(
     })?;
     session.record_event("plan-resolved", None, None, None)?;
     for scenario in selected {
-        let directory = session.scenario_directory(&scenario.id);
+        let directory = session.scenario_directory(scenario.id());
         fs::create_dir_all(&directory)?;
         hil_core::durable::atomic_json(&directory.join("scenario.json"), scenario)?;
     }
-    let required = Requirements::union(selected);
+    let required = requirements(selected);
     let lab_provenance = hil_core::lab::provenance::LabProvenance::capture(lab, required)?;
     session.record_lab_provenance(&lab_provenance)?;
     session.record_event("lab-provenance-captured", None, None, None)?;
@@ -365,14 +366,14 @@ fn run_scenario(
     selected: &Scenario,
     session: &RunSession,
 ) -> Result<ScenarioResult> {
-    let scenario_output = session.scenario_directory(&selected.id);
+    let scenario_output = session.scenario_directory(selected.id());
     fs::create_dir_all(&scenario_output)?;
     hil_core::durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
-    let mut repetitions = Vec::with_capacity(usize::from(selected.repetitions));
-    for number in 1..=selected.repetitions {
+    let mut repetitions = Vec::with_capacity(usize::from(selected.repetitions()));
+    for number in 1..=selected.repetitions() {
         oer_process::check_cancelled()?;
         let relative = PathBuf::from("scenarios")
-            .join(&selected.id)
+            .join(selected.id())
             .join(format!("repetition-{number:03}"));
         let output = session.directory().join(&relative);
         fs::create_dir_all(&output)?;
@@ -383,9 +384,9 @@ fn run_scenario(
         // publish its completed boundary before observing campaign cancellation.
     }
     let result = ScenarioResult::from_repetitions(
-        selected.id.clone(),
-        selected.image,
-        selected.repetitions,
+        selected.id().to_owned(),
+        selected.image(),
+        selected.repetitions(),
         repetitions,
     );
     hil_core::durable::atomic_json(&scenario_output.join("result.json"), &result)?;
@@ -399,15 +400,16 @@ fn run_scenario_repetition(
     artifacts: &Path,
     output: &Path,
 ) -> Result<RepetitionResult> {
-    let resolved = lab.resolve_scenario(selected);
+    let plan = selected.plan();
+    let resolved = lab.resolve(plan.wifi);
     let lab = &resolved;
     let started_unix_millis = hil_core::durable::unix_millis()?;
     let started = std::time::Instant::now();
     let cleanup = hil_core::fixture::cleanup::Scope::new(output);
     let (outcome, failure, measurements) = match fixture::preflight::check(lab, selected)
-        .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, selected, output))
+        .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, &plan, output))
         .and_then(|fixture| {
-            preflight::validate_flashed_image(lab, selected.image, output)?;
+            preflight::validate_flashed_image(lab, plan.image, output)?;
             Ok(fixture)
         }) {
         Err(error) => {
@@ -497,13 +499,13 @@ fn write_blocked_scenario(
     selected: &Scenario,
     failure: Failure,
 ) -> Result<ScenarioResult> {
-    let output = session.scenario_directory(&selected.id);
+    let output = session.scenario_directory(selected.id());
     fs::create_dir_all(&output)?;
     hil_core::durable::atomic_json(&output.join("scenario.json"), selected)?;
     let result = ScenarioResult::blocked(
-        selected.id.clone(),
-        selected.image,
-        selected.repetitions,
+        selected.id().to_owned(),
+        selected.image(),
+        selected.repetitions(),
         failure,
     );
     session.seal_scenario(selected, &result)?;

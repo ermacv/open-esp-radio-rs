@@ -1,18 +1,14 @@
-schema = 4
+schema = 5
 id = "station-ap-loss"
 description = "Station detects controlled AP loss, reconnects and completes fresh IP exchange"
 repetitions = 3
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["ap-availability", "diagnostic", "psram-stack", "station", "lifecycle"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
+[wifi.workload]
 kind = "station-ap-loss"
+link = { phy = "ht40" }
 require_recovery_echo = true
 timeout_seconds = 120
-
-[criteria]

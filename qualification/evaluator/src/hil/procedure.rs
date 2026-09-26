@@ -38,13 +38,13 @@ fn for_requirement(document: &Value, requirement: &super::HilRequirement) -> Val
     // These thresholds only assess retained measurements. Other criteria can
     // request extra traffic/assertions and therefore remain part of execution.
     if !requirement.checks.is_empty()
-        && value.pointer("/workload/kind").and_then(Value::as_str) == Some("udp")
-        && value.pointer("/workload/direction").and_then(Value::as_str) == Some("rx")
+        && super::checks::receive_only_station_udp(&value)
+        && let Some(criteria) = value
+            .pointer_mut("/wifi/workload/criteria")
+            .and_then(Value::as_object_mut)
     {
         for key in ["minimum_rx_bps", "maximum_rx_silence_ms"] {
-            if let Some(criteria) = value["criteria"].as_object_mut() {
-                criteria.remove(key);
-            }
+            criteria.remove(key);
         }
     }
     value
@@ -57,32 +57,33 @@ mod tests {
 
     #[test]
     fn numeric_reassessment_does_not_relax_stimulus_or_extra_observations() {
-        let original = json!({"id":"rx","image":"correctness", "workload":{"kind":"udp","direction":"rx","duration_seconds":30},
-            "criteria":{"minimum_rx_bps":1000,"maximum_rx_silence_ms":10}});
+        let original = json!({"id":"rx","wifi":{"image":"correctness","workload":{"kind":"station-udp",
+            "offer":{"rx_bps":100_000},"duration_seconds":30,
+            "criteria":{"minimum_rx_bps":1000,"maximum_rx_silence_ms":10}}}});
         let mut requirement = super::super::HilRequirement {
             scenario: "rx".into(),
             checks: vec!["udp.rx.target-rate".into()],
             minimum_repetitions: 1,
         };
         let mut changed = original.clone();
-        changed["criteria"]["minimum_rx_bps"] = json!(2000);
+        changed["wifi"]["workload"]["criteria"]["minimum_rx_bps"] = json!(2000);
         assert_eq!(
             for_requirement(&original, &requirement),
             for_requirement(&changed, &requirement)
         );
-        changed["criteria"]["require_post_maintenance_echo"] = json!(true);
+        changed["wifi"]["workload"]["maintenance"] = json!({"operation":"calibration"});
         assert_ne!(
             for_requirement(&original, &requirement),
             for_requirement(&changed, &requirement)
         );
         changed = original.clone();
-        changed["workload"]["duration_seconds"] = json!(60);
+        changed["wifi"]["workload"]["duration_seconds"] = json!(60);
         assert_ne!(
             for_requirement(&original, &requirement),
             for_requirement(&changed, &requirement)
         );
         changed = original.clone();
-        changed["criteria"]["minimum_rx_bps"] = json!(2000);
+        changed["wifi"]["workload"]["criteria"]["minimum_rx_bps"] = json!(2000);
         requirement.checks.clear();
         assert_ne!(
             for_requirement(&original, &requirement),

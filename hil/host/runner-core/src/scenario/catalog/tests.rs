@@ -1,4 +1,6 @@
-use super::super::*;
+use super::super::test_family::TestFamily;
+
+type Catalog = super::Catalog<TestFamily>;
 use std::{fs, path::PathBuf};
 
 const ALPHA: &str =
@@ -39,7 +41,7 @@ fn nested_catalog_consumes_shared_serialized_documents() {
         catalog
             .all()
             .iter()
-            .map(|scenario| scenario.id.as_str())
+            .map(|scenario| scenario.id())
             .collect::<Vec<_>>(),
         ["alpha-system", "beta-system"]
     );
@@ -47,7 +49,7 @@ fn nested_catalog_consumes_shared_serialized_documents() {
         catalog
             .all()
             .iter()
-            .all(|scenario| scenario.repetitions == 3)
+            .all(|scenario| scenario.repetitions() == 3)
     );
 }
 
@@ -57,7 +59,7 @@ fn catalog_rejects_ambiguous_or_unsupported_inputs() {
         ("other/alpha-system.toml", ALPHA.to_owned()),
         ("wrong-name.toml", BETA.to_owned()),
         ("hidden.txt", "unexpected file".to_owned()),
-        ("beta-system.toml", BETA.replace("schema = 4", "schema = 5")),
+        ("beta-system.toml", BETA.replace("schema = 5", "schema = 4")),
         (
             "beta-system.toml",
             BETA.replace("repetitions = 3", "repetitions = 0"),

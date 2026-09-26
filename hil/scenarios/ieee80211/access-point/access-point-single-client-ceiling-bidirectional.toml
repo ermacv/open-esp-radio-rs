@@ -1,34 +1,28 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-single-client-ceiling-bidirectional"
 description = "Observer-free single-client AP HT40 saturated bidirectional UDP gate"
 repetitions = 3
-image = "performance"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "bidirectional"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "performance"
 
-[workload]
+[wifi.workload]
 kind = "access-point"
+link = { phy = "ht40" }
 cycles = 2
 boots = 1
 timeout_seconds = 120
-client = "open-wrt"
+clients = { kind = "openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "bidirectional"
 duration_seconds = 16
-rx_rate_bps = 65000000
-tx_rate_bps = 65000000
 payload_bytes = 1472
+offer = { rx_bps = 65000000, tx_bps = 65000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_rx_bps = 40000000
 minimum_tx_bps = 40000000
 minimum_combined_bps = 80000000
-minimum_concurrent_ap_clients = 1

@@ -15,7 +15,9 @@ use crate::{
     workload::ieee80211::control::stop_station,
     workload::ieee80211::station_access_point::wait_for_endpoints,
 };
-use hil_core::{scenario::PhyExpectation, session::SerialCapture, session::probe_udp_rx_ready_via};
+use hil_core::{
+    lab::link::PhyExpectation, session::SerialCapture, session::probe_udp_rx_ready_via,
+};
 
 const TARGET_RX_PORT: u16 = 4_323;
 const BEACON_LOSS_TIMEOUT: Duration = Duration::from_secs(15);

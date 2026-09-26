@@ -1,13 +1,8 @@
-schema = 4
+schema = 5
 id = "alpha-system"
-repetitions = 3
 description = "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup"
-image = "boot-smoke"
-isolation = "reset"
-data_plane = "split-radio-network"
+repetitions = 3
 tags = ["smoke", "psram-stack"]
 
-[workload]
+[system]
 kind = "boot-smoke"
-
-[criteria]

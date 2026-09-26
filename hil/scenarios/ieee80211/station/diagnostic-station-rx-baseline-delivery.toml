@@ -1,25 +1,21 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-station-rx-baseline-delivery"
 description = "RX diagnostic isolation: no maintenance"
 repetitions = 3
-image = "diagnostic-rx-delivery"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "station", "pause", "udp", "ht40"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-rx-delivery"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 12
-rx_rate_bps = 65000000
 payload_bytes = 1200
+offer = { rx_bps = 65000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.criteria]
+require_no_beacon_loss = true
 minimum_rx_bps = 60000000
 maximum_rx_silence_ms = 50
-require_no_beacon_loss = true

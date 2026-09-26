@@ -1,11 +1,9 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-missing-refresh-key"
 description = "Start encryption, refuse the replacement LTK, require termination with PIN or Key Missing, then reconnect encrypted and retire cold"
-image = "bluetooth-dtm"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "encryption", "key-refresh", "security-failure", "lifecycle"]
 
-[workload]
-kind = "bluetooth-security-failure"
+[bluetooth]
+kind = "security-failure"
 failure = "missing-refresh-key"

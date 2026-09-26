@@ -183,14 +183,9 @@ fn validate_lab_provenance(run_directory: &Path, manifest: &RunManifest) -> Resu
                 .join("scenario.json");
             validate_relative_path(&snapshot, "scenario snapshot")?;
             require_regular_file_below(run_directory, &snapshot)?;
-            let scenario: crate::scenario::Scenario = read_json(&run_directory.join(snapshot))?;
-            if scenario.id != entry.scenario
-                || scenario.image != entry.image
-                || scenario.repetitions != entry.repetitions
-                || Some(crate::lab::requirements::Requirements::for_scenario(
-                    &scenario,
-                )) != entry.requirements
-            {
+            let scenario =
+                crate::scenario::Header::from_snapshot(&fs::read(run_directory.join(snapshot))?)?;
+            if scenario.id != entry.scenario || scenario.repetitions != entry.repetitions {
                 return Err(
                     "system-only lab provenance disagrees with the selected scenario snapshot"
                         .into(),

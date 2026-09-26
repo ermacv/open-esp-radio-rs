@@ -1,26 +1,20 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-tx-ht40-split-task-poll-diagnostic"
 description = "Split-core HT40 saturated TX executor, A-MPDU, and block-ack diagnostic"
 repetitions = 3
-image = "diagnostic-task-poll"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-poll", "ampdu"]
 
-[link]
-phy = "ht40"
-guard_interval = "any"
+[wifi]
+image = "diagnostic-task-poll"
 
-[workload]
-kind = "udp"
-direction = "tx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-tx_rate_bps = 130000000
 payload_bytes = 1472
+offer = { tx_bps = 130000000 }
 
-[criteria]
-exact_delivery = false
-require_no_beacon_loss = false
+[wifi.workload.criteria]
 minimum_tx_bps = 90000000
 maximum_idle_channel_utilization_255 = 64

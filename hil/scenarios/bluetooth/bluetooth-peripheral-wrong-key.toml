@@ -1,11 +1,9 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-wrong-key"
 description = "Reject the first encryption attempt with wrong-key, verify exact security evidence, then reconnect with a valid LTK and retire cold"
-image = "bluetooth-dtm"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "encryption", "security-failure", "lifecycle"]
 
-[workload]
-kind = "bluetooth-security-failure"
+[bluetooth]
+kind = "security-failure"
 failure = "wrong-key"

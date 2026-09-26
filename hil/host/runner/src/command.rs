@@ -4,12 +4,13 @@ use std::env;
 
 use clap::Parser as _;
 
+use crate::scenario::{Catalog, requirements};
 use crate::{
     Result, cli::Cli, cli::CliCommand, cli::DeviceCommand, cli::ImageCommand, cli::ReportCommand,
     cli::ScenarioCommand, emit_json, execution::firmware::RunFirmware, execution::orchestration,
     execution::preflight, fixture, repository_root,
 };
-use hil_core::{device, image, lab, output, scenario};
+use hil_core::{device, image, lab, output, scenario::SCENARIO_SCHEMA};
 
 pub(crate) fn run() -> Result<()> {
     let root = repository_root()?;
@@ -78,19 +79,19 @@ pub(crate) fn run() -> Result<()> {
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::Check { scenario: id },
         } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
-            let required = lab::requirements::Requirements::for_scenario(selected);
+            let required = selected.requirements();
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::fixture_check::check_without_device(&root, &lab, selected)
         }
         CliCommand::Doctor(selection) => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
-            let required = lab::requirements::Requirements::union(&selected);
+            let required = requirements(&selected);
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::doctor::run(&root, &lab, &selected)
@@ -103,7 +104,7 @@ pub(crate) fn run() -> Result<()> {
             qualification,
             capability,
         } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = Catalog::load(&catalog_path)?;
             let plan = if let Some(manifest) = qualification {
                 hil_core::campaign::Plan::from_qualification(
                     &root, &catalog, manifest, capability, network,
@@ -126,7 +127,7 @@ pub(crate) fn run() -> Result<()> {
             check,
             source_include,
         } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = Catalog::load(&catalog_path)?;
             let plan: hil_core::campaign::Plan = serde_json::from_slice(&std::fs::read(plan)?)?;
             let plan = plan.refresh(&root, &catalog)?;
             let (selected, network) = plan.resolve(&catalog)?;
@@ -135,7 +136,7 @@ pub(crate) fn run() -> Result<()> {
             }
             let snapshot = image::snapshot::capture(&root, &source_include)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
-            let required = lab::requirements::Requirements::union(&selected);
+            let required = requirements(&selected);
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
@@ -154,11 +155,11 @@ pub(crate) fn run() -> Result<()> {
             )
         }
         CliCommand::Scenario { command } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = Catalog::load(&catalog_path)?;
             match command {
                 ScenarioCommand::List => emit_json(
                     &serde_json::json!({
-                        "schema": scenario::SCENARIO_SCHEMA,
+                        "schema": SCENARIO_SCHEMA,
                         "scenarios": catalog.all(),
                     }),
                     true,
@@ -169,7 +170,7 @@ pub(crate) fn run() -> Result<()> {
                     }
                     emit_json(
                         &serde_json::json!({
-                            "schema": scenario::SCENARIO_SCHEMA,
+                            "schema": SCENARIO_SCHEMA,
                             "scenarios": catalog.all().len(),
                             "status": "valid"
                         }),
@@ -258,7 +259,7 @@ pub(crate) fn run() -> Result<()> {
             firmware_from,
             network,
         } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = Catalog::load(&catalog_path)?;
             let mut selected = catalog.get(&id)?.clone();
             preflight::configure_run_selection(
                 &mut selected,
@@ -277,13 +278,13 @@ pub(crate) fn run() -> Result<()> {
                         &root,
                         "esp32s31",
                         &run_id,
-                        selected.image,
+                        selected.image(),
                     )?))
                 }
                 None => RunFirmware::BuildCurrent(network),
             };
             let lab = lab::config::LabConfig::load(&lab_path)?;
-            let required = lab::requirements::Requirements::for_scenario(&selected);
+            let required = selected.requirements();
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
@@ -305,7 +306,7 @@ pub(crate) fn run() -> Result<()> {
             network,
             source_include,
         } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = Catalog::load(&catalog_path)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let selected = crate::cli::Selection {
                 scenario: None,
@@ -313,7 +314,7 @@ pub(crate) fn run() -> Result<()> {
             }
             .resolve(&catalog)?;
             let snapshot = image::snapshot::capture(&root, &source_include)?;
-            let required = lab::requirements::Requirements::union(&selected);
+            let required = requirements(&selected);
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;

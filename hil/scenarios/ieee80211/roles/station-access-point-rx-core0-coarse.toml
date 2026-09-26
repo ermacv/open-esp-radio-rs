@@ -1,18 +1,18 @@
-schema = 4
+schema = 5
 id = "station-access-point-rx-core0-coarse"
 description = "Coarse Core0 ownership accounting during simultaneous STA and AP UDP ingress"
-image = "diagnostic-core0-rx-coarse"
 repetitions = 3
-isolation = "reset"
-data_plane = "split-radio-network"
-rx_continuation = "adaptive-probe-diagnostic"
 tags = ["diagnostic", "wifi", "sta-ap", "udp", "rx", "core0", "coarse", "psram-stack"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-core0-rx-coarse"
 
-[workload]
+[wifi.datapath]
+rx_continuation = "adaptive-probe-diagnostic"
+
+[wifi.workload]
 kind = "station-access-point"
+link = { phy = "ht40" }
 timeout_seconds = 30
 duration_seconds = 12
 direction = "rx"

@@ -16,7 +16,7 @@ use oer_hil_protocol::WifiAccessPointSecurity;
 use crate::Result;
 use hil_core::{
     lab::config::AccessPointConfig, lab::config::OpenWrtConfig,
-    scenario::HtGuardIntervalExpectation,
+    lab::link::HtGuardIntervalExpectation,
 };
 
 // Linux network-interface names contain at most IFNAMSIZ-1 (15) bytes.

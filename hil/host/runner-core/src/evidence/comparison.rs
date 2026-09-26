@@ -6,7 +6,7 @@
 use serde::Serialize;
 
 use super::run::{MeasurementUnit, MeasurementVerdict, Outcome, ScenarioResult};
-use crate::scenario::Scenario;
+use crate::scenario::{Scenario, ScenarioFamily};
 
 #[derive(Debug, Serialize)]
 pub struct Report {
@@ -41,22 +41,24 @@ struct Delta {
     mean_delta_percent: Option<f64>,
 }
 
-pub fn collect(selected: &[&Scenario], results: &[ScenarioResult]) -> Option<Report> {
+pub fn collect<F: ScenarioFamily>(
+    selected: &[&Scenario<F>],
+    results: &[ScenarioResult],
+) -> Option<Report> {
     let comparisons = selected
         .iter()
         .filter_map(|experiment| {
-            let relation = experiment.comparison.as_ref()?;
-            let control = relation.control();
+            let control = experiment.control()?;
             let observation = observe(
                 results.iter().find(|result| result.scenario == control),
                 results
                     .iter()
-                    .find(|result| result.scenario == experiment.id),
+                    .find(|result| result.scenario == experiment.id()),
             )
             .unwrap_or_else(|reason| Observation::Unavailable { reason });
             Some(Pair {
                 control: control.to_owned(),
-                experiment: experiment.id.clone(),
+                experiment: experiment.id().to_owned(),
                 observation,
             })
         })

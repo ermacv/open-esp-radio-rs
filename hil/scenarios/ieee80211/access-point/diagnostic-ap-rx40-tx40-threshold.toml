@@ -1,33 +1,27 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-ap-rx40-tx40-threshold"
 description = "Temporary same-ELF AP balanced duplex threshold control at 40/40 Mbit/s"
 repetitions = 1
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "access-point", "udp", "bidirectional", "threshold"]
 
-[workload]
+[wifi]
+image = "correctness"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 180
-client = "open-wrt"
+clients = { kind = "openwrt" }
+independent_air_monitor = true
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "bidirectional"
 duration_seconds = 10
-rx_rate_bps = 40000000
-tx_rate_bps = 40000000
 payload_bytes = 1472
+offer = { rx_bps = 40000000, tx_bps = 40000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_rx_bps = 1
 minimum_tx_bps = 1
-minimum_concurrent_ap_clients = 1
-
-[evidence]
-independent_laptop_air_monitor = true

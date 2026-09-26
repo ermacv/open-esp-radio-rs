@@ -1,8 +1,9 @@
 //! Execution prerequisites derived from workload behavior, never scenario names.
+//!
+//! Each scenario family computes its requirements; this type only names the
+//! shared laboratory services and combines them.
 
 use serde::{Deserialize, Serialize};
-
-use crate::scenario::{AccessPointClient, Direction, Scenario, Workload};
 
 /// Serial ownership and firmware are common to every scenario. These are the
 /// additional fixture services consumed by the selected workload and evidence.
@@ -24,86 +25,24 @@ pub struct Requirements {
 }
 
 impl Requirements {
-    pub fn for_scenario(scenario: &Scenario) -> Self {
-        let mut required = Self::default();
-        match &scenario.workload {
-            Workload::BluetoothDtm { .. }
-            | Workload::BluetoothGatt
-            | Workload::BluetoothSecureGatt
-            | Workload::BluetoothSecureGattTiming
-            | Workload::BluetoothSecureGattHciReadFailure
-            | Workload::BluetoothPhyWatchdog
-            | Workload::BluetoothPeripheral { .. }
-            | Workload::BluetoothAclCalibration { .. }
-            | Workload::BluetoothAclBackpressure { .. }
-            | Workload::BluetoothEncryptedAcl { .. }
-            | Workload::BluetoothSecurityFailure { .. }
-            | Workload::BluetoothWatchdogReset
-            | Workload::BluetoothMaintenanceDeadline => {
-                required.bluetooth_adapter = true;
-                return required;
-            }
-            Workload::BootSmoke
-            | Workload::SystemWatchdog
-            | Workload::Timebase { .. }
-            | Workload::MemoryBenchmark { .. }
-            | Workload::Ieee802154EventStatus { .. }
-            | Workload::Ieee802154EdEvent { .. } => return required,
-            Workload::Udp { direction, .. } => {
-                required.station_udp_rx_capture = *direction != Direction::Tx;
-                required.station_udp_tx_capture = *direction != Direction::Rx;
-            }
-            Workload::AccessPoint {
-                client, probe_load, ..
-            } => {
-                required.probe_load = *probe_load;
-                required.laptop_client = *client == AccessPointClient::Laptop;
-                required.openwrt_client = *client == AccessPointClient::OpenWrt
-                    || scenario.criteria.minimum_concurrent_ap_clients.unwrap_or(1) >= 2;
-            }
-            Workload::StationAccessPoint { .. } | Workload::StationAccessPointReconnect { .. } => {
-                required.laptop_client = true
-            }
-            Workload::Tcp { .. }
-            | Workload::WifiPhyWatchdog
-            | Workload::Icmp { .. }
-            | Workload::StationReconnect { .. }
-            | Workload::StationApLoss { .. }
-            | Workload::StationApAbsence { .. }
-            | Workload::WifiRole { .. }
-            | Workload::MonitorCapture { .. } => {}
-        }
-        // AP and monitor workloads also begin by qualifying the connected STA.
-        // Keep that real dependency visible until their lifecycle changes.
-        required.station_network = true;
-        required.station_control = matches!(
-            scenario.workload,
-            Workload::StationApLoss { .. }
-                | Workload::StationApAbsence { .. }
-                | Workload::StationAccessPointReconnect { .. }
-        );
-        required.openwrt_tx_monitor =
-            scenario.evidence.openwrt_tx_monitor_rx || required.probe_load;
-        required.laptop_air_monitor = scenario.evidence.independent_laptop_air_monitor;
-        required
-    }
-
-    pub fn union(scenarios: &[&Scenario]) -> Self {
-        let mut required = Self::default();
-        for scenario in scenarios {
-            let next = Self::for_scenario(scenario);
-            required.station_network |= next.station_network;
-            required.bluetooth_adapter |= next.bluetooth_adapter;
-            required.station_control |= next.station_control;
-            required.station_udp_rx_capture |= next.station_udp_rx_capture;
-            required.station_udp_tx_capture |= next.station_udp_tx_capture;
-            required.laptop_client |= next.laptop_client;
-            required.openwrt_client |= next.openwrt_client;
-            required.openwrt_tx_monitor |= next.openwrt_tx_monitor;
-            required.laptop_air_monitor |= next.laptop_air_monitor;
-            required.probe_load |= next.probe_load;
-        }
-        required
+    /// The fixture services a set of scenarios needs together.
+    pub fn union(requirements: impl IntoIterator<Item = Self>) -> Self {
+        requirements
+            .into_iter()
+            .fold(Self::default(), |required, next| Self {
+                station_network: required.station_network | next.station_network,
+                bluetooth_adapter: required.bluetooth_adapter | next.bluetooth_adapter,
+                station_control: required.station_control | next.station_control,
+                station_udp_rx_capture: required.station_udp_rx_capture
+                    | next.station_udp_rx_capture,
+                station_udp_tx_capture: required.station_udp_tx_capture
+                    | next.station_udp_tx_capture,
+                laptop_client: required.laptop_client | next.laptop_client,
+                openwrt_client: required.openwrt_client | next.openwrt_client,
+                openwrt_tx_monitor: required.openwrt_tx_monitor | next.openwrt_tx_monitor,
+                laptop_air_monitor: required.laptop_air_monitor | next.laptop_air_monitor,
+                probe_load: required.probe_load | next.probe_load,
+            })
     }
 
     pub fn network(self) -> bool {

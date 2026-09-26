@@ -1,13 +1,10 @@
-schema = 4
+schema = 5
 id = "ieee802154-ed-event-selective-write"
 description = "Two back-to-back production polled ED transactions followed by reset-detached ED-DONE plus TIMER0 selected-write validation"
-image = "diagnostic-ieee802154-ed-event"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["diagnostic", "ieee802154", "production-ed", "back-to-back", "event-status", "ed-done", "rx-abort", "selective-write", "timer-counter"]
 
-[workload]
-kind = "ieee802154-ed-event"
+[ieee802154]
+kind = "ed-event"
 boots = 3
 poll_limit = 100000
 timer_threshold = 1000

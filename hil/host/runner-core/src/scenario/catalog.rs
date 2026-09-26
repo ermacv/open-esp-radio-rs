@@ -5,10 +5,15 @@
 
 use std::{collections::BTreeSet, fs, path::Path};
 
-use super::{Catalog, Scenario};
+use super::{Scenario, ScenarioFamily};
 use crate::Result;
 
-impl Catalog {
+#[derive(Debug)]
+pub struct Catalog<F> {
+    scenarios: Vec<Scenario<F>>,
+}
+
+impl<F: ScenarioFamily> Catalog<F> {
     pub fn load(directory: &Path) -> Result<Self> {
         // Do not let a symlink in the supplied catalog path bypass the same
         // no-follow policy applied to entries below that directory.
@@ -62,20 +67,17 @@ impl Catalog {
                     .into());
                 }
                 let text = fs::read_to_string(&path)?;
-                let mut scenario: Scenario = toml::from_str(&text)
-                    .map_err(|error| format!("{}: {error}", path.display()))?;
-                if path.file_stem().and_then(|name| name.to_str()) != Some(&scenario.id) {
+                let scenario = Scenario::<F>::from_toml(&text, &path)?;
+                if path.file_stem().and_then(|name| name.to_str()) != Some(scenario.id()) {
                     return Err(format!(
                         "scenario filename does not match ID `{}`: {}",
-                        scenario.id,
+                        scenario.id(),
                         path.display()
                     )
                     .into());
                 }
-                scenario.source = path;
-                scenario.validate()?;
-                if !ids.insert(scenario.id.clone()) {
-                    return Err(format!("duplicate HIL scenario id `{}`", scenario.id).into());
+                if !ids.insert(scenario.id().to_owned()) {
+                    return Err(format!("duplicate HIL scenario id `{}`", scenario.id()).into());
                 }
                 scenarios.push(scenario);
             }
@@ -83,26 +85,46 @@ impl Catalog {
         if scenarios.is_empty() {
             return Err(format!("scenario catalog is empty: {}", directory.display()).into());
         }
-        // Preserve the original flat filename order inside each ImageClass::ALL
-        // group, regardless of future domain-folder placement.
-        scenarios.sort_by(|left, right| left.id.cmp(&right.id));
+        // Order by identity, independent of domain-folder placement.
+        scenarios.sort_by(|left, right| left.id().cmp(right.id()));
+        Self::new(scenarios)
+    }
+
+    /// Build a catalog from validated scenarios and check every
+    /// experiment/control relation.
+    pub fn new(scenarios: Vec<Scenario<F>>) -> Result<Self> {
         let catalog = Self { scenarios };
-        for scenario in catalog.all() {
-            if let Some(comparison) = &scenario.comparison {
-                comparison.validate(scenario, &catalog)?;
+        for experiment in catalog.all() {
+            let Some(control) = experiment.control() else {
+                continue;
+            };
+            let control = catalog.get(control)?;
+            if control.control().is_some() {
+                return Err(format!(
+                    "{}: control {} must be an independent scenario",
+                    experiment.id(),
+                    control.id()
+                )
+                .into());
             }
+            experiment
+                .family
+                .validate_control(&control.family)
+                .map_err(|error| {
+                    format!("{}: control {}: {error}", experiment.id(), control.id())
+                })?;
         }
         Ok(catalog)
     }
 
-    pub fn all(&self) -> &[Scenario] {
+    pub fn all(&self) -> &[Scenario<F>] {
         &self.scenarios
     }
 
-    pub fn get(&self, id: &str) -> Result<&Scenario> {
+    pub fn get(&self, id: &str) -> Result<&Scenario<F>> {
         self.scenarios
             .iter()
-            .find(|scenario| scenario.id == id)
+            .find(|scenario| scenario.id() == id)
             .ok_or_else(|| format!("unknown HIL scenario `{id}`").into())
     }
 }

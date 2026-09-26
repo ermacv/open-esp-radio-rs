@@ -16,7 +16,9 @@ use crate::{
     Result, workload::ieee80211::control::scan, workload::ieee80211::control::start_station,
     workload::ieee80211::control::stop_station,
 };
-use hil_core::{scenario::PhyExpectation, session::MonitorCaptureEvidence, session::SerialCapture};
+use hil_core::{
+    lab::link::PhyExpectation, session::MonitorCaptureEvidence, session::SerialCapture,
+};
 
 pub struct Config {
     pub output: PathBuf,

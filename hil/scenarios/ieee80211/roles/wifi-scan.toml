@@ -1,17 +1,13 @@
-schema = 4
+schema = 5
 id = "wifi-scan"
 description = "Standalone full-band scan with target-side dwell timing"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "scanner"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "wifi-role"
-operation = "scan"
+[wifi.workload]
+kind = "role"
+link = { phy = "ht40" }
 timeout_seconds = 90
-
-[criteria]
+operation = { kind = "scan" }

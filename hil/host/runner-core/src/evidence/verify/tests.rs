@@ -245,7 +245,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
                     secondary_client_address: None,
                 },
                 station_fixture: StationFixtureDefinition::External {
-                    phys: vec![crate::scenario::PhyExpectation::Ht40],
+                    phys: vec![crate::lab::link::PhyExpectation::Ht40],
                 },
                 sensitive_network_values: SensitiveValueDisposition::Omitted,
             },
@@ -298,45 +298,40 @@ fn verifies_typed_lab_provenance_and_rejects_wrong_device_binding() {
 }
 
 #[test]
-fn system_provenance_cannot_hide_a_network_workload() {
+fn system_provenance_requires_a_matching_scenario_snapshot() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
     let mut provenance: LabProvenance = read_json(&run.join("lab-provenance.json")).unwrap();
     provenance.scope = crate::lab::provenance::ObservationScope::System;
     provenance.fixture = FixtureObservation::NotUsed;
     atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
-    let mut scenario: crate::scenario::Scenario = toml::from_str(include_str!(
-        "../../../../../scenarios/system/timebase.toml"
-    ))
-    .unwrap();
+    let mut scenario = crate::scenario::test_family::scenario(include_str!(
+        "../../../../../scenarios/system/boot-smoke.toml"
+    ));
     let snapshot = run
         .join("scenarios")
-        .join(&scenario.id)
+        .join(scenario.id())
         .join("scenario.json");
     fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
     atomic_json(&snapshot, &scenario).unwrap();
     let plan = crate::evidence::run::RunPlan {
         schema: RUN_SCHEMA,
         run_id: "run-1".into(),
-        selection: "timebase".into(),
+        selection: "boot-smoke".into(),
         firmware: None,
         entries: vec![crate::evidence::run::PlanEntry {
-            scenario: scenario.id.clone(),
-            image: scenario.image,
-            repetitions: scenario.repetitions,
+            scenario: scenario.id().to_owned(),
+            image: scenario.image(),
+            repetitions: scenario.repetitions(),
             disposition: crate::evidence::run::PlanDisposition::Selected,
             reason: None,
-            requirements: Some(crate::lab::requirements::Requirements::default()),
+            requirements: Some(scenario.requirements()),
         }],
     };
     atomic_json(&run.join("plan.json"), &plan).unwrap();
     let manifest: RunManifest = read_json(&run.join("manifest.json")).unwrap();
     validate_lab_provenance(&run, &manifest).unwrap();
-    scenario.workload = crate::scenario::Workload::StationReconnect {
-        cycles: 1,
-        boots: 1,
-        timeout_seconds: 30,
-    };
+    scenario.header.repetitions += 1;
     atomic_json(&snapshot, &scenario).unwrap();
     assert!(
         validate_lab_provenance(&run, &manifest)
@@ -358,27 +353,27 @@ fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
     provenance.fixture = FixtureObservation::NotUsed;
     provenance.definition.bluetooth_adapter = Some("hci0".into());
     atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
-    let scenario: crate::scenario::Scenario = toml::from_str(include_str!(
-        "../../../../../scenarios/bluetooth/bluetooth-dtm-bidirectional.toml"
-    ))
-    .unwrap();
-    let directory = run.join("scenarios").join(&scenario.id);
+    let scenario = crate::scenario::test_family::scenario(include_str!(
+        "../../../../../scenarios/system/boot-smoke.toml"
+    ));
+    let directory = run.join("scenarios").join(scenario.id());
     fs::create_dir_all(&directory).unwrap();
     atomic_json(&directory.join("scenario.json"), &scenario).unwrap();
     let plan = crate::evidence::run::RunPlan {
         schema: RUN_SCHEMA,
         run_id: "run-1".into(),
-        selection: scenario.id.clone(),
+        selection: scenario.id().to_owned(),
         firmware: None,
         entries: vec![crate::evidence::run::PlanEntry {
-            scenario: scenario.id.clone(),
-            image: scenario.image,
-            repetitions: scenario.repetitions,
+            scenario: scenario.id().to_owned(),
+            image: scenario.image(),
+            repetitions: scenario.repetitions(),
             disposition: crate::evidence::run::PlanDisposition::Selected,
             reason: None,
-            requirements: Some(crate::lab::requirements::Requirements::for_scenario(
-                &scenario,
-            )),
+            requirements: Some(crate::lab::requirements::Requirements {
+                bluetooth_adapter: true,
+                ..Default::default()
+            }),
         }],
     };
     atomic_json(&run.join("plan.json"), &plan).unwrap();

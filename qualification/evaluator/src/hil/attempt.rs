@@ -58,15 +58,20 @@ pub(super) fn load(
         if document.get("id").and_then(serde_json::Value::as_str) != Some(id) {
             return Err("HIL attempt procedure identity does not match its result".into());
         }
-        let image = document
+        let result: serde_json::Value = read_json(&run.join(&scenario_root).join("result.json"))?;
+        // Only a Wi-Fi procedure names its image; other families imply it.
+        // The sealed result carries the image either way and must agree
+        // with an explicit procedure image and with the recorded firmware.
+        let image = result
             .get("image")
             .and_then(serde_json::Value::as_str)
             .filter(|image| valid_id(image))
             .ok_or("HIL attempt has no valid image class")?;
-        let result: serde_json::Value = read_json(&run.join(&scenario_root).join("result.json"))?;
         let raw: serde_json::Value = read_json(&path)?;
         if result != raw["suite"]["scenarios"][0]
-            || result.get("image").and_then(serde_json::Value::as_str) != Some(image)
+            || document
+                .pointer("/wifi/image")
+                .is_some_and(|declared| declared.as_str() != Some(image))
             || document.get("repetitions") != result.get("required_repetitions")
             || raw["manifest"]["firmware"]
                 .as_array()

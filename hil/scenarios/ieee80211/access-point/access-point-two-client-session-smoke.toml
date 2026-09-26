@@ -1,30 +1,26 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-two-client-session-smoke"
 description = "Bound-socket readiness, bidirectional sessions and evidence across two AP epochs"
 repetitions = 1
-image = "diagnostic-task-residence"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "access-point", "multi-client", "session-smoke"]
 
-[workload]
+[wifi]
+image = "diagnostic-task-residence"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 45
-client = "laptop"
+clients = { kind = "laptop-and-openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp-multi-client"
-direction = "bidirectional"
 duration_seconds = 5
 payload_bytes = 1200
-rx_rate_bps_per_flow = 1000000
-tx_rate_bps_per_flow = 1000000
+offer = { rx_bps = 1000000, tx_bps = 1000000 }
 
-[criteria]
-exact_delivery = false
-minimum_host_offer_percent = 95
+[wifi.workload.traffic.criteria]
 minimum_bps_per_flow = 900000
-minimum_concurrent_ap_clients = 2
+minimum_host_offer_percent = 95

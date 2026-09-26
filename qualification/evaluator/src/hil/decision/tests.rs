@@ -490,10 +490,7 @@ fn other_scenario_and_wrong_units_cannot_supply_a_requested_obligation() {
     let mut catalog = ScenarioCatalog::default();
     catalog.checks.insert(
         id.into(),
-        checks::contracts(&json!({
-            "workload":{"kind":"udp","direction":"rx"},
-            "criteria":{"minimum_rx_bps":100_000}
-        }))
+        checks::contracts(&json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":100_000}}}}))
         .unwrap(),
     );
     let mut index = HilEvidenceIndex::synthetic(&[(id, 1)]);
@@ -551,10 +548,7 @@ fn completed_numeric_observation_is_reassessed_but_absence_is_not_a_failure() {
     let mut catalog = ScenarioCatalog::default();
     catalog.checks.insert(
         id.into(),
-        checks::contracts(&json!({
-            "workload":{"kind":"udp","direction":"rx"},
-            "criteria":{"minimum_rx_bps":100_000}
-        }))
+        checks::contracts(&json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":100_000}}}}))
         .unwrap(),
     );
     let mut requested = requirement(id, 1);
@@ -573,10 +567,7 @@ fn completed_numeric_observation_is_reassessed_but_absence_is_not_a_failure() {
     );
     catalog.checks.insert(
         id.into(),
-        checks::contracts(&json!({
-            "workload":{"kind":"udp","direction":"rx"},
-            "criteria":{"minimum_rx_bps":85_000}
-        }))
+        checks::contracts(&json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":85_000}}}}))
         .unwrap(),
     );
     assert_eq!(

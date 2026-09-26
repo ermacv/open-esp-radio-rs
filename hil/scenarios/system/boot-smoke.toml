@@ -1,13 +1,8 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "boot-smoke"
 description = "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup"
-image = "boot-smoke"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["smoke", "psram-stack"]
 
-[workload]
+[system]
 kind = "boot-smoke"
-
-[criteria]

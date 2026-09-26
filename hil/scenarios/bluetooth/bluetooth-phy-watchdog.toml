@@ -1,11 +1,9 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "bluetooth-phy-watchdog"
 description = "Real PHY calibration completion/restoration faults and cancellation; autonomous reset, fresh ACL and ordinary disconnect control"
-image = "bluetooth-watchdog-reset"
-isolation = "reset"
 repetitions = 3
+transfer = "identical-image"
 tags = ["bluetooth", "phy", "watchdog", "fault-injection"]
 
-[workload]
-kind = "bluetooth-phy-watchdog"
+[bluetooth]
+kind = "phy-watchdog"

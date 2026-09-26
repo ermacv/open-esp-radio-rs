@@ -2683,6 +2683,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "toml",
  "zbus",
 ]
 
@@ -2728,6 +2729,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "toml",
  "zeroize",
 ]
 
@@ -2739,6 +2741,7 @@ dependencies = [
  "oer-hil-runner-core",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -2750,6 +2753,7 @@ dependencies = [
  "oer-process",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

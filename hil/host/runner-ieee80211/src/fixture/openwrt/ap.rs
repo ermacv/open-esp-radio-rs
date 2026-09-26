@@ -10,7 +10,7 @@ use std::{
 use zeroize::Zeroizing;
 
 use crate::Result;
-use hil_core::{lab::config::OpenWrtConfig, lab::config::StationConfig, scenario::PhyExpectation};
+use hil_core::{lab::config::OpenWrtConfig, lab::config::StationConfig, lab::link::PhyExpectation};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Observation {

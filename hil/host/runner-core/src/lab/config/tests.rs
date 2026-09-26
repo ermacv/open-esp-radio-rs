@@ -34,22 +34,18 @@ fn linux_fixture_requires_explicit_radio_and_network_settings() {
 #[test]
 fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
     let lab = LabConfig::for_test();
-    let catalog =
-        crate::scenario::Catalog::load(&repository_root().unwrap().join("hil/scenarios")).unwrap();
     let mut tested = 0;
-    for scenario in catalog.all() {
-        if !matches!(
-            scenario.workload,
-            crate::scenario::Workload::AccessPoint { .. }
-        ) {
-            continue;
-        }
-        let resolved = lab.resolve_scenario(scenario);
+    for link in [None, Some(PhyExpectation::Ht20), Some(PhyExpectation::Ht40)] {
+        let wifi = WifiLabUse {
+            link,
+            access_point: true,
+        };
+        let resolved = lab.resolve(wifi);
         let StationFixtureConfig::OpenWrt(config) = &resolved.station_fixture else {
             panic!("OpenWrt test lab");
         };
         assert_eq!(config.channel, resolved.access_point.channel());
-        let expected = if resolved.fixture_phy(scenario) == PhyExpectation::Ht40 {
+        let expected = if resolved.fixture_phy(wifi) == PhyExpectation::Ht40 {
             40
         } else {
             20
@@ -63,6 +59,14 @@ fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
         }
         tested += 1;
     }
+    let station = WifiLabUse {
+        link: Some(PhyExpectation::He20),
+        access_point: false,
+    };
+    assert_eq!(
+        lab.resolve(station).access_point.channel_width(),
+        lab.access_point.channel_width()
+    );
     assert!(tested > 0);
     assert_eq!(
         lab.access_point.channel_width(),

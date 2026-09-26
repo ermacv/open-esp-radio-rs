@@ -1,30 +1,26 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-rx-ht40-core0-async-probe256-diagnostic"
 description = "Same-image HT40 RX asynchronous dispatch with 256-us masked continuation diagnostic"
-image = "diagnostic-core0-rx-coarse"
-isolation = "reset"
-data_plane = "split-radio-network"
-rx_continuation = "delayed-probe256-diagnostic"
+transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "masked-probe-ab", "async-dispatch-ab"]
 
-[link]
-phy = "ht40"
-guard_interval = "any"
+[wifi]
+image = "diagnostic-core0-rx-coarse"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.datapath]
+rx_continuation = "delayed-probe256-diagnostic"
+
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 12
-rx_rate_bps = 140000000
 payload_bytes = 1472
+offer = { rx_bps = 140000000 }
 
-[criteria]
-exact_delivery = false
-require_no_beacon_loss = false
+[wifi.workload.observation]
+openwrt_tx_monitor = true
+independent_air_monitor = true
+
+[wifi.workload.criteria]
 minimum_rx_bps = 90000000
 maximum_idle_channel_utilization_255 = 64
-
-[evidence]
-openwrt_tx_monitor_rx = true
-independent_laptop_air_monitor = true

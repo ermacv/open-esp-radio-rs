@@ -629,12 +629,8 @@ fn finish_writes_all_views_and_completes_manifest() {
 
 #[test]
 fn campaign_and_unavailable_comparison_are_part_of_the_sealed_inventory() {
-    let catalog =
-        crate::scenario::Catalog::load(&crate::repository_root().unwrap().join("hil/scenarios"))
-            .unwrap();
-    let experiment = catalog
-        .get("diagnostic-station-phy-combined-high-load-delivery-rx")
-        .unwrap();
+    let catalog = crate::scenario::test_family::catalog();
+    let experiment = catalog.get("experiment").unwrap();
     let plan = crate::campaign::Plan::create(
         &catalog,
         &[experiment],
@@ -803,13 +799,12 @@ fn provenance_retains_actual_network_selection_even_when_cargo_features_match() 
 fn history_counts_sealed_attempt_once_before_and_after_campaign_completion() {
     let root = temporary_directory("sealed-history");
     let mut session = integrated_session(&root);
-    let scenario: crate::scenario::Scenario = toml::from_str(include_str!(
+    let scenario = crate::scenario::test_family::scenario(include_str!(
         "../../../../../scenarios/system/boot-smoke.toml"
-    ))
-    .unwrap();
+    ));
     let result = ScenarioResult::from_repetitions(
-        scenario.id.clone(),
-        scenario.image,
+        scenario.id().to_owned(),
+        scenario.image(),
         1,
         vec![RepetitionResult {
             schema: RUN_SCHEMA,

@@ -10,11 +10,11 @@ fn catalog() -> Catalog {
 fn passed(scenario: &Scenario) -> ScenarioResult {
     ScenarioResult {
         schema: RUN_SCHEMA,
-        scenario: scenario.id.clone(),
-        image: scenario.image,
+        scenario: scenario.id().to_owned(),
+        image: scenario.image(),
         outcome: Outcome::Passed,
-        required_repetitions: scenario.repetitions,
-        repetitions: (1..=scenario.repetitions)
+        required_repetitions: scenario.repetitions(),
+        repetitions: (1..=scenario.repetitions())
             .map(|repetition| RepetitionResult {
                 schema: RUN_SCHEMA,
                 repetition,
@@ -22,7 +22,7 @@ fn passed(scenario: &Scenario) -> ScenarioResult {
                 started_unix_millis: 0,
                 duration_millis: 0,
                 artifact_directory: PathBuf::from("scenarios")
-                    .join(&scenario.id)
+                    .join(scenario.id())
                     .join(format!("repetition-{repetition:03}")),
                 attachments: Vec::new(),
                 measurements: Vec::new(),
@@ -66,9 +66,9 @@ impl SuiteEffects for FakeSuite {
     }
 
     fn preflight(&mut self, scenario: &Scenario) -> Option<Failure> {
-        self.log.push(format!("preflight:{}", scenario.id));
+        self.log.push(format!("preflight:{}", scenario.id()));
         self.preflight_failures
-            .contains(&scenario.id)
+            .contains(scenario.id())
             .then(|| Failure::new(FailureKind::Precondition, "injected preflight failure"))
     }
 
@@ -90,7 +90,7 @@ impl SuiteEffects for FakeSuite {
         scenario: &Scenario,
         _session: &RunSession,
     ) -> Result<ScenarioResult> {
-        self.log.push(format!("execute:{}", scenario.id));
+        self.log.push(format!("execute:{}", scenario.id()));
         Ok(passed(scenario))
     }
 }
@@ -100,7 +100,7 @@ fn two_same_image(catalog: &Catalog) -> [&Scenario; 2] {
         let candidates = catalog
             .all()
             .iter()
-            .filter(|scenario| scenario.image == class)
+            .filter(|scenario| scenario.image() == class)
             .take(2)
             .collect::<Vec<_>>();
         if let [first, second] = candidates.as_slice() {
@@ -132,7 +132,7 @@ fn successful_group_prepares_once_and_preserves_scenario_order() {
         .iter()
         .filter_map(|entry| entry.strip_prefix("execute:"))
         .collect::<Vec<_>>();
-    assert_eq!(executed, [selected[0].id.as_str(), selected[1].id.as_str()]);
+    assert_eq!(executed, [selected[0].id(), selected[1].id()]);
 }
 
 #[test]
@@ -161,10 +161,7 @@ fn campaign_executes_only_the_control_and_experiment_with_one_preparation() {
             .iter()
             .filter_map(|entry| entry.strip_prefix("execute:"))
             .collect::<Vec<_>>(),
-        [
-            experiment.comparison.as_ref().unwrap().control(),
-            experiment.id.as_str()
-        ]
+        [experiment.control().unwrap(), experiment.id()]
     );
 }
 
@@ -174,26 +171,26 @@ fn image_build_and_flash_failures_block_the_group_but_continue_later_classes() {
     let first = catalog
         .all()
         .iter()
-        .find(|scenario| scenario.image == ImageClass::BootSmoke)
+        .find(|scenario| scenario.image() == ImageClass::BootSmoke)
         .expect("boot-smoke scenario");
     let second = catalog
         .all()
         .iter()
-        .find(|scenario| scenario.image == ImageClass::Performance)
+        .find(|scenario| scenario.image() == ImageClass::Performance)
         .expect("performance scenario");
 
     for kind in [FailureKind::ImageBuild, FailureKind::ImageFlash] {
         let root = tempfile::tempdir().unwrap();
         let mut session = session(root.path());
         let mut fake = FakeSuite {
-            preparation_failures: vec![(first.image, kind)],
+            preparation_failures: vec![(first.image(), kind)],
             ..FakeSuite::default()
         };
         let results = execute_selected(&mut session, &mut fake, &[first, second]).unwrap();
         assert_eq!(results[0].outcome, Outcome::Blocked);
         assert_eq!(results[0].failure.as_ref().unwrap().kind, kind);
         assert_eq!(results[1].outcome, Outcome::Passed);
-        assert!(fake.log.contains(&format!("execute:{}", second.id)));
+        assert!(fake.log.contains(&format!("execute:{}", second.id())));
     }
 }
 
@@ -204,7 +201,7 @@ fn preflight_failure_has_no_image_or_workload_side_effect() {
     let root = tempfile::tempdir().unwrap();
     let mut session = session(root.path());
     let mut fake = FakeSuite {
-        preflight_failures: BTreeSet::from([scenario.id.clone()]),
+        preflight_failures: BTreeSet::from([scenario.id().to_owned()]),
         ..FakeSuite::default()
     };
     let results = execute_selected(&mut session, &mut fake, &[scenario]).unwrap();
@@ -225,18 +222,18 @@ fn cancellation_stops_before_the_next_scenario() {
     };
     let error = execute_selected(&mut session, &mut fake, &selected).unwrap_err();
     assert_eq!(error.to_string(), "injected cancellation");
-    assert!(fake.log.contains(&format!("execute:{}", selected[0].id)));
-    assert!(!fake.log.contains(&format!("execute:{}", selected[1].id)));
+    assert!(fake.log.contains(&format!("execute:{}", selected[0].id())));
+    assert!(!fake.log.contains(&format!("execute:{}", selected[1].id())));
     let seal = session
         .directory()
         .join("attempts")
-        .join(format!("{}.json", selected[0].id));
+        .join(format!("{}.json", selected[0].id()));
     let before = fs::read(&seal).unwrap();
     assert!(
         !session
             .directory()
             .join("attempts")
-            .join(format!("{}.json", selected[1].id))
+            .join(format!("{}.json", selected[1].id()))
             .exists()
     );
     let record: serde_json::Value = serde_json::from_slice(&before).unwrap();
@@ -276,9 +273,9 @@ fn single_scenario_preserves_its_original_preflight_prepare_event_order() {
     assert_eq!(
         fake.log,
         [
-            format!("preflight:{}", scenario.id),
-            format!("prepare:{}", scenario.image.id()),
-            format!("execute:{}", scenario.id),
+            format!("preflight:{}", scenario.id()),
+            format!("prepare:{}", scenario.image().id()),
+            format!("execute:{}", scenario.id()),
         ]
     );
     let events = fs::read_to_string(session.directory().join("events.jsonl")).unwrap();
@@ -358,14 +355,14 @@ fn run_all_selection_has_one_ordered_image_plan_and_requirement_union() {
         .collect::<Vec<_>>();
     assert_eq!(flattened.len(), selected.len());
     assert_eq!(
-        Requirements::union(&selected),
-        Requirements::union(&flattened)
+        crate::scenario::requirements(&selected),
+        crate::scenario::requirements(&flattened)
     );
     for scenario in selected {
         assert_eq!(
             flattened
                 .iter()
-                .filter(|entry| entry.id == scenario.id)
+                .filter(|entry| entry.id() == scenario.id())
                 .count(),
             1
         );

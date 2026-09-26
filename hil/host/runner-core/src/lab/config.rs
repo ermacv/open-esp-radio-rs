@@ -12,7 +12,11 @@ use oer_hil_protocol::{
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{Result, repository_root, scenario::PhyExpectation};
+use crate::{
+    Result,
+    lab::link::{PhyExpectation, WifiLabUse},
+    repository_root,
+};
 
 #[derive(Clone)]
 pub struct LabConfig {
@@ -448,8 +452,10 @@ impl LabConfig {
         })
     }
 
-    pub fn fixture_phy(&self, scenario: &crate::scenario::Scenario) -> PhyExpectation {
-        scenario.link.map(|link| link.phy).unwrap_or_else(|| {
+    /// The station-fixture link a scenario requires: its own link or, for a
+    /// scenario without one, the access point's channel width.
+    pub fn fixture_phy(&self, wifi: WifiLabUse) -> PhyExpectation {
+        wifi.link.unwrap_or_else(|| {
             if self.access_point.bandwidth_mhz() == 40 {
                 PhyExpectation::Ht40
             } else {
@@ -458,14 +464,13 @@ impl LabConfig {
         })
     }
 
-    pub fn resolve_scenario(&self, scenario: &crate::scenario::Scenario) -> Self {
+    /// Resolve the channel geometry of an access-point scenario: the target
+    /// AP adopts the requested link and the fixture follows its channel.
+    pub fn resolve(&self, wifi: WifiLabUse) -> Self {
         let mut lab = self.clone();
-        if matches!(
-            scenario.workload,
-            crate::scenario::Workload::AccessPoint { .. }
-        ) {
-            if let Some(link) = scenario.link {
-                lab.access_point.channel_width = match link.phy {
+        if wifi.access_point {
+            if let Some(link) = wifi.link {
+                lab.access_point.channel_width = match link {
                     PhyExpectation::Ht20 | PhyExpectation::He20 => WifiChannelWidth::Mhz20,
                     PhyExpectation::Ht40
                         if self.access_point.channel_width.bandwidth_mhz() == 40 =>

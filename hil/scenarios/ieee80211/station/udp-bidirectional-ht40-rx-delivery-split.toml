@@ -1,31 +1,27 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-bidirectional-ht40-rx-delivery-split"
 description = "Split-core HT40 full-duplex RX delivery-frontier diagnostic"
 repetitions = 3
-image = "diagnostic-rx-delivery"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "full-duplex", "ht40", "split-core"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-rx-delivery"
 
-[workload]
-kind = "udp"
-direction = "bidirectional"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-rx_rate_bps = 55000000
-tx_rate_bps = 55000000
 payload_bytes = 1472
+offer = { rx_bps = 55000000, tx_bps = 55000000 }
 
-[criteria]
+[wifi.workload.observation]
+openwrt_tx_monitor = true
+independent_air_monitor = true
+
+[wifi.workload.criteria]
 exact_delivery = true
+require_no_beacon_loss = true
 minimum_rx_bps = 49500000
 minimum_tx_bps = 49500000
 minimum_combined_bps = 100000000
-require_no_beacon_loss = true
-
-[evidence]
-openwrt_tx_monitor_rx = true
-independent_laptop_air_monitor = true

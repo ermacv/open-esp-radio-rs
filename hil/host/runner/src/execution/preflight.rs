@@ -4,11 +4,15 @@ use std::{path::Path, time::Duration};
 
 use oer_hil_protocol::WifiApScheduler;
 
-use crate::{Result, fixture};
+use crate::{
+    Result, fixture,
+    scenario::{Family, Scenario},
+};
 use hil_core::{
     evidence::run::Failure, image, image::ImageClass, image::Integration, lab::config::LabConfig,
-    scenario::Scenario, scenario::Workload, session::SerialCapture,
+    session::SerialCapture,
 };
+use hil_wifi::scenario::WifiWorkload;
 
 pub(crate) fn configure_run_selection(
     selected: &mut Scenario,
@@ -17,19 +21,22 @@ pub(crate) fn configure_run_selection(
     network: Integration,
 ) -> Result<()> {
     if let Some(policy) = ap_scheduler {
-        selected.ap_scheduler = policy;
+        let Family::Wifi(wifi) = &mut selected.family else {
+            return Err("--ap-scheduler requires a standalone access-point scenario".into());
+        };
+        let WifiWorkload::AccessPoint(access_point) = &mut wifi.workload else {
+            return Err("--ap-scheduler requires a standalone access-point scenario".into());
+        };
+        access_point.scheduler = policy;
     }
     selected.validate()?;
-    if selected.ap_scheduler != WifiApScheduler::Disabled {
-        if !matches!(selected.workload, Workload::AccessPoint { .. }) {
-            return Err("--ap-scheduler requires a standalone access-point scenario".into());
-        }
-        if !replay && network != Integration::OwnedXarxa {
-            return Err(
-                "--ap-scheduler requires --network owned-xarxa or a compatible archived image"
-                    .into(),
-            );
-        }
+    if selected.plan().settings.ap_scheduler != WifiApScheduler::Disabled
+        && !replay
+        && network != Integration::OwnedXarxa
+    {
+        return Err(
+            "--ap-scheduler requires --network owned-xarxa or a compatible archived image".into(),
+        );
     }
     Ok(())
 }

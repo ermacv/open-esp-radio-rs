@@ -208,8 +208,12 @@ including on failure. Firmware must implement read-only boot discovery; there
 is no reset fallback. Serial-driver line behavior remains platform-dependent;
 the runner issues no reset-line sequence when attaching.
 
-Scenarios are versioned TOML files in domain folders under `hil/scenarios`; they contain workload,
-isolation and acceptance criteria, never serial paths or secrets. Machine-local
+Scenarios are versioned TOML files in domain folders under `hil/scenarios`; they contain one
+family's workload and acceptance criteria, never serial paths or secrets.
+`runner-core` owns the family-independent envelope, catalog and `Plan`
+projection (image, laboratory requirements, target initialization, named
+checks and Wi-Fi laboratory use); each family package owns its typed table,
+validation and execution, and the runner composes the families. Machine-local
 device, STA/AP and OpenWrt values live only in mode-0600 `hil/local.toml`.
 `LabConfig` is immutable. Each workload receives its own execution context:
 borrowed laboratory inputs and the selected scenario's initialization settings.
@@ -226,8 +230,8 @@ instead, never a rebuild. `run-all` groups scenarios by image class, so changing
 UDP/TCP direction or rates does not rebuild or reflash firmware. It continues
 after scenario, image-build and image-flash failures, records the remaining
 scenarios as blocked when necessary, writes the complete suite, and returns a
-non-zero status unless every selected scenario passed. Independent scenarios
-reset the target. Ordinary scenario files must use `reset` isolation.
+non-zero status unless every selected scenario passed. Every scenario resets
+the target.
 
 AP scenarios select a controlled Linux or OpenWrt client. The Linux fixture
 leases WLAN as a managed WPA2 client without a gateway and restores

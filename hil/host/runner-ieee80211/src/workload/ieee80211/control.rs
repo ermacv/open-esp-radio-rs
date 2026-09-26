@@ -11,9 +11,40 @@ use oer_hil_protocol::{
 
 use crate::Result;
 use hil_core::{
-    scenario::PhyExpectation, scenario::WifiOperation as Operation, session::SerialCapture,
-    session::StationConnectionObservation,
+    lab::link::PhyExpectation, session::SerialCapture, session::StationConnectionObservation,
 };
+
+/// One Wi-Fi role ownership transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Operation {
+    Stop,
+    Start,
+    Restart,
+    MaintenanceRestart,
+    Retained,
+    Scan,
+    Monitor,
+    AccessPoint,
+    StationAccessPoint,
+    Roundtrip,
+}
+
+impl Operation {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Stop => "stop",
+            Self::Start => "start",
+            Self::Restart => "restart",
+            Self::MaintenanceRestart => "maintenance-restart",
+            Self::Retained => "retained",
+            Self::Scan => "scan",
+            Self::Monitor => "monitor",
+            Self::AccessPoint => "ap",
+            Self::StationAccessPoint => "sta-ap",
+            Self::Roundtrip => "roundtrip",
+        }
+    }
+}
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const DEFAULT_MONITOR_DURATION: Duration = Duration::from_secs(3);

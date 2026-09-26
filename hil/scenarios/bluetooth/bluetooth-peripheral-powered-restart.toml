@@ -1,13 +1,11 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-powered-restart"
 description = "Three real BLE peripheral ACL/update/peer-Reset cycles in one board boot, with physical cold shutdown and same-storage powered restart between connections, fresh HCI Reset, closed old Host authorities and final cold retirement"
-image = "bluetooth-dtm"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "lifecycle", "restart"]
 
-[workload]
-kind = "bluetooth-peripheral"
+[bluetooth]
+kind = "peripheral"
 boots = 1
 connections = 3
 hold_millis = 100

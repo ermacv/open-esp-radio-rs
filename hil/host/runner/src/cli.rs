@@ -144,15 +144,15 @@ pub(crate) struct Selection {
 impl Selection {
     pub(crate) fn resolve<'a>(
         &self,
-        catalog: &'a hil_core::scenario::Catalog,
-    ) -> crate::Result<Vec<&'a hil_core::scenario::Scenario>> {
+        catalog: &'a crate::scenario::Catalog,
+    ) -> crate::Result<Vec<&'a crate::scenario::Scenario>> {
         if let Some(id) = &self.scenario {
             return Ok(vec![catalog.get(id)?]);
         }
         let selected: Vec<_> = catalog
             .all()
             .iter()
-            .filter(|entry| self.tag.iter().all(|tag| entry.tags.contains(tag)))
+            .filter(|entry| self.tag.iter().all(|tag| entry.header.tags.contains(tag)))
             .collect();
         if selected.is_empty() {
             return Err("no HIL scenarios match the requested tags".into());

@@ -7,9 +7,7 @@ fn functional_review_cannot_move_numeric_measurements_to_a_changed_application()
     let mut catalog = ScenarioCatalog::default();
     catalog.checks.insert(
         "exchange".into(),
-        checks::contracts(&json!({
-            "workload":{"kind":"udp","direction":"rx"}, "criteria":{"minimum_rx_bps":10}
-        }))
+        checks::contracts(&json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":10}}}}))
         .unwrap(),
     );
     save(&fixture, &record(&fixture, &index, &catalog));
@@ -134,7 +132,7 @@ fn property_identity_tracks_dependency_contracts_and_scenario_criteria() {
     assert_ne!(initial.sha256, changed.sha256);
     catalog.definitions.insert(
         "exchange".into(),
-        json!({"criteria":{"minimum_rx_bps":100}}),
+        json!({"wifi":{"workload":{"criteria":{"minimum_rx_bps":100}}}}),
     );
     let new_criteria = property(&d, &declarations, &requirement(), &catalog, &fixture.0).unwrap();
     assert_ne!(changed.sha256, new_criteria.sha256);
@@ -153,7 +151,7 @@ fn whole_gatt_memory_obligation_requires_identical_application() {
     let mut catalog = ScenarioCatalog::default();
     catalog.definitions.insert(
         "exchange".into(),
-        json!({"id":"exchange","image":"correctness","transfer":"identical-image","workload":{"kind":"bluetooth-secure-gatt"}}),
+        json!({"id":"exchange","transfer":"identical-image","bluetooth":{"kind":"secure-gatt"}}),
     );
     let run = fixture.0.join("runs/old");
     write(
@@ -174,7 +172,7 @@ fn property_identity_ignores_only_display_metadata() {
     let fixture = setup();
     let mut catalog = ScenarioCatalog::default();
     let definition = json!({"description":"Original", "tags":["wifi"],
-        "workload":{"kind":"station-reconnect"}, "repetitions":2});
+        "wifi":{"image":"correctness","workload":{"kind":"station-reconnect"}}, "repetitions":2});
     catalog.definitions.insert("exchange".into(), definition);
     let original = property(
         &declaration(),
@@ -426,11 +424,10 @@ fn evidence_classification_excludes_supporting_tests_but_never_required_owners()
 
 #[test]
 fn procedure_binding_normalizes_defaults_and_annotations_but_binds_execution() {
-    let original =
-        "schema = 4\nid = \"boot\"\nimage = \"boot-smoke\"\n[workload]\nkind = \"boot-smoke\"\n";
+    let original = "schema = 5\nid = \"boot\"\n[system]\nkind = \"boot-smoke\"\n";
     let annotated = original.replace(
-        "[workload]",
-        "description = \"rewritten\"\ntags = [\"new\"]\nrepetitions = 1\n[workload]",
+        "[system]",
+        "description = \"rewritten\"\ntags = [\"new\"]\nrepetitions = 1\n[system]",
     );
     let hash = input_hash(original.as_bytes(), &InputKind::Procedure).unwrap();
     assert_eq!(
@@ -725,7 +722,7 @@ fn compiler_review_admits_functional_evidence_but_never_timing_or_changed_flags(
     catalog.checks.insert(
         "exchange".into(),
         checks::contracts(
-            &json!({"workload":{"kind":"udp","direction":"rx"},"criteria":{"minimum_rx_bps":10}}),
+            &json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":10}}}}),
         )
         .unwrap(),
     );

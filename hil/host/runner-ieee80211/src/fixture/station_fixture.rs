@@ -8,8 +8,8 @@ use crate::{
     fixture::openwrt::evidence::OpenWrtRxEvidence,
 };
 use hil_core::{
-    lab::config::StationFixtureConfig, scenario::HtGuardIntervalExpectation,
-    scenario::PhyExpectation,
+    lab::config::StationFixtureConfig, lab::link::HtGuardIntervalExpectation,
+    lab::link::PhyExpectation,
 };
 
 pub enum RxCapture {

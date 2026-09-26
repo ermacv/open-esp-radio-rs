@@ -1,23 +1,20 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "icmp-latency"
 description = "Connected-station ICMP latency and loss"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "icmp", "station"]
 
-[link]
-phy = "he20"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "icmp"
+[wifi.workload]
+kind = "station-icmp"
+link = { phy = "he20" }
 count = 100
 interval_ms = 20
 timeout_ms = 1000
 payload_bytes = 56
 
-[criteria]
-maximum_lost = 0
+[wifi.workload.criteria]
 maximum_p95_ms = 20
 require_no_beacon_loss = true

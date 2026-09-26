@@ -1,22 +1,19 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-rx-delivery-diagnostic"
 description = "RX reorder, network enqueue and UDP consumer frontier evidence"
-image = "diagnostic-rx-delivery"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "udp", "station"]
 
-[link]
-phy = "he20"
+[wifi]
+image = "diagnostic-rx-delivery"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "he20" }
 duration_seconds = 16
-rx_rate_bps = 80000000
 payload_bytes = 1200
+offer = { rx_bps = 80000000 }
 
-[criteria]
+[wifi.workload.criteria]
 exact_delivery = true
 minimum_rx_bps = 70000000

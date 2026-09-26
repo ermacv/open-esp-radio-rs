@@ -11,7 +11,7 @@ use std::{
 
 use crate::Result;
 use hil_core::{
-    lab::config::OpenWrtConfig, scenario::HtGuardIntervalExpectation, scenario::PhyExpectation,
+    lab::config::OpenWrtConfig, lab::link::HtGuardIntervalExpectation, lab::link::PhyExpectation,
 };
 
 mod tx;

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Result,
     lab::config::{LabConfig, OpenWrtConfig, StationFixtureConfig},
-    scenario::PhyExpectation,
+    lab::link::PhyExpectation,
 };
 
 pub const LAB_PROVENANCE_SCHEMA: u16 = 1;

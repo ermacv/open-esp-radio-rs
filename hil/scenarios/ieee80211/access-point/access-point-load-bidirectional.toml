@@ -1,32 +1,30 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-load-bidirectional"
 description = "Sustained balanced four-flow AP fairness baseline with exact delivery"
 repetitions = 5
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "wifi", "access-point", "network", "load", "bidirectional"]
 
-[workload]
+[wifi]
+image = "correctness"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 180
+clients = { kind = "laptop-and-openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp-multi-client"
-direction = "bidirectional"
 duration_seconds = 60
-rx_rate_bps_per_flow = 8000000
-tx_rate_bps_per_flow = 8000000
 payload_bytes = 1400
+offer = { rx_bps = 8000000, tx_bps = 8000000 }
 
-[criteria]
+[wifi.workload.traffic.criteria]
 exact_delivery = true
 minimum_rx_bps = 15200000
 minimum_tx_bps = 15200000
 minimum_combined_bps = 30400000
 minimum_bps_per_flow = 7600000
 maximum_flow_skew_percent = 20
-minimum_concurrent_ap_clients = 2

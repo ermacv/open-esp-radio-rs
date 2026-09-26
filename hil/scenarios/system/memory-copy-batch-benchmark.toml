@@ -1,13 +1,10 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "memory-copy-batch-benchmark"
 description = "CPU frame loops and single-chain blocking/async GDMA batches from SRAM/PSRAM into SRAM"
-image = "diagnostic-memory-benchmark"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "memory", "copy", "gdma", "batch"]
 
-[workload]
+[system]
 kind = "memory-benchmark"
 boots = 2
 iterations = 32

@@ -1,32 +1,25 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-icmp"
 description = "AP HT40 MCS7 latency and loss over 100 ICMP requests per WPA2 epoch"
 repetitions = 3
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "wifi", "access-point", "network", "single-client", "ht40", "icmp"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
+[wifi.workload]
 kind = "access-point"
+link = { phy = "ht40" }
 cycles = 2
 boots = 1
 timeout_seconds = 90
-client = "open-wrt"
+clients = { kind = "openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "icmp"
 count = 100
 interval_ms = 20
 timeout_ms = 1000
 payload_bytes = 56
-
-[criteria]
-maximum_lost = 0
 maximum_p95_ms = 20
-require_no_beacon_loss = true
-minimum_concurrent_ap_clients = 1

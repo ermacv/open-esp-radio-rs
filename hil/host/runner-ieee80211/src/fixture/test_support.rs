@@ -79,7 +79,7 @@ fn fixture_lifecycle_harness() {
         let error = super::controlled_ap::ControlledAp::start(
             &lab.station,
             &lab.station_fixture,
-            hil_core::scenario::PhyExpectation::Ht40,
+            hil_core::lab::link::PhyExpectation::Ht40,
         )
         .err()
         .expect("injected fixture failure");

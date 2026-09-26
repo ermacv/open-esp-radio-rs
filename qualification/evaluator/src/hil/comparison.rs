@@ -5,59 +5,45 @@
 
 use super::*;
 
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-enum Relation {
-    WifiPhyMaintenance { control: String },
-}
-
+/// The one supported experiment: station UDP RX with a PHY maintenance
+/// operation against the same scenario without it. Every other executable
+/// value, including image, data path, link, observers and criteria, is equal.
 pub(super) fn validate(
     documents: &BTreeMap<String, serde_json::Value>,
 ) -> Result<BTreeMap<String, String>> {
     let mut controls = BTreeMap::new();
     for (id, experiment) in documents {
-        let Some(relation) = experiment.get("comparison").filter(|v| !v.is_null()) else {
+        let Some(control) = experiment.get("control").filter(|v| !v.is_null()) else {
             continue;
         };
-        let Relation::WifiPhyMaintenance { control } = serde_json::from_value(relation.clone())?;
+        let control = control
+            .as_str()
+            .ok_or_else(|| format!("{id}: control must be a scenario id"))?
+            .to_owned();
         let baseline = documents
             .get(&control)
             .ok_or_else(|| format!("{id}: missing comparison control {control}"))?;
-        if control == *id || baseline.get("comparison").is_some_and(|v| !v.is_null()) {
+        if control == *id || baseline.get("control").is_some_and(|v| !v.is_null()) {
             return Err(format!("{id}: comparison control must be independent").into());
         }
         let mut normalized = procedure::normalize(experiment);
-        let workload = normalized
-            .get_mut("workload")
+        let mut baseline = procedure::normalize(baseline);
+        let maintenance = normalized
+            .pointer_mut("/wifi/workload")
             .and_then(serde_json::Value::as_object_mut)
-            .ok_or_else(|| format!("{id}: comparison needs a workload"))?;
-        if workload.get("kind").and_then(serde_json::Value::as_str) != Some("udp")
-            || workload
-                .get("direction")
-                .and_then(serde_json::Value::as_str)
-                != Some("rx")
-            || workload
-                .remove("station_pause")
-                .and_then(|value| value.as_str().map(str::to_owned))
-                .is_none()
-            || baseline
-                .pointer("/workload/station_pause")
-                .is_some_and(|v| !v.is_null())
-            || experiment.get("link").is_none_or(|v| v.is_null())
+            .and_then(|workload| workload.remove("maintenance"));
+        if !checks::receive_only_station_udp(&normalized)
+            || maintenance.is_none()
+            || baseline.pointer("/wifi/workload/maintenance").is_some()
         {
             return Err(format!(
                 "{id}: comparison requires station UDP RX with and without maintenance"
             )
             .into());
         }
-        let mut baseline = procedure::normalize(baseline);
-        baseline["workload"]
-            .as_object_mut()
-            .unwrap()
-            .remove("station_pause");
         for value in [&mut normalized, &mut baseline] {
             let fields = value.as_object_mut().ok_or("scenario must be an object")?;
-            for field in ["id", "description", "tags", "comparison"] {
+            for field in ["id", "control"] {
                 fields.remove(field);
             }
         }
@@ -85,10 +71,10 @@ mod tests {
         ]);
         assert_eq!(validate(&documents).unwrap()[&experiment_id], control_id);
         let mut changed = documents.clone();
-        changed.get_mut(&control_id).unwrap()["link"]["phy"] = "he20".into();
+        changed.get_mut(&control_id).unwrap()["wifi"]["workload"]["link"]["phy"] = "he20".into();
         assert!(validate(&changed).is_err());
         let mut changed = documents.clone();
-        changed.get_mut(&control_id).unwrap()["workload"]["payload_bytes"] = 512.into();
+        changed.get_mut(&control_id).unwrap()["wifi"]["workload"]["payload_bytes"] = 512.into();
         assert!(validate(&changed).is_err());
         let mut changed = documents;
         changed.remove(&control_id);

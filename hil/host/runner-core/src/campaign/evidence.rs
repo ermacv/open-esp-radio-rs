@@ -70,7 +70,10 @@ impl Selection {
         }
         Ok(selection)
     }
-    fn runnable<'a>(&self, catalog: &'a Catalog) -> Result<Vec<&'a Scenario>> {
+    fn runnable<'a, F: ScenarioFamily>(
+        &self,
+        catalog: &'a Catalog<F>,
+    ) -> Result<Vec<&'a Scenario<F>>> {
         let mut candidates = BTreeSet::new();
         let mut withheld = BTreeSet::new();
         let mut seen = BTreeSet::new();
@@ -85,11 +88,11 @@ impl Selection {
             );
             if obligation.procedure_sha256 != procedure_sha256
                 || obligation.minimum_repetitions == 0
-                || obligation.minimum_repetitions > scenario.repetitions
+                || obligation.minimum_repetitions > scenario.repetitions()
                 || obligation
                     .checks
                     .iter()
-                    .any(|c| !scenario.supported_checks().contains(&c.as_str()))
+                    .any(|c| !scenario.plan().checks.contains(&c.as_str()))
             {
                 return Err("evaluator obligation does not match the execution catalog".into());
             }
@@ -114,9 +117,9 @@ impl Selection {
     }
 }
 impl Plan {
-    pub fn from_qualification(
+    pub fn from_qualification<F: ScenarioFamily>(
         root: &Path,
-        catalog: &Catalog,
+        catalog: &Catalog<F>,
         manifest: PathBuf,
         capability: Option<String>,
         network: Integration,
@@ -132,15 +135,15 @@ impl Plan {
             network,
         )
     }
-    pub(super) fn from_selection(
-        catalog: &Catalog,
+    pub(super) fn from_selection<F: ScenarioFamily>(
+        catalog: &Catalog<F>,
         binding: Binding,
         network: Integration,
     ) -> Result<Self> {
         let selected = binding.selection.runnable(catalog)?;
         let mut plan = if selected.is_empty() {
             Self {
-                schema: 5,
+                schema: CAMPAIGN_SCHEMA,
                 network: network.id().into(),
                 requested: vec![],
                 requested_checks: vec![],
@@ -156,7 +159,7 @@ impl Plan {
     }
     /// Retain the requested program scope, but recompute completion/applicability.
     /// New seals can reduce execution to zero without opening the lab or building.
-    pub fn refresh(&self, root: &Path, catalog: &Catalog) -> Result<Self> {
+    pub fn refresh<F: ScenarioFamily>(&self, root: &Path, catalog: &Catalog<F>) -> Result<Self> {
         let Some(binding) = &self.qualification else {
             return Ok(self.clone());
         };
@@ -230,7 +233,7 @@ mod tests {
                 .unwrap()
                 .0
                 .iter()
-                .map(|s| s.id.as_str())
+                .map(|s| s.id())
                 .collect::<Vec<_>>(),
             vec!["boot-smoke"]
         );

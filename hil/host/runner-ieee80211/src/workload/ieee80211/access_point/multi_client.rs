@@ -14,6 +14,7 @@ use oer_hil_protocol::{
     SessionConfig, SessionFlowConfig, SessionLinkRequirements, Transport,
 };
 
+use crate::scenario::{Direction, access_point::MultiClientCriteria};
 use crate::workload::ieee80211::access_point::{
     Config, ConnectedClients, UDP_HOST_PORT, UDP_RX_PORT, UDP_SECONDARY_HOST_PORT,
     UDP_TX_SOURCE_PORT, protocol_direction,
@@ -28,8 +29,8 @@ use crate::{
     workload::traffic::tx_traffic::Receiver,
 };
 use hil_core::{
-    scenario::Criteria, scenario::Direction, session::SerialCapture,
-    session::probe_udp_rx_ready_via, transport::udp::configure_qualification_receive_buffer,
+    session::SerialCapture, session::probe_udp_rx_ready_via,
+    transport::udp::configure_qualification_receive_buffer,
 };
 
 struct MultiClientHostFlow {
@@ -125,6 +126,7 @@ pub(super) fn qualify_multi_client_udp(
     context: &Context<'_>,
     clients: &ConnectedClients,
     workload: UdpWorkload,
+    criteria: MultiClientCriteria,
 ) -> Result<TrafficReport> {
     if config.require_rx_delivery_evidence {
         return Err("multi-client AP UDP does not combine independent RX sequence ledgers".into());
@@ -323,7 +325,7 @@ pub(super) fn qualify_multi_client_udp(
             flows: evidence.flow_transport,
         }),
     };
-    let report = observed.evaluate(output, &config.criteria);
+    let report = observed.evaluate(output, &criteria);
     acknowledgement?;
     report
 }
@@ -345,7 +347,7 @@ struct MultiClientObservation {
 }
 
 impl MultiClientObservation {
-    fn evaluate(self, output: &Path, criteria: &Criteria) -> Result<TrafficReport> {
+    fn evaluate(self, output: &Path, criteria: &MultiClientCriteria) -> Result<TrafficReport> {
         // Preserve delivery even when terminal evidence or a later gate fails.
         // Raw per-flow host observations must not depend on qualification.
         let host_offer: [_; SESSION_FLOW_CAPACITY] = std::array::from_fn(|index| {
@@ -434,7 +436,7 @@ impl MultiClientObservation {
             tx_units: flow_reports.iter().map(|flow| flow.tx_units).sum(),
             elapsed_micros: structured.elapsed_micros,
         };
-        validate_rate_criteria(&aggregate, criteria)?;
+        validate_rate_criteria(&aggregate, criteria.floors())?;
         validate_multi_client_fairness(&flow_reports, direction, criteria)?;
         Ok(TrafficReport::UdpMultiClient(Box::new(
             MultiClientSessionReport {
@@ -563,17 +565,16 @@ fn validate_multi_client_udp_flow(
 pub(super) fn validate_multi_client_fairness(
     flows: &[MultiClientFlowReport; SESSION_FLOW_CAPACITY],
     direction: Direction,
-    criteria: &Criteria,
+    criteria: &MultiClientCriteria,
 ) -> Result<()> {
     let validate = |label: &str, rates: [u64; SESSION_FLOW_CAPACITY]| -> Result<()> {
-        if let Some(minimum) = criteria.minimum_bps_per_flow {
-            for (index, rate) in rates.into_iter().enumerate() {
-                if rate < minimum {
-                    return Err(format!(
-                        "AP {label} flow {index} bitrate {rate} is below required {minimum}",
-                    )
-                    .into());
-                }
+        let minimum = criteria.minimum_bps_per_flow;
+        for (index, rate) in rates.into_iter().enumerate() {
+            if rate < minimum {
+                return Err(format!(
+                    "AP {label} flow {index} bitrate {rate} is below required {minimum}",
+                )
+                .into());
             }
         }
         if let Some(maximum_percent) = criteria.maximum_flow_skew_percent {

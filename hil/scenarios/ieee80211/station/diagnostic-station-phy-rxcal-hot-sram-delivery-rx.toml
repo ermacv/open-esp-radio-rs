@@ -1,25 +1,23 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-station-phy-rxcal-hot-sram-delivery-rx"
 description = "Common-calibration timing with RX-gain state decisions in SRAM and the same short-settle policy"
 repetitions = 1
-image = "diagnostic-rx-delivery-phy-hot-sram"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "station", "pause", "udp", "ht40"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-rx-delivery-phy-hot-sram"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 12
-rx_rate_bps = 65000000
 payload_bytes = 1200
-station_pause = "common-calibration"
+offer = { rx_bps = 65000000 }
 
-[criteria]
-exact_delivery = false
-minimum_rx_bps = 10000000
+[wifi.workload.maintenance]
+operation = "common-calibration"
+
+[wifi.workload.criteria]
 require_no_beacon_loss = true
+minimum_rx_bps = 10000000

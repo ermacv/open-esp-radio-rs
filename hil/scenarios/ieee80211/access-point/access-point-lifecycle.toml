@@ -1,18 +1,16 @@
-schema = 4
+schema = 5
 id = "access-point-lifecycle"
 description = "Repeated cold-boot and ownership qualification for one WPA2 access point"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "access-point", "lifecycle"]
 
-[workload]
+[wifi]
+image = "correctness"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 4
 boots = 5
 timeout_seconds = 90
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "none"
-
-[criteria]

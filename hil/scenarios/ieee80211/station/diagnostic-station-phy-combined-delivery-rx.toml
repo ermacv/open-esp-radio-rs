@@ -1,26 +1,24 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-station-phy-combined-delivery-rx"
 description = "Observed calibration maintenance without PM during RX UDP delivery"
 repetitions = 3
-image = "diagnostic-rx-delivery"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["phy-maintenance", "diagnostic", "station", "pause", "udp", "ht40"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-rx-delivery"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 12
-rx_rate_bps = 65000000
 payload_bytes = 1200
-station_pause = "calibration"
+offer = { rx_bps = 65000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.maintenance]
+operation = "calibration"
+
+[wifi.workload.criteria]
+require_no_beacon_loss = true
 minimum_rx_bps = 60000000
 maximum_rx_silence_ms = 50
-require_no_beacon_loss = true

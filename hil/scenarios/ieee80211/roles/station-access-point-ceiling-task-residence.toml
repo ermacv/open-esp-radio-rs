@@ -1,16 +1,14 @@
-schema = 4
+schema = 5
 id = "station-access-point-ceiling-task-residence"
 description = "Production-like Core0 residence under a 130 Mbit/s aggregate same-channel STA+AP bidirectional UDP offer"
-image = "diagnostic-task-residence"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["wifi", "sta-ap", "udp", "ceiling", "task-residence", "psram-stack"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-task-residence"
 
-[workload]
+[wifi.workload]
 kind = "station-access-point"
+link = { phy = "ht40" }
 timeout_seconds = 30
 duration_seconds = 15
 direction = "bidirectional"

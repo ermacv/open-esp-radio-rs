@@ -1,19 +1,14 @@
-schema = 4
+schema = 5
 id = "wifi-radio-retained-cycle"
 description = "Connected HT40/WPA2 STA to stopped link and retained RF wake with pre-operation PHY epoch preserved, plus fresh bidirectional session-identified UDP recovery before and after each cycle"
 repetitions = 3
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "lifecycle", "phy", "retained-wake"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "wifi-role"
-operation = "retained"
+[wifi.workload]
+kind = "role"
+link = { phy = "ht40" }
 timeout_seconds = 90
-cycles = 3
-
-[criteria]
+operation = { kind = "retained", cycles = 3 }

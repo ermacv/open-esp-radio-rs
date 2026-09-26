@@ -1,26 +1,21 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-bidirectional-ht40-split-soak"
 description = "Five-minute split-core HT40 full-duplex stability gate"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "udp", "station", "full-duplex", "ht40", "split-core", "soak"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "udp"
-direction = "bidirectional"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 300
-rx_rate_bps = 5000000
-tx_rate_bps = 5000000
 payload_bytes = 1472
+offer = { rx_bps = 5000000, tx_bps = 5000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.criteria]
+require_no_beacon_loss = true
 minimum_rx_bps = 4500000
 minimum_tx_bps = 4500000
 minimum_combined_bps = 9000000
-require_no_beacon_loss = true

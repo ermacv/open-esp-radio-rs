@@ -1,5 +1,20 @@
 use super::*;
 
+/// Criteria that accept any per-flow bitrate.
+fn criteria() -> MultiClientCriteria {
+    MultiClientCriteria {
+        exact_delivery: false,
+        minimum_rx_bps: None,
+        minimum_tx_bps: None,
+        minimum_combined_bps: None,
+        minimum_bps_per_flow: 0,
+        maximum_flow_skew_percent: None,
+        minimum_host_offer_percent: None,
+        maximum_secondary_tx_interarrival_ms: None,
+        minimum_secondary_tx_datagrams: None,
+    }
+}
+
 fn observation(target: Result<MultiClientTarget>) -> MultiClientObservation {
     MultiClientObservation {
         direction: Direction::Tx,
@@ -34,7 +49,7 @@ fn observation(target: Result<MultiClientTarget>) -> MultiClientObservation {
 fn missing_terminal_evidence_preserves_each_hosts_delivery() {
     let output = tempfile::tempdir().unwrap();
     let error = observation(Err("terminal evidence timed out".into()))
-        .evaluate(output.path(), &Criteria::default())
+        .evaluate(output.path(), &criteria())
         .err()
         .expect("qualification must fail");
     assert!(error.to_string().contains("terminal evidence timed out"));
@@ -67,10 +82,10 @@ fn failed_per_peer_rate_gate_preserves_complete_raw_evidence() {
         flows,
     }));
     observed.host_rx[1] = observed.host_rx[0].clone();
-    let criteria = Criteria {
+    let criteria = MultiClientCriteria {
         exact_delivery: false,
-        minimum_bps_per_flow: Some(10_000),
-        ..Criteria::default()
+        minimum_bps_per_flow: 10_000,
+        ..criteria()
     };
     let error = observed
         .evaluate(output.path(), &criteria)
@@ -116,11 +131,7 @@ fn failed_sender_keeps_successful_receiver_observations() {
         flows: [None, None],
     }));
     observed.host_errors.push("flow 1 sender failed".to_owned());
-    assert!(
-        observed
-            .evaluate(output.path(), &Criteria::default())
-            .is_err()
-    );
+    assert!(observed.evaluate(output.path(), &criteria()).is_err());
     let saved: serde_json::Value =
         serde_json::from_slice(&fs::read(output.path().join("delivery-progress.json")).unwrap())
             .unwrap();
@@ -146,9 +157,9 @@ fn unmet_offer_preserves_delivery_and_reports_the_invalid_load_condition() {
     let error = observed
         .evaluate(
             output.path(),
-            &Criteria {
+            &MultiClientCriteria {
                 minimum_host_offer_percent: Some(95),
-                ..Criteria::default()
+                ..criteria()
             },
         )
         .err()

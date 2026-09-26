@@ -1,37 +1,27 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-ap-rx42-task-poll-fixed-client-mcs7"
 description = "AP 42 Mbit/s fixed-MCS7 uplink control with Core0 task-poll telemetry"
 repetitions = 1
-image = "diagnostic-core0-rx-cycles"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "wifi", "access-point", "ht40", "rx", "task-poll", "fixed-client-mcs"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-core0-rx-cycles"
 
-[workload]
+[wifi.workload]
 kind = "access-point"
+link = { phy = "ht40" }
 cycles = 2
 boots = 1
 timeout_seconds = 180
-client = "open-wrt"
+clients = { kind = "openwrt", fixed_ht_mcs = 7 }
+independent_air_monitor = true
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "rx"
 duration_seconds = 10
-rx_rate_bps = 42000000
 payload_bytes = 1472
+offer = { rx_bps = 42000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_rx_bps = 1
-minimum_concurrent_ap_clients = 1
-
-[evidence]
-independent_laptop_air_monitor = true
-
-[fixture_mutation]
-openwrt_client_fixed_ht_mcs = 7

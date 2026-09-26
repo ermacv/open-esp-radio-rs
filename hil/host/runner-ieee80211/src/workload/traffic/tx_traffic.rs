@@ -36,7 +36,7 @@ use crate::{
     workload::traffic::host_network::BenchmarkIpv4Route,
 };
 use hil_core::{
-    lab::config::StationFixtureConfig, scenario::PhyExpectation, session::await_udp_tx_ready,
+    lab::config::StationFixtureConfig, lab::link::PhyExpectation, session::await_udp_tx_ready,
     transport::udp::configure_qualification_receive_buffer, transport::udp::confirm_reverse_flow,
 };
 

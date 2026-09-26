@@ -10,6 +10,7 @@ use oer_hil_protocol::{
     SessionLinkRequirements, Transport,
 };
 
+use crate::scenario::{Direction, access_point::UdpCriteria};
 use crate::workload::ieee80211::access_point::{
     Config, ConnectedClients, UDP_HOST_PORT, UDP_RX_PORT, UDP_TX_SOURCE_PORT, protocol_direction,
     report::TrafficReport, session_report, validate_rate_criteria,
@@ -21,8 +22,8 @@ use crate::{
     workload::traffic::tx_traffic::Receiver,
 };
 use hil_core::{
-    scenario::Direction, session::SerialCapture, session::SessionEvidence,
-    session::probe_udp_rx_ready_via, transport::udp::configure_qualification_receive_buffer,
+    session::SerialCapture, session::SessionEvidence, session::probe_udp_rx_ready_via,
+    transport::udp::configure_qualification_receive_buffer,
 };
 
 #[derive(Clone, Copy)]
@@ -51,6 +52,7 @@ pub(super) fn qualify_udp(
     context: &hil_core::context::Context<'_>,
     clients: &ConnectedClients,
     workload: UdpWorkload,
+    criteria: UdpCriteria,
 ) -> Result<TrafficReport> {
     let UdpWorkload {
         direction,
@@ -171,7 +173,7 @@ pub(super) fn qualify_udp(
         host_rx.as_deref(),
         structured,
         UdpEvidencePolicy {
-            exact_delivery: config.criteria.exact_delivery,
+            exact_delivery: criteria.exact_delivery,
             driver_observation: config.require_driver_observation,
             rx_delivery: config.require_rx_delivery_evidence,
         },
@@ -183,7 +185,7 @@ pub(super) fn qualify_udp(
         report.tx_bytes = host_received.bytes;
         report.tx_units = host_received.datagrams;
     }
-    validate_rate_criteria(&report, &config.criteria).map_err(|error| {
+    validate_rate_criteria(&report, criteria.floors()).map_err(|error| {
         let source = host_tx.map(|host| {
             format!(
                 "host UDP source={}bps datagrams={} maximum_lateness_us={} maximum_catch_up_datagrams={} deadline_resets={}",

@@ -1,33 +1,28 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "ap-network-comparison-02-rx-balanced"
 description = "Two physical stations with ESP as AP: rx-balanced"
 repetitions = 1
-image = "diagnostic-task-residence"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "access-point", "multi-client", "ht40", "ap-network-comparison"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-task-residence"
 
-[workload]
+[wifi.workload]
 kind = "access-point"
+link = { phy = "ht40" }
 cycles = 1
 boots = 1
 timeout_seconds = 150
-client = "laptop"
+clients = { kind = "laptop-and-openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp-multi-client"
-direction = "rx"
 duration_seconds = 12
 payload_bytes = 1472
-rx_rate_bps_per_flow = 65000000
+offer = { rx_bps = 65000000 }
 
-[criteria]
-minimum_host_offer_percent = 95
-exact_delivery = false
-minimum_bps_per_flow = 1
-minimum_concurrent_ap_clients = 2
+[wifi.workload.traffic.criteria]
 minimum_rx_bps = 1
+minimum_bps_per_flow = 1
+minimum_host_offer_percent = 95

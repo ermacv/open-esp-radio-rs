@@ -1,11 +1,9 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "system-watchdog"
 description = "SoC deadline completion, stuck synchronous poll, cancellation, lost completion and late restoration; reset evidence only, no RF assertion"
-image = "system-watchdog"
-isolation = "reset"
 repetitions = 3
+transfer = "identical-image"
 tags = ["watchdog", "soc", "fault-injection"]
 
-[workload]
-kind = "system-watchdog"
+[system]
+kind = "watchdog"

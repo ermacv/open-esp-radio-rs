@@ -1,11 +1,9 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-active-data-mic"
 description = "Corrupt one received active-data MIC before production authentication; require zero Host delivery, MIC-failure retirement, encrypted recovery and cold release; not over-air corruption"
-image = "bluetooth-dtm"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "encryption", "security-failure", "rx-fault-injection", "lifecycle"]
 
-[workload]
-kind = "bluetooth-security-failure"
+[bluetooth]
+kind = "security-failure"
 failure = "active-data-mic"

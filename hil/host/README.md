@@ -93,10 +93,11 @@ This selects the HE20 calibration integration and adds its HE20 control. A
 control need not provide the experiment's named check. The plan lists provided
 checks and selection reasons; it does not infer success from tags, select by
 changed files, or claim minimum coverage of an arbitrary product program.
-Saved executable plans use schema 5; older plan schemas are rejected. Scenario
-digests normalize schema-4 defaults using `hil/schema/scenario-v4-defaults.json`
-and exclude top-level `description` and `tags`; all execution fields remain
-bound, including repetitions, workload, criteria and fixture interventions. Regenerating
+Saved executable plans use schema 6; older plan schemas are rejected. Scenario
+digests drop null values, fill schema-5 defaults from
+`hil/schema/scenario-v5-defaults.json` and exclude top-level `description`,
+`tags` and `transfer`; all execution fields remain bound, including
+repetitions, the control relation and the complete family table. Regenerating
 an offline plan neither executes hardware nor invalidates sealed observations.
 
 A program-backed plan reads the independent evaluator's existing evidence:
@@ -211,11 +212,13 @@ executable and its embedded build/source identity. Firmware capture does not
 replace this identity. The qualification evaluator uses
 [`observer-inputs.json`](../schema/observer-inputs.json) to select relevant
 observer inputs; it does not require equality of the entire runner binary.
-Its schema-3 registry maps each workload to a dependency domain (`common`,
-`ieee80211`, `bluetooth`, `system` or `ieee802154`) whose direct dependencies
-are the runner family packages. A workload's source inputs are the runner
-package, every path package in its domain's projected dependency closure and
-the listed non-Cargo `data` files; source paths are never enumerated.
+Its schema-4 registry identifies a workload as `<family>/<kind>` (for example
+`wifi/station-udp`), classifies its timing sensitivity, and scopes its inputs by
+the `common` group plus the scenario family's group (`wifi`, `bluetooth`,
+`system` or `ieee802154`), whose direct dependencies are the runner family
+packages. A workload's source inputs are the runner package, every path package
+in that projected dependency closure and the listed non-Cargo `data` files;
+source paths are never enumerated.
 Legacy bundles need an explicit provenance review before becoming applicable.
 
 `RunSession` also publishes `attempts/<scenario>.json` immediately after a

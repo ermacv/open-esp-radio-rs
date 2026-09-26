@@ -4,18 +4,22 @@ use oer_process::CommandExt as _;
 use std::{net::Ipv4Addr, process::Command};
 
 use crate::Result;
+use crate::scenario::access_point::AccessPointIcmp;
 use crate::workload::ieee80211::access_point::report::TrafficReport;
-use hil_core::scenario::Criteria;
 
 pub(super) fn qualify_icmp(
     target: Ipv4Addr,
     bind_wifi_interface: bool,
-    count: u16,
-    interval_ms: u16,
-    timeout_ms: u16,
-    payload_bytes: u16,
-    criteria: &Criteria,
+    icmp: &AccessPointIcmp,
 ) -> Result<TrafficReport> {
+    let AccessPointIcmp {
+        count,
+        interval_ms,
+        timeout_ms,
+        payload_bytes,
+        maximum_lost: allowed_lost,
+        maximum_p95_ms,
+    } = *icmp;
     let interval_seconds = format!("{:.3}", f64::from(interval_ms) / 1_000.0);
     let timeout_seconds = format!("{:.3}", f64::from(timeout_ms) / 1_000.0);
     let mut command = Command::new("ping");
@@ -38,8 +42,7 @@ pub(super) fn qualify_icmp(
     samples_micros.sort_unstable();
     let received = u16::try_from(samples_micros.len())?;
     let lost = count.saturating_sub(received);
-    let allowed_lost = criteria.maximum_lost.unwrap_or(0);
-    if u32::from(lost) > allowed_lost {
+    if lost > allowed_lost {
         return Err(format!(
             "AP ICMP lost {lost}/{count} packets (allowed {allowed_lost}); output: {}",
             stdout.trim()
@@ -52,7 +55,7 @@ pub(super) fn qualify_icmp(
     let p50_micros = percentile_micros(&samples_micros, 50);
     let p95_micros = percentile_micros(&samples_micros, 95);
     let p99_micros = percentile_micros(&samples_micros, 99);
-    if let Some(maximum_ms) = criteria.maximum_p95_ms
+    if let Some(maximum_ms) = maximum_p95_ms
         && p95_micros > u64::from(maximum_ms) * 1_000
     {
         return Err(format!(

@@ -27,58 +27,59 @@ pub(super) fn whole_scenario_image_sensitive(document: &Value) -> bool {
     document.get("transfer").and_then(Value::as_str) == Some("identical-image")
 }
 
+/// Station UDP whose offer flows only to the target.
+pub(super) fn receive_only_station_udp(document: &Value) -> bool {
+    document
+        .pointer("/wifi/workload/kind")
+        .and_then(Value::as_str)
+        == Some("station-udp")
+        && document
+            .pointer("/wifi/workload/offer/rx_bps")
+            .is_some_and(|v| !v.is_null())
+        && document
+            .pointer("/wifi/workload/offer/tx_bps")
+            .is_none_or(Value::is_null)
+}
+
 pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> {
     let mut checks = BTreeMap::new();
-    let kind = document.pointer("/workload/kind").and_then(Value::as_str);
+    let workload = document.pointer("/wifi/workload");
+    let field = |name: &str| workload.and_then(|workload| workload.get(name));
+    let exactly_once = |checks: &mut BTreeMap<String, Contract>, name: &str| {
+        checks.insert(
+            name.into(),
+            Contract {
+                unit: "count",
+                image_sensitive: false,
+                comparison: "exactly",
+                threshold: 1,
+            },
+        );
+    };
+    let kind = field("kind").and_then(Value::as_str);
     if matches!(kind, Some("station-ap-loss" | "station-ap-absence")) {
-        let mut names = vec!["wifi.station.control-responsive"];
+        exactly_once(&mut checks, "wifi.station.control-responsive");
         if kind == Some("station-ap-loss") {
-            names.push("wifi.station.ap-loss-reconnected");
-            if document
-                .pointer("/workload/require_recovery_echo")
-                .and_then(Value::as_bool)
-                == Some(true)
-            {
-                names.push("wifi.station.recovered-ip-exchange");
+            exactly_once(&mut checks, "wifi.station.ap-loss-reconnected");
+            if field("require_recovery_echo").and_then(Value::as_bool) == Some(true) {
+                exactly_once(&mut checks, "wifi.station.recovered-ip-exchange");
             }
+        } else if field("initially_absent").and_then(Value::as_bool) == Some(true) {
+            exactly_once(&mut checks, "wifi.station.initial-retry-exhausted");
         } else {
-            names.push(
-                if document
-                    .pointer("/workload/initially_absent")
-                    .and_then(Value::as_bool)
-                    == Some(true)
-                {
-                    "wifi.station.initial-retry-exhausted"
-                } else {
-                    "wifi.station.recovery-retry-exhausted"
-                },
-            );
-        }
-        for name in names {
-            checks.insert(
-                name.into(),
-                Contract {
-                    unit: "count",
-                    image_sensitive: false,
-                    comparison: "exactly",
-                    threshold: 1,
-                },
-            );
+            exactly_once(&mut checks, "wifi.station.recovery-retry-exhausted");
         }
         return Ok(checks);
     }
-    if document.pointer("/workload/kind").and_then(Value::as_str) != Some("udp")
-        || document
-            .pointer("/workload/direction")
-            .and_then(Value::as_str)
-            != Some("rx")
-    {
+    if !receive_only_station_udp(document) {
         return Ok(checks);
     }
-    if let Some(floor) = document
-        .pointer("/criteria/minimum_rx_bps")
-        .and_then(Value::as_u64)
-    {
+    let criterion = |name: &str| {
+        field("criteria")
+            .and_then(|criteria| criteria.get(name))
+            .and_then(Value::as_u64)
+    };
+    if let Some(floor) = criterion("minimum_rx_bps") {
         for (name, threshold) in [
             ("udp.rx.target-rate", floor / 1_000 * 1_000),
             ("udp.rx.host-offer-rate", floor),
@@ -94,10 +95,7 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
             );
         }
     }
-    if let Some(limit) = document
-        .pointer("/criteria/maximum_rx_silence_ms")
-        .and_then(Value::as_u64)
-    {
+    if let Some(limit) = criterion("maximum_rx_silence_ms") {
         checks.insert(
             "udp.rx.maximum-silence".into(),
             Contract {
@@ -110,42 +108,16 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
             },
         );
     }
-    if document
-        .pointer("/workload/station_pause")
-        .is_some_and(|operation| !operation.is_null())
-    {
-        for name in [
-            "wifi.maintenance.transaction-valid",
-            "wifi.maintenance.same-link",
-        ] {
-            checks.insert(
-                name.into(),
-                Contract {
-                    unit: "count",
-                    image_sensitive: false,
-                    comparison: "exactly",
-                    threshold: 1,
-                },
-            );
+    if let Some(maintenance) = field("maintenance").filter(|v| !v.is_null()) {
+        exactly_once(&mut checks, "wifi.maintenance.transaction-valid");
+        exactly_once(&mut checks, "wifi.maintenance.same-link");
+        if maintenance
+            .get("require_post_maintenance_echo")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
+            exactly_once(&mut checks, "wifi.maintenance.ip-exchange-resumed");
         }
-    }
-    if document
-        .pointer("/criteria/require_post_maintenance_echo")
-        .and_then(Value::as_bool)
-        == Some(true)
-        && document
-            .pointer("/workload/station_pause")
-            .is_some_and(|v| !v.is_null())
-    {
-        checks.insert(
-            "wifi.maintenance.ip-exchange-resumed".into(),
-            Contract {
-                unit: "count",
-                image_sensitive: false,
-                comparison: "exactly",
-                threshold: 1,
-            },
-        );
     }
     Ok(checks)
 }
@@ -217,11 +189,12 @@ mod tests {
     #[test]
     fn ap_start_failure_is_distinct_from_recovery_and_control_liveness() {
         let initial = contracts(
-            &serde_json::json!({"workload":{"kind":"station-ap-absence","initially_absent":true}}),
+            &serde_json::json!({"wifi":{"workload":{"kind":"station-ap-absence","initially_absent":true}}}),
         )
         .unwrap();
         let recovered =
-            contracts(&serde_json::json!({"workload":{"kind":"station-ap-absence"}})).unwrap();
+            contracts(&serde_json::json!({"wifi":{"workload":{"kind":"station-ap-absence"}}}))
+                .unwrap();
         assert!(initial.contains_key("wifi.station.initial-retry-exhausted"));
         assert!(!initial.contains_key("wifi.station.recovery-retry-exhausted"));
         assert!(recovered.contains_key("wifi.station.recovery-retry-exhausted"));
@@ -236,21 +209,21 @@ mod tests {
     #[test]
     fn unchanged_link_does_not_substitute_for_post_maintenance_exchange() {
         let name = "wifi.maintenance.ip-exchange-resumed";
-        let mut document = json!({"workload":{"kind":"udp","direction":"rx","station_pause":"calibration"},
-            "criteria":{"require_post_maintenance_echo":true}});
+        let mut document = json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":1000},
+            "maintenance":{"operation":"calibration","require_post_maintenance_echo":true}}}});
         let contract = contracts(&document).unwrap();
         assert!(contract.contains_key(name));
         assert!(!passes(name, &contract[name], &[observed(1)]));
         let mut echo = observed(1);
         echo["name"] = json!(name);
         assert!(passes(name, &contract[name], &[echo]));
-        document["criteria"]["require_post_maintenance_echo"] = json!(false);
+        document["wifi"]["workload"]["maintenance"]["require_post_maintenance_echo"] = json!(false);
         assert!(!contracts(&document).unwrap().contains_key(name));
     }
 
     #[test]
     fn independently_checks_values_units_thresholds_duplicates_and_missing_data() {
-        let contracts = contracts(&json!({"workload": {"kind": "udp", "direction": "rx", "station_pause": "calibration"}})).unwrap();
+        let contracts = contracts(&json!({"wifi": {"workload": {"kind": "station-udp", "offer": {"rx_bps": 1000}, "maintenance": {"operation": "calibration"}}}})).unwrap();
         let name = "wifi.maintenance.same-link";
         let contract = &contracts[name];
         assert!(passes(name, contract, &[observed(1)]));
@@ -278,8 +251,8 @@ mod tests {
             "verdict":"failed"});
         let measurements = vec![original.clone()];
         for (floor, expected) in [(85_000_000, true), (90_000_000, true), (95_000_000, false)] {
-            let contracts = contracts(&json!({"workload":{"kind":"udp","direction":"rx"},
-                "criteria":{"minimum_rx_bps":floor}}))
+            let contracts = contracts(&json!({"wifi":{"workload":{"kind":"station-udp",
+                "offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":floor}}}}))
             .unwrap();
             assert_eq!(
                 passes(

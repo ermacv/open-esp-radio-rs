@@ -5,6 +5,9 @@ use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{Direction as ProtocolDirection, WifiAccessPointSecurity, WifiRole};
 
+use crate::scenario::{
+    AccessPointClients, AccessPointTraffic, Direction, LinkExpectation, RateFloors,
+};
 use crate::{
     Result, fixture::local::air_monitor::LocalAirMonitorCapture,
     fixture::openwrt::client::ControlledOpenWrtClient,
@@ -13,10 +16,8 @@ use crate::{
     workload::ieee80211::control::start_station, workload::ieee80211::control::stop_station,
 };
 use hil_core::{
-    lab::config::StationFixtureConfig, scenario::AccessPointClient, scenario::AccessPointTraffic,
-    scenario::Criteria, scenario::Direction, scenario::HtGuardIntervalExpectation,
-    scenario::LinkExpectation, scenario::PhyExpectation, session::SerialCapture,
-    session::SessionEvidence,
+    lab::config::StationFixtureConfig, lab::link::HtGuardIntervalExpectation,
+    lab::link::PhyExpectation, session::SerialCapture, session::SessionEvidence,
 };
 
 mod clients;
@@ -69,20 +70,17 @@ pub struct Config {
     pub cycles: u8,
     pub boots: u8,
     pub timeout: Duration,
-    pub client: AccessPointClient,
+    pub clients: AccessPointClients,
     pub security: WifiAccessPointSecurity,
     pub traffic: AccessPointTraffic,
-    pub criteria: Criteria,
-    pub expected_link: Option<LinkExpectation>,
+    pub link: Option<LinkExpectation>,
     pub require_driver_observation: bool,
     pub require_rx_delivery_evidence: bool,
     pub capture_independent_laptop_air_monitor: bool,
-    pub openwrt_client_fixed_ht_mcs: Option<u8>,
-    pub openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
 }
 
 pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
-    if let Some(expected_phy) = config.expected_link.map(|link| link.phy) {
+    if let Some(expected_phy) = config.link.map(|link| link.phy) {
         let expected_bandwidth_mhz = match expected_phy {
             PhyExpectation::Ht40 => 40,
             PhyExpectation::Ht20 => 20,
@@ -101,9 +99,7 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
         }
     }
     fs::create_dir_all(output)?;
-    let minimum_clients = config.criteria.minimum_concurrent_ap_clients.unwrap_or(1);
-    let fixture_preparation = if config.client == AccessPointClient::OpenWrt || minimum_clients >= 2
-    {
+    let fixture_preparation = if config.clients.openwrt() {
         let StationFixtureConfig::OpenWrt(fixture) = &context.lab.station_fixture else {
             return Err("AP controlled OpenWrt client requires the OpenWrt station fixture".into());
         };
@@ -160,10 +156,10 @@ fn qualify(
         return Err("firmware does not advertise AP role control".into());
     }
     report_stack(capture, config.timeout, "ap-initial-station-connected")?;
-    let minimum_clients = config.criteria.minimum_concurrent_ap_clients.unwrap_or(1);
+    let minimum_clients = config.clients.count();
     if context.lab.access_point.client_limit() < minimum_clients {
         return Err(format!(
-            "AP client_limit={} is below scenario minimum_concurrent_ap_clients={minimum_clients}",
+            "AP client_limit={} is below the scenario's {minimum_clients} concurrent clients",
             context.lab.access_point.client_limit(),
         )
         .into());
@@ -484,7 +480,7 @@ fn qualify(
         stop_stack_result?;
         restart_result?;
         if config.require_driver_observation {
-            validate_mcs_evidence(&config.traffic, config.expected_link, &stopped)?;
+            validate_mcs_evidence(&config.traffic, config.link, &stopped)?;
             validate_access_point_observation(cycle, config.security, minimum_clients, &stopped)?;
         }
         let access_point = config.require_driver_observation.then_some(stopped);
@@ -618,19 +614,10 @@ fn validate_mcs_evidence(
         )
         .into());
     }
-    let (require_rx, require_tx) = match traffic {
-        AccessPointTraffic::Udp { direction, .. }
-        | AccessPointTraffic::UdpMultiClient { direction, .. }
-        | AccessPointTraffic::Tcp { direction, .. } => match direction {
-            Direction::Rx => (true, false),
-            Direction::Tx => (false, true),
-            Direction::Bidirectional => (true, true),
-        },
-        AccessPointTraffic::Icmp { .. } => (true, true),
-        AccessPointTraffic::None => {
-            return Err("AP minimum_mcs requires a data-plane workload".into());
-        }
+    let Some(direction) = traffic.direction() else {
+        return Err("AP minimum_mcs requires a data-plane workload".into());
     };
+    let (require_rx, require_tx) = (direction.receives(), direction.transmits());
     if require_rx && evidence.rx_ht40_mcs_frames[7] == 0 {
         return Err(format!(
             "AP client-to-target path did not observe HT40 MCS7 protected data \
@@ -675,21 +662,16 @@ fn validate_mcs_evidence(
 }
 
 fn traffic_duration(traffic: &AccessPointTraffic) -> Duration {
+    let seconds = |value: u16| Duration::from_secs(u64::from(value));
     match traffic {
-        AccessPointTraffic::None => Duration::from_secs(2),
-        AccessPointTraffic::Icmp {
-            count, interval_ms, ..
-        } => Duration::from_millis(u64::from(*count) * u64::from(*interval_ms))
-            .max(Duration::from_secs(2)),
-        AccessPointTraffic::Udp {
-            duration_seconds, ..
+        AccessPointTraffic::None {} => Duration::from_secs(2),
+        AccessPointTraffic::Icmp(icmp) => {
+            Duration::from_millis(u64::from(icmp.count) * u64::from(icmp.interval_ms))
+                .max(Duration::from_secs(2))
         }
-        | AccessPointTraffic::UdpMultiClient {
-            duration_seconds, ..
-        }
-        | AccessPointTraffic::Tcp {
-            duration_seconds, ..
-        } => Duration::from_secs(u64::from(*duration_seconds)),
+        AccessPointTraffic::Udp(udp) => seconds(udp.duration_seconds),
+        AccessPointTraffic::UdpMultiClient(udp) => seconds(udp.duration_seconds),
+        AccessPointTraffic::Tcp(tcp) => seconds(tcp.duration_seconds),
     }
 }
 
@@ -703,87 +685,58 @@ fn qualify_data_plane(
     let target = context.lab.access_point.target_address();
     let traffic_target = clients.traffic_target(target)?;
     match &config.traffic {
-        AccessPointTraffic::None => Ok(TrafficReport::None),
-        AccessPointTraffic::Icmp {
-            count,
-            interval_ms,
-            timeout_ms,
-            payload_bytes,
-        } => qualify_icmp(
-            traffic_target,
-            clients.openwrt_primary().is_none(),
-            *count,
-            *interval_ms,
-            *timeout_ms,
-            *payload_bytes,
-            &config.criteria,
-        ),
-        AccessPointTraffic::Udp {
-            direction,
-            duration_seconds,
-            rx_rate_bps,
-            tx_rate_bps,
-            payload_bytes,
-        } => qualify_udp(
+        AccessPointTraffic::None {} => Ok(TrafficReport::None),
+        AccessPointTraffic::Icmp(icmp) => {
+            qualify_icmp(traffic_target, clients.openwrt_primary().is_none(), icmp)
+        }
+        AccessPointTraffic::Udp(udp) => qualify_udp(
             output,
             capture,
             config,
             context,
             clients,
             UdpWorkload {
-                direction: *direction,
-                duration: Duration::from_secs(u64::from(*duration_seconds)),
-                rx_rate_bps: *rx_rate_bps,
-                tx_rate_bps: *tx_rate_bps,
+                direction: udp.offer.direction(),
+                duration: Duration::from_secs(u64::from(udp.duration_seconds)),
+                rx_rate_bps: udp.offer.rx_bps,
+                tx_rate_bps: udp.offer.tx_bps,
                 secondary_rx_rate_bps: None,
                 secondary_tx_rate_bps: None,
                 secondary_tx_pacing_group_datagrams: None,
-                payload_bytes: usize::from(*payload_bytes),
+                payload_bytes: usize::from(udp.payload_bytes),
             },
+            udp.criteria,
         ),
-        AccessPointTraffic::UdpMultiClient {
-            direction,
-            duration_seconds,
-            rx_rate_bps_per_flow,
-            tx_rate_bps_per_flow,
-            secondary_rx_rate_bps,
-            secondary_tx_rate_bps,
-            secondary_tx_pacing_group_datagrams,
-            payload_bytes,
-        } => qualify_multi_client_udp(
+        AccessPointTraffic::UdpMultiClient(udp) => qualify_multi_client_udp(
             output,
             capture,
             config,
             context,
             clients,
             UdpWorkload {
-                direction: *direction,
-                duration: Duration::from_secs(u64::from(*duration_seconds)),
-                rx_rate_bps: *rx_rate_bps_per_flow,
-                tx_rate_bps: *tx_rate_bps_per_flow,
-                secondary_rx_rate_bps: *secondary_rx_rate_bps,
-                secondary_tx_rate_bps: *secondary_tx_rate_bps,
-                secondary_tx_pacing_group_datagrams: *secondary_tx_pacing_group_datagrams,
-                payload_bytes: usize::from(*payload_bytes),
+                direction: udp.offer.direction(),
+                duration: Duration::from_secs(u64::from(udp.duration_seconds)),
+                rx_rate_bps: udp.offer.rx_bps,
+                tx_rate_bps: udp.offer.tx_bps,
+                secondary_rx_rate_bps: udp.secondary.rx_bps,
+                secondary_tx_rate_bps: udp.secondary.tx_bps,
+                secondary_tx_pacing_group_datagrams: udp.secondary.tx_pacing_group_datagrams,
+                payload_bytes: usize::from(udp.payload_bytes),
             },
+            udp.criteria,
         ),
-        AccessPointTraffic::Tcp {
-            direction,
-            duration_seconds,
-            rx_rate_bps,
-            tx_rate_bps,
-            chunk_bytes,
-        } => qualify_tcp(
+        AccessPointTraffic::Tcp(tcp) => qualify_tcp(
             capture,
             config,
             context.lab.access_point.target_address(),
             TcpWorkload {
-                direction: *direction,
-                duration: Duration::from_secs(u64::from(*duration_seconds)),
-                rx_rate_bps: *rx_rate_bps,
-                tx_rate_bps: *tx_rate_bps,
-                chunk_bytes: usize::from(*chunk_bytes),
+                direction: tcp.offer.direction(),
+                duration: Duration::from_secs(u64::from(tcp.duration_seconds)),
+                rx_rate_bps: tcp.offer.rx_bps,
+                tx_rate_bps: tcp.offer.tx_bps,
+                chunk_bytes: usize::from(tcp.chunk_bytes),
             },
+            tcp.criteria.floors(),
         ),
     }
 }
@@ -799,7 +752,7 @@ fn session_report(direction: Direction, evidence: &SessionEvidence) -> SessionRe
     }
 }
 
-fn validate_rate_criteria(report: &SessionReport, criteria: &Criteria) -> Result<()> {
+fn validate_rate_criteria(report: &SessionReport, criteria: RateFloors) -> Result<()> {
     if report.elapsed_micros == 0 {
         return Err("AP transport reported zero elapsed time".into());
     }

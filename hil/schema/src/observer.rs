@@ -96,10 +96,11 @@ pub fn projection(resolved: &Value, dependencies: &BTreeSet<String>) -> Result<V
 
 /// Version of `hil/schema/observer-inputs.json`.
 ///
-/// Schema 3 scopes observer inputs by Cargo packages: a workload's inputs are
-/// the runner package, the path packages reachable from its domain's direct
-/// dependencies and the registry's non-Cargo `data` files.
-pub const REGISTRY_SCHEMA: u64 = 3;
+/// Schema 4 scopes observer inputs by scenario family: a workload's inputs
+/// are the runner package, the path packages reachable from the common and
+/// family dependency groups and the registry's non-Cargo `data` files. A
+/// workload is identified as `<family>/<kind>`.
+pub const REGISTRY_SCHEMA: u64 = 4;
 
 /// Reject a registry of another schema before reading any scope from it.
 pub fn check_registry_schema(registry: &Value) -> Result<()> {
@@ -109,30 +110,49 @@ pub fn check_registry_schema(registry: &Value) -> Result<()> {
     Ok(())
 }
 
-/// Every workload kind the registry maps to a dependency domain.
+/// The `<family>/<kind>` identity of a schema-5 scenario document.
+pub fn workload(document: &Value) -> Option<String> {
+    ["wifi", "bluetooth", "system", "ieee802154"]
+        .into_iter()
+        .find_map(|family| {
+            let table = document.get(family)?;
+            let kind = if family == "wifi" {
+                table.pointer("/workload/kind")
+            } else {
+                table.get("kind")
+            }?;
+            Some(format!("{family}/{}", kind.as_str()?))
+        })
+}
+
+/// Every workload identity the registry classifies.
 pub fn workloads(registry: &Value) -> Result<Vec<String>> {
-    Ok(registry["workload_domains"]
+    Ok(registry["timing"]
         .as_object()
-        .ok_or("observer workload domains missing")?
+        .ok_or("observer workload timing missing")?
         .keys()
         .cloned()
         .collect())
 }
 
 /// Registry scope for the selected workload; all direct dependencies must have an owner.
-pub fn dependencies(registry: &Value, kind: &str) -> Result<BTreeSet<String>> {
+pub fn dependencies(registry: &Value, workload: &str) -> Result<BTreeSet<String>> {
     let groups = registry["dependencies"]
         .as_object()
         .ok_or("observer dependencies missing")?;
     let mut names = BTreeSet::new();
-    let domain = if kind.is_empty() {
+    let family = if workload.is_empty() {
         "common"
     } else {
-        registry["workload_domains"][kind]
-            .as_str()
-            .ok_or("observer workload domain missing")?
+        if registry["timing"].get(workload).is_none() {
+            return Err(format!("observer workload {workload} is not classified").into());
+        }
+        workload
+            .split_once('/')
+            .map(|(family, _)| family)
+            .ok_or("observer workload lacks a family")?
     };
-    for group in ["common", domain] {
+    for group in ["common", family] {
         for name in groups
             .get(group)
             .and_then(Value::as_array)
@@ -232,19 +252,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_schema_and_workloads_come_from_the_domain_map() {
+    fn registry_schema_and_workloads_come_from_the_family_map() {
         let registry = json!({
-            "schema": 3,
-            "workload_domains": {"udp": "ieee80211", "bluetooth-dtm": "bluetooth"},
-            "dependencies": {"common": ["core"], "ieee80211": ["wifi"], "bluetooth": ["ble"]},
+            "schema": 4,
+            "timing": {"wifi/station-udp": true, "bluetooth/dtm": true},
+            "dependencies": {"common": ["core"], "wifi": ["wifi"], "bluetooth": ["ble"]},
         });
         check_registry_schema(&registry).unwrap();
-        assert_eq!(workloads(&registry).unwrap(), ["bluetooth-dtm", "udp"]);
-        let udp = dependencies(&registry, "udp").unwrap();
+        assert_eq!(
+            workloads(&registry).unwrap(),
+            ["bluetooth/dtm", "wifi/station-udp"]
+        );
+        let udp = dependencies(&registry, "wifi/station-udp").unwrap();
         assert!(udp.contains("core") && udp.contains("wifi") && !udp.contains("ble"));
+        assert!(dependencies(&registry, "wifi/role").is_err());
         let mut legacy = registry;
-        legacy["schema"] = json!(2);
+        legacy["schema"] = json!(3);
         assert!(check_registry_schema(&legacy).is_err());
+        let document = json!({"wifi": {"image": "correctness", "workload": {"kind": "role"}}});
+        assert_eq!(workload(&document).as_deref(), Some("wifi/role"));
+        let document = json!({"system": {"kind": "boot-smoke"}});
+        assert_eq!(workload(&document).as_deref(), Some("system/boot-smoke"));
     }
 
     fn fixture() -> Value {

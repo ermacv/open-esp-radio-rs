@@ -1,5 +1,6 @@
 pub mod config;
 mod error;
+pub mod link;
 pub use error::Error;
 pub mod lock;
 pub mod provenance;

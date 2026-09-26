@@ -1,10 +1,8 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-acl-backpressure"
 description = "Host holds one RX ACL credit through supervision expiry while reading HCI events, then drains the old handle and reconnects without Reset"
-image = "bluetooth-dtm"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "backpressure", "lifecycle"]
 
-[workload]
-kind = "bluetooth-acl-backpressure"
+[bluetooth]
+kind = "acl-backpressure"

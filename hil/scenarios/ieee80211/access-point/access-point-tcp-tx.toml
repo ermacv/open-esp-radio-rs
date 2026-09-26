@@ -1,24 +1,23 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-tcp-tx"
 description = "Two AP ownership epochs with exact outbound TCP delivery"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "wifi", "access-point", "network", "tcp", "tx"]
 
-[workload]
+[wifi]
+image = "correctness"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 90
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "tcp"
-direction = "tx"
 duration_seconds = 10
-tx_rate_bps = 5000000
 chunk_bytes = 8192
+offer = { tx_bps = 5000000 }
 
-[criteria]
+[wifi.workload.traffic.criteria]
 minimum_tx_bps = 4000000

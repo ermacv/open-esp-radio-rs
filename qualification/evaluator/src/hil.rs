@@ -28,7 +28,7 @@ use sha2::{Digest, Sha256};
 use crate::Result;
 
 const HIL_RUN_SCHEMA: u16 = 2;
-const HIL_SCENARIO_SCHEMA: u16 = 4;
+const HIL_SCENARIO_SCHEMA: u16 = 5;
 
 #[derive(Clone, Debug)]
 pub(crate) struct RepositoryState {
@@ -157,13 +157,20 @@ impl ScenarioCatalog {
                     format!("invalid HIL scenario catalog entry: {}", path.display()).into(),
                 );
             }
+            let value: serde_json::Value = toml_edit::de::from_str(&input)?;
+            if !has_one_family(&value) {
+                return Err(format!(
+                    "HIL scenario must name exactly one family table: {}",
+                    path.display()
+                )
+                .into());
+            }
             if repetitions
                 .insert(document.id.clone(), document.repetitions)
                 .is_some()
             {
                 return Err(format!("duplicate HIL scenario id {}", document.id).into());
             }
-            let value: serde_json::Value = toml_edit::de::from_str(&input)?;
             if value.get("transfer").is_some_and(|v| {
                 !matches!(
                     v.as_str(),
@@ -288,6 +295,24 @@ struct ScenarioDocument {
 
 const fn one_repetition() -> u8 {
     1
+}
+
+/// Exactly one radio-family table carries the executable procedure; a Wi-Fi
+/// table names its image and a tagged workload, the others are tagged
+/// workloads themselves.
+pub(crate) fn has_one_family(document: &serde_json::Value) -> bool {
+    let tables = ["wifi", "bluetooth", "system", "ieee802154"]
+        .into_iter()
+        .filter_map(|family| Some((family, document.get(family)?)))
+        .collect::<Vec<_>>();
+    let [(family, table)] = tables.as_slice() else {
+        return false;
+    };
+    if *family == "wifi" {
+        table["image"].is_string() && table["workload"]["kind"].is_string()
+    } else {
+        table["kind"].is_string()
+    }
 }
 
 impl HilEvidenceIndex {

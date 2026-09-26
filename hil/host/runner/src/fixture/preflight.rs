@@ -1,19 +1,22 @@
 //! Fixture prerequisites shared by doctor, execution and fixture-only checks.
 
-use crate::Result;
+use crate::{
+    Result,
+    scenario::{Family, Scenario},
+};
 use hil_core::{
     evidence::run::Failure, evidence::run::FailureKind, lab::config::LabConfig,
-    lab::config::StationFixtureConfig, lab::requirements::Requirements, scenario::Scenario,
-    scenario::Workload,
+    lab::config::StationFixtureConfig,
 };
 
 pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
-    let resolved = lab.resolve_scenario(scenario);
+    let plan = scenario.plan();
+    let resolved = lab.resolve(plan.wifi);
     let lab = &resolved;
     if let Some(failure) = scenario_precondition(lab, scenario) {
         return Err(hil_core::fixture::Error::new(failure.message).into());
     }
-    let required = Requirements::for_scenario(scenario);
+    let required = plan.requirements;
     if let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture
         && config.read_only
         && (required.station_control || required.openwrt_client || required.openwrt_tx_monitor)
@@ -39,7 +42,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     if required.station_network {
         match &lab.station_fixture {
             StationFixtureConfig::OpenWrt(config) => {
-                let phy = lab.fixture_phy(scenario);
+                let phy = lab.fixture_phy(plan.wifi);
                 hil_wifi::fixture::openwrt::ap::probe(
                     config,
                     hil_wifi::fixture::openwrt::ap::Profile::new(config, phy),
@@ -49,13 +52,8 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
                     hil_wifi::fixture::openwrt::evidence::doctor_tools(config)?;
                 }
-                if matches!(
-                    scenario.workload,
-                    hil_core::scenario::Workload::Udp {
-                        station_pause: Some(_),
-                        ..
-                    }
-                ) {
+                if matches!(&scenario.family, Family::Wifi(wifi) if wifi.requires_packet_decoder())
+                {
                     hil_core::image::require_program(std::ffi::OsStr::new("tshark"))?;
                 }
             }
@@ -63,7 +61,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                 hil_wifi::fixture::local::ap::check(
                     config,
                     &lab.station,
-                    lab.fixture_phy(scenario),
+                    lab.fixture_phy(plan.wifi),
                 )
                 .map_err(hil_core::fixture::Error::context)?;
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
@@ -106,36 +104,8 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
 
 /// Scenario-specific Bluetooth adapter checks and the station fixture PHY.
 pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
-    let bluetooth_preflight: Option<
-        fn(hil_bluetooth::fixture::bluetooth::model::Adapter) -> Result<()>,
-    > = match selected.workload {
-        Workload::BluetoothSecureGatt
-        | Workload::BluetoothSecureGattTiming
-        | Workload::BluetoothSecureGattHciReadFailure => {
-            Some(hil_bluetooth::fixture::bluetooth::att::preflight)
-        }
-        Workload::BluetoothAclCalibration { .. } => {
-            Some(hil_bluetooth::fixture::bluetooth::att_parameters::preflight)
-        }
-        Workload::BluetoothGatt | Workload::BluetoothAclBackpressure { .. } => {
-            Some(hil_bluetooth::fixture::bluetooth::att::preflight)
-        }
-        Workload::BluetoothDtm { .. }
-        | Workload::BluetoothWatchdogReset
-        | Workload::BluetoothMaintenanceDeadline => {
-            Some(hil_bluetooth::fixture::bluetooth::preflight)
-        }
-        Workload::BluetoothPeripheral { .. }
-        | Workload::BluetoothEncryptedAcl { .. }
-        | Workload::BluetoothPhyWatchdog => {
-            Some(hil_bluetooth::fixture::bluetooth::preflight_connect_reset)
-        }
-        Workload::BluetoothSecurityFailure { .. } => {
-            Some(hil_bluetooth::fixture::bluetooth::preflight_security_failure)
-        }
-        _ => None,
-    };
-    if let Some(preflight) = bluetooth_preflight {
+    if let Family::Bluetooth(bluetooth) = &selected.family {
+        let preflight = bluetooth.adapter_preflight();
         let result = lab
             .bluetooth_adapter
             .ok_or_else(|| "missing [bluetooth] adapter in lab config".into())
@@ -144,11 +114,12 @@ pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Opt
             return Some(Failure::new(FailureKind::Precondition, error.to_string()));
         }
     }
-    if !Requirements::for_scenario(selected).station_network {
+    let plan = selected.plan();
+    if !plan.requirements.station_network {
         return None;
     }
     lab.station_fixture
-        .require_phy(lab.fixture_phy(selected))
+        .require_phy(lab.fixture_phy(plan.wifi))
         .err()
         .map(|error| Failure::new(FailureKind::Precondition, error.to_string()))
 }

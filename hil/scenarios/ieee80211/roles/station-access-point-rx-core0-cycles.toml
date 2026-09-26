@@ -1,18 +1,18 @@
-schema = 4
+schema = 5
 id = "station-access-point-rx-core0-cycles"
 description = "Intrusive Core0 phase accounting for simultaneous STA and AP UDP ingress"
-image = "diagnostic-core0-rx-cycles"
 repetitions = 3
-isolation = "reset"
-data_plane = "split-radio-network"
-rx_continuation = "adaptive-probe-diagnostic"
 tags = ["diagnostic", "wifi", "sta-ap", "udp", "rx", "core0", "phase-accounting"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-core0-rx-cycles"
 
-[workload]
+[wifi.datapath]
+rx_continuation = "adaptive-probe-diagnostic"
+
+[wifi.workload]
 kind = "station-access-point"
+link = { phy = "ht40" }
 timeout_seconds = 30
 duration_seconds = 12
 direction = "rx"
@@ -20,6 +20,4 @@ rate_bps_per_flow = 32500000
 minimum_bps_per_flow = 5000000
 maximum_fairness_skew_percent = 50
 payload_bytes = 1472
-
-[evidence]
-independent_laptop_air_monitor = true
+independent_air_monitor = true

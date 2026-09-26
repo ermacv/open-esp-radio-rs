@@ -1,19 +1,13 @@
-schema = 4
+schema = 5
 id = "wifi-monitor-lifecycle"
 description = "Station to monitor ownership transition and station restoration"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "monitor", "lifecycle"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "wifi-role"
-operation = "monitor"
+[wifi.workload]
+kind = "role"
+link = { phy = "ht40" }
 timeout_seconds = 90
-dwell_seconds = 3
-snapshot_length = 256
-
-[criteria]
+operation = { kind = "monitor", dwell_seconds = 3, snapshot_length = 256 }

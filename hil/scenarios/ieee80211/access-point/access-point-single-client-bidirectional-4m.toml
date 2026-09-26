@@ -1,29 +1,26 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-single-client-bidirectional-4m"
 description = "Single-client AP 4+4 Mbit/s bidirectional baseline"
 repetitions = 1
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["characterization", "wifi", "access-point", "network", "single-client", "bidirectional"]
 
-[workload]
+[wifi]
+image = "correctness"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 120
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "bidirectional"
 duration_seconds = 30
-rx_rate_bps = 4000000
-tx_rate_bps = 4000000
 payload_bytes = 1400
+offer = { rx_bps = 4000000, tx_bps = 4000000 }
 
-[criteria]
+[wifi.workload.traffic.criteria]
 exact_delivery = true
 minimum_rx_bps = 3800000
 minimum_tx_bps = 3800000
-minimum_concurrent_ap_clients = 1

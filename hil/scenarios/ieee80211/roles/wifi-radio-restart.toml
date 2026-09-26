@@ -1,19 +1,14 @@
-schema = 4
+schema = 5
 id = "wifi-radio-restart"
 description = "Connected HT40/WPA2 STA to stopped link and cold cache-backed RF restart, with fresh bidirectional session-identified UDP recovery before and after each cycle"
 repetitions = 3
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "lifecycle", "phy"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "wifi-role"
-operation = "restart"
+[wifi.workload]
+kind = "role"
+link = { phy = "ht40" }
 timeout_seconds = 90
-cycles = 3
-
-[criteria]
+operation = { kind = "restart", cycles = 3 }

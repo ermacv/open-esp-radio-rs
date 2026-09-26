@@ -4,9 +4,10 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::scenario::{Scenario, requirements};
 use crate::{Result, fixture};
-use hil_core::lab::{config::LabConfig, requirements::Requirements};
-use hil_core::{image, scenario::Scenario};
+use hil_core::image;
+use hil_core::lab::config::LabConfig;
 
 #[derive(Default, Serialize)]
 struct Checks {
@@ -43,7 +44,7 @@ impl Checks {
 }
 
 pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Result<()> {
-    let required = Requirements::union(scenarios);
+    let required = requirements(scenarios);
     let mut checks = Checks::default();
     checks.run("firmware-workspace", || {
         root.join("hil/targets/esp32s31/Cargo.toml")
@@ -68,7 +69,7 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
         image::ensure_vendor_dependencies_absent(root)
     })?;
     for scenario in scenarios {
-        checks.run(format!("fixture-{}", scenario.id), || {
+        checks.run(format!("fixture-{}", scenario.id()), || {
             fixture::preflight::check(lab, scenario)
         })?;
     }

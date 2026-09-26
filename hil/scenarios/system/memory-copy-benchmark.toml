@@ -1,13 +1,10 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "memory-copy-benchmark"
 description = "Bounded CPU, blocking GDMA and async GDMA copies from SRAM/PSRAM into SRAM; correctness and measured counter scopes"
-image = "diagnostic-memory-benchmark"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "memory", "copy", "gdma"]
 
-[workload]
+[system]
 kind = "memory-benchmark"
 boots = 2
 iterations = 32

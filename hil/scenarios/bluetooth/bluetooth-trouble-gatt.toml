@@ -1,11 +1,9 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "bluetooth-trouble-gatt"
 description = "Shared standalone Trouble application: discover, read/write and gracefully disconnect/reconnect three times on one Host/Controller epoch; plaintext, not secure GATT qualification"
-image = "bluetooth-gatt"
-isolation = "reset"
 repetitions = 3
+transfer = "identical-image"
 tags = ["bluetooth", "peripheral", "gatt", "trouble", "lifecycle"]
 
-[workload]
-kind = "bluetooth-gatt"
+[bluetooth]
+kind = "gatt"

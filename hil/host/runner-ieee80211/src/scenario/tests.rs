@@ -1,0 +1,427 @@
+use super::*;
+
+fn parse(text: &str) -> WifiScenario {
+    toml::from_str(text).unwrap_or_else(|error| panic!("{error}\n{text}"))
+}
+
+fn valid(text: &str) -> WifiScenario {
+    let scenario = parse(text);
+    scenario
+        .validate()
+        .unwrap_or_else(|error| panic!("{error}\n{text}"));
+    scenario
+}
+
+fn invalid(text: &str) {
+    assert!(parse(text).validate().is_err(), "accepted\n{text}");
+}
+
+const UDP_RX: &str = "image = 'correctness'\n[workload]\nkind = 'station-udp'\nlink = { phy = 'ht40' }\nduration_seconds = 16\npayload_bytes = 1472\noffer = { rx_bps = 50000000 }\n";
+
+fn udp_rx(extra: &str) -> String {
+    format!("{UDP_RX}{extra}")
+}
+
+#[test]
+fn station_udp_requirements_follow_the_offer_and_observers() {
+    let rx = valid(UDP_RX).plan();
+    assert!(rx.requirements.station_network && rx.requirements.station_udp_rx_capture);
+    assert!(!rx.requirements.station_udp_tx_capture && !rx.requirements.openwrt_tx_monitor);
+    assert_eq!(
+        rx.wifi,
+        WifiLabUse {
+            link: Some(PhyExpectation::Ht40),
+            access_point: false,
+        }
+    );
+    let observed = valid(&udp_rx(
+        "[workload.observation]\nopenwrt_tx_monitor = true\nindependent_air_monitor = true\n",
+    ))
+    .plan();
+    assert!(observed.requirements.openwrt_tx_monitor && observed.requirements.laptop_air_monitor);
+    let both = valid(&UDP_RX.replace(
+        "offer = { rx_bps = 50000000 }",
+        "offer = { rx_bps = 50000000, tx_bps = 50000000 }",
+    ))
+    .plan();
+    assert!(both.requirements.station_udp_rx_capture && both.requirements.station_udp_tx_capture);
+}
+
+#[test]
+fn station_udp_criteria_must_measure_an_offered_direction() {
+    for extra in [
+        "[workload.criteria]\nminimum_tx_bps = 1\n",
+        "[workload.criteria]\nminimum_rx_bps = 50000001\n",
+        "[workload.criteria]\nminimum_combined_bps = 1\n",
+        "[workload.criteria]\nmaximum_rx_silence_ms = 0\n",
+        "[workload.observation]\nindependent_air_monitor = true\n",
+    ] {
+        invalid(&udp_rx(extra));
+    }
+    invalid(&UDP_RX.replace("offer = { rx_bps = 50000000 }", "offer = {}"));
+    invalid(
+        &UDP_RX
+            .replace(
+                "offer = { rx_bps = 50000000 }",
+                "offer = { tx_bps = 50000000 }",
+            )
+            .replace("'ht40'", "'ht20'"),
+    );
+    invalid(
+        &udp_rx("[workload.criteria]\nexact_delivery = true\n")
+            .replace("correctness", "performance"),
+    );
+    invalid(
+        &udp_rx("[workload.criteria]\nrequire_no_beacon_loss = true\n")
+            .replace("correctness", "performance"),
+    );
+    assert!(
+        toml::from_str::<WifiScenario>(&udp_rx("[workload.criteria]\nmaximum_lost = 1\n")).is_err()
+    );
+}
+
+#[test]
+fn maintenance_owns_its_schedule_and_rfpll_qualification() {
+    let scenario = valid(&udp_rx(
+        "[workload.maintenance]\noperation = 'calibration'\nrequire_post_maintenance_echo = true\n",
+    ));
+    assert_eq!(
+        scenario.plan().checks,
+        [
+            "wifi.maintenance.ip-exchange-resumed",
+            "wifi.maintenance.same-link",
+            "wifi.maintenance.transaction-valid",
+        ]
+    );
+    assert!(scenario.requires_packet_decoder());
+    for maintenance in [
+        "operation = 'calibration'\nrequire_nonzero_rfpll_correction = true\n",
+        "operation = 'rfpll-observed'\nrequire_nonzero_rfpll_correction = true\nattempts = { count = 3, interval_millis = 500 }\n",
+        "operation = 'rfpll-observed'\nrequire_nonzero_rfpll_correction = true\nafter_millis = 14001\n",
+        "operation = 'rfpll-observed'\nafter_millis = 1000\nattempts = { count = 3, interval_millis = 500 }\n",
+        "operation = { synthetic = { duration_micros = 0, notify_ap = false } }\n",
+    ] {
+        invalid(&udp_rx(&format!("[workload.maintenance]\n{maintenance}")));
+    }
+    valid(&udp_rx(
+        "[workload.maintenance]\noperation = 'rfpll-observed'\nrequire_nonzero_rfpll_correction = true\nafter_millis = 1000\nattempts = { count = 3, interval_millis = 500 }\n",
+    ));
+    invalid(
+        &udp_rx("[workload.maintenance]\noperation = 'calibration'\n")
+            .replace("duration_seconds = 16", "duration_seconds = 11"),
+    );
+}
+
+#[test]
+fn receive_checks_are_published_only_for_their_criteria() {
+    assert!(valid(UDP_RX).plan().checks.is_empty());
+    let checks = valid(&udp_rx(
+        "[workload.criteria]\nminimum_rx_bps = 1000\nmaximum_rx_silence_ms = 50\n",
+    ))
+    .plan()
+    .checks;
+    assert_eq!(
+        checks,
+        [
+            "udp.rx.host-offer-rate",
+            "udp.rx.maximum-silence",
+            "udp.rx.target-rate"
+        ]
+    );
+}
+
+#[test]
+fn link_expectations_require_driver_observation_and_a_matching_phy() {
+    for (link, image) in [
+        ("{ phy = 'ht40', minimum_mcs = 8 }", "correctness"),
+        ("{ phy = 'ht40', minimum_mcs = 7 }", "performance"),
+        ("{ phy = 'he20', guard_interval = 'short' }", "correctness"),
+        (
+            "{ phy = 'ht40', guard_interval = 'short' }",
+            "diagnostic-task-residence",
+        ),
+    ] {
+        invalid(
+            &UDP_RX
+                .replace("{ phy = 'ht40' }", link)
+                .replace("correctness", image),
+        );
+    }
+    valid(&UDP_RX.replace("{ phy = 'ht40' }", "{ phy = 'he20', minimum_mcs = 9 }"));
+}
+
+#[test]
+fn fixture_guard_interval_mutation_requires_a_strict_expectation_and_both_observers() {
+    let strict = UDP_RX.replace(
+        "{ phy = 'ht40' }",
+        "{ phy = 'ht40', guard_interval = 'short' }",
+    );
+    let observers =
+        "[workload.observation]\nopenwrt_tx_monitor = true\nindependent_air_monitor = true\n";
+    let mutated = strict.replace(
+        "payload_bytes = 1472\n",
+        "payload_bytes = 1472\nfixed_fixture_guard_interval = true\n",
+    );
+    valid(&format!("{mutated}{observers}"));
+    invalid(&mutated);
+    invalid(&format!(
+        "{}{observers}",
+        UDP_RX.replace(
+            "payload_bytes = 1472\n",
+            "payload_bytes = 1472\nfixed_fixture_guard_interval = true\n",
+        )
+    ));
+}
+
+#[test]
+fn datapath_diagnostics_are_restricted_to_their_measurements() {
+    let rx = |image: &str, datapath: &str| {
+        format!(
+            "{}[datapath]\n{datapath}\n",
+            UDP_RX
+                .replace("correctness", image)
+                .replace("duration_seconds = 16", "duration_seconds = 12")
+        )
+    };
+    valid(&rx(
+        "diagnostic-task-poll",
+        "rx_checksum = 'assume-valid-diagnostic'",
+    ));
+    invalid(&rx(
+        "correctness",
+        "rx_checksum = 'assume-valid-diagnostic'",
+    ));
+    valid(&rx(
+        "diagnostic-core0-rx-coarse",
+        "rx_continuation = 'adaptive-probe-diagnostic'",
+    ));
+    invalid(&rx(
+        "diagnostic-task-poll",
+        "rx_continuation = 'adaptive-probe-diagnostic'",
+    ));
+    valid(&rx(
+        "diagnostic-core0-rx-cycles",
+        "l1_cache_counters = true",
+    ));
+    invalid(&rx(
+        "diagnostic-core0-rx-coarse",
+        "l1_cache_counters = true",
+    ));
+    invalid(&rx(
+        "diagnostic-task-poll",
+        "tx_buffer = 'psram-direct-dma-diagnostic'",
+    ));
+    invalid(
+        &rx("diagnostic-core0-rx-cycles", "")
+            .replace("duration_seconds = 12", "duration_seconds = 13"),
+    );
+}
+
+#[test]
+fn images_accept_only_their_workloads() {
+    invalid(&UDP_RX.replace("correctness", "bluetooth-dtm"));
+    invalid(&UDP_RX.replace("correctness", "diagnostic-phy-fault"));
+    invalid(&UDP_RX.replace("correctness", "diagnostic-rx-ownership"));
+    valid(
+        "image = 'diagnostic-phy-fault'\n[workload]\nkind = 'phy-watchdog'\nlink = { phy = 'ht40' }\n",
+    );
+    invalid("image = 'correctness'\n[workload]\nkind = 'phy-watchdog'\nlink = { phy = 'ht40' }\n");
+    invalid(
+        "image = 'performance'\n[workload]\nkind = 'station-reconnect'\nlink = { phy = 'ht40' }\ncycles = 1\nboots = 1\ntimeout_seconds = 30\n",
+    );
+}
+
+#[test]
+fn station_control_workloads_publish_distinct_checks() {
+    let loss = valid("image = 'correctness'\n[workload]\nkind = 'station-ap-loss'\nlink = { phy = 'ht40' }\ntimeout_seconds = 60\nrequire_recovery_echo = true\n").plan();
+    assert!(loss.requirements.station_control);
+    assert_eq!(
+        loss.checks,
+        [
+            "wifi.station.ap-loss-reconnected",
+            "wifi.station.control-responsive",
+            "wifi.station.recovered-ip-exchange",
+        ]
+    );
+    let absence = |initially_absent: bool| {
+        valid(&format!("image = 'correctness'\n[workload]\nkind = 'station-ap-absence'\nlink = {{ phy = 'ht40' }}\ntimeout_seconds = 60\ninitially_absent = {initially_absent}\n")).plan().checks
+    };
+    assert!(absence(true).contains(&"wifi.station.initial-retry-exhausted"));
+    assert!(!absence(true).contains(&"wifi.station.recovery-retry-exhausted"));
+    assert!(absence(false).contains(&"wifi.station.recovery-retry-exhausted"));
+}
+
+#[test]
+fn role_operations_own_their_parameters() {
+    let role = |operation: &str| {
+        format!(
+            "image = 'correctness'\n[workload]\nkind = 'role'\nlink = {{ phy = 'ht40' }}\ntimeout_seconds = 60\noperation = {operation}\n"
+        )
+    };
+    valid(&role("{ kind = 'restart', cycles = 3 }"));
+    valid(&role(
+        "{ kind = 'roundtrip', channel = 6, dwell_seconds = 5, snapshot_length = 128 }",
+    ));
+    invalid(&role("{ kind = 'restart', cycles = 11 }"));
+    invalid(&role("{ kind = 'monitor', channel = 14 }"));
+    assert!(toml::from_str::<WifiScenario>(&role("{ kind = 'scan', cycles = 3 }")).is_err());
+}
+
+const AP: &str = "image = 'correctness'\n[workload]\nkind = 'access-point'\ncycles = 1\nboots = 1\ntimeout_seconds = 60\n";
+
+fn ap(fields: &str, traffic: &str) -> String {
+    format!("{AP}{fields}[workload.traffic]\n{traffic}")
+}
+
+const AP_UDP_RX: &str =
+    "kind = 'udp'\nduration_seconds = 10\npayload_bytes = 1472\noffer = { rx_bps = 10000000 }\n";
+
+#[test]
+fn access_point_clients_select_fixture_services() {
+    let laptop = valid(&ap("", "kind = 'none'\n")).plan();
+    assert!(laptop.requirements.laptop_client && !laptop.requirements.openwrt_client);
+    assert!(laptop.requirements.station_network);
+    assert_eq!(
+        laptop.wifi,
+        WifiLabUse {
+            link: None,
+            access_point: true,
+        }
+    );
+    let openwrt = valid(&ap("clients = { kind = 'openwrt' }\n", AP_UDP_RX)).plan();
+    assert!(!openwrt.requirements.laptop_client && openwrt.requirements.openwrt_client);
+    let both = valid(&ap(
+        "clients = { kind = 'laptop-and-openwrt' }\n",
+        "kind = 'none'\n",
+    ))
+    .plan();
+    assert!(both.requirements.laptop_client && both.requirements.openwrt_client);
+    let scheduled = valid(&ap(
+        "link = { phy = 'ht20' }\nscheduler = 'rr-ht-response24'\n",
+        "kind = 'none'\n",
+    ))
+    .plan();
+    assert_eq!(
+        scheduled.settings.ap_scheduler,
+        WifiApScheduler::RrHtResponse24
+    );
+    assert_eq!(scheduled.wifi.link, Some(PhyExpectation::Ht20));
+}
+
+#[test]
+fn access_point_mutations_and_observers_require_their_evidence() {
+    invalid(&ap("security = 'open'\n", "kind = 'none'\n"));
+    invalid(&ap("clients = { kind = 'openwrt' }\n", "kind = 'none'\n"));
+    invalid(&ap("independent_air_monitor = true\n", AP_UDP_RX));
+    invalid(&ap("link = { phy = 'he20' }\n", "kind = 'none'\n"));
+    invalid(&ap("scheduler = 'rr-ht-response24'\n", "kind = 'none'\n"));
+    invalid(&ap(
+        "link = { phy = 'ht40', minimum_mcs = 7 }\n",
+        "kind = 'none'\n",
+    ));
+    let mutated = "link = { phy = 'ht40' }\nclients = { kind = 'openwrt', fixed_ht_mcs = 7 }\n";
+    invalid(&ap(mutated, AP_UDP_RX));
+    let mutated = format!("{mutated}independent_air_monitor = true\n");
+    valid(&ap(&mutated, AP_UDP_RX));
+    invalid(&ap(&mutated, AP_UDP_RX).replace("correctness", "performance"));
+    invalid(&ap(
+        "link = { phy = 'ht40' }\nclients = { kind = 'openwrt', fixed_guard_interval = true }\nindependent_air_monitor = true\n",
+        AP_UDP_RX,
+    ));
+    let observed = valid(&ap(
+        "clients = { kind = 'openwrt' }\nindependent_air_monitor = true\n",
+        AP_UDP_RX,
+    ))
+    .plan();
+    assert!(observed.requirements.laptop_air_monitor);
+}
+
+const MULTI_TX: &str = "kind = 'udp-multi-client'\nduration_seconds = 12\npayload_bytes = 1472\noffer = { tx_bps = 20000000 }\n[workload.traffic.criteria]\nminimum_bps_per_flow = 1000000\n";
+
+#[test]
+fn multi_client_traffic_needs_both_clients_and_consistent_offers() {
+    let both = "clients = { kind = 'laptop-and-openwrt' }\n";
+    valid(&ap(both, MULTI_TX));
+    invalid(&ap("", MULTI_TX));
+    invalid(&ap(
+        both,
+        &MULTI_TX.replace(
+            "minimum_bps_per_flow = 1000000",
+            "minimum_bps_per_flow = 20000001",
+        ),
+    ));
+    invalid(&ap(
+        both,
+        &MULTI_TX.replace(
+            "[workload.traffic.criteria]",
+            "[workload.traffic.secondary]\nrx_bps = 1000000\n[workload.traffic.criteria]",
+        ),
+    ));
+    invalid(&ap(
+        both,
+        &format!("{MULTI_TX}maximum_secondary_tx_interarrival_ms = 100\n"),
+    ));
+    let paced = MULTI_TX.replace(
+        "[workload.traffic.criteria]",
+        "[workload.traffic.secondary]\ntx_bps = 1000000\ntx_pacing_group_datagrams = 4\n[workload.traffic.criteria]",
+    );
+    valid(&ap(
+        both,
+        &format!(
+            "{paced}maximum_secondary_tx_interarrival_ms = 100\nminimum_secondary_tx_datagrams = 8\n"
+        ),
+    ));
+    invalid(&ap(
+        both,
+        &format!("{paced}maximum_flow_skew_percent = 10\n"),
+    ));
+    let probe = format!("{both}probe_load = true\n");
+    valid(&ap(&probe, MULTI_TX).replace("correctness", "diagnostic-task-poll"));
+    invalid(&ap(&probe, MULTI_TX));
+    let requirements = parse(&ap(&probe, MULTI_TX).replace("correctness", "diagnostic-task-poll"))
+        .plan()
+        .requirements;
+    assert!(requirements.probe_load && requirements.openwrt_tx_monitor);
+}
+
+#[test]
+fn paired_station_access_point_uses_the_laptop_client() {
+    let paired = valid("image = 'correctness'\n[workload]\nkind = 'station-access-point'\nlink = { phy = 'ht40' }\ntimeout_seconds = 60\nduration_seconds = 10\ndirection = 'bidirectional'\nrate_bps_per_flow = 10000000\nminimum_bps_per_flow = 1000000\nmaximum_fairness_skew_percent = 50\npayload_bytes = 1472\n").plan();
+    assert!(paired.requirements.laptop_client && !paired.requirements.station_control);
+    let reconnect = valid("image = 'correctness'\n[workload]\nkind = 'station-access-point-reconnect'\nlink = { phy = 'ht40' }\ntimeout_seconds = 60\n").plan();
+    assert!(reconnect.requirements.laptop_client && reconnect.requirements.station_control);
+}
+
+#[test]
+fn a_control_differs_from_its_experiment_only_by_maintenance() {
+    let control = valid(UDP_RX);
+    let experiment = valid(&udp_rx(
+        "[workload.maintenance]\noperation = 'calibration'\n",
+    ));
+    experiment.validate_control(&control).unwrap();
+    assert!(control.validate_control(&experiment).is_err());
+    for changed in [
+        UDP_RX.replace("'ht40'", "'he20'"),
+        UDP_RX.replace("payload_bytes = 1472", "payload_bytes = 512"),
+        udp_rx("[workload.criteria]\nminimum_rx_bps = 1000\n"),
+        udp_rx("[datapath]\nplacement = 'single-core'\n"),
+        UDP_RX.replace("correctness", "diagnostic-rx-delivery"),
+    ] {
+        assert!(
+            experiment.validate_control(&valid(&changed)).is_err(),
+            "{changed}"
+        );
+    }
+    let transmit = valid(&UDP_RX.replace(
+        "offer = { rx_bps = 50000000 }",
+        "offer = { tx_bps = 50000000 }",
+    ));
+    let transmit_experiment = valid(&format!(
+        "{}[workload.maintenance]\noperation = 'calibration'\n",
+        UDP_RX.replace(
+            "offer = { rx_bps = 50000000 }",
+            "offer = { tx_bps = 50000000 }"
+        )
+    ));
+    assert!(transmit_experiment.validate_control(&transmit).is_err());
+}

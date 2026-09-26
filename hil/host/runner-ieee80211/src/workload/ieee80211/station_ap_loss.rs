@@ -11,7 +11,7 @@ use std::{
 use oer_hil_protocol::{StationDisconnectReason, StationLifecycleEvent};
 
 use crate::{Result, fixture::controlled_ap::ControlledAp};
-use hil_core::{scenario::PhyExpectation, session::SerialCapture};
+use hil_core::{lab::link::PhyExpectation, session::SerialCapture};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 

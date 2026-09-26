@@ -2,7 +2,7 @@
 
 use crate::Result;
 use hil_core::{
-    lab::config::StationConfig, lab::config::StationFixtureConfig, scenario::PhyExpectation,
+    lab::config::StationConfig, lab::config::StationFixtureConfig, lab::link::PhyExpectation,
 };
 
 /// Restores the selected AP frontier on every normal or error return.

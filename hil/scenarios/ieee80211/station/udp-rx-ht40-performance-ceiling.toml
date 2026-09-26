@@ -1,24 +1,20 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-rx-ht40-performance-ceiling"
 description = "Observer-free HT40 UDP host-to-station 100 Mbit/s production gate"
 repetitions = 1
-image = "performance"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "performance", "udp", "station", "ht40", "split-core", "ceiling"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "performance"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-rx_rate_bps = 130000000
 payload_bytes = 1472
+offer = { rx_bps = 130000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.criteria]
 minimum_rx_bps = 90000000
 maximum_idle_channel_utilization_255 = 64

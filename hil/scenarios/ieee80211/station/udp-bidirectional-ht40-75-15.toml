@@ -1,26 +1,21 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-bidirectional-ht40-75-15"
 description = "Split-core HT40 75/15 Mbit/s full-duplex characterization"
 repetitions = 3
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["characterization", "udp", "station", "full-duplex", "ht40", "ht40-matrix-90"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "udp"
-direction = "bidirectional"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-rx_rate_bps = 75000000
-tx_rate_bps = 15000000
 payload_bytes = 1200
+offer = { rx_bps = 75000000, tx_bps = 15000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.criteria]
+require_no_beacon_loss = true
 minimum_rx_bps = 67500000
 minimum_tx_bps = 13500000
-require_no_beacon_loss = true

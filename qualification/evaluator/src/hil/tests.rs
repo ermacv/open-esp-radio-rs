@@ -14,17 +14,13 @@ fn current_scenario_catalog_drives_requirement_repetition_bounds() {
     fs::create_dir_all(&catalog_directory).unwrap();
     fs::write(
         catalog_directory.join("ble-direct-test.toml"),
-        r#"schema = 4
+        r#"schema = 5
 id = "ble-direct-test"
 description = "Exercise the current HIL scenario document shape"
 repetitions = 3
-image = "boot-smoke"
-isolation = "reset"
 
-[workload]
+[system]
 kind = "boot-smoke"
-
-[criteria]
 "#,
     )
     .unwrap();
@@ -62,7 +58,7 @@ fn scenario_catalog_rejects_non_current_schema() {
     fs::create_dir_all(&catalog_directory).unwrap();
     fs::write(
         catalog_directory.join("future-scenario.toml"),
-        "schema = 5\nid = \"future-scenario\"\nrepetitions = 1\n",
+        "schema = 6\nid = \"future-scenario\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
     )
     .unwrap();
 
@@ -430,15 +426,9 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
     fs::write(root.join("observer.rs"), b"test observer").unwrap();
     let registry: serde_json::Value =
         serde_json::from_str(include_str!("../../../../hil/schema/observer-inputs.json")).unwrap();
-    let domains: BTreeMap<_, _> = registry["workload_domains"]
-        .as_object()
-        .unwrap()
-        .keys()
-        .map(|k| (k, "common"))
-        .collect();
     fs::write(
         root.join("hil/schema/observer-inputs.json"),
-        serde_json::to_vec(&json!({"schema":3,"data":["observer.rs"],"workload_domains":domains,"timing":registry["timing"],"dependencies":{"common":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
+        serde_json::to_vec(&json!({"schema":4,"data":["observer.rs"],"timing":registry["timing"],"dependencies":{"common":[],"wifi":[],"bluetooth":[],"system":[],"ieee802154":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
             .unwrap(),
     )
     .unwrap();

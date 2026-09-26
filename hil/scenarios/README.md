@@ -1,17 +1,64 @@
 # Versioned scenario catalog
 
-Folders identify the workload domain: system, IEEE 802.15.4, and IEEE 802.11
-station/access-point/roles/monitor. Scenario IDs are stable across folder moves.
-Tags select overlapping diagnostic, characterization and qualification uses;
-they do not assign ownership or make a hardware-readiness claim.
+Folders identify the workload domain: system, IEEE 802.15.4, Bluetooth and
+IEEE 802.11 station/access-point/roles/monitor. Scenario IDs are stable across
+folder moves. Tags select overlapping diagnostic, characterization and
+qualification uses; they do not assign ownership or make a hardware-readiness
+claim.
+
+## Document shape
+
+Schema 5 documents have a common header and exactly one family table:
+
+```toml
+schema = 5
+id = "udp-rx-he20-calibration"
+description = "..."
+repetitions = 3                 # default 1
+transfer = "identical-image"    # default unchanged-functional-contract
+tags = ["he20"]
+control = "udp-rx-he20-ceiling" # controlled experiments only
+
+[wifi]                          # or [bluetooth], [system], [ieee802154]
+image = "correctness"
+
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "he20" }
+duration_seconds = 30
+payload_bytes = 1472
+offer = { rx_bps = 50000000 }
+
+[wifi.workload.maintenance]
+operation = "calibration"
+
+[wifi.workload.criteria]
+minimum_rx_bps = 45000000
+```
+
+The family owns every executable value:
+
+- `[system]`, `[ieee802154]` and `[bluetooth]` are tagged workloads whose kind
+  implies the firmware image. A Bluetooth workload that runs with or without
+  automatic PHY maintenance selects the image through a typed field
+  (`active_maintenance`, `exercise` or `phy_maintenance`).
+- `[wifi]` selects the image and an optional `[wifi.datapath]` initialization
+  (placement, checksum, TX-buffer and RX-continuation diagnostics). Each
+  workload variant carries its own link expectation, observers, fixture
+  mutations and acceptance criteria, so a field that has no meaning for a
+  workload cannot be written. Offers are directional: `rx_bps` flows to the
+  target, `tx_bps` from it, and the present offers define the direction.
+
+Every table rejects unknown fields. Relations that remain between the image,
+the data path and the workload are validated by the family.
 
 ## Controlled experiments
 
-An optional `[comparison]` with `kind = "wifi-phy-maintenance"` names a
-`control` scenario. The experiment is station UDP RX with a PHY maintenance
-operation; its control has no such operation. Link, traffic, image, observers,
-fixture mutations, repetitions and absolute criteria must match. Only identity,
-description, tags and the maintenance operation may differ. Controls cannot
+An optional top-level `control` names the control scenario. The experiment is
+station UDP RX with a `[wifi.workload.maintenance]` operation; its control has
+none. Link, traffic, image, data path, observers, fixture mutations,
+repetitions and absolute criteria must match. Only identity, description, tags
+and the maintenance table may differ. Controls cannot
 themselves name controls. Both catalog consumers validate this relation.
 
 `cargo hil plan` includes the control, without adding qualification prerequisite
@@ -40,8 +87,8 @@ unique throughout the catalog. README.md is the only ignored documentation
 filename. Symlinks (including a symlink catalog root), special files, other
 file extensions and an empty catalog are rejected. The readers never follow
 directory links outside the catalog. Each independently checks its required
-schema and repetition bounds; only the runner interprets executable workload
-and acceptance fields.
+schema, repetition bounds and the single family table; only the runner
+interprets executable workload and acceptance fields.
 
 The runner sorts by scenario ID.
 `run-all` first traverses `ImageClass::ALL`, then the selected
@@ -52,8 +99,8 @@ workload criteria and repetition count.
 Synthetic serialized compatibility inputs live in `hil/tests/fixtures/catalog`.
 They are used by both independent readers and are not part of this catalog.
 
-`criteria.require_post_maintenance_echo = true` is supported only by station UDP
-RX with an explicit maintenance operation. It adds
+`maintenance.require_post_maintenance_echo = true` is supported only by station
+UDP RX. It adds
 `wifi.maintenance.ip-exchange-resumed`: three fresh ICMP exchanges after a
 successful maintenance result and completion of the original UDP session, within
 the same captured station epoch. Missing or partial exchange fails the scenario;

@@ -67,7 +67,7 @@ fn catalog_rejects_ambiguous_or_unsupported_inputs() {
         ("other/alpha-system.toml", ALPHA.to_owned()),
         ("wrong-name.toml", BETA.to_owned()),
         ("hidden.txt", "unexpected file".to_owned()),
-        ("beta-system.toml", BETA.replace("schema = 4", "schema = 5")),
+        ("beta-system.toml", BETA.replace("schema = 5", "schema = 4")),
         (
             "beta-system.toml",
             BETA.replace("repetitions = 3", "repetitions = 0"),

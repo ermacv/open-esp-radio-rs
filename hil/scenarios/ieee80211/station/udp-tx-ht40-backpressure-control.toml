@@ -1,23 +1,20 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-tx-ht40-backpressure-control"
 description = "Paced HT40 TX control for comparison with saturated task-poll diagnostics"
-image = "diagnostic-task-poll"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-poll", "backpressure"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-task-poll"
 
-[workload]
-kind = "udp"
-direction = "tx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-tx_rate_bps = 16000000
 payload_bytes = 1472
+offer = { tx_bps = 16000000 }
 
-[criteria]
+[wifi.workload.criteria]
 exact_delivery = true
 require_no_beacon_loss = true
 minimum_tx_bps = 15000000

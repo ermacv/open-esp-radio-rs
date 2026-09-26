@@ -4,8 +4,10 @@ use super::*;
 use crate::{
     campaign::Plan,
     image::{Artifacts, Integration},
-    scenario::Catalog,
+    scenario::test_family::TestFamily,
 };
+
+type Catalog = crate::scenario::Catalog<TestFamily>;
 use serde_json::{Value, json};
 use std::process::Command;
 
@@ -68,7 +70,7 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
     write(
         root,
         "hil/schema/observer-inputs.json",
-        r#"{"schema":3,"data":[],"timing":{"station-ap-loss":false,"boot-smoke":false},"workload_domains":{"station-ap-loss":"common","boot-smoke":"common"},"dependencies":{"common":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}"#,
+        r#"{"schema":4,"data":[],"timing":{"wifi/station-ap-loss":false,"system/boot-smoke":false},"dependencies":{"common":[],"wifi":[],"system":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}"#,
     );
     write(
         root,
@@ -269,12 +271,12 @@ source-paths = ["phy.rs"]
     run.repository_root = root.into();
     run.target_directory = root.join("target/hil/esp32s31");
     run.bind_source_snapshot(captured.directory()).unwrap();
-    run.record_firmware(scenario.image, &artifacts).unwrap();
+    run.record_firmware(scenario.image(), &artifacts).unwrap();
     let result = ScenarioResult::from_repetitions(
-        scenario.id.clone(),
-        scenario.image,
-        scenario.repetitions,
-        (1..=scenario.repetitions)
+        scenario.id().to_owned(),
+        scenario.image(),
+        scenario.repetitions(),
+        (1..=scenario.repetitions())
             .map(|repetition| RepetitionResult {
                 schema: RUN_SCHEMA,
                 repetition,
@@ -283,7 +285,7 @@ source-paths = ["phy.rs"]
                 duration_millis: 1,
                 artifact_directory: PathBuf::from(format!(
                     "scenarios/{}/repetition-{repetition:03}",
-                    scenario.id
+                    scenario.id()
                 )),
                 attachments: vec![],
                 measurements: vec![],
@@ -339,7 +341,7 @@ source-paths = ["phy.rs"]
     let build = crate::evidence::build_record::publish(
         root,
         captured_b.directory(),
-        scenario.image,
+        scenario.image(),
         &artifacts,
     )
     .unwrap();
@@ -348,16 +350,16 @@ source-paths = ["phy.rs"]
         crate::evidence::build_record::publish(
             root,
             captured_b.directory(),
-            scenario.image,
+            scenario.image(),
             &artifacts
         )
         .unwrap(),
         build
     );
     let build_id = sha256_file(&build.join("integrity.json")).unwrap();
-    let review = json!({"schema":1,"id":"wifi-a-to-b","capability":"wifi","scenario":scenario.id,"property-sha256":decision["property"]["sha256"],"kind":"unchanged-functional-contract","reviewer":"host-contract-test","reason":"BLE-only source change; Wi-Fi and PHY owners unchanged in A and B",
-        "source":{"id":observed["observation_id"],"image":scenario.image.id(),"application-sha256":source_hash},
-        "destination":{"id":build_id,"build-record":build.strip_prefix(root).unwrap(),"image":scenario.image.id(),"application-sha256":sha256_file(&artifacts.application_image).unwrap()},"inputs":inputs,"dependency-roots":["wifi"],"failures":[]});
+    let review = json!({"schema":1,"id":"wifi-a-to-b","capability":"wifi","scenario":scenario.id(),"property-sha256":decision["property"]["sha256"],"kind":"unchanged-functional-contract","reviewer":"host-contract-test","reason":"BLE-only source change; Wi-Fi and PHY owners unchanged in A and B",
+        "source":{"id":observed["observation_id"],"image":scenario.image().id(),"application-sha256":source_hash},
+        "destination":{"id":build_id,"build-record":build.strip_prefix(root).unwrap(),"image":scenario.image().id(),"application-sha256":sha256_file(&artifacts.application_image).unwrap()},"inputs":inputs,"dependency-roots":["wifi"],"failures":[]});
     write(
         root,
         "target/review.toml",

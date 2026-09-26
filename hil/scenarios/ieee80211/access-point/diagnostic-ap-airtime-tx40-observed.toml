@@ -1,31 +1,26 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-ap-airtime-tx40-observed"
 description = "Temporary AP downlink-only control for terminal MAC RX error correlation"
 repetitions = 1
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic-ap-airtime", "diagnostic-ap-rx-hardware"]
 
-[workload]
+[wifi]
+image = "correctness"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 180
-client = "open-wrt"
+clients = { kind = "openwrt" }
+independent_air_monitor = true
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "tx"
 duration_seconds = 10
-tx_rate_bps = 40000000
 payload_bytes = 1472
+offer = { tx_bps = 40000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_tx_bps = 1
-minimum_concurrent_ap_clients = 1
-
-[evidence]
-independent_laptop_air_monitor = true

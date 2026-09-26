@@ -1,31 +1,26 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-single-client-ceiling-tx-diagnostic"
 description = "Diagnostic single-client AP HT40 saturated UDP transmit characterization"
 repetitions = 1
-image = "diagnostic-mac-irq"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "tx"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-mac-irq"
 
-[workload]
+[wifi.workload]
 kind = "access-point"
+link = { phy = "ht40" }
 cycles = 2
 boots = 1
 timeout_seconds = 120
-client = "open-wrt"
+clients = { kind = "openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "tx"
 duration_seconds = 16
-tx_rate_bps = 130000000
 payload_bytes = 1472
+offer = { tx_bps = 130000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_tx_bps = 1
-minimum_concurrent_ap_clients = 1

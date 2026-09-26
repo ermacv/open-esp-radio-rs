@@ -1,27 +1,24 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-station-phy-calibration-bidirectional"
 description = "Explicit common and Wi-Fi calibration within a preserved station epoch during bidirectional UDP delivery"
 repetitions = 1
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "station", "pause", "udp", "ht40"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "udp"
-direction = "bidirectional"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 12
-rx_rate_bps = 65000000
-tx_rate_bps = 65000000
 payload_bytes = 1200
-station_pause = "calibration"
+offer = { rx_bps = 65000000, tx_bps = 65000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.maintenance]
+operation = "calibration"
+
+[wifi.workload.criteria]
+require_no_beacon_loss = true
 minimum_rx_bps = 10000000
 minimum_tx_bps = 10000000
-require_no_beacon_loss = true

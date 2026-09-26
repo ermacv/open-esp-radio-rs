@@ -1,28 +1,25 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-single-client-load-rx"
 description = "Observer-free sustained single-client AP inbound performance baseline"
 repetitions = 1
-image = "performance"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "rx"]
 
-[workload]
+[wifi]
+image = "performance"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 180
-client = "open-wrt"
+clients = { kind = "openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "rx"
 duration_seconds = 60
-rx_rate_bps = 16000000
 payload_bytes = 1400
+offer = { rx_bps = 16000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_rx_bps = 15200000
-minimum_concurrent_ap_clients = 1

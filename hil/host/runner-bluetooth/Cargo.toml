@@ -23,6 +23,7 @@ async-io = "2.6"
 futures-lite = "2.6"
 
 [dev-dependencies]
+toml = "1.1"
 hil-core = { package = "oer-hil-runner-core", path = "../runner-core", features = ["test-support"] }
 
 [lints]

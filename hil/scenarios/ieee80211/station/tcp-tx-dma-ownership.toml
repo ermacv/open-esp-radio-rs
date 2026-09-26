@@ -1,22 +1,19 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "tcp-tx-dma-ownership"
 description = "TCP transmit with receive-side DMA lease timing for peer traffic"
-image = "diagnostic-rx-ownership"
 repetitions = 3
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "tcp", "station", "memory"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-rx-ownership"
 
-[workload]
-kind = "tcp"
-direction = "tx"
+[wifi.workload]
+kind = "station-tcp"
+link = { phy = "ht40" }
 duration_seconds = 16
-tx_rate_bps = 120000000
 chunk_bytes = 32768
+offer = { tx_bps = 120000000 }
 
-[criteria]
+[wifi.workload.criteria]
 minimum_tx_bps = 65000000

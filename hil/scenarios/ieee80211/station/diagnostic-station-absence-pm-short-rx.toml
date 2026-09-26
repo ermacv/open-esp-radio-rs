@@ -1,25 +1,23 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-station-absence-pm-short-rx"
 description = "RX diagnostic isolation: 2 ms acknowledged PM absence"
 repetitions = 1
-image = "diagnostic-rx-delivery"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "station", "pause", "udp", "ht40"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-rx-delivery"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 12
-rx_rate_bps = 65000000
 payload_bytes = 1200
-station_pause = { synthetic = { duration_micros = 2000, notify_ap = true } }
+offer = { rx_bps = 65000000 }
 
-[criteria]
-exact_delivery = false
-minimum_rx_bps = 10000000
+[wifi.workload.maintenance]
+operation = { synthetic = { duration_micros = 2000, notify_ap = true } }
+
+[wifi.workload.criteria]
 require_no_beacon_loss = true
+minimum_rx_bps = 10000000

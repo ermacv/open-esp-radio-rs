@@ -1,36 +1,28 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-ap-airtime-rx45-tx40-observed"
 description = "Temporary AP asymmetric duplex control with 45 Mbit/s uplink and 40 Mbit/s downlink"
 repetitions = 1
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic-ap-airtime-sweep", "diagnostic-ap-rx-disposition"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
+[wifi.workload]
 kind = "access-point"
+link = { phy = "ht40" }
 cycles = 2
 boots = 1
 timeout_seconds = 180
-client = "open-wrt"
+clients = { kind = "openwrt" }
+independent_air_monitor = true
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "bidirectional"
 duration_seconds = 10
-rx_rate_bps = 45000000
-tx_rate_bps = 40000000
 payload_bytes = 1472
+offer = { rx_bps = 45000000, tx_bps = 40000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_rx_bps = 1
 minimum_tx_bps = 1
-minimum_concurrent_ap_clients = 1
-
-[evidence]
-independent_laptop_air_monitor = true

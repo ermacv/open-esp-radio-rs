@@ -423,13 +423,13 @@ fn ap_rate_gate_checks_combined_bidirectional_throughput() {
         tx_units: 0,
         elapsed_micros: 1_000_000,
     };
-    let mut criteria = Criteria {
+    let mut criteria = RateFloors {
         minimum_combined_bps: Some(32_000_000),
-        ..Criteria::default()
+        ..RateFloors::default()
     };
-    assert!(validate_rate_criteria(&report, &criteria).is_ok());
+    assert!(validate_rate_criteria(&report, criteria).is_ok());
     criteria.minimum_combined_bps = Some(32_000_001);
-    assert!(validate_rate_criteria(&report, &criteria).is_err());
+    assert!(validate_rate_criteria(&report, criteria).is_err());
 }
 
 #[test]
@@ -454,10 +454,16 @@ fn sparse_secondary_tx_requires_enough_packets_and_bounded_interarrival() {
         host_tx_maximum_interarrival_us: Some(maximum_interarrival_us),
         host_tx_sequence_after_maximum_interarrival: Some(2),
     };
-    let criteria = Criteria {
+    let criteria = crate::scenario::access_point::MultiClientCriteria {
+        exact_delivery: false,
+        minimum_rx_bps: None,
+        minimum_tx_bps: None,
+        minimum_combined_bps: None,
+        minimum_bps_per_flow: 0,
+        maximum_flow_skew_percent: None,
+        minimum_host_offer_percent: None,
         minimum_secondary_tx_datagrams: Some(8),
         maximum_secondary_tx_interarrival_ms: Some(5_500),
-        ..Criteria::default()
     };
 
     assert!(
@@ -495,22 +501,18 @@ fn ap_ht40_mcs7_gate_is_directional_and_fails_closed() {
     let link = Some(LinkExpectation {
         phy: PhyExpectation::Ht40,
         minimum_mcs: Some(7),
-        guard_interval: hil_core::scenario::HtGuardIntervalExpectation::Any,
+        guard_interval: hil_core::lab::link::HtGuardIntervalExpectation::Any,
     });
-    let rx = AccessPointTraffic::Udp {
-        direction: Direction::Rx,
-        duration_seconds: 1,
-        rx_rate_bps: Some(1),
-        tx_rate_bps: None,
-        payload_bytes: 1,
+    let udp = |rx_bps, tx_bps| {
+        AccessPointTraffic::Udp(crate::scenario::access_point::AccessPointUdp {
+            duration_seconds: 1,
+            payload_bytes: 1,
+            offer: crate::scenario::Offer { rx_bps, tx_bps },
+            criteria: Default::default(),
+        })
     };
-    let tx = AccessPointTraffic::Udp {
-        direction: Direction::Tx,
-        duration_seconds: 1,
-        rx_rate_bps: None,
-        tx_rate_bps: Some(1),
-        payload_bytes: 1,
-    };
+    let rx = udp(Some(1), None);
+    let tx = udp(None, Some(1));
     let mut observed = oer_hil_protocol::WifiAccessPointEvidence::default();
     assert!(validate_mcs_evidence(&rx, link, &observed).is_err());
     observed.rx_ht_data_frames = 1;
@@ -529,13 +531,15 @@ fn ap_guard_interval_gate_tolerates_only_epoch_warmup_frames() {
         minimum_mcs: Some(7),
         guard_interval: HtGuardIntervalExpectation::Short,
     });
-    let rx = AccessPointTraffic::Udp {
-        direction: Direction::Rx,
+    let rx = AccessPointTraffic::Udp(crate::scenario::access_point::AccessPointUdp {
         duration_seconds: 1,
-        rx_rate_bps: Some(1),
-        tx_rate_bps: None,
         payload_bytes: 1,
-    };
+        offer: crate::scenario::Offer {
+            rx_bps: Some(1),
+            tx_bps: None,
+        },
+        criteria: Default::default(),
+    });
     let mut observed = oer_hil_protocol::WifiAccessPointEvidence {
         rx_ht_data_frames: 100,
         rx_ht40_short_gi_frames: 99,

@@ -4,7 +4,7 @@
 
 use super::controlled_ap::ControlledAp;
 use crate::Result;
-use hil_core::{lab::config::LabConfig, lab::requirements::Requirements, scenario::Scenario};
+use hil_core::{lab::config::LabConfig, scenario::Plan};
 use std::{
     cell::{RefCell, RefMut},
     path::Path,
@@ -15,10 +15,10 @@ pub struct Prepared {
 }
 
 impl Prepared {
-    pub fn start(lab: &LabConfig, scenario: &Scenario, output: &Path) -> Result<Self> {
-        let required = Requirements::for_scenario(scenario);
+    pub fn start(lab: &LabConfig, plan: &Plan, output: &Path) -> Result<Self> {
+        let required = plan.requirements;
         let ap = if required.station_network {
-            let phy = lab.fixture_phy(scenario);
+            let phy = lab.fixture_phy(plan.wifi);
             let mut ap = ControlledAp::start(&lab.station, &lab.station_fixture, phy)
                 .map_err(super::Error::context)?;
             // A fresh selected-radio epoch is part of the multi-client fixture.

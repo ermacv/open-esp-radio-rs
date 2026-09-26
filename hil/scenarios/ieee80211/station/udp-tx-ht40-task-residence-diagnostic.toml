@@ -1,22 +1,15 @@
-schema = 4
+schema = 5
 id = "udp-tx-ht40-task-residence-diagnostic"
 description = "Split radio/network HT40 saturated station TX executor-residence diagnostic without driver observers"
 repetitions = 1
-image = "diagnostic-task-residence"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-residence"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-task-residence"
 
-[workload]
-kind = "udp"
-direction = "tx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-tx_rate_bps = 130000000
 payload_bytes = 1472
-
-[criteria]
-exact_delivery = false
-require_no_beacon_loss = false
+offer = { tx_bps = 130000000 }

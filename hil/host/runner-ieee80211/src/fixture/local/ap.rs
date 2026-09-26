@@ -6,7 +6,7 @@ use crate::fixture::{
     local::wpa_control::{Control, field},
 };
 use hil_core::{
-    lab::config::LocalLinuxConfig, lab::config::StationConfig, scenario::PhyExpectation,
+    lab::config::LocalLinuxConfig, lab::config::StationConfig, lab::link::PhyExpectation,
 };
 use oer_process::CommandExt as _;
 use std::{

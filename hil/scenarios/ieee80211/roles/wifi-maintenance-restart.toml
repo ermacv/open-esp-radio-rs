@@ -1,19 +1,14 @@
-schema = 4
+schema = 5
 id = "wifi-maintenance-restart"
 description = "Connected common/Wi-Fi calibration, continued same-link UDP, cold restart and new-generation bidirectional UDP recovery"
 repetitions = 3
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["wifi", "lifecycle", "phy", "restart"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "wifi-role"
-operation = "maintenance-restart"
+[wifi.workload]
+kind = "role"
+link = { phy = "ht40" }
 timeout_seconds = 90
-cycles = 3
-
-[criteria]
+operation = { kind = "maintenance-restart", cycles = 3 }

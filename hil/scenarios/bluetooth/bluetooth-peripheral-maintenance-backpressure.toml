@@ -1,11 +1,9 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-maintenance-backpressure"
 description = "Active PHY restoration on a live ACL connection, then held Host credit through supervision expiry, exact credit drain, same-HCI reconnect and physical cold retirement"
-image = "bluetooth-phy-maintenance"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "backpressure", "phy-maintenance", "lifecycle"]
 
-[workload]
-kind = "bluetooth-acl-backpressure"
+[bluetooth]
+kind = "acl-backpressure"
 active_maintenance = true

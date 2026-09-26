@@ -5,7 +5,7 @@
 //! Closing an attempt neither closes the campaign nor releases fixture leases.
 
 use super::*;
-use crate::scenario::Scenario;
+use crate::scenario::{Header, Scenario, ScenarioFamily};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
@@ -17,22 +17,22 @@ struct AttemptSeal {
 }
 
 impl RunSession {
-    pub fn seal_scenario(&mut self, scenario: &Scenario, result: &ScenarioResult) -> Result<()> {
-        if result.scenario != scenario.id
-            || result.image != scenario.image
-            || result.required_repetitions != scenario.repetitions
-            || scenario.id.is_empty()
-            || !scenario
-                .id
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    pub fn seal_scenario<F: ScenarioFamily>(
+        &mut self,
+        scenario: &Scenario<F>,
+        result: &ScenarioResult,
+    ) -> Result<()> {
+        let image = scenario.image();
+        if result.scenario != scenario.id()
+            || result.image != image
+            || result.required_repetitions != scenario.repetitions()
         {
             return Err("attempt result does not match its selected scenario".into());
         }
         let seal_path = self
             .directory
             .join("attempts")
-            .join(format!("{}.json", scenario.id));
+            .join(format!("{}.json", scenario.id()));
         if seal_path.try_exists()? {
             return Err("a sealed scenario attempt cannot be replaced".into());
         }
@@ -42,9 +42,7 @@ impl RunSession {
         manifest.duration_millis = Some(duration_millis(self.started.elapsed()));
         // Other images may be prepared later. They are not this experiment's
         // subject, and their mutable manifest must not invalidate this seal.
-        manifest
-            .firmware
-            .retain(|artifact| artifact.image == scenario.image);
+        manifest.firmware.retain(|artifact| artifact.image == image);
         let suite = SuiteResult {
             schema: RUN_SCHEMA,
             run_id: manifest.run_id.clone(),
@@ -61,10 +59,10 @@ impl RunSession {
             scenarios: vec![result.clone()],
         };
         validation::validate_suite(&suite, &manifest)?;
-        let output = self.scenario_directory(&scenario.id);
+        let output = self.scenario_directory(scenario.id());
         atomic_json(&output.join("scenario.json"), scenario)?;
         atomic_json(&output.join("result.json"), result)?;
-        let files = material_files(&self.directory, &manifest, &scenario.id, scenario.image)?;
+        let files = material_files(&self.directory, &manifest, scenario.id(), image)?;
         atomic_json(
             &seal_path,
             &AttemptSeal {
@@ -219,12 +217,11 @@ pub fn completed_attempts(run: &Path, parent: &RunManifest) -> Result<Option<Vec
             }
         }
         let output = run.join("scenarios").join(&result.scenario);
-        let scenario: Scenario = serde_json::from_slice(&fs::read(output.join("scenario.json"))?)?;
+        let scenario = Header::from_snapshot(&fs::read(output.join("scenario.json"))?)?;
         let recorded: ScenarioResult =
             serde_json::from_slice(&fs::read(output.join("result.json"))?)?;
         if &recorded != result
             || scenario.id != result.scenario
-            || scenario.image != result.image
             || scenario.repetitions != result.required_repetitions
             || seal
                 .manifest

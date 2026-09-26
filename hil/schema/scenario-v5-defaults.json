@@ -1,0 +1,124 @@
+{
+  "repetitions": 1,
+  "wifi": {
+    "datapath": {
+      "placement": "split-radio-network",
+      "rx_checksum": "software",
+      "tx_udp_checksum": "software",
+      "tx_buffer": "owned-sram-promotion",
+      "rx_continuation": "immediate-software-probe",
+      "l1_cache_counters": false
+    },
+    "workload": {
+      "$kind": {
+        "station-udp": {
+          "link": { "guard_interval": "any" },
+          "?maintenance": {
+            "require_nonzero_rfpll_correction": false,
+            "require_post_maintenance_echo": false
+          },
+          "fixed_fixture_guard_interval": false,
+          "observation": {
+            "openwrt_tx_monitor": false,
+            "independent_air_monitor": false
+          },
+          "criteria": {
+            "exact_delivery": false,
+            "require_no_beacon_loss": false
+          }
+        },
+        "station-tcp": {
+          "link": { "guard_interval": "any" },
+          "criteria": { "require_no_beacon_loss": false }
+        },
+        "station-icmp": {
+          "link": { "guard_interval": "any" },
+          "criteria": { "maximum_lost": 0, "require_no_beacon_loss": false }
+        },
+        "station-reconnect": {
+          "link": { "guard_interval": "any" },
+          "criteria": { "require_no_beacon_loss": false }
+        },
+        "station-ap-loss": {
+          "link": { "guard_interval": "any" },
+          "require_recovery_echo": false
+        },
+        "station-ap-absence": {
+          "link": { "guard_interval": "any" },
+          "initially_absent": false
+        },
+        "role": {
+          "link": { "guard_interval": "any" },
+          "operation": {
+            "$kind": {
+              "restart": { "cycles": 1 },
+              "maintenance-restart": { "cycles": 1 },
+              "retained": { "cycles": 1 },
+              "monitor": { "dwell_seconds": 3, "snapshot_length": 256 },
+              "station-access-point": { "dwell_seconds": 3 },
+              "roundtrip": { "dwell_seconds": 3, "snapshot_length": 256 }
+            }
+          }
+        },
+        "phy-watchdog": {
+          "link": { "guard_interval": "any" }
+        },
+        "monitor-capture": {
+          "link": { "guard_interval": "any" }
+        },
+        "access-point": {
+          "?link": { "guard_interval": "any" },
+          "security": "wpa2-personal",
+          "scheduler": "disabled",
+          "clients": {
+            "kind": "laptop",
+            "$kind": { "openwrt": { "fixed_guard_interval": false } }
+          },
+          "probe_load": false,
+          "independent_air_monitor": false,
+          "traffic": {
+            "$kind": {
+              "icmp": { "maximum_lost": 0 },
+              "udp": { "criteria": { "exact_delivery": false } },
+              "udp-multi-client": {
+                "secondary": {},
+                "criteria": { "exact_delivery": false }
+              },
+              "tcp": { "criteria": {} }
+            }
+          }
+        },
+        "station-access-point": {
+          "link": { "guard_interval": "any" },
+          "independent_air_monitor": false
+        },
+        "station-access-point-reconnect": {
+          "link": { "guard_interval": "any" }
+        }
+      }
+    }
+  },
+  "bluetooth": {
+    "$kind": {
+      "secure-gatt": {
+        "shutdown": "bond-load-failure",
+        "irq_sampling": "every-snapshot"
+      },
+      "acl-backpressure": { "active_maintenance": false },
+      "encrypted-acl": { "exercise": "none" },
+      "security-failure": { "read_version_before_disconnect": false },
+      "peripheral": {
+        "termination": "peer-reset",
+        "retire_after": false,
+        "restart_between_connections": false,
+        "phy_maintenance": { "kind": "none" }
+      }
+    }
+  },
+  "system": {
+    "$kind": {
+      "memory-benchmark": { "batch_sizes": [1] }
+    }
+  },
+  "ieee802154": {}
+}

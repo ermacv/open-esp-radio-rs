@@ -1,12 +1,10 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-acl-calibration"
 description = "Four simultaneous HCI ACL credits and repeated full PHY calibration at 7.5 ms; empty peer ACK recovery, exact payload/credit checks, threshold restoration and cold retirement"
-image = "bluetooth-phy-maintenance"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "phy-maintenance", "calibration"]
 
-[workload]
-kind = "bluetooth-acl-calibration"
+[bluetooth]
+kind = "acl-calibration"
 duration_millis = 15000
 minimum_calibrations = 8

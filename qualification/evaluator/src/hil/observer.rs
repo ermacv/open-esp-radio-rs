@@ -310,12 +310,11 @@ pub(super) fn compatible(
         .map(|(run, p)| read_json::<Value>(&run.join(&p.path)))
         .transpose()?;
     let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json"))?;
-    let kind = document
+    let workload = document
         .as_ref()
-        .and_then(|d| d.pointer("/workload/kind"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let dependencies = build_inputs::dependencies(&registry, kind)?;
+        .and_then(build_inputs::workload)
+        .unwrap_or_default();
+    let dependencies = build_inputs::dependencies(&registry, &workload)?;
     let Some(current) = current.resolved.as_ref() else {
         return Ok(false);
     };
@@ -487,16 +486,15 @@ pub(super) fn timing_sensitive(
     if !requirement.checks.is_empty() {
         return Ok(false);
     }
-    let Some(kind) = catalog
+    let Some(workload) = catalog
         .definitions
         .get(&requirement.scenario)
-        .and_then(|d| d.pointer("/workload/kind"))
-        .and_then(Value::as_str)
+        .and_then(build_inputs::workload)
     else {
         return Ok(false);
     };
     let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json"))?;
-    registry["timing"][kind]
+    registry["timing"][workload.as_str()]
         .as_bool()
         .ok_or_else(|| "observer timing policy missing".into())
 }
@@ -537,11 +535,8 @@ mod tests {
             .collect::<Vec<_>>()
         };
         for document in catalog.definitions.values() {
-            let kind = document
-                .pointer("/workload/kind")
-                .unwrap()
-                .as_str()
-                .unwrap();
+            let workload = build_inputs::workload(document).unwrap();
+            let kind = workload.as_str();
             let packages = family(kind);
             assert_eq!(
                 packages.len(),
@@ -554,9 +549,9 @@ mod tests {
                     .contains("oer-hil-runner-core")
             );
         }
-        assert_eq!(family("udp"), ["oer-hil-runner-ieee80211"]);
-        assert_eq!(family("bluetooth-dtm"), ["oer-hil-runner-bluetooth"]);
-        assert_eq!(family("boot-smoke"), ["oer-hil-runner-system"]);
+        assert_eq!(family("wifi/station-udp"), ["oer-hil-runner-ieee80211"]);
+        assert_eq!(family("bluetooth/dtm"), ["oer-hil-runner-bluetooth"]);
+        assert_eq!(family("system/boot-smoke"), ["oer-hil-runner-system"]);
         assert!(!data_inputs(&root).unwrap().is_empty());
     }
 
@@ -575,7 +570,7 @@ mod tests {
             &prefixes
         ));
         assert!(selected(
-            Path::new("hil/schema/scenario-v4-defaults.json"),
+            Path::new("hil/schema/scenario-v5-defaults.json"),
             &prefixes
         ));
         assert!(!selected(

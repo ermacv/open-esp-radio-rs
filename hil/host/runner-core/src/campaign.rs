@@ -14,8 +14,10 @@ use crate::{
     Result,
     image::{ImageClass, Integration},
     lab::requirements::Requirements,
-    scenario::{Catalog, Scenario},
+    scenario::{Catalog, Scenario, ScenarioFamily},
 };
+
+const CAMPAIGN_SCHEMA: u16 = 6;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
@@ -52,7 +54,7 @@ pub struct Plan {
 }
 
 // Descriptive metadata is preserved in run provenance, but is not executed.
-fn procedure(scenario: &Scenario) -> Result<serde_json::Value> {
+fn procedure<F: ScenarioFamily>(scenario: &Scenario<F>) -> Result<serde_json::Value> {
     Ok(crate::scenario::identity::normalize(&serde_json::to_value(
         scenario,
     )?))
@@ -60,17 +62,17 @@ fn procedure(scenario: &Scenario) -> Result<serde_json::Value> {
 
 impl Plan {
     #[cfg(any(test, feature = "test-support"))]
-    pub fn create(
-        catalog: &Catalog,
-        requested: &[&Scenario],
+    pub fn create<F: ScenarioFamily>(
+        catalog: &Catalog<F>,
+        requested: &[&Scenario<F>],
         network: Integration,
     ) -> Result<Self> {
         Self::create_for_checks(catalog, requested, network, &[])
     }
 
-    pub fn create_for_checks(
-        catalog: &Catalog,
-        candidates: &[&Scenario],
+    pub fn create_for_checks<F: ScenarioFamily>(
+        catalog: &Catalog<F>,
+        candidates: &[&Scenario<F>],
         network: Integration,
         checks: &[String],
     ) -> Result<Self> {
@@ -83,7 +85,7 @@ impl Plan {
             .iter()
             .copied()
             .filter(|scenario| {
-                let supported = scenario.supported_checks();
+                let supported = scenario.plan().checks;
                 checks
                     .iter()
                     .all(|check| supported.contains(&check.as_str()))
@@ -94,21 +96,20 @@ impl Plan {
         }
         let ids = requested
             .iter()
-            .map(|s| s.id.clone())
+            .map(|s| s.id().to_owned())
             .collect::<BTreeSet<_>>();
         if ids.len() != requested.len() {
             return Err("campaign repeats a requested scenario".into());
         }
-        let mut ordered = Vec::<&Scenario>::new();
+        let mut ordered = Vec::<&Scenario<F>>::new();
         let mut seen = BTreeSet::new();
         // Only execution controls expand selection. Product prerequisites do
         // not belong to this graph, and never trigger a baseline suite here.
         for id in &ids {
             let scenario = catalog.get(id)?;
-            if let Some(comparison) = &scenario.comparison {
-                comparison.validate(scenario, catalog)?;
-                let control = catalog.get(comparison.control())?;
-                if seen.insert(control.id.clone()) {
+            if let Some(control) = scenario.control() {
+                let control = catalog.get(control)?;
+                if seen.insert(control.id().to_owned()) {
                     ordered.push(control);
                 }
             }
@@ -120,13 +121,14 @@ impl Plan {
         // their experiment's image and retain their before-experiment order.
         let ordered = ImageClass::ALL
             .into_iter()
-            .flat_map(|image| ordered.iter().copied().filter(move |s| s.image == image))
+            .flat_map(|image| ordered.iter().copied().filter(move |s| s.image() == image))
             .collect::<Vec<_>>();
         let scenarios = ordered
             .iter()
             .map(|scenario| {
                 let mut reasons = Vec::new();
-                if ids.contains(&scenario.id) {
+                let plan = scenario.plan();
+                if ids.contains(scenario.id()) {
                     reasons.push(Reason::Requested);
                     if !checks.is_empty() {
                         reasons.push(Reason::ProvidesChecks {
@@ -136,49 +138,44 @@ impl Plan {
                 }
                 for id in &ids {
                     let experiment = catalog.get(id)?;
-                    if experiment
-                        .comparison
-                        .as_ref()
-                        .is_some_and(|c| c.control() == scenario.id)
-                    {
+                    if experiment.control() == Some(scenario.id()) {
                         reasons.push(Reason::ControlFor {
                             experiment: id.clone(),
                         });
                     }
                 }
                 Ok(Entry {
-                    scenario: scenario.id.clone(),
+                    scenario: scenario.id().to_owned(),
                     scenario_sha256: format!(
                         "{:x}",
                         Sha256::digest(serde_json::to_vec(&procedure(scenario)?)?)
                     ),
-                    image: scenario.image,
-                    repetitions: scenario.repetitions,
-                    requirements: Requirements::for_scenario(scenario),
+                    image: plan.image,
+                    repetitions: scenario.repetitions(),
+                    requirements: plan.requirements,
                     reasons,
-                    supported_checks: scenario
-                        .supported_checks()
-                        .into_iter()
-                        .map(str::to_owned)
-                        .collect(),
+                    supported_checks: plan.checks.into_iter().map(str::to_owned).collect(),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
-            schema: 5,
+            schema: CAMPAIGN_SCHEMA,
             qualification: None,
             network: network.id().to_owned(),
             requested: ids.into_iter().collect(),
             requested_checks: checks,
-            requirements: Requirements::union(&ordered),
+            requirements: Requirements::union(ordered.iter().map(|s| s.requirements())),
             scenarios,
         })
     }
 
     /// Reconstruct the plan before acquiring fixture leases or touching a DUT.
     /// Editing the output cannot silently change its repetitions or workload.
-    pub fn resolve<'a>(&self, catalog: &'a Catalog) -> Result<(Vec<&'a Scenario>, Integration)> {
-        if self.schema != 5 {
+    pub fn resolve<'a, F: ScenarioFamily>(
+        &self,
+        catalog: &'a Catalog<F>,
+    ) -> Result<(Vec<&'a Scenario<F>>, Integration)> {
+        if self.schema != CAMPAIGN_SCHEMA {
             return Err("unsupported executable campaign schema".into());
         }
         let network: Integration = self.network.parse()?;
@@ -210,168 +207,4 @@ impl Plan {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    pub(super) fn catalog() -> Catalog {
-        Catalog::load(&crate::repository_root().unwrap().join("hil/scenarios")).unwrap()
-    }
-
-    const EXPERIMENT: &str = "diagnostic-station-phy-combined-high-load-delivery-rx";
-
-    #[test]
-    fn selecting_integration_adds_only_its_control_not_wifi_prerequisites() {
-        let catalog = catalog();
-        let experiment = catalog.get(EXPERIMENT).unwrap();
-        let plan = Plan::create(&catalog, &[experiment], Integration::UpstreamXarxa).unwrap();
-        let (selected, _) = plan.resolve(&catalog).unwrap();
-        assert_eq!(selected.len(), 2);
-        assert_eq!(
-            selected[0].id,
-            experiment.comparison.as_ref().unwrap().control()
-        );
-        assert_eq!(selected[1].id, EXPERIMENT);
-        assert_eq!(
-            plan.scenarios[0].reasons,
-            vec![Reason::ControlFor {
-                experiment: EXPERIMENT.into()
-            }]
-        );
-        let roundtrip: Plan = serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
-        assert_eq!(plan, roundtrip);
-    }
-
-    #[test]
-    fn selecting_control_directly_does_not_duplicate_it() {
-        let catalog = catalog();
-        let experiment = catalog.get(EXPERIMENT).unwrap();
-        let control = catalog
-            .get(experiment.comparison.as_ref().unwrap().control())
-            .unwrap();
-        let plan =
-            Plan::create(&catalog, &[control, experiment], Integration::UpstreamXarxa).unwrap();
-        assert_eq!(plan.scenarios.len(), 2);
-        assert_eq!(plan.scenarios[0].reasons.len(), 2);
-        assert!(Plan::create(&catalog, &[control, control], Integration::UpstreamXarxa).is_err());
-    }
-
-    #[test]
-    fn he20_integration_uses_its_own_baseline_without_ht40_evidence() {
-        let catalog = catalog();
-        let plan = Plan::create(
-            &catalog,
-            &[catalog.get("udp-rx-he20-calibration").unwrap()],
-            Integration::UpstreamXarxa,
-        )
-        .unwrap();
-        let (selected, _) = plan.resolve(&catalog).unwrap();
-        assert_eq!(
-            selected
-                .iter()
-                .map(|scenario| scenario.id.as_str())
-                .collect::<Vec<_>>(),
-            ["udp-rx-he20-ceiling", "udp-rx-he20-calibration"]
-        );
-        assert!(selected.iter().all(|scenario| scenario.link.unwrap().phy == crate::scenario::PhyExpectation::He20));
-    }
-
-    #[test]
-    fn named_check_selection_is_scoped_and_does_not_promote_controls() {
-        let catalog = catalog();
-        let selected = catalog
-            .all()
-            .iter()
-            .filter(|scenario| scenario.tags.iter().any(|tag| tag == "he20"))
-            .collect::<Vec<_>>();
-        let plan = Plan::create_for_checks(
-            &catalog,
-            &selected,
-            Integration::UpstreamXarxa,
-            &["wifi.maintenance.same-link".into()],
-        )
-        .unwrap();
-        let (resolved, _) = plan.resolve(&catalog).unwrap();
-        assert_eq!(resolved.len(), 2);
-        assert_eq!(plan.requested, ["udp-rx-he20-calibration"]);
-        assert!(
-            !plan.scenarios[0]
-                .supported_checks
-                .contains(&"wifi.maintenance.same-link".into())
-        );
-        assert!(
-            matches!(&plan.scenarios[1].reasons[1], Reason::ProvidesChecks { checks } if checks == &["wifi.maintenance.same-link"])
-        );
-        assert!(
-            Plan::create_for_checks(
-                &catalog,
-                &selected,
-                Integration::UpstreamXarxa,
-                &["not-a-check".into()]
-            )
-            .is_err()
-        );
-        assert!(
-            Plan::create_for_checks(
-                &catalog,
-                &selected,
-                Integration::UpstreamXarxa,
-                &[
-                    "wifi.maintenance.same-link".into(),
-                    "udp.rx.maximum-silence".into()
-                ]
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn ordinary_selection_does_not_expand_and_modified_plans_fail_closed() {
-        let catalog = catalog();
-        let plan = Plan::create(
-            &catalog,
-            &[catalog.get("boot-smoke").unwrap()],
-            Integration::UpstreamXarxa,
-        )
-        .unwrap();
-        assert_eq!(plan.scenarios.len(), 1);
-        let mut changed = plan.clone();
-        changed.scenarios[0].repetitions += 1;
-        assert!(changed.resolve(&catalog).is_err());
-        let mut changed = plan.clone();
-        changed.scenarios[0].scenario_sha256 = "00".repeat(32);
-        assert!(changed.resolve(&catalog).is_err());
-        let mut changed = plan.clone();
-        changed.schema = 1;
-        assert!(changed.resolve(&catalog).is_err());
-        let mut changed = plan;
-        changed.scenarios.clear();
-        assert!(changed.resolve(&catalog).is_err());
-    }
-}
-
-#[cfg(test)]
-#[test]
-fn procedure_identity_ignores_annotations_but_tracks_execution() {
-    let catalog = tests::catalog();
-    let mut scenario = catalog.get("boot-smoke").unwrap().clone();
-    let original = procedure(&scenario).unwrap();
-    scenario.description.push_str(" Clarified wording.");
-    scenario.tags.push("documentation".into());
-    assert_eq!(original, procedure(&scenario).unwrap());
-    let plan = Plan::create(
-        &catalog,
-        &[catalog.get("boot-smoke").unwrap()],
-        Integration::UpstreamXarxa,
-    )
-    .unwrap();
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("boot-smoke.toml");
-    std::fs::write(&path, toml::to_string(&scenario).unwrap()).unwrap();
-    let annotated = Catalog::load(directory.path()).unwrap();
-    assert!(plan.resolve(&annotated).is_ok());
-    scenario.repetitions += 1;
-    std::fs::write(&path, toml::to_string(&scenario).unwrap()).unwrap();
-    let changed = Catalog::load(directory.path()).unwrap();
-    assert!(plan.resolve(&changed).is_err());
-    assert_ne!(original, procedure(&scenario).unwrap());
-}
+mod tests;

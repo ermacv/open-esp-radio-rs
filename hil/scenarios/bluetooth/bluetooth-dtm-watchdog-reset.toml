@@ -1,11 +1,9 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "bluetooth-dtm-watchdog-reset"
 description = "Diagnostic MWDT1 reset during active DTM TX/RX; peer checks RF silence before any new DUT HCI command"
-image = "bluetooth-watchdog-reset"
-isolation = "reset"
 repetitions = 3
+transfer = "identical-image"
 tags = ["bluetooth", "dtm", "watchdog", "fault-injection"]
 
-[workload]
-kind = "bluetooth-watchdog-reset"
+[bluetooth]
+kind = "watchdog-reset"

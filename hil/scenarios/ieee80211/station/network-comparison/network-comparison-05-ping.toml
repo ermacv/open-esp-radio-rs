@@ -1,21 +1,16 @@
-schema = 4
+schema = 5
 id = "network-comparison-05-ping"
 description = "Four-stack HT40 comparison: idle ICMP echo latency"
 repetitions = 1
-image = "diagnostic-task-residence"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["diagnostic", "station", "ht40", "network-comparison"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-task-residence"
 
-[workload]
-kind = "icmp"
+[wifi.workload]
+kind = "station-icmp"
+link = { phy = "ht40" }
 count = 120
 interval_ms = 100
 timeout_ms = 1000
 payload_bytes = 56
-
-[criteria]
-maximum_lost = 0

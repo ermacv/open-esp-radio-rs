@@ -1,26 +1,20 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-tx-emission-256-software-diagnostic"
 description = "Fixed-rate 256-byte UDP TX software-checksum emission-cost diagnostic"
 repetitions = 2
-image = "diagnostic-core0-rx-coarse"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "core0", "coarse-cycles", "tx-emission-sweep"]
 
-[link]
-phy = "ht40"
-guard_interval = "any"
+[wifi]
+image = "diagnostic-core0-rx-coarse"
 
-[workload]
-kind = "udp"
-direction = "tx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 12
-tx_rate_bps = 10240000
 payload_bytes = 256
+offer = { tx_bps = 10240000 }
 
-[criteria]
-exact_delivery = false
-require_no_beacon_loss = false
+[wifi.workload.criteria]
 minimum_tx_bps = 8000000
 maximum_idle_channel_utilization_255 = 64

@@ -175,7 +175,7 @@ resolve a failure as `fixed`; that requires a later passing observation.
 
 Input `kind` defaults to `bytes`. Two explicit classifications require `reason`:
 
-- `procedure`: hash the canonical JSON of a schema-4 scenario, with executable
+- `procedure`: hash the canonical JSON of a schema-5 scenario, with executable
   defaults expanded and display metadata removed. Both archived procedures and
   the current file must match this hash.
 - `evidence`: record supporting test/analysis provenance without treating its

@@ -260,12 +260,11 @@ fn input_hash(bytes: &[u8], kind: &InputKind) -> Result<String> {
     let bytes = match kind {
         InputKind::Procedure => {
             let value: serde_json::Value = toml_edit::de::from_str(std::str::from_utf8(bytes)?)?;
-            if value["schema"] != 4
+            if value["schema"] != 5
                 || !value["id"].is_string()
-                || !value["image"].is_string()
-                || !value["workload"]["kind"].is_string()
+                || !crate::hil::has_one_family(&value)
             {
-                return Err("procedure input must be a version 4 HIL scenario".into());
+                return Err("procedure input must be a version 5 HIL scenario".into());
             }
             serde_json::to_vec(&crate::hil::procedure::normalize(&value))?
         }

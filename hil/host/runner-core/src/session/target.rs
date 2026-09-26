@@ -5,7 +5,7 @@ use oer_hil_protocol::{
     WifiTxUdpChecksumPolicy,
 };
 
-use crate::{lab::config::LabConfig, scenario::Scenario};
+use crate::lab::config::LabConfig;
 
 /// What a session needs from its repetition: the laboratory and the
 /// selected scenario's target initialization settings.
@@ -36,20 +36,6 @@ impl Default for Settings {
             tx_buffer: WifiTxBufferPolicy::OwnedSramPromotion,
             rx_continuation: WifiRxContinuationPolicy::ImmediateSoftwareProbe,
             l1_cache_counters: false,
-        }
-    }
-}
-
-impl From<&Scenario> for Settings {
-    fn from(scenario: &Scenario) -> Self {
-        Self {
-            ap_scheduler: scenario.ap_scheduler,
-            data_plane: scenario.data_plane,
-            rx_checksum: scenario.rx_checksum,
-            tx_udp_checksum: scenario.tx_udp_checksum,
-            tx_buffer: scenario.tx_buffer,
-            rx_continuation: scenario.rx_continuation,
-            l1_cache_counters: scenario.l1_cache_counters,
         }
     }
 }

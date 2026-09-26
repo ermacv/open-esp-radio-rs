@@ -1,28 +1,22 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-rx-ht40-openwrt-delivery-diagnostic"
 description = "Split-core HT40 AP TX-monitor to station delivery-frontier diagnostic"
 repetitions = 1
-image = "diagnostic-rx-delivery"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "openwrt-monitor"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-rx-delivery"
 
-[workload]
-kind = "udp"
-direction = "rx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-rx_rate_bps = 120000000
 payload_bytes = 1472
+offer = { rx_bps = 120000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.observation]
+openwrt_tx_monitor = true
+
+[wifi.workload.criteria]
 minimum_rx_bps = 72000000
-require_no_beacon_loss = false
-
-[evidence]
-openwrt_tx_monitor_rx = true
-independent_laptop_air_monitor = false

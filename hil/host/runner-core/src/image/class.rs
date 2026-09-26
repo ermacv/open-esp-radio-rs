@@ -225,6 +225,34 @@ impl ImageClass {
                 | Self::DiagnosticMemoryBenchmark
         )
     }
+
+    /// Images that run the Wi-Fi station and AP stack.
+    pub const fn is_wifi(self) -> bool {
+        matches!(
+            self,
+            Self::Correctness
+                | Self::Performance
+                | Self::DiagnosticPhyFault
+                | Self::DiagnosticMacIrq
+                | Self::DiagnosticTxWait
+                | Self::DiagnosticTaskResidence
+                | Self::DiagnosticTxArchitecture
+                | Self::DiagnosticTaskPoll
+                | Self::DiagnosticCore0RxCoarse
+                | Self::DiagnosticCore0RxCycles
+                | Self::DiagnosticRxDelivery
+                | Self::DiagnosticRxOwnership
+                | Self::DiagnosticRxDeliveryPhyHotSram
+        )
+    }
+
+    /// Images whose Core0 RX phase totals use u32 cycle accumulators.
+    pub const fn is_core0_rx_cycle_diagnostic(self) -> bool {
+        matches!(
+            self,
+            Self::DiagnosticCore0RxCoarse | Self::DiagnosticCore0RxCycles
+        )
+    }
 }
 
 impl std::str::FromStr for ImageClass {

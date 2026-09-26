@@ -1,17 +1,13 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "wifi-phy-watchdog"
 description = "Real connected PHY faults; autonomous reset, new-boot bidirectional UDP, rejected admission without reset"
-image = "diagnostic-phy-fault"
-isolation = "reset"
 repetitions = 3
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["wifi", "phy", "watchdog", "fault-injection"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-phy-fault"
 
-[workload]
-kind = "wifi-phy-watchdog"
-
-[criteria]
+[wifi.workload]
+kind = "phy-watchdog"
+link = { phy = "ht40" }

@@ -1,10 +1,8 @@
 use super::*;
 
-fn catalog() -> hil_core::scenario::Catalog {
-    hil_core::scenario::Catalog::load(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios"),
-    )
-    .expect("load scenario catalog")
+fn catalog() -> crate::scenario::Catalog {
+    crate::scenario::Catalog::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios"))
+        .expect("load scenario catalog")
 }
 
 #[test]

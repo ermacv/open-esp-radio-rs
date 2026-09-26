@@ -59,7 +59,7 @@ fn both_reverse_probes_finish_before_collectors_start() {
     let mut ready_interfaces = Vec::new();
     let receivers = prepare_receivers(
         [&station, &access_point],
-        hil_core::scenario::Direction::Tx,
+        crate::scenario::Direction::Tx,
         Duration::from_secs(5),
         &output,
         |interface, socket| {
@@ -101,7 +101,7 @@ fn failed_second_preflight_starts_neither_collector() {
     let (access_point, _access_point_peer) = local_flow();
     let error = prepare_receivers(
         [&station, &access_point],
-        hil_core::scenario::Direction::Bidirectional,
+        crate::scenario::Direction::Bidirectional,
         Duration::from_secs(5),
         &output,
         |interface, _| {

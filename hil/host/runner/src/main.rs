@@ -5,6 +5,7 @@ mod cli;
 mod command;
 mod execution;
 mod fixture;
+mod scenario;
 #[cfg(test)]
 mod tests;
 

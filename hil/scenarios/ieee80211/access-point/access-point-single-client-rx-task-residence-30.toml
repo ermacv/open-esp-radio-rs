@@ -1,31 +1,26 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-single-client-rx-task-residence-30"
 description = "Split-core AP HT40 RX executor-residence control at 30 Mbit/s offered load"
 repetitions = 1
-image = "diagnostic-task-residence"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "rx", "task-poll", "rx-residence-sweep"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-task-residence"
 
-[workload]
+[wifi.workload]
 kind = "access-point"
+link = { phy = "ht40" }
 cycles = 2
 boots = 1
 timeout_seconds = 120
-client = "open-wrt"
+clients = { kind = "openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "udp"
-direction = "rx"
 duration_seconds = 16
-rx_rate_bps = 30000000
 payload_bytes = 1472
+offer = { rx_bps = 30000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.traffic.criteria]
 minimum_rx_bps = 25000000
-minimum_concurrent_ap_clients = 1

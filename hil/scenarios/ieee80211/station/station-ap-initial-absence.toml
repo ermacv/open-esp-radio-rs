@@ -1,18 +1,14 @@
-schema = 4
+schema = 5
 id = "station-ap-initial-absence"
 description = "Station starts with its AP absent, exhausts three candidate attempts and keeps HIL control responsive"
 repetitions = 3
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["ap-availability", "functional", "station", "lifecycle"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
+[wifi.workload]
 kind = "station-ap-absence"
+link = { phy = "ht40" }
 initially_absent = true
 timeout_seconds = 120
-
-[criteria]

@@ -6,6 +6,7 @@ use oer_hil_protocol::{
     Completion, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements, Transport,
 };
 
+use crate::scenario::{Direction, RateFloors};
 use crate::workload::ieee80211::access_point::{
     Config, TCP_PORT, protocol_direction, report::TrafficReport, session_report,
     validate_rate_criteria,
@@ -18,7 +19,7 @@ use crate::{
     workload::traffic::paced_tcp::receive as receive_tcp,
     workload::traffic::paced_tcp::send as send_tcp,
 };
-use hil_core::{scenario::Direction, session::SerialCapture, session::SessionEvidence};
+use hil_core::{session::SerialCapture, session::SessionEvidence};
 
 #[derive(Clone, Copy)]
 pub(super) struct TcpWorkload {
@@ -34,6 +35,7 @@ pub(super) fn qualify_tcp(
     config: &Config,
     target: Ipv4Addr,
     workload: TcpWorkload,
+    floors: RateFloors,
 ) -> Result<TrafficReport> {
     let TcpWorkload {
         direction,
@@ -96,7 +98,7 @@ pub(super) fn qualify_tcp(
     acknowledgement?;
     let report = session_report(direction, &structured);
     validate_tcp(host_tx, host_rx, structured)?;
-    validate_rate_criteria(&report, &config.criteria)?;
+    validate_rate_criteria(&report, floors)?;
     Ok(TrafficReport::Tcp(report))
 }
 

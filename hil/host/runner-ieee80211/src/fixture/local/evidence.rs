@@ -5,7 +5,7 @@ use oer_process::CommandExt as _;
 use std::{net::Ipv4Addr, process::Command, time::Duration};
 
 use crate::Result;
-use hil_core::{lab::config::LocalLinuxConfig, scenario::PhyExpectation};
+use hil_core::{lab::config::LocalLinuxConfig, lab::link::PhyExpectation};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LocalLinuxRxEvidence {

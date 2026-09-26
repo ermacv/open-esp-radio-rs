@@ -1,15 +1,14 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-active-phy-maintenance"
 description = "Production automatic PHY maintenance inside three live peripheral ACL sessions, with peer Reset recovery and final retirement; explicit engineering budgets, no thermal qualification"
-image = "bluetooth-phy-maintenance"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "lifecycle", "phy-maintenance"]
 
-[workload]
-kind = "bluetooth-peripheral"
+[bluetooth]
+kind = "peripheral"
 boots = 1
 connections = 3
 hold_millis = 3000
 termination = "peer-reset"
 retire_after = true
+phy_maintenance = { kind = "automatic" }

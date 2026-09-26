@@ -1,23 +1,20 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "icmp-latency-ht40-split"
 description = "Split-core HT40 connected-station ICMP latency and loss"
 repetitions = 3
-image = "performance"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "icmp", "station", "ht40", "split-core"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "performance"
 
-[workload]
-kind = "icmp"
+[wifi.workload]
+kind = "station-icmp"
+link = { phy = "ht40" }
 count = 100
 interval_ms = 20
 timeout_ms = 1000
 payload_bytes = 56
 
-[criteria]
-maximum_lost = 0
+[wifi.workload.criteria]
 maximum_p95_ms = 20

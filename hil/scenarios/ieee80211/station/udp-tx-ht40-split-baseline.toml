@@ -1,23 +1,19 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "udp-tx-ht40-split-baseline"
 description = "Stable split-core HT40 UDP station-to-host performance baseline"
 repetitions = 5
-image = "performance"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "udp", "station", "ht40", "split-core", "baseline"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "performance"
 
-[workload]
-kind = "udp"
-direction = "tx"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 16
-tx_rate_bps = 80000000
 payload_bytes = 1472
+offer = { tx_bps = 80000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.criteria]
 minimum_tx_bps = 72000000

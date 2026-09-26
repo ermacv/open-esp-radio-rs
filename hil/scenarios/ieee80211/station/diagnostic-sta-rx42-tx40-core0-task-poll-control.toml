@@ -1,30 +1,25 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "diagnostic-sta-rx42-tx40-core0-task-poll-control"
 description = "Same diagnostic ELF station control for AP 42/40 Core0 task-poll localization"
 repetitions = 1
-image = "diagnostic-core0-rx-cycles"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["diagnostic", "station", "udp", "bidirectional", "ht40", "task-poll", "ap-control"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "diagnostic-core0-rx-cycles"
 
-[workload]
-kind = "udp"
-direction = "bidirectional"
+[wifi.workload]
+kind = "station-udp"
+link = { phy = "ht40" }
 duration_seconds = 10
-rx_rate_bps = 42000000
-tx_rate_bps = 40000000
 payload_bytes = 1472
+offer = { rx_bps = 42000000, tx_bps = 40000000 }
 
-[criteria]
-exact_delivery = false
+[wifi.workload.observation]
+openwrt_tx_monitor = true
+independent_air_monitor = true
+
+[wifi.workload.criteria]
+require_no_beacon_loss = true
 minimum_rx_bps = 1000000
 minimum_tx_bps = 1000000
-require_no_beacon_loss = true
-
-[evidence]
-openwrt_tx_monitor_rx = true
-independent_laptop_air_monitor = true

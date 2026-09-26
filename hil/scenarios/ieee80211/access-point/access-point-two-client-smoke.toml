@@ -1,26 +1,23 @@
-schema = 4
-transfer = "identical-image"
+schema = 5
 id = "access-point-two-client-smoke"
 description = "Two simultaneous WPA2 clients across two access-point ownership epochs"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
+transfer = "identical-image"
 tags = ["qualification", "wifi", "access-point", "lifecycle", "multi-client"]
 
-[workload]
+[wifi]
+image = "correctness"
+
+[wifi.workload]
 kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 90
+clients = { kind = "laptop-and-openwrt" }
 
-[workload.traffic]
+[wifi.workload.traffic]
 kind = "icmp"
 count = 10
 interval_ms = 100
 timeout_ms = 1000
 payload_bytes = 56
-
-[criteria]
-maximum_lost = 0
 maximum_p95_ms = 50
-minimum_concurrent_ap_clients = 2

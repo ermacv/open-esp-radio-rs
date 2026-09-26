@@ -1,7 +1,7 @@
 //! Connected station obligations for PHY fault tests.
 use crate::Result;
 use hil_core::{
-    context::Context, scenario::PhyExpectation, session::SerialCapture,
+    context::Context, lab::link::PhyExpectation, session::SerialCapture,
     workload::phy::fault_lifecycle, workload::phy::fault_lifecycle::Scenario,
 };
 use oer_hil_protocol::{PhyFaultCommand, PhyFaultEvidence, PhyFaultMode, PhyFaultPhase};

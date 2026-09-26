@@ -1,18 +1,13 @@
-schema = 4
+schema = 5
 id = "station-access-point-lifecycle"
 description = "One same-channel production STA+AP owner exposes both network endpoints and returns every owner on stop"
-image = "correctness"
-isolation = "reset"
-data_plane = "split-radio-network"
 tags = ["diagnostic", "psram-stack", "wifi", "station", "access-point", "lifecycle"]
 
-[link]
-phy = "ht40"
+[wifi]
+image = "correctness"
 
-[workload]
-kind = "wifi-role"
-operation = "station-access-point"
+[wifi.workload]
+kind = "role"
+link = { phy = "ht40" }
 timeout_seconds = 120
-dwell_seconds = 5
-
-[criteria]
+operation = { kind = "station-access-point", dwell_seconds = 5 }

@@ -21,6 +21,7 @@ serde_json = "1.0"
 zeroize = "1.8.1"
 
 [dev-dependencies]
+toml = "1.1"
 hil-core = { package = "oer-hil-runner-core", path = "../runner-core", features = ["test-support"] }
 
 [lints]

@@ -1,13 +1,11 @@
-schema = 4
+schema = 5
 id = "bluetooth-peripheral-recovery"
 description = "Two real LE peripheral connections with exact Feature and Version Exchange, backpressured 251-byte bidirectional ACL fragmentation before and after exact Connection and Channel Map Updates, peer Reset disconnection and advertising recovery"
-image = "bluetooth-dtm"
-isolation = "reset"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "connection", "feature-exchange", "version-exchange", "connection-update", "channel-map-update", "acl", "recovery"]
 
-[workload]
-kind = "bluetooth-peripheral"
+[bluetooth]
+kind = "peripheral"
 boots = 1
 connections = 2
 hold_millis = 100

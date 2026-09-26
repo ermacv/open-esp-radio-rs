@@ -39,7 +39,7 @@ const ACCESS_POINT_HOST_PORT: u16 = 9_102;
 pub struct Config {
     pub timeout: Duration,
     pub duration: Duration,
-    pub direction: hil_core::scenario::Direction,
+    pub direction: crate::scenario::Direction,
     pub rate_bps_per_flow: u64,
     pub minimum_bps_per_flow: u64,
     pub maximum_fairness_skew_percent: u8,
@@ -51,7 +51,7 @@ pub struct Config {
 #[derive(Serialize)]
 struct Report {
     schema: u8,
-    direction: hil_core::scenario::Direction,
+    direction: crate::scenario::Direction,
     offered_bps_per_flow: u64,
     minimum_bps_per_flow: u64,
     maximum_fairness_skew_percent: u8,
@@ -87,17 +87,17 @@ struct HostFlow {
     socket: UdpSocket,
 }
 
-const fn target_receives(direction: hil_core::scenario::Direction) -> bool {
+const fn target_receives(direction: crate::scenario::Direction) -> bool {
     matches!(
         direction,
-        hil_core::scenario::Direction::Rx | hil_core::scenario::Direction::Bidirectional
+        crate::scenario::Direction::Rx | crate::scenario::Direction::Bidirectional
     )
 }
 
-const fn target_transmits(direction: hil_core::scenario::Direction) -> bool {
+const fn target_transmits(direction: crate::scenario::Direction) -> bool {
     matches!(
         direction,
-        hil_core::scenario::Direction::Tx | hil_core::scenario::Direction::Bidirectional
+        crate::scenario::Direction::Tx | crate::scenario::Direction::Bidirectional
     )
 }
 
@@ -340,7 +340,7 @@ pub fn wait_for_endpoints(
 /// Collector deadlines begin afterwards, before either target session starts.
 fn prepare_receivers(
     flows: [&HostFlow; 2],
-    direction: hil_core::scenario::Direction,
+    direction: crate::scenario::Direction,
     maximum_wait: Duration,
     output: &Path,
     mut ready: impl FnMut(WifiNetworkInterface, &UdpSocket) -> Result<()>,
@@ -395,9 +395,9 @@ fn start_session(
         pacing_group_datagrams: None,
     };
     let (direction, target_rx, target_tx) = match config.direction {
-        hil_core::scenario::Direction::Rx => (HilDirection::Rx, Some(flow_config()), None),
-        hil_core::scenario::Direction::Tx => (HilDirection::Tx, None, Some(flow_config())),
-        hil_core::scenario::Direction::Bidirectional => (
+        crate::scenario::Direction::Rx => (HilDirection::Rx, Some(flow_config()), None),
+        crate::scenario::Direction::Tx => (HilDirection::Tx, None, Some(flow_config())),
+        crate::scenario::Direction::Bidirectional => (
             HilDirection::Bidirectional,
             Some(flow_config()),
             Some(flow_config()),

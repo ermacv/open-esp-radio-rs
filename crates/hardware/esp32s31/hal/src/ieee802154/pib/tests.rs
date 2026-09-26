@@ -1,7 +1,7 @@
 //! PIB behavior read from the pinned `esp_ieee802154_pib.c`.
 use std::vec::Vec;
 
-use super::{Ieee802154MultipanIndex, Ieee802154PendingMode, Ieee802154Pib, Ieee802154PibDefaults};
+use super::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154Pib, Ieee802154PibDefaults};
 use crate::ieee802154::{
     lifecycle::Ieee802154Channel,
     ll::tests::{Call, Recorder},
@@ -67,10 +67,7 @@ fn only_a_changed_hardware_value_marks_the_pib_pending() {
     pib.set_promiscuous(true);
     pib.set_cca_threshold(-75);
     pib.set_power(10);
-    pib.set_pending_mode(
-        Ieee802154MultipanIndex::CONTEXT0,
-        Ieee802154PendingMode::Disable,
-    );
+    pib.set_pending_mode(Ieee802154MultipanIndex::CONTEXT0, AutoPendingMode::Disable);
     pib.set_rx_when_idle(true);
     assert!(!pib.is_pending());
     assert!(pib.rx_when_idle());
@@ -99,10 +96,10 @@ fn power_follows_the_current_channel() {
 #[test]
 fn enhanced_or_zigbee_pending_on_any_interface_selects_the_enhanced_lookup() {
     for (mode, enhanced) in [
-        (Ieee802154PendingMode::Disable, false),
-        (Ieee802154PendingMode::Enable, false),
-        (Ieee802154PendingMode::Enhanced, true),
-        (Ieee802154PendingMode::Zigbee, true),
+        (AutoPendingMode::Disable, false),
+        (AutoPendingMode::Enable, false),
+        (AutoPendingMode::Enhanced, true),
+        (AutoPendingMode::Zigbee, true),
     ] {
         let mut pib = Ieee802154Pib::new(Ieee802154PibDefaults::default(), levels());
         pib.set_pending_mode(Ieee802154MultipanIndex::CONTEXT2, mode);

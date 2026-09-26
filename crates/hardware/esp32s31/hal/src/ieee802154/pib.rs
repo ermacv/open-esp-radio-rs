@@ -8,6 +8,7 @@
 //! are not PIB values; the vendor driver writes them directly.
 
 pub use oer_esp32s31_pac::Ieee802154MultipanIndex;
+pub use oer_ieee802154::AutoPendingMode;
 
 use crate::ieee802154::{
     lifecycle::Ieee802154Channel, ll::Ieee802154LowLevel, policy::Ieee802154CcaMode,
@@ -16,30 +17,6 @@ use crate::ieee802154::{
 
 const CHANNEL_COUNT: usize = 16;
 const INTERFACE_COUNT: usize = Ieee802154MultipanIndex::COUNT as usize;
-
-/// Automatic frame-pending policy of one interface (`ieee802154_ll_pending_mode_t`).
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub enum Ieee802154PendingMode {
-    /// The pending bit is always set in the ACK to a data request.
-    #[default]
-    Disable,
-    /// The pending bit is set in the ACK to a data request whose source
-    /// address is in the pending table.
-    Enable,
-    /// The pending bit is set in every ACK whose source address is in the
-    /// pending table.
-    Enhanced,
-    /// The pending bit is cleared only for a data request from a short source
-    /// address in the pending table.
-    Zigbee,
-}
-
-impl Ieee802154PendingMode {
-    /// Whether this mode selects the hardware's enhanced pending lookup.
-    const fn selects_enhanced_lookup(self) -> bool {
-        matches!(self, Self::Enhanced | Self::Zigbee)
-    }
-}
 
 /// Build-time PIB defaults (`CONFIG_IEEE802154_CCA_MODE` and
 /// `CONFIG_IEEE802154_CCA_THRESHOLD`).
@@ -72,7 +49,7 @@ pub struct Ieee802154Pib {
     rx_when_idle: bool,
     power_dbm: [i8; CHANNEL_COUNT],
     channel: Ieee802154Channel,
-    pending_mode: [Ieee802154PendingMode; INTERFACE_COUNT],
+    pending_mode: [AutoPendingMode; INTERFACE_COUNT],
     cca_threshold_dbm: i8,
     cca_mode: Ieee802154CcaMode,
     pending: bool,
@@ -100,7 +77,7 @@ impl Ieee802154Pib {
                 Ok(channel) => channel,
                 Err(_) => unreachable!(),
             },
-            pending_mode: [Ieee802154PendingMode::Disable; INTERFACE_COUNT],
+            pending_mode: [AutoPendingMode::Disable; INTERFACE_COUNT],
             cca_threshold_dbm: defaults.cca_threshold_dbm,
             cca_mode: defaults.cca_mode,
             pending: true,
@@ -267,16 +244,12 @@ impl Ieee802154Pib {
     }
 
     /// `ieee802154_pib_get_pending_mode`.
-    pub const fn pending_mode(&self, interface: Ieee802154MultipanIndex) -> Ieee802154PendingMode {
+    pub const fn pending_mode(&self, interface: Ieee802154MultipanIndex) -> AutoPendingMode {
         self.pending_mode[interface.value() as usize]
     }
 
     /// `ieee802154_pib_set_pending_mode`.
-    pub fn set_pending_mode(
-        &mut self,
-        interface: Ieee802154MultipanIndex,
-        mode: Ieee802154PendingMode,
-    ) {
+    pub fn set_pending_mode(&mut self, interface: Ieee802154MultipanIndex, mode: AutoPendingMode) {
         Self::replace(
             &mut self.pending,
             &mut self.pending_mode[interface.value() as usize],

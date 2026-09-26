@@ -25,12 +25,18 @@ extern crate std;
 pub mod mac {
     /// Owned and borrowed MAC frames without platform DMA framing.
     pub mod frame;
+    /// MAC header inspection of `[PHR, PSDU...]` images.
+    pub mod header;
+    /// Frame-pending table and ACK pending-bit decision.
+    pub mod pending;
 }
 
 /// Hardware-independent radio command/event and state contracts.
 pub mod radio;
 
 pub use mac::frame::{Frame, FrameError, FrameView, MAX_MAC_FRAME_LEN, MIN_MAC_FRAME_LEN};
+pub use mac::header::{AddressMode, FrameAddress, FrameType, FrameVersion, PhrFrame};
+pub use mac::pending::{AckPending, AutoPendingMode, PendingTable, PendingTableFull, ack_pending};
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
 pub use radio::command::{

@@ -17,6 +17,7 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-ieee80211-dma",
     "oer-esp32s31-radio-esp-hal",
     "oer-esp32s31-executor-embassy",
+    "oer-esp32s31-bluetooth-system",
     "oer-esp32s31-ieee80211-system",
 ];
 /// The HAL is the only production consumer of the closed PAC; drivers and

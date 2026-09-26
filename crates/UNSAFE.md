@@ -60,6 +60,7 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-wifi-dma` | `hardware/esp32s31/driver/ieee80211/dma/` |
 | `esp32s31-radio-platform-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |
 | `esp32s31-executor-embassy` | `adapters/embassy/esp32s31/executor/` |
+| `esp32s31-bluetooth-system` | `composition/esp32s31/embassy/bluetooth/` |
 | `esp32s31-embassy-wifi` | `composition/esp32s31/embassy/ieee80211/` |
 
 These exceptions cover distinct obligations: singleton acquisition and MMIO

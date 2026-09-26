@@ -2283,6 +2283,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-bluetooth-system"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-bluetooth-radio",
+ "oer-esp32s31-bluetooth-runtime",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-phy-runtime",
+ "oer-esp32s31-radio-esp-hal",
+ "static_cell",
+]
+
+[[package]]
 name = "oer-esp32s31-coex"
 version = "0.1.0"
 dependencies = [

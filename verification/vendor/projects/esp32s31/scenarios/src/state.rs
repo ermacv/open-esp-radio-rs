@@ -70,6 +70,7 @@ const RX_POLICY_NONE: Claim = (
 
 const RETRY_CTS: Claim = ("lmacProcessCtsTimeout", "open_libpp_tx_retry_trace_step");
 const RETRY_COLLISION: Claim = ("lmacProcessCollision", "open_libpp_tx_retry_trace_step");
+const RETRY_ACK: Claim = ("lmacProcessAckTimeout", "open_libpp_tx_retry_trace_step");
 /// The retry sequences' queue contexts, named by the nearest symbol below
 /// them, and the two per-queue bytes they leave unprojected.
 const RETRY_QUEUES: &str = "0x2f850000";
@@ -101,6 +102,10 @@ pub const DECISIONS: &[Decision] = &[
             retry_queue(RETRY_COLLISION, RETRY_SHORT_COUNT, 2, 1),
             retry_queue(RETRY_COLLISION, RETRY_SHORT_COUNT, 2, 2),
             retry_queue(RETRY_COLLISION, RETRY_SHORT_COUNT, 2, 3),
+            retry_queue(RETRY_ACK, RETRY_SHORT_COUNT, 1, 0),
+            retry_queue(RETRY_ACK, RETRY_SHORT_COUNT, 1, 1),
+            retry_queue(RETRY_ACK, RETRY_SHORT_COUNT, 1, 2),
+            retry_queue(RETRY_ACK, RETRY_SHORT_COUNT, 1, 3),
         ],
     },
     Decision {
@@ -117,6 +122,10 @@ pub const DECISIONS: &[Decision] = &[
             retry_queue(RETRY_COLLISION, RETRY_STATE, 1, 1),
             retry_queue(RETRY_COLLISION, RETRY_STATE, 1, 2),
             retry_queue(RETRY_COLLISION, RETRY_STATE, 1, 3),
+            retry_queue(RETRY_ACK, RETRY_STATE, 1, 0),
+            retry_queue(RETRY_ACK, RETRY_STATE, 1, 1),
+            retry_queue(RETRY_ACK, RETRY_STATE, 1, 2),
+            retry_queue(RETRY_ACK, RETRY_STATE, 1, 3),
         ],
     },
     Decision {

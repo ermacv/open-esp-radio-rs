@@ -7,7 +7,7 @@
     "libnet80211": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "libpp": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "2573c382c7a58abbc51dfc4373f697b646db0b6222848245708b36964e51d88e",
+    "production": "51d9049790470d8a066894dc1ae4fd9b24718743b0461d18ec32beb25885f731",
     "rftest": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a",
     "rom": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -27,7 +27,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211",
-      "sha256": "12107c6edac2753786f4ab99bc7c34c9d1443890754cdfbacb7bba1687a0e740"
+      "sha256": "c7de1ce5404259c5a23d61a6e4762b2ca574e79f12ab90a4998e09c1ecf2acbb"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma",
@@ -35,7 +35,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac",
-      "sha256": "1f14ef9f0094600b2d4b3fb19f836477df559644d405fe1ea6c8d166c798a42f"
+      "sha256": "1cc24b195eb9ada14e21c0a40e6a75419ca5d65218145267181956bcec8012da"
     },
     {
       "path": "crates/hardware/esp32s31/hal",
@@ -155,7 +155,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "19d136a4d7e14d9351e50fb2f613a3108c0b27c9828cf94ffb209969766351e0"
+      "sha256": "8849922d95ba2a19e49605c7fe6e7725431a2177328447b41783ce76a90447f0"
     },
     {
       "path": "verification/vendor/schema",
@@ -341,7 +341,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "4222cb92e79bbaef764468b5b9d3ce4c1204fee6e28f058278f7aac6cd637fe8"
+        "c7cf750acf55547753e4a65bc28f1f44eda483a7754817d05a3af7a2e0de733b"
       ],
       "coverage": {
         "blocks": {
@@ -377,7 +377,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "85049d5f83ed74211c18d539d878f47c592c9c820834beb48bcb09022f84d8e3"
+        "c558909b1861ad76e3037b7e1df17f31bbca1050fe8c454e3ee4655d77300676"
       ],
       "coverage": {
         "blocks": {
@@ -413,7 +413,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "c695e36906d7997ad235afb5e1d2594e70187f9eeb907f6a079d8913e8217dae"
+        "6071be068cbd5dd9de4aa2feb89dd7197b817291a5c8dc3a8225bad07bfac0be"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +449,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "5502374fcbcb9dac36001c14b2d2d9d427d0dc9bae083d6f0744901cb7dad48c"
+        "49a4ad9a48b58a78cee5454fe40e4004e57e319350298e3ec1c382508b6c96f0"
       ],
       "coverage": {
         "blocks": {
@@ -485,7 +485,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "c14280bc68d48945fa89dcca384b49770e7f02b239e902218d095e0559c70a1f"
+        "4dc0455e9cb3c4d847c581911350f61feb67b55e551e45b17e506a7c69f77442"
       ],
       "coverage": {
         "blocks": {
@@ -521,7 +521,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "767b7cb45e1defa91d49e9130bf9e1f490cb6bec1927dd6e970101e6cd55dddc"
+        "4d55ddd7634e230167631a69832726e9f4c98467f8f4db221f01629fda1c71dc"
       ],
       "coverage": {
         "blocks": {
@@ -727,7 +727,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "febc37ea28f8ed9a0e11bc1dcdebb06b6a125c2792e5005ffd1c5037f656b6b1"
+        "1022de45e798104122871d5d7f5cd25c0165cb03e07085274d3d8e1fefacf541"
       ],
       "coverage": {
         "blocks": {
@@ -763,7 +763,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "c24d1df1b5626ac5ef1401a64b2517d3921eee6e99e27c55234863f3a3c5cf72"
+        "4adb33783bc7d99852e451dcbde56a7b4a22fb263ad7fa0cdb0a4c8734dff6b4"
       ],
       "coverage": {
         "blocks": {
@@ -799,8 +799,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "321a29a9e19e4f533ae70a5bc61f6f2463d0fb37e6c2e02c0d06f63198a868a6",
-        "4058220037966fbfbfbe2392d1b9b1571fdbe5fef71f17e55af143b50f890bd1"
+        "1455fe11b00b294816ca8aaebb736c8f2386a68dfa0a60fc22eaf0eba56e7ec3",
+        "bd2c53468c6619c14a9207dde1916360f18c204816f7184709ce4407bb9809a4"
       ],
       "coverage": {
         "blocks": {
@@ -836,7 +836,7 @@
       "verdict": "match",
       "cases": 101,
       "reviews": [
-        "fd1d945ddc0424134386fe572c2b68f01150a1c0d5a1b6e5ebf3bcf944f274a8"
+        "f08e63df450d8457a9d954a141f0ba7fea7413d6185ab11a0115685b0492a7f6"
       ],
       "coverage": {
         "blocks": {
@@ -872,8 +872,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "4d5c90f01312d114576a5daf6578c891d9a6d28323f674681ca7c1239f0fd8b5",
-        "99f9271ce8986657a0e8203cd513d3206ac300389abc37e4fc6e3c995d52b5f3"
+        "9b8e44c991fd60ddf2823adbcdb2ce52569e5ddacb91ae9cff848bdafacf8c45",
+        "bb417eea338ba67502c2c0005426779b9d52bc8f85043d6e501d812eb7f71360"
       ],
       "coverage": {
         "blocks": {
@@ -909,8 +909,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "5453aa88e84f2c29ad76945f506bc2a8676653b5f0d40abf83a60bb137f1cfc8",
-        "84a2de6f251f9334c797c8cd19a2909ae75df0072d6287300942a993e4f0f488"
+        "4de29a861deba8a117e26b0ecb7ab70b10d6a6754592a7c4691935e4d8906255",
+        "c6d7dba7381593296d053e1e184dbe883b7358d923e5e25f1164d8b682206ff6"
       ],
       "coverage": {
         "blocks": {
@@ -946,9 +946,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "222c3cec0614db49b624fccb729f74393b3ef79f193434f7d400eee92e849da2",
-        "73141d01c25dbbd9ebec4841d550d3809979d17026be5ea9a1720dc694180aff",
-        "c3b660ed7aea832b9ae6128d5e3993d8939c2b5314ea80bf49008c94defdb8b5"
+        "001b38dded282f5ecc0db2d733411e0f7dba051ce4df2a06b00a6473db5c1cb1",
+        "3ef2de40f91e71a10569d04e886725154cb6eeaf327ebeac8e541a066b389411",
+        "e0ac5974f28aca2f2a86cf30a34242010ef151f86a94cd167ee82a0169c41d26"
       ],
       "coverage": {
         "blocks": {
@@ -984,8 +984,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "264117a8b93568a656c0bba0a5facef2b2b227c8bca5168a4fc74e2b3c4e42d4",
-        "b658759f3a99c029d064ee6acccbc909dcaf9271924519b63e34cd5d4853d964"
+        "7a4c68342e472ebe22ec35e46c74ee77f1581eb4aaa9c91ac9e4a97ec8fc73e5",
+        "d603dcae90e5a9a1d602f75ce513342b82c8bf79b5be57a49b85a924d9f8d8cd"
       ],
       "coverage": {
         "blocks": {
@@ -1021,8 +1021,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "432287e51a44e5713146b345f61e4995a5d69cac0718ac60fcc9be8fd3132ca7",
-        "6477b3350d063d1f818afae8089b15b54965d74e1fc9efba01c5b027c43db982"
+        "22ceb7ef9a3719ec502c2ce661f8da7a03c78a6bfc163e7bbff07cf536af00fa",
+        "c9232bcdcc625c1b3c52eaf7e176080423a62c26b844a79deeaa410729cb2ff7"
       ],
       "coverage": {
         "blocks": {
@@ -1058,8 +1058,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "3f52138f9557e0b72253ddd9fec66cb1e1e85aab06bd8eec2dc0e7e56a42ce67",
-        "dbe0be313693b20d5cb9facbdb286a3b46ba09a4653461eb5e5ec74140056e58"
+        "a19360e847e8bf9d4a38ecb02337faa5faf6d04bab502b16d3facf944676eaca",
+        "d0223179116187c20ba716abca98bec9f13216e98c76a683343e11552b6d1c1c"
       ],
       "coverage": {
         "blocks": {
@@ -1197,7 +1197,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "5735c826f65e6d0a2dea826c8859d1724943d4ed1cef35d39e64a055f9adb12c"
+        "9f2264e4290ae36a8c1c8b01bce7af0fac8e68095fa0f15122b3ef6e8560627c"
       ],
       "coverage": {
         "blocks": {
@@ -1267,7 +1267,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "4dfec3298ba1e3364a099a3f7c4671fb123ed71088ff61e92041a10eaddf2adc"
+        "3bdacef60b07714402642c70fb42189dcaa958f9d523e42481d1ce30c0f02c45"
       ],
       "coverage": {
         "blocks": {
@@ -1915,7 +1915,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "97fcebf3dfe98bb58a3f978397cbbcad287f23f66c4fcd28269fd2e2239772bd"
+        "b97cf97f71b4dcae068d1372fc82d9647d792827c65027de2de3cc1302704199"
       ],
       "coverage": {
         "blocks": {
@@ -2382,6 +2382,40 @@
         "written": 18,
         "compared": 6,
         "reviewed": 12,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "lmacProcessAckTimeout",
+      "production": "open_libpp_tx_retry_trace_step",
+      "verdict": "match",
+      "cases": 1024,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 66,
+          "total": 2066
+        },
+        "directions": {
+          "reached": 50,
+          "total": 2122
+        },
+        "open": 113,
+        "excluded": 121,
+        "untriaged": 4064
+      },
+      "observation": {
+        "executed": 17,
+        "observed": 17,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 15,
+        "compared": 7,
+        "reviewed": 8,
         "untriaged": 0
       }
     }
@@ -5918,6 +5952,76 @@
       "kind": "block"
     },
     {
+      "function": "lmacProcessAckTimeout",
+      "offset": 62,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 66,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 124,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 174,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 178,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 200,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 202,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 202,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 202,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 204,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 214,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 258,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 268,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessAckTimeout",
+      "offset": 270,
+      "kind": "block"
+    },
+    {
       "function": "lmacProcessCollision",
       "offset": 130,
       "kind": "taken"
@@ -5930,6 +6034,51 @@
     {
       "function": "lmacProcessCtsTimeout",
       "offset": 16,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 14,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 30,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 36,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongFrameSuccess",
+      "offset": 52,
       "kind": "block"
     },
     {
@@ -6233,6 +6382,51 @@
       "kind": "taken"
     },
     {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 14,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 30,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 36,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortFrameSuccess",
+      "offset": 52,
+      "kind": "block"
+    },
+    {
       "function": "lmacProcessShortRetryFail",
       "offset": 30,
       "kind": "fallthrough"
@@ -6304,16 +6498,6 @@
     },
     {
       "function": "lmacProcessShortRetryFail",
-      "offset": 178,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 182,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
       "offset": 232,
       "kind": "fallthrough"
     },
@@ -6379,11 +6563,6 @@
     },
     {
       "function": "lmacProcessShortRetryFail",
-      "offset": 386,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
       "offset": 394,
       "kind": "block"
     },
@@ -6409,27 +6588,7 @@
     },
     {
       "function": "lmacProcessShortRetryFail",
-      "offset": 486,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
       "offset": 494,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 494,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 496,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 508,
       "kind": "taken"
     },
     {
@@ -6441,21 +6600,6 @@
       "function": "lmacProcessShortRetryFail",
       "offset": 510,
       "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 512,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 526,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 540,
-      "kind": "taken"
     },
     {
       "function": "lmacProcessShortRetryFail",
@@ -6540,11 +6684,6 @@
     {
       "function": "lmacProcessShortRetryFail",
       "offset": 684,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 698,
       "kind": "fallthrough"
     },
     {
@@ -19094,23 +19233,8 @@
     },
     {
       "function": "rcReachRetryLimit",
-      "offset": 194,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "rcReachRetryLimit",
-      "offset": 198,
-      "kind": "block"
-    },
-    {
-      "function": "rcReachRetryLimit",
       "offset": 208,
       "kind": "taken"
-    },
-    {
-      "function": "rcReachRetryLimit",
-      "offset": 208,
-      "kind": "fallthrough"
     },
     {
       "function": "rcSetTxAmpduLimit",

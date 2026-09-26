@@ -18,7 +18,12 @@ use blobray_domain::{
 };
 
 /// Vendor functions the sequences enter, linked as extra roots.
-pub const ROOTS: &[&str] = &["lmacInit", "lmacProcessCtsTimeout", "lmacProcessCollision"];
+pub const ROOTS: &[&str] = &[
+    "lmacInit",
+    "lmacProcessCtsTimeout",
+    "lmacProcessCollision",
+    "lmacProcessAckTimeout",
+];
 /// Evidence claims: each vendor retry leaf with the production retry owner.
 pub const CLAIMS: &[(&str, &str, &str)] = &[
     (
@@ -29,6 +34,11 @@ pub const CLAIMS: &[(&str, &str, &str)] = &[
     (
         "archive",
         "lmacProcessCollision",
+        "open_libpp_tx_retry_trace_step",
+    ),
+    (
+        "archive",
+        "lmacProcessAckTimeout",
         "open_libpp_tx_retry_trace_step",
     ),
 ];
@@ -82,6 +92,7 @@ const INITIAL_RATE: u32 = 0x0b;
 /// Production decisions the step probe returns.
 const RETRY_COMPLETE: u32 = 0;
 const RETRY_AGAIN: u32 = 1;
+const RETRY_AGAIN_WITH_BIT: u32 = 2;
 /// One vendor retry leaf: its extra arguments after the queue, the step
 /// probe's disposition, and the continuation a retry reaches with its
 /// third argument word when that word decides.
@@ -92,9 +103,13 @@ struct Completion {
     arguments: &'static [u32],
     disposition: u32,
     retry: (&'static str, Option<u32>),
+    /// The production decision of a retry: with the Retry bit or without.
+    retry_decision: u32,
+    /// Whether the MPDU's publication limit, and not a class limit, ends it.
+    publication_limited: bool,
 }
 
-const COMPLETIONS: [Completion; 2] = [
+const COMPLETIONS: [Completion; 3] = [
     // `lmacProcessShortRetryFail(context, 0, 1, _)` retries through
     // `lmacEndFrameExchangeSequence(context, 1, 1)`.
     Completion {
@@ -103,6 +118,8 @@ const COMPLETIONS: [Completion; 2] = [
         arguments: &[0],
         disposition: 1,
         retry: ("lmacEndFrameExchangeSequence", Some(1)),
+        retry_decision: RETRY_AGAIN,
+        publication_limited: false,
     },
     // Both collision branches retry through `lmacRetryTxFrame`.
     Completion {
@@ -111,6 +128,20 @@ const COMPLETIONS: [Completion; 2] = [
         arguments: &[],
         disposition: 2,
         retry: ("lmacRetryTxFrame", None),
+        retry_decision: RETRY_AGAIN,
+        publication_limited: false,
+    },
+    // `lmacProcessShortRetryFail(context, 0, 0, 0)` sets the Retry bit and
+    // retries through `lmacEndFrameExchangeSequence(context, 1, 1)`; the
+    // record's publication limit (`rcReachRetryLimit`) ends the MPDU.
+    Completion {
+        label: "ack",
+        leaf: "lmacProcessAckTimeout",
+        arguments: &[0],
+        disposition: 0,
+        retry: ("lmacEndFrameExchangeSequence", Some(1)),
+        retry_decision: RETRY_AGAIN_WITH_BIT,
+        publication_limited: true,
     },
 ];
 /// The vendor's own limits: long and short retry limits and the RTS length
@@ -337,7 +368,9 @@ fn sequence(
     let leaf = symbol(completion.leaf)?;
     // A CTS timeout always counts as short; a collision counts in the frame's
     // class.
-    let attempts = if long && completion.disposition != COMPLETIONS[0].disposition {
+    let attempts = if completion.publication_limited {
+        limit
+    } else if long && completion.disposition != COMPLETIONS[0].disposition {
         limits.long
     } else {
         limits.short
@@ -544,7 +577,12 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
                     let last = phase + 1 == compared.len();
                     let decision = crate::i2c::returned_low(&records, *case, true);
                     // Each sequence retries until its last phase completes it.
-                    if decision != Some(if last { RETRY_COMPLETE } else { RETRY_AGAIN }) {
+                    let expected = if last {
+                        RETRY_COMPLETE
+                    } else {
+                        completion.retry_decision
+                    };
+                    if decision != Some(expected) {
                         return Err(invalid(format!(
                             "{label} case {case}: production decided {decision:?} at phase {phase}"
                         )));

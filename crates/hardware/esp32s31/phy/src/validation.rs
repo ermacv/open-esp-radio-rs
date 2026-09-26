@@ -82,27 +82,30 @@ pub fn calibration_tracking(
     .expect("calibration action selects the combined child")
 }
 
-/// Select the complete parent with RFPLL disabled for the isolated baseline
-/// comparison. The compiled production entry and every remaining registered
-/// policy field are unchanged; the returned model owns no physical capability.
+/// Parent policy choices a vendor comparison seeds as `phy_param` guards.
+/// Every other registered policy field is unchanged.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ParameterTrackingChoices {
+    /// RFPLL capacitance tracking (`phy_param[0xa]`).
+    pub rfpll: bool,
+    /// Either vendor tracking guard (`phy_param[0x17]` or `[0x195]`).
+    pub inhibited: bool,
+    /// Calibration tracking, disabled by a nonzero `phy_param[0x192]`.
+    pub calibration: bool,
+}
+
+/// Select the complete production parent under `choices`; the returned model
+/// owns no physical capability.
 pub fn parameter_tracking(
     state: &crate::PhyState,
     clients: crate::tracking::parameters::PhyParamTrackRequest,
+    choices: ParameterTrackingChoices,
 ) -> crate::state::client::PhyPendingTracking {
     let mut policy =
         crate::tracking::parameters::PhyParamTrackingPolicy::for_registered_state(state);
-    policy.rfpll_cap_tracking_enabled = false;
-    crate::state::client::PhyPendingTracking::for_validation(clients, policy)
-}
-
-/// Exercise the registered RFPLL policy inside the real production parent.
-pub fn parameter_tracking_with_rfpll(
-    state: &crate::PhyState,
-    clients: crate::tracking::parameters::PhyParamTrackRequest,
-) -> crate::state::client::PhyPendingTracking {
-    let mut policy =
-        crate::tracking::parameters::PhyParamTrackingPolicy::for_registered_state(state);
-    policy.rfpll_cap_tracking_enabled = true;
+    policy.rfpll_cap_tracking_enabled = choices.rfpll;
+    policy.tracking_inhibited = choices.inhibited;
+    policy.calibration_tracking_enabled = choices.calibration;
     crate::state::client::PhyPendingTracking::for_validation(clients, policy)
 }
 

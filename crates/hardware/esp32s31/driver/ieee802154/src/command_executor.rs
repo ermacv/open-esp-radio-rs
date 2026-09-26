@@ -10,9 +10,6 @@
 //! `RX_START`, `CCA_TX_START`, or `ED_START`. `STOP` is deliberately not used
 //! as a synchronous idle proof; terminal IRQ reconciliation owns that edge.
 
-#[cfg(test)]
-use oer_esp32s31_hal::ieee802154::mac::Ieee802154MultipanEnableState;
-
 use crate::{
     MacCommandCapability, MacCommandExecutor, MacOperation, MacOperationPolicyError, sealed,
 };
@@ -21,11 +18,9 @@ use oer_esp32s31_ieee802154_dma::{RxDmaAddress, TxDmaAddress};
 
 use oer_esp32s31_ieee802154_mac::{MacActivePhase, MacCommandIntent, MacTransmitAcknowledgement};
 
-use oer_esp32s31_hal::ieee802154::mac::{
-    Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdDurationUnits,
-    Ieee802154FrequencyCode, Ieee802154MacCommand, Ieee802154MacControl,
-    Ieee802154MacPolicySnapshot, Ieee802154PanIdentity, Ieee802154TaskOwner,
-    Ieee802154Timer0ThresholdWord,
+use oer_esp32s31_hal::ieee802154::{
+    Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint, Ieee802154ReadbackError,
+    mac::{Ieee802154Command, Ieee802154TaskOwner},
 };
 
 /// Vendor watchdog interval started when an ACK-requesting transmit reaches
@@ -88,23 +83,12 @@ pub enum Ieee802154CommandError {
     /// A command-dependent step was reached before static policy passed its
     /// exact post-write readback.
     PolicyNotRefreshed,
-    /// The requested ED duration could not be represented by the generated
-    /// register field type without truncation.
-    EnergyDetectionDurationOutOfRange {
-        /// Complete rejected source-level duration.
-        units: u16,
-    },
     /// Standalone ED or CCA was requested without a duration publication in
     /// the same preparation epoch.
     EnergyDetectionDurationMissing,
-    /// The static-policy image read after the device fence did not match the
-    /// exact retained image.
-    StaticPolicyReadbackMismatch {
-        /// Policy image retained by this command epoch.
-        expected: Ieee802154MacPolicySnapshot,
-        /// Complete policy image sampled after refresh.
-        observed: Ieee802154MacPolicySnapshot,
-    },
+    /// The static policy read after the device fence did not match the
+    /// policy retained by this executor.
+    StaticPolicyReadback(Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -121,17 +105,14 @@ enum ExecutorState {
 }
 
 trait TaskCommandBackend {
-    fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode);
-    fn set_cca_mode(&mut self, mode: Ieee802154CcaMode);
-    fn set_cca_threshold_code(&mut self, threshold: i8);
-    fn set_mac_control(&mut self, control: Ieee802154MacControl);
-    fn set_ack_timeout(&mut self, timeout: Ieee802154AckTimeoutUnits);
-    fn set_primary_pan_identity(&mut self, identity: Ieee802154PanIdentity);
-    fn mac_policy_snapshot(&mut self) -> Ieee802154MacPolicySnapshot;
+    fn refresh_policy(
+        &mut self,
+        policy: Ieee802154MacPolicy,
+    ) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>>;
     fn publish_transmit_address(&mut self, address: u32);
     fn publish_receive_address(&mut self, address: u32);
-    fn set_ed_duration(&mut self, duration: Ieee802154EdDurationUnits);
-    fn request_command(&mut self, command: MacCommandIntent);
+    fn set_ed_duration(&mut self, units: u16);
+    fn request_command(&mut self, command: Ieee802154Command);
     fn enable_acknowledgement_watchdog_event(&mut self);
     fn sample_monotonic_microseconds(&mut self) -> u32;
     fn start_acknowledgement_watchdog(&mut self, threshold: u32);
@@ -145,32 +126,11 @@ struct HalTaskCommandBackend {
 }
 
 impl TaskCommandBackend for HalTaskCommandBackend {
-    fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
-        self.task.set_frequency_code(code);
-    }
-
-    fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {
-        self.task.set_cca_mode(mode);
-    }
-
-    fn set_cca_threshold_code(&mut self, threshold: i8) {
-        self.task.set_cca_threshold_code(threshold);
-    }
-
-    fn set_mac_control(&mut self, control: Ieee802154MacControl) {
-        self.task.set_mac_control(control);
-    }
-
-    fn set_ack_timeout(&mut self, timeout: Ieee802154AckTimeoutUnits) {
-        self.task.set_ack_timeout(timeout);
-    }
-
-    fn set_primary_pan_identity(&mut self, identity: Ieee802154PanIdentity) {
-        self.task.set_primary_pan_identity(identity);
-    }
-
-    fn mac_policy_snapshot(&mut self) -> Ieee802154MacPolicySnapshot {
-        self.task.mac_policy_snapshot()
+    fn refresh_policy(
+        &mut self,
+        policy: Ieee802154MacPolicy,
+    ) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>> {
+        self.task.refresh_mac_policy(policy)
     }
 
     fn publish_transmit_address(&mut self, address: u32) {
@@ -181,21 +141,12 @@ impl TaskCommandBackend for HalTaskCommandBackend {
         self.task.publish_receive_dma_address(address);
     }
 
-    fn set_ed_duration(&mut self, duration: Ieee802154EdDurationUnits) {
-        self.task.set_ed_duration(duration);
+    fn set_ed_duration(&mut self, units: u16) {
+        self.task.set_ed_duration(units);
     }
 
-    fn request_command(&mut self, command: MacCommandIntent) {
-        let command = match command {
-            MacCommandIntent::Receive => Ieee802154MacCommand::Receive,
-            MacCommandIntent::Transmit => Ieee802154MacCommand::Transmit,
-            MacCommandIntent::TransmitWithClearChannelAssessment => {
-                Ieee802154MacCommand::ClearChannelThenTransmit
-            }
-            MacCommandIntent::ClearChannelAssessment => Ieee802154MacCommand::EnergyDetection,
-            MacCommandIntent::EnergyDetection => Ieee802154MacCommand::EnergyDetection,
-        };
-        self.task.request_mac_command(command);
+    fn request_command(&mut self, command: Ieee802154Command) {
+        self.task.request_command(command);
     }
 
     fn enable_acknowledgement_watchdog_event(&mut self) {
@@ -207,8 +158,7 @@ impl TaskCommandBackend for HalTaskCommandBackend {
     }
 
     fn start_acknowledgement_watchdog(&mut self, threshold: u32) {
-        self.task
-            .start_acknowledgement_watchdog(Ieee802154Timer0ThresholdWord::new(threshold));
+        self.task.start_acknowledgement_watchdog(threshold);
     }
 
     fn disarm_acknowledgement_watchdog(&mut self) {
@@ -220,14 +170,31 @@ impl TaskCommandBackend for HalTaskCommandBackend {
     }
 }
 
+/// The hardware command that starts one actor intent.
+///
+/// Standalone CCA is an energy-detection transaction whose sample the actor
+/// interprets; the hardware has no separate CCA opcode.
+const fn hardware_command(intent: MacCommandIntent) -> Ieee802154Command {
+    match intent {
+        MacCommandIntent::Receive => Ieee802154Command::Receive,
+        MacCommandIntent::Transmit => Ieee802154Command::Transmit,
+        MacCommandIntent::TransmitWithClearChannelAssessment => {
+            Ieee802154Command::ClearChannelThenTransmit
+        }
+        MacCommandIntent::ClearChannelAssessment | MacCommandIntent::EnergyDetection => {
+            Ieee802154Command::EnergyDetection
+        }
+    }
+}
+
 struct TaskCommandExecutorCore<Backend> {
     backend: Backend,
-    expected_policy: Ieee802154MacPolicySnapshot,
+    expected_policy: Ieee802154MacPolicy,
     state: ExecutorState,
 }
 
 impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
-    const fn new(backend: Backend, expected_policy: Ieee802154MacPolicySnapshot) -> Self {
+    const fn new(backend: Backend, expected_policy: Ieee802154MacPolicy) -> Self {
         Self {
             backend,
             expected_policy,
@@ -297,23 +264,9 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
             return Err(Ieee802154CommandError::PreparationNotOpen);
         };
 
-        let expected = self.expected_policy;
-        self.backend.set_frequency_code(expected.frequency_code());
-        self.backend.set_cca_mode(expected.cca_mode());
         self.backend
-            .set_cca_threshold_code(expected.cca_threshold_code());
-        self.backend.set_mac_control(expected.control());
-        self.backend.set_ack_timeout(expected.ack_timeout());
-        self.backend.set_primary_pan_identity(expected.identity());
-        self.backend.order_device_accesses();
-
-        let observed = self.backend.mac_policy_snapshot();
-        if observed != expected {
-            return Err(Ieee802154CommandError::StaticPolicyReadbackMismatch {
-                expected,
-                observed,
-            });
-        }
+            .refresh_policy(self.expected_policy)
+            .map_err(Ieee802154CommandError::StaticPolicyReadback)?;
 
         self.state = ExecutorState::Preparing {
             policy_refreshed: true,
@@ -345,9 +298,7 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
         units: u16,
     ) -> Result<(), Ieee802154CommandError> {
         self.require_refreshed_preparation()?;
-        let duration = Ieee802154EdDurationUnits::new(u32::from(units))
-            .ok_or(Ieee802154CommandError::EnergyDetectionDurationOutOfRange { units })?;
-        self.backend.set_ed_duration(duration);
+        self.backend.set_ed_duration(units);
         self.backend.order_device_accesses();
 
         self.state = ExecutorState::Preparing {
@@ -373,7 +324,7 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
         // typed open-LL command leaf. The post-command fence closes the finite
         // task-side transaction before the executor awaits its hard IRQ.
         self.backend.order_device_accesses();
-        self.backend.request_command(command);
+        self.backend.request_command(hardware_command(command));
         self.backend.order_device_accesses();
         self.state = ExecutorState::Active {
             command,
@@ -475,7 +426,7 @@ pub struct Ieee802154CommandExecutor {
 impl Ieee802154CommandExecutor {
     const fn from_task_registers(
         task: Ieee802154TaskOwner,
-        expected_policy: Ieee802154MacPolicySnapshot,
+        expected_policy: Ieee802154MacPolicy,
         clock: Ieee802154MonotonicMicrosecondClock,
     ) -> Self {
         Self {
@@ -546,7 +497,7 @@ impl MacCommandExecutor for Ieee802154CommandExecutor {
 }
 
 impl MacOperation<Ieee802154CommandExecutor> {
-    /// Bind one dedicated HAL task owner and its reviewed static-policy image
+    /// Bind one dedicated HAL task owner and the static policy it republishes before every command
     /// to the production command owner without touching MMIO.
     ///
     /// PHY, BTBB, coexistence, event masks, and the CPU interrupt route remain
@@ -554,7 +505,7 @@ impl MacOperation<Ieee802154CommandExecutor> {
     /// only transfers the already-exclusive task capability.
     pub const fn from_esp32s31_task(
         task: Ieee802154TaskOwner,
-        expected_policy: Ieee802154MacPolicySnapshot,
+        expected_policy: Ieee802154MacPolicy,
         clock: Ieee802154MonotonicMicrosecondClock,
     ) -> Self {
         Self::from_commands(MacCommandCapability {

@@ -49,7 +49,7 @@ use crate::{
             Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154MacControl, Ieee802154MacPolicy,
             Ieee802154MacPolicyBackend, Ieee802154MacPolicyCheckpoint,
             Ieee802154MacPolicyFailure as EngineMacPolicyFailure, Ieee802154MacPolicyReadback,
-            Ieee802154PanIdentity, configure_ieee802154_mac_policy,
+            Ieee802154MacPolicyWrites, Ieee802154PanIdentity, configure_ieee802154_mac_policy,
         },
     },
     owner::{SharedPhyHal, route},
@@ -414,7 +414,7 @@ impl<P> Ieee802154EdEventProbeFinished<P> {
     }
 }
 
-impl<P> Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured<P> {
+impl<P> Ieee802154MacPolicyWrites for Ieee802154FoundationConfigured<P> {
     fn set_channel(&mut self, channel: crate::ieee802154::Ieee802154Channel) {
         self.inner
             .backend_mut()
@@ -451,7 +451,9 @@ impl<P> Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured<P> {
     fn order_device_accesses(&mut self) {
         self.inner.backend_mut().mac_hal().order_device_accesses();
     }
+}
 
+impl<P> Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured<P> {
     fn mac_policy_readback(&mut self) -> Ieee802154MacPolicyReadback {
         let mut hal = self.inner.backend_mut().mac_hal();
         let foundation = hal.foundation_snapshot();

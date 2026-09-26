@@ -4,22 +4,21 @@ use oer_esp32s31_ieee802154_dma::{
 
 use std::{boxed::Box, vec::Vec};
 
+use oer_esp32s31_hal::ieee802154::{
+    Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154Channel, Ieee802154MacControl,
+    Ieee802154PanIdentity,
+};
+
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
-    Frequency(Ieee802154FrequencyCode),
-    CcaMode(Ieee802154CcaMode),
-    CcaThreshold(i8),
-    MacControl(Ieee802154MacControl),
-    AckTimeout(Ieee802154AckTimeoutUnits),
-    PanIdentity(Ieee802154PanIdentity),
+    PolicyRefresh(Ieee802154MacPolicy),
     Fence,
-    PolicySnapshot,
     TxAddress(u32),
     RxAddress(u32),
-    EdDuration(u32),
-    Command(MacCommandIntent),
+    EdDuration(u16),
+    Command(Ieee802154Command),
     WatchdogEventEnabled,
     ClockSample(u32),
     WatchdogStarted(u32),
@@ -27,16 +26,22 @@ enum Operation {
 }
 
 struct FakeBackend {
-    observed_policy: Ieee802154MacPolicySnapshot,
+    refresh: Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>>,
     operations: Vec<Operation>,
     clock_samples: [u32; 2],
     next_clock_sample: usize,
 }
 
 impl FakeBackend {
-    fn new(observed_policy: Ieee802154MacPolicySnapshot) -> Self {
+    fn new() -> Self {
+        Self::with_refresh(Ok(()))
+    }
+
+    fn with_refresh(
+        refresh: Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>>,
+    ) -> Self {
         Self {
-            observed_policy,
+            refresh,
             operations: Vec::new(),
             clock_samples: [0; 2],
             next_clock_sample: 0,
@@ -50,33 +55,12 @@ impl FakeBackend {
 }
 
 impl TaskCommandBackend for FakeBackend {
-    fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
-        self.operations.push(Operation::Frequency(code));
-    }
-
-    fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {
-        self.operations.push(Operation::CcaMode(mode));
-    }
-
-    fn set_cca_threshold_code(&mut self, threshold: i8) {
-        self.operations.push(Operation::CcaThreshold(threshold));
-    }
-
-    fn set_mac_control(&mut self, control: Ieee802154MacControl) {
-        self.operations.push(Operation::MacControl(control));
-    }
-
-    fn set_ack_timeout(&mut self, timeout: Ieee802154AckTimeoutUnits) {
-        self.operations.push(Operation::AckTimeout(timeout));
-    }
-
-    fn set_primary_pan_identity(&mut self, identity: Ieee802154PanIdentity) {
-        self.operations.push(Operation::PanIdentity(identity));
-    }
-
-    fn mac_policy_snapshot(&mut self) -> Ieee802154MacPolicySnapshot {
-        self.operations.push(Operation::PolicySnapshot);
-        self.observed_policy
+    fn refresh_policy(
+        &mut self,
+        policy: Ieee802154MacPolicy,
+    ) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>> {
+        self.operations.push(Operation::PolicyRefresh(policy));
+        self.refresh
     }
 
     fn publish_transmit_address(&mut self, address: u32) {
@@ -87,11 +71,11 @@ impl TaskCommandBackend for FakeBackend {
         self.operations.push(Operation::RxAddress(address));
     }
 
-    fn set_ed_duration(&mut self, duration: Ieee802154EdDurationUnits) {
-        self.operations.push(Operation::EdDuration(duration.get()));
+    fn set_ed_duration(&mut self, units: u16) {
+        self.operations.push(Operation::EdDuration(units));
     }
 
-    fn request_command(&mut self, command: MacCommandIntent) {
+    fn request_command(&mut self, command: Ieee802154Command) {
         self.operations.push(Operation::Command(command));
     }
 
@@ -122,40 +106,31 @@ impl TaskCommandBackend for FakeBackend {
     }
 }
 
-fn policy() -> Ieee802154MacPolicySnapshot {
-    Ieee802154MacPolicySnapshot::new(
-        Ieee802154FrequencyCode::new(15),
-        Ieee802154CcaMode::CarrierOrEnergyDetection,
-        -72,
-        Ieee802154AckTimeoutUnits::new(864),
-        Ieee802154MacControl::new(true, true, false, false, false, true),
-        Ieee802154MultipanEnableState::new(true, false, true, false),
-        Ieee802154PanIdentity::new(
-            0x1234,
-            0x5678,
-            [0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe],
-        ),
-    )
+fn policy() -> Ieee802154MacPolicy {
+    policy_with_control(Ieee802154MacControl::new(
+        true, true, false, false, false, true,
+    ))
 }
 
 fn refreshed_core() -> TaskCommandExecutorCore<FakeBackend> {
-    let policy = policy();
-    let mut core = TaskCommandExecutorCore::new(FakeBackend::new(policy), policy);
+    let mut core = TaskCommandExecutorCore::new(FakeBackend::new(), policy());
     core.require_state_specific_quiescence().unwrap();
     core.refresh_static_policy().unwrap();
     core
 }
 
-fn policy_with_control(control: Ieee802154MacControl) -> Ieee802154MacPolicySnapshot {
-    let base = policy();
-    Ieee802154MacPolicySnapshot::new(
-        base.frequency_code(),
-        base.cca_mode(),
-        base.cca_threshold_code(),
-        base.ack_timeout(),
+fn policy_with_control(control: Ieee802154MacControl) -> Ieee802154MacPolicy {
+    Ieee802154MacPolicy::new(
+        Ieee802154Channel::new(15).unwrap(),
+        Ieee802154CcaMode::CarrierOrEnergyDetection,
+        -72,
+        Ieee802154AckTimeout::from_units(864),
         control,
-        base.multipan_enable_state(),
-        base.identity(),
+        Ieee802154PanIdentity::new(
+            0x1234,
+            0x5678,
+            [0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe],
+        ),
     )
 }
 
@@ -167,7 +142,7 @@ fn automatic_ack_policy_must_match_the_operation_terminal_model() {
         Ieee802154MacControl::new(false, false, true, false, false, false),
     ] {
         let policy = policy_with_control(control);
-        let core = TaskCommandExecutorCore::new(FakeBackend::new(policy), policy);
+        let core = TaskCommandExecutorCore::new(FakeBackend::new(), policy);
         assert_eq!(
             core.validate_operation_policy(receive),
             Err(
@@ -199,30 +174,21 @@ fn automatic_ack_policy_must_match_the_operation_terminal_model() {
     ] {
         let control = Ieee802154MacControl::new(false, rx_auto_ack, false, false, false, false);
         let policy = policy_with_control(control);
-        let core = TaskCommandExecutorCore::new(FakeBackend::new(policy), policy);
+        let core = TaskCommandExecutorCore::new(FakeBackend::new(), policy);
         assert_eq!(core.validate_operation_policy(phase), expected);
     }
 }
 
 #[test]
-fn policy_refresh_uses_exact_order_fence_and_readback() {
+fn policy_refresh_republishes_the_retained_policy_through_the_hal() {
     let expected = policy();
-    let mut core = TaskCommandExecutorCore::new(FakeBackend::new(expected), expected);
+    let mut core = TaskCommandExecutorCore::new(FakeBackend::new(), expected);
     core.require_state_specific_quiescence().unwrap();
     core.refresh_static_policy().unwrap();
 
     assert_eq!(
         core.backend.operations,
-        [
-            Operation::Frequency(expected.frequency_code()),
-            Operation::CcaMode(expected.cca_mode()),
-            Operation::CcaThreshold(expected.cca_threshold_code()),
-            Operation::MacControl(expected.control()),
-            Operation::AckTimeout(expected.ack_timeout()),
-            Operation::PanIdentity(expected.identity()),
-            Operation::Fence,
-            Operation::PolicySnapshot,
-        ]
+        [Operation::PolicyRefresh(expected)]
     );
 }
 
@@ -231,7 +197,7 @@ fn acknowledgement_watchdog_uses_two_wrapping_clock_samples_in_source_order() {
     let policy = policy();
     let started_at = u32::MAX - 99_999;
     let programmed_at = 50_000;
-    let backend = FakeBackend::new(policy).with_clock_samples([started_at, programmed_at]);
+    let backend = FakeBackend::new().with_clock_samples([started_at, programmed_at]);
     let mut core = TaskCommandExecutorCore::new(backend, policy);
     core.require_state_specific_quiescence().unwrap();
     core.refresh_static_policy().unwrap();
@@ -282,22 +248,21 @@ fn acknowledgement_watchdog_threshold_fails_closed_across_half_range() {
 
 #[test]
 fn policy_mismatch_fails_closed_before_any_command() {
-    let expected = policy();
-    let observed = Ieee802154MacPolicySnapshot::new(
-        expected.frequency_code(),
-        Ieee802154CcaMode::Carrier,
-        expected.cca_threshold_code(),
-        expected.ack_timeout(),
-        expected.control(),
-        expected.multipan_enable_state(),
-        expected.identity(),
-    );
-    let mut core = TaskCommandExecutorCore::new(FakeBackend::new(observed), expected);
+    let mismatch = Ieee802154ReadbackError {
+        checkpoint: Ieee802154MacPolicyCheckpoint::CcaMode,
+        expected: true,
+        observed: false,
+    };
+    let mut core = TaskCommandExecutorCore::new(FakeBackend::with_refresh(Err(mismatch)), policy());
     core.require_state_specific_quiescence().unwrap();
 
     assert_eq!(
         core.refresh_static_policy(),
-        Err(Ieee802154CommandError::StaticPolicyReadbackMismatch { expected, observed })
+        Err(Ieee802154CommandError::StaticPolicyReadback(mismatch))
+    );
+    assert_eq!(
+        core.request_command(MacCommandIntent::Receive),
+        Err(Ieee802154CommandError::PolicyNotRefreshed)
     );
     assert!(
         !core
@@ -322,10 +287,10 @@ fn ed_and_cca_publish_bounded_duration_then_the_same_open_ll_start() {
         assert_eq!(
             &core.backend.operations[prefix_len..],
             [
-                Operation::EdDuration(u32::from(u16::MAX)),
+                Operation::EdDuration(u16::MAX),
                 Operation::Fence,
                 Operation::Fence,
-                Operation::Command(command),
+                Operation::Command(hardware_command(command)),
                 Operation::Fence,
             ]
         );
@@ -341,8 +306,7 @@ fn ed_and_cca_publish_bounded_duration_then_the_same_open_ll_start() {
 
 #[test]
 fn supported_command_requires_policy_and_duration_in_the_same_epoch() {
-    let expected = policy();
-    let mut unrefreshed = TaskCommandExecutorCore::new(FakeBackend::new(expected), expected);
+    let mut unrefreshed = TaskCommandExecutorCore::new(FakeBackend::new(), policy());
     unrefreshed.require_state_specific_quiescence().unwrap();
     assert_eq!(
         unrefreshed.configure_energy_detection_duration(8),
@@ -400,7 +364,7 @@ fn dma_addresses_and_all_open_ll_commands_are_published_in_order() {
             Operation::EdDuration(8),
             Operation::Fence,
             Operation::Fence,
-            Operation::Command(MacCommandIntent::TransmitWithClearChannelAssessment),
+            Operation::Command(Ieee802154Command::ClearChannelThenTransmit),
             Operation::Fence,
         ]
     );
@@ -413,7 +377,7 @@ fn dma_addresses_and_all_open_ll_commands_are_published_in_order() {
             &core.backend.operations[prefix_len..],
             [
                 Operation::Fence,
-                Operation::Command(command),
+                Operation::Command(hardware_command(command)),
                 Operation::Fence
             ]
         );
@@ -438,5 +402,26 @@ fn affine_state_blocks_reentry_until_exact_completion_handoff() {
     assert_eq!(
         core.require_state_specific_quiescence(),
         Err(Ieee802154CommandError::PreparationAlreadyOpen)
+    );
+}
+
+#[test]
+fn actor_intents_select_the_hardware_command_opcode() {
+    assert_eq!(
+        [
+            MacCommandIntent::Receive,
+            MacCommandIntent::Transmit,
+            MacCommandIntent::TransmitWithClearChannelAssessment,
+            MacCommandIntent::ClearChannelAssessment,
+            MacCommandIntent::EnergyDetection,
+        ]
+        .map(hardware_command),
+        [
+            Ieee802154Command::Receive,
+            Ieee802154Command::Transmit,
+            Ieee802154Command::ClearChannelThenTransmit,
+            Ieee802154Command::EnergyDetection,
+            Ieee802154Command::EnergyDetection,
+        ]
     );
 }

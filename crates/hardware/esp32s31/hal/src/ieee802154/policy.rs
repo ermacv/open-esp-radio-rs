@@ -489,7 +489,7 @@ impl Ieee802154MacPolicyReadback {
 /// inner order: TX auto ACK, RX auto ACK, enhanced ACK TX, coordinator,
 /// promiscuous, enhanced pending; then primary-context enable before each
 /// address class.
-pub(crate) trait Ieee802154MacPolicyBackend {
+pub(crate) trait Ieee802154MacPolicyWrites {
     fn set_channel(&mut self, channel: Ieee802154Channel);
     fn set_cca_mode(&mut self, mode: Ieee802154CcaMode);
     fn set_cca_threshold_code(&mut self, threshold: i8);
@@ -497,9 +497,35 @@ pub(crate) trait Ieee802154MacPolicyBackend {
     fn set_ack_timeout(&mut self, timeout: Ieee802154AckTimeout);
     fn set_primary_pan_identity(&mut self, identity: Ieee802154PanIdentity);
     fn order_device_accesses(&mut self);
+}
+
+/// Cold static-policy backend: the foundation owner can still prove that
+/// every event and abort source remains masked.
+pub(crate) trait Ieee802154MacPolicyBackend: Ieee802154MacPolicyWrites {
     /// Sample the foundation invariants and static policy as one semantic
     /// post-fence readback operation.
     fn mac_policy_readback(&mut self) -> Ieee802154MacPolicyReadback;
+}
+
+/// Operational static-policy backend: event delivery is owned by the active
+/// interrupt route, so only the policy fields are read back.
+pub(crate) trait Ieee802154MacPolicyRefreshBackend: Ieee802154MacPolicyWrites {
+    /// Sample the static-policy fields once after the device fence.
+    fn mac_policy_snapshot(&mut self) -> Ieee802154MacPolicySnapshot;
+}
+
+/// Publish the deterministic, known static policy and fence it.
+///
+/// The missing TX-power operation is intentionally visible in this sequence:
+/// channel is followed directly by CCA mode, without a placeholder write.
+fn write_mac_policy(backend: &mut impl Ieee802154MacPolicyWrites, policy: Ieee802154MacPolicy) {
+    backend.set_channel(policy.channel);
+    backend.set_cca_mode(policy.cca_mode);
+    backend.set_cca_threshold_code(policy.cca_threshold_code);
+    backend.set_mac_control(policy.control);
+    backend.set_ack_timeout(policy.ack_timeout);
+    backend.set_primary_pan_identity(policy.identity);
+    backend.order_device_accesses();
 }
 
 /// Failed policy transition retaining the exact input owner for retry.
@@ -519,10 +545,8 @@ impl<Backend> Ieee802154MacPolicyFailure<Backend> {
     }
 }
 
-/// Apply the deterministic, known static policy and prove one sampled image.
-///
-/// The missing TX-power operation is intentionally visible in this sequence:
-/// channel is followed directly by CCA mode, without a placeholder write.
+/// Apply the static policy on the cold foundation owner and prove one sampled
+/// image of the foundation invariants and every policy field.
 pub(crate) fn configure_ieee802154_mac_policy<Backend>(
     mut backend: Backend,
     policy: Ieee802154MacPolicy,
@@ -530,52 +554,67 @@ pub(crate) fn configure_ieee802154_mac_policy<Backend>(
 where
     Backend: Ieee802154MacPolicyBackend,
 {
-    backend.set_channel(policy.channel);
-    backend.set_cca_mode(policy.cca_mode);
-    backend.set_cca_threshold_code(policy.cca_threshold_code);
-    backend.set_mac_control(policy.control);
-    backend.set_ack_timeout(policy.ack_timeout);
-    backend.set_primary_pan_identity(policy.identity);
-    backend.order_device_accesses();
+    write_mac_policy(&mut backend, policy);
 
     let readback = backend.mac_policy_readback();
-    if let Err(error) = verify_mac_policy_readback(readback, policy) {
+    if let Err(error) = verify_foundation_readback(readback.foundation)
+        .and_then(|()| verify_mac_policy_snapshot(readback.policy, policy))
+    {
         return Err(Ieee802154MacPolicyFailure { backend, error });
     }
 
     Ok(backend)
 }
 
-fn verify_mac_policy_readback(
-    readback: Ieee802154MacPolicyReadback,
-    expected: Ieee802154MacPolicy,
+/// Republish the static policy on the operational task owner before one
+/// command epoch and prove the sampled policy fields.
+///
+/// This is the same write sequence as [`configure_ieee802154_mac_policy`].
+/// Event and abort enables belong to the active interrupt route here, so the
+/// foundation masking invariants are deliberately not part of the readback.
+pub(crate) fn refresh_ieee802154_mac_policy(
+    backend: &mut impl Ieee802154MacPolicyRefreshBackend,
+    policy: Ieee802154MacPolicy,
+) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>> {
+    write_mac_policy(backend, policy);
+    verify_mac_policy_snapshot(backend.mac_policy_snapshot(), policy)
+}
+
+fn verify_foundation_readback(
+    foundation: Ieee802154FoundationSnapshot,
 ) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>> {
     verify(
         Ieee802154MacPolicyCheckpoint::EventsMasked,
-        readback.foundation.events_masked(),
+        foundation.events_masked(),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::RxAbortsMasked,
-        readback.foundation.rx_aborts_masked(),
+        foundation.rx_aborts_masked(),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::TxAbortsMasked,
-        readback.foundation.tx_aborts_masked(),
+        foundation.tx_aborts_masked(),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::EdSampleAverage,
-        readback.foundation.ed_uses_average(),
+        foundation.ed_uses_average(),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::TxrxPtiDisabled,
-        readback.foundation.txrx_pti().value() == COEX_DISABLED_PTI,
+        foundation.txrx_pti().value() == COEX_DISABLED_PTI,
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::AckPtiDisabled,
-        readback.foundation.ack_pti().value() == COEX_DISABLED_PTI,
+        foundation.ack_pti().value() == COEX_DISABLED_PTI,
     )?;
 
-    let snapshot = readback.policy;
+    Ok(())
+}
+
+fn verify_mac_policy_snapshot(
+    snapshot: Ieee802154MacPolicySnapshot,
+    expected: Ieee802154MacPolicy,
+) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>> {
     verify(
         Ieee802154MacPolicyCheckpoint::Channel,
         snapshot.frequency_code == expected.channel.frequency_code().value(),

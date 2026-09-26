@@ -47,6 +47,16 @@ use crate::ieee802154::{
     },
 };
 
+/// Convert a source-level `uint16_t` ED duration into the register field.
+///
+/// The reviewed field is sixteen bits wide, so every duration is accepted.
+pub(crate) const fn ed_duration_units(units: u16) -> PacEdDurationUnits {
+    match PacEdDurationUnits::new(units as u32) {
+        Some(duration) => duration,
+        None => panic!("the reviewed ED-duration field is sixteen bits wide"),
+    }
+}
+
 /// Typed register operations required by the first IEEE 802.15.4 foundation.
 ///
 /// The trait is crate-private and its production implementation is sealed to
@@ -377,10 +387,7 @@ impl Ieee802154PolledOperationBackend for Ieee802154PacHal<'_> {
     }
 
     fn set_ed_duration(&mut self, duration: u16) -> Result<(), Self::Error> {
-        let Some(duration) = PacEdDurationUnits::new(u32::from(duration)) else {
-            unreachable!("every u16 is accepted by the reviewed ED-duration subset")
-        };
-        self.backend.set_ed_duration(duration);
+        self.backend.set_ed_duration(ed_duration_units(duration));
         Ok(())
     }
 

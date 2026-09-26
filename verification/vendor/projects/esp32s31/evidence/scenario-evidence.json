@@ -155,7 +155,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "f2e9cbe8b7b7f370215f24510cbd2317b4712008d949a5151e105b567d9324f7"
+      "sha256": "19d136a4d7e14d9351e50fb2f613a3108c0b27c9828cf94ffb209969766351e0"
     },
     {
       "path": "verification/vendor/schema",
@@ -1197,7 +1197,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "5528a84454e921c5a648bbf2aa2ddd4a52573fea89994d602cd78ff062c9af45"
+        "5735c826f65e6d0a2dea826c8859d1724943d4ed1cef35d39e64a055f9adb12c"
       ],
       "coverage": {
         "blocks": {
@@ -1267,7 +1267,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "1d343bb7c5fefd93b98db402ec803139e20d16f2870cbacd3aa0766770ae5da5"
+        "4dfec3298ba1e3364a099a3f7c4671fb123ed71088ff61e92041a10eaddf2adc"
       ],
       "coverage": {
         "blocks": {
@@ -1915,7 +1915,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "9174a47563507896ed528f807d156827c2220ecb9a6aa4bd098b39f893fdb308"
+        "97fcebf3dfe98bb58a3f978397cbbcad287f23f66c4fcd28269fd2e2239772bd"
       ],
       "coverage": {
         "blocks": {
@@ -2323,7 +2323,7 @@
       "symbol": "lmacProcessCtsTimeout",
       "production": "open_libpp_tx_retry_trace_step",
       "verdict": "match",
-      "cases": 512,
+      "cases": 1024,
       "reviews": [],
       "coverage": {
         "blocks": {
@@ -2348,6 +2348,40 @@
         "written": 13,
         "compared": 5,
         "reviewed": 8,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "lmacProcessCollision",
+      "production": "open_libpp_tx_retry_trace_step",
+      "verdict": "match",
+      "cases": 1024,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 79,
+          "total": 2031
+        },
+        "directions": {
+          "reached": 59,
+          "total": 2094
+        },
+        "open": 113,
+        "excluded": 121,
+        "untriaged": 3979
+      },
+      "observation": {
+        "executed": 10,
+        "observed": 10,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 18,
+        "compared": 6,
+        "reviewed": 12,
         "untriaged": 0
       }
     }
@@ -5815,16 +5849,6 @@
     },
     {
       "function": "lmacIsLongFrame",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "lmacIsLongFrame",
-      "offset": 16,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacIsLongFrame",
       "offset": 16,
       "kind": "fallthrough"
     },
@@ -5842,16 +5866,6 @@
       "function": "lmacIsLongFrame",
       "offset": 22,
       "kind": "fallthrough"
-    },
-    {
-      "function": "lmacIsLongFrame",
-      "offset": 24,
-      "kind": "block"
-    },
-    {
-      "function": "lmacIsLongFrame",
-      "offset": 30,
-      "kind": "block"
     },
     {
       "function": "lmacMSDUAged",
@@ -5904,6 +5918,11 @@
       "kind": "block"
     },
     {
+      "function": "lmacProcessCollision",
+      "offset": 130,
+      "kind": "taken"
+    },
+    {
       "function": "lmacProcessCtsTimeout",
       "offset": 12,
       "kind": "fallthrough"
@@ -5912,6 +5931,306 @@
       "function": "lmacProcessCtsTimeout",
       "offset": 16,
       "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 24,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 48,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 62,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 82,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 86,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 98,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 98,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 100,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 130,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 134,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 192,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 194,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 200,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 208,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 212,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 212,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 212,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 216,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 250,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 266,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 270,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 282,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 282,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 284,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 320,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 324,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 328,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 342,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 342,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 344,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 356,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 356,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 358,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 360,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 374,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 388,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 388,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 392,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 394,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 424,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 426,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 426,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 430,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 450,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 454,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 454,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 456,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 458,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 468,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 468,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 470,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 472,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 488,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 488,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 490,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 558,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 558,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 558,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 572,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessLongRetryFail",
+      "offset": 582,
+      "kind": "taken"
     },
     {
       "function": "lmacProcessShortRetryFail",
@@ -5985,11 +6304,6 @@
     },
     {
       "function": "lmacProcessShortRetryFail",
-      "offset": 174,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
       "offset": 178,
       "kind": "fallthrough"
     },
@@ -6011,11 +6325,6 @@
     {
       "function": "lmacProcessShortRetryFail",
       "offset": 240,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 248,
       "kind": "taken"
     },
     {
@@ -6070,11 +6379,6 @@
     },
     {
       "function": "lmacProcessShortRetryFail",
-      "offset": 382,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
       "offset": 386,
       "kind": "taken"
     },
@@ -6082,11 +6386,6 @@
       "function": "lmacProcessShortRetryFail",
       "offset": 394,
       "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 406,
-      "kind": "taken"
     },
     {
       "function": "lmacProcessShortRetryFail",
@@ -6107,11 +6406,6 @@
       "function": "lmacProcessShortRetryFail",
       "offset": 414,
       "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 454,
-      "kind": "block"
     },
     {
       "function": "lmacProcessShortRetryFail",
@@ -6231,11 +6525,6 @@
     {
       "function": "lmacProcessShortRetryFail",
       "offset": 612,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 614,
       "kind": "block"
     },
     {

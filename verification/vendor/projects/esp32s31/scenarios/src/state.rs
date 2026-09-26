@@ -68,7 +68,8 @@ const RX_POLICY_NONE: Claim = (
     "open_wifi_sta_ap_trace_disable_all_role_receive",
 );
 
-const RETRY: Claim = ("lmacProcessCtsTimeout", "open_libpp_tx_retry_trace_step");
+const RETRY_CTS: Claim = ("lmacProcessCtsTimeout", "open_libpp_tx_retry_trace_step");
+const RETRY_COLLISION: Claim = ("lmacProcessCollision", "open_libpp_tx_retry_trace_step");
 /// The retry sequences' queue contexts, named by the nearest symbol below
 /// them, and the two per-queue bytes they leave unprojected.
 const RETRY_QUEUES: &str = "0x2f850000";
@@ -77,25 +78,29 @@ const RETRY_QUEUE_BYTES: u32 = 0x38;
 const RETRY_SHORT_COUNT: u32 = 0x0b;
 const RETRY_STATE: u32 = 0x12;
 
-const fn retry_queue(field: u32, queue: u32) -> Place {
+const fn retry_queue(claim: Claim, field: u32, length: u32, queue: u32) -> Place {
     let start = RETRY_QUEUES_OFFSET + queue * RETRY_QUEUE_BYTES + field;
-    place(RETRY, RETRY_QUEUES, start, start + 1)
+    place(claim, RETRY_QUEUES, start, start + length)
 }
 
 /// Reviewed unprojected vendor state.
 pub const DECISIONS: &[Decision] = &[
     Decision {
-        reason: "`lmac.o` per-queue short retry count (queue context 0x0b) that \
-            `lmacProcessShortRetryFail` raises and compares with the short retry limit to \
-            reset the contention window: production has no queue-level count and resets the \
-            window when the MPDU's own short count reaches the limit. The compared sequences \
-            send one MSDU per queue without interleaving, where both counts are equal and the \
-            compared contention exponent follows; interleaved MSDUs are not covered",
+        reason: "`lmac.o` per-queue short and long retry counts (queue context 0x0b and \
+            0x0c) that `lmacProcess{Short,Long}RetryFail` raise and compare with the retry \
+            limits to reset the contention window: production has no queue-level counts and \
+            resets the window when the MPDU's own count reaches the limit. The compared \
+            sequences send one MSDU per queue without interleaving, where the counts are equal \
+            and the compared contention exponent follows; interleaved MSDUs are not covered",
         places: &[
-            retry_queue(RETRY_SHORT_COUNT, 0),
-            retry_queue(RETRY_SHORT_COUNT, 1),
-            retry_queue(RETRY_SHORT_COUNT, 2),
-            retry_queue(RETRY_SHORT_COUNT, 3),
+            retry_queue(RETRY_CTS, RETRY_SHORT_COUNT, 1, 0),
+            retry_queue(RETRY_CTS, RETRY_SHORT_COUNT, 1, 1),
+            retry_queue(RETRY_CTS, RETRY_SHORT_COUNT, 1, 2),
+            retry_queue(RETRY_CTS, RETRY_SHORT_COUNT, 1, 3),
+            retry_queue(RETRY_COLLISION, RETRY_SHORT_COUNT, 2, 0),
+            retry_queue(RETRY_COLLISION, RETRY_SHORT_COUNT, 2, 1),
+            retry_queue(RETRY_COLLISION, RETRY_SHORT_COUNT, 2, 2),
+            retry_queue(RETRY_COLLISION, RETRY_SHORT_COUNT, 2, 3),
         ],
     },
     Decision {
@@ -104,10 +109,14 @@ pub const DECISIONS: &[Decision] = &[
             modeled exchange end: production keeps the transmission in its ordinary TX owner, \
             whose compared retry decision ends it",
         places: &[
-            retry_queue(RETRY_STATE, 0),
-            retry_queue(RETRY_STATE, 1),
-            retry_queue(RETRY_STATE, 2),
-            retry_queue(RETRY_STATE, 3),
+            retry_queue(RETRY_CTS, RETRY_STATE, 1, 0),
+            retry_queue(RETRY_CTS, RETRY_STATE, 1, 1),
+            retry_queue(RETRY_CTS, RETRY_STATE, 1, 2),
+            retry_queue(RETRY_CTS, RETRY_STATE, 1, 3),
+            retry_queue(RETRY_COLLISION, RETRY_STATE, 1, 0),
+            retry_queue(RETRY_COLLISION, RETRY_STATE, 1, 1),
+            retry_queue(RETRY_COLLISION, RETRY_STATE, 1, 2),
+            retry_queue(RETRY_COLLISION, RETRY_STATE, 1, 3),
         ],
     },
     Decision {

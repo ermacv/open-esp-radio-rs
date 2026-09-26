@@ -3,12 +3,13 @@
 //! One sequence starts from the vendor's own `lmacInit`, which builds the
 //! queue contexts `our_instances_ptr` names, and the production retry
 //! owner's reset. Warm phases then apply one completion each: the vendor
-//! leaf (`lmacProcessCtsTimeout`) against the production retry owner's
-//! `observe_completion`. Every phase compares the descriptor retry counters,
-//! the queue's contention exponent and the frame's Retry bit, and the
-//! scenario checks that both sides choose the same continuation: the vendor
-//! reaches `lmacEndFrameExchangeSequence` with a retry flag, or ends the
-//! exchange, as production retries or completes.
+//! leaf (`lmacProcessCtsTimeout`, `lmacProcessCollision`) against the
+//! production retry owner's `observe_completion`, for a short and a long
+//! frame on the two sides of the vendor's RTS threshold. Every phase compares
+//! the descriptor retry counters, the queue's contention exponent and the
+//! frame's Retry bit, and the scenario checks that both sides choose the same
+//! continuation: the vendor retries through its leaf's continuation, or ends
+//! the exchange, as production retries or completes.
 use crate::harness::{Arg, Result, case, direct, invalid, known, region, selection};
 use crate::mac::{LEAF_FILLS, Mac};
 use blobray_domain::{
@@ -17,16 +18,25 @@ use blobray_domain::{
 };
 
 /// Vendor functions the sequences enter, linked as extra roots.
-pub const ROOTS: &[&str] = &["lmacInit", "lmacProcessCtsTimeout"];
-/// Evidence claims: the vendor retry leaf with the production retry owner.
-pub const CLAIMS: &[(&str, &str, &str)] = &[(
-    "archive",
-    "lmacProcessCtsTimeout",
-    "open_libpp_tx_retry_trace_step",
-)];
-/// `lmacConfMib`, which `lmacInit` fills: its short retry limit at 0x15.
+pub const ROOTS: &[&str] = &["lmacInit", "lmacProcessCtsTimeout", "lmacProcessCollision"];
+/// Evidence claims: each vendor retry leaf with the production retry owner.
+pub const CLAIMS: &[(&str, &str, &str)] = &[
+    (
+        "archive",
+        "lmacProcessCtsTimeout",
+        "open_libpp_tx_retry_trace_step",
+    ),
+    (
+        "archive",
+        "lmacProcessCollision",
+        "open_libpp_tx_retry_trace_step",
+    ),
+];
+/// `lmacConfMib`, which `lmacInit` fills: the long and short retry limits
+/// at 0x14 and 0x15 and the RTS length threshold at 0x16.
 const CONF: &str = "lmacConfMib";
-const CONF_SHORT_RETRY_LIMIT: u32 = 0x15;
+const CONF_LIMITS: u32 = 0x14;
+const CONF_LIMITS_BYTES: u32 = 4;
 
 /// Queue contexts `lmacInit` builds: five of 0x38 bytes.
 const QUEUES: u32 = 0x3fff_2000;
@@ -39,11 +49,13 @@ const QUEUE_BUFFER: u32 = 0x00;
 const QUEUE_EXPONENT: u32 = 0x08;
 const QUEUE_STATE: u32 = 0x12;
 const QUEUE_TRANSMITTING: u8 = 1;
-/// The transmitting `esf_buf`: its DMA descriptor at 0x04 and its transmit
-/// descriptor at 0x34.
+/// The transmitting `esf_buf`: its DMA descriptor at 0x04, its frame length
+/// at 0x14 (which `lmacIsLongFrame` compares with the RTS threshold) and its
+/// transmit descriptor at 0x34.
 const BUFFER: u32 = 0x3fff_2400;
 const BUFFER_BYTES: usize = 0x40;
 const BUFFER_DMA: usize = 0x04;
+const BUFFER_LENGTH: usize = 0x14;
 const BUFFER_DESCRIPTOR: usize = 0x34;
 /// The transmit descriptor: retry counters at 5..8 (MPDU, short, long) and
 /// the rate schedule record at 0x1c.
@@ -70,8 +82,45 @@ const INITIAL_RATE: u32 = 0x0b;
 /// Production decisions the step probe returns.
 const RETRY_COMPLETE: u32 = 0;
 const RETRY_AGAIN: u32 = 1;
-/// Dispositions of the step probe.
-const CTS_TIMEOUT: u32 = 1;
+/// One vendor retry leaf: its extra arguments after the queue, the step
+/// probe's disposition, and the continuation a retry reaches with its
+/// third argument word when that word decides.
+#[derive(Clone, Copy)]
+struct Completion {
+    label: &'static str,
+    leaf: &'static str,
+    arguments: &'static [u32],
+    disposition: u32,
+    retry: (&'static str, Option<u32>),
+}
+
+const COMPLETIONS: [Completion; 2] = [
+    // `lmacProcessShortRetryFail(context, 0, 1, _)` retries through
+    // `lmacEndFrameExchangeSequence(context, 1, 1)`.
+    Completion {
+        label: "cts",
+        leaf: "lmacProcessCtsTimeout",
+        arguments: &[0],
+        disposition: 1,
+        retry: ("lmacEndFrameExchangeSequence", Some(1)),
+    },
+    // Both collision branches retry through `lmacRetryTxFrame`.
+    Completion {
+        label: "collision",
+        leaf: "lmacProcessCollision",
+        arguments: &[],
+        disposition: 2,
+        retry: ("lmacRetryTxFrame", None),
+    },
+];
+/// The vendor's own limits: long and short retry limits and the RTS length
+/// threshold.
+#[derive(Clone, Copy)]
+struct Limits {
+    long: u8,
+    short: u8,
+    threshold: u16,
+}
 /// Guest events one retry phase may record.
 const RETRY_EVENTS: u32 = 1 << 12;
 /// The ordinary queues: VO, VI, BE and BK.
@@ -101,6 +150,37 @@ const CONTINUATIONS: &[&str] = &[
 ];
 
 fn model(name: &str, address: u32, boundary: CallBoundary, words: u16) -> CallDeclaration {
+    model_with(name, address, boundary, words, vec![])
+}
+
+/// `lmacRetryTxFrame` republishes the frame, which returns the queue to its
+/// transmitting state. A phase that must retry declares it for exactly one
+/// call, so a vendor that does not retry leaves it incomplete.
+fn retry_model(address: u32, boundary: CallBoundary) -> CallDeclaration {
+    let mut model = model_with(
+        "lmacRetryTxFrame",
+        address,
+        boundary,
+        3,
+        vec![blobray_domain::CallOutput {
+            pointer_argument: 0,
+            byte_offset: QUEUE_STATE,
+            width: 1,
+            value: u32::from(QUEUE_TRANSMITTING),
+            scope: blobray_domain::CallOutputScope::NormalMemory,
+        }],
+    );
+    model.repetition = CallRepetition::Finite;
+    model
+}
+
+fn model_with(
+    name: &str,
+    address: u32,
+    boundary: CallBoundary,
+    words: u16,
+    outputs: Vec<blobray_domain::CallOutput>,
+) -> CallDeclaration {
     CallDeclaration {
         id: name.into(),
         applicability: "a retry-leaf continuation or setup callee answered without effect".into(),
@@ -113,7 +193,7 @@ fn model(name: &str, address: u32, boundary: CallBoundary, words: u16) -> CallDe
         argument_words: words,
         responses: vec![CallResponse {
             return_words: [Some(0), None],
-            outputs: vec![],
+            outputs,
             allocation: None,
             delay_micros: None,
         }],
@@ -122,14 +202,17 @@ fn model(name: &str, address: u32, boundary: CallBoundary, words: u16) -> CallDe
 }
 
 /// One retry sequence of `queue`: the vendor `lmacInit` and production reset,
-/// the queue-context patch, and one compared phase per CTS timeout until
-/// production completes.
+/// the queue-context patch, and one compared `completion` phase per attempt
+/// until the frame's retry limit ends it.
+#[allow(clippy::too_many_arguments)]
 fn sequence(
     ctx: &Mac,
+    completion: Completion,
     queue: u32,
     fill: u8,
     limit: u8,
-    short_limit: u8,
+    limits: Limits,
+    long: bool,
 ) -> Result<Vec<(ExecutionCase, bool)>> {
     let image = ctx.image_symbols()?;
     let symbol = |name: &str| ctx.symbol_address(&image, name);
@@ -141,6 +224,9 @@ fn sequence(
     let mut buffer = vec![0u8; BUFFER_BYTES];
     buffer[BUFFER_DMA..BUFFER_DMA + 4].copy_from_slice(&DMA.to_le_bytes());
     buffer[BUFFER_DESCRIPTOR..BUFFER_DESCRIPTOR + 4].copy_from_slice(&DESCRIPTOR.to_le_bytes());
+    // A long frame is one byte over the threshold; a short one reaches it.
+    let length = limits.threshold + u16::from(long);
+    buffer[BUFFER_LENGTH..BUFFER_LENGTH + 2].copy_from_slice(&length.to_le_bytes());
     let mut descriptor = vec![0u8; DESCRIPTOR_BYTES];
     descriptor[DESCRIPTOR_RECORD..DESCRIPTOR_RECORD + 4].copy_from_slice(&RECORD.to_le_bytes());
     let mut dma = vec![0u8; DMA_BYTES];
@@ -176,7 +262,7 @@ fn sequence(
         vec![
             ("queue", Arg::Word(Some(i64::from(queue)))),
             ("mpdu_retry_limit", Arg::Word(Some(i64::from(limit)))),
-            ("long_frame", Arg::Word(Some(0))),
+            ("long_frame", Arg::Word(Some(i64::from(long)))),
         ],
         vec![],
         vec![],
@@ -190,7 +276,7 @@ fn sequence(
     reset.arguments.resize(8, Some(0));
     let mut rows = vec![(
         case(
-            format!("retry-init-q{queue}-{fill:02x}"),
+            format!("retry-{}-init-q{queue}-{long}-{fill:02x}", completion.label),
             init,
             Some(reset),
             SessionReset::Cold,
@@ -216,7 +302,10 @@ fn sequence(
         let length = bytes.len() as u32;
         rows.push((
             case(
-                format!("retry-patch-q{queue}-{index}-{fill:02x}"),
+                format!(
+                    "retry-{}-patch-q{queue}-{long}-{index}-{fill:02x}",
+                    completion.label
+                ),
                 direct(
                     memcpy,
                     &[*address, PATCH, length],
@@ -245,23 +334,43 @@ fn sequence(
         named("queue-contention-exponent", context + QUEUE_EXPONENT, 1),
         named("frame-flags", FRAME + FRAME_FLAGS, 1),
     ];
-    let leaf = symbol("lmacProcessCtsTimeout")?;
-    for step in 0..u32::from(short_limit) {
-        let mut vendor = direct(leaf, &[queue, 0], vec![], vec![], observed.clone());
+    let leaf = symbol(completion.leaf)?;
+    // A CTS timeout always counts as short; a collision counts in the frame's
+    // class.
+    let attempts = if long && completion.disposition != COMPLETIONS[0].disposition {
+        limits.long
+    } else {
+        limits.short
+    };
+    let arguments: Vec<u32> = [queue]
+        .iter()
+        .chain(completion.arguments)
+        .copied()
+        .collect();
+    for step in 0..u32::from(attempts) {
+        let mut vendor = direct(leaf, &arguments, vec![], vec![], observed.clone());
         for name in RETRY_QUIET {
             vendor
                 .calls
                 .push(model(name, symbol(name)?, boundary(name), 1));
         }
+        let retries = step + 1 < u32::from(attempts) && completion.retry.0 == "lmacRetryTxFrame";
         for name in CONTINUATIONS {
             vendor
                 .calls
-                .push(model(name, symbol(name)?, boundary(name), 3));
+                .push(if *name == "lmacRetryTxFrame" && retries {
+                    retry_model(symbol(name)?, boundary(name))
+                } else {
+                    model(name, symbol(name)?, boundary(name), 3)
+                });
         }
         let mut production = ctx.session.probes.invoke(
             "open_libpp_tx_retry_trace_step",
             vec![
-                ("disposition", Arg::Word(Some(i64::from(CTS_TIMEOUT)))),
+                (
+                    "disposition",
+                    Arg::Word(Some(i64::from(completion.disposition))),
+                ),
                 ("context", Arg::Word(Some(i64::from(context)))),
                 ("descriptor", Arg::Word(Some(i64::from(DESCRIPTOR)))),
                 ("buffer", Arg::Word(Some(i64::from(FRAME)))),
@@ -271,7 +380,10 @@ fn sequence(
         )?;
         production.arguments.resize(8, Some(0));
         let mut row = case(
-            format!("retry-cts-q{queue}-{step}-{fill:02x}"),
+            format!(
+                "retry-{}-q{queue}-{long}-{step}-{fill:02x}",
+                completion.label
+            ),
             vendor,
             Some(production),
             SessionReset::Warm,
@@ -320,11 +432,11 @@ fn init_invocation(
     Ok(init)
 }
 
-/// The short retry limit the vendor's `lmacInit` installs.
-fn short_retry_limit(ctx: &mut Mac) -> Result<u8> {
+/// The retry limits and RTS threshold the vendor's `lmacInit` installs.
+fn vendor_limits(ctx: &mut Mac) -> Result<Limits> {
     let image = ctx.image_symbols()?;
     let queues = vec![0u8; (QUEUE_BYTES * QUEUE_COUNT) as usize];
-    let address = ctx.symbol_address(&image, CONF)? + CONF_SHORT_RETRY_LIMIT;
+    let address = ctx.symbol_address(&image, CONF)? + CONF_LIMITS;
     let init = init_invocation(
         ctx,
         &image,
@@ -335,7 +447,7 @@ fn short_retry_limit(ctx: &mut Mac) -> Result<u8> {
             None,
             RegionLifetime::Session,
         )?],
-        vec![selection(address, 1)],
+        vec![selection(address, CONF_LIMITS_BYTES)],
     )?;
     let mut row = case("lmac-init", init, None, SessionReset::Cold, false);
     row.relation = None;
@@ -351,10 +463,14 @@ fn short_retry_limit(ctx: &mut Mac) -> Result<u8> {
         .clone();
     // The vendor must return from lmacInit, not stop incomplete.
     crate::i2c::returned_low(&records, 0, false);
-    crate::evidence::output(&records, 0, false)
-        .first()
-        .copied()
-        .ok_or_else(|| invalid("lmacInit left no short retry limit"))
+    let [long, short, low, high] = crate::evidence::output(&records, 0, false)[..] else {
+        return Err(invalid("lmacInit left no retry limits"));
+    };
+    Ok(Limits {
+        long,
+        short,
+        threshold: u16::from_le_bytes([low, high]),
+    })
 }
 
 /// The vendor continuation of one phase: the modeled callee and its third
@@ -384,70 +500,67 @@ fn continuation(
     found
 }
 
-/// Compare every CTS-timeout sequence; each phase must MATCH and choose the
+/// Compare every retry sequence; each phase must MATCH and choose the
 /// continuation production chooses.
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
     let limit = ctx.rates.publication_limit(INITIAL_RATE)?;
-    let short_limit = short_retry_limit(ctx)?;
+    let limits = vendor_limits(ctx)?;
     let image = ctx.image_symbols()?;
     let targets: Vec<(u32, &'static str)> = CONTINUATIONS
         .iter()
         .map(|name| Ok((ctx.symbol_address(&image, name)?, *name)))
         .collect::<Result<_>>()?;
-    for queue in QUEUES_COMPARED {
-        let mut rows = vec![];
-        let mut compared = vec![];
-        for fill in LEAF_FILLS {
-            for (row, is_compared) in sequence(ctx, queue, fill, limit, short_limit)? {
-                if is_compared {
-                    compared.push(rows.len() as u32);
+    for completion in COMPLETIONS {
+        for queue in QUEUES_COMPARED {
+            let mut rows = vec![];
+            // Compared phases of each sequence, in order.
+            let mut sequences = vec![];
+            for long in [false, true] {
+                for fill in LEAF_FILLS {
+                    let mut compared = vec![];
+                    for (row, is_compared) in
+                        sequence(ctx, completion, queue, fill, limit, limits, long)?
+                    {
+                        if is_compared {
+                            compared.push(rows.len() as u32);
+                        }
+                        rows.push(row);
+                    }
+                    sequences.push(compared);
                 }
-                rows.push(row);
             }
-        }
-        let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
-        let records = ctx
-            .submit(
-                &format!("retry-cts-q{queue}"),
-                &crate::session::request(&vendor, Some(&production), None, rows, RETRY_EVENTS),
-                Some(ComparisonVerdict::Match),
-            )?
-            .records
-            .clone();
-        // Each sequence retries until its last phase completes it.
-        let per_sequence = compared.len() / LEAF_FILLS.len();
-        for (index, case) in compared.iter().enumerate() {
-            let last = index % per_sequence == per_sequence - 1;
-            let decision = crate::i2c::returned_low(&records, *case, true);
-            if decision != Some(if last { RETRY_COMPLETE } else { RETRY_AGAIN }) {
-                return Err(invalid(format!(
-                    "retry case {case}: production decided {decision:?} at phase {}",
-                    index % per_sequence
-                )));
-            }
-        }
-        for case in compared {
-            let decision = crate::i2c::returned_low(&records, case, true);
-            let vendor = continuation(&records, case, &targets);
-            let expected = match decision {
-                Some(RETRY_AGAIN) => Some(("lmacEndFrameExchangeSequence", Some(1))),
-                Some(RETRY_COMPLETE) => None,
-                other => {
-                    return Err(invalid(format!(
-                        "retry case {case}: production returned {other:?}"
-                    )));
+            let label = format!("retry-{}-q{queue}", completion.label);
+            let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
+            let records = ctx
+                .submit(
+                    &label,
+                    &crate::session::request(&vendor, Some(&production), None, rows, RETRY_EVENTS),
+                    Some(ComparisonVerdict::Match),
+                )?
+                .records
+                .clone();
+            for compared in sequences {
+                for (phase, case) in compared.iter().enumerate() {
+                    let last = phase + 1 == compared.len();
+                    let decision = crate::i2c::returned_low(&records, *case, true);
+                    // Each sequence retries until its last phase completes it.
+                    if decision != Some(if last { RETRY_COMPLETE } else { RETRY_AGAIN }) {
+                        return Err(invalid(format!(
+                            "{label} case {case}: production decided {decision:?} at phase {phase}"
+                        )));
+                    }
+                    let reached = continuation(&records, *case, &targets);
+                    let (callee, flag) = completion.retry;
+                    let retried = matches!(
+                        reached,
+                        Some((name, word)) if name == callee && (flag.is_none() || word == flag)
+                    );
+                    if reached.is_none() || retried == last {
+                        return Err(invalid(format!(
+                            "{label} case {case}: production decided {decision:?}, the vendor reached {reached:?}"
+                        )));
+                    }
                 }
-            };
-            let agrees = match (expected, vendor) {
-                (Some(expected), Some(vendor)) => expected == vendor,
-                // A completed exchange is any continuation other than a retry.
-                (None, Some(vendor)) => vendor != ("lmacEndFrameExchangeSequence", Some(1)),
-                _ => false,
-            };
-            if !agrees {
-                return Err(invalid(format!(
-                    "retry case {case}: production decided {decision:?}, the vendor reached {vendor:?}"
-                )));
             }
         }
     }

@@ -1,5 +1,7 @@
 //! modem register and hardware operations.
 
+pub(crate) mod clock_device;
+
 pub(crate) mod coex;
 
 pub(crate) mod etm;

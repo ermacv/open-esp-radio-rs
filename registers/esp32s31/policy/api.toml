@@ -1499,6 +1499,20 @@ register = "INTERRUPT_1_RAW"
 sources = ["BLOB_LIBPP_HAL_DISABLE_MAC"]
 
 [[fixed-register-images]]
+name = "open_modem_pll_source_gate"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "MODEM_CONF"
+value = 0x3d
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK"]
+
+[[fixed-register-images]]
+name = "close_modem_pll_source_gate"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "MODEM_CONF"
+value = 0x25
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK"]
+
+[[fixed-register-images]]
 name = "clear_all_mac_power_interrupts"
 peripheral = "WIFI_MAC_POWER_INTERRUPT"
 register = "CLEAR"
@@ -6845,6 +6859,122 @@ fields = [
     "CLK_BT_APB_EN",
     "CLK_BTBB_EN",
 ]
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "set_modem_wifi_mac_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_WIFIMAC_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "set_modem_wifi_baseband_clocks"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [
+    { field = "CLK_WIFIBB_22M_EN", source-bit-offset = 0 },
+    { field = "CLK_WIFIBB_40M_EN", source-bit-offset = 0 },
+    { field = "CLK_WIFIBB_80M_EN", source-bit-offset = 0 },
+    { field = "CLK_WIFIBB_40X_EN", source-bit-offset = 0 },
+    { field = "CLK_WIFIBB_80X_EN", source-bit-offset = 0 },
+    { field = "CLK_WIFIBB_40X1_EN", source-bit-offset = 0 },
+    { field = "CLK_WIFIBB_160X1_EN", source-bit-offset = 0 },
+]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "set_modem_wifi_apb_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_WIFI_APB_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "set_modem_wifi_baseband_44m_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_WIFIBB_44M_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "set_modem_ieee802154_apb_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_ZB_APB_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "set_modem_ieee802154_mac_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_ZBMAC_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_modem_frontend_apb_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_FE_APB_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_modem_frontend_80m_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_FE_80M_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_modem_frontend_160m_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_FE_160M_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_modem_frontend_dac_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_FE_DAC_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_modem_frontend_pwdet_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_FE_PWDET_ADC_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_modem_frontend_adc_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_FE_ADC_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
 sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
 
 [[field-replace-modifies]]

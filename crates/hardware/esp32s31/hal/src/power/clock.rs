@@ -107,6 +107,22 @@ macro_rules! dependencies {
         pub(crate) enum ModemClockReleaseEdge {
             $($name),+
         }
+
+        impl ModemClockAcquireEdge {
+            const fn dependency(self) -> Dependency {
+                match self {
+                    $(Self::$name => Dependency::$name),+
+                }
+            }
+        }
+
+        impl ModemClockReleaseEdge {
+            const fn dependency(self) -> Dependency {
+                match self {
+                    $(Self::$name => Dependency::$name),+
+                }
+            }
+        }
     };
 }
 
@@ -814,6 +830,9 @@ impl<'planner, 'lease> ModemClockReleaseCommitReady<'planner, 'lease> {
         self.transaction.planner
     }
 }
+
+mod executor;
+pub use executor::{PlatformClockError, PlatformClockProvider};
 
 #[cfg(test)]
 mod tests;

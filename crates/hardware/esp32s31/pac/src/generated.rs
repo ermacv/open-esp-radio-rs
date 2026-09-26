@@ -5611,6 +5611,96 @@ pub(crate) fn prepare_modem_syscon_clock_map(registers: &crate::svd::ModemSyscon
     crate::svd::field_replace_modify::prepare_modem_syscon_clock_map(registers);
 }
 
+/// Typed bridge for the reviewed `set_modem_wifi_mac_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_modem_wifi_mac_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_modem_wifi_mac_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_modem_wifi_baseband_clocks` field-replacement transaction.
+#[inline]
+pub(crate) fn set_modem_wifi_baseband_clocks(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_modem_wifi_baseband_clocks(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_modem_wifi_apb_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_modem_wifi_apb_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_modem_wifi_apb_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_modem_wifi_baseband_44m_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_modem_wifi_baseband_44m_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_modem_wifi_baseband_44m_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_modem_ieee802154_apb_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_modem_ieee802154_apb_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_modem_ieee802154_apb_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_modem_ieee802154_mac_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_modem_ieee802154_mac_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_modem_ieee802154_mac_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `enable_modem_frontend_apb_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_modem_frontend_apb_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_modem_frontend_apb_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_modem_frontend_80m_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_modem_frontend_80m_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_modem_frontend_80m_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_modem_frontend_160m_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_modem_frontend_160m_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_modem_frontend_160m_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_modem_frontend_dac_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_modem_frontend_dac_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_modem_frontend_dac_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_modem_frontend_pwdet_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_modem_frontend_pwdet_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_modem_frontend_pwdet_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_modem_frontend_adc_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_modem_frontend_adc_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_modem_frontend_adc_clock(registers);
+}
+
 /// Typed bridge for the reviewed `set_bluetooth_wifi_baseband_80x1_clock` field-replacement transaction.
 #[inline]
 pub(crate) fn set_bluetooth_wifi_baseband_80x1_clock(

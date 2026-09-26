@@ -228,3 +228,4 @@ fn verify_state(checkpoint: PowerCheckpoint, observed: bool) -> Result<(), Power
 mod tests;
 
 pub(crate) mod clock;
+pub use clock::{PlatformClockError, PlatformClockProvider};

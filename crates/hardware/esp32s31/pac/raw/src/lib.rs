@@ -60105,6 +60105,32 @@ pub mod fixed_register_write {
 /// Safe, SVD-declared writes of fixed complete-register images.
 pub mod fixed_register_image {
 
+    /// Publish the SVD-qualified image `0x0000003d` to `HP_SYS_CLKRST_RADIO`.`MODEM_CONF`.
+    #[inline]
+    pub fn open_modem_pll_source_gate(registers: &crate::HpSysClkrstRadio) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .modem_conf()
+                .write_with_zero(|writer| writer.bits(0x0000003d));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000025` to `HP_SYS_CLKRST_RADIO`.`MODEM_CONF`.
+    #[inline]
+    pub fn close_modem_pll_source_gate(registers: &crate::HpSysClkrstRadio) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .modem_conf()
+                .write_with_zero(|writer| writer.bits(0x00000025));
+        }
+    }
+
     /// Publish the SVD-qualified image `0xffffffff` to `WIFI_MAC_POWER_INTERRUPT`.`CLEAR`.
     #[inline]
     pub fn clear_all_mac_power_interrupts(registers: &crate::WifiMacPowerInterrupt) {
@@ -67974,6 +68000,146 @@ pub mod field_replace_modify {
                 .bit(((input >> 7) & 0x00000001) != 0)
                 .clk_modem_apb_st_map_bit_two()
                 .bit(((input >> 8) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_WIFIMAC_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_modem_wifi_mac_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_wifimac_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_WIFIBB_22M_EN, CLK_WIFIBB_40M_EN, CLK_WIFIBB_80M_EN, CLK_WIFIBB_40X_EN, CLK_WIFIBB_80X_EN, CLK_WIFIBB_40X1_EN, CLK_WIFIBB_160X1_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_modem_wifi_baseband_clocks(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_wifibb_22m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_80m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40x_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_80x_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40x1_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_160x1_en()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_WIFI_APB_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_modem_wifi_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_wifi_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_WIFIBB_44M_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_modem_wifi_baseband_44m_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_wifibb_44m_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ZB_APB_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_modem_ieee802154_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_zb_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ZBMAC_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_modem_ieee802154_mac_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_zbmac_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_FE_APB_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_modem_frontend_apb_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_fe_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_FE_80M_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_modem_frontend_80m_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_fe_80m_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_FE_160M_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_modem_frontend_160m_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_fe_160m_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_FE_DAC_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_modem_frontend_dac_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_fe_dac_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_FE_PWDET_ADC_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_modem_frontend_pwdet_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_fe_pwdet_adc_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_FE_ADC_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_modem_frontend_adc_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_fe_adc_en().bit((input & 0x00000001) != 0)
         });
     }
 

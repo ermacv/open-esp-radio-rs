@@ -248,6 +248,7 @@ pub use wifi::mac::{
 };
 pub mod ownership;
 
+pub use modem::clock_device::ModemClockDevice;
 pub use ownership::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER;
 
 pub use ownership::{

@@ -19,6 +19,10 @@
 //! - [`BluetoothRuntime::quiesce`] stops the scheduler, lends the Bluetooth
 //!   quiescence proof to shared-PHY maintenance and resumes it.
 //!
+//! The runtime is the [`oer_bluetooth_runtime::LeRadioPort`] of the portable
+//! Controller service loop: a refused request is an answer to the Controller
+//! core, while a missing radio, a fault or a failed time sample ends the loop.
+//!
 //! Outcomes leave the lock as owned values through a bounded queue that any
 //! executor may await with [`BluetoothRuntime::next_outcome`]. The platform
 //! calls [`BluetoothRuntime::on_scheduler_wake`] when its scheduler interrupt
@@ -37,6 +41,8 @@ mod hardware;
 #[cfg(target_arch = "riscv32")]
 mod modem_timer;
 mod outcome;
+#[cfg(any(target_arch = "riscv32", test))]
+mod port;
 #[cfg(any(target_arch = "riscv32", test))]
 mod runtime;
 

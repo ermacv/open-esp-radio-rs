@@ -389,3 +389,31 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
         }
     });
 }
+
+#[test]
+fn as_a_radio_port_a_refusal_answers_and_a_missing_radio_ends_service() {
+    use oer_bluetooth_runtime::LeRadioPort;
+
+    let model = Model::default();
+    model.0.borrow_mut().time = 20_000;
+    let runtime = installed(&model);
+    block_on(async {
+        assert_eq!(
+            LeRadioPort::request(&runtime, configure()).await,
+            Ok(Ok(()))
+        );
+        assert_eq!(
+            LeRadioPort::request(&runtime, advertise(1, 5_000)).await,
+            Ok(Err(RequestError::TooLate))
+        );
+    });
+    let empty = Runtime::new();
+    assert_eq!(
+        block_on(LeRadioPort::request(&empty, configure())),
+        Err(BluetoothRuntimeError::NotInstalled)
+    );
+    assert_eq!(
+        block_on(LeRadioPort::clock(&empty)),
+        Err(BluetoothRuntimeError::NotInstalled)
+    );
+}

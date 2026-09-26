@@ -1297,6 +1297,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-controller"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-bluetooth-radio",
+]
+
+[[package]]
 name = "oer-bluetooth-hci"
 version = "0.1.0"
 dependencies = [
@@ -1316,6 +1326,18 @@ dependencies = [
 [[package]]
 name = "oer-bluetooth-radio"
 version = "0.1.0"
+
+[[package]]
+name = "oer-bluetooth-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-controller",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-radio",
+]
 
 [[package]]
 name = "oer-embassy-net-owned"
@@ -1376,6 +1398,7 @@ dependencies = [
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-bluetooth-radio",
+ "oer-bluetooth-runtime",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-radio",

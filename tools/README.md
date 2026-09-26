@@ -8,6 +8,7 @@ checks. A utility does not need its own Cargo package.
 | --- | --- |
 | [blobray](blobray/README.md) | Captured binary research, reviewed knowledge and bounded concrete comparison |
 | [memory-report](memory-report/README.md) | Generic ELF memory and stack analysis; the consumer supplies placement policy |
+| [symbol-lineage](symbol-lineage/README.md) | Source function names carried across obfuscated vendor archive revisions |
 | [process](process/README.md) | Host child-process ownership, cancellation and bounded cleanup shared by xtask and HIL |
 | [firmware](firmware/README.md) | Firmware image operations and shared serial-device leases |
 | [xtask](xtask/README.md) | Cargo/source/architecture checks and their regression tests |

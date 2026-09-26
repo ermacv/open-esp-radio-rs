@@ -91,14 +91,14 @@ impl<const MODEM_TIMER_CAPACITY: usize> ControllerModemTimerRuntime<'_, MODEM_TI
     }
 }
 
-impl ControllerInterruptRuntime<'_> {
+impl<'runtime> ControllerInterruptRuntime<'runtime> {
     /// Durable scheduler handoff for this epoch.
-    pub const fn scheduler_wake(&self) -> &SchedulerWakeCell {
+    pub const fn scheduler_wake(&self) -> &'runtime SchedulerWakeCell {
         self.scheduler_wake
     }
 
     /// Durable source-127 task-readiness handoff for this epoch.
-    pub const fn modem_lp_timer_worker_wake(&self) -> &ModemLpTimerWorkerWakeCell {
+    pub const fn modem_lp_timer_worker_wake(&self) -> &'runtime ModemLpTimerWorkerWakeCell {
         self.modem_lp_timer_worker_wake
     }
 }

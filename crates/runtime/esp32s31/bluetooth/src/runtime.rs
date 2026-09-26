@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_futures::select::select;
 use embassy_sync::{blocking_mutex::raw::RawMutex, channel::Channel, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Timer};
-use oer_bluetooth_radio::{RadioOutcome, RadioRequest, RequestError};
+use oer_bluetooth_radio::{RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError};
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
     controller_time::{
@@ -355,6 +355,28 @@ impl<
             .map_err(BluetoothRuntimeError::Rejected)?;
         self.work.signal(());
         Ok(())
+    }
+
+    /// A fresh radio time and the radio's admission timing, for planning the
+    /// next request.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed, the runtime faulted or no time sample could be
+    /// taken.
+    pub async fn clock(&self) -> Result<(RadioInstant, RadioTiming), BluetoothRuntimeError> {
+        let mut installed = self.installed.lock().await;
+        let installed = installed
+            .as_mut()
+            .ok_or(BluetoothRuntimeError::NotInstalled)?;
+        if installed.faulted {
+            return Err(BluetoothRuntimeError::Faulted);
+        }
+        let sample = sample_time(&mut installed.hardware)
+            .await
+            .map_err(BluetoothRuntimeError::Time)?;
+        installed.radio.observe_time(&sample);
+        Ok((installed.radio.now(), installed.radio.timing()))
     }
 
     /// The platform's scheduler interrupt published a wake for the worker.

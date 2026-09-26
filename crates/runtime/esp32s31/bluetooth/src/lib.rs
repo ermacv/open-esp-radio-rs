@@ -26,13 +26,16 @@
 //!
 //! [`BluetoothRadioHardware`] names every hardware operation; on the chip,
 //! `LiveBluetoothHardware` joins the powered task endpoint of one Controller
-//! epoch with the platform's interrupt-owner storage.
+//! epoch with the platform's interrupt-owner storage, and `run_modem_timer`
+//! drives the source-127 timer task beside the radio.
 
 #[cfg(test)]
 extern crate std;
 
 #[cfg(any(target_arch = "riscv32", test))]
 mod hardware;
+#[cfg(target_arch = "riscv32")]
+mod modem_timer;
 mod outcome;
 #[cfg(any(target_arch = "riscv32", test))]
 mod runtime;
@@ -41,6 +44,8 @@ mod runtime;
 pub use hardware::LiveBluetoothHardware;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use hardware::{BluetoothRadioHardware, RxChainPublicationError};
+#[cfg(target_arch = "riscv32")]
+pub use modem_timer::{ModemTimerFault, run_modem_timer};
 pub use outcome::{BluetoothOutcome, BluetoothReceivedPdu, MAX_PDU_BYTES};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime::{

@@ -277,6 +277,17 @@ fn an_admitted_event_runs_and_ends() {
 }
 
 #[test]
+fn the_clock_reports_a_fresh_radio_time() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    model.0.borrow_mut().time = 2_000;
+    let (now, timing) = block_on(runtime.clock()).unwrap();
+    // Two raw ticks per microsecond.
+    assert_eq!(now, RadioInstant::from_micros(1_000));
+    assert_eq!(timing.admission_guard, RadioDuration::from_micros(40));
+}
+
+#[test]
 fn a_refused_request_reports_the_radio_error() {
     let model = Model::default();
     model.0.borrow_mut().time = 20_000;

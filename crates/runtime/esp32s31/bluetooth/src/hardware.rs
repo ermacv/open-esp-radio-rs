@@ -126,19 +126,22 @@ mod live {
     /// interrupt-owner storage.
     pub struct LiveBluetoothHardware<'runtime, S> {
         task: ControllerPoweredTaskRuntime<'runtime>,
-        storage: S,
+        storage: &'runtime S,
     }
 
     impl<'runtime, S: SchedulerRunInterruptStorage> LiveBluetoothHardware<'runtime, S> {
         /// Join the task endpoint with the storage that holds the stable
         /// interrupt owner.
-        pub const fn new(task: ControllerPoweredTaskRuntime<'runtime>, storage: S) -> Self {
+        pub const fn new(
+            task: ControllerPoweredTaskRuntime<'runtime>,
+            storage: &'runtime S,
+        ) -> Self {
             Self { task, storage }
         }
 
-        /// Separate the task endpoint and the storage again.
-        pub fn into_parts(self) -> (ControllerPoweredTaskRuntime<'runtime>, S) {
-            (self.task, self.storage)
+        /// Separate the task endpoint again.
+        pub fn into_task(self) -> ControllerPoweredTaskRuntime<'runtime> {
+            self.task
         }
     }
 
@@ -206,7 +209,7 @@ mod live {
         }
 
         fn observe(&mut self) -> Result<SchedulerHardwareView, SchedulerHardwareError> {
-            self.task.observe_scheduler_hardware(&self.storage)
+            self.task.observe_scheduler_hardware(self.storage)
         }
 
         fn start(
@@ -214,7 +217,7 @@ mod live {
             items: &SchedulerItemSpace<'_>,
             insertion: SchedulerIdleInsertion,
         ) -> Result<(), SchedulerStartError<S::Error>> {
-            self.task.start_scheduler(&self.storage, items, insertion)
+            self.task.start_scheduler(self.storage, items, insertion)
         }
 
         fn perform<I: Copy, const CAPACITY: usize>(
@@ -222,25 +225,25 @@ mod live {
             items: &SchedulerItemSpace<'_>,
             step: &SchedulerStep<I, CAPACITY>,
         ) -> Result<(), SchedulerHardwareError> {
-            self.task.perform_scheduler_step(&self.storage, items, step)
+            self.task.perform_scheduler_step(self.storage, items, step)
         }
 
         fn observe_wait(
             &mut self,
             wait: SchedulerWait,
         ) -> Result<SchedulerObservation, SchedulerHardwareError> {
-            self.task.observe_scheduler(&self.storage, wait)
+            self.task.observe_scheduler(self.storage, wait)
         }
 
         fn recover(&mut self, fault: SchedulerTransactionFault) {
-            self.task.recover_scheduler(&self.storage, fault);
+            self.task.recover_scheduler(self.storage, fault);
         }
 
         fn step_stop(
             &mut self,
             stop: BluetoothSchedulerStop,
         ) -> Result<BluetoothSchedulerStopStep, BluetoothSchedulerStop> {
-            self.task.step_scheduler_stop(&self.storage, stop)
+            self.task.step_scheduler_stop(self.storage, stop)
         }
     }
 }

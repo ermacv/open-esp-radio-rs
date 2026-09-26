@@ -1,21 +1,32 @@
-//! Legacy non-connectable undirected advertising.
+//! Legacy undirected advertising, non-connectable or connectable.
 //!
 //! Enable configures the backend's advertising set with the `ADV_NONCONN_IND`
-//! PDU and then schedules one event per advertising interval plus a
-//! pseudo-random advertising delay of 0 to 10 ms (Core Vol 6 Part B 4.4.2.2.1).
-//! Each event transmits on the selected primary channels in order; a channel
-//! reserves the radio's preparation lead plus the PDU's air time, following
-//! the vendor item geometry. An event the arbiter cannot place within the
-//! delay range is skipped. Disable cancels the event in progress, waits for
-//! it to end and removes the set before it completes.
+//! PDU, or with `ADV_IND` and its `SCAN_RSP`, and then schedules one event per
+//! advertising interval plus a pseudo-random advertising delay of 0 to 10 ms
+//! (Core Vol 6 Part B 4.4.2.2.1). Each event transmits on the selected
+//! primary channels in order. A non-connectable channel reserves the radio's
+//! preparation lead plus the PDU's air time, following the vendor item
+//! geometry; a connectable channel also covers the vendor's four-microsecond
+//! response-capable tail and the longest exchange that follows: a scan
+//! request answered by the scan response, or a connection indication. An
+//! event the arbiter cannot place within the delay range is skipped. Disable
+//! cancels the event in progress, waits for it to end and removes the set
+//! before it completes.
+//!
+//! A valid connection indication addressed to the set ends advertising: the
+//! remaining channels are cancelled, the set is removed and the indication
+//! passes to the peripheral connection.
 
 use bt_hci::param::{Error as HciError, Status};
-use oer_bluetooth_hci::{
-    LeLegacyAdvertisingAddress, LeLegacyNonconnectableAdvertisingEnableRequest,
-};
+use oer_bluetooth_hci::{LeLegacyAdvertisingAddress, LeLegacyAdvertisingEnableRequest};
 use oer_bluetooth_ll::{
     LeDeviceAddress, LeDeviceAddressKind,
     advertising::{LegacyAdvertisingData, LegacyNonconnectableAdvertisement},
+    connectable_advertising::{
+        LeChannelSelectionAlgorithmTwoSupport, LegacyConnectableAdvertisement,
+        LegacyScanResponseData,
+    },
+    connection::{LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeLegacyConnectionRequest},
 };
 use oer_bluetooth_radio::{
     AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu,
@@ -30,6 +41,20 @@ pub(crate) const ADVERTISING_PDU_CAPACITY: usize = 2 + 6 + 31;
 /// Upper bound of the advertising delay.
 pub(crate) const ADVERTISING_DELAY_MAX: RadioDuration = RadioDuration::from_micros(10_000);
 const SET: AdvertisingSetId = AdvertisingSetId::new(0);
+/// Inter-frame space.
+const T_IFS_MICROS: u32 = 150;
+/// LE 1M air time of `SCAN_REQ`.
+const SCAN_REQ_AIR_MICROS: u32 = (1 + 4 + 2 + 12 + 3) * 8;
+/// The vendor's response-capable scheduler tail after `ADV_IND`.
+const RESPONSE_CAPABLE_TAIL_MICROS: u32 = 4;
+
+/// A connection indication accepted by a connectable set.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ConnectionIndication {
+    pub(crate) request: LeLegacyConnectionRequest,
+    /// On-air start of the indication.
+    pub(crate) at: RadioInstant,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Phase {
@@ -60,6 +85,10 @@ pub(crate) struct Advertiser {
     phase: Phase,
     pdu: [u8; ADVERTISING_PDU_CAPACITY],
     pdu_len: usize,
+    /// The scan response of a connectable set.
+    scan_response: [u8; ADVERTISING_PDU_CAPACITY],
+    scan_response_len: Option<usize>,
+    advertiser: LeDeviceAddress,
     channels: AdvertisingChannels,
     interval: RadioDuration,
     next_anchor: Option<RadioInstant>,
@@ -67,6 +96,9 @@ pub(crate) struct Advertiser {
     /// The removal in progress is followed by a new configuration.
     restart: bool,
     completion: Option<Status>,
+    connection: Option<ConnectionIndication>,
+    /// Advertising stops because a connection was created.
+    connected: bool,
 }
 
 impl Advertiser {
@@ -75,12 +107,17 @@ impl Advertiser {
             phase: Phase::Idle,
             pdu: [0; ADVERTISING_PDU_CAPACITY],
             pdu_len: 0,
+            scan_response: [0; ADVERTISING_PDU_CAPACITY],
+            scan_response_len: None,
+            advertiser: LeDeviceAddress::from_wire_bytes([0; 6], LeDeviceAddressKind::Public),
             channels: AdvertisingChannels::ALL,
             interval: RadioDuration::from_micros(0),
             next_anchor: None,
             outstanding: None,
             restart: false,
             completion: None,
+            connection: None,
+            connected: false,
         }
     }
 
@@ -92,7 +129,7 @@ impl Advertiser {
     /// Start a set; the completion follows once the backend took it.
     pub(crate) fn enable(
         &mut self,
-        request: LeLegacyNonconnectableAdvertisingEnableRequest,
+        request: LeLegacyAdvertisingEnableRequest,
     ) -> Result<(), HciError> {
         self.load(request)?;
         self.next_anchor = None;
@@ -105,7 +142,7 @@ impl Advertiser {
     /// again; the completion follows once the backend took the new one.
     pub(crate) fn update(
         &mut self,
-        request: LeLegacyNonconnectableAdvertisingEnableRequest,
+        request: LeLegacyAdvertisingEnableRequest,
     ) -> Result<(), HciError> {
         self.load(request)?;
         self.restart = true;
@@ -113,31 +150,54 @@ impl Advertiser {
         Ok(())
     }
 
-    fn load(
-        &mut self,
-        request: LeLegacyNonconnectableAdvertisingEnableRequest,
-    ) -> Result<(), HciError> {
-        let kind = match request.advertiser() {
+    fn load(&mut self, request: LeLegacyAdvertisingEnableRequest) -> Result<(), HciError> {
+        let (parameters, advertiser, data) = match request {
+            LeLegacyAdvertisingEnableRequest::Nonconnectable(request) => {
+                (request.parameters(), request.advertiser(), request.data())
+            }
+            LeLegacyAdvertisingEnableRequest::Connectable(request) => {
+                (request.parameters(), request.advertiser(), request.data())
+            }
+        };
+        let kind = match advertiser {
             LeLegacyAdvertisingAddress::Public(_) => LeDeviceAddressKind::Public,
             LeLegacyAdvertisingAddress::Random(_) => LeDeviceAddressKind::Random,
         };
-        let bytes: [u8; 6] = request
-            .advertiser()
+        let bytes: [u8; 6] = advertiser
             .wire_address()
             .raw()
             .try_into()
             .expect("a device address has six octets");
-        let host_data = request.data();
-        let data = LegacyAdvertisingData::new(host_data.as_bytes())
+        let advertiser = LeDeviceAddress::from_wire_bytes(bytes, kind);
+        let data = LegacyAdvertisingData::new(data.as_bytes())
             .map_err(|_| HciError::INVALID_HCI_PARAMETERS)?;
-        let advertisement = LegacyNonconnectableAdvertisement::new(
-            LeDeviceAddress::from_wire_bytes(bytes, kind),
-            data,
-        );
-        self.pdu_len = advertisement
-            .encode(&mut self.pdu)
-            .map_err(|_| HciError::INVALID_HCI_PARAMETERS)?;
-        let channels = request.parameters().channels();
+        let (pdu_len, scan_response_len) = match request {
+            LeLegacyAdvertisingEnableRequest::Nonconnectable(_) => (
+                LegacyNonconnectableAdvertisement::new(advertiser, data).encode(&mut self.pdu),
+                None,
+            ),
+            LeLegacyAdvertisingEnableRequest::Connectable(request) => {
+                let response = request.scan_response_data();
+                let response = LegacyScanResponseData::new(response.as_bytes())
+                    .map_err(|_| HciError::INVALID_HCI_PARAMETERS)?;
+                let scan_response = response
+                    .encode(advertiser, &mut self.scan_response)
+                    .map_err(|_| HciError::INVALID_HCI_PARAMETERS)?;
+                (
+                    LegacyConnectableAdvertisement::new(
+                        advertiser,
+                        data,
+                        LeChannelSelectionAlgorithmTwoSupport::Supported,
+                    )
+                    .encode(&mut self.pdu),
+                    Some(scan_response),
+                )
+            }
+        };
+        self.pdu_len = pdu_len.map_err(|_| HciError::INVALID_HCI_PARAMETERS)?;
+        self.scan_response_len = scan_response_len;
+        self.advertiser = advertiser;
+        let channels = parameters.channels();
         self.channels = AdvertisingChannels::new(
             channels.channel_37(),
             channels.channel_38(),
@@ -145,7 +205,7 @@ impl Advertiser {
         )
         .ok_or(HciError::INVALID_HCI_PARAMETERS)?;
         self.interval = RadioDuration::from_micros(
-            u32::from(request.parameters().interval().minimum_units_625_us()) * 625,
+            u32::from(parameters.interval().minimum_units_625_us()) * 625,
         );
         Ok(())
     }
@@ -182,7 +242,10 @@ impl Advertiser {
                         set: SET,
                         pdu: AdvertisingPdu::new(&self.pdu[..self.pdu_len])
                             .expect("the encoded PDU fits the legacy bounds"),
-                        scan_response: None,
+                        scan_response: self.scan_response_len.map(|length| {
+                            AdvertisingPdu::new(&self.scan_response[..length])
+                                .expect("the encoded response fits the legacy bounds")
+                        }),
                         tx_power: TxPower::from_dbm(0),
                     },
                 ))
@@ -217,6 +280,11 @@ impl Advertiser {
                 self.restart = false;
                 self.phase = Phase::Configuring { sent: false };
             }
+            // Advertising that ended in a connection completes no command.
+            Phase::Removing { .. } if self.connected => {
+                self.connected = false;
+                self.phase = Phase::Idle;
+            }
             Phase::Removing { .. } => {
                 self.restart = false;
                 self.phase = Phase::Idle;
@@ -230,10 +298,17 @@ impl Advertiser {
         }
     }
 
-    /// Air time of one channel of the event, plus the lead.
+    /// Air time of one channel of the event and its responses, plus the
+    /// lead.
     fn channel_spacing(&self, timing: RadioTiming) -> RadioDuration {
-        let payload = (self.pdu_len - 2) as u32;
-        RadioDuration::from_micros(timing.preparation_lead.as_micros() + payload * 8 + 80)
+        let mut air = air_micros(self.pdu_len);
+        if let Some(response) = self.scan_response_len {
+            let scan = SCAN_REQ_AIR_MICROS + T_IFS_MICROS + air_micros(response);
+            air += RESPONSE_CAPABLE_TAIL_MICROS
+                + T_IFS_MICROS
+                + scan.max(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS);
+        }
+        RadioDuration::from_micros(timing.preparation_lead.as_micros() + air)
     }
 
     fn event_duration(&self, timing: RadioTiming) -> RadioDuration {
@@ -321,16 +396,35 @@ impl Advertiser {
 
     /// Account one outcome.
     pub(crate) fn outcome(&mut self, outcome: RadioOutcome<'_>) {
-        let RadioOutcome::EventEnded { id, .. } = outcome else {
-            return;
-        };
-        if !self.owns(id) {
-            return;
+        match outcome {
+            RadioOutcome::Received { id, pdu } if self.owns(id) => {
+                let (Some(_), Some(at), Phase::Running) =
+                    (self.scan_response_len, pdu.captured_at, self.phase)
+                else {
+                    return;
+                };
+                let Ok(request) = LeLegacyConnectionRequest::decode(pdu.pdu) else {
+                    return;
+                };
+                if request.is_addressed_to(self.advertiser) {
+                    self.connection = Some(ConnectionIndication { request, at });
+                    self.connected = true;
+                    self.phase = Phase::Cancelling { sent: false };
+                }
+            }
+            RadioOutcome::EventEnded { id, .. } if self.owns(id) => {
+                self.outstanding = None;
+                if let Phase::Cancelling { .. } = self.phase {
+                    self.phase = Phase::Removing { sent: false };
+                }
+            }
+            _ => {}
         }
-        self.outstanding = None;
-        if let Phase::Cancelling { .. } = self.phase {
-            self.phase = Phase::Removing { sent: false };
-        }
+    }
+
+    /// The connection indication that ended advertising, once.
+    pub(crate) fn take_connection(&mut self) -> Option<ConnectionIndication> {
+        self.connection.take()
     }
 
     pub(crate) fn owns(&self, id: EventId) -> bool {
@@ -340,4 +434,9 @@ impl Advertiser {
     pub(crate) fn take_completion(&mut self) -> Option<Status> {
         self.completion.take()
     }
+}
+
+/// LE 1M air time of a PDU of `length` octets, header included.
+const fn air_micros(length: usize) -> u32 {
+    (length as u32 - 2) * 8 + 80
 }

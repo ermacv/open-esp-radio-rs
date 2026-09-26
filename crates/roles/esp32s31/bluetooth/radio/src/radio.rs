@@ -4,10 +4,10 @@ use core::convert::Infallible;
 
 use oer_bluetooth_radio::{
     AdvertisingChannel, AdvertisingConfiguration, AdvertisingEvent, AdvertisingSetId,
-    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
-    EventId, EventResult, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
-    RadioTiming, ReceivedPdu, RequestError, ScanWindow, ScannerConfiguration, ScannerId, TestPhy,
-    TestReceive, TestReport, TestTransmit, TxPower,
+    ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming,
+    ConnectionId, DataPduKind, EventId, EventResult, RadioDuration, RadioFault, RadioInstant,
+    RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError, ScanWindow,
+    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -18,18 +18,18 @@ use oer_esp32s31_bluetooth::{
     },
 };
 use oer_esp32s31_bluetooth_memory::{
-    DirectionFindingWorkspaceLink, DtmPool, DtmReceiverEventPhase, DtmRole,
-    DtmSchedulerItemCompletionStatus, DtmSchedulerItemEventType, DtmSchedulerReceiverPhy,
-    DtmSchedulerTransmitterPhy, LeRxChain, LeRxOutcome, LeRxSource, LegacyAdvertisingPool,
-    LegacyAdvertisingPrimaryChannel, LegacyAdvertisingPrimaryChannelPlan,
-    LegacyConnectableAdvIndPacketInput, LegacyConnectableAdvertisingMemoryInput,
-    LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
-    LegacyConnectableScanResponsePacketInput, PassiveScanDefaultTxPowerDbm, PassiveScanPool,
-    PassiveScanPrimaryChannel, PassiveScanResetConfig, PassiveScanSchedulerWindow,
-    PassiveScanStartSelection, PeripheralConnectionCapturedAnchorAvailability,
-    PeripheralConnectionDataChannel, PeripheralConnectionDefaultTxPowerDbm,
-    PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
-    PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
+    BlePhyLe1MPacketStartCalibration, DirectionFindingWorkspaceLink, DtmPool,
+    DtmReceiverEventPhase, DtmRole, DtmSchedulerItemCompletionStatus, DtmSchedulerItemEventType,
+    DtmSchedulerReceiverPhy, DtmSchedulerTransmitterPhy, LeRxChain, LeRxOutcome, LeRxSource,
+    LegacyAdvertisingPool, LegacyAdvertisingPrimaryChannelPlan, LegacyConnectableAdvIndPacketInput,
+    LegacyConnectableAdvertisingMemoryInput, LegacyConnectableAdvertisingOwnAddress,
+    LegacyConnectableAdvertisingPool, LegacyConnectableScanResponsePacketInput,
+    PassiveScanDefaultTxPowerDbm, PassiveScanPool, PassiveScanPrimaryChannel,
+    PassiveScanResetConfig, PassiveScanSchedulerWindow, PassiveScanStartSelection,
+    PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
+    PeripheralConnectionDefaultTxPowerDbm, PeripheralConnectionEventSpan,
+    PeripheralConnectionFirstEvent, PeripheralConnectionIdentity, PeripheralConnectionPool,
+    PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
     PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
     PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
     PeripheralConnectionSchedulerWindow, PeripheralConnectionTransmitPduKind,
@@ -142,6 +142,40 @@ struct ConnectionFacts {
     tx_power: TxPower,
 }
 
+// Source-owned S31 connection-event policy. The provenance of each term is
+// the recurring-event section of
+// verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md:
+// the 63-us widening jitter and the 10-us receive guard are the reviewed
+// private-options defaults, the 2-us receive tail and the 1-us boundary are
+// CPU-time ticks, and 5,154 us is the complete LE 1M event duration. A
+// recurring event ends 5,154 us after its widened anchor less the preparation
+// lead; the first event ends 5,154 us plus the boundary after its transmit
+// window, with the 16-us first-event uncertainty on each side.
+const WIDENING_JITTER_MICROS: u32 = 63;
+const RECEIVE_GUARD_MICROS: u32 = 10;
+const RECEIVE_TAIL_MICROS: u32 = 2;
+const BOUNDARY_GUARD_MICROS: u32 = 1;
+const FIRST_EVENT_GUARD_MICROS: u32 = 16;
+const LE_1M_EVENT_MICROS: u32 = 5_154;
+
+const fn connection_allowances(
+    preparation_lead_micros: u32,
+    local_sleep_clock_ppm: u16,
+) -> ConnectionAllowances {
+    ConnectionAllowances {
+        local_sleep_clock_ppm,
+        widening_jitter: RadioDuration::from_micros(WIDENING_JITTER_MICROS),
+        receive_guard: RadioDuration::from_micros(RECEIVE_GUARD_MICROS),
+        receive_tail: RadioDuration::from_micros(RECEIVE_TAIL_MICROS),
+        boundary_guard: RadioDuration::from_micros(BOUNDARY_GUARD_MICROS),
+        first_event_guard: RadioDuration::from_micros(FIRST_EVENT_GUARD_MICROS),
+        event_length: RadioDuration::from_micros(
+            LE_1M_EVENT_MICROS.saturating_sub(preparation_lead_micros),
+        ),
+        first_event_length: RadioDuration::from_micros(LE_1M_EVENT_MICROS + BOUNDARY_GUARD_MICROS),
+    }
+}
+
 /// The monotonic radio epoch over the controller scheduler epoch.
 struct RadioClock {
     epoch: ControllerSchedulerEpoch,
@@ -172,6 +206,13 @@ impl RadioClock {
         let micros = self.epoch.project_capture(raw_capture);
         let delta = micros.wrapping_sub(self.now as u32) as i32;
         RadioInstant::from_micros(self.now.wrapping_add_signed(i64::from(delta)))
+    }
+
+    /// The on-air start of an LE 1M packet from its receive timestamp.
+    fn packet_start(&self, raw_capture: u32) -> RadioInstant {
+        let captured = self.instant(raw_capture).as_micros();
+        let delay = BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros();
+        RadioInstant::from_micros(captured.saturating_sub(u64::from(delay)))
     }
 }
 
@@ -212,7 +253,8 @@ impl<
 > BluetoothRadio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>
 {
     /// Take the memory of an initialized scheduler epoch. `sample` is the
-    /// first live controller-time sample of the epoch.
+    /// first live controller-time sample of the epoch and
+    /// `local_sleep_clock_ppm` the board's worst-case sleep-clock accuracy.
     pub fn new(
         memory: BluetoothRadioMemory<
             LEGACY,
@@ -225,6 +267,7 @@ impl<
         config: SchedulerSoftwareConfig,
         scale: BluetoothControllerTimeScale,
         sample: &ControllerTimeSample,
+        local_sleep_clock_ppm: u16,
     ) -> Self {
         let epoch = ControllerSchedulerEpoch::from_first_live_update(sample, scale);
         Self {
@@ -245,6 +288,10 @@ impl<
             timing: RadioTiming {
                 preparation_lead: RadioDuration::from_micros(config.preparation_lead_micros()),
                 admission_guard: RadioDuration::from_micros(config.late_start_guard_micros()),
+                connection: connection_allowances(
+                    config.preparation_lead_micros(),
+                    local_sleep_clock_ppm,
+                ),
             },
             policy: SchedulerTimingPolicy::from_scheduler_config(config, scale),
             faulted: false,
@@ -875,48 +922,66 @@ impl<
         index: usize,
         event: AdvertisingEvent,
     ) -> Result<(), RequestError> {
-        if event.channels.len() != 1 {
-            return Err(RequestError::Unsupported);
-        }
         let slot = self.connectable[index]
             .as_ref()
             .expect("the set is configured");
         if slot.event.is_some() {
             return Err(RequestError::Busy);
         }
-        let (channel, anchor) = event.channel_anchor(0).ok_or(RequestError::TooFar)?;
+        let count = event.channels.len();
+        let spacing = event.channel_spacing.as_micros();
         let lead = self.timing.preparation_lead.as_micros();
-        let window = self.reserve(
-            anchor.as_micros(),
-            event
-                .channel_spacing
-                .as_micros()
-                .checked_sub(lead)
-                .ok_or(RequestError::Unsupported)?,
-        )?;
-        self.free(window)?;
-        self.check_capacity(1)?;
+        let mut windows = [None; 3];
+        for (position, window) in windows.iter_mut().enumerate().take(count) {
+            let (_, anchor) = event.channel_anchor(position).ok_or(RequestError::TooFar)?;
+            let window_ = self.reserve(
+                anchor.as_micros(),
+                spacing.checked_sub(lead).ok_or(RequestError::Unsupported)?,
+            )?;
+            self.free(window_)?;
+            *window = Some(window_);
+        }
+        self.check_capacity(count)?;
+        let plan = LegacyAdvertisingPrimaryChannelPlan::new(
+            event.channels.contains(AdvertisingChannel::Channel37),
+            event.channels.contains(AdvertisingChannel::Channel38),
+            event.channels.contains(AdvertisingChannel::Channel39),
+        )
+        .expect("a channel set is non-empty");
+        let first = windows[0].expect("an event has a channel");
+        let raw_duration = self.clock.duration(spacing);
         let lead_ticks = self.policy.sequence_lead_raw_delta();
         let slot = self.connectable[index]
             .as_mut()
             .expect("the set is configured");
-        self.memory
+        let prepared = self
+            .memory
             .connectable
             .prepare_event(
                 &slot.instance,
-                advertising_channel(channel),
-                window.start(),
-                window.end(),
+                plan,
+                first.start(),
+                raw_duration,
                 lead_ticks,
             )
             .map_err(|_| RequestError::Unsupported)?;
-        let id = self
-            .memory
-            .connectable
-            .submit(&slot.instance, 0)
-            .expect("the event prepared the item");
-        slot.event = Some(Event::new(event.id, 1));
-        self.push_pending(id, window);
+        let mut submitted = [None; 3];
+        for (item, start, end) in prepared.items() {
+            let id = self
+                .memory
+                .connectable
+                .submit(&slot.instance, item)
+                .expect("the event prepared the item");
+            submitted[item] = Some((
+                id,
+                SchedulerRawWindow::from_projected_scheduler_window(start, end)
+                    .expect("admission checked the window"),
+            ));
+        }
+        slot.event = Some(Event::new(event.id, count as u8));
+        for (id, window) in submitted.into_iter().flatten() {
+            self.push_pending(id, window);
+        }
         Ok(())
     }
 
@@ -1531,7 +1596,10 @@ impl<
                     if let PeripheralConnectionCapturedAnchorAvailability::Available(captured) =
                         result.capture
                     {
-                        anchor = Some(self.clock.instant(captured.wrapping_controller_ticks()));
+                        anchor = Some(
+                            self.clock
+                                .packet_start(captured.wrapping_controller_ticks()),
+                        );
                     }
                     if result.status == PeripheralConnectionSchedulerItemCompletionStatus::Aborted {
                         anchor = None;
@@ -1546,11 +1614,9 @@ impl<
                                 pdu: ReceivedPdu {
                                     pdu: pdu.as_bytes(),
                                     rssi_dbm: pdu.rssi_dbm(),
-                                    captured_at: Some(
-                                        self.clock.instant(
-                                            pdu.captured_time().wrapping_controller_ticks(),
-                                        ),
-                                    ),
+                                    captured_at: Some(self.clock.packet_start(
+                                        pdu.captured_time().wrapping_controller_ticks(),
+                                    )),
                                 },
                             })
                         }
@@ -1648,7 +1714,7 @@ fn drain_chain<const PACKETS: usize>(
                     pdu: pdu.as_bytes(),
                     rssi_dbm: pdu.rssi_dbm(),
                     captured_at: Some(
-                        clock.instant(pdu.captured_time().wrapping_controller_ticks()),
+                        clock.packet_start(pdu.captured_time().wrapping_controller_ticks()),
                     ),
                 },
             }),
@@ -1703,14 +1769,6 @@ fn free_slot<Id>(slots: &[Option<Slot<Id>>]) -> Result<usize, RequestError> {
         .iter()
         .position(Option::is_none)
         .ok_or(RequestError::NoInstance)
-}
-
-const fn advertising_channel(channel: AdvertisingChannel) -> LegacyAdvertisingPrimaryChannel {
-    match channel {
-        AdvertisingChannel::Channel37 => LegacyAdvertisingPrimaryChannel::Channel37,
-        AdvertisingChannel::Channel38 => LegacyAdvertisingPrimaryChannel::Channel38,
-        AdvertisingChannel::Channel39 => LegacyAdvertisingPrimaryChannel::Channel39,
-    }
 }
 
 const fn scan_channel(channel: AdvertisingChannel) -> PassiveScanPrimaryChannel {

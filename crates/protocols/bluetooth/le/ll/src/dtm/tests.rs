@@ -1,8 +1,8 @@
 use std::vec::Vec;
 
 use oer_bluetooth_radio::{
-    EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioTiming,
-    TestChannel, TestPhy, TestReport, TxPower,
+    ConnectionAllowances, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome,
+    RadioRequest, RadioTiming, TestChannel, TestPhy, TestReport, TxPower,
 };
 
 use super::{DTM_MAX_PAYLOAD, DtmPayloadPattern, DtmSession, DtmStartError, DtmStop, DtmTest};
@@ -10,6 +10,16 @@ use super::{DTM_MAX_PAYLOAD, DtmPayloadPattern, DtmSession, DtmStartError, DtmSt
 const TIMING: RadioTiming = RadioTiming {
     preparation_lead: RadioDuration::from_micros(107),
     admission_guard: RadioDuration::from_micros(40),
+    connection: ConnectionAllowances {
+        local_sleep_clock_ppm: 500,
+        widening_jitter: RadioDuration::from_micros(63),
+        receive_guard: RadioDuration::from_micros(10),
+        receive_tail: RadioDuration::from_micros(2),
+        boundary_guard: RadioDuration::from_micros(1),
+        first_event_guard: RadioDuration::from_micros(16),
+        event_length: RadioDuration::from_micros(5047),
+        first_event_length: RadioDuration::from_micros(5155),
+    },
 };
 
 fn fnv1a64(bytes: &[u8]) -> u64 {

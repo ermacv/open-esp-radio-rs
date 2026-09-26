@@ -43,6 +43,9 @@ pub trait BluetoothRadioHardware {
     /// Controller time scale of this epoch.
     fn controller_time_scale(&self) -> BluetoothControllerTimeScale;
 
+    /// Worst-case accuracy of the board's sleep clock, in parts per million.
+    fn local_sleep_clock_ppm(&self) -> u16;
+
     /// Publish a controller-time latch request.
     fn request_time(&mut self) -> Result<ControllerTimeRequest, ControllerTimeRequestError>;
 
@@ -122,21 +125,28 @@ mod live {
 
     use super::*;
 
-    /// The powered task endpoint of one Controller epoch and the platform's
-    /// interrupt-owner storage.
+    /// The powered task endpoint of one Controller epoch, the platform's
+    /// interrupt-owner storage and the board's sleep-clock accuracy.
     pub struct LiveBluetoothHardware<'runtime, S> {
         task: ControllerPoweredTaskRuntime<'runtime>,
         storage: &'runtime S,
+        local_sleep_clock_ppm: u16,
     }
 
     impl<'runtime, S: SchedulerRunInterruptStorage> LiveBluetoothHardware<'runtime, S> {
         /// Join the task endpoint with the storage that holds the stable
-        /// interrupt owner.
+        /// interrupt owner. `local_sleep_clock_ppm` is the board's reviewed
+        /// worst-case sleep-clock accuracy.
         pub const fn new(
             task: ControllerPoweredTaskRuntime<'runtime>,
             storage: &'runtime S,
+            local_sleep_clock_ppm: u16,
         ) -> Self {
-            Self { task, storage }
+            Self {
+                task,
+                storage,
+                local_sleep_clock_ppm,
+            }
         }
 
         /// Separate the task endpoint again.
@@ -154,6 +164,10 @@ mod live {
 
         fn controller_time_scale(&self) -> BluetoothControllerTimeScale {
             self.task.controller_time_scale()
+        }
+
+        fn local_sleep_clock_ppm(&self) -> u16 {
+            self.local_sleep_clock_ppm
         }
 
         fn request_time(&mut self) -> Result<ControllerTimeRequest, ControllerTimeRequestError> {

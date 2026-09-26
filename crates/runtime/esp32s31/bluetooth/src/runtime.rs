@@ -318,6 +318,7 @@ impl<
             hardware.scheduler_config(),
             hardware.controller_time_scale(),
             &sample,
+            hardware.local_sleep_clock_ppm(),
         );
         *installed = Some(Installed {
             radio,

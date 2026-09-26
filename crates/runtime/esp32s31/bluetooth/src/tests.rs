@@ -69,6 +69,10 @@ impl BluetoothRadioHardware for Model {
         BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale()
     }
 
+    fn local_sleep_clock_ppm(&self) -> u16 {
+        500
+    }
+
     fn request_time(&mut self) -> Result<ControllerTimeRequest, ControllerTimeRequestError> {
         Ok(ControllerTimeRequest::for_validation(1))
     }

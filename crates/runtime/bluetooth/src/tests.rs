@@ -3,7 +3,7 @@ use std::vec::Vec;
 
 use embassy_futures::{block_on, join::join};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
-use oer_bluetooth_controller::LeController;
+use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::bt_hci::{
     ControllerToHostPacket,
     cmd::{
@@ -18,8 +18,8 @@ use oer_bluetooth_hci::{
     LeControllerHciEndpoints, LeControllerHciResources,
 };
 use oer_bluetooth_radio::{
-    EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioTiming,
-    RequestError,
+    ConnectionAllowances, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome,
+    RadioRequest, RadioTiming, RequestError,
 };
 
 use crate::{LeRadioPort, NoRadio, OutcomesLost, ServeExit, serve};
@@ -34,6 +34,13 @@ fn config() -> LeControllerBootstrapConfig {
         4,
     )
     .unwrap()
+}
+
+fn controller_config() -> LeControllerConfig {
+    LeControllerConfig {
+        bootstrap: config(),
+        version: None,
+    }
 }
 
 fn resources() -> Resources {
@@ -115,6 +122,16 @@ impl LeRadioPort for ModelRadio {
             RadioTiming {
                 preparation_lead: RadioDuration::from_micros(300),
                 admission_guard: RadioDuration::from_micros(200),
+                connection: ConnectionAllowances {
+                    local_sleep_clock_ppm: 500,
+                    widening_jitter: RadioDuration::from_micros(63),
+                    receive_guard: RadioDuration::from_micros(10),
+                    receive_tail: RadioDuration::from_micros(2),
+                    boundary_guard: RadioDuration::from_micros(1),
+                    first_event_guard: RadioDuration::from_micros(16),
+                    event_length: RadioDuration::from_micros(5047),
+                    first_event_length: RadioDuration::from_micros(5155),
+                },
             },
         ))
     }
@@ -147,7 +164,7 @@ impl LeRadioPort for ModelRadio {
 fn serves_bootstrap_and_ends_when_the_transport_closes() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 4>::new(config(), None);
+    let mut core = LeController::<'_, 12>::new(controller_config(), None);
     let (exit, ()) = block_on(join(serve(&controller, &mut core, &NoRadio), async {
         host.write(&Reset::new()).await.unwrap();
         assert_eq!(status(&host).await, 0x00);
@@ -163,7 +180,7 @@ fn serves_bootstrap_and_ends_when_the_transport_closes() {
 fn a_radio_without_hardware_fails_advertising_enable() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 4>::new(config(), None);
+    let mut core = LeController::<'_, 12>::new(controller_config(), None);
     let (exit, ()) = block_on(join(serve(&controller, &mut core, &NoRadio), async {
         host.write(&Reset::new()).await.unwrap();
         status(&host).await;
@@ -180,7 +197,7 @@ fn a_radio_without_hardware_fails_advertising_enable() {
 fn advertising_events_follow_their_outcomes() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 4>::new(config(), None);
+    let mut core = LeController::<'_, 12>::new(controller_config(), None);
     let radio = ModelRadio::new();
     let (exit, ()) = block_on(join(serve(&controller, &mut core, &radio), async {
         host.write(&Reset::new()).await.unwrap();
@@ -211,7 +228,7 @@ fn advertising_events_follow_their_outcomes() {
 fn refused_requests_are_retried_after_a_delay() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 4>::new(config(), None);
+    let mut core = LeController::<'_, 12>::new(controller_config(), None);
     let radio = ModelRadio::new();
     let (exit, ()) = block_on(join(serve(&controller, &mut core, &radio), async {
         host.write(&Reset::new()).await.unwrap();
@@ -227,6 +244,30 @@ fn refused_requests_are_retried_after_a_delay() {
         embassy_time::Timer::after_millis(5).await;
         *radio.refuse.borrow_mut() = false;
         radio.until(2).await;
+        controller.close();
+    }));
+    assert_eq!(exit, ServeExit::Closed);
+}
+
+#[test]
+fn host_data_without_a_connection_does_not_block_commands() {
+    let mut resources = resources();
+    let LeControllerHciEndpoints { host, controller } = resources.split();
+    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let (exit, ()) = block_on(join(serve(&controller, &mut core, &NoRadio), async {
+        host.write(&Reset::new()).await.unwrap();
+        assert_eq!(status(&host).await, 0x00);
+        let data = [1, 2, 3];
+        host.write(&oer_bluetooth_hci::bt_hci::data::AclPacket::new(
+            oer_bluetooth_hci::bt_hci::param::ConnHandle::new(0),
+            oer_bluetooth_hci::bt_hci::data::AclPacketBoundary::FirstNonFlushable,
+            oer_bluetooth_hci::bt_hci::data::AclBroadcastFlag::PointToPoint,
+            &data,
+        ))
+        .await
+        .unwrap();
+        host.write(&LeRand::new()).await.unwrap();
+        assert_eq!(status(&host).await, 0x01);
         controller.close();
     }));
     assert_eq!(exit, ServeExit::Closed);

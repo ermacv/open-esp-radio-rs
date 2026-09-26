@@ -157,7 +157,7 @@ pub struct ConnectionConfiguration {
     pub access_address: AccessAddress,
     /// CRC initialization.
     pub crc_init: CrcInit,
-    /// When the connection indication was received; the first reference
+    /// The on-air start of the connection indication; the first reference
     /// point until a valid reception replaces it.
     pub created_at: RadioInstant,
     /// Transmit power.
@@ -260,6 +260,39 @@ pub struct RadioTiming {
     pub preparation_lead: RadioDuration,
     /// Minimum time from a request to the start of its reservation.
     pub admission_guard: RadioDuration,
+    /// How the backend listens around connection anchors.
+    pub connection: ConnectionAllowances,
+}
+
+/// The backend's allowances around a connection anchor, which the planner
+/// adds to the Link Layer's own window widening.
+///
+/// For an anchor `A`, a widening `W` (the specification's clock drift plus
+/// `widening_jitter`) and an outstanding transmit window `T`, a recurring
+/// event listens for `receive_guard + 2W + T + receive_tail` from
+/// `A - receive_guard - W` and occupies the air from
+/// `A - receive_guard - W - boundary_guard` to `A + W + T + event_length`.
+/// The first event listens across `T` widened by `first_event_guard` on each
+/// side and occupies the air from `A - first_event_guard - boundary_guard`
+/// to `A + T + first_event_length`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConnectionAllowances {
+    /// Worst-case accuracy of the local sleep clock, in parts per million.
+    pub local_sleep_clock_ppm: u16,
+    /// Timing jitter added to every window widening.
+    pub widening_jitter: RadioDuration,
+    /// Fixed listening before the widened anchor of a recurring event.
+    pub receive_guard: RadioDuration,
+    /// Listening kept after the widened receive window.
+    pub receive_tail: RadioDuration,
+    /// Guard before an event's air window.
+    pub boundary_guard: RadioDuration,
+    /// Uncertainty on each side of the first event's transmit window.
+    pub first_event_guard: RadioDuration,
+    /// Air time a recurring event keeps after its widened anchor window.
+    pub event_length: RadioDuration,
+    /// Air time the first event keeps after its transmit window.
+    pub first_event_length: RadioDuration,
 }
 
 impl RadioTiming {
@@ -346,7 +379,7 @@ pub enum RequestError {
 
 #[cfg(test)]
 mod tests {
-    use super::{AdvertisingEvent, AdvertisingSetId, EventId, RadioTiming};
+    use super::{AdvertisingEvent, AdvertisingSetId, ConnectionAllowances, EventId, RadioTiming};
     use crate::{
         AdvertisingChannel, AdvertisingChannels, RadioDuration, RadioInstant, RadioWindow,
     };
@@ -375,6 +408,16 @@ mod tests {
         let timing = RadioTiming {
             preparation_lead: RadioDuration::from_micros(300),
             admission_guard: RadioDuration::from_micros(100),
+            connection: ConnectionAllowances {
+                local_sleep_clock_ppm: 500,
+                widening_jitter: RadioDuration::from_micros(0),
+                receive_guard: RadioDuration::from_micros(0),
+                receive_tail: RadioDuration::from_micros(0),
+                boundary_guard: RadioDuration::from_micros(0),
+                first_event_guard: RadioDuration::from_micros(0),
+                event_length: RadioDuration::from_micros(0),
+                first_event_length: RadioDuration::from_micros(0),
+            },
         };
         let air = RadioWindow::new(
             RadioInstant::from_micros(1_000),

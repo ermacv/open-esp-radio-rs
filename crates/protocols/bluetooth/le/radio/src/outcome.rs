@@ -9,7 +9,7 @@ pub struct ReceivedPdu<'pdu> {
     pub pdu: &'pdu [u8],
     /// Receive strength.
     pub rssi_dbm: i8,
-    /// When the backend captured the packet, when it can project it.
+    /// The on-air start of the packet, when the backend can project it.
     pub captured_at: Option<RadioInstant>,
 }
 
@@ -18,7 +18,8 @@ pub struct ReceivedPdu<'pdu> {
 pub enum EventResult {
     /// The radio executed the event.
     Executed {
-        /// The anchor a connection event captured, if any.
+        /// The on-air start of the central's first packet of a connection
+        /// event, if one arrived.
         anchor: Option<RadioInstant>,
     },
     /// The event left the schedule without executing: it was cancelled,

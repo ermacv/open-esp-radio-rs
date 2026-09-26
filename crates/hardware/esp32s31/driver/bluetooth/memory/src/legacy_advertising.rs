@@ -352,6 +352,17 @@ pub struct LegacyAdvertisingEvent {
 }
 
 impl LegacyAdvertisingEvent {
+    pub(crate) const fn empty(items: u8) -> Self {
+        Self {
+            windows: [(0, 0); ITEMS],
+            items,
+        }
+    }
+
+    pub(crate) const fn set_window(&mut self, item: usize, start: u32, end: u32) {
+        self.windows[item] = (start, end);
+    }
+
     /// Item index and raw window of every item of the event.
     pub fn items(&self) -> impl Iterator<Item = (usize, u32, u32)> + '_ {
         self.windows[..usize::from(self.items)]

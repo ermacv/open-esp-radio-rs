@@ -182,7 +182,8 @@ pub struct LeLongTermKeyCommandCompleteEvent {
 }
 
 impl LeLongTermKeyCommandCompleteEvent {
-    pub(crate) fn new(opcode: Opcode, status: Status, handle: ConnHandle) -> Self {
+    /// Command Complete of an LTK reply `opcode` for `handle`.
+    pub fn new(opcode: Opcode, status: Status, handle: ConnHandle) -> Self {
         let opcode_bytes = opcode.to_raw().to_le_bytes();
         let handle_bytes = handle.raw().to_le_bytes();
         Self {

@@ -1,5 +1,7 @@
 use std::vec::Vec;
 
+use oer_esp32s31_bluetooth_memory::BlePhyLe1MPacketStartCalibration;
+
 use oer_bluetooth_radio::{
     AccessAddress, AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration,
     AdvertisingEvent, AdvertisingPdu, AdvertisingSetId, ConnectionConfiguration, ConnectionEvent,
@@ -36,10 +38,13 @@ enum Seen {
 }
 
 #[derive(Default)]
-struct Sink(Vec<Seen>);
+struct Sink(Vec<Seen>, Vec<Option<RadioInstant>>);
 
 impl BluetoothRadioSink for Sink {
     fn outcome(&mut self, outcome: RadioOutcome<'_>) {
+        if let RadioOutcome::Received { pdu, .. } = outcome {
+            self.1.push(pdu.captured_at);
+        }
         self.0.push(match outcome {
             RadioOutcome::Received { id, pdu } => Seen::Received(id, pdu.pdu.to_vec()),
             RadioOutcome::EventEnded {
@@ -65,6 +70,7 @@ fn radio() -> Radio {
         SchedulerSoftwareConfig::reviewed_standalone(),
         BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
         &ControllerTimeSample::for_validation(0),
+        500,
     )
 }
 
@@ -125,6 +131,11 @@ fn the_timing_follows_the_scheduler_policy() {
     assert_eq!(radio.timing().preparation_lead.as_micros(), 107);
     assert_eq!(radio.timing().admission_guard.as_micros(), 40);
     assert_eq!(radio.now(), RadioInstant::from_micros(0));
+    // A recurring event ends 5,154 us after its widened anchor less the lead.
+    let connection = radio.timing().connection;
+    assert_eq!(connection.local_sleep_clock_ppm, 500);
+    assert_eq!(connection.event_length.as_micros(), 5_154 - 107);
+    assert_eq!(connection.first_event_length.as_micros(), 5_155);
 }
 
 #[test]
@@ -334,10 +345,27 @@ fn a_connectable_set_receives_its_requests() {
             channel_spacing: RadioDuration::from_micros(600),
         })
     };
-    assert_eq!(
-        radio.request(event(AdvertisingChannels::ALL), &mut sink),
-        Err(RequestError::Unsupported)
-    );
+    // Every primary channel gets its own item.
+    {
+        let mut all = self::radio();
+        all.request(
+            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+                set: AdvertisingSetId::new(3),
+                pdu: AdvertisingPdu::new(&ADV_IND).unwrap(),
+                scan_response: Some(AdvertisingPdu::new(&SCAN_RSP).unwrap()),
+                tx_power: TxPower::from_dbm(0),
+            }),
+            &mut sink,
+        )
+        .unwrap();
+        all.request(event(AdvertisingChannels::ALL), &mut sink)
+            .unwrap();
+        assert_eq!(all.pending.iter().flatten().count(), 3);
+        assert_eq!(
+            all.request(event(AdvertisingChannels::ALL), &mut sink),
+            Err(RequestError::Busy)
+        );
+    }
     radio
         .request(
             event(AdvertisingChannels::single(AdvertisingChannel::Channel38)),
@@ -368,6 +396,19 @@ fn a_connectable_set_receives_its_requests() {
             Seen::Received(EventId::new(7), scan_request.to_vec()),
             Seen::Ended(EventId::new(7), true)
         ]
+    );
+    assert_eq!(sink.1.len(), 1);
+}
+
+#[test]
+fn captures_become_the_on_air_packet_start() {
+    let radio = radio();
+    let delay = BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros();
+    assert!(delay > 0);
+    let raw = radio.clock.raw(20_000);
+    assert_eq!(
+        radio.clock.packet_start(raw).as_micros(),
+        radio.clock.instant(raw).as_micros() - u64::from(delay)
     );
 }
 

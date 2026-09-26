@@ -6,15 +6,28 @@ use oer_bluetooth_hci::{
     LeRandomUnavailable,
 };
 use oer_bluetooth_radio::{
-    AdvertisingChannel, AdvertisingChannels, AdvertisingEvent, EventId, EventResult, RadioDuration,
+    AdvertisingChannel, AdvertisingChannels, AdvertisingEvent, ConnectionAllowances,
+    ConnectionConfiguration, ConnectionEvent, DataPduKind, EventId, EventResult, RadioDuration,
     RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError, ScanWindow,
 };
 
-use crate::{LeController, PLANNING_SLACK};
+use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLACK};
+
+mod connection;
 
 const TIMING: RadioTiming = RadioTiming {
     preparation_lead: RadioDuration::from_micros(300),
     admission_guard: RadioDuration::from_micros(200),
+    connection: ConnectionAllowances {
+        local_sleep_clock_ppm: 500,
+        widening_jitter: RadioDuration::from_micros(63),
+        receive_guard: RadioDuration::from_micros(10),
+        receive_tail: RadioDuration::from_micros(2),
+        boundary_guard: RadioDuration::from_micros(1),
+        first_event_guard: RadioDuration::from_micros(16),
+        event_length: RadioDuration::from_micros(5047),
+        first_event_length: RadioDuration::from_micros(5155),
+    },
 };
 const SUCCESS: u8 = 0x00;
 const UNKNOWN_CONNECTION: u8 = 0x02;
@@ -38,6 +51,20 @@ const TEST_END: Opcode = Opcode::new(OpcodeGroup::LE, 0x001f);
 /// 100 ms advertising interval.
 const ADV_INTERVAL_UNITS: u16 = 160;
 
+const OUTPUT: usize = 12;
+
+fn config() -> LeControllerConfig {
+    LeControllerConfig {
+        bootstrap: LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+            251,
+            4,
+        )
+        .unwrap(),
+        version: Some(LeVersionInformation::new(0x0d, 0xffff, 1)),
+    }
+}
+
 struct FixedRandom;
 
 impl LeRandomSource for FixedRandom {
@@ -52,6 +79,11 @@ static RANDOM: FixedRandom = FixedRandom;
 #[derive(Clone, Debug, PartialEq)]
 enum Request {
     ConfigureAdvertising(Vec<u8>),
+    ConfigureConnectable(Vec<u8>, Vec<u8>),
+    OpenConnection(ConnectionConfiguration),
+    ConnectionEvent(ConnectionEvent),
+    Transmit(DataPduKind, Vec<u8>),
+    CloseConnection,
     Advertise(AdvertisingEvent),
     RemoveAdvertising,
     ConfigureScanner,
@@ -67,8 +99,20 @@ impl From<RadioRequest<'_>> for Request {
     fn from(request: RadioRequest<'_>) -> Self {
         match request {
             RadioRequest::ConfigureAdvertising(configuration) => {
-                Self::ConfigureAdvertising(configuration.pdu.bytes().to_vec())
+                match configuration.scan_response {
+                    Some(response) => Self::ConfigureConnectable(
+                        configuration.pdu.bytes().to_vec(),
+                        response.bytes().to_vec(),
+                    ),
+                    None => Self::ConfigureAdvertising(configuration.pdu.bytes().to_vec()),
+                }
             }
+            RadioRequest::OpenConnection(configuration) => Self::OpenConnection(configuration),
+            RadioRequest::ConnectionEvent(event) => Self::ConnectionEvent(event),
+            RadioRequest::Transmit { pdu, .. } => {
+                Self::Transmit(pdu.kind(), pdu.payload().to_vec())
+            }
+            RadioRequest::CloseConnection(_) => Self::CloseConnection,
             RadioRequest::Advertise(event) => Self::Advertise(event),
             RadioRequest::RemoveAdvertising(_) => Self::RemoveAdvertising,
             RadioRequest::ConfigureScanner(_) => Self::ConfigureScanner,
@@ -78,26 +122,19 @@ impl From<RadioRequest<'_>> for Request {
             RadioRequest::TestReceive(test) => Self::TestReceive(test.id),
             RadioRequest::EndTest => Self::EndTest,
             RadioRequest::Cancel(id) => Self::Cancel(id),
-            request => panic!("unexpected request {request:?}"),
         }
     }
 }
 
 struct Harness {
-    core: LeController<'static, 4>,
+    core: LeController<'static, OUTPUT>,
     now: u64,
 }
 
 impl Harness {
     fn new() -> Self {
-        let config = LeControllerBootstrapConfig::new(
-            BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
-            251,
-            4,
-        )
-        .unwrap();
         Self {
-            core: LeController::new(config, Some(&RANDOM)),
+            core: LeController::new(config(), Some(&RANDOM)),
             now: 10_000,
         }
     }
@@ -266,13 +303,7 @@ fn le_rand_uses_the_random_source_or_is_unknown_without_one() {
     assert_eq!(packets[0][5], SUCCESS);
     assert_eq!(&packets[0][6..14], &[1, 2, 3, 4, 5, 6, 7, 8]);
 
-    let config = LeControllerBootstrapConfig::new(
-        BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
-        251,
-        4,
-    )
-    .unwrap();
-    let mut core = LeController::<4>::new(config, None);
+    let mut core = LeController::<OUTPUT>::new(config(), None);
     core.command(HciCommandPacket::new(LE_RAND, &[])).unwrap();
     assert_eq!(core.front().unwrap().as_bytes()[5], 0x01);
 }
@@ -320,11 +351,16 @@ fn advertising_pdu_carries_the_public_address_and_host_data() {
 }
 
 #[test]
-fn connectable_advertising_is_unsupported_and_a_missing_random_address_is_invalid() {
-    let mut harness = Harness::configured();
+fn connectable_advertising_needs_entropy_and_a_set_random_address() {
     // Defaults describe connectable undirected advertising.
-    assert_eq!(harness.command(SET_ADV_ENABLE, &[1]), Some(UNSUPPORTED));
+    let mut core = LeController::<OUTPUT>::new(config(), None);
+    core.command(HciCommandPacket::new(RESET, &[])).unwrap();
+    core.pop();
+    core.command(HciCommandPacket::new(SET_ADV_ENABLE, &[1]))
+        .unwrap();
+    assert_eq!(core.front().unwrap().as_bytes()[5], UNSUPPORTED);
 
+    let mut harness = Harness::configured();
     let mut parameters = nonconnectable_parameters();
     parameters[5] = 0x01; // random own address
     harness.command(SET_ADV_PARAMS, &parameters);
@@ -585,5 +621,9 @@ fn reset_stops_every_role_before_it_completes() {
     assert_eq!(harness.status_of(RESET), Some(SUCCESS));
     assert!(!harness.core.wants_radio());
     // The configuration returned to its defaults: connectable again.
-    assert_eq!(harness.command(SET_ADV_ENABLE, &[1]), Some(UNSUPPORTED));
+    assert_eq!(harness.command(SET_ADV_ENABLE, &[1]), None);
+    assert!(matches!(
+        harness.step(),
+        Some(Request::ConfigureConnectable(_, _))
+    ));
 }

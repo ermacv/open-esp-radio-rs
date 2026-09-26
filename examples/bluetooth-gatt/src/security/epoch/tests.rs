@@ -8,7 +8,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use oer_bluetooth_controller::LeController;
+use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
 use trouble_host::prelude::*;
 
@@ -34,7 +34,7 @@ fn transport() -> Transport {
 /// command can be held before the core executes it.
 struct Peer<'c> {
     transport: InProcessHciControllerTransport<'c, NoopRawMutex, 4, 4, 258>,
-    core: LeController<'static, 4>,
+    core: LeController<'static, 12>,
 }
 
 /// A command taken from the Host and not yet executed.
@@ -48,7 +48,13 @@ impl<'c> Peer<'c> {
     fn new(transport: InProcessHciControllerTransport<'c, NoopRawMutex, 4, 4, 258>) -> Self {
         Self {
             transport,
-            core: LeController::new(config(), None),
+            core: LeController::new(
+                LeControllerConfig {
+                    bootstrap: config(),
+                    version: None,
+                },
+                None,
+            ),
         }
     }
 

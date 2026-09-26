@@ -68,6 +68,9 @@ const SCANNERS: usize = 1;
 const CONNECTIONS: usize = 1;
 const SCAN_PACKETS: usize = 4;
 const RX_PACKETS: usize = 4;
+/// Worst-case accuracy of the board's sleep clock. 500 ppm is the largest
+/// value the Link Layer defines; the qualified secure GATT peripheral used it.
+const LOCAL_SLEEP_CLOCK_PPM: u16 = 500;
 
 /// The radio runtime of this composition.
 pub type BluetoothSystemRuntime = BluetoothRuntime<
@@ -524,7 +527,7 @@ pub async fn start_esp32s31_bluetooth(
     if let Err((error, _, _)) = RUNTIME
         .install(
             radio_memory,
-            LiveBluetoothHardware::new(endpoints.task, bound),
+            LiveBluetoothHardware::new(endpoints.task, bound, LOCAL_SLEEP_CLOCK_PPM),
         )
         .await
     {

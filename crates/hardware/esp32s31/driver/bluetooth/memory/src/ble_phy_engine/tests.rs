@@ -1,4 +1,4 @@
-use super::{BlePhyEngineModelAddress, BlePhyEngineStorage};
+use super::{BlePhyEngineModelAddress, BlePhyEngineStorage, BlePhyLe1MPacketStartCalibration};
 
 #[test]
 fn failed_binding_returns_the_same_opaque_allocation() {
@@ -27,5 +27,10 @@ fn le_1m_calibration_preserves_elapsed_controller_time() {
     let second = calibration.normalize_controller_micros(1_001);
 
     assert_ne!(first, 1_000, "the initialized calibration is not zero");
+    assert_eq!(calibration, BlePhyLe1MPacketStartCalibration::le_1m());
+    assert_eq!(
+        first,
+        1_000 - BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros()
+    );
     assert_eq!(second.wrapping_sub(first), 1);
 }

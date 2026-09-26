@@ -148,6 +148,19 @@ pub struct BlePhyLe1MPacketStartCalibration {
 }
 
 impl BlePhyLe1MPacketStartCalibration {
+    /// The reviewed LE 1M terms that BLE PHY initialization publishes.
+    pub const fn le_1m() -> Self {
+        Self {
+            packet_start_offset_micros: packet_start_offsets_micros()[LE_1M_PHY_MODE_INDEX],
+            rx_address_delay_micros: rx_address_delays_micros()[LE_1M_PHY_MODE_INDEX],
+        }
+    }
+
+    /// Time from the on-air packet start to its receive timestamp.
+    pub const fn capture_delay_micros(self) -> u32 {
+        self.packet_start_offset_micros as u32 + self.rx_address_delay_micros as u32
+    }
+
     /// Recover the on-air packet-start time from a converted receive timestamp.
     pub const fn normalize_controller_micros(self, captured_micros: u32) -> u32 {
         captured_micros.wrapping_sub(

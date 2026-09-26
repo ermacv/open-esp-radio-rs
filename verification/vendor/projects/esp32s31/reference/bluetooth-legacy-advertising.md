@@ -184,15 +184,18 @@ an opaque four-microsecond response-capable scheduler tail reserve. The
 evidence does not identify it as an inter-frame space, receive window or scan
 response airtime. The receive allocator prepares the non-scanning receive
 class and supplies the selected primary-channel count to vendor memory
-management, but it does not prove that the open fixed two-node pool safely
-covers a three-channel response event. The first open memory typestate
-therefore accepts exactly one primary channel and fails closed otherwise.
+management. The memory typestate lowers one scheduler item per selected
+primary channel, as for non-connectable advertising; every item shares the
+two-header TX chain and the global non-scanning RX chain. The composition
+sizes that chain for one reception per channel plus the connection
+indication, and the radio drains it when the event ends. Delivery of every
+reception of a three-channel event is not yet qualified on hardware.
 
 The portable Link Layer owns the semantic advertisement, scan-response data
 and typed bounded `ADV_IND`/`SCAN_RSP` encodings. A later chip aggregate must
 retain that affine portable event while translating it into a short-lived S31
 memory input: two allocation-fit PDU borrows, the already selected own-address
-behavior and exactly one translated primary channel. The memory crate has no
+behavior and the translated primary-channel plan. The memory crate has no
 portable Link Layer dependency, does not retain that event and does not parse
 or revalidate Bluetooth wire semantics. It owns only the private two-header TX
 chain, the exact affine non-scanning RX pool, the common advertising reset

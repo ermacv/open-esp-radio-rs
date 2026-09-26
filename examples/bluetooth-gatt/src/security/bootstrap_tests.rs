@@ -9,7 +9,7 @@ use core::{
 };
 use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use oer_bluetooth_controller::LeController;
+use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
 use oer_bluetooth_runtime::{NoRadio, serve};
 use trouble_host::{BleHostError, Error as HostError, prelude::*};
@@ -58,7 +58,13 @@ fn run_bootstrap(fail: bool, bonds: bool) {
     .unwrap();
     let mut hci = LeControllerHciResources::<NoopRawMutex, 4, 4, 258>::new(config).unwrap();
     let LeControllerHciEndpoints { host, controller } = hci.split();
-    let mut core = LeController::<'_, 4>::new(config, Some(&entropy));
+    let mut core = LeController::<'_, 12>::new(
+        LeControllerConfig {
+            bootstrap: config,
+            version: None,
+        },
+        Some(&entropy),
+    );
     let mut resources = HostResources::<DefaultPacketPool, 1, 3>::new();
     let stack = trouble_host::new(ExternalController::<_, 4>::new(host), &mut resources).build();
     stack.set_io_capabilities(IoCapabilities::DisplayYesNo);

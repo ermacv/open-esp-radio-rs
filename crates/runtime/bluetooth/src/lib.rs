@@ -14,7 +14,8 @@
 //! The loop owns no memory of its own beyond one command buffer and spawns
 //! nothing; the caller polls it on a task of its choice. It ends when the
 //! transport closes or fails, or when the radio port fails, faults or loses
-//! outcomes. Host data packets are discarded: the core has no connections.
+//! outcomes. Host ACL data enters the core while it has room for a packet;
+//! until then commands pass queued data.
 
 #[cfg(test)]
 extern crate std;
@@ -95,6 +96,16 @@ impl LeRadioPort for NoRadio {
             RadioTiming {
                 preparation_lead: oer_bluetooth_radio::RadioDuration::from_micros(0),
                 admission_guard: oer_bluetooth_radio::RadioDuration::from_micros(0),
+                connection: oer_bluetooth_radio::ConnectionAllowances {
+                    local_sleep_clock_ppm: 0,
+                    widening_jitter: oer_bluetooth_radio::RadioDuration::from_micros(0),
+                    receive_guard: oer_bluetooth_radio::RadioDuration::from_micros(0),
+                    receive_tail: oer_bluetooth_radio::RadioDuration::from_micros(0),
+                    boundary_guard: oer_bluetooth_radio::RadioDuration::from_micros(0),
+                    first_event_guard: oer_bluetooth_radio::RadioDuration::from_micros(0),
+                    event_length: oer_bluetooth_radio::RadioDuration::from_micros(0),
+                    first_event_length: oer_bluetooth_radio::RadioDuration::from_micros(0),
+                },
             },
         ))
     }
@@ -168,15 +179,19 @@ where
             retry_at = Some(Instant::now() + REFUSED_RETRY_DELAY);
         }
 
-        // Take the next command.
+        // Take the next command, or ACL data while the connection takes it.
         if core.is_command_ready() {
-            match transport.try_receive(&mut buffer) {
+            match transport.try_receive_admitted(&mut buffer, core.is_acl_ready()) {
                 Ok(HostToControllerFrame::Command(command)) => {
                     core.command(command)
                         .expect("the core is ready for a command");
                     continue;
                 }
-                // No connection carries data.
+                Ok(HostToControllerFrame::Acl(packet)) => {
+                    core.acl(packet);
+                    continue;
+                }
+                // LE carries no synchronous or isochronous data here.
                 Ok(_) => continue,
                 Err(HciChannelError::Empty) => {}
                 Err(HciChannelError::Closed) => return ServeExit::Closed,
@@ -186,13 +201,14 @@ where
 
         // Wait for any of them to make progress.
         let command_ready = core.is_command_ready();
+        let acl_ready = core.is_acl_ready();
         let publishing = core.front().is_some();
         let retry = retry_at.filter(|_| core.wants_radio());
         let event = select4(
             radio.next_outcome(),
             async {
                 if command_ready {
-                    transport.wait_receive_ready().await;
+                    transport.wait_receive_admitted(acl_ready).await;
                 } else {
                     core::future::pending::<()>().await;
                 }

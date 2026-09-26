@@ -11,7 +11,7 @@ use super::{
     SCHEDULER_ITEM_COEX_PRIORITIES,
 };
 use crate::{
-    LegacyAdvertisingPrimaryChannel,
+    LegacyAdvertisingPrimaryChannelPlan,
     le_rx_chain::{LeRxChain, LeRxChainModelAddress, LeRxChainStorage},
     le_rx_packet::LeRxOutcome,
     rx_memory_list::RxMemoryListClass,
@@ -130,13 +130,15 @@ fn the_item_carries_its_number_and_a_request_priority_in_every_phase() {
     let mut pool = pool();
     let instance = pool.acquire().unwrap();
     let (graph, _, _) = pool.shared(&instance).unwrap();
-    assert_eq!(graph.item.words[SCHEDULER_ITEM_ALLOCATION_NUMBER].get(), 3);
-    let priorities = graph.item.words[SCHEDULER_ITEM_COEX_PRIORITIES].get();
-    assert!((0..4).all(|phase| (priorities >> (phase * 5)) & 31 != 0));
+    for item in &graph.items {
+        assert_eq!(item.words[SCHEDULER_ITEM_ALLOCATION_NUMBER].get(), 3);
+        let priorities = item.words[SCHEDULER_ITEM_COEX_PRIORITIES].get();
+        assert!((0..4).all(|phase| (priorities >> (phase * 5)) & 31 != 0));
+    }
 }
 
 #[test]
-fn an_event_lowers_the_item_and_finishing_restores_it() {
+fn an_event_lowers_one_item_per_channel_and_finishing_restores_them() {
     let mut pool = pool();
     let chain = chain(RxMemoryListClass::NonScanning);
     let instance = prepared(&mut pool, &chain);
@@ -144,24 +146,34 @@ fn an_event_lowers_the_item_and_finishing_restores_it() {
         pool.submit(&instance, 0),
         Err(SchedulerPoolError::NotPrepared)
     );
-    pool.prepare_event(
-        &instance,
-        LegacyAdvertisingPrimaryChannel::Channel38,
-        6_000,
-        6_200,
-        214,
-    )
-    .unwrap();
+    let plan = LegacyAdvertisingPrimaryChannelPlan::new(true, false, true).unwrap();
+    let event = pool
+        .prepare_event(&instance, plan, 6_000, 200, 214)
+        .unwrap();
+    assert_eq!(
+        event.items().collect::<std::vec::Vec<_>>(),
+        [(0, 6_000, 6_200), (1, 6_200, 6_400)]
+    );
     {
         let (graph, _, _) = pool.shared(&instance).unwrap();
-        let header = graph.item.header();
-        assert_eq!((header.raw_start(), header.raw_end()), (6_000, 6_200));
-        assert_eq!(header.sequence_start(), 6_214);
-        assert_eq!(header.sequence_duration(), 200);
+        for (index, start) in [(0, 6_000), (1, 6_200)] {
+            let header = graph.items[index].header();
+            assert_eq!((header.raw_start(), header.raw_end()), (start, start + 200));
+            assert_eq!(header.sequence_start(), start + 214);
+            assert_eq!(header.sequence_duration(), 200);
+        }
+        // The unselected third item keeps its allocation-time image.
+        assert_eq!(graph.items[2].header().raw_start(), 0);
         assert_eq!(graph.link_state.scheduler_head(), 0);
     }
-    let id = pool.submit(&instance, 0).unwrap();
-    pool.retire(id).unwrap();
+    assert_eq!(
+        pool.submit(&instance, 2),
+        Err(SchedulerPoolError::NotPrepared)
+    );
+    let first = pool.submit(&instance, 0).unwrap();
+    let second = pool.submit(&instance, 1).unwrap();
+    pool.retire(first).unwrap();
+    pool.retire(second).unwrap();
     pool.finish_event(&instance).unwrap();
     assert_eq!(
         pool.finish_event(&instance),
@@ -170,9 +182,14 @@ fn an_event_lowers_the_item_and_finishing_restores_it() {
     let (graph, binding, _) = pool.shared(&instance).unwrap();
     assert_eq!(
         graph.link_state.scheduler_head(),
-        binding.item.controller_address().address()
+        binding.items[0].controller_address().address()
     );
-    assert_eq!(graph.item.header().raw_start(), 0);
+    assert!(
+        graph
+            .items
+            .iter()
+            .all(|item| item.header().raw_start() == 0)
+    );
 }
 
 #[test]
@@ -200,12 +217,13 @@ fn a_scanning_chain_and_early_events_are_refused() {
     assert_eq!(
         pool.prepare_event(
             &instance,
-            LegacyAdvertisingPrimaryChannel::Channel37,
+            LegacyAdvertisingPrimaryChannelPlan::new(true, false, false).unwrap(),
             0,
             1,
             0
-        ),
-        Err(LegacyConnectableAdvertisingError::State)
+        )
+        .err(),
+        Some(LegacyConnectableAdvertisingError::State)
     );
     assert_eq!(pool.adv_ind_pdu(&instance), None);
 }

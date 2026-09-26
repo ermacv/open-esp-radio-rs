@@ -65,6 +65,19 @@ impl<const CAPACITY: usize> Output<CAPACITY> {
         self.dropped
     }
 
+    /// Free slots, the response slot included.
+    pub(crate) const fn free(&self) -> usize {
+        CAPACITY - self.len
+    }
+
+    /// Queue Controller-to-Host ACL data; the caller checked the room.
+    pub(crate) fn push_acl(&mut self, bytes: &[u8]) {
+        assert!(
+            self.len + 1 < CAPACITY && self.push(PacketKind::AclData, bytes),
+            "ACL data leaves the response slot free"
+        );
+    }
+
     /// Queue a command response; the caller admitted the command only while a
     /// slot was free.
     pub(crate) fn push_response(&mut self, bytes: &[u8]) {

@@ -1,11 +1,12 @@
 //! Response-capable legacy advertising instances.
 //!
 //! One instance holds the advertising link state, the scheduler context, one
-//! scheduler item and two chained TX packets: `ADV_IND` and its `SCAN_RSP`.
-//! Requests and connection indications arrive through the global
-//! non-scanning receive chain under the instance's advertising number. The
-//! PDUs and reset persist across events; each event lowers the item on one
-//! primary channel, and finishing the event restores the item.
+//! scheduler item per primary channel and two chained TX packets: `ADV_IND`
+//! and its `SCAN_RSP`. Requests and connection indications arrive through the
+//! global non-scanning receive chain under the instance's advertising number.
+//! The PDUs and reset persist across events; each event lowers one item per
+//! selected channel, the scheduler executor inserts them one by one, and
+//! finishing the event restores every item.
 
 #![forbid(unsafe_code)]
 
@@ -17,9 +18,12 @@ use crate::{
         BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, LeTxBufferHeaderStorage, LeTxPacketAddress,
         LeTxPacketPreparedInput, LeTxPacketPreparedLength,
     },
+    legacy_advertising::{
+        BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY, LegacyAdvertisingEvent,
+    },
     legacy_advertising_event_image::{
         LegacyAdvertisingLinkStateWords, LegacyAdvertisingOwnAddress,
-        LegacyAdvertisingPrimaryChannel, LegacyAdvertisingSchedulerItemWords,
+        LegacyAdvertisingPrimaryChannelPlan, LegacyAdvertisingSchedulerItemWords,
     },
     legacy_advertising_tx_packet::LegacyAdvertisingTxPacketStorage,
     rx_memory_list::RxMemoryListClass,
@@ -40,6 +44,7 @@ type AdvertisingTxPacketAddress = LeTxPacketAddress<LEGACY_ADVERTISING_TX_PACKET
 type AdvertisingTxPacketLength = LeTxPacketPreparedLength<LEGACY_ADVERTISING_TX_PACKET_BYTES>;
 type AdvertisingTxPacketInput<'a> = LeTxPacketPreparedInput<'a, LEGACY_ADVERTISING_TX_PACKET_BYTES>;
 
+const ITEMS: usize = BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY;
 const LINK_STATE_WORDS: usize = 0x84 / 4;
 const SCHEDULER_ITEM_WORDS: usize = 0x60 / 4;
 
@@ -249,7 +254,7 @@ impl LinkStateStorage {
         for word in &self.words {
             word.set(0);
         }
-        self.set_scheduler_head(Some(binding.item));
+        self.set_scheduler_head(Some(binding.items[0]));
         self.words[LINK_STATE_TX_HEAD].set(binding.adv_ind_header.controller_address().address());
         self.words[LINK_STATE_TX_TAIL]
             .set(binding.scan_response_header.controller_address().address());
@@ -396,7 +401,7 @@ impl ItemStorage {
 pub struct LegacyConnectableAdvertisingStorage {
     link_state: LinkStateStorage,
     scheduler_context: SchedulerContextStorage,
-    item: ItemStorage,
+    items: [ItemStorage; ITEMS],
     adv_ind_header: LeTxBufferHeaderStorage,
     scan_response_header: LeTxBufferHeaderStorage,
     adv_ind_packet: LegacyAdvertisingTxPacketStorage<LEGACY_ADVERTISING_TX_PACKET_BYTES>,
@@ -409,7 +414,7 @@ pub struct LegacyConnectableAdvertisingStorage {
 pub struct LegacyConnectableAdvertisingBinding {
     link_state: ControllerSramLinkAddress,
     scheduler_context: ControllerSramLinkAddress,
-    item: ControllerSramLinkAddress,
+    items: [ControllerSramLinkAddress; ITEMS],
     adv_ind_header: ControllerSramLinkAddress,
     scan_response_header: ControllerSramLinkAddress,
     adv_ind_packet: AdvertisingTxPacketAddress,
@@ -431,19 +436,22 @@ pub struct LegacyConnectableAdvertisingPrepared {
 pub enum LegacyConnectableAdvertisingState {
     Empty,
     Prepared(LegacyConnectableAdvertisingPrepared),
-    Event(LegacyConnectableAdvertisingPrepared),
+    Event {
+        prepared: LegacyConnectableAdvertisingPrepared,
+        items: u8,
+    },
 }
 
 impl sealed::Sealed for LegacyConnectableAdvertisingStorage {}
 
 impl SchedulerRoleStorage for LegacyConnectableAdvertisingStorage {
     const KIND: SchedulerRoleKind = SchedulerRoleKind::ConnectableAdvertising;
-    const ITEMS: usize = 1;
+    const ITEMS: usize = ITEMS;
     const NUMBERS: usize = 1;
     const NEW: Self = Self {
         link_state: LinkStateStorage::new(),
         scheduler_context: SchedulerContextStorage::new(),
-        item: ItemStorage::new(),
+        items: [const { ItemStorage::new() }; ITEMS],
         adv_ind_header: LeTxBufferHeaderStorage::new(),
         scan_response_header: LeTxBufferHeaderStorage::new(),
         adv_ind_packet: LegacyAdvertisingTxPacketStorage::new(),
@@ -466,10 +474,12 @@ impl SchedulerRoleStorage for LegacyConnectableAdvertisingStorage {
             AdvertisingTxPacketAddress::new(base + offset as u32)
                 .map_err(|_| SchedulerPoolBindError::ZeroCompressedLink)
         };
+        let items = core::mem::offset_of!(Self, items);
+        let item = core::mem::size_of::<ItemStorage>();
         Ok(LegacyConnectableAdvertisingBinding {
             link_state: link(core::mem::offset_of!(Self, link_state))?,
             scheduler_context: link(core::mem::offset_of!(Self, scheduler_context))?,
-            item: link(core::mem::offset_of!(Self, item))?,
+            items: [link(items)?, link(items + item)?, link(items + 2 * item)?],
             adv_ind_header: link(core::mem::offset_of!(Self, adv_ind_header))?,
             scan_response_header: link(core::mem::offset_of!(Self, scan_response_header))?,
             adv_ind_packet: packet(core::mem::offset_of!(Self, adv_ind_packet))?,
@@ -478,20 +488,20 @@ impl SchedulerRoleStorage for LegacyConnectableAdvertisingStorage {
         })
     }
 
-    fn item_words(&self, _item: usize) -> &[VolatileCell<u32>] {
-        &self.item.words
+    fn item_words(&self, item: usize) -> &[VolatileCell<u32>] {
+        &self.items[item].words
     }
 
     fn item_link(
         binding: &LegacyConnectableAdvertisingBinding,
-        _item: usize,
+        item: usize,
     ) -> ControllerSramLinkAddress {
-        binding.item
+        binding.items[item]
     }
 
     fn reinitialize(&mut self, binding: &LegacyConnectableAdvertisingBinding) -> Self::State {
         self.scheduler_context.clear();
-        self.item.initialize(binding);
+        self.initialize_items(binding);
         self.adv_ind_header.initialize_bound_tx_with_successor(
             binding.adv_ind_packet,
             Some(binding.scan_response_header),
@@ -505,7 +515,18 @@ impl SchedulerRoleStorage for LegacyConnectableAdvertisingStorage {
     }
 
     fn admits(state: &LegacyConnectableAdvertisingState, item: usize) -> bool {
-        item == 0 && matches!(state, LegacyConnectableAdvertisingState::Event(_))
+        matches!(
+            state,
+            LegacyConnectableAdvertisingState::Event { items, .. } if item < usize::from(*items)
+        )
+    }
+}
+
+impl LegacyConnectableAdvertisingStorage {
+    fn initialize_items(&self, binding: &LegacyConnectableAdvertisingBinding) {
+        for item in &self.items {
+            item.initialize(binding);
+        }
     }
 }
 
@@ -570,16 +591,17 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
         Ok(())
     }
 
-    /// Lower the item on `channel`. `raw_sequence_lead` is the scheduler's
-    /// accepted preparation lead.
+    /// Lower one event into one item per selected channel, each lasting
+    /// `raw_item_duration` from `raw_start` on. `raw_sequence_lead` is the
+    /// scheduler's accepted preparation lead.
     pub fn prepare_event(
         &mut self,
         instance: &SchedulerRoleInstance,
-        channel: LegacyAdvertisingPrimaryChannel,
+        channels: LegacyAdvertisingPrimaryChannelPlan,
         raw_start: u32,
-        raw_end: u32,
+        raw_item_duration: u32,
         raw_sequence_lead: u32,
-    ) -> Result<(), LegacyConnectableAdvertisingError> {
+    ) -> Result<LegacyAdvertisingEvent, LegacyConnectableAdvertisingError> {
         let cpu = self
             .cpu(instance)
             .map_err(LegacyConnectableAdvertisingError::Pool)?;
@@ -587,28 +609,37 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
             return Err(LegacyConnectableAdvertisingError::State);
         };
         let graph = &cpu.graph;
-        if graph.link_state.scheduler_head() != cpu.binding.item.controller_address().address() {
+        if graph.link_state.scheduler_head() != cpu.binding.items[0].controller_address().address()
+        {
             return Err(LegacyConnectableAdvertisingError::SchedulerHeadMismatch);
         }
-        let words = graph.item.reviewed_words().prepare_event_item(
-            graph.link_state.reviewed_words(),
-            channel,
-            None,
-            raw_start,
-            raw_end,
-        );
-        graph.item.write_reviewed_words(words);
-        // Common r_btdm_sched_calc_seq_time projection.
-        graph
-            .item
-            .header()
-            .set_sequence(raw_start, raw_end, raw_sequence_lead);
+        let mut event = LegacyAdvertisingEvent::empty(channels.channel_count() as u8);
+        let link_state = graph.link_state.reviewed_words();
+        for index in 0..channels.channel_count() {
+            let start = raw_start.wrapping_add(raw_item_duration.wrapping_mul(index as u32));
+            let end = start.wrapping_add(raw_item_duration);
+            let channel = channels
+                .channel(index)
+                .expect("a validated channel plan contains every active position");
+            let item = &graph.items[index];
+            // The executor links the items; each carries only its own window.
+            item.write_reviewed_words(
+                item.reviewed_words()
+                    .prepare_event_item(link_state, channel, None, start, end),
+            );
+            // Common r_btdm_sched_calc_seq_time projection.
+            item.header().set_sequence(start, end, raw_sequence_lead);
+            event.set_window(index, start, end);
+        }
         graph.link_state.set_scheduler_head(None);
-        *cpu.state = LegacyConnectableAdvertisingState::Event(prepared);
-        Ok(())
+        *cpu.state = LegacyConnectableAdvertisingState::Event {
+            prepared,
+            items: event.item_count() as u8,
+        };
+        Ok(event)
     }
 
-    /// Restore the item after a finished or abandoned event.
+    /// Restore the items after a finished or abandoned event.
     pub fn finish_event(
         &mut self,
         instance: &SchedulerRoleInstance,
@@ -616,13 +647,13 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
         let cpu = self
             .cpu(instance)
             .map_err(LegacyConnectableAdvertisingError::Pool)?;
-        let LegacyConnectableAdvertisingState::Event(prepared) = *cpu.state else {
+        let LegacyConnectableAdvertisingState::Event { prepared, .. } = *cpu.state else {
             return Err(LegacyConnectableAdvertisingError::State);
         };
-        cpu.graph.item.initialize(cpu.binding);
+        cpu.graph.initialize_items(cpu.binding);
         cpu.graph
             .link_state
-            .set_scheduler_head(Some(cpu.binding.item));
+            .set_scheduler_head(Some(cpu.binding.items[0]));
         *cpu.state = LegacyConnectableAdvertisingState::Prepared(prepared);
         Ok(())
     }
@@ -650,7 +681,7 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
         match *state {
             LegacyConnectableAdvertisingState::Empty => None,
             LegacyConnectableAdvertisingState::Prepared(prepared)
-            | LegacyConnectableAdvertisingState::Event(prepared) => Some((graph, prepared)),
+            | LegacyConnectableAdvertisingState::Event { prepared, .. } => Some((graph, prepared)),
         }
     }
 

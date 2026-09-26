@@ -12,7 +12,7 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use gatt_application::security::{
     bonds::RamBondStore, comparison::NumericComparison, epoch, gatt::Observation,
 };
-use oer_bluetooth_controller::LeController;
+use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
 use oer_hil_protocol::{BluetoothGattResetReadGate as Phase, Command, Event};
 use oer_hil_target_core::bluetooth_gatt::secure::reset_gate::GatedController;
@@ -81,7 +81,13 @@ fn exercise(cancel: bool, fail: bool) {
     let mut transport = LeControllerHciResources::<NoopRawMutex, 4, 4, 258>::new(config).unwrap();
     let endpoints = transport.split();
     let peer = endpoints.controller;
-    let mut core = LeController::<'_, 4>::new(config, None);
+    let mut core = LeController::<'_, 12>::new(
+        LeControllerConfig {
+            bootstrap: config,
+            version: None,
+        },
+        None,
+    );
     let state = state::State::new();
     state.observe(Observation::Advertising);
     assert!(matches!(

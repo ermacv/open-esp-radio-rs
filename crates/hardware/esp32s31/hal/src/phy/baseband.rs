@@ -7,7 +7,7 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "riscv32")]
-use crate::{owner::SharedPhyAccess, phy_pac, phy_pac_mut, types::CfrValue};
+use crate::{owner::SharedPhyAccess, phy_pac_mut, types::CfrValue};
 
 /// Enable the two IQ-correction modes selected by PHY initialization.
 ///
@@ -274,13 +274,6 @@ pub fn configure_lltf_mask(registers: &mut impl SharedPhyAccess, input_0: u32, i
 pub fn configure_noise_floor_auto(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_noise_floor_auto();
-}
-
-/// Read complete rev0 ROM `phy_read_hw_noisefloor` as signed quarter-dB.
-#[cfg(target_arch = "riscv32")]
-pub fn read_hardware_noise_floor(registers: &impl SharedPhyAccess) -> i32 {
-    let registers = phy_pac(registers);
-    registers.read_noise_floor_quarter_db()
 }
 
 /// Apply the complete baseband register initialization leaf.

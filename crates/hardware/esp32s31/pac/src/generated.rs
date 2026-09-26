@@ -6317,7 +6317,7 @@ pub(crate) fn configure_forced_rx_gain_state_from_vendor_argument(
 /// Typed bridge for the reviewed `configure_phy_low_rate_first_state` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_phy_low_rate_first_state(
-    registers: &crate::svd::PhyAgcOracle,
+    registers: &crate::svd::WifiPhyRateOracle,
     value: PhyLowRateState,
 ) {
     crate::svd::field_replace_modify::configure_phy_low_rate_first_state(registers, value.bits());
@@ -6326,7 +6326,7 @@ pub(crate) fn configure_phy_low_rate_first_state(
 /// Typed bridge for the reviewed `configure_phy_low_rate_second_state` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_phy_low_rate_second_state(
-    registers: &crate::svd::PhyAgcOracle,
+    registers: &crate::svd::WifiPhyRateOracle,
     value: PhyLowRateState,
 ) {
     crate::svd::field_replace_modify::configure_phy_low_rate_second_state(registers, value.bits());
@@ -6335,7 +6335,7 @@ pub(crate) fn configure_phy_low_rate_second_state(
 /// Typed bridge for the reviewed `configure_phy_low_rate_secondary_state` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_phy_low_rate_secondary_state(
-    registers: &crate::svd::PhyAgcOracle,
+    registers: &crate::svd::WifiPhyRateOracle,
     value: PhyLowRateState,
 ) {
     crate::svd::field_replace_modify::configure_phy_low_rate_secondary_state(
@@ -6452,7 +6452,7 @@ pub(crate) fn configure_phy_agc_initial_antenna_paths(registers: &crate::svd::Ph
 /// Typed bridge for the reviewed `configure_phy_rx11b_first_low_rate_state` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_phy_rx11b_first_low_rate_state(
-    registers: &crate::svd::PhyAgcOracle,
+    registers: &crate::svd::WifiPhyRateOracle,
     value: PhyRx11bLowRateArgument,
 ) {
     crate::svd::field_replace_modify::configure_phy_rx11b_first_low_rate_state(
@@ -6464,7 +6464,7 @@ pub(crate) fn configure_phy_rx11b_first_low_rate_state(
 /// Typed bridge for the reviewed `configure_phy_rx11b_second_low_rate_state` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_phy_rx11b_second_low_rate_state(
-    registers: &crate::svd::PhyAgcOracle,
+    registers: &crate::svd::WifiPhyRateOracle,
     value: PhyRx11bLowRateArgument,
 ) {
     crate::svd::field_replace_modify::configure_phy_rx11b_second_low_rate_state(
@@ -6476,7 +6476,7 @@ pub(crate) fn configure_phy_rx11b_second_low_rate_state(
 /// Typed bridge for the reviewed `configure_phy_rx11b_secondary_low_rate_state` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_phy_rx11b_secondary_low_rate_state(
-    registers: &crate::svd::PhyAgcOracle,
+    registers: &crate::svd::WifiPhyRateOracle,
     value: PhyRx11bLowRateArgument,
 ) {
     crate::svd::field_replace_modify::configure_phy_rx11b_secondary_low_rate_state(

@@ -583,7 +583,7 @@ impl RadioRuntimeOwner {
     /// Read the calibrated baseband observation without exposing the PAC
     /// owner or its register encoding.
     pub fn read_noise_floor_dbm(&self) -> i8 {
-        self.registers.radio_phy().read_noise_floor_dbm()
+        self.registers.read_noise_floor_dbm()
     }
 
     pub fn access_point_receive_policy_snapshot(&self) -> wifi_mac::MacApReceivePolicySnapshot {

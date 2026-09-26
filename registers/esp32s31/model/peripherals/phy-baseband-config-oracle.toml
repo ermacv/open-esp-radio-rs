@@ -870,22 +870,6 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "NOISE_FLOOR_MEASUREMENT"
-description = "Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."
-addressOffset = 0x708C
-size = 32
-access = "read-only"
-
-[[peripherals.registers.register.fields]]
-name = "SIGNED_SIXTEENTH_DB_CODE"
-description = "Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."
-bitOffset = 0
-bitWidth = 12
-access = "read-only"
-
-[[peripherals.registers]]
-
-[peripherals.registers.register]
 name = "BASEBAND_INIT_7400"
 description = "Complete phy_bb_reg_init sets bits 14:13."
 addressOffset = 0x7400
@@ -1970,26 +1954,6 @@ completeness = "complete"
 entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_MEASUREMENT"
-sources = [
-    "ROM_REV0_PHY_READ_NOISE_FLOOR",
-    "HIL_OPEN_STA_RATE_CONTROL_2026_07_30",
-]
-provenance = "reviewed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_MEASUREMENT.SIGNED_SIXTEENTH_DB_CODE"
-sources = [
-    "ROM_REV0_PHY_READ_NOISE_FLOOR",
-    "HIL_OPEN_STA_RATE_CONTROL_2026_07_30",
-]
-provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
 

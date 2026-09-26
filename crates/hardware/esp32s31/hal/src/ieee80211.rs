@@ -8,4 +8,8 @@ pub mod channel;
 
 pub mod mac;
 
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub mod phy_rate;
+
 pub mod station_wake;

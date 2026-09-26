@@ -12,7 +12,7 @@ use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 // PHY partition. They cannot acquire, release, or recover the complete Wi-Fi
 // owner. Release-relevant production probes below acquire opaque HAL owners.
 
-use oer_esp32s31_pac::RadioPhyRegisters;
+use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
 
 use oer_esp32s31_ieee80211_mac::ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf};
 
@@ -1429,8 +1429,8 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    pub fn open_phy_trace_ret_read_hw_noisefloor(registers: &mut RadioPhyRegisters) -> u32 =>
-        oer_esp32s31_hal::phy::baseband::read_hardware_noise_floor(&mut shared_phy(registers)) as u32;
+    pub fn open_phy_trace_ret_read_hw_noisefloor(registers: &mut WifiRadioRegisters) -> u32 =>
+        oer_esp32s31_hal::ieee80211::phy_rate::read_hardware_noise_floor(registers) as u32;
 }
 
 oer_probe_macros::probe! {
@@ -1444,18 +1444,18 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    pub fn open_phy_trace_enable_low_rate(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::set_low_rate_enabled(&mut shared_phy(registers), true);
+    pub fn open_phy_trace_enable_low_rate(registers: &mut WifiRadioRegisters) =>
+        oer_esp32s31_hal::ieee80211::phy_rate::set_low_rate_enabled(registers, true);
 }
 
 oer_probe_macros::probe! {
-    pub fn open_phy_trace_disable_low_rate(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::set_low_rate_enabled(&mut shared_phy(registers), false);
+    pub fn open_phy_trace_disable_low_rate(registers: &mut WifiRadioRegisters) =>
+        oer_esp32s31_hal::ieee80211::phy_rate::set_low_rate_enabled(registers, false);
 }
 
 oer_probe_macros::probe! {
-    pub fn open_phy_trace_ret_is_low_rate_enabled(registers: &mut RadioPhyRegisters) -> u32 =>
-        u32::from(oer_esp32s31_hal::phy::agc::low_rate_enabled(&mut shared_phy(registers)));
+    pub fn open_phy_trace_ret_is_low_rate_enabled(registers: &mut WifiRadioRegisters) -> u32 =>
+        u32::from(oer_esp32s31_hal::ieee80211::phy_rate::low_rate_enabled(registers));
 }
 
 oer_probe_macros::probe! {
@@ -1851,8 +1851,8 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    pub fn open_phy_trace_rx11blr_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::configure_rx_11b_low_rate(&mut shared_phy(registers), input);
+    pub fn open_phy_trace_rx11blr_cfg(input: u32, registers: &mut WifiRadioRegisters) =>
+        oer_esp32s31_hal::ieee80211::phy_rate::configure_rx_11b_low_rate(registers, input);
 }
 
 oer_probe_macros::probe! {

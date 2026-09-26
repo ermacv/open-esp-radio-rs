@@ -17,6 +17,7 @@ fragments = [
     "peripherals/i2c-ana-mst.toml",
     "peripherals/phy-i2c-command-ram.toml",
     "peripherals/phy-agc-oracle.toml",
+    "peripherals/wifi-phy-rate-oracle.toml",
     "peripherals/phy-baseband-config-oracle.toml",
     "peripherals/phy-iq-estimator-oracle.toml",
     "peripherals/phy-rx-dco-oracle.toml",

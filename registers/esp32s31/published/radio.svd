@@ -3182,6 +3182,34 @@
             </field>
           </fields>
         </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_PHY_RATE_ORACLE</name>
+      <description>Wi-Fi-owned PHY words: the noise-floor measurement read by Wi-Fi link
+        policy and the low-rate receive gate of Wi-Fi rate control and 11b
+        long-range RX. Only Wi-Fi touches these words: no PHY registration,
+        calibration or tracking body and no Bluetooth or IEEE 802.15.4 body
+        accesses them, so they belong to the Wi-Fi partition rather than the
+        shared radio PHY. They share the radio-core base with the PHY oracles.</description>
+      <baseAddress>0x20100000</baseAddress>
+      <registers>
+        <register>
+          <name>NOISE_FLOOR_MEASUREMENT</name>
+          <description>Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.</description>
+          <addressOffset>0x708C</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>SIGNED_SIXTEENTH_DB_CODE</name>
+              <description>Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>12</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
         <register>
           <name>LOW_RATE_PRIMARY_CONTROL</name>
           <description>Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order; complete phy_rx11blr_cfg replaces both with its caller low bit.</description>
@@ -4145,22 +4173,6 @@
               <name>AUTO_CONTROL_HIGH_UNKNOWN</name>
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>NOISE_FLOOR_MEASUREMENT</name>
-          <description>Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.</description>
-          <addressOffset>0x708C</addressOffset>
-          <size>0x20</size>
-          <access>read-only</access>
-          <fields>
-            <field>
-              <name>SIGNED_SIXTEENTH_DB_CODE</name>
-              <description>Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm.</description>
-              <bitOffset>0</bitOffset>
-              <bitWidth>12</bitWidth>
-              <access>read-only</access>
             </field>
           </fields>
         </register>

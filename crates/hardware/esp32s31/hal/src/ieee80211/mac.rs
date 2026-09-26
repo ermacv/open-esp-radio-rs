@@ -248,10 +248,7 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 
     pub fn disable_phy_low_rate(&mut self) {
-        self.registers
-            .radio_mut()
-            .radio_phy_mut()
-            .configure_phy_low_rate(false);
+        self.registers.radio_mut().configure_phy_low_rate(false);
     }
 
     pub fn configure_open_promiscuous_receive(&mut self) {
@@ -340,20 +337,18 @@ impl<'registers> WifiMacHal<'registers> {
     /// policy. This exposes the measured value, not the underlying register
     /// owner or encoding.
     pub fn read_noise_floor_dbm(&self) -> i8 {
-        self.pac().radio_phy().read_noise_floor_dbm()
+        self.pac().read_noise_floor_dbm()
     }
 
     /// Read the reviewed ROM low-rate enable status while the runtime MAC
     /// register authority is exclusively borrowed.
     pub fn phy_low_rate_enabled(&self) -> bool {
-        self.pac().radio_phy().phy_low_rate_enabled()
+        self.pac().phy_low_rate_enabled()
     }
 
     /// Apply the complete three-RMW ROM low-rate gate transaction.
     pub fn configure_phy_low_rate(&mut self, enabled: bool) {
-        self.pac_mut()
-            .radio_phy_mut()
-            .configure_phy_low_rate(enabled);
+        self.pac_mut().configure_phy_low_rate(enabled);
     }
 
     /// Begin the reviewed no-power-save MAC quiesce sequence before PHY

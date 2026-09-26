@@ -313,7 +313,7 @@ impl RadioOwnerArena {
 
     /// Read the current hardware noise floor as a bounded value observation.
     pub fn try_noise_floor_dbm(&self) -> Result<i8, RadioOwnerArenaError> {
-        self.try_with_ref(|registers| registers.radio_phy().read_noise_floor_dbm())
+        self.try_with_ref(|registers| registers.read_noise_floor_dbm())
     }
 
     /// Install one semantic station CCMP key under the runtime owner.

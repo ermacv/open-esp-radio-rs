@@ -6353,13 +6353,10 @@ pub mod phy_agc_oracle {
         _reserved27: [u8; 0x04],
         agc_update_8028_opaque: AgcUpdate8028Opaque,
         agc_update_802c_opaque: AgcUpdate802cOpaque,
-        _reserved29: [u8; 0x30],
-        low_rate_primary_control: LowRatePrimaryControl,
-        _reserved30: [u8; 0x0c],
+        _reserved29: [u8; 0x40],
         agc_update_8070_opaque: AgcUpdate8070Opaque,
-        _reserved31: [u8; 0x04],
+        _reserved30: [u8; 0x04],
         agc_update_8078_control: AgcUpdate8078Control,
-        low_rate_secondary_control: LowRateSecondaryControl,
     }
     impl RegisterBlock {
         #[doc = "0x8bc - Complete phy_agc_reg_init performs two fresh-read parameter-derived field replacements."]
@@ -6507,11 +6504,6 @@ pub mod phy_agc_oracle {
         pub const fn agc_update_802c_opaque(&self) -> &AgcUpdate802cOpaque {
             &self.agc_update_802c_opaque
         }
-        #[doc = "0x8060 - Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order; complete phy_rx11blr_cfg replaces both with its caller low bit."]
-        #[inline(always)]
-        pub const fn low_rate_primary_control(&self) -> &LowRatePrimaryControl {
-            &self.low_rate_primary_control
-        }
         #[doc = "0x8070 - Complete phy_bb_agc_reg_update writes 0x000008c7."]
         #[inline(always)]
         pub const fn agc_update_8070_opaque(&self) -> &AgcUpdate8070Opaque {
@@ -6521,11 +6513,6 @@ pub mod phy_agc_oracle {
         #[inline(always)]
         pub const fn agc_update_8078_control(&self) -> &AgcUpdate8078Control {
             &self.agc_update_8078_control
-        }
-        #[doc = "0x807c - Third and final fresh-read RMW in the complete low-rate leaves and phy_rx11blr_cfg."]
-        #[inline(always)]
-        pub const fn low_rate_secondary_control(&self) -> &LowRateSecondaryControl {
-            &self.low_rate_secondary_control
         }
     }
     #[doc = "AGC_PARAMETER_CONTROL (rw) register accessor: Complete phy_agc_reg_init performs two fresh-read parameter-derived field replacements.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_parameter_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_parameter_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_parameter_control`] module"]
@@ -7895,6 +7882,67 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
+}
+#[doc = "Wi-Fi-owned PHY words: the noise-floor measurement read by Wi-Fi link policy and the low-rate receive gate of Wi-Fi rate control and 11b long-range RX. Only Wi-Fi touches these words: no PHY registration, calibration or tracking body and no Bluetooth or IEEE 802.15.4 body accesses them, so they belong to the Wi-Fi partition rather than the shared radio PHY. They share the radio-core base with the PHY oracles."]
+pub type WifiPhyRateOracle = crate::Periph<wifi_phy_rate_oracle::RegisterBlock, 0x2010_0000>;
+impl core::fmt::Debug for WifiPhyRateOracle {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiPhyRateOracle").finish()
+    }
+}
+#[doc = "Wi-Fi-owned PHY words: the noise-floor measurement read by Wi-Fi link policy and the low-rate receive gate of Wi-Fi rate control and 11b long-range RX. Only Wi-Fi touches these words: no PHY registration, calibration or tracking body and no Bluetooth or IEEE 802.15.4 body accesses them, so they belong to the Wi-Fi partition rather than the shared radio PHY. They share the radio-core base with the PHY oracles."]
+pub mod wifi_phy_rate_oracle {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x708c],
+        noise_floor_measurement: NoiseFloorMeasurement,
+        _reserved1: [u8; 0x0fd0],
+        low_rate_primary_control: LowRatePrimaryControl,
+        _reserved2: [u8; 0x18],
+        low_rate_secondary_control: LowRateSecondaryControl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x708c - Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
+        #[inline(always)]
+        pub const fn noise_floor_measurement(&self) -> &NoiseFloorMeasurement {
+            &self.noise_floor_measurement
+        }
+        #[doc = "0x8060 - Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order; complete phy_rx11blr_cfg replaces both with its caller low bit."]
+        #[inline(always)]
+        pub const fn low_rate_primary_control(&self) -> &LowRatePrimaryControl {
+            &self.low_rate_primary_control
+        }
+        #[doc = "0x807c - Third and final fresh-read RMW in the complete low-rate leaves and phy_rx11blr_cfg."]
+        #[inline(always)]
+        pub const fn low_rate_secondary_control(&self) -> &LowRateSecondaryControl {
+            &self.low_rate_secondary_control
+        }
+    }
+    #[doc = "NOISE_FLOOR_MEASUREMENT (r) register accessor: Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@noise_floor_measurement`] module"]
+    #[doc(alias = "NOISE_FLOOR_MEASUREMENT")]
+    pub type NoiseFloorMeasurement = crate::Reg<noise_floor_measurement::NoiseFloorMeasurementSpec>;
+    #[doc = "Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
+    pub mod noise_floor_measurement {
+        #[doc = "Register `NOISE_FLOOR_MEASUREMENT` reader"]
+        pub type R = crate::R<NoiseFloorMeasurementSpec>;
+        #[doc = "Field `SIGNED_SIXTEENTH_DB_CODE` reader - Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
+        pub type SignedSixteenthDbCodeR = crate::FieldReader<u16>;
+        impl R {
+            #[doc = "Bits 0:11 - Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
+            #[inline(always)]
+            pub fn signed_sixteenth_db_code(&self) -> SignedSixteenthDbCodeR {
+                SignedSixteenthDbCodeR::new((self.bits & 0x0fff) as u16)
+            }
+        }
+        #[doc = "Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NoiseFloorMeasurementSpec;
+        impl crate::RegisterSpec for NoiseFloorMeasurementSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`noise_floor_measurement::R`](R) reader structure"]
+        impl crate::Readable for NoiseFloorMeasurementSpec {}
+    }
     #[doc = "LOW_RATE_PRIMARY_CONTROL (rw) register accessor: Complete phy_enable_low_rate sets bits 10 and 11 through separate fresh-read RMW edges; complete phy_disable_low_rate clears them in the same order; complete phy_rx11blr_cfg replaces both with its caller low bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`low_rate_primary_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`low_rate_primary_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@low_rate_primary_control`] module"]
     #[doc(alias = "LOW_RATE_PRIMARY_CONTROL")]
     pub type LowRatePrimaryControl =
@@ -8044,57 +8092,55 @@ pub mod phy_baseband_config_oracle {
         i2c_tx_rate_control: I2cTxRateControl,
         _reserved27: [u8; 0x2b88],
         noise_floor_control: NoiseFloorControl,
-        _reserved28: [u8; 0x70],
-        noise_floor_measurement: NoiseFloorMeasurement,
-        _reserved29: [u8; 0x0370],
+        _reserved28: [u8; 0x03e4],
         baseband_init_7400: BasebandInit7400,
-        _reserved30: [u8; 0x24],
+        _reserved29: [u8; 0x24],
         baseband_init_7428: BasebandInit7428,
-        _reserved31: [u8; 0x10],
+        _reserved30: [u8; 0x10],
         baseband_init_743c: BasebandInit743c,
         tx_output_filter_control: TxOutputFilterControl,
-        _reserved33: [u8; 0x10],
+        _reserved32: [u8; 0x10],
         tx_power_track_control_0: TxPowerTrackControl0,
         tx_power_track_control_1: TxPowerTrackControl1,
         tx_power_track_control_2: TxPowerTrackControl2,
         tx_power_track_control_3: TxPowerTrackControl3,
-        _reserved37: [u8; 0x04],
+        _reserved36: [u8; 0x04],
         hccfr_control: HccfrControl,
         hccfr_value: HccfrValue,
-        _reserved39: [u8; 0x08],
+        _reserved38: [u8; 0x08],
         iccfr_force_control: IccfrForceControl,
         iccfr_enable_control: IccfrEnableControl,
-        _reserved41: [u8; 0x0388],
+        _reserved40: [u8; 0x0388],
         baseband_init_7808: BasebandInit7808,
-        _reserved42: [u8; 0x84],
+        _reserved41: [u8; 0x84],
         baseband_init_7890: BasebandInit7890,
-        _reserved43: [u8; 0x48],
+        _reserved42: [u8; 0x48],
         baseband_init_78dc: BasebandInit78dc,
-        _reserved44: [u8; 0x04],
+        _reserved43: [u8; 0x04],
         baseband_init_78e4: BasebandInit78e4,
-        _reserved45: [u8; 0x24],
+        _reserved44: [u8; 0x24],
         baseband_init_790c: BasebandInit790c,
-        _reserved46: [u8; 0x70],
+        _reserved45: [u8; 0x70],
         baseband_init_7980: BasebandInit7980,
-        _reserved47: [u8; 0xa4],
+        _reserved46: [u8; 0xa4],
         baseband_init_7a28: BasebandInit7a28,
-        _reserved48: [u8; 0x01d4],
+        _reserved47: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
-        _reserved49: [u8; 0x04],
+        _reserved48: [u8; 0x04],
         baseband_watchdog_status: BasebandWatchdogStatus,
-        _reserved50: [u8; 0x24],
+        _reserved49: [u8; 0x24],
         baseband_tx_pa_timing: BasebandTxPaTiming,
-        _reserved51: [u8; 0x08],
+        _reserved50: [u8; 0x08],
         baseband_watchdog_control: BasebandWatchdogControl,
         baseband_watchdog_enable: BasebandWatchdogEnable,
         noise_floor_enable_0: NoiseFloorEnable0,
-        _reserved54: [u8; 0x08],
+        _reserved53: [u8; 0x08],
         noise_floor_enable_1: NoiseFloorEnable1,
-        _reserved55: [u8; 0x18],
+        _reserved54: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
-        _reserved56: [u8; 0x38],
+        _reserved55: [u8; 0x38],
         baseband_init_7ca8: BasebandInit7ca8,
-        _reserved57: [u8; 0x24],
+        _reserved56: [u8; 0x24],
         baseband_init_7cd0: BasebandInit7cd0,
     }
     impl RegisterBlock {
@@ -8237,11 +8283,6 @@ pub mod phy_baseband_config_oracle {
         #[inline(always)]
         pub const fn noise_floor_control(&self) -> &NoiseFloorControl {
             &self.noise_floor_control
-        }
-        #[doc = "0x708c - Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
-        #[inline(always)]
-        pub const fn noise_floor_measurement(&self) -> &NoiseFloorMeasurement {
-            &self.noise_floor_measurement
         }
         #[doc = "0x7400 - Complete phy_bb_reg_init sets bits 14:13."]
         #[inline(always)]
@@ -10390,30 +10431,6 @@ pub mod phy_baseband_config_oracle {
         impl crate::Writable for NoiseFloorControlSpec {
             type Safety = crate::Unsafe;
         }
-    }
-    #[doc = "NOISE_FLOOR_MEASUREMENT (r) register accessor: Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@noise_floor_measurement`] module"]
-    #[doc(alias = "NOISE_FLOOR_MEASUREMENT")]
-    pub type NoiseFloorMeasurement = crate::Reg<noise_floor_measurement::NoiseFloorMeasurementSpec>;
-    #[doc = "Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
-    pub mod noise_floor_measurement {
-        #[doc = "Register `NOISE_FLOOR_MEASUREMENT` reader"]
-        pub type R = crate::R<NoiseFloorMeasurementSpec>;
-        #[doc = "Field `SIGNED_SIXTEENTH_DB_CODE` reader - Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
-        pub type SignedSixteenthDbCodeR = crate::FieldReader<u16>;
-        impl R {
-            #[doc = "Bits 0:11 - Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
-            #[inline(always)]
-            pub fn signed_sixteenth_db_code(&self) -> SignedSixteenthDbCodeR {
-                SignedSixteenthDbCodeR::new((self.bits & 0x0fff) as u16)
-            }
-        }
-        #[doc = "Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct NoiseFloorMeasurementSpec;
-        impl crate::RegisterSpec for NoiseFloorMeasurementSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`noise_floor_measurement::R`](R) reader structure"]
-        impl crate::Readable for NoiseFloorMeasurementSpec {}
     }
     #[doc = "BASEBAND_INIT_7400 (rw) register accessor: Complete phy_bb_reg_init sets bits 14:13.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7400::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7400::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7400`] module"]
     #[doc(alias = "BASEBAND_INIT_7400")]
@@ -57467,6 +57484,8 @@ pub struct Peripherals {
     pub phy_i2c_command_ram: PhyI2cCommandRam,
     #[doc = "PHY_AGC_ORACLE"]
     pub phy_agc_oracle: PhyAgcOracle,
+    #[doc = "WIFI_PHY_RATE_ORACLE"]
+    pub wifi_phy_rate_oracle: WifiPhyRateOracle,
     #[doc = "PHY_BASEBAND_CONFIG_ORACLE"]
     pub phy_baseband_config_oracle: PhyBasebandConfigOracle,
     #[doc = "PHY_IQ_ESTIMATOR_ORACLE"]
@@ -57694,6 +57713,7 @@ impl Peripherals {
             i2c_ana_mst: unsafe { I2cAnaMst::steal() },
             phy_i2c_command_ram: unsafe { PhyI2cCommandRam::steal() },
             phy_agc_oracle: unsafe { PhyAgcOracle::steal() },
+            wifi_phy_rate_oracle: unsafe { WifiPhyRateOracle::steal() },
             phy_baseband_config_oracle: unsafe { PhyBasebandConfigOracle::steal() },
             phy_iq_estimator_oracle: unsafe { PhyIqEstimatorOracle::steal() },
             phy_rx_dco_oracle: unsafe { PhyRxDcoOracle::steal() },
@@ -58299,6 +58319,7 @@ pub mod peripheral_ownership {
 
     /// ESP32-S31 Wi-Fi MAC register views owned by the Wi-Fi hardware lifecycle.
     pub struct WifiMacPeripherals {
+        pub wifi_phy_rate_oracle: crate::WifiPhyRateOracle,
         pub wifi_mac_antenna_init: crate::WifiMacAntennaInit,
         pub wifi_mac_aux_tsf_control: crate::WifiMacAuxTsfControl,
         pub wifi_mac_beacon_ie_crc: crate::WifiMacBeaconIeCrc,
@@ -58490,6 +58511,7 @@ pub mod peripheral_ownership {
             i2c_ana_mst,
             phy_i2c_command_ram,
             phy_agc_oracle,
+            wifi_phy_rate_oracle,
             phy_baseband_config_oracle,
             phy_iq_estimator_oracle,
             phy_rx_dco_oracle,
@@ -58588,6 +58610,7 @@ pub mod peripheral_ownership {
         } = peripherals;
         PeripheralPartitions {
             wifi_mac: WifiMacPeripherals {
+                wifi_phy_rate_oracle,
                 wifi_mac_antenna_init,
                 wifi_mac_aux_tsf_control,
                 wifi_mac_beacon_ie_crc,
@@ -59536,9 +59559,9 @@ pub mod field_read {
             .bits()
     }
 
-    /// Read `PHY_AGC_ORACLE`.`LOW_RATE_PRIMARY_CONTROL`.`LOW_RATE_ENABLE_FIRST` without exposing its register block.
+    /// Read `WIFI_PHY_RATE_ORACLE`.`LOW_RATE_PRIMARY_CONTROL`.`LOW_RATE_ENABLE_FIRST` without exposing its register block.
     #[inline]
-    pub fn observe_phy_low_rate_enabled(registers: &crate::PhyAgcOracle) -> bool {
+    pub fn observe_phy_low_rate_enabled(registers: &crate::WifiPhyRateOracle) -> bool {
         registers
             .low_rate_primary_control()
             .read()
@@ -59552,11 +59575,9 @@ pub mod field_read {
         registers.baseband_watchdog_status().read().status().bits()
     }
 
-    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`NOISE_FLOOR_MEASUREMENT`.`SIGNED_SIXTEENTH_DB_CODE` without exposing its register block.
+    /// Read `WIFI_PHY_RATE_ORACLE`.`NOISE_FLOOR_MEASUREMENT`.`SIGNED_SIXTEENTH_DB_CODE` without exposing its register block.
     #[inline]
-    pub fn observe_phy_noise_floor_sixteenth_db_code(
-        registers: &crate::PhyBasebandConfigOracle,
-    ) -> u16 {
+    pub fn observe_phy_noise_floor_sixteenth_db_code(registers: &crate::WifiPhyRateOracle) -> u16 {
         registers
             .noise_floor_measurement()
             .read()
@@ -69001,9 +69022,9 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_FIRST]` from one reviewed logical image while preserving every other bit.
+    /// Replace WIFI_PHY_RATE_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_FIRST]` from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn configure_phy_low_rate_first_state(registers: &crate::PhyAgcOracle, input: u32) {
+    pub fn configure_phy_low_rate_first_state(registers: &crate::WifiPhyRateOracle, input: u32) {
         registers.low_rate_primary_control().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69013,9 +69034,9 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_SECOND]` from one reviewed logical image while preserving every other bit.
+    /// Replace WIFI_PHY_RATE_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_SECOND]` from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn configure_phy_low_rate_second_state(registers: &crate::PhyAgcOracle, input: u32) {
+    pub fn configure_phy_low_rate_second_state(registers: &crate::WifiPhyRateOracle, input: u32) {
         registers.low_rate_primary_control().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69025,9 +69046,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL fields `[LOW_RATE_ENABLE]` from one reviewed logical image while preserving every other bit.
+    /// Replace WIFI_PHY_RATE_ORACLE.LOW_RATE_SECONDARY_CONTROL fields `[LOW_RATE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn configure_phy_low_rate_secondary_state(registers: &crate::PhyAgcOracle, input: u32) {
+    pub fn configure_phy_low_rate_secondary_state(
+        registers: &crate::WifiPhyRateOracle,
+        input: u32,
+    ) {
         registers.low_rate_secondary_control().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69217,9 +69241,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_FIRST]` from one reviewed logical image while preserving every other bit.
+    /// Replace WIFI_PHY_RATE_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_FIRST]` from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn configure_phy_rx11b_first_low_rate_state(registers: &crate::PhyAgcOracle, input: u32) {
+    pub fn configure_phy_rx11b_first_low_rate_state(
+        registers: &crate::WifiPhyRateOracle,
+        input: u32,
+    ) {
         registers.low_rate_primary_control().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000000) & 0x00000001;
             // SAFETY: generator validation proves every logical input projection
@@ -69230,9 +69257,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_SECOND]` from one reviewed logical image while preserving every other bit.
+    /// Replace WIFI_PHY_RATE_ORACLE.LOW_RATE_PRIMARY_CONTROL fields `[LOW_RATE_ENABLE_SECOND]` from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn configure_phy_rx11b_second_low_rate_state(registers: &crate::PhyAgcOracle, input: u32) {
+    pub fn configure_phy_rx11b_second_low_rate_state(
+        registers: &crate::WifiPhyRateOracle,
+        input: u32,
+    ) {
         registers.low_rate_primary_control().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000000) & 0x00000001;
             // SAFETY: generator validation proves every logical input projection
@@ -69243,10 +69273,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL fields `[LOW_RATE_ENABLE]` from one reviewed logical image while preserving every other bit.
+    /// Replace WIFI_PHY_RATE_ORACLE.LOW_RATE_SECONDARY_CONTROL fields `[LOW_RATE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx11b_secondary_low_rate_state(
-        registers: &crate::PhyAgcOracle,
+        registers: &crate::WifiPhyRateOracle,
         input: u32,
     ) {
         registers.low_rate_secondary_control().modify(|_, writer| {

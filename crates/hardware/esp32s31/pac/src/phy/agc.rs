@@ -2,38 +2,10 @@
 
 #![forbid(unsafe_code)]
 
-use crate::generated::{
-    PhyAgcParameterByte, PhyLowRateState, PhyRx11bLowRateArgument, PhyRxGainTableLastIndex,
-};
+use crate::generated::{PhyAgcParameterByte, PhyRxGainTableLastIndex};
 use crate::{PhyFtmEnableVendorArgument, RadioPhyRegisters};
 
-const fn phy_low_rate_state(enabled: bool) -> PhyLowRateState {
-    if enabled {
-        PhyLowRateState::Enabled
-    } else {
-        PhyLowRateState::Disabled
-    }
-}
-
 impl RadioPhyRegisters {
-    /// Enable or disable the complete three-edge PHY low-rate path.
-    ///
-    /// SOURCE: complete rev0 ROM `phy_enable_low_rate` at `0x2f82_5210`
-    /// and `phy_disable_low_rate` at `0x2f82_5230`, both size `0x20`.
-    /// The two primary-word bits remain separate RMWs exactly as in ROM.
-    pub fn configure_phy_low_rate(&mut self, enabled: bool) {
-        let agc = &self.peripherals.phy_agc_oracle;
-        let state = phy_low_rate_state(enabled);
-        crate::generated::configure_phy_low_rate_first_state(agc, state);
-        crate::generated::configure_phy_low_rate_second_state(agc, state);
-        crate::generated::configure_phy_low_rate_secondary_state(agc, state);
-    }
-
-    /// Read the complete ROM `phy_is_low_rate_enabled` status bit.
-    pub fn phy_low_rate_enabled(&self) -> bool {
-        crate::svd::field_read::observe_phy_low_rate_enabled(&self.peripherals.phy_agc_oracle)
-    }
-
     /// Apply all fourteen internal MMIO edges of `phy_bb_agc_reg_update`.
     pub fn update_agc_baseband_registers(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;
@@ -117,17 +89,6 @@ impl RadioPhyRegisters {
         crate::generated::clear_phy_agc_initial_antenna_fields(agc);
         crate::generated::configure_phy_agc_initial_antenna_control(agc);
         crate::generated::configure_phy_agc_initial_antenna_paths(agc);
-    }
-
-    /// Apply complete rev0 ROM `phy_rx11blr_cfg` without widening the caller
-    /// low-bit contract into a boolean ABI.
-    pub fn configure_rx_11b_low_rate(&mut self, input: u32) {
-        let input = PhyRx11bLowRateArgument::new(input)
-            .expect("every u32 is a complete phy_rx11blr_cfg argument");
-        let agc = &self.peripherals.phy_agc_oracle;
-        crate::generated::configure_phy_rx11b_first_low_rate_state(agc, input);
-        crate::generated::configure_phy_rx11b_second_low_rate_state(agc, input);
-        crate::generated::configure_phy_rx11b_secondary_low_rate_state(agc, input);
     }
 
     /// Apply either complete branch of rev0 ROM `phy_rfrx_sat_rst`.

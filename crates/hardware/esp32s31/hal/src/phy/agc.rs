@@ -46,20 +46,6 @@ pub fn set_enabled(registers: &mut impl SharedPhyAccess, enabled: bool) {
     registers.set_agc_enabled(enabled);
 }
 
-/// Select either complete ROM low-rate configuration leaf.
-#[cfg(target_arch = "riscv32")]
-pub fn set_low_rate_enabled(registers: &mut impl SharedPhyAccess, enabled: bool) {
-    let registers = phy_pac_mut(registers);
-    registers.configure_phy_low_rate(enabled);
-}
-
-/// Read complete ROM `phy_is_low_rate_enabled`.
-#[cfg(target_arch = "riscv32")]
-pub fn low_rate_enabled(registers: &impl SharedPhyAccess) -> bool {
-    let registers = phy_pac(registers);
-    registers.phy_low_rate_enabled()
-}
-
 /// Apply all ten fresh-read updates of complete `phy_agc_reg_init`.
 #[cfg(target_arch = "riscv32")]
 pub fn initialize_registers(
@@ -133,13 +119,6 @@ pub fn configure_forced_rx_gain_from_vendor_arguments(
 ) {
     let registers = phy_pac_mut(registers);
     registers.configure_forced_rx_gain_from_vendor_arguments(enabled, gain);
-}
-
-/// Apply complete rev0 ROM `phy_rx11blr_cfg`.
-#[cfg(target_arch = "riscv32")]
-pub fn configure_rx_11b_low_rate(registers: &mut impl SharedPhyAccess, input: u32) {
-    let registers = phy_pac_mut(registers);
-    registers.configure_rx_11b_low_rate(input);
 }
 
 /// Apply either complete branch of rev0 ROM `phy_rfrx_sat_rst`.

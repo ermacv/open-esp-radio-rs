@@ -66,14 +66,14 @@ impl TxDcPwdetFields {
     }
 }
 
-const fn decode_noise_floor_quarter_db(raw_low_twelve: u16) -> i32 {
+pub(crate) const fn decode_noise_floor_quarter_db(raw_low_twelve: u16) -> i32 {
     // Complete ROM `phy_read_hw_noisefloor` subtracts 0x1000 from the
     // generated twelve-bit field unconditionally and shifts by two.
     let signed_sixteenth_db = raw_low_twelve as i32 - 0x1000;
     signed_sixteenth_db >> 2
 }
 
-const fn quarter_db_to_dbm(quarter_db: i32) -> i8 {
+pub(crate) const fn quarter_db_to_dbm(quarter_db: i32) -> i8 {
     // Complete blob `wDev_GetNoiseFloor` consumes the quarter-dB ROM result,
     // adds two, shifts by two and stores a byte.
     ((quarter_db + 2) >> 2) as i8
@@ -322,27 +322,6 @@ impl RadioPhyRegisters {
         crate::generated::enable_noise_floor_auto_control_high(bb);
         crate::generated::enable_noise_floor_auto_path_0(bb);
         crate::generated::enable_noise_floor_auto_path_1(bb);
-    }
-
-    /// Read the current hardware noise floor as the signed byte used by MAC
-    /// rate control.
-    ///
-    /// SOURCE: complete rev0 ROM `phy_read_hw_noisefloor` at
-    /// `0x2f82_7d72`, size `0x1a`, reads `0x2010_708c[11:0]` and performs the
-    /// first arithmetic divide by four. Complete
-    /// `libpp.a[wdev.o]::wDev_GetNoiseFloor`, size `0x36`, applies
-    /// `(quarter_db + 2) >> 2` and retains the result as a signed byte.
-    pub fn read_noise_floor_dbm(&self) -> i8 {
-        quarter_db_to_dbm(self.read_noise_floor_quarter_db())
-    }
-
-    /// Read the exact signed quarter-dB result returned by complete rev0 ROM
-    /// `phy_read_hw_noisefloor`.
-    pub fn read_noise_floor_quarter_db(&self) -> i32 {
-        let raw = crate::svd::field_read::observe_phy_noise_floor_sixteenth_db_code(
-            &self.peripherals.phy_baseband_config_oracle,
-        );
-        decode_noise_floor_quarter_db(raw)
     }
 
     /// Apply all six ordered PA-on configuration operations.

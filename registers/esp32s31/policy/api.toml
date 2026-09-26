@@ -10,6 +10,7 @@ name = "WifiMacPeripherals"
 member = "wifi_mac"
 description = "ESP32-S31 Wi-Fi MAC register views owned by the Wi-Fi hardware lifecycle."
 peripherals = [
+    "WIFI_PHY_RATE_ORACLE",
     "WIFI_MAC_ANTENNA_INIT",
     "WIFI_MAC_AUX_TSF_CONTROL",
     "WIFI_MAC_BEACON_IE_CRC",
@@ -8348,7 +8349,7 @@ sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "configure_phy_low_rate_first_state"
-peripheral = "PHY_AGC_ORACLE"
+peripheral = "WIFI_PHY_RATE_ORACLE"
 register = "LOW_RATE_PRIMARY_CONTROL"
 fields = [{ field = "LOW_RATE_ENABLE_FIRST", source-bit-offset = 0 }]
 domain = "PhyLowRateState"
@@ -8357,7 +8358,7 @@ sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "configure_phy_low_rate_second_state"
-peripheral = "PHY_AGC_ORACLE"
+peripheral = "WIFI_PHY_RATE_ORACLE"
 register = "LOW_RATE_PRIMARY_CONTROL"
 fields = [{ field = "LOW_RATE_ENABLE_SECOND", source-bit-offset = 0 }]
 domain = "PhyLowRateState"
@@ -8366,7 +8367,7 @@ sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "configure_phy_low_rate_secondary_state"
-peripheral = "PHY_AGC_ORACLE"
+peripheral = "WIFI_PHY_RATE_ORACLE"
 register = "LOW_RATE_SECONDARY_CONTROL"
 fields = [{ field = "LOW_RATE_ENABLE", source-bit-offset = 0 }]
 domain = "PhyLowRateState"
@@ -8375,7 +8376,7 @@ sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
 
 [[field-reads]]
 name = "observe_phy_low_rate_enabled"
-peripheral = "PHY_AGC_ORACLE"
+peripheral = "WIFI_PHY_RATE_ORACLE"
 register = "LOW_RATE_PRIMARY_CONTROL"
 field = "LOW_RATE_ENABLE_FIRST"
 sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
@@ -8523,7 +8524,7 @@ sources = ["ROM_REV0_PHY_RX11BLR_CFG"]
 
 [[field-replace-modifies]]
 name = "configure_phy_rx11b_first_low_rate_state"
-peripheral = "PHY_AGC_ORACLE"
+peripheral = "WIFI_PHY_RATE_ORACLE"
 register = "LOW_RATE_PRIMARY_CONTROL"
 fields = [{ field = "LOW_RATE_ENABLE_FIRST", source-bit-offset = 0 }]
 domain = "PhyRx11bLowRateArgument"
@@ -8533,7 +8534,7 @@ sources = ["ROM_REV0_PHY_RX11BLR_CFG", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "configure_phy_rx11b_second_low_rate_state"
-peripheral = "PHY_AGC_ORACLE"
+peripheral = "WIFI_PHY_RATE_ORACLE"
 register = "LOW_RATE_PRIMARY_CONTROL"
 fields = [{ field = "LOW_RATE_ENABLE_SECOND", source-bit-offset = 0 }]
 domain = "PhyRx11bLowRateArgument"
@@ -8543,7 +8544,7 @@ sources = ["ROM_REV0_PHY_RX11BLR_CFG", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "configure_phy_rx11b_secondary_low_rate_state"
-peripheral = "PHY_AGC_ORACLE"
+peripheral = "WIFI_PHY_RATE_ORACLE"
 register = "LOW_RATE_SECONDARY_CONTROL"
 fields = [{ field = "LOW_RATE_ENABLE", source-bit-offset = 0 }]
 domain = "PhyRx11bLowRateArgument"
@@ -9425,7 +9426,7 @@ sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
 
 [[field-reads]]
 name = "observe_phy_noise_floor_sixteenth_db_code"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+peripheral = "WIFI_PHY_RATE_ORACLE"
 register = "NOISE_FLOOR_MEASUREMENT"
 field = "SIGNED_SIXTEENTH_DB_CODE"
 sources = ["ROM_REV0_PHY_READ_NOISE_FLOOR", "S31_ESP_PACS_SVD"]

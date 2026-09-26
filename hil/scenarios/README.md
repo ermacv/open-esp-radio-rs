@@ -125,9 +125,10 @@ station other than the laptop peer that sends that data. It publishes:
   different paths and stamps one MPDU per A-MPDU. A CTS to the target answers
   only its RTS, so either observed half shows the exchange; the observer
   loses single control frames, and the remainder bounds that loss.
-- `wifi.protection.control-rate`: target RTS frames whose PHY differs from
-  the required control rate (DSSS/HR under ERP protection, OFDM otherwise),
-  exactly zero.
+- `wifi.protection.control-rate`: target RTS frames at a rate outside the
+  BSSBasicRateSet and the mandatory rates of their modulation class, or not
+  DSSS/HR while the BSS sets ERP Use_Protection, exactly zero. The basic set
+  and ERP protection come from the BSS's beacons in the same capture.
 - `wifi.protection.nav-covers-exchange`: protected PPDUs with an observed
   RTS whose NAV, from the RTS TSFT plus its airtime and Duration, ends before
   the AP's BlockAck or Ack ends, exactly zero.

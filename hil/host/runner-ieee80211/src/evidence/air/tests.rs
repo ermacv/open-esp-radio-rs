@@ -93,3 +93,25 @@ fn epoch_parser_is_integer_and_microsecond_bounded() {
     assert_eq!(epoch_micros("broken"), None);
     assert_eq!(MacAddress::BROADCAST.to_string(), "ff:ff:ff:ff:ff:ff");
 }
+
+#[test]
+fn beacon_rates_collect_the_basic_set_and_erp_protection() {
+    let rates = parse_beacon_rates(
+        "0x8b,0x96,0x82,0x84,0x0c,0x18,0x30,0x60\t0x6c,0x12,0x24,0x48\t0x00\n\
+         0x8b,0x96,0x82,0x84,0x0c,0x18,0x30,0x60\t0x6c,0x12,0x24,0x48\t0x02\n",
+    )
+    .unwrap();
+    assert_eq!(
+        rates.basic_kbps.into_iter().collect::<Vec<_>>(),
+        [1_000, 2_000, 5_500, 11_000]
+    );
+    assert!(rates.erp_use_protection);
+    let ofdm = parse_beacon_rates("0x8c,0x12,0x98,0x24,0xb0,0x48,0x60,0x6c\t\t\n").unwrap();
+    assert_eq!(
+        ofdm.basic_kbps.into_iter().collect::<Vec<_>>(),
+        [6_000, 12_000, 24_000]
+    );
+    assert!(!ofdm.erp_use_protection);
+    assert!(parse_beacon_rates("").is_err());
+    assert!(parse_beacon_rates("0x8b\t\n").is_err());
+}

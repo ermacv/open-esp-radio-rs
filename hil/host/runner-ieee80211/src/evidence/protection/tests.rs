@@ -18,6 +18,14 @@ fn at(
     record
 }
 
+/// A BSS with the OFDM basic set 6/12/24 Mb/s.
+fn bss(erp_use_protection: bool) -> BssRates {
+    BssRates {
+        basic_kbps: [6_000, 12_000, 24_000].into(),
+        erp_use_protection,
+    }
+}
+
 fn control(mut record: AirFrame, phy: AirPhy, rate_kbps: u32) -> AirFrame {
     record.phy = Some(phy);
     record.rate_kbps = Some(rate_kbps);
@@ -70,7 +78,7 @@ fn every_protected_ppdu_with_covering_nav_passes() {
         .flat_map(|index| exchange(index * 10_000, true, AirPhy::Ofdm, 24_000, 400))
         .collect::<Vec<_>>();
     let evidence = Flow::station(&frames, AP, None)
-        .and_then(|flow| analyze(&frames, flow, Expectation { erp: false }))
+        .and_then(|flow| analyze(&frames, flow, &bss(false)))
         .unwrap();
     assert_eq!(evidence.target.as_deref(), Some("02:00:00:00:00:10"));
     assert_eq!((evidence.data_ppdus, evidence.protected_ppdus), (10, 10));
@@ -86,7 +94,7 @@ fn unprotected_ppdus_wrong_rates_and_short_nav_are_counted() {
     frames.extend(exchange(10_000, false, AirPhy::Ofdm, 24_000, 0));
     frames.extend(exchange(20_000, true, AirPhy::Ofdm, 24_000, 100));
     let evidence = Flow::station(&frames, AP, None)
-        .and_then(|flow| analyze(&frames, flow, Expectation { erp: true }))
+        .and_then(|flow| analyze(&frames, flow, &bss(true)))
         .unwrap();
     assert_eq!((evidence.data_ppdus, evidence.protected_ppdus), (3, 2));
     assert_eq!(evidence.protected_basis_points(), 6_666);
@@ -95,7 +103,7 @@ fn unprotected_ppdus_wrong_rates_and_short_nav_are_counted() {
     assert!(evidence.first_nav_shortfall_micros.unwrap() > 0);
     let dsss = exchange(0, true, AirPhy::HrDsss, 11_000, 600);
     let evidence = Flow::station(&dsss, AP, None)
-        .and_then(|flow| analyze(&dsss, flow, Expectation { erp: true }))
+        .and_then(|flow| analyze(&dsss, flow, &bss(true)))
         .unwrap();
     assert_eq!((evidence.wrong_control_rate, evidence.nav_short), (0, 0));
 }
@@ -108,7 +116,7 @@ fn either_observed_half_of_an_exchange_shows_protection() {
     lost_rts.remove(0);
     let frames = [lost_cts, lost_rts].concat();
     let evidence = Flow::station(&frames, AP, None)
-        .and_then(|flow| analyze(&frames, flow, Expectation { erp: false }))
+        .and_then(|flow| analyze(&frames, flow, &bss(false)))
         .unwrap();
     assert_eq!((evidence.data_ppdus, evidence.protected_ppdus), (2, 2));
     assert_eq!((evidence.cts_unobserved, evidence.rts_unobserved), (1, 1));
@@ -124,11 +132,11 @@ fn the_target_is_the_dominant_sender_other_than_the_peer() {
     }
     assert!(
         Flow::station(&frames, AP, None)
-            .and_then(|flow| analyze(&frames, flow, Expectation { erp: false }))
+            .and_then(|flow| analyze(&frames, flow, &bss(false)))
             .is_err()
     );
     let evidence = Flow::station(&frames, AP, Some(LAPTOP))
-        .and_then(|flow| analyze(&frames, flow, Expectation { erp: false }))
+        .and_then(|flow| analyze(&frames, flow, &bss(false)))
         .unwrap();
     assert_eq!(evidence.target.as_deref(), Some("02:00:00:00:00:10"));
     assert!(Flow::station(&[], AP, None).is_err());
@@ -136,7 +144,7 @@ fn the_target_is_the_dominant_sender_other_than_the_peer() {
     untimed[1].mac_time_micros = None;
     assert!(
         Flow::station(&untimed, AP, Some(LAPTOP))
-            .and_then(|flow| analyze(&untimed, flow, Expectation { erp: false }))
+            .and_then(|flow| analyze(&untimed, flow, &bss(false)))
             .is_err()
     );
 }
@@ -183,7 +191,49 @@ fn an_access_point_flow_is_the_ap_data_to_its_other_station() {
             receiver: HT_CLIENT
         }
     );
-    let evidence = analyze(&frames, flow, Expectation { erp: false }).unwrap();
+    let evidence = analyze(&frames, flow, &bss(false)).unwrap();
     assert_eq!((evidence.data_ppdus, evidence.protected_ppdus), (3, 3));
+    assert_eq!(evidence.nav_short, 0);
+}
+
+#[test]
+fn control_rates_follow_the_basic_set_and_erp() {
+    let rts = |phy, rate| control(frame(0, FrameKind::RTS), phy, rate);
+    let plain = bss(false);
+    assert!(control_rate_allowed(&rts(AirPhy::Ofdm, 24_000), &plain));
+    assert!(control_rate_allowed(&rts(AirPhy::HrDsss, 11_000), &plain));
+    // 36 Mb/s is neither basic nor mandatory here.
+    assert!(!control_rate_allowed(&rts(AirPhy::Ofdm, 36_000), &plain));
+    let mut basic_36 = bss(false);
+    basic_36.basic_kbps.insert(36_000);
+    assert!(control_rate_allowed(&rts(AirPhy::Ofdm, 36_000), &basic_36));
+    // ERP protection requires DSSS/HR even for a basic OFDM rate.
+    assert!(!control_rate_allowed(
+        &rts(AirPhy::Ofdm, 24_000),
+        &bss(true)
+    ));
+    assert!(control_rate_allowed(
+        &rts(AirPhy::HrDsss, 11_000),
+        &bss(true)
+    ));
+    assert!(!control_rate_allowed(&rts(AirPhy::Ht, 65_000), &plain));
+    assert!(!control_rate_allowed(&frame(0, FrameKind::RTS), &plain));
+}
+
+#[test]
+fn an_ack_after_an_a_mpdu_answers_another_exchange() {
+    // The observer lost the BlockAck; the target's next Ack answers a single
+    // MPDU to another station and must not judge this NAV.
+    let mut frames = exchange(0, true, AirPhy::Ofdm, 24_000, 600);
+    let block_ack = frames.pop().unwrap();
+    frames.push(control(
+        at(block_ack.mac_time_micros.unwrap() + 800, FrameKind::ACK, None, TARGET),
+        AirPhy::Ofdm,
+        24_000,
+    ));
+    let evidence = Flow::station(&frames, AP, None)
+        .and_then(|flow| analyze(&frames, flow, &bss(false)))
+        .unwrap();
+    assert_eq!((evidence.protected_ppdus, evidence.nav_evaluated), (1, 0));
     assert_eq!(evidence.nav_short, 0);
 }

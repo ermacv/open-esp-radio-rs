@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     Result,
-    evidence::{air::MacAddress, protection::Expectation},
+    evidence::air::MacAddress,
     fixture::{openwrt::air_monitor::ProtectionCapture, prepared::Prepared},
     workload::{
         ieee80211::{self, control::Operation},
@@ -156,16 +156,12 @@ fn station_udp(
         ProtectionPeer::NonHtMember => Some(laptop_address()?),
         ProtectionPeer::OverlappingLegacyBss => None,
     };
-    let expectation = Expectation {
-        erp: induced.peer == ProtectionPeer::OverlappingLegacyBss,
-    };
     let capture = ProtectionCapture::start(context.lab, true, bound, output)?;
     let traffic = station_udp_traffic(workload, image, output, context);
     let protection = assess_protection(
         capture,
         induced.minimum_protected_ppdu_percent,
         peer,
-        expectation,
         context,
     );
     traffic.and(protection)
@@ -191,7 +187,6 @@ fn access_point(
         capture,
         protection.minimum_protected_ppdu_percent,
         Some(peer),
-        Expectation { erp: false },
         context,
     );
     traffic.and(assessed)
@@ -208,11 +203,10 @@ fn assess_protection(
     capture: ProtectionCapture,
     minimum_protected_ppdu_percent: u8,
     peer: Option<MacAddress>,
-    expectation: Expectation,
     context: &Context<'_>,
 ) -> Result<()> {
     use hil_core::evidence::run::{Comparison, Measurement, MeasurementUnit};
-    let evidence = capture.finish(peer, expectation)?;
+    let evidence = capture.finish(peer)?;
     if evidence.data_ppdus < MINIMUM_PROTECTION_PPDUS || evidence.nav_evaluated == 0 {
         return Err(format!(
             "protection observation is insufficient: {} data PPDUs, {} with an evaluable NAV",

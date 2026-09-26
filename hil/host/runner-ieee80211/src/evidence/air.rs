@@ -338,6 +338,82 @@ fn decode_hex(value: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
+/// Rates and ERP protection a BSS advertises in its beacons.
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub struct BssRates {
+    /// The BSSBasicRateSet, in kb/s.
+    pub basic_kbps: std::collections::BTreeSet<u32>,
+    /// A beacon carried ERP Use_Protection.
+    pub erp_use_protection: bool,
+}
+
+/// The rates and ERP protection of `bss`, from every beacon it sent in the
+/// capture. Rate elements repeat a field per rate, so this decode aggregates
+/// occurrences instead of taking the first.
+pub fn beacon_rates(path: &Path, bss: MacAddress) -> Result<BssRates> {
+    let output = Command::new("tshark")
+        .arg("-r")
+        .arg(path)
+        .args([
+            "-Y",
+            &format!("wlan.fc.type_subtype == 0x0008 && wlan.ta == {bss}"),
+            "-T",
+            "fields",
+            "-E",
+            "separator=\t",
+            "-E",
+            "occurrence=a",
+            "-E",
+            "aggregator=,",
+            "-e",
+            "wlan.supported_rates",
+            "-e",
+            "wlan.extended_supported_rates",
+            "-e",
+            "wlan.erp_info",
+        ])
+        .supervised_output()?;
+    if !output.status.success() {
+        return Err(crate::fixture::Error::new(format!(
+            "cannot decode beacons of {bss}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+        .into());
+    }
+    parse_beacon_rates(&String::from_utf8(output.stdout)?)
+        .map_err(|error| format!("beacons of {bss}: {error}").into())
+}
+
+/// Parse beacon records of supported rates, extended rates and ERP.
+pub fn parse_beacon_rates(text: &str) -> Result<BssRates> {
+    let mut rates = BssRates::default();
+    let mut beacons = 0;
+    for line in text.lines().filter(|line| !line.is_empty()) {
+        let fields = line.split('\t').collect::<Vec<_>>();
+        let [supported, extended, erp] = fields[..] else {
+            return Err(format!("beacon record has {} fields: {line}", fields.len()).into());
+        };
+        beacons += 1;
+        for rate in [supported, extended]
+            .into_iter()
+            .flat_map(|list| list.split(','))
+            .filter_map(present)
+        {
+            let rate = parse_integer::<u8>(rate)?;
+            if rate & 0x80 != 0 {
+                rates.basic_kbps.insert(u32::from(rate & 0x7f) * 500);
+            }
+        }
+        if let Some(erp) = present(erp) {
+            rates.erp_use_protection |= parse_integer::<u8>(erp)? & 0x02 != 0;
+        }
+    }
+    if beacons == 0 {
+        return Err("the capture holds no beacon".into());
+    }
+    Ok(rates)
+}
+
 /// Seconds with up to microsecond precision; additional digits truncate.
 pub fn epoch_micros(value: &str) -> Option<u64> {
     let value = value.trim();

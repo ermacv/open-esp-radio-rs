@@ -9,21 +9,14 @@ use serde::Serialize;
 
 use crate::{
     Result,
-    evidence::air::{AirFrame, AirPhy, FrameKind, MacAddress},
+    evidence::air::{AirFrame, AirPhy, BssRates, FrameKind, MacAddress},
 };
-
-/// Protection advertised by the AP while the frames were captured.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Expectation {
-    /// ERP Use_Protection: control frames must use a DSSS/HR rate.
-    pub erp: bool,
-}
 
 /// The RTS and its CTS are SIFS apart; anything slower is not one exchange.
 const EXCHANGE_GAP_MICROS: u64 = 1_000;
-/// The response follows the stamped MPDU of a PPDU by at most that MPDU's
-/// airtime and SIFS.
-const RESPONSE_WINDOW_MICROS: u64 = 1_000;
+/// A response belongs to the exchange when it starts within the RTS NAV
+/// plus this margin; the NAV check then judges it exactly.
+const RESPONSE_SLACK_MICROS: u64 = 1_000;
 /// TSFT stamps whole microseconds and PHYs round their durations.
 const NAV_TOLERANCE_MICROS: u64 = 2;
 const RTS_BYTES: u32 = 20;
@@ -43,8 +36,8 @@ pub struct ProtectionEvidence {
     /// Protected PPDUs whose CTS the observer lost (only the RTS was seen).
     pub cts_unobserved: u32,
     pub target_rts: u32,
-    /// RTS frames whose PHY class differs from the protection's control rate
-    /// (or whose PHY the capture did not record).
+    /// RTS frames at a rate outside the BSS basic and mandatory rates, not
+    /// DSSS/HR under ERP protection, or whose rate the capture did not record.
     pub wrong_control_rate: u32,
     /// Protected PPDUs with an observed response, whose NAV was checked.
     pub nav_evaluated: u32,
@@ -113,12 +106,9 @@ impl Flow {
     }
 }
 
-/// Analyze how `flow.target` protects its data PPDUs to `flow.receiver`.
-pub fn analyze(
-    frames: &[AirFrame],
-    flow: Flow,
-    expectation: Expectation,
-) -> Result<ProtectionEvidence> {
+/// Analyze how `flow.target` protects its data PPDUs to `flow.receiver` in
+/// the BSS advertising `bss`.
+pub fn analyze(frames: &[AirFrame], flow: Flow, bss: &BssRates) -> Result<ProtectionEvidence> {
     let Flow { target, receiver } = flow;
     let timeline = timeline(frames, target, receiver)?;
     let mut evidence = ProtectionEvidence {
@@ -130,17 +120,12 @@ pub fn analyze(
         let rts = match event {
             Event::Rts(frame) => {
                 evidence.target_rts += 1;
-                let expected = match frame.phy {
-                    Some(phy) if expectation.erp => phy.is_dsss(),
-                    Some(phy) => phy == AirPhy::Ofdm,
-                    None => false,
-                };
-                if !expected {
+                if !control_rate_allowed(frame, bss) {
                     evidence.wrong_control_rate += 1;
                 }
                 continue;
             }
-            Event::Ppdu => {
+            Event::Ppdu { .. } => {
                 evidence.data_ppdus += 1;
                 // Either observed half of the exchange shows it: a CTS to the
                 // target answers only the target's RTS. The observer loses
@@ -179,11 +164,19 @@ pub fn analyze(
         let Some(duration) = rts.duration_micros.map(u64::from) else {
             continue;
         };
+        // The response is the next event, unless the observer lost it and a
+        // later exchange's response follows outside this NAV.
+        let aggregated = matches!(event, Event::Ppdu { aggregated: true });
         let response =
             timeline[index + 1..]
                 .first()
                 .and_then(|&(response_time, event)| match event {
-                    Event::Response(frame) if response_time - time <= RESPONSE_WINDOW_MICROS => {
+                    // An Ack carries no transmitter: after an A-MPDU it answers
+                    // another exchange of the target, not this one.
+                    Event::Response(frame)
+                        if response_time - rts_time <= duration + RESPONSE_SLACK_MICROS
+                            && (frame.kind == FrameKind::BLOCK_ACK) == aggregated =>
+                    {
                         Some((response_time, frame))
                     }
                     _ => None,
@@ -221,8 +214,11 @@ pub fn analyze(
 enum Event<'a> {
     Rts(&'a AirFrame),
     Cts(&'a AirFrame),
-    /// A data PPDU, timed by the one MPDU the observer stamped.
-    Ppdu,
+    /// A data PPDU, timed by the one MPDU the observer stamped. An A-MPDU
+    /// is answered by a BlockAck, a single MPDU by an Ack.
+    Ppdu {
+        aggregated: bool,
+    },
     /// A data PPDU whose stamped MPDU the observer lost. It counts as a PPDU
     /// but can never be shown to be protected.
     UntimedPpdu,
@@ -255,7 +251,7 @@ fn timeline<'a>(
                         *stamp = stamp.or(frame.mac_time_micros);
                     }
                     None => match frame.mac_time_micros {
-                        Some(time) => timeline.push((time, Event::Ppdu)),
+                        Some(time) => timeline.push((time, Event::Ppdu { aggregated: false })),
                         None => untimed += 1,
                     },
                 }
@@ -266,7 +262,7 @@ fn timeline<'a>(
     }
     for stamp in aggregates.into_values() {
         match stamp {
-            Some(time) => timeline.push((time, Event::Ppdu)),
+            Some(time) => timeline.push((time, Event::Ppdu { aggregated: true })),
             None => untimed += 1,
         }
     }
@@ -274,6 +270,20 @@ fn timeline<'a>(
     // Untimed PPDUs precede everything, so no exchange is attributed to them.
     timeline.splice(0..0, (0..untimed).map(|_| (0, Event::UntimedPpdu)));
     Ok(timeline)
+}
+
+/// A control frame's rate must be in the BSSBasicRateSet or a mandatory
+/// rate of its modulation class, and DSSS/HR under ERP protection.
+fn control_rate_allowed(frame: &AirFrame, bss: &BssRates) -> bool {
+    let (Some(phy), Some(rate)) = (frame.phy, frame.rate_kbps) else {
+        return false;
+    };
+    let mandatory: &[u32] = match phy {
+        phy if phy.is_dsss() => &[1_000, 2_000, 5_500, 11_000],
+        AirPhy::Ofdm if !bss.erp_use_protection => &[6_000, 12_000, 24_000],
+        _ => return false,
+    };
+    bss.basic_kbps.contains(&rate) || mandatory.contains(&rate)
 }
 
 /// A PPDU stamped at `time` lies inside the NAV a control frame set.

@@ -198,10 +198,13 @@ impl ProtectionCapture {
             ProtectionScope::Channel
         };
         let filter = match scope {
-            ProtectionScope::StationFixture(bssid) => {
-                format!("type ctl or (type data and wlan addr1 {bssid})")
+            ProtectionScope::StationFixture(bssid) => format!(
+                "type ctl or (type data and wlan addr1 {bssid}) or \
+                 (type mgt subtype beacon and wlan addr2 {bssid})"
+            ),
+            ProtectionScope::Channel => {
+                "type ctl or type data or (type mgt subtype beacon)".to_owned()
             }
-            ProtectionScope::Channel => "type ctl or type data".to_owned(),
         };
         let geometry = local::air_monitor::resolve_observer_action(ap)?;
         fs::create_dir_all(output)?;
@@ -221,7 +224,6 @@ impl ProtectionCapture {
     pub fn finish(
         mut self,
         peer: Option<MacAddress>,
-        expectation: crate::evidence::protection::Expectation,
     ) -> Result<crate::evidence::protection::ProtectionEvidence> {
         use crate::evidence::protection::{Flow, analyze};
         let (captured, dropped) = self.remote.finish_capture()?;
@@ -242,12 +244,18 @@ impl ProtectionCapture {
                 peer.ok_or("an access point flow needs the laptop client")?,
             )?,
         };
-        let evidence = analyze(&frames, flow, expectation)?;
+        // The BSS whose basic rates and ERP protection govern the exchange.
+        let bss = match self.scope {
+            ProtectionScope::StationFixture(bssid) => bssid,
+            ProtectionScope::Channel => flow.target,
+        };
+        let rates = air::beacon_rates(self.remote.output_path(), bss)?;
+        let evidence = analyze(&frames, flow, &rates)?;
         fs::write(
             self.remote.output_path().with_extension("json"),
             serde_json::to_vec_pretty(&serde_json::json!({
                 "schema": 1, "captured_frames": captured,
-                "erp_protection": expectation.erp, "evidence": evidence,
+                "bss": bss.to_string(), "bss_rates": rates, "evidence": evidence,
             }))?,
         )?;
         Ok(evidence)

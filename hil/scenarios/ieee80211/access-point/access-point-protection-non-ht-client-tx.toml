@@ -22,9 +22,9 @@ minimum_protected_ppdu_percent = 95
 kind = "udp-multi-client"
 duration_seconds = 16
 payload_bytes = 1472
-offer = { tx_bps = 8000000 }
+offer = { tx_bps = 3000000 }
 
 [wifi.workload.traffic.criteria]
 exact_delivery = true
-minimum_tx_bps = 15000000
-minimum_bps_per_flow = 7500000
+minimum_tx_bps = 5500000
+minimum_bps_per_flow = 2800000

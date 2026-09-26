@@ -102,6 +102,7 @@ pub const DECISIONS: &[Decision] = &[
             Place::Function("phy_rfpll_cap_init_cal"),
             Place::Function("phy_wait_rfpll_cal_end"),
             Place::Function("phy_write_rfpll_sdm"),
+            Place::Function("phy_restart_cal"),
         ],
     },
     Decision {
@@ -424,10 +425,48 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "diagnostic print of the Wi-Fi TX gain; production emits no vendor console \
+            output",
+        places: &[Place::Range {
+            function: "phy_wifi_get_tx_gain",
+            start: 0xb2,
+            end: 0xd6,
+        }],
+    },
+    Decision {
+        reason: "repeated software-frequency status polls before the start completes: the \
+            poll count is hardware timing",
+        places: &[Place::Range {
+            function: "phy_set_chan_freq_sw_start",
+            start: 0x18,
+            end: 0x19,
+        }],
+    },
+    Decision {
+        reason: "sensor DAC outside the five calibrated windows: the ROM's default index 5 \
+            reads beyond its five-entry attribute table, and production rejects the DAC \
+            fail-closed",
+        places: &[Place::Range {
+            function: "phy_tsens_dac_to_index",
+            start: 0x22,
+            end: 0x28,
+        }],
+    },
+    Decision {
+        reason: "TX gain publication skip option (`phy_param[7]`), which the production \
+            configuration fixes disabled",
+        places: &[Place::Range {
+            function: "phy_wifi_set_tx_gain_new",
+            start: 0x4a,
+            end: 0x4b,
+        }],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[
             Place::Function("phy_chan14_mic_cfg_new"),
+            Place::Function("phy_set_most_tpw"),
             // The `phy_param[0x26]` guard's enabled path up to the 802.11p guard.
             Place::Range {
                 function: "phy_chip_set_chan",

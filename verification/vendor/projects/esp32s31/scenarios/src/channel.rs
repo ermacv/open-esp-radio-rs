@@ -119,18 +119,23 @@ impl Transition {
     }
 }
 
+/// Bandwidth request bytes beyond 0 and 1: a low nibble of 2 or more and a
+/// nonzero high nibble reach every `phy_bb_cbw_chan_cfg` path.
+const OTHER_CBW: [u32; 3] = [2, 3, 0x11];
+
 /// Enabled 802.11p with a configuration byte distinct from every fill.
 const DOT11P: [u8; 2] = [1, 0x3c];
 
 /// Full-root matrix: every tracked channel class at both bandwidths, MHz
-/// requests including one between channel centers, and one channel at both
-/// bandwidths with 802.11p enabled.
+/// requests including one between channel centers, other bandwidth request
+/// bytes, and one channel at both bandwidths with 802.11p enabled.
 pub fn full_transitions() -> Vec<Transition> {
     let mut result = transitions(
         [1, 6, 11, 13]
             .into_iter()
             .flat_map(|channel| [0, 1].map(|cbw| (channel, cbw, 5, 100)))
-            .chain([2412, 2437, 2472, 2474].map(|mhz| (mhz, 0, 5, 100))),
+            .chain([2412, 2437, 2472, 2474].map(|mhz| (mhz, 0, 5, 100)))
+            .chain(OTHER_CBW.map(|cbw| (6, cbw, 5, 100))),
     );
     result.extend(
         transitions([0, 1].into_iter().map(|cbw| (6, cbw, 5, 100)))
@@ -717,7 +722,7 @@ mod tests {
     #[test]
     fn matrices_cover_channels_windows_and_fills() {
         let full = full_transitions();
-        assert_eq!(full.len(), (4 * 2 + 4 + 2) * FILLS.len());
+        assert_eq!(full.len(), (4 * 2 + 4 + OTHER_CBW.len() + 2) * FILLS.len());
         let committed: Vec<_> = full.iter().map(Transition::committed_channel).collect();
         assert!(committed.iter().all(|c| (1..=13).contains(c)));
         assert!(full.iter().any(|t| t.dot11p == DOT11P));

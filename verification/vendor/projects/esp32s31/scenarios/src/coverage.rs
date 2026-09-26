@@ -273,6 +273,93 @@ pub const DECISIONS: &[Decision] = &[
         }],
     },
     Decision {
+        reason: "diagnostic print of the calibration tracking parent, selected by its \
+            first argument; production emits no vendor console output",
+        places: &[
+            Place::Range {
+                function: "phy_cal_param_track",
+                start: 0x62,
+                end: 0x7e,
+            },
+            Place::Range {
+                function: "phy_cal_param_track",
+                start: 0x154,
+                end: 0x170,
+            },
+        ],
+    },
+    Decision {
+        reason: "diagnostic print of the Bluetooth TX gain; production emits no vendor \
+            console output",
+        places: &[Place::Range {
+            function: "phy_bt_get_tx_gain",
+            start: 0xfe,
+            end: 0x11c,
+        }],
+    },
+    Decision {
+        reason: "repeated analog I2C busy polls before a write: the poll count is hardware \
+            timing and the command itself is compared",
+        places: &[Place::Range {
+            function: "phy_chip_i2c_writeReg",
+            start: 0x3a,
+            end: 0x3b,
+        }],
+    },
+    Decision {
+        reason: "temperature clamps at 250 and -200: the sensor scenario compares every \
+            8-bit code in every DAC window and none reaches them",
+        places: &[
+            Place::Range {
+                function: "phy_code_to_temp",
+                start: 0x1a,
+                end: 0x1b,
+            },
+            Place::Range {
+                function: "phy_code_to_temp",
+                start: 0x36,
+                end: 0x3e,
+            },
+            Place::Range {
+                function: "phy_code_to_temp",
+                start: 0x44,
+                end: 0x4a,
+            },
+        ],
+    },
+    Decision {
+        reason: "frequency-memory parameter selectors 0 and 1, which only callers outside \
+            the claimed closures pass; every claimed caller selects 2",
+        places: &[
+            Place::Range {
+                function: "phy_get_freq_mem_param",
+                start: 0x4,
+                end: 0x16,
+            },
+            Place::Range {
+                function: "phy_get_freq_mem_param",
+                start: 0x1a,
+                end: 0x26,
+            },
+        ],
+    },
+    Decision {
+        reason: "mixer digital-gain index above 10: its claimed callers pass indices from \
+            the fixed RX gain tables and calibration loops, all at most 10",
+        places: &[
+            Place::Range {
+                function: "phy_bt_rx_mx_dgain",
+                start: 0x16,
+                end: 0x17,
+            },
+            Place::Range {
+                function: "phy_bt_rx_mx_dgain",
+                start: 0x26,
+                end: 0x2a,
+            },
+        ],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

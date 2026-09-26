@@ -40,6 +40,7 @@ use crate::{
             Ieee802154ResetFailure as EngineResetFailure, Ieee802154ResetReadback,
             establish_ieee802154_clocks, state as lifecycle_state,
         },
+        mac::{Ieee802154InterruptSetupOwner, Ieee802154TaskOwner},
         operation::{
             Ieee802154OperationPollBudget, Ieee802154PolledOperation,
             Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
@@ -50,6 +51,7 @@ use crate::{
             Ieee802154MacPolicyBackend, Ieee802154MacPolicyCheckpoint,
             Ieee802154MacPolicyFailure as EngineMacPolicyFailure, Ieee802154MacPolicyReadback,
             Ieee802154MacPolicyWrites, Ieee802154PanIdentity, configure_ieee802154_mac_policy,
+            verify_ieee802154_mac_policy,
         },
     },
     owner::{SharedPhyHal, route},
@@ -891,6 +893,106 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
     /// Borrow the integration token without claiming operational readiness.
     pub fn peripheral(&self) -> &P {
         self.foundation.peripheral()
+    }
+    /// Hand the task and inactive interrupt owners to the operational MAC.
+    ///
+    /// This transition performs no MMIO. Event and abort delivery stay masked
+    /// until the interrupt owner is activated; the static policy remains
+    /// whatever this owner proved. The route keeps the platform token, the
+    /// retained partitions, the clock leases and the policy until both owners
+    /// return through [`Ieee802154OperationalRoute::into_policy_configured`].
+    pub fn into_operational(self) -> Ieee802154Operational<P> {
+        let OwnedIeee802154Backend {
+            platform,
+            task,
+            interrupts,
+            retained,
+            clocks,
+            phy_state,
+        } = self.foundation.inner.into_backend();
+        Ieee802154Operational {
+            task: Ieee802154TaskOwner::new(task, phy_state),
+            interrupts: Ieee802154InterruptSetupOwner::new(interrupts),
+            route: Ieee802154OperationalRoute {
+                platform,
+                retained,
+                clocks,
+                policy: self.policy,
+            },
+        }
+    }
+}
+
+/// The owners of one operational IEEE 802.15.4 MAC epoch.
+///
+/// The task owner executes commands; the interrupt owner is inactive until
+/// its platform route activates it. Neither is RF readiness.
+#[must_use = "the operational owners must return to their route"]
+pub struct Ieee802154Operational<P> {
+    /// Task-side MAC registers with the route PHY state.
+    pub task: Ieee802154TaskOwner,
+    /// Inactive interrupt ownership for the platform CPU route.
+    pub interrupts: Ieee802154InterruptSetupOwner,
+    /// Remaining route ownership retained while the MAC is operational.
+    pub route: Ieee802154OperationalRoute<P>,
+}
+
+/// Route ownership retained while the task and interrupt owners run the MAC.
+#[must_use = "the operational route must reunite with its owners"]
+pub struct Ieee802154OperationalRoute<P> {
+    platform: P,
+    retained: RetainedIeee802154,
+    clocks: SharedClockLeases,
+    policy: Ieee802154MacPolicy,
+}
+
+impl<P> Ieee802154OperationalRoute<P> {
+    /// Return the static policy every command epoch must republish.
+    pub const fn policy(&self) -> Ieee802154MacPolicy {
+        self.policy
+    }
+
+    /// Borrow the integration token without claiming readiness.
+    pub const fn peripheral(&self) -> &P {
+        &self.platform
+    }
+
+    /// Reunite the quiescent operational owners with this route.
+    ///
+    /// The interrupt owner is inactive only after its teardown zeroed every
+    /// event and abort enable and consumed the final pending image. No
+    /// register is written here: the complete foundation and policy readback
+    /// must still hold before the polled owner is returned.
+    ///
+    /// # Errors
+    ///
+    /// A readback mismatch returns the owner through the same failure and
+    /// recovery as a failed cold policy configuration.
+    pub fn into_policy_configured(
+        self,
+        task: Ieee802154TaskOwner,
+        interrupts: Ieee802154InterruptSetupOwner,
+    ) -> Result<Ieee802154MacPolicyConfigured<P>, Ieee802154MacPolicyTransitionFailure<P>> {
+        let Self {
+            platform,
+            retained,
+            clocks,
+            policy,
+        } = self;
+        let (task, phy_state) = task.into_parts();
+        let foundation = Ieee802154FoundationConfigured {
+            inner: Ieee802154Lifecycle::resume_unverified(OwnedIeee802154Backend {
+                platform,
+                task,
+                interrupts: interrupts.into_pac(),
+                retained,
+                clocks,
+                phy_state,
+            }),
+        };
+        verify_ieee802154_mac_policy(foundation, policy)
+            .map(|foundation| Ieee802154MacPolicyConfigured { foundation, policy })
+            .map_err(|inner| Ieee802154MacPolicyTransitionFailure { inner })
     }
 }
 

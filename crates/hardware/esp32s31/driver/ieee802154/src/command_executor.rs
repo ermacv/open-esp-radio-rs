@@ -1,9 +1,9 @@
 //! ESP32-S31 HAL-backed task-side command execution.
 //!
-//! The executor owns one narrow IEEE 802.15.4 register lease for the complete
-//! command epoch. Its constructor is crate-private until the whole-radio HAL
-//! can transfer a proved stopped owner together with IRQ-route ownership.
-//! Consequently this module adds no public escape hatch from a raw register owner.
+//! The executor owns the HAL task owner for the complete command epoch. The
+//! only source of that owner is the HAL operational transition
+//! (`Ieee802154MacPolicyConfigured::into_operational`), which also hands out
+//! the inactive interrupt owner and retains the route until both return.
 //!
 //! The concrete leaves below are a direct typed port of the public ESP-IDF
 //! common LL: policy and DMA publication precede exactly one of `TX_START`,
@@ -497,12 +497,13 @@ impl MacCommandExecutor for Ieee802154CommandExecutor {
 }
 
 impl MacOperation<Ieee802154CommandExecutor> {
-    /// Bind one dedicated HAL task owner and the static policy it republishes before every command
-    /// to the production command owner without touching MMIO.
+    /// Bind the operational HAL task owner and the static policy it
+    /// republishes before every command, without touching MMIO.
     ///
-    /// PHY, BTBB, coexistence, event masks, and the CPU interrupt route remain
-    /// prerequisites of the higher-level ready transition. This constructor
-    /// only transfers the already-exclusive task capability.
+    /// Pass the policy of the same operational route
+    /// (`Ieee802154OperationalRoute::policy`). PHY/RF readiness and the CPU
+    /// interrupt route remain prerequisites of the higher-level ready
+    /// transition; this constructor only transfers the task capability.
     pub const fn from_esp32s31_task(
         task: Ieee802154TaskOwner,
         expected_policy: Ieee802154MacPolicy,
@@ -513,7 +514,8 @@ impl MacOperation<Ieee802154CommandExecutor> {
         })
     }
 
-    /// Recover the unique task owner from an idle production command owner.
+    /// Recover the unique task owner from an idle production command owner so
+    /// it can return to its operational route.
     pub fn into_esp32s31_task(self) -> Ieee802154TaskOwner {
         self.hardware.executor.into_task_registers()
     }

@@ -5,8 +5,9 @@
 //! with the cold policy transition, so the HAL owns one policy path. The
 //! interrupt owners expose the reviewed activation,
 //! sample/acknowledge and teardown transitions. None of these types can be
-//! constructed outside the HAL: they are transferred only together with the
-//! whole-radio route that proves exclusive ownership. Commands and policy use
+//! constructed outside the HAL: `Ieee802154MacPolicyConfigured::into_operational`
+//! hands them out and `Ieee802154OperationalRoute::into_policy_configured`
+//! takes both back, so they never exist apart from their exclusive route. Commands and policy use
 //! the HAL's semantic vocabulary; only the interrupt event vocabulary, which
 //! has no HAL counterpart, is re-exported here.
 
@@ -22,6 +23,8 @@ pub use oer_esp32s31_pac::{
     Ieee802154InterruptSnapshot, Ieee802154RxAbortReason, Ieee802154RxAbortReasonObservation,
     Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
 };
+
+use crate::phy::restore::PhyRouteState;
 
 use crate::ieee802154::{
     backend::ed_duration_units,
@@ -65,9 +68,22 @@ impl Ieee802154Command {
 #[must_use = "the IEEE 802.15.4 task owner must be returned to its route"]
 pub struct Ieee802154TaskOwner {
     registers: PacTaskRegisters,
+    /// The route PHY state travels with the registers that contain the PHY.
+    phy_state: PhyRouteState,
 }
 
 impl Ieee802154TaskOwner {
+    pub(crate) const fn new(registers: PacTaskRegisters, phy_state: PhyRouteState) -> Self {
+        Self {
+            registers,
+            phy_state,
+        }
+    }
+
+    pub(crate) fn into_parts(self) -> (PacTaskRegisters, PhyRouteState) {
+        (self.registers, self.phy_state)
+    }
+
     /// Republish the complete static policy, fence it and prove the sampled
     /// policy fields before one command epoch.
     ///
@@ -198,6 +214,14 @@ pub struct Ieee802154InterruptSetupOwner {
 }
 
 impl Ieee802154InterruptSetupOwner {
+    pub(crate) const fn new(registers: PacInterruptSetup) -> Self {
+        Self { registers }
+    }
+
+    pub(crate) fn into_pac(self) -> PacInterruptSetup {
+        self.registers
+    }
+
     /// Install the reviewed event/abort baseline, acknowledge one stale
     /// snapshot and return the active interrupt owner. The platform CPU route
     /// must be enabled only afterwards.

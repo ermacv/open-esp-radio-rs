@@ -10,7 +10,7 @@ use super::{
     Ieee802154CcaMode, Ieee802154MacControl, Ieee802154MacPolicy, Ieee802154MacPolicyBackend,
     Ieee802154MacPolicyCheckpoint, Ieee802154MacPolicyReadback, Ieee802154MacPolicyRefreshBackend,
     Ieee802154MacPolicySnapshot, Ieee802154MacPolicyWrites, Ieee802154PanIdentity,
-    configure_ieee802154_mac_policy, refresh_ieee802154_mac_policy,
+    configure_ieee802154_mac_policy, refresh_ieee802154_mac_policy, verify_ieee802154_mac_policy,
 };
 use crate::ieee802154::lifecycle::{Ieee802154Channel, Ieee802154ReadbackError};
 
@@ -406,4 +406,42 @@ fn refresh_reports_the_first_mismatched_policy_field() {
             observed: false,
         })
     );
+}
+
+#[test]
+fn returning_owner_is_proved_by_readback_alone() {
+    let policy = policy();
+    let verified = verify_ieee802154_mac_policy(
+        backend(Ieee802154MacPolicySnapshot::from_policy(policy)),
+        policy,
+    )
+    .expect("matching readback");
+
+    // No policy or foundation field is rewritten on the way back.
+    assert_eq!(verified.operations, [Operation::Snapshot]);
+}
+
+#[test]
+fn returning_owner_with_live_event_enables_invalidates_the_foundation() {
+    let policy = policy();
+    let foundation = Ieee802154FoundationSnapshot::new(
+        false,
+        true,
+        true,
+        true,
+        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+    );
+    let failure = verify_ieee802154_mac_policy(
+        backend_with_foundation(foundation, Ieee802154MacPolicySnapshot::from_policy(policy)),
+        policy,
+    )
+    .expect_err("an interrupt teardown that left events enabled must fail");
+
+    assert_eq!(
+        failure.error().checkpoint,
+        Ieee802154MacPolicyCheckpoint::EventsMasked
+    );
+    assert!(failure.error().checkpoint.invalidates_foundation());
+    assert_eq!(failure.into_backend().operations, [Operation::Snapshot]);
 }

@@ -89,10 +89,11 @@ use oer_esp32s31_hal::{
         Ieee802154FoundationTransitionFailure, Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint,
         Ieee802154MacPolicyConfigured, Ieee802154MacPolicyRecovery,
         Ieee802154MacPolicyTransitionFailure, Ieee802154OperationCompleted,
-        Ieee802154OperationFailed, Ieee802154OperationPollBudget,
-        Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
-        Ieee802154ReadbackError, Ieee802154Reset, Ieee802154ResetCheckpoint,
-        Ieee802154ResetTransitionFailure,
+        Ieee802154OperationFailed, Ieee802154OperationPollBudget, Ieee802154Operational,
+        Ieee802154OperationalRoute, Ieee802154PolledOperationEvidence,
+        Ieee802154PolledOperationFailure, Ieee802154ReadbackError, Ieee802154Reset,
+        Ieee802154ResetCheckpoint, Ieee802154ResetTransitionFailure,
+        mac::{Ieee802154InterruptSetupOwner, Ieee802154TaskOwner},
     },
     types::Ieee802154TimingReady as HalIeee802154TimingReady,
 };
@@ -794,6 +795,105 @@ impl<P> RegisteredIeee802154MacPolicyConfigured<P> {
     /// an RFPLL/PHY channel transition.
     pub const fn policy(&self) -> Ieee802154MacPolicy {
         self.role.policy()
+    }
+    /// Hand the task and inactive interrupt owners to the operational MAC
+    /// while the route keeps the target registration proof.
+    ///
+    /// This performs no MMIO and claims neither RF readiness nor an active
+    /// interrupt route.
+    pub fn into_operational(self) -> RegisteredIeee802154Operational<P> {
+        let Self {
+            role,
+            prerequisites,
+        } = self;
+        let Ieee802154Operational {
+            task,
+            interrupts,
+            route,
+        } = role.into_operational();
+        RegisteredIeee802154Operational {
+            task,
+            interrupts,
+            route: RegisteredIeee802154OperationalRoute {
+                route,
+                prerequisites,
+            },
+        }
+    }
+}
+
+/// The owners of one registered operational IEEE 802.15.4 MAC epoch.
+#[must_use = "the operational owners must return to their registered route"]
+pub struct RegisteredIeee802154Operational<P> {
+    /// Task-side MAC registers with the route PHY state.
+    pub task: Ieee802154TaskOwner,
+    /// Inactive interrupt ownership for the platform CPU route.
+    pub interrupts: Ieee802154InterruptSetupOwner,
+    /// Route ownership and the target registration proof.
+    pub route: RegisteredIeee802154OperationalRoute<P>,
+}
+
+/// Registered route retained while the MAC is operational.
+///
+/// The registration proof stays with the route, so it cannot be separated
+/// from the hardware it describes while the owners are lent out.
+#[must_use = "the registered operational route must reunite with its owners"]
+pub struct RegisteredIeee802154OperationalRoute<P> {
+    route: Ieee802154OperationalRoute<P>,
+    prerequisites: RegisteredIeee802154Prerequisites,
+}
+
+impl<P> RegisteredIeee802154OperationalRoute<P> {
+    /// Return the static policy every command epoch must republish.
+    pub const fn policy(&self) -> Ieee802154MacPolicy {
+        self.route.policy()
+    }
+
+    /// Borrow the target-registered PHY state without exposing mutable state.
+    pub const fn phy_state(&self) -> &PhyState {
+        self.prerequisites.phy_state()
+    }
+
+    /// Borrow the integration token without separating it from the proof.
+    pub const fn peripheral(&self) -> &P {
+        self.route.peripheral()
+    }
+
+    /// Reunite the quiescent operational owners and prove the foundation and
+    /// policy readback again.
+    ///
+    /// # Errors
+    ///
+    /// A readback mismatch retains the owner and registration proof through
+    /// the registered policy-failure recovery.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the allocation-free failure must retain the exact HAL owner and PHY proof"
+    )]
+    pub fn into_policy_configured(
+        self,
+        task: Ieee802154TaskOwner,
+        interrupts: Ieee802154InterruptSetupOwner,
+    ) -> Result<
+        RegisteredIeee802154MacPolicyConfigured<P>,
+        RegisteredIeee802154MacPolicyTransitionFailure<P>,
+    > {
+        let Self {
+            route,
+            prerequisites,
+        } = self;
+        match preserve_prerequisites(route, prerequisites, |route| {
+            route.into_policy_configured(task, interrupts)
+        }) {
+            Ok((role, prerequisites)) => Ok(RegisteredIeee802154MacPolicyConfigured {
+                role,
+                prerequisites,
+            }),
+            Err((failure, prerequisites)) => Err(RegisteredIeee802154MacPolicyTransitionFailure {
+                failure,
+                prerequisites,
+            }),
+        }
     }
 }
 

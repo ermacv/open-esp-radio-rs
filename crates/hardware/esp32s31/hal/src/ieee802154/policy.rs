@@ -555,7 +555,22 @@ where
     Backend: Ieee802154MacPolicyBackend,
 {
     write_mac_policy(&mut backend, policy);
+    verify_ieee802154_mac_policy(backend, policy)
+}
 
+/// Prove, without writing, that the foundation invariants and every policy
+/// field still read back as `policy`.
+///
+/// Returning from an operational epoch uses this: the interrupt teardown
+/// restores the masks, and a readback mismatch is reported through the same
+/// checkpoints and recovery as a failed cold configuration.
+pub(crate) fn verify_ieee802154_mac_policy<Backend>(
+    mut backend: Backend,
+    policy: Ieee802154MacPolicy,
+) -> Result<Backend, Ieee802154MacPolicyFailure<Backend>>
+where
+    Backend: Ieee802154MacPolicyBackend,
+{
     let readback = backend.mac_policy_readback();
     if let Err(error) = verify_foundation_readback(readback.foundation)
         .and_then(|()| verify_mac_policy_snapshot(readback.policy, policy))

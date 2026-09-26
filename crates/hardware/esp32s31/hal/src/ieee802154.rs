@@ -40,7 +40,10 @@ pub use policy::{
     Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint, Ieee802154PanIdentity,
 };
 
-pub use role::{Ieee802154ClockTransitionFailure, Ieee802154Clocked};
+pub use role::{
+    Ieee802154ClockTransitionFailure, Ieee802154Clocked, Ieee802154Operational,
+    Ieee802154OperationalRoute,
+};
 
 #[cfg(feature = "validation-probes")]
 pub use validation::{

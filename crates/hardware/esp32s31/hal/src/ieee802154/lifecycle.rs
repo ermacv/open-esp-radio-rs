@@ -215,6 +215,18 @@ impl<Backend, State> Ieee802154Lifecycle<Backend, State> {
 }
 
 impl<Backend> Ieee802154Lifecycle<Backend, state::FoundationConfigured> {
+    /// Re-enter the foundation phase with an owner returning from an
+    /// operational epoch.
+    ///
+    /// The owner is not yet proved: the caller must pass it through the
+    /// complete foundation and policy readback before exposing it.
+    pub(crate) const fn resume_unverified(backend: Backend) -> Self {
+        Self {
+            backend,
+            _state: PhantomData,
+        }
+    }
+
     /// Forget a disproved foundation while retaining the last independent
     /// reset proof and the exact whole-radio backend.
     pub(crate) fn forget_foundation(self) -> Ieee802154Lifecycle<Backend, state::Reset> {

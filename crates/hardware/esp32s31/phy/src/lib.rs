@@ -91,6 +91,7 @@ mod tx;
 mod registered_bluetooth;
 mod registered_ieee802154;
 mod registered_radio;
+pub mod registered_route;
 mod registered_wifi;
 pub use registered_wifi::{
     RegisteredWifiPhy, RegisteredWifiPhyClientReleaseError, RegisteredWifiPhyClientReleaseFailure,

@@ -8,16 +8,19 @@ use oer_esp32s31_hal::owner::{Radio, state::Powered};
 #[cfg(target_arch = "riscv32")]
 use crate::state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS;
 
+#[cfg(target_arch = "riscv32")]
+use crate::state::client::PhyPendingTracking;
 use crate::{
     PhyState, RegisteredPhyState,
-    state::client::{
-        PhyClientAcquireError, PhyClientAcquireFailure, PhyClientAcquireOrdering,
-        PhyClientAcquireOutcome, PhyClientReleaseError, PhyClientReleaseFailure,
-        PhyClientReleaseOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
-        PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
-        PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
+    registered_route::{
+        PhyClientAcquire, PhyClientAcquireFailureOwner, PhyClientRelease,
+        PhyClientReleaseFailureOwner, PhyPendingTrackOwner, PhyPendingTrackingOwner,
+        PhyTrackEvaluationFailureOwner, PhyTrackEvaluationOwner, PhyTrackPoisonedOwner, WifiRoute,
     },
-    tracking::parameters::PhyParamTrackRequest,
+    state::client::{
+        PhyClientReleaseOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
+        PhyPllTrackClock, PhyTrackTimeError,
+    },
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -137,61 +140,29 @@ impl<P> RegisteredPhyRadio<P> {
         self.clients.snapshot()
     }
 
-    /// Acquire one protocol client while retaining the registered radio epoch.
+    /// Acquire the Wi-Fi client while retaining the registered radio epoch.
+    ///
+    /// The Wi-Fi route cannot acquire another protocol's client.
     #[allow(
         clippy::result_large_err,
         reason = "the allocation-free failure must retain radio, PHY proof, and client owner"
     )]
     pub fn acquire_client(
         self,
-        client: PhyModemClient,
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredPhyClientAcquire<P>, RegisteredPhyClientAcquireFailure<P>> {
-        let Self {
-            radio,
-            phy,
-            clients,
-        } = self;
-        match clients.acquire(client, clock) {
-            Ok(outcome) => Ok(RegisteredPhyClientAcquire {
-                radio,
-                phy,
-                outcome,
-            }),
-            Err(failure) => Err(RegisteredPhyClientAcquireFailure {
-                radio,
-                phy,
-                failure,
-            }),
-        }
+        crate::registered_route::acquire::<WifiRoute<P>>(self.radio, self.phy, self.clients, clock)
     }
 
-    /// Release one protocol client while retaining the registered radio epoch.
+    /// Release the Wi-Fi client while retaining the registered radio epoch.
     #[allow(
         clippy::result_large_err,
         reason = "the allocation-free failure must retain radio, PHY proof, and client owner"
     )]
     pub fn release_client(
         self,
-        client: PhyModemClient,
     ) -> Result<RegisteredPhyClientRelease<P>, RegisteredPhyClientReleaseFailure<P>> {
-        let Self {
-            radio,
-            phy,
-            clients,
-        } = self;
-        match clients.release(client) {
-            Ok(outcome) => Ok(RegisteredPhyClientRelease {
-                radio,
-                phy,
-                outcome,
-            }),
-            Err(failure) => Err(RegisteredPhyClientReleaseFailure {
-                radio,
-                phy,
-                failure,
-            }),
-        }
+        crate::registered_route::release::<WifiRoute<P>>(self.radio, self.phy, self.clients)
     }
 
     /// Evaluate one periodic callback for this exact registered epoch.
@@ -203,23 +174,13 @@ impl<P> RegisteredPhyRadio<P> {
         self,
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredPhyTrackEvaluation<P>, RegisteredPhyTrackEvaluationFailure<P>> {
-        let Self {
-            radio,
-            phy,
-            clients,
-        } = self;
-        match clients.evaluate_periodic_tracking(clock) {
-            Ok(evaluation) => Ok(RegisteredPhyTrackEvaluation {
-                radio,
-                phy,
-                evaluation,
-            }),
-            Err(failure) => Err(RegisteredPhyTrackEvaluationFailure {
-                radio,
-                phy,
-                failure,
-            }),
-        }
+        crate::registered_route::evaluate::<WifiRoute<P>>(
+            self.radio,
+            self.phy,
+            self.clients,
+            clock,
+            false,
+        )
     }
 
     /// Recheck the deadline after a timer or other event wakes the radio owner.
@@ -236,23 +197,13 @@ impl<P> RegisteredPhyRadio<P> {
         self,
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredPhyTrackEvaluation<P>, RegisteredPhyTrackEvaluationFailure<P>> {
-        let Self {
-            radio,
-            phy,
-            clients,
-        } = self;
-        match clients.evaluate_immediate_tracking(clock) {
-            Ok(evaluation) => Ok(RegisteredPhyTrackEvaluation {
-                radio,
-                phy,
-                evaluation,
-            }),
-            Err(failure) => Err(RegisteredPhyTrackEvaluationFailure {
-                radio,
-                phy,
-                failure,
-            }),
-        }
+        crate::registered_route::evaluate::<WifiRoute<P>>(
+            self.radio,
+            self.phy,
+            self.clients,
+            clock,
+            true,
+        )
     }
 
     /// Wait for demand without transferring the physical owner to a timer.
@@ -323,85 +274,13 @@ impl<P> TargetRegisteredPhyEpoch<P> {
 }
 
 /// Successful client acquisition coupled to its registered hardware epoch.
-#[must_use = "client acquisition retains the registered radio owner"]
-pub struct RegisteredPhyClientAcquire<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    outcome: PhyClientAcquireOutcome,
-}
-
-impl<P> RegisteredPhyClientAcquire<P> {
-    pub const fn client(&self) -> PhyModemClient {
-        self.outcome.client()
-    }
-
-    pub const fn was_empty(&self) -> bool {
-        self.outcome.was_empty()
-    }
-
-    pub const fn ordering(&self) -> PhyClientAcquireOrdering {
-        self.outcome.ordering()
-    }
-
-    pub const fn request(&self) -> Option<&PhyParamTrackRequest> {
-        self.outcome.request()
-    }
-
-    /// Recover the registered owner only when no hardware tracking is due.
-    #[allow(
-        clippy::result_large_err,
-        reason = "pending work must retain the allocation-free registered hardware owner"
-    )]
-    pub fn into_owner(self) -> Result<RegisteredPhyRadio<P>, RegisteredPhyPendingTrack<P>> {
-        let Self {
-            radio,
-            phy,
-            outcome,
-        } = self;
-        match outcome.into_owner() {
-            Ok(clients) => Ok(RegisteredPhyRadio {
-                radio,
-                phy,
-                clients,
-            }),
-            Err(pending) => Err(RegisteredPhyPendingTrack {
-                radio,
-                phy,
-                pending,
-            }),
-        }
-    }
-}
+pub type RegisteredPhyClientAcquire<P> = PhyClientAcquire<WifiRoute<P>>;
 
 /// Rejected client acquisition retaining the unchanged registered owner.
-#[must_use = "failed acquisition retains the registered radio owner"]
-pub struct RegisteredPhyClientAcquireFailure<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    failure: PhyClientAcquireFailure,
-}
-
-impl<P> RegisteredPhyClientAcquireFailure<P> {
-    pub const fn error(&self) -> PhyClientAcquireError {
-        self.failure.error()
-    }
-
-    pub fn into_owner(self) -> RegisteredPhyRadio<P> {
-        RegisteredPhyRadio {
-            radio: self.radio,
-            phy: self.phy,
-            clients: self.failure.into_owner(),
-        }
-    }
-}
+pub type RegisteredPhyClientAcquireFailure<P> = PhyClientAcquireFailureOwner<WifiRoute<P>>;
 
 /// Successful client release coupled to its registered hardware epoch.
-#[must_use = "client release retains the registered radio owner"]
-pub struct RegisteredPhyClientRelease<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    outcome: PhyClientReleaseOutcome,
-}
+pub type RegisteredPhyClientRelease<P> = PhyClientRelease<WifiRoute<P>>;
 
 impl<P> RegisteredPhyClientRelease<P> {
     pub(crate) fn from_detached_parts(
@@ -410,18 +289,10 @@ impl<P> RegisteredPhyClientRelease<P> {
         outcome: PhyClientReleaseOutcome,
     ) -> Self {
         Self {
-            radio,
-            phy,
+            hardware: radio,
+            registered: phy,
             outcome,
         }
-    }
-
-    pub const fn client(&self) -> PhyModemClient {
-        self.outcome.client()
-    }
-
-    pub const fn is_last(&self) -> bool {
-        self.outcome.is_last()
     }
 
     /// Resolve the saved-mask last-client decision without erasing it.
@@ -431,8 +302,8 @@ impl<P> RegisteredPhyClientRelease<P> {
     /// that either transaction has run.
     pub fn into_disposition(self) -> RegisteredPhyClientReleaseDisposition<P> {
         let Self {
-            radio,
-            phy,
+            hardware: radio,
+            registered: phy,
             outcome,
         } = self;
         let is_last = outcome.is_last();
@@ -797,160 +668,31 @@ impl<P> RegisteredPhyRfClosePoisoned<P> {
 }
 
 /// Rejected client release retaining the unchanged registered owner.
-#[must_use = "failed release retains the registered radio owner"]
-pub struct RegisteredPhyClientReleaseFailure<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    failure: PhyClientReleaseFailure,
-}
+pub type RegisteredPhyClientReleaseFailure<P> = PhyClientReleaseFailureOwner<WifiRoute<P>>;
 
-impl<P> RegisteredPhyClientReleaseFailure<P> {
-    pub const fn error(&self) -> PhyClientReleaseError {
-        self.failure.error()
-    }
+/// Periodic-tracking evaluation coupled to its registered hardware epoch.
+pub type RegisteredPhyTrackEvaluation<P> = PhyTrackEvaluationOwner<WifiRoute<P>>;
 
-    pub fn into_owner(self) -> RegisteredPhyRadio<P> {
-        RegisteredPhyRadio {
-            radio: self.radio,
-            phy: self.phy,
-            clients: self.failure.into_owner(),
-        }
-    }
-}
+/// Invalid clock evaluation retaining the unchanged registered owner.
+pub type RegisteredPhyTrackEvaluationFailure<P> = PhyTrackEvaluationFailureOwner<WifiRoute<P>>;
 
-/// Periodic scheduler evaluation coupled to its registered hardware epoch.
-#[must_use = "tracking evaluation retains the registered radio owner"]
-pub struct RegisteredPhyTrackEvaluation<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    evaluation: PhyTrackEvaluation,
-}
-
-impl<P> RegisteredPhyTrackEvaluation<P> {
-    pub const fn request(&self) -> Option<&PhyParamTrackRequest> {
-        self.evaluation.request()
-    }
-
-    /// Recover the registered owner only when no hardware tracking is due.
-    #[allow(
-        clippy::result_large_err,
-        reason = "pending work must retain the allocation-free registered hardware owner"
-    )]
-    pub fn into_owner(self) -> Result<RegisteredPhyRadio<P>, RegisteredPhyPendingTrack<P>> {
-        let Self {
-            radio,
-            phy,
-            evaluation,
-        } = self;
-        match evaluation.into_owner() {
-            Ok(clients) => Ok(RegisteredPhyRadio {
-                radio,
-                phy,
-                clients,
-            }),
-            Err(pending) => Err(RegisteredPhyPendingTrack {
-                radio,
-                phy,
-                pending,
-            }),
-        }
-    }
-}
-
-/// Invalid periodic clock sample retaining the unchanged registered owner.
-#[must_use = "failed tracking evaluation retains the registered radio owner"]
-pub struct RegisteredPhyTrackEvaluationFailure<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    failure: PhyTrackEvaluationFailure,
-}
-
-impl<P> RegisteredPhyTrackEvaluationFailure<P> {
-    pub const fn error(&self) -> PhyTrackTimeError {
-        self.failure.error()
-    }
-
-    pub fn into_owner(self) -> RegisteredPhyRadio<P> {
-        RegisteredPhyRadio {
-            radio: self.radio,
-            phy: self.phy,
-            clients: self.failure.into_owner(),
-        }
-    }
-}
-
-/// Scheduler request which still owns the exact registered hardware epoch.
-#[must_use = "pending tracking retains the registered radio owner"]
-pub struct RegisteredPhyPendingTrack<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    pending: PhyPendingTrack,
-}
+/// Due tracking request retaining the complete powered radio epoch.
+pub type RegisteredPhyPendingTrack<P> = PhyPendingTrackOwner<WifiRoute<P>>;
 
 impl<P> RegisteredPhyPendingTrack<P> {
-    pub const fn request(&self) -> &PhyParamTrackRequest {
-        self.pending.request()
-    }
-
-    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.pending.snapshot()
-    }
-
-    /// Inspect the last committed PHY state without recovering mutable access.
-    pub const fn state(&self) -> &PhyState {
-        self.phy.state()
-    }
-
-    /// Inspect the integration token without separating the hardware epoch.
+    /// Borrow the integration token without separating it from the proof.
     pub const fn peripheral(&self) -> &P {
-        self.radio.peripheral()
-    }
-
-    pub fn begin_tracking(self) -> RegisteredPhyPendingTracking<P> {
-        let policy = self.phy.tracking_policy();
-        RegisteredPhyPendingTracking {
-            radio: self.radio,
-            phy: self.phy,
-            pending: self.pending.begin_tracking(policy),
-        }
-    }
-
-    /// Poison a request which cannot be executed on its target epoch.
-    pub fn fail(self) -> RegisteredPhyTrackPoisoned<P> {
-        RegisteredPhyTrackPoisoned {
-            radio: self.radio,
-            phy: self.phy,
-            poisoned: self.pending.fail(),
-        }
+        self.hardware.peripheral()
     }
 }
 
-/// In-flight outer tracking transition coupled to registered hardware.
-#[must_use = "in-flight tracking retains the registered radio owner"]
-pub struct RegisteredPhyPendingTracking<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    pending: PhyPendingTracking,
-}
+/// In-flight tracking retaining the complete powered radio epoch.
+pub type RegisteredPhyPendingTracking<P> = PhyPendingTrackingOwner<WifiRoute<P>>;
 
 impl<P> RegisteredPhyPendingTracking<P> {
-    #[cfg(test)]
-    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
-        self.pending.action()
-    }
-
-    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.pending.snapshot()
-    }
-
-    /// Inspect the last committed PHY state without recovering mutable access.
-    pub const fn state(&self) -> &PhyState {
-        self.phy.state()
-    }
-
-    /// Inspect the integration token without separating the hardware epoch.
+    /// Borrow the integration token without separating it from the proof.
     pub const fn peripheral(&self) -> &P {
-        self.radio.peripheral()
+        self.hardware.peripheral()
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -958,72 +700,53 @@ impl<P> RegisteredPhyPendingTracking<P> {
         &mut self,
     ) -> (&mut P, &mut PhyHal, &mut PhyState, &mut PhyPendingTracking) {
         let Self {
-            radio,
-            phy,
+            hardware,
+            registered,
             pending,
         } = self;
-        let (platform, registers) = radio.phy_hal_parts();
-        (platform, registers, phy.target_state_mut(), pending)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        clippy::result_large_err,
-        reason = "incomplete target work must retain the allocation-free hardware epoch"
-    )]
-    pub(crate) fn into_registered_radio(self) -> Result<RegisteredPhyRadio<P>, Self> {
-        let Self {
-            radio,
-            phy,
-            pending,
-        } = self;
-        match pending.into_owner() {
-            Ok(clients) => Ok(RegisteredPhyRadio {
-                radio,
-                phy,
-                clients,
-            }),
-            Err(pending) => Err(Self {
-                radio,
-                phy,
-                pending,
-            }),
-        }
-    }
-
-    /// Explicitly poison an interrupted or externally rejected target run.
-    pub fn fail(self) -> RegisteredPhyTrackPoisoned<P> {
-        RegisteredPhyTrackPoisoned {
-            radio: self.radio,
-            phy: self.phy,
-            poisoned: self.pending.fail(),
-        }
+        let (platform, registers) = hardware.phy_hal_parts();
+        (platform, registers, registered.target_state_mut(), pending)
     }
 }
 
-/// Terminal fail-stop registered epoch after ambiguous tracking hardware work.
-#[must_use = "failed tracking poisons the registered radio epoch"]
-pub struct RegisteredPhyTrackPoisoned<P> {
-    radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    poisoned: PhyTrackPoisoned,
-}
+/// Fail-stop radio epoch after ambiguous tracking hardware work.
+pub type RegisteredPhyTrackPoisoned<P> = PhyTrackPoisonedOwner<WifiRoute<P>>;
 
 impl<P> RegisteredPhyTrackPoisoned<P> {
-    pub const fn state(&self) -> &PhyState {
-        self.phy.state()
-    }
-
-    pub const fn request(&self) -> &PhyParamTrackRequest {
-        self.poisoned.request()
-    }
-
-    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.poisoned.snapshot()
-    }
-
+    /// Borrow the integration token for terminal diagnostics only.
     pub const fn peripheral(&self) -> &P {
-        self.radio.peripheral()
+        self.hardware.peripheral()
+    }
+}
+
+impl<P> crate::registered_route::sealed::PhyRoute for WifiRoute<P> {
+    type Hardware = Radio<P, Powered>;
+    type Unclaimed = RegisteredPhyRadio<P>;
+    type Client = RegisteredPhyRadio<P>;
+    const CLIENT: PhyModemClient = PhyModemClient::Wifi;
+
+    fn unclaimed(
+        radio: Radio<P, Powered>,
+        phy: RegisteredPhyState,
+        clients: PhyClientState,
+    ) -> RegisteredPhyRadio<P> {
+        RegisteredPhyRadio {
+            radio,
+            phy,
+            clients,
+        }
+    }
+
+    fn client(
+        radio: Radio<P, Powered>,
+        phy: RegisteredPhyState,
+        clients: PhyClientState,
+    ) -> RegisteredPhyRadio<P> {
+        RegisteredPhyRadio {
+            radio,
+            phy,
+            clients,
+        }
     }
 }
 

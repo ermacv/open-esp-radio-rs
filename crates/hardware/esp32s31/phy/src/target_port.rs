@@ -871,7 +871,7 @@ impl<P> TargetPhyParamTrackingFailure<P> {
     /// No extractor is provided: target hardware may have advanced beyond
     /// this state, so the registered epoch cannot be retried or resumed.
     pub const fn state(&self) -> &PhyState {
-        self.poisoned.state()
+        self.poisoned.phy_state()
     }
 }
 
@@ -2656,7 +2656,7 @@ where
             });
         }
     };
-    match tracking.into_registered_radio() {
+    match tracking.into_client_owner() {
         Ok(registered_radio) => Ok(TargetPhyParamTrackingSuccess {
             registered_radio,
             outcome,

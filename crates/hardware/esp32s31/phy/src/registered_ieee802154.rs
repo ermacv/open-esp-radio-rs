@@ -101,14 +101,15 @@ use oer_esp32s31_hal::{
 #[cfg(target_arch = "riscv32")]
 use crate::state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS;
 
+#[cfg(target_arch = "riscv32")]
+use crate::state::client::PhyPendingTracking;
 use crate::{
     PhyState, RegisteredPhyState,
-    state::client::{
-        PhyClientAcquireError, PhyClientAcquireFailure, PhyClientAcquireOrdering,
-        PhyClientAcquireOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
-        PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackPoisoned,
+    registered_route::{
+        Ieee802154Route, PhyClientAcquire, PhyClientAcquireFailureOwner, PhyPendingTrackOwner,
+        PhyPendingTrackingOwner, PhyTrackPoisonedOwner,
     },
-    tracking::parameters::PhyParamTrackRequest,
+    state::client::{PhyClientSnapshot, PhyClientState, PhyModemClient, PhyPllTrackClock},
 };
 
 /// Registered whole-radio owner after IEEE 802.15.4 clock readback.
@@ -158,23 +159,12 @@ impl<P> RegisteredIeee802154Clocked<P> {
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredIeee802154ClientAcquire<P>, RegisteredIeee802154ClientAcquireFailure<P>>
     {
-        let Self {
-            role,
-            registered,
-            clients,
-        } = self;
-        match clients.acquire(PhyModemClient::Ieee802154, clock) {
-            Ok(outcome) => Ok(RegisteredIeee802154ClientAcquire {
-                role,
-                registered,
-                outcome,
-            }),
-            Err(failure) => Err(RegisteredIeee802154ClientAcquireFailure {
-                role,
-                registered,
-                failure,
-            }),
-        }
+        crate::registered_route::acquire::<Ieee802154Route<P>>(
+            self.role,
+            self.registered,
+            self.clients,
+            clock,
+        )
     }
 }
 
@@ -186,70 +176,11 @@ impl<P> RegisteredIeee802154Clocked<P> {
 }
 
 /// Successful IEEE client acquisition retaining the registered role owner.
-#[must_use = "IEEE client acquisition retains the registered role owner"]
-pub struct RegisteredIeee802154ClientAcquire<P> {
-    role: Ieee802154Clocked<P>,
-    registered: RegisteredPhyState,
-    outcome: PhyClientAcquireOutcome,
-}
-
-impl<P> RegisteredIeee802154ClientAcquire<P> {
-    pub const fn ordering(&self) -> PhyClientAcquireOrdering {
-        self.outcome.ordering()
-    }
-
-    pub const fn request(&self) -> Option<&PhyParamTrackRequest> {
-        self.outcome.request()
-    }
-
-    #[allow(
-        clippy::result_large_err,
-        reason = "pending work retains the allocation-free IEEE role and registered PHY"
-    )]
-    pub fn into_owner(
-        self,
-    ) -> Result<RegisteredIeee802154Client<P>, RegisteredIeee802154PendingTrack<P>> {
-        let Self {
-            role,
-            registered,
-            outcome,
-        } = self;
-        match outcome.into_owner() {
-            Ok(clients) => Ok(RegisteredIeee802154Client {
-                role,
-                registered,
-                clients,
-            }),
-            Err(pending) => Err(RegisteredIeee802154PendingTrack {
-                role,
-                registered,
-                pending,
-            }),
-        }
-    }
-}
+pub type RegisteredIeee802154ClientAcquire<P> = PhyClientAcquire<Ieee802154Route<P>>;
 
 /// Rejected IEEE client acquisition retaining the unchanged registered role.
-#[must_use = "failed IEEE client acquisition retains the registered role owner"]
-pub struct RegisteredIeee802154ClientAcquireFailure<P> {
-    role: Ieee802154Clocked<P>,
-    registered: RegisteredPhyState,
-    failure: PhyClientAcquireFailure,
-}
-
-impl<P> RegisteredIeee802154ClientAcquireFailure<P> {
-    pub const fn error(&self) -> PhyClientAcquireError {
-        self.failure.error()
-    }
-
-    pub fn into_owner(self) -> RegisteredIeee802154Clocked<P> {
-        RegisteredIeee802154Clocked {
-            role: self.role,
-            registered: self.registered,
-            clients: self.failure.into_owner(),
-        }
-    }
-}
+pub type RegisteredIeee802154ClientAcquireFailure<P> =
+    PhyClientAcquireFailureOwner<Ieee802154Route<P>>;
 
 /// Registered IEEE route after the shared-PHY client bit was acquired.
 #[must_use = "the registered IEEE client owner is unique"]
@@ -288,54 +219,12 @@ impl<P> RegisteredIeee802154Client<P> {
 }
 
 /// Pending immediate tracking request retaining the dedicated IEEE role.
-#[must_use = "pending IEEE tracking retains the registered role owner"]
-pub struct RegisteredIeee802154PendingTrack<P> {
-    role: Ieee802154Clocked<P>,
-    registered: RegisteredPhyState,
-    pending: PhyPendingTrack,
-}
-
-impl<P> RegisteredIeee802154PendingTrack<P> {
-    pub const fn request(&self) -> &PhyParamTrackRequest {
-        self.pending.request()
-    }
-
-    pub fn begin_tracking(self) -> RegisteredIeee802154PendingTracking<P> {
-        let policy = self.registered.tracking_policy();
-        RegisteredIeee802154PendingTracking {
-            role: self.role,
-            registered: self.registered,
-            pending: self.pending.begin_tracking(policy),
-        }
-    }
-
-    pub fn fail(self) -> RegisteredIeee802154TrackPoisoned<P> {
-        RegisteredIeee802154TrackPoisoned {
-            role: self.role,
-            registered: self.registered,
-            poisoned: self.pending.fail(),
-        }
-    }
-}
+pub type RegisteredIeee802154PendingTrack<P> = PhyPendingTrackOwner<Ieee802154Route<P>>;
 
 /// In-flight tracking transition retaining the dedicated IEEE role.
-#[must_use = "in-flight IEEE tracking retains the registered role owner"]
-pub struct RegisteredIeee802154PendingTracking<P> {
-    role: Ieee802154Clocked<P>,
-    registered: RegisteredPhyState,
-    pending: PhyPendingTracking,
-}
+pub type RegisteredIeee802154PendingTracking<P> = PhyPendingTrackingOwner<Ieee802154Route<P>>;
 
 impl<P> RegisteredIeee802154PendingTracking<P> {
-    #[cfg(test)]
-    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
-        self.pending.action()
-    }
-
-    pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
-    }
-
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn target_tracking_parts(
         &mut self,
@@ -346,73 +235,53 @@ impl<P> RegisteredIeee802154PendingTracking<P> {
         &mut PhyPendingTracking,
     ) {
         let Self {
-            role,
+            hardware,
             registered,
             pending,
         } = self;
-        let (platform, registers) = role.common_phy_parts();
+        let (platform, registers) = hardware.common_phy_parts();
         (platform, registers, registered.target_state_mut(), pending)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        clippy::result_large_err,
-        reason = "incomplete target work retains the allocation-free IEEE hardware epoch"
-    )]
-    pub(crate) fn into_client_owner(self) -> Result<RegisteredIeee802154Client<P>, Self> {
-        let Self {
-            role,
-            registered,
-            pending,
-        } = self;
-        match pending.into_owner() {
-            Ok(clients) => Ok(RegisteredIeee802154Client {
-                role,
-                registered,
-                clients,
-            }),
-            Err(pending) => Err(Self {
-                role,
-                registered,
-                pending,
-            }),
-        }
-    }
-
-    pub fn fail(self) -> RegisteredIeee802154TrackPoisoned<P> {
-        RegisteredIeee802154TrackPoisoned {
-            role: self.role,
-            registered: self.registered,
-            poisoned: self.pending.fail(),
-        }
     }
 }
 
 /// Fail-stop dedicated IEEE epoch after ambiguous tracking hardware work.
-#[must_use = "failed IEEE tracking poisons the registered role epoch"]
-pub struct RegisteredIeee802154TrackPoisoned<P> {
-    role: Ieee802154Clocked<P>,
-    registered: RegisteredPhyState,
-    poisoned: PhyTrackPoisoned,
-}
+pub type RegisteredIeee802154TrackPoisoned<P> = PhyTrackPoisonedOwner<Ieee802154Route<P>>;
 
 impl<P> RegisteredIeee802154TrackPoisoned<P> {
-    pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
-    }
-
-    pub const fn request(&self) -> &PhyParamTrackRequest {
-        self.poisoned.request()
-    }
-
-    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.poisoned.snapshot()
-    }
-}
-
-impl<P> RegisteredIeee802154TrackPoisoned<P> {
+    /// Borrow the integration token for terminal diagnostics only.
     pub fn peripheral(&self) -> &P {
-        self.role.peripheral()
+        self.hardware.peripheral()
+    }
+}
+
+impl<P> crate::registered_route::sealed::PhyRoute for Ieee802154Route<P> {
+    type Hardware = Ieee802154Clocked<P>;
+    type Unclaimed = RegisteredIeee802154Clocked<P>;
+    type Client = RegisteredIeee802154Client<P>;
+    const CLIENT: PhyModemClient = PhyModemClient::Ieee802154;
+
+    fn unclaimed(
+        role: Ieee802154Clocked<P>,
+        registered: RegisteredPhyState,
+        clients: PhyClientState,
+    ) -> RegisteredIeee802154Clocked<P> {
+        RegisteredIeee802154Clocked {
+            role,
+            registered,
+            clients,
+        }
+    }
+
+    fn client(
+        role: Ieee802154Clocked<P>,
+        registered: RegisteredPhyState,
+        clients: PhyClientState,
+    ) -> RegisteredIeee802154Client<P> {
+        RegisteredIeee802154Client {
+            role,
+            registered,
+            clients,
+        }
     }
 }
 

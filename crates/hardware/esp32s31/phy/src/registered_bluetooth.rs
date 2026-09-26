@@ -13,16 +13,18 @@
 //! None of these states claims RF qualification or operational Link Layer
 //! readiness.
 
+#[cfg(target_arch = "riscv32")]
+use crate::state::client::PhyPendingTracking;
 use crate::{
     PhyState, RegisteredPhyState,
-    state::client::{
-        PhyClientAcquireError, PhyClientAcquireFailure, PhyClientAcquireOrdering,
-        PhyClientAcquireOutcome, PhyClientReleaseError, PhyClientReleaseFailure,
-        PhyClientReleaseOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
-        PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
-        PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
+    registered_route::{
+        BluetoothRoute, PhyClientAcquire, PhyClientAcquireFailureOwner, PhyClientRelease,
+        PhyClientReleaseFailureOwner, PhyPendingTrackOwner, PhyPendingTrackingOwner,
+        PhyTrackEvaluationFailureOwner, PhyTrackEvaluationOwner, PhyTrackPoisonedOwner,
     },
-    tracking::parameters::PhyParamTrackRequest,
+    state::client::{
+        PhyClientSnapshot, PhyClientState, PhyModemClient, PhyPllTrackClock, PhyTrackTimeError,
+    },
 };
 
 /// Target-registered common PHY before the Bluetooth client is acquired.
@@ -77,87 +79,15 @@ impl RegisteredBluetoothPhy {
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredBluetoothPhyClientAcquire, RegisteredBluetoothPhyClientAcquireFailure>
     {
-        let Self {
-            registered,
-            clients,
-        } = self;
-        match clients.acquire(PhyModemClient::Bluetooth, clock) {
-            Ok(outcome) => Ok(RegisteredBluetoothPhyClientAcquire {
-                registered,
-                outcome,
-            }),
-            Err(failure) => Err(RegisteredBluetoothPhyClientAcquireFailure {
-                registered,
-                failure,
-            }),
-        }
+        crate::registered_route::acquire::<BluetoothRoute>((), self.registered, self.clients, clock)
     }
 }
 
 /// Successful Bluetooth-client acquisition retaining target registration.
-#[must_use = "Bluetooth client acquisition retains the registered PHY owner"]
-pub struct RegisteredBluetoothPhyClientAcquire {
-    registered: RegisteredPhyState,
-    outcome: PhyClientAcquireOutcome,
-}
-
-impl RegisteredBluetoothPhyClientAcquire {
-    /// Return the reviewed first/later-client ordering.
-    pub const fn ordering(&self) -> PhyClientAcquireOrdering {
-        self.outcome.ordering()
-    }
-
-    /// Borrow the immediate tracking request, when one is due.
-    pub const fn request(&self) -> Option<&PhyParamTrackRequest> {
-        self.outcome.request()
-    }
-
-    /// Finish the software acquisition edge or retain pending target work.
-    #[allow(
-        clippy::result_large_err,
-        reason = "pending work retains the allocation-free registered PHY owner"
-    )]
-    pub fn into_owner(
-        self,
-    ) -> Result<RegisteredBluetoothPhyClient, RegisteredBluetoothPhyPendingTrack> {
-        let Self {
-            registered,
-            outcome,
-        } = self;
-        match outcome.into_owner() {
-            Ok(clients) => Ok(RegisteredBluetoothPhyClient {
-                registered,
-                clients,
-            }),
-            Err(pending) => Err(RegisteredBluetoothPhyPendingTrack {
-                registered,
-                pending,
-            }),
-        }
-    }
-}
+pub type RegisteredBluetoothPhyClientAcquire = PhyClientAcquire<BluetoothRoute>;
 
 /// Rejected Bluetooth-client acquisition retaining the unchanged owner.
-#[must_use = "failed Bluetooth client acquisition retains the registered PHY owner"]
-pub struct RegisteredBluetoothPhyClientAcquireFailure {
-    registered: RegisteredPhyState,
-    failure: PhyClientAcquireFailure,
-}
-
-impl RegisteredBluetoothPhyClientAcquireFailure {
-    /// Inspect the exact source-owned client-set rejection.
-    pub const fn error(&self) -> PhyClientAcquireError {
-        self.failure.error()
-    }
-
-    /// Recover the unchanged pre-acquisition owner.
-    pub fn into_owner(self) -> RegisteredBluetoothPhy {
-        RegisteredBluetoothPhy {
-            registered: self.registered,
-            clients: self.failure.into_owner(),
-        }
-    }
-}
+pub type RegisteredBluetoothPhyClientAcquireFailure = PhyClientAcquireFailureOwner<BluetoothRoute>;
 
 /// Target-registered PHY with the Bluetooth client acquired and settled.
 ///
@@ -209,20 +139,7 @@ impl RegisteredBluetoothPhyClient {
         self,
     ) -> Result<RegisteredBluetoothPhyClientRelease, RegisteredBluetoothPhyClientReleaseFailure>
     {
-        let Self {
-            registered,
-            clients,
-        } = self;
-        match clients.release(PhyModemClient::Bluetooth) {
-            Ok(outcome) => Ok(RegisteredBluetoothPhyClientRelease {
-                registered,
-                outcome,
-            }),
-            Err(failure) => Err(RegisteredBluetoothPhyClientReleaseFailure {
-                registered,
-                failure,
-            }),
-        }
+        crate::registered_route::release::<BluetoothRoute>((), self.registered, self.clients)
     }
 
     /// Inspect registered-policy conditions without sampling temperature,
@@ -249,20 +166,13 @@ impl RegisteredBluetoothPhyClient {
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure>
     {
-        let Self {
-            registered,
-            clients,
-        } = self;
-        match clients.evaluate_periodic_tracking(clock) {
-            Ok(evaluation) => Ok(RegisteredBluetoothPhyTrackEvaluation {
-                registered,
-                evaluation,
-            }),
-            Err(failure) => Err(RegisteredBluetoothPhyTrackEvaluationFailure {
-                registered,
-                failure,
-            }),
-        }
+        crate::registered_route::evaluate::<BluetoothRoute>(
+            (),
+            self.registered,
+            self.clients,
+            clock,
+            false,
+        )
     }
 
     /// Recheck an absolute deadline after a timer or another Controller event
@@ -278,20 +188,13 @@ impl RegisteredBluetoothPhyClient {
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure>
     {
-        let Self {
-            registered,
-            clients,
-        } = self;
-        match clients.evaluate_immediate_tracking(clock) {
-            Ok(evaluation) => Ok(RegisteredBluetoothPhyTrackEvaluation {
-                registered,
-                evaluation,
-            }),
-            Err(failure) => Err(RegisteredBluetoothPhyTrackEvaluationFailure {
-                registered,
-                failure,
-            }),
-        }
+        crate::registered_route::evaluate::<BluetoothRoute>(
+            (),
+            self.registered,
+            self.clients,
+            clock,
+            true,
+        )
     }
 
     /// Wait for scheduling demand while borrowing, rather than transferring,
@@ -321,11 +224,7 @@ impl RegisteredBluetoothPhyClient {
 ///
 /// The result is detached from the Controller's physical owners. It proves
 /// only the source-owned client transition and cannot close RF by itself.
-#[must_use = "Bluetooth release must be retained through Controller teardown"]
-pub struct RegisteredBluetoothPhyClientRelease {
-    registered: RegisteredPhyState,
-    outcome: PhyClientReleaseOutcome,
-}
+pub type RegisteredBluetoothPhyClientRelease = PhyClientRelease<BluetoothRoute>;
 
 /// Last Bluetooth client after the complete target RF-close graph.
 /// Controller, timer, temperature power and platform clocks still belong to
@@ -540,22 +439,6 @@ impl RegisteredBluetoothPhyClientRelease {
 }
 
 impl RegisteredBluetoothPhyClientRelease {
-    /// Client removed by this transition.
-    pub const fn client(&self) -> PhyModemClient {
-        self.outcome.client()
-    }
-
-    /// Whether the saved pre-release mask contained no other PHY client.
-    pub const fn is_last(&self) -> bool {
-        self.outcome.is_last()
-    }
-
-    /// Inspect the post-release client set without discarding the saved
-    /// last-client fact.
-    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.outcome.owner().snapshot()
-    }
-
     /// Recover the registered pre-acquisition owner only when this release
     /// removed the last client.
     ///
@@ -573,6 +456,7 @@ impl RegisteredBluetoothPhyClientRelease {
         let Self {
             registered,
             outcome,
+            ..
         } = self;
         let clients = outcome.into_owner();
         debug_assert!(clients.snapshot().is_empty());
@@ -584,204 +468,57 @@ impl RegisteredBluetoothPhyClientRelease {
 }
 
 /// Rejected Bluetooth-client release retaining the unchanged registered owner.
-#[must_use = "failed release retains the registered Bluetooth PHY owner"]
-pub struct RegisteredBluetoothPhyClientReleaseFailure {
-    registered: RegisteredPhyState,
-    failure: PhyClientReleaseFailure,
-}
-
-impl RegisteredBluetoothPhyClientReleaseFailure {
-    /// Inspect the exact source-owned release rejection.
-    pub const fn error(&self) -> PhyClientReleaseError {
-        self.failure.error()
-    }
-
-    /// Recover the owner left unchanged by the rejected release.
-    pub fn into_owner(self) -> RegisteredBluetoothPhyClient {
-        RegisteredBluetoothPhyClient {
-            registered: self.registered,
-            clients: self.failure.into_owner(),
-        }
-    }
-}
+pub type RegisteredBluetoothPhyClientReleaseFailure = PhyClientReleaseFailureOwner<BluetoothRoute>;
 
 /// Scheduler evaluation retaining the exact registered Bluetooth epoch.
-#[must_use = "tracking evaluation retains the registered Bluetooth owner"]
-pub struct RegisteredBluetoothPhyTrackEvaluation {
-    registered: RegisteredPhyState,
-    evaluation: PhyTrackEvaluation,
-}
-
-impl RegisteredBluetoothPhyTrackEvaluation {
-    /// Borrow the request emitted by this evaluation, when one is due.
-    pub const fn request(&self) -> Option<&PhyParamTrackRequest> {
-        self.evaluation.request()
-    }
-
-    /// Recover the settled owner or retain the due request in its affine
-    /// pending state.
-    #[allow(
-        clippy::result_large_err,
-        reason = "pending work retains the allocation-free registered Bluetooth owner"
-    )]
-    pub fn into_owner(
-        self,
-    ) -> Result<RegisteredBluetoothPhyClient, RegisteredBluetoothPhyPendingTrack> {
-        let Self {
-            registered,
-            evaluation,
-        } = self;
-        match evaluation.into_owner() {
-            Ok(clients) => Ok(RegisteredBluetoothPhyClient {
-                registered,
-                clients,
-            }),
-            Err(pending) => Err(RegisteredBluetoothPhyPendingTrack {
-                registered,
-                pending,
-            }),
-        }
-    }
-}
+pub type RegisteredBluetoothPhyTrackEvaluation = PhyTrackEvaluationOwner<BluetoothRoute>;
 
 /// Invalid clock evaluation retaining the unchanged Bluetooth PHY owner.
-#[must_use = "failed tracking evaluation retains the registered Bluetooth owner"]
-pub struct RegisteredBluetoothPhyTrackEvaluationFailure {
-    registered: RegisteredPhyState,
-    failure: PhyTrackEvaluationFailure,
-}
-
-impl RegisteredBluetoothPhyTrackEvaluationFailure {
-    /// Inspect the monotonic-time failure without recovering mutable state.
-    pub const fn error(&self) -> PhyTrackTimeError {
-        self.failure.error()
-    }
-
-    /// Recover the owner left unchanged by the rejected clock evaluation.
-    pub fn into_owner(self) -> RegisteredBluetoothPhyClient {
-        RegisteredBluetoothPhyClient {
-            registered: self.registered,
-            clients: self.failure.into_owner(),
-        }
-    }
-}
+pub type RegisteredBluetoothPhyTrackEvaluationFailure =
+    PhyTrackEvaluationFailureOwner<BluetoothRoute>;
 
 /// Pending immediate tracking after Bluetooth-client acquisition.
-#[must_use = "pending Bluetooth tracking retains the registered PHY owner"]
-pub struct RegisteredBluetoothPhyPendingTrack {
-    registered: RegisteredPhyState,
-    pending: PhyPendingTrack,
-}
-
-impl RegisteredBluetoothPhyPendingTrack {
-    /// Borrow the exact source-owned tracking request.
-    pub const fn request(&self) -> &PhyParamTrackRequest {
-        self.pending.request()
-    }
-
-    /// Begin tracking with policy projected from this registered PHY epoch.
-    pub fn begin_tracking(self) -> RegisteredBluetoothPhyPendingTracking {
-        let policy = self.registered.tracking_policy();
-        RegisteredBluetoothPhyPendingTracking {
-            registered: self.registered,
-            pending: self.pending.begin_tracking(policy),
-        }
-    }
-
-    /// Enter fail-stop state without attempting target tracking work.
-    pub fn fail(self) -> RegisteredBluetoothPhyTrackPoisoned {
-        RegisteredBluetoothPhyTrackPoisoned {
-            registered: self.registered,
-            poisoned: self.pending.fail(),
-        }
-    }
-}
+pub type RegisteredBluetoothPhyPendingTrack = PhyPendingTrackOwner<BluetoothRoute>;
 
 /// In-flight Bluetooth tracking retaining the target registration proof.
-#[must_use = "in-flight Bluetooth tracking retains the registered PHY owner"]
-pub struct RegisteredBluetoothPhyPendingTracking {
-    registered: RegisteredPhyState,
-    pending: PhyPendingTracking,
-}
+pub type RegisteredBluetoothPhyPendingTracking = PhyPendingTrackingOwner<BluetoothRoute>;
 
 impl RegisteredBluetoothPhyPendingTracking {
-    /// Inspect the next semantic target operation.
-    #[cfg(test)]
-    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
-        self.pending.action()
-    }
-
-    /// Borrow the last committed target-registered PHY state.
-    pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
-    }
-
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn target_tracking_parts(&mut self) -> (&mut PhyState, &mut PhyPendingTracking) {
         (self.registered.target_state_mut(), &mut self.pending)
     }
-
-    /// Whether this tracking belongs to the registration of `hardware`.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn describes(
-        &self,
-        hardware: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
-    ) -> bool {
-        self.pending.describes(hardware)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        clippy::result_large_err,
-        reason = "incomplete target work retains the allocation-free Bluetooth PHY epoch"
-    )]
-    pub(crate) fn into_client_owner(self) -> Result<RegisteredBluetoothPhyClient, Self> {
-        let Self {
-            registered,
-            pending,
-        } = self;
-        match pending.into_owner() {
-            Ok(clients) => Ok(RegisteredBluetoothPhyClient {
-                registered,
-                clients,
-            }),
-            Err(pending) => Err(Self {
-                registered,
-                pending,
-            }),
-        }
-    }
-
-    /// Consume ambiguous work into a non-recoverable owner.
-    pub fn fail(self) -> RegisteredBluetoothPhyTrackPoisoned {
-        RegisteredBluetoothPhyTrackPoisoned {
-            registered: self.registered,
-            poisoned: self.pending.fail(),
-        }
-    }
 }
 
 /// Fail-stop Bluetooth PHY epoch after ambiguous tracking hardware work.
-#[must_use = "failed Bluetooth tracking poisons the registered PHY epoch"]
-pub struct RegisteredBluetoothPhyTrackPoisoned {
-    registered: RegisteredPhyState,
-    poisoned: PhyTrackPoisoned,
-}
+pub type RegisteredBluetoothPhyTrackPoisoned = PhyTrackPoisonedOwner<BluetoothRoute>;
 
-impl RegisteredBluetoothPhyTrackPoisoned {
-    /// Borrow the last committed semantic state for diagnostics.
-    pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+impl crate::registered_route::sealed::PhyRoute for BluetoothRoute {
+    type Hardware = ();
+    type Unclaimed = RegisteredBluetoothPhy;
+    type Client = RegisteredBluetoothPhyClient;
+    const CLIENT: PhyModemClient = PhyModemClient::Bluetooth;
+
+    fn unclaimed(
+        (): (),
+        registered: RegisteredPhyState,
+        clients: PhyClientState,
+    ) -> RegisteredBluetoothPhy {
+        RegisteredBluetoothPhy {
+            registered,
+            clients,
+        }
     }
 
-    /// Borrow the exact tracking request which poisoned the epoch.
-    pub const fn request(&self) -> &PhyParamTrackRequest {
-        self.poisoned.request()
-    }
-
-    /// Inspect the retained client set without any recovery authority.
-    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.poisoned.snapshot()
+    fn client(
+        (): (),
+        registered: RegisteredPhyState,
+        clients: PhyClientState,
+    ) -> RegisteredBluetoothPhyClient {
+        RegisteredBluetoothPhyClient {
+            registered,
+            clients,
+        }
     }
 }
 

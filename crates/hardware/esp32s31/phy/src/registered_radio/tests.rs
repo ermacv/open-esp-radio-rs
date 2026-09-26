@@ -53,12 +53,30 @@ fn cache_refresh_consumes_the_prior_snapshot_and_captures_committed_state() {
     assert_eq!(refreshed.snapshot().common.sensor_index, 3);
 }
 
+/// A registered radio whose shared client set already holds another
+/// protocol's client, as a future shared domain would.
+fn registered_radio_with_client(client: PhyModemClient) -> RegisteredPhyRadio<TestPlatform> {
+    let mut owner = registered_radio();
+    owner.clients = owner
+        .clients
+        .acquire(client, &mut FixedClock(0))
+        .unwrap_or_else(|_| panic!("fresh model acquisition must succeed"))
+        .into_owner()
+        .unwrap_or_else(|_| panic!("fresh timestamp must not request tracking"));
+    owner
+}
+
 fn settle_acquire(
     owner: RegisteredPhyRadio<TestPlatform>,
     client: PhyModemClient,
     now_micros: u64,
 ) -> RegisteredPhyRadio<TestPlatform> {
-    let acquired = match owner.acquire_client(client, &mut FixedClock(now_micros)) {
+    assert_eq!(
+        client,
+        PhyModemClient::Wifi,
+        "the Wi-Fi route acquires only Wi-Fi"
+    );
+    let acquired = match owner.acquire_client(&mut FixedClock(now_micros)) {
         Ok(acquired) => acquired,
         Err(_) => panic!("fresh acquisition must succeed"),
     };
@@ -73,20 +91,20 @@ fn registered_client_acquire_release_never_separates_radio_and_phy_state() {
     let owner = registered_radio();
     assert!(owner.client_snapshot().is_empty());
 
-    let owner = settle_acquire(owner, PhyModemClient::Ieee802154, 0);
-    assert!(owner.client_snapshot().contains(PhyModemClient::Ieee802154));
+    let owner = settle_acquire(owner, PhyModemClient::Wifi, 0);
+    assert!(owner.client_snapshot().contains(PhyModemClient::Wifi));
 
-    let failure = match owner.acquire_client(PhyModemClient::Ieee802154, &mut FixedClock(0)) {
+    let failure = match owner.acquire_client(&mut FixedClock(0)) {
         Ok(_) => panic!("duplicate client acquisition must fail"),
         Err(failure) => failure,
     };
     assert_eq!(
         failure.error(),
-        PhyClientAcquireError::AlreadyAcquired(PhyModemClient::Ieee802154)
+        crate::state::client::PhyClientAcquireError::AlreadyAcquired(PhyModemClient::Wifi)
     );
     let owner = failure.into_owner();
 
-    let released = match owner.release_client(PhyModemClient::Ieee802154) {
+    let released = match owner.release_client() {
         Ok(released) => released,
         Err(_) => panic!("owned client must release"),
     };
@@ -100,10 +118,13 @@ fn registered_client_acquire_release_never_separates_radio_and_phy_state() {
 
 #[test]
 fn non_last_release_returns_the_ordinary_registered_owner() {
-    let owner = settle_acquire(registered_radio(), PhyModemClient::Wifi, 0);
-    let owner = settle_acquire(owner, PhyModemClient::Bluetooth, 0);
+    let owner = settle_acquire(
+        registered_radio_with_client(PhyModemClient::Bluetooth),
+        PhyModemClient::Wifi,
+        0,
+    );
     let released = owner
-        .release_client(PhyModemClient::Wifi)
+        .release_client()
         .unwrap_or_else(|_| panic!("owned client must release"));
     assert!(!released.is_last());
     let RegisteredPhyClientReleaseDisposition::Remaining(owner) = released.into_disposition()
@@ -116,7 +137,7 @@ fn non_last_release_returns_the_ordinary_registered_owner() {
 
 #[test]
 fn periodic_request_retains_complete_registered_epoch_until_poison_or_success() {
-    let owner = settle_acquire(registered_radio(), PhyModemClient::Ieee802154, 0);
+    let owner = registered_radio_with_client(PhyModemClient::Ieee802154);
     let evaluation = match owner.evaluate_periodic_tracking(&mut FixedClock(1)) {
         Ok(evaluation) => evaluation,
         Err(_) => panic!("monotonic callback must evaluate"),
@@ -221,7 +242,7 @@ fn cancelled_tracking_wait_retains_owner_and_empty_client_set_never_arms() {
     assert_eq!(timer.deadlines, [DEFAULT_PLL_TRACK_PERIOD_MICROS + 1]);
     assert_eq!(owner.client_snapshot(), before);
     let released = owner
-        .release_client(PhyModemClient::Wifi)
+        .release_client()
         .unwrap_or_else(|_| panic!("cancelled wait must retain the owner"));
     let RegisteredPhyClientReleaseDisposition::Last(idle) = released.into_disposition() else {
         panic!("last client must produce the powered-idle lifecycle owner");
@@ -271,7 +292,7 @@ fn wifi_acquisition_after_cold_calibration_retains_owner_until_initial_tracking(
         DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
     ] {
         let acquired = registered_radio()
-            .acquire_client(PhyModemClient::Wifi, &mut FixedClock(now))
+            .acquire_client(&mut FixedClock(now))
             .unwrap_or_else(|_| panic!("fresh Wi-Fi acquisition failed"));
         assert!(acquired.was_empty());
         match acquired.into_owner() {
@@ -291,4 +312,23 @@ fn wifi_acquisition_after_cold_calibration_retains_owner_until_initial_tracking(
             }
         }
     }
+}
+
+#[test]
+fn wifi_route_releases_only_its_own_client() {
+    let owner = registered_radio_with_client(PhyModemClient::Bluetooth);
+    let failure = owner
+        .release_client()
+        .err()
+        .expect("the Wi-Fi route must not release another protocol's client");
+    assert_eq!(
+        failure.error(),
+        crate::state::client::PhyClientReleaseError::NotAcquired(PhyModemClient::Wifi)
+    );
+    assert!(
+        failure
+            .into_owner()
+            .client_snapshot()
+            .contains(PhyModemClient::Bluetooth)
+    );
 }

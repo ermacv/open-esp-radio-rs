@@ -18,10 +18,7 @@ use oer_esp32s31_phy::{
     run_target_phy_register,
 };
 
-use oer_esp32s31_phy::{
-    state::client::{PhyModemClient, PhyPllTrackClock},
-    tracking::PhyParamTrackingOutcome,
-};
+use oer_esp32s31_phy::{state::client::PhyPllTrackClock, tracking::PhyParamTrackingOutcome};
 use oer_ieee80211_mac::channel::WifiChannel;
 
 /// Application-selected inputs for one cold radio start.
@@ -204,7 +201,7 @@ where
             .map_err(WifiColdStartFailure::Registration)?;
     let (powered, calibration_cache, registration, port_counters) =
         target_registration.into_registered_parts();
-    let acquired = match powered.acquire_client(PhyModemClient::Wifi, clock) {
+    let acquired = match powered.acquire_client(clock) {
         Ok(acquired) => acquired,
         Err(failure) => {
             return Err(WifiColdStartFailure::ClientAcquire(

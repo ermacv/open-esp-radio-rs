@@ -214,7 +214,7 @@ impl<P> WifiStopped<P> {
             .map_err(WifiRadioRetainedCycleFailure::RfWake)?;
         let acquire = idle
             .retain_powered()
-            .acquire_client(oer_esp32s31_phy::state::client::PhyModemClient::Wifi, clock)
+            .acquire_client(clock)
             .map_err(WifiRadioRetainedCycleFailure::Acquire)?;
         let mut radio = acquire
             .into_owner()

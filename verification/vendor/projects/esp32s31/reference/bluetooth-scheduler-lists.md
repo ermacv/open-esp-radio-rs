@@ -215,7 +215,7 @@ insertion end. The registers are:
   0 locks, 2, 5, 6 and 7 fail, and 1, 3 and 4 are treated as impossible.
   Bit 26 reports the lock engine idle;
 - `0x2010_1258` execution modify: bit 31 START, bit 16 a mode flag, bits 15:0
-  the list mask. Bit 17 reports completion and bit 23 is treated as impossible.
+  the list mask. Bit 17 reports completion and bit 19 is treated as impossible.
   Bit 18 reports the modify engine idle;
 - `0x2010_1218` lock-modify request: bit 31 START and bits 19:0 compressed
   item, after the list index is written to the low nibble of `0x2010_136c`.

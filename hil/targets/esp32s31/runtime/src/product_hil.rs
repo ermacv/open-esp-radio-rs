@@ -1725,9 +1725,9 @@ pub async fn run(
     ))
     .await;
     #[cfg(feature = "driver-observation")]
-    phy_diagnostics::log(initialization.start.wifi.registration.rf_calibration).await;
+    phy_diagnostics::log(initialization.registration.rf_calibration).await;
     if let Some(cache) = initialization.calibration_cache {
-        let disposition = match initialization.start.wifi.registration.calibration_path {
+        let disposition = match initialization.registration.calibration_path {
             PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,
             PhyCalibrationPath::PartialFromCache => StartupArtifactDisposition::Restored,
             PhyCalibrationPath::FullForCache if artifact_was_supplied => {

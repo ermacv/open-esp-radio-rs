@@ -564,13 +564,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     ));
                 }
             };
-            let calibration_path = match ready
-                .wifi()
-                .start_report()
-                .wifi
-                .registration
-                .calibration_path
-            {
+            let calibration_path = match ready.registration().calibration_path {
                 oer_esp32s31_phy::PhyCalibrationPath::PartialFromCache => {
                     oer_radio::wifi::WifiRadioCalibrationPath::RestoredCache
                 }

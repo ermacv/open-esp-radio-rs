@@ -392,6 +392,12 @@ impl TaskOwner {
     ) -> Result<crate::root::RetainedRadioHardware, BluetoothPhysicalReleaseFailure> {
         shutdown::release_retained_after_phy_close(self, output.registers, timer.timer)
     }
+    /// Whether this route entered from a retained root, so the common PHY
+    /// power and registration of the previous route are still in effect.
+    pub const fn common_phy_inherited(&self) -> bool {
+        self.clocks.common_inherited()
+    }
+
     /// Establish the shared modem/PHY power, reset and calibration clocks.
     ///
     /// Call once before common PHY registration on the exclusive cold route.

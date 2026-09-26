@@ -160,6 +160,21 @@ impl<P> BluetoothStopped<P> {
         }
     }
 
+    /// Bind one platform lease to a root another protocol route handed over
+    /// with its registered PHY retained and RF closed.
+    ///
+    /// This transition performs no MMIO. The Controller boot then skips the
+    /// common power sequence and wakes RF instead of registering the PHY.
+    pub fn from_retained(
+        platform: P,
+        hardware: oer_esp32s31_hal::root::RetainedRadioHardware,
+    ) -> Self {
+        Self {
+            registers: HalBluetoothColdOwner::from_retained(hardware),
+            platform,
+        }
+    }
+
     /// Release an unpowered Bluetooth owner for caller-controlled rebinding.
     ///
     /// # Errors
@@ -292,6 +307,25 @@ impl TaskResources {
         oer_esp32s31_hal::bluetooth::BluetoothPhysicalReleaseFailure,
     > {
         self.registers.release_after_phy_close(output, timer)
+    }
+
+    /// Hand the powered, registered PHY to the retained root after RF close
+    /// and temperature power-down, instead of returning to the cold root.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the complete no-allocation physical frontier"
+    )]
+    pub fn release_retained_after_phy_close(
+        self,
+        output: oer_esp32s31_hal::bluetooth::InterruptOutputReleasedOwner,
+        timer: oer_esp32s31_hal::bluetooth::ModemLpTimerInterruptReadyOwner,
+    ) -> Result<
+        oer_esp32s31_hal::root::RetainedRadioHardware,
+        oer_esp32s31_hal::bluetooth::BluetoothPhysicalReleaseFailure,
+    > {
+        self.registers
+            .release_retained_after_phy_close(output, timer)
     }
 
     /// Preserve pending or faulted time ownership before any terminal extraction.
@@ -763,6 +797,11 @@ impl TaskResources {
         &mut self,
     ) -> Result<(), oer_esp32s31_hal::power::PowerError> {
         self.registers.prepare_common_phy_power()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn common_phy_inherited(&self) -> bool {
+        self.registers.common_phy_inherited()
     }
 
     /// Execute the reviewed finite BT baseband-v2 initialization transaction.

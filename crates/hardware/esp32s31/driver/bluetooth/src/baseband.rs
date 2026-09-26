@@ -5,7 +5,7 @@
 //! interrupts, HCI, or the Link Layer are ready.
 
 #[cfg(target_arch = "riscv32")]
-use crate::common_phy_state::{ControllerPhyInitialized, PhyInitializationReport};
+use crate::common_phy_state::{ControllerPhyEntry, ControllerPhyInitialized};
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_phy::PhyCalibrationCache;
 
@@ -42,8 +42,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     ControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Inspect the completed common-PHY transition without hardware access.
-    pub const fn phy_report(&self) -> PhyInitializationReport {
-        self.initialized.report()
+    pub const fn phy_entry(&self) -> ControllerPhyEntry {
+        self.initialized.phy_entry()
     }
 
     /// Inspect the finite BTBB transition input without hardware access.

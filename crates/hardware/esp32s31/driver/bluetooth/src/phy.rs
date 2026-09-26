@@ -6,7 +6,8 @@
 
 use crate::{
     common_phy_state::{
-        ControllerPhyInitialized, ControllerPhyRegistered, PhyInitializationReport,
+        ControllerPhyEntry, ControllerPhyInitialized, ControllerPhyRegistered,
+        PhyInitializationReport,
     },
     low_power::ControllerLowPowerHardwareInitialized,
 };
@@ -131,7 +132,7 @@ pub struct ControllerPhyClientAcquire<P, const MT: usize, const SC: usize> {
     controller: Controller<P, MT, SC>,
     acquisition: RegisteredBluetoothPhyClientAcquire,
     calibration_cache: Option<PhyCalibrationCache>,
-    report: PhyInitializationReport,
+    report: ControllerPhyEntry,
 }
 
 impl<P, const MT: usize, const SC: usize> ControllerPhyClientAcquire<P, MT, SC> {
@@ -184,7 +185,7 @@ pub struct ControllerPhyClientAcquireFailure<P, const MT: usize, const SC: usize
     _controller: Controller<P, MT, SC>,
     failure: RegisteredBluetoothPhyClientAcquireFailure,
     _calibration_cache: Option<PhyCalibrationCache>,
-    _report: PhyInitializationReport,
+    _report: ControllerPhyEntry,
 }
 
 impl<P, const MT: usize, const SC: usize> ControllerPhyClientAcquireFailure<P, MT, SC> {
@@ -200,7 +201,7 @@ pub struct ControllerPhyPendingTrack<P, const MT: usize, const SC: usize> {
     controller: Controller<P, MT, SC>,
     pending: RegisteredBluetoothPhyPendingTrack,
     calibration_cache: Option<PhyCalibrationCache>,
-    report: PhyInitializationReport,
+    report: ControllerPhyEntry,
 }
 
 impl<P, const MT: usize, const SC: usize> ControllerPhyPendingTrack<P, MT, SC> {
@@ -226,7 +227,7 @@ pub struct ControllerPhyPendingTracking<P, const MT: usize, const SC: usize> {
     controller: Controller<P, MT, SC>,
     tracking: RegisteredBluetoothPhyPendingTracking,
     calibration_cache: Option<PhyCalibrationCache>,
-    report: PhyInitializationReport,
+    report: ControllerPhyEntry,
 }
 
 /// Failed tracking retaining the outer Controller and poisoned lower owner.
@@ -235,7 +236,7 @@ pub struct ControllerPhyTrackingFailure<P, const MT: usize, const SC: usize> {
     _controller: Controller<P, MT, SC>,
     failure: TargetBluetoothPhyParamTrackingFailure,
     _calibration_cache: Option<PhyCalibrationCache>,
-    _report: PhyInitializationReport,
+    _report: ControllerPhyEntry,
 }
 
 impl<P, const MT: usize, const SC: usize> ControllerPhyTrackingFailure<P, MT, SC> {
@@ -387,6 +388,121 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
     }
 }
 
+/// Rejected or failed retained-PHY resume retaining the outer Controller.
+#[must_use = "failed retained PHY resume still owns Bluetooth hardware"]
+pub struct ControllerPhyResumeFailure<P, const MT: usize, const SC: usize> {
+    _controller: Controller<P, MT, SC>,
+    failure: PhyResumeFailure,
+}
+
+enum PhyResumeFailure {
+    NotRetained {
+        _closed: oer_esp32s31_phy::RegisteredBluetoothPhyRfClosed,
+    },
+    Power {
+        error: oer_esp32s31_hal::power::PowerError,
+        _closed: oer_esp32s31_phy::RegisteredBluetoothPhyRfClosed,
+    },
+    Wake(oer_esp32s31_phy::BluetoothPhyRfWakeFailure),
+}
+
+/// Exact failed boundary of a retained-PHY resume.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyResumeError {
+    /// This Controller powered its own common PHY; no retained epoch exists.
+    NotRetained,
+    /// The common power prerequisite was rejected before any wake.
+    Power(oer_esp32s31_hal::power::PowerError),
+    /// The closed domain belongs to another registration; no MMIO ran.
+    EpochMismatch,
+    /// The retained RF wake started and failed.
+    Wake(oer_esp32s31_phy::PhyTargetPortError),
+}
+
+impl<P, const MT: usize, const SC: usize> ControllerPhyResumeFailure<P, MT, SC> {
+    /// Whether the retained RF wake started and left the RF domain ambiguous.
+    pub const fn phy_hardware_ambiguous(&self) -> bool {
+        matches!(
+            self.failure,
+            PhyResumeFailure::Wake(oer_esp32s31_phy::BluetoothPhyRfWakeFailure::Poisoned(_))
+        )
+    }
+
+    /// Inspect the rejected or failed resume boundary.
+    pub const fn error(&self) -> PhyResumeError {
+        match &self.failure {
+            PhyResumeFailure::NotRetained { .. } => PhyResumeError::NotRetained,
+            PhyResumeFailure::Power { error, .. } => PhyResumeError::Power(*error),
+            PhyResumeFailure::Wake(oer_esp32s31_phy::BluetoothPhyRfWakeFailure::EpochMismatch(
+                _,
+            )) => PhyResumeError::EpochMismatch,
+            PhyResumeFailure::Wake(oer_esp32s31_phy::BluetoothPhyRfWakeFailure::Poisoned(
+                poisoned,
+            )) => PhyResumeError::Wake(poisoned.error()),
+        }
+    }
+}
+
+impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
+    /// Resume the registered common PHY another protocol route handed over,
+    /// instead of powering and registering it.
+    ///
+    /// The Controller must have been booted from
+    /// [`crate::resources::BluetoothStopped::from_retained`]; the common power
+    /// sequence of the previous route stays in effect and only the retained
+    /// RF wake runs. Bluetooth-client acquisition remains a separate
+    /// transition, exactly as after [`Self::initialize_common_phy`].
+    ///
+    /// # Cancellation
+    /// Once polled, drive this future to a terminal result. After the first
+    /// wake edge every failure requires reset.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the complete allocation-free Controller epoch"
+    )]
+    #[must_use = "retained PHY resume must be driven to a terminal result"]
+    pub async fn resume_common_phy<D: PhyAsyncDelay>(
+        mut self,
+        closed: oer_esp32s31_phy::RegisteredBluetoothPhyRfClosed,
+        calibration_cache: Option<PhyCalibrationCache>,
+    ) -> Result<ControllerPhyRegistered<P, MT, SC>, ControllerPhyResumeFailure<P, MT, SC>> {
+        let task = self.common_phy_parts_mut().0;
+        if !task.common_phy_inherited() {
+            return Err(ControllerPhyResumeFailure {
+                _controller: self,
+                failure: PhyResumeFailure::NotRetained { _closed: closed },
+            });
+        }
+        // Inherited common power returns without register access; the call
+        // still retires cold reunion for this route.
+        if let Err(error) = task.prepare_common_phy_power() {
+            return Err(ControllerPhyResumeFailure {
+                _controller: self,
+                failure: PhyResumeFailure::Power {
+                    error,
+                    _closed: closed,
+                },
+            });
+        }
+        let result = {
+            let mut shared_phy = self.common_phy_parts_mut().0.shared_phy_hal();
+            closed.wake_rf::<D>(&mut shared_phy).await
+        };
+        match result {
+            Ok(phy) => Ok(ControllerPhyRegistered {
+                controller: self,
+                phy,
+                calibration_cache,
+                report: ControllerPhyEntry::RetainedWake,
+            }),
+            Err(failure) => Err(ControllerPhyResumeFailure {
+                _controller: self,
+                failure: PhyResumeFailure::Wake(failure),
+            }),
+        }
+    }
+}
+
 #[inline(never)]
 #[allow(
     clippy::result_large_err,
@@ -406,7 +522,10 @@ fn finish_registration<P, const MT: usize, const SC: usize>(
                 controller,
                 phy,
                 calibration_cache,
-                report: PhyInitializationReport::from_target(registration, counters),
+                report: ControllerPhyEntry::Registered(PhyInitializationReport::from_target(
+                    registration,
+                    counters,
+                )),
             })
         }
         Err(failure) => Err(ControllerPhyInitializationFailure {

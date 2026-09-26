@@ -353,11 +353,9 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         self.initialized.baseband_report()
     }
 
-    /// Inspect the complete common-PHY transition.
-    pub const fn phy_report(
-        &self,
-    ) -> oer_esp32s31_bluetooth::common_phy_state::PhyInitializationReport {
-        self.initialized.phy_report()
+    /// Inspect how the common PHY was obtained.
+    pub const fn phy_entry(&self) -> oer_esp32s31_bluetooth::common_phy_state::ControllerPhyEntry {
+        self.initialized.phy_entry()
     }
 
     /// Conditional runtime-control branch retained across the timer start.
@@ -450,11 +448,9 @@ where
         self.initialized.baseband_report()
     }
 
-    /// Inspect the complete common-PHY transition.
-    pub const fn phy_report(
-        &self,
-    ) -> oer_esp32s31_bluetooth::common_phy_state::PhyInitializationReport {
-        self.initialized.phy_report()
+    /// Inspect how the common PHY was obtained.
+    pub const fn phy_entry(&self) -> oer_esp32s31_bluetooth::common_phy_state::ControllerPhyEntry {
+        self.initialized.phy_entry()
     }
 
     /// Conditional runtime-control branch retained across publication.
@@ -583,11 +579,9 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         self.initialized.baseband_report()
     }
 
-    /// Inspect the complete common-PHY transition.
-    pub const fn phy_report(
-        &self,
-    ) -> oer_esp32s31_bluetooth::common_phy_state::PhyInitializationReport {
-        self.initialized.phy_report()
+    /// Inspect how the common PHY was obtained.
+    pub const fn phy_entry(&self) -> oer_esp32s31_bluetooth::common_phy_state::ControllerPhyEntry {
+        self.initialized.phy_entry()
     }
 
     /// Conditional runtime-control branch retained by the ISR-ready timer.

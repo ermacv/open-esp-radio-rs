@@ -919,19 +919,17 @@ pub async fn new(
         .station()
         .ok_or(NewError::StationRole)?;
     let station_address = station_interface.interface.address;
+    let registration = ready.registration();
     let (wifi, calibration_cache) = ready.into_parts();
     let initialization = RadioInitialization {
         start: wifi.start_report(),
+        registration,
         transition: wifi.transition_report(),
         calibration_cache,
     };
     diagnostics_event!(
         "open-radio: cold PHY ready, full_calibration={} initial_tracking={} tracking_inhibited={}",
-        initialization
-            .start
-            .wifi
-            .registration
-            .full_calibration_performed,
+        initialization.registration.full_calibration_performed,
         initialization.start.wifi.initial_tracking.is_some(),
         initialization
             .start

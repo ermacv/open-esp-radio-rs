@@ -122,6 +122,8 @@ impl RadioInstance {
 /// calibration owners.
 pub struct RadioInitialization {
     pub start: oer_esp32s31_ieee80211::mac_start::WifiMacStartReport,
+    /// The cold registration this initialization performed.
+    pub registration: oer_esp32s31_phy::PhyRegisterOutcome,
     pub transition: oer_esp32s31_ieee80211::runtime::WifiRuntimeTransitionReport,
     pub calibration_cache: Option<oer_esp32s31_phy::PhyCalibrationCache>,
 }

@@ -33,7 +33,7 @@ use {
         baseband::BasebandInitializationReport,
         ble_phy::BlePhyInitializationReport,
         clock::ClockEnableFailure,
-        common_phy_state::PhyInitializationReport,
+        common_phy_state::ControllerPhyEntry,
         low_power::ControllerLowPowerHardwareInitializationFailure,
         phy::{
             ControllerPhyClientAcquireFailure, ControllerPhyInitializationFailure,
@@ -377,8 +377,9 @@ pub struct BluetoothColdStartOutput<
         'static,
         Platform,
     >,
-    /// Complete common-PHY target execution report.
-    pub phy: PhyInitializationReport,
+    /// How the common PHY was obtained, with its target execution report
+    /// after a registration.
+    pub phy: ControllerPhyEntry,
     /// Finite BTBB initialization input projected from the PHY owner.
     pub baseband: BasebandInitializationReport,
     /// Exact BLE-PHY source configuration consumed by this epoch.
@@ -844,7 +845,7 @@ pub async fn start_esp32s31_bluetooth<
         },
     };
 
-    let phy = initialized.report();
+    let phy = initialized.phy_entry();
     let calibration = initialized
         .calibration_cache()
         .map(|cache| *cache.snapshot());

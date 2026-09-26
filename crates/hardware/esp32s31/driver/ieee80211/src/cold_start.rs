@@ -3,8 +3,10 @@
 //! This boundary owns the production ordering shared by standalone firmware
 //! and HIL: power, finite PHY registration, Wi-Fi client acquisition and
 //! initial tracking, Wi-Fi RX enable and initial
-//! channel selection. Board token construction, persistent calibration
-//! storage and diagnostics remain caller policy.
+//! channel selection. A retained PHY handed over by another protocol route
+//! replaces power and registration with the retained RF wake. Board token
+//! construction, persistent calibration storage and diagnostics remain caller
+//! policy.
 
 use crate::channel::lower_wifi_channel;
 
@@ -13,9 +15,9 @@ use oer_esp32s31_hal::owner::{PowerUpFailure, Radio};
 use oer_esp32s31_phy::{
     PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome,
     PhyTargetObserver, PhyTargetPortCounters, PhyTargetPortError, PhyTxTargetPowerProfile,
-    RegisteredPhyClientAcquireFailure, RegisteredPhyRadio, TargetPhyParamTrackingFailure,
-    TargetPhyRegisterAttempt, TargetPhyRegisterFailure, run_target_phy_param_tracking,
-    run_target_phy_register,
+    RegisteredPhyClientAcquireFailure, RegisteredPhyRadio, RegisteredPhyRfWakePoisoned,
+    RetainedPhy, TargetPhyParamTrackingFailure, TargetPhyRegisterAttempt, TargetPhyRegisterFailure,
+    run_target_phy_param_tracking, run_target_phy_register,
 };
 
 use oer_esp32s31_phy::{state::client::PhyPllTrackClock, tracking::PhyParamTrackingOutcome};
@@ -47,14 +49,36 @@ impl WifiColdStartConfig {
     }
 }
 
+/// How the Wi-Fi route obtained its registered PHY.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiPhyEntry {
+    /// Cold power-up and target registration on this route.
+    Registered {
+        registration: PhyRegisterOutcome,
+        port_counters: PhyTargetPortCounters,
+    },
+    /// Retained RF wake of an epoch another route handed over; no
+    /// registration or calibration ran.
+    RetainedWake,
+}
+
 /// Observable result of the finite cold start without HIL telemetry policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiColdStartReport {
-    pub registration: PhyRegisterOutcome,
-    pub port_counters: PhyTargetPortCounters,
+    pub entry: WifiPhyEntry,
     pub initial_channel: WifiChannel,
     /// None when the acquisition timestamp did not require tracking.
     pub initial_tracking: Option<PhyParamTrackingOutcome>,
+}
+
+impl WifiColdStartReport {
+    /// The registration this start performed, or `None` after retained wake.
+    pub const fn registration(&self) -> Option<PhyRegisterOutcome> {
+        match self.entry {
+            WifiPhyEntry::Registered { registration, .. } => Some(registration),
+            WifiPhyEntry::RetainedWake => None,
+        }
+    }
 }
 
 /// Complete owner set returned at the cold-MAC boundary.
@@ -99,6 +123,8 @@ impl<P> WifiColdStart<P> {
 pub enum WifiColdStartFailure<P> {
     Power(WifiColdPowerFailure<P>),
     Registration(TargetPhyRegisterFailure<P>),
+    /// Retained RF wake started and failed; the epoch requires reset.
+    RetainedWake(RegisteredPhyRfWakePoisoned<P>),
     ClientAcquire(WifiColdClientAcquireFailure<P>),
     InitialTracking(WifiColdInitialTrackingFailure<P>),
     InitialChannel {
@@ -177,6 +203,23 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
+    start_registered_esp32s31_wifi::<P, D, O>(radio, config, calibration_cache, observer, clock)
+        .await
+        .map(|(start, _)| start)
+}
+
+/// [`start_esp32s31_wifi`] together with the registration it performed.
+pub(crate) async fn start_registered_esp32s31_wifi<P, D, O>(
+    radio: Radio<P>,
+    config: WifiColdStartConfig,
+    calibration_cache: Option<PhyCalibrationCache>,
+    observer: O,
+    clock: &mut impl PhyPllTrackClock,
+) -> Result<(WifiColdStart<P>, PhyRegisterOutcome), WifiColdStartFailure<P>>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver + Clone,
+{
     let powered = match radio.power_up() {
         Ok(powered) => powered,
         Err(failure) => {
@@ -201,6 +244,73 @@ where
             .map_err(WifiColdStartFailure::Registration)?;
     let (powered, calibration_cache, registration, port_counters) =
         target_registration.into_registered_parts();
+    complete_wifi_start::<P, D, O>(
+        powered,
+        WifiPhyEntry::Registered {
+            registration,
+            port_counters,
+        },
+        config,
+        calibration_cache,
+        observer,
+        clock,
+    )
+    .await
+    .map(|start| (start, registration))
+}
+
+/// Enter Wi-Fi from a PHY that another protocol route handed over with RF
+/// closed, then run the same client, tracking and channel tail as a cold
+/// start.
+///
+/// No power sequence, registration or calibration runs: the retained RF wake
+/// restores the registered epoch. `calibration_cache` is only refreshed from
+/// the retained state after tracking.
+///
+/// # Cancellation
+///
+/// This has the same fail-stop contract as [`start_esp32s31_wifi`].
+#[must_use = "Wi-Fi retained resume must be driven to a terminal result"]
+pub async fn resume_esp32s31_wifi<P, D, O>(
+    peripheral: P,
+    retained: RetainedPhy,
+    config: WifiColdStartConfig,
+    calibration_cache: Option<PhyCalibrationCache>,
+    observer: O,
+    clock: &mut impl PhyPllTrackClock,
+) -> Result<WifiColdStart<P>, WifiColdStartFailure<P>>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver + Clone,
+{
+    let idle = retained
+        .into_wifi(peripheral)
+        .wake_rf::<D>()
+        .await
+        .map_err(WifiColdStartFailure::RetainedWake)?;
+    complete_wifi_start::<P, D, O>(
+        idle.retain_powered(),
+        WifiPhyEntry::RetainedWake,
+        config,
+        calibration_cache,
+        observer,
+        clock,
+    )
+    .await
+}
+
+async fn complete_wifi_start<P, D, O>(
+    powered: RegisteredPhyRadio<P>,
+    entry: WifiPhyEntry,
+    config: WifiColdStartConfig,
+    calibration_cache: Option<PhyCalibrationCache>,
+    observer: O,
+    clock: &mut impl PhyPllTrackClock,
+) -> Result<WifiColdStart<P>, WifiColdStartFailure<P>>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver + Clone,
+{
     let acquired = match powered.acquire_client(clock) {
         Ok(acquired) => acquired,
         Err(failure) => {
@@ -239,8 +349,7 @@ where
     };
     let calibration_cache = calibration_cache.map(|cache| powered.refresh_calibration_cache(cache));
     let report = WifiColdStartReport {
-        registration,
-        port_counters,
+        entry,
         initial_tracking,
         initial_channel: config.initial_channel,
     };

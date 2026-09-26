@@ -17,8 +17,8 @@ use oer_esp32s31_phy::{
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_phy::{
     RegisteredPhyClientAcquireFailure, RegisteredPhyColdReleaseFailure, RegisteredPhyColdReleased,
-    RegisteredPhyPendingTrack, RegisteredPhyRadio, RegisteredPhyRfCloseFailure,
-    RegisteredPhyRfWakePoisoned,
+    RegisteredPhyPendingTrack, RegisteredPhyRadio, RegisteredPhyRetainedReleaseFailure,
+    RegisteredPhyRfCloseFailure, RegisteredPhyRfWakePoisoned, RetainedPhy,
 };
 
 use oer_esp32s31_ieee80211_mac::sta_ap_registers::disable_all_role_receive_registers;
@@ -174,6 +174,41 @@ impl<P> WifiStopped<P> {
                 Ok(WifiRadioReleaseDisposition::Cold(cold))
             }
         }
+    }
+
+    /// Release the stopped last Wi-Fi client, close RF and hand the powered,
+    /// registered PHY to another protocol route.
+    ///
+    /// This is the protocol-switch counterpart of [`Self::release_radio`]:
+    /// the registration epoch, calibration state and common PHY power stay in
+    /// effect, so the next route wakes RF instead of registering again. A
+    /// release that leaves another client returns the shared radio unchanged.
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, drive this future to a terminal result. Dropping it can
+    /// strand a temperature transaction or a partially closed RF epoch.
+    #[cfg(target_arch = "riscv32")]
+    #[must_use = "retained release must reach an owned retained PHY or failure frontier"]
+    pub async fn release_retained<D: oer_esp32s31_phy::PhyAsyncDelay>(
+        self,
+    ) -> Result<(P, RetainedPhy), WifiRadioRetainedReleaseFailure<P>> {
+        let idle = match self
+            .release_phy_client()
+            .map_err(WifiRadioRetainedReleaseFailure::Client)?
+        {
+            RegisteredPhyClientReleaseDisposition::Last(idle) => idle,
+            RegisteredPhyClientReleaseDisposition::Remaining(radio) => {
+                return Err(WifiRadioRetainedReleaseFailure::Shared(radio));
+            }
+        };
+        let closed = idle
+            .close_rf::<D>()
+            .await
+            .map_err(WifiRadioRetainedReleaseFailure::RfClose)?;
+        closed
+            .release_retained()
+            .map_err(WifiRadioRetainedReleaseFailure::Retained)
     }
 
     /// Close and immediately restore the RF domain without retiring the
@@ -380,6 +415,34 @@ pub enum WifiRadioRetainedCycleFailure<P> {
     RfWake(RegisteredPhyRfWakePoisoned<P>),
     Acquire(RegisteredPhyClientAcquireFailure<P>),
     Tracking(RegisteredPhyPendingTrack<P>),
+}
+
+/// Frontier of a stopped-Wi-Fi handoff that did not reach the retained PHY.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retained release failure retains the exact recoverable or poisoned owner"]
+pub enum WifiRadioRetainedReleaseFailure<P> {
+    /// Wi-Fi client release failed before physical RF close was selected.
+    Client(WifiPhyClientReleaseFailure<P>),
+    /// Another protocol client keeps the shared registered PHY powered.
+    Shared(RegisteredPhyRadio<P>),
+    /// RF-close preparation failed recoverably or physical close was poisoned.
+    RfClose(RegisteredPhyRfCloseFailure<P>),
+    /// RF was closed, but the retained root rejected the handoff before MMIO.
+    Retained(RegisteredPhyRetainedReleaseFailure<P>),
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P> WifiRadioRetainedReleaseFailure<P> {
+    /// Whether RF close left an ambiguous PHY epoch.
+    pub const fn phy_hardware_ambiguous(&self) -> bool {
+        match self {
+            Self::RfClose(RegisteredPhyRfCloseFailure::Started(_)) => true,
+            Self::Client(_)
+            | Self::Shared(_)
+            | Self::RfClose(RegisteredPhyRfCloseFailure::Preparation(_))
+            | Self::Retained(_) => false,
+        }
+    }
 }
 
 /// Fail-stop frontier for the composed stopped-Wi-Fi release transaction.

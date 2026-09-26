@@ -189,6 +189,12 @@ a root of another registration is returned with the domain. The client set is
 empty throughout, and every wake failure after the first edge is reset-required.
 Both routes' HIL recovery across a switch remains a separate gate.
 
+The Wi-Fi driver composes the handoff as `WifiStopped::release_retained` and
+`resume_esp32s31_radio`, which runs the ordinary client, tracking, channel and
+MAC initialization tail after the retained wake; its report records
+`WifiPhyEntry::RetainedWake` instead of a registration. The Bluetooth
+Controller composes it as `release_retained` and `resume_common_phy`.
+
 Protocol runtimes must first return their real TX, RX DMA, IRQ, MAC/LL and
 per-protocol receive-enable owners to the composition. Consequently neither
 `PhyClientState::release`, a zero client mask nor a coex request can call the

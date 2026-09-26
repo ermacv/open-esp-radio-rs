@@ -226,3 +226,30 @@ fn unpowered_route_cannot_enter_the_retained_root() {
         )
     );
 }
+
+#[test]
+fn inherited_route_skips_the_common_power_sequence_and_cold_reunion() {
+    let cold = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
+    let (task, _interrupts) = cold.separate_interrupt_owner();
+    assert!(!task.common_phy_inherited());
+
+    let wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation())
+        .with_common_power_for_test();
+    let retained = wifi
+        .release_retained()
+        .unwrap_or_else(|_| panic!("a powered Wi-Fi route hands over its PHY"));
+    let (mut task, interrupts) = ColdOwner::from_retained(retained).separate_interrupt_owner();
+    assert!(task.common_phy_inherited());
+
+    // The validation root has no register block, so any power-sequence MMIO
+    // would fault here.
+    assert_eq!(task.prepare_common_phy_power(), Ok(()));
+    let Err(failure) = task.into_cold(interrupts) else {
+        panic!("an inherited route cannot fabricate the cold radio root");
+    };
+    assert_eq!(
+        failure.error(),
+        TaskOwnerReuniteError::HardwareLifecycleNotRestored
+    );
+    let _retained_owners = failure.into_parts();
+}

@@ -23,6 +23,16 @@ pub struct PhyInitializationReport {
     pub baseband_operations: u32,
 }
 
+/// How this Controller epoch obtained its registered common PHY.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControllerPhyEntry {
+    /// Common power and full target registration on this route.
+    Registered(PhyInitializationReport),
+    /// Retained RF wake of an epoch another protocol route handed over; no
+    /// power sequence, registration or calibration ran.
+    RetainedWake,
+}
+
 /// Powered Controller after complete target shared-PHY registration.
 ///
 /// Construction is possible only from the state that already retains the
@@ -44,14 +54,14 @@ pub struct ControllerPhyRegistered<
         ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     pub(crate) phy: RegisteredBluetoothPhy,
     pub(crate) calibration_cache: Option<PhyCalibrationCache>,
-    pub(crate) report: PhyInitializationReport,
+    pub(crate) report: ControllerPhyEntry,
 }
 
 impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     ControllerPhyRegistered<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
-    /// Inspect the value-only registration result without obtaining hardware authority.
-    pub const fn report(&self) -> PhyInitializationReport {
+    /// Inspect how the registered PHY was obtained, without hardware authority.
+    pub const fn phy_entry(&self) -> ControllerPhyEntry {
         self.report
     }
 
@@ -83,14 +93,14 @@ pub struct ControllerPhyInitialized<
         ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     pub(crate) phy: RegisteredBluetoothPhyClient,
     pub(crate) calibration_cache: Option<PhyCalibrationCache>,
-    pub(crate) report: PhyInitializationReport,
+    pub(crate) report: ControllerPhyEntry,
 }
 
 impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     ControllerPhyInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
-    /// Inspect the value-only target registration result.
-    pub const fn report(&self) -> PhyInitializationReport {
+    /// Inspect how the registered PHY was obtained.
+    pub const fn phy_entry(&self) -> ControllerPhyEntry {
         self.report
     }
 

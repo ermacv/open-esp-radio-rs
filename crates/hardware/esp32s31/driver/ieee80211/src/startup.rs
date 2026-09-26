@@ -13,7 +13,8 @@
 use crate::{
     cold_start::{
         WifiColdStartConfig as Esp32s31WifiStartConfig,
-        WifiColdStartFailure as Esp32s31WifiStartFailure, start_esp32s31_wifi,
+        WifiColdStartFailure as Esp32s31WifiStartFailure, resume_esp32s31_wifi,
+        start_registered_esp32s31_wifi,
     },
     mac_start::{
         WifiMacPlatform, WifiMacStartConfig, WifiMacStartFailure, start_esp32s31_wifi_mac,
@@ -25,7 +26,8 @@ use oer_esp32s31_hal::owner::Radio;
 
 use oer_esp32s31_phy::state::client::PhyPllTrackClock;
 use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyCalibrationCache, PhyTargetObserver, RegisteredPhyColdReleased,
+    PhyAsyncDelay, PhyCalibrationCache, PhyRegisterOutcome, PhyTargetObserver,
+    RegisteredPhyColdReleased, RetainedPhy,
 };
 
 /// Inputs for the one common PHY/MAC transition.
@@ -41,13 +43,36 @@ impl RadioStartConfig {
     }
 }
 
-/// Role-neutral stopped Wi-Fi returned after common initialization.
+/// Role-neutral stopped Wi-Fi returned after cold common initialization.
 pub struct RadioReady<P> {
+    wifi: WifiStopped<P>,
+    calibration_cache: Option<PhyCalibrationCache>,
+    registration: PhyRegisterOutcome,
+}
+
+impl<P> RadioReady<P> {
+    pub const fn wifi(&self) -> &WifiStopped<P> {
+        &self.wifi
+    }
+
+    /// The cold registration this initialization performed.
+    pub const fn registration(&self) -> PhyRegisterOutcome {
+        self.registration
+    }
+
+    pub fn into_parts(self) -> (WifiStopped<P>, Option<PhyCalibrationCache>) {
+        (self.wifi, self.calibration_cache)
+    }
+}
+
+/// Role-neutral stopped Wi-Fi resumed from a retained PHY; no registration
+/// ran.
+pub struct RadioResumed<P> {
     wifi: WifiStopped<P>,
     calibration_cache: Option<PhyCalibrationCache>,
 }
 
-impl<P> RadioReady<P> {
+impl<P> RadioResumed<P> {
     pub const fn wifi(&self) -> &WifiStopped<P> {
         &self.wifi
     }
@@ -72,7 +97,8 @@ impl<P> RadioStartFailure<P> {
                 !failure.failure_cleanup_completed()
             }
             Self::Wifi(
-                Esp32s31WifiStartFailure::InitialTracking(_)
+                Esp32s31WifiStartFailure::RetainedWake(_)
+                | Esp32s31WifiStartFailure::InitialTracking(_)
                 | Esp32s31WifiStartFailure::InitialChannel { .. },
             ) => true,
             Self::Wifi(
@@ -102,13 +128,64 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
-    let wifi =
-        start_esp32s31_wifi::<P, D, O>(radio, config.wifi, calibration_cache, observer, clock)
-            .await
-            .map_err(RadioStartFailure::Wifi)?;
+    let (wifi, registration) = start_registered_esp32s31_wifi::<P, D, O>(
+        radio,
+        config.wifi,
+        calibration_cache,
+        observer,
+        clock,
+    )
+    .await
+    .map_err(RadioStartFailure::Wifi)?;
     let mac = start_esp32s31_wifi_mac(wifi, config.mac).map_err(RadioStartFailure::Mac)?;
     let runtime = enter_esp32s31_wifi_runtime(mac);
     Ok(RadioReady {
+        wifi: runtime.wifi,
+        calibration_cache: runtime.calibration_cache,
+        registration,
+    })
+}
+
+/// Resume role-neutral Wi-Fi from a PHY another protocol route handed over.
+///
+/// The retained RF wake replaces power-up and registration; the common MAC
+/// initialization then runs exactly as after a cold start, including its own
+/// MAC clock enable and reset pulse.
+///
+/// # Cancellation
+///
+/// This has the same fail-stop cancellation contract as
+/// [`start_esp32s31_radio`]. Once polled, it must reach a terminal result.
+#[allow(
+    large_assignments,
+    reason = "the unique initialized radio owner graph crosses an explicit poll boundary; the linked-image stack-frame audit independently bounds this reviewed future"
+)]
+pub async fn resume_esp32s31_radio<P, D, O>(
+    peripheral: P,
+    retained: RetainedPhy,
+    config: RadioStartConfig,
+    calibration_cache: Option<PhyCalibrationCache>,
+    observer: O,
+    clock: &mut impl PhyPllTrackClock,
+) -> Result<RadioResumed<P>, RadioStartFailure<P>>
+where
+    P: WifiMacPlatform,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver + Clone,
+{
+    let wifi = resume_esp32s31_wifi::<P, D, O>(
+        peripheral,
+        retained,
+        config.wifi,
+        calibration_cache,
+        observer,
+        clock,
+    )
+    .await
+    .map_err(RadioStartFailure::Wifi)?;
+    let mac = start_esp32s31_wifi_mac(wifi, config.mac).map_err(RadioStartFailure::Mac)?;
+    let runtime = enter_esp32s31_wifi_runtime(mac);
+    Ok(RadioResumed {
         wifi: runtime.wifi,
         calibration_cache: runtime.calibration_cache,
     })

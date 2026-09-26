@@ -152,7 +152,7 @@ pub struct ControllerBlePhyEngineInitialized<
         SCHEDULER_CAPACITY,
     >,
     physical: RuntimeOwnerSlot<BlePhyRetainedOwners>,
-    phy_report: crate::common_phy_state::PhyInitializationReport,
+    phy_entry: crate::common_phy_state::ControllerPhyEntry,
     baseband_report: crate::baseband::BasebandInitializationReport,
     report: BlePhyInitializationReport,
 }
@@ -236,8 +236,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     }
 
     /// Inspect the complete common-PHY transition.
-    pub const fn phy_report(&self) -> crate::common_phy_state::PhyInitializationReport {
-        self.phy_report
+    pub const fn phy_entry(&self) -> crate::common_phy_state::ControllerPhyEntry {
+        self.phy_entry
     }
 
     /// Take the interrupt bank with its controller output prepared, and the
@@ -351,7 +351,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             controller,
             phy,
             calibration_cache,
-            report: phy_report,
+            report: phy_entry,
         } = initialized;
         ControllerBlePhyEngineInitialized {
             controller,
@@ -364,7 +364,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                     _publication: publication,
                 },
             }),
-            phy_report,
+            phy_entry,
             baseband_report,
             report,
         }

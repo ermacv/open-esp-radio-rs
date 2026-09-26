@@ -136,6 +136,11 @@ clocks and the 160 MHz PHY-I2C source are checked through semantic readback.
 The task owner retains the I2C clock lease. `PhyInitializationError` separates
 power-checkpoint failures from registration failures; both preserve fail-stop
 ownership and prevent cold reunion until the physical release transition completes.
+A Controller booted from `BluetoothStopped::from_retained` instead calls
+`resume_common_phy` with the closed domain from `RetainedPhy::into_bluetooth`:
+the inherited common power runs no sequence and the retained RF wake replaces
+registration. `ControllerPhyEntry` records which path the epoch took; a
+Controller that powered its own PHY rejects the resume before any MMIO.
 
 See [FEATURES.md](../../../../hardware/esp32s31/driver/bluetooth/FEATURES.md) for supported and incomplete paths; structural
 organization does not extend hardware qualification.
@@ -341,6 +346,12 @@ reservation joined to the same HCI epoch. It releases the last Bluetooth PHY
 client, executes the common target RF-close graph, powers down temperature,
 resets the Controller/timer domains and restores clock leases and the captured
 shared cold-power baseline. The complete operation returns `ControllerColdReleased`.
+
+`release_retained` shares the same client release and RF close but hands the
+powered, registered PHY to another protocol route: after temperature power-down
+and the Controller/timer reset it releases only Bluetooth's own clock leases
+and returns `ControllerRetainedReleased` with the platform and a `RetainedPhy`.
+The common power, calibration and registration epoch stay in effect.
 
 Keep the consuming future alive until a terminal result. Failures retain every
 physical partition, SRAM allocation and the platform reservation. Successful

@@ -40,8 +40,9 @@ use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
-    AcceptedCommand, AutoPendingMode, CommandError, Frame, PendingTable, RadioCommand, RadioEvent,
-    RadioFault, RadioState, ReceivedFrame, RequestId, RestingState, RxMetadata, TxStatus,
+    AcceptedCommand, AutoPendingMode, CommandError, Frame, MacKeys, PendingTable, RadioCommand,
+    RadioEvent, RadioFault, RadioState, ReceivedFrame, RequestId, RestingState, RxMetadata,
+    TxStatus,
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
@@ -669,10 +670,24 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         self.with_radio(|radio, _, _| change(radio.engine().pending_table()))
     }
 
+    /// Read or change the MAC keys and frame counter the radio secures
+    /// transmissions and enhanced ACKs with
+    /// ([`Ieee802154Radio::mac_keys`]).
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn with_mac_keys<T>(
+        &self,
+        change: impl FnOnce(&mut Option<MacKeys>) -> T,
+    ) -> Result<T, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| change(radio.mac_keys()))
+    }
+
     /// Change the enhanced-ACK generator of the installed radio: install
-    /// one (`None` refuses every enhanced ACK, the vendor default), set its
-    /// header IEs, or update its MAC keys and frame counter. The interrupt
-    /// handler uses it under the same lock.
+    /// one (`None` refuses every enhanced ACK, the vendor default) or set
+    /// its header IEs; secured ACKs use [`Self::with_mac_keys`]. The
+    /// interrupt handler uses it under the same lock.
     ///
     /// # Errors
     ///

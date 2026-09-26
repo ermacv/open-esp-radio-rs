@@ -255,7 +255,7 @@ id = "ieee802154-capability-sources-and-publication-scope"
 domain = "ieee802154"
 title = "Capability sources and publication scope"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary. The [radio role](../../../../roles/esp32s31/ieee802154/radio/src/lib.rs)\nadvertises the subset it implements, including `CSMA_CA` and `TRANSMIT_RETRIES`;\n`SECURITY_OFFLOAD` and `SOURCE_MATCH` are not advertised. An advertised capability is source coverage,\nnot RF qualification.\n\nThe [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) admits portable\ncommands through the role, which starts the operations of the [MAC engine](src/engine.rs)\nported from the public ESP-IDF driver. These are runtime entry points, not a\ncomplete public RF-ready service; CSMA/CA backoffs run in the runtime's event\nwait."
+overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary. The [radio role](../../../../roles/esp32s31/ieee802154/radio/src/lib.rs)\nadvertises the subset it implements, including `CSMA_CA`, `TRANSMIT_RETRIES` and\n`SECURITY_OFFLOAD`; `SOURCE_MATCH` is not advertised. An advertised capability is source coverage,\nnot RF qualification.\n\nThe [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) admits portable\ncommands through the role, which starts the operations of the [MAC engine](src/engine.rs)\nported from the public ESP-IDF driver. These are runtime entry points, not a\ncomplete public RF-ready service; CSMA/CA backoffs run in the runtime's event\nwait."
 packages = [
     "oer-ieee802154",
     "oer-esp32s31-ieee802154-runtime",
@@ -471,7 +471,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Enhanced ACK TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames from the role's generator, a port of ESP-IDF's OpenThread generator: the [portable formatter](../../../../protocols/ieee802154/src/mac/enhanced_ack.rs) ports OpenThread GenerateEnhAck, and secured ACKs take the frame counter and the key-index-mode key from caller-held MAC keys with engine-armed transmit security. Header IEs are fixed caller bytes; CSL and link-metrics IE content, secured-ACK receive metadata and on-air qualification are absent."
+scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames from the role's generator, a port of ESP-IDF's OpenThread generator: the [portable formatter](../../../../protocols/ieee802154/src/mac/enhanced_ack.rs) ports OpenThread GenerateEnhAck, and secured ACKs take the frame counter and the key-index-mode key from the radio's MAC keys with engine-armed transmit security. Header IEs are fixed caller bytes; CSL and link-metrics IE content, secured-ACK receive metadata and on-air qualification are absent."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-hardware-frame-filtering"
@@ -601,7 +601,7 @@ section = "ieee802154-security-power-and-coexistence"
 title = "Hardware TX security"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine programs address, key and payload offset for one secured transmission and clears security at its end. No key/nonce/counter lifecycle is composed, and hardware security offload is not qualified."
+scope-and-limitations = "The engine programs address, key and payload offset for one secured transmission and clears security at its end. With the radio's MAC keys the role secures each attempt as ESP-IDF's OpenThread port does, taking the [frame counter and key](../../../../protocols/ieee802154/src/mac/security.rs) itself. Key derivation and CSL re-securing are not composed, and hardware security offload is not qualified on air."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-rx-on-when-idle"

@@ -21,7 +21,7 @@
 extern crate std;
 
 use oer_esp32s31_hal::ieee802154::{
-    Ieee802154Channel,
+    Ieee802154Channel, Ieee802154MultipanIndex,
     ll::{Ieee802154LowLevel, Ieee802154RxStatus},
 };
 use oer_esp32s31_ieee802154::engine::{
@@ -30,19 +30,20 @@ use oer_esp32s31_ieee802154::engine::{
 };
 use oer_ieee802154::{
     AcceptedCommand, AttemptFailure, Channel, CommandError, Configuration, CsmaCa, FcsStatus,
-    FramePending, FrameRetries, FrameView, MacKeys, RadioCapabilities, RadioCommand, RadioEvent,
-    RadioFault, RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId,
-    RestingState, RetryStart, RxMetadata, SecurityStatus, TxMode, TxStatus, generate_enhanced_ack,
+    FramePending, FrameRetries, FrameView, KeyIdMode, MacKeys, PhrFrame, RadioCapabilities,
+    RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine, RadioTimestamp,
+    ReceivedFrame, RequestId, RestingState, RetryStart, RxMetadata, SecurityStatus, TxMode,
+    TxStatus, generate_enhanced_ack,
 };
 
 /// The portable capabilities the role implements.
 ///
-/// Security offload and source matching have no portable command yet and
-/// are not advertised.
+/// Source matching has no portable command yet and is not advertised.
 pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::NONE
     .union(RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT)
     .union(RadioCapabilities::CSMA_CA)
     .union(RadioCapabilities::TRANSMIT_RETRIES)
+    .union(RadioCapabilities::SECURITY_OFFLOAD)
     .union(RadioCapabilities::ENERGY_SCAN)
     .union(RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SCHEDULED_TRANSMIT)
@@ -65,25 +66,24 @@ pub struct Ieee802154EnhancedAckIeTooLong;
 /// handler for each received 2015 frame that requests an ACK.
 ///
 /// It builds the ACK with [`generate_enhanced_ack`], carrying the configured
-/// header IEs, and secures the ACK of a secured frame with [`MacKeys`]:
-/// the next frame counter and the key of the frame's key index. Without
-/// keys, or when the frame cannot be acknowledged, the generator refuses
-/// and the engine delivers the frame without an ACK. The port rebuilds its
+/// header IEs, and secures the ACK of a secured frame with the radio's
+/// [`MacKeys`] ([`Ieee802154Radio::mac_keys`]): the next frame counter and
+/// the key of the frame's key index. Without keys, or when the frame cannot
+/// be acknowledged, the generator refuses and the engine delivers the frame
+/// without an ACK. The port rebuilds its
 /// CSL and link-metrics IEs per frame; here the IEs are the caller's bytes.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Ieee802154EnhancedAckGenerator {
     header_ies: [u8; IEEE802154_ENHANCED_ACK_IE_CAPACITY],
     header_ies_len: usize,
-    keys: Option<MacKeys>,
 }
 
 impl Ieee802154EnhancedAckGenerator {
-    /// A generator without header IEs or keys: secured frames are refused.
+    /// A generator without header IEs.
     pub const fn new() -> Self {
         Self {
             header_ies: [0; IEEE802154_ENHANCED_ACK_IE_CAPACITY],
             header_ies_len: 0,
-            keys: None,
         }
     }
 
@@ -108,16 +108,12 @@ impl Ieee802154EnhancedAckGenerator {
         Ok(())
     }
 
-    /// The MAC keys and frame counter, when secured ACKs are admitted.
-    pub fn keys(&mut self) -> &mut Option<MacKeys> {
-        &mut self.keys
-    }
-
     fn generate(
         &mut self,
         frame: &[u8; FRAME_SIZE],
         info: &Ieee802154FrameInfo,
         ack: &mut [u8; FRAME_SIZE],
+        keys: Option<&mut MacKeys>,
     ) -> Ieee802154EnhancedAck {
         // The PHR counts the RSSI and LQI bytes that replace the FCS.
         let length = usize::from(frame[0] & 0x7f);
@@ -133,11 +129,7 @@ impl Ieee802154EnhancedAckGenerator {
             return Ieee802154EnhancedAck::Refused;
         };
         let key = match generated.security() {
-            Some(_) => match self
-                .keys
-                .as_mut()
-                .and_then(|keys| keys.secure(&mut generated))
-            {
+            Some(_) => match keys.and_then(|keys| keys.secure(&mut generated)) {
                 Some(key) => Some(key),
                 None => return Ieee802154EnhancedAck::Refused,
             },
@@ -188,7 +180,7 @@ enum Phase {
 
 /// The transmit security the upper layer armed for the next transmission.
 #[derive(Clone, Copy)]
-struct TransmitSecurity {
+struct ArmedSecurity {
     key: [u8; 16],
     address: [u8; 8],
 }
@@ -204,7 +196,7 @@ struct Transmission {
     mode: TxMode,
     csma: CsmaCa,
     retries: FrameRetries,
-    security: Option<TransmitSecurity>,
+    security: Option<ArmedSecurity>,
     /// Whether the engine still holds `security`.
     armed: bool,
     phase: Phase,
@@ -224,10 +216,13 @@ impl Transmission {
 
     /// `SubMac::StartCsmaBackoff`: back off before a CSMA-CA attempt, or
     /// attempt at once.
-    fn start_access<L, E>(&mut self, engine: &mut Ieee802154Engine<'_>, ll: &mut L, env: &mut E)
-    where
+    fn start_access<L>(
+        &mut self,
+        engine: &mut Ieee802154Engine<'_>,
+        ll: &mut L,
+        env: &mut Collector<'_>,
+    ) where
         L: Ieee802154LowLevel + ?Sized,
-        E: Ieee802154Environment + ?Sized,
     {
         if matches!(self.mode, TxMode::CsmaCa { .. }) && self.csma.backoff_micros(0).is_some() {
             self.start_delay(Delay::CsmaBackoff, engine, ll, env);
@@ -238,15 +233,14 @@ impl Transmission {
 
     /// `SubMac::StartTimerForBackoff`: wait receiving on the transmit
     /// channel when the radio receives when idle, otherwise asleep.
-    fn start_delay<L, E>(
+    fn start_delay<L>(
         &mut self,
         delay: Delay,
         engine: &mut Ieee802154Engine<'_>,
         ll: &mut L,
-        env: &mut E,
+        env: &mut Collector<'_>,
     ) where
         L: Ieee802154LowLevel + ?Sized,
-        E: Ieee802154Environment + ?Sized,
     {
         self.phase = Phase::DelayDue(delay);
         self.armed = false;
@@ -257,14 +251,29 @@ impl Transmission {
         }
     }
 
-    /// `SubMac::BeginTransmit`: one attempt in the request's channel access.
-    fn attempt<L, E>(&mut self, engine: &mut Ieee802154Engine<'_>, ll: &mut L, env: &mut E)
+    /// `SubMac::BeginTransmit`: one attempt in the request's channel access,
+    /// secured as `otPlatRadioTransmit` secures it.
+    fn attempt<L>(&mut self, engine: &mut Ieee802154Engine<'_>, ll: &mut L, env: &mut Collector<'_>)
     where
         L: Ieee802154LowLevel + ?Sized,
-        E: Ieee802154Environment + ?Sized,
     {
-        if let Some(security) = self.security.filter(|_| !self.armed) {
-            engine.set_transmit_security(ll, self.image(), &security.key, &security.address);
+        if let Some(security) = self.security {
+            if !self.armed {
+                engine.set_transmit_security(ll, self.image(), &security.key, &security.address);
+            }
+        } else if let Some(keys) = env.security.keys.as_mut()
+            && PhrFrame::new(self.image()).security_enabled()
+        {
+            // The port's transmit security: a new frame counter unless this
+            // retransmits the frame, the current key index and key, and the
+            // extended address read for key identifier mode 1.
+            let security = keys.transmit_security(self.retries.retries() > 0);
+            let length = usize::from(self.image[0]) + 1;
+            if security.apply(&mut self.image[..length]) == Some(KeyIdMode::Index) {
+                env.security.address =
+                    ll.multipan_extended_address(Ieee802154MultipanIndex::CONTEXT0);
+            }
+            engine.set_transmit_security(ll, self.image(), &security.key, &env.security.address);
         }
         self.armed = false;
         self.phase = Phase::Attempting;
@@ -317,22 +326,36 @@ const NOTIFICATIONS: usize = 8;
 
 /// The engine environment of one entry: notifications are collected and
 /// translated after the engine returns.
-struct Collector<'generator> {
+struct Collector<'role> {
     platform: Ieee802154Platform,
-    enhanced_ack: &'generator mut Option<Ieee802154EnhancedAckGenerator>,
+    enhanced_ack: &'role mut Option<Ieee802154EnhancedAckGenerator>,
+    security: &'role mut RadioSecurity,
     notifications: [Option<Notification>; NOTIFICATIONS],
+}
+
+/// The security state the radio keeps for the stack, as ESP-IDF's
+/// OpenThread port keeps it in its statics.
+#[derive(Default)]
+struct RadioSecurity {
+    /// Keys and frame counter of secured transmissions and enhanced ACKs.
+    keys: Option<MacKeys>,
+    /// The port's `s_security_addr`: the extended address of the last key
+    /// identifier mode 1 transmission.
+    address: [u8; 8],
 }
 
 type Notifications = [Option<Notification>; NOTIFICATIONS];
 
-impl<'generator> Collector<'generator> {
+impl<'role> Collector<'role> {
     const fn new(
         platform: Ieee802154Platform,
-        enhanced_ack: &'generator mut Option<Ieee802154EnhancedAckGenerator>,
+        enhanced_ack: &'role mut Option<Ieee802154EnhancedAckGenerator>,
+        security: &'role mut RadioSecurity,
     ) -> Self {
         Self {
             platform,
             enhanced_ack,
+            security,
             notifications: [None; NOTIFICATIONS],
         }
     }
@@ -394,7 +417,7 @@ impl Ieee802154Environment for Collector<'_> {
         ack: &mut [u8; FRAME_SIZE],
     ) -> Ieee802154EnhancedAck {
         match self.enhanced_ack {
-            Some(generator) => generator.generate(frame, info, ack),
+            Some(generator) => generator.generate(frame, info, ack, self.security.keys.as_mut()),
             None => Ieee802154EnhancedAck::Refused,
         }
     }
@@ -506,7 +529,8 @@ pub struct Ieee802154Radio<'storage> {
     platform: Ieee802154Platform,
     enhanced_ack: Option<Ieee802154EnhancedAckGenerator>,
     transmission: Option<Transmission>,
-    next_security: Option<TransmitSecurity>,
+    next_security: Option<ArmedSecurity>,
+    security: RadioSecurity,
 }
 
 impl<'storage> Ieee802154Radio<'storage> {
@@ -520,7 +544,25 @@ impl<'storage> Ieee802154Radio<'storage> {
             enhanced_ack: None,
             transmission: None,
             next_security: None,
+            security: RadioSecurity {
+                keys: None,
+                address: [0; 8],
+            },
         }
+    }
+
+    /// The MAC keys and frame counter the radio secures with, as ESP-IDF's
+    /// OpenThread port keeps them (`otPlatRadioSetMacKey`,
+    /// `otPlatRadioSetMacFrameCounter`). With keys, every attempt of a
+    /// secured frame takes a new frame counter unless it retransmits the
+    /// frame, and the current key index and key; the key identifier mode 1
+    /// attempt reads the extended address as the nonce source, others reuse
+    /// the last one read. Secured enhanced ACKs take their counter from the
+    /// same keys. Security the upper layer arms with
+    /// [`Self::set_transmit_security`] takes precedence for the next
+    /// transmission; without keys a secured frame goes out as given.
+    pub fn mac_keys(&mut self) -> &mut Option<MacKeys> {
+        &mut self.security.keys
     }
 
     /// The enhanced-ACK generator; `None` refuses every enhanced ACK.
@@ -558,7 +600,8 @@ impl<'storage> Ieee802154Radio<'storage> {
         sink: &mut S,
     ) -> Result<AcceptedCommand, CommandError> {
         let accepted = self.machine.admit(command)?;
-        let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
+        let mut collector =
+            Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
         let engine = &mut self.engine;
         match command {
             RadioCommand::Enable { .. }
@@ -644,7 +687,7 @@ impl<'storage> Ieee802154Radio<'storage> {
         address: &[u8; 8],
     ) {
         self.engine.set_transmit_security(ll, frame, key, address);
-        self.next_security = Some(TransmitSecurity {
+        self.next_security = Some(ArmedSecurity {
             key: *key,
             address: *address,
         });
@@ -682,7 +725,8 @@ impl<'storage> Ieee802154Radio<'storage> {
         let Phase::Delaying(delay) = transmission.phase else {
             return;
         };
-        let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
+        let mut collector =
+            Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
         match delay {
             Delay::CsmaBackoff => transmission.attempt(&mut self.engine, ll, &mut collector),
             Delay::Retransmission(_) => {
@@ -709,7 +753,8 @@ impl<'storage> Ieee802154Radio<'storage> {
         ll: &mut L,
         sink: &mut S,
     ) {
-        let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
+        let mut collector =
+            Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
         self.engine.isr(ll, &mut collector);
         let notifications = collector.notifications;
         self.deliver(ll, notifications, None, sink);
@@ -740,7 +785,8 @@ impl<'storage> Ieee802154Radio<'storage> {
                 Follow::Nothing => return,
                 Follow::Restore(channel) => {
                     // Resume receive on the resting channel an operation left.
-                    let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
+                    let mut collector =
+                        Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
                     let previous = self.engine.pib().channel();
                     self.engine.pib().set_channel(channel);
                     self.engine.receive(ll, &mut collector);
@@ -752,7 +798,8 @@ impl<'storage> Ieee802154Radio<'storage> {
                     let Some(transmission) = self.transmission.as_mut() else {
                         return;
                     };
-                    let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
+                    let mut collector =
+                        Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
                     match follow {
                         Follow::Delay(delay) => {
                             transmission.start_delay(delay, &mut self.engine, ll, &mut collector);

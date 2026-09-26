@@ -422,7 +422,7 @@ fn a_secured_2015_frame_is_answered_with_a_secured_enhanced_ack() {
     let mut bench = Bench::receiving();
     let mut generator = Ieee802154EnhancedAckGenerator::new();
     generator.set_header_ies(&[0x00, 0x00]).unwrap();
-    *generator.keys() = Some(MacKeys::new(1, [1; 16], [2; 16], [3; 16], 7));
+    *bench.radio.mac_keys() = Some(MacKeys::new(1, [1; 16], [2; 16], [3; 16], 7));
     *bench.radio.enhanced_ack() = Some(generator);
 
     bench.deliver(&SECURED_2015);
@@ -441,16 +441,7 @@ fn a_secured_2015_frame_is_answered_with_a_secured_enhanced_ack() {
             0x00, 0x00, // FCS
         ]
     );
-    assert_eq!(
-        bench
-            .radio
-            .enhanced_ack()
-            .unwrap()
-            .keys()
-            .unwrap()
-            .frame_counter(),
-        8
-    );
+    assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 8);
     assert!(bench.seen().is_empty(), "the frame waits for its ACK");
 
     bench.interrupt(&[Ieee802154Event::AckTxDone]);
@@ -762,4 +753,74 @@ fn transmit_security_is_armed_again_for_each_retry() {
     assert!(bench.radio.take_delay().is_some());
     bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
     assert!(bench.hw.transmit_security, "the retry armed it again");
+}
+
+/// A 2006 data frame requesting an ACK, secured at ENC-MIC-32 in key
+/// identifier mode 1 with a zero counter and key index, then a payload byte
+/// and its MIC.
+const SECURED_MODE_1: [u8; 20] = [
+    0x69, 0x98, 0x01, 0x34, 0x12, 0x02, 0x00, 0x01, 0x00, 0x0d, 0, 0, 0, 0, 0, 0xaa, 0, 0, 0, 0,
+];
+
+impl Bench {
+    /// The frame counter and key index of the secured frame the MAC
+    /// transmits next.
+    fn transmitted_security(&mut self) -> ([u8; 4], u8) {
+        let image = self.transmit_image();
+        (image[11..15].try_into().unwrap(), image[15])
+    }
+}
+
+/// With MAC keys the radio secures each attempt as ESP-IDF's OpenThread
+/// port does: every CCA attempt of the first transmission takes a new frame
+/// counter with the current key index, a retransmission keeps its counter.
+#[test]
+fn the_radio_secures_each_attempt_with_its_mac_keys() {
+    let mut bench = Bench::enabled();
+    *bench.radio.mac_keys() = Some(MacKeys::new(4, [1; 16], [2; 16], [3; 16], 100));
+    bench.transmit_retried(&SECURED_MODE_1, TxMode::CsmaCa { max_backoffs: 1 }, 1);
+
+    assert!(bench.radio.take_delay().is_some());
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
+    assert!(bench.hw.transmit_security);
+    assert_eq!(bench.transmitted_security(), ([100, 0, 0, 0], 4));
+    bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
+
+    // The second CCA attempt is a transmit of its own.
+    assert!(bench.radio.take_delay().is_some());
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
+    assert_eq!(bench.transmitted_security(), ([101, 0, 0, 0], 4));
+    bench.no_ack();
+
+    // The retransmission keeps the counter.
+    assert!(bench.radio.take_delay().is_some());
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
+    assert!(bench.radio.take_delay().is_some());
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
+    assert!(bench.hw.transmit_security);
+    assert_eq!(bench.transmitted_security(), ([101, 0, 0, 0], 4));
+    assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 102);
+}
+
+/// Security the upper layer arms wins over the MAC keys; without keys a
+/// secured frame goes out as given.
+#[test]
+fn armed_security_or_no_keys_leave_the_frame_as_given() {
+    let mut image = vec![SECURED_MODE_1.len() as u8 + 2];
+    image.extend_from_slice(&SECURED_MODE_1);
+
+    let mut bench = Bench::enabled();
+    *bench.radio.mac_keys() = Some(MacKeys::new(4, [1; 16], [2; 16], [3; 16], 100));
+    bench
+        .radio
+        .set_transmit_security(&mut bench.hw, &image, &[7; 16], &[9; 8]);
+    bench.transmit_retried(&SECURED_MODE_1, TxMode::Direct, 0);
+    assert!(bench.hw.transmit_security);
+    assert_eq!(bench.transmitted_security(), ([0, 0, 0, 0], 0));
+    assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 100);
+
+    let mut bench = Bench::enabled();
+    bench.transmit_retried(&SECURED_MODE_1, TxMode::Direct, 0);
+    assert!(!bench.hw.transmit_security);
+    assert_eq!(bench.transmitted_security(), ([0, 0, 0, 0], 0));
 }

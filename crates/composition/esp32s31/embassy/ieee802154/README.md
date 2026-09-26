@@ -51,10 +51,24 @@ engine resolves transmit power through the recovered ESP32-S31 BTBB level set.
 Enhanced ACKs follow ESP-IDF's OpenThread port: `start` installs no
 generator, so 2015 frames are delivered without an ACK, as with the vendor's
 default generator. `Ieee802154SystemRuntime::with_enhanced_ack` installs an
-`Ieee802154EnhancedAckGenerator`, sets its header IEs and gives it the MAC
-keys and frame counter that secure the ACK of a secured frame; the stack
-takes the frame counters of its own secured transmissions from the same
-`MacKeys`. Each `start` begins without a generator.
+`Ieee802154EnhancedAckGenerator` and sets its header IEs. Each `start`
+begins without a generator.
+
+Transmit security follows ESP-IDF's OpenThread port, which claims
+`OT_RADIO_CAPS_TRANSMIT_SEC`: `Ieee802154SystemRuntime::with_mac_keys`
+installs the `MacKeys` (key index, previous, current and next key, frame
+counter) that `otPlatRadioSetMacKey` and `otPlatRadioSetMacFrameCounter`
+set. With keys the radio secures every attempt of a secured frame: a new
+frame counter unless the attempt retransmits the frame, the current key
+index and key, and in key identifier mode 1 the extended address as the
+nonce source; secured enhanced ACKs take their counter from the same keys.
+As in the port, a retransmission keeps its counter; the port takes a new
+one per retry only for a CSL receiver, which is not composed. Security the
+upper layer arms with `set_transmit_security` takes precedence for the next
+transmission, and without keys a secured frame goes out as given. Frames in
+other key identifier modes reuse the address of the last mode 1
+transmission, as the port's shared `s_security_addr` does; unlike the port,
+secured enhanced ACKs do not refresh it.
 
 CSMA-CA transmissions follow OpenThread `SubMac` over the one-CCA radio: a
 random backoff before each CCA attempt, receiving on the transmit channel
@@ -62,10 +76,8 @@ when the radio was receiving, and another backoff while the channel is busy.
 A transmission with `max_frame_retries` is retried as `SubMac` retries it
 with ESP-IDF's OpenThread defaults: after an attempt without channel access
 at once, after one without acknowledgement following a random delay whose
-exponent grows from 0 to 5. Each attempt after the first arms the transmit
-security the upper layer set again, as the port arms it per transmit; a
-retransmitted secured frame keeps its frame counter, while `SubMac`
-re-secures one that carries header IEs with a new counter. The backoff and
+exponent grows from 0 to 5. Every attempt arms its transmit security again,
+as the port arms it per transmit. The backoff and
 retry timers run inside `Ieee802154SystemRuntime::next_event`, so the
 consumer must await events while a transmission waits; the random words
 come from the hardware generator.

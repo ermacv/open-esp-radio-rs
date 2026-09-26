@@ -30,7 +30,7 @@ pub type Options = PhyOptions;
 const TRACKING_EVENTS: u32 = 1 << 20;
 /// Production probe input and output words of the combined root and parent.
 const COMBINED_INPUT_WORDS: usize = 8;
-const PARENT_INPUT_WORDS: usize = 11;
+const PARENT_INPUT_WORDS: usize = 12;
 const COMBINED_OUTPUT_BYTES: u32 = 176;
 const PARENT_OUTPUT_BYTES: u32 = 190;
 /// Calibration snapshot bytes both roots start with.
@@ -107,6 +107,10 @@ const COMBINED: [OutputField; 9] = [
     field("shared-rx-dc", 436, 94, 2, 34),
 ];
 /// Additional committed parent fields: power temperature, shared cache,
+/// `phy_param` byte of the vendor Wi-Fi I2C tracking band: 0 nominal, 1 cold,
+/// 2 elevated, 3 hot.
+const I2C_BAND: usize = 77;
+
 /// Wi-Fi and BT gain bases, retained adjustment, I2C band code and the RFPLL
 /// reference. Signed bytes occupy the low byte of an output word.
 const PARENT: [OutputField; 7] = [
@@ -115,7 +119,7 @@ const PARENT: [OutputField; 7] = [
     field("wifi-gain-base", 291, 166, 1, 1),
     field("bluetooth-gain-base", 292, 168, 1, 1),
     field("gain-adjustment", GAIN_ADJUSTMENT, 170, 1, 1),
-    field("i2c-band", 77, 172, 1, 1),
+    field("i2c-band", I2C_BAND, 172, 1, 1),
     field("rfpll-reference", 304, 174, 2, 1),
 ];
 
@@ -208,13 +212,16 @@ pub struct Case {
     pub correction: Option<i8>,
     pub clients: (bool, bool),
     pub fill: u8,
+    /// Vendor code of the I2C tracking band both parent sides start from.
+    pub previous_band: u8,
 }
 
 impl Case {
     fn label(&self, root: Root) -> String {
         format!(
-            "{root:?}-{}-wifi{}-bt{}-fill{:x}-rfpll{:?}",
+            "{root:?}-{}-band{}-wifi{}-bt{}-fill{:x}-rfpll{:?}",
             self.name,
+            self.previous_band,
             u8::from(self.clients.0),
             u8::from(self.clients.1),
             self.fill,
@@ -235,6 +242,9 @@ impl Case {
         }
         // The retained RX-gain table last indices both sides start from.
         words.push(u16::from_le_bytes([INITIAL_SHARED_LAST, INITIAL_WIFI_LAST]));
+        if root == Root::Parent {
+            words.push(u16::from(self.previous_band));
+        }
         words
     }
     fn parameters(&self, root: Root) -> Vec<u8> {
@@ -262,6 +272,7 @@ impl Case {
             data[GAIN_ADJUSTMENT] = self.fill;
             data[POWER_ENABLED] = 1;
             data[RFPLL_ENABLED] = u8::from(self.correction.is_some());
+            data[I2C_BAND] = self.previous_band;
         }
         if self.threshold < DEFAULT_THRESHOLD {
             data[THRESHOLD_OVERRIDE..THRESHOLD_OVERRIDE + 2]
@@ -625,9 +636,28 @@ pub fn cases(root: Root, rfpll: Option<i8>) -> Vec<Case> {
             ),
         ];
     }
+    // Parent cases that start from a retained band: each non-nominal band
+    // held, and a nominal temperature leaving an elevated band.
+    let held: &[(&'static str, i16, u8)] = if root == Root::Parent && rfpll.is_none() {
+        &[
+            ("cold-held", -20, 1),
+            ("elevated-held", 55, 2),
+            ("hot-held", 95, 3),
+            ("nominal-from-elevated", 20, 2),
+        ]
+    } else {
+        &[]
+    };
+    let specs: Vec<_> = specs
+        .into_iter()
+        .map(|(name, temperatures, rx, threshold)| (name, temperatures, rx, threshold, 0))
+        .chain(held.iter().map(|&(name, temperature, band)| {
+            (name, [temperature; 3], false, DEFAULT_THRESHOLD, band)
+        }))
+        .collect();
     let mut result = vec![];
     for clients in [(false, false), (true, false), (false, true), (true, true)] {
-        for &(name, temperatures, rx, threshold) in &specs {
+        for &(name, temperatures, rx, threshold, previous_band) in &specs {
             for fill in FILLS {
                 result.push(Case {
                     name,
@@ -637,6 +667,7 @@ pub fn cases(root: Root, rfpll: Option<i8>) -> Vec<Case> {
                     correction: rfpll,
                     clients,
                     fill,
+                    previous_band,
                 });
             }
         }
@@ -736,6 +767,7 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
                 correction,
                 clients: (true, true),
                 fill,
+                previous_band: 0,
             };
             let input: Vec<u8> = profile
                 .inputs(root)
@@ -876,7 +908,9 @@ mod tests {
     #[test]
     fn families_cover_clients_fills_and_parent_bands() {
         assert_eq!(cases(Root::Combined, None).len(), 4 * 10 * FILLS.len());
-        assert_eq!(cases(Root::Parent, None).len(), 4 * 22 * FILLS.len());
+        let parent = cases(Root::Parent, None);
+        assert_eq!(parent.len(), 4 * (22 + 4) * FILLS.len());
+        assert!((1..=3).all(|band| parent.iter().any(|c| c.previous_band == band)));
         assert_eq!(cases(Root::Parent, Some(-5)).len(), 4 * 6 * FILLS.len());
     }
 }

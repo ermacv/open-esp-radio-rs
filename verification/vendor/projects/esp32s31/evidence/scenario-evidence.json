@@ -5,7 +5,7 @@
   "inputs": {
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "366c8679bd1b10c8d7c98bd61ea8624e880316063e2b192825f961cf2f132c89",
+    "production": "ffcce51e4ae70c26a0da37cdde2b20cc013354e0061ab98054367385ffd9b9d7",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
     "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -149,11 +149,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "3433318f9a946fea3609f6b80c58dc40a54867b926b6d69106e284e54a8197d1"
+      "sha256": "dd19141d1f286c3b2a93f1c5e34812ddffa905ae0516330bdc604cd8a4da36ef"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "c48588d519ce50960f8b76ba9181c3b92cfd8d22821641550800169973181144"
+      "sha256": "a47151ea9463689f01d38c86caae0447cc9dacf0a1a1ed6081dc0725f65456be"
     },
     {
       "path": "verification/vendor/schema",
@@ -304,7 +304,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "9b18d2751a3391ca9086959e55f65054e1224f7c152f4906cd5bafc61593b97d"
+        "777581525dfe40aa1ad63212b380f95796b57a0c540845c78b1b7b4c09db66ba"
       ],
       "coverage": {
         "blocks": {
@@ -333,7 +333,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "28cac02587a05ddadadff4dfb0e43a0994de69bb1b85914a182329c328884062"
+        "4a285bd08b478770b547f4cc5a721379562f860e95e479463a7b55a8a3821a86"
       ],
       "coverage": {
         "blocks": {
@@ -362,7 +362,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "077ee372b1c7a35e555779318420ae5aebffae6f89575f41059e860f7c37791a"
+        "e76634057a754955d9406f5bf22a8830f771e328993baf20da960c3f6301dfb0"
       ],
       "coverage": {
         "blocks": {
@@ -391,7 +391,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "39cd25082b7e0609b0173440751d81bdfef7a4d04a215b7c6dbbc22d64a97e42"
+        "3344ec5b7d2a94617ff1df725a4fcca37d7afe0854bcf38f7ed84d3a10df88f2"
       ],
       "coverage": {
         "blocks": {
@@ -420,7 +420,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "18a49f2f269525244af9bb9002355512aa5afc4861a96450a3a86805db4a936a"
+        "8ba575af1fd9443c1957857cdaffa11604fb6bad748b178f6f24b967f39a04a4"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +449,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "3d9a82666a4e833c15ba4fdc581007ccb05388659cd6337b341ce48a71224952"
+        "b29f3d1dadb93d72c78558ae1a4a65f45c2c92c5cf679d2f1ad055698fc8c921"
       ],
       "coverage": {
         "blocks": {
@@ -613,7 +613,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "7248bc8cb5dd8913f13aeefcf61544ab52cb40e0b88dd1cd064de7f46c5f262d"
+        "946b7eb938fbd463038e5ab1c18bcd1b888d9586f01935f77e10f87e58371cef"
       ],
       "coverage": {
         "blocks": {
@@ -642,7 +642,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "7ececd23f01536fde07e1215b6555d9bcbcb85298d47a736ff40f8243bf57591"
+        "91749e96c0e2732c9c96b612828c5ac9e943b15fedf4d6ad4bf5efb34bfe0775"
       ],
       "coverage": {
         "blocks": {
@@ -671,7 +671,7 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "f90e34919e5c16cd71a85b6e670672c51dbd4b42a7470315a29af1432c17d3a4"
+        "9b5c4645ffeb1f3a5369b6f0757f55a590ccb378748912cc02ba332b6ea3025d"
       ],
       "coverage": {
         "blocks": {
@@ -700,8 +700,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "6f280023d7035106ad5f583d4c9d60194a68b5cdb6b19662b6c2cd85bbfcd56a",
-        "a003d4a78480fb3a41d3fbba67e555ce05b08b1f97c2a4b7422285f656cbd934"
+        "ee93da1d20d9153d6d5e5908d13f44c093c56f07bdf42a85877481e88b351e62",
+        "f2710e2f6dddba5abbf48a6fda60c83c589763a37bb0e988a27dc6df8b932dd1"
       ],
       "coverage": {
         "blocks": {
@@ -730,7 +730,7 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "9b1a7bb179dcf164ccf29abca74a7182be0460561adb443e66a9a4869340afa0"
+        "4167057396361dbc44ec754fbc71c23158ae3b33bff3ba1f726fb397aa906073"
       ],
       "coverage": {
         "blocks": {
@@ -759,9 +759,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "2236a547e4d1d5cc74dbe88adf30b15119b2e08a212d3d705e7dd16b9e75f339",
-        "4c45fb35a3acb89698a10bc13632a5b678583c5a1ac3d0513b7766236fff0279",
-        "56e588834c794b596834d1240ec7c8296a4721b5b28a1a69e7d26689d9b799ed"
+        "56b63152ca4c61a010cccad39d882064ad724617206e27bbb3f46791e0bb0ea8",
+        "9f7bfa76b17addf3f29bc8eb2c6b15d40e807ddb02cc254f68f2c4421f6debb8",
+        "fdffb18d138b2495ff2c6f6bbc74d414e62ef1d50241f047c25c5d441607db2f"
       ],
       "coverage": {
         "blocks": {
@@ -790,8 +790,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "1992230db36d160f023dbd9a606fb757fb072fe220109a1616a1e772cfd62e8b",
-        "dd4ce0958ef78b647bc9565cdab40918f421eb7d3790b923573418f52b359897"
+        "5d5d37e1860cd91ccbeea0f73076c01aa0eaa6e16dd1c92a09268a03c3548fd4",
+        "621bfa25d952dca735e2c4d889b8cf8523d700695cd957b746d2b3e2b564e132"
       ],
       "coverage": {
         "blocks": {
@@ -820,8 +820,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "00e1528cc98218c930db4770e85798be4b3c73cb7564bb27d4e1656675f474b0",
-        "60a748b33f55bf65f8ec3756d5203ebedcfe0f9464166126b3c561ca347ead7d"
+        "0e37365ad5174212c763099ec721e405b5dfd9397caeb3bae1c3462e1d8cd8bc",
+        "b5b8ab05cf2396289f4ebbe6ef04302bf38a73dd79d69b011ef98542c182e7c1"
       ],
       "coverage": {
         "blocks": {
@@ -848,22 +848,22 @@
       "symbol": "phy_param_track_tot",
       "production": "open_phy_tracking_trace_parent",
       "verdict": "match",
-      "cases": 320,
+      "cases": 352,
       "reviews": [
-        "1abd0f98ac47d0b350f93f8faa062d229406ba5171f1bd8e8ac73c80d7a39d23",
-        "748d198965197928aa30b8d875e7e09d07604b0fb649c8ec2d64f964cc6d6791"
+        "2c4735c144f7ba4f32767ba81f8110a4ebf87ad19edb04a84f94dacf64400794",
+        "81e92e558c6564aedced0845b84fd4635ae08857d9e0ad3a0ee1657c3e8def27"
       ],
       "coverage": {
         "blocks": {
-          "reached": 534,
+          "reached": 535,
           "total": 1059
         },
         "directions": {
-          "reached": 351,
+          "reached": 355,
           "total": 982
         },
         "excluded": 989,
-        "untriaged": 167
+        "untriaged": 162
       },
       "observation": {
         "executed": 1815,
@@ -977,31 +977,6 @@
     {
       "function": "phy_tsens_dac_to_index",
       "offset": 38,
-      "kind": "block"
-    },
-    {
-      "function": "phy_tx_i2c_track",
-      "offset": 34,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_tx_i2c_track",
-      "offset": 116,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_tx_i2c_track",
-      "offset": 190,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_tx_i2c_track",
-      "offset": 268,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_tx_i2c_track",
-      "offset": 270,
       "kind": "block"
     },
     {

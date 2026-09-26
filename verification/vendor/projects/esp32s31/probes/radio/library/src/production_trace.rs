@@ -676,7 +676,7 @@ oer_probe_macros::probe! {
     /// Status: 0 terminal owner, 1 contained hardware failure, 2 incomplete success,
     /// 3 erroneous ordinary-owner recovery after an executor failure.
     pub fn open_phy_tracking_trace_parent(
-        input: &[u16; 11],
+        input: &[u16; 12],
         wifi: bool,
         bluetooth: bool,
         output: &mut [u16; 95],
@@ -700,6 +700,20 @@ oer_probe_macros::probe! {
         );
         let [shared_last, wifi_last] = input[10].to_le_bytes();
         validation::seed_rx_table_last_indices(&mut state, shared_last, wifi_last);
+        {
+            use oer_esp32s31_phy::tracking::i2c::{PhyWifiI2cTrackingBand, PhyWifiI2cTrackingOutcome};
+            // Vendor band code at `phy_param[0x4d]`, as the band output encodes it.
+            let band = match input[11] {
+                1 => PhyWifiI2cTrackingBand::Cold,
+                2 => PhyWifiI2cTrackingBand::Elevated,
+                3 => PhyWifiI2cTrackingBand::Hot,
+                _ => PhyWifiI2cTrackingBand::Nominal,
+            };
+            state.apply_wifi_i2c_tracking_outcome(PhyWifiI2cTrackingOutcome {
+                band,
+                changed: false,
+            });
+        }
         let clients = PhyParamTrackRequest::new(wifi, bluetooth);
         let mut pending = if input[9] != 0 {
             validation::parameter_tracking_with_rfpll(&state, clients)

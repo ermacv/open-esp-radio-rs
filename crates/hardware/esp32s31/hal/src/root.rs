@@ -359,18 +359,18 @@ pub enum ConcurrentReunionError {
 
 /// Rejected reunion returning both unchanged owners.
 #[must_use = "a rejected reunion still owns the arbiter and every partition"]
-pub struct ConcurrentReunionFailure {
-    shared: SharedRadio,
+pub struct ConcurrentReunionFailure<T = ()> {
+    shared: SharedRadio<T>,
     partitions: ConcurrentPartitions,
     error: ConcurrentReunionError,
 }
 
-impl ConcurrentReunionFailure {
+impl<T> ConcurrentReunionFailure<T> {
     pub const fn error(&self) -> ConcurrentReunionError {
         self.error
     }
 
-    pub fn into_parts(self) -> (SharedRadio, ConcurrentPartitions) {
+    pub fn into_parts(self) -> (SharedRadio<T>, ConcurrentPartitions) {
         (self.shared, self.partitions)
     }
 }
@@ -383,7 +383,10 @@ impl RadioHardware {
     /// returned [`SharedRadio`] arbiter, and every protocol partition to
     /// [`ConcurrentPartitions`]. The two are separate owners so a protocol
     /// can take its partition while other routes hold arbiter leases.
-    pub fn into_concurrent(self) -> (SharedRadio, ConcurrentPartitions) {
+    ///
+    /// `attachment` is the upper layer's state kept under the same
+    /// arbitration, such as the PHY layer's registered domain slot.
+    pub fn into_concurrent<T>(self, attachment: T) -> (SharedRadio<T>, ConcurrentPartitions) {
         let RadioPartitions {
             wifi_mac,
             wifi_interrupts,
@@ -403,6 +406,7 @@ impl RadioHardware {
                     shared_radio,
                 }),
                 PhyRouteState::new(self.phy_registration),
+                attachment,
             ),
             ConcurrentPartitions {
                 wifi: WifiPartition {
@@ -433,11 +437,11 @@ impl RadioHardware {
         clippy::result_large_err,
         reason = "rejection returns the arbiter and every partition without allocation"
     )]
-    pub fn from_concurrent(
-        shared: SharedRadio,
+    pub fn from_concurrent<T>(
+        shared: SharedRadio<T>,
         partitions: ConcurrentPartitions,
-    ) -> Result<Self, ConcurrentReunionFailure> {
-        let (registers, phy) = match shared.into_parts() {
+    ) -> Result<(Self, T), ConcurrentReunionFailure<T>> {
+        let (registers, phy, attachment) = match shared.into_parts() {
             Ok(parts) => parts,
             Err((shared, error)) => {
                 return Err(ConcurrentReunionFailure {
@@ -457,19 +461,22 @@ impl RadioHardware {
             bluetooth,
             ieee802154,
         } = partitions;
-        Ok(Self::returned(
-            RadioPartitions {
-                wifi_mac: wifi.mac,
-                wifi_interrupts: wifi.interrupts,
-                radio_phy,
-                coexistence,
-                bluetooth: bluetooth.controller,
-                bluetooth_modem_lp_timer: bluetooth.modem_lp_timer,
-                bluetooth_interrupts: bluetooth.interrupts,
-                shared_radio,
-                ieee802154: ieee802154.mac,
-            },
-            phy,
+        Ok((
+            Self::returned(
+                RadioPartitions {
+                    wifi_mac: wifi.mac,
+                    wifi_interrupts: wifi.interrupts,
+                    radio_phy,
+                    coexistence,
+                    bluetooth: bluetooth.controller,
+                    bluetooth_modem_lp_timer: bluetooth.modem_lp_timer,
+                    bluetooth_interrupts: bluetooth.interrupts,
+                    shared_radio,
+                    ieee802154: ieee802154.mac,
+                },
+                phy,
+            ),
+            attachment,
         ))
     }
 }

@@ -16,6 +16,7 @@ fn arbiter() -> SharedRadio {
             shared_radio,
         }),
         PhyRouteState::new(PhyRegistration::new()),
+        (),
     )
 }
 
@@ -63,7 +64,7 @@ fn registration_epoch_persists_across_leases() {
         .unwrap_or_else(|_| panic!("a dropped lease frees the arbiter"));
     assert_eq!(lease.registration_epoch(), Some(epoch));
     drop(lease);
-    let (_registers, phy) = radio
+    let (_registers, phy, ()) = radio
         .into_parts()
         .unwrap_or_else(|_| panic!("an idle arbiter leaves arbitration"));
     assert_eq!(phy.registration_epoch(), Some(epoch));
@@ -166,4 +167,24 @@ fn the_arbiter_stays_while_btbb_is_held() {
         panic!("IEEE 802.15.4 still holds BTBB");
     };
     assert_eq!(error, SharedRadioReleaseError::BtbbHeld);
+}
+
+#[test]
+fn an_until_proof_needs_a_non_empty_window() {
+    let mut wifi =
+        oer_esp32s31_pac::WifiRadioRegisters::new(RadioPartitions::for_validation().wifi_mac);
+    assert_eq!(
+        ClientQuiescence::until(&mut wifi, 20, 20).err(),
+        Some(EmptyQuiescentWindow)
+    );
+    let proof = ClientQuiescence::until(&mut wifi, 10, 20)
+        .unwrap_or_else(|_| panic!("a non-empty window is accepted"));
+    assert_eq!(proof.client(), RadioClient::Wifi);
+    assert_eq!(
+        proof.span(),
+        QuiescentSpan::Until {
+            issued_at_micros: 10,
+            release_by_micros: 20
+        }
+    );
 }

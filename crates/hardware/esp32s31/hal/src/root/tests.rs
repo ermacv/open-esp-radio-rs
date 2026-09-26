@@ -160,14 +160,14 @@ fn registration_epoch_is_replaced_by_registration_and_retired_by_every_route_rel
 #[test]
 fn a_concurrent_split_reunites_and_retires_the_registration() {
     use crate::owner::PhyInitializationAccess;
-    let (shared, partitions) = RadioHardware::for_validation().into_concurrent();
+    let (shared, partitions) = RadioHardware::for_validation().into_concurrent(());
     let epoch = {
         let mut lease = shared
             .try_acquire()
             .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
         lease.phy_hal().begin_registration_epoch()
     };
-    let hardware = RadioHardware::from_concurrent(shared, partitions)
+    let (hardware, ()) = RadioHardware::from_concurrent(shared, partitions)
         .unwrap_or_else(|_| panic!("an idle split reunites"));
     // Returning to the neutral root retires the registration, as a route does.
     let wifi = WifiColdRegisters::from_hardware(hardware);
@@ -177,7 +177,7 @@ fn a_concurrent_split_reunites_and_retires_the_registration() {
 #[test]
 fn reunion_waits_for_common_power_and_calibration_restore() {
     use crate::shared_radio::{RadioClient, SharedRadioReleaseError};
-    let (mut shared, partitions) = RadioHardware::for_validation().into_concurrent();
+    let (mut shared, partitions) = RadioHardware::for_validation().into_concurrent(());
     shared.hold_common_power_for_test(RadioClient::Bluetooth);
     let Err(failure) = RadioHardware::from_concurrent(shared, partitions) else {
         panic!("a client still holds common power");
@@ -188,7 +188,7 @@ fn reunion_waits_for_common_power_and_calibration_restore() {
     );
 
     let (_shared, partitions) = failure.into_parts();
-    let (mut shared, _) = RadioHardware::for_validation().into_concurrent();
+    let (mut shared, _) = RadioHardware::for_validation().into_concurrent(());
     shared.phy_state_mut_for_test().occupy_txdc_for_test();
     let Err(failure) = RadioHardware::from_concurrent(shared, partitions) else {
         panic!("a calibration still owns a restore obligation");

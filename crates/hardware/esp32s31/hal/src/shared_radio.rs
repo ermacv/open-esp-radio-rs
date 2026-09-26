@@ -29,7 +29,8 @@ use core::{
 };
 
 use oer_esp32s31_pac::{
-    BluetoothTaskRegisters, Ieee802154TaskRegisters, SharedRadioRegisters, WifiRadioRegisters,
+    BluetoothSchedulerStopped, BluetoothTaskRegisters, Ieee802154TaskRegisters,
+    SharedRadioRegisters, WifiRadioRegisters,
 };
 
 pub use crate::clock::{CommonRadioPowerError, RadioClient};
@@ -98,12 +99,14 @@ pub enum BtbbAcquired {
     Joined,
 }
 
-/// Shared registers and the PHY and power state that must stay with them.
-struct SharedRadioState {
+/// Shared registers, the PHY, power and BTBB state that must stay with them,
+/// and the upper layer's attachment.
+struct SharedRadioState<T> {
     registers: SharedRadioRegisters,
     phy: PhyRouteState,
     power: CommonRadioPower,
     btbb_clients: u8,
+    attachment: T,
 }
 
 /// Unique arbiter of the shared radio partitions.
@@ -113,24 +116,29 @@ struct SharedRadioState {
 /// fn requires_clone<T: Clone>() {}
 /// requires_clone::<SharedRadio>();
 /// ```
+///
+/// `T` is state an upper layer keeps under the same arbitration, such as the
+/// PHY layer's registered domain. The HAL never interprets it; a lease lends
+/// it together with the shared registers.
 #[must_use = "dropping the shared radio arbiter permanently loses the shared registers"]
-pub struct SharedRadio {
+pub struct SharedRadio<T = ()> {
     held: AtomicBool,
-    state: UnsafeCell<SharedRadioState>,
+    state: UnsafeCell<SharedRadioState<T>>,
 }
 
 // SAFETY: `state` is dereferenced only through a `SharedRadioLease`, and at
 // most one lease exists at a time: `try_acquire` grants one only after
 // atomically changing `held` from false to true, and the lease clears it on
 // drop after its last access. The shared registers are safe to move between
-// execution contexts, so granting exclusive access from any context is sound.
+// execution contexts, and the attachment is `Send`, so granting exclusive
+// access from any context is sound.
 #[allow(unsafe_code)]
-unsafe impl Sync for SharedRadio where SharedRadioRegisters: Send {}
+unsafe impl<T: Send> Sync for SharedRadio<T> where SharedRadioRegisters: Send {}
 
-impl SharedRadio {
-    /// Place the shared owner and its PHY state under arbitration. This
-    /// performs no MMIO.
-    pub(crate) fn new(registers: SharedRadioRegisters, phy: PhyRouteState) -> Self {
+impl<T> SharedRadio<T> {
+    /// Place the shared owner, its PHY state and `attachment` under
+    /// arbitration. This performs no MMIO.
+    pub(crate) fn new(registers: SharedRadioRegisters, phy: PhyRouteState, attachment: T) -> Self {
         Self {
             held: AtomicBool::new(false),
             state: UnsafeCell::new(SharedRadioState {
@@ -138,6 +146,7 @@ impl SharedRadio {
                 phy,
                 power: CommonRadioPower::default(),
                 btbb_clients: 0,
+                attachment,
             }),
         }
     }
@@ -147,7 +156,7 @@ impl SharedRadio {
     /// # Errors
     ///
     /// [`SharedRadioBusy`] while another lease is alive or was forgotten.
-    pub fn try_acquire(&self) -> Result<SharedRadioLease<'_>, SharedRadioBusy> {
+    pub fn try_acquire(&self) -> Result<SharedRadioLease<'_, T>, SharedRadioBusy> {
         self.held
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .map(|_| SharedRadioLease { radio: self })
@@ -165,9 +174,13 @@ impl SharedRadio {
     ///
     /// Returns the unchanged arbiter while a client still holds common power
     /// or a PHY calibration still owns a restore obligation.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the parts are returned exactly as arbitration held them"
+    )]
     pub(crate) fn into_parts(
         self,
-    ) -> Result<(SharedRadioRegisters, PhyRouteState), (Self, SharedRadioReleaseError)> {
+    ) -> Result<(SharedRadioRegisters, PhyRouteState, T), (Self, SharedRadioReleaseError)> {
         let state = self.state.into_inner();
         if state.power.any_client() {
             return Err((
@@ -184,10 +197,10 @@ impl SharedRadio {
                 SharedRadioReleaseError::Restore(error),
             ));
         }
-        Ok((state.registers, state.phy))
+        Ok((state.registers, state.phy, state.attachment))
     }
 
-    fn from_state(state: SharedRadioState) -> Self {
+    fn from_state(state: SharedRadioState<T>) -> Self {
         Self {
             held: AtomicBool::new(false),
             state: UnsafeCell::new(state),
@@ -210,6 +223,100 @@ impl SharedRadio {
     }
 }
 
+/// How long a client performs no RF and does not touch the shared PHY.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QuiescentSpan {
+    /// Quiet for as long as the proof lives.
+    Stopped,
+    /// The shared PHY must be released by `release_by_micros`.
+    ///
+    /// Both instants are in the PHY monotonic clock (`PhyAsyncDelay::now_micros`,
+    /// microseconds). `issued_at_micros` is the PHY-clock half of the paired
+    /// sample the issuer used to translate its own schedule; the translation
+    /// and its error bound are the issuer's obligation. `release_by_micros` is
+    /// the last instant the shared PHY may still be held, after the issuer
+    /// subtracted its own sequencing, hardware preparation and restore margins.
+    Until {
+        issued_at_micros: u64,
+        release_by_micros: u64,
+    },
+}
+
+/// A `Until` proof whose window is empty.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EmptyQuiescentWindow;
+
+/// Proof that one client performs no RF and does not touch the shared PHY for
+/// its span.
+///
+/// The proof borrows the owner that guarantees it for its whole lifetime, so
+/// the client cannot restart or publish new radio work while it lives.
+///
+/// ```compile_fail
+/// use oer_esp32s31_hal::shared_radio::ClientQuiescence;
+/// fn publish_while_quiet<O: oer_esp32s31_hal::shared_radio::RadioClientOwner>(owner: &mut O) {
+///     let proof = ClientQuiescence::until(owner, 10, 20).unwrap();
+///     let _reuse = &mut *owner;
+///     drop(proof);
+/// }
+/// ```
+#[must_use = "a quiescence proof admits PHY maintenance only while it lives"]
+pub struct ClientQuiescence<'client> {
+    client: RadioClient,
+    span: QuiescentSpan,
+    _hold: core::marker::PhantomData<&'client ()>,
+}
+
+impl<'client> ClientQuiescence<'client> {
+    /// Bluetooth is quiet while its scheduler stays stopped.
+    ///
+    /// The receipt comes from the executor's stopped state; restarting needs
+    /// the executor mutably, which this borrow prevents while the proof lives.
+    pub fn bluetooth_stopped(_stopped: &'client BluetoothSchedulerStopped) -> Self {
+        Self {
+            client: RadioClient::Bluetooth,
+            span: QuiescentSpan::Stopped,
+            _hold: core::marker::PhantomData,
+        }
+    }
+
+    /// The client that owns `owner` stays quiet until `release_by_micros`.
+    ///
+    /// The issuer guarantees, from a fresh sample, that no event of its own
+    /// is running now and none starts before the window closes. Every
+    /// hardware action of the client goes through `owner`, which this proof
+    /// borrows mutably.
+    ///
+    /// # Errors
+    ///
+    /// The window is empty (`issued_at_micros >= release_by_micros`).
+    pub fn until<O: RadioClientOwner>(
+        _owner: &'client mut O,
+        issued_at_micros: u64,
+        release_by_micros: u64,
+    ) -> Result<Self, EmptyQuiescentWindow> {
+        if issued_at_micros >= release_by_micros {
+            return Err(EmptyQuiescentWindow);
+        }
+        Ok(Self {
+            client: O::CLIENT,
+            span: QuiescentSpan::Until {
+                issued_at_micros,
+                release_by_micros,
+            },
+            _hold: core::marker::PhantomData,
+        })
+    }
+
+    pub const fn client(&self) -> RadioClient {
+        self.client
+    }
+
+    pub const fn span(&self) -> QuiescentSpan {
+        self.span
+    }
+}
+
 /// Why the shared radio cannot leave arbitration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SharedRadioReleaseError {
@@ -227,12 +334,12 @@ pub struct SharedRadioBusy;
 
 /// Unique, scoped access to the shared radio partitions.
 #[must_use = "a lease blocks every other route until it is dropped"]
-pub struct SharedRadioLease<'radio> {
-    radio: &'radio SharedRadio,
+pub struct SharedRadioLease<'radio, T = ()> {
+    radio: &'radio SharedRadio<T>,
 }
 
-impl SharedRadioLease<'_> {
-    fn state(&self) -> &SharedRadioState {
+impl<T> SharedRadioLease<'_, T> {
+    fn state(&self) -> &SharedRadioState<T> {
         // SAFETY: this lease is the unique holder (see `SharedRadio`'s `Sync`
         // proof), so no mutable reference to the state exists elsewhere.
         #[allow(unsafe_code)]
@@ -241,7 +348,7 @@ impl SharedRadioLease<'_> {
         }
     }
 
-    fn state_mut(&mut self) -> &mut SharedRadioState {
+    fn state_mut(&mut self) -> &mut SharedRadioState<T> {
         // SAFETY: this lease is the unique holder and `&mut self` prevents a
         // second borrow through it, so the reference is exclusive.
         #[allow(unsafe_code)]
@@ -390,6 +497,26 @@ impl SharedRadioLease<'_> {
         SharedPhyHal::new(state.registers.radio_phy_mut(), &mut state.phy)
     }
 
+    /// Borrow the upper layer's attachment.
+    pub fn attachment(&self) -> &T {
+        &self.state().attachment
+    }
+
+    /// Mutably borrow the upper layer's attachment.
+    pub fn attachment_mut(&mut self) -> &mut T {
+        &mut self.state_mut().attachment
+    }
+
+    /// Borrow the shared PHY together with the attachment, for an upper-layer
+    /// operation that updates its state while driving the PHY.
+    pub fn phy_hal_with_attachment(&mut self) -> (SharedPhyHal<'_, route::Shared>, &mut T) {
+        let state = self.state_mut();
+        (
+            SharedPhyHal::new(state.registers.radio_phy_mut(), &mut state.phy),
+            &mut state.attachment,
+        )
+    }
+
     /// Borrow the shared registers for a protocol transaction that also
     /// touches protocol registers.
     #[cfg_attr(
@@ -404,7 +531,7 @@ impl SharedRadioLease<'_> {
     }
 }
 
-impl Drop for SharedRadioLease<'_> {
+impl<T> Drop for SharedRadioLease<'_, T> {
     fn drop(&mut self) {
         self.radio.held.store(false, Ordering::Release);
     }

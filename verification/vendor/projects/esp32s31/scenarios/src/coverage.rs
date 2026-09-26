@@ -462,6 +462,40 @@ pub const DECISIONS: &[Decision] = &[
         }],
     },
     Decision {
+        reason: "RX gain memory writes over the tables generated from the fixed inputs of \
+            `phy_set_rx_gain_table`: their RXBB DC index never exceeds 5 and the RF gain \
+            index search always finds its entry",
+        places: &[
+            Place::Range {
+                function: "phy_get_rxbb_dc_new",
+                start: 0x6,
+                end: 0xc,
+            },
+            Place::Range {
+                function: "phy_rfrx_gain_index_new",
+                start: 0x64,
+                end: 0x65,
+            },
+        ],
+    },
+    Decision {
+        reason: "TX baseband gain index above 4: the claimed `phy_txdc_cal_pwdet_init` \
+            passes loop indices 0 to 2, and the other caller is outside the claimed \
+            closures",
+        places: &[
+            Place::Range {
+                function: "phy_index_to_txbbgain",
+                start: 0x2,
+                end: 0x3,
+            },
+            Place::Range {
+                function: "phy_index_to_txbbgain",
+                start: 0x1a,
+                end: 0x1e,
+            },
+        ],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

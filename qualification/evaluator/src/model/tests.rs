@@ -391,11 +391,11 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
     assert!(rejected(&|i| i.entries[0].coverage.blocks.reached = 2));
     // An uncovered block neither excluded nor untriaged.
     assert!(rejected(&|i| i.entries[0].coverage.blocks.total = 2));
-    // Untriaged locations the index does not list.
-    assert!(rejected(&|i| {
-        i.entries[0].coverage.blocks.total = 2;
-        i.entries[0].coverage.untriaged = 1;
-    }));
+    // A claim's untriaged location another claim covers is not listed.
+    let mut covered = evidence.index.clone();
+    covered.entries[0].coverage.blocks.total = 2;
+    covered.entries[0].coverage.untriaged = 1;
+    covered.validate("test-radio").unwrap();
     let location = |offset| scenario_evidence::Location {
         function: "set_channel".into(),
         offset,

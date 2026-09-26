@@ -106,6 +106,7 @@ pub const DECISIONS: &[Decision] = &[
 pub struct Observed {
     pub uncovered: BTreeSet<Location>,
     pub functions: BTreeSet<String>,
+    pub closures: Vec<Closure>,
 }
 
 impl Observed {
@@ -137,6 +138,32 @@ impl Observed {
         }
         Ok(())
     }
+}
+
+/// Closure functions of one claim and the locations its executions left
+/// uncovered.
+#[derive(Clone, Debug, Default)]
+pub struct Closure {
+    pub functions: BTreeSet<String>,
+    pub uncovered: BTreeSet<Location>,
+}
+
+/// Locations of `untriaged` that no closure covers: a closure covers a
+/// location when it contains the location's function and its executions
+/// reached it.
+pub fn uncovered_everywhere(
+    closures: &[Closure],
+    untriaged: BTreeSet<Location>,
+) -> BTreeSet<Location> {
+    untriaged
+        .into_iter()
+        .filter(|location| {
+            closures.iter().all(|closure| {
+                !closure.functions.contains(&location.function)
+                    || closure.uncovered.contains(location)
+            })
+        })
+        .collect()
 }
 
 /// A block or a branch direction, for the index.
@@ -182,6 +209,26 @@ mod tests {
         assert!(observed.check("suite", DECISIONS).is_err());
         observed.uncovered.insert(at("helper", 0));
         observed.check("suite", DECISIONS).unwrap();
+    }
+
+    #[test]
+    fn a_location_another_closure_covers_is_not_untriaged() {
+        let closure = |functions: &[&str], uncovered: &[Location]| Closure {
+            functions: functions.iter().map(|f| f.to_string()).collect(),
+            uncovered: uncovered.iter().cloned().collect(),
+        };
+        let untriaged = BTreeSet::from([at("phy_root", 4), at("phy_root", 8)]);
+        let closures = [
+            closure(&["phy_root"], &[at("phy_root", 4), at("phy_root", 8)]),
+            // Reaches offset 8, not 4.
+            closure(&["phy_root"], &[at("phy_root", 4)]),
+            // Does not contain the function, so it covers nothing of it.
+            closure(&["other"], &[]),
+        ];
+        assert_eq!(
+            uncovered_everywhere(&closures, untriaged),
+            BTreeSet::from([at("phy_root", 4)])
+        );
     }
 
     #[test]

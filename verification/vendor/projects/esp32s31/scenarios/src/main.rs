@@ -713,6 +713,7 @@ fn all(
     let mut elapsed = vec![];
     let mut entries = vec![];
     let mut untriaged = std::collections::BTreeSet::new();
+    let mut closures = vec![];
     let mut lines = observation::Lines::default();
     let mut failed = None;
     for (name, seconds, outcome) in outcomes {
@@ -721,6 +722,7 @@ fn all(
             Ok((code, claims)) if code == ExitCode::SUCCESS => {
                 entries.extend(claims.entries);
                 untriaged.extend(claims.untriaged);
+                closures.extend(claims.closures);
                 lines.extend(&claims.lines);
             }
             Ok((code, _)) => {
@@ -769,7 +771,9 @@ fn all(
             &common,
             &[&sdk, &phy_sdk, &rftest],
             entries,
-            untriaged.into_iter().collect(),
+            coverage::uncovered_everywhere(&closures, untriaged)
+                .into_iter()
+                .collect(),
             unobserved
                 .into_iter()
                 .map(|(path, line)| evidence_index::SourceLine { path, line })

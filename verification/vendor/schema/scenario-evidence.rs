@@ -33,7 +33,8 @@ pub struct Index {
     pub sources: Vec<SourceDigest>,
     pub entries: Vec<Entry>,
     /// Uncovered vendor locations of claimed root closures that no reviewed
-    /// decision excludes yet, ascending and unique.
+    /// decision excludes yet and no claim whose closure contains their
+    /// function covers, ascending and unique.
     pub untriaged: Vec<Location>,
     /// Executed production PHY source lines that no compared observation
     /// depends on and no reviewed decision covers yet, ascending and unique.
@@ -212,7 +213,6 @@ impl Index {
                 || c.excluded + c.untriaged
                     != (c.blocks.total - c.blocks.reached)
                         + (c.directions.total - c.directions.reached)
-                || (c.untriaged != 0 && self.untriaged.is_empty())
             {
                 return Err(format!(
                     "entry {} {} has inconsistent coverage",

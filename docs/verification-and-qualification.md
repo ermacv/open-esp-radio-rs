@@ -120,8 +120,9 @@ native evidence index
   comparisons executed, the lines a compared observation depends on (Blobray
   observation dependence), and how many of the rest a reviewed decision
   covers or remain untriaged;
-- every untriaged uncovered location of the claimed closures, by vendor
-  function, offset and kind (block, taken or fallthrough direction);
+- every untriaged uncovered location of the claimed closures that no claim
+  whose closure contains its function reaches, by vendor function, offset
+  and kind (block, taken or fallthrough direction);
 - every executed production PHY line that no scenario's compared observations
   depend on and no reviewed decision covers, by path and line;
 - SHA-256 identities of the authenticated private inputs and the production

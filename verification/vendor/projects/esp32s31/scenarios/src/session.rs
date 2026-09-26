@@ -51,6 +51,8 @@ struct Claimed<'a> {
 pub struct Claims {
     pub entries: Vec<evidence_index::Entry>,
     pub untriaged: std::collections::BTreeSet<evidence_index::Location>,
+    /// Closure and uncovered locations of every claim.
+    pub closures: Vec<crate::coverage::Closure>,
     /// Production PHY lines the claims' executions executed and observed.
     pub lines: crate::observation::Lines,
 }
@@ -700,6 +702,7 @@ impl Session {
         // Uncovered locations by absolute address and kind: a block shared by
         // several closure functions is named once, by the lowest entry.
         let mut located = BTreeMap::new();
+        let mut functions = std::collections::BTreeSet::new();
         for function in report
             .functions
             .iter()
@@ -710,6 +713,7 @@ impl Session {
                 .clone()
                 .unwrap_or_else(|| format!("{:#x}", function.entry));
             observed.functions.insert(name.clone());
+            functions.insert(name.clone());
             let mut add = |address: u32, kind: LocationKind| {
                 located.entry((address, kind)).or_insert_with(|| {
                     crate::coverage::location(&name, function.entry, address, kind)
@@ -741,7 +745,11 @@ impl Session {
             excluded: excluded.len() as u64,
             untriaged: untriaged.len() as u64,
         };
-        observed.uncovered.extend(locations);
+        observed.uncovered.extend(locations.iter().cloned());
+        observed.closures.push(crate::coverage::Closure {
+            functions,
+            uncovered: locations,
+        });
         let mut instructions = blobray_application::in_process::ObservedInstructions::default();
         for artifact in &selected {
             let o = &artifact.observed;
@@ -838,6 +846,7 @@ impl Session {
         Ok(Claims {
             entries,
             untriaged,
+            closures: observed.closures,
             lines: lines.lines,
         })
     }

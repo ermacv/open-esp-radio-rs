@@ -23,7 +23,7 @@ inventory.
 | `phy` | Common PHY power/readback, registration, Bluetooth-client acquisition and initial tracking |
 | `interrupt` | Chip interrupt state and hardware handling |
 | `modem_timer` | Controller modem low-power timer task over the published timer owner |
-| `scheduler` | Ordered hardware-list mirror, raw windows, timeline, finished lists, post-unlink handoff and single-item completion |
+| `scheduler` | Event executor core, ordered hardware-list mirror, raw windows, timeline, finished lists, post-unlink handoff and single-item completion |
 | `timed_preparation` | Controller-time preparation shared by timed scheduler admissions |
 | `resources` | Stopped aggregate, platform lease and runtime owner leases |
 | `runtime_resources` | Durable software queues and wake cells of one powered epoch |

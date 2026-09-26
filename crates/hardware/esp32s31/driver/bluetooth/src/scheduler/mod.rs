@@ -9,6 +9,7 @@ pub mod completion;
 pub(crate) mod config;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod core;
+pub mod executor;
 pub(crate) mod finished_lists;
 pub(crate) mod insertion;
 pub mod list;
@@ -79,6 +80,10 @@ pub use timeline::{
     SchedulerSequenceReady, SchedulerTimingPolicy, SchedulerWindowReservation,
 };
 
+pub use executor::{
+    SchedulerCompletion, SchedulerExecutor, SchedulerIdleInsertion, SchedulerItemAccess,
+    SchedulerSubmitError,
+};
 pub use list::{
     SchedulerList, SchedulerListCompletionScan, SchedulerListInsertError, SchedulerListPlacement,
     SchedulerListRemoval,

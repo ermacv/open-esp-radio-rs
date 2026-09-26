@@ -49,6 +49,9 @@ oer-ieee802154 = { path = "../../../../../crates/protocols/ieee802154" }
 [features]
 # Build the vendor driver and the port with multi-PAN and two interfaces.
 multipan = []
+# Build the vendor driver with software coexistence and the port with the
+# driver's default scene levels.
+sw-coex = []
 
 [build-dependencies]
 cc = "=1.4.3"

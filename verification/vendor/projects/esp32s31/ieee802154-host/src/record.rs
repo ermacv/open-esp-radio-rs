@@ -53,6 +53,10 @@ pub enum Record {
     /// A call leaving the driver: PHY, BTBB, coexistence, clocks, interrupt
     /// allocation, time or the critical section.
     External { name: String, arguments: Vec<u64> },
+    /// A coexistence priority the driver publishes through libcoexist
+    /// (`esp_coex_ieee802154_txrx_pti_set`, `esp_coex_ieee802154_ack_pti_set`)
+    /// with its level argument.
+    Coex { name: String, level: u64 },
     /// A direct register access outside the LL (the ETM helpers).
     RegisterWrite { address: u32, value: u32 },
     /// A direct register read outside the LL.
@@ -95,6 +99,7 @@ impl fmt::Display for Record {
             Self::External { name, arguments } => {
                 write!(formatter, "ext {name}({})", list(arguments))
             }
+            Self::Coex { name, level } => write!(formatter, "coex {name}({level:#x})"),
             Self::RegisterWrite { address, value } => {
                 write!(formatter, "reg-write {address:#010x} = {value:#x}")
             }
@@ -310,6 +315,13 @@ impl LlModel {
     }
 }
 
+/// The libcoexist calls that publish the driver's coexistence levels; the
+/// port compares them, unlike the other calls leaving the driver.
+pub const COEX_PRIORITY_CALLS: [&str; 2] = [
+    "esp_coex_ieee802154_txrx_pti_set",
+    "esp_coex_ieee802154_ack_pti_set",
+];
+
 /// Record one LL or external call and return the modelled value.
 #[unsafe(no_mangle)]
 extern "C" fn oer_host_record(
@@ -349,6 +361,11 @@ extern "C" fn oer_host_record(
                 .collect();
             state.records.push(Record::Ll { name, arguments });
             value
+        } else if COEX_PRIORITY_CALLS.contains(&name.as_str())
+            && let [level] = *arguments
+        {
+            state.records.push(Record::Coex { name, level });
+            0
         } else {
             let value = state.model.inputs.values.get(&name).copied().unwrap_or(0);
             state.records.push(Record::External { name, arguments });

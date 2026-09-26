@@ -90,6 +90,23 @@ run only without the feature.
 cargo test --manifest-path verification/vendor/projects/esp32s31/ieee802154-host/Cargo.toml --features multipan
 ```
 
+## Software coexistence
+
+`--features sw-coex` builds the vendor driver with
+`CONFIG_ESP_COEX_SW_COEXIST_ENABLE`, the default of a build that also enables
+Wi-Fi or Bluetooth, and gives the engine the driver's default scene levels.
+The driver's `esp_coex_ieee802154_txrx_pti_set` and
+`esp_coex_ieee802154_ack_pti_set` calls are compared as `coex` records with
+their level. The port resolves the levels against a table in which level `n`
+has priority `n`, so each published priority names the level the engine
+chose; the level-to-priority resolution belongs to libcoexist and is tested
+with the HAL. The test that pins the build without coexistence runs only
+without the feature.
+
+```console
+cargo test --manifest-path verification/vendor/projects/esp32s31/ieee802154-host/Cargo.toml --features sw-coex
+```
+
 ## Limits
 
 The stand exercises the driver's software behavior against scripted register

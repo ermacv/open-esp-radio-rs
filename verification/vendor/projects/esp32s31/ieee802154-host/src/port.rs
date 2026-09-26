@@ -10,6 +10,7 @@
 
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
+use oer_esp32s31_hal::coex::CoexPti;
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154CcaMode, Ieee802154Channel, Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels,
     ll::{
@@ -24,10 +25,17 @@ use oer_esp32s31_hal::ieee802154::{
         Ieee802154TxAbortReasonObservation,
     },
 };
-use oer_esp32s31_ieee802154::pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults};
+#[cfg(feature = "sw-coex")]
+use oer_esp32s31_hal::{
+    coex::{CoexPtiTable, Ieee802154CoexLevel},
+    ieee802154::coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
+};
 use oer_esp32s31_ieee802154::engine::{
     FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Environment,
     Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,
+};
+use oer_esp32s31_ieee802154::pib::{
+    AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults,
 };
 use oer_ieee802154::FrameAddress;
 
@@ -304,6 +312,15 @@ impl Shared {
 struct PortLl(Rc<RefCell<Shared>>);
 
 impl PortLl {
+    /// A priority published against [`level_table`], rendered as the level
+    /// the vendor driver passes to libcoexist.
+    fn coex(&mut self, name: &str, pti: CoexPti) {
+        self.0.borrow_mut().records.push(Record::Coex {
+            name: name.to_owned(),
+            level: u64::from(pti.value()),
+        });
+    }
+
     fn ll(&self, name: &str, arguments: &[Arg]) -> u64 {
         self.0.borrow_mut().ll(name, arguments)
     }
@@ -432,6 +449,12 @@ impl Ieee802154LowLevel for PortLl {
     }
     fn disable_coex(&mut self) {
         self.ll("ieee802154_ll_disable_coex", &[]);
+    }
+    fn set_txrx_pti(&mut self, pti: CoexPti) {
+        self.coex("esp_coex_ieee802154_txrx_pti_set", pti);
+    }
+    fn set_ack_pti(&mut self, pti: CoexPti) {
+        self.coex("esp_coex_ieee802154_ack_pti_set", pti);
     }
     fn set_channel(&mut self, channel: Ieee802154Channel) {
         self.value(
@@ -739,6 +762,27 @@ fn interface(index: u8) -> Result<Ieee802154MultipanIndex, &'static str> {
 /// to power index zero, which a one-level provider reproduces.
 static LEVELS: [i8; 1] = [0];
 
+/// A coexistence table in which level `n` (`ieee802154_coex_event_t`) has
+/// priority `n`, so every priority the engine publishes names the level the
+/// vendor driver chose. How libcoexist maps a level to a priority is not
+/// part of the compiled driver; the HAL owns and tests that resolution.
+#[cfg(feature = "sw-coex")]
+fn level_table() -> CoexPtiTable {
+    let mut table = CoexPtiTable::VENDOR;
+    for level in [
+        Ieee802154CoexLevel::High,
+        Ieee802154CoexLevel::Middle,
+        Ieee802154CoexLevel::Low,
+        Ieee802154CoexLevel::Idle,
+    ] {
+        table.set(
+            level.event(),
+            CoexPti::new(level as u8).expect("a level is a priority"),
+        );
+    }
+    table
+}
+
 /// Run `scenario` against the production engine.
 ///
 /// # Errors
@@ -759,6 +803,12 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
         defaults,
         oer_esp32s31_ieee802154::engine::Ieee802154Interfaces::new(2).expect("two interfaces"),
     );
+    // The stand's software-coexistence build uses the driver's default
+    // scene levels.
+    #[cfg(feature = "sw-coex")]
+    engine.set_coexistence(Ieee802154Coexistence::Software(
+        Ieee802154CoexPriorities::resolve(Ieee802154CoexConfig::VENDOR, &level_table()),
+    ));
     let shared = Rc::new(RefCell::new(Shared {
         model: LlModel::new((scenario.inputs)()),
         records: Vec::new(),

@@ -86,7 +86,7 @@ defers every decision to a task cannot meet these deadlines.
 | `esp_phy_enable` / `esp_phy_disable(PHY_MODEM_IEEE802154)` | RF client acquire and release around operations | PHY `join_ieee802154` / `leave_ieee802154` on the arbiter's shared PHY domain |
 | `esp_btbb_enable` / `esp_btbb_disable` | common BTBB initialization | arbiter BTBB reference, taken by `join_ieee802154` with the registration's gain byte |
 | `bt_bb_get_tx_pwr_table` | dBm-to-power-index table | HAL `Ieee802154TxPowerLevels::ESP32S31`, recovered from the provider |
-| `esp_coex_ieee802154_*` | PTI scenes, external-coexistence stages, coexistence break notice | coexistence driver; the MAC foundation uses the disabled PTI baseline |
+| `esp_coex_ieee802154_*` | PTI scenes, external-coexistence stages, coexistence break notice | PTI levels: HAL scene priorities read from the arbiter table, published by the driver engine; external-coexistence stages and the break notice absent |
 | `ieee802154_txon_delay_set` (called by `ieee802154_mac_init`) | TX-on delay | arbiter shared TX-on override in `join_ieee802154`; `RXON_DELAY` in the HAL MAC foundation |
 | `bt_bb_get_cur_rx_info` | receive diagnostic | none |
 | `modem_clock_module_*` | module clock, reset and MAC reset | arbiter modem clock planner; MAC reset in the HAL IEEE 802.15.4 lifecycle |
@@ -110,7 +110,7 @@ frame semantics belong to the protocol crate.
 | `start_ed`, `tx_init`, `rx_init`, `ieee802154_transmit`, `receive`, `energy_detect`, `cca`, `sleep` | driver engine, runtime entry points | implemented |
 | `event_end_process` register steps | HAL `ll` | implemented |
 | `stop_rx` ... `stop_ed`, `stop_current_operation` | driver engine over HAL `ll` | implemented |
-| `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver engine | implemented without test mode and software coexistence; multi-PAN is a construction option |
+| `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver engine | implemented without test mode; software coexistence and multi-PAN are construction options |
 | RX buffer ring, `set_next_rx_buffer`, frame info | driver engine | implemented: twenty engine-owned receive buffers, the stub buffer, a copied transmit frame and the enhanced-ACK frame; DMA-capable placement is the composition's obligation |
 | `esp_ieee802154_timer.c` | HAL `ll` timers, driver engine callbacks | implemented |
 | `ieee802154_transmit_at`, `receive_at` (timer and ETM) | driver engine over HAL `ll` | implemented on the IEEE 802.15.4 channels zero and one of `MODEM_ETM`; the write-trigger semantics of the set and clear words is not yet verified on hardware |
@@ -119,7 +119,7 @@ frame semantics belong to the protocol crate.
 | `esp_ieee802154_sec.c` | driver engine over HAL `ll` | implemented |
 | `esp_ieee802154_multipan.c`, `update_mpf_index`, per-interface pending tables | driver engine | implemented for one to four interfaces; the radio role and runtime serve interface zero |
 | `esp_ieee802154_event.c` callbacks | driver engine environment, runtime event queue | implemented; the enhanced-ACK generator is a platform function |
-| `esp_ieee802154_util.c` coexistence scenes, channel conversion | coexistence driver, HAL | partial: channel conversion only |
+| `esp_ieee802154_util.c` coexistence scenes, channel conversion | HAL, driver engine | implemented: scene levels with the default configuration, channel conversion |
 | `ieee802154_sleep`, `rf_enable` / `rf_disable`, sleep retention | driver engine, HAL and PHY | partial: engine sleep state; RF gating (off in the default build) and retention absent |
 | `esp_ieee802154_debug.c` | not ported: optional statistics | absent |
 | `esp_ieee802154.c` public API | driver engine, radio role over the portable contract | partial: PIB, identity, ACK-timeout, transmit-security, pending-table and operation entry points of interface zero; event callbacks are the engine environment; statistics, coexistence configuration and RSSI of the last frame absent |

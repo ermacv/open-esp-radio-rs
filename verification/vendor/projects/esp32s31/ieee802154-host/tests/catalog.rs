@@ -66,7 +66,9 @@ fn every_scenario_matches_the_production_engine() {
 }
 
 /// `esp_ieee802154_enable` then `ieee802154_mac_init` (esp_ieee802154.c
-/// L35-L41, esp_ieee802154_dev.c L897-L956).
+/// L35-L41, esp_ieee802154_dev.c L897-L956), in the build without software
+/// coexistence.
+#[cfg(not(feature = "sw-coex"))]
 #[test]
 fn enable_follows_the_public_order_and_mac_init() {
     assert_eq!(
@@ -87,6 +89,41 @@ fn enable_follows_the_public_order_and_mac_init() {
             "ext esp_phy_modem_init(0x2)",
             "return esp_ieee802154_enable = 0",
         ]
+    );
+}
+
+/// With software coexistence `ieee802154_mac_init` publishes the ACK at
+/// `IEEE802154_MIDDLE` (2) and the idle scene at `IEEE802154_IDLE` (4)
+/// instead of disabling coexistence (esp_ieee802154_dev.c L924-L928,
+/// esp_ieee802154_util.c L31-L35); receive, energy detection and CCA publish
+/// the `IEEE802154_LOW` (3) scene before their command (L481, L1229,
+/// L1246), a timed transmission `IEEE802154_MIDDLE` (L1054).
+#[cfg(feature = "sw-coex")]
+#[test]
+fn software_coexistence_publishes_the_scene_levels() {
+    let enable = trace("enable");
+    assert_subsequence(
+        &enable,
+        &[
+            "ll ieee802154_ll_set_ed_sample_mode(0x1)",
+            "coex esp_coex_ieee802154_ack_pti_set(0x2)",
+            "coex esp_coex_ieee802154_txrx_pti_set(0x4)",
+            "ext ieee802154_txon_delay_set()",
+        ],
+    );
+    assert!(!enable.iter().any(|line| line.contains("disable_coex")));
+    for scenario in ["receive-with-auto-ack", "energy-detect", "cca-busy"] {
+        assert!(
+            trace(scenario)
+                .iter()
+                .any(|line| line == "coex esp_coex_ieee802154_txrx_pti_set(0x3)"),
+            "{scenario}"
+        );
+    }
+    assert!(
+        trace("transmit-at")
+            .iter()
+            .any(|line| line == "coex esp_coex_ieee802154_txrx_pti_set(0x2)")
     );
 }
 

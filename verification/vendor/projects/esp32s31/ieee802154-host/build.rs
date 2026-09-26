@@ -261,6 +261,11 @@ fn main() {
             .define("CONFIG_IEEE802154_MULTI_PAN_ENABLE", "1")
             .define("CONFIG_IEEE802154_INTERFACE_NUM", "2");
     }
+    // `sw-coex` reproduces `CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y`, the default
+    // of a build that also enables Wi-Fi or Bluetooth.
+    if env::var_os("CARGO_FEATURE_SW_COEX").is_some() {
+        build.define("CONFIG_ESP_COEX_SW_COEXIST_ENABLE", "1");
+    }
     for source in sources.iter().filter(|source| {
         source.path.ends_with(".c")
             && source

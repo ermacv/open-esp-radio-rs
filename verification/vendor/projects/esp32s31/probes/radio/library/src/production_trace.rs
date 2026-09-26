@@ -669,14 +669,15 @@ oer_probe_macros::probe! {
     /// Complete current parameter parent, including real power/I2C/calibration and
     /// temperature children. RFPLL defaults to registered policy, with an explicit
     /// validation-only override; neither path grants physical access.
-    /// Inputs extend the combined probe with signed gain adjustment and relaxed
-    /// power threshold and RFPLL enable. Outputs extend its 81 words with power
+    /// Inputs extend the combined probe with signed gain adjustment, relaxed
+    /// power threshold, RFPLL enable, the retained Wi-Fi I2C band code and the
+    /// Bluetooth/802.15.4 TX-power tracking enable. Outputs extend its 81 words with power
     /// temperature/cache, Wi-Fi and BT gain bases, retained adjustment, the vendor
     /// I2C-band code and RFPLL reference temperature.
     /// Status: 0 terminal owner, 1 contained hardware failure, 2 incomplete success,
     /// 3 erroneous ordinary-owner recovery after an executor failure.
     pub fn open_phy_tracking_trace_parent(
-        input: &[u16; 12],
+        input: &[u16; 13],
         wifi: bool,
         bluetooth: bool,
         output: &mut [u16; 95],
@@ -714,6 +715,7 @@ oer_probe_macros::probe! {
                 changed: false,
             });
         }
+        state.set_bt_power_tracking(input[12] as u8);
         let clients = PhyParamTrackRequest::new(wifi, bluetooth);
         let mut pending = if input[9] != 0 {
             validation::parameter_tracking_with_rfpll(&state, clients)

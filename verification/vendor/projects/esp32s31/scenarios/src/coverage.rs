@@ -399,6 +399,15 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "diagnostic print of the TX-power tracking child, selected by its third \
+            argument; production emits no vendor console output",
+        places: &[Place::Range {
+            function: "phy_txpwr_cal_track_new",
+            start: 0xd8,
+            end: 0xfa,
+        }],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

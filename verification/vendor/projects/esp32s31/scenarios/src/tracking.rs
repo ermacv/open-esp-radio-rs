@@ -30,7 +30,7 @@ pub type Options = PhyOptions;
 const TRACKING_EVENTS: u32 = 1 << 20;
 /// Production probe input and output words of the combined root and parent.
 const COMBINED_INPUT_WORDS: usize = 8;
-const PARENT_INPUT_WORDS: usize = 12;
+const PARENT_INPUT_WORDS: usize = 13;
 const COMBINED_OUTPUT_BYTES: u32 = 176;
 const PARENT_OUTPUT_BYTES: u32 = 190;
 /// Calibration snapshot bytes both roots start with.
@@ -214,14 +214,17 @@ pub struct Case {
     pub fill: u8,
     /// Vendor code of the I2C tracking band both parent sides start from.
     pub previous_band: u8,
+    /// Whether parent Bluetooth/802.15.4 TX-power tracking is enabled.
+    pub power_tracking: bool,
 }
 
 impl Case {
     fn label(&self, root: Root) -> String {
         format!(
-            "{root:?}-{}-band{}-wifi{}-bt{}-fill{:x}-rfpll{:?}",
+            "{root:?}-{}-band{}-power{}-wifi{}-bt{}-fill{:x}-rfpll{:?}",
             self.name,
             self.previous_band,
+            u8::from(self.power_tracking),
             u8::from(self.clients.0),
             u8::from(self.clients.1),
             self.fill,
@@ -243,7 +246,10 @@ impl Case {
         // The retained RX-gain table last indices both sides start from.
         words.push(u16::from_le_bytes([INITIAL_SHARED_LAST, INITIAL_WIFI_LAST]));
         if root == Root::Parent {
-            words.push(u16::from(self.previous_band));
+            words.extend([
+                u16::from(self.previous_band),
+                u16::from(self.power_tracking),
+            ]);
         }
         words
     }
@@ -270,7 +276,7 @@ impl Case {
         if root == Root::Parent {
             data[TONE_CLEAR] = u8::from(self.fill == FILLS[0]);
             data[GAIN_ADJUSTMENT] = self.fill;
-            data[POWER_ENABLED] = 1;
+            data[POWER_ENABLED] = u8::from(self.power_tracking);
             data[RFPLL_ENABLED] = u8::from(self.correction.is_some());
             data[I2C_BAND] = self.previous_band;
         }
@@ -637,27 +643,37 @@ pub fn cases(root: Root, rfpll: Option<i8>) -> Vec<Case> {
         ];
     }
     // Parent cases that start from a retained band: each non-nominal band
-    // held, and a nominal temperature leaving an elevated band.
-    let held: &[(&'static str, i16, u8)] = if root == Root::Parent && rfpll.is_none() {
+    // held, and a nominal temperature leaving an elevated band;
+    // and one with Bluetooth/802.15.4 TX-power tracking disabled.
+    let held: &[(&'static str, i16, u8, bool)] = if root == Root::Parent && rfpll.is_none() {
         &[
-            ("cold-held", -20, 1),
-            ("elevated-held", 55, 2),
-            ("hot-held", 95, 3),
-            ("nominal-from-elevated", 20, 2),
+            ("cold-held", -20, 1, true),
+            ("elevated-held", 55, 2, true),
+            ("hot-held", 95, 3, true),
+            ("nominal-from-elevated", 20, 2, true),
+            ("power-tracking-disabled", 106, 0, false),
+            ("power-tracking-disabled-cold", -61, 0, false),
         ]
     } else {
         &[]
     };
     let specs: Vec<_> = specs
         .into_iter()
-        .map(|(name, temperatures, rx, threshold)| (name, temperatures, rx, threshold, 0))
-        .chain(held.iter().map(|&(name, temperature, band)| {
-            (name, [temperature; 3], false, DEFAULT_THRESHOLD, band)
+        .map(|(name, temperatures, rx, threshold)| (name, temperatures, rx, threshold, 0, true))
+        .chain(held.iter().map(|&(name, temperature, band, power)| {
+            (
+                name,
+                [temperature; 3],
+                false,
+                DEFAULT_THRESHOLD,
+                band,
+                power,
+            )
         }))
         .collect();
     let mut result = vec![];
     for clients in [(false, false), (true, false), (false, true), (true, true)] {
-        for &(name, temperatures, rx, threshold, previous_band) in &specs {
+        for &(name, temperatures, rx, threshold, previous_band, power_tracking) in &specs {
             for fill in FILLS {
                 result.push(Case {
                     name,
@@ -668,6 +684,7 @@ pub fn cases(root: Root, rfpll: Option<i8>) -> Vec<Case> {
                     clients,
                     fill,
                     previous_band,
+                    power_tracking,
                 });
             }
         }
@@ -768,6 +785,7 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
                 clients: (true, true),
                 fill,
                 previous_band: 0,
+                power_tracking: true,
             };
             let input: Vec<u8> = profile
                 .inputs(root)
@@ -909,7 +927,8 @@ mod tests {
     fn families_cover_clients_fills_and_parent_bands() {
         assert_eq!(cases(Root::Combined, None).len(), 4 * 10 * FILLS.len());
         let parent = cases(Root::Parent, None);
-        assert_eq!(parent.len(), 4 * (22 + 4) * FILLS.len());
+        assert_eq!(parent.len(), 4 * (22 + 6) * FILLS.len());
+        assert!(parent.iter().any(|c| !c.power_tracking));
         assert!((1..=3).all(|band| parent.iter().any(|c| c.previous_band == band)));
         assert_eq!(cases(Root::Parent, Some(-5)).len(), 4 * 6 * FILLS.len());
     }

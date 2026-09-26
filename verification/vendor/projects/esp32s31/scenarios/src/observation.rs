@@ -202,6 +202,12 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "state store the parent probe seeds and the optimized probe forwards in a \
+            register to the tracking policy it builds next; the flag's decision on the \
+            Bluetooth/802.15.4 TX-power update is observed",
+        places: &[("state.rs", "self.bluetooth.power_tracking = value;")],
+    },
+    Decision {
         reason: "temperature acquisition provenance, a production scheduling record with no \
             vendor counterpart; the temperature and sensor index are compared",
         places: &[("tracking/temperature.rs", "Acquisition::Undated => Self {")],

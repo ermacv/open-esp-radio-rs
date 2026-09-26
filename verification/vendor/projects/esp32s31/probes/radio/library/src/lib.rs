@@ -1055,6 +1055,113 @@ oer_probe_macros::probe! {
     }
 }
 
+/// The ordinary retry owner and runtime policy one retry sequence evolves.
+struct RetryProbeState(
+    core::cell::UnsafeCell<
+        Option<(
+            oer_esp32s31_ieee80211_mac::tx::runtime::OrdinaryMpduRetryState,
+            oer_esp32s31_ieee80211_mac::tx::runtime::WifiTxRuntimePolicy,
+            oer_esp32s31_ieee80211_mac::tx::LegacyTxQueue,
+        )>,
+    >,
+);
+
+// SAFETY: Blobray executes this probe image on one thread and invokes its
+// stateful retry entries serially.
+unsafe impl Sync for RetryProbeState {}
+
+static RETRY_STATE: RetryProbeState = RetryProbeState(core::cell::UnsafeCell::new(None));
+
+/// Decisions the retry step returns: complete, retry, and retry with the
+/// 802.11 Retry bit.
+const RETRY_COMPLETE: u32 = 0;
+const RETRY_AGAIN: u32 = 1;
+const RETRY_AGAIN_WITH_BIT: u32 = 2;
+/// Frame-control flags byte and its Retry bit.
+const FRAME_FLAGS: usize = 1;
+const FRAME_RETRY: u8 = 0x08;
+
+oer_probe_macros::probe! {
+    /// Start one ordinary MPDU of queue `queue` with the vendor default
+    /// runtime policy.
+    pub fn open_libpp_tx_retry_trace_reset(queue: u32, mpdu_retry_limit: u32, long_frame: u32) -> u32 {
+        use oer_esp32s31_ieee80211_mac::tx::{
+            LegacyRate, LegacyTxQueue, TxPhyRate,
+            runtime::{OrdinaryFrameClass, OrdinaryMpduRetryState, WifiTxRuntimePolicy},
+        };
+        let queue = match queue {
+            0 => LegacyTxQueue::Voice,
+            1 => LegacyTxQueue::Video,
+            2 => LegacyTxQueue::BestEffort,
+            3 => LegacyTxQueue::Background,
+            _ => panic!("verification ordinary queue is out of range"),
+        };
+        let state = OrdinaryMpduRetryState::new(
+            queue,
+            TxPhyRate::Legacy(LegacyRate::Ofdm6M),
+            mpdu_retry_limit as u8,
+            if long_frame != 0 {
+                OrdinaryFrameClass::Long
+            } else {
+                OrdinaryFrameClass::Short
+            },
+        )
+        .expect("verification retry limit is nonzero");
+        // SAFETY: see `RetryProbeState`.
+        unsafe {
+            *RETRY_STATE.0.get() = Some((state, WifiTxRuntimePolicy::vendor_defaults(), queue))
+        };
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Apply one completion to the retry owner and project its state in the
+    /// vendor layout: descriptor counters at 5..8, the queue's contention
+    /// exponent at context byte 8 and the frame's Retry bit.
+    pub fn open_libpp_tx_retry_trace_step(
+        disposition: u32,
+        context: u32,
+        descriptor: u32,
+        buffer: u32,
+    ) -> u32 {
+        use oer_esp32s31_ieee80211_mac::tx::{TxCompletionDisposition, runtime::OrdinaryRetryDecision};
+        let disposition = match disposition {
+            0 => TxCompletionDisposition::AckTimeout,
+            1 => TxCompletionDisposition::CtsTimeout,
+            2 => TxCompletionDisposition::Collision,
+            _ => panic!("verification disposition is out of range"),
+        };
+        // SAFETY: see `RetryProbeState`; the reset entry ran first.
+        let (state, policy, queue) = unsafe { (*RETRY_STATE.0.get()).as_mut() }
+            .expect("the retry sequence starts with its reset entry");
+        let decision = state.observe_completion(policy, disposition);
+        let counters = state.counters();
+        let exponent = policy.contention_exponent(*queue);
+        // SAFETY: every retry case supplies writable descriptor, context and
+        // frame objects covering these bytes.
+        unsafe {
+            let descriptor = descriptor as *mut u8;
+            descriptor.add(5).write(counters.mpdu);
+            descriptor.add(6).write(counters.short);
+            descriptor.add(7).write(counters.long);
+            (context as *mut u8).add(8).write(exponent);
+        }
+        match decision {
+            OrdinaryRetryDecision::Complete => RETRY_COMPLETE,
+            OrdinaryRetryDecision::Retry { set_retry_bit: false } => RETRY_AGAIN,
+            OrdinaryRetryDecision::Retry { set_retry_bit: true } => {
+                // SAFETY: as above.
+                unsafe {
+                    let flags = (buffer as *mut u8).add(FRAME_FLAGS);
+                    flags.write(flags.read() | FRAME_RETRY);
+                }
+                RETRY_AGAIN_WITH_BIT
+            }
+        }
+    }
+}
+
 // These validation-only leaves make the result of the compiled production
 // completion classifier observable without introducing a shadow numeric
 // encoding. The non-pure inline assembly prevents LLVM from deleting the

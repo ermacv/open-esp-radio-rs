@@ -172,7 +172,7 @@ impl Vendor<'_> {
     }
 }
 
-fn call_boundary(image: &BTreeMap<String, u32>, name: &str) -> CallBoundary {
+pub(crate) fn call_boundary(image: &BTreeMap<String, u32>, name: &str) -> CallBoundary {
     if image.contains_key(name) {
         CallBoundary::CapturedCode
     } else {
@@ -217,15 +217,16 @@ impl RateTables {
     const DOT11N_INDEX: &'static str = "rc11NRate2SchedIdx";
     const DOT11AX_INDEX: &'static str = "rc11AXRate2SchedIdx";
     const INDEX_CALLER: &'static str = "rcUpdatePhyMode";
-    /// Bytes of one schedule record.
+    /// Bytes of one schedule record, and its publication-limit byte.
     const RECORD: usize = 12;
+    const PUBLICATION_LIMIT: usize = 8;
     /// Index-table entry of a rate with no 802.11g record.
     const UNMAPPED: u8 = 0xff;
 
     /// The vendor schedule record of `code` in `arena`: the 802.11g record
     /// of a legacy rate, the 802.11n record of an HT rate and the 802.11ax
     /// record of an HE rate.
-    fn record(&self, arena: RateArena, code: u32) -> Result<Vec<u8>> {
+    pub(crate) fn record(&self, arena: RateArena, code: u32) -> Result<Vec<u8>> {
         let (records, index) = match arena {
             RateArena::Legacy => return self.legacy_record(code),
             RateArena::Ht => (&self.dot11n, self.dot11n_index.get(&code)),
@@ -257,13 +258,18 @@ impl RateTables {
             .ok_or_else(|| invalid(format!("vendor record {index} outside the arena")))
     }
 
+    /// The publication limit, byte 0x08, of legacy rate `code`'s record.
+    pub(crate) fn publication_limit(&self, code: u32) -> Result<u8> {
+        Ok(self.legacy_record(code)?[Self::PUBLICATION_LIMIT])
+    }
+
     /// Whether the attempt counts of `code`'s record reach its publication
     /// limit at byte 0x08, so the retry-limit owner ends the MPDU before the
     /// record is exhausted.
     fn covers_publication_limit(&self, arena: RateArena, code: u32) -> Result<bool> {
         let record = self.record(arena, code)?;
         let attempts: u32 = (0..4).map(|pair| u32::from(record[2 * pair + 1])).sum();
-        Ok(attempts >= u32::from(record[8]))
+        Ok(attempts >= u32::from(record[Self::PUBLICATION_LIMIT]))
     }
 
     /// The rate codes the vendor maps to an 802.11g record.
@@ -540,7 +546,7 @@ const PPDU_HE_STATES: [u32; 80] = {
     let mut i = 0;
     while i < states.len() {
         let i32 = i as u32;
-        states[i] = i32 % 10 | (i32 / 10 % 4) << 8 | (i32 / 40) << 16;
+        states[i] = (i32 % 10) | ((i32 / 10 % 4) << 8) | ((i32 / 40) << 16);
         i += 1;
     }
     states
@@ -1616,6 +1622,7 @@ impl Mac {
             .map(|l| (if l.net80211 { NET80211_INPUT } else { 0 }, l.vendor))
             .filter(|(_, v)| *v != LEAVES[0].vendor)
             .chain([(0, RateTables::INDEX_CALLER)])
+            .chain(crate::retry::ROOTS.iter().map(|root| (0, *root)))
             .collect();
         vendors.sort_unstable();
         vendors.dedup();
@@ -1698,6 +1705,26 @@ impl Mac {
             production,
             session,
         })
+    }
+
+    /// Symbols of the linked image.
+    pub(crate) fn image_symbols(&self) -> Result<BTreeMap<String, u32>> {
+        image_symbols(&self.session.run.join("image/image.elf"))
+    }
+
+    /// Address of `name` in the linked image, or else in the ROM.
+    pub(crate) fn symbol_address(&self, image: &BTreeMap<String, u32>, name: &str) -> Result<u32> {
+        if let Some(address) = image.get(name) {
+            return Ok(*address);
+        }
+        Ok(u32::try_from(
+            crate::harness::symbol(
+                &self.session.inventory,
+                crate::layout::ROM_INPUT as usize,
+                name,
+            )?
+            .value,
+        )?)
     }
 
     /// Entry address of the vendor function of `leaf`.
@@ -2137,5 +2164,6 @@ pub fn claims() -> Vec<(&'static str, &'static str, &'static str)> {
     LEAVES
         .iter()
         .map(|l| (if l.rom { "rom" } else { "archive" }, l.vendor, l.probe))
+        .chain(crate::retry::CLAIMS.iter().copied())
         .collect()
 }

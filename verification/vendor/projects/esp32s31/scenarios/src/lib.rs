@@ -22,6 +22,7 @@ pub mod mac;
 pub mod observation;
 pub mod phy;
 pub mod research;
+pub mod retry;
 pub mod rfpll;
 pub mod rx_gain;
 pub mod session;

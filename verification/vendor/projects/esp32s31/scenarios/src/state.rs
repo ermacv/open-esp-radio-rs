@@ -68,8 +68,48 @@ const RX_POLICY_NONE: Claim = (
     "open_wifi_sta_ap_trace_disable_all_role_receive",
 );
 
+const RETRY: Claim = ("lmacProcessCtsTimeout", "open_libpp_tx_retry_trace_step");
+/// The retry sequences' queue contexts, named by the nearest symbol below
+/// them, and the two per-queue bytes they leave unprojected.
+const RETRY_QUEUES: &str = "0x2f850000";
+const RETRY_QUEUES_OFFSET: u32 = 0x3fff_2000 - 0x2f85_0000;
+const RETRY_QUEUE_BYTES: u32 = 0x38;
+const RETRY_SHORT_COUNT: u32 = 0x0b;
+const RETRY_STATE: u32 = 0x12;
+
+const fn retry_queue(field: u32, queue: u32) -> Place {
+    let start = RETRY_QUEUES_OFFSET + queue * RETRY_QUEUE_BYTES + field;
+    place(RETRY, RETRY_QUEUES, start, start + 1)
+}
+
 /// Reviewed unprojected vendor state.
 pub const DECISIONS: &[Decision] = &[
+    Decision {
+        reason: "`lmac.o` per-queue short retry count (queue context 0x0b) that \
+            `lmacProcessShortRetryFail` raises and compares with the short retry limit to \
+            reset the contention window: production has no queue-level count and resets the \
+            window when the MPDU's own short count reaches the limit. The compared sequences \
+            send one MSDU per queue without interleaving, where both counts are equal and the \
+            compared contention exponent follows; interleaved MSDUs are not covered",
+        places: &[
+            retry_queue(RETRY_SHORT_COUNT, 0),
+            retry_queue(RETRY_SHORT_COUNT, 1),
+            retry_queue(RETRY_SHORT_COUNT, 2),
+            retry_queue(RETRY_SHORT_COUNT, 3),
+        ],
+    },
+    Decision {
+        reason: "`lmac.o` per-queue exchange state (queue context 0x12) that the vendor \
+            transmit path sets and the retry-limit branch moves to its end state before the \
+            modeled exchange end: production keeps the transmission in its ordinary TX owner, \
+            whose compared retry decision ends it",
+        places: &[
+            retry_queue(RETRY_STATE, 0),
+            retry_queue(RETRY_STATE, 1),
+            retry_queue(RETRY_STATE, 2),
+            retry_queue(RETRY_STATE, 3),
+        ],
+    },
     Decision {
         reason: "`ieee80211_supplicant.o` current-policy byte `g_ic+0x2cc`: only the \
             remain-on-channel policy 13 saves it into `g_offchan_ctx` and `roc_op_end` tests it \

@@ -7,7 +7,7 @@
     "libnet80211": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "libpp": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "2306028f27e297332b7f5e77354da3b077bafe7ba9ce7e4380ae34aaef195c06",
+    "production": "42be40d443927fe0a3619f38042eaa1b6c52b3538c7d66009230df7340c97430",
     "rftest": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a",
     "rom": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -151,11 +151,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "db581ce936c46782990db5ae2ae78dad085c509018d406a573fdfc7a909dc265"
+      "sha256": "b8d7afcc54edda344834e5f5981cc7c415395c2c64d078deb3c5b39d91c42a72"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "4916cf244c2144d8d9170b57256c89aefdae6c9f5ac164f6a71322026f6bfe69"
+      "sha256": "f2e9cbe8b7b7f370215f24510cbd2317b4712008d949a5151e105b567d9324f7"
     },
     {
       "path": "verification/vendor/schema",
@@ -341,7 +341,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "aa5ae1b4050fae210c1ab54566f17c051a91caf0cd2de3e718d0e6fe79bc6dae"
+        "5f8a020f49dd557118105eb24c78601f4db69ea6e1a6f3609e3ecb56c8ca2135"
       ],
       "coverage": {
         "blocks": {
@@ -377,7 +377,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "6b29d2d2dfde139e6943bdb3fa2c9e663a87ae91c2f0ba44580be89c861046dd"
+        "0e5f9a3f0e31a589c4555cb440bcc394f4a9b86b32d294bd27d7bae6697f1280"
       ],
       "coverage": {
         "blocks": {
@@ -413,7 +413,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "fdc9ce8a966c43be27f7278156a2506c9fd5b54131cc5eae60db62699710b64f"
+        "f72177692ea4b9d46f69ad64319769b2a239323117e6a03cbb665225cc26b20c"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +449,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "29ac8631c4784497c617b25a3162206c6c2ba04a331dfa59569ebc8a4ad4944c"
+        "09e92cf29dc8b525e2eb75459bd4e3feed2f45b09da148f32bc515aa92cbc5a0"
       ],
       "coverage": {
         "blocks": {
@@ -485,7 +485,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "a1df50166f91d63dfd853bb1aaa0bd70028ef16f19162c711e39483b8597a862"
+        "5a9a36ca7d8c641f8bbbed6d33b0134011ab947e0ca3ea7bd8156b11aa77e523"
       ],
       "coverage": {
         "blocks": {
@@ -521,7 +521,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "aa84536b0945ea15258a0b7a76f6aec636ce6a14bcb237828ad7c1110efb8129"
+        "7c1cc98f73913527761c3a4b2be59d9dedbcc3543dd97383ddec674ace3ccc2d"
       ],
       "coverage": {
         "blocks": {
@@ -727,7 +727,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "a3fff455a840825efa144d3367281f020e490203107d80ee59eaf71f6de9855d"
+        "c11c5011e25d4f53ce74ed8987ee9c9d26067911d98531d869f4e698a800b9ad"
       ],
       "coverage": {
         "blocks": {
@@ -763,7 +763,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "be19af7d0e05033723101ac469b43c18dddc355d2f9623f28fcc2cf1c4ffe7e3"
+        "3516af5d5fe7ddf7da6cf7aff8ef0ab3c043ba22db7e9f32fbcc0420e4204583"
       ],
       "coverage": {
         "blocks": {
@@ -799,8 +799,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "7f494e00643f853420b83746f03cbffa9b6e6535fcfa849292bcf6d81876299f",
-        "c80effc0c40fabca0efb6978dbb5e9f1fc04a39a88f72e1794b3149dfb3aed1d"
+        "895affb0f4272839c03f15f2c7f7da31cebe59a22318f372c24b6af64bab62ba",
+        "c1091c138d951d5ddf1c800084f28398c3852b0347200383cdb67246277ec9de"
       ],
       "coverage": {
         "blocks": {
@@ -836,7 +836,7 @@
       "verdict": "match",
       "cases": 101,
       "reviews": [
-        "f3e98f7f37e123b61e833b0432a4f7063cc9645f11390df36d06c133ca11e426"
+        "c778dfb549722827b5649e9c3ebaba3fd01160a74d35ac8d3ac59b333c033d79"
       ],
       "coverage": {
         "blocks": {
@@ -872,8 +872,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "149795293a406956e1ade0de557b93a91e7143cc4baf46f5b334cdc5336654bf",
-        "495df1aacbf253437271125cd1f1a9ec0490f07e8aa019281cbe257c1ebcc198"
+        "06ae8e11477f28aba102c7be183a7b4ff906eb7b686dd1170eafabeb9c0eeecc",
+        "8673b08b7a723177ccd1dd94593782c26c7892be51ed0151c4146e5d859c10a8"
       ],
       "coverage": {
         "blocks": {
@@ -909,8 +909,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "2ad195acb503710556d6916bbcab0de12c2271a86eb9285bbb7554887e26d29f",
-        "3b9ec7fc021e3b4880894e87dd3d1e50ec729c1c6c3a99e67bcd729f7410e070"
+        "79e398c62b505d7e5e51bd45f1c9ece1b2c7ac63e0fafc4a178ccbe66b49ca47",
+        "b3ff864ae4eb9541f7b4bfdbc5b67badb543e4667d40bbe52eee7bcd4ee04b51"
       ],
       "coverage": {
         "blocks": {
@@ -946,9 +946,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "104a86d7c782464f336808daefb60e2a19afc37ae217ff31648e6ec1ab8b8fa6",
-        "3c4aaf5fa0b358acf83975da63200d8c2ecca5b09b2f6dd1e5cc5627d4d09e42",
-        "642dd7c0c1f36839f8ce5dff2eee0eb69f6f5f1ca45e507854a3dd52b9165a7e"
+        "54f31274e43f3dea1860ba37584a8fb2b7173218fa03254c4709e5d762ba62db",
+        "82c8f6de1d93a8c5c82b509692ca0292e8a190f5f7c97c78e34d8f62975c30dc",
+        "e618bb70e5387aa63d1cc9f2f9e1be6fa4e690df07a39871c7bed63e770889fe"
       ],
       "coverage": {
         "blocks": {
@@ -984,8 +984,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "d06936f5d9b31a032467827879f162caffa912218c70ad655dd6bf9129c6037e",
-        "f2b81a0849ffd25800f398fb4ba238c145af1068efc1e211f7ec1695be676528"
+        "9db9bd0d760ebecc1ab341e35ee6bbb1e5295939412f018cae34c9e771799bf0",
+        "be4aafa9c8d123aa61d4794608c924e457f273a1b9021239e3fe3a202a3f5512"
       ],
       "coverage": {
         "blocks": {
@@ -1021,8 +1021,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "333300abefe3106a4812b2c63242ed95b680ae51db315213949f71386dedb102",
-        "6c6db8db4bd0311945df604f3fefe3e407dfcc8bf0765a13916dddecbafae291"
+        "56f276c01404b312f8e42273b6575a9bf909b4225c5a4f58a36a8776d033bd12",
+        "5f5a31c02ce7af6c1eb89433fd667fc34c1b55e59ffc56dd9a05cf575b6971fc"
       ],
       "coverage": {
         "blocks": {
@@ -1058,8 +1058,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "99317f2290b5cd89fd7945295ffe161988e64648193e146f83cbf45662e7af60",
-        "aefc526883811105d3bb5e51d1a6f2b9ae9691f4b6af4ee68bd5198a86ba312c"
+        "d69b72b816c42c9c62585735235737ca6fb683e1efa99e1fccf18546a54e8891",
+        "f203134e5cc94f7f9593ae9739388795a7911d6c21e76f2d06d0aae8b79522b8"
       ],
       "coverage": {
         "blocks": {
@@ -1197,7 +1197,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "2d972bbe53b270cef3539613173a2056dbcbe4b6c7346b5ee290dafeb39a561a"
+        "49a503654d48ead90123ec6aa7de86d0ed7ed6925543a2857b166b3f6d36dd90"
       ],
       "coverage": {
         "blocks": {
@@ -1267,7 +1267,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "727c04ab0c3470b638a8f83f134638b1b3017958b6405f6c8820baef111d56e9"
+        "bc3e4e96f94eaa93e49e1815fb2bf9df998a6b4d54cb730b523265b62bc5cc09"
       ],
       "coverage": {
         "blocks": {
@@ -1915,7 +1915,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "55a064eab832dbfdbda95b6ef38e7525cbeabc557163db05468ae754d7f93730"
+        "6c4a9ddde34cf885b9efd56293d57179d1f45bc9e5e00eff92d3fca55778d05f"
       ],
       "coverage": {
         "blocks": {
@@ -2314,6 +2314,40 @@
         "written": 1,
         "compared": 0,
         "reviewed": 1,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "lmacProcessCtsTimeout",
+      "production": "open_libpp_tx_retry_trace_step",
+      "verdict": "match",
+      "cases": 512,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 55,
+          "total": 1981
+        },
+        "directions": {
+          "reached": 41,
+          "total": 2038
+        },
+        "open": 113,
+        "excluded": 121,
+        "untriaged": 3915
+      },
+      "observation": {
+        "executed": 10,
+        "observed": 10,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 13,
+        "compared": 5,
+        "reviewed": 8,
         "untriaged": 0
       }
     }
@@ -5867,6 +5901,391 @@
     {
       "function": "lmacMSDUAged",
       "offset": 96,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessCtsTimeout",
+      "offset": 12,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessCtsTimeout",
+      "offset": 16,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 32,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 32,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 34,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 34,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 34,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 92,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 106,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 126,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 130,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 142,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 142,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 144,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 174,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 178,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 182,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 232,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 234,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 240,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 248,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 252,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 256,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 294,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 310,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 314,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 326,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 326,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 328,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 364,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 378,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 382,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 386,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 394,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 406,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 410,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 414,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 414,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 414,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 454,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 486,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 494,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 494,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 496,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 508,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 508,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 510,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 512,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 526,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 540,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 540,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 544,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 568,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 576,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 576,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 578,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 580,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 590,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 590,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 592,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 594,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 610,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 610,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 612,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 614,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 684,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 684,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 684,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 698,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 728,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 732,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 742,
+      "kind": "taken"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 742,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 746,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessShortRetryFail",
+      "offset": 750,
       "kind": "block"
     },
     {
@@ -18333,6 +18752,76 @@
       "function": "rcLowerSched",
       "offset": 98,
       "kind": "block"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 10,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 12,
+      "kind": "block"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 68,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 70,
+      "kind": "block"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 156,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 158,
+      "kind": "block"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 164,
+      "kind": "taken"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 164,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 168,
+      "kind": "block"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 170,
+      "kind": "block"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 194,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 198,
+      "kind": "block"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 208,
+      "kind": "taken"
+    },
+    {
+      "function": "rcReachRetryLimit",
+      "offset": 208,
+      "kind": "fallthrough"
     },
     {
       "function": "rcSetTxAmpduLimit",

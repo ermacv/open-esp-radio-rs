@@ -11,12 +11,14 @@ pub(crate) mod config;
 pub mod core;
 pub(crate) mod finished_lists;
 pub(crate) mod insertion;
+pub mod list;
 pub(crate) mod lock_modify;
 /// Post-unlink mailbox that defers item reuse until the ISR observes the unlink.
 pub mod post_unlink;
 pub mod time;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod timeline;
+pub mod window;
 
 pub use config::SchedulerSoftwareConfig;
 
@@ -72,10 +74,16 @@ pub use core::{SchedulerFinishedListDrainPending, SchedulerFinishedListDrainStat
 pub use core::{SchedulerHeadPublicationError, SchedulerInitialized};
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub use timeline::{
-    SchedulerRawWindow, SchedulerReservationError, SchedulerReservationReleaseError,
+    SchedulerReservationError, SchedulerReservationReleaseError,
     SchedulerReservationReleaseFailure, SchedulerSequenceAuthorizationError,
     SchedulerSequenceReady, SchedulerTimingPolicy, SchedulerWindowReservation,
 };
+
+pub use list::{
+    SchedulerList, SchedulerListCompletionScan, SchedulerListInsertError, SchedulerListPlacement,
+    SchedulerListRemoval,
+};
+pub use window::SchedulerRawWindow;
 
 pub use finished_lists::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,

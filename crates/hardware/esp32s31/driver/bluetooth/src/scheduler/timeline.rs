@@ -14,7 +14,7 @@ use crate::{ControllerTimeSample, scheduler::SchedulerSoftwareConfig};
 
 use oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale;
 
-const MAX_FORWARD_SPAN: u32 = i32::MAX as u32;
+use crate::scheduler::window::{MAX_FORWARD_SPAN, SchedulerRawWindow};
 
 /// Raw-tick insertion timing policy derived from one common scheduler epoch.
 ///
@@ -60,53 +60,6 @@ impl SchedulerTimingPolicy {
 
     pub const fn sequence_lead_raw_delta(self) -> u32 {
         self.sequence_lead_raw_delta
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SchedulerRawWindow {
-    start: u32,
-    end: u32,
-}
-
-impl SchedulerRawWindow {
-    const fn new(start: u32, end: u32) -> Option<Self> {
-        let duration = end.wrapping_sub(start);
-        if duration == 0 || duration > MAX_FORWARD_SPAN {
-            None
-        } else {
-            Some(Self { start, end })
-        }
-    }
-
-    /// Bind a projected scheduler window before timeline admission.
-    pub const fn from_projected_scheduler_window(start: u32, end: u32) -> Option<Self> {
-        Self::new(start, end)
-    }
-
-    pub const fn start(self) -> u32 {
-        self.start
-    }
-
-    pub const fn end(self) -> u32 {
-        self.end
-    }
-
-    pub const fn duration(self) -> u32 {
-        self.end.wrapping_sub(self.start)
-    }
-
-    const fn strictly_overlaps(self, other: Self) -> bool {
-        (other.end.wrapping_sub(self.start) as i32) > 0
-            && (self.end.wrapping_sub(other.start) as i32) > 0
-    }
-
-    const fn delayed_after(self, occupied: Self) -> Self {
-        let start = occupied.end;
-        Self {
-            start,
-            end: start.wrapping_add(self.duration()),
-        }
     }
 }
 
@@ -316,7 +269,7 @@ fn authorize_sequence<State>(
 > {
     if !reservation
         .timing_policy
-        .initial_deadline_is_open(sample, reservation.window.start)
+        .initial_deadline_is_open(sample, reservation.window.start())
     {
         return Err(SchedulerSequenceAuthorizationFailure {
             reservation,
@@ -430,7 +383,7 @@ impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
             return Err(SchedulerReservationError::WindowOutsideForwardHalfRange);
         };
 
-        let original_start = candidate.start;
+        let original_start = candidate.start();
         let mut displaced_by = [false; CAPACITY];
         while let Some((slot_index, occupied)) =
             self.slots
@@ -447,7 +400,7 @@ impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
             }
             displaced_by[slot_index] = true;
             candidate = candidate.delayed_after(occupied);
-            if candidate.start.wrapping_sub(original_start) > MAX_FORWARD_SPAN {
+            if candidate.start().wrapping_sub(original_start) > MAX_FORWARD_SPAN {
                 return Err(SchedulerReservationError::OverlapResolutionOutsideForwardHalfRange);
             }
         }

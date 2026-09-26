@@ -157,7 +157,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "8f38d3d9710540c4ba2c385004766a85a8790fa5880150b354ced0af2b08de7f"
+      "sha256": "a7eb4ae71fc56a99b04e7f7363f55949dd054d1ffcd0c722ed64391b799ec26f"
     },
     {
       "path": "verification/vendor/schema",
@@ -182,8 +182,8 @@
           "reached": 26,
           "total": 402
         },
-        "excluded": 701,
-        "untriaged": 3
+        "excluded": 702,
+        "untriaged": 2
       },
       "observation": {
         "executed": 40,
@@ -236,8 +236,8 @@
           "reached": 31,
           "total": 406
         },
-        "excluded": 701,
-        "untriaged": 1
+        "excluded": 702,
+        "untriaged": 0
       },
       "observation": {
         "executed": 41,
@@ -263,8 +263,8 @@
           "reached": 42,
           "total": 418
         },
-        "excluded": 701,
-        "untriaged": 2
+        "excluded": 702,
+        "untriaged": 1
       },
       "observation": {
         "executed": 41,
@@ -716,8 +716,8 @@
           "reached": 94,
           "total": 606
         },
-        "excluded": 946,
-        "untriaged": 19
+        "excluded": 948,
+        "untriaged": 17
       },
       "observation": {
         "executed": 368,
@@ -836,8 +836,8 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 1000,
-        "untriaged": 139
+        "excluded": 1002,
+        "untriaged": 137
       },
       "observation": {
         "executed": 1388,
@@ -866,8 +866,8 @@
           "reached": 358,
           "total": 982
         },
-        "excluded": 1012,
-        "untriaged": 136
+        "excluded": 1014,
+        "untriaged": 134
       },
       "observation": {
         "executed": 1823,
@@ -878,16 +878,6 @@
     }
   ],
   "untriaged": [
-    {
-      "function": "phy_get_tx_gain_value",
-      "offset": 16,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_set_chan_reg",
-      "offset": 38,
-      "kind": "taken"
-    },
     {
       "function": "phy_txbbgain_to_index",
       "offset": 34,

@@ -363,7 +363,8 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         reason: "constant arguments only callers outside the claimed closures pass: the \
             linear-to-dB scale 3 of `phy_get_power_db` and PBus read selectors above 4 \
-            (`phy_pbus_print`, `phy_set_rx_gain_cal_iq`, `phy_bt_txdc_cal*`); a claimed \
+            (`phy_pbus_print`, `phy_set_rx_gain_cal_iq`, `phy_bt_txdc_cal*`) and the \
+            channel-register argument 0 (`phy_wakeup_init`); a claimed \
             caller passing them would either reach these paths or leave its call \
             uncovered",
         places: &[
@@ -396,6 +397,12 @@ pub const DECISIONS: &[Decision] = &[
                 function: "phy_pbus_rd_shift",
                 start: 0x36,
                 end: 0x3a,
+            },
+            // `phy_chip_set_chan_misc_new` passes 1; only `phy_wakeup_init` passes 0.
+            Place::Range {
+                function: "phy_set_chan_reg",
+                start: 0x26,
+                end: 0x27,
             },
         ],
     },
@@ -520,6 +527,16 @@ pub const DECISIONS: &[Decision] = &[
                 end: 0x24,
             },
         ],
+    },
+    Decision {
+        reason: "step limit of the TX gain table walk: each step moves one entry toward a \
+            table end and the walk stops at either end, so from a start index inside the \
+            table it ends within count - 1 steps and the limit never stops it",
+        places: &[Place::Range {
+            function: "phy_get_tx_gain_value",
+            start: 0x10,
+            end: 0x11,
+        }],
     },
     Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \

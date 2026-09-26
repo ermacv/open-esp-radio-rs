@@ -1364,10 +1364,13 @@ pub(crate) const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
             if rate <= 42 { MAP[rate as usize] } else { 0xff }
         }
         RateIndexMap::Dot11G => {
+            // SOURCE: `libpp.a[trc.o]` `.rodata` switch table of
+            // `rc11GRate2SchedIdx`, including the long-range codes 0x29 and
+            // 0x2a that select 802.11g records 12 and 11.
             const MAP: [u8; 43] = [
                 10, 9, 8, 0xff, 0xff, 9, 8, 0xff, 1, 3, 5, 7, 0, 2, 4, 6, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 12, 11,
             ];
             if rate <= 42 { MAP[rate as usize] } else { 0xff }
         }

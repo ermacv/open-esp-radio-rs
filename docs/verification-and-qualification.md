@@ -116,7 +116,8 @@ native evidence index
   carries the vendor coverage of the root's closure over those comparisons
   (Blobray in-process coverage): basic blocks and branch directions reached out of
   all, and how many uncovered ones a reviewed decision excludes or remain
-  untriaged. It also counts the production PHY source lines those
+  untriaged. It also counts the production hardware source lines (the
+  ESP32-S31 PHY, HAL, PAC and MAC driver crates) those
   comparisons executed, the lines a compared observation depends on (Blobray
   observation dependence), and how many of the rest a reviewed decision
   covers or remain untriaged. Finally it counts the persistent vendor bytes
@@ -126,7 +127,7 @@ native evidence index
 - every untriaged uncovered location of the claimed closures that no claim
   whose closure contains its function reaches, by vendor function, offset
   and kind (block, taken or fallthrough direction);
-- every executed production PHY line that no scenario's compared observations
+- every executed production hardware line that no scenario's compared observations
   depend on and no reviewed decision covers, by path and line;
 - every persistent vendor byte a claim's cases write without comparing it and
   no reviewed decision covers, coalesced by data symbol and offset; a byte

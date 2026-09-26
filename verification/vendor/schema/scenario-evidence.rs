@@ -36,7 +36,7 @@ pub struct Index {
     /// decision excludes yet and no claim whose closure contains their
     /// function covers, ascending and unique.
     pub untriaged: Vec<Location>,
-    /// Executed production PHY source lines that no compared observation
+    /// Executed production hardware source lines that no compared observation
     /// depends on and no reviewed decision covers yet, ascending and unique.
     pub unobserved: Vec<SourceLine>,
     /// Persistent vendor bytes a claim's cases write without comparing them

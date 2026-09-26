@@ -2,7 +2,8 @@
 //!
 //! Blobray reports which executed production instructions a compared
 //! observation depends on. Debug line information of the probe ELF maps them
-//! to production PHY source lines, including inlined frames: a line is
+//! to production hardware source lines (PHY, HAL, PAC and MAC driver crates),
+//! including inlined frames: a line is
 //! observed when any of its executed instructions is. Every executed but
 //! unobserved line is either reviewed by a decision below, with its reason, or
 //! reported as untriaged in the evidence index. A decision that matches no
@@ -12,8 +13,8 @@ use crate::harness::{Result, invalid};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// Production PHY sources, relative to the repository root.
-pub const SCOPE: &str = "crates/hardware/esp32s31/phy/src";
+/// Production ESP32-S31 hardware sources, relative to the repository root.
+pub const SCOPE: &str = "crates/hardware/esp32s31";
 
 /// Repository root: this package lives five directories below it.
 pub fn root() -> Result<PathBuf> {
@@ -37,38 +38,72 @@ pub struct Decision {
 /// Reviewed unobserved lines.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "device-ordering fence the MAC and power event clears add after their \
+            acknowledge write: the reviewed contract of each clear requires exactly one, \
+            counted but not paired with a vendor effect",
+        places: &[
+            (
+                "pac/raw/src/lib.rs",
+                "core::arch::asm!(\"fence iorw, iorw\")",
+            ),
+            ("pac/src/ownership.rs", "svd::device_access::fence();"),
+            ("pac/src/wifi/mac/interrupt.rs", "device_fence();"),
+        ],
+    },
+    Decision {
+        reason: "restore-record copy of the captured TX-DC power-detector calibration field: \
+            the optimized probe restores the field from the captured register word it keeps in \
+            a register, whose restore write is compared, and never reads the record copy back",
+        places: &[
+            (
+                "pac/raw/src/lib.rs",
+                "CalibrationFieldUnknownR::new(((self.bits >> 4) & 0xff) as u8)",
+            ),
+            ("pac/raw/src/lib.rs", ".calibration_field_unknown()"),
+        ],
+    },
+    Decision {
+        reason: "construction of the validation-only shared-PHY wrapper: its fresh route \
+            state is a constant the optimized probes fold into each restore-slot check, so no \
+            store of it is read",
+        places: &[("hal/src/owner.rs", "Self {")],
+    },
+    Decision {
         reason: "execution statistics of the RX-gain and TX-DC executors; they \
             report effort to production diagnostics and have no vendor counterpart",
         places: &[
             (
-                "rx/gain_calibration.rs",
+                "phy/src/rx/gain_calibration.rs",
                 "stats.minimum_operations += completion.operations();",
             ),
             (
-                "rx/gain_calibration.rs",
+                "phy/src/rx/gain_calibration.rs",
                 "stats.settle_1us += 2 * u32::from(completion.estimators());",
             ),
             (
-                "target_port/calibration.rs",
+                "phy/src/target_port/calibration.rs",
                 "execution.minimum_searches += 1;",
             ),
             (
-                "target_port/calibration.rs",
+                "phy/src/target_port/calibration.rs",
                 "execution.outer_operations += 1;",
             ),
             (
-                "target_port/calibration.rs",
+                "phy/src/target_port/calibration.rs",
                 "execution.minimum_searches += stats.minimum_searches;",
             ),
             (
-                "target_port/calibration.rs",
+                "phy/src/target_port/calibration.rs",
                 "execution.minimum_operations += stats.minimum_operations;",
             ),
             (
-                "target_port/calibration.rs",
+                "phy/src/target_port/calibration.rs",
                 "execution.settle_1us += stats.settle_1us;",
             ),
-            ("target_port/calibration.rs", "execution.settle_10us += 1;"),
+            (
+                "phy/src/target_port/calibration.rs",
+                "execution.settle_10us += 1;",
+            ),
         ],
     },
     Decision {
@@ -76,25 +111,25 @@ pub const DECISIONS: &[Decision] = &[
             transaction a timed-out step reports; every compared case completes",
         places: &[
             (
-                "target_port/calibration.rs",
+                "phy/src/target_port/calibration.rs",
                 "measurement: measurement_base + 1,",
             ),
             (
-                "target_port/calibration.rs",
+                "phy/src/target_port/calibration.rs",
                 "PhyPbusForceTest::new(1, 1, shared_control),",
             ),
-            ("tx/dc_power_detector.rs", "let measurement = self"),
+            ("phy/src/tx/dc_power_detector.rs", "let measurement = self"),
             (
-                "tx/dc_power_detector.rs",
+                "phy/src/tx/dc_power_detector.rs",
                 ".wrapping_add(self.total_measurements);",
             ),
             (
-                "tx/dc_power_detector.rs",
+                "phy/src/tx/dc_power_detector.rs",
                 "observations = observations.wrapping_add(1);",
             ),
-            ("tx/dc_power_detector.rs", "for transaction in ["),
+            ("phy/src/tx/dc_power_detector.rs", "for transaction in ["),
             (
-                "tx/dc_power_detector.rs",
+                "phy/src/tx/dc_power_detector.rs",
                 "PhyPbusForceTest::new(4, 2, u16::from(tx_path_value) << 3),",
             ),
         ],
@@ -104,36 +139,39 @@ pub const DECISIONS: &[Decision] = &[
             channel, platform, observer) that the probes bind to zero-sized or no-op \
             implementations; the register effects themselves are compared",
         places: &[
-            ("target_port.rs", "registers: &mut impl SharedPhyAccess,"),
             (
-                "target_port.rs",
-                "channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,",
-            ),
-            ("target_port.rs", "observer: &mut O,"),
-            ("target_port.rs", "platform: &mut P,"),
-            ("target_port.rs", "&'port mut self,"),
-            ("target_port.rs", "&mut self.observer,"),
-            ("target_port.rs", "self.platform,"),
-            ("target_port.rs", "self.registers,"),
-            (
-                "target_port/rfpll.rs",
+                "phy/src/target_port.rs",
                 "registers: &mut impl SharedPhyAccess,",
             ),
             (
-                "target_port/temperature.rs",
+                "phy/src/target_port.rs",
+                "channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,",
+            ),
+            ("phy/src/target_port.rs", "observer: &mut O,"),
+            ("phy/src/target_port.rs", "platform: &mut P,"),
+            ("phy/src/target_port.rs", "&'port mut self,"),
+            ("phy/src/target_port.rs", "&mut self.observer,"),
+            ("phy/src/target_port.rs", "self.platform,"),
+            ("phy/src/target_port.rs", "self.registers,"),
+            (
+                "phy/src/target_port/rfpll.rs",
                 "registers: &mut impl SharedPhyAccess,",
             ),
             (
-                "validation.rs",
+                "phy/src/target_port/temperature.rs",
+                "registers: &mut impl SharedPhyAccess,",
+            ),
+            (
+                "phy/src/validation.rs",
                 "channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,",
             ),
-            ("validation.rs", "observer: &mut O,"),
+            ("phy/src/validation.rs", "observer: &mut O,"),
             (
-                "validation.rs",
+                "phy/src/validation.rs",
                 "crate::target_port::select_phy_channel_with_hal::<D, _, _>(",
             ),
             (
-                "target_port.rs",
+                "phy/src/target_port.rs",
                 "TargetCompleter::<D>::select_channel_hal(state, channel_or_frequency, cbw, channel, observer)",
             ),
         ],
@@ -145,23 +183,32 @@ pub const DECISIONS: &[Decision] = &[
             whose instructions are observed",
         places: &[
             (
-                "tracking/calibration.rs",
+                "phy/src/tracking/calibration.rs",
                 "channel: self.parameters.current_channel,",
             ),
             (
-                "tracking/calibration.rs",
+                "phy/src/tracking/calibration.rs",
                 "cbw: self.parameters.channel_bandwidth,",
             ),
-            ("tracking/calibration.rs", "class: self.active_class,"),
             (
-                "tracking/calibration.rs",
+                "phy/src/tracking/calibration.rs",
+                "class: self.active_class,",
+            ),
+            (
+                "phy/src/tracking/calibration.rs",
                 "let current = self.parameters.current_temperature;",
             ),
-            ("tracking/calibration.rs", "clients: self.request.clients,"),
-            ("tracking/calibration.rs", "threshold: self.threshold,"),
-            ("tracking/calibration.rs", "self.dcode"),
-            ("tracking/calibration.rs", "self.channel"),
-            ("tracking/calibration.rs", "self.tx_dc_pwdet[0]"),
+            (
+                "phy/src/tracking/calibration.rs",
+                "clients: self.request.clients,",
+            ),
+            (
+                "phy/src/tracking/calibration.rs",
+                "threshold: self.threshold,",
+            ),
+            ("phy/src/tracking/calibration.rs", "self.dcode"),
+            ("phy/src/tracking/calibration.rs", "self.channel"),
+            ("phy/src/tracking/calibration.rs", "self.tx_dc_pwdet[0]"),
         ],
     },
     Decision {
@@ -170,11 +217,11 @@ pub const DECISIONS: &[Decision] = &[
             the ready-flag take of a completed delay future at its `.await`; the probes poll \
             each future to completion without suspension, so no resume reads them",
         places: &[
-            ("target_port.rs", "}"),
-            ("target_port.rs", ".await;"),
-            ("target_port/rfpll.rs", "}"),
+            ("phy/src/target_port.rs", "}"),
+            ("phy/src/target_port.rs", ".await;"),
+            ("phy/src/target_port/rfpll.rs", "}"),
             (
-                "target_port/temperature.rs",
+                "phy/src/target_port/temperature.rs",
                 ") -> Result<Result<PhyTemperatureOutcome, PhyTemperatureFailure>, PhyTargetPortError> {",
             ),
         ],
@@ -183,23 +230,26 @@ pub const DECISIONS: &[Decision] = &[
         reason: "probe snapshot artifact: the tracking probes read the RX-gain memory \
             parameters to export their DC banks and drop `parameter_002`, which the RX-gain \
             scenario compares where calibration uses it",
-        places: &[("state.rs", "parameter_002: self.config.pbus_rx_path,")],
+        places: &[(
+            "phy/src/state.rs",
+            "parameter_002: self.config.pbus_rx_path,",
+        )],
     },
     Decision {
         reason: "diagnostic-print selectors retained with the TX-power child's parent action: \
             commit reads only its variant and `enabled`, and the vendor diagnostics select \
             only console output, which production does not emit",
-        places: &[("tracking/parameters.rs", "Ok(Self {")],
+        places: &[("phy/src/tracking/parameters.rs", "Ok(Self {")],
     },
     Decision {
         reason: "measurement identity of the event-driven RX-DC host model: the ROM search \
             has no corresponding field and the direct target transaction never reads it",
         places: &[
             (
-                "rx/gain_calibration.rs",
+                "phy/src/rx/gain_calibration.rs",
                 "measurement: iteration.wrapping_mul(2).wrapping_add(high as u8),",
             ),
-            ("rx/gain_calibration.rs", "policy.iteration,"),
+            ("phy/src/rx/gain_calibration.rs", "policy.iteration,"),
         ],
     },
     Decision {
@@ -208,9 +258,9 @@ pub const DECISIONS: &[Decision] = &[
             Bluetooth/802.15.4 TX-power update, the relaxed Wi-Fi TX-power threshold) is \
             observed under both flag values",
         places: &[
-            ("state.rs", "self.bluetooth.power_tracking = value;"),
+            ("phy/src/state.rs", "self.bluetooth.power_tracking = value;"),
             (
-                "state.rs",
+                "phy/src/state.rs",
                 "state.wifi.tx_power_tracking_slow = relaxed_threshold.into();",
             ),
         ],
@@ -220,12 +270,15 @@ pub const DECISIONS: &[Decision] = &[
             compared parent transition never reads them",
         places: &[
             (
-                "state/client.rs",
+                "phy/src/state/client.rs",
                 "owner.bits = if request.wifi() { WIFI_BIT } else { 0 }",
             ),
-            ("state/client.rs", "| if request.bluetooth_ieee802154() {"),
             (
-                "state/client.rs",
+                "phy/src/state/client.rs",
+                "| if request.bluetooth_ieee802154() {",
+            ),
+            (
+                "phy/src/state/client.rs",
                 "owner.tracker_model_armed = owner.bits != 0;",
             ),
         ],
@@ -236,14 +289,17 @@ pub const DECISIONS: &[Decision] = &[
             branch that sets it, and the recalibrated RX-gain child overwrites its initial \
             table results before reading them",
         places: &[
-            ("target_port.rs", "transition"),
-            ("target_port.rs", "let mut child = pending"),
+            ("phy/src/target_port.rs", "transition"),
+            ("phy/src/target_port.rs", "let mut child = pending"),
         ],
     },
     Decision {
         reason: "temperature acquisition provenance, a production scheduling record with no \
             vendor counterpart; the temperature and sensor index are compared",
-        places: &[("tracking/temperature.rs", "Acquisition::Undated => Self {")],
+        places: &[(
+            "phy/src/tracking/temperature.rs",
+            "Acquisition::Undated => Self {",
+        )],
     },
     Decision {
         reason: "RFPLL correction report: the search and frequency-memory outcome reach only \
@@ -252,23 +308,23 @@ pub const DECISIONS: &[Decision] = &[
             capacitor and frequency-memory writes are compared",
         places: &[
             (
-                "analog/frequency.rs",
+                "phy/src/analog/frequency.rs",
                 "PhyFrequencyCapMemoryAction::Complete(PhyFrequencyCapMemoryOutcome {",
             ),
             (
-                "analog/frequency.rs",
+                "phy/src/analog/frequency.rs",
                 "correction: self.request.correction,",
             ),
-            ("tracking/rfpll.rs", "search: *search,"),
-            ("tracking/rfpll/thermal.rs", "self.request"),
-            ("tracking/parameters.rs", "self.child.request()"),
-            ("target_port.rs", "let request = child.request();"),
+            ("phy/src/tracking/rfpll.rs", "search: *search,"),
+            ("phy/src/tracking/rfpll/thermal.rs", "self.request"),
+            ("phy/src/tracking/parameters.rs", "self.child.request()"),
+            ("phy/src/target_port.rs", "let request = child.request();"),
             (
-                "target_port/rfpll.rs",
+                "phy/src/target_port/rfpll.rs",
                 ") -> Result<rfpll::Outcome, PhyTargetPortError> {",
             ),
             (
-                "target_port/rfpll.rs",
+                "phy/src/target_port/rfpll.rs",
                 ".ok_or(PhyTargetPortError::UnexpectedBinding)",
             ),
         ],
@@ -276,11 +332,14 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         reason: "initial correction of the event-driven RX-DC host model; the target \
             runs the calibration as one direct transaction starting from the request",
-        places: &[("rx/gain_calibration.rs", "current: request.initial,")],
+        places: &[(
+            "phy/src/rx/gain_calibration.rs",
+            "current: request.initial,",
+        )],
     },
 ];
 
-/// Executed and observed production PHY lines.
+/// Executed and observed production hardware lines.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Lines {
     pub executed: BTreeSet<SourceLine>,
@@ -304,7 +363,7 @@ impl Lines {
     }
 }
 
-/// Maps probe instructions to production PHY source lines.
+/// Maps probe instructions to production hardware source lines.
 pub struct LineMap {
     lines: BTreeMap<u32, Vec<SourceLine>>,
 }
@@ -457,7 +516,7 @@ mod tests {
     use super::*;
 
     const FILE: &str = "crates/hardware/esp32s31/phy/src/example.rs";
-    const PLACE: &str = "example.rs";
+    const PLACE: &str = "phy/src/example.rs";
 
     fn root() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();

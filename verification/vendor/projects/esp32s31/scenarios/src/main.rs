@@ -799,7 +799,7 @@ fn all(
         .filter(|l| !lines.effect.contains(*l) && lines.state.contains(*l))
         .count();
     println!(
-        "{} of {} executed production PHY lines observed; {} unobserved reviewed, {} untriaged \
+        "{} of {} executed production hardware lines observed; {} unobserved reviewed, {} untriaged \
          ({effect} reach uncompared effects, {state} only final state, {} nothing)",
         lines.observed.len(),
         lines.executed.len(),

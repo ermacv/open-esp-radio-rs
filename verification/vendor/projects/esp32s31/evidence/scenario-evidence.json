@@ -4,6 +4,7 @@
   "target": "esp32s31",
   "inputs": {
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
+    "libpp": "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "production": "d19798763daa893c29d9ac0ad2b64d69d9e1dc84d808b893137998754385a336",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
@@ -109,7 +110,7 @@
     },
     {
       "path": "tools/blobray/crates/application",
-      "sha256": "a6e5bee958e61bf38ad2751df34232b38b8fab1aba1d2587418be37293716d96"
+      "sha256": "4d76bfd2b18814ecd85bbb238217974f7ffce6b7fce4b9128aaccc3f8c8af6c4"
     },
     {
       "path": "tools/blobray/crates/artifacts",
@@ -117,7 +118,7 @@
     },
     {
       "path": "tools/blobray/crates/domain",
-      "sha256": "5d36fe93086dbb851ca177137f4160381238096b39da4013b1b5ee4f736f5748"
+      "sha256": "2bf063d2543846bb13d087a05bdc5ff29a27b21b0d705f651ffc301ca5017e76"
     },
     {
       "path": "tools/blobray/crates/knowledge",
@@ -129,7 +130,7 @@
     },
     {
       "path": "tools/blobray/crates/store",
-      "sha256": "451c274d4d40c9deaad61b0235178dfd8f47d261fb38babaf44f24ae0fd7b9f0"
+      "sha256": "5b50164c72fa5ef64234c94d916584436536088e24d152e35d06db47b7ebacc1"
     },
     {
       "path": "tools/blobray/crates/verification",
@@ -157,11 +158,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "c1d52253fbe5b4f000f16e7d33215b99c75e0996ab21331dc50ed4c56857dc88"
+      "sha256": "1cb6319f0c2829281b83a94c61859325a63d468b33aeb6ea673d7e5833b6c327"
     },
     {
       "path": "verification/vendor/schema",
-      "sha256": "a11183ecd67a813ff619c2fc7f7d6e7f53eb2ed3f9c0fdf9a839c15245bf9681"
+      "sha256": "2c00a79bcb49037a2497d655aab311d4bfa6de31471193cc852efffeae31921d"
     }
   ],
   "entries": [
@@ -219,10 +220,10 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 27,
-        "observed": 27,
+        "executed": 63,
+        "observed": 58,
         "reviewed": 0,
-        "untriaged": 0
+        "untriaged": 5
       },
       "state": {
         "written": 0,
@@ -252,10 +253,10 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 41,
-        "observed": 41,
+        "executed": 78,
+        "observed": 73,
         "reviewed": 0,
-        "untriaged": 0
+        "untriaged": 5
       },
       "state": {
         "written": 80,
@@ -285,10 +286,10 @@
         "untriaged": 1
       },
       "observation": {
-        "executed": 41,
-        "observed": 41,
+        "executed": 78,
+        "observed": 73,
         "reviewed": 0,
-        "untriaged": 0
+        "untriaged": 5
       },
       "state": {
         "written": 0,
@@ -318,8 +319,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 15,
-        "observed": 15,
+        "executed": 44,
+        "observed": 44,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -338,7 +339,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "4a0c8a1140aaf6dbb202dc5807dc184fb93b1c075f90e6fee910401ff9e0df77"
+        "2915f04c5efcb1fc8b443033e606379a4320a889ac396598a6f441ccc6ce6775"
       ],
       "coverage": {
         "blocks": {
@@ -353,8 +354,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 39,
-        "observed": 39,
+        "executed": 85,
+        "observed": 85,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -373,7 +374,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "a677385a6530dc660901542c3c037f4e34f90f1de91477dbdd285adfa9b7f272"
+        "c3d1c7cb1683cedfc0dc0f9505c2bf481502c3260e24863968db89c99c33cd74"
       ],
       "coverage": {
         "blocks": {
@@ -388,8 +389,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 39,
-        "observed": 39,
+        "executed": 85,
+        "observed": 85,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -408,7 +409,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "92215bdcc1ba92c08c911280198f8c3e937b216146d3c7ff2c30b29c26b357d1"
+        "aec63070589e9cadaf511f7b7633a643064400d1e37dbffebf1a96d03908ff14"
       ],
       "coverage": {
         "blocks": {
@@ -423,8 +424,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 39,
-        "observed": 39,
+        "executed": 85,
+        "observed": 85,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -443,7 +444,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "ae5baa87efb9cc9d9fc62ce89fe3689c2d775f67639895498a9bd8f0bd07ace7"
+        "308260def5a4864866daef340aa6979d84a7ec1ff3dfb647c298446ece4a1e51"
       ],
       "coverage": {
         "blocks": {
@@ -458,8 +459,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 39,
-        "observed": 39,
+        "executed": 85,
+        "observed": 85,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -478,7 +479,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "039baf946e41b95f93e73e7ca61ac7a0051238318ca30613f4b0e45b78ad2d19"
+        "84ee336a540e906e73c5bfd7fc5d4bfac6a256d3a163b91ad29a17dfa4af7641"
       ],
       "coverage": {
         "blocks": {
@@ -493,8 +494,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 39,
-        "observed": 39,
+        "executed": 85,
+        "observed": 85,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -513,7 +514,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "e6905a5f5e9bcf3c02dd5c59181b50d00f5fe299745b38f8216cf1829405824b"
+        "cbf5c91993acb61d3bd31aeac74d4f37c78db1ebca8aba241d7aade7347e554d"
       ],
       "coverage": {
         "blocks": {
@@ -528,8 +529,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 39,
-        "observed": 39,
+        "executed": 85,
+        "observed": 85,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -561,8 +562,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 46,
-        "observed": 46,
+        "executed": 105,
+        "observed": 105,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -594,8 +595,8 @@
         "untriaged": 2
       },
       "observation": {
-        "executed": 3,
-        "observed": 3,
+        "executed": 67,
+        "observed": 67,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -627,8 +628,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 3,
-        "observed": 3,
+        "executed": 67,
+        "observed": 67,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -660,8 +661,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 3,
-        "observed": 3,
+        "executed": 67,
+        "observed": 67,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -693,8 +694,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 3,
-        "observed": 3,
+        "executed": 67,
+        "observed": 67,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -713,7 +714,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "c1ca261d4b88d35b15320c91a2759a0c8dfa410b4343d154abfc322570010d37"
+        "ceeb7a92fa5a807513d6d7dc27885515fb1b8539c30fc45285a0b3a82786aef1"
       ],
       "coverage": {
         "blocks": {
@@ -728,10 +729,10 @@
         "untriaged": 2
       },
       "observation": {
-        "executed": 105,
-        "observed": 105,
+        "executed": 149,
+        "observed": 144,
         "reviewed": 0,
-        "untriaged": 0
+        "untriaged": 5
       },
       "state": {
         "written": 0,
@@ -748,7 +749,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "284e036a2683b9eba90d625c21ff10c1b69da8b4d3f84d72514422d576551ea7"
+        "9abc29b85284ebdb716331f559467a00171133d274ca8b179765a5572a17327d"
       ],
       "coverage": {
         "blocks": {
@@ -763,10 +764,10 @@
         "untriaged": 11
       },
       "observation": {
-        "executed": 199,
-        "observed": 190,
+        "executed": 303,
+        "observed": 293,
         "reviewed": 7,
-        "untriaged": 2
+        "untriaged": 3
       },
       "state": {
         "written": 5,
@@ -783,8 +784,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "227c949009d525e1a53dc8171c2198e608fcf3c56a6a801aa757c82e04a21d3b",
-        "73ba55f019ed86baf64ec4a964aab7bafd091ce860b46d2978f9d8d791194a42"
+        "6342facfdcb392d15fc4c7f1b01a3becafbd0917611c9a42c7506281facc7397",
+        "d5cbeb3c7136fc08689451976fc2e766bc75e91de5d68a9bd94457a533942f62"
       ],
       "coverage": {
         "blocks": {
@@ -799,9 +800,9 @@
         "untriaged": 43
       },
       "observation": {
-        "executed": 149,
-        "observed": 147,
-        "reviewed": 2,
+        "executed": 200,
+        "observed": 197,
+        "reviewed": 3,
         "untriaged": 0
       },
       "state": {
@@ -819,7 +820,7 @@
       "verdict": "match",
       "cases": 100,
       "reviews": [
-        "1f1bca81928e6e2e3a2d451af0e383c36cc9f8a33d64ee6ca7c9af5f02262ab0"
+        "cadda6a176bbf41b0da04cc44f08f79fd14379e361aaebb53f33ac62a6d41b33"
       ],
       "coverage": {
         "blocks": {
@@ -834,10 +835,10 @@
         "untriaged": 2
       },
       "observation": {
-        "executed": 181,
-        "observed": 178,
+        "executed": 226,
+        "observed": 207,
         "reviewed": 1,
-        "untriaged": 2
+        "untriaged": 18
       },
       "state": {
         "written": 0,
@@ -854,8 +855,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "c202093a1ed0c475b6bd4b95a6ec9aadd72acbb2b0affdf77409cea914324d6a",
-        "d36f302af8b53eb1a339b089b9f7b3615acfafbc7452cb7345e6f9796e7bdb83"
+        "32e54cdd3fe7e2ac3237524871a33c829207aaf40fecffd39889ab1f3db085ec",
+        "bc3a46666ed68fbffb9e89265abb6fd34842db14d425561f9267df8fe5eb09a2"
       ],
       "coverage": {
         "blocks": {
@@ -870,10 +871,10 @@
         "untriaged": 17
       },
       "observation": {
-        "executed": 368,
-        "observed": 358,
+        "executed": 598,
+        "observed": 583,
         "reviewed": 7,
-        "untriaged": 3
+        "untriaged": 8
       },
       "state": {
         "written": 9,
@@ -890,8 +891,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "5994b352494c15a46299590d96544ee473b209cccace063355937a3c893630cf",
-        "ea862160b51cdaaa1319b3e406978eb093585b708b247f5d35d27a4aa239e010"
+        "07e37d4db004242a793175cd15c3ca507e5d3fa75e6c5f4d42d569f220f4d2c6",
+        "d0adc0d34076c808945eb45b0d0d2f21ecb726e692410775cd3f45b1a5c4f21d"
       ],
       "coverage": {
         "blocks": {
@@ -906,10 +907,10 @@
         "untriaged": 3
       },
       "observation": {
-        "executed": 95,
-        "observed": 91,
+        "executed": 145,
+        "observed": 128,
         "reviewed": 2,
-        "untriaged": 2
+        "untriaged": 15
       },
       "state": {
         "written": 1,
@@ -926,9 +927,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "14d8c17cfb0aea0e60039ede85c2a33912b774b9dde1d0aa06200b14eb282bf0",
-        "8a4db206bed463447c4db71814887ed6e460391327a3f9997bc7988b728a6af0",
-        "fec0faeb985c6c25af333b88aea3761b0892389248f5a82fce7b05e023051964"
+        "4404446c602e0beaac48898427e82693a1da82652acaeab71e84d74c99a878d6",
+        "53b89bf83007994ea0bf6a2e3fd41ece2146d490a9669a111dc736b51f3a1ff4",
+        "5e42558919fbbcd92366ee3adf33ba984c267af95f1b1ee877e57cfa172e2612"
       ],
       "coverage": {
         "blocks": {
@@ -943,10 +944,10 @@
         "untriaged": 20
       },
       "observation": {
-        "executed": 452,
-        "observed": 432,
+        "executed": 690,
+        "observed": 663,
         "reviewed": 13,
-        "untriaged": 7
+        "untriaged": 14
       },
       "state": {
         "written": 114,
@@ -963,8 +964,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "3c34606bc71506fae4827c9813f554d8398c32c56830b764fb58ba442a94b419",
-        "cdf1693cbce3713d304549da160e16a87837515581b4168b78a846c30b26323b"
+        "7586c91de034b55bce1491fb895f7a9728a60dc7f38ffe10b29ae5b2b3ffcfe6",
+        "fb69c28caa94f01fa008fa4bdd081d71d812248eb8267a51a4897c4fb7970433"
       ],
       "coverage": {
         "blocks": {
@@ -979,10 +980,10 @@
         "untriaged": 2
       },
       "observation": {
-        "executed": 170,
-        "observed": 163,
-        "reviewed": 5,
-        "untriaged": 2
+        "executed": 385,
+        "observed": 374,
+        "reviewed": 7,
+        "untriaged": 4
       },
       "state": {
         "written": 24,
@@ -999,8 +1000,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "206b574019d008c0c48000b77a24ff14a4943cb498d694147621a52ef3919a90",
-        "8ffad935269ac4097c359627fa487e8e867f3f96e2bcfee8edc87a3a26f9f13a"
+        "8c896f346476128a22b08d5d8a945094d6fd9f852881e08e322aae98e7c6a2b0",
+        "f0d2e7eaf8bea340d875dc43c2f298a3dd4f1cc3496cbc999819ee737f2dec55"
       ],
       "coverage": {
         "blocks": {
@@ -1015,10 +1016,10 @@
         "untriaged": 137
       },
       "observation": {
-        "executed": 1389,
-        "observed": 1343,
-        "reviewed": 32,
-        "untriaged": 14
+        "executed": 1941,
+        "observed": 1890,
+        "reviewed": 34,
+        "untriaged": 17
       },
       "state": {
         "written": 157,
@@ -1035,8 +1036,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "8a7275764d66654d9a875b7f718149eeae82f6ca8d0651985e2706693a8c9c37",
-        "eb2e6ac535e0d0efd4e05c0d11cd8340ac4921fe2a94c0cc4b7da1160a95cf40"
+        "6ba853ebdcfe4fe04e2b6cb1ee434e26bf2fdf886a6193c39932a3cf75bb82e9",
+        "9717baf3dab749b6389c0e305d9f045cdf01d472d983ef6ba24862b4a6e5d966"
       ],
       "coverage": {
         "blocks": {
@@ -1051,10 +1052,10 @@
         "untriaged": 134
       },
       "observation": {
-        "executed": 1824,
-        "observed": 1745,
-        "reviewed": 62,
-        "untriaged": 17
+        "executed": 2418,
+        "observed": 2329,
+        "reviewed": 64,
+        "untriaged": 25
       },
       "state": {
         "written": 180,
@@ -1062,9 +1063,678 @@
         "reviewed": 20,
         "untriaged": 0
       }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_disable_softap_tsf",
+      "production": "open_libpp_ap_tsf_trace_hal_disable_softap_tsf",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 14,
+        "observed": 14,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_tsf_reset",
+      "production": "open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 5,
+          "total": 8
+        },
+        "directions": {
+          "reached": 3,
+          "total": 6
+        },
+        "excluded": 6,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 25,
+        "observed": 24,
+        "reviewed": 0,
+        "untriaged": 1
+      },
+      "state": {
+        "written": 4,
+        "compared": 0,
+        "reviewed": 4,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_interrupt_get_event",
+      "production": "open_libpp_trace_hal_mac_interrupt_ret_get_event",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 12,
+        "observed": 12,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_interrupt_clr_event",
+      "production": "open_libpp_trace_hal_mac_interrupt_ret_clr_event",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [
+        "857a36f5bf20c8dcae7e565ea2519d554e83b6ee5001b3404aac457586df64b8"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 15,
+        "observed": 12,
+        "reviewed": 3,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_pwr_interrupt_get_event",
+      "production": "open_libpp_power_irq_trace_hal_pwr_interrupt_get_event",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 12,
+        "observed": 12,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_pwr_interrupt_clr_event",
+      "production": "open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [
+        "4d9a1eb06b09267813a327e818a412ce4d1054075b5be480ba699d228934ae8b"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 15,
+        "observed": 12,
+        "reviewed": 3,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_rx_disable",
+      "production": "open_libpp_rx_trace_hal_mac_rx_disable",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 14,
+        "observed": 14,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_rx_enable",
+      "production": "open_libpp_rx_trace_hal_mac_rx_enable",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 13,
+        "observed": 13,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_rx_set_base",
+      "production": "open_libpp_rx_trace_hal_mac_rx_set_base",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 13,
+        "observed": 13,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_rx_is_dscr_reload",
+      "production": "open_libpp_rx_trace_hal_mac_rx_is_dscr_reload",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 12,
+        "observed": 12,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_rx_set_dscr_reload",
+      "production": "open_libpp_rx_trace_hal_mac_rx_set_dscr_reload",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 14,
+        "observed": 14,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_tx_set_cca",
+      "production": "open_libpp_tx_trace_hal_mac_tx_set_cca",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 15,
+        "observed": 15,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_get_txq_in_trig_flow_state",
+      "production": "open_libpp_tx_trace_hal_mac_get_txq_in_trig_flow_state",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 11,
+        "observed": 11,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_is_txq_enabled",
+      "production": "open_libpp_tx_trace_hal_mac_is_txq_enabled",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 13,
+        "observed": 13,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_is_txq_valid",
+      "production": "open_libpp_tx_trace_hal_mac_is_txq_valid",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 12,
+        "observed": 12,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_set_txq_invalid",
+      "production": "open_libpp_tx_trace_hal_mac_set_txq_invalid",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 16,
+        "observed": 16,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_txq_disable",
+      "production": "open_libpp_tx_trace_hal_mac_txq_disable",
+      "verdict": "match",
+      "cases": 32,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 16,
+        "observed": 16,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_txq_disable",
+      "production": "open_ordinary_tx_ownership_disable",
+      "verdict": "match",
+      "cases": 32,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 16,
+        "observed": 16,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_clr_txq_state",
+      "production": "open_ordinary_tx_ownership_acknowledge",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 4,
+          "total": 7
+        },
+        "directions": {
+          "reached": 2,
+          "total": 6
+        },
+        "excluded": 7,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 27,
+        "observed": 27,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_disable_sta_beacon_filter",
+      "production": "open_wifi_sta_trace_hal_disable_sta_beacon_filter",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 17,
+        "observed": 17,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
     }
   ],
   "untriaged": [],
-  "unobserved": [],
+  "unobserved": [
+    {
+      "path": "crates/hardware/esp32s31/pac/src/phy/baseband.rs",
+      "line": 558
+    }
+  ],
   "unprojected": []
 }

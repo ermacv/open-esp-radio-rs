@@ -51,6 +51,7 @@ members = [
     "crates/hardware/esp32s31/driver/ieee80211/mac",
     "crates/roles/esp32s31/ieee80211/ap",
     "crates/roles/esp32s31/ieee80211/sta",
+    "crates/roles/esp32s31/bluetooth/radio",
     "crates/roles/esp32s31/ieee802154/radio",
     "crates/hardware/esp32s31/phy",
     "crates/hardware/esp32s31/pac/raw",

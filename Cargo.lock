@@ -2257,6 +2257,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-bluetooth-radio"
+version = "0.1.0"
+dependencies = [
+ "oer-bluetooth-radio",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-hal",
+]
+
+[[package]]
 name = "oer-esp32s31-coex"
 version = "0.1.0"
 dependencies = [

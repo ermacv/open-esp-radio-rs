@@ -70,9 +70,9 @@ enum Checkout {
     /// A fresh temporary directory, for readers of the sources.
     Temporary(tempfile::TempDir),
     /// A fixed build workspace held under an exclusive lock. A stable path
-    /// keeps Cargo's unit identities stable in the shared compile cache, so
-    /// each snapshot rebuilds its path packages in place instead of adding
-    /// another copy of every one.
+    /// keeps Cargo's unit identities stable in the shared compile cache, and
+    /// unchanged files keep their modification times, so Cargo rebuilds only
+    /// the packages a snapshot actually changes.
     Workspace { path: PathBuf, _lock: fs::File },
 }
 
@@ -95,8 +95,10 @@ impl FrozenSources {
         Self::materialize(directory, checkout)
     }
 
-    /// Materialize into `workspace`, replacing its previous contents once
-    /// no other build holds it.
+    /// Materialize into `workspace` once no other build holds it. The
+    /// snapshot is verified in a staging directory; the workspace then keeps
+    /// every file whose bytes and mode are unchanged, receives the rest and
+    /// loses anything the snapshot does not contain.
     pub fn open_in_workspace(directory: &Path, workspace: &Path) -> Result<Self> {
         use fs2::FileExt as _;
         let parent = workspace
@@ -109,17 +111,30 @@ impl FrozenSources {
             .write(true)
             .open(workspace.with_extension("lock"))?;
         lock.lock_exclusive()?;
-        if fs::symlink_metadata(workspace).is_ok() {
-            fs::remove_dir_all(workspace)?;
+        let staging = workspace.with_extension("staging");
+        if fs::symlink_metadata(&staging).is_ok() {
+            fs::remove_dir_all(&staging)?;
         }
-        fs::create_dir(workspace)?;
-        Self::materialize(
-            directory,
-            Checkout::Workspace {
+        fs::create_dir(&staging)?;
+        let (snapshot, manifest) = materialize::materialize(directory, &staging)?;
+        if !fs::symlink_metadata(workspace).is_ok_and(|metadata| metadata.is_dir()) {
+            if fs::symlink_metadata(workspace).is_ok() {
+                fs::remove_file(workspace)?;
+            }
+            fs::create_dir(workspace)?;
+        }
+        synchronize(&staging, workspace)?;
+        fs::remove_dir_all(&staging)?;
+        let sources = Self {
+            checkout: Checkout::Workspace {
                 path: workspace.to_owned(),
                 _lock: lock,
             },
-        )
+            snapshot,
+            manifest,
+        };
+        sources.verify_unchanged()?;
+        Ok(sources)
     }
 
     fn materialize(directory: &Path, checkout: Checkout) -> Result<Self> {
@@ -159,6 +174,68 @@ impl FrozenSources {
         }
         Ok(())
     }
+}
+
+/// Make `destination` hold exactly the regular files of `source`, leaving
+/// files with equal bytes and mode untouched.
+fn synchronize(source: &Path, destination: &Path) -> Result<()> {
+    let mut entries = fs::read_dir(destination)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        let expected = source.join(entry.file_name());
+        let kind = entry.file_type()?;
+        let keep = match fs::symlink_metadata(&expected) {
+            Ok(metadata) if metadata.is_dir() => kind.is_dir(),
+            Ok(metadata) if metadata.is_file() => kind.is_file(),
+            _ => false,
+        };
+        if !keep {
+            if kind.is_dir() {
+                fs::remove_dir_all(entry.path())?;
+            } else {
+                fs::remove_file(entry.path())?;
+            }
+        }
+    }
+    let mut entries = fs::read_dir(source)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        let target = destination.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            if !target.is_dir() {
+                fs::create_dir(&target)?;
+            }
+            synchronize(&entry.path(), &target)?;
+        } else if !kind.is_file() {
+            return Err("materialized snapshot holds a non-regular entry".into());
+        } else if !same_file(&entry.path(), &target)? {
+            // Replace atomically so a partly written file is never kept.
+            let temporary =
+                destination.join(format!(".{}.sync", entry.file_name().to_string_lossy()));
+            fs::copy(entry.path(), &temporary)?;
+            fs::rename(&temporary, &target)?;
+        }
+    }
+    Ok(())
+}
+
+fn same_file(left: &Path, right: &Path) -> Result<bool> {
+    let (left_metadata, Ok(right_metadata)) =
+        (fs::symlink_metadata(left)?, fs::symlink_metadata(right))
+    else {
+        return Ok(false);
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        if left_metadata.permissions().mode() != right_metadata.permissions().mode() {
+            return Ok(false);
+        }
+    }
+    Ok(right_metadata.is_file()
+        && left_metadata.len() == right_metadata.len()
+        && fs::read(left)? == fs::read(right)?)
 }
 
 struct Selection {

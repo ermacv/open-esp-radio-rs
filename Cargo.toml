@@ -108,6 +108,11 @@ codegen-units = 1
 # Host-side binary analysis is prohibitively slow at dev opt-level 0. Keep a
 # separate incremental profile for the normal blobray aliases so firmware
 # development and unit tests retain their ordinary dev/release behavior.
+# HIL source snapshots hash every input file several times per build; an
+# unoptimized SHA-256 dominates a current-source run.
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.blobray]
 inherits = "dev"
 opt-level = 3

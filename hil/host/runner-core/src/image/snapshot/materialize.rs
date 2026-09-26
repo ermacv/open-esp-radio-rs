@@ -37,7 +37,10 @@ pub(super) fn materialize(directory: &Path, destination: &Path) -> Result<(Snaps
     if !roles.contains(&"repository".to_owned()) || expected.len() != snapshot.files {
         return Err("incomplete source snapshot manifest".into());
     }
-    let mut archive = tar::Archive::new(fs::File::open(directory.join("sources.tar"))?);
+    let mut archive = tar::Archive::new(std::io::BufReader::with_capacity(
+        1 << 20,
+        fs::File::open(directory.join("sources.tar"))?,
+    ));
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?.into_owned();
@@ -57,8 +60,10 @@ pub(super) fn materialize(directory: &Path, destination: &Path) -> Result<(Snaps
             .write(true)
             .create_new(true)
             .open(&output)?;
+        // A checkout is transient: a failed build materializes it again, and
+        // the digest below checks what was written, so no fsync is needed.
         std::io::copy(&mut entry, &mut target)?;
-        target.sync_all()?;
+        drop(target);
         if crate::durable::sha256_file(&output)? != file.sha256 {
             return Err("source archive content digest mismatch".into());
         }

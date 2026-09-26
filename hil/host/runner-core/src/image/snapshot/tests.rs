@@ -213,6 +213,8 @@ fn a_build_workspace_is_stable_exclusive_and_replaced_on_reuse() {
     let opened = FrozenSources::open_in_workspace(&first.directory, &workspace).unwrap();
     assert_eq!(opened.repository(), workspace.join("repository"));
     fs::write(workspace.join("stale.txt"), "left behind").unwrap();
+    let unchanged = workspace.join("repository/.gitignore");
+    let unchanged_time = fs::metadata(&unchanged).unwrap().modified().unwrap();
     // A second build waits for the lock; the holder releases it on drop.
     let lock = fs::File::open(workspace.with_extension("lock")).unwrap();
     assert!(fs2::FileExt::try_lock_exclusive(&lock).is_err());
@@ -220,6 +222,11 @@ fn a_build_workspace_is_stable_exclusive_and_replaced_on_reuse() {
     let reopened = FrozenSources::open_in_workspace(&second.directory, &workspace).unwrap();
     assert_eq!(reopened.repository(), workspace.join("repository"));
     assert!(!workspace.join("stale.txt").exists());
+    // Unchanged bytes keep their modification time, so Cargo keeps them fresh.
+    assert_eq!(
+        fs::metadata(&unchanged).unwrap().modified().unwrap(),
+        unchanged_time
+    );
     assert_eq!(
         fs::read_to_string(workspace.join("repository/Cargo.toml")).unwrap(),
         "changed\n"

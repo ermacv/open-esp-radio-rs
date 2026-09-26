@@ -19,13 +19,26 @@
 //! and source-127 worker wakes. [`BluetoothSystem::runner`] drives the radio
 //! runtime and the source-127 timer task until a fault stops either.
 //!
+//! [`start_bluetooth_hci`] then creates the HCI Controller over that runtime:
+//! the in-process transport, whose Host end goes to the Host stack, and the
+//! service that runs the portable Controller core with the runtime as its
+//! radio. [`BluetoothEntropy`] binds the SoC entropy service as its random
+//! source.
+//!
 //! The epoch is one-shot: there is no teardown or restart, and periodic PHY
 //! tracking maintenance is not composed yet. Any failure after the first
 //! Controller write retains its owners in the returned error.
 
 #[cfg(target_arch = "riscv32")]
+mod hci;
+#[cfg(target_arch = "riscv32")]
 mod system;
 
+#[cfg(target_arch = "riscv32")]
+pub use hci::{
+    BluetoothEntropy, BluetoothHci, BluetoothHciService, BluetoothHostTransport,
+    CONTROLLER_TO_HOST, HOST_TO_CONTROLLER, OUTPUT, PACKET, start_bluetooth_hci,
+};
 #[cfg(target_arch = "riscv32")]
 pub use system::{
     BluetoothInterruptFault, BluetoothRunner, BluetoothRunnerFault, BluetoothStartError,

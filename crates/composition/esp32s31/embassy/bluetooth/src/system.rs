@@ -248,6 +248,8 @@ pub struct BluetoothSystem {
     pub phy: oer_esp32s31_bluetooth::common_phy_state::ControllerPhyEntry,
     /// Calibration result of this epoch, for the next cold start.
     pub calibration: Option<PhyCalibrationSnapshot>,
+    /// The device's public address.
+    pub public_address: oer_bluetooth_hci::BluetoothPublicDeviceAddress,
 }
 
 /// Drives the radio runtime and the source-127 timer task.
@@ -542,5 +544,6 @@ pub async fn start_esp32s31_bluetooth(
         },
         phy,
         calibration,
+        public_address,
     })
 }

@@ -2313,6 +2313,9 @@ dependencies = [
  "critical-section",
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-controller",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-runtime",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-radio",
@@ -2321,6 +2324,7 @@ dependencies = [
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
  "oer-esp32s31-radio-esp-hal",
+ "oer-esp32s31-soc-esp-hal",
  "static_cell",
 ]
 

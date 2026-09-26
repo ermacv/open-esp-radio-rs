@@ -86,7 +86,6 @@ pub struct RfpllFrequencyRequest {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RfpllFrequencyOutcome {
-    pub sdm: RfpllSdmImage,
     pub lock_observed: bool,
     pub initial_cap: u16,
     pub final_cap: u16,
@@ -240,16 +239,38 @@ enum RfpllFrequencyStep {
     ChannelStartDelay,
     ChannelClear,
     ChannelSettleDelay,
-    ChannelReady { samples: u32 },
+    ChannelReady {
+        samples: u32,
+    },
     ChannelNrx,
-    InitialWrite(u8),
-    SdmWrite(u8),
+    /// Direct programming carries the SDM image it writes after the
+    /// initial writes; table-selected channels never compute one.
+    InitialWrite {
+        index: u8,
+        sdm: RfpllSdmImage,
+    },
+    SdmWrite {
+        index: u8,
+        sdm: RfpllSdmImage,
+    },
     RestartWrite(u8),
-    LockDelay { attempt: u8 },
-    LockRead { attempt: u8 },
-    CapLowRead { lock_observed: bool },
-    CapHighRead { low: u8, lock_observed: bool },
-    EnableCapSearch { initial: u16, lock_observed: bool },
+    LockDelay {
+        attempt: u8,
+    },
+    LockRead {
+        attempt: u8,
+    },
+    CapLowRead {
+        lock_observed: bool,
+    },
+    CapHighRead {
+        low: u8,
+        lock_observed: bool,
+    },
+    EnableCapSearch {
+        initial: u16,
+        lock_observed: bool,
+    },
     CapWriteLow(CapWriteContinuation),
     CapWriteHigh(CapWriteContinuation),
     CapDelay(CapWriteContinuation),
@@ -263,7 +284,6 @@ enum RfpllFrequencyStep {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RfpllFrequencyTransition {
     request: RfpllFrequencyRequest,
-    sdm: RfpllSdmImage,
     step: RfpllFrequencyStep,
 }
 
@@ -278,12 +298,14 @@ impl RfpllFrequencyTransition {
     pub const fn new(request: RfpllFrequencyRequest) -> Self {
         Self {
             request,
-            sdm: calculate_rfpll_sdm(
-                request.frequency_code,
-                request.crystal_selector,
-                request.offset,
-            ),
-            step: RfpllFrequencyStep::InitialWrite(0),
+            step: RfpllFrequencyStep::InitialWrite {
+                index: 0,
+                sdm: calculate_rfpll_sdm(
+                    request.frequency_code,
+                    request.crystal_selector,
+                    request.offset,
+                ),
+            },
         }
     }
 
@@ -294,7 +316,6 @@ impl RfpllFrequencyTransition {
         let frequency = Self::programmed_frequency(request);
         Self {
             request,
-            sdm: calculate_rfpll_sdm(frequency, request.crystal_selector, request.offset),
             step: if frequency.wrapping_sub(2_400) <= 84 {
                 RfpllFrequencyStep::ChannelStart
             } else {
@@ -314,8 +335,8 @@ impl RfpllFrequencyTransition {
         RfpllFrequencyAction::WriteMasked { field, value }
     }
 
-    const fn sdm_write(self, index: u8) -> RfpllFrequencyAction {
-        let bytes = self.sdm.bytes;
+    const fn sdm_write(index: u8, sdm: RfpllSdmImage) -> RfpllFrequencyAction {
+        let bytes = sdm.bytes;
         match index {
             0 => RfpllFrequencyAction::WriteMasked {
                 field: analog_registers::RFPLL_SDM_UPDATE_ENABLE,
@@ -369,8 +390,8 @@ impl RfpllFrequencyTransition {
             RfpllFrequencyStep::ChannelNrx => RfpllFrequencyAction::ConfigureNrx {
                 frequency_mhz: Self::programmed_frequency(self.request),
             },
-            RfpllFrequencyStep::InitialWrite(index) => Self::initial_write(index),
-            RfpllFrequencyStep::SdmWrite(index) => self.sdm_write(index),
+            RfpllFrequencyStep::InitialWrite { index, .. } => Self::initial_write(index),
+            RfpllFrequencyStep::SdmWrite { index, sdm } => Self::sdm_write(index, sdm),
             RfpllFrequencyStep::RestartWrite(index) => Self::restart_write(index),
             RfpllFrequencyStep::LockDelay { .. } => RfpllFrequencyAction::DelayMicros(20),
             RfpllFrequencyStep::LockRead { .. } => RfpllFrequencyAction::ReadMasked {
@@ -493,27 +514,34 @@ impl RfpllFrequencyTransition {
                 RfpllFrequencyCompletion::NrxConfigured { frequency_mhz },
             ) if frequency_mhz == Self::programmed_frequency(self.request) => {
                 RfpllFrequencyStep::Complete(RfpllFrequencyOutcome {
-                    sdm: self.sdm,
                     lock_observed: true,
                     initial_cap: 0,
                     final_cap: 0,
                     accepted_cap_samples: 0,
                 })
             }
-            (RfpllFrequencyStep::InitialWrite(index), _)
+            (RfpllFrequencyStep::InitialWrite { index, sdm }, _)
                 if Self::matches_write(action, completion) =>
             {
                 if index == 2 {
-                    RfpllFrequencyStep::SdmWrite(0)
+                    RfpllFrequencyStep::SdmWrite { index: 0, sdm }
                 } else {
-                    RfpllFrequencyStep::InitialWrite(index + 1)
+                    RfpllFrequencyStep::InitialWrite {
+                        index: index + 1,
+                        sdm,
+                    }
                 }
             }
-            (RfpllFrequencyStep::SdmWrite(index), _) if Self::matches_write(action, completion) => {
+            (RfpllFrequencyStep::SdmWrite { index, sdm }, _)
+                if Self::matches_write(action, completion) =>
+            {
                 if index == 5 {
                     RfpllFrequencyStep::RestartWrite(0)
                 } else {
-                    RfpllFrequencyStep::SdmWrite(index + 1)
+                    RfpllFrequencyStep::SdmWrite {
+                        index: index + 1,
+                        sdm,
+                    }
                 }
             }
             (RfpllFrequencyStep::RestartWrite(index), _)
@@ -610,7 +638,6 @@ impl RfpllFrequencyTransition {
                     accepted,
                     lock_observed,
                 } => RfpllFrequencyStep::Complete(RfpllFrequencyOutcome {
-                    sdm: self.sdm,
                     lock_observed,
                     initial_cap: initial,
                     final_cap,

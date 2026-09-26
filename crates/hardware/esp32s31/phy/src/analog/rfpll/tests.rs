@@ -265,7 +265,6 @@ fn external_lowering_covers_rfpll_mmio_i2c_and_timer_actions() {
     assert!(matches!(
         RfpllFrequencyExternalBinding::lower(RfpllFrequencyAction::Complete(
             RfpllFrequencyOutcome {
-                sdm: calculate_rfpll_sdm(0x983, 0x31, 0),
                 lock_observed: true,
                 initial_cap: 1,
                 final_cap: 1,

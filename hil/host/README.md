@@ -180,11 +180,20 @@ The content-addressed directory contains `manifest.json`, `snapshot.json` and
 `sources.tar`. It records exact file bytes and executable modes for the main
 source and configured overrides. Subsequent capture does not overwrite an
 existing identity, and corrupt stored material is rejected. Builds with
-`--source-snapshot` validate and materialize these inputs in a private temporary
-directory; Cargo uses that directory, including its copied configuration and
-snapshot-local override paths. Outputs and the snapshot reference remain under
+`--source-snapshot` validate and materialize these inputs in the fixed workspace
+`target/hil/esp32s31/source-build/`, held under an exclusive lock and replaced
+on each build; Cargo uses that directory, including its copied configuration
+and snapshot-local override paths. Artifacts (including copies of both ELFs)
+and the snapshot reference remain under
 `target/hil/esp32s31/snapshot-builds/`. The live checkout is not a build source
 for this explicit mode.
+
+Live and snapshot builds of one image class and network share the Cargo cache
+`target/hil/esp32s31/build-cache/<profile>-<class>-<network>/`. Cargo
+fingerprints decide reuse: registry packages are compiled once, while the
+freshly materialized path packages always rebuild in place under the stable
+workspace path. Reproducibility verification and compiler statistics keep a
+private cache inside their own output directory.
 
 This fixes the source input set, not the entire build environment: tools, Cargo
 package caches and user-level configuration are still external. It does not

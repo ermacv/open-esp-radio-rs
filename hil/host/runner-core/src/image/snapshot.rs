@@ -60,26 +60,79 @@ impl SourceInput {
 
 /// Owns a verified private checkout. No build falls back to the live repository.
 pub struct FrozenSources {
-    isolated: tempfile::TempDir,
+    checkout: Checkout,
     snapshot: Snapshot,
     manifest: Manifest,
 }
 
+/// Where a snapshot is materialized.
+enum Checkout {
+    /// A fresh temporary directory, for readers of the sources.
+    Temporary(tempfile::TempDir),
+    /// A fixed build workspace held under an exclusive lock. A stable path
+    /// keeps Cargo's unit identities stable in the shared compile cache, so
+    /// each snapshot rebuilds its path packages in place instead of adding
+    /// another copy of every one.
+    Workspace { path: PathBuf, _lock: fs::File },
+}
+
+impl Checkout {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Temporary(directory) => directory.path(),
+            Self::Workspace { path, .. } => path,
+        }
+    }
+}
+
 impl FrozenSources {
     pub fn open(directory: &Path) -> Result<Self> {
-        let isolated = tempfile::Builder::new()
-            .prefix("oer-source-build-")
-            .tempdir()?;
-        let (snapshot, manifest) = materialize::materialize(directory, isolated.path())?;
+        let checkout = Checkout::Temporary(
+            tempfile::Builder::new()
+                .prefix("oer-source-build-")
+                .tempdir()?,
+        );
+        Self::materialize(directory, checkout)
+    }
+
+    /// Materialize into `workspace`, replacing its previous contents once
+    /// no other build holds it.
+    pub fn open_in_workspace(directory: &Path, workspace: &Path) -> Result<Self> {
+        use fs2::FileExt as _;
+        let parent = workspace
+            .parent()
+            .ok_or("source build workspace has no parent")?;
+        fs::create_dir_all(parent)?;
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(workspace.with_extension("lock"))?;
+        lock.lock_exclusive()?;
+        if fs::symlink_metadata(workspace).is_ok() {
+            fs::remove_dir_all(workspace)?;
+        }
+        fs::create_dir(workspace)?;
+        Self::materialize(
+            directory,
+            Checkout::Workspace {
+                path: workspace.to_owned(),
+                _lock: lock,
+            },
+        )
+    }
+
+    fn materialize(directory: &Path, checkout: Checkout) -> Result<Self> {
+        let (snapshot, manifest) = materialize::materialize(directory, checkout.path())?;
         Ok(Self {
-            isolated,
+            checkout,
             snapshot,
             manifest,
         })
     }
 
     pub fn repository(&self) -> PathBuf {
-        self.isolated.path().join("repository")
+        self.checkout.path().join("repository")
     }
 
     pub fn sources(&self) -> &[SourceInput] {
@@ -89,7 +142,7 @@ impl FrozenSources {
     pub fn verify_unchanged(&self) -> Result<()> {
         for source in &self.manifest.sources {
             for file in &source.files {
-                let path = self.isolated.path().join(&source.name).join(&file.path);
+                let path = self.checkout.path().join(&source.name).join(&file.path);
                 let metadata = fs::symlink_metadata(&path)?;
                 if !metadata.is_file()
                     || metadata.len() != file.size_bytes

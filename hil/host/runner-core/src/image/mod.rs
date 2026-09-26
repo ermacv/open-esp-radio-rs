@@ -426,10 +426,47 @@ fn build_selected(
             embassy: local_embassy.as_deref(),
             xarxa: local_xarxa.as_deref(),
         },
-        None,
+        BuildPlacement {
+            output: None,
+            cache: CompileCache::Shared(&shared_compile_cache(root, class, network)),
+        },
         false,
         false,
     )
+}
+
+/// Where one image build writes its artifacts and keeps compiled units.
+#[derive(Clone, Copy)]
+pub(crate) struct BuildPlacement<'a> {
+    /// Artifact directory; the class/network default when absent.
+    pub(crate) output: Option<&'a Path>,
+    pub(crate) cache: CompileCache<'a>,
+}
+
+/// Where Cargo keeps compiled units for one image build.
+#[derive(Clone, Copy)]
+pub(crate) enum CompileCache<'a> {
+    /// A cache shared by every build of one image class and network. Cargo
+    /// fingerprints decide reuse: registry packages are reused, while
+    /// packages from a freshly materialized source tree always rebuild.
+    Shared(&'a Path),
+    /// A private cache inside the build output, for builds whose evidence
+    /// requires isolation (reproducibility and compiler statistics).
+    Isolated,
+}
+
+/// The shared compile cache of the repository at `root`.
+pub(crate) fn shared_compile_cache(
+    root: &Path,
+    class: crate::image::ImageClass,
+    network: Integration,
+) -> PathBuf {
+    root.join("target/hil/esp32s31/build-cache").join(format!(
+        "{}-{}-{}",
+        class.runtime_profile(),
+        class.id(),
+        network.id()
+    ))
 }
 
 #[derive(Default)]
@@ -444,7 +481,7 @@ fn build_resolved(
     class: crate::image::ImageClass,
     network: Integration,
     local: LocalOverrides<'_>,
-    output_override: Option<&Path>,
+    placement: BuildPlacement<'_>,
     trim_paths: bool,
     mono_stats: bool,
 ) -> Result<Artifacts> {
@@ -455,6 +492,10 @@ fn build_resolved(
     } = local;
     ensure_no_old_application_dependency(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
+    let BuildPlacement {
+        output: output_override,
+        cache: compile_cache,
+    } = placement;
     let output = output_override.map_or_else(
         || {
             root.join("target/hil/esp32s31").join(format!(
@@ -466,8 +507,12 @@ fn build_resolved(
         },
         Path::to_owned,
     );
-    let runtime_target = output.join("cargo/runtime");
-    let bootstrap_target = output.join("cargo/bootstrap");
+    let cache = match compile_cache {
+        CompileCache::Shared(cache) => cache.to_owned(),
+        CompileCache::Isolated => output.join("cargo"),
+    };
+    let runtime_target = cache.join("runtime");
+    let bootstrap_target = cache.join("bootstrap");
     fs::create_dir_all(&output)?;
     fs::write(output.join("image-class.txt"), format!("{}\n", class.id()))?;
     // Private copies of both committed catalogs: patched networks and local
@@ -482,15 +527,19 @@ fn build_resolved(
     )?;
     let overridden = local_esp_hal.is_some() || local_embassy.is_some() || local_xarxa.is_some();
 
-    let runtime_elf = runtime_target
+    let compiled_runtime_elf = runtime_target
         .join(TARGET)
         .join("release")
         .join(RUNTIME_BIN);
+    // Artifacts are copied out of the compile cache, which a later build of
+    // the same class may overwrite.
+    let runtime_elf = output.join("runtime.elf");
     let runtime_bin = output.join("runtime.bin");
-    let bootstrap_elf = bootstrap_target
+    let compiled_bootstrap_elf = bootstrap_target
         .join(TARGET)
         .join("release")
         .join(BOOTSTRAP_BIN);
+    let bootstrap_elf = output.join("bootstrap.elf");
     let effective_embedded_lock = output.join("effective-Cargo.lock");
     let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
@@ -522,7 +571,8 @@ fn build_resolved(
         mono::configure(&mut runtime, &output)?;
     }
     run_command(&mut runtime, "build stage-two runtime")?;
-    require_file(&runtime_elf, "runtime ELF")?;
+    require_file(&compiled_runtime_elf, "runtime ELF")?;
+    fs::copy(&compiled_runtime_elf, &runtime_elf)?;
     // Local overrides deliberately resolve path packages; only a network
     // selection has a fixed expected pin change.
     if !overridden {
@@ -567,7 +617,8 @@ fn build_resolved(
     enable_experimental_path_trimming(&mut bootstrap, trim_paths);
     crate::image::stack::enable_stack_checks(&mut bootstrap, &stack_budget);
     run_command(&mut bootstrap, "build Flash/SRAM bootstrap")?;
-    require_file(&bootstrap_elf, "bootstrap ELF")?;
+    require_file(&compiled_bootstrap_elf, "bootstrap ELF")?;
+    fs::copy(&compiled_bootstrap_elf, &bootstrap_elf)?;
     let bootstrap_stack_report =
         crate::image::stack::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
     let bootstrap_stack_report_path = output.join("bootstrap-stack.txt");

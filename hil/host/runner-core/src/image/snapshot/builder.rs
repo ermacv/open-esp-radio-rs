@@ -8,7 +8,8 @@ pub fn build(
     class: crate::image::ImageClass,
     network: crate::image::Integration,
 ) -> Result<crate::image::Artifacts> {
-    FrozenSources::open(directory)?.build(root, class, network)
+    FrozenSources::open_in_workspace(directory, &root.join("target/hil/esp32s31/source-build"))?
+        .build(root, class, network)
 }
 
 impl FrozenSources {
@@ -25,7 +26,7 @@ impl FrozenSources {
                 .sources
                 .iter()
                 .any(|s| s.name == role)
-                .then(|| self.isolated.path().join(role))
+                .then(|| self.checkout.path().join(role))
         };
         let esp_hal = override_path("esp-hal");
         let embassy = override_path("embassy");
@@ -48,7 +49,12 @@ impl FrozenSources {
                 embassy: embassy.as_deref(),
                 xarxa: xarxa.as_deref(),
             },
-            Some(&output),
+            crate::image::BuildPlacement {
+                output: Some(&output),
+                cache: crate::image::CompileCache::Shared(&crate::image::shared_compile_cache(
+                    root, class, network,
+                )),
+            },
             false,
             false,
         )?;

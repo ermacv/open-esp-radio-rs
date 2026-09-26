@@ -196,7 +196,10 @@ pub fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -> Resul
         class,
         super::Integration::UpstreamXarxa,
         super::LocalOverrides::default(),
-        Some(&output.join("build-a")),
+        super::BuildPlacement {
+            output: Some(&output.join("build-a")),
+            cache: super::CompileCache::Isolated,
+        },
         trim_paths,
         false,
     )?;
@@ -206,7 +209,10 @@ pub fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -> Resul
         class,
         super::Integration::UpstreamXarxa,
         super::LocalOverrides::default(),
-        Some(&output.join("build-directory-b")),
+        super::BuildPlacement {
+            output: Some(&output.join("build-directory-b")),
+            cache: super::CompileCache::Isolated,
+        },
         trim_paths,
         false,
     )?;

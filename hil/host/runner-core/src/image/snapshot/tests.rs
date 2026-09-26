@@ -198,3 +198,31 @@ fn materialization_rejects_modified_manifest_and_archive_before_building() {
         assert_eq!(fs::read_dir(build.path()).unwrap().count(), 0);
     }
 }
+
+#[test]
+fn a_build_workspace_is_stable_exclusive_and_replaced_on_reuse() {
+    let root = repository();
+    let output = tempfile::tempdir().unwrap();
+    let roots = vec![("repository".into(), root.path().to_owned())];
+    let first = capture_roots(&roots, &[], output.path()).unwrap();
+    fs::write(root.path().join("Cargo.toml"), "changed\n").unwrap();
+    git(root.path(), &["commit", "-qam", "changed"]).unwrap();
+    let second = capture_roots(&roots, &[], &output.path().join("second")).unwrap();
+    let build = tempfile::tempdir().unwrap();
+    let workspace = build.path().join("source-build");
+    let opened = FrozenSources::open_in_workspace(&first.directory, &workspace).unwrap();
+    assert_eq!(opened.repository(), workspace.join("repository"));
+    fs::write(workspace.join("stale.txt"), "left behind").unwrap();
+    // A second build waits for the lock; the holder releases it on drop.
+    let lock = fs::File::open(workspace.with_extension("lock")).unwrap();
+    assert!(fs2::FileExt::try_lock_exclusive(&lock).is_err());
+    drop(opened);
+    let reopened = FrozenSources::open_in_workspace(&second.directory, &workspace).unwrap();
+    assert_eq!(reopened.repository(), workspace.join("repository"));
+    assert!(!workspace.join("stale.txt").exists());
+    assert_eq!(
+        fs::read_to_string(workspace.join("repository/Cargo.toml")).unwrap(),
+        "changed\n"
+    );
+    reopened.verify_unchanged().unwrap();
+}

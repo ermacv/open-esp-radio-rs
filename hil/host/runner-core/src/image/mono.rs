@@ -105,7 +105,10 @@ pub fn capture(root: &Path, class: ImageClass) -> Result<()> {
         class,
         Integration::UpstreamXarxa,
         LocalOverrides::default(),
-        Some(&directory),
+        BuildPlacement {
+            output: Some(&directory),
+            cache: CompileCache::Isolated,
+        },
         false,
         true,
     );

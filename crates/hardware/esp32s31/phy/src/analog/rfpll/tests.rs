@@ -321,3 +321,45 @@ fn channel_and_mhz_inputs_select_the_same_table_but_direct_calibration_does_not(
         RfpllFrequencyAction::Failed(RfpllFrequencyFailure::UnsupportedChannelFrequency(5000))
     );
 }
+
+#[test]
+fn channel_readiness_counts_every_not_ready_sample_until_the_deadline() {
+    let mut transition = RfpllFrequencyTransition::channel(RfpllFrequencyRequest {
+        crystal_selector: 0,
+        frequency_code: 1,
+        offset: 0,
+    });
+    for completion in [
+        RfpllFrequencyCompletion::ChannelSwitchStarted {
+            frequency_index: 12,
+            crystal_selector: 0,
+        },
+        RfpllFrequencyCompletion::DelayElapsed(1),
+        RfpllFrequencyCompletion::ChannelSwitchCleared,
+        RfpllFrequencyCompletion::DelayElapsed(10),
+    ] {
+        transition.advance(completion).unwrap();
+    }
+    for samples in 0..3 {
+        assert_eq!(
+            transition.action(),
+            RfpllFrequencyAction::ReadChannelReady { samples }
+        );
+        transition
+            .advance(RfpllFrequencyCompletion::ChannelReadyObserved { ready: false })
+            .unwrap();
+    }
+    assert_eq!(
+        transition.action(),
+        RfpllFrequencyAction::ReadChannelReady { samples: 3 }
+    );
+    transition
+        .advance(RfpllFrequencyCompletion::ChannelReadyTimedOut)
+        .unwrap();
+    assert_eq!(
+        transition.action(),
+        RfpllFrequencyAction::Failed(RfpllFrequencyFailure::FrequencyReadyDeadlineExceeded {
+            samples: 3
+        })
+    );
+}

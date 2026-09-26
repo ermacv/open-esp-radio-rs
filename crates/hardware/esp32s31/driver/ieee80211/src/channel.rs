@@ -1,11 +1,11 @@
 //! ESP32-S31 lowering of portable Wi-Fi channel definitions.
 
 #[cfg(target_arch = "riscv32")]
-use oer_esp32s31_hal::owner::RadioRuntimeOwner;
+use oer_esp32s31_hal::{owner::RadioRuntimeOwner, shared_radio::SharedRadioLease};
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, RegisteredWifiPhy,
-    switch_registered_wifi_channel,
+    ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver, concurrent::ConcurrentPhy,
+    switch_concurrent_wifi_channel,
 };
 
 use oer_ieee80211_mac::channel::{WifiChannel, WifiChannelWidth};
@@ -36,18 +36,21 @@ pub const fn lower_wifi_channel(channel: WifiChannel) -> PhyChannel {
 
 /// Retune an initialized Wi-Fi MAC while its role-specific DMA/IRQ service is
 /// stopped and therefore owns no asynchronous access to these registers.
+///
+/// The shared PHY domain is retuned under the arbiter lease; `platform` is
+/// the radio system's PHY platform token.
 #[cfg(target_arch = "riscv32")]
 pub async fn switch_esp32s31_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
-    state: &mut RegisteredWifiPhy,
-    channel: WifiChannel,
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
     radio: &mut RadioRuntimeOwner,
+    channel: WifiChannel,
     observer: &mut O,
-) -> Result<(), PhyTargetPortError> {
+) -> Result<(), ConcurrentWifiChannelError> {
     let channel = lower_wifi_channel(channel);
-    let mut hardware = radio.channel_hal(platform);
-    switch_registered_wifi_channel::<D, _, _>(
-        state,
+    let (mut hardware, phy) = radio.channel_hal_with_attachment(platform, lease);
+    switch_concurrent_wifi_channel::<D, _, _>(
+        phy,
         channel.channel_or_frequency,
         channel.cbw,
         &mut hardware,

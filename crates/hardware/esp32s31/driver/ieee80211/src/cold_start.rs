@@ -1,43 +1,45 @@
-//! Reusable role-neutral cold PHY/Wi-Fi composition for ESP32-S31.
+//! Reusable role-neutral Wi-Fi bring-up as a client of the radio arbiter.
 //!
 //! This boundary owns the production ordering shared by standalone firmware
-//! and HIL: power, finite PHY registration, Wi-Fi client acquisition and
-//! initial tracking, Wi-Fi RX enable and initial
-//! channel selection. A retained PHY handed over by another protocol route
-//! replaces power and registration with the retained RF wake. Board token
-//! construction, persistent calibration storage and diagnostics remain caller
+//! and HIL once the shared PHY domain is registered with RF open: common
+//! radio power, the Wi-Fi module clocks and initialized status, the Wi-Fi PHY
+//! client with its initial tracking, the Wi-Fi RX enable and the initial
+//! channel. Registration, RF close and wake belong to the composition that
+//! owns the arbiter. Board token construction and diagnostics remain caller
 //! policy.
 
 use crate::channel::lower_wifi_channel;
 
-use oer_esp32s31_hal::owner::{PowerUpFailure, Radio};
-
-use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome,
-    PhyTargetObserver, PhyTargetPortCounters, PhyTargetPortError, PhyTxTargetPowerProfile,
-    RegisteredPhyClientAcquireFailure, RegisteredPhyRadio, RegisteredPhyRfWakePoisoned,
-    RetainedPhy, TargetPhyParamTrackingFailure, TargetPhyRegisterAttempt, TargetPhyRegisterFailure,
-    run_target_phy_param_tracking, run_target_phy_register,
+use oer_esp32s31_hal::{
+    ieee80211::client::{WifiClocked, WifiCold, WifiPowered},
+    root::WifiPartition,
+    shared_radio::{
+        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
+    },
 };
 
-use oer_esp32s31_phy::{state::client::PhyPllTrackClock, tracking::PhyParamTrackingOutcome};
+use oer_esp32s31_phy::{
+    ConcurrentPhyTrackingError, ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver,
+    PhyTxTargetPowerProfile,
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
+    maintain_concurrent_phy, select_concurrent_wifi_channel,
+    state::client::PhyPllTrackClock,
+    tracking::PhyParamTrackingOutcome,
+    wifi_client::{WifiPhyMembership, join_wifi, set_wifi_rx},
+};
+
 use oer_ieee80211_mac::channel::WifiChannel;
 
-/// Application-selected inputs for one cold radio start.
+/// Application-selected inputs for one Wi-Fi bring-up.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiColdStartConfig {
-    pub calibration_identity: PhyCalibrationIdentity,
     pub initial_channel: WifiChannel,
     pub maximum_tx_power_quarter_dbm: i8,
 }
 
 impl WifiColdStartConfig {
-    pub const fn new(
-        calibration_identity: PhyCalibrationIdentity,
-        initial_channel: WifiChannel,
-    ) -> Self {
+    pub const fn new(initial_channel: WifiChannel) -> Self {
         Self {
-            calibration_identity,
             initial_channel,
             maximum_tx_power_quarter_dbm: i8::MAX,
         }
@@ -49,353 +51,241 @@ impl WifiColdStartConfig {
     }
 }
 
-/// How the Wi-Fi route obtained its registered PHY.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WifiPhyEntry {
-    /// Cold power-up and target registration on this route.
-    Registered {
-        registration: PhyRegisterOutcome,
-        port_counters: PhyTargetPortCounters,
-    },
-    /// Retained RF wake of an epoch another route handed over; no
-    /// registration or calibration ran.
-    RetainedWake,
-}
-
-/// Observable result of the finite cold start without HIL telemetry policy.
+/// Observable result of the finite bring-up without HIL telemetry policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiColdStartReport {
-    pub entry: WifiPhyEntry,
     pub initial_channel: WifiChannel,
-    /// None when the acquisition timestamp did not require tracking.
+    /// None when joining the domain did not require tracking.
     pub initial_tracking: Option<PhyParamTrackingOutcome>,
 }
 
-impl WifiColdStartReport {
-    /// The registration this start performed, or `None` after retained wake.
-    pub const fn registration(&self) -> Option<PhyRegisterOutcome> {
-        match self.entry {
-            WifiPhyEntry::Registered { registration, .. } => Some(registration),
-            WifiPhyEntry::RetainedWake => None,
-        }
-    }
-}
-
 /// Complete owner set returned at the cold-MAC boundary.
-pub struct WifiColdStart<P> {
-    radio: RegisteredPhyRadio<P>,
-    tx_power: PhyTxTargetPowerProfile,
-    calibration_cache: Option<PhyCalibrationCache>,
-    report: WifiColdStartReport,
+pub struct WifiColdStart<W> {
+    pub(crate) clocked: WifiClocked,
+    pub(crate) membership: WifiPhyMembership,
+    pub(crate) platform: W,
+    pub(crate) tx_power: PhyTxTargetPowerProfile,
+    pub(crate) report: WifiColdStartReport,
 }
 
-impl<P> WifiColdStart<P> {
+impl<W> WifiColdStart<W> {
     pub const fn report(&self) -> WifiColdStartReport {
         self.report
     }
 
-    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
-        self.calibration_cache.as_ref()
-    }
-
-    pub fn into_parts(
-        self,
-    ) -> (
-        RegisteredPhyRadio<P>,
-        PhyTxTargetPowerProfile,
-        Option<PhyCalibrationCache>,
-        WifiColdStartReport,
-    ) {
-        (
-            self.radio,
-            self.tx_power,
-            self.calibration_cache,
-            self.report,
-        )
+    pub const fn tx_power(&self) -> PhyTxTargetPowerProfile {
+        self.tx_power
     }
 }
 
-/// Failure which always returns the unique radio owner at its exact phase.
-#[allow(
-    clippy::large_enum_variant,
-    reason = "the allocation-free failure retains the exact opaque radio/PHY owner"
-)]
-pub enum WifiColdStartFailure<P> {
-    Power(WifiColdPowerFailure<P>),
-    Registration(TargetPhyRegisterFailure<P>),
-    /// Retained RF wake started and failed; the epoch requires reset.
-    RetainedWake(RegisteredPhyRfWakePoisoned<P>),
-    ClientAcquire(WifiColdClientAcquireFailure<P>),
-    InitialTracking(WifiColdInitialTrackingFailure<P>),
-    InitialChannel {
-        radio: RegisteredPhyRadio<P>,
-        calibration_cache: Option<PhyCalibrationCache>,
-        report: WifiColdStartReport,
-        error: PhyTargetPortError,
+/// Why the bring-up stopped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiColdStartError {
+    /// Common radio power was rejected or failed a read-back checkpoint.
+    Power(CommonRadioPowerError),
+    /// The Wi-Fi module clocks or the initialized status could not change.
+    Clocks(ModemClockError),
+    /// The shared PHY domain rejected the Wi-Fi client.
+    Join(ConcurrentPhyError),
+    /// The initial tracking was rejected or failed.
+    InitialTracking(ConcurrentPhyTrackingError),
+    /// The initial channel was rejected or failed.
+    InitialChannel(ConcurrentWifiChannelError),
+}
+
+/// The Wi-Fi owners a failed bring-up returns, at the stage it reached.
+#[must_use = "a failed Wi-Fi bring-up still owns the Wi-Fi partition"]
+pub enum WifiColdStartFrontier<W> {
+    /// Nothing changed; the partition is unpowered.
+    Cold { cold: WifiCold, platform: W },
+    /// Common power is held; the Wi-Fi clocks are off.
+    Powered { powered: WifiPowered, platform: W },
+    /// The Wi-Fi clocks are on; Wi-Fi is not a PHY client.
+    Clocked { clocked: WifiClocked, platform: W },
+    /// Wi-Fi is a PHY client with its baseband receive path disabled, unless
+    /// a started PHY transaction failed.
+    Joined {
+        clocked: WifiClocked,
+        membership: WifiPhyMembership,
+        platform: W,
     },
 }
 
-/// Recoverable prerequisite failure retaining the caller's replay cache.
-#[must_use = "power failure retains the cold radio and calibration cache"]
-pub struct WifiColdPowerFailure<P> {
-    failure: PowerUpFailure<P>,
-    calibration_cache: Option<PhyCalibrationCache>,
+/// Failed bring-up retaining the Wi-Fi owners at their exact stage.
+#[must_use = "a failed Wi-Fi bring-up still owns the Wi-Fi partition"]
+pub struct WifiColdStartFailure<W> {
+    error: WifiColdStartError,
+    frontier: WifiColdStartFrontier<W>,
 }
 
-impl<P> WifiColdPowerFailure<P> {
-    pub fn into_parts(self) -> (PowerUpFailure<P>, Option<PhyCalibrationCache>) {
-        (self.failure, self.calibration_cache)
+impl<W> WifiColdStartFailure<W> {
+    pub const fn error(&self) -> WifiColdStartError {
+        self.error
+    }
+
+    /// Whether a started PHY transaction failed: the shared domain is
+    /// poisoned and the radio requires reset.
+    pub const fn phy_hardware_ambiguous(&self) -> bool {
+        matches!(
+            self.error,
+            WifiColdStartError::InitialTracking(ConcurrentPhyTrackingError::Failed(_))
+                | WifiColdStartError::InitialChannel(ConcurrentWifiChannelError::Failed(_))
+        )
+    }
+
+    pub fn into_frontier(self) -> WifiColdStartFrontier<W> {
+        self.frontier
     }
 }
 
-/// Rejected first-client acquisition with the completed registration cache.
-#[must_use = "client-acquire failure retains the registered radio and calibration cache"]
-pub struct WifiColdClientAcquireFailure<P> {
-    failure: RegisteredPhyClientAcquireFailure<P>,
-    calibration_cache: Option<PhyCalibrationCache>,
-}
-
-impl<P> WifiColdClientAcquireFailure<P> {
-    pub fn into_parts(
-        self,
-    ) -> (
-        RegisteredPhyClientAcquireFailure<P>,
-        Option<PhyCalibrationCache>,
-    ) {
-        (self.failure, self.calibration_cache)
-    }
-}
-
-/// Fail-stop initial tracking result retaining, but not releasing, the cache
-/// which predates the ambiguous hardware transaction.
-#[must_use = "tracking failure retains the complete poisoned cold-start frontier"]
-pub struct WifiColdInitialTrackingFailure<P> {
-    failure: TargetPhyParamTrackingFailure<P>,
-    _calibration_cache: Option<PhyCalibrationCache>,
-}
-
-impl<P> WifiColdInitialTrackingFailure<P> {
-    pub const fn error(&self) -> oer_esp32s31_phy::TargetPhyParamTrackingError {
-        self.failure.error()
-    }
-
-    pub const fn state(&self) -> &oer_esp32s31_phy::PhyState {
-        self.failure.state()
-    }
-}
-
-/// Run the common production cold-start sequence without diagnostics or board
-/// allocation policy.
+/// Bring Wi-Fi up as a client of the registered, RF-open shared PHY domain.
 ///
-/// This operation owns the sole radio value across hardware awaits and must run
-/// to completion. Cancelling it after polling is fail-closed: no ready owner or
-/// PHY-registration proof is returned, and the integration must reset the
-/// peripheral or chip before establishing another `Radio` owner.
-#[must_use = "Wi-Fi cold start must be driven to a terminal result"]
-pub async fn start_esp32s31_wifi<P, D, O>(
-    radio: Radio<P>,
-    config: WifiColdStartConfig,
-    calibration_cache: Option<PhyCalibrationCache>,
-    observer: O,
-    clock: &mut impl PhyPllTrackClock,
-) -> Result<WifiColdStart<P>, WifiColdStartFailure<P>>
-where
-    D: PhyAsyncDelay,
-    O: PhyTargetObserver + Clone,
-{
-    start_registered_esp32s31_wifi::<P, D, O>(radio, config, calibration_cache, observer, clock)
-        .await
-        .map(|(start, _)| start)
-}
-
-/// [`start_esp32s31_wifi`] together with the registration it performed.
-pub(crate) async fn start_registered_esp32s31_wifi<P, D, O>(
-    radio: Radio<P>,
-    config: WifiColdStartConfig,
-    calibration_cache: Option<PhyCalibrationCache>,
-    observer: O,
-    clock: &mut impl PhyPllTrackClock,
-) -> Result<(WifiColdStart<P>, PhyRegisterOutcome), WifiColdStartFailure<P>>
-where
-    D: PhyAsyncDelay,
-    O: PhyTargetObserver + Clone,
-{
-    let powered = match radio.power_up() {
-        Ok(powered) => powered,
-        Err(failure) => {
-            return Err(WifiColdStartFailure::Power(WifiColdPowerFailure {
-                failure,
-                calibration_cache,
-            }));
-        }
-    };
-    let attempt = TargetPhyRegisterAttempt::with_production_config_and_calibration(
-        powered,
-        config.calibration_identity,
-        calibration_cache,
-    );
-    let mut registration = core::pin::pin!(run_target_phy_register::<_, D, _>(
-        attempt,
-        observer.clone()
-    ));
-    let target_registration =
-        core::future::poll_fn(|cx| poll_registration(registration.as_mut(), cx))
-            .await
-            .map_err(WifiColdStartFailure::Registration)?;
-    let (powered, calibration_cache, registration, port_counters) =
-        target_registration.into_registered_parts();
-    complete_wifi_start::<P, D, O>(
-        powered,
-        WifiPhyEntry::Registered {
-            registration,
-            port_counters,
-        },
-        config,
-        calibration_cache,
-        observer,
-        clock,
-    )
-    .await
-    .map(|start| (start, registration))
-}
-
-/// Enter Wi-Fi from a PHY that another protocol route handed over with RF
-/// closed, then run the same client, tracking and channel tail as a cold
-/// start.
-///
-/// No power sequence, registration or calibration runs: the retained RF wake
-/// restores the registered epoch. `calibration_cache` is only refreshed from
-/// the retained state after tracking.
+/// `platform` and `clocks` are the radio system's PHY platform token and
+/// clock sources; `wifi_platform` is Wi-Fi's own MAC platform, kept with the
+/// returned owner. Initial tracking follows the domain's admission policy
+/// without quiescence proofs.
 ///
 /// # Cancellation
 ///
-/// This has the same fail-stop contract as [`start_esp32s31_wifi`].
-#[must_use = "Wi-Fi retained resume must be driven to a terminal result"]
-pub async fn resume_esp32s31_wifi<P, D, O>(
-    peripheral: P,
-    retained: RetainedPhy,
+/// Once polled, drive this future to a terminal result: cancelling during
+/// tracking or the channel transaction leaves the shared PHY ambiguous.
+#[must_use = "Wi-Fi bring-up must be driven to a terminal result"]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the arbiter lease, both platforms and the clock sources are distinct owners"
+)]
+pub async fn start_esp32s31_wifi<P, W, D, O>(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    platform: &mut P,
+    clocks: &mut impl PlatformClockProvider,
+    partition: WifiPartition,
+    wifi_platform: W,
     config: WifiColdStartConfig,
-    calibration_cache: Option<PhyCalibrationCache>,
-    observer: O,
+    mut observer: O,
     clock: &mut impl PhyPllTrackClock,
-) -> Result<WifiColdStart<P>, WifiColdStartFailure<P>>
+) -> Result<WifiColdStart<W>, WifiColdStartFailure<W>>
 where
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
-    let idle = retained
-        .into_wifi(peripheral)
-        .wake_rf::<D>()
-        .await
-        .map_err(WifiColdStartFailure::RetainedWake)?;
-    complete_wifi_start::<P, D, O>(
-        idle.retain_powered(),
-        WifiPhyEntry::RetainedWake,
-        config,
-        calibration_cache,
-        observer,
-        clock,
-    )
-    .await
-}
-
-async fn complete_wifi_start<P, D, O>(
-    powered: RegisteredPhyRadio<P>,
-    entry: WifiPhyEntry,
-    config: WifiColdStartConfig,
-    calibration_cache: Option<PhyCalibrationCache>,
-    observer: O,
-    clock: &mut impl PhyPllTrackClock,
-) -> Result<WifiColdStart<P>, WifiColdStartFailure<P>>
-where
-    D: PhyAsyncDelay,
-    O: PhyTargetObserver + Clone,
-{
-    let acquired = match powered.acquire_client(clock) {
-        Ok(acquired) => acquired,
+    let powered = match WifiCold::from_partition(partition).power_up(lease) {
+        Ok(powered) => powered,
         Err(failure) => {
-            return Err(WifiColdStartFailure::ClientAcquire(
-                WifiColdClientAcquireFailure {
-                    failure,
-                    calibration_cache,
+            return Err(WifiColdStartFailure {
+                error: WifiColdStartError::Power(failure.error()),
+                frontier: WifiColdStartFrontier::Cold {
+                    cold: failure.into_owner(),
+                    platform: wifi_platform,
                 },
-            ));
+            });
         }
     };
-    let (mut powered, initial_tracking) = match acquired.into_owner() {
-        Ok(powered) => (powered, None),
-        Err(pending) => {
-            let success = match run_target_phy_param_tracking::<_, D, _>(
-                pending.begin_tracking(),
-                observer.clone(),
-            )
-            .await
-            {
-                Ok(success) => success,
-                Err(failure) => {
-                    return Err(WifiColdStartFailure::InitialTracking(
-                        WifiColdInitialTrackingFailure {
-                            failure,
-                            // Tracking may already have changed hardware, so this
-                            // snapshot remains opaque with the fail-stop frontier.
-                            _calibration_cache: calibration_cache,
-                        },
-                    ));
-                }
-            };
-            let (powered, outcome) = success.into_parts();
-            (powered, Some(outcome))
+    let mut clocked = match powered.enable_clocks(lease, clocks) {
+        Ok(clocked) => clocked,
+        Err(failure) => {
+            return Err(WifiColdStartFailure {
+                error: WifiColdStartError::Clocks(failure.error()),
+                frontier: WifiColdStartFrontier::Powered {
+                    powered: failure.into_owner(),
+                    platform: wifi_platform,
+                },
+            });
         }
     };
-    let calibration_cache = calibration_cache.map(|cache| powered.refresh_calibration_cache(cache));
-    let report = WifiColdStartReport {
-        entry,
-        initial_tracking,
-        initial_channel: config.initial_channel,
+    if let Err(error) = clocked.set_initialized(lease, true) {
+        return Err(WifiColdStartFailure {
+            error: WifiColdStartError::Clocks(error),
+            frontier: WifiColdStartFrontier::Clocked {
+                clocked,
+                platform: wifi_platform,
+            },
+        });
+    }
+    let (membership, acquired) = match join_wifi(lease, &clocked, clock) {
+        Ok(joined) => joined,
+        Err(error) => {
+            return Err(WifiColdStartFailure {
+                error: WifiColdStartError::Join(error),
+                frontier: WifiColdStartFrontier::Clocked {
+                    clocked,
+                    platform: wifi_platform,
+                },
+            });
+        }
+    };
+    let initial_tracking = if acquired == ConcurrentAcquire::TrackingDue {
+        match maintain_concurrent_phy::<P, D, _>(lease, platform, &[], observer.clone()).await {
+            Ok(outcome) => Some(outcome),
+            Err(error) => {
+                return Err(WifiColdStartFailure {
+                    error: WifiColdStartError::InitialTracking(error),
+                    frontier: WifiColdStartFrontier::Joined {
+                        clocked,
+                        membership,
+                        platform: wifi_platform,
+                    },
+                });
+            }
+        }
+    } else {
+        None
     };
 
-    let mut channel_observer = observer;
+    set_wifi_rx(lease, &membership, true);
     let initial_channel = lower_wifi_channel(config.initial_channel);
-    if let Err(error) = powered
-        .initialize_wifi_channel::<D, _>(
+    let selected = {
+        let (mut channel, phy) = clocked.channel_hal_with_attachment(platform, lease);
+        select_concurrent_wifi_channel::<D, _, _>(
+            phy,
             initial_channel.channel_or_frequency,
             initial_channel.cbw,
-            &mut channel_observer,
+            &mut channel,
+            &mut observer,
         )
         .await
-    {
-        return Err(WifiColdStartFailure::InitialChannel {
-            radio: powered,
-            calibration_cache,
-            report,
-            error,
+    };
+    if let Err(error) = selected {
+        if matches!(error, ConcurrentWifiChannelError::Rejected(_)) {
+            // Nothing started; restore the receive path the joined frontier
+            // reports.
+            set_wifi_rx(lease, &membership, false);
+        }
+        return Err(WifiColdStartFailure {
+            error: WifiColdStartError::InitialChannel(error),
+            frontier: WifiColdStartFrontier::Joined {
+                clocked,
+                membership,
+                platform: wifi_platform,
+            },
         });
     }
 
-    let tx_power = powered
-        .state()
-        .tx_target_power_profile()
-        .with_maximum_quarter_dbm(config.maximum_tx_power_quarter_dbm);
+    let tx_power = match lease.attachment().phy_state() {
+        Ok(state) => state
+            .tx_target_power_profile()
+            .with_maximum_quarter_dbm(config.maximum_tx_power_quarter_dbm),
+        Err(error) => {
+            set_wifi_rx(lease, &membership, false);
+            return Err(WifiColdStartFailure {
+                error: WifiColdStartError::InitialChannel(ConcurrentWifiChannelError::Rejected(
+                    error,
+                )),
+                frontier: WifiColdStartFrontier::Joined {
+                    clocked,
+                    membership,
+                    platform: wifi_platform,
+                },
+            });
+        }
+    };
     Ok(WifiColdStart {
-        radio: powered,
+        clocked,
+        membership,
+        platform: wifi_platform,
         tx_power,
-        calibration_cache,
-        report,
+        report: WifiColdStartReport {
+            initial_channel: config.initial_channel,
+            initial_tracking,
+        },
     })
-}
-
-// Registration's pinned state already lives in its parent future. Keep its
-// hardware-step stack temporaries outside the cold-start owner-transfer frame.
-#[inline(never)]
-fn poll_registration<F: core::future::Future>(
-    future: core::pin::Pin<&mut F>,
-    cx: &mut core::task::Context<'_>,
-) -> core::task::Poll<F::Output> {
-    type PollFn<F> = for<'a, 'b, 'c> fn(
-        core::pin::Pin<&'a mut F>,
-        &'b mut core::task::Context<'c>,
-    )
-        -> core::task::Poll<<F as core::future::Future>::Output>;
-    let poll: PollFn<F> = F::poll;
-    core::hint::black_box(poll)(future, cx)
 }

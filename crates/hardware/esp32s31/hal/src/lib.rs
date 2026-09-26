@@ -6,8 +6,9 @@
 //! [`root`] owns the protocol-neutral radio root and composes the restricted
 //! PAC partitions into exclusive protocol routes. [`shared_radio`] arbitrates
 //! the shared radio partitions and PHY state between concurrently running
-//! routes through non-blocking leases. [`owner`] retains the Wi-Fi route and
-//! grants bounded capabilities.
+//! routes through non-blocking leases. [`owner`] holds the running Wi-Fi MAC
+//! owner and grants bounded capabilities; [`ieee80211::client`] brings Wi-Fi up
+//! as a client of the arbiter.
 //! [`phy`], [`ieee80211`], [`bluetooth`] and [`ieee802154`] implement domain
 //! operations through those capabilities. [`types`] exposes value contracts
 //! without granting PAC access. Protocol policy and executor waits belong to
@@ -23,12 +24,9 @@ use oer_esp32s31_pac::{
     MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioPhyRegisters,
 };
 
-use root::{RadioHardware, RadioPhyReleaseError};
-
 pub mod bluetooth;
 
 mod clock;
-mod route_registers;
 
 pub mod coex;
 

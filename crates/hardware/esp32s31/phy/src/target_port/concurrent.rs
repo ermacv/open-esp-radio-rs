@@ -7,7 +7,7 @@ use crate::{
         ConcurrentPhy, ConcurrentPhyError, MaintenancePolicy, Slot, admit_maintenance,
         evaluate_periodic_tracking,
     },
-    registered_route::PhyDomain,
+    domain::PhyDomain,
     state::client::PhyModemClient,
     state::client::PhyPllTrackClock,
 };

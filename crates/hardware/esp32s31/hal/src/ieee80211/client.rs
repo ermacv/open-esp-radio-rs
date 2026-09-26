@@ -12,17 +12,23 @@
 //! cold MAC HAL and the channel HAL take the shared registers from the lease
 //! for one transaction, the MAC reset pulses through it, and the runtime MAC
 //! HAL needs no lease because the Wi-Fi hot path touches Wi-Fi registers
-//! only.
+//! only. After cold MAC setup [`WifiClocked::into_running`] splits the client
+//! into the task-side [`RadioRuntimeOwner`] and the MAC interrupt setup;
+//! [`WifiClocked::from_running`] reunites a stopped runtime epoch.
 
 use core::fmt;
 
 use oer_esp32s31_pac::{MacInterruptSetup, WifiRadioRegisters};
 
+use crate::types::MacInterruptEnableState;
+
 use crate::{
     ieee80211::{
         channel::RadioChannelHal,
         mac::{WifiMacColdHal, WifiMacHal},
+        station_wake::StationWakeState,
     },
+    owner::RadioRuntimeOwner,
     root::WifiPartition,
     shared_radio::{
         CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
@@ -54,6 +60,7 @@ pub struct WifiPowered {
 pub struct WifiClocked {
     registers: WifiClientRegisters,
     initialized: bool,
+    station_wake: StationWakeState,
 }
 
 /// Failed Wi-Fi lifecycle transition retaining the unchanged owner.
@@ -157,6 +164,7 @@ impl WifiPowered {
             Ok(()) => Ok(WifiClocked {
                 registers: self.registers,
                 initialized: false,
+                station_wake: StationWakeState::default(),
             }),
             Err(error) => Err(WifiTransitionFailure { owner: self, error }),
         }
@@ -189,6 +197,7 @@ impl WifiClocked {
         Self {
             registers: cold.registers,
             initialized: false,
+            station_wake: StationWakeState::default(),
         }
     }
 
@@ -247,6 +256,46 @@ impl WifiClocked {
             RadioChannelHal::from_leased(platform, &mut self.registers.mac, phy, restore),
             attachment,
         )
+    }
+
+    /// Close the cold polling interrupt phase before the task/ISR split:
+    /// mask and clear every MAC interrupt and return the previous enables.
+    pub fn close_cold_interrupt_phase(&mut self) -> MacInterruptEnableState {
+        let interrupts = &mut self.registers.interrupts;
+        let mask = interrupts.mac_interrupt_enable();
+        interrupts.mask_and_clear_all_mac_interrupts();
+        mask
+    }
+
+    /// Complete the one-way transition after cold MAC setup: the task-side
+    /// runtime owner and the MAC interrupt setup, which keeps MAC interrupts
+    /// masked until its activation. This performs no MMIO.
+    pub fn into_running(self) -> (RadioRuntimeOwner, crate::owner::MacInterruptSetup) {
+        let WifiClientRegisters { mac, interrupts } = self.registers;
+        (
+            RadioRuntimeOwner::from_clocked(mac, self.station_wake, self.initialized),
+            crate::owner::MacInterruptSetup { inner: interrupts },
+        )
+    }
+
+    /// Reunite a stopped runtime epoch with its inactive interrupt setup.
+    ///
+    /// The caller must have completed its protocol stop: no DMA owner or
+    /// installed interrupt route may remain outside these values. This
+    /// performs no MMIO; the Wi-Fi clocks stay enabled.
+    pub fn from_running(
+        runtime: RadioRuntimeOwner,
+        interrupts: crate::owner::MacInterruptSetup,
+    ) -> Self {
+        let (mac, station_wake, initialized) = runtime.into_clocked_parts();
+        Self {
+            registers: WifiClientRegisters {
+                mac,
+                interrupts: interrupts.inner,
+            },
+            initialized,
+            station_wake,
+        }
     }
 
     /// Disable the Wi-Fi module clocks. While Wi-Fi is marked initialized

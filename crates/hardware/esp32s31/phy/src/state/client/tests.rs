@@ -804,10 +804,13 @@ mod schedule;
 #[test]
 fn only_the_minting_registration_describes_a_detached_client_set() {
     use oer_esp32s31_hal::owner::PhyInitializationAccess;
-    let mut radio =
-        oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
-    let first = radio.phy_hal_mut().begin_registration_epoch();
-    let second = radio.phy_hal_mut().begin_registration_epoch();
+    let (radio, _partitions) =
+        oer_esp32s31_hal::root::RadioHardware::for_validation().into_concurrent(());
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
+    let first = lease.phy_hal().begin_registration_epoch();
+    let second = lease.phy_hal().begin_registration_epoch();
     let clients = PhyClientState::for_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS, first);
 
     assert!(clients.describes_epoch(Some(first)));

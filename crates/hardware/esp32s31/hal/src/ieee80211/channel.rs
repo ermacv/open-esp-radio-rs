@@ -1,61 +1,39 @@
 //! Narrow register capability for one PHY channel transaction.
 
-use crate::route_registers::WifiRegisters;
 use core::cell::RefMut;
 
-use crate::{owner::SharedPhyAccess, phy::restore::PhyRouteState};
+use crate::{ieee80211::MacBorrow, owner::SharedPhyAccess, phy::restore::PhyRouteState};
 
 use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
 
-/// Temporary channel-programming borrow from the unique [`crate::owner::Radio`] owner.
+/// Temporary channel-programming borrow: the Wi-Fi client's MAC with the
+/// shared PHY and route restore state borrowed from the arbiter lease.
 ///
-/// Dropping this value ends both mutable borrows; it does not consume or split
-/// the radio owner. No PAC owner or generic register accessor is exposed.
+/// Dropping this value ends every borrow; no PAC owner or generic register
+/// accessor is exposed.
 #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
-enum ChannelRegisters<'radio> {
-    Owned(&'radio mut WifiRegisters, &'radio mut PhyRouteState),
-    Published(RefMut<'radio, WifiRegisters>, RefMut<'radio, PhyRouteState>),
-    /// A concurrent client's MAC with the shared PHY and route restore state
-    /// borrowed from the arbiter lease.
-    Leased {
-        mac: &'radio mut WifiRadioRegisters,
-        phy: &'radio mut RadioPhyRegisters,
-        restore: &'radio mut PhyRouteState,
-    },
+struct ChannelRegisters<'radio> {
+    mac: MacBorrow<'radio>,
+    phy: &'radio mut RadioPhyRegisters,
+    restore: &'radio mut PhyRouteState,
 }
 
 #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
 impl ChannelRegisters<'_> {
     fn mac_mut(&mut self) -> &mut WifiRadioRegisters {
-        match self {
-            Self::Owned(registers, _) => registers,
-            Self::Published(registers, _) => registers,
-            Self::Leased { mac, .. } => mac,
-        }
+        &mut self.mac
     }
 
     fn radio_phy(&self) -> &RadioPhyRegisters {
-        match self {
-            Self::Owned(registers, _) => registers.radio_phy(),
-            Self::Published(registers, _) => registers.radio_phy(),
-            Self::Leased { phy, .. } => phy,
-        }
+        self.phy
     }
 
     fn route_state(&self) -> &PhyRouteState {
-        match self {
-            Self::Owned(_, state) => state,
-            Self::Published(_, state) => state,
-            Self::Leased { restore, .. } => restore,
-        }
+        self.restore
     }
 
     fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
-        match self {
-            Self::Owned(registers, restore) => (registers.radio_phy_mut(), restore),
-            Self::Published(registers, restore) => (registers.radio_phy_mut(), restore),
-            Self::Leased { phy, restore, .. } => (phy, restore),
-        }
+        (self.phy, self.restore)
     }
 }
 
@@ -67,17 +45,6 @@ pub struct RadioChannelHal<'radio, P> {
 }
 
 impl<'radio, P> RadioChannelHal<'radio, P> {
-    pub(crate) fn from_owned(
-        platform: &'radio mut P,
-        registers: &'radio mut WifiRegisters,
-        restore: &'radio mut PhyRouteState,
-    ) -> Self {
-        Self {
-            platform,
-            registers: ChannelRegisters::Owned(registers, restore),
-        }
-    }
-
     pub(crate) fn from_leased(
         platform: &'radio mut P,
         mac: &'radio mut WifiRadioRegisters,
@@ -86,18 +53,27 @@ impl<'radio, P> RadioChannelHal<'radio, P> {
     ) -> Self {
         Self {
             platform,
-            registers: ChannelRegisters::Leased { mac, phy, restore },
+            registers: ChannelRegisters {
+                mac: MacBorrow::Owned(mac),
+                phy,
+                restore,
+            },
         }
     }
 
     pub(crate) fn from_published(
         platform: &'radio mut P,
-        registers: RefMut<'radio, WifiRegisters>,
-        restore: RefMut<'radio, PhyRouteState>,
+        mac: RefMut<'radio, WifiRadioRegisters>,
+        phy: &'radio mut RadioPhyRegisters,
+        restore: &'radio mut PhyRouteState,
     ) -> Self {
         Self {
             platform,
-            registers: ChannelRegisters::Published(registers, restore),
+            registers: ChannelRegisters {
+                mac: MacBorrow::Published(mac),
+                phy,
+                restore,
+            },
         }
     }
 }

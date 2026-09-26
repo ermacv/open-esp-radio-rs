@@ -3,8 +3,8 @@
 use super::*;
 use crate::lifecycle::{PhyRfCloseOperation, drive_rf_close};
 
-/// Reproduce the default current-vendor temperature observation immediately
-/// before RF close while the radio is still physically available.
+/// Why the current-vendor temperature observation that immediately precedes
+/// RF close failed.
 ///
 /// Failure precedes every shutdown mutation, so the caller may retain and
 /// retry its powered-idle owner. The observation updates only source-owned
@@ -20,14 +20,6 @@ pub(crate) enum PhyRfCloseTemperatureFailure {
 
 const fn preclose_i2c_failure(error: PhyTargetPortError) -> PhyRfCloseTemperatureFailure {
     PhyRfCloseTemperatureFailure::HardwareAmbiguous(error)
-}
-
-pub(crate) async fn observe_temperature_before_rf_close<P, D: PhyAsyncDelay>(
-    radio: &mut Radio<P, Powered>,
-    state: &mut PhyState,
-) -> Result<(), PhyRfCloseTemperatureFailure> {
-    let (platform, registers) = radio.phy_hal_parts();
-    observe_temperature_with_hal::<P, D>(platform, registers, state).await
 }
 
 pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
@@ -71,13 +63,6 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
 ///
 /// The first operation crosses the point of no recovery. Any returned error
 /// means the powered hardware epoch is ambiguous and must remain poisoned.
-pub(crate) fn execute_rf_close<P, D: PhyAsyncDelay>(
-    radio: &mut Radio<P, Powered>,
-) -> Result<(), PhyTargetPortError> {
-    let registers = radio.phy_hal_mut();
-    execute_rf_close_with_hal::<D>(registers)
-}
-
 pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
 ) -> Result<(), PhyTargetPortError> {
@@ -356,20 +341,11 @@ fn restore_wake_pbus_boundaries(
 }
 
 /// Execute current-vendor retained RF wake against the existing registered
-/// calibration state.
+/// calibration state, through any route's shared-PHY borrow.
 ///
 /// The parent transition enforces exact child order. Every child is finite;
 /// completion is published only after frequency control, BBPLL, force-TX/RX
 /// and baseband mode have all returned to their operational values.
-#[cfg(target_arch = "riscv32")]
-pub(crate) async fn execute_rf_wake<P, D: PhyAsyncDelay>(
-    radio: &mut Radio<P, Powered>,
-    state: &PhyState,
-) -> Result<(), PhyTargetPortError> {
-    execute_rf_wake_with_hal::<D>(radio.phy_hal_mut(), state).await
-}
-
-/// Execute the retained RF-wake graph through any route's shared-PHY borrow.
 #[cfg(target_arch = "riscv32")]
 pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
     registers: &mut impl PhyInitializationAccess,

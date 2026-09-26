@@ -305,12 +305,6 @@ impl RegisteredPhyState {
         &self.state
     }
 
-    /// Retire registration proof after the physical RF epoch is shut down.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn into_retired_state(self) -> crate::state::PhyState {
-        self.state
-    }
-
     /// Project periodic-tracking policy from the one registered PHY epoch.
     ///
     /// Keeping this method on the registration proof prevents callers from
@@ -355,10 +349,12 @@ pub struct PhyRegisterTransition {
 }
 
 impl PhyRegisterTransition {
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn new(config: crate::state::PhyConfig) -> Self {
         Self::new_on_channel(config, 11)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn new_on_channel(
         config: crate::state::PhyConfig,
         channel_or_frequency: u16,
@@ -415,6 +411,7 @@ impl PhyRegisterTransition {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn with_production_config() -> Self {
         Self::new(crate::state::PhyConfig::production())
     }
@@ -531,6 +528,7 @@ impl PhyRegisterTransition {
         clippy::result_large_err,
         reason = "non-failure paths must return the unique allocation-free registration owner"
     )]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn into_failed_parts(
         mut self,
     ) -> Result<

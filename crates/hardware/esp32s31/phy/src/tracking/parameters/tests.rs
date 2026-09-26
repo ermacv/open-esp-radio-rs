@@ -562,28 +562,6 @@ fn temperature_to_power_matches_all_signed_16_bit_deltas() {
     );
 }
 
-mod selection;
-#[test]
-fn selected_rfpll_stops_before_power_and_calibration() {
-    let mut parent = PhyParamTrackingTransition::selected(
-        PhyParamTrackRequest::new(true, false),
-        POLICY,
-        crate::tracking::maintenance::Operation::Rfpll,
-    );
-    parent
-        .advance(PhyParamTrackingCompletion::EnteredCritical)
-        .unwrap();
-    parent
-        .advance(PhyParamTrackingCompletion::RfpllCapTracked(
-            PhyParamTrackingRfpllCompletion {
-                committed: (),
-                corrected: false,
-            },
-        ))
-        .unwrap();
-    assert_eq!(parent.action(), PhyParamTrackingAction::ExitCritical);
-}
-
 #[test]
 fn outcome_reports_the_children_that_committed_an_update() {
     let mut transition =

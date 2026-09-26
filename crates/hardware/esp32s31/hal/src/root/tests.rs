@@ -1,5 +1,9 @@
 use super::{RadioHardware, RadioPhyReleaseError};
-use crate::{owner::WifiColdRegisters, phy::restore::PhyRouteState};
+use crate::{
+    owner::PhyInitializationAccess,
+    phy::restore::PhyRouteState,
+    shared_radio::{SharedRadio, SharedRadioReleaseError},
+};
 
 #[derive(Clone, Copy)]
 enum Restore {
@@ -27,9 +31,7 @@ impl Restore {
             }
         }
     }
-}
 
-impl Restore {
     fn occupy(self, slot: &mut PhyRouteState) {
         match self {
             Self::TxDcPwdet => slot.occupy_txdc_for_test(),
@@ -40,78 +42,55 @@ impl Restore {
     }
 }
 
+/// Begin one registration through a fresh lease of `shared`.
+fn register(shared: &SharedRadio<()>) -> crate::owner::PhyRegistrationEpoch {
+    let mut lease = shared
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
+    lease.phy_hal().begin_registration_epoch()
+}
+
 #[test]
-fn pending_restore_survives_same_route_transitions_and_blocks_every_release() {
+fn every_pending_restore_blocks_the_reunion() {
     for restore in Restore::ALL {
-        let mut wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
-        restore.occupy(wifi.phy_state_mut());
-        let (registers, interrupts, route) = wifi.into_running();
-        let wifi = WifiColdRegisters::from_running(registers, interrupts, route);
-        let Err((_wifi, error)) = wifi.release() else {
-            panic!("Wi-Fi released a pending restore");
+        let (mut shared, partitions) = RadioHardware::for_validation().into_concurrent(());
+        restore.occupy(shared.phy_state_mut_for_test());
+        let Err(failure) = RadioHardware::from_concurrent(shared, partitions) else {
+            panic!("the split reunited over a pending restore");
         };
-        assert_eq!(error, restore.error());
+        assert_eq!(
+            failure.error(),
+            super::ConcurrentReunionError::Shared(SharedRadioReleaseError::Restore(
+                restore.error()
+            ))
+        );
     }
 }
 
 #[test]
-fn wifi_route_roundtrip_returns_the_complete_root() {
-    let wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
-    let (registers, interrupts, route) = wifi.into_running();
-    let Ok(hardware) = WifiColdRegisters::from_running(registers, interrupts, route).release()
-    else {
-        panic!("an untouched cold route can be released");
-    };
-
-    let Ok(_hardware) = WifiColdRegisters::from_hardware(hardware).release() else {
-        panic!("the returned root enters Wi-Fi again");
-    };
-}
-
-#[test]
-fn registration_epoch_is_replaced_by_registration_and_retired_by_every_route_release() {
-    let mut wifi = RadioHardware::for_validation().into_wifi();
-    let phy = &mut wifi.phy;
-    assert_eq!(phy.registration_epoch(), None);
-    let first = phy.begin_registration_epoch();
-    assert_eq!(phy.registration_epoch(), Some(first));
-    let second = phy.begin_registration_epoch();
-    assert_ne!(first, second);
-    assert_eq!(phy.registration_epoch(), Some(second));
-
-    let mut wifi =
-        RadioHardware::from_wifi(wifi.registers, wifi.interrupts, wifi.phy, wifi.retained)
-            .into_wifi();
-    let phy = &mut wifi.phy;
-    assert_eq!(phy.registration_epoch(), None);
-    let third = phy.begin_registration_epoch();
-    assert!(third != first && third != second);
-
-    let wifi = RadioHardware::from_wifi(wifi.registers, wifi.interrupts, wifi.phy, wifi.retained)
-        .into_wifi();
-    assert_eq!(wifi.phy.registration_epoch(), None);
-}
-
-#[test]
 fn a_concurrent_split_reunites_and_retires_the_registration() {
-    use crate::owner::PhyInitializationAccess;
     let (shared, partitions) = RadioHardware::for_validation().into_concurrent(());
-    let epoch = {
-        let mut lease = shared
-            .try_acquire()
-            .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
-        lease.phy_hal().begin_registration_epoch()
-    };
+    let first = register(&shared);
+    let second = register(&shared);
+    assert_ne!(first, second);
     let (hardware, ()) = RadioHardware::from_concurrent(shared, partitions)
         .unwrap_or_else(|_| panic!("an idle split reunites"));
-    // Returning to the neutral root retires the registration, as a route does.
-    let wifi = WifiColdRegisters::from_hardware(hardware);
-    assert_ne!(wifi.phy_state().registration_epoch(), Some(epoch));
+
+    // Returning to the neutral root retires the registration.
+    let (shared, _partitions) = hardware.into_concurrent(());
+    {
+        let lease = shared
+            .try_acquire()
+            .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
+        assert_eq!(lease.registration_epoch(), None);
+    }
+    let third = register(&shared);
+    assert!(third != first && third != second);
 }
 
 #[test]
-fn reunion_waits_for_common_power_and_calibration_restore() {
-    use crate::shared_radio::{RadioClient, SharedRadioReleaseError};
+fn reunion_waits_for_common_power() {
+    use crate::shared_radio::RadioClient;
     let (mut shared, partitions) = RadioHardware::for_validation().into_concurrent(());
     shared.hold_common_power_for_test(RadioClient::Bluetooth);
     let Err(failure) = RadioHardware::from_concurrent(shared, partitions) else {
@@ -121,17 +100,5 @@ fn reunion_waits_for_common_power_and_calibration_restore() {
         failure.error(),
         super::ConcurrentReunionError::Shared(SharedRadioReleaseError::CommonPowerHeld)
     );
-
-    let (_shared, partitions) = failure.into_parts();
-    let (mut shared, _) = RadioHardware::for_validation().into_concurrent(());
-    shared.phy_state_mut_for_test().occupy_txdc_for_test();
-    let Err(failure) = RadioHardware::from_concurrent(shared, partitions) else {
-        panic!("a calibration still owns a restore obligation");
-    };
-    assert_eq!(
-        failure.error(),
-        super::ConcurrentReunionError::Shared(SharedRadioReleaseError::Restore(
-            RadioPhyReleaseError::TxDcPwdetRestorePending
-        ))
-    );
+    let (_shared, _partitions) = failure.into_parts();
 }

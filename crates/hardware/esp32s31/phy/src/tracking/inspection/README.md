@@ -1,8 +1,7 @@
 # Tracking inspection and execution boundaries
 
-`RegisteredPhyRadio::inspect_tracking(now_micros)` and
-`RegisteredWifiPhy::inspect_tracking(now_micros)` borrow the registered owner
-and return `inspection::Inspection`. They do not consume a client, advance a
+`PhyDomain::inspect_tracking(now_micros)` borrows the registered domain and
+returns `inspection::Inspection`. It does not consume a client, advance a
 tracking timestamp, sample temperature, access hardware or admit maintenance.
 Clock errors come from the existing client scheduler. No separate scheduler
 or copy of calibration reference state is introduced.
@@ -73,13 +72,8 @@ hardware children retain the same exclusive access. A child completion or an
 async Pending return is not a resumable protocol checkpoint. Hardware coex
 timer control does not supply a joint-protocol maintenance grant.
 
-The connected Wi-Fi composition enables an observation-driven service from
-`RadioConfig` and exposes a coalescing external request for a new measurement. These notifications
-carry no temperature and no RF authority. The existing `Track` request follows
-registered policy; `Calibrate` is a due-only diagnostic override for both heavy
-branches. Independent operations preserve the periodic scheduler timestamps.
-See the [service contract](../service/README.md). Inspection itself never starts
-the service or performs hardware work.
+Inspection itself never performs hardware work; the periodic tracking graph
+reevaluates the same predicates at its action boundaries.
 
 Execution outcomes, observed conditions and protocol restoration remain three
 separate facts. Failure after consuming the operation retains an unusable epoch;

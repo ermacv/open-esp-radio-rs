@@ -1,37 +1,24 @@
 //! Hardware ownership, capabilities, and affine lifecycle transitions.
 
 use crate::{
-    ieee80211::{channel, mac as wifi_mac},
-    power::PowerError,
+    ieee80211::{channel, mac as wifi_mac, station_wake::StationWakeState},
+    shared_radio::SharedRadioLease,
     types::{
-        MacInterruptEnableState, MacInterruptMask, MacInterruptSnapshot, MacPowerInterruptSnapshot,
-        MacPowerWakeCause, PhyAdcRate,
+        MacInterruptMask, MacInterruptSnapshot, MacPowerInterruptSnapshot, MacPowerWakeCause,
+        PhyAdcRate,
     },
 };
 
 use super::*;
 
 use crate::phy::restore::PhyRouteState;
-use crate::route_registers::WifiRegisters;
+use oer_esp32s31_pac::WifiRadioRegisters;
 
 mod interrupt_checkpoint;
 pub mod maintenance;
-mod wifi_cold;
 
 pub use crate::phy::registration::PhyRegistrationEpoch;
 pub use interrupt_checkpoint::MacInterruptCheckpoint;
-pub(crate) use wifi_cold::{WifiColdRegisters, WifiRouteState};
-
-/// Powered-lifecycle PHY capability.
-///
-/// The PAC owner remains private to HAL. PHY code can pass this value only to
-/// named HAL operations; it cannot dereference or recover a generic register
-/// block from it.
-pub struct PhyHal {
-    pub(crate) registers: WifiColdRegisters,
-    /// Whether this exclusive route's PHY grant-protect request is programmed.
-    pub(crate) grant_protected: bool,
-}
 
 /// One PAC-observed image of the Wi-Fi baseband enable condition.
 ///
@@ -56,9 +43,7 @@ impl WifiBasebandEnableObservation {
 /// Protocol routes that can lend the shared radio PHY.
 ///
 /// The route is part of every [`SharedPhyHal`] type, so an operation that is
-/// valid only for one route cannot accept a borrow minted by another. For
-/// example, Wi-Fi maintenance access cannot stand in for a lease of the
-/// shared radio arbiter.
+/// valid only for one route cannot accept a borrow minted by another.
 pub mod route {
     mod sealed {
         pub trait Route {}
@@ -67,14 +52,10 @@ pub mod route {
     /// Closed set of routes; downstream crates cannot add a lender.
     pub trait Route: sealed::Route {}
 
-    /// Borrowed from checked Wi-Fi maintenance access.
-    pub enum Wifi {}
     /// Borrowed through a lease of the shared radio arbiter.
     pub enum Shared {}
 
-    impl sealed::Route for Wifi {}
     impl sealed::Route for Shared {}
-    impl Route for Wifi {}
     impl Route for Shared {}
 }
 
@@ -87,16 +68,7 @@ pub mod route {
 ///
 /// ```
 /// use oer_esp32s31_hal::owner::{SharedPhyHal, route};
-/// fn keep(phy: SharedPhyHal<'_, route::Wifi>) -> SharedPhyHal<'_, route::Wifi> {
-///     phy
-/// }
-/// ```
-///
-/// A borrow from one route is a different type from a borrow of another:
-///
-/// ```compile_fail
-/// use oer_esp32s31_hal::owner::{SharedPhyHal, route};
-/// fn relabel(phy: SharedPhyHal<'_, route::Wifi>) -> SharedPhyHal<'_, route::Shared> {
+/// fn keep(phy: SharedPhyHal<'_, route::Shared>) -> SharedPhyHal<'_, route::Shared> {
 ///     phy
 /// }
 /// ```
@@ -143,8 +115,7 @@ pub(crate) mod sealed {
 
 /// Sealed protocol-neutral port accepted by named PHY HAL operations.
 ///
-/// External crates can use an acquired [`SharedPhyHal`] or Wi-Fi lifecycle
-/// borrow but cannot implement this trait for an arbitrary owner or recover
+/// External crates can use an acquired [`SharedPhyHal`] or channel borrow but cannot implement this trait for an arbitrary owner or recover
 /// the underlying PAC.
 pub trait SharedPhyAccess: sealed::SharedPhyAccess {
     /// The registration that currently describes this PHY partition.
@@ -316,38 +287,6 @@ pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationA
     }
 }
 
-impl sealed::SharedPhyAccess for PhyHal {
-    fn pac(&self) -> &RadioPhyRegisters {
-        self.registers.radio().radio_phy()
-    }
-
-    fn route_state(&self) -> &PhyRouteState {
-        self.registers.phy_state()
-    }
-
-    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
-        self.registers.phy_parts_mut()
-    }
-}
-
-impl sealed::SharedPhyContext for PhyHal {
-    fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation {
-        WifiBasebandEnableObservation::from_pac_readback(
-            self.registers
-                .radio()
-                .radio_phy()
-                .wifi_baseband_is_enabled(),
-        )
-    }
-}
-
-impl SharedPhyAccess for PhyHal {}
-impl SharedPhyContext for PhyHal {}
-
-impl sealed::PhyInitializationAccess for PhyHal {}
-
-impl PhyInitializationAccess for PhyHal {}
-
 impl<R: route::Route> sealed::SharedPhyAccess for SharedPhyHal<'_, R> {
     fn pac(&self) -> &RadioPhyRegisters {
         self.registers
@@ -440,77 +379,18 @@ pub(crate) fn phy_parts_mut(
     sealed::SharedPhyAccess::parts_mut(access)
 }
 
-/// Type states for the coarse radio power lifecycle.
-pub mod state {
-
-    use crate::owner::{MacInterruptSetup, PhyHal, RadioRuntimeOwner};
-
-    use super::WifiColdRegisters;
-
-    /// The application uniquely owns the peripheral, but the open driver has
-    /// not yet established its clock/reset prerequisites.
-    pub struct Owned {
-        pub(crate) registers: WifiColdRegisters,
-    }
-
-    /// The radio clock/reset prerequisites have been established and finite
-    /// PHY register operations may access MMIO.
-    pub struct Powered {
-        pub(crate) registers: PhyHal,
-    }
-
-    /// Cold initialization has completed and task/ISR authority is disjoint.
-    pub struct Running {
-        pub(crate) registers: RadioRuntimeOwner,
-        pub(crate) interrupts: MacInterruptSetup,
-    }
-}
-
-/// Unique application-visible owner of an ESP32-S31 radio peripheral.
+/// Opaque task-side owner of the running Wi-Fi MAC partition.
 ///
-/// `P` is the integration layer's singleton token (for example,
-/// `esp_hal::peripherals::WIFI`). Keeping it inside this value ties the open
-/// driver's register capability to the safe peripheral owner.
-pub struct Radio<P, State = state::Owned> {
-    pub(crate) peripheral: P,
-    pub(crate) state: State,
-}
-
-/// Failed cold Wi-Fi release retaining both application and radio owners.
-#[must_use = "failed Wi-Fi release still owns the application token and radio route"]
-pub struct RadioReleaseFailure<P> {
-    pub(crate) radio: Radio<P, state::Owned>,
-    pub(crate) error: RadioPhyReleaseError,
-}
-
-impl<P> RadioReleaseFailure<P> {
-    pub const fn error(&self) -> RadioPhyReleaseError {
-        self.error
-    }
-
-    pub fn into_parts(self) -> (Radio<P, state::Owned>, RadioPhyReleaseError) {
-        (self.radio, self.error)
-    }
-}
-
-impl<P> core::fmt::Debug for RadioReleaseFailure<P> {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("RadioReleaseFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
-}
-
-/// Opaque task-side owner of the running radio register partition.
-///
-/// This value can be moved between lifecycle owners and the runtime arena, but
-/// it exposes no PAC owner, dereference operation, or generic register
-/// callback. Finite hardware transactions are borrowed through HAL
-/// capabilities.
+/// A clocked Wi-Fi client becomes this owner after cold MAC setup
+/// ([`WifiClocked::into_running`]). It holds the Wi-Fi MAC registers only:
+/// the Wi-Fi hot path needs no arbiter lease, and every operation that
+/// touches shared radio registers borrows them from the lease. It can move
+/// between lifecycle owners and the runtime arena, but exposes no PAC owner,
+/// dereference operation, or generic register callback.
 pub struct RadioRuntimeOwner {
-    pub(crate) registers: WifiRegisters,
-    route: WifiRouteState,
+    pub(crate) registers: WifiRadioRegisters,
+    station_wake: StationWakeState,
+    initialized: bool,
 }
 
 impl RadioRuntimeOwner {
@@ -519,28 +399,57 @@ impl RadioRuntimeOwner {
     #[cfg(any(test, feature = "validation-probes"))]
     #[doc(hidden)]
     pub fn claim_for_validation() -> Self {
-        let (registers, _interrupts, route) =
-            WifiColdRegisters::from_hardware(RadioHardware::for_validation()).into_running();
-        Self::from_pac(registers, route)
+        let (_shared, partitions) =
+            crate::root::RadioHardware::for_validation().into_concurrent(());
+        let clocked = crate::ieee80211::client::WifiClocked::for_validation(
+            crate::ieee80211::client::WifiCold::from_partition(partitions.wifi),
+        );
+        clocked.into_running().0
+    }
+
+    pub(crate) fn from_clocked(
+        registers: WifiRadioRegisters,
+        station_wake: StationWakeState,
+        initialized: bool,
+    ) -> Self {
+        Self {
+            registers,
+            station_wake,
+            initialized,
+        }
+    }
+
+    pub(crate) fn into_clocked_parts(self) -> (WifiRadioRegisters, StationWakeState, bool) {
+        (self.registers, self.station_wake, self.initialized)
     }
 
     pub fn wifi_mac_hal(&mut self) -> wifi_mac::WifiMacHal<'_> {
-        wifi_mac::WifiMacHal::from_owned(&mut self.registers)
+        wifi_mac::WifiMacHal::from_mac(&mut self.registers)
     }
 
-    /// Borrow the coexistence timer bank inside an isolated validation image.
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub fn coex_timer_bank(&mut self) -> crate::coex::CoexTimerBank<'_> {
-        crate::coex::CoexTimerBank::from_owned(self.registers.shared_mut())
+    /// Borrow the channel HAL for one channel transaction, with the shared
+    /// PHY borrowed from the arbiter lease.
+    pub fn channel_hal<'hal, P, T>(
+        &'hal mut self,
+        platform: &'hal mut P,
+        lease: &'hal mut SharedRadioLease<'_, T>,
+    ) -> channel::RadioChannelHal<'hal, P> {
+        let (phy, restore) = lease.phy_parts_mut();
+        channel::RadioChannelHal::from_leased(platform, &mut self.registers, phy, restore)
     }
 
-    pub fn channel_hal<'owner, P>(
-        &'owner mut self,
-        platform: &'owner mut P,
-    ) -> channel::RadioChannelHal<'owner, P> {
-        let (registers, restore) = self.channel_parts_mut();
-        channel::RadioChannelHal::from_owned(platform, registers, restore)
+    /// Borrow the channel HAL together with the arbiter's attachment, for a
+    /// PHY channel operation that updates the shared domain's state.
+    pub fn channel_hal_with_attachment<'hal, P, T>(
+        &'hal mut self,
+        platform: &'hal mut P,
+        lease: &'hal mut SharedRadioLease<'_, T>,
+    ) -> (channel::RadioChannelHal<'hal, P>, &'hal mut T) {
+        let (phy, restore, attachment) = lease.phy_parts_with_attachment();
+        (
+            channel::RadioChannelHal::from_leased(platform, &mut self.registers, phy, restore),
+            attachment,
+        )
     }
 
     /// Read the calibrated baseband observation without exposing the PAC
@@ -604,52 +513,23 @@ impl RadioRuntimeOwner {
         self.registers.he_trigger_receive_diagnostics()
     }
 
-    pub(crate) fn from_pac(registers: WifiRegisters, route: WifiRouteState) -> Self {
-        Self { registers, route }
-    }
-
-    pub(crate) fn pac(&self) -> &WifiRegisters {
+    pub(crate) fn pac(&self) -> &WifiRadioRegisters {
         &self.registers
     }
 
-    pub(crate) fn pac_mut(&mut self) -> &mut WifiRegisters {
+    pub(crate) fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
         &mut self.registers
     }
 
-    /// Borrow the Wi-Fi register set together with the route restore slot.
-    pub(crate) fn channel_parts_mut(&mut self) -> (&mut WifiRegisters, &mut PhyRouteState) {
-        (&mut self.registers, self.route.phy_state_mut())
-    }
-
-    /// Borrow the shared PHY together with the route restore slot.
-    pub(crate) fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
-        (self.registers.radio_phy_mut(), self.route.phy_state_mut())
-    }
-
-    /// Borrow the shared PHY parts together with the coexistence timer bank.
-    pub(crate) fn phy_and_coex_timer_parts_mut(
-        &mut self,
-    ) -> (
-        &mut RadioPhyRegisters,
-        &mut PhyRouteState,
-        oer_esp32s31_pac::CoexTimerBankRegisters<'_>,
-    ) {
-        let (_, shared) = self.registers.parts_mut();
-        let (phy, timers) = shared.radio_phy_and_coex_timers_mut();
-        (phy, self.route.phy_state_mut(), timers)
-    }
-
-    /// Borrow the Wi-Fi register set together with the station wake state.
+    /// Borrow the Wi-Fi MAC together with the station wake state.
     pub(crate) fn station_wake_parts_mut(
         &mut self,
-    ) -> (
-        &mut WifiRegisters,
-        &mut crate::ieee80211::station_wake::StationWakeState,
-    ) {
-        (&mut self.registers, self.route.station_wake_mut())
+    ) -> (&mut WifiRadioRegisters, &mut StationWakeState) {
+        (&mut self.registers, &mut self.station_wake)
     }
 
-    /// Borrow the station TBTT and modem-wakeup capability.
+    /// Borrow the station TBTT and modem-wakeup capability. Both wake banks
+    /// are Wi-Fi MAC registers, so this needs no arbiter lease.
     pub fn station_wake_hal(&mut self) -> crate::ieee80211::station_wake::StationWakeHal<'_> {
         let (registers, state) = self.station_wake_parts_mut();
         crate::ieee80211::station_wake::StationWakeHal::from_owned(registers, state)
@@ -687,7 +567,7 @@ impl MacInterruptRegisters {
 
     pub(crate) fn prepare_connected_sta_with_pac(
         &mut self,
-        registers: &mut WifiRegisters,
+        registers: &mut WifiRadioRegisters,
     ) -> ConnectedStaInterruptPrepared {
         let _ = self
             .inner
@@ -785,7 +665,7 @@ impl MacInterruptSetup {
 
     pub(crate) fn prepare_connected_sta_with_pac(
         &mut self,
-        registers: &mut WifiRegisters,
+        registers: &mut WifiRadioRegisters,
     ) -> ConnectedStaInterruptPrepared {
         let _ = self
             .inner
@@ -805,482 +685,6 @@ impl MacInterruptSetup {
     }
 }
 
-/// Failed power transition retaining the unique partially-mutated radio owner.
-///
-/// The contained owner deliberately has no `release` or protocol-switch
-/// escape. Platform clocks and resets may already differ from the cold
-/// baseline, so only a controlled retry may recover a powered owner.
-pub struct PowerUpFailure<P> {
-    pub(crate) radio: Radio<P, state::Owned>,
-    pub(crate) error: PowerError,
-}
-
-/// Failed release of a physically closed radio back to the cold owner.
-///
-/// This type is constructed only by the post-PHY-close path. It retains the
-/// exact powered owner because a pending PHY restore obligation prevented
-/// neutral-root reconstruction.
-#[must_use = "failed cold reunion retains the complete closed hardware owner"]
-pub struct ColdReunionFailure<P> {
-    _radio: Radio<P, state::Powered>,
-    error: ColdReunionError,
-}
-
-impl<P> ColdReunionFailure<P> {
-    pub const fn error(&self) -> ColdReunionError {
-        self.error
-    }
-}
-
-/// Restore invariant which prevented a closed radio from reaching cold state.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ColdReunionError {
-    TxDcPwdetRestorePending,
-    TxIqToneControlRestorePending,
-    RxDcoControlRestorePending,
-    BluetoothTxPowerControlRestorePending,
-    WifiPowerRestore(crate::root::WifiPowerRestoreCheckpoint),
-}
-
-impl From<RadioPhyReleaseError> for ColdReunionError {
-    fn from(error: RadioPhyReleaseError) -> Self {
-        match error {
-            RadioPhyReleaseError::TxDcPwdetRestorePending => Self::TxDcPwdetRestorePending,
-            RadioPhyReleaseError::TxIqToneControlRestorePending => {
-                Self::TxIqToneControlRestorePending
-            }
-            RadioPhyReleaseError::RxDcoControlRestorePending => Self::RxDcoControlRestorePending,
-            RadioPhyReleaseError::BluetoothTxPowerControlRestorePending => {
-                Self::BluetoothTxPowerControlRestorePending
-            }
-            RadioPhyReleaseError::WifiPowerRestore(checkpoint) => {
-                Self::WifiPowerRestore(checkpoint)
-            }
-        }
-    }
-}
-
-impl<P> PowerUpFailure<P> {
-    /// Inspect the exact failed read-back checkpoint.
-    pub const fn error(&self) -> PowerError {
-        self.error
-    }
-}
-
-impl<P> PowerUpFailure<P> {
-    /// Retry the idempotent prerequisite sequence without exposing a cold
-    /// owner or allowing a protocol switch through partially-mutated state.
-    pub fn retry(self) -> Result<Radio<P, state::Powered>, Self> {
-        self.radio.power_up()
-    }
-}
-
-impl<P> Radio<P, state::Owned> {
-    /// Bind the integration layer's unique peripheral token to the open
-    /// driver's register capability.
-    ///
-    /// The platform token and custom radio PAC singleton must both be free.
-    /// A second claim returns the platform token unchanged.
-    pub fn claim(peripheral: P) -> Result<Self, P> {
-        #[cfg(not(test))]
-        let Some(hardware) = RadioHardware::take() else {
-            return Err(peripheral);
-        };
-        #[cfg(test)]
-        let hardware = RadioHardware::for_validation();
-        Ok(Self::from_hardware(peripheral, hardware))
-    }
-
-    /// Bind an already-owned neutral radio root to the standalone Wi-Fi HAL.
-    ///
-    /// This is the consuming re-entry after [`Self::release`] or after a
-    /// concurrent split has been reunited into the same root. It does not
-    /// acquire another singleton and performs no MMIO.
-    pub fn from_hardware(peripheral: P, hardware: RadioHardware) -> Self {
-        Self {
-            peripheral,
-            state: state::Owned {
-                registers: WifiColdRegisters::from_hardware(hardware),
-            },
-        }
-    }
-
-    /// Construct the complete owner inside an isolated validation image.
-    ///
-    /// This bypasses only the process-wide singleton acquisition required by
-    /// production. The returned ownership and lifecycle API is identical.
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub fn claim_for_validation(peripheral: P) -> Self {
-        Self {
-            peripheral,
-            state: state::Owned {
-                registers: WifiColdRegisters::from_hardware(RadioHardware::for_validation()),
-            },
-        }
-    }
-
-    /// Release a radio that has not crossed into the powered state.
-    ///
-    /// Both singleton authorities are returned. Dropping the neutral radio
-    /// root would permanently make every radio route unavailable for this
-    /// boot.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RadioReleaseFailure`] with this complete radio owner when a
-    /// pending TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power calibration must restore its
-    /// PAC-owned state first.
-    pub fn release(self) -> Result<(P, RadioHardware), RadioReleaseFailure<P>> {
-        let Self { peripheral, state } = self;
-        match state.registers.release() {
-            Ok(hardware) => Ok((peripheral, hardware)),
-            Err((registers, error)) => Err(RadioReleaseFailure {
-                radio: Radio {
-                    peripheral,
-                    state: state::Owned { registers },
-                },
-                error,
-            }),
-        }
-    }
-
-    /// Construct a powered owner inside an isolated validation process.
-    ///
-    /// The validation harness is responsible for establishing the hardware
-    /// prerequisites before using this value. Production firmware cannot
-    /// enable this API.
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub fn assume_powered_for_validation(self) -> Radio<P, state::Powered> {
-        Radio {
-            peripheral: self.peripheral,
-            state: state::Powered {
-                registers: PhyHal {
-                    registers: self.state.registers,
-                    grant_protected: false,
-                },
-            },
-        }
-    }
-}
-
-impl<P> Radio<P, state::Owned> {
-    /// Execute the finite modem/PHY clock and reset prerequisites.
-    ///
-    /// Every register transaction goes through the reviewed custom PAC. The
-    /// exact operation order reproduces the qualified S31 `esp-hal` clock
-    /// path; the ROM-only frontend gates are a
-    /// later owned PHY transition and are not folded into this type-state
-    /// change.
-    ///
-    /// `P` remains an affine integration witness. A successful PAC read-back
-    /// is the only safe path into `Radio<P, Powered>`.
-    pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
-        self.state.registers.prepare_wifi_power_epoch();
-        if let Err(error) = power::execute_owned(&mut self.state.registers.power_route()) {
-            return Err(PowerUpFailure { radio: self, error });
-        }
-        Ok(Radio {
-            peripheral: self.peripheral,
-            state: state::Powered {
-                registers: PhyHal {
-                    registers: self.state.registers,
-                    grant_protected: false,
-                },
-            },
-        })
-    }
-}
-
-impl<P> Radio<P, state::Powered> {
-    /// Borrow the platform and the narrow cold-MAC capability together for
-    /// one lifecycle transition.
-    pub fn cold_mac_parts(&mut self) -> (&mut P, wifi_mac::WifiMacColdHal<'_>) {
-        (
-            &mut self.peripheral,
-            wifi_mac::WifiMacColdHal::from_owned(&mut self.state.registers.registers),
-        )
-    }
-
-    /// Close the cold polling interrupt phase before constructing disjoint
-    /// task/ISR runtime capabilities.
-    pub fn close_cold_interrupt_phase(&mut self) -> MacInterruptEnableState {
-        let mask = self.state.registers.registers.mac_interrupt_enable();
-        self.state
-            .registers
-            .registers
-            .mask_and_clear_all_mac_interrupts();
-        mask
-    }
-
-    /// Borrow the integration token without releasing register ownership.
-    pub const fn peripheral(&self) -> &P {
-        &self.peripheral
-    }
-
-    /// Borrow a narrow channel capability for one transaction.
-    pub fn channel_hal(&mut self) -> channel::RadioChannelHal<'_, P> {
-        let (registers, restore) = self.state.registers.registers.radio_parts_mut();
-        channel::RadioChannelHal::from_owned(&mut self.peripheral, registers, restore)
-    }
-
-    /// Borrow the platform and PHY capability independently.
-    ///
-    /// The two mutable borrows are tied to this unique powered owner and refer
-    /// to disjoint fields, allowing a lifecycle function to coordinate an
-    /// official system operation with internal Wi-Fi MMIO.
-    pub fn phy_hal_parts(&mut self) -> (&mut P, &mut PhyHal) {
-        (&mut self.peripheral, &mut self.state.registers)
-    }
-
-    /// Borrow the platform, the shared PHY and this route's PHY grant-protect
-    /// request together, for PHY maintenance that brackets its hardware
-    /// regions with the request. The exclusive route has no radio arbiter;
-    /// the request carries the arbiter's cold event-48 priority.
-    pub fn phy_hal_parts_with_grant(
-        &mut self,
-    ) -> (
-        &mut P,
-        SharedPhyHal<'_, route::Wifi>,
-        crate::coex::PhyGrantProtect<'_>,
-    ) {
-        let hal = &mut self.state.registers;
-        let (registers, restore, timers) = hal.registers.phy_and_coex_timer_parts_mut();
-        (
-            &mut self.peripheral,
-            SharedPhyHal::new(registers, restore),
-            crate::coex::PhyGrantProtect::new(
-                timers,
-                crate::coex::CoexPtiTable::VENDOR.pti(crate::coex::PHY_GRANT_PROTECT_EVENT),
-                &mut hal.grant_protected,
-            ),
-        )
-    }
-
-    /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.
-    ///
-    /// Espressif's `enable_phy_with_wifi_rx` lifecycle wrapper performs this
-    /// operation after `register_chipv7_phy` or `phy_wakeup_init`.  Keeping it
-    /// on the powered owner makes that final lifecycle edge explicit and
-    /// prevents application code from writing `WIFI_BB_CFG` without owning the
-    /// radio peripheral.
-    /// Internal PHY capability used by source-owned target bindings.
-    ///
-    /// The returned borrow cannot outlive the unique powered radio owner.
-    pub fn phy_hal_mut(&mut self) -> &mut PhyHal {
-        &mut self.state.registers
-    }
-
-    /// Return a physically closed radio to the cold ownership frontier.
-    ///
-    /// The PHY layer must complete RF close and temperature-sensor power-down
-    /// before calling it; ordinary application flow reaches it only through
-    /// the registered PHY cold-release transaction. This releases retained
-    /// shared clocks and restores the route-owned cold-power baseline before
-    /// reconstructing the cold owner.
-    #[doc(hidden)]
-    pub fn reunite_cold_after_phy_close(
-        self,
-    ) -> Result<Radio<P, state::Owned>, ColdReunionFailure<P>> {
-        let Radio {
-            peripheral,
-            state: state::Powered { registers },
-        } = self;
-        match registers.registers.release() {
-            Ok(hardware) => Ok(Radio::from_hardware(peripheral, hardware)),
-            Err((registers, error)) => Err(ColdReunionFailure {
-                _radio: Radio {
-                    peripheral,
-                    state: state::Powered {
-                        registers: PhyHal {
-                            registers,
-                            grant_protected: false,
-                        },
-                    },
-                },
-                error: error.into(),
-            }),
-        }
-    }
-}
-
-/// Rejected hand-over of a closed radio to the retained root.
-#[must_use = "failed retained release still owns the powered radio"]
-pub struct RetainedReleaseFailure<P> {
-    radio: Radio<P, state::Powered>,
-    error: crate::root::RetainedRadioReleaseError,
-}
-
-impl<P> RetainedReleaseFailure<P> {
-    pub const fn error(&self) -> crate::root::RetainedRadioReleaseError {
-        self.error
-    }
-
-    /// Recover the unchanged powered radio.
-    pub fn into_radio(self) -> Radio<P, state::Powered> {
-        self.radio
-    }
-}
-
-impl<P> Radio<P, state::Powered> {
-    /// Enter the Wi-Fi route from a retained root.
-    ///
-    /// The common PHY power sequence of the previous route stays in effect,
-    /// so this powered owner skips [`Radio::power_up`]; the registration epoch
-    /// of the retained PHY stays current.
-    pub fn from_retained(peripheral: P, hardware: crate::root::RetainedRadioHardware) -> Self {
-        Radio {
-            peripheral,
-            state: state::Powered {
-                registers: PhyHal {
-                    registers: WifiColdRegisters::from_retained(hardware),
-                    grant_protected: false,
-                },
-            },
-        }
-    }
-
-    /// Report, without MMIO, why
-    /// [`Self::release_retained_after_phy_close`] would reject this radio.
-    ///
-    /// # Errors
-    ///
-    /// A calibration restore obligation remains, or the route never
-    /// established common PHY power.
-    pub fn check_retained_release(&self) -> Result<(), crate::root::RetainedRadioReleaseError> {
-        self.state.registers.registers.check_retained_release()
-    }
-
-    /// Hand a physically closed radio to the retained root.
-    ///
-    /// The PHY layer must complete RF close and temperature-sensor power-down
-    /// first; ordinary application flow reaches it only through the registered
-    /// PHY retained release. Wi-Fi's own leases are released, and the common
-    /// PHY power stays in effect for the next route.
-    #[doc(hidden)]
-    #[allow(
-        clippy::result_large_err,
-        reason = "rejection returns the complete powered radio without allocation"
-    )]
-    pub fn release_retained_after_phy_close(
-        self,
-    ) -> Result<(P, crate::root::RetainedRadioHardware), RetainedReleaseFailure<P>> {
-        let Radio {
-            peripheral,
-            state: state::Powered { registers },
-        } = self;
-        match registers.registers.release_retained() {
-            Ok(hardware) => Ok((peripheral, hardware)),
-            Err((registers, error)) => Err(RetainedReleaseFailure {
-                radio: Radio {
-                    peripheral,
-                    state: state::Powered {
-                        registers: PhyHal {
-                            registers,
-                            grant_protected: false,
-                        },
-                    },
-                },
-                error,
-            }),
-        }
-    }
-}
-
-impl<P> Radio<P, state::Powered> {
-    /// Complete the one-way ownership transition after cold MAC setup.
-    pub fn into_running(self) -> Radio<P, state::Running> {
-        let (registers, interrupts, route) = self.state.registers.registers.into_running();
-        Radio {
-            peripheral: self.peripheral,
-            state: state::Running {
-                registers: RadioRuntimeOwner::from_pac(registers, route),
-                interrupts: MacInterruptSetup { inner: interrupts },
-            },
-        }
-    }
-}
-
-impl<P> Radio<P, state::Running> {
-    pub const fn peripheral(&self) -> &P {
-        &self.peripheral
-    }
-
-    pub fn channel_hal(&mut self) -> channel::RadioChannelHal<'_, P> {
-        self.state.registers.channel_hal(&mut self.peripheral)
-    }
-
-    pub fn wifi_mac_hal(&mut self) -> wifi_mac::WifiMacHal<'_> {
-        self.state.registers.wifi_mac_hal()
-    }
-
-    /// Split only at the role-epoch ownership boundary. Both returned
-    /// capabilities remain opaque and can be recombined only through
-    /// [`Self::from_runtime_parts`].
-    pub fn into_runtime_parts(self) -> (P, RadioRuntimeOwner, MacInterruptSetup) {
-        (self.peripheral, self.state.registers, self.state.interrupts)
-    }
-
-    pub fn from_runtime_parts(
-        peripheral: P,
-        registers: RadioRuntimeOwner,
-        interrupts: MacInterruptSetup,
-    ) -> Self {
-        Self {
-            peripheral,
-            state: state::Running {
-                registers,
-                interrupts,
-            },
-        }
-    }
-
-    /// Reunite an inactive runtime partition into the powered cold frontier.
-    ///
-    /// This is an ownership-only transition and performs no MMIO. The caller
-    /// must have completed its protocol stop before reconstructing `Running`:
-    /// no DMA owner or installed interrupt route may remain outside this
-    /// value. RF and shared clocks stay physically powered.
-    #[doc(hidden)]
-    pub fn reunite_powered(self) -> Radio<P, state::Powered> {
-        let RadioRuntimeOwner { registers, route } = self.state.registers;
-        let registers =
-            WifiColdRegisters::from_running(registers, self.state.interrupts.inner, route);
-        Radio {
-            peripheral: self.peripheral,
-            state: state::Powered {
-                registers: PhyHal {
-                    registers,
-                    grant_protected: false,
-                },
-            },
-        }
-    }
-}
-
-impl<P> Radio<P, state::Powered> {
-    /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.
-    ///
-    /// The typed route-PAC operation and the PBus-visible owned state are
-    /// updated together under the unique radio owner.
-    #[cfg(target_arch = "riscv32")]
-    pub fn enable_wifi_rx(&mut self) {
-        let (_, registers) = self.phy_hal_parts();
-        crate::phy::frequency::set_wifi_enabled(registers, true);
-    }
-
-    /// Disable the Wi-Fi RX/baseband path at a stopped protocol frontier.
-    ///
-    /// This is the per-client release edge used before shared RF sleep or a
-    /// handoff to another protocol. It does not close RF or release clocks.
-    #[cfg(target_arch = "riscv32")]
-    pub fn disable_wifi_rx(&mut self) {
-        let (_, registers) = self.phy_hal_parts();
-        crate::phy::frequency::set_wifi_enabled(registers, false);
-    }
-}
-
 /// Executor-neutral source of asynchronous deadlines.
 pub trait AsyncDelay {
     type Error;
@@ -1295,6 +699,3 @@ pub trait AsyncEvent {
 
     fn wait(&mut self) -> impl Future<Output = Result<Self::Event, Self::Error>> + '_;
 }
-
-#[cfg(test)]
-mod tests;

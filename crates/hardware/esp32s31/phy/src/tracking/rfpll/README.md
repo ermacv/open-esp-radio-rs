@@ -147,23 +147,8 @@ traces. Alternative memory layouts, linked coexistence grants and physical RF be
 require separate evidence. The validation-only full-parent profile is described
 in the [tracking contract](../README.md).
 
-`WifiPhyMaintenanceRequest::MeasureRfpll` selects this child alone with a zero
-thermal threshold under the existing exclusive Wi-Fi maintenance owner. It
-requires an explicit `maximum_age_micros` and rechecks the dated temperature
-sample after physical admission; forcing measurement does not bypass freshness.
-It preserves registered policy and periodic deadlines. Successful completion exits
-the maintenance graph before power/calibration/temperature children; failure
-retains the poisoned epoch and physical access. The request does not grant joint
-radio access and must not be cancelled after hardware work begins. Conditional
-`Operation::Rfpll` retains its normal thermal predicate. The automatic service
-selects this conditional request from a fresh observation.
-
-`ObservedOperation { operation: Operation::Rfpll, maximum_age_micros }` uses the
-same child and thermal threshold, but rejects a stale, undated or invalid-clock
-sensor observation after physical admission. Acquisition and RFPLL remain
-separate operations with checked restoration between them. The sample timestamp
-comes from the real completed sensor transaction, never from inspection or a
-request deadline. This selected request does not enable periodic RFPLL.
+Production runs this child only inside the periodic parameter-tracking graph,
+under its normal thermal predicate; no protocol selects it alone.
 
 ## Terminal observations
 

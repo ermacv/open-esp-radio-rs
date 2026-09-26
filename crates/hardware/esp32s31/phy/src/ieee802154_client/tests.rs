@@ -9,7 +9,7 @@ use super::*;
 use crate::{
     PhyConfig, PhyState, RegisteredPhyState,
     concurrent::ConcurrentPhy,
-    registered_route::PhyDomain,
+    domain::PhyDomain,
     state::client::{DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyClientState},
 };
 

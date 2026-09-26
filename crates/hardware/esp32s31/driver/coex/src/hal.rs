@@ -5,7 +5,8 @@
 //! executor-neutral [`CoexClockHardware`] and [`CoexTimerHardware`] ports.
 
 use oer_esp32s31_hal::{
-    ieee80211::mac::{WifiMacColdHal, WifiMacHal},
+    coex::CoexTimerBank,
+    ieee80211::mac::WifiMacColdHal,
     types::{CoexistenceLowPowerClockObservation, CoexistenceLowPowerClockSource},
 };
 
@@ -43,9 +44,9 @@ impl CoexClockHardware for WifiMacColdHal<'_> {
     }
 }
 
-impl CoexClockHardware for WifiMacHal<'_> {
+impl CoexClockHardware for CoexTimerBank<'_> {
     fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
-        timer_clock(self.sample_coexistence_low_power_clock(), true)
+        timer_clock(self.sample_low_power_clock(), true)
     }
 }
 

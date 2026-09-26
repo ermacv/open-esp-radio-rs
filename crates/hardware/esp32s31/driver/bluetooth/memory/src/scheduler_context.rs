@@ -26,11 +26,6 @@ impl SchedulerContextStorage {
     pub(crate) fn clear(&mut self) {
         self.words.fill(0);
     }
-
-    #[cfg(test)]
-    pub(crate) const fn snapshot(&self) -> [u32; BLUETOOTH_SCHEDULER_CONTEXT_BYTES / 4] {
-        self.words
-    }
 }
 
 impl Default for SchedulerContextStorage {

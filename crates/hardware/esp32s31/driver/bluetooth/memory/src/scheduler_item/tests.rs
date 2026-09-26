@@ -47,8 +47,6 @@ fn control_bytes_are_cleared_independently() {
 
     header.clear_event_byte();
     assert_eq!(header.control(), 0x1122_3300);
-    header.clear_scheduler_byte();
-    assert_eq!(header.control(), 0x1100_3300);
 }
 
 #[test]
@@ -88,4 +86,45 @@ fn window_and_links_use_their_own_words() {
     assert_eq!(words[0x54 / 4].get(), 0x2f00_0300);
     assert_eq!(header.previous(), 0x2f00_0200);
     assert_eq!(header.completion_link(), 0x2f00_0300);
+}
+
+#[test]
+fn list_preparation_resets_the_scheduler_state_and_keeps_role_bits() {
+    let words = item();
+    let header = SchedulerItemHeader::new(&words);
+    header.set_hardware_next_word(0x0230_0000 | 0x0004_0000);
+    header.set_control(0x0f5a_1122);
+    header.set_status(0);
+    let previous = ControllerSramLinkAddress::new(0x2f00_0100).expect("test link is representable");
+    let next = ControllerSramLinkAddress::new(0x2f00_0200).expect("test link is representable");
+
+    header.prepare_for_list(Some(previous), Some(next));
+    assert_eq!(
+        header.hardware_next_word(),
+        0x0030_0000 | next.compressed_image()
+    );
+    // The event and kind bytes stay; `+0x4e` and the `+0x4f` list state clear.
+    assert_eq!(header.control(), 0x0800_1122);
+    assert_eq!(header.completion_status(), None);
+    assert_eq!(header.previous(), 0x2f00_0100);
+
+    header.prepare_for_list(None, None);
+    assert_eq!(header.hardware_next_image(), 0);
+    assert_eq!(header.previous(), 0);
+}
+
+#[test]
+fn deletion_marks_the_item_and_keeps_its_next_link() {
+    let words = item();
+    let header = SchedulerItemHeader::new(&words);
+    let next = ControllerSramLinkAddress::new(0x2f00_0200).expect("test link is representable");
+    header.prepare_for_list(None, Some(next));
+    header.set_control(0x0000_0011);
+
+    header.mark_deleted();
+    assert_eq!(
+        header.hardware_next_word(),
+        (1 << 25) | next.compressed_image()
+    );
+    assert_eq!(header.control(), 0x0200_0011);
 }

@@ -25,6 +25,19 @@ pub enum RxMemoryListClass {
 }
 
 impl RxMemoryListClass {
+    const LINK_STATE_CLASS_MASK: u32 = 0x7000_0000;
+
+    /// Select this class in link-state word `+0x20` bits 30:28, as
+    /// `r_ble_lll_mmgmt_update_global_rxlink` does for every role that
+    /// receives through a global list.
+    pub(crate) const fn select_in_link_state(self, word: u32) -> u32 {
+        let class = match self {
+            Self::Scanning => 1,
+            Self::NonScanning => 2,
+        };
+        (word & !Self::LINK_STATE_CLASS_MASK) | (class << 28)
+    }
+
     /// The exact active selector chosen by the complete memory-manager body.
     pub const fn selector(self) -> BluetoothMemoryListSelector {
         match self {

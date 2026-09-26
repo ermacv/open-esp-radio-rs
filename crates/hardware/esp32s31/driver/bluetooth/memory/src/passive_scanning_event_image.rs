@@ -73,11 +73,11 @@ impl PassiveScanSchedulerWindow {
         }
     }
 
-    const fn start(self) -> u32 {
+    pub(crate) const fn start(self) -> u32 {
         self.start
     }
 
-    const fn end(self) -> u32 {
+    pub(crate) const fn end(self) -> u32 {
         self.end
     }
 }

@@ -8,11 +8,11 @@
 //!
 //! | Byte offset | Field |
 //! | --- | --- |
-//! | `+0x00` bits 19:0 | Compressed hardware next link; the upper bits belong to the role allocation |
+//! | `+0x00` bits 19:0 | Compressed hardware next link; bit 25 is the skip marker; the other upper bits belong to the role allocation |
 //! | `+0x0c`, `+0x10` | Sequence start (raw start plus the scheduler lead) and window duration |
 //! | `+0x38` | Execution status; [`SCHEDULER_ITEM_UNEXECUTED`] until hardware records a result |
 //! | `+0x44`, `+0x48` | Raw start and end of the scheduled window |
-//! | `+0x4c` | Role event byte, role kind byte `+0x4d`, scheduler bytes `+0x4e` and `+0x4f` |
+//! | `+0x4c` | Role event byte, role kind byte `+0x4d`, scheduler bytes `+0x4e` and `+0x4f`; `+0x4f` bit 1 marks a deleted item |
 //! | `+0x50` | Full address of the previous item in the list |
 //! | `+0x54` | Full address link of the software completion queue |
 //!
@@ -38,8 +38,13 @@ const PREVIOUS_WORD: usize = 0x50 / 4;
 const COMPLETION_LINK_WORD: usize = 0x54 / 4;
 
 const COMPRESSED_LINK_MASK: u32 = 0x000f_ffff;
+const SKIP_MARKER: u32 = 1 << 25;
 const EVENT_BYTE_MASK: u32 = 0x0000_00ff;
 const SCHEDULER_BYTE_4E_MASK: u32 = 0x00ff_0000;
+/// `+0x4f` bits 2:0: the deleted and preempted state of a list entry.
+const LIST_STATE_4F_MASK: u32 = 0x0700_0000;
+/// `+0x4f` bit 1.
+const DELETED_4F: u32 = 0x0200_0000;
 
 /// Status of an item that hardware has not executed.
 pub const SCHEDULER_ITEM_UNEXECUTED: u32 = u32::MAX;
@@ -60,6 +65,16 @@ pub enum SchedulerItemCompletionStatus {
 pub(crate) trait SchedulerItemWords {
     fn word(&self, index: usize) -> u32;
     fn set_word(&self, index: usize, value: u32);
+}
+
+impl SchedulerItemWords for [VolatileCell<u32>] {
+    fn word(&self, index: usize) -> u32 {
+        self[index].get()
+    }
+
+    fn set_word(&self, index: usize, value: u32) {
+        self[index].set(value);
+    }
 }
 
 impl<const WORDS: usize> SchedulerItemWords for [VolatileCell<u32>; WORDS] {
@@ -176,12 +191,37 @@ impl<'item, W: SchedulerItemWords + ?Sized> SchedulerItemHeader<'item, W> {
         self.set_control(self.control() & !EVENT_BYTE_MASK);
     }
 
-    /// Clear scheduler byte `+0x4e`, as list insertion does.
-    pub(crate) fn clear_scheduler_byte(&self) {
-        self.set_control(self.control() & !SCHEDULER_BYTE_4E_MASK);
+    /// Prepare the item for list insertion as the vendor reset and merge do
+    /// together: clear the skip marker, scheduler byte `+0x4e` and the list
+    /// state of `+0x4f`, mark the item unexecuted and install both links.
+    pub(crate) fn prepare_for_list(
+        &self,
+        previous: Option<ControllerSramLinkAddress>,
+        next: Option<ControllerSramLinkAddress>,
+    ) {
+        let word = self.hardware_next_word() & !(COMPRESSED_LINK_MASK | SKIP_MARKER);
+        self.set_hardware_next_word(
+            word | next.map_or(0, ControllerSramLinkAddress::compressed_image),
+        );
+        self.set_control(self.control() & !(SCHEDULER_BYTE_4E_MASK | LIST_STATE_4F_MASK));
+        self.mark_unexecuted();
+        self.link_previous(previous);
+    }
+
+    /// Mark the item deleted as vendor cancellation does: set the skip
+    /// marker and the deleted flag, keeping the hardware next link.
+    pub(crate) fn mark_deleted(&self) {
+        self.set_hardware_next_word(self.hardware_next_word() | SKIP_MARKER);
+        self.set_control(self.control() | DELETED_4F);
+    }
+
+    /// Store the full address of the previous item, or zero for the head.
+    pub(crate) fn link_previous(&self, previous: Option<ControllerSramLinkAddress>) {
+        self.set_previous(previous.map_or(0, |previous| previous.controller_address().address()));
     }
 
     /// Full address of the previous item; zero when the item is the head.
+    #[cfg(test)]
     pub(crate) fn previous(&self) -> u32 {
         self.words.word(PREVIOUS_WORD)
     }
@@ -190,6 +230,7 @@ impl<'item, W: SchedulerItemWords + ?Sized> SchedulerItemHeader<'item, W> {
         self.words.set_word(PREVIOUS_WORD, address);
     }
 
+    #[cfg(test)]
     pub(crate) fn completion_link(&self) -> u32 {
         self.words.word(COMPLETION_LINK_WORD)
     }

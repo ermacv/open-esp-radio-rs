@@ -143,11 +143,6 @@ impl LeTxBufferHeaderStorage {
         self.words[index].get()
     }
 
-    #[cfg(test)]
-    fn write_word(&self, index: usize, value: u32) {
-        self.words[index].set(value);
-    }
-
     fn install(&self, words: [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4]) {
         for (cell, word) in self.words.iter().zip(words) {
             cell.set(word);
@@ -179,10 +174,6 @@ impl LeTxBufferHeaderStorage {
     /// Completed packetless cursor retained by a connection TX list.
     pub(super) fn initialize_empty_cursor(&self) {
         self.install([0, 0, 0, 0x8000_0000, 2, 0]);
-    }
-
-    pub(super) fn is_empty_cursor(&self) -> bool {
-        self.packet_base_link().is_none() && self.transmission_completed()
     }
 
     pub(super) fn link_successor(&self, successor: ControllerSramLinkAddress) {
@@ -228,51 +219,9 @@ impl LeTxBufferHeaderStorage {
         self.read_word(4) & Self::ALLOCATION_EXTENT_MASK == packet.allocation_extent_image()
     }
 
-    pub(super) fn retains_bound_tx_with_successor<const ALLOCATION_BYTES: usize>(
-        &self,
-        packet: LeTxPacketAddress<ALLOCATION_BYTES>,
-        successor: Option<ControllerSramLinkAddress>,
-    ) -> bool {
-        let expected_successor = successor.map_or(0, ControllerSramLinkAddress::compressed_image);
-        self.read_word(0) & Self::COMPRESSED_LINK_MASK == expected_successor
-            && self.packet_base_link() == Some(packet.base_link())
-            && self.pdu_target_link() == Some(packet.pdu_target_link())
-            && self.retains_allocation_extent(packet)
-    }
-
     #[cfg(test)]
     pub(super) fn snapshot(&self) -> [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4] {
         core::array::from_fn(|index| self.read_word(index))
-    }
-
-    #[cfg(test)]
-    pub(super) fn model_retarget_packet_base<const ALLOCATION_BYTES: usize>(
-        &self,
-        packet: LeTxPacketAddress<ALLOCATION_BYTES>,
-    ) {
-        let current = self.read_word(1);
-        self.write_word(
-            1,
-            (current & !Self::COMPRESSED_LINK_MASK) | packet.base_link().image(),
-        );
-    }
-
-    #[cfg(test)]
-    pub(super) fn model_retarget_pdu<const ALLOCATION_BYTES: usize>(
-        &self,
-        packet: LeTxPacketAddress<ALLOCATION_BYTES>,
-    ) {
-        let current = self.read_word(2);
-        self.write_word(
-            2,
-            (current & !Self::COMPRESSED_LINK_MASK) | packet.pdu_target_link().image(),
-        );
-    }
-
-    #[cfg(test)]
-    pub(super) fn model_drop_allocation_extent(&self) {
-        let current = self.read_word(4);
-        self.write_word(4, current & !Self::ALLOCATION_EXTENT_MASK);
     }
 }
 

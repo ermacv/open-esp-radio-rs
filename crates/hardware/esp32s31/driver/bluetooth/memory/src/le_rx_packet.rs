@@ -103,71 +103,6 @@ impl LeReceivedPdu {
     }
 }
 
-/// Bounded completed packet batch copied from one LE receive graph.
-///
-/// The graph-specific owner chooses the capacity. This value contains no SRAM
-/// links and can cross into role-specific Link Layer code after reclamation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LeReceivedBatch<const CAPACITY: usize = 2> {
-    packets: [Option<LeReceivedPdu>; CAPACITY],
-    len: usize,
-    discarded: usize,
-}
-
-impl<const CAPACITY: usize> LeReceivedBatch<CAPACITY> {
-    pub(crate) const fn empty() -> Self {
-        Self {
-            packets: [None; CAPACITY],
-            len: 0,
-            discarded: 0,
-        }
-    }
-
-    pub(crate) fn push(&mut self, packet: LeReceivedPdu) {
-        assert!(
-            self.len < CAPACITY,
-            "the receive graph bounds its copied batch"
-        );
-        self.packets[self.len] = Some(packet);
-        self.len += 1;
-    }
-
-    fn push_discarded(&mut self) {
-        assert!(
-            self.len + self.discarded < CAPACITY,
-            "the receive graph bounds its completed observations"
-        );
-        self.discarded += 1;
-    }
-
-    /// Number of completed packets copied from this event.
-    pub const fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Whether this event completed without a received packet.
-    pub const fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    /// Number of completed hardware observations rejected before PDU dispatch.
-    ///
-    /// These observations carry no PDU and therefore cannot reach a protocol
-    /// parser. Their private controller result image is not exposed.
-    pub const fn discarded_count(&self) -> usize {
-        self.discarded
-    }
-
-    /// Borrow one packet in hardware list order.
-    pub const fn packet(&self, index: usize) -> Option<&LeReceivedPdu> {
-        if index < self.len {
-            self.packets[index].as_ref()
-        } else {
-            None
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LeRxPacketError {
     ProducerSentinelRetained,
@@ -183,14 +118,17 @@ enum LeRxPacketDisposition {
     Discarded,
 }
 
-/// Read-only descriptor/packet progress; this is not a dispatchable PDU.
+/// Result of one completed receive packet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LeRxNodeObservation {
-    pub completed: bool,
-    pub packet_retained: bool,
-    pub producer_updated: bool,
-    pub epoch_updated: bool,
-    pub header: Option<u8>,
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the copied PDU is returned by value; no allocator exists below the controller"
+)]
+pub enum LeRxOutcome {
+    /// A dispatchable PDU.
+    Received(LeReceivedPdu),
+    /// A completed observation rejected before PDU dispatch.
+    Discarded,
 }
 
 /// Malformed completed LE receive storage.
@@ -200,8 +138,6 @@ pub enum LeRxError {
     ProducerSentinelRetained,
     /// A completed header still points at an untouched receive-epoch sentinel.
     EpochSentinelRetained,
-    /// A later node completed after an earlier incomplete node in the chain.
-    CompletionChainGap,
 }
 
 impl From<LeRxPacketError> for LeRxError {
@@ -276,10 +212,6 @@ impl LeRxBufferHeaderStorage {
         }
     }
 
-    pub(crate) fn append_successor(&self, successor: ControllerSramLinkAddress) {
-        self.words[0].set((self.words[0].get() & !Self::LINK_MASK) | successor.compressed_image());
-    }
-
     pub(crate) fn completion_observed(&self) -> bool {
         self.words[3].get() & Self::COMPLETION_GATE != 0
     }
@@ -300,17 +232,9 @@ impl LeRxBufferHeaderStorage {
         }
     }
 
-    pub(crate) fn is_packetless(&self) -> bool {
-        self.words[1].get() & Self::LINK_MASK == 0
-    }
-
     #[cfg(test)]
     pub(crate) fn emulate_hardware_completion(&self) {
         self.words[3].set(self.words[3].get() | Self::COMPLETION_GATE);
-    }
-
-    pub(crate) fn retains_packet(&self, packet: LeRxPacketAddress) -> bool {
-        self.words[1].get() & Self::LINK_MASK == packet.compressed_image()
     }
 
     pub(crate) fn successor(&self) -> Option<u32> {
@@ -325,6 +249,49 @@ impl LeRxBufferHeaderStorage {
 
     pub(crate) fn rotates_into_successor(&self) -> bool {
         self.words[4].get() & Self::ROTATION_MARKER != 0
+    }
+
+    /// Set or clear the rotation marker in the `+0x10` halfword.
+    pub(crate) fn set_rotation_marker(&self, marked: bool) {
+        let word = self.words[4].get() & !Self::ROTATION_MARKER;
+        self.words[4].set(if marked {
+            word | Self::ROTATION_MARKER
+        } else {
+            word
+        });
+    }
+
+    /// Replace the successor link while preserving bits 31:20.
+    pub(crate) fn link_successor(&self, successor: Option<ControllerSramLinkAddress>) {
+        let image = successor.map_or(0, ControllerSramLinkAddress::compressed_image);
+        self.words[0].set((self.words[0].get() & !Self::LINK_MASK) | image);
+    }
+
+    /// Compressed packet link, or `None` for a packetless header.
+    pub(crate) fn packet_image(&self) -> Option<u32> {
+        let image = self.words[1].get() & Self::LINK_MASK;
+        (image != 0).then_some(image)
+    }
+
+    /// Detach the packet while preserving bits 31:20.
+    pub(crate) fn clear_packet(&self) {
+        self.words[1].set(self.words[1].get() & !Self::LINK_MASK);
+    }
+
+    pub(crate) fn clear_completion(&self) {
+        self.words[3].set(self.words[3].get() & !Self::COMPLETION_GATE);
+    }
+
+    /// Store the full address of the predecessor, or zero.
+    pub(crate) fn set_predecessor(&self, predecessor: Option<u32>) {
+        self.words[5].set(predecessor.unwrap_or(0));
+    }
+
+    /// Copy the complete header image from `other`.
+    pub(crate) fn copy_from(&self, other: &Self) {
+        for (cell, word) in self.words.iter().zip(&other.words) {
+            cell.set(word.get());
+        }
     }
 }
 
@@ -437,29 +404,25 @@ impl LeRxPacketStorage {
         self.words[offset / 4].set((word & !(0xff << shift)) | (u32::from(value) << shift));
     }
 
-    pub(crate) fn observe(
-        &self,
-        header: &LeRxBufferHeaderStorage,
-        packet: LeRxPacketAddress,
-    ) -> LeRxNodeObservation {
-        let producer_updated = self.words[Self::RESULT_WORD].get() & Self::RESULT_REARM_SENTINEL
-            != Self::RESULT_REARM_SENTINEL;
-        let epoch_updated = self.words[Self::EPOCH_WORD].get() & Self::EPOCH_REARM_SENTINEL
-            != Self::EPOCH_REARM_SENTINEL;
-        LeRxNodeObservation {
-            completed: header.completion_observed(),
-            packet_retained: header.retains_packet(packet),
-            producer_updated,
-            epoch_updated,
-            header: (producer_updated && epoch_updated).then(|| self.read_byte(0x1c)),
-        }
+    /// Allocation number that hardware recorded in the `+0x18` halfword.
+    pub(crate) fn receive_tag(&self) -> u16 {
+        (self.words[Self::EPOCH_WORD].get() & Self::EPOCH_REARM_SENTINEL) as u16
     }
 
-    pub(crate) fn is_armed(&self) -> bool {
-        self.words[Self::RESULT_WORD].get() & Self::RESULT_REARM_SENTINEL
-            == Self::RESULT_REARM_SENTINEL
-            && self.words[Self::EPOCH_WORD].get() & Self::EPOCH_REARM_SENTINEL
-                == Self::EPOCH_REARM_SENTINEL
+    /// Copy the result of a completed packet.
+    pub(crate) fn received(&self, connection: bool) -> Result<LeRxOutcome, LeRxError> {
+        Ok(match self.disposition(connection)? {
+            LeRxPacketDisposition::Dispatchable => {
+                LeRxOutcome::Received(self.copy_dispatchable_pdu()?)
+            }
+            LeRxPacketDisposition::Discarded => LeRxOutcome::Discarded,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn emulate_receive_tag(&self, tag: u16) {
+        let word = self.words[Self::EPOCH_WORD].get() & !Self::EPOCH_REARM_SENTINEL;
+        self.words[Self::EPOCH_WORD].set(word | u32::from(tag));
     }
 }
 
@@ -478,68 +441,30 @@ impl LeRxNodeStorage {
     }
 }
 
-pub(crate) fn extract_completed_rx_batch<const CAPACITY: usize>(
-    nodes: &[LeRxNodeStorage; CAPACITY],
-) -> Result<LeReceivedBatch<CAPACITY>, LeRxError> {
-    extract_completed_rx_batch_for_role(nodes, false)
-}
-
-pub(crate) fn extract_completed_connection_rx_batch<const CAPACITY: usize>(
-    nodes: &[LeRxNodeStorage; CAPACITY],
-) -> Result<LeReceivedBatch<CAPACITY>, LeRxError> {
-    extract_completed_rx_batch_for_role(nodes, true)
-}
-
-fn extract_completed_rx_batch_for_role<const CAPACITY: usize>(
-    nodes: &[LeRxNodeStorage; CAPACITY],
-    connection: bool,
-) -> Result<LeReceivedBatch<CAPACITY>, LeRxError> {
-    extract_completed_rx_nodes(nodes, connection)
-}
-
-pub(crate) fn extract_completed_rx_nodes<'a, const CAPACITY: usize>(
-    nodes: impl IntoIterator<Item = &'a LeRxNodeStorage>,
-    connection: bool,
-) -> Result<LeReceivedBatch<CAPACITY>, LeRxError> {
-    let mut batch = LeReceivedBatch::empty();
-    let mut incomplete_observed = false;
-    for node in nodes {
-        if !node.header.completion_observed() {
-            incomplete_observed = true;
-            continue;
-        }
-        if incomplete_observed {
-            return Err(LeRxError::CompletionChainGap);
-        }
-        match node.packet.disposition(connection)? {
-            LeRxPacketDisposition::Dispatchable => batch.push(node.packet.copy_dispatchable_pdu()?),
-            LeRxPacketDisposition::Discarded => batch.push_discarded(),
-        }
-    }
-    Ok(batch)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn connection_rejections_do_not_dispatch_or_hide_a_later_control_request() {
-        let nodes = [LeRxNodeStorage::new(), LeRxNodeStorage::new()];
+    fn connection_rejections_are_discarded_and_accepted_pdus_are_copied() {
+        let packet = LeRxPacketStorage::new();
         let feature_req = [3, 9, 8, 0, 0, 0, 0, 0, 0, 0, 0];
-        for node in &nodes {
-            node.packet.initialize();
-            node.packet.emulate_hardware_receive(&feature_req, -40, 123);
-            node.header.emulate_hardware_completion();
-        }
-        // Exercise each independently rejected controller outcome. These are
+        packet.initialize();
+        packet.emulate_hardware_receive(&feature_req, -40, 123);
+        let Ok(LeRxOutcome::Received(pdu)) = packet.received(true) else {
+            panic!("an accepted connection PDU is dispatchable")
+        };
+        assert_eq!(pdu.as_bytes(), feature_req);
+        // Each independently rejected controller outcome. These are
         // packet-result stimuli, not MMIO or generated-layout assertions.
         for rejected_result in [1, 2, 4, 16] {
-            nodes[0].packet.words[LeRxPacketStorage::RESULT_WORD].set(rejected_result);
-            let batch = extract_completed_connection_rx_batch(&nodes).unwrap();
-            assert_eq!(batch.discarded_count(), 1);
-            assert_eq!(batch.len(), 1);
-            assert_eq!(batch.packet(0).unwrap().as_bytes(), feature_req);
+            packet.words[LeRxPacketStorage::RESULT_WORD].set(rejected_result);
+            assert_eq!(packet.received(true), Ok(LeRxOutcome::Discarded));
         }
+        packet.rearm();
+        assert_eq!(
+            packet.received(true),
+            Err(LeRxError::ProducerSentinelRetained)
+        );
     }
 }

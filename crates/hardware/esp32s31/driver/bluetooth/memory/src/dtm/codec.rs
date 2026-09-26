@@ -1,7 +1,5 @@
 //! Private SRAM layout and word codec for one DTM memory graph.
 
-use core::{marker::PhantomPinned, pin::Pin};
-
 use crate::{
     dtm_event_image::{
         DtmLinkStateProfileWord, DtmLinkStateReviewedWords, DtmPositionalEventWords,
@@ -16,23 +14,18 @@ use crate::{
     },
     scheduler_context::SchedulerContextStorage,
     scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
-    sram_link::{
-        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
-        ControllerSramLinkAddress,
-    },
+    sram_link::ControllerSramLinkAddress,
 };
 
 use oer_esp32s31_hal::types::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
 };
 
-use pin_project::pin_project;
-
 use super::{
-    DtmMemoryGraphBindError, DtmMemoryGraphIdentity, DtmMemoryGraphPrepareError,
-    DtmMemoryGraphRecyclePrepared, DtmMemoryGraphRxSuccessRecycleError, DtmPositionalEventSeed,
-    DtmSchedulerAllocationConfig, DtmSchedulerItemCompletionStatus, DtmTxPacketPrepareError,
+    DtmExecutedWitness, DtmPositionalEventSeed, DtmPrepareError, DtmRxRotationError,
+    DtmSchedulerItemCompletionStatus, DtmTxPacketPrepareError,
 };
+use crate::scheduler_pool::SchedulerPoolBindError;
 
 use vcell::VolatileCell;
 
@@ -72,19 +65,6 @@ const SCHEDULER_ITEM_POSITIONAL_24_OFFSET: usize = 0x24 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
 const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4;
 const RX_PACKET_WORDS: usize = BLUETOOTH_DTM_RX_PACKET_BYTES.div_ceil(4);
-const PRIVATE_SCHEDULER_ALLOCATION_ADDITION: u32 = 5;
-
-impl DtmSchedulerAllocationConfig {
-    const fn allocation_image(self) -> u32 {
-        ((self.extended_advertising_instances as u32)
-            .wrapping_add(1)
-            .wrapping_add(self.connections as u32)
-            .wrapping_add(PRIVATE_SCHEDULER_ALLOCATION_ADDITION)
-            .wrapping_add(4)
-            .wrapping_add(self.periodic_syncs as u32))
-            & 0x0fff
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DtmRxPacketAddressError {
@@ -169,11 +149,6 @@ impl DtmLinkStateStorage {
         self.write_word(Self::CRC_INIT_WORD, crc_init.apply_to_controller_word(word));
     }
 
-    #[cfg(test)]
-    pub(super) fn snapshot(&self) -> [u32; BLUETOOTH_DTM_LINK_STATE_BYTES / 4] {
-        core::array::from_fn(|index| self.read_word(index))
-    }
-
     pub(super) fn reviewed_words(&self) -> DtmLinkStateReviewedWords {
         DtmLinkStateReviewedWords {
             word_00: self.read_word(0),
@@ -206,6 +181,10 @@ pub(super) struct DtmSchedulerItemStorage {
 }
 
 impl DtmSchedulerItemStorage {
+    pub(super) fn words(&self) -> &[VolatileCell<u32>] {
+        &self.words
+    }
+
     const fn new() -> Self {
         Self {
             words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
@@ -244,11 +223,6 @@ impl DtmSchedulerItemStorage {
         for word in &self.words {
             word.set(0);
         }
-    }
-
-    #[cfg(test)]
-    pub(super) fn snapshot(&self) -> [u32; SCHEDULER_ITEM_WORDS] {
-        core::array::from_fn(|index| self.read_word(index))
     }
 
     fn reviewed_words(&self) -> DtmSchedulerItemReviewedWords {
@@ -312,11 +286,6 @@ impl DtmRxBufferHeaderStorage {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn snapshot_words(&self) -> [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4] {
-        core::array::from_fn(|index| self.read_word(index))
-    }
-
     fn initialize_bound_rx(&self, packet: DtmRxPacketAddress) {
         self.install([0, packet.compressed_image(), 0x8080_0000, 0, 0, 0]);
     }
@@ -344,7 +313,7 @@ impl DtmRxBufferHeaderStorage {
         self.write_word(1, current & !Self::COMPRESSED_LINK_MASK);
     }
 
-    fn observe_rx_completion_after_fence(&self, _fenced: &DtmMemoryGraphRecyclePrepared) -> bool {
+    fn observe_rx_completion_after_fence(&self, _fenced: &DtmExecutedWitness) -> bool {
         self.read_word(3) & Self::RX_COMPLETION_OBSERVED_MASK != 0
     }
 
@@ -492,14 +461,6 @@ impl DtmRxPacketStorage {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn snapshot(&self) -> [u8; BLUETOOTH_DTM_RX_PACKET_BYTES] {
-        core::array::from_fn(|index| {
-            let shift = (index % 4) * 8;
-            (self.read_word(index / 4) >> shift) as u8
-        })
-    }
-
     fn rearm_reviewed_packet_fields(&self) {
         self.write_word(
             Self::RESULT_WORD,
@@ -518,7 +479,7 @@ impl DtmRxPacketStorage {
 
     fn observe_after_fenced_completion(
         &self,
-        _fenced: &DtmMemoryGraphRecyclePrepared,
+        _fenced: &DtmExecutedWitness,
     ) -> Result<
         Result<DtmRxResultProjection, DtmRxResultProjectionError>,
         DtmRxPacketCompletionObservationError,
@@ -548,9 +509,9 @@ enum DtmRxPacketCompletionObservationError {
     AuxiliaryNotProduced,
 }
 
-#[pin_project]
+/// Controller-SRAM graph of one DTM instance.
 #[repr(C)]
-pub struct DtmMemoryGraphStorage {
+pub struct DtmStorage {
     #[cfg_attr(test, allow(dead_code))]
     pub(super) link_state: DtmLinkStateStorage,
     pub(super) scheduler_context: SchedulerContextStorage,
@@ -560,35 +521,23 @@ pub struct DtmMemoryGraphStorage {
     pub(super) tx_header: LeTxBufferHeaderStorage,
     pub(super) tx_packet: LeTxPacketStorage<BLUETOOTH_DTM_TX_PACKET_BYTES>,
     pub(super) rx_packet: DtmRxPacketStorage,
-    #[pin]
-    _pin: PhantomPinned,
 }
 
-const BLUETOOTH_DTM_MEMORY_GRAPH_BYTES: u32 = core::mem::size_of::<DtmMemoryGraphStorage>() as u32;
-const LINK_STATE_STORAGE_OFFSET: u32 =
-    core::mem::offset_of!(DtmMemoryGraphStorage, link_state) as u32;
+const LINK_STATE_STORAGE_OFFSET: u32 = core::mem::offset_of!(DtmStorage, link_state) as u32;
 const SCHEDULER_CONTEXT_STORAGE_OFFSET: u32 =
-    core::mem::offset_of!(DtmMemoryGraphStorage, scheduler_context) as u32;
-const SCHEDULER_ITEM_STORAGE_OFFSET: u32 =
-    core::mem::offset_of!(DtmMemoryGraphStorage, scheduler_item) as u32;
-const RX_HEADER_STORAGE_OFFSET: u32 =
-    core::mem::offset_of!(DtmMemoryGraphStorage, rx_header) as u32;
+    core::mem::offset_of!(DtmStorage, scheduler_context) as u32;
+const SCHEDULER_ITEM_STORAGE_OFFSET: u32 = core::mem::offset_of!(DtmStorage, scheduler_item) as u32;
+const RX_HEADER_STORAGE_OFFSET: u32 = core::mem::offset_of!(DtmStorage, rx_header) as u32;
 const RX_SWAP_RESERVE_STORAGE_OFFSET: u32 =
-    core::mem::offset_of!(DtmMemoryGraphStorage, rx_swap_reserve) as u32;
-const TX_HEADER_STORAGE_OFFSET: u32 =
-    core::mem::offset_of!(DtmMemoryGraphStorage, tx_header) as u32;
-const TX_PACKET_STORAGE_OFFSET: u32 =
-    core::mem::offset_of!(DtmMemoryGraphStorage, tx_packet) as u32;
-const RX_PACKET_STORAGE_OFFSET: u32 =
-    core::mem::offset_of!(DtmMemoryGraphStorage, rx_packet) as u32;
+    core::mem::offset_of!(DtmStorage, rx_swap_reserve) as u32;
+const TX_HEADER_STORAGE_OFFSET: u32 = core::mem::offset_of!(DtmStorage, tx_header) as u32;
+const TX_PACKET_STORAGE_OFFSET: u32 = core::mem::offset_of!(DtmStorage, tx_packet) as u32;
+const RX_PACKET_STORAGE_OFFSET: u32 = core::mem::offset_of!(DtmStorage, rx_packet) as u32;
 
-/// Non-forgeable address binding retained by one CPU-owned static graph.
-pub(super) struct DtmMemoryGraphBinding {
-    #[cfg(not(target_arch = "riscv32"))]
-    identity: DtmMemoryGraphIdentity,
-    base: BluetoothControllerSramAddress,
-    end_exclusive: u32,
-    allocation_config: DtmSchedulerAllocationConfig,
+/// Addresses and DTM number of one instance.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub struct DtmBinding {
     link_state: ControllerSramLinkAddress,
     scheduler_context: BluetoothControllerSramAddress,
     scheduler_item: ControllerSramLinkAddress,
@@ -597,98 +546,37 @@ pub(super) struct DtmMemoryGraphBinding {
     tx_header: ControllerSramLinkAddress,
     pub(super) tx_packet: DtmTxPacketAddress,
     pub(super) rx_packet: DtmRxPacketAddress,
+    number: u16,
 }
 
-impl DtmMemoryGraphBinding {
-    pub(super) fn new(
-        identity: DtmMemoryGraphIdentity,
-        base: u32,
-        allocation_config: DtmSchedulerAllocationConfig,
-    ) -> Result<Self, DtmMemoryGraphBindError> {
-        #[cfg(target_arch = "riscv32")]
-        let _ = identity;
-        let base_address = BluetoothControllerSramAddress::new(base)
-            .map_err(DtmMemoryGraphBindError::InvalidBase)?;
-        if base < BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW
-            || BLUETOOTH_DTM_MEMORY_GRAPH_BYTES
-                > BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH.saturating_sub(base)
-        {
-            return Err(DtmMemoryGraphBindError::ExtentOutsidePhysicalSram);
-        }
-
-        let address = |offset: u32| {
-            base.checked_add(offset)
-                .ok_or(DtmMemoryGraphBindError::ExtentOutsidePhysicalSram)
-        };
+impl DtmBinding {
+    pub(super) fn new(base: u32, number: u16) -> Result<Self, SchedulerPoolBindError> {
+        let address = |offset: u32| base + offset;
         let bound_link = |offset: u32| {
-            ControllerSramLinkAddress::new(address(offset)?)
-                .map_err(|_| DtmMemoryGraphBindError::ZeroCompressedLink)
+            ControllerSramLinkAddress::new(address(offset))
+                .map_err(|_| SchedulerPoolBindError::ZeroCompressedLink)
         };
-
-        let link_state = bound_link(LINK_STATE_STORAGE_OFFSET)?;
-        let scheduler_context =
-            BluetoothControllerSramAddress::new(address(SCHEDULER_CONTEXT_STORAGE_OFFSET)?)
-                .map_err(DtmMemoryGraphBindError::InvalidBase)?;
-        let scheduler_item = bound_link(SCHEDULER_ITEM_STORAGE_OFFSET)?;
-        let rx_header = bound_link(RX_HEADER_STORAGE_OFFSET)?;
-        let rx_swap_reserve = bound_link(RX_SWAP_RESERVE_STORAGE_OFFSET)?;
-        let tx_header = bound_link(TX_HEADER_STORAGE_OFFSET)?;
-        let tx_packet = DtmTxPacketAddress::new(address(TX_PACKET_STORAGE_OFFSET)?)
-            .map_err(|_| DtmMemoryGraphBindError::InvalidPacketExtent)?;
-        let rx_packet = DtmRxPacketAddress::new(address(RX_PACKET_STORAGE_OFFSET)?)
-            .map_err(|_| DtmMemoryGraphBindError::InvalidPacketExtent)?;
-
         Ok(Self {
-            #[cfg(not(target_arch = "riscv32"))]
-            identity,
-            base: base_address,
-            end_exclusive: base + BLUETOOTH_DTM_MEMORY_GRAPH_BYTES,
-            allocation_config,
-            link_state,
-            scheduler_context,
-            scheduler_item,
-            rx_header,
-            rx_swap_reserve,
-            tx_header,
-            tx_packet,
-            rx_packet,
+            link_state: bound_link(LINK_STATE_STORAGE_OFFSET)?,
+            scheduler_context: BluetoothControllerSramAddress::new(address(
+                SCHEDULER_CONTEXT_STORAGE_OFFSET,
+            ))
+            .map_err(SchedulerPoolBindError::InvalidBase)?,
+            scheduler_item: bound_link(SCHEDULER_ITEM_STORAGE_OFFSET)?,
+            rx_header: bound_link(RX_HEADER_STORAGE_OFFSET)?,
+            rx_swap_reserve: bound_link(RX_SWAP_RESERVE_STORAGE_OFFSET)?,
+            tx_header: bound_link(TX_HEADER_STORAGE_OFFSET)?,
+            tx_packet: DtmTxPacketAddress::new(address(TX_PACKET_STORAGE_OFFSET))
+                .map_err(|_| SchedulerPoolBindError::ZeroCompressedLink)?,
+            rx_packet: DtmRxPacketAddress::new(address(RX_PACKET_STORAGE_OFFSET))
+                .map_err(|_| SchedulerPoolBindError::ZeroCompressedLink)?,
+            number,
         })
     }
 
-    pub const fn identity(&self) -> DtmMemoryGraphIdentity {
-        #[cfg(target_arch = "riscv32")]
-        {
-            DtmMemoryGraphIdentity(self.base.address() as usize)
-        }
-        #[cfg(not(target_arch = "riscv32"))]
-        {
-            self.identity
-        }
-    }
-
-    pub const fn range(&self) -> (u32, u32) {
-        (self.base.address(), self.end_exclusive)
-    }
-
-    pub const fn allocation_config(&self) -> DtmSchedulerAllocationConfig {
-        self.allocation_config
-    }
-
-    pub const fn scheduler_item_address(&self) -> ControllerSramLinkAddress {
+    pub(super) const fn scheduler_item_address(&self) -> ControllerSramLinkAddress {
         self.scheduler_item
     }
-}
-
-pub(super) struct DtmSchedulerBookkeepingRollback {
-    previous_control: u32,
-    previous_status: u32,
-    previous_completed_link: u32,
-}
-
-pub(super) struct DtmEmptyListRollback {
-    bookkeeping: DtmSchedulerBookkeepingRollback,
-    previous_hardware_chain: DtmSchedulerHardwareChainWord,
-    previous_software_next: u32,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -730,7 +618,7 @@ impl DtmRxRotationPlan {
     }
 }
 
-impl DtmMemoryGraphStorage {
+impl DtmStorage {
     pub const fn new() -> Self {
         Self {
             link_state: DtmLinkStateStorage::new(),
@@ -741,22 +629,17 @@ impl DtmMemoryGraphStorage {
             tx_header: LeTxBufferHeaderStorage::new(),
             tx_packet: LeTxPacketStorage::new(),
             rx_packet: DtmRxPacketStorage::new(),
-            _pin: PhantomPinned,
         }
     }
 
-    pub(super) fn initialize_reviewed_allocation(
-        self: Pin<&mut Self>,
-        binding: &DtmMemoryGraphBinding,
-        config: DtmSchedulerAllocationConfig,
-    ) {
+    pub(super) fn initialize_reviewed_allocation(&mut self, binding: &DtmBinding) {
         let link_state = binding.link_state.compressed_image();
         let scheduler_context = binding.scheduler_context.compressed_image();
         let rx_header_address = binding.rx_header.controller_address().address();
         let rx_swap_address = binding.rx_swap_reserve.controller_address().address();
         let tx_header_address = binding.tx_header.controller_address().address();
 
-        let storage = self.project();
+        let storage = self;
         storage.link_state.clear();
         storage.scheduler_context.clear();
         storage.scheduler_item.clear();
@@ -802,7 +685,7 @@ impl DtmMemoryGraphStorage {
         );
         storage.scheduler_item.write_word(
             SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET,
-            config.allocation_image(),
+            u32::from(binding.number),
         );
         storage.scheduler_item.write_word(
             SCHEDULER_ITEM_POSITIONAL_24_OFFSET,
@@ -817,73 +700,6 @@ impl DtmMemoryGraphStorage {
         )
     }
 
-    pub(super) fn restore_positional_words(
-        self: Pin<&mut Self>,
-        previous: DtmPositionalEventWords,
-    ) {
-        let storage = self.project();
-        storage
-            .link_state
-            .write_reviewed_words(previous.link_state());
-        storage
-            .scheduler_item
-            .write_reviewed_words(previous.scheduler_item());
-    }
-
-    pub(super) fn prepare_scheduler_bookkeeping(
-        self: Pin<&mut Self>,
-    ) -> DtmSchedulerBookkeepingRollback {
-        let header = self.project().scheduler_item.header();
-        let previous_control = header.control();
-        let previous_status = header.status();
-        let previous_completed_link = header.completion_link();
-        header.clear_scheduler_byte();
-        header.mark_unexecuted();
-        header.set_completion_link(0);
-        DtmSchedulerBookkeepingRollback {
-            previous_control,
-            previous_status,
-            previous_completed_link,
-        }
-    }
-
-    pub(super) fn restore_scheduler_bookkeeping(
-        self: Pin<&mut Self>,
-        rollback: DtmSchedulerBookkeepingRollback,
-    ) {
-        let header = self.project().scheduler_item.header();
-        header.set_control(rollback.previous_control);
-        header.set_status(rollback.previous_status);
-        header.set_completion_link(rollback.previous_completed_link);
-    }
-
-    pub(super) fn prepare_empty_list_link(
-        self: Pin<&mut Self>,
-        bookkeeping: DtmSchedulerBookkeepingRollback,
-    ) -> DtmEmptyListRollback {
-        let scheduler_item = self.project().scheduler_item;
-        let previous_hardware_chain = scheduler_item.terminate_hardware_chain();
-        let previous_software_next = scheduler_item.header().previous();
-        scheduler_item.header().set_previous(0);
-        DtmEmptyListRollback {
-            bookkeeping,
-            previous_hardware_chain,
-            previous_software_next,
-        }
-    }
-
-    pub(super) fn restore_empty_list_link(
-        self: Pin<&mut Self>,
-        rollback: DtmEmptyListRollback,
-    ) -> DtmSchedulerBookkeepingRollback {
-        let scheduler_item = self.project().scheduler_item;
-        scheduler_item.write_hardware_chain_word(rollback.previous_hardware_chain);
-        scheduler_item
-            .header()
-            .set_previous(rollback.previous_software_next);
-        rollback.bookkeeping
-    }
-
     pub(super) fn observe_completion_status(&self) -> Option<DtmSchedulerItemCompletionStatus> {
         self.scheduler_item
             .header()
@@ -896,8 +712,8 @@ impl DtmMemoryGraphStorage {
             })
     }
 
-    pub(super) fn commit_scheduler_recycle(self: Pin<&mut Self>) {
-        let scheduler_item = self.project().scheduler_item;
+    pub(super) fn commit_scheduler_recycle(&mut self) {
+        let scheduler_item = &self.scheduler_item;
         scheduler_item.header().set_completion_link(0);
         let _ = scheduler_item.terminate_hardware_chain();
     }
@@ -910,12 +726,11 @@ impl DtmMemoryGraphStorage {
     }
 
     pub(super) fn prepare_tx_packet(
-        self: Pin<&mut Self>,
+        &mut self,
         pdu_header: LeTestPduHeader,
         payload: &[u8],
     ) -> LeTxPacketPreparedLength<BLUETOOTH_DTM_TX_PACKET_BYTES> {
-        self.project()
-            .tx_packet
+        self.tx_packet
             .prepare_pdu(pdu_header.controller_image(), payload)
             .unwrap_or_else(|_| {
                 unreachable!("the full DTM allocation accepts every eight-bit payload length")
@@ -924,29 +739,29 @@ impl DtmMemoryGraphStorage {
 
     pub(super) fn positional_event_seed<BuildError>(
         &self,
-        binding: &DtmMemoryGraphBinding,
-    ) -> Result<DtmPositionalEventSeed, DtmMemoryGraphPrepareError<BuildError>> {
+        binding: &DtmBinding,
+    ) -> Result<DtmPositionalEventSeed, DtmPrepareError<BuildError>> {
         let previous = self.reviewed_event_words();
         let tx_head_address = self.link_state.read_word(LINK_STATE_TX_HEAD_OFFSET);
         let rx_tail_address = self.link_state.read_word(LINK_STATE_RX_TAIL_OFFSET);
         let tx_head = ControllerSramLinkAddress::new(tx_head_address)
-            .map_err(|_| DtmMemoryGraphPrepareError::CurrentTxHeadUnbound)?;
+            .map_err(|_| DtmPrepareError::CurrentTxHeadUnbound)?;
         if tx_head != binding.tx_header {
-            return Err(DtmMemoryGraphPrepareError::CurrentTxHeadIdentityMismatch);
+            return Err(DtmPrepareError::CurrentTxHeadIdentityMismatch);
         }
         if self.tx_header.packet_base_link() != Some(binding.tx_packet.base_link()) {
-            return Err(DtmMemoryGraphPrepareError::CurrentTxHeaderPacketBaseMismatch);
+            return Err(DtmPrepareError::CurrentTxHeaderPacketBaseMismatch);
         }
         if self.tx_header.pdu_target_link() != Some(binding.tx_packet.pdu_target_link()) {
-            return Err(DtmMemoryGraphPrepareError::CurrentTxHeaderPduTargetMismatch);
+            return Err(DtmPrepareError::CurrentTxHeaderPduTargetMismatch);
         }
         if !self.tx_header.retains_allocation_extent(binding.tx_packet) {
-            return Err(DtmMemoryGraphPrepareError::CurrentTxHeaderAllocationExtentMismatch);
+            return Err(DtmPrepareError::CurrentTxHeaderAllocationExtentMismatch);
         }
         let rx_tail = ControllerSramLinkAddress::new(rx_tail_address)
-            .map_err(|_| DtmMemoryGraphPrepareError::CurrentRxTailUnbound)?;
+            .map_err(|_| DtmPrepareError::CurrentRxTailUnbound)?;
         if rx_tail != binding.rx_header && rx_tail != binding.rx_swap_reserve {
-            return Err(DtmMemoryGraphPrepareError::CurrentRxTailIdentityMismatch);
+            return Err(DtmPrepareError::CurrentRxTailIdentityMismatch);
         }
         let selected_rx_tail = if rx_tail == binding.rx_header {
             &self.rx_header
@@ -955,7 +770,7 @@ impl DtmMemoryGraphStorage {
         };
         if selected_rx_tail.rx_packet_link() != Some(DtmRxPacketLink::from_bound(binding.rx_packet))
         {
-            return Err(DtmMemoryGraphPrepareError::CurrentRxTailPacketMismatch);
+            return Err(DtmPrepareError::CurrentRxTailPacketMismatch);
         }
         Ok(DtmPositionalEventSeed {
             words: previous,
@@ -965,15 +780,15 @@ impl DtmMemoryGraphStorage {
     }
 
     pub(super) fn validate_and_commit_positional_event<BuildError>(
-        self: Pin<&mut Self>,
-        binding: &DtmMemoryGraphBinding,
+        &mut self,
+        binding: &DtmBinding,
         seed: DtmPositionalEventSeed,
         candidate: DtmPositionalEventWords,
-    ) -> Result<(), DtmMemoryGraphPrepareError<BuildError>> {
+    ) -> Result<(), DtmPrepareError<BuildError>> {
         let expected_tx_head = seed.tx_header_head_projection();
         let observed_tx_head = candidate.tx_header_head_projection();
         if observed_tx_head != expected_tx_head {
-            return Err(DtmMemoryGraphPrepareError::LinkStateTxHeadMismatch {
+            return Err(DtmPrepareError::LinkStateTxHeadMismatch {
                 expected: expected_tx_head,
                 observed: observed_tx_head,
             });
@@ -981,15 +796,15 @@ impl DtmMemoryGraphStorage {
         let expected_rx_tail = seed.rx_header_tail_projection();
         let observed_rx_tail = candidate.rx_header_tail_projection();
         if observed_rx_tail != expected_rx_tail {
-            return Err(DtmMemoryGraphPrepareError::LinkStateRxTailMismatch {
+            return Err(DtmPrepareError::LinkStateRxTailMismatch {
                 expected: expected_rx_tail,
                 observed: observed_rx_tail,
             });
         }
         if !candidate.scheduler_item_retains_link_state(binding.link_state) {
-            return Err(DtmMemoryGraphPrepareError::SchedulerItemLinkStateMismatch);
+            return Err(DtmPrepareError::SchedulerItemLinkStateMismatch);
         }
-        let storage = self.project();
+        let storage = self;
         storage
             .link_state
             .write_reviewed_words(candidate.link_state());
@@ -1001,12 +816,12 @@ impl DtmMemoryGraphStorage {
 
     pub(super) fn validate_rx_rotation(
         &self,
-        binding: &DtmMemoryGraphBinding,
-        recycle: &DtmMemoryGraphRecyclePrepared,
+        binding: &DtmBinding,
+        recycle: &DtmExecutedWitness,
         status: DtmSchedulerItemCompletionStatus,
-    ) -> Result<DtmRxRotationPlan, DtmMemoryGraphRxSuccessRecycleError> {
+    ) -> Result<DtmRxRotationPlan, DtmRxRotationError> {
         if status != DtmSchedulerItemCompletionStatus::Zero {
-            return Err(DtmMemoryGraphRxSuccessRecycleError::CompletionStatusMismatch);
+            return Err(DtmRxRotationError::CompletionStatusMismatch);
         }
         let primary_address = binding.rx_header.controller_address().address();
         let swap_address = binding.rx_swap_reserve.controller_address().address();
@@ -1020,9 +835,9 @@ impl DtmMemoryGraphStorage {
             }
         };
         let head = slot(self.link_state.read_word(LINK_STATE_RX_HEAD_OFFSET))
-            .ok_or(DtmMemoryGraphRxSuccessRecycleError::RxHeadIdentityMismatch)?;
+            .ok_or(DtmRxRotationError::RxHeadIdentityMismatch)?;
         let tail = slot(self.link_state.read_word(LINK_STATE_RX_TAIL_OFFSET))
-            .ok_or(DtmMemoryGraphRxSuccessRecycleError::RxTailIdentityMismatch)?;
+            .ok_or(DtmRxRotationError::RxTailIdentityMismatch)?;
         let reserve_address = self.link_state.read_word(LINK_STATE_RX_SWAP_RESERVE_OFFSET);
         let header = |slot| match slot {
             DtmRxHeaderSlot::Primary => &self.rx_header,
@@ -1048,43 +863,43 @@ impl DtmMemoryGraphStorage {
                 DtmRxHeaderSlot::Swap => swap_address,
             };
             if reserve_address != expected_reserve {
-                return Err(DtmMemoryGraphRxSuccessRecycleError::RxSwapIdentityMismatch);
+                return Err(DtmRxRotationError::RxSwapIdentityMismatch);
             }
             let reserve = header(copy_target);
             if reserve.rx_successor_link().is_some() || reserve.rx_packet_link().is_some() {
-                return Err(DtmMemoryGraphRxSuccessRecycleError::ReserveNotDetached);
+                return Err(DtmRxRotationError::ReserveNotDetached);
             }
             if header(tail).rx_backlink().is_some() {
-                return Err(DtmMemoryGraphRxSuccessRecycleError::InitialBacklinkUnexpected);
+                return Err(DtmRxRotationError::InitialBacklinkUnexpected);
             }
             (tail, copy_target, false)
         } else {
             if reserve_address != 0 {
-                return Err(DtmMemoryGraphRxSuccessRecycleError::SwapReserveUnexpected);
+                return Err(DtmRxRotationError::SwapReserveUnexpected);
             }
             let predecessor = header(head);
             if predecessor.rx_packet_link().is_some() {
-                return Err(DtmMemoryGraphRxSuccessRecycleError::PredecessorPacketStillBound);
+                return Err(DtmRxRotationError::PredecessorPacketStillBound);
             }
             if predecessor.rx_successor_link() != Some(successor(tail)) {
-                return Err(DtmMemoryGraphRxSuccessRecycleError::PredecessorSuccessorMismatch);
+                return Err(DtmRxRotationError::PredecessorSuccessorMismatch);
             }
             if !predecessor.observe_rx_completion_after_fence(recycle) {
-                return Err(DtmMemoryGraphRxSuccessRecycleError::PredecessorNotCompleted);
+                return Err(DtmRxRotationError::PredecessorNotCompleted);
             }
             if header(tail).rx_backlink() != Some(backlink(head)) {
-                return Err(DtmMemoryGraphRxSuccessRecycleError::SuccessorBacklinkMismatch);
+                return Err(DtmRxRotationError::SuccessorBacklinkMismatch);
             }
             (tail, head, true)
         };
 
         let returned_header = header(returned);
         if returned_header.rx_successor_link().is_some() {
-            return Err(DtmMemoryGraphRxSuccessRecycleError::ReturnedHasSuccessor);
+            return Err(DtmRxRotationError::ReturnedHasSuccessor);
         }
         if returned_header.rx_packet_link() != Some(DtmRxPacketLink::from_bound(binding.rx_packet))
         {
-            return Err(DtmMemoryGraphRxSuccessRecycleError::ReturnedPacketMismatch);
+            return Err(DtmRxRotationError::ReturnedPacketMismatch);
         }
         if !returned_header.observe_rx_completion_after_fence(recycle) {
             return Ok(DtmRxRotationPlan::NoReturnedPacket {
@@ -1097,10 +912,10 @@ impl DtmMemoryGraphStorage {
             .observe_after_fenced_completion(recycle)
             .map_err(|error| match error {
                 DtmRxPacketCompletionObservationError::ResultNotProduced => {
-                    DtmMemoryGraphRxSuccessRecycleError::ReturnedResultNotProduced
+                    DtmRxRotationError::ReturnedResultNotProduced
                 }
                 DtmRxPacketCompletionObservationError::AuxiliaryNotProduced => {
-                    DtmMemoryGraphRxSuccessRecycleError::ReturnedAuxiliaryNotProduced
+                    DtmRxRotationError::ReturnedAuxiliaryNotProduced
                 }
             })?;
         Ok(DtmRxRotationPlan::Rotate {
@@ -1111,18 +926,14 @@ impl DtmMemoryGraphStorage {
         })
     }
 
-    pub(super) fn commit_rx_rotation(
-        self: Pin<&mut Self>,
-        binding: &DtmMemoryGraphBinding,
-        plan: DtmRxRotationPlan,
-    ) {
-        let storage = self.project();
+    pub(super) fn commit_rx_rotation(&mut self, binding: &DtmBinding, plan: DtmRxRotationPlan) {
+        let storage = self;
         match plan {
             DtmRxRotationPlan::NoReturnedPacket { predecessor } => {
                 if let Some(predecessor) = predecessor {
                     match predecessor {
-                        DtmRxHeaderSlot::Primary => storage.rx_header,
-                        DtmRxHeaderSlot::Swap => storage.rx_swap_reserve,
+                        DtmRxHeaderSlot::Primary => &storage.rx_header,
+                        DtmRxHeaderSlot::Swap => &storage.rx_swap_reserve,
                     }
                     .set_rx_software_terminal(true);
                 }
@@ -1133,8 +944,8 @@ impl DtmMemoryGraphStorage {
                 steady,
                 projection: _,
             } => {
-                let primary = &*storage.rx_header;
-                let swap = &*storage.rx_swap_reserve;
+                let primary = &storage.rx_header;
+                let swap = &storage.rx_swap_reserve;
                 let returned_header = match returned {
                     DtmRxHeaderSlot::Primary => primary,
                     DtmRxHeaderSlot::Swap => swap,
@@ -1195,7 +1006,7 @@ impl DtmMemoryGraphStorage {
     }
 }
 
-impl Default for DtmMemoryGraphStorage {
+impl Default for DtmStorage {
     fn default() -> Self {
         Self::new()
     }

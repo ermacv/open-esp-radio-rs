@@ -154,7 +154,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "fe3c4dc2644d0f9fcb59abb4b63cbdf463ba132d19c9df754f0fee5671aa0e47"
+      "sha256": "bfcbf283455f4c0ab67f06044907bf6fa2f61cb6b412510b09d7f30fa56199ca"
     },
     {
       "path": "verification/vendor/schema",

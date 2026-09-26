@@ -102,6 +102,10 @@ pub struct Session {
     project: std::cell::Cell<bool>,
     /// Exported ELF bytes of each prepared image.
     images: std::cell::RefCell<BTreeMap<PreparedImageId, Vec<u8>>>,
+    /// Images this run took from the link cache without preparing them in a
+    /// project. A later operation on the project must prepare them first:
+    /// the restored session snapshot predates every link.
+    unprepared: std::cell::RefCell<Vec<CachedLink>>,
     /// Effect contracts and projections the scenario's relations select,
     /// reviewed through git and identified by content.
     effects: Vec<EffectContract>,
@@ -121,6 +125,15 @@ pub struct LinkedImage {
     pub roots: BTreeMap<String, u32>,
 }
 
+/// Arguments of one link served from the cache, and its cached image.
+struct CachedLink {
+    request: LinkRequest,
+    linker: PathBuf,
+    entry: String,
+    candidates: Vec<u64>,
+    image: PreparedImageId,
+}
+
 pub fn path_arg(path: &Path) -> OsString {
     path.as_os_str().to_owned()
 }
@@ -135,15 +148,31 @@ impl Session {
     /// Create the run's Blobray project from the authenticated inputs, once,
     /// when a setup operation misses the cache.
     fn ensure_project(&self) -> Result<()> {
-        if self.project.get() {
-            return Ok(());
+        if !self.project.get() {
+            self.setup
+                .restore(PROJECT_SNAPSHOT, &self.run.join("project"))?;
+            if self.runner.inventory()? != self.inventory {
+                return Err(invalid("restored project differs from the cached setup"));
+            }
+            self.project.set(true);
         }
-        self.setup
-            .restore(PROJECT_SNAPSHOT, &self.run.join("project"))?;
-        if self.runner.inventory()? != self.inventory {
-            return Err(invalid("restored project differs from the cached setup"));
+        // Prepare every image this run took from the link cache, so project
+        // operations that select it find it. Linking is deterministic: the
+        // prepared image must be the cached one.
+        let unprepared = std::mem::take(&mut *self.unprepared.borrow_mut());
+        for link in unprepared {
+            // The export directory holds the cached copy of an earlier image;
+            // replay in link order leaves it with the same final image.
+            let exported = self.run.join("image");
+            if exported.exists() {
+                fs::remove_dir_all(&exported)?;
+            }
+            let linked =
+                self.link_uncached(&link.request, &link.linker, &link.entry, &link.candidates)?;
+            if linked.image != link.image {
+                return Err(invalid("re-prepared image differs from the cached link"));
+            }
         }
-        self.project.set(true);
         Ok(())
     }
 
@@ -233,6 +262,7 @@ impl Session {
             setup: entry,
             project: std::cell::Cell::new(project),
             images: Default::default(),
+            unprepared: Default::default(),
             effects: vec![],
             projections: vec![],
             executed: Default::default(),
@@ -442,6 +472,13 @@ impl Session {
             self.images
                 .borrow_mut()
                 .insert(linked.image.clone(), fs::read(&exported)?);
+            self.unprepared.borrow_mut().push(CachedLink {
+                request: request.clone(),
+                linker: linker.to_path_buf(),
+                entry: entry.to_owned(),
+                candidates: candidates.to_vec(),
+                image: linked.image.clone(),
+            });
             return Ok(linked);
         }
         self.ensure_project()?;

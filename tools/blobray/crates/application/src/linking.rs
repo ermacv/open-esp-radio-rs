@@ -253,10 +253,14 @@ fn invalid(message: impl Into<String>) -> Error {
 }
 fn validate_request(request: &LinkRequest) -> Result<()> {
     request.layout.validate()?;
-    if request.inputs.is_empty() || request.inputs.len() > 512 || request.roots.len() > 15 {
-        return Err(invalid(
-            "link request needs 1..512 input occurrences and at most 15 additional roots",
-        ));
+    if request.inputs.is_empty()
+        || request.inputs.len() > 512
+        || request.roots.len() >= MAX_IMAGE_ROOTS
+    {
+        return Err(invalid(format!(
+            "link request needs 1..512 input occurrences and at most {} additional roots",
+            MAX_IMAGE_ROOTS - 1
+        )));
     }
     for (index, input) in request.inputs.iter().enumerate() {
         if request.inputs[..index].contains(input) {
@@ -866,4 +870,54 @@ fn prepare_image_inner(
     let mut file = disk.temporary(&directory)?;
     file.write_all(&encoded).map_err(storage_io)?;
     storage.image_receipt(file, control)
+}
+
+#[cfg(test)]
+mod root_limit_tests {
+    use super::*;
+
+    fn selection(index: u64) -> EntrySelection {
+        EntrySelection {
+            input: 0,
+            symbol: SymbolId {
+                object: ObjectId {
+                    artifact: ArtifactId::of_bytes(b"object"),
+                    location: ObjectLocation::Standalone,
+                },
+                table: SymbolTableKind::Static,
+                table_section: 0,
+                index,
+            },
+        }
+    }
+
+    fn request(roots: u64) -> LinkRequest {
+        LinkRequest {
+            companions: vec![],
+            revision: None,
+            inputs: vec![0],
+            entry: selection(0),
+            roots: (1..=roots).map(selection).collect(),
+            layout: ImageLayout {
+                code: ImageRegion {
+                    start: 0x1000_0000,
+                    length: 0x10_0000,
+                },
+                data: ImageRegion {
+                    start: 0x2000_0000,
+                    length: 0x10_0000,
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn an_image_holds_the_entry_and_at_most_the_remaining_roots() {
+        let additional = (MAX_IMAGE_ROOTS - 1) as u64;
+        validate_request(&request(additional)).unwrap();
+        assert_eq!(
+            validate_request(&request(additional + 1)).unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+    }
 }

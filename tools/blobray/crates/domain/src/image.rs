@@ -115,6 +115,8 @@ pub struct LinkerIdentity {
     pub version: String,
     pub executable: ArtifactId,
 }
+/// Roots of one linked image: the entry and every additional root.
+pub const MAX_IMAGE_ROOTS: usize = 64;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkRecipe {

@@ -31,7 +31,7 @@ fn manifest(source: &dyn ByteSource, control: &mut dyn RunControl) -> Result<Ima
         || manifest.linker_diagnostics.signal.is_some()
         || manifest.linker_diagnostics.stderr_tail.len() > 8192
         || manifest.roots.is_empty()
-        || manifest.roots.len() > 16
+        || manifest.roots.len() > MAX_IMAGE_ROOTS
         || manifest.roots[0].address != manifest.entry
         || manifest.roots.len() != manifest.plan.recipe.roots.len() + 1
         || !manifest

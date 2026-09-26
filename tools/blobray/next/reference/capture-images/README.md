@@ -206,7 +206,7 @@ outputs and normalized evidence share the operation's temporary budget.
 LLD buffers stdout ELF in process memory, covered by the process limit rather
 than Blobray `WorkingMemory`. Inspection and validation admit one full object/image
 buffer at a time. An 8 MiB metadata reservation covers up to 512 bindings,
-4096 members, 16 roots, 32 blockers and the bounded capability probe. Root
+4096 members, 64 roots (`MAX_IMAGE_ROOTS`), 32 blockers and the bounded capability probe. Root
 names/sections are at most 4096 bytes, map/observation records 64 KiB, saved plan
 metadata 60 KiB, image manifest 56 KiB and stderr tail 8192 bytes. Capacity
 exhaustion fails explicitly without partial publication.

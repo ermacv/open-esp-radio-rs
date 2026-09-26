@@ -2,7 +2,7 @@
 //! function production and the register model cite.
 //!
 //! Production records recovered facts in `SOURCE:` comment blocks, and the
-//! register model in the descriptions of its evidence `[[sources]]`. Every
+//! register model in its evidence source and register/field descriptions. Every
 //! identifier in those texts that names a function of a pinned vendor
 //! artifact is a reference. The chip's registry records, for each referenced
 //! function, the code fingerprint of the revision its facts were reviewed
@@ -24,9 +24,13 @@ fn registry_path(chip: &str) -> Result<&'static str> {
     }
 }
 
-/// Register-model evidence of `chip`, relative to the repository root.
-fn evidence_directory(chip: &str) -> String {
-    format!("registers/{chip}/evidence")
+/// Register-model evidence and model of `chip`, relative to the
+/// repository root.
+fn register_directories(chip: &str) -> [String; 2] {
+    [
+        format!("registers/{chip}/evidence"),
+        format!("registers/{chip}/model"),
+    ]
 }
 
 /// Production sources scanned for `SOURCE:` blocks.
@@ -77,7 +81,7 @@ fn parse_registry(text: &str) -> Result<Vec<Entry>> {
 fn render_registry(entries: &[Entry]) -> String {
     let mut text = String::from(
         "# Code fingerprints of the vendor functions production `SOURCE:` blocks\n\
-         # and register-model evidence cite, as reviewed. Maintained by\n\
+         # and the register model cite, as reviewed. Maintained by\n\
          # `cargo xtask vendor-provenance`; checked by `cargo xtask check\n\
          # provenance`.\n\
          schema = 1\n",
@@ -140,23 +144,36 @@ fn production_words(directory: &Path, out: &mut BTreeSet<String>) -> Result<()> 
     Ok(())
 }
 
-/// Identifiers of every register-model evidence source description.
-fn evidence_words(directory: &Path, out: &mut BTreeSet<String>) -> Result<()> {
+/// Identifiers of every `description` in `value`, at any depth.
+fn description_words(value: &toml::Value, out: &mut BTreeSet<String>) {
+    match value {
+        toml::Value::Table(table) => {
+            for (key, value) in table {
+                match value {
+                    toml::Value::String(text) if key == "description" => identifiers(text, out),
+                    other => description_words(other, out),
+                }
+            }
+        }
+        toml::Value::Array(values) => {
+            for value in values {
+                description_words(value, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Identifiers of every description in the TOML files under `directory`:
+/// evidence sources and the model's register and field descriptions.
+fn register_words(directory: &Path, out: &mut BTreeSet<String>) -> Result<()> {
     for entry in std::fs::read_dir(directory)? {
         let path = entry?.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-        let table: toml::Table = toml::from_str(&std::fs::read_to_string(&path)?)?;
-        for source in table
-            .get("sources")
-            .and_then(|v| v.as_array())
-            .into_iter()
-            .flatten()
-        {
-            if let Some(description) = source.get("description").and_then(|v| v.as_str()) {
-                identifiers(description, out);
-            }
+        if path.is_dir() {
+            register_words(&path, out)?;
+        } else if path.extension().and_then(|e| e.to_str()) == Some("toml") {
+            let table: toml::Table = toml::from_str(&std::fs::read_to_string(&path)?)?;
+            description_words(&toml::Value::Table(table), out);
         }
     }
     Ok(())
@@ -208,7 +225,9 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
     }
     let mut words = BTreeSet::new();
     production_words(&ctx.root.join(PRODUCTION), &mut words)?;
-    evidence_words(&ctx.root.join(evidence_directory(chip)), &mut words)?;
+    for directory in register_directories(chip) {
+        register_words(&ctx.root.join(directory), &mut words)?;
+    }
     let known: BTreeSet<&str> = current
         .keys()
         .map(|(_, _, name)| name.as_str())

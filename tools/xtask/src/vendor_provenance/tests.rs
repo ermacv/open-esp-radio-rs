@@ -43,3 +43,23 @@ fn the_registry_round_trips() {
     }];
     assert_eq!(parse_registry(&render_registry(&entries)).unwrap(), entries);
 }
+
+#[test]
+fn register_descriptions_are_cited_at_any_depth() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir(directory.path().join("model")).unwrap();
+    std::fs::write(
+        directory.path().join("model/a.toml"),
+        "[[sources]]\ndescription = \"complete bt_bb_v2_init_cmplx\"\n\
+         [[peripherals.registers]]\n\
+         [peripherals.registers.register]\nname = \"rcGetRate\"\n\
+         [[peripherals.registers.register.fields]]\n\
+         description = \"bt_bb_rx_dpo_set replaces this field\"\n",
+    )
+    .unwrap();
+    let mut words = BTreeSet::new();
+    register_words(directory.path(), &mut words).unwrap();
+    assert!(words.contains("bt_bb_v2_init_cmplx"));
+    assert!(words.contains("bt_bb_rx_dpo_set"));
+    assert!(!words.contains("rcGetRate"));
+}

@@ -45,11 +45,11 @@ production code against the real source artifact; do not assert equivalence
 by comparing a table with a duplicate fixture. Preserve applicable attribution
 and license notices.
 
-Every vendor function a `SOURCE:` block or register-model evidence source
-names is registered with the relocation-normalized code fingerprint of the
-revision its facts were reviewed against
-(`verification/vendor/projects/<chip>/provenance.toml`). A pin update that
-changes or removes such a function fails `cargo xtask check provenance`;
+Every vendor function a `SOURCE:` block, register-model evidence source or
+register or field description names is registered with the
+relocation-normalized code fingerprint of the revision its facts were reviewed
+against (`verification/vendor/projects/<chip>/provenance.toml`). A pin update
+that changes or removes such a function fails `cargo xtask check provenance`;
 `cargo xtask vendor-diff` shows what changed, and after the facts follow the
 pinned code, `cargo xtask vendor-provenance --accept` records its fingerprint.
 

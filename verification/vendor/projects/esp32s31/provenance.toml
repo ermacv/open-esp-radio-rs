@@ -1,5 +1,5 @@
 # Code fingerprints of the vendor functions production `SOURCE:` blocks
-# and register-model evidence cite, as reviewed. Maintained by
+# and the register model cite, as reviewed. Maintained by
 # `cargo xtask vendor-provenance`; checked by `cargo xtask check
 # provenance`.
 schema = 1
@@ -391,6 +391,12 @@ code = "37a36959b0a2b6c849dee7218ad8eac04c06979afc2f2a3ca5e296c17a30336f"
 [[function]]
 artifact = "libbtbb"
 member = "bt_bb_v2.o"
+symbol = "bt_agc_gain_offset"
+code = "965df8dbed1d7ab33ccbee6ad06662e79840ce486b89596f120299c8d39c82f0"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
 symbol = "bt_agc_gain_set"
 code = "1d28b0d5722ef4b83da850a4bcdc7379dd81e56d6cf5da1fe7b6defd21ac3bcb"
 
@@ -433,14 +439,68 @@ code = "3ea719b051a1c77f80a8b5b1f8f5a26af697f10fe4b747d200e5f6d47754f8ae"
 [[function]]
 artifact = "libbtbb"
 member = "bt_bb_v2.o"
+symbol = "bt_bb_cca_config"
+code = "1937386055f4582f5482e0c5fc53e9faf063a0ee4f7086879e9d21af4a2e646a"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_coex_config"
+code = "28ca861372d6012b31fea2ae669d8ad2632376a1a2d0bc04369830737731dd86"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
 symbol = "bt_bb_corr_thresh_aa_lc_en"
 code = "30a114f096af888e14f294d3bc6782868d99af682d8151ff8e29c5a244669a35"
 
 [[function]]
 artifact = "libbtbb"
 member = "bt_bb_v2.o"
+symbol = "bt_bb_get_cur_rx_info"
+code = "30d3b61ce9a9d32bd8dcd21b02eadcb3f713331d40b77a8115c6e8c638d25f04"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_get_le_tx_on_delay"
+code = "34f786b1b9e044cd03ff22c1aebc505a132087f059bacaca72e72e411f9e37cc"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_rx_correlator_set"
+code = "d1a1ac62be8b71a3cf3b99df3416079f7c450ab8138ea609a86eb2de8a365025"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_rx_dpo_set"
+code = "e70a325ebf57559c37ae76780bdec77422f5978790c331a99f0917262551f514"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_rx_filter_sel"
+code = "0f4e20dcbd435fc1bbd8b01d673d0ffdf4db872d7d7627c188f0281ea8bb8ebd"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
 symbol = "bt_bb_rx_set"
 code = "5dafe2820b1f7705b92aa0826b14309c5915c6ccf84936eabba9137185c5116d"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_set_corr_thresh_le"
+code = "aac0050a4ab55597dab053dd5e0e8854a0bcbf7f1935d78a179b1c13576f7511"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_set_le_tx_on_delay"
+code = "c271bc27863750ebcc33ad5b6562f2d91d3c72eb6c0a7dd5fb4007ee175dcc7a"
 
 [[function]]
 artifact = "libbtbb"
@@ -453,6 +513,48 @@ artifact = "libbtbb"
 member = "bt_bb_v2.o"
 symbol = "bt_bb_set_zb_tx_on_delay"
 code = "b6d31fe6f99c03fe188ba45f3b45225c0224d40ed15a5c48188bcea3c2c190f6"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_tx_cca_fifo_count"
+code = "2e27bd88833e9b5f3f32273df59254a00f273b7190d6ee058414e75185ac5983"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_tx_cca_fifo_empty"
+code = "aa5bc013aef379a9e0202c9c11261e7bec0677be927f1e8bb38512d2fac5e1bb"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_tx_cca_fifo_full"
+code = "9bc6279059ece30131c8424a15c3e3f6dcae37731e4ee357e5aab431762e6cb3"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_tx_cca_fifo_read"
+code = "06c29c0cadad55a6467b0ee4f5dde6744b9af9646d7682238f5ef8b37600c16a"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_tx_cca_fifo_reset"
+code = "d5562a734bbbcc6a8b2cebf8ac659278bd8e3fdb2be84b13c83118b15b577963"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_tx_cca_period"
+code = "d46ee86ed6abd96262047ffb67b3bc7130914de40e5decd73b178cca3c48b3b6"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_tx_cca_set"
+code = "80b89700c0f2be4e2570dd16902d12066b012d42878b7d268a17bfbe1afafa41"
 
 [[function]]
 artifact = "libbtbb"
@@ -471,6 +573,12 @@ artifact = "libbtbb"
 member = "bt_bb_v2.o"
 symbol = "bt_bb_v2_tx_set"
 code = "773f5d2d9d4479c30950de36f2cf7dde3b3f549f07bb61c3854687e91d117e57"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "bt_bb_wdt_init"
+code = "a2c22f0d3bf76d22116dbbfbce1d8447e584482b7fddc2c8fc8a60850afc7fae"
 
 [[function]]
 artifact = "libbtbb"
@@ -525,6 +633,12 @@ artifact = "libbtbb"
 member = "bt_cte.o"
 symbol = "ble_bb_cte_set_ant_map"
 code = "eb374c208ba703fa48c62b768c50bb8c0ab46220e84419f596efdcc3fb24d92d"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_cte.o"
+symbol = "ble_bb_cte_set_cte_en"
+code = "7bdcd0d2883ba4dcfea60974fc0c45a175d9b39a4d527cd24d6b4e092050bd3e"
 
 [[function]]
 artifact = "libbtdm_common"
@@ -859,8 +973,38 @@ code = "cc4fd6b94e23168a7338ab4c8b35daadb3cea8cbd21821f5b225bf8f39336f65"
 [[function]]
 artifact = "libcoexist"
 member = "coexist_hw.o"
+symbol = "coex_hw_timer_disable"
+code = "edd42e22e5b5344a7d7bd6cba789f76ca689dd8c9146775327709e66444eb5ff"
+
+[[function]]
+artifact = "libcoexist"
+member = "coexist_hw.o"
+symbol = "coex_hw_timer_enable"
+code = "c5cb406d43192859c05b1324f7f8a21ef5fbf7b1722d711e7c12c616d9812520"
+
+[[function]]
+artifact = "libcoexist"
+member = "coexist_hw.o"
+symbol = "coex_hw_timer_force"
+code = "fd42999eef5ed54c2b49aea2c5674a0e9b56724dd71e492380a8c3f758233c2f"
+
+[[function]]
+artifact = "libcoexist"
+member = "coexist_hw.o"
 symbol = "coex_hw_timer_set"
 code = "014967708138e0b0b2630763e9b9dce786be667baac5b6a759bac487cb8af2fb"
+
+[[function]]
+artifact = "libcoexist"
+member = "coexist_hw.o"
+symbol = "coex_hw_timer_tick_get"
+code = "322ed82beb7312d2d8c6ddfe595d02880dd5720b11c974dbf2cddcc309ee3f93"
+
+[[function]]
+artifact = "libcoexist"
+member = "coexist_hw.o"
+symbol = "coex_hw_timer_unforce"
+code = "6cf6e30c218039cc30dcfcf28671c3935baa495e7d78ab9b053e5bd2ace8f8c6"
 
 [[function]]
 artifact = "libcoexist"
@@ -1074,6 +1218,12 @@ code = "30e048b252f10b84d4cfdd2c50f50b59a8d6fa342d52a85f034ff7c604914de0"
 
 [[function]]
 artifact = "libnet80211"
+member = "ieee80211_output.o"
+symbol = "ieee80211_set_tx_pti"
+code = "0234f8d68873c148099922a91fe79504a83a4439dfdda558b9ad02a8ecd72696"
+
+[[function]]
+artifact = "libnet80211"
 member = "ieee80211_sta.o"
 symbol = "ieee80211_parse_wmeparams"
 code = "642ea34d278804972aa903d93131ab9865217d4a522f1f9a7ecc8b626fdda13a"
@@ -1161,6 +1311,12 @@ artifact = "libphy"
 member = "phy_hw_freq.o"
 symbol = "phy_freq_i2c_data_write"
 code = "e1f43517e21e57a29d69b0a7bc9bdfeef6eebfac1edbfae57e84a6e0c7299ce1"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_get_i2c_hostid_new"
+code = "a8f886556cb6cbce00cca44c1318363bceb023def1f13bb9bf64f09268e74878"
 
 [[function]]
 artifact = "libphy"
@@ -2065,6 +2221,12 @@ code = "56453509e5aad2e07c1ffd4d66e7291e29e997d026c5fbbeed8569080191142e"
 [[function]]
 artifact = "libpp"
 member = "hal_mac_ctl.o"
+symbol = "hal_he_get_htc"
+code = "423f87a7bb1aefbb3b9fa9306c82c13c9c01b229bc3df3d13d2c258b30aec3fe"
+
+[[function]]
+artifact = "libpp"
+member = "hal_mac_ctl.o"
 symbol = "hal_he_get_hw_txq_bsr"
 code = "c63ceda31dde84f150cae18e59948dae6dea9dad3b59918ba18231f05a1464bf"
 
@@ -2454,9 +2616,21 @@ code = "1b1d9962e1909bc1faa2f25edf3002532adccede6b3aee6d7211e8304582058a"
 
 [[function]]
 artifact = "libpp"
+member = "hal_mac_tx.o"
+symbol = "mac_tx_set_txop_q"
+code = "4840548d6fbe1378cf2c5ab9e5cfdf82bf421938141679f9bf18d1e8397ac3f6"
+
+[[function]]
+artifact = "libpp"
 member = "hal_pwr.o"
 symbol = "pwr_hal_select_wifimac_regdma_link"
 code = "d73abad28ea76119d2e1b2069a6a554897d65da5ceaf9fb4e8152007008e9051"
+
+[[function]]
+artifact = "libpp"
+member = "hal_pwr.o"
+symbol = "pwr_hal_set_mac_modem_beacon_miss_limit"
+code = "33a82291c470e9e422dba874b24875bf11031181664b833c12bc428210e268b5"
 
 [[function]]
 artifact = "libpp"
@@ -2467,8 +2641,26 @@ code = "0be9a93f1875698c602d90512a5e5efadacccb8d79357be5ccbbd280fc8ac9de"
 [[function]]
 artifact = "libpp"
 member = "hal_pwr.o"
+symbol = "pwr_hal_set_mac_modem_state_sleep_limit"
+code = "ad6feb6d2a78bf0df8ff9aca719b795b7c03849f48effaaed42af28fe90ca884"
+
+[[function]]
+artifact = "libpp"
+member = "hal_pwr.o"
 symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_disable"
 code = "c6c32cdb07abd52f2dd9ac30b3724fcfddc9bef8553d0ce961441e35ef76744b"
+
+[[function]]
+artifact = "libpp"
+member = "hal_pwr.o"
+symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_early_time"
+code = "a4ffe350e9b07fcc8ff9c627d32a2c9afddd89b060a12859ed09956cbb801f2e"
+
+[[function]]
+artifact = "libpp"
+member = "hal_pwr.o"
+symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_enable"
+code = "6c3cdbf8546b6f91c561324684e9dbe55fcdd5833a253dcc4fb8db4e19a531a9"
 
 [[function]]
 artifact = "libpp"
@@ -2917,6 +3109,12 @@ code = "6815ae47a7636ff04fce0e4a5e52a75c37cabcd85ffdc5aedf252e485c5834c5"
 [[function]]
 artifact = "libpp"
 member = "pp.o"
+symbol = "ppTxFragmentProc"
+code = "0b87b1db81ba0ff56780eaecc7911a33d4d552b98fa23eec0785a2c501cdeb3a"
+
+[[function]]
+artifact = "libpp"
+member = "pp.o"
 symbol = "ppTxProtoProc"
 code = "6e7b2964f8efedf755d8234ed284b94c47b44b0d9ed2b7c9ed72333427f239b2"
 
@@ -3259,6 +3457,18 @@ code = "87813ab9b65259ca1a6463b246b4e078b450d950df837eba624b5936daf7d983"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "coex_hw_timer_disable"
+code = "edd42e22e5b5344a7d7bd6cba789f76ca689dd8c9146775327709e66444eb5ff"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "coex_hw_timer_enable"
+code = "c5cb406d43192859c05b1324f7f8a21ef5fbf7b1722d711e7c12c616d9812520"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "coex_hw_timer_set"
 code = "e022315856d9e87fae51a405db9b24bae991b82b1a5b6b00f011ff032612e0d4"
 
@@ -3511,6 +3721,12 @@ code = "e216676ccd9b004951c1b918f7d8e55cbc3db94fee64e27f9d79ae813c946c43"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "ieee80211_set_tx_pti"
+code = "0cce7bd73ac5f6b20f94d15dbbd8861847532169975777dc48896c338f96033a"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "is_ndpa_to_dut"
 code = "b3f2e208a3006b25e4222b3fbfa2e79d4170061b9d81aaa6fa2079bd73648705"
 
@@ -3639,6 +3855,12 @@ artifact = "rom"
 member = ""
 symbol = "mac_tx_set_tb"
 code = "f224f8b4b07b2d42b07ab36047f6e987e168f49608563a2ca30bc8815f486b39"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "mac_tx_set_txop_q"
+code = "b378c9ed3987451861b19f10bd500a3fc26246ac62125e84fd5649e14aca8cdc"
 
 [[function]]
 artifact = "rom"
@@ -4567,14 +4789,38 @@ code = "b2c0dba7015129c4e9bb1cc9cb41a33ffc2184d8ce072d3c27750d992cd8c251"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "pwr_hal_set_mac_modem_beacon_miss_limit"
+code = "33a82291c470e9e422dba874b24875bf11031181664b833c12bc428210e268b5"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "pwr_hal_set_mac_modem_beacon_miss_timeout"
 code = "0be9a93f1875698c602d90512a5e5efadacccb8d79357be5ccbbd280fc8ac9de"
 
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "pwr_hal_set_mac_modem_state_sleep_limit"
+code = "ad6feb6d2a78bf0df8ff9aca719b795b7c03849f48effaaed42af28fe90ca884"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_disable"
 code = "c6c32cdb07abd52f2dd9ac30b3724fcfddc9bef8553d0ce961441e35ef76744b"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_early_time"
+code = "a4ffe350e9b07fcc8ff9c627d32a2c9afddd89b060a12859ed09956cbb801f2e"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_enable"
+code = "6c3cdbf8546b6f91c561324684e9dbe55fcdd5833a253dcc4fb8db4e19a531a9"
 
 [[function]]
 artifact = "rom"

@@ -276,8 +276,8 @@ bitOffset = 31
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SCHEDULER_POINTER_COMMAND"
-description = "Pointer command transaction: compressed pointer in bits 0..19, four-bit argument in bits 20..23 and START in bit 31; completion returns a two-bit result in bits 28..29."
+name = "SCHEDULER_SKIP_REQUEST"
+description = "Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and SCHEDULER_STATE.BUSY are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established."
 addressOffset = 0xEC
 size = 32
 access = "read-write"
@@ -285,10 +285,16 @@ access = "read-write"
 name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFFF
 [[peripherals.registers.register.fields]]
-name = "ARGUMENT_LOW_4"
+name = "HARDWARE_LIST_INDEX"
 bitOffset = 20
 bitWidth = 4
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xF
 [[peripherals.registers.register.fields]]
 name = "RESULT"
 bitOffset = 28
@@ -958,7 +964,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "OPERATIONAL_CONTROL_0204"
-description = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations."
+description = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."
 addressOffset = 0x204
 size = 32
 access = "read-write"
@@ -970,7 +976,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "OPERATIONAL_STATUS_0208"
-description = "Two complete operational functions consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set, then clear the control bit. The remaining bits and the hardware meaning of bit zero are unknown."
+description = "Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown."
 addressOffset = 0x208
 size = 32
 access = "read-only"
@@ -1009,19 +1015,19 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "OPERATIONAL_STATUS_0324"
-description = "Two complete operational functions read the complete word; its inner encoding remains unknown."
+description = "The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown."
 addressOffset = 0x324
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "STATUS_0"
 bitOffset = 0
-bitWidth = 32
+bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "OPERATIONAL_WORD_036C"
-description = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."
+description = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned."
 addressOffset = 0x36C
 size = 32
 access = "read-write"
@@ -1029,6 +1035,14 @@ access = "read-write"
 name = "LOCK_MODIFY_HARDWARE_LIST_INDEX"
 description = "Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."
 bitOffset = 0
+bitWidth = 4
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x0F
+[[peripherals.registers.register.fields]]
+name = "CANCELLATION_HARDWARE_LIST_INDEX"
+description = "Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."
+bitOffset = 4
 bitWidth = 4
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0
@@ -1284,36 +1298,36 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SKIP_REQUEST"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND.COMPRESSED_SRAM_POINTER"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SKIP_REQUEST.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND.ARGUMENT_LOW_4"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SKIP_REQUEST.HARDWARE_LIST_INDEX"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND.RESULT"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SKIP_REQUEST.RESULT"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
-completeness = "complete"
+completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND.START"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SKIP_REQUEST.START"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -2158,13 +2172,13 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204.CONTROL_0"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -2177,7 +2191,7 @@ accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0208.STATUS_0"
-sources = ["BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -2220,8 +2234,8 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0324.IMAGE"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0324.STATUS_0"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -2236,6 +2250,13 @@ completeness = "complete"
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C.LOCK_MODIFY_HARDWARE_LIST_INDEX"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_INDEX"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C.CANCELLATION_HARDWARE_LIST_INDEX"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

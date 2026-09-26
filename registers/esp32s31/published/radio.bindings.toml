@@ -2542,10 +2542,24 @@ scope = []
 register-method = "irq_clear_0"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_0_14"
-method = "unclassified_0_14"
+svd-name = "UNCLASSIFIED_0_6"
+method = "unclassified_0_6"
 bit-offset = 0
-bit-width = 15
+bit-width = 7
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "SOURCE_7"
+method = "source_7"
+bit-offset = 7
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_8_14"
+method = "unclassified_8_14"
+bit-offset = 8
+bit-width = 7
 access = "write-only"
 
 [[registers.fields]]
@@ -3387,12 +3401,12 @@ access = "read-write"
 address = 537923820
 width = 32
 access = "read-write"
-identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SKIP_REQUEST"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "scheduler_pointer_command"
+register-method = "scheduler_skip_request"
 
 [[registers.fields]]
 svd-name = "COMPRESSED_SRAM_POINTER"
@@ -3402,8 +3416,8 @@ bit-width = 20
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ARGUMENT_LOW_4"
-method = "argument_low_4"
+svd-name = "HARDWARE_LIST_INDEX"
+method = "hardware_list_index"
 bit-offset = 20
 bit-width = 4
 access = "read-write"
@@ -4206,10 +4220,10 @@ scope = []
 register-method = "operational_status_0324"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "STATUS_0"
+method = "status_0"
 bit-offset = 0
-bit-width = 32
+bit-width = 1
 access = "read-only"
 
 [[registers]]
@@ -4735,6 +4749,13 @@ register-method = "operational_word_036c"
 svd-name = "LOCK_MODIFY_HARDWARE_LIST_INDEX"
 method = "lock_modify_hardware_list_index"
 bit-offset = 0
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CANCELLATION_HARDWARE_LIST_INDEX"
+method = "cancellation_hardware_list_index"
+bit-offset = 4
 bit-width = 4
 access = "read-write"
 

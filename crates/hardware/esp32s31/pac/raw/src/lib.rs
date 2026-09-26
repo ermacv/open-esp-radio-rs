@@ -40963,7 +40963,7 @@ pub mod bluetooth_controller_core {
         hal_init_control_0: HalInitControl0,
         hal_init_control_1: HalInitControl1,
         _reserved20: [u8; 0x08],
-        scheduler_pointer_command: SchedulerPointerCommand,
+        scheduler_skip_request: SchedulerSkipRequest,
         _reserved21: [u8; 0xd0],
         hal_init_latch: HalInitLatch,
         hal_init_low_20: HalInitLow20,
@@ -41108,10 +41108,10 @@ pub mod bluetooth_controller_core {
         pub const fn hal_init_control_1(&self) -> &HalInitControl1 {
             &self.hal_init_control_1
         }
-        #[doc = "0xec - Pointer command transaction: compressed pointer in bits 0..19, four-bit argument in bits 20..23 and START in bit 31; completion returns a two-bit result in bits 28..29."]
+        #[doc = "0xec - Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and SCHEDULER_STATE.BUSY are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established."]
         #[inline(always)]
-        pub const fn scheduler_pointer_command(&self) -> &SchedulerPointerCommand {
-            &self.scheduler_pointer_command
+        pub const fn scheduler_skip_request(&self) -> &SchedulerSkipRequest {
+            &self.scheduler_skip_request
         }
         #[doc = "0x1c0 - BTDM HAL initialization writes the finite complete image 0x40 and then sets bit 31 through a fresh-read RMW. Inner semantics remain unknown."]
         #[inline(always)]
@@ -41148,12 +41148,12 @@ pub mod bluetooth_controller_core {
         pub const fn iso_coex_control_1(&self) -> &IsoCoexControl1 {
             &self.iso_coex_control_1
         }
-        #[doc = "0x204 - Complete operational functions independently set and clear bit zero through fresh-read RMW operations."]
+        #[doc = "0x204 - Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."]
         #[inline(always)]
         pub const fn operational_control_0204(&self) -> &OperationalControl0204 {
             &self.operational_control_0204
         }
-        #[doc = "0x208 - Two complete operational functions consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set, then clear the control bit. The remaining bits and the hardware meaning of bit zero are unknown."]
+        #[doc = "0x208 - Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown."]
         #[inline(always)]
         pub const fn operational_status_0208(&self) -> &OperationalStatus0208 {
             &self.operational_status_0208
@@ -41263,7 +41263,7 @@ pub mod bluetooth_controller_core {
         pub const fn scan_hw_snapshot(&self) -> &ScanHwSnapshot {
             &self.scan_hw_snapshot
         }
-        #[doc = "0x324 - Two complete operational functions read the complete word; its inner encoding remains unknown."]
+        #[doc = "0x324 - The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown."]
         #[inline(always)]
         pub const fn operational_status_0324(&self) -> &OperationalStatus0324 {
             &self.operational_status_0324
@@ -41279,7 +41279,7 @@ pub mod bluetooth_controller_core {
         pub fn hal_init_slot_map_iter(&self) -> impl Iterator<Item = &HalInitSlotMap> {
             self.hal_init_slot_map.iter()
         }
-        #[doc = "0x36c - Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."]
+        #[doc = "0x36c - Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned."]
         #[inline(always)]
         pub const fn operational_word_036c(&self) -> &OperationalWord036c {
             &self.operational_word_036c
@@ -42053,24 +42053,24 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_POINTER_COMMAND (rw) register accessor: Pointer command transaction: compressed pointer in bits 0..19, four-bit argument in bits 20..23 and START in bit 31; completion returns a two-bit result in bits 28..29.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_pointer_command::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_pointer_command::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_pointer_command`] module"]
-    #[doc(alias = "SCHEDULER_POINTER_COMMAND")]
-    pub type SchedulerPointerCommand =
-        crate::Reg<scheduler_pointer_command::SchedulerPointerCommandSpec>;
-    #[doc = "Pointer command transaction: compressed pointer in bits 0..19, four-bit argument in bits 20..23 and START in bit 31; completion returns a two-bit result in bits 28..29."]
-    pub mod scheduler_pointer_command {
-        #[doc = "Register `SCHEDULER_POINTER_COMMAND` reader"]
-        pub type R = crate::R<SchedulerPointerCommandSpec>;
-        #[doc = "Register `SCHEDULER_POINTER_COMMAND` writer"]
-        pub type W = crate::W<SchedulerPointerCommandSpec>;
+    #[doc = "SCHEDULER_SKIP_REQUEST (rw) register accessor: Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and SCHEDULER_STATE.BUSY are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_skip_request::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_skip_request::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_skip_request`] module"]
+    #[doc(alias = "SCHEDULER_SKIP_REQUEST")]
+    pub type SchedulerSkipRequest = crate::Reg<scheduler_skip_request::SchedulerSkipRequestSpec>;
+    #[doc = "Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and SCHEDULER_STATE.BUSY are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established."]
+    pub mod scheduler_skip_request {
+        #[doc = "Register `SCHEDULER_SKIP_REQUEST` reader"]
+        pub type R = crate::R<SchedulerSkipRequestSpec>;
+        #[doc = "Register `SCHEDULER_SKIP_REQUEST` writer"]
+        pub type W = crate::W<SchedulerSkipRequestSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        #[doc = "Field `ARGUMENT_LOW_4` reader - "]
-        pub type ArgumentLow4R = crate::FieldReader;
-        #[doc = "Field `ARGUMENT_LOW_4` writer - "]
-        pub type ArgumentLow4W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
+        #[doc = "Field `HARDWARE_LIST_INDEX` reader - "]
+        pub type HardwareListIndexR = crate::FieldReader;
+        #[doc = "Field `HARDWARE_LIST_INDEX` writer - "]
+        pub type HardwareListIndexW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `RESULT` reader - "]
         pub type ResultR = crate::FieldReader;
         #[doc = "Field `RESULT` writer - "]
@@ -42087,8 +42087,8 @@ pub mod bluetooth_controller_core {
             }
             #[doc = "Bits 20:23"]
             #[inline(always)]
-            pub fn argument_low_4(&self) -> ArgumentLow4R {
-                ArgumentLow4R::new(((self.bits >> 20) & 0x0f) as u8)
+            pub fn hardware_list_index(&self) -> HardwareListIndexR {
+                HardwareListIndexR::new(((self.bits >> 20) & 0x0f) as u8)
             }
             #[doc = "Bits 28:29"]
             #[inline(always)]
@@ -42106,34 +42106,36 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, SchedulerPointerCommandSpec> {
+            ) -> CompressedSramPointerW<'_, SchedulerSkipRequestSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
             #[doc = "Bits 20:23"]
             #[inline(always)]
-            pub fn argument_low_4(&mut self) -> ArgumentLow4W<'_, SchedulerPointerCommandSpec> {
-                ArgumentLow4W::new(self, 20)
+            pub fn hardware_list_index(
+                &mut self,
+            ) -> HardwareListIndexW<'_, SchedulerSkipRequestSpec> {
+                HardwareListIndexW::new(self, 20)
             }
             #[doc = "Bits 28:29"]
             #[inline(always)]
-            pub fn result(&mut self) -> ResultW<'_, SchedulerPointerCommandSpec> {
+            pub fn result(&mut self) -> ResultW<'_, SchedulerSkipRequestSpec> {
                 ResultW::new(self, 28)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
-            pub fn start(&mut self) -> StartW<'_, SchedulerPointerCommandSpec> {
+            pub fn start(&mut self) -> StartW<'_, SchedulerSkipRequestSpec> {
                 StartW::new(self, 31)
             }
         }
-        #[doc = "Pointer command transaction: compressed pointer in bits 0..19, four-bit argument in bits 20..23 and START in bit 31; completion returns a two-bit result in bits 28..29.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_pointer_command::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_pointer_command::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerPointerCommandSpec;
-        impl crate::RegisterSpec for SchedulerPointerCommandSpec {
+        #[doc = "Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and SCHEDULER_STATE.BUSY are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_skip_request::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_skip_request::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SchedulerSkipRequestSpec;
+        impl crate::RegisterSpec for SchedulerSkipRequestSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`scheduler_pointer_command::R`](R) reader structure"]
-        impl crate::Readable for SchedulerPointerCommandSpec {}
-        #[doc = "`write(|w| ..)` method takes [`scheduler_pointer_command::W`](W) writer structure"]
-        impl crate::Writable for SchedulerPointerCommandSpec {
+        #[doc = "`read()` method returns [`scheduler_skip_request::R`](R) reader structure"]
+        impl crate::Readable for SchedulerSkipRequestSpec {}
+        #[doc = "`write(|w| ..)` method takes [`scheduler_skip_request::W`](W) writer structure"]
+        impl crate::Writable for SchedulerSkipRequestSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -44144,11 +44146,11 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "OPERATIONAL_CONTROL_0204 (rw) register accessor: Complete operational functions independently set and clear bit zero through fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_control_0204::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_control_0204::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_control_0204`] module"]
+    #[doc = "OPERATIONAL_CONTROL_0204 (rw) register accessor: Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_control_0204::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_control_0204::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_control_0204`] module"]
     #[doc(alias = "OPERATIONAL_CONTROL_0204")]
     pub type OperationalControl0204 =
         crate::Reg<operational_control_0204::OperationalControl0204Spec>;
-    #[doc = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations."]
+    #[doc = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."]
     pub mod operational_control_0204 {
         #[doc = "Register `OPERATIONAL_CONTROL_0204` reader"]
         pub type R = crate::R<OperationalControl0204Spec>;
@@ -44172,7 +44174,7 @@ pub mod bluetooth_controller_core {
                 Control0W::new(self, 0)
             }
         }
-        #[doc = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_control_0204::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_control_0204::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_control_0204::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_control_0204::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct OperationalControl0204Spec;
         impl crate::RegisterSpec for OperationalControl0204Spec {
             type Ux = u32;
@@ -44184,10 +44186,10 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "OPERATIONAL_STATUS_0208 (r) register accessor: Two complete operational functions consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set, then clear the control bit. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0208::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_status_0208`] module"]
+    #[doc = "OPERATIONAL_STATUS_0208 (r) register accessor: Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0208::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_status_0208`] module"]
     #[doc(alias = "OPERATIONAL_STATUS_0208")]
     pub type OperationalStatus0208 = crate::Reg<operational_status_0208::OperationalStatus0208Spec>;
-    #[doc = "Two complete operational functions consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set, then clear the control bit. The remaining bits and the hardware meaning of bit zero are unknown."]
+    #[doc = "Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown."]
     pub mod operational_status_0208 {
         #[doc = "Register `OPERATIONAL_STATUS_0208` reader"]
         pub type R = crate::R<OperationalStatus0208Spec>;
@@ -44200,7 +44202,7 @@ pub mod bluetooth_controller_core {
                 Status0R::new((self.bits & 1) != 0)
             }
         }
-        #[doc = "Two complete operational functions consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set, then clear the control bit. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0208::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0208::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct OperationalStatus0208Spec;
         impl crate::RegisterSpec for OperationalStatus0208Spec {
             type Ux = u32;
@@ -44295,23 +44297,23 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "OPERATIONAL_STATUS_0324 (r) register accessor: Two complete operational functions read the complete word; its inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0324::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_status_0324`] module"]
+    #[doc = "OPERATIONAL_STATUS_0324 (r) register accessor: The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0324::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_status_0324`] module"]
     #[doc(alias = "OPERATIONAL_STATUS_0324")]
     pub type OperationalStatus0324 = crate::Reg<operational_status_0324::OperationalStatus0324Spec>;
-    #[doc = "Two complete operational functions read the complete word; its inner encoding remains unknown."]
+    #[doc = "The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown."]
     pub mod operational_status_0324 {
         #[doc = "Register `OPERATIONAL_STATUS_0324` reader"]
         pub type R = crate::R<OperationalStatus0324Spec>;
-        #[doc = "Field `IMAGE` reader - "]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `STATUS_0` reader - "]
+        pub type Status0R = crate::BitReader;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn status_0(&self) -> Status0R {
+                Status0R::new((self.bits & 1) != 0)
             }
         }
-        #[doc = "Two complete operational functions read the complete word; its inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0324::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0324::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct OperationalStatus0324Spec;
         impl crate::RegisterSpec for OperationalStatus0324Spec {
             type Ux = u32;
@@ -44319,10 +44321,10 @@ pub mod bluetooth_controller_core {
         #[doc = "`read()` method returns [`operational_status_0324::R`](R) reader structure"]
         impl crate::Readable for OperationalStatus0324Spec {}
     }
-    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
+    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
     #[doc(alias = "OPERATIONAL_WORD_036C")]
     pub type OperationalWord036c = crate::Reg<operational_word_036c::OperationalWord036cSpec>;
-    #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."]
+    #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned."]
     pub mod operational_word_036c {
         #[doc = "Register `OPERATIONAL_WORD_036C` reader"]
         pub type R = crate::R<OperationalWord036cSpec>;
@@ -44333,11 +44335,21 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `LOCK_MODIFY_HARDWARE_LIST_INDEX` writer - Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."]
         pub type LockModifyHardwareListIndexW<'a, REG> =
             crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `CANCELLATION_HARDWARE_LIST_INDEX` reader - Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."]
+        pub type CancellationHardwareListIndexR = crate::FieldReader;
+        #[doc = "Field `CANCELLATION_HARDWARE_LIST_INDEX` writer - Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."]
+        pub type CancellationHardwareListIndexW<'a, REG> =
+            crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:3 - Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."]
             #[inline(always)]
             pub fn lock_modify_hardware_list_index(&self) -> LockModifyHardwareListIndexR {
                 LockModifyHardwareListIndexR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7 - Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."]
+            #[inline(always)]
+            pub fn cancellation_hardware_list_index(&self) -> CancellationHardwareListIndexR {
+                CancellationHardwareListIndexR::new(((self.bits >> 4) & 0x0f) as u8)
             }
         }
         impl W {
@@ -44348,8 +44360,15 @@ pub mod bluetooth_controller_core {
             ) -> LockModifyHardwareListIndexW<'_, OperationalWord036cSpec> {
                 LockModifyHardwareListIndexW::new(self, 0)
             }
+            #[doc = "Bits 4:7 - Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."]
+            #[inline(always)]
+            pub fn cancellation_hardware_list_index(
+                &mut self,
+            ) -> CancellationHardwareListIndexW<'_, OperationalWord036cSpec> {
+                CancellationHardwareListIndexW::new(self, 4)
+            }
         }
-        #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct OperationalWord036cSpec;
         impl crate::RegisterSpec for OperationalWord036cSpec {
             type Ux = u32;
@@ -44690,8 +44709,12 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_clear_0 {
         #[doc = "Register `IRQ_CLEAR_0` writer"]
         pub type W = crate::W<IrqClear0Spec>;
-        #[doc = "Field `UNCLASSIFIED_0_14` writer - "]
-        pub type Unclassified0_14W<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
+        #[doc = "Field `UNCLASSIFIED_0_6` writer - "]
+        pub type Unclassified0_6W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `SOURCE_7` writer - Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 bit zero."]
+        pub type Source7W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_8_14` writer - "]
+        pub type Unclassified8_14W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         #[doc = "Field `SOURCE_15` writer - "]
         pub type Source15W<'a, REG> = crate::BitWriter1C<'a, REG>;
         #[doc = "Field `UNCLASSIFIED_16_20` writer - "]
@@ -44705,10 +44728,20 @@ pub mod bluetooth_interrupt_bank {
         #[doc = "Field `UNCLASSIFIED_29_31` writer - "]
         pub type Unclassified29_31W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         impl W {
-            #[doc = "Bits 0:14"]
+            #[doc = "Bits 0:6"]
             #[inline(always)]
-            pub fn unclassified_0_14(&mut self) -> Unclassified0_14W<'_, IrqClear0Spec> {
-                Unclassified0_14W::new(self, 0)
+            pub fn unclassified_0_6(&mut self) -> Unclassified0_6W<'_, IrqClear0Spec> {
+                Unclassified0_6W::new(self, 0)
+            }
+            #[doc = "Bit 7 - Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 bit zero."]
+            #[inline(always)]
+            pub fn source_7(&mut self) -> Source7W<'_, IrqClear0Spec> {
+                Source7W::new(self, 7)
+            }
+            #[doc = "Bits 8:14"]
+            #[inline(always)]
+            pub fn unclassified_8_14(&mut self) -> Unclassified8_14W<'_, IrqClear0Spec> {
+                Unclassified8_14W::new(self, 8)
             }
             #[doc = "Bit 15"]
             #[inline(always)]
@@ -59718,6 +59751,22 @@ pub mod field_read {
             .frequency_ready()
             .bit()
     }
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`OPERATIONAL_STATUS_0324`.`STATUS_0` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_cancellation_status_0324(
+        registers: &crate::BluetoothControllerCore,
+    ) -> bool {
+        registers.operational_status_0324().read().status_0().bit()
+    }
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`OPERATIONAL_STATUS_0208`.`STATUS_0` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_cancellation_status_0208(
+        registers: &crate::BluetoothControllerCore,
+    ) -> bool {
+        registers.operational_status_0208().read().status_0().bit()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -60052,6 +60101,16 @@ pub mod field_snapshot_read {
             sample.shift_low_or_init_high_unknown().bits(),
             sample.shift_high_unknown().bits(),
         )
+    }
+
+    /// Read `START`, `RESULT` from one `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_SKIP_REQUEST` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_bluetooth_scheduler_skip_request(
+        registers: &crate::BluetoothControllerCore,
+    ) -> (bool, u8) {
+        let sample = registers.scheduler_skip_request().read();
+        (sample.start().bit(), sample.result().bits())
     }
 }
 
@@ -61103,6 +61162,21 @@ pub mod fixed_register_image {
             registers
                 .scheduler_lifecycle_request()
                 .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000080` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CLEAR_0`.
+    #[inline]
+    pub fn acknowledge_bluetooth_scheduler_cancellation_source(
+        registers: &crate::BluetoothInterruptBank,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .irq_clear_0()
+                .write_with_zero(|writer| writer.bits(0x00000080));
         }
     }
 }
@@ -62873,6 +62947,32 @@ pub mod zero_based_field_write {
             });
         }
     }
+
+    /// Write `COMPRESSED_SRAM_POINTER`, `HARDWARE_LIST_INDEX`, `START` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_SKIP_REQUEST` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_skip_request(
+        registers: &crate::BluetoothControllerCore,
+        compressed_sram_pointer_value: u32,
+        hardware_list_index_value: u8,
+        start_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .scheduler_skip_request()
+                .write_with_zero(|writer| {
+                    writer
+                        .compressed_sram_pointer()
+                        .set(compressed_sram_pointer_value)
+                        .hardware_list_index()
+                        .set(hardware_list_index_value)
+                        .start()
+                        .bit(start_value)
+                });
+        }
+    }
 }
 
 /// Safe fresh one-bit samples republished over otherwise zero register images.
@@ -63114,6 +63214,18 @@ pub mod zero_register_write {
         unsafe {
             registers
                 .tx_gain_compensation_aux()
+                .write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_SKIP_REQUEST`.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_skip_request(registers: &crate::BluetoothControllerCore) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .scheduler_skip_request()
                 .write_with_zero(|writer| writer);
         }
     }
@@ -71626,6 +71738,66 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.control_20().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields `[CANCELLATION_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_cancellation_hardware_list_index(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.operational_word_036c().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .cancellation_hardware_list_index()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields `[CANCELLATION_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_cancellation_hardware_list_index(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.operational_word_036c().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .cancellation_hardware_list_index()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 fields `[CONTROL_0]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_scheduler_cancellation_control(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.operational_control_0204().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.control_0().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 fields `[CONTROL_0]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_cancellation_control(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.operational_control_0204().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.control_0().bit((input & 0x00000001) != 0)
         });
     }
 }

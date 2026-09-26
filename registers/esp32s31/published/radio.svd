@@ -17747,8 +17747,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SCHEDULER_POINTER_COMMAND</name>
-          <description>Pointer command transaction: compressed pointer in bits 0..19, four-bit argument in bits 20..23 and START in bit 31; completion returns a two-bit result in bits 28..29.</description>
+          <name>SCHEDULER_SKIP_REQUEST</name>
+          <description>Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and SCHEDULER_STATE.BUSY are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established.</description>
           <addressOffset>0xEC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17757,11 +17757,23 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
-              <name>ARGUMENT_LOW_4</name>
+              <name>HARDWARE_LIST_INDEX</name>
               <bitOffset>20</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>RESULT</name>
@@ -18640,7 +18652,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>OPERATIONAL_CONTROL_0204</name>
-          <description>Complete operational functions independently set and clear bit zero through fresh-read RMW operations.</description>
+          <description>Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.</description>
           <addressOffset>0x204</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18654,7 +18666,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>OPERATIONAL_STATUS_0208</name>
-          <description>Two complete operational functions consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set, then clear the control bit. The remaining bits and the hardware meaning of bit zero are unknown.</description>
+          <description>Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
           <addressOffset>0x208</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -18703,21 +18715,21 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>OPERATIONAL_STATUS_0324</name>
-          <description>Two complete operational functions read the complete word; its inner encoding remains unknown.</description>
+          <description>The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
           <addressOffset>0x324</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>STATUS_0</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
         <register>
           <name>OPERATIONAL_WORD_036C</name>
-          <description>Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.</description>
+          <description>Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned.</description>
           <addressOffset>0x36C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18726,6 +18738,18 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>LOCK_MODIFY_HARDWARE_LIST_INDEX</name>
               <description>Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify.</description>
               <bitOffset>0</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>CANCELLATION_HARDWARE_LIST_INDEX</name>
+              <description>Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero.</description>
+              <bitOffset>4</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
                 <range>
@@ -18847,9 +18871,20 @@ also exposing scheduler, sleep or memory-management state.
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>UNCLASSIFIED_0_14</name>
+              <name>UNCLASSIFIED_0_6</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>15</bitWidth>
+              <bitWidth>7</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_7</name>
+              <description>Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 bit zero.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_8_14</name>
+              <bitOffset>8</bitOffset>
+              <bitWidth>7</bitWidth>
             </field>
             <field>
               <name>SOURCE_15</name>

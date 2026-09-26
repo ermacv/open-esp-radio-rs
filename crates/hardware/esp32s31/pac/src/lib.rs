@@ -78,6 +78,13 @@ pub use bluetooth::{
         BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
         BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
         BluetoothSchedulerRunEventPublished,
+        cancellation::{
+            BluetoothSchedulerCancellationDisposition, BluetoothSchedulerCancellationIndexed,
+            BluetoothSchedulerCancellationReleased, BluetoothSchedulerCancellationRequested,
+            BluetoothSchedulerCancellationSourceAcknowledged, BluetoothSchedulerSkipCleared,
+            BluetoothSchedulerSkipDisposition, BluetoothSchedulerSkipPublished,
+            BluetoothSchedulerSkipRequest, BluetoothSchedulerSkipResult,
+        },
         insertion::{
             BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
             BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,

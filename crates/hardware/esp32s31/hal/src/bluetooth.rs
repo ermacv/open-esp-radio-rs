@@ -45,13 +45,15 @@ pub use oer_esp32s31_pac::{
     BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptAcknowledged,
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
     BluetoothPhyRegisterInitInputs, BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,
-    BluetoothScanStartPublished, BluetoothSchedulerExecutionLockDisposition,
-    BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
-    BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
-    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
-    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothScanStartPublished, BluetoothSchedulerCancellationDisposition,
+    BluetoothSchedulerCancellationIndexed, BluetoothSchedulerCancellationReleased,
+    BluetoothSchedulerCancellationRequested, BluetoothSchedulerCancellationSourceAcknowledged,
+    BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
+    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
+    BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListHeadRetirementObservation, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
@@ -59,12 +61,14 @@ pub use oer_esp32s31_pac::{
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceCleared,
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunEventPublished,
-    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalIdle,
-    BluetoothSchedulerSoftwareListRemovalInterruptStep, BluetoothSchedulerSoftwareListRemovalJoin,
-    BluetoothSchedulerSoftwareListRemovalReady, BluetoothSchedulerStopped,
-    BluetoothSchedulerStoppedHeadRetirement, BluetoothSchedulerStoppedItem,
-    BluetoothSchedulerWorkObservation, ModemSysconBluetoothObservation,
-    PlatformClockPowerObservation, SharedModemClockObservation,
+    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSkipCleared,
+    BluetoothSchedulerSkipDisposition, BluetoothSchedulerSkipPublished,
+    BluetoothSchedulerSkipRequest, BluetoothSchedulerSkipResult,
+    BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalInterruptStep,
+    BluetoothSchedulerSoftwareListRemovalJoin, BluetoothSchedulerSoftwareListRemovalReady,
+    BluetoothSchedulerStopped, BluetoothSchedulerStoppedHeadRetirement,
+    BluetoothSchedulerStoppedItem, BluetoothSchedulerWorkObservation,
+    ModemSysconBluetoothObservation, PlatformClockPowerObservation, SharedModemClockObservation,
 };
 
 /// Opaque HAL owner for the exclusive Bluetooth route before task/IRQ split.
@@ -980,6 +984,16 @@ impl InterruptRegistersOwner {
         self.registers.capture_scheduler_work()
     }
 
+    /// Acknowledge interrupt source 7 for one indexed scheduler
+    /// cancellation, between its index publication and its control request.
+    pub fn acknowledge_scheduler_cancellation_source(
+        &mut self,
+        indexed: &BluetoothSchedulerCancellationIndexed,
+    ) -> BluetoothSchedulerCancellationSourceAcknowledged {
+        self.registers
+            .acknowledge_scheduler_cancellation_source(indexed)
+    }
+
     /// Capture the interrupt-owned scheduler BUSY field for one lock/modify
     /// decision without borrowing task-side controller registers.
     pub fn capture_scheduler_lock_modify_interrupt(
@@ -1566,6 +1580,94 @@ impl ControllerHal<'_> {
         scheduler: BluetoothSchedulerWorkObservation,
     ) -> BluetoothSchedulerExecutionModifyDisposition {
         self.registers.observe_scheduler_execution_modify(scheduler)
+    }
+
+    /// Publish one scheduler skip request through the restricted PAC.
+    ///
+    /// # Safety
+    ///
+    /// The request must name an initialized item linked in that hardware
+    /// list. The caller must retain the pinned item and exclusive list
+    /// ownership until the request is observed and cleared.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains the listed item lifetime and list serialization"
+    )]
+    pub unsafe fn publish_scheduler_skip(
+        &mut self,
+        request: BluetoothSchedulerSkipRequest,
+    ) -> BluetoothSchedulerSkipPublished {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
+        unsafe { self.registers.publish_scheduler_skip(request) }
+    }
+
+    /// Perform one finite skip-request observation.
+    pub fn observe_scheduler_skip(
+        &mut self,
+        published: &BluetoothSchedulerSkipPublished,
+        scheduler: BluetoothSchedulerWorkObservation,
+    ) -> BluetoothSchedulerSkipDisposition {
+        self.registers.observe_scheduler_skip(published, scheduler)
+    }
+
+    /// Clear a skip request after its terminal observation.
+    pub fn clear_scheduler_skip(
+        &mut self,
+        published: BluetoothSchedulerSkipPublished,
+    ) -> BluetoothSchedulerSkipCleared {
+        self.registers.clear_scheduler_skip(published)
+    }
+
+    /// Publish the scheduler cancellation hardware-list index.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have observed the lock/modify request idle and must
+    /// retain exclusive list ownership until the cancellation control is
+    /// released.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller serializes the shared operational word"
+    )]
+    pub unsafe fn index_scheduler_cancellation(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerCancellationIndexed {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
+        unsafe { self.registers.index_scheduler_cancellation(index) }
+    }
+
+    /// Set the scheduler cancellation control after its index and source
+    /// acknowledgement.
+    pub fn request_scheduler_cancellation(
+        &mut self,
+        indexed: BluetoothSchedulerCancellationIndexed,
+        acknowledged: BluetoothSchedulerCancellationSourceAcknowledged,
+    ) -> BluetoothSchedulerCancellationRequested {
+        self.registers
+            .request_scheduler_cancellation(indexed, acknowledged)
+    }
+
+    /// Perform one finite observation of the cancellation control waits.
+    pub fn observe_scheduler_cancellation(
+        &mut self,
+        requested: &mut BluetoothSchedulerCancellationRequested,
+        scheduler: BluetoothSchedulerWorkObservation,
+    ) -> BluetoothSchedulerCancellationDisposition {
+        self.registers
+            .observe_scheduler_cancellation(requested, scheduler)
+    }
+
+    /// Clear the scheduler cancellation control.
+    pub fn release_scheduler_cancellation(
+        &mut self,
+        requested: BluetoothSchedulerCancellationRequested,
+    ) -> BluetoothSchedulerCancellationReleased {
+        self.registers.release_scheduler_cancellation(requested)
     }
 
     /// Publish the synchronous BTMAC scheduler event through the restricted

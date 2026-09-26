@@ -10356,3 +10356,87 @@ fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[zero-based-field-writes]]
+name = "publish_bluetooth_scheduler_skip_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_SKIP_REQUEST"
+fields = ["COMPRESSED_SRAM_POINTER", "HARDWARE_LIST_INDEX", "START"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[field-snapshot-reads]]
+name = "observe_bluetooth_scheduler_skip_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_SKIP_REQUEST"
+fields = ["START", "RESULT"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[zero-register-writes]]
+name = "clear_bluetooth_scheduler_skip_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_SKIP_REQUEST"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[bounded-domains]]
+name = "BluetoothSchedulerCancellationHardwareListIndex"
+description = "Zero-based hardware-list index accepted by the reviewed scheduler cancellation sequence."
+min = 0
+max = 0x0f
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_scheduler_cancellation_hardware_list_index"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_WORD_036C"
+fields = [{ field = "CANCELLATION_HARDWARE_LIST_INDEX", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_scheduler_cancellation_hardware_list_index"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_WORD_036C"
+fields = [{ field = "CANCELLATION_HARDWARE_LIST_INDEX", source-bit-offset = 0 }]
+domain = "BluetoothSchedulerCancellationHardwareListIndex"
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_scheduler_cancellation_control"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_CONTROL_0204"
+fields = [{ field = "CONTROL_0", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_scheduler_cancellation_control"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_CONTROL_0204"
+fields = [{ field = "CONTROL_0", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_cancellation_status_0324"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_STATUS_0324"
+field = "STATUS_0"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_cancellation_status_0208"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_STATUS_0208"
+field = "STATUS_0"
+sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
+
+[[fixed-register-images]]
+name = "acknowledge_bluetooth_scheduler_cancellation_source"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_CLEAR_0"
+value = 0x00000080
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]

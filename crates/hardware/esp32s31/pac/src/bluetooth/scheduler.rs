@@ -560,6 +560,8 @@ impl BluetoothTaskRegisters {
 #[cfg(test)]
 mod tests;
 
+pub(crate) mod cancellation;
+
 pub(crate) mod insertion;
 
 pub(crate) mod lock_modify;

@@ -1904,6 +1904,29 @@ impl PhyDigitalGainImage {
     }
 }
 
+/// Zero-based hardware-list index accepted by the reviewed scheduler cancellation sequence.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothSchedulerCancellationHardwareListIndex(u32);
+
+impl BluetoothSchedulerCancellationHardwareListIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000000f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000000f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete TIMER0 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154Timer0ThresholdWord(u32);
@@ -7757,6 +7780,44 @@ pub(crate) fn clear_bluetooth_memory_list_2_initial_control(
     registers: &crate::svd::BluetoothControllerCore,
 ) {
     crate::svd::field_replace_modify::clear_bluetooth_memory_list_2_initial_control(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_scheduler_cancellation_hardware_list_index` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_scheduler_cancellation_hardware_list_index(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_scheduler_cancellation_hardware_list_index(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_scheduler_cancellation_hardware_list_index` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_scheduler_cancellation_hardware_list_index(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothSchedulerCancellationHardwareListIndex,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_scheduler_cancellation_hardware_list_index(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_scheduler_cancellation_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_scheduler_cancellation_control(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_scheduler_cancellation_control(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_scheduler_cancellation_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_scheduler_cancellation_control(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_scheduler_cancellation_control(registers);
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

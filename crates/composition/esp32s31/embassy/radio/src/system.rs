@@ -1,9 +1,11 @@
 //! The arbiter, its shared resources and the periodic tracking timer.
 
+use core::{future::Future, task::Poll};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     mutex::{Mutex, MutexGuard},
 };
+
 use embassy_time::Timer;
 use oer_esp32s31_hal::{
     root::{ConcurrentPartitions, RadioHardware},
@@ -152,18 +154,64 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
     /// As [`Self::run_tracking`].
     pub async fn run_tracking_observed(
         &self,
-        mut observe: impl FnMut(&Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError>),
+        observe: impl FnMut(&Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError>),
     ) -> ConcurrentPhyTrackingError {
+        match self
+            .run_tracking_until(core::future::pending::<()>(), observe)
+            .await
+        {
+            Err(error) => error,
+            Ok(()) => unreachable!("a pending stop never completes"),
+        }
+    }
+
+    /// [`Self::run_tracking_observed`] that ends when `stop` completes.
+    ///
+    /// `stop` is polled only while the timer waits between ticks; a started
+    /// tick always runs to its terminal result first. Stopping therefore
+    /// never leaves a tracking transaction half done, and the owner may end
+    /// the timer without a reset.
+    ///
+    /// # Errors
+    ///
+    /// A tick failed or the domain is poisoned; the radio then requires
+    /// reset. `Ok(())` means `stop` completed.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping this future itself follows [`Self::run_tracking`]: do it only
+    /// while it waits; prefer `stop`.
+    pub async fn run_tracking_until(
+        &self,
+        stop: impl Future<Output = ()>,
+        mut observe: impl FnMut(&Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError>),
+    ) -> Result<(), ConcurrentPhyTrackingError> {
+        let mut stop = core::pin::pin!(stop);
         loop {
-            Timer::after_micros(DEFAULT_PLL_TRACK_PERIOD_MICROS).await;
+            let mut period = Timer::after_micros(DEFAULT_PLL_TRACK_PERIOD_MICROS);
+            let stopped = core::future::poll_fn(|context| {
+                if stop.as_mut().poll(context).is_ready() {
+                    return Poll::Ready(true);
+                }
+                if core::pin::Pin::new(&mut period).poll(context).is_ready() {
+                    return Poll::Ready(false);
+                }
+                Poll::Pending
+            })
+            .await;
+            if stopped {
+                return Ok(());
+            }
             let tick = self.track().await;
             observe(&tick);
             match tick {
                 Ok(ConcurrentTrackingTick::Unavailable(ConcurrentPhyError::Poisoned)) => {
-                    return ConcurrentPhyTrackingError::Rejected(ConcurrentPhyError::Poisoned);
+                    return Err(ConcurrentPhyTrackingError::Rejected(
+                        ConcurrentPhyError::Poisoned,
+                    ));
                 }
                 Ok(_) => {}
-                Err(error) => return error,
+                Err(error) => return Err(error),
             }
         }
     }

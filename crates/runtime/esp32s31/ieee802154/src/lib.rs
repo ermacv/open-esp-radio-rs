@@ -24,13 +24,13 @@ use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
     channel::Channel,
 };
-use oer_esp32s31_hal::ieee802154::ll::Ieee802154LowLevel;
+use oer_esp32s31_hal::ieee802154::{Ieee802154MultipanIndex, ll::Ieee802154LowLevel};
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
-    AcceptedCommand, CommandError, Frame, PendingTable, RadioCommand, RadioEvent, RadioFault,
-    RadioState, ReceivedFrame, RequestId, RxMetadata, TxStatus,
+    AcceptedCommand, AutoPendingMode, CommandError, Frame, PendingTable, RadioCommand, RadioEvent,
+    RadioFault, RadioState, ReceivedFrame, RequestId, RxMetadata, TxStatus,
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
@@ -378,6 +378,21 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         change: impl FnOnce(&mut PendingTable<PENDING_TABLE_SIZE>) -> T,
     ) -> Result<T, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| change(radio.engine().pending_table()))
+    }
+
+    /// `esp_ieee802154_set_pending_mode`: how the automatic acknowledgement
+    /// decides frame pending. The PIB publishes it before the next operation.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn set_pending_mode(&self, mode: AutoPendingMode) -> Result<(), Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| {
+            radio
+                .engine()
+                .pib()
+                .set_pending_mode(Ieee802154MultipanIndex::CONTEXT0, mode);
+        })
     }
 
     /// `esp_ieee802154_set_transmit_security` for the secured `[PHR, PSDU...]`

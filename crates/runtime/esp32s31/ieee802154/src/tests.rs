@@ -206,3 +206,27 @@ fn uninstall_returns_the_parts_and_discards_events() {
     assert!(runtime.events.try_receive().is_err());
     assert_eq!(runtime.state(), Err(Ieee802154RuntimeError::NotInstalled));
 }
+
+#[test]
+fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
+    let runtime = Runtime::<4>::new();
+    assert_eq!(
+        runtime.set_pending_mode(oer_ieee802154::AutoPendingMode::Enable),
+        Err(Ieee802154RuntimeError::NotInstalled)
+    );
+    let runtime = enabled::<4>();
+    runtime
+        .set_pending_mode(oer_ieee802154::AutoPendingMode::Enhanced)
+        .unwrap();
+    let mode = runtime.installed.lock(|installed| {
+        installed
+            .borrow_mut()
+            .as_mut()
+            .unwrap()
+            .radio
+            .engine()
+            .pib()
+            .pending_mode(oer_esp32s31_hal::ieee802154::Ieee802154MultipanIndex::CONTEXT0)
+    });
+    assert_eq!(mode, oer_ieee802154::AutoPendingMode::Enhanced);
+}

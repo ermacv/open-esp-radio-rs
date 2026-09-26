@@ -13,7 +13,6 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-pac",
     "oer-esp32s31-soc-esp-hal",
     "oer-esp32s31-phy",
-    "oer-esp32s31-ieee802154-dma",
     "oer-esp32s31-ieee802154",
     "oer-esp32s31-ieee80211-dma",
     "oer-esp32s31-radio-esp-hal",

@@ -1164,57 +1164,10 @@ impl Ieee802154EventObservation {
     }
 }
 
-/// One opaque, non-replayable hard-IRQ sample.
-///
-/// The private raw token retains the exact fourteen-bit W1C image sampled at
-/// interrupt entry. Status and ED/CCA observations are captured only when the
-/// matching event bit was present. The value is intentionally neither `Copy`
-/// nor `Clone`; acknowledgement consumes it.
-#[must_use = "an IEEE 802.15.4 interrupt snapshot must be acknowledged"]
-#[derive(Debug)]
-pub struct Ieee802154InterruptSnapshot {
-    acknowledgement: crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
-    events: Ieee802154EventObservation,
-    rx_abort_reason: Option<Ieee802154RxAbortReasonObservation>,
-    tx_abort_reason: Option<Ieee802154TxAbortReasonObservation>,
-    ed_rss_code: Option<i8>,
-    cca_busy: Option<bool>,
-}
-
-impl Ieee802154InterruptSnapshot {
-    /// Classify the sampled event field without exposing its register image.
-    pub const fn event_classification(
-        &self,
-    ) -> Result<Ieee802154EventMask, Ieee802154EventObservationError> {
-        self.events.classification()
-    }
-
-    /// Return typed RX-abort evidence only for an RX-abort event.
-    pub const fn rx_abort_reason(&self) -> Option<Ieee802154RxAbortReasonObservation> {
-        self.rx_abort_reason
-    }
-
-    /// Return typed TX-abort evidence only for a TX-abort event.
-    pub const fn tx_abort_reason(&self) -> Option<Ieee802154TxAbortReasonObservation> {
-        self.tx_abort_reason
-    }
-
-    /// Return the signed ED result only for an ED-DONE event.
-    pub const fn ed_rss_code(&self) -> Option<i8> {
-        self.ed_rss_code
-    }
-
-    /// Return the CCA result only for an ED-DONE event.
-    pub const fn cca_busy(&self) -> Option<bool> {
-        self.cca_busy
-    }
-}
-
 /// One ordered DMA-free energy-detection/CCA register sample.
 ///
 /// `EVENT_STATUS` remains observation-only in this copyable diagnostic value.
-/// Runtime acknowledgement uses the separate affine interrupt snapshot, so a
-/// read-only report can never be replayed as a W1C image.
+/// It can never be replayed as a W1C image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Ieee802154EdCcaSnapshot {
     duration: Option<Ieee802154EdDurationUnits>,
@@ -1748,33 +1701,6 @@ pub struct Ieee802154TimerLease<'registers> {
 }
 
 impl Ieee802154TimerLease<'_> {
-    /// Add TIMER0 to the closed runtime interrupt baseline before deadline
-    /// sampling begins.
-    #[doc(hidden)]
-    pub fn enable_acknowledgement_watchdog_event(&mut self) {
-        self.registers.enable_runtime_events_with_timer0();
-    }
-
-    /// Publish the already-derived TIMER0 threshold and fixed start image.
-    ///
-    /// This PAC layer assigns no unit to `threshold`; the runtime owns the
-    /// source-defined monotonic-clock conversion.
-    #[doc(hidden)]
-    pub fn start_acknowledgement_watchdog(&mut self, threshold: Ieee802154Timer0ThresholdWord) {
-        self.set_timer0_threshold(threshold);
-        crate::device_fence();
-        self.start_timer0();
-        crate::device_fence();
-    }
-
-    /// Stop TIMER0 and restore the reviewed runtime baseline without TIMER0.
-    #[doc(hidden)]
-    pub fn disarm_acknowledgement_watchdog(&mut self) {
-        self.stop_timer0();
-        self.registers.enable_runtime_events_without_timer0();
-        crate::device_fence();
-    }
-
     /// Publish one complete TIMER0 threshold without assigning clock units.
     pub fn set_timer0_threshold(&mut self, threshold: Ieee802154Timer0ThresholdWord) {
         self.registers.publish_timer0_threshold(threshold.get());
@@ -2676,34 +2602,6 @@ impl Ieee802154InterruptSetup {
 }
 
 impl Ieee802154InterruptRegisters {
-    /// Capture one ISR event/status batch before acknowledging any event.
-    ///
-    /// This follows the pinned public ISR ordering: sample the complete event
-    /// image, capture RX/TX abort evidence selected by that image, and retain
-    /// the exact W1C token for a later consuming acknowledge.
-    pub fn sample_interrupt(&self) -> Ieee802154InterruptSnapshot {
-        let acknowledgement = self.registers.sample_event_status();
-        let events = Ieee802154EventObservation::from_snapshot(&acknowledgement);
-        let rx_abort = events.contains(Ieee802154Event::RxAbort);
-        let tx_abort = events.contains(Ieee802154Event::TxAbort);
-        let ed_done = events.contains(Ieee802154Event::EdDone);
-        let rx_status = rx_abort.then(|| self.registers.rx_status_readback());
-        let tx_status = tx_abort.then(|| self.registers.tx_status_readback());
-
-        Ieee802154InterruptSnapshot {
-            acknowledgement,
-            events,
-            rx_abort_reason: rx_status.map(|status| {
-                Ieee802154RxAbortReasonObservation::from_field(status.abort_reason_code())
-            }),
-            tx_abort_reason: tx_status.map(|status| {
-                Ieee802154TxAbortReasonObservation::from_field(status.abort_reason_code())
-            }),
-            ed_rss_code: ed_done.then(|| self.registers.ed_rss_code()),
-            cca_busy: ed_done.then(|| self.registers.cca_busy()),
-        }
-    }
-
     /// `ieee802154_ll_get_events`: one read of the event field, without
     /// acknowledging it.
     pub fn events(&self) -> Ieee802154EventObservation {
@@ -2739,13 +2637,6 @@ impl Ieee802154InterruptRegisters {
         Ieee802154TxAbortReasonObservation::from_field(
             self.registers.tx_status_readback().abort_reason_code(),
         )
-    }
-
-    /// Acknowledge exactly one sampled W1C event image and consume it.
-    pub fn acknowledge_interrupt(&mut self, snapshot: Ieee802154InterruptSnapshot) {
-        self.registers
-            .acknowledge_event_status(snapshot.acknowledgement);
-        crate::device_fence();
     }
 
     /// Close one finite hard-IRQ epoch and return inactive setup ownership.

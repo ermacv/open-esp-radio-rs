@@ -753,27 +753,6 @@ impl TaskRegisters {
         });
     }
 
-    /// Enable the reviewed runtime event baseline with TIMER0.
-    #[doc(hidden)]
-    pub fn enable_runtime_events_with_timer0(&mut self) {
-        self.registers.event_enable().modify(|_, writer| {
-            writer.tx_done().set_bit();
-            writer.rx_done().set_bit();
-            writer.ack_tx_done().set_bit();
-            writer.ack_rx_done().set_bit();
-            writer.rx_abort().set_bit();
-            writer.tx_abort().set_bit();
-            writer.ed_done().set_bit();
-            writer.unclassified_7().bit(false);
-            writer.timer0_overflow().set_bit();
-            writer.timer1_overflow().set_bit();
-            writer.clock_count_match().clear_bit();
-            writer.tx_sfd_done().set_bit();
-            writer.rx_sfd_done().set_bit();
-            writer.unclassified_13().bit(false)
-        });
-    }
-
     /// Mask every receive-abort reason through the generated field variant.
     #[doc(hidden)]
     pub fn mask_all_rx_aborts(&mut self) {

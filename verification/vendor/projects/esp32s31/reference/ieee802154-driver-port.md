@@ -107,7 +107,7 @@ frame semantics belong to the protocol crate.
 | `ieee802154_ll.h` (S31): `IEEE802154_RSSI_COMPENSATION_VALUE` 0, receive sensitivity -104 | driver engine | partial: RSSI compensation 0; receive sensitivity absent |
 | `ieee802154_mac_init` / `deinit`, `ieee802154_enable` / `disable` | HAL IEEE 802.15.4 lifecycle, HAL `ll`, driver engine | partial: clocks, reset and masked foundation; the engine's `mac_init` reinitializes the PIB, applies `ll::mac_init_registers` and clears the receive ring; `ieee802154_txon_delay_set` and interrupt allocation are not composed. `deinit` writes no MAC register |
 | `ieee802154_pib_*`, `ieee802154_pib_update` | HAL `pib` | implemented: mutable PIB with pending mark, per-channel power resolved through the external level provider, pending mode and `rx_when_idle`; the engine publishes it before each operation |
-| `start_ed`, `tx_init`, `rx_init`, `ieee802154_transmit`, `receive`, `energy_detect`, `cca`, `sleep` | driver engine | implemented; the runtime still drives the per-operation command executor |
+| `start_ed`, `tx_init`, `rx_init`, `ieee802154_transmit`, `receive`, `energy_detect`, `cca`, `sleep` | driver engine, runtime entry points | implemented |
 | `event_end_process` register steps | HAL `ll` | implemented |
 | `stop_rx` ... `stop_ed`, `stop_current_operation` | driver engine over HAL `ll` | implemented |
 | `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver engine | implemented without test mode, multi-PAN and software coexistence |
@@ -118,7 +118,7 @@ frame semantics belong to the protocol crate.
 | `esp_ieee802154_frame.c` | protocol `mac::header` | implemented over `[PHR, PSDU...]` images; malformed headers report absent fields where the vendor reads outside the frame |
 | `esp_ieee802154_sec.c` | driver engine over HAL `ll` | implemented |
 | `esp_ieee802154_multipan.c` | HAL policy, driver | partial: PAC multi-PAN fields |
-| `esp_ieee802154_event.c` callbacks | driver engine environment, runtime event handoff | partial: engine notifications; the runtime still uses the acknowledged-interrupt queue |
+| `esp_ieee802154_event.c` callbacks | driver engine environment, runtime event queue | implemented; the enhanced-ACK generator is a platform function |
 | `esp_ieee802154_util.c` coexistence scenes, channel conversion | coexistence driver, HAL | partial: channel conversion only |
 | `ieee802154_sleep`, `rf_enable` / `rf_disable`, sleep retention | driver engine, HAL and PHY | partial: engine sleep state; RF gating (off in the default build) and retention absent |
 | `esp_ieee802154_debug.c` | not ported: optional statistics | absent |

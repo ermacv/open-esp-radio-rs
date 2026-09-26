@@ -1,156 +1,317 @@
-use core::{
-    future::Future,
-    task::{Context, Poll, Waker},
-};
+//! Runtime behavior over a register model: the engine's vendor sequences
+//! are covered by the engine tests and the host stand; these tests cover the
+//! lock, the event queue and slot ownership.
+
+use std::{boxed::Box, vec::Vec};
 
 use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use oer_esp32s31_ieee802154::{MacOperation, ValidationMacCommandExecutor};
-use oer_esp32s31_ieee802154_irq::{
-    Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservationError,
-    acknowledged_interrupt_for_validation,
+use oer_esp32s31_hal::ieee802154::{
+    Ieee802154CcaMode, Ieee802154Channel, Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels,
+    ll::{
+        Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
+        Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
+        Ieee802154RxAbortEnableSet, Ieee802154RxStateCode, Ieee802154RxStatus, Ieee802154Timer,
+        Ieee802154TxAbortEnableSet,
+    },
+    mac::{
+        Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReasonObservation,
+        Ieee802154TxAbortReasonObservation,
+    },
+    pib::{Ieee802154MultipanIndex, Ieee802154PibDefaults},
 };
-use oer_esp32s31_ieee802154_mac::{MacNoDmaResources, MacReady};
+use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154State};
 
-use super::*;
+use super::{
+    Ieee802154EventsLost, Ieee802154Hardware, Ieee802154Platform, Ieee802154RadioEvent,
+    Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
+};
 
-fn publish<M: RawMutex, const DEPTH: usize>(
-    irq: &Ieee802154IrqRuntime<M, DEPTH>,
+/// Register model: the scenario sets the event image; getters of the
+/// automatic-ACK policy return the last value written.
+#[derive(Default)]
+struct Model {
     events: Ieee802154EventMask,
-    ed_rss: i8,
-) -> Result<(), Ieee802154AcknowledgedInterrupt> {
-    irq.post(acknowledged_interrupt_for_validation(
-        Ok(events),
-        None,
-        None,
-        ed_rss,
-        false,
-    ))
+    rx_address: Option<u32>,
+    rx_auto_ack: bool,
+    tx_auto_ack: bool,
+    frequency_code: u8,
+    commands: Vec<Ieee802154LlCommand>,
 }
 
-fn publish_unclassified<M: RawMutex, const DEPTH: usize>(
-    irq: &Ieee802154IrqRuntime<M, DEPTH>,
-) -> Result<(), Ieee802154AcknowledgedInterrupt> {
-    irq.post(acknowledged_interrupt_for_validation(
-        Err(Ieee802154EventObservationError),
-        None,
-        None,
-        0,
-        false,
-    ))
+impl Ieee802154Hardware for Model {
+    type Port<'a> = &'a mut Model;
+
+    fn port(&mut self) -> Self::Port<'_> {
+        self
+    }
 }
 
-fn active_cca() -> MacOperationActive<MacNoDmaResources, ValidationMacCommandExecutor> {
-    MacOperation::for_validation()
-        .start(MacReady::new().request_clear_channel_assessment())
-        .unwrap()
+macro_rules! ignored {
+    ($($name:ident($($arg:ty),*);)*) => {
+        $(fn $name(&mut self, $(_: $arg),*) {})*
+    };
+}
+
+impl Ieee802154LowLevel for &mut Model {
+    ignored! {
+        enable_event(Ieee802154Event);
+        disable_event(Ieee802154Event);
+        enable_all_events();
+        enable_tx_aborts(Ieee802154TxAbortEnableSet);
+        enable_rx_aborts(Ieee802154RxAbortEnableSet);
+        disable_rx_aborts(Ieee802154RxAbortEnableSet);
+        set_ed_sample_mode(Ieee802154EdSampleMode);
+        disable_coex();
+        set_tx_power(&Ieee802154ResolvedTxPower<'_>);
+        set_cca_mode(Ieee802154CcaMode);
+        set_cca_threshold(i8);
+        set_tx_enhanced_ack(bool);
+        set_coordinator(bool);
+        set_promiscuous(bool);
+        set_pending_mode(bool);
+        set_pending_bit(bool);
+        set_transmit_security(bool);
+        set_timer_threshold(Ieee802154Timer, u32);
+        start_timer(Ieee802154Timer);
+        stop_timer(Ieee802154Timer);
+        disable_etm_channel(Ieee802154EtmChannel);
+        enable_etm_channel(Ieee802154EtmChannel);
+        set_etm_route(Ieee802154EtmRoute);
+        set_tx_address(u32);
+        set_ed_duration(u16);
+        notify_enhanced_ack_generated();
+        set_multipan_panid(Ieee802154MultipanIndex, u16);
+        set_multipan_short_address(Ieee802154MultipanIndex, u16);
+        set_multipan_extended_address(Ieee802154MultipanIndex, [u8; 8]);
+        set_ack_timeout(u16);
+        set_security_address(&[u8; 8]);
+        set_security_key(&[u8; 16]);
+        set_security_offset(u8);
+    }
+
+    fn set_command(&mut self, command: Ieee802154LlCommand) {
+        self.commands.push(command);
+    }
+    fn events(&mut self) -> Ieee802154EventObservation {
+        Ieee802154EventObservation::from_named(self.events)
+    }
+    fn clear_events(&mut self, mask: Ieee802154EventMask) {
+        self.events = self.events.difference(mask);
+    }
+    fn rx_abort_reason(&mut self) -> Ieee802154RxAbortReasonObservation {
+        Ieee802154RxAbortReasonObservation::Unclassified
+    }
+    fn tx_abort_reason(&mut self) -> Ieee802154TxAbortReasonObservation {
+        Ieee802154TxAbortReasonObservation::Unclassified
+    }
+    fn rx_status(&mut self) -> Ieee802154RxStatus {
+        Ieee802154RxStatus::new(
+            0,
+            Ieee802154RxAbortReasonObservation::Unclassified,
+            Ieee802154RxStateCode::new(0).unwrap(),
+            false,
+            false,
+            false,
+        )
+    }
+    fn is_current_rx_frame(&mut self) -> bool {
+        false
+    }
+    fn set_rx_address(&mut self, address: u32) {
+        self.rx_address = Some(address);
+    }
+    fn tx_auto_ack(&mut self) -> bool {
+        self.tx_auto_ack
+    }
+    fn rx_auto_ack(&mut self) -> bool {
+        self.rx_auto_ack
+    }
+    fn tx_enhanced_ack(&mut self) -> bool {
+        false
+    }
+    fn pending_mode(&mut self) -> bool {
+        false
+    }
+    fn frequency_code(&mut self) -> u8 {
+        self.frequency_code
+    }
+    fn ed_rss(&mut self) -> i8 {
+        -70
+    }
+    fn cca_busy(&mut self) -> bool {
+        false
+    }
+    fn set_channel(&mut self, channel: Ieee802154Channel) {
+        self.frequency_code = channel.frequency_code().value();
+    }
+    fn set_tx_auto_ack(&mut self, enable: bool) {
+        self.tx_auto_ack = enable;
+    }
+    fn set_rx_auto_ack(&mut self, enable: bool) {
+        self.rx_auto_ack = enable;
+    }
+    fn etm_channel_enabled(&mut self, _: Ieee802154EtmChannel) -> bool {
+        false
+    }
+    fn multipan_panid(&mut self, _: Ieee802154MultipanIndex) -> u16 {
+        0
+    }
+    fn multipan_short_address(&mut self, _: Ieee802154MultipanIndex) -> u16 {
+        0
+    }
+    fn multipan_extended_address(&mut self, _: Ieee802154MultipanIndex) -> [u8; 8] {
+        [0; 8]
+    }
+    fn ack_timeout(&mut self) -> u16 {
+        0
+    }
+}
+
+static LEVELS: [i8; 1] = [0];
+
+const PLATFORM: Ieee802154Platform = Ieee802154Platform {
+    now_micros: || 0,
+    enhanced_ack: None,
+};
+
+/// 2006 data frame without an ACK request.
+const DATA: [u8; 13] = [
+    0x0c, 0x41, 0x98, 0x01, 0x34, 0x12, 0xff, 0xff, 0x78, 0x56, 0xaa, 0x00, 0x00,
+];
+
+type Runtime<const EVENTS: usize> = Ieee802154Runtime<'static, NoopRawMutex, Model, EVENTS>;
+
+fn installed<const EVENTS: usize>() -> Runtime<EVENTS> {
+    let runtime = Runtime::new();
+    let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
+    let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+    let parts = Ieee802154RuntimeParts {
+        engine: Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default()),
+        hardware: Model::default(),
+    };
+    assert!(
+        runtime
+            .install(parts, PLATFORM, Ieee802154PibDefaults::default())
+            .is_ok()
+    );
+    runtime
+}
+
+impl<const EVENTS: usize> Runtime<EVENTS> {
+    /// Model the MAC DMA writing `frame` and raising `events`, then run the
+    /// interrupt handler.
+    fn interrupt(&self, frame: Option<&[u8]>, events: &[Ieee802154Event]) {
+        self.installed.lock(|installed| {
+            let mut installed = installed.borrow_mut();
+            let parts = &mut installed.as_mut().unwrap().parts;
+            if let Some(frame) = frame {
+                let address = parts.hardware.rx_address.unwrap();
+                assert!(parts.engine.model_dma_write(address, frame));
+            }
+            parts.hardware.events = events
+                .iter()
+                .fold(Ieee802154EventMask::NONE, |mask, event| {
+                    mask.union(event.mask())
+                });
+        });
+        self.on_interrupt();
+    }
 }
 
 #[test]
-fn acknowledged_values_cross_the_async_handoff_in_order() {
-    let irq = Ieee802154IrqRuntime::<NoopRawMutex, 2>::new();
-    publish(&irq, Ieee802154Event::TxSfdDone.mask(), -20).unwrap();
-    publish(&irq, Ieee802154Event::TxDone.mask(), -21).unwrap();
+fn install_initializes_the_mac_once() {
+    let runtime = installed::<4>();
+    assert_eq!(runtime.state(), Ok(Ieee802154State::Idle));
 
-    let first = block_on(irq.wait()).unwrap();
-    let second = block_on(irq.wait()).unwrap();
-    assert_eq!(
-        first.event_classification(),
-        Ok(Ieee802154Event::TxSfdDone.mask())
+    let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
+    let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+    let second = Ieee802154RuntimeParts {
+        engine: Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default()),
+        hardware: Model::default(),
+    };
+    assert!(
+        runtime
+            .install(second, PLATFORM, Ieee802154PibDefaults::default())
+            .is_err()
     );
-    assert_eq!(first.ed_rss_code(), -20);
-    assert_eq!(
-        second.event_classification(),
-        Ok(Ieee802154Event::TxDone.mask())
-    );
-    assert_eq!(second.ed_rss_code(), -21);
 }
 
 #[test]
-fn overflow_is_a_fail_closed_operation_error() {
-    let irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
-    publish(&irq, Ieee802154Event::TxSfdDone.mask(), 0).unwrap();
-    let rejected = publish(&irq, Ieee802154Event::TxDone.mask(), 0)
-        .expect_err("the full handoff returns the exact rejected token");
-    assert_eq!(
-        rejected.event_classification(),
-        Ok(Ieee802154Event::TxDone.mask())
-    );
-
-    assert!(matches!(block_on(irq.wait()), Err(Ieee802154IrqOverflow)));
-    assert_eq!(irq.drain(), Ieee802154IrqDrain::default());
+fn operations_without_an_engine_are_refused() {
+    let runtime = Runtime::<4>::new();
+    assert_eq!(runtime.receive(), Err(Ieee802154RuntimeError::NotInstalled));
+    runtime.on_interrupt();
+    assert!(runtime.uninstall().is_none());
 }
 
 #[test]
-fn cancellation_before_an_irq_keeps_the_exact_active_owner_recoverable() {
-    let irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
-    let mut operation = Ieee802154Operation::new(active_cca());
-    let mut future = std::boxed::Box::pin(operation.advance(&irq));
-    let mut context = Context::from_waker(Waker::noop());
-    assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
-    drop(future);
-
-    assert!(operation.is_active());
-    assert!(!operation.is_quarantined());
-    assert!(operation.into_active().is_some());
+fn a_transmission_completes_through_the_event_queue() {
+    let runtime = installed::<4>();
+    runtime.transmit(&DATA, false).unwrap();
+    assert_eq!(
+        runtime.transmit(&[0; 129], false),
+        Err(Ieee802154RuntimeError::FrameImage)
+    );
+    runtime.interrupt(None, &[Ieee802154Event::TxDone]);
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::Transmitted { ack: None })
+    );
+    assert_eq!(runtime.state(), Ok(Ieee802154State::Sleep));
 }
 
 #[test]
-fn consumed_overflow_decode_and_rejection_errors_quarantine_the_owner() {
-    let overflow_irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
-    publish(&overflow_irq, Ieee802154Event::TxSfdDone.mask(), 0).unwrap();
-    let rejected = publish(&overflow_irq, Ieee802154Event::TxDone.mask(), 0)
-        .expect_err("the full handoff returns the exact rejected token");
-    assert_eq!(
-        rejected.event_classification(),
-        Ok(Ieee802154Event::TxDone.mask())
-    );
-    let mut overflow = Ieee802154Operation::new(active_cca());
-    assert!(matches!(
-        block_on(overflow.advance(&overflow_irq)),
-        Err(Ieee802154OperationError::IrqOverflow)
-    ));
-    assert!(!overflow.is_active());
-    assert!(overflow.is_quarantined());
-    assert!(overflow.into_active().is_none());
+fn a_received_frame_stays_in_its_slot_until_taken() {
+    let runtime = installed::<4>();
+    runtime.with_pib(|pib| pib.set_rx_when_idle(true)).unwrap();
+    runtime.receive().unwrap();
+    runtime.interrupt(Some(&DATA), &[Ieee802154Event::RxDone]);
+    let Ok(Ieee802154RadioEvent::Received { slot, info }) = block_on(runtime.next_event()) else {
+        panic!("a frame was received");
+    };
+    assert!(info.process);
+    assert_eq!(slot.index(), 0);
+    let (frame, _) = runtime.take_frame(slot).unwrap();
+    assert_eq!(frame[..DATA.len()], DATA);
+    assert_eq!(runtime.state(), Ok(Ieee802154State::Rx));
+}
 
-    let decode_irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
-    publish_unclassified(&decode_irq).unwrap();
-    let mut decode = Ieee802154Operation::new(active_cca());
-    assert!(matches!(
-        block_on(decode.advance(&decode_irq)),
-        Err(Ieee802154OperationError::Interrupt(
-            MacInterruptBatchError::UnclassifiedEvents(_)
-        ))
-    ));
-    assert!(!decode.is_active());
-    assert!(decode.is_quarantined());
-    assert!(decode.into_active().is_none());
+/// Overflow reports the loss once, keeps the queued event and returns
+/// every dropped frame's slot to the ring, so reception never falls back to
+/// the stub buffer while one frame is held.
+#[test]
+fn an_overflowing_queue_reports_the_loss_and_frees_the_slots() {
+    let runtime = installed::<1>();
+    runtime.with_pib(|pib| pib.set_rx_when_idle(true)).unwrap();
+    runtime.receive().unwrap();
+    for _ in 0..2 * oer_esp32s31_ieee802154::engine::RX_BUFFER_COUNT {
+        runtime.interrupt(Some(&DATA), &[Ieee802154Event::RxDone]);
+    }
+    let receiving_into_the_ring = runtime.installed.lock(|installed| {
+        let installed = installed.borrow();
+        let parts = &installed.as_ref().unwrap().parts;
+        parts
+            .engine
+            .model_rx_slot(parts.hardware.rx_address.unwrap())
+            .is_some()
+    });
+    assert!(receiving_into_the_ring);
 
-    let rejected_irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
-    publish(&rejected_irq, Ieee802154Event::TxDone.mask(), 0).unwrap();
-    let mut rejected = Ieee802154Operation::new(active_cca());
-    assert!(matches!(
-        block_on(rejected.advance(&rejected_irq)),
-        Err(Ieee802154OperationError::Rejected(_))
-    ));
-    assert!(!rejected.is_active());
-    assert!(rejected.is_quarantined());
-    assert!(rejected.into_active().is_none());
+    assert_eq!(block_on(runtime.next_event()), Err(Ieee802154EventsLost));
+    let Ok(Ieee802154RadioEvent::Received { slot, .. }) = block_on(runtime.next_event()) else {
+        panic!("the first frame stays queued");
+    };
+    assert_eq!(slot.index(), 0);
 }
 
 #[test]
-fn quiesced_epoch_drain_reports_every_stale_value() {
-    let irq = Ieee802154IrqRuntime::<NoopRawMutex, 2>::new();
-    publish(&irq, Ieee802154Event::RxSfdDone.mask(), 0).unwrap();
-    publish(&irq, Ieee802154Event::RxDone.mask(), 0).unwrap();
-
-    assert_eq!(
-        irq.drain(),
-        Ieee802154IrqDrain {
-            acknowledged_events: 2,
-            overflowed: false,
-        }
-    );
-    assert!(irq.try_take().is_none());
+fn uninstall_returns_the_parts_and_discards_events() {
+    let runtime = installed::<4>();
+    runtime.transmit(&DATA, false).unwrap();
+    runtime.interrupt(None, &[Ieee802154Event::TxDone]);
+    let parts = runtime.uninstall().expect("an engine was installed");
+    assert_eq!(parts.engine.state(), Ieee802154State::Disable);
+    assert!(runtime.events.try_receive().is_err());
+    assert_eq!(runtime.cca(), Err(Ieee802154RuntimeError::NotInstalled));
 }

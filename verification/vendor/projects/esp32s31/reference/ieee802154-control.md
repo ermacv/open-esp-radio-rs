@@ -244,16 +244,17 @@ postconditions:
   `bt_bb_get_tx_pwr_table()`.
 
 The PHY client set is shared with Wi-Fi and Bluetooth, and BTBB has its own
-first/last-user refcount. A control actor cannot safely replace either with an
+first/last-user refcount. A control owner cannot safely replace either with an
 unconditional boolean enable or release. Clock acquisition and MAC foundation
 writes do not imply calibrated RF, a locked/tracked PLL, valid TX timing, or
 on-air capability.
 
 ## Implementation boundary
 
-The pure control actor owns sequential transitions and deferred-next policy.
-The PAC owns register authority and affine W1C acknowledgement; the command
-executor retains exact DMA resources. The platform adapter owns source-132
-routing, while the Embassy handoff transfers bounded acknowledged values.
+The [MAC engine](../../../../../crates/hardware/esp32s31/driver/ieee802154/src/engine.rs)
+owns the vendor state machine, `next_operation` and its DMA buffers; the PAC
+owns register authority. The [runtime](../../../../../crates/runtime/esp32s31/ieee802154/src/lib.rs)
+serializes the engine with the MAC owners and queues its notifications, and
+the platform adapter owns source-132 routing.
 A `STOP` write is not a proof of terminal DMA quiescence. RF/BTBB readiness,
 TX-power policy and on-air service require separate evidence.

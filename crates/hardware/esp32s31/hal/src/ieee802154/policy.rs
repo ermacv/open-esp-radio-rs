@@ -507,13 +507,6 @@ pub(crate) trait Ieee802154MacPolicyBackend: Ieee802154MacPolicyWrites {
     fn mac_policy_readback(&mut self) -> Ieee802154MacPolicyReadback;
 }
 
-/// Operational static-policy backend: event delivery is owned by the active
-/// interrupt route, so only the policy fields are read back.
-pub(crate) trait Ieee802154MacPolicyRefreshBackend: Ieee802154MacPolicyWrites {
-    /// Sample the static-policy fields once after the device fence.
-    fn mac_policy_snapshot(&mut self) -> Ieee802154MacPolicySnapshot;
-}
-
 /// Publish the deterministic, known static policy and fence it.
 ///
 /// The missing TX-power operation is intentionally visible in this sequence:
@@ -579,20 +572,6 @@ where
     }
 
     Ok(backend)
-}
-
-/// Republish the static policy on the operational task owner before one
-/// command epoch and prove the sampled policy fields.
-///
-/// This is the same write sequence as [`configure_ieee802154_mac_policy`].
-/// Event and abort enables belong to the active interrupt route here, so the
-/// foundation masking invariants are deliberately not part of the readback.
-pub(crate) fn refresh_ieee802154_mac_policy(
-    backend: &mut impl Ieee802154MacPolicyRefreshBackend,
-    policy: Ieee802154MacPolicy,
-) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>> {
-    write_mac_policy(backend, policy);
-    verify_mac_policy_snapshot(backend.mac_policy_snapshot(), policy)
 }
 
 fn verify_foundation_readback(

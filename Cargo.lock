@@ -2490,15 +2490,8 @@ name = "oer-esp32s31-ieee802154"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154-dma",
- "oer-esp32s31-ieee802154-irq",
- "oer-esp32s31-ieee802154-mac",
  "oer-ieee802154",
 ]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-dma"
-version = "0.1.0"
 
 [[package]]
 name = "oer-esp32s31-ieee802154-esp-hal"
@@ -2506,24 +2499,6 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
- "oer-esp32s31-ieee802154-irq",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-irq"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-mac"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-ieee802154-dma",
- "oer-esp32s31-ieee802154-irq",
 ]
 
 [[package]]
@@ -2532,10 +2507,9 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-esp32s31-hal",
  "oer-esp32s31-ieee802154",
- "oer-esp32s31-ieee802154-dma",
- "oer-esp32s31-ieee802154-irq",
- "oer-esp32s31-ieee802154-mac",
+ "oer-ieee802154",
 ]
 
 [[package]]

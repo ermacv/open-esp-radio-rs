@@ -8,9 +8,9 @@ use oer_esp32s31_pac::{
 use super::{
     COEX_DISABLED_PTI, IEEE802154_MAX_ACK_TIMEOUT_MICROSECONDS, Ieee802154AckTimeout,
     Ieee802154CcaMode, Ieee802154MacControl, Ieee802154MacPolicy, Ieee802154MacPolicyBackend,
-    Ieee802154MacPolicyCheckpoint, Ieee802154MacPolicyReadback, Ieee802154MacPolicyRefreshBackend,
-    Ieee802154MacPolicySnapshot, Ieee802154MacPolicyWrites, Ieee802154PanIdentity,
-    configure_ieee802154_mac_policy, refresh_ieee802154_mac_policy, verify_ieee802154_mac_policy,
+    Ieee802154MacPolicyCheckpoint, Ieee802154MacPolicyReadback, Ieee802154MacPolicySnapshot,
+    Ieee802154MacPolicyWrites, Ieee802154PanIdentity, configure_ieee802154_mac_policy,
+    verify_ieee802154_mac_policy,
 };
 use crate::ieee802154::lifecycle::{Ieee802154Channel, Ieee802154ReadbackError};
 
@@ -67,13 +67,6 @@ impl Ieee802154MacPolicyBackend for FakeBackend {
     fn mac_policy_readback(&mut self) -> Ieee802154MacPolicyReadback {
         self.operations.push(Operation::Snapshot);
         self.readback
-    }
-}
-
-impl Ieee802154MacPolicyRefreshBackend for FakeBackend {
-    fn mac_policy_snapshot(&mut self) -> Ieee802154MacPolicySnapshot {
-        self.operations.push(Operation::Snapshot);
-        self.readback.policy
     }
 }
 
@@ -355,56 +348,6 @@ fn readback_reports_the_first_failed_checkpoint() {
     assert_eq!(
         failure.error().checkpoint,
         Ieee802154MacPolicyCheckpoint::CcaMode
-    );
-}
-
-#[test]
-fn refresh_uses_the_configure_sequence_and_ignores_operational_event_enables() {
-    let policy = policy();
-    // An active interrupt route enables events, so the foundation masks no
-    // longer hold; refresh must verify only the static-policy fields.
-    let foundation = Ieee802154FoundationSnapshot::new(
-        false,
-        false,
-        true,
-        true,
-        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
-        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
-    );
-    let mut backend =
-        backend_with_foundation(foundation, Ieee802154MacPolicySnapshot::from_policy(policy));
-
-    assert_eq!(refresh_ieee802154_mac_policy(&mut backend, policy), Ok(()));
-    assert_eq!(
-        backend.operations,
-        [
-            Operation::Channel(20),
-            Operation::CcaMode(Ieee802154CcaMode::CarrierAndEnergyDetection),
-            Operation::CcaThreshold(-67),
-            Operation::MacControl(policy.control()),
-            Operation::AckTimeout(109),
-            Operation::PrimaryIdentity(policy.identity()),
-            Operation::Fence,
-            Operation::Snapshot,
-        ]
-    );
-}
-
-#[test]
-fn refresh_reports_the_first_mismatched_policy_field() {
-    let policy = policy();
-    let mut snapshot = Ieee802154MacPolicySnapshot::from_policy(policy);
-    snapshot.cca_mode = Ieee802154CcaMode::Carrier;
-    snapshot.identity.extended_address[0] ^= 1;
-    let mut backend = backend(snapshot);
-
-    assert_eq!(
-        refresh_ieee802154_mac_policy(&mut backend, policy),
-        Err(Ieee802154ReadbackError {
-            checkpoint: Ieee802154MacPolicyCheckpoint::CcaMode,
-            expected: true,
-            observed: false,
-        })
     );
 }
 

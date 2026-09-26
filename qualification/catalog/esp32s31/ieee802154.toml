@@ -28,12 +28,11 @@ level = "lower-primitive"
 [source-facts.source-contract]
 id = "ieee802154-mac-operation-subset"
 composition = "production"
-scope = "The lower MAC actor and executor own RX without automatic ACK direct or CCA-gated TX ACK reception and DMA completion transitions"
-limits = "Lower operation ownership does not compose the RF-ready public service; automatic ACK generation CSMA/CA source matching timed operations and security are not implied"
+scope = "The MAC engine ported from the public ESP-IDF driver owns RX with hardware and enhanced ACK, direct and CCA-gated TX with ACK reception, ED/CCA, timed TX/RX, the receive ring and the pending decision; the runtime serializes it with the MAC owners and queues its notifications"
+limits = "Host differential comparison with the compiled vendor driver covers the software sequence only; RF readiness, whole-radio composition, CSMA/CA and on-air behavior are not implied"
 source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/mac/src/actor.rs",
-  "crates/hardware/esp32s31/driver/ieee802154/src/command_executor.rs",
-  "crates/runtime/esp32s31/ieee802154/src/owner.rs",
+  "crates/hardware/esp32s31/driver/ieee802154/src/engine.rs",
+  "crates/runtime/esp32s31/ieee802154/src/lib.rs",
 ]
 
 [[capabilities]]
@@ -249,11 +248,11 @@ id = "ieee802154-capability-sources-and-publication-scope"
 domain = "ieee802154"
 title = "Capability sources and publication scope"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary, not the S31 backend's supported-feature image. In particular,\n`CSMA_CA`, `SCHEDULED_TRANSMIT`, `AUTOMATIC_ACKNOWLEDGEMENT`, `SECURITY_OFFLOAD`\nand `SOURCE_MATCH` constants do not compose their corresponding operations.\nThe same applies to portable commands, configuration and software sleep states.\n\nThe [runtime MAC owner](../../../../runtime/esp32s31/ieee802154/src/owner.rs)\nprovides `receive_without_auto_ack()`, `transmit_without_ack()`,\n`transmit_with_ack()`, `clear_channel_assessment()` and `energy_detection()`.\nThese are lower runtime entry points, not a complete public RF-ready service.\nThe [MAC actor](mac/src/actor.rs) admits only Direct or\nClearChannelAssessment TX access; neither is a CSMA/CA scheduler."
+overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary, not the S31 backend's supported-feature image. In particular,\n`CSMA_CA`, `SCHEDULED_TRANSMIT`, `AUTOMATIC_ACKNOWLEDGEMENT`, `SECURITY_OFFLOAD`\nand `SOURCE_MATCH` constants do not compose their corresponding operations.\nThe same applies to portable commands, configuration and software sleep states.\n\nThe [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) starts the\noperations of the [MAC engine](src/engine.rs) ported from the public ESP-IDF\ndriver. These are runtime entry points, not a complete public RF-ready\nservice, and CCA-gated transmission is not a CSMA/CA scheduler."
 packages = [
     "oer-ieee802154",
     "oer-esp32s31-ieee802154-runtime",
-    "oer-esp32s31-ieee802154-mac",
+    "oer-esp32s31-ieee802154",
 ]
 
 [[sections]]
@@ -329,8 +328,8 @@ section = "ieee802154-phy-and-rf"
 title = "RSSI"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[RX frame view](dma/src/frame.rs) exposes the hardware RSSI byte; calibrated measurement through a complete receive service is not established."
-packages = ["oer-esp32s31-ieee802154-dma"]
+scope-and-limitations = "The [engine](src/engine.rs) reports the hardware RSSI byte with the S31 compensation 0; calibrated measurement through a complete receive service is not established."
+packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]
 id = "ieee802154-phy-and-rf-lqi"
@@ -338,7 +337,7 @@ section = "ieee802154-phy-and-rf"
 title = "LQI"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "RX frame view exposes hardware LQI; the whole-radio receive path remains incomplete."
+scope-and-limitations = "The engine reports hardware LQI; the whole-radio receive path remains incomplete."
 
 [[items]]
 id = "ieee802154-phy-and-rf-tx-power"
@@ -346,7 +345,7 @@ section = "ieee802154-phy-and-rf"
 title = "TX power"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[Power resolution](../../hal/src/ieee802154/tx_power.rs) validates caller-supplied levels and resolves a dBm request to an opaque provider index. A calibrated S31 provider and MMIO publication are not composed; the resolved value grants no hardware authority."
+scope-and-limitations = "[Power resolution](../../hal/src/ieee802154/tx_power.rs) validates caller-supplied levels and the PIB publishes the resolved index before each operation. A calibrated S31 level provider is not composed."
 packages = ["oer-esp32s31-hal"]
 
 [[items]]
@@ -389,7 +388,7 @@ section = "ieee802154-cca-and-channel-access"
 title = "CCA-before-TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The actor/executor owns ClearChannelThenTransmit command selection. Whole-radio transmission remains incomplete."
+scope-and-limitations = "The engine issues the CCA-then-TX command and reports CCA busy or failure. Whole-radio transmission remains incomplete."
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-csma-ca"
@@ -413,8 +412,8 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "RX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[RX DMA](dma/src/rx.rs), actor command, acknowledged completion and bounded frame extraction exist. RF-ready public service and on-air reception remain incomplete."
-packages = ["oer-esp32s31-ieee802154-dma"]
+scope-and-limitations = "The [engine](src/engine.rs) owns the twenty-buffer receive ring with its stub buffer and receive-when-idle rearm; the runtime hands frames to the consumer. RF-ready public service and on-air reception remain incomplete."
+packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-direct-tx"
@@ -422,8 +421,8 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Direct TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[TX DMA](dma/src/tx.rs), MAC actor and PAC command publication exist without a complete RF-ready radio composition."
-packages = ["oer-esp32s31-ieee802154-dma"]
+scope-and-limitations = "The engine copies the frame into its DMA buffer and starts the transmission; completion and failures reach the runtime queue. No complete RF-ready radio composition exists."
+packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-hardware-fcs-generation-check"
@@ -439,7 +438,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "TX ACK request and ACK reception"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "ACK-request admission, RX_ACK phase, watchdog and correlation exist. Complete on-air ACK exchange remains unqualified."
+scope-and-limitations = "The engine enters RX_ACK, runs the 200 ms ACK timer and reports the ACK frame or its absence. Complete on-air ACK exchange remains unqualified."
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-ack-timeout-configuration"
@@ -447,24 +446,24 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "ACK timeout configuration"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "Static policy validates and converts requests to hardware timeout units, then checks semantic readback. This does not establish a working ACK exchange."
+scope-and-limitations = "Static policy and the engine's public setter convert microseconds to 16-microsecond hardware units. This does not establish a working ACK exchange."
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-hardware-auto-ack-generation"
 section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Hardware Auto ACK generation"
-status = "fail-closed"
-level = "lower-primitive"
-scope-and-limitations = "The [command executor](src/command_executor.rs) rejects Receive when `tx_auto_ack` or `enhanced_ack_tx` is enabled. The exposed RX operation is explicitly `receive_without_auto_ack()`."
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The [engine](src/engine.rs) lets the hardware acknowledge 2003/2006 frames, selecting the pending bit before the ACK leaves. On-air ACK timing is not qualified."
 packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-enhanced-ack-tx"
 section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Enhanced ACK TX"
-status = "fail-closed"
-level = "lower-primitive"
-scope-and-limitations = "The same receive-policy guard prevents activation. No complete Enhanced ACK formatter/security/completion owner exists."
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames built by a caller-supplied generator; no production Enhanced ACK formatter or IE/security content owner exists."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-hardware-frame-filtering"
@@ -529,15 +528,15 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Automatic Frame Pending"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "Static `enhanced_pending` control and PAC frame-pending access exist. Source-match and pending-data lifecycle are absent; automatic ACK transmission remains blocked by the RX policy above."
+scope-and-limitations = "The engine selects the pending bit for each acknowledged frame from the PIB pending mode and the [pending table](../../../../protocols/ieee802154/src/mac/pending.rs). On-air behavior is not qualified."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-source-matching-table"
 section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Source Matching table"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No production add/remove/reset, address ownership or pending-data selection lifecycle exists."
+scope-and-limitations = "The protocol pending table owns add, clear and reset of short and extended addresses for interface zero; multi-PAN tables are absent."
 
 [[items]]
 id = "ieee802154-timing-mac-timers-clock-match"
@@ -553,8 +552,8 @@ section = "ieee802154-timing"
 title = "TX/RX SFD events"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[IRQ vocabulary](irq/src/lib.rs) and PAC events represent SFD observations. Complete source-route/runtime composition remains incomplete."
-packages = ["oer-esp32s31-ieee802154-irq"]
+scope-and-limitations = "The engine reports TX and RX SFD events through the runtime queue. Whole-radio composition remains incomplete."
+packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]
 id = "ieee802154-timing-rx-timestamp"
@@ -562,23 +561,23 @@ section = "ieee802154-timing"
 title = "RX timestamp"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "Timer/SFD primitives exist, but receive frames do not publish a timestamp in a validated monotonic radio epoch."
+scope-and-limitations = "The engine stamps each frame at its SFD with the platform microsecond clock; the timestamp is not validated against a radio epoch on hardware."
 
 [[items]]
 id = "ieee802154-timing-timed-tx-transmit-at"
 section = "ieee802154-timing"
 title = "Timed TX (`transmit_at`)"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No operational scheduled-TX owner composes timer, RF readiness, DMA and completion."
+scope-and-limitations = "The engine programs TIMER0 and modem ETM channel zero to start TX or CCA-then-TX at the requested time. RF readiness and on-air timing are not qualified."
 
 [[items]]
 id = "ieee802154-timing-timed-rx-receive-at"
 section = "ieee802154-timing"
 title = "Timed RX (`receive_at`)"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No operational scheduled-RX window owner exists."
+scope-and-limitations = "The engine programs TIMER1 and modem ETM channel one to open a receive window and closes it at its end unless a frame is in flight. RF readiness and on-air timing are not qualified."
 
 [[items]]
 id = "ieee802154-timing-coordinated-sampled-listening-csl"
@@ -594,15 +593,15 @@ section = "ieee802154-security-power-and-coexistence"
 title = "Hardware TX security"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "PAC security controls and programming access exist. No complete runtime key/nonce/counter and protected-frame publication lifecycle is composed. Register access does not establish security offload."
+scope-and-limitations = "The engine programs address, key and payload offset for one secured transmission and clears security at its end. No key/nonce/counter lifecycle is composed, and hardware security offload is not qualified."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-rx-on-when-idle"
 section = "ieee802154-security-power-and-coexistence"
 title = "RX-on-when-idle"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "Portable state exists without a dedicated S31 receive/rearm policy and radio lifetime."
+scope-and-limitations = "The engine rearms receive after each operation when the PIB receive-when-idle flag is set. Radio lifetime is not composed."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-radio-sleep-wake"
@@ -706,9 +705,9 @@ details = "Qualification capability: `active-interrupt-runtime`\n\nAgreement: Lo
 documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[references]]
-id = "ieee802154-qualification-scope-mapping-lower-rx-tx-actor-and-dma-public-dataplane"
+id = "ieee802154-qualification-scope-mapping-mac-engine-and-runtime-public-dataplane"
 section = "ieee802154-qualification-scope-mapping"
-title = "Lower RX/TX actor and DMA / public dataplane"
+title = "MAC engine and runtime / public dataplane"
 kind = "qualification-mapping"
 details = "Qualification capability: `rx-tx-dataplane`\n\nAgreement: `ieee802154-mac-operation-subset` exists; complete RF-ready public operation is still incomplete."
 documents = ["qualification/targets/esp32s31/ieee802154.toml"]
@@ -730,43 +729,43 @@ details = "Authority: Typed register operations and hardware-access leases"
 packages = ["oer-esp32s31-pac"]
 
 [[references]]
-id = "ieee802154-ownership-and-readiness-dma"
+id = "ieee802154-ownership-and-readiness-dma-buffers"
 section = "ieee802154-ownership-and-readiness"
-title = "[DMA](dma/src/lib.rs)"
+title = "[DMA buffers](src/engine/buffers.rs)"
 kind = "source-reference"
-details = "Authority: CPU/device buffer ownership, frame geometry and terminal reclamation"
-packages = ["oer-esp32s31-ieee802154-dma"]
+details = "Authority: Engine-owned receive ring, transmit and enhanced-ACK frames with whole-image volatile copies"
+packages = ["oer-esp32s31-ieee802154"]
 
 [[references]]
-id = "ieee802154-ownership-and-readiness-mac-actor"
+id = "ieee802154-ownership-and-readiness-mac-engine"
 section = "ieee802154-ownership-and-readiness"
-title = "[MAC actor](mac/src/actor.rs)"
+title = "[MAC engine](src/engine.rs)"
 kind = "source-reference"
-details = "Authority: Serialized operation state, acknowledged IRQ batches, ACK watchdog and completion"
-packages = ["oer-esp32s31-ieee802154-mac"]
+details = "Authority: The ported ESP-IDF state machine, interrupt handling, ACK timer, pending decision and operation stops"
+packages = ["oer-esp32s31-ieee802154"]
 
 [[references]]
-id = "ieee802154-ownership-and-readiness-irq"
+id = "ieee802154-ownership-and-readiness-frame-inspection"
 section = "ieee802154-ownership-and-readiness"
-title = "[IRQ](irq/src/lib.rs)"
+title = "[MAC header and pending table](../../../../protocols/ieee802154/src/mac/header.rs)"
 kind = "source-reference"
-details = "Authority: Bounded event/abort classification and acknowledged batch handoff"
-packages = ["oer-esp32s31-ieee802154-irq"]
+details = "Authority: Portable header inspection and the frame-pending table"
+packages = ["oer-ieee802154"]
+
+[[references]]
+id = "ieee802154-ownership-and-readiness-low-level"
+section = "ieee802154-ownership-and-readiness"
+title = "[HAL LL backend](../../hal/src/ieee802154/ll.rs)"
+kind = "source-reference"
+details = "Authority: One method per vendor LL accessor over the joined task and interrupt owners"
+packages = ["oer-esp32s31-hal"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-runtime"
 section = "ieee802154-ownership-and-readiness"
-title = "[Runtime](src/lib.rs)"
+title = "[Runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs)"
 kind = "source-reference"
-details = "Authority: Executor-neutral command/completion progression; PAC executor enforces operation policy"
-packages = ["oer-esp32s31-ieee802154"]
-
-[[references]]
-id = "ieee802154-ownership-and-readiness-embassy-owner"
-section = "ieee802154-ownership-and-readiness"
-title = "[Runtime owner](../../../../runtime/esp32s31/ieee802154/src/owner.rs)"
-kind = "source-reference"
-details = "Authority: Async waits and retained lower MAC/DMA owners"
+details = "Authority: Engine and MAC owners under one lock, interrupt entry and bounded event queue"
 packages = ["oer-esp32s31-ieee802154-runtime"]
 
 [[references]]
@@ -794,10 +793,10 @@ packages = ["oer-ieee802154"]
 [[references]]
 id = "ieee802154-source-lower-runtime-entry-points"
 section = "ieee802154-capability-sources-and-publication-scope"
-title = "Lower runtime owner and MAC actor entry points"
+title = "Runtime operation entry points"
 kind = "source-reference"
-details = "The lower operations do not establish a complete public RF-ready service, and Direct or ClearChannelAssessment access is not a CSMA/CA scheduler."
+details = "The runtime operations start the ported vendor operations; they do not establish a complete public RF-ready service, and CCA-gated transmission is not a CSMA/CA scheduler."
 packages = [
     "oer-esp32s31-ieee802154-runtime",
-    "oer-esp32s31-ieee802154-mac",
+    "oer-esp32s31-ieee802154",
 ]

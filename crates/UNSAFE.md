@@ -56,7 +56,6 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-pac` | `hardware/esp32s31/pac/` |
 | `esp32s31-soc` | `adapters/esp-hal/esp32s31/soc/` |
 | `esp32s31-phy` | `hardware/esp32s31/phy/` |
-| `esp32s31-ieee802154-dma` | `hardware/esp32s31/driver/ieee802154/dma/` |
 | `esp32s31-ieee802154` | `hardware/esp32s31/driver/ieee802154/` |
 | `esp32s31-wifi-dma` | `hardware/esp32s31/driver/ieee80211/dma/` |
 | `esp32s31-radio-platform-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |

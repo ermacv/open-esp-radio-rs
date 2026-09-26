@@ -281,6 +281,31 @@ pub fn mac_init_registers<Ll: Ieee802154LowLevel + ?Sized>(ll: &mut Ll) {
     ll.disable_coex();
 }
 
+/// The task owner and its active interrupt owner, held together for the
+/// life of an interrupt-driven MAC epoch.
+#[must_use = "the MAC owners must be separated and returned to their route"]
+pub struct Ieee802154MacOwners {
+    task: Ieee802154TaskOwner,
+    interrupts: Ieee802154InterruptOwner,
+}
+
+impl Ieee802154MacOwners {
+    /// Hold the task owner with the interrupt owner it activated.
+    pub const fn new(task: Ieee802154TaskOwner, interrupts: Ieee802154InterruptOwner) -> Self {
+        Self { task, interrupts }
+    }
+
+    /// Separate the owners, for interrupt deactivation.
+    pub fn into_parts(self) -> (Ieee802154TaskOwner, Ieee802154InterruptOwner) {
+        (self.task, self.interrupts)
+    }
+
+    /// Borrow both owners as one LL port.
+    pub fn port(&mut self) -> Ieee802154MacPort<'_> {
+        Ieee802154MacPort::new(&mut self.task, &mut self.interrupts)
+    }
+}
+
 /// The MAC task and interrupt owners joined for one critical section.
 ///
 /// The public driver runs its operation starts, stops and interrupt handler

@@ -32,7 +32,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
 | `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
-| `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio actors; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler), its `memory/` and IEEE 802.15.4 `{dma,irq,mac}/` hold their lower ownership boundaries; the IEEE 802.15.4 root owns one affine MAC operation |
+| `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; the IEEE 802.15.4 root is the MAC engine ported from the public ESP-IDF driver |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/embassy/esp32s31/` | Executor/time platform ABI and coexistence mailbox |

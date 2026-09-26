@@ -98,29 +98,7 @@ name = "oer-esp32s31-ieee802154"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154-dma",
- "oer-esp32s31-ieee802154-irq",
- "oer-esp32s31-ieee802154-mac",
  "oer-ieee802154",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-dma"
-version = "0.1.0"
-
-[[package]]
-name = "oer-esp32s31-ieee802154-irq"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-mac"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-ieee802154-dma",
- "oer-esp32s31-ieee802154-irq",
 ]
 
 [[package]]

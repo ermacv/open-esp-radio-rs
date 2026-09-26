@@ -5,19 +5,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Executor-independent IRQ bottom half and operation owners for the ESP32-S31 IEEE 802.15.4 driver"
+description = "Executor-independent ESP32-S31 IEEE 802.15.4 radio runtime over the ported MAC engine"
 
 [dependencies]
 embassy-sync = "0.8.0"
-oer-esp32s31-ieee802154-dma = { path = "../../../hardware/esp32s31/driver/ieee802154/dma" }
-oer-esp32s31-ieee802154-irq = { path = "../../../hardware/esp32s31/driver/ieee802154/irq" }
-oer-esp32s31-ieee802154-mac = { path = "../../../hardware/esp32s31/driver/ieee802154/mac" }
+oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal" }
 oer-esp32s31-ieee802154 = { path = "../../../hardware/esp32s31/driver/ieee802154" }
+oer-ieee802154 = { path = "../../../protocols/ieee802154" }
 
 [dev-dependencies]
 embassy-futures = "0.1.2"
-oer-esp32s31-ieee802154-irq = { path = "../../../hardware/esp32s31/driver/ieee802154/irq", features = ["validation-probes"] }
-oer-esp32s31-ieee802154 = { path = "../../../hardware/esp32s31/driver/ieee802154", features = ["validation-probes"] }
 
 [lints]
 workspace = true

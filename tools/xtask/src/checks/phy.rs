@@ -14,7 +14,6 @@ const PHY_PACKAGES: &[&str] = &[
     "oer-memory",
     "oer-esp32s31-coex",
     "oer-esp32s31-hal",
-    "oer-esp32s31-ieee802154-irq",
     "oer-esp32s31-pac",
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-phy",

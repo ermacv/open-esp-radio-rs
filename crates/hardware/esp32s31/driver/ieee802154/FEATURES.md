@@ -45,8 +45,8 @@ Canonical section: `ieee802154-cca-and-channel-access`.
 ## RX/TX dataplane and acknowledgments
 
 Canonical section: `ieee802154-rx-tx-dataplane-and-acknowledgments`.
-The exposed receive operation remains explicitly bounded to operation without
-automatic ACK generation.
+The MAC engine is ported from the public ESP-IDF driver; the host stand
+compares its software sequence with the compiled vendor driver.
 
 ## Filtering, addressing and MAC automation
 
@@ -67,6 +67,6 @@ HOST-ONLY scopes and are not capabilities admitted by the radio/MAC gate.
 
 ## Ownership and readiness
 
-Canonical section: `ieee802154-ownership-and-readiness`. Lower HAL, PAC, DMA,
-actor, IRQ, operation and Embassy owners do not by themselves compose the missing
-RF-ready public service.
+Canonical section: `ieee802154-ownership-and-readiness`. The HAL, PAC, MAC
+engine and runtime do not by themselves compose the missing RF-ready public
+service.

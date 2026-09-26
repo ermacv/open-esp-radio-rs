@@ -2,18 +2,21 @@
 //! peer.
 //!
 //! The ESP32-C5 peer runs the vendor driver (`hil/peers/esp32c5-ieee802154`).
-//! One session on the device under test covers four cells on one channel and
-//! PAN:
+//! One session on the device under test covers these cells on one channel
+//! and PAN:
 //!
-//! 1. the device transmits data frames requesting acknowledgement: each is
-//!    acknowledged with its sequence number and arrives at the peer intact;
+//! 1. the device transmits data frames requesting acknowledgement by CSMA-CA
+//!    with retries: each is acknowledged with its sequence number and
+//!    arrives at the peer intact;
 //! 2. the peer transmits data frames to the device: the device acknowledges
 //!    each, and reports the same frames by digest;
 //! 3. the peer transmits to another short address: the device neither
-//!    acknowledges nor reports it;
+//!    acknowledges nor reports it; a device frame to that address ends
+//!    unacknowledged after its retries;
 //! 4. with the peer's short address in the device's pending table, the
 //!    device's acknowledgement of the peer's data request carries frame
-//!    pending;
+//!    pending, and its enhanced ACK of the peer's 2015 frame is the one
+//!    IEEE 802.15.4-2015 prescribes;
 //! 5. after one tracking period, the device runs shared PHY tracking inside
 //!    its own quiescence window and then exchanges one acknowledged frame in
 //!    each direction again.
@@ -25,8 +28,9 @@ use oer_hil_protocol::{
     Ieee802154AirTxOutcome, Ieee802154SessionConfig, Ieee802154SessionFrame,
     Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
     Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
-    Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionTransmitEvidence,
-    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, ieee802154_frame_crc32c,
+    Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionRfPolicy,
+    Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
+    ieee802154_frame_crc32c,
 };
 use serde::Serialize;
 
@@ -35,12 +39,12 @@ use crate::{
     peer::{Peer, PeerConfig, PeerEvent, PeerLink},
 };
 
-const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
 /// Session start registers and calibrates the shared PHY.
-const START_TIMEOUT: Duration = Duration::from_secs(30);
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 /// Bound on one peer report after its trigger.
-const PEER_EVENT_TIMEOUT: Duration = Duration::from_secs(1);
+pub(crate) const PEER_EVENT_TIMEOUT: Duration = Duration::from_secs(1);
 const REPORT_NAME: &str = "ieee802154-peer-exchange.json";
 /// Longer than the shared PHY domain's one-second tracking period.
 const TRACKING_DUE_AFTER: Duration = Duration::from_millis(1_200);
@@ -52,8 +56,8 @@ pub const DEVICE_SHORT: u16 = 0x0001;
 pub const PEER_SHORT: u16 = 0x0002;
 /// A short address nobody in the cell owns.
 pub const FOREIGN_SHORT: u16 = 0x0099;
-const DEVICE_EXTENDED: [u8; 8] = [0x01, 0x54, 0x31, 0x53, 0x33, 0x32, 0x65, 0x4f];
-const PEER_EXTENDED: [u8; 8] = [0x02, 0x54, 0x31, 0x43, 0x35, 0x70, 0x65, 0x4f];
+pub(crate) const DEVICE_EXTENDED: [u8; 8] = [0x01, 0x54, 0x31, 0x53, 0x33, 0x32, 0x65, 0x4f];
+pub(crate) const PEER_EXTENDED: [u8; 8] = [0x02, 0x54, 0x31, 0x43, 0x35, 0x70, 0x65, 0x4f];
 
 /// Sequence numbers of peer-originated frames start here, apart from the
 /// device's.
@@ -174,8 +178,8 @@ fn write_report(output: &Path, reports: &[BootReport], failure: Option<&str>) ->
             "status": "passed",
             "result": "acknowledged-exchange-filtering-and-pending-with-vendor-peer",
             "not_proven": [
-                "enhanced-acknowledgement",
-                "csma-ca",
+                "busy-channel-csma-ca",
+                "retry-count-on-air",
                 "security",
                 "calibrated-output-power",
                 "timed-exchange",
@@ -232,6 +236,7 @@ fn exchange<L: PeerLink>(
                 maintenance_policy: Ieee802154SessionMaintenancePolicy::Vendor,
                 background_maintenance: false,
                 enhanced_ack: true,
+                rf_policy: Ieee802154SessionRfPolicy::AlwaysOn,
             },
             START_TIMEOUT,
         )?,

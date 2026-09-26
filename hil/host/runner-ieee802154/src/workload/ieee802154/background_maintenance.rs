@@ -12,7 +12,8 @@ use std::{fs, path::Path, time::Duration};
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
     Ieee802154AirTxOutcome, Ieee802154SessionConfig, Ieee802154SessionMaintenancePolicy,
-    Ieee802154SessionStopEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
+    Ieee802154SessionRfPolicy, Ieee802154SessionStopEvidence, Ieee802154SessionTransmitRequest,
+    Ieee802154SessionTxMode,
 };
 use serde::Serialize;
 
@@ -133,6 +134,7 @@ fn session(capture: &SerialCapture, config: &Config) -> Result<Ieee802154Session
                 maintenance_policy: config.policy,
                 background_maintenance: true,
                 enhanced_ack: false,
+                rf_policy: Ieee802154SessionRfPolicy::AlwaysOn,
             },
             START_TIMEOUT,
         )?,
@@ -168,6 +170,7 @@ mod tests {
                 tracked,
                 ..Default::default()
             },
+            ..Default::default()
         }
     }
 

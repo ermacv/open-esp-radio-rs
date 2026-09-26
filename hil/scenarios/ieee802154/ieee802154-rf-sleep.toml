@@ -1,0 +1,10 @@
+schema = 5
+id = "ieee802154-rf-sleep"
+description = "RF closed while the device's radio sleeps and opened for each operation: transmissions from sleep acknowledged by the ESP32-C5 vendor-driver reference peer, no acknowledgement while asleep, and reception after RF opens"
+tags = ["ieee802154", "arbiter-client", "on-air", "peer", "rf-sleep", "acknowledgement", "receive", "transmit"]
+
+[ieee802154]
+kind = "rf-sleep"
+boots = 2
+channel = 15
+frames = 4

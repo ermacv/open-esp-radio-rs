@@ -21,7 +21,7 @@ use oer_esp32s31_ieee802154_runtime::{
     Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
 };
 use oer_esp32s31_ieee802154_system::{
-    Ieee802154PhyMaintenance, Ieee802154System, Ieee802154SystemRuntime,
+    Ieee802154PhyMaintenance, Ieee802154RfPolicy, Ieee802154System, Ieee802154SystemRuntime,
 };
 use oer_esp32s31_phy::ConcurrentTrackingTick;
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
@@ -32,9 +32,9 @@ use oer_hil_protocol::{
     Ieee802154SessionMaintenanceCounts, Ieee802154SessionMaintenancePolicy,
     Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
-    Ieee802154SessionStopEvidence, Ieee802154SessionTransmitEvidence,
-    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, RejectReason,
-    ieee802154_frame_crc32c,
+    Ieee802154SessionRfCounts, Ieee802154SessionRfPolicy, Ieee802154SessionStopEvidence,
+    Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
+    RejectReason, ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, RadioCommand, RequestId,
@@ -86,6 +86,7 @@ struct Session {
     next_id: u32,
     received: Received,
     lost: bool,
+    rf: Ieee802154SessionRfCounts,
 }
 
 impl Session {
@@ -233,6 +234,15 @@ type Foreground<'a> = (&'a mut Ieee802154System, &'a Radio);
 /// background maintenance owns the schedule.
 async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) -> u32 {
     loop {
+        // An operation or event may have left the radio asleep.
+        if let Some((system, radio)) = foreground.as_mut() {
+            let slept = core::pin::pin!(system.sleep_rf_if_idle(*radio));
+            match slept.await {
+                Ok(true) => session.rf.closes = session.rf.closes.saturating_add(1),
+                Ok(false) => {}
+                Err(_) => session.rf.failed = true,
+            }
+        }
         let command = match select(
             receive_ieee802154_session_command(),
             session.runtime.next_event(),
@@ -246,6 +256,19 @@ async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) ->
                 continue;
             }
         };
+        if matches!(
+            command,
+            Ieee802154SessionCommand::Transmit { .. } | Ieee802154SessionCommand::Receive { .. }
+        ) && let Some((system, radio)) = foreground.as_mut()
+            && !system.rf_open()
+        {
+            let woken = core::pin::pin!(system.wake_rf(*radio));
+            match woken.await {
+                Ok(()) => session.rf.opens = session.rf.opens.saturating_add(1),
+                // The runtime then refuses the command.
+                Err(_) => session.rf.failed = true,
+            }
+        }
         match command {
             Ieee802154SessionCommand::Transmit {
                 request_id,
@@ -415,13 +438,26 @@ pub(in crate::product_hil) async fn run_session(
         next_id: 0,
         received: Received::default(),
         lost: false,
+        rf: Ieee802154SessionRfCounts::default(),
     };
     client
         .set_maintenance_policy(config.maintenance_policy)
         .await;
-    let started = match session.configure(config) {
-        Ok(()) => Ieee802154SessionResult::Done,
-        Err(result) => result,
+    system.set_rf_policy(match config.rf_policy {
+        Ieee802154SessionRfPolicy::AlwaysOn => Ieee802154RfPolicy::AlwaysOn,
+        Ieee802154SessionRfPolicy::CloseWhenAsleep => Ieee802154RfPolicy::CloseWhenAsleep,
+    });
+    // Background maintenance runs beside the commands without the system,
+    // which the RF sleep needs.
+    let started = if config.background_maintenance
+        && config.rf_policy == Ieee802154SessionRfPolicy::CloseWhenAsleep
+    {
+        Ieee802154SessionResult::UnsupportedSetup
+    } else {
+        match session.configure(config) {
+            Ok(()) => Ieee802154SessionResult::Done,
+            Err(result) => result,
+        }
     };
     publish_event_reliably(0, request_id, HilEvent::Ieee802154SessionStarted(started)).await;
 
@@ -476,6 +512,7 @@ pub(in crate::product_hil) async fn run_session(
         HilEvent::Ieee802154SessionStopped(Ieee802154SessionStopEvidence {
             result: stopped,
             maintenance: counts.get(),
+            rf: session.rf,
         }),
     )
     .await;

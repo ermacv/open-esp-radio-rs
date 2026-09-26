@@ -19,6 +19,14 @@ pub enum RestingState {
         /// Active receive channel.
         channel: Channel,
     },
+    /// Radio sleeps until a scheduled receive window opens, then receives
+    /// on one channel until the window ends.
+    ScheduledReceiving {
+        /// The window's correlation identifier.
+        id: RequestId,
+        /// Window receive channel.
+        channel: Channel,
+    },
 }
 
 /// Complete finite portable controller state.
@@ -187,6 +195,20 @@ impl RadioStateMachine {
                 Some(_) => RadioState::Resting(RestingState::Receiving { channel }),
                 None => return Err(CommandError::Busy { state: previous }),
             },
+            RadioCommand::ScheduledReceive(request) => {
+                let Some(_) = resting(previous) else {
+                    return Err(CommandError::Busy { state: previous });
+                };
+                require_capability(
+                    self.capabilities,
+                    kind,
+                    RadioCapabilities::SCHEDULED_RECEIVE,
+                )?;
+                RadioState::Resting(RestingState::ScheduledReceiving {
+                    id,
+                    channel: request.channel,
+                })
+            }
             RadioCommand::Configure { configuration, .. } => {
                 let Some(_) = resting(previous) else {
                     return Err(CommandError::Busy { state: previous });
@@ -201,7 +223,7 @@ impl RadioStateMachine {
                 previous
             }
             RadioCommand::Transmit(request) => {
-                let Some(resume) = resting(previous) else {
+                let Some(resume) = resumable(previous) else {
                     return Err(CommandError::Busy { state: previous });
                 };
                 if !self.capabilities.supports_tx_mode(request.mode) {
@@ -247,7 +269,7 @@ impl RadioStateMachine {
                 }
             }
             RadioCommand::EnergyScan(request) => {
-                let Some(resume) = resting(previous) else {
+                let Some(resume) = resumable(previous) else {
                     return Err(CommandError::Busy { state: previous });
                 };
                 require_capability(self.capabilities, kind, RadioCapabilities::ENERGY_SCAN)?;
@@ -258,7 +280,7 @@ impl RadioStateMachine {
                 }
             }
             RadioCommand::ClearChannelAssessment { channel, .. } => {
-                let Some(resume) = resting(previous) else {
+                let Some(resume) = resumable(previous) else {
                     return Err(CommandError::Busy { state: previous });
                 };
                 require_capability(
@@ -287,11 +309,21 @@ impl RadioStateMachine {
     pub fn observe(&mut self, event: RadioEvent<'_>) -> Result<(), EventError> {
         let next = match (self.state, event) {
             (
-                RadioState::Resting(RestingState::Receiving { channel }),
+                RadioState::Resting(
+                    RestingState::Receiving { channel }
+                    | RestingState::ScheduledReceiving { channel, .. },
+                ),
                 RadioEvent::Received(rx),
             ) => {
                 require_channel(channel, rx.metadata.channel)?;
                 self.state
+            }
+            (
+                RadioState::Resting(RestingState::ScheduledReceiving { id: expected, .. }),
+                RadioEvent::ScheduledReceiveDone { id },
+            ) => {
+                require_id(expected, id)?;
+                RadioState::Resting(RestingState::Sleeping)
             }
             // A transmission from receive mode keeps receiving on its own
             // channel while it waits for the channel, as a CSMA-CA backoff
@@ -377,6 +409,16 @@ const fn resting(state: RadioState) -> Option<RestingState> {
     }
 }
 
+/// The resting state an operation started from `state` returns to: an
+/// operation ends a scheduled receive window, and the radio sleeps after it
+/// as ESP-IDF's `next_operation` does without receive-on-when-idle.
+const fn resumable(state: RadioState) -> Option<RestingState> {
+    match resting(state) {
+        Some(RestingState::ScheduledReceiving { .. }) => Some(RestingState::Sleeping),
+        other => other,
+    }
+}
+
 const fn active_id(state: RadioState) -> Option<RequestId> {
     match state {
         RadioState::Transmitting { id, .. }
@@ -391,7 +433,10 @@ const fn required_tx_capability(mode: TxMode) -> RadioCapabilities {
         TxMode::Direct => RadioCapabilities::NONE,
         TxMode::ClearChannelAssessment => RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT,
         TxMode::CsmaCa { .. } => RadioCapabilities::CSMA_CA,
-        TxMode::Scheduled { .. } => RadioCapabilities::SCHEDULED_TRANSMIT,
+        TxMode::Scheduled { cca: false, .. } => RadioCapabilities::SCHEDULED_TRANSMIT,
+        TxMode::Scheduled { cca: true, .. } => {
+            RadioCapabilities::SCHEDULED_TRANSMIT.union(RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT)
+        }
     }
 }
 

@@ -45,6 +45,11 @@ pub enum RadioEvent<'frame> {
         /// Correlation identifier from the accepted request.
         id: RequestId,
     },
+    /// A scheduled receive window ended; the radio sleeps.
+    ScheduledReceiveDone {
+        /// Correlation identifier from the accepted request.
+        id: RequestId,
+    },
     /// Fail-closed backend fault. A valid fault disables the state machine.
     Fault {
         /// Active operation identifier, or `None` outside an operation.

@@ -384,3 +384,103 @@ fn frame_retries_require_the_retry_capability() {
     let mut machine = enabled(RadioCapabilities::TRANSMIT_RETRIES);
     assert!(machine.admit(request(3)).is_ok());
 }
+
+fn window(id: u32, on: u8) -> RadioCommand<'static> {
+    RadioCommand::ScheduledReceive(crate::ScheduledReceiveRequest {
+        id: RequestId::new(id),
+        channel: channel(on),
+        start: crate::RadioTimestamp::from_micros(1_000),
+        duration_us: 500,
+    })
+}
+
+/// A scheduled window needs its capability, accepts frames on its channel
+/// and sleeps when its own end is reported.
+#[test]
+fn a_scheduled_receive_window_receives_until_its_end() {
+    let mut plain = enabled(RadioCapabilities::NONE);
+    assert_eq!(
+        plain.admit(window(8, 15)),
+        Err(CommandError::Unsupported {
+            command: CommandKind::ScheduledReceive,
+            required: RadioCapabilities::SCHEDULED_RECEIVE,
+        })
+    );
+    assert_eq!(plain.state(), RadioState::Resting(RestingState::Sleeping));
+
+    let mut machine = enabled(RadioCapabilities::SCHEDULED_RECEIVE);
+    machine.admit(window(8, 15)).unwrap();
+    let scheduled = RadioState::Resting(RestingState::ScheduledReceiving {
+        id: RequestId::new(8),
+        channel: channel(15),
+    });
+    assert_eq!(machine.state(), scheduled);
+
+    let frame = [0x41, 0x88, 0x01];
+    let received = |on| {
+        RadioEvent::Received(ReceivedFrame {
+            frame: FrameView::new(&frame).unwrap(),
+            metadata: metadata(channel(on)),
+        })
+    };
+    machine.observe(received(15)).unwrap();
+    assert!(matches!(
+        machine.observe(received(16)),
+        Err(EventError::ChannelMismatch { .. })
+    ));
+    assert!(matches!(
+        machine.observe(RadioEvent::ScheduledReceiveDone {
+            id: RequestId::new(9)
+        }),
+        Err(EventError::RequestMismatch { .. })
+    ));
+    assert_eq!(machine.state(), scheduled);
+    machine
+        .observe(RadioEvent::ScheduledReceiveDone {
+            id: RequestId::new(8),
+        })
+        .unwrap();
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+    assert!(matches!(
+        machine.observe(RadioEvent::ScheduledReceiveDone {
+            id: RequestId::new(8)
+        }),
+        Err(EventError::Unexpected { .. })
+    ));
+}
+
+/// An operation admitted during a window ends it: the radio sleeps after
+/// the operation, and another command replaces the window.
+#[test]
+fn an_operation_ends_a_scheduled_window() {
+    let mut machine =
+        enabled(RadioCapabilities::SCHEDULED_RECEIVE | RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT);
+    machine.admit(window(8, 15)).unwrap();
+    machine
+        .admit(RadioCommand::ClearChannelAssessment {
+            id: RequestId::new(9),
+            channel: channel(15),
+        })
+        .unwrap();
+    machine
+        .observe(RadioEvent::ClearChannelAssessmentDone {
+            id: RequestId::new(9),
+            idle: true,
+        })
+        .unwrap();
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+
+    machine.admit(window(10, 15)).unwrap();
+    machine
+        .admit(RadioCommand::Receive {
+            id: RequestId::new(11),
+            channel: channel(20),
+        })
+        .unwrap();
+    assert_eq!(
+        machine.state(),
+        RadioState::Resting(RestingState::Receiving {
+            channel: channel(20)
+        })
+    );
+}

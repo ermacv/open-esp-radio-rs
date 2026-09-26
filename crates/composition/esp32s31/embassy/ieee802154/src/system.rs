@@ -239,6 +239,7 @@ const fn needs_rf(command: &RadioCommand<'_>) -> bool {
     matches!(
         command,
         RadioCommand::Receive { .. }
+            | RadioCommand::ScheduledReceive(_)
             | RadioCommand::Transmit(_)
             | RadioCommand::EnergyScan(_)
             | RadioCommand::ClearChannelAssessment { .. }

@@ -1071,9 +1071,11 @@ fn a_timed_transmission_starts_through_etm_channel_zero() {
 fn a_timed_receive_window_closes_without_a_frame() {
     let mut bench = Bench::enabled();
     bench.env.now = 1_000;
-    bench
-        .engine
-        .receive_at(&mut bench.hw, &mut bench.env, 5_000, 2_000);
+    assert!(
+        bench
+            .engine
+            .receive_at(&mut bench.hw, &mut bench.env, 5_000, 2_000)
+    );
     let rx0 = bench.rx_address(0);
     assert_subsequence(
         &bench.hw.calls,
@@ -1149,9 +1151,11 @@ fn a_timed_receive_window_closing_mid_frame_finishes_the_frame() {
 fn an_elapsed_receive_window_is_skipped() {
     let mut bench = Bench::enabled();
     bench.env.now = 1_000;
-    bench
-        .engine
-        .receive_at(&mut bench.hw, &mut bench.env, 100, 50);
+    assert!(
+        !bench
+            .engine
+            .receive_at(&mut bench.hw, &mut bench.env, 100, 50)
+    );
     assert_eq!(bench.hw.calls, []);
     assert_eq!(bench.engine.state(), Ieee802154State::Idle);
 }

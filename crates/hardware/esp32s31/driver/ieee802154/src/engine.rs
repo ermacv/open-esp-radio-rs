@@ -830,8 +830,10 @@ impl<'storage> Ieee802154Engine<'storage> {
     }
 
     /// `ieee802154_receive_at`: receive from `time`, for `duration`
-    /// microseconds when nonzero, starting through ETM channel one.
-    pub fn receive_at<L, E>(&mut self, ll: &mut L, env: &mut E, time: u32, duration: u32)
+    /// microseconds when nonzero, starting through ETM channel one. Returns
+    /// `false`, leaving the current operation, for a window that already
+    /// ended, where the vendor returns `ESP_OK` without starting it.
+    pub fn receive_at<L, E>(&mut self, ll: &mut L, env: &mut E, time: u32, duration: u32) -> bool
     where
         L: Ieee802154LowLevel + ?Sized,
         E: Ieee802154Environment + ?Sized,
@@ -840,7 +842,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         if duration != 0 {
             let now = cx.env.now_micros() as u32;
             if ll::target_time_expired(time.wrapping_add(duration), now) {
-                return;
+                return false;
             }
         }
         self.rx_init(&mut cx);
@@ -858,6 +860,7 @@ impl<'storage> Ieee802154Engine<'storage> {
             Ieee802154Timer::Timer1,
             time.wrapping_sub(RX_RAMPUP_MICROSECONDS),
         );
+        true
     }
 
     /// `ieee802154_sleep`.

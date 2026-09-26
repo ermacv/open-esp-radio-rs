@@ -89,6 +89,17 @@ retry timers run inside `Ieee802154SystemRuntime::next_event`, so the
 consumer must await events while a transmission waits; the random words
 come from the hardware generator.
 
+Scheduled operations use the radio clock, `Ieee802154SystemRuntime::now`
+(ESP-HAL's microsecond clock, as `otPlatRadioGetNow` reads `esp_timer`). A
+`TxMode::Scheduled` transmission starts at its time through TIMER0 and the
+modem ETM, after a CCA when it asks for one (`esp_ieee802154_transmit_at`).
+`RadioCommand::ScheduledReceive` opens a receive window through TIMER1
+(`otPlatRadioReceiveAt`): the radio sleeps outside it, and
+`ScheduledReceiveDone` reports its end - at its end, with its first
+received frame as the vendor receive path ends it, or at once for a window
+that had already ended. Another operation replaces the window, after which
+the radio sleeps.
+
 The shared radio is a software-coexistence build, so the MAC takes part in
 coexistence as the vendor driver does with `CONFIG_ESP_COEX_SW_COEXIST_ENABLE`:
 `start` reads the arbiter's coexistence table once and the engine publishes

@@ -438,7 +438,8 @@ fn terminal_of(event: &Ieee802154RadioEvent) -> Option<RequestId> {
         | Ieee802154RadioEvent::EnergyScanDone { id, .. }
         | Ieee802154RadioEvent::EnergyScanFailed { id }
         | Ieee802154RadioEvent::ClearChannelAssessmentDone { id, .. }
-        | Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => Some(id),
+        | Ieee802154RadioEvent::ClearChannelAssessmentFailed { id }
+        | Ieee802154RadioEvent::ScheduledReceiveDone { id } => Some(id),
         Ieee802154RadioEvent::Fault { id, .. } => id,
         Ieee802154RadioEvent::Received(_) => None,
     }

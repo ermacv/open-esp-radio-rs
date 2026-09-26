@@ -26,7 +26,8 @@ use oer_esp32s31_hal::ieee802154::{
 };
 use oer_esp32s31_ieee802154::engine::{
     FRAME_SIZE, Ieee802154Engine, Ieee802154EnhancedAck, Ieee802154Environment,
-    Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,
+    Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154State,
+    Ieee802154TxError,
 };
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AttemptFailure, Channel, CommandError, Configuration, CsmaCa,
@@ -47,6 +48,7 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
     .union(RadioCapabilities::ENERGY_SCAN)
     .union(RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SCHEDULED_TRANSMIT)
+    .union(RadioCapabilities::SCHEDULED_RECEIVE)
     .union(RadioCapabilities::TRANSMIT_POWER)
     .union(RadioCapabilities::PROMISCUOUS)
     .union(RadioCapabilities::RECEIVE_TIMESTAMP)
@@ -305,8 +307,9 @@ impl Transmission {
             TxMode::ClearChannelAssessment | TxMode::CsmaCa { .. } => {
                 engine.transmit(ll, env, image, true)
             }
-            TxMode::Scheduled { at } => {
-                engine.transmit_at(ll, env, image, false, at.as_micros() as u32)
+            // The engine counts in the low 32 bits of the radio clock.
+            TxMode::Scheduled { at, cca } => {
+                engine.transmit_at(ll, env, image, cca, at.as_micros() as u32)
             }
         };
         started.expect("a validated MAC frame fits one DMA frame");
@@ -339,8 +342,12 @@ enum Notification {
     Transmitted(Option<Ieee802154RxSlot>),
     TransmitFailed(Ieee802154TxError),
     EnergyDetected(i8),
-    ClearChannelAssessed { busy: bool },
+    ClearChannelAssessed {
+        busy: bool,
+    },
     MeasurementFailed,
+    /// A scheduled receive window ended (`esp_ieee802154_receive_at_done`).
+    ScheduledReceiveDone,
 }
 
 /// Notifications one engine entry can raise.
@@ -444,7 +451,9 @@ impl Ieee802154Environment for Collector<'_> {
         self.push(Notification::MeasurementFailed);
     }
 
-    fn receive_at_done(&mut self) {}
+    fn receive_at_done(&mut self) {
+        self.push(Notification::ScheduledReceiveDone);
+    }
 
     fn generate_enhanced_ack(
         &mut self,
@@ -608,6 +617,12 @@ impl<'storage> Ieee802154Radio<'storage> {
         &mut self.security.keys
     }
 
+    /// The radio clock (`otPlatRadioGetNow`): the monotonic epoch of
+    /// scheduled operations and receive timestamps.
+    pub fn now(&self) -> RadioTimestamp {
+        RadioTimestamp::from_micros((self.platform.now_micros)())
+    }
+
     /// The enhanced-ACK generator; `None` refuses every enhanced ACK.
     pub fn enhanced_ack(&mut self) -> &mut Option<Ieee802154EnhancedAckGenerator> {
         &mut self.enhanced_ack
@@ -701,6 +716,18 @@ impl<'storage> Ieee802154Radio<'storage> {
                 };
                 transmission.start_access(engine, ll, &mut collector);
                 self.transmission = Some(transmission);
+            }
+            RadioCommand::ScheduledReceive(request) => {
+                // `otPlatRadioReceiveAt`: the radio sleeps outside the window.
+                engine.pib().set_channel(hal_channel(request.channel));
+                engine.pib().set_rx_when_idle(false);
+                let start = request.start.as_micros() as u32;
+                if !engine.receive_at(ll, &mut collector, start, request.duration_us) {
+                    // A window that already ended does not start; the radio
+                    // sleeps and the window ends at once.
+                    engine.sleep(ll, &mut collector);
+                    collector.push(Notification::ScheduledReceiveDone);
+                }
             }
             RadioCommand::EnergyScan(request) => {
                 engine.pib().set_channel(hal_channel(request.channel));
@@ -884,6 +911,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                     }
                 }
                 let _ = self.engine.receive_handle_done(slot);
+                self.end_window_after_frame(sink);
                 Follow::Nothing
             }
             Notification::Transmitted(ack) => {
@@ -958,6 +986,19 @@ impl<'storage> Ieee802154Radio<'storage> {
                     sink,
                 )
             }
+            Notification::ScheduledReceiveDone => match self.machine.state() {
+                RadioState::Resting(RestingState::ScheduledReceiving { id, .. }) => {
+                    let event = RadioEvent::ScheduledReceiveDone { id };
+                    if self.machine.observe(event).is_ok() {
+                        sink.event(event);
+                    }
+                    Follow::Nothing
+                }
+                // The end of a window an operation already replaced: the
+                // engine still reports a reception it let finish, which
+                // ESP-IDF's OpenThread port ignores too.
+                _ => Follow::Nothing,
+            },
             Notification::MeasurementFailed => match self.machine.state() {
                 RadioState::EnergyScanning { id, .. } => {
                     self.finish(RadioEvent::EnergyScanFailed { id }, sink)
@@ -970,6 +1011,23 @@ impl<'storage> Ieee802154Radio<'storage> {
                     Follow::Nothing
                 }
             },
+        }
+    }
+
+    /// A received frame ends a scheduled window: the vendor's receive path
+    /// stops the window timer (`event_end_process`) and, without
+    /// receive-on-when-idle, leaves the receiver (`next_operation`) without
+    /// `esp_ieee802154_receive_at_done`. Report the window's end once the
+    /// engine has left reception.
+    fn end_window_after_frame<S: Ieee802154RadioSink + ?Sized>(&mut self, sink: &mut S) {
+        if let RadioState::Resting(RestingState::ScheduledReceiving { id, .. }) =
+            self.machine.state()
+            && self.engine.state() != Ieee802154State::Rx
+        {
+            let event = RadioEvent::ScheduledReceiveDone { id };
+            if self.machine.observe(event).is_ok() {
+                sink.event(event);
+            }
         }
     }
 

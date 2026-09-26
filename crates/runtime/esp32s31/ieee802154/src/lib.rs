@@ -41,8 +41,8 @@ use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, MacKeys, PendingTable,
-    RadioCommand, RadioEvent, RadioFault, RadioState, ReceivedFrame, RequestId, RestingState,
-    RxMetadata, TxStatus,
+    RadioCommand, RadioEvent, RadioFault, RadioState, RadioTimestamp, ReceivedFrame, RequestId,
+    RestingState, RxMetadata, TxStatus,
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
@@ -117,6 +117,11 @@ pub enum Ieee802154RadioEvent {
         /// The request.
         id: RequestId,
     },
+    /// A scheduled receive window ended; the radio sleeps.
+    ScheduledReceiveDone {
+        /// The request.
+        id: RequestId,
+    },
     /// The radio disabled itself after a broken event sequence.
     Fault {
         /// The active request.
@@ -151,6 +156,7 @@ impl Ieee802154RadioEvent {
             RadioEvent::ClearChannelAssessmentFailed { id } => {
                 Self::ClearChannelAssessmentFailed { id }
             }
+            RadioEvent::ScheduledReceiveDone { id } => Self::ScheduledReceiveDone { id },
             RadioEvent::Fault { id, fault } => Self::Fault { id, fault },
         }
     }
@@ -184,6 +190,7 @@ impl Ieee802154RadioEvent {
             Self::ClearChannelAssessmentFailed { id } => {
                 RadioEvent::ClearChannelAssessmentFailed { id: *id }
             }
+            Self::ScheduledReceiveDone { id } => RadioEvent::ScheduledReceiveDone { id: *id },
             Self::Fault { id, fault } => RadioEvent::Fault {
                 id: *id,
                 fault: *fault,
@@ -531,6 +538,16 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         }
     }
 
+    /// The radio clock (`otPlatRadioGetNow`): the monotonic epoch of
+    /// scheduled operations and receive timestamps.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn now(&self) -> Result<RadioTimestamp, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.now())
+    }
+
     /// Admit and start one portable command.
     ///
     /// # Errors
@@ -544,6 +561,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         let needs_rf = matches!(
             command,
             RadioCommand::Receive { .. }
+                | RadioCommand::ScheduledReceive(_)
                 | RadioCommand::Transmit(_)
                 | RadioCommand::EnergyScan(_)
                 | RadioCommand::ClearChannelAssessment { .. }

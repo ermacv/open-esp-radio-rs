@@ -48,6 +48,8 @@ pub enum RadioCommand<'frame> {
         /// Channel to assess.
         channel: Channel,
     },
+    /// Sleep, then receive in a window that opens at a monotonic radio time.
+    ScheduledReceive(ScheduledReceiveRequest),
 }
 
 impl RadioCommand<'_> {
@@ -62,6 +64,7 @@ impl RadioCommand<'_> {
             | Self::ClearChannelAssessment { id, .. } => id,
             Self::Transmit(request) => request.id,
             Self::EnergyScan(request) => request.id,
+            Self::ScheduledReceive(request) => request.id,
         }
     }
 
@@ -76,6 +79,7 @@ impl RadioCommand<'_> {
             Self::Transmit(_) => CommandKind::Transmit,
             Self::EnergyScan(_) => CommandKind::EnergyScan,
             Self::ClearChannelAssessment { .. } => CommandKind::ClearChannelAssessment,
+            Self::ScheduledReceive(_) => CommandKind::ScheduledReceive,
         }
     }
 }
@@ -99,6 +103,8 @@ pub enum CommandKind {
     EnergyScan,
     /// Standalone CCA operation.
     ClearChannelAssessment,
+    /// Scheduled receive window.
+    ScheduledReceive,
 }
 
 /// How one transmit request should acquire the channel.
@@ -113,10 +119,14 @@ pub enum TxMode {
         /// Maximum number of backoffs before returning channel-busy.
         max_backoffs: u8,
     },
-    /// Start at a monotonic backend timestamp without implicit CSMA-CA.
+    /// Start at a monotonic backend timestamp without implicit CSMA-CA,
+    /// optionally after one clear-channel assessment that ends at that time.
     Scheduled {
         /// Requested start time.
         at: RadioTimestamp,
+        /// Assess the channel first (ESP-IDF `esp_ieee802154_transmit_at`
+        /// with `cca`, as OpenThread's `mCsmaCaEnabled` asks).
+        cca: bool,
     },
 }
 
@@ -157,6 +167,27 @@ pub struct TxRequest<'frame> {
     pub max_frame_retries: u8,
     /// Who secures the frame when its security-enabled bit is set.
     pub security: TxSecurity,
+}
+
+/// One scheduled receive window (`otPlatRadioReceiveAt`).
+///
+/// The radio sleeps until the window opens, receives on `channel` from
+/// `start` and, for a nonzero `duration_us`, stops at its end - finishing a
+/// frame whose reception has begun - and sleeps again. A window of zero
+/// duration receives until the next command. A backend may end the window
+/// with its first received frame, as ESP-IDF's driver does; a window that
+/// already ended when admitted ends at once. Either end is reported by
+/// [`RadioEvent::ScheduledReceiveDone`](crate::RadioEvent::ScheduledReceiveDone).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ScheduledReceiveRequest {
+    /// Caller-owned correlation identifier.
+    pub id: RequestId,
+    /// Receive channel.
+    pub channel: Channel,
+    /// Time the receiver is on, in the radio's monotonic epoch.
+    pub start: RadioTimestamp,
+    /// Window length in microseconds; zero leaves the window open.
+    pub duration_us: u32,
 }
 
 /// One bounded energy-detection scan request.

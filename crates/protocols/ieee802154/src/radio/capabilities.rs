@@ -47,8 +47,10 @@ impl RadioCapabilities {
     /// Retransmission after a transmission without acknowledgement or
     /// channel access.
     pub const TRANSMIT_RETRIES: Self = Self(1 << 11);
+    /// Reception in a window that opens at a monotonic radio time.
+    pub const SCHEDULED_RECEIVE: Self = Self(1 << 12);
 
-    const KNOWN: u16 = (1 << 12) - 1;
+    const KNOWN: u16 = (1 << 13) - 1;
 
     /// Validate a serialized capability image.
     pub const fn from_bits(bits: u16) -> Result<Self, CapabilityBitsError> {
@@ -81,7 +83,10 @@ impl RadioCapabilities {
             TxMode::Direct => true,
             TxMode::ClearChannelAssessment => self.contains(Self::CLEAR_CHANNEL_ASSESSMENT),
             TxMode::CsmaCa { .. } => self.contains(Self::CSMA_CA),
-            TxMode::Scheduled { .. } => self.contains(Self::SCHEDULED_TRANSMIT),
+            TxMode::Scheduled { cca, .. } => {
+                self.contains(Self::SCHEDULED_TRANSMIT)
+                    && (!cca || self.contains(Self::CLEAR_CHANNEL_ASSESSMENT))
+            }
         }
     }
 

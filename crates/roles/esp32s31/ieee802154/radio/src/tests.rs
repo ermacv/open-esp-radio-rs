@@ -12,12 +12,13 @@ use oer_esp32s31_hal::ieee802154::{
         Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
     },
 };
-use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers};
+use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154State};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FramePending,
-    FrameView, MacKeys, RadioCommand, RadioEvent, RadioState, RequestId, RestingState,
-    SentAcknowledgement, TxMode, TxRequest, TxSecurity, TxStatus,
+    FrameView, MacKeys, RadioCommand, RadioEvent, RadioState, RadioTimestamp, RequestId,
+    RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest, TxSecurity,
+    TxStatus,
 };
 
 use super::{
@@ -50,6 +51,7 @@ enum Seen {
         idle: bool,
     },
     ClearChannelAssessmentFailed,
+    ScheduledReceiveDone(RequestId),
     Fault,
 }
 
@@ -90,6 +92,7 @@ impl Ieee802154RadioSink for Sink {
                 Seen::ClearChannelAssessmentDone { idle }
             }
             RadioEvent::ClearChannelAssessmentFailed { .. } => Seen::ClearChannelAssessmentFailed,
+            RadioEvent::ScheduledReceiveDone { id } => Seen::ScheduledReceiveDone(id),
             RadioEvent::Fault { .. } => Seen::Fault,
         });
     }
@@ -916,4 +919,142 @@ fn stack_retransmissions_keep_their_counter_and_processed_frames_are_sent_as_giv
     assert!(!bench.hw.transmit_security);
     assert_eq!(bench.transmitted_security(), ([55, 0, 0, 0], 3));
     assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 100);
+}
+
+impl Bench {
+    fn scheduled_receive(&mut self, id: u32, start: u64, duration_us: u32) {
+        self.submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
+            id: RequestId::new(id),
+            channel: channel(15),
+            start: RadioTimestamp::from_micros(start),
+            duration_us,
+        }))
+        .unwrap();
+    }
+}
+
+/// `otPlatRadioReceiveAt`: the window receives on its channel; as in the
+/// vendor driver, the first frame ends it and the radio sleeps.
+#[test]
+fn a_scheduled_window_ends_with_its_first_frame() {
+    let mut bench = Bench::receiving();
+    bench.scheduled_receive(5, 5_000, 2_000);
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::ScheduledReceiving {
+            id: RequestId::new(5),
+            channel: channel(15),
+        })
+    );
+    assert_eq!(bench.radio.engine().state(), Ieee802154State::Rx);
+    assert!(bench.hw.etm_enabled[1], "timer one starts the receiver");
+
+    // The window opens, then a frame arrives.
+    bench.interrupt(&[Ieee802154Event::Timer1Overflow]);
+    bench.deliver(&DATA);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert_eq!(
+        bench.seen(),
+        [
+            Seen::Received {
+                mac: DATA.to_vec(),
+                channel: 15
+            },
+            Seen::ScheduledReceiveDone(RequestId::new(5)),
+        ]
+    );
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+}
+
+/// A window without frames ends at its end and leaves the radio asleep.
+#[test]
+fn a_scheduled_window_without_frames_ends_at_its_end() {
+    let mut bench = Bench::enabled();
+    bench.scheduled_receive(5, 5_000, 2_000);
+    bench.interrupt(&[Ieee802154Event::Timer1Overflow]);
+    assert_eq!(bench.seen(), []);
+    bench.interrupt(&[Ieee802154Event::Timer1Overflow]);
+    assert_eq!(
+        bench.seen(),
+        [Seen::ScheduledReceiveDone(RequestId::new(5))]
+    );
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+}
+
+/// A window that already ended does not start: the radio sleeps and the
+/// window ends at once.
+#[test]
+fn an_elapsed_window_ends_at_once() {
+    let mut bench = Bench::receiving();
+    // The bench clock reads 42 microseconds.
+    bench.scheduled_receive(5, 10, 20);
+    assert_eq!(
+        bench.seen(),
+        [Seen::ScheduledReceiveDone(RequestId::new(5))]
+    );
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+    assert_ne!(bench.radio.engine().state(), Ieee802154State::Rx);
+}
+
+/// A transmission ends a window, and the radio sleeps after it; a window
+/// end the engine still reports afterwards is ignored.
+#[test]
+fn a_transmission_ends_a_window() {
+    let mut bench = Bench::enabled();
+    bench.scheduled_receive(5, 5_000, 2_000);
+    bench.transmit(6, &DATA, 15, TxMode::Direct).unwrap();
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(6),
+            status: TxStatus::Success,
+            ack_pending: None
+        }]
+    );
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+    bench.interrupt(&[Ieee802154Event::Timer1Overflow]);
+    assert_eq!(bench.seen(), []);
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+}
+
+/// A scheduled transmission with a CCA assesses the channel first, as
+/// `esp_ieee802154_transmit_at` with `cca` does.
+#[test]
+fn a_scheduled_transmission_can_assess_the_channel() {
+    let at = RadioTimestamp::from_micros(5_000);
+    let mut bench = Bench::enabled();
+    bench
+        .transmit(6, &DATA, 15, TxMode::Scheduled { at, cca: true })
+        .unwrap();
+    assert_eq!(bench.radio.engine().state(), Ieee802154State::TxCca);
+    assert!(bench.hw.etm_enabled[0], "timer zero starts the CCA");
+
+    let mut bench = Bench::enabled();
+    bench
+        .transmit(6, &DATA, 15, TxMode::Scheduled { at, cca: false })
+        .unwrap();
+    assert_eq!(bench.radio.engine().state(), Ieee802154State::Tx);
+}
+
+/// The radio clock is the platform clock.
+#[test]
+fn the_radio_clock_is_the_platform_clock() {
+    let bench = Bench::enabled();
+    assert_eq!(bench.radio.now(), RadioTimestamp::from_micros(42));
 }

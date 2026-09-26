@@ -8,8 +8,8 @@ use oer_esp32s31_hal::ieee802154::{
     ll::{
         Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
         Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
-        Ieee802154RxAbortEnableSet, Ieee802154RxStateCode, Ieee802154RxStatus, Ieee802154Timer,
-        Ieee802154TxAbortEnableSet,
+        Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStateCode,
+        Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
     },
     mac::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
@@ -327,6 +327,10 @@ impl Ieee802154LowLevel for Hw {
     fn multipan_extended_address(&mut self, _: Ieee802154MultipanIndex) -> [u8; 8] {
         self.extended_address
     }
+    fn set_multipan_enable(&mut self, _state: Ieee802154MultipanEnableState) {}
+    fn multipan_enable(&mut self) -> Ieee802154MultipanEnableState {
+        Ieee802154MultipanEnableState::NONE
+    }
     fn set_ack_timeout(&mut self, units: u16) {
         self.calls.push(Call::SetAckTimeout(units));
         self.ack_timeout = units;
@@ -611,6 +615,7 @@ fn transmit_with_ack_reports_the_received_ack() {
                     rssi: -60,
                     lqi: 200,
                     timestamp: 0,
+                    mpf_index: Some(Ieee802154MultipanIndex::CONTEXT0),
                 }
             )),
         }]
@@ -708,6 +713,7 @@ fn an_auto_acked_frame_is_delivered_after_its_ack() {
                 rssi: -55,
                 lqi: 0xb4,
                 timestamp: 0,
+                mpf_index: Some(Ieee802154MultipanIndex::CONTEXT0),
             },
         }]
     );

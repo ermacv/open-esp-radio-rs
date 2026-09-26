@@ -6,8 +6,8 @@
 
 use super::{
     Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
-    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,
-    Ieee802154Timer, Ieee802154TxAbortEnableSet,
+    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154MultipanEnableState,
+    Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
 };
 use crate::ieee802154::{
     lifecycle::Ieee802154Channel,
@@ -58,16 +58,18 @@ pub struct Ieee802154LlModel {
     pub promiscuous: bool,
     /// Transmit security enable.
     pub transmit_security: bool,
-    /// PAN ID of context zero.
-    pub panid: u16,
-    /// Short address of context zero.
-    pub short_address: u16,
-    /// Extended address of context zero.
-    pub extended_address: [u8; 8],
+    /// PAN ID of each context.
+    pub panid: [u16; 4],
+    /// Short address of each context.
+    pub short_address: [u16; 4],
+    /// Extended address of each context.
+    pub extended_address: [[u8; 8]; 4],
     /// ACK timeout in 16-microsecond units.
     pub ack_timeout: u16,
     /// ETM channel enables.
     pub etm_enabled: [bool; 2],
+    /// Multi-PAN context enables.
+    pub multipan_enable: Ieee802154MultipanEnableState,
 }
 
 impl Default for Ieee802154LlModel {
@@ -90,11 +92,12 @@ impl Default for Ieee802154LlModel {
             pending_bit: false,
             promiscuous: false,
             transmit_security: false,
-            panid: 0,
-            short_address: 0,
-            extended_address: [0; 8],
+            panid: [0; 4],
+            short_address: [0; 4],
+            extended_address: [[0; 8]; 4],
             ack_timeout: 0,
             etm_enabled: [false; 2],
+            multipan_enable: Ieee802154MultipanEnableState::NONE,
         }
     }
 }
@@ -182,23 +185,32 @@ impl Ieee802154LowLevel for Ieee802154LlModel {
     fn set_ed_duration(&mut self, _symbols: u16) {}
     fn notify_enhanced_ack_generated(&mut self) {}
     fn disable_rx_aborts(&mut self, _set: Ieee802154RxAbortEnableSet) {}
-    fn set_multipan_panid(&mut self, _index: Ieee802154MultipanIndex, panid: u16) {
-        self.panid = panid;
+    fn set_multipan_panid(&mut self, index: Ieee802154MultipanIndex, panid: u16) {
+        self.multipan_enable = self.multipan_enable.with(index);
+        self.panid[usize::from(index.value())] = panid;
     }
-    fn multipan_panid(&mut self, _index: Ieee802154MultipanIndex) -> u16 {
-        self.panid
+    fn multipan_panid(&mut self, index: Ieee802154MultipanIndex) -> u16 {
+        self.panid[usize::from(index.value())]
     }
-    fn set_multipan_short_address(&mut self, _index: Ieee802154MultipanIndex, address: u16) {
-        self.short_address = address;
+    fn set_multipan_short_address(&mut self, index: Ieee802154MultipanIndex, address: u16) {
+        self.multipan_enable = self.multipan_enable.with(index);
+        self.short_address[usize::from(index.value())] = address;
     }
-    fn multipan_short_address(&mut self, _index: Ieee802154MultipanIndex) -> u16 {
-        self.short_address
+    fn multipan_short_address(&mut self, index: Ieee802154MultipanIndex) -> u16 {
+        self.short_address[usize::from(index.value())]
     }
-    fn set_multipan_extended_address(&mut self, _index: Ieee802154MultipanIndex, address: [u8; 8]) {
-        self.extended_address = address;
+    fn set_multipan_extended_address(&mut self, index: Ieee802154MultipanIndex, address: [u8; 8]) {
+        self.multipan_enable = self.multipan_enable.with(index);
+        self.extended_address[usize::from(index.value())] = address;
     }
-    fn multipan_extended_address(&mut self, _index: Ieee802154MultipanIndex) -> [u8; 8] {
-        self.extended_address
+    fn multipan_extended_address(&mut self, index: Ieee802154MultipanIndex) -> [u8; 8] {
+        self.extended_address[usize::from(index.value())]
+    }
+    fn set_multipan_enable(&mut self, state: Ieee802154MultipanEnableState) {
+        self.multipan_enable = state;
+    }
+    fn multipan_enable(&mut self) -> Ieee802154MultipanEnableState {
+        self.multipan_enable
     }
     fn set_ack_timeout(&mut self, units: u16) {
         self.ack_timeout = units;

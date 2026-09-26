@@ -379,9 +379,9 @@ fn configuration_reaches_the_identity_and_the_pib() {
     }
     assert_eq!(
         (
-            bench.hw.panid,
-            bench.hw.short_address,
-            bench.hw.extended_address
+            bench.hw.panid[0],
+            bench.hw.short_address[0],
+            bench.hw.extended_address[0]
         ),
         (0x1234, 0x5678, [1, 2, 3, 4, 5, 6, 7, 8])
     );

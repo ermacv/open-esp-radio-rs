@@ -520,8 +520,8 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Four Multi-PAN contexts"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[PAC MAC access](../../pac/src/ieee802154/mac.rs) represents four contexts. Production static policy uses context zero; no multi-context service/admission lifecycle exists."
-packages = ["oer-esp32s31-pac"]
+scope-and-limitations = "A [multi-PAN engine](src/engine.rs) assigns each received frame to the interface it addresses and keeps pending mode, pending table, receive and sleep per interface, as the vendor multi-PAN build does. The radio role and runtime serve interface zero; on-air multi-PAN filtering is not qualified."
+packages = ["oer-esp32s31-ieee802154", "oer-esp32s31-pac"]
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-automatic-frame-pending"

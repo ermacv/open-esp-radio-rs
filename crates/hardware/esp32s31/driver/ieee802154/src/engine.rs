@@ -18,7 +18,8 @@ use oer_esp32s31_hal::ieee802154::{
     Ieee802154Channel, Ieee802154TxPowerLevels,
     ll::{
         self, Ieee802154EtmRoute, Ieee802154LlCommand, Ieee802154LowLevel,
-        Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer,
+        Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,
+        Ieee802154Timer,
     },
     mac::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
@@ -27,7 +28,7 @@ use oer_esp32s31_hal::ieee802154::{
     },
     pib::{Ieee802154MultipanIndex, Ieee802154Pib, Ieee802154PibDefaults},
 };
-use oer_ieee802154::{FrameVersion, PendingTable, PhrFrame, ack_pending};
+use oer_ieee802154::{FrameAddress, FrameType, FrameVersion, PendingTable, PhrFrame, ack_pending};
 
 mod buffers;
 
@@ -101,8 +102,8 @@ pub enum Ieee802154TxError {
     Security,
 }
 
-/// Receive metadata (`esp_ieee802154_frame_info_t` without multi-PAN).
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+/// Receive metadata (`esp_ieee802154_frame_info_t`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Ieee802154FrameInfo {
     /// The frame was acknowledged with the pending bit set.
     pub pending: bool,
@@ -116,6 +117,50 @@ pub struct Ieee802154FrameInfo {
     pub lqi: u8,
     /// Microsecond timestamp of the SFD.
     pub timestamp: u64,
+    /// The multi-PAN interface the frame addresses, `None` for a broadcast
+    /// or unmatched frame (`ESP_IEEE802154_MULTIPAN_MAX`). Without multi-PAN
+    /// it stays interface zero.
+    pub mpf_index: Option<Ieee802154MultipanIndex>,
+}
+
+impl Default for Ieee802154FrameInfo {
+    /// The zeroed vendor frame information: interface zero.
+    fn default() -> Self {
+        Self {
+            pending: false,
+            process: false,
+            channel: 0,
+            rssi: 0,
+            lqi: 0,
+            timestamp: 0,
+            mpf_index: Some(Ieee802154MultipanIndex::CONTEXT0),
+        }
+    }
+}
+
+/// The multi-PAN build configuration (`CONFIG_IEEE802154_MULTI_PAN_ENABLE`
+/// and `CONFIG_IEEE802154_INTERFACE_NUM`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Ieee802154Interfaces(u8);
+
+impl Ieee802154Interfaces {
+    /// Multi-PAN with `count` interfaces, one through four.
+    pub const fn new(count: u8) -> Option<Self> {
+        if count >= 1 && count <= Ieee802154MultipanIndex::COUNT {
+            Some(Self(count))
+        } else {
+            None
+        }
+    }
+
+    /// The interface count.
+    pub const fn count(self) -> u8 {
+        self.0
+    }
+
+    fn indices(self) -> impl Iterator<Item = Ieee802154MultipanIndex> {
+        (0..self.0).filter_map(Ieee802154MultipanIndex::new)
+    }
 }
 
 /// A receive-ring slot the upper layer holds until
@@ -234,7 +279,9 @@ pub struct Ieee802154Engine<'storage> {
     buffers: &'storage mut Ieee802154EngineBuffers,
     levels: Ieee802154TxPowerLevels<'storage>,
     pib: Ieee802154Pib,
-    pending_table: PendingTable<PENDING_TABLE_SIZE>,
+    pending_tables: [PendingTable<PENDING_TABLE_SIZE>; Ieee802154MultipanIndex::COUNT as usize],
+    multipan: Option<Ieee802154Interfaces>,
+    rx_when_idle_mask: u8,
     state: Ieee802154State,
     tx: TxSource,
     rx_info: [Ieee802154FrameInfo; RX_BUFFER_COUNT + 1],
@@ -259,7 +306,10 @@ impl<'storage> Ieee802154Engine<'storage> {
             buffers,
             levels,
             pib: Ieee802154Pib::new(defaults, levels),
-            pending_table: PendingTable::new(),
+            pending_tables: [const { PendingTable::new() };
+                Ieee802154MultipanIndex::COUNT as usize],
+            multipan: None,
+            rx_when_idle_mask: 0,
             state: Ieee802154State::Disable,
             tx: TxSource::Frame,
             rx_info: [Ieee802154FrameInfo::default(); RX_BUFFER_COUNT + 1],
@@ -270,6 +320,30 @@ impl<'storage> Ieee802154Engine<'storage> {
             timer0: None,
             timer1: None,
         }
+    }
+
+    /// A disabled engine built with multi-PAN and `interfaces` interfaces.
+    pub fn new_multipan(
+        buffers: &'storage mut Ieee802154EngineBuffers,
+        levels: Ieee802154TxPowerLevels<'storage>,
+        defaults: Ieee802154PibDefaults,
+        interfaces: Ieee802154Interfaces,
+    ) -> Self {
+        let mut engine = Self::new(buffers, levels, defaults);
+        engine.multipan = Some(interfaces);
+        engine
+    }
+
+    /// The multi-PAN interfaces, `None` without multi-PAN.
+    pub const fn multipan(&self) -> Option<Ieee802154Interfaces> {
+        self.multipan
+    }
+
+    /// `IEEE802154_ASSERT(index < CONFIG_IEEE802154_INTERFACE_NUM)`: without
+    /// multi-PAN only interface zero exists.
+    fn assert_interface(&self, index: Ieee802154MultipanIndex) {
+        let count = self.multipan.map_or(1, Ieee802154Interfaces::count);
+        vendor_assert!(index.value() < count);
     }
 
     /// `ieee802154_get_state`.
@@ -285,7 +359,157 @@ impl<'storage> Ieee802154Engine<'storage> {
 
     /// The frame-pending table of interface zero.
     pub fn pending_table(&mut self) -> &mut PendingTable<PENDING_TABLE_SIZE> {
-        &mut self.pending_table
+        self.pending_table_for(Ieee802154MultipanIndex::CONTEXT0)
+    }
+
+    /// The frame-pending table of one interface
+    /// (`esp_ieee802154_multipan_*_pending_*`).
+    pub fn pending_table_for(
+        &mut self,
+        index: Ieee802154MultipanIndex,
+    ) -> &mut PendingTable<PENDING_TABLE_SIZE> {
+        self.assert_interface(index);
+        &mut self.pending_tables[usize::from(index.value())]
+    }
+
+    /// `esp_ieee802154_set_multipan_panid`.
+    pub fn set_multipan_panid<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        index: Ieee802154MultipanIndex,
+        panid: u16,
+    ) {
+        self.assert_interface(index);
+        ll.set_multipan_panid(index, panid);
+    }
+
+    /// `esp_ieee802154_get_multipan_panid`.
+    pub fn multipan_panid<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        index: Ieee802154MultipanIndex,
+    ) -> u16 {
+        self.assert_interface(index);
+        ll.multipan_panid(index)
+    }
+
+    /// `esp_ieee802154_set_multipan_short_address`.
+    pub fn set_multipan_short_address<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        index: Ieee802154MultipanIndex,
+        address: u16,
+    ) {
+        self.assert_interface(index);
+        ll.set_multipan_short_address(index, address);
+    }
+
+    /// `esp_ieee802154_get_multipan_short_address`.
+    pub fn multipan_short_address<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        index: Ieee802154MultipanIndex,
+    ) -> u16 {
+        self.assert_interface(index);
+        ll.multipan_short_address(index)
+    }
+
+    /// `esp_ieee802154_set_multipan_extended_address` in frame byte order.
+    pub fn set_multipan_extended_address<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        index: Ieee802154MultipanIndex,
+        address: [u8; 8],
+    ) {
+        self.assert_interface(index);
+        ll.set_multipan_extended_address(index, address);
+    }
+
+    /// `esp_ieee802154_get_multipan_extended_address`.
+    pub fn multipan_extended_address<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        index: Ieee802154MultipanIndex,
+    ) -> [u8; 8] {
+        self.assert_interface(index);
+        ll.multipan_extended_address(index)
+    }
+
+    /// `esp_ieee802154_set_multipan_enable`: the enabled interfaces must
+    /// exist.
+    pub fn set_multipan_enable<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        enable: Ieee802154MultipanEnableState,
+    ) {
+        self.assert_enable(enable);
+        ll.set_multipan_enable(enable);
+    }
+
+    /// `esp_ieee802154_get_multipan_enable`.
+    pub fn multipan_enable<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+    ) -> Ieee802154MultipanEnableState {
+        ll.multipan_enable()
+    }
+
+    /// `IEEE802154_ASSERT(mask < (1 << CONFIG_IEEE802154_INTERFACE_NUM))`.
+    fn assert_enable(&self, enable: Ieee802154MultipanEnableState) {
+        let count = self.multipan.map_or(1, Ieee802154Interfaces::count);
+        vendor_assert!(
+            (count..Ieee802154MultipanIndex::COUNT)
+                .filter_map(Ieee802154MultipanIndex::new)
+                .all(|index| !enable.contains(index))
+        );
+    }
+
+    /// `esp_ieee802154_multipan_receive`: enable `index`, then receive.
+    pub fn multipan_receive<L, E>(
+        &mut self,
+        ll: &mut L,
+        env: &mut E,
+        index: Ieee802154MultipanIndex,
+    ) where
+        L: Ieee802154LowLevel + ?Sized,
+        E: Ieee802154Environment + ?Sized,
+    {
+        self.assert_interface(index);
+        let enable = ll.multipan_enable().with(index);
+        self.assert_enable(enable);
+        ll.set_multipan_enable(enable);
+        self.receive(ll, env);
+    }
+
+    /// `esp_ieee802154_multipan_sleep`: disable `index`; the last disabled
+    /// interface puts the radio to sleep.
+    pub fn multipan_sleep<L, E>(&mut self, ll: &mut L, env: &mut E, index: Ieee802154MultipanIndex)
+    where
+        L: Ieee802154LowLevel + ?Sized,
+        E: Ieee802154Environment + ?Sized,
+    {
+        self.assert_interface(index);
+        let enable = ll.multipan_enable().without(index);
+        self.assert_enable(enable);
+        ll.set_multipan_enable(enable);
+        if enable == Ieee802154MultipanEnableState::NONE {
+            self.sleep(ll, env);
+        }
+    }
+
+    /// `esp_ieee802154_multipan_set_rx_when_idle`: receive when idle while
+    /// any interface asks for it.
+    pub fn multipan_set_rx_when_idle(&mut self, index: Ieee802154MultipanIndex, enable: bool) {
+        self.assert_interface(index);
+        if enable {
+            self.rx_when_idle_mask |= 1 << index.value();
+            self.pib.set_rx_when_idle(true);
+        } else {
+            self.rx_when_idle_mask &= !(1 << index.value());
+            if self.rx_when_idle_mask == 0 {
+                self.pib.set_rx_when_idle(false);
+            }
+        }
     }
 
     /// `esp_ieee802154_set_panid`: PAN ID of interface zero.
@@ -829,12 +1053,67 @@ impl<'storage> Ieee802154Engine<'storage> {
         }
         let rssi = image[usize::from(length) - 1] as i8;
         let lqi = image[usize::from(length)];
+        if let Some(interfaces) = self.multipan {
+            let interface = Self::match_interface(cx, &image, interfaces);
+            self.rx_info[index].mpf_index = interface;
+        }
         let channel = Ieee802154Channel::from_frequency_code(cx.ll.frequency_code());
         vendor_assert!(channel.is_some());
+        let info = &mut self.rx_info[index];
         info.channel = channel.map_or(0, Ieee802154Channel::number);
         info.rssi = rssi.wrapping_add(RSSI_COMPENSATION);
         info.lqi = lqi;
         self.recent_rx_info_index = self.rx_index;
+    }
+
+    /// `update_mpf_index`: the first interface whose PAN ID (when the frame
+    /// carries one) and destination address match; none for a broadcast
+    /// address or PAN ID. The identities are read from the MAC.
+    fn match_interface<L, E>(
+        cx: &mut Cx<'_, L, E>,
+        image: &[u8; FRAME_SIZE],
+        interfaces: Ieee802154Interfaces,
+    ) -> Option<Ieee802154MultipanIndex>
+    where
+        L: Ieee802154LowLevel + ?Sized,
+        E: Ieee802154Environment + ?Sized,
+    {
+        let frame = PhrFrame::new(image);
+        let panid = if frame.frame_type() == FrameType::Beacon {
+            frame.source_panid()
+        } else {
+            frame.destination_panid()
+        };
+        let destination = frame.destination_address().ok().flatten();
+        let broadcast = match destination {
+            Some(FrameAddress::Short(address)) => address == [0xff; 2],
+            Some(FrameAddress::Extended(address)) => address == [0xff; 8],
+            None => false,
+        };
+        if broadcast || panid == Some([0xff, 0xff]) {
+            return None;
+        }
+        for index in interfaces.indices() {
+            if let Some(panid) = panid
+                && u16::from_le_bytes(panid) != cx.ll.multipan_panid(index)
+            {
+                continue;
+            }
+            match destination {
+                Some(FrameAddress::Short(address))
+                    if u16::from_le_bytes(address) == cx.ll.multipan_short_address(index) =>
+                {
+                    return Some(index);
+                }
+                Some(FrameAddress::Extended(address))
+                    if address == cx.ll.multipan_extended_address(index) =>
+                {
+                    return Some(index);
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     /// `set_next_rx_buffer`: reuse the current slot when free, otherwise the
@@ -1207,9 +1486,20 @@ impl<'storage> Ieee802154Engine<'storage> {
         L: Ieee802154LowLevel + ?Sized,
         E: Ieee802154Environment + ?Sized,
     {
+        let interface = if self.multipan.is_some() {
+            match self.rx_info[usize::from(self.rx_index)].mpf_index {
+                Some(interface) => interface,
+                // An unmatched frame gets no pending decision, not even on
+                // the hardware ACK.
+                None => return false,
+            }
+        } else {
+            Ieee802154MultipanIndex::CONTEXT0
+        };
         let enhanced_lookup = cx.ll.pending_mode();
-        let mode = self.pib.pending_mode(Ieee802154MultipanIndex::CONTEXT0);
-        let decision = ack_pending(frame, enhanced_lookup, mode, &self.pending_table);
+        let mode = self.pib.pending_mode(interface);
+        let table = &self.pending_tables[usize::from(interface.value())];
+        let decision = ack_pending(frame, enhanced_lookup, mode, table);
         if decision.set_to_hardware {
             cx.ll.set_pending_bit(decision.pending);
         }
@@ -1354,5 +1644,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     }
 }
 
+#[cfg(test)]
+mod multipan_tests;
 #[cfg(test)]
 mod tests;

@@ -5,10 +5,10 @@ use std::{vec, vec::Vec};
 
 use super::{
     Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
-    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,
-    Ieee802154Timer, Ieee802154TxAbortEnableSet, etm_channel_clear, etm_set_event_task,
-    event_end_process, mac_init_registers, sec_clear, target_time_expired, timer_fire_at,
-    timer_threshold,
+    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154MultipanEnableState,
+    Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
+    etm_channel_clear, etm_set_event_task, event_end_process, mac_init_registers, sec_clear,
+    target_time_expired, timer_fire_at, timer_threshold,
 };
 use crate::ieee802154::{
     lifecycle::Ieee802154Channel,
@@ -96,6 +96,8 @@ impl Ieee802154LowLevel for Recorder {
         multipan_short_address(Ieee802154MultipanIndex) -> u16;
         set_multipan_extended_address(Ieee802154MultipanIndex, [u8; 8]);
         multipan_extended_address(Ieee802154MultipanIndex) -> [u8; 8];
+        set_multipan_enable(Ieee802154MultipanEnableState);
+        multipan_enable() -> Ieee802154MultipanEnableState;
         set_ack_timeout(u16);
         ack_timeout() -> u16;
         set_security_offset(u8);

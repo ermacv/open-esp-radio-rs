@@ -11,6 +11,9 @@ description = "Interrupt-driven ESP32-S31 IEEE 802.15.4 MAC driver ported from t
 oer-esp32s31-hal = { path = "../../hal" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
 
+[dev-dependencies]
+oer-esp32s31-hal = { path = "../../hal", features = ["ll-model"] }
+
 [lints]
 workspace = true
 

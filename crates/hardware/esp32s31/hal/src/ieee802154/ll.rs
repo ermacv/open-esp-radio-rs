@@ -26,8 +26,8 @@ use oer_esp32s31_pac::{
 
 pub use oer_esp32s31_pac::{
     Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
-    Ieee802154RxAbortEnableSet, Ieee802154RxStateCode, Ieee802154RxStatus,
-    Ieee802154TxAbortEnableSet,
+    Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStateCode,
+    Ieee802154RxStatus, Ieee802154TxAbortEnableSet,
 };
 
 use crate::ieee802154::{
@@ -138,6 +138,10 @@ pub trait Ieee802154LowLevel {
     fn set_multipan_extended_address(&mut self, index: Ieee802154MultipanIndex, address: [u8; 8]);
     /// `ieee802154_ll_get_multipan_ext_addr`.
     fn multipan_extended_address(&mut self, index: Ieee802154MultipanIndex) -> [u8; 8];
+    /// `ieee802154_ll_set_multipan_enable_mask`.
+    fn set_multipan_enable(&mut self, state: Ieee802154MultipanEnableState);
+    /// `ieee802154_ll_get_multipan_enable_mask`.
+    fn multipan_enable(&mut self) -> Ieee802154MultipanEnableState;
     /// `ieee802154_ll_set_ack_timeout` in 16-microsecond units.
     fn set_ack_timeout(&mut self, units: u16);
     /// `ieee802154_ll_get_ack_timeout` in 16-microsecond units.
@@ -414,6 +418,14 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
 
     fn multipan_extended_address(&mut self, index: Ieee802154MultipanIndex) -> [u8; 8] {
         self.task.lease().multipan_extended_address(index)
+    }
+
+    fn set_multipan_enable(&mut self, state: Ieee802154MultipanEnableState) {
+        self.task.lease().set_multipan_enable_state(state);
+    }
+
+    fn multipan_enable(&mut self) -> Ieee802154MultipanEnableState {
+        self.task.lease().multipan_enable_state()
     }
 
     fn set_ack_timeout(&mut self, units: u16) {

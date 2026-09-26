@@ -1,8 +1,8 @@
 //! One registered-epoch lifecycle shared by every protocol route.
 //!
-//! Every protocol route couples the same two software owners, the
-//! target-issued [`RegisteredPhyState`] and the shared PHY client set, to its
-//! own physical owner. A route selects that physical owner, its owners before
+//! A [`PhyDomain`] is one registered PHY epoch: the target-issued
+//! [`RegisteredPhyState`] and the client set that shares it. Every protocol
+//! route couples a domain to its own physical owner. A route selects that physical owner, its owners before
 //! and after acquiring its client, and the client it may acquire. The client
 //! acquisition, tracking evaluation, pending tracking, fail-stop and release
 //! frontiers below are written once and instantiated per route; each keeps
@@ -31,10 +31,8 @@ use crate::{
 };
 
 pub(crate) mod sealed {
-    use crate::{
-        RegisteredPhyState,
-        state::client::{PhyClientState, PhyModemClient},
-    };
+    use super::PhyDomain;
+    use crate::state::client::PhyModemClient;
 
     pub trait PhyRoute {
         /// Physical owner coupled to the registration, or `()` when the
@@ -47,17 +45,115 @@ pub(crate) mod sealed {
         /// The only client this route may acquire or release.
         const CLIENT: PhyModemClient;
 
-        fn unclaimed(
-            hardware: Self::Hardware,
-            registered: RegisteredPhyState,
-            clients: PhyClientState,
-        ) -> Self::Unclaimed;
+        fn unclaimed(hardware: Self::Hardware, domain: PhyDomain) -> Self::Unclaimed;
 
-        fn client(
-            hardware: Self::Hardware,
-            registered: RegisteredPhyState,
-            clients: PhyClientState,
-        ) -> Self::Client;
+        fn client(hardware: Self::Hardware, domain: PhyDomain) -> Self::Client;
+    }
+}
+
+/// One registered PHY epoch: the target-issued calibration state and the
+/// client set that shares it.
+///
+/// Every protocol owner holds exactly one domain beside its physical owner,
+/// and every registration path mints one. The domain is neither `Clone` nor
+/// constructible outside the crate, so its calibration state and client set
+/// cannot be replaced or paired with another epoch.
+///
+/// ```compile_fail
+/// use oer_esp32s31_phy::registered_route::PhyDomain;
+/// fn requires_clone<T: Clone>() {}
+/// requires_clone::<PhyDomain>();
+/// ```
+#[must_use = "a registered PHY domain is the unique owner of its epoch"]
+pub struct PhyDomain {
+    pub(crate) registered: RegisteredPhyState,
+    pub(crate) clients: PhyClientState,
+}
+
+impl PhyDomain {
+    pub(crate) const fn new(registered: RegisteredPhyState, clients: PhyClientState) -> Self {
+        Self {
+            registered,
+            clients,
+        }
+    }
+
+    /// Mint the domain of one completed target registration.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn from_target_completion(
+        state: PhyState,
+        witness: crate::target_port::TargetRegistrationWitness,
+    ) -> Self {
+        let epoch = witness.epoch();
+        Self::new(
+            RegisteredPhyState::from_target_completion(state, witness),
+            PhyClientState::for_registration(
+                crate::state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS,
+                epoch,
+            ),
+        )
+    }
+
+    /// Borrow the registered calibration state without mutable authority.
+    pub const fn phy_state(&self) -> &PhyState {
+        self.registered.state()
+    }
+
+    /// Inspect the shared client set without exposing its raw mask.
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.clients.snapshot()
+    }
+
+    /// Replace an older cache for this epoch with the currently committed
+    /// semantic calibration state.
+    ///
+    /// Consuming the prior cache preserves the single-owner persistence
+    /// contract. Its platform-derived identity is retained; the next cold
+    /// registration still validates that identity against the physical chip.
+    pub fn refresh_calibration_cache(
+        &self,
+        previous: crate::state::PhyCalibrationCache,
+    ) -> crate::state::PhyCalibrationCache {
+        self.registered
+            .state()
+            .calibration_cache(previous.identity())
+    }
+
+    /// Inspect registered-policy conditions without sampling temperature,
+    /// advancing deadlines or acquiring RF. Values describe retained state,
+    /// not a job plan.
+    pub fn inspect_tracking(
+        &self,
+        now_micros: u64,
+    ) -> Result<crate::tracking::inspection::Inspection, PhyTrackTimeError> {
+        crate::tracking::inspection::Inspection::registered(
+            &self.registered,
+            self.client_snapshot(),
+            now_micros,
+        )
+    }
+
+    /// Wait for tracking demand without transferring the domain to a timer.
+    ///
+    /// Cancellation and timer errors leave the domain unchanged. The returned
+    /// observation is not a hardware grant: obtain the required physical
+    /// exclusion before invoking a consuming evaluation. No timestamp is
+    /// refreshed here.
+    pub async fn wait_for_tracking_demand(
+        &self,
+        timer: &mut impl crate::state::client::PhyTrackingTimer,
+    ) -> Result<Option<crate::tracking::schedule::Demand>, PhyTrackTimeError> {
+        use crate::tracking::schedule::Schedule;
+        loop {
+            match self
+                .client_snapshot()
+                .tracking_schedule_at(timer.now_micros())?
+            {
+                Schedule::Inactive => return Ok(None),
+                Schedule::Due(demand) => return Ok(Some(demand)),
+                Schedule::At(deadline) => timer.wait_until_micros(deadline).await,
+            }
+        }
     }
 }
 
@@ -92,7 +188,7 @@ fn client_owner<R: PhyRoute>(
     registered: RegisteredPhyState,
     clients: PhyClientState,
 ) -> Client<R> {
-    <R as sealed::PhyRoute>::client(hardware, registered, clients)
+    <R as sealed::PhyRoute>::client(hardware, PhyDomain::new(registered, clients))
 }
 
 /// Acquire this route's client for one owner's parts.
@@ -102,10 +198,13 @@ fn client_owner<R: PhyRoute>(
 )]
 pub(crate) fn acquire<R: PhyRoute>(
     hardware: Hardware<R>,
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
     clock: &mut impl crate::state::client::PhyPllTrackClock,
 ) -> Result<PhyClientAcquire<R>, PhyClientAcquireFailureOwner<R>> {
+    let PhyDomain {
+        registered,
+        clients,
+    } = domain;
     match clients.acquire(<R as sealed::PhyRoute>::CLIENT, clock) {
         Ok(outcome) => Ok(PhyClientAcquire {
             hardware,
@@ -127,9 +226,12 @@ pub(crate) fn acquire<R: PhyRoute>(
 )]
 pub(crate) fn release<R: PhyRoute>(
     hardware: Hardware<R>,
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 ) -> Result<PhyClientRelease<R>, PhyClientReleaseFailureOwner<R>> {
+    let PhyDomain {
+        registered,
+        clients,
+    } = domain;
     match clients.release(<R as sealed::PhyRoute>::CLIENT) {
         Ok(outcome) => Ok(PhyClientRelease {
             hardware,
@@ -152,11 +254,14 @@ pub(crate) fn release<R: PhyRoute>(
 )]
 pub(crate) fn evaluate<R: PhyRoute>(
     hardware: Hardware<R>,
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
     clock: &mut impl crate::state::client::PhyPllTrackClock,
     immediate: bool,
 ) -> Result<PhyTrackEvaluationOwner<R>, PhyTrackEvaluationFailureOwner<R>> {
+    let PhyDomain {
+        registered,
+        clients,
+    } = domain;
     let result = if immediate {
         clients.evaluate_immediate_tracking(clock)
     } else {
@@ -245,8 +350,7 @@ impl<R: PhyRoute> PhyClientAcquireFailureOwner<R> {
     pub fn into_owner(self) -> Unclaimed<R> {
         <R as sealed::PhyRoute>::unclaimed(
             self.hardware,
-            self.registered,
-            self.failure.into_owner(),
+            PhyDomain::new(self.registered, self.failure.into_owner()),
         )
     }
 }

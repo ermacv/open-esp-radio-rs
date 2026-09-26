@@ -8,8 +8,9 @@
 use oer_esp32s31_hal::owner::{Radio, state::Powered};
 
 use crate::{
-    PhyState, RegisteredPhyState,
-    state::client::{PhyClientReleaseError, PhyClientSnapshot, PhyClientState, PhyModemClient},
+    PhyState,
+    registered_route::PhyDomain,
+    state::client::{PhyClientReleaseError, PhyClientSnapshot, PhyModemClient},
 };
 
 /// Wi-Fi's retained registration and client scheduler, without a raw-state
@@ -23,8 +24,7 @@ use crate::{
 /// ```
 #[must_use = "registered Wi-Fi PHY belongs to its runtime hardware epoch"]
 pub struct RegisteredWifiPhy {
-    pub(crate) registered: RegisteredPhyState,
-    pub(crate) clients: PhyClientState,
+    pub(crate) domain: PhyDomain,
 }
 
 /// A due periodic pass or an explicitly selected operation.
@@ -56,8 +56,13 @@ pub enum WifiPhyMaintenanceRequest {
 }
 
 impl RegisteredWifiPhy {
+    /// Borrow the registered PHY domain this owner holds.
+    pub const fn domain(&self) -> &PhyDomain {
+        &self.domain
+    }
+
     pub const fn state(&self) -> &PhyState {
-        self.registered.state()
+        self.domain.registered.state()
     }
 
     /// Inspect registered-policy conditions without sampling temperature, advancing
@@ -67,15 +72,11 @@ impl RegisteredWifiPhy {
         now_micros: u64,
     ) -> Result<crate::tracking::inspection::Inspection, crate::state::client::PhyTrackTimeError>
     {
-        crate::tracking::inspection::Inspection::registered(
-            &self.registered,
-            self.client_snapshot(),
-            now_micros,
-        )
+        self.domain.inspect_tracking(now_micros)
     }
 
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.clients.snapshot()
     }
 
     /// Release the Wi-Fi client and reunite the registration with the powered
@@ -93,7 +94,7 @@ impl RegisteredWifiPhy {
         mut radio: Radio<P, Powered>,
     ) -> Result<crate::RegisteredPhyClientRelease<P>, RegisteredWifiPhyClientReleaseFailure<P>>
     {
-        if !self.clients.describes(&*radio.phy_hal_mut()) {
+        if !self.domain.clients.describes(&*radio.phy_hal_mut()) {
             return Err(RegisteredWifiPhyClientReleaseFailure {
                 owner: self,
                 radio,
@@ -101,8 +102,10 @@ impl RegisteredWifiPhy {
             });
         }
         let Self {
-            registered,
-            clients,
+            domain: PhyDomain {
+                registered,
+                clients,
+            },
         } = self;
         match clients.release(PhyModemClient::Wifi) {
             Ok(outcome) => Ok(crate::RegisteredPhyClientRelease::from_detached_parts(
@@ -111,8 +114,7 @@ impl RegisteredWifiPhy {
             Err(failure) => Err(RegisteredWifiPhyClientReleaseFailure {
                 error: RegisteredWifiPhyClientReleaseError::Client(failure.error()),
                 owner: Self {
-                    registered,
-                    clients: failure.into_owner(),
+                    domain: PhyDomain::new(registered, failure.into_owner()),
                 },
                 radio,
             }),

@@ -1,4 +1,5 @@
 use super::{RegisteredBluetoothPhy, RegisteredBluetoothPhyClient};
+use crate::registered_route::PhyDomain;
 use crate::{
     PhyConfig, PhyState, RegisteredPhyState,
     state::client::{
@@ -17,10 +18,10 @@ impl PhyPllTrackClock for FixedClock {
 
 fn registered_phy() -> RegisteredBluetoothPhy {
     RegisteredBluetoothPhy {
-        registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
-            PhyConfig::production(),
-        )),
-        clients: PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        domain: PhyDomain::new(
+            RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production())),
+            PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        ),
     }
 }
 
@@ -234,10 +235,10 @@ fn bluetooth_release_preserves_last_client_disposition_until_explicit_recovery()
 #[test]
 fn missing_bluetooth_release_returns_the_unchanged_owner() {
     let owner = RegisteredBluetoothPhyClient {
-        registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
-            PhyConfig::production(),
-        )),
-        clients: PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        domain: PhyDomain::new(
+            RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production())),
+            PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        ),
     };
     let failure = owner
         .release_phy_client()

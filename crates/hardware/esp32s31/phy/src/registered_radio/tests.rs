@@ -1,3 +1,4 @@
+use crate::registered_route::PhyDomain;
 use crate::tracking::parameters::PhyParamTrackingAction;
 use crate::{PhyConfig, state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS};
 
@@ -25,8 +26,10 @@ fn registered_radio_with_state(state: PhyState) -> RegisteredPhyRadio<TestPlatfo
     let radio = radio.assume_powered_for_validation();
     RegisteredPhyRadio {
         radio,
-        phy: RegisteredPhyState::from_wrapper_test_model(state),
-        clients: PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        domain: PhyDomain::new(
+            RegisteredPhyState::from_wrapper_test_model(state),
+            PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        ),
     }
 }
 
@@ -57,7 +60,8 @@ fn cache_refresh_consumes_the_prior_snapshot_and_captures_committed_state() {
 /// protocol's client, as a future shared domain would.
 fn registered_radio_with_client(client: PhyModemClient) -> RegisteredPhyRadio<TestPlatform> {
     let mut owner = registered_radio();
-    owner.clients = owner
+    owner.domain.clients = owner
+        .domain
         .clients
         .acquire(client, &mut FixedClock(0))
         .unwrap_or_else(|_| panic!("fresh model acquisition must succeed"))

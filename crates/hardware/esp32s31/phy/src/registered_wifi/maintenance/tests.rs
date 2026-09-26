@@ -1,4 +1,5 @@
 use super::*;
+use crate::registered_route::PhyDomain;
 use crate::{
     PhyConfig, PhyState,
     state::client::{DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyClientState, PhyModemClient},
@@ -16,10 +17,10 @@ fn owner() -> RegisteredWifiPhy {
         .into_owner()
         .unwrap_or_else(|_| panic!("unexpected initial tracking"));
     RegisteredWifiPhy {
-        registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
-            PhyConfig::production(),
-        )),
-        clients,
+        domain: PhyDomain::new(
+            RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production())),
+            clients,
+        ),
     }
 }
 
@@ -40,10 +41,10 @@ fn registered_radio(acquire_wifi: bool) -> (RegisteredWifiPhy, PoweredRadio) {
             .unwrap_or_else(|_| panic!("unexpected initial tracking"));
     }
     let owner = RegisteredWifiPhy {
-        registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
-            PhyConfig::production(),
-        )),
-        clients,
+        domain: PhyDomain::new(
+            RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production())),
+            clients,
+        ),
     };
     (owner, radio)
 }
@@ -157,14 +158,14 @@ fn elapsed_deadline_retains_wifi_until_tracking_completes() {
 #[test]
 fn explicit_calibration_preserves_registered_policy_and_real_deadline() {
     let owner = owner();
-    let before = owner.registered.tracking_policy();
-    let requested = WifiPhyMaintenanceRequest::Calibrate.policy(&owner.registered);
+    let before = owner.domain.registered.tracking_policy();
+    let requested = WifiPhyMaintenanceRequest::Calibrate.policy(&owner.domain.registered);
     assert_eq!(requested.calibration_tracking_threshold, Some(0));
     assert_eq!(
-        WifiPhyMaintenanceRequest::Track.policy(&owner.registered),
+        WifiPhyMaintenanceRequest::Track.policy(&owner.domain.registered),
         before
     );
-    assert_eq!(owner.registered.tracking_policy(), before);
+    assert_eq!(owner.domain.registered.tracking_policy(), before);
     let snapshot = owner.client_snapshot();
     match owner
         .evaluate(
@@ -223,7 +224,7 @@ fn automatic_selection_rechecks_sample_age_after_waiting_for_admission() {
         Some(100),
         Some(110),
     );
-    owner.registered = RegisteredPhyState::from_wrapper_test_model(state);
+    owner.domain.registered = RegisteredPhyState::from_wrapper_test_model(state);
     let before = owner.client_snapshot();
     let Evaluation::Idle(owner) = owner
         .evaluate(
@@ -258,17 +259,17 @@ fn explicit_rfpll_forces_measurement_without_enabling_periodic_work() {
         Some(90),
         Some(95),
     );
-    owner.registered = RegisteredPhyState::from_wrapper_test_model(state);
+    owner.domain.registered = RegisteredPhyState::from_wrapper_test_model(state);
     let request = WifiPhyMaintenanceRequest::MeasureRfpll {
         maximum_age_micros: 1000,
     };
     let before = owner.client_snapshot();
-    let policy = owner.registered.tracking_policy();
+    let policy = owner.domain.registered.tracking_policy();
     assert!(policy.rfpll_cap_tracking_enabled);
-    let selected = request.policy(&owner.registered);
+    let selected = request.policy(&owner.domain.registered);
     assert_eq!(selected.rfpll_cap_tracking_threshold, Some(0));
     assert!(selected.rfpll_cap_tracking_enabled);
-    assert_eq!(owner.registered.tracking_policy(), policy);
+    assert_eq!(owner.domain.registered.tracking_policy(), policy);
     let Evaluation::Pending {
         registered: _,
         mut pending,
@@ -320,7 +321,7 @@ fn observed_rfpll_requires_a_completed_recent_acquisition_without_changing_polic
                 acquisition.map(|(start, _)| start),
                 acquisition.map(|(_, end)| end),
             );
-            owner.registered = RegisteredPhyState::from_wrapper_test_model(state);
+            owner.domain.registered = RegisteredPhyState::from_wrapper_test_model(state);
             let request = if forced {
                 WifiPhyMaintenanceRequest::MeasureRfpll {
                     maximum_age_micros: 1000,
@@ -331,10 +332,14 @@ fn observed_rfpll_requires_a_completed_recent_acquisition_without_changing_polic
                     maximum_age_micros: 1000,
                 }
             };
-            assert!(request.policy(&owner.registered).rfpll_cap_tracking_enabled);
+            assert!(
+                request
+                    .policy(&owner.domain.registered)
+                    .rfpll_cap_tracking_enabled
+            );
             assert_eq!(
                 request
-                    .policy(&owner.registered)
+                    .policy(&owner.domain.registered)
                     .rfpll_cap_tracking_threshold,
                 forced.then_some(0)
             );

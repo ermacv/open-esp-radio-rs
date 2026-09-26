@@ -19,12 +19,10 @@ use crate::{
     PhyState, RegisteredPhyState,
     registered_route::{
         BluetoothRoute, PhyClientAcquire, PhyClientAcquireFailureOwner, PhyClientRelease,
-        PhyClientReleaseFailureOwner, PhyPendingTrackOwner, PhyPendingTrackingOwner,
+        PhyClientReleaseFailureOwner, PhyDomain, PhyPendingTrackOwner, PhyPendingTrackingOwner,
         PhyTrackEvaluationFailureOwner, PhyTrackEvaluationOwner, PhyTrackPoisonedOwner,
     },
-    state::client::{
-        PhyClientSnapshot, PhyClientState, PhyModemClient, PhyPllTrackClock, PhyTrackTimeError,
-    },
+    state::client::{PhyClientSnapshot, PhyModemClient, PhyPllTrackClock, PhyTrackTimeError},
 };
 
 /// Target-registered common PHY before the Bluetooth client is acquired.
@@ -34,35 +32,34 @@ use crate::{
 /// `Clone` and exposes no decomposer.
 #[must_use = "the target-registered Bluetooth PHY owner is unique"]
 pub struct RegisteredBluetoothPhy {
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 }
 
 impl RegisteredBluetoothPhy {
+    /// Borrow the registered PHY domain this owner holds.
+    pub const fn domain(&self) -> &PhyDomain {
+        &self.domain
+    }
+
     /// Mint the Bluetooth owner after one concrete target registration run.
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn from_target_completion(
         state: PhyState,
         witness: crate::target_port::TargetRegistrationWitness,
     ) -> Self {
-        let epoch = witness.epoch();
         Self {
-            registered: RegisteredPhyState::from_target_completion(state, witness),
-            clients: PhyClientState::for_registration(
-                crate::state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS,
-                epoch,
-            ),
+            domain: PhyDomain::from_target_completion(state, witness),
         }
     }
 
     /// Borrow the target-registered PHY state without mutable authority.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.domain.phy_state()
     }
 
     /// Inspect the source-owned client set without exposing its bit image.
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 
     /// Acquire exactly the Bluetooth shared-PHY client.
@@ -79,7 +76,7 @@ impl RegisteredBluetoothPhy {
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredBluetoothPhyClientAcquire, RegisteredBluetoothPhyClientAcquireFailure>
     {
-        crate::registered_route::acquire::<BluetoothRoute>((), self.registered, self.clients, clock)
+        crate::registered_route::acquire::<BluetoothRoute>((), self.domain, clock)
     }
 }
 
@@ -96,11 +93,15 @@ pub type RegisteredBluetoothPhyClientAcquireFailure = PhyClientAcquireFailureOwn
 /// a per-event RF-ready instant nor operational radio-engine readiness.
 #[must_use = "the registered Bluetooth PHY client owner is unique"]
 pub struct RegisteredBluetoothPhyClient {
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 }
 
 impl RegisteredBluetoothPhyClient {
+    /// Borrow the registered PHY domain this owner holds.
+    pub const fn domain(&self) -> &PhyDomain {
+        &self.domain
+    }
+
     /// Change only the diagnostic thermal thresholds, returning their old policy.
     /// This does not mutate samples, acknowledge demand or grant RF access.
     /// The caller retains exclusive client authority and must arrange quiescence.
@@ -109,7 +110,7 @@ impl RegisteredBluetoothPhyClient {
         &mut self,
         debug: crate::state::PhyTemperatureTrackingDebug,
     ) -> crate::state::PhyTemperatureTrackingDebug {
-        let state = self.registered.target_state_mut();
+        let state = self.domain.registered.target_state_mut();
         let old = state.temperature_tracking_debug();
         state.set_temperature_tracking_debug(debug.first, debug.second);
         old
@@ -117,12 +118,12 @@ impl RegisteredBluetoothPhyClient {
 
     /// Borrow the target-registered PHY state without mutable authority.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.domain.phy_state()
     }
 
     /// Inspect the settled source-owned client set.
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 
     /// Release the Bluetooth client while retaining the registered common-PHY
@@ -139,7 +140,7 @@ impl RegisteredBluetoothPhyClient {
         self,
     ) -> Result<RegisteredBluetoothPhyClientRelease, RegisteredBluetoothPhyClientReleaseFailure>
     {
-        crate::registered_route::release::<BluetoothRoute>((), self.registered, self.clients)
+        crate::registered_route::release::<BluetoothRoute>((), self.domain)
     }
 
     /// Inspect registered-policy conditions without sampling temperature,
@@ -148,11 +149,7 @@ impl RegisteredBluetoothPhyClient {
         &self,
         now_micros: u64,
     ) -> Result<crate::tracking::inspection::Inspection, PhyTrackTimeError> {
-        crate::tracking::inspection::Inspection::registered(
-            &self.registered,
-            self.client_snapshot(),
-            now_micros,
-        )
+        self.domain.inspect_tracking(now_micros)
     }
 
     /// Evaluate one source-compatible periodic callback for this Bluetooth
@@ -166,13 +163,7 @@ impl RegisteredBluetoothPhyClient {
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure>
     {
-        crate::registered_route::evaluate::<BluetoothRoute>(
-            (),
-            self.registered,
-            self.clients,
-            clock,
-            false,
-        )
+        crate::registered_route::evaluate::<BluetoothRoute>((), self.domain, clock, false)
     }
 
     /// Recheck an absolute deadline after a timer or another Controller event
@@ -188,13 +179,7 @@ impl RegisteredBluetoothPhyClient {
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure>
     {
-        crate::registered_route::evaluate::<BluetoothRoute>(
-            (),
-            self.registered,
-            self.clients,
-            clock,
-            true,
-        )
+        crate::registered_route::evaluate::<BluetoothRoute>((), self.domain, clock, true)
     }
 
     /// Wait for scheduling demand while borrowing, rather than transferring,
@@ -206,17 +191,7 @@ impl RegisteredBluetoothPhyClient {
         &self,
         timer: &mut impl crate::state::client::PhyTrackingTimer,
     ) -> Result<Option<crate::tracking::schedule::Demand>, PhyTrackTimeError> {
-        use crate::tracking::schedule::Schedule;
-        loop {
-            match self
-                .client_snapshot()
-                .tracking_schedule_at(timer.now_micros())?
-            {
-                Schedule::Inactive => return Ok(None),
-                Schedule::Due(demand) => return Ok(Some(demand)),
-                Schedule::At(deadline) => timer.wait_until_micros(deadline).await,
-            }
-        }
+        self.domain.wait_for_tracking_demand(timer).await
     }
 }
 
@@ -461,8 +436,7 @@ impl RegisteredBluetoothPhyClientRelease {
         let clients = outcome.into_owner();
         debug_assert!(clients.snapshot().is_empty());
         Ok(RegisteredBluetoothPhy {
-            registered,
-            clients,
+            domain: PhyDomain::new(registered, clients),
         })
     }
 }
@@ -499,26 +473,12 @@ impl crate::registered_route::sealed::PhyRoute for BluetoothRoute {
     type Client = RegisteredBluetoothPhyClient;
     const CLIENT: PhyModemClient = PhyModemClient::Bluetooth;
 
-    fn unclaimed(
-        (): (),
-        registered: RegisteredPhyState,
-        clients: PhyClientState,
-    ) -> RegisteredBluetoothPhy {
-        RegisteredBluetoothPhy {
-            registered,
-            clients,
-        }
+    fn unclaimed((): (), domain: PhyDomain) -> RegisteredBluetoothPhy {
+        RegisteredBluetoothPhy { domain }
     }
 
-    fn client(
-        (): (),
-        registered: RegisteredPhyState,
-        clients: PhyClientState,
-    ) -> RegisteredBluetoothPhyClient {
-        RegisteredBluetoothPhyClient {
-            registered,
-            clients,
-        }
+    fn client((): (), domain: PhyDomain) -> RegisteredBluetoothPhyClient {
+        RegisteredBluetoothPhyClient { domain }
     }
 }
 

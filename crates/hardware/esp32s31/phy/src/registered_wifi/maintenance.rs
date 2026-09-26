@@ -3,6 +3,7 @@
 use super::{RegisteredWifiPhy, WifiPhyMaintenanceRequest};
 use crate::{
     RegisteredPhyState,
+    registered_route::PhyDomain,
     state::client::{PhyPendingTracking, PhyPllTrackClock, PhyTrackTimeError},
 };
 
@@ -39,8 +40,10 @@ impl RegisteredWifiPhy {
             return Err((self, Rejection::EpochMismatch));
         }
         let Self {
-            registered,
-            clients,
+            domain: PhyDomain {
+                registered,
+                clients,
+            },
         } = self;
         let operation = match request {
             WifiPhyMaintenanceRequest::Operation(operation)
@@ -61,8 +64,7 @@ impl RegisteredWifiPhy {
             if let Err(error) = clients.snapshot().tracking_schedule_at(clock.now_micros()) {
                 return Err((
                     Self {
-                        registered,
-                        clients,
+                        domain: PhyDomain::new(registered, clients),
                     },
                     Rejection::Clock(error),
                 ));
@@ -72,8 +74,7 @@ impl RegisteredWifiPhy {
                 .contains(crate::state::client::PhyModemClient::Wifi)
             {
                 return Ok(Evaluation::Idle(Self {
-                    registered,
-                    clients,
+                    domain: PhyDomain::new(registered, clients),
                 }));
             }
             let maximum_age = match request {
@@ -96,8 +97,7 @@ impl RegisteredWifiPhy {
                 )
             {
                 return Ok(Evaluation::Idle(Self {
-                    registered,
-                    clients,
+                    domain: PhyDomain::new(registered, clients),
                 }));
             }
             let pending = clients.begin_wifi_operation(request.policy(&registered), operation);
@@ -112,8 +112,7 @@ impl RegisteredWifiPhy {
                 let error = failure.error();
                 return Err((
                     Self {
-                        registered,
-                        clients: failure.into_owner(),
+                        domain: PhyDomain::new(registered, failure.into_owner()),
                     },
                     Rejection::Clock(error),
                 ));
@@ -121,8 +120,7 @@ impl RegisteredWifiPhy {
         };
         Ok(match evaluation.into_owner() {
             Ok(clients) => Evaluation::Idle(Self {
-                registered,
-                clients,
+                domain: PhyDomain::new(registered, clients),
             }),
             Err(pending) => {
                 let policy = request.policy(&registered);
@@ -229,7 +227,7 @@ mod target {
             (Self, WifiAccess<I>, Option<PhyParamTrackingOutcome>),
             WifiPhyMaintenanceFailure<I>,
         > {
-            let registration_current = self.clients.describes(&access.phy_hal());
+            let registration_current = self.domain.clients.describes(&access.phy_hal());
             let (mut registered, mut pending) =
                 match self.evaluate(request, clock, registration_current) {
                     Ok(Evaluation::Idle(owner)) => return Ok((owner, access, None)),
@@ -280,8 +278,7 @@ mod target {
             match pending.into_owner() {
                 Ok(clients) => Ok((
                     Self {
-                        registered,
-                        clients,
+                        domain: PhyDomain::new(registered, clients),
                     },
                     access,
                     Some(outcome),

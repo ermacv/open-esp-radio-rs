@@ -3162,11 +3162,11 @@ pub async fn select_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
     channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
     observer: &mut O,
 ) -> Result<(), PhyTargetPortError> {
-    if !phy.clients.describes(&*channel) {
+    if !phy.domain.clients.describes(&*channel) {
         return Err(PhyTargetPortError::RegistrationEpochMismatch);
     }
     select_phy_channel_with_hal::<D, _, _>(
-        phy.registered.target_state_mut(),
+        phy.domain.registered.target_state_mut(),
         channel_or_frequency,
         cbw,
         channel,
@@ -3186,11 +3186,11 @@ pub async fn switch_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
     channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
     observer: &mut O,
 ) -> Result<(), PhyTargetPortError> {
-    if !phy.clients.describes(&*channel) {
+    if !phy.domain.clients.describes(&*channel) {
         return Err(PhyTargetPortError::RegistrationEpochMismatch);
     }
     switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
-        phy.registered.target_state_mut(),
+        phy.domain.registered.target_state_mut(),
         channel_or_frequency,
         cbw,
         channel,

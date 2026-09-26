@@ -14,7 +14,7 @@ use crate::{
     PhyState, RegisteredPhyState,
     registered_route::{
         PhyClientAcquire, PhyClientAcquireFailureOwner, PhyClientRelease,
-        PhyClientReleaseFailureOwner, PhyPendingTrackOwner, PhyPendingTrackingOwner,
+        PhyClientReleaseFailureOwner, PhyDomain, PhyPendingTrackOwner, PhyPendingTrackingOwner,
         PhyTrackEvaluationFailureOwner, PhyTrackEvaluationOwner, PhyTrackPoisonedOwner, WifiRoute,
     },
     state::client::{
@@ -83,11 +83,15 @@ mod wifi_integration;
 #[must_use = "a registered PHY radio uniquely owns its powered hardware epoch"]
 pub struct RegisteredPhyRadio<P> {
     radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 }
 
 impl<P> RegisteredPhyRadio<P> {
+    /// Borrow the registered PHY domain this owner holds.
+    pub const fn domain(&self) -> &PhyDomain {
+        &self.domain
+    }
+
     /// Lend only cold MAC operations while retaining registration authority.
     #[cfg(target_arch = "riscv32")]
     pub fn cold_mac_parts(
@@ -105,7 +109,7 @@ impl<P> RegisteredPhyRadio<P> {
 
     /// Inspect the calibrated state without weakening its hardware association.
     pub const fn state(&self) -> &PhyState {
-        self.phy.state()
+        self.domain.phy_state()
     }
 
     /// Replace an older cache for this epoch with the currently committed
@@ -118,7 +122,7 @@ impl<P> RegisteredPhyRadio<P> {
         &self,
         previous: crate::state::PhyCalibrationCache,
     ) -> crate::state::PhyCalibrationCache {
-        self.phy.state().calibration_cache(previous.identity())
+        self.domain.refresh_calibration_cache(previous)
     }
 
     /// Inspect the source-owned client set without exposing its raw mask.
@@ -129,15 +133,11 @@ impl<P> RegisteredPhyRadio<P> {
         now_micros: u64,
     ) -> Result<crate::tracking::inspection::Inspection, crate::state::client::PhyTrackTimeError>
     {
-        crate::tracking::inspection::Inspection::registered(
-            &self.phy,
-            self.client_snapshot(),
-            now_micros,
-        )
+        self.domain.inspect_tracking(now_micros)
     }
 
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 
     /// Acquire the Wi-Fi client while retaining the registered radio epoch.
@@ -151,7 +151,7 @@ impl<P> RegisteredPhyRadio<P> {
         self,
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredPhyClientAcquire<P>, RegisteredPhyClientAcquireFailure<P>> {
-        crate::registered_route::acquire::<WifiRoute<P>>(self.radio, self.phy, self.clients, clock)
+        crate::registered_route::acquire::<WifiRoute<P>>(self.radio, self.domain, clock)
     }
 
     /// Release the Wi-Fi client while retaining the registered radio epoch.
@@ -162,7 +162,7 @@ impl<P> RegisteredPhyRadio<P> {
     pub fn release_client(
         self,
     ) -> Result<RegisteredPhyClientRelease<P>, RegisteredPhyClientReleaseFailure<P>> {
-        crate::registered_route::release::<WifiRoute<P>>(self.radio, self.phy, self.clients)
+        crate::registered_route::release::<WifiRoute<P>>(self.radio, self.domain)
     }
 
     /// Evaluate one periodic callback for this exact registered epoch.
@@ -174,13 +174,7 @@ impl<P> RegisteredPhyRadio<P> {
         self,
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredPhyTrackEvaluation<P>, RegisteredPhyTrackEvaluationFailure<P>> {
-        crate::registered_route::evaluate::<WifiRoute<P>>(
-            self.radio,
-            self.phy,
-            self.clients,
-            clock,
-            false,
-        )
+        crate::registered_route::evaluate::<WifiRoute<P>>(self.radio, self.domain, clock, false)
     }
 
     /// Recheck the deadline after a timer or other event wakes the radio owner.
@@ -197,13 +191,7 @@ impl<P> RegisteredPhyRadio<P> {
         self,
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredPhyTrackEvaluation<P>, RegisteredPhyTrackEvaluationFailure<P>> {
-        crate::registered_route::evaluate::<WifiRoute<P>>(
-            self.radio,
-            self.phy,
-            self.clients,
-            clock,
-            true,
-        )
+        crate::registered_route::evaluate::<WifiRoute<P>>(self.radio, self.domain, clock, true)
     }
 
     /// Wait for demand without transferring the physical owner to a timer.
@@ -216,17 +204,7 @@ impl<P> RegisteredPhyRadio<P> {
         &self,
         timer: &mut impl crate::state::client::PhyTrackingTimer,
     ) -> Result<Option<crate::tracking::schedule::Demand>, PhyTrackTimeError> {
-        use crate::tracking::schedule::Schedule;
-        loop {
-            match self
-                .client_snapshot()
-                .tracking_schedule_at(timer.now_micros())?
-            {
-                Schedule::Inactive => return Ok(None),
-                Schedule::Due(demand) => return Ok(Some(demand)),
-                Schedule::At(deadline) => timer.wait_until_micros(deadline).await,
-            }
-        }
+        self.domain.wait_for_tracking_demand(timer).await
     }
 }
 
@@ -267,8 +245,7 @@ impl<P> TargetRegisteredPhyEpoch<P> {
         );
         RegisteredPhyRadio {
             radio: self.radio,
-            phy: self.phy,
-            clients,
+            domain: PhyDomain::new(self.phy, clients),
         }
     }
 }
@@ -312,14 +289,12 @@ impl<P> RegisteredPhyClientRelease<P> {
             debug_assert!(clients.snapshot().is_empty());
             RegisteredPhyClientReleaseDisposition::Last(RegisteredPhyPoweredIdle {
                 radio,
-                phy,
-                clients,
+                domain: PhyDomain::new(phy, clients),
             })
         } else {
             RegisteredPhyClientReleaseDisposition::Remaining(RegisteredPhyRadio {
                 radio,
-                phy,
-                clients,
+                domain: PhyDomain::new(phy, clients),
             })
         }
     }
@@ -345,19 +320,18 @@ pub enum RegisteredPhyClientReleaseDisposition<P> {
 #[must_use = "the powered idle owner must be retained or physically transitioned"]
 pub struct RegisteredPhyPoweredIdle<P> {
     radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 }
 
 impl<P> RegisteredPhyPoweredIdle<P> {
     /// Inspect calibration state without weakening its hardware association.
     pub const fn state(&self) -> &PhyState {
-        self.phy.state()
+        self.domain.phy_state()
     }
 
     /// Inspect the empty client set associated with this powered epoch.
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 
     /// Explicitly retain the registered radio in its powered state.
@@ -365,11 +339,10 @@ impl<P> RegisteredPhyPoweredIdle<P> {
     /// This performs no hardware work. It is suitable for an always-powered
     /// policy or for reacquiring a client before physical shutdown begins.
     pub fn retain_powered(self) -> RegisteredPhyRadio<P> {
-        debug_assert!(self.clients.snapshot().is_empty());
+        debug_assert!(self.domain.client_snapshot().is_empty());
         RegisteredPhyRadio {
             radio: self.radio,
-            phy: self.phy,
-            clients: self.clients,
+            domain: self.domain,
         }
     }
 
@@ -392,7 +365,7 @@ impl<P> RegisteredPhyPoweredIdle<P> {
     ) -> Result<RegisteredPhyRfClosed<P>, RegisteredPhyRfCloseFailure<P>> {
         if let Err(failure) = crate::target_port::observe_temperature_before_rf_close::<P, D>(
             &mut self.radio,
-            self.phy.target_state_mut(),
+            self.domain.registered.target_state_mut(),
         )
         .await
         {
@@ -405,8 +378,7 @@ impl<P> RegisteredPhyPoweredIdle<P> {
                 crate::target_port::PhyRfCloseTemperatureFailure::HardwareAmbiguous(error) => {
                     RegisteredPhyRfCloseFailure::Started(RegisteredPhyRfClosePoisoned {
                         radio: self.radio,
-                        phy: self.phy,
-                        clients: self.clients,
+                        domain: self.domain,
                         error,
                     })
                 }
@@ -417,8 +389,7 @@ impl<P> RegisteredPhyPoweredIdle<P> {
             return Err(RegisteredPhyRfCloseFailure::Started(
                 RegisteredPhyRfClosePoisoned {
                     radio: self.radio,
-                    phy: self.phy,
-                    clients: self.clients,
+                    domain: self.domain,
                     error,
                 },
             ));
@@ -426,8 +397,7 @@ impl<P> RegisteredPhyPoweredIdle<P> {
 
         Ok(RegisteredPhyRfClosed {
             radio: self.radio,
-            phy: self.phy,
-            clients: self.clients,
+            domain: self.domain,
         })
     }
 }
@@ -440,17 +410,16 @@ impl<P> RegisteredPhyPoweredIdle<P> {
 #[must_use = "the closed RF epoch must be retained, woken, or shut down"]
 pub struct RegisteredPhyRfClosed<P> {
     radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 }
 
 impl<P> RegisteredPhyRfClosed<P> {
     pub const fn state(&self) -> &PhyState {
-        self.phy.state()
+        self.domain.phy_state()
     }
 
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 
     pub const fn peripheral(&self) -> &P {
@@ -475,21 +444,20 @@ impl<P> RegisteredPhyRfClosed<P> {
     pub async fn wake_rf<D: crate::PhyAsyncDelay>(
         mut self,
     ) -> Result<RegisteredPhyPoweredIdle<P>, RegisteredPhyRfWakePoisoned<P>> {
-        debug_assert!(self.clients.snapshot().is_empty());
+        debug_assert!(self.domain.client_snapshot().is_empty());
         if let Err(error) =
-            crate::target_port::execute_rf_wake::<P, D>(&mut self.radio, self.phy.state()).await
+            crate::target_port::execute_rf_wake::<P, D>(&mut self.radio, self.domain.phy_state())
+                .await
         {
             return Err(RegisteredPhyRfWakePoisoned {
                 radio: self.radio,
-                phy: self.phy,
-                clients: self.clients,
+                domain: self.domain,
                 error,
             });
         }
         Ok(RegisteredPhyPoweredIdle {
             radio: self.radio,
-            phy: self.phy,
-            clients: self.clients,
+            domain: self.domain,
         })
     }
 
@@ -507,17 +475,16 @@ impl<P> RegisteredPhyRfClosed<P> {
     pub fn release_to_cold(
         mut self,
     ) -> Result<RegisteredPhyColdReleased<P>, RegisteredPhyColdReleaseFailure<P>> {
-        debug_assert!(self.clients.snapshot().is_empty());
+        debug_assert!(self.domain.client_snapshot().is_empty());
         oer_esp32s31_hal::phy::temperature::power_down(self.radio.phy_hal_mut());
         match self.radio.reunite_cold_after_phy_close() {
             Ok(radio) => Ok(RegisteredPhyColdReleased {
                 radio,
-                final_state: self.phy.into_retired_state(),
+                final_state: self.domain.registered.into_retired_state(),
             }),
             Err(failure) => Err(RegisteredPhyColdReleaseFailure {
                 _failure: failure,
-                phy: self.phy,
-                clients: self.clients,
+                domain: self.domain,
             }),
         }
     }
@@ -528,8 +495,7 @@ impl<P> RegisteredPhyRfClosed<P> {
 #[must_use = "partially restored RF hardware requires reset"]
 pub struct RegisteredPhyRfWakePoisoned<P> {
     radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
     error: crate::PhyTargetPortError,
 }
 
@@ -540,11 +506,11 @@ impl<P> RegisteredPhyRfWakePoisoned<P> {
     }
 
     pub const fn state(&self) -> &PhyState {
-        self.phy.state()
+        self.domain.phy_state()
     }
 
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 
     pub const fn peripheral(&self) -> &P {
@@ -589,8 +555,7 @@ impl<P> RegisteredPhyColdReleased<P> {
 #[must_use = "failed shutdown retains an unrecoverable closed hardware epoch"]
 pub struct RegisteredPhyColdReleaseFailure<P> {
     _failure: oer_esp32s31_hal::owner::ColdReunionFailure<P>,
-    phy: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -600,11 +565,11 @@ impl<P> RegisteredPhyColdReleaseFailure<P> {
     }
 
     pub const fn state(&self) -> &PhyState {
-        self.phy.state()
+        self.domain.phy_state()
     }
 
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 }
 
@@ -643,8 +608,7 @@ impl<P> RegisteredPhyRfClosePreparationFailure<P> {
 #[must_use = "partially closed RF hardware requires reset"]
 pub struct RegisteredPhyRfClosePoisoned<P> {
     radio: Radio<P, Powered>,
-    phy: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
     error: crate::PhyTargetPortError,
 }
 
@@ -655,11 +619,11 @@ impl<P> RegisteredPhyRfClosePoisoned<P> {
     }
 
     pub const fn state(&self) -> &PhyState {
-        self.phy.state()
+        self.domain.phy_state()
     }
 
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 
     pub const fn peripheral(&self) -> &P {
@@ -725,28 +689,12 @@ impl<P> crate::registered_route::sealed::PhyRoute for WifiRoute<P> {
     type Client = RegisteredPhyRadio<P>;
     const CLIENT: PhyModemClient = PhyModemClient::Wifi;
 
-    fn unclaimed(
-        radio: Radio<P, Powered>,
-        phy: RegisteredPhyState,
-        clients: PhyClientState,
-    ) -> RegisteredPhyRadio<P> {
-        RegisteredPhyRadio {
-            radio,
-            phy,
-            clients,
-        }
+    fn unclaimed(radio: Radio<P, Powered>, domain: PhyDomain) -> RegisteredPhyRadio<P> {
+        RegisteredPhyRadio { radio, domain }
     }
 
-    fn client(
-        radio: Radio<P, Powered>,
-        phy: RegisteredPhyState,
-        clients: PhyClientState,
-    ) -> RegisteredPhyRadio<P> {
-        RegisteredPhyRadio {
-            radio,
-            phy,
-            clients,
-        }
+    fn client(radio: Radio<P, Powered>, domain: PhyDomain) -> RegisteredPhyRadio<P> {
+        RegisteredPhyRadio { radio, domain }
     }
 }
 

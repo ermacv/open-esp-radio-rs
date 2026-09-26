@@ -1,3 +1,4 @@
+use crate::registered_route::PhyDomain;
 use crate::{
     PhyConfig, PhyState, RegisteredPhyState,
     state::client::{
@@ -37,8 +38,7 @@ fn model_prerequisites() -> RegisteredIeee802154Prerequisites {
         .into_owner()
         .unwrap_or_else(|_| panic!("fresh model timestamp must settle"));
     RegisteredIeee802154Prerequisites {
-        registered,
-        clients,
+        domain: PhyDomain::new(registered, clients),
         timing: HalIeee802154TimingReady::for_host_ownership_model(gain_parameter),
     }
 }

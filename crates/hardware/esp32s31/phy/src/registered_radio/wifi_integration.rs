@@ -33,8 +33,7 @@ impl<P> RegisteredPhyRadio<P> {
             registers,
             interrupt,
             crate::RegisteredWifiPhy {
-                registered: self.phy,
-                clients: self.clients,
+                domain: self.domain,
             },
         )
     }
@@ -49,7 +48,7 @@ impl<P> RegisteredPhyRadio<P> {
         self.radio.enable_wifi_rx();
         let mut hardware = self.radio.channel_hal();
         crate::target_port::select_phy_channel_with_hal::<D, _, _>(
-            self.phy.target_state_mut(),
+            self.domain.registered.target_state_mut(),
             channel,
             cbw,
             &mut hardware,

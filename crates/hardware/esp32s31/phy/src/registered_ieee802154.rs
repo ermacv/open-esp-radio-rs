@@ -99,17 +99,14 @@ use oer_esp32s31_hal::{
 };
 
 #[cfg(target_arch = "riscv32")]
-use crate::state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS;
-
-#[cfg(target_arch = "riscv32")]
 use crate::state::client::PhyPendingTracking;
 use crate::{
     PhyState, RegisteredPhyState,
     registered_route::{
-        Ieee802154Route, PhyClientAcquire, PhyClientAcquireFailureOwner, PhyPendingTrackOwner,
-        PhyPendingTrackingOwner, PhyTrackPoisonedOwner,
+        Ieee802154Route, PhyClientAcquire, PhyClientAcquireFailureOwner, PhyDomain,
+        PhyPendingTrackOwner, PhyPendingTrackingOwner, PhyTrackPoisonedOwner,
     },
-    state::client::{PhyClientSnapshot, PhyClientState, PhyModemClient, PhyPllTrackClock},
+    state::client::{PhyClientSnapshot, PhyModemClient, PhyPllTrackClock},
 };
 
 /// Registered whole-radio owner after IEEE 802.15.4 clock readback.
@@ -120,11 +117,15 @@ use crate::{
 #[must_use = "the registered IEEE 802.15.4 clock owner is unique"]
 pub struct RegisteredIeee802154Clocked<P> {
     role: Ieee802154Clocked<P>,
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 }
 
 impl<P> RegisteredIeee802154Clocked<P> {
+    /// Borrow the registered PHY domain this owner holds.
+    pub const fn domain(&self) -> &PhyDomain {
+        &self.domain
+    }
+
     /// Couple the exact target-completed state to its dedicated IEEE owner.
     ///
     /// The private target witness means a caller-driven model transition
@@ -136,17 +137,15 @@ impl<P> RegisteredIeee802154Clocked<P> {
         state: PhyState,
         witness: crate::target_port::TargetRegistrationWitness,
     ) -> Self {
-        let epoch = witness.epoch();
         Self {
             role,
-            registered: RegisteredPhyState::from_target_completion(state, witness),
-            clients: PhyClientState::for_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS, epoch),
+            domain: PhyDomain::from_target_completion(state, witness),
         }
     }
 
     /// Borrow the target-registered PHY state without exposing mutable state.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.domain.phy_state()
     }
 
     /// Acquire the dedicated IEEE 802.15.4 bit before BTBB/timing work.
@@ -159,12 +158,7 @@ impl<P> RegisteredIeee802154Clocked<P> {
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<RegisteredIeee802154ClientAcquire<P>, RegisteredIeee802154ClientAcquireFailure<P>>
     {
-        crate::registered_route::acquire::<Ieee802154Route<P>>(
-            self.role,
-            self.registered,
-            self.clients,
-            clock,
-        )
+        crate::registered_route::acquire::<Ieee802154Route<P>>(self.role, self.domain, clock)
     }
 }
 
@@ -186,17 +180,21 @@ pub type RegisteredIeee802154ClientAcquireFailure<P> =
 #[must_use = "the registered IEEE client owner is unique"]
 pub struct RegisteredIeee802154Client<P> {
     role: Ieee802154Clocked<P>,
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
 }
 
 impl<P> RegisteredIeee802154Client<P> {
+    /// Borrow the registered PHY domain this owner holds.
+    pub const fn domain(&self) -> &PhyDomain {
+        &self.domain
+    }
+
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.domain.phy_state()
     }
 
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 
     /// Initialize common BTBB and IEEE timing only after client acquisition.
@@ -210,8 +208,7 @@ impl<P> RegisteredIeee802154Client<P> {
         RegisteredIeee802154TimingReady {
             role: parts.role,
             prerequisites: RegisteredIeee802154Prerequisites {
-                registered: parts.registered,
-                clients: parts.clients,
+                domain: parts.domain,
                 timing: parts.timing,
             },
         }
@@ -260,35 +257,18 @@ impl<P> crate::registered_route::sealed::PhyRoute for Ieee802154Route<P> {
     type Client = RegisteredIeee802154Client<P>;
     const CLIENT: PhyModemClient = PhyModemClient::Ieee802154;
 
-    fn unclaimed(
-        role: Ieee802154Clocked<P>,
-        registered: RegisteredPhyState,
-        clients: PhyClientState,
-    ) -> RegisteredIeee802154Clocked<P> {
-        RegisteredIeee802154Clocked {
-            role,
-            registered,
-            clients,
-        }
+    fn unclaimed(role: Ieee802154Clocked<P>, domain: PhyDomain) -> RegisteredIeee802154Clocked<P> {
+        RegisteredIeee802154Clocked { role, domain }
     }
 
-    fn client(
-        role: Ieee802154Clocked<P>,
-        registered: RegisteredPhyState,
-        clients: PhyClientState,
-    ) -> RegisteredIeee802154Client<P> {
-        RegisteredIeee802154Client {
-            role,
-            registered,
-            clients,
-        }
+    fn client(role: Ieee802154Clocked<P>, domain: PhyDomain) -> RegisteredIeee802154Client<P> {
+        RegisteredIeee802154Client { role, domain }
     }
 }
 
 struct RegisteredIeee802154TimingParts<P, Timing> {
     role: Ieee802154Clocked<P>,
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
     timing: Timing,
 }
 
@@ -296,29 +276,23 @@ fn establish_registered_timing<P, Timing>(
     owner: RegisteredIeee802154Client<P>,
     transition: impl FnOnce(&mut Ieee802154Clocked<P>, &RegisteredPhyState) -> Timing,
 ) -> RegisteredIeee802154TimingParts<P, Timing> {
-    let RegisteredIeee802154Client {
-        mut role,
-        registered,
-        clients,
-    } = owner;
-    let timing = transition(&mut role, &registered);
+    let RegisteredIeee802154Client { mut role, domain } = owner;
+    let timing = transition(&mut role, &domain.registered);
     RegisteredIeee802154TimingParts {
         role,
-        registered,
-        clients,
+        domain,
         timing,
     }
 }
 
 struct RegisteredIeee802154Prerequisites {
-    registered: RegisteredPhyState,
-    clients: PhyClientState,
+    domain: PhyDomain,
     timing: HalIeee802154TimingReady,
 }
 
 impl RegisteredIeee802154Prerequisites {
     const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.domain.phy_state()
     }
 
     const fn timing_gain_parameter(&self) -> u8 {
@@ -326,7 +300,7 @@ impl RegisteredIeee802154Prerequisites {
     }
 
     const fn client_snapshot(&self) -> PhyClientSnapshot {
-        self.clients.snapshot()
+        self.domain.client_snapshot()
     }
 }
 

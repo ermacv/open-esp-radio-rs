@@ -4,7 +4,7 @@
   "target": "esp32s31",
   "inputs": {
     "archive": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
-    "bluetooth-production": "d825531281d035c86b145f993e8abfcda66e9633f663693b959723d412f19398",
+    "bluetooth-production": "4a7acc905d22ec801f6338699c039f66034076825f5e1aa3c4d7f4e7a78b8ca2",
     "libble_app": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "libbtbb": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
     "libbtdm_common": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
@@ -14,7 +14,7 @@
     "libnet80211": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "libpp": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "28fcbebee12541ebb750658da6539475b026b887ae61930fc4430960b185fb70",
+    "production": "8c88e0fe8ee8de5741e0226035a9d17b7e02ef4d8bd30b8ec10a13d90fb68e67",
     "rftest": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a",
     "rom": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -25,8 +25,8 @@
       "sha256": "89eb21a9b5e47f2db945a9a9a9c1f75bf745dc2623093500c5a2c3b570c569da"
     },
     {
-      "path": "crates/adapters/esp-hal/esp32s31/ieee80211",
-      "sha256": "ee11189c03ab4f50f8e0badb3e731f5a9765413ace28634e999e3c361af63b5e"
+      "path": "crates/adapters/esp-hal/esp32s31/radio",
+      "sha256": "b05a9967cb6661cb433dd4a206fdbac28e584858e847feb1b6e34f3e2c0f08e8"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth",
@@ -38,23 +38,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
-      "sha256": "6035cfb3c859857b99d703201e236657b8614de8df80bd3adff0d45c9b0131c0"
+      "sha256": "e3b7f24a5e7ca58c434d3eb11edbb78362ff941eb27d9e3f01b9f7e0cb335dec"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211",
-      "sha256": "c7de1ce5404259c5a23d61a6e4762b2ca574e79f12ab90a4998e09c1ecf2acbb"
+      "sha256": "4d1ef30d97af811d42da7bb5723c0e49b7693492a04a4ab77ed66ee165888eec"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma",
-      "sha256": "039d752bf8a8c9ef2b3ac05a75686f7a0ecef01ad893a1ef09fc8e7fdfdd2f90"
+      "sha256": "98fcddad87add968a74cc0391148eb4fc8d93d7d371c8011160a21905d3c7a26"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac",
-      "sha256": "1cc24b195eb9ada14e21c0a40e6a75419ca5d65218145267181956bcec8012da"
+      "sha256": "0a4f59fe5c6dd2ee090fa7278d35ebd6e0f229e3190fe7f85ccb1e8bb1f8536c"
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "8066447e4c987216ff030831ee00376ad228e1f66220f40bd5fa3cd637467dcd"
+      "sha256": "f4706f63a4665afe142113f5b243cb000aca7e430ce890de85646e52d266b625"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -66,7 +66,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "a96e5ed143937644f36c04c3b526484aa0c1b823c029552f4edf12309653ca3c"
+      "sha256": "be9ca957bec028d724734805ef3650fca84923e5c66ecc36d2d1ada491fbd2d2"
     },
     {
       "path": "crates/memory",
@@ -110,11 +110,19 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta",
-      "sha256": "4abf8d1afce3ea016a8b28135d99e8f756651a35e91666cb9bc1753c4fe472a9"
+      "sha256": "98bb5b432a0ff1c4afa050ecdf390fd32ed43791970508f3c7094741e2602052"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211",
-      "sha256": "891b41f98f5d7dbd238fbce90b3436fdc98d79bff21f9ad89f5484034b70b322"
+      "sha256": "1034b7878f900f1f880076406c4b12e8972a62fa8d1963dec86abfe2680ef17c"
+    },
+    {
+      "path": "crates/runtime/esp32s31/phy",
+      "sha256": "823150b6406b8892cb32b46403d99029c24563e869560b8e2b8e2c505e7ebc78"
+    },
+    {
+      "path": "crates/runtime/esp32s31/radio",
+      "sha256": "cfe78d144482a60bdfdc7f221c1f38072440fc730232bdaf7e50d9d9e8e5527a"
     },
     {
       "path": "crates/runtime/ieee80211",
@@ -178,11 +186,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "c936977e783a8e32595b6695c0bcb04bf9aed9d98c324f282f486c781623e235"
+      "sha256": "b29c88e7897487a0267ed32826b50a199b0ff3ff86b07f11a717fa24130b43fd"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "2ae7add17167207fc1060309446410e6bf1b6abca0aad51d922d28154ea0a5cd"
+      "sha256": "0883c5fc1d9252ba263eedc0afcee41cf2acb193e82778a907be4c998ec91691"
     },
     {
       "path": "verification/vendor/schema",
@@ -246,10 +254,10 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 63,
+        "executed": 62,
         "observed": 58,
         "reviewed": 0,
-        "untriaged": 5
+        "untriaged": 4
       },
       "state": {
         "written": 0,
@@ -280,8 +288,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 113,
-        "observed": 113,
+        "executed": 112,
+        "observed": 112,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -314,8 +322,8 @@
         "untriaged": 2
       },
       "observation": {
-        "executed": 113,
-        "observed": 113,
+        "executed": 112,
+        "observed": 112,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -368,7 +376,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "ee057862c35b48c9e89da39326f1c118d2133fe92b180441ee230317b6f20bd3"
+        "8c43ef3bcb6d3bc45cc240b2f0113271c7f43b0071160bf0bf57b7da5279df80"
       ],
       "coverage": {
         "blocks": {
@@ -404,7 +412,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "ac356b3c122d85085991db0b4235a1ac7184f0c548a91193c185bf360adec690"
+        "26728046a79d29a92b19554070a8795d8fc3cb18e11ddbe2ae9118db36e6278d"
       ],
       "coverage": {
         "blocks": {
@@ -440,7 +448,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "8d29491b70d9dfe095819b5a7687c7258fcdaa7b2791f4675270e641504199ee"
+        "ff6abb834e7084e65b644d56002f1f6df04f61c4960177de9e4ce884e405e30d"
       ],
       "coverage": {
         "blocks": {
@@ -476,7 +484,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "34f3286a89b00737eb270430fe2cc601974db4c8279c15628494efafd31b2e91"
+        "16d23f48e842590fb202b7c424325ed8958a18c7475aa9d792daee352d7dae69"
       ],
       "coverage": {
         "blocks": {
@@ -512,7 +520,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "1b5b91d9037c0a777cd83dd5e15195617f1ce3824ca7f0c49da21fd4d1c84fb4"
+        "9454bcb73326e9d5edfc9d042c440657fc19fe3429ed339659ee60ce779f75e6"
       ],
       "coverage": {
         "blocks": {
@@ -548,7 +556,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "7c8ae64024b952fe7f8cf5edc84327e65cc31206fc18f54455eff559f64496c7"
+        "c60f23819c7fe98bcb84ded6abad615b5fded5b3c7b60786988bad64c84b1f09"
       ],
       "coverage": {
         "blocks": {
@@ -598,8 +606,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 111,
-        "observed": 110,
+        "executed": 110,
+        "observed": 109,
         "reviewed": 0,
         "untriaged": 1
       },
@@ -754,7 +762,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "397f24b00c50ba50f927c6ad2532704b2d230af899cb4c820a0b410f516dea3f"
+        "280ddad106490f2c158769d7c17efcb48da07223e1b03e14f2a448ffaeb3fcc0"
       ],
       "coverage": {
         "blocks": {
@@ -770,10 +778,10 @@
         "untriaged": 10
       },
       "observation": {
-        "executed": 149,
-        "observed": 144,
+        "executed": 153,
+        "observed": 151,
         "reviewed": 0,
-        "untriaged": 5
+        "untriaged": 2
       },
       "state": {
         "written": 0,
@@ -790,7 +798,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "598e134cb152dd1eeb1f99703182b7cea221c6417df7ae8be3e44023f76e1744"
+        "17f5b394bec4579675a537cd862f9ef3d7e9ef1c8a1c16d714f37eeab3cad8d7"
       ],
       "coverage": {
         "blocks": {
@@ -806,10 +814,10 @@
         "untriaged": 19
       },
       "observation": {
-        "executed": 309,
-        "observed": 300,
-        "reviewed": 6,
-        "untriaged": 3
+        "executed": 315,
+        "observed": 301,
+        "reviewed": 7,
+        "untriaged": 7
       },
       "state": {
         "written": 5,
@@ -826,8 +834,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "0b556da2e19cdde1aa40fde2d32b0089d07f2e9e4b78549d4856439e36a853d1",
-        "e02678e045c9f9043e61f9ebf2012cc251aaf706ec80b41b3b183b3f2361ce3d"
+        "29ca620644a6e8b5e7a0fdd43f556a199071afad92c587988a0ee8b8b6bb7037",
+        "4c958b6af2c6e36ffcf17730f808134be4ec5fb7307081c6cbccfaa461fe96b2"
       ],
       "coverage": {
         "blocks": {
@@ -863,7 +871,7 @@
       "verdict": "match",
       "cases": 101,
       "reviews": [
-        "94913d71edba394fb3abaa0460f5052cc917896671869edff831e3300d5ea708"
+        "b3bda1a6d362389592e8a8f46321f68f4dfdd990001f9019dfdfa4e98a016a62"
       ],
       "coverage": {
         "blocks": {
@@ -879,10 +887,10 @@
         "untriaged": 10
       },
       "observation": {
-        "executed": 220,
+        "executed": 223,
         "observed": 201,
-        "reviewed": 1,
-        "untriaged": 18
+        "reviewed": 2,
+        "untriaged": 20
       },
       "state": {
         "written": 0,
@@ -899,8 +907,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "10e94575a9a4123bf417f57b25ddae26fc9c20873501cd41ae057745356be14b",
-        "c0e1d9dfca43e13ef7afc7a74e95b78a1b0301bb1871655a174e09750a07787f"
+        "0d74e20b04fedeed9b84934fbfcb54263d54aa6d8b1d2a35bad52bd8ebbef598",
+        "c9c4b1bf872788c74ea0eb4c91c47fcc77b4b2157b57407c875a6862064abd18"
       ],
       "coverage": {
         "blocks": {
@@ -916,10 +924,10 @@
         "untriaged": 69
       },
       "observation": {
-        "executed": 628,
-        "observed": 615,
+        "executed": 629,
+        "observed": 613,
         "reviewed": 7,
-        "untriaged": 6
+        "untriaged": 9
       },
       "state": {
         "written": 11,
@@ -936,8 +944,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "8f37e1a0152275668d036a21e3a17f55d8cc1b04f9a4c6280e8effdb68fa4e6f",
-        "c479b066e37d15b796e2c5b981fc17b660e29b1fc50882975129f3a499e33643"
+        "a9448a498f583a7be36420f1acbba8b8c52f5157aa076a148402985475759bcd",
+        "fa053bbcbf330efb5c43183414b13f49fef921a7031cfd861f8a826f14e5db86"
       ],
       "coverage": {
         "blocks": {
@@ -953,10 +961,10 @@
         "untriaged": 11
       },
       "observation": {
-        "executed": 145,
-        "observed": 128,
-        "reviewed": 2,
-        "untriaged": 15
+        "executed": 148,
+        "observed": 129,
+        "reviewed": 3,
+        "untriaged": 16
       },
       "state": {
         "written": 1,
@@ -973,9 +981,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "2b08bcdeb7d7f0b82abd03c9964c0f721b5d1da4816d820dd12a87ddb43aeba3",
-        "83bd79266f13f9f427b0f9c529c142e110b855f36e3b37b4882741d285ac09e7",
-        "9b7c2fd10f2fae29638aca8d33c7d5914e85327eda310a8b4691fc493160b7c5"
+        "2375cc538bb136840992fd99adc0ce22802b37c778f892368d7187f1d283879f",
+        "31de838da316043207d076af598face39450f0b82db86548d2aeda3f857ea867",
+        "8c9b8a7044a4b7aaf97c326f9dde900e40db00588fd5c865bf2bcfa351ebb140"
       ],
       "coverage": {
         "blocks": {
@@ -991,10 +999,10 @@
         "untriaged": 69
       },
       "observation": {
-        "executed": 637,
-        "observed": 607,
-        "reviewed": 22,
-        "untriaged": 8
+        "executed": 640,
+        "observed": 606,
+        "reviewed": 21,
+        "untriaged": 13
       },
       "state": {
         "written": 106,
@@ -1011,8 +1019,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "32c3aa6e021e3b6782e8d2ea6a317512d8b9333008f87e2eb2be8eb44cd9b456",
-        "eec9627db9003389cc4147d1896a1c0b45c7bac948e58b9275f3ba5947837e3c"
+        "16f490a3c0718bac68c084c8c33fc7cbce9fe80532bc3e6b3e27b59d7dc1b085",
+        "b42348ba16d652ae4a16c96a9c15085705137948b7f7e5afd64dafbfcc17a49e"
       ],
       "coverage": {
         "blocks": {
@@ -1028,10 +1036,10 @@
         "untriaged": 9
       },
       "observation": {
-        "executed": 385,
-        "observed": 374,
-        "reviewed": 7,
-        "untriaged": 4
+        "executed": 386,
+        "observed": 371,
+        "reviewed": 5,
+        "untriaged": 10
       },
       "state": {
         "written": 24,
@@ -1048,8 +1056,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "50d51ffc1f8008cd8909413c56fbd606d11d0631802fe0aa85153ac8c9ac4ba9",
-        "edf8f238495bdfba90c48fc52fb51cff51c9c4601effdaf63393742165aabc52"
+        "23c744771b17e433549026d923d7d5c4c46d9d21d66e3dd6b00394e54eabbdd2",
+        "b8e5cfd0d268b0b85981a63689c0abe0e812088a059cd826bd56999c8c1f7cb2"
       ],
       "coverage": {
         "blocks": {
@@ -1065,10 +1073,10 @@
         "untriaged": 189
       },
       "observation": {
-        "executed": 1913,
-        "observed": 1868,
-        "reviewed": 32,
-        "untriaged": 13
+        "executed": 1918,
+        "observed": 1870,
+        "reviewed": 30,
+        "untriaged": 18
       },
       "state": {
         "written": 151,
@@ -1085,8 +1093,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "6dd14985ac938baeb4295c448851962286271265bde1f240a6681dfe8878f7f9",
-        "a2d62bd13b074f3cb147d2ed5b450f2d935934b0cdc0958c718ea3f68e91aeff"
+        "0f62c551bf3b8b44baef05074d91295b0e13b7082a422394135cefe9a21fb506",
+        "2aa245d92cdceff4a3ef0cebd0999832d19ddc829b1ae5998a3fe133a7035904"
       ],
       "coverage": {
         "blocks": {
@@ -1102,10 +1110,10 @@
         "untriaged": 186
       },
       "observation": {
-        "executed": 2414,
-        "observed": 2331,
-        "reviewed": 62,
-        "untriaged": 21
+        "executed": 2413,
+        "observed": 2328,
+        "reviewed": 61,
+        "untriaged": 24
       },
       "state": {
         "written": 174,
@@ -1224,7 +1232,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "490239331e8516de31f7067981e00f384d4b3187cc820b24e02c87d95d9eac76"
+        "ecd029b89044cfd41a1f4efd8b705bf213e14d7fdb2f1950e1beb2e0767954e0"
       ],
       "coverage": {
         "blocks": {
@@ -1294,7 +1302,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "f2f6f09524e4e2d11be057eb0b644244153bccb87ce26241494e2d34e6573eb4"
+        "71118e401448d8e7dc3ba852bb2dc861408e4e4f25abbb53d74769c66c99862a"
       ],
       "coverage": {
         "blocks": {
@@ -1942,7 +1950,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "eee41ef93df29d862ddfe7103cfbd4e53cd0be5d297c7c6e5fae4019c848f709"
+        "fc424118409963a600bfcd96f8464e2c052f6fd3cff768f1c3b2ad3e188fa682"
       ],
       "coverage": {
         "blocks": {
@@ -2454,7 +2462,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "7786c3e462788d362a0aa88406b5a84611dcdece741e17654ea93d138d7c8e86"
+        "58ea7e5e3650e56bcf4e16bc05f49ecb95032e09129235889dacf1e155f426f8"
       ],
       "coverage": {
         "blocks": {
@@ -2490,7 +2498,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "512b2007bedd733cf8ec321f3d1e789977691492b52ffe6b87b46f550c4ebbec"
+        "6b6b6a3d14f5455cbaa444a02ffada22ce4c9c47624267c82f0103f2b628729f"
       ],
       "coverage": {
         "blocks": {
@@ -2526,7 +2534,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "bf6e805776032fd2d9c04b2370775009110956ac505adc28755e5e3d0112df27"
+        "26dad2fe9f7f03a1b0073da66320f428dda63a3e655299a5309ef61c84736d10"
       ],
       "coverage": {
         "blocks": {
@@ -2562,7 +2570,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "02605704d5d78f6b44e2a39834e8f8a9fafed63e5b2503f9a87beba4fd59e6db"
+        "73d67b3567cce927e9e386df41f63337527379a7f665391e9cd096716e6ade1c"
       ],
       "coverage": {
         "blocks": {
@@ -2598,7 +2606,7 @@
       "verdict": "match",
       "cases": 12,
       "reviews": [
-        "9aaba07ebcffbba31e71a67f81b95c3ef3630db3c1e3369797fed638cdc8d512"
+        "e22a374d091fc173229f5b185a5c942ea7176464c3d8178b95bb3cb1f51570f1"
       ],
       "coverage": {
         "blocks": {
@@ -2634,7 +2642,7 @@
       "verdict": "match",
       "cases": 288,
       "reviews": [
-        "5467a843f8df24131591aa6d08029abac5d30019eddbd7583ee892b89226704c"
+        "d940cb5dce9f411da1a842781a7ee4eb396e6f4f544529152166e37194286c52"
       ],
       "coverage": {
         "blocks": {
@@ -2670,7 +2678,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "baef5d51f4ad5c4b0d7906a08fa2c96fac45f992d7f65b8b6906c260f8522bd7"
+        "ffc908588d5924bb5c2a6e53f6de61c2c583b50e77f8ae229b08b6ac3fe14ad4"
       ],
       "coverage": {
         "blocks": {
@@ -2706,7 +2714,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "2f48b81d6a6f43edb2f7fab8d862b030c9bf022f83a04e3027f6c91732739c4c"
+        "36e8854b9166847098dd9dae4f1b3d355ce52b2778c1281ea1f16304849d8065"
       ],
       "coverage": {
         "blocks": {
@@ -25263,12 +25271,20 @@
       "line": 122
     },
     {
-      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "line": 788
+      "path": "crates/hardware/esp32s31/hal/src/ieee80211/client.rs",
+      "line": 197
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "line": 1058
+      "line": 305
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
+      "line": 800
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
+      "line": 1070
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
@@ -25301,6 +25317,18 @@
     {
       "path": "crates/hardware/esp32s31/pac/src/validation.rs",
       "line": 216
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/state.rs",
+      "line": 575
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/target_executor.rs",
+      "line": 224
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
+      "line": 1812
     }
   ],
   "unprojected": [

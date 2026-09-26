@@ -73,28 +73,10 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
-        reason: "restore-record copy of the captured TX-DC power-detector calibration field: \
-            the optimized probe restores the field from the captured register word it keeps in \
-            a register, whose restore write is compared, and never reads the record copy back",
-        places: &[
-            (
-                "pac/raw/src/lib.rs",
-                "CalibrationFieldUnknownR::new(((self.bits >> 4) & 0xff) as u8)",
-            ),
-            ("pac/raw/src/lib.rs", ".calibration_field_unknown()"),
-        ],
-    },
-    Decision {
         reason: "construction of the validation-only shared-PHY wrapper: its fresh route \
             state is a constant the optimized probes fold into each restore-slot check, so no \
             store of it is read",
         places: &[("hal/src/owner.rs", "Self {")],
-    },
-    Decision {
-        reason: "previous estimate carried into a radio-stage minimum search: it replaces \
-            only an estimate the search does not admit, and every compared radio search \
-            admits one",
-        places: &[("phy/src/rx/gain_calibration.rs", "policy.measurement,")],
     },
     Decision {
         reason: "terminal inspection of the one-step RX-DC child: the arm selects the \
@@ -518,16 +500,20 @@ impl Sources {
                 }
             }
         }
-        match decisions
+        let stale: Vec<String> = decisions
             .iter()
             .flat_map(|d| d.places)
-            .find(|place| !matched.contains(*place))
-        {
-            Some((file, source)) => Err(invalid(format!(
-                "observation decision for `{source}` in {file} matches no unobserved line; \
-                 the line is observed or no longer executed"
-            ))),
-            None => Ok(()),
+            .filter(|place| !matched.contains(*place))
+            .map(|(file, source)| format!("`{source}` in {file}"))
+            .collect();
+        if stale.is_empty() {
+            Ok(())
+        } else {
+            Err(invalid(format!(
+                "observation decisions match no unobserved line; each line is observed or \
+                 no longer executed: {}",
+                stale.join(", ")
+            )))
         }
     }
 }

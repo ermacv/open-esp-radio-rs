@@ -56,6 +56,10 @@ oer-esp32s31-ieee80211-system = { path = "../../../crates/composition/esp32s31/e
 oer-esp32s31-pac = { path = "../../../crates/hardware/esp32s31/pac", features = ["validation-probes"] }
 oer-esp32s31-soc-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 oer-esp32s31-phy = { path = "../../../crates/hardware/esp32s31/phy" }
+oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }
+oer-bluetooth-radio = { path = "../../../crates/protocols/bluetooth/le/radio" }
+oer-esp32s31-bluetooth = { path = "../../../crates/hardware/esp32s31/driver/bluetooth" }
+oer-esp32s31-bluetooth-system = { path = "../../../crates/composition/esp32s31/embassy/bluetooth" }
 oer-esp32s31-ieee80211-mac = { path = "../../../crates/hardware/esp32s31/driver/ieee80211/mac" }
 oer-esp32s31-ieee80211-runtime = { path = "../../../crates/runtime/esp32s31/ieee80211", default-features = false }
 oer-ieee80211-mac = { path = "../../../crates/protocols/ieee80211/mac" }

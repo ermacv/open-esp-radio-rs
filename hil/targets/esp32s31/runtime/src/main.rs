@@ -19,14 +19,24 @@ compile_error!("select one network contract: upstream-network, embassy-network o
 #[cfg(not(any(
     feature = "boot-smoke",
     feature = "open-radio-hil",
+    feature = "bluetooth-hil",
     feature = "system-watchdog"
 )))]
-compile_error!("select boot-smoke, open-radio-hil or system-watchdog");
+compile_error!("select boot-smoke, open-radio-hil, bluetooth-hil or system-watchdog");
 #[cfg(all(
     feature = "system-watchdog",
-    any(feature = "boot-smoke", feature = "open-radio-hil")
+    any(
+        feature = "boot-smoke",
+        feature = "open-radio-hil",
+        feature = "bluetooth-radio"
+    )
 ))]
 compile_error!("system-watchdog requires an exclusive radio-free image");
+#[cfg(all(
+    feature = "bluetooth-radio",
+    any(feature = "boot-smoke", feature = "open-radio-hil")
+))]
+compile_error!("Bluetooth requires exclusive radio composition");
 #[cfg(all(feature = "boot-smoke", feature = "open-radio-hil"))]
 compile_error!("boot-smoke and open-radio-hil are mutually exclusive scenarios");
 #[cfg(all(feature = "code-flash", feature = "code-psram"))]
@@ -75,6 +85,8 @@ use esp_hal::{
 use oer_esp32s31_executor_embassy::Executor;
 use static_cell::StaticCell;
 
+#[cfg(feature = "bluetooth-hil")]
+mod bluetooth;
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
@@ -92,7 +104,11 @@ mod phy_evidence;
 mod phy_fault;
 #[cfg(feature = "open-radio-hil")]
 mod stack_evidence;
-#[cfg(any(feature = "system-watchdog", feature = "open-radio-hil"))]
+#[cfg(any(
+    feature = "system-watchdog",
+    feature = "open-radio-hil",
+    feature = "bluetooth-radio"
+))]
 mod system;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod watchdog;
@@ -354,6 +370,23 @@ extern "C" fn runtime_main() -> ! {
     // SAFETY: bootstrap intentionally hands MIE over clear, and timer and
     // software wake interrupt ownership is complete at this point.
     unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
+
+    #[cfg(feature = "bluetooth-hil")]
+    bluetooth::start(
+        executor,
+        oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
+            peripherals.MODEM_SYSCON,
+            peripherals.MODEM_LPCON,
+            peripherals.HP_SYS_CLKRST,
+            peripherals.PMU,
+            peripherals.LP_AON_CLK_RST,
+            peripherals.LP_PERI,
+            peripherals.LP_TSENS,
+            peripherals.I2C_ANA_MST,
+        ),
+        peripherals.USB_DEVICE,
+        peripherals.RNG,
+    );
 
     #[cfg(feature = "system-watchdog")]
     system::console::start(

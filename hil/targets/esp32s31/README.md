@@ -13,6 +13,13 @@ build/flash`, `run` and `run-all` accept `--network upstream-xarxa` (default),
 are archived beside each image. The [network implementation guide](../../../docs/network-implementations.md)
 explains the crates, source policy, memory and UDP admission differences.
 
+The `bluetooth-dtm` image (`bluetooth-hil`) serves the `bluetooth-dtm-*`
+scenarios through the production Bluetooth composition. `runtime/src/bluetooth.rs`
+answers the console and runs one Direct Test Mode session on LE 1M, channel 0,
+with 37-byte PRBS9 payloads: it plans each test event with the portable
+`oer_bluetooth_ll::dtm` session and submits it to the radio runtime. The image
+has no Link Layer role or HCI Controller, so the peripheral scenarios reject it.
+
 `runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
 API bindings and diagnostic wrappers. All implementations use the same traffic
 workers and public production radio constructor. Radio behaviour belongs in

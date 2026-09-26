@@ -390,6 +390,15 @@ fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
         classify_flashed_capabilities(&features),
         Some(ImageClass::BluetoothDtm)
     );
+    features.bluetooth_peripheral = false;
+    assert_eq!(
+        classify_flashed_capabilities(&features),
+        Some(ImageClass::BluetoothDtm)
+    );
+    features.bluetooth_dtm = false;
+    features.bluetooth_peripheral = true;
+    assert_eq!(classify_flashed_capabilities(&features), None);
+    features.bluetooth_dtm = true;
     features.udp = true;
     assert_eq!(classify_flashed_capabilities(&features), None);
     assert!(

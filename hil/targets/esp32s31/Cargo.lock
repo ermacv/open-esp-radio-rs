@@ -1306,6 +1306,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-ll"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "oer-bluetooth-radio",
+]
+
+[[package]]
+name = "oer-bluetooth-radio"
+version = "0.1.0"
+
+[[package]]
 name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [
@@ -1344,6 +1356,48 @@ dependencies = [
  "oer-esp32s31-hal",
  "pin-project",
  "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-radio"
+version = "0.1.0"
+dependencies = [
+ "oer-bluetooth-radio",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-radio",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-bluetooth-radio",
+ "oer-esp32s31-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-system"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-bluetooth-radio",
+ "oer-esp32s31-bluetooth-runtime",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-phy-runtime",
+ "oer-esp32s31-radio-esp-hal",
+ "static_cell",
 ]
 
 [[package]]
@@ -1683,6 +1737,10 @@ dependencies = [
  "esp-hal",
  "heapless 0.9.3",
  "log",
+ "oer-bluetooth-ll",
+ "oer-bluetooth-radio",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-system",
  "oer-esp32s31-executor-embassy",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211-dma",

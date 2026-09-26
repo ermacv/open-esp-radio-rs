@@ -37,6 +37,13 @@ reported_frame_count = 30
 # runtime high-water observations cover exercised aggregate call chains only.
 # Selectors omit crate hashes so the policy survives ordinary rebuilds.
 [[reviewed_frames]]
+function_contains = "::system::start_esp32s31_bluetooth"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/system.rs"]
+max_bytes = 12288
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "one-time Bluetooth cold start moves the powered Controller typestate through the common-PHY and BLE-PHY transitions before placing it in static storage; it runs once on the 192-KiB CPU0 task stack before any radio task"
+
+[[reviewed_frames]]
 function_contains = "::station::StaLifecycleService<"
 source_ends_with = ["crates/protocols/ieee80211/sta/src/station.rs", "oer-ieee80211-sta-0.1.0/src/station.rs"]
 max_bytes = 19712

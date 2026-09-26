@@ -84,7 +84,8 @@ pub fn classify_flashed_capabilities(
         }
         let expected = FeatureCapabilities {
             bluetooth_dtm: true,
-            bluetooth_peripheral: true,
+            // The radio-contract image serves DTM without a peripheral role.
+            bluetooth_peripheral: features.bluetooth_peripheral,
             bluetooth_phy_maintenance: features.bluetooth_phy_maintenance,
             bluetooth_watchdog_reset: features.bluetooth_watchdog_reset,
             phy_fault_injection: features.phy_fault_injection,

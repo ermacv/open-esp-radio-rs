@@ -26,6 +26,21 @@ phy-fault-injection = [
 upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-ieee80211-system/upstream-network", "oer-hil-target-core?/upstream-network"]
 embassy-network = ["dep:embassy-net-released", "oer-esp32s31-ieee80211-system/embassy-network", "oer-hil-target-core?/embassy-network"]
 owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-ieee80211-system/owned-network", "oer-hil-target-core?/owned-network"]
+# Bluetooth LE radio over the production composition. The Direct Test Mode
+# image serves the `bluetooth-dtm-*` scenarios.
+bluetooth-radio = [
+    "dep:oer-bluetooth-ll",
+    "dep:oer-bluetooth-radio",
+    "dep:oer-esp32s31-bluetooth",
+    "dep:oer-esp32s31-bluetooth-system",
+    "dep:oer-esp32s31-phy",
+    "dep:oer-esp32s31-radio-esp-hal",
+    "dep:embassy-futures",
+    "dep:embassy-sync",
+    "dep:embedded-io-async",
+    "dep:oer-hil-protocol",
+]
+bluetooth-hil = ["bluetooth-radio"]
 open-radio-hil = [
     "dep:oer-ieee80211-softmac",
     "dep:oer-esp32s31-ieee80211-mac",
@@ -174,6 +189,10 @@ oer-network-interface = { workspace = true, optional = true }
 oer-esp32s31-ieee80211-system = { workspace = true, optional = true }
 oer-esp32s31-hal = { workspace = true, optional = true }
 oer-esp32s31-phy = { workspace = true, optional = true }
+oer-bluetooth-ll = { workspace = true, optional = true }
+oer-bluetooth-radio = { workspace = true, optional = true }
+oer-esp32s31-bluetooth = { workspace = true, optional = true }
+oer-esp32s31-bluetooth-system = { workspace = true, optional = true }
 oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 oer-esp32s31-ieee802154 = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-runtime = { workspace = true, optional = true }

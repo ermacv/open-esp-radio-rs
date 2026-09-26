@@ -346,9 +346,9 @@ where
         phase: PreparedTxSchedulerPhase,
         at_micros: u64,
     ) {
-        if !self.has_prepared() {
-            return;
-        }
+        // Every boundary is observed, including those without a prepared
+        // successor: the observer classifies publications that did not enter
+        // through the prepared path instead of silently losing them.
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::PreparedSchedulerPhase { phase, at_micros });
         }

@@ -242,9 +242,9 @@ max_bytes = 10496
 reason = "the Embassy poll wrapper executes the Wi-Fi role dispatcher including the paired-role request; this limit bounds its compiler-measured local frame separately from the future retained in static PSRAM storage"
 
 [[reviewed_frames]]
-function_contains = "::target_port::run_target_bluetooth_phy_register::<"
-source_ends_with = ["crates/hardware/esp32s31/phy/src/target_port.rs"]
+function_contains = "PhyDomain>::register::<"
+source_ends_with = ["crates/hardware/esp32s31/phy/src/target_port/domain.rs"]
 max_bytes = 9728
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "Bluetooth registration retains its actual calibration transition and registered-owner result while borrowing the stopped outer Controller; cold start and powered restart share this executor. Its caller has an opaque poll boundary and runtime painting independently bounds the full CPU0 initialization chain"
+reason = "protocol-neutral domain registration retains its actual calibration transition and registered-domain result while borrowing the stopped outer route; cold start and powered restart share this executor. Its caller has an opaque poll boundary and runtime painting independently bounds the full CPU0 initialization chain"
 

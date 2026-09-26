@@ -36,6 +36,15 @@ pub enum Step {
     SetCcaThreshold(i8),
     /// `esp_ieee802154_set_ack_timeout` in microseconds.
     SetAckTimeout(u32),
+    /// `esp_ieee802154_get_panid`, `get_short_address`,
+    /// `get_extended_address` and `get_ack_timeout`, in that order.
+    GetIdentity,
+    /// `esp_ieee802154_set_transmit_security` for `[length, psdu...]`.
+    SetTransmitSecurity {
+        frame: Vec<u8>,
+        key: [u8; 16],
+        address: [u8; 8],
+    },
     /// `esp_ieee802154_set_pending_mode`.
     SetPendingMode(u32),
     /// `esp_ieee802154_add_pending_addr`.
@@ -92,6 +101,11 @@ unsafe extern "C" {
     fn esp_ieee802154_set_cca_mode(mode: u32) -> i32;
     fn esp_ieee802154_set_cca_threshold(threshold: i8) -> i32;
     fn esp_ieee802154_set_ack_timeout(timeout: u32) -> i32;
+    fn esp_ieee802154_get_panid() -> u16;
+    fn esp_ieee802154_get_short_address() -> u16;
+    fn esp_ieee802154_get_extended_address(address: *mut u8) -> i32;
+    fn esp_ieee802154_get_ack_timeout() -> u32;
+    fn esp_ieee802154_set_transmit_security(frame: *mut u8, key: *mut u8, address: *mut u8) -> i32;
     fn esp_ieee802154_set_pending_mode(mode: u32) -> i32;
     fn esp_ieee802154_add_pending_addr(address: *const u8, short: bool) -> i32;
     fn esp_ieee802154_transmit(frame: *const u8, cca: bool) -> i32;
@@ -161,6 +175,25 @@ fn run_step(step: Step, last_rx: &mut Option<usize>) {
             Step::SetAckTimeout(timeout) => returned(
                 "esp_ieee802154_set_ack_timeout",
                 esp_ieee802154_set_ack_timeout(timeout),
+            ),
+            Step::GetIdentity => {
+                esp_ieee802154_get_panid();
+                esp_ieee802154_get_short_address();
+                let mut address = [0u8; 8];
+                esp_ieee802154_get_extended_address(address.as_mut_ptr());
+                esp_ieee802154_get_ack_timeout();
+            }
+            Step::SetTransmitSecurity {
+                mut frame,
+                mut key,
+                mut address,
+            } => returned(
+                "esp_ieee802154_set_transmit_security",
+                esp_ieee802154_set_transmit_security(
+                    frame.as_mut_ptr(),
+                    key.as_mut_ptr(),
+                    address.as_mut_ptr(),
+                ),
             ),
             Step::SetPendingMode(mode) => returned(
                 "esp_ieee802154_set_pending_mode",

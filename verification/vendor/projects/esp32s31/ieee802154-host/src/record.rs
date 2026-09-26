@@ -18,7 +18,7 @@ use std::{
 /// Buffer addresses are labelled instead of printed, so a trace does not
 /// depend on where the host placed the driver's statics or the scenario's
 /// frames.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Argument {
     /// A scalar value.
     Value(u64),
@@ -26,6 +26,9 @@ pub enum Argument {
     TransmitFrame(usize),
     /// The `n`th distinct driver-owned buffer, in order of first appearance.
     DriverBuffer(usize),
+    /// The bytes an address, key or extended-address pointer refers to,
+    /// read after the call.
+    Bytes(Vec<u8>),
 }
 
 impl fmt::Display for Argument {
@@ -34,6 +37,7 @@ impl fmt::Display for Argument {
             Self::Value(value) => write!(formatter, "{value:#x}"),
             Self::TransmitFrame(index) => write!(formatter, "tx#{index}"),
             Self::DriverBuffer(index) => write!(formatter, "buf#{index}"),
+            Self::Bytes(bytes) => write!(formatter, "[{}]", hex(bytes)),
         }
     }
 }
@@ -246,6 +250,14 @@ fn bytes_of(bytes: *const u8, len: u32) -> Vec<u8> {
 }
 
 const LL: &str = "ieee802154_ll_";
+
+/// Pointer arguments recorded by content: `(accessor, argument, bytes)`.
+pub(crate) const BYTE_ARGUMENTS: [(&str, usize, usize); 4] = [
+    ("ieee802154_ll_set_multipan_ext_addr", 1, 8),
+    ("ieee802154_ll_get_multipan_ext_addr", 1, 8),
+    ("ieee802154_ll_set_security_addr", 0, 8),
+    ("ieee802154_ll_set_security_key", 0, 16),
+];
 const EXTENDED_ADDRESS_SETTER: &str = "ieee802154_ll_set_multipan_ext_addr";
 const EXTENDED_ADDRESS_GETTER: &str = "ieee802154_ll_get_multipan_ext_addr";
 
@@ -318,7 +330,17 @@ extern "C" fn oer_host_record(
                 .iter()
                 .enumerate()
                 .map(|(index, &argument)| {
-                    if pointers & 1 << index != 0 {
+                    let by_content = BYTE_ARGUMENTS
+                        .iter()
+                        .find(|(accessor, position, _)| *accessor == name && *position == index);
+                    if let Some((_, _, length)) = by_content {
+                        // SAFETY: the driver passes a live buffer of the
+                        // accessor's fixed length.
+                        Argument::Bytes(
+                            unsafe { std::slice::from_raw_parts(argument as *const u8, *length) }
+                                .to_vec(),
+                        )
+                    } else if pointers & 1 << index != 0 {
                         state.label(argument as usize)
                     } else {
                         Argument::Value(argument)

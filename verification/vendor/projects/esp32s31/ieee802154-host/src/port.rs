@@ -260,6 +260,21 @@ impl Shared {
         value
     }
 
+    /// A call whose last argument points at `buffer`, recorded by content
+    /// after the model answered, as the vendor recorder does.
+    fn ll_buffer(&mut self, name: &str, leading: &[u64], buffer: &mut [u8]) -> u64 {
+        let mut raw = leading.to_vec();
+        raw.push(buffer.as_mut_ptr() as u64);
+        let value = self.model.call(name, &raw);
+        let mut arguments: Vec<Argument> = leading.iter().copied().map(Argument::Value).collect();
+        arguments.push(Argument::Bytes(buffer.to_vec()));
+        self.records.push(Record::Ll {
+            name: name.to_owned(),
+            arguments,
+        });
+        value
+    }
+
     fn read(&mut self, address: u32) -> u32 {
         let value = self.registers.get(&address).copied().unwrap_or(0);
         self.records.push(Record::RegisterRead { address, value });
@@ -489,6 +504,74 @@ impl Ieee802154LowLevel for PortLl {
         shared.write(ETM_CH0_EVT_ID + offset, event);
         shared.write(ETM_CH0_TASK_ID + offset, task);
     }
+    fn set_multipan_panid(&mut self, index: Ieee802154MultipanIndex, panid: u16) {
+        self.ll(
+            "ieee802154_ll_set_multipan_panid",
+            &[
+                Arg::Value(u64::from(index.value())),
+                Arg::Value(u64::from(panid)),
+            ],
+        );
+    }
+    fn multipan_panid(&mut self, index: Ieee802154MultipanIndex) -> u16 {
+        self.ll(
+            "ieee802154_ll_get_multipan_panid",
+            &[Arg::Value(u64::from(index.value()))],
+        ) as u16
+    }
+    fn set_multipan_short_address(&mut self, index: Ieee802154MultipanIndex, address: u16) {
+        self.ll(
+            "ieee802154_ll_set_multipan_short_addr",
+            &[
+                Arg::Value(u64::from(index.value())),
+                Arg::Value(u64::from(address)),
+            ],
+        );
+    }
+    fn multipan_short_address(&mut self, index: Ieee802154MultipanIndex) -> u16 {
+        self.ll(
+            "ieee802154_ll_get_multipan_short_addr",
+            &[Arg::Value(u64::from(index.value()))],
+        ) as u16
+    }
+    fn set_multipan_extended_address(&mut self, index: Ieee802154MultipanIndex, address: [u8; 8]) {
+        let mut address = address;
+        self.0.borrow_mut().ll_buffer(
+            "ieee802154_ll_set_multipan_ext_addr",
+            &[u64::from(index.value())],
+            &mut address,
+        );
+    }
+    fn multipan_extended_address(&mut self, index: Ieee802154MultipanIndex) -> [u8; 8] {
+        let mut address = [0; 8];
+        self.0.borrow_mut().ll_buffer(
+            "ieee802154_ll_get_multipan_ext_addr",
+            &[u64::from(index.value())],
+            &mut address,
+        );
+        address
+    }
+    fn set_ack_timeout(&mut self, units: u16) {
+        self.value("ieee802154_ll_set_ack_timeout", u64::from(units));
+    }
+    fn ack_timeout(&mut self) -> u16 {
+        self.ll("ieee802154_ll_get_ack_timeout", &[]) as u16
+    }
+    fn set_security_address(&mut self, address: &[u8; 8]) {
+        let mut address = *address;
+        self.0
+            .borrow_mut()
+            .ll_buffer("ieee802154_ll_set_security_addr", &[], &mut address);
+    }
+    fn set_security_key(&mut self, key: &[u8; 16]) {
+        let mut key = *key;
+        self.0
+            .borrow_mut()
+            .ll_buffer("ieee802154_ll_set_security_key", &[], &mut key);
+    }
+    fn set_security_offset(&mut self, offset: u8) {
+        self.value("ieee802154_ll_set_security_offset", u64::from(offset));
+    }
 }
 
 struct PortEnv(Rc<RefCell<Shared>>);
@@ -681,14 +764,21 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
                 };
                 let _ = engine.pending_table().add(address);
             }
-            Step::SetPanId(_)
-            | Step::SetShortAddress(_)
-            | Step::SetExtendedAddress(_)
-            | Step::SetAckTimeout(_) => {
-                return Err(format!(
-                    "{step:?} is written by the public API layer, not the engine"
-                ));
+            Step::SetPanId(panid) => engine.set_panid(&mut ll, panid),
+            Step::SetShortAddress(address) => engine.set_short_address(&mut ll, address),
+            Step::SetExtendedAddress(address) => engine.set_extended_address(&mut ll, address),
+            Step::SetAckTimeout(timeout) => engine.set_ack_timeout(&mut ll, timeout),
+            Step::GetIdentity => {
+                engine.panid(&mut ll);
+                engine.short_address(&mut ll);
+                engine.extended_address(&mut ll);
+                engine.ack_timeout(&mut ll);
             }
+            Step::SetTransmitSecurity {
+                frame,
+                key,
+                address,
+            } => engine.set_transmit_security(&mut ll, &frame, &key, &address),
             Step::Transmit { frame, cca } => {
                 shared.borrow_mut().transmits += 1;
                 engine

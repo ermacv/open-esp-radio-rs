@@ -243,6 +243,42 @@ fn receive_at_window_closes_mid_frame() -> Vec<Step> {
     ]
 }
 
+fn configure_identity() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::SetPanId(0x1234),
+        Step::SetShortAddress(0x5678),
+        Step::SetExtendedAddress([1, 2, 3, 4, 5, 6, 7, 8]),
+        Step::SetAckTimeout(200),
+        Step::GetIdentity,
+    ]
+}
+
+/// The 2006 data frame with security enabled and a frame-counter-suppressed
+/// auxiliary security header in place of its payload byte.
+fn secured_frame() -> Vec<u8> {
+    let mut frame = data_frame(false);
+    frame[1] |= 0x08;
+    frame[10] = 0x25;
+    frame
+}
+
+fn transmit_with_security() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::SetTransmitSecurity {
+            frame: secured_frame(),
+            key: [7; 16],
+            address: [9; 8],
+        },
+        Step::Transmit {
+            frame: secured_frame(),
+            cca: false,
+        },
+        interrupt(event::TX_DONE),
+    ]
+}
+
 fn sleep_after_receive() -> Vec<Step> {
     vec![Step::Enable, Step::Receive, Step::Sleep, Step::Sleep]
 }
@@ -463,6 +499,16 @@ pub const SCENARIOS: &[Scenario] = &[
         name: "receive-at-window-closes-mid-frame",
         inputs: no_inputs,
         steps: receive_at_window_closes_mid_frame,
+    },
+    Scenario {
+        name: "configure-identity",
+        inputs: no_inputs,
+        steps: configure_identity,
+    },
+    Scenario {
+        name: "transmit-with-security",
+        inputs: no_inputs,
+        steps: transmit_with_security,
     },
     Scenario {
         name: "sleep-after-receive",

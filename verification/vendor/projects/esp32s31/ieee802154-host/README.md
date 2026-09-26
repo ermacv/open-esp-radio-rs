@@ -72,9 +72,9 @@ renders each HAL low-level call as the vendor `ieee802154_ll_*` accessor and
 argument, and each modem ETM access as the vendor's direct register access;
 getters on both sides answer from one shared value model. Calls that leave
 the driver (clocks, PHY, BTBB, interrupt allocation, time, critical sections)
-are not compared. A vendor assertion, or a step the engine does not own yet
-(PAN identity, addresses and ACK timeout belong to the public API layer), is
-`INCOMPLETE`. The stand has no BTBB power table, so both sides resolve power
+are not compared. A vendor assertion, or a step the engine does not own, is
+`INCOMPLETE`. Address, extended-address and key arguments are compared by
+content. The stand has no BTBB power table, so both sides resolve power
 to index zero. The tests require `MATCH` for every catalog scenario.
 
 ## Limits

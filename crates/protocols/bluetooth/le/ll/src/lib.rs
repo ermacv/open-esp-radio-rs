@@ -3,11 +3,13 @@
 
 //! Hardware-independent Bluetooth Low Energy Link Layer building blocks.
 //!
-//! This crate owns bounded over-the-air PDU codecs and protocol-role state.
-//! It has no HCI, MMIO, DMA, interrupt, executor, allocator, ESP32-S31,
-//! vendor-archive, or ROM-ABI dependency. Chip code lowers prepared protocol
-//! work into its private descriptor and register accessors; an HCI router may
-//! configure roles only after those lower ownership boundaries exist.
+//! This crate owns bounded over-the-air PDU codecs and the protocol state of
+//! one connection: advertising and scan-response PDUs, advertising report
+//! parsing and duplicate filtering, connection indication, channel selection
+//! and instants, control procedures, encryption and the Direct Test Mode
+//! session planner. It has no HCI, MMIO, DMA, interrupt, executor, allocator,
+//! ESP32-S31, vendor-archive or ROM-ABI dependency. The Controller core
+//! schedules roles and composes these pieces.
 //!
 //! [`connection::maintenance`] admits provisional budgeted event omissions on
 //! the same connection owner, retaining initial acknowledgement, Instant and
@@ -18,9 +20,7 @@
 extern crate std;
 
 mod address;
-pub mod advertiser;
 pub mod advertising;
-pub mod advertising_lifecycle;
 pub mod connectable_advertising;
 pub mod connection;
 pub mod control;

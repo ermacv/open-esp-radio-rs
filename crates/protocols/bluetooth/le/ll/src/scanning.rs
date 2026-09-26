@@ -1,14 +1,11 @@
-//! Portable legacy passive-scanning policy and PDU parsing.
+//! Legacy advertising report parsing and duplicate filtering.
 //!
 //! This module understands Bluetooth air-interface fields only. It contains no
 //! ESP32 descriptor layout, MMIO, HCI packet framing, executor, or allocator.
 
 use crate::{LeDeviceAddress, LeDeviceAddressKind};
 
-/// HCI legacy scan interval/window unit: 0.625 milliseconds.
-pub const LEGACY_SCAN_UNIT_MICROS: u32 = 625;
-pub const LEGACY_SCAN_MIN_UNITS: u16 = 0x0004;
-pub const LEGACY_SCAN_MAX_UNITS: u16 = 0x4000;
+/// Largest legacy advertising data after the advertiser address.
 pub const LEGACY_SCAN_DATA_CAPACITY: usize = 31;
 
 const LEGACY_HEADER_BYTES: usize = 2;
@@ -19,203 +16,12 @@ const TX_ADD_RANDOM: u8 = 1 << 6;
 const RX_ADD_RANDOM: u8 = 1 << 7;
 const PAYLOAD_LENGTH_MASK: u8 = 0x3f;
 
-/// Validated legacy scan interval.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LegacyScanInterval(u16);
-
-impl LegacyScanInterval {
-    pub const fn new(units_625_us: u16) -> Result<Self, LegacyScanTimingError> {
-        if units_625_us < LEGACY_SCAN_MIN_UNITS || units_625_us > LEGACY_SCAN_MAX_UNITS {
-            Err(LegacyScanTimingError::IntervalOutsideRange)
-        } else {
-            Ok(Self(units_625_us))
-        }
-    }
-
-    pub const fn units_625_us(self) -> u16 {
-        self.0
-    }
-
-    pub const fn micros(self) -> u32 {
-        self.0 as u32 * LEGACY_SCAN_UNIT_MICROS
-    }
-}
-
-/// Validated non-empty legacy receive window.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LegacyScanWindow(u16);
-
-impl LegacyScanWindow {
-    pub const fn new(units_625_us: u16) -> Result<Self, LegacyScanTimingError> {
-        if units_625_us < LEGACY_SCAN_MIN_UNITS || units_625_us > LEGACY_SCAN_MAX_UNITS {
-            Err(LegacyScanTimingError::WindowOutsideRange)
-        } else {
-            Ok(Self(units_625_us))
-        }
-    }
-
-    pub const fn units_625_us(self) -> u16 {
-        self.0
-    }
-
-    pub const fn micros(self) -> u32 {
-        self.0 as u32 * LEGACY_SCAN_UNIT_MICROS
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LegacyScanTimingError {
-    IntervalOutsideRange,
-    WindowOutsideRange,
-    WindowExceedsInterval,
-}
-
-/// Immutable passive LE 1M scanning parameters.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LegacyPassiveScanParameters {
-    interval: LegacyScanInterval,
-    window: LegacyScanWindow,
-}
-
-impl LegacyPassiveScanParameters {
-    pub const fn new(
-        interval: LegacyScanInterval,
-        window: LegacyScanWindow,
-    ) -> Result<Self, LegacyScanTimingError> {
-        if window.units_625_us() > interval.units_625_us() {
-            Err(LegacyScanTimingError::WindowExceedsInterval)
-        } else {
-            Ok(Self { interval, window })
-        }
-    }
-
-    pub const fn interval(self) -> LegacyScanInterval {
-        self.interval
-    }
-
-    pub const fn window(self) -> LegacyScanWindow {
-        self.window
-    }
-}
-
-/// Primary advertising channel selected for one receive window.
+/// Primary advertising channel a report was received on.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrimaryScanChannel {
     Channel37,
     Channel38,
     Channel39,
-}
-
-/// Host-selected duplicate filtering policy retained by the scanner role.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LegacyScanDuplicatePolicy {
-    ReportAll,
-    FilterDuplicates,
-}
-
-/// Configured but disabled passive scanner.
-#[must_use = "retain the configured scanner or enable it"]
-pub struct LegacyPassiveScannerDisabled {
-    parameters: LegacyPassiveScanParameters,
-}
-
-impl LegacyPassiveScannerDisabled {
-    pub const fn new(parameters: LegacyPassiveScanParameters) -> Self {
-        Self { parameters }
-    }
-
-    pub const fn parameters(&self) -> LegacyPassiveScanParameters {
-        self.parameters
-    }
-
-    pub const fn set_parameters(mut self, parameters: LegacyPassiveScanParameters) -> Self {
-        self.parameters = parameters;
-        self
-    }
-
-    pub const fn enable(
-        self,
-        duplicate_policy: LegacyScanDuplicatePolicy,
-    ) -> LegacyPassiveScannerEnabled {
-        LegacyPassiveScannerEnabled {
-            parameters: self.parameters,
-            duplicate_policy,
-            next_channel: PrimaryScanChannel::Channel37,
-        }
-    }
-}
-
-/// Enabled scanner between hardware receive windows.
-#[must_use = "begin the next window or disable the scanner"]
-pub struct LegacyPassiveScannerEnabled {
-    parameters: LegacyPassiveScanParameters,
-    duplicate_policy: LegacyScanDuplicatePolicy,
-    next_channel: PrimaryScanChannel,
-}
-
-impl LegacyPassiveScannerEnabled {
-    pub const fn parameters(&self) -> LegacyPassiveScanParameters {
-        self.parameters
-    }
-
-    pub const fn duplicate_policy(&self) -> LegacyScanDuplicatePolicy {
-        self.duplicate_policy
-    }
-
-    pub const fn next_channel(&self) -> PrimaryScanChannel {
-        self.next_channel
-    }
-
-    pub const fn begin_window(self) -> LegacyPassiveScanWindowInFlight {
-        LegacyPassiveScanWindowInFlight { scanner: self }
-    }
-
-    pub const fn disable(self) -> LegacyPassiveScannerDisabled {
-        LegacyPassiveScannerDisabled {
-            parameters: self.parameters,
-        }
-    }
-}
-
-/// Portable scanner owner paired with exactly one lower receive window.
-#[must_use = "complete or cancel the exact scanner window"]
-pub struct LegacyPassiveScanWindowInFlight {
-    scanner: LegacyPassiveScannerEnabled,
-}
-
-impl LegacyPassiveScanWindowInFlight {
-    pub const fn parameters(&self) -> LegacyPassiveScanParameters {
-        self.scanner.parameters
-    }
-
-    pub const fn duplicate_policy(&self) -> LegacyScanDuplicatePolicy {
-        self.scanner.duplicate_policy
-    }
-
-    pub const fn channel(&self) -> PrimaryScanChannel {
-        self.scanner.next_channel
-    }
-
-    /// Complete a hardware window and rotate to the next primary channel.
-    pub const fn complete(mut self) -> LegacyPassiveScannerEnabled {
-        self.scanner.next_channel = self.scanner.next_channel.next();
-        self.scanner
-    }
-
-    /// Cancel before completion without advancing the primary-channel plan.
-    pub const fn cancel(self) -> LegacyPassiveScannerEnabled {
-        self.scanner
-    }
-}
-
-impl PrimaryScanChannel {
-    pub const fn next(self) -> Self {
-        match self {
-            Self::Channel37 => Self::Channel38,
-            Self::Channel38 => Self::Channel39,
-            Self::Channel39 => Self::Channel37,
-        }
-    }
 }
 
 /// Legacy advertising PDU classes reportable by a passive scanner.

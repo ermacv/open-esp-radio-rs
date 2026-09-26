@@ -1,38 +1,10 @@
 use super::{
-    LegacyAdvertisingDuplicateFilter, LegacyAdvertisingReportKind, LegacyPassiveScanParameters,
-    LegacyPassiveScannerDisabled, LegacyScanDuplicatePolicy, LegacyScanInterval,
-    LegacyScanTimingError, LegacyScanWindow, PrimaryScanChannel, parse_legacy_advertising_report,
+    LegacyAdvertisingDuplicateFilter, LegacyAdvertisingReportKind, PrimaryScanChannel,
+    parse_legacy_advertising_report,
 };
 use crate::LeDeviceAddressKind;
 
 const ADV_NONCONN: [u8; 11] = [2, 9, 1, 2, 3, 4, 5, 6, 2, 1, 6];
-
-#[test]
-fn timing_rejects_a_window_larger_than_its_interval() {
-    let interval = LegacyScanInterval::new(16).expect("the interval is valid");
-    let window = LegacyScanWindow::new(17).expect("the window is valid");
-    assert_eq!(
-        LegacyPassiveScanParameters::new(interval, window),
-        Err(LegacyScanTimingError::WindowExceedsInterval)
-    );
-}
-
-#[test]
-fn scanner_rotates_channel_only_after_a_completed_window() {
-    let parameters = LegacyPassiveScanParameters::new(
-        LegacyScanInterval::new(16).expect("the interval is valid"),
-        LegacyScanWindow::new(16).expect("the window is valid"),
-    )
-    .expect("the window fits its interval");
-    let enabled = LegacyPassiveScannerDisabled::new(parameters)
-        .enable(LegacyScanDuplicatePolicy::FilterDuplicates);
-    let first = enabled.begin_window();
-    assert_eq!(first.channel(), PrimaryScanChannel::Channel37);
-    let retry = first.cancel().begin_window();
-    assert_eq!(retry.channel(), PrimaryScanChannel::Channel37);
-    let second = retry.complete().begin_window();
-    assert_eq!(second.channel(), PrimaryScanChannel::Channel38);
-}
 
 #[test]
 fn passive_report_retains_protocol_fields_and_metadata() {

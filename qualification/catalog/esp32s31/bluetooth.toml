@@ -2389,7 +2389,7 @@ section = "bluetooth-legacy-advertising-scanning"
 title = "Legacy non-connectable advertising (`ADV_NONCONN_IND`)"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The portable [advertiser](../../../../protocols/bluetooth/le/ll/src/advertiser.rs) event plan and memory-crate legacy advertising storage exist. No LE Controller composition currently exists."
+scope-and-limitations = "The portable [Controller core](../../../../protocols/bluetooth/le/controller/src/advertising.rs) plans the advertising events over the memory-crate legacy advertising storage, and the chip composition runs them through HCI. Air behavior has no qualified HIL evidence."
 
 [[items]]
 id = "bluetooth-legacy-connectable-advertising-adv-ind"

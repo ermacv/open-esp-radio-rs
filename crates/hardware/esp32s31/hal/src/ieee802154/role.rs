@@ -1,19 +1,26 @@
-//! Whole-owner lifecycle for the dedicated IEEE 802.15.4 radio route.
+//! IEEE 802.15.4 lifecycle as a client of the shared radio arbiter.
 //!
-//! The entry owner consumes the protocol-neutral [`RadioHardware`] root
-//! directly into the exclusive IEEE 802.15.4 route. Task-side MAC/shared-PHY
-//! ownership and the inactive interrupt owner remain disjoint for the complete
-//! lifecycle; no temporary Wi-Fi register owner exists. Completion of this
-//! module's final state is intentionally weaker than common-PHY, BTBB, RF, or
+//! The chain starts from the [`Ieee802154RadioPartition`] of a concurrent
+//! split and holds only the MAC, its interrupt route and its ETM channels.
+//! Common radio power, the module clocks and the private MAC resets live in
+//! the shared radio registers, so each of those transitions borrows the
+//! arbiter's [`SharedRadioLease`] for its duration and never retains it. The
+//! MAC foundation and policy touch only the partition.
+//!
+//! The public ESP-IDF enable order is `ieee802154_enable` (module clocks),
+//! `esp_phy_enable`, `esp_btbb_enable` and then `ieee802154_mac_init`, whose
+//! first step is the MAC reset. The PHY client and BTBB steps belong to the
+//! PHY layer, which composes them at [`Ieee802154Clocked`]. Completion of this
+//! module's states is intentionally weaker than common-PHY, BTBB, RF, or
 //! operational-MAC readiness.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 use core::fmt;
 
 use oer_esp32s31_pac::{
     Ieee802154FoundationSnapshot, Ieee802154InterruptSetup, Ieee802154Pti, Ieee802154TaskRegisters,
-    Ieee802154TimingPrerequisite, Ieee802154TimingReady,
+    RadioPhyRegisters,
 };
 
 #[cfg(feature = "validation-probes")]
@@ -29,16 +36,13 @@ use crate::ieee802154::validation::{
 };
 
 use crate::{
-    clock::SharedClockLeases,
     ieee802154::{
         backend::Ieee802154PacHal,
         lifecycle::{
-            Ieee802154ClockCheckpoint, Ieee802154ClockFailure as EngineClockFailure,
-            Ieee802154ClockReadback, Ieee802154FoundationCheckpoint,
-            Ieee802154FoundationFailure as EngineFoundationFailure, Ieee802154Lifecycle,
-            Ieee802154LifecycleBackend, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
-            Ieee802154ResetFailure as EngineResetFailure, Ieee802154ResetReadback,
-            establish_ieee802154_clocks, state as lifecycle_state,
+            Ieee802154FoundationCheckpoint, Ieee802154FoundationFailure as EngineFoundationFailure,
+            Ieee802154Lifecycle, Ieee802154LifecycleBackend, Ieee802154ReadbackError,
+            Ieee802154ResetCheckpoint, Ieee802154ResetFailure as EngineResetFailure,
+            Ieee802154ResetPort, Ieee802154ResetReadback, state as lifecycle_state,
         },
         mac::{Ieee802154InterruptSetupOwner, Ieee802154TaskOwner},
         operation::{
@@ -51,125 +55,29 @@ use crate::{
             Ieee802154MacPolicyBackend, Ieee802154MacPolicyCheckpoint,
             Ieee802154MacPolicyFailure as EngineMacPolicyFailure, Ieee802154MacPolicyReadback,
             Ieee802154MacPolicyWrites, Ieee802154PanIdentity, configure_ieee802154_mac_policy,
-            verify_ieee802154_mac_policy,
         },
     },
-    owner::{SharedPhyHal, route},
-    phy::restore::PhyRouteState,
-    power::{self, PowerError},
-    root::{Ieee802154Route, RadioHardware, RadioPhyReleaseError, RetainedIeee802154},
+    root::Ieee802154RadioPartition,
+    shared_radio::{
+        BtbbAcquired, BtbbError, CommonRadioPowerError, ModemClockError, PlatformClockProvider,
+        SharedRadioLease,
+    },
 };
 
-struct OwnedIeee802154Backend<P> {
-    platform: P,
+/// The IEEE 802.15.4 partition split into its task and inactive interrupt
+/// halves.
+struct Ieee802154Mac {
     task: Ieee802154TaskRegisters,
     interrupts: Ieee802154InterruptSetup,
-    retained: RetainedIeee802154,
-    clocks: SharedClockLeases,
-    phy_state: PhyRouteState,
 }
 
-/// Failed cold-route release retaining the complete IEEE 802.15.4 owner.
-#[must_use = "failed IEEE 802.15.4 release still owns the platform and radio route"]
-pub struct Ieee802154OwnedReleaseFailure<P> {
-    owner: Ieee802154Owned<P>,
-    error: RadioPhyReleaseError,
-}
-
-impl<P> Ieee802154OwnedReleaseFailure<P> {
-    pub const fn error(&self) -> RadioPhyReleaseError {
-        self.error
-    }
-
-    pub fn into_parts(self) -> (Ieee802154Owned<P>, RadioPhyReleaseError) {
-        (self.owner, self.error)
-    }
-}
-
-impl<P> fmt::Debug for Ieee802154OwnedReleaseFailure<P> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Ieee802154OwnedReleaseFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
-}
-
-impl<P> OwnedIeee802154Backend<P> {
+impl Ieee802154Mac {
     fn mac_hal(&mut self) -> Ieee802154PacHal<'_> {
         Ieee802154PacHal::from_owned(&mut self.task, &mut self.interrupts)
     }
 }
 
-impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
-    fn configure_modem_clock_maps(&mut self) {
-        self.task.configure_modem_syscon_clock_maps();
-        self.task.radio_phy_mut().prepare_shared_modem_clock_map();
-    }
-
-    fn configure_modem_source_clock(&mut self) {
-        self.task.radio_phy_mut().configure_modem_source_clocks();
-    }
-
-    fn enable_wifi_bb_80x1_clock(&mut self) {
-        self.task.enable_ieee802154_wifi_bb_clock();
-    }
-
-    fn enable_etm_clock(&mut self) {
-        self.task.enable_ieee802154_etm_clock();
-    }
-
-    fn enable_bt_apb_clocks(&mut self) {
-        self.task.enable_ieee802154_bt_apb_clocks();
-    }
-
-    fn enable_bt_ieee802154_common_baseband_clock(&mut self) {
-        self.task.enable_ieee802154_common_baseband_clock();
-    }
-
-    fn enable_ieee802154_mac_clocks(&mut self) {
-        self.task.enable_ieee802154_mac_clocks();
-    }
-
-    fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
-        self.task.set_ieee802154_mac_reset(asserted);
-    }
-
-    fn set_ieee802154_apb_reset(&mut self, asserted: bool) {
-        self.task.set_ieee802154_apb_reset(asserted);
-    }
-
-    fn ieee802154_reset_readback(&self) -> Ieee802154ResetReadback {
-        let reset = self.task.modem_syscon_ieee802154_reset_observation();
-        Ieee802154ResetReadback {
-            mac_reset_released: reset.mac_reset_released,
-            apb_reset_released: reset.apb_reset_released,
-        }
-    }
-    fn enable_coexistence_clock(&mut self) {
-        self.clocks.retain_coexistence(self.task.radio_phy_mut());
-    }
-
-    fn ieee802154_clock_readback(&self) -> Ieee802154ClockReadback {
-        let platform = self.task.radio_phy().platform_clock_power_observation();
-        let shared = self.task.radio_phy().shared_modem_clock_observation();
-        let modem = self.task.modem_syscon_ieee802154_clock_observation();
-        Ieee802154ClockReadback {
-            modem_clock_maps_configured: modem.active_clock_map_configured
-                && shared.power_state_map_configured,
-            pll_160m_clock_enabled: platform.ref_160m_clock_enabled,
-            modem_source_clock_configured: platform.modem_source_clocks_configured,
-            coexistence_clock_enabled: shared.coexistence_clock_enabled,
-            wifi_bb_80x1_clock_enabled: modem.wifi_bb_80x1_clock_enabled,
-            etm_clock_enabled: modem.etm_clock_enabled,
-            bt_apb_clock_enabled: modem.bt_apb_clock_enabled,
-            modem_security_apb_clock_enabled: modem.modem_security_apb_clock_enabled,
-            bt_ieee802154_common_baseband_clock_enabled: modem.common_baseband_clock_enabled,
-            ieee802154_apb_clock_enabled: modem.ieee802154_apb_clock_enabled,
-            ieee802154_mac_clock_enabled: modem.ieee802154_mac_clock_enabled,
-        }
-    }
-
+impl Ieee802154LifecycleBackend for Ieee802154Mac {
     fn mask_all_events(&mut self) {
         self.mac_hal().mask_all_events();
     }
@@ -194,6 +102,10 @@ impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
         self.mac_hal().set_ack_pti(pti);
     }
 
+    fn apply_rx_on_delay(&mut self) {
+        self.mac_hal().apply_rx_on_delay();
+    }
+
     fn order_device_accesses(&mut self) {
         self.mac_hal().order_device_accesses();
     }
@@ -203,146 +115,173 @@ impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
     }
 }
 
-/// Exclusive cold owner of the dedicated IEEE 802.15.4 radio route.
-///
-/// Construction consumes the protocol-neutral hardware root and immediately
-/// separates the task and inactive interrupt partitions without touching
-/// MMIO. It proves neither clocks nor common-PHY, BTBB, coexistence, RF, IRQ,
-/// DMA, or MAC readiness.
-#[must_use = "the IEEE 802.15.4 owner retains every radio hardware partition"]
-pub struct Ieee802154Owned<P> {
-    backend: OwnedIeee802154Backend<P>,
+/// The private MAC resets in the shared modem syscon block, borrowed from
+/// one lease for one reset transition.
+struct LeasedResetPort<'a> {
+    radio_phy: &'a mut RadioPhyRegisters,
 }
 
-impl<P> Ieee802154Owned<P> {
-    /// Claim the process-wide radio root directly for IEEE 802.15.4.
-    ///
-    /// A failed singleton claim returns the integration token unchanged. This
-    /// ownership-only transition performs no clock, reset, PHY, or MAC write.
-    pub fn claim(platform: P) -> Result<Self, P> {
-        #[cfg(not(test))]
-        let Some(hardware) = RadioHardware::take() else {
-            return Err(platform);
-        };
-        #[cfg(test)]
-        let hardware = RadioHardware::for_validation();
-        Ok(Self::from_hardware(platform, hardware))
+impl Ieee802154ResetPort for LeasedResetPort<'_> {
+    fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
+        self.radio_phy.set_ieee802154_mac_reset(asserted);
     }
 
-    /// Construct the dedicated owner without consuming the process singleton.
-    ///
-    /// This validation-only entry point exists so dependent crate tests can
-    /// exercise the exact production ownership route without raw PAC access.
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub fn claim_for_validation(platform: P) -> Self {
-        Self::from_hardware(platform, RadioHardware::for_validation())
+    fn set_ieee802154_apb_reset(&mut self, asserted: bool) {
+        self.radio_phy.set_ieee802154_apb_reset(asserted);
     }
 
-    /// Bind an already-owned neutral radio root to the IEEE 802.15.4 route.
-    pub fn from_hardware(platform: P, hardware: RadioHardware) -> Self {
-        let Ieee802154Route {
-            task,
-            interrupts,
-            phy,
-            retained,
-        } = hardware.into_ieee802154();
+    fn ieee802154_reset_readback(&self) -> Ieee802154ResetReadback {
+        let reset = self.radio_phy.ieee802154_reset_observation();
+        Ieee802154ResetReadback {
+            mac_reset_released: reset.mac_reset_released,
+            apb_reset_released: reset.apb_reset_released,
+        }
+    }
+}
+
+/// Unpowered IEEE 802.15.4 client holding its partition.
+///
+/// Construction splits the partition without touching MMIO. It proves
+/// neither power nor clocks, common-PHY, BTBB, RF, IRQ, DMA, or MAC
+/// readiness.
+#[must_use = "the IEEE 802.15.4 client retains its radio partition"]
+pub struct Ieee802154Cold {
+    mac: Ieee802154Mac,
+}
+
+impl Ieee802154Cold {
+    /// Take the partition of a concurrent split. This performs no MMIO.
+    pub fn from_partition(partition: Ieee802154RadioPartition) -> Self {
+        let (task, interrupts) = Ieee802154TaskRegisters::new(partition.into_mac());
         Self {
-            backend: OwnedIeee802154Backend {
-                platform,
-                task,
-                interrupts,
-                retained,
-                clocks: SharedClockLeases::default(),
-                phy_state: phy,
-            },
+            mac: Ieee802154Mac { task, interrupts },
         }
     }
 
-    /// Return the untouched cold route to its protocol-neutral root.
+    /// Return the partition. This performs no MMIO.
+    pub fn into_partition(self) -> Ieee802154RadioPartition {
+        let Ieee802154Mac { task, interrupts } = self.mac;
+        Ieee802154RadioPartition::from_mac(task.into_partition(interrupts))
+    }
+
+    /// Enter common radio power as the IEEE 802.15.4 client.
     ///
-    /// This method is intentionally unavailable after the first power
-    /// transition, whose partial mutation requires typed retry ownership.
-    /// A higher layer must first finish its state-specific STOP and
-    /// shared-resource teardown sequence; release then drops the retained
-    /// shared-clock leases and reunites the MAC interrupt owner.
+    /// Only the first client runs the modem/PHY power sequence.
     ///
     /// # Errors
     ///
-    /// Returns a release failure retaining this owner and its
-    /// platform while TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power control still
-    /// awaits restoration in the route restore slot.
-    pub fn release(self) -> Result<(P, RadioHardware), Ieee802154OwnedReleaseFailure<P>> {
-        if let Err(error) = crate::root::check_phy_restore_complete(&self.backend.phy_state) {
-            return Err(Ieee802154OwnedReleaseFailure { owner: self, error });
+    /// The client already holds power or the first client's sequence failed a
+    /// read-back checkpoint; the unchanged owner is returned.
+    pub fn power_up<T>(
+        self,
+        lease: &mut SharedRadioLease<'_, T>,
+    ) -> Result<Ieee802154Powered, Ieee802154PowerTransitionFailure<Self>> {
+        match lease.enter_common_power(&self.mac.task) {
+            Ok(()) => Ok(Ieee802154Powered { mac: self.mac }),
+            Err(error) => Err(Ieee802154PowerTransitionFailure { owner: self, error }),
         }
-        let OwnedIeee802154Backend {
-            platform,
-            mut task,
-            interrupts,
-            retained,
-            mut clocks,
-            phy_state,
-        } = self.backend;
-        clocks.release_all(task.radio_phy_mut());
-        Ok((
-            platform,
-            RadioHardware::from_ieee802154(Ieee802154Route {
-                task,
-                interrupts,
-                phy: phy_state,
-                retained,
+    }
+}
+
+/// IEEE 802.15.4 client inside common radio power.
+///
+/// It proves only membership in the common modem/PHY power; the module
+/// clocks and the MAC resets are later stages.
+#[must_use = "the powered IEEE 802.15.4 client must leave common power"]
+pub struct Ieee802154Powered {
+    mac: Ieee802154Mac,
+}
+
+impl Ieee802154Powered {
+    /// Leave common radio power; the last client restores the cold baseline.
+    ///
+    /// # Errors
+    ///
+    /// The baseline did not read back; the client stays entered and the
+    /// unchanged owner is returned for a retry.
+    pub fn power_down<T>(
+        self,
+        lease: &mut SharedRadioLease<'_, T>,
+    ) -> Result<Ieee802154Cold, Ieee802154PowerTransitionFailure<Self>> {
+        match lease.exit_common_power(&self.mac.task) {
+            Ok(()) => Ok(Ieee802154Cold { mac: self.mac }),
+            Err(error) => Err(Ieee802154PowerTransitionFailure { owner: self, error }),
+        }
+    }
+}
+
+impl Ieee802154Powered {
+    /// Enable the IEEE 802.15.4 module clocks through the shared planner.
+    ///
+    /// This is `modem_clock_module_enable(PERIPH_IEEE802154_MODULE)`: only
+    /// dependencies no other client holds are switched on; the 160 MHz source
+    /// and the analog-I2C master clock go through `platform`.
+    ///
+    /// # Errors
+    ///
+    /// The planner rejected the request before any access, or a platform
+    /// request failed and poisoned the modem clocks; the owner is returned.
+    pub fn enable_clocks<T>(
+        self,
+        lease: &mut SharedRadioLease<'_, T>,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<Ieee802154Clocked, Ieee802154ClockTransitionFailure<Self>> {
+        match lease.enable_modem_clocks(&self.mac.task, platform) {
+            Ok(()) => Ok(Ieee802154Clocked {
+                inner: Ieee802154Lifecycle::clocked(self.mac),
             }),
-        ))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn phy_state_mut(&mut self) -> &mut PhyRouteState {
-        &mut self.backend.phy_state
-    }
-
-    /// Borrow the integration token before any lifecycle mutation.
-    pub const fn peripheral(&self) -> &P {
-        &self.backend.platform
+            Err(error) => Err(Ieee802154ClockTransitionFailure { owner: self, error }),
+        }
     }
 }
 
-/// Dedicated IEEE 802.15.4 owner after shared modem/PHY power prerequisites.
-///
-/// This state retains the same task and inactive interrupt partitions as the
-/// cold owner. It proves only the generic modem/PHY clock and reset sequence;
-/// IEEE-specific clocks and common-PHY registration remain separate stages.
-#[must_use = "the powered IEEE 802.15.4 owner retains every radio partition"]
-pub struct Ieee802154Powered<P> {
-    backend: OwnedIeee802154Backend<P>,
+/// Failed module-clock transition retaining the unchanged owner.
+#[must_use = "a failed IEEE 802.15.4 clock transition still owns the partition"]
+pub struct Ieee802154ClockTransitionFailure<Owner> {
+    owner: Owner,
+    error: ModemClockError,
 }
 
-/// Failed shared modem/PHY power transition retaining the dedicated route.
-///
-/// The finite transaction may already have changed shared clock/reset state.
-/// Safe recovery is therefore limited to inspecting the exact checkpoint or
-/// retrying with this same owner; it cannot be released as a cold radio root.
-#[must_use = "a failed IEEE 802.15.4 power transition still owns the radio"]
-pub struct Ieee802154PowerTransitionFailure<P> {
-    backend: OwnedIeee802154Backend<P>,
-    error: PowerError,
-}
-
-impl<P> Ieee802154PowerTransitionFailure<P> {
-    /// Inspect the first failed shared power prerequisite.
-    pub const fn error(&self) -> PowerError {
+impl<Owner> Ieee802154ClockTransitionFailure<Owner> {
+    pub const fn error(&self) -> ModemClockError {
         self.error
     }
-}
 
-impl<P> Ieee802154PowerTransitionFailure<P> {
-    /// Retry the exact shared power sequence with the retained route.
-    pub fn retry(self) -> Result<Ieee802154Powered<P>, Self> {
-        enter_ieee802154_powered(self.backend)
+    /// Recover the owner. After [`ModemClockError::Poisoned`] no further
+    /// modem clock change succeeds until reset.
+    pub fn into_owner(self) -> Owner {
+        self.owner
     }
 }
 
-impl<P> fmt::Debug for Ieee802154PowerTransitionFailure<P> {
+impl<Owner> fmt::Debug for Ieee802154ClockTransitionFailure<Owner> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Ieee802154ClockTransitionFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Failed common-power transition retaining the unchanged owner.
+#[must_use = "a failed IEEE 802.15.4 power transition still owns the partition"]
+pub struct Ieee802154PowerTransitionFailure<Owner> {
+    owner: Owner,
+    error: CommonRadioPowerError,
+}
+
+impl<Owner> Ieee802154PowerTransitionFailure<Owner> {
+    pub const fn error(&self) -> CommonRadioPowerError {
+        self.error
+    }
+
+    /// Recover the owner for a retry.
+    pub fn into_owner(self) -> Owner {
+        self.owner
+    }
+}
+
+impl<Owner> fmt::Debug for Ieee802154PowerTransitionFailure<Owner> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Ieee802154PowerTransitionFailure")
@@ -351,72 +290,78 @@ impl<P> fmt::Debug for Ieee802154PowerTransitionFailure<P> {
     }
 }
 
-/// Whole-radio owner after all IEEE 802.15.4 clock dependencies read back.
-pub struct Ieee802154Clocked<P> {
-    inner: Ieee802154Lifecycle<OwnedIeee802154Backend<P>, lifecycle_state::Clocked>,
+/// IEEE 802.15.4 client whose module clocks the shared planner holds.
+///
+/// This is the stage at which the PHY layer enters the client into the
+/// shared PHY domain and the shared BTBB baseband, before the MAC reset.
+#[must_use = "the clocked IEEE 802.15.4 client must release its module clocks"]
+pub struct Ieee802154Clocked {
+    inner: Ieee802154Lifecycle<Ieee802154Mac, lifecycle_state::Clocked>,
 }
 
-/// Whole-radio owner after the MAC and APB resets were pulsed and released.
-pub struct Ieee802154Reset<P> {
-    inner: Ieee802154Lifecycle<OwnedIeee802154Backend<P>, lifecycle_state::Reset>,
+/// IEEE 802.15.4 client after the MAC and APB resets were pulsed and
+/// released.
+#[must_use = "the reset IEEE 802.15.4 client retains its partition"]
+pub struct Ieee802154Reset {
+    inner: Ieee802154Lifecycle<Ieee802154Mac, lifecycle_state::Reset>,
 }
 
 /// Interrupt-masked static MAC foundation.
 ///
 /// This state does not imply PHY/RF ownership, interrupt routing, DMA buffer
 /// setup, or an idle/operational MAC. Those are later one-way transitions.
-pub struct Ieee802154FoundationConfigured<P> {
-    inner: Ieee802154Lifecycle<OwnedIeee802154Backend<P>, lifecycle_state::FoundationConfigured>,
+#[must_use = "the IEEE 802.15.4 foundation owner retains its partition"]
+pub struct Ieee802154FoundationConfigured {
+    inner: Ieee802154Lifecycle<Ieee802154Mac, lifecycle_state::FoundationConfigured>,
 }
 
-/// Terminal whole-radio owner after the validation-only status experiment.
+/// Terminal owner after the validation-only status experiment.
 ///
 /// The reset-isolated discriminator remains validation-only and terminal.
 /// Production acknowledgement uses a separate affine full-snapshot W1C owner;
 /// this probe's raw paired-bit writes still cannot preserve a normal lifecycle
-/// proof. This type
-/// exposes only evidence and deliberately provides no route back to foundation,
-/// policy, or operational transitions. The reset-isolation capability remains
-/// consumed for the rest of the process.
+/// proof. This type exposes only evidence and deliberately provides no route
+/// back to foundation, policy, or operational transitions. The
+/// reset-isolation capability remains consumed for the rest of the process.
 #[cfg(feature = "validation-probes")]
-#[must_use = "the terminal validation owner retains the radio and isolation capability"]
-pub struct Ieee802154EventStatusProbeFinished<P> {
+#[must_use = "the terminal validation owner retains the partition and isolation capability"]
+pub struct Ieee802154EventStatusProbeFinished {
     evidence: Ieee802154EventStatusProbeEvidence,
-    _foundation: Ieee802154FoundationConfigured<P>,
+    _foundation: Ieee802154FoundationConfigured,
     _isolation: Ieee802154EventStatusProbeIsolation,
 }
 
 #[cfg(feature = "validation-probes")]
-impl<P> Ieee802154EventStatusProbeFinished<P> {
+impl Ieee802154EventStatusProbeFinished {
     /// Borrow the complete raw evidence retained by the terminal owner.
     pub const fn evidence(&self) -> &Ieee802154EventStatusProbeEvidence {
         &self.evidence
     }
 }
 
-/// Terminal whole-radio owner after the validation-only ED event experiment.
+/// Terminal owner after the validation-only ED event experiment.
 ///
 /// The probe rechecks historical selective clearing with fixed ED-DONE and
 /// TIMER0 validation writes. Production acknowledgement uses the generated
 /// affine W1C snapshot instead. The experimental cleanup still ends the normal
 /// lifecycle, so this owner cannot be promoted to an operational state.
 #[cfg(feature = "validation-probes")]
-#[must_use = "the terminal validation owner retains the radio and isolation capability"]
-pub struct Ieee802154EdEventProbeFinished<P> {
+#[must_use = "the terminal validation owner retains the partition and isolation capability"]
+pub struct Ieee802154EdEventProbeFinished {
     evidence: Ieee802154EdEventProbeEvidence,
-    _policy: Ieee802154MacPolicyConfigured<P>,
+    _policy: Ieee802154MacPolicyConfigured,
     _isolation: Ieee802154EdEventProbeIsolation,
 }
 
 #[cfg(feature = "validation-probes")]
-impl<P> Ieee802154EdEventProbeFinished<P> {
+impl Ieee802154EdEventProbeFinished {
     /// Borrow the complete raw evidence retained by the terminal owner.
     pub const fn evidence(&self) -> &Ieee802154EdEventProbeEvidence {
         &self.evidence
     }
 }
 
-impl<P> Ieee802154MacPolicyWrites for Ieee802154FoundationConfigured<P> {
+impl Ieee802154MacPolicyWrites for Ieee802154FoundationConfigured {
     fn set_channel(&mut self, channel: crate::ieee802154::Ieee802154Channel) {
         self.inner
             .backend_mut()
@@ -455,7 +400,7 @@ impl<P> Ieee802154MacPolicyWrites for Ieee802154FoundationConfigured<P> {
     }
 }
 
-impl<P> Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured<P> {
+impl Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured {
     fn mac_policy_readback(&mut self) -> Ieee802154MacPolicyReadback {
         let mut hal = self.inner.backend_mut().mac_hal();
         let foundation = hal.foundation_snapshot();
@@ -464,31 +409,32 @@ impl<P> Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured<P> {
     }
 }
 
-/// Whole-radio owner after the known static MAC policy passes readback.
+/// Foundation owner after the known static MAC policy passed readback.
 ///
 /// Event and abort delivery is masked between finite polled operations. This
 /// state supports only serialized raw ED and CCA; it is not PHY/RF or BTBB
 /// readiness, does not route an IRQ, owns no DMA buffer, and is not an
 /// operational RX/TX MAC. It is not a complete vendor PIB because TX-power
 /// mapping remains opaque.
-pub struct Ieee802154MacPolicyConfigured<P> {
-    foundation: Ieee802154FoundationConfigured<P>,
+#[must_use = "the IEEE 802.15.4 policy owner retains its partition"]
+pub struct Ieee802154MacPolicyConfigured {
+    foundation: Ieee802154FoundationConfigured,
     policy: Ieee802154MacPolicy,
 }
 
-/// Successfully recovered finite ED/CCA operation with the reusable whole
-/// radio owner retained.
+/// Successfully recovered finite ED/CCA operation with the reusable owner
+/// retained.
 ///
 /// The evidence is MAC-level only. An ED RSS code is uncalibrated and neither
 /// result proves RFPLL tuning, RF performance, PHY conformance, or a complete
 /// operational IEEE 802.15.4 dataplane.
-#[must_use = "a completed IEEE 802.15.4 operation retains the reusable radio owner"]
-pub struct Ieee802154OperationCompleted<P> {
-    owner: Ieee802154MacPolicyConfigured<P>,
+#[must_use = "a completed IEEE 802.15.4 operation retains the reusable owner"]
+pub struct Ieee802154OperationCompleted {
+    owner: Ieee802154MacPolicyConfigured,
     evidence: Ieee802154PolledOperationEvidence,
 }
 
-impl<P> Ieee802154OperationCompleted<P> {
+impl Ieee802154OperationCompleted {
     /// Return the finite operation evidence retained across exact recovery.
     pub const fn evidence(&self) -> &Ieee802154PolledOperationEvidence {
         &self.evidence
@@ -496,69 +442,36 @@ impl<P> Ieee802154OperationCompleted<P> {
 
     /// Consume the evidence wrapper and recover the same static-policy owner
     /// for a subsequent serialized operation.
-    pub fn into_owner(self) -> Ieee802154MacPolicyConfigured<P> {
+    pub fn into_owner(self) -> Ieee802154MacPolicyConfigured {
         self.owner
     }
 }
 
-/// Terminal failed ED/CCA operation retaining the whole radio owner without a
+/// Terminal failed ED/CCA operation retaining the partition without a
 /// recovery transition.
 ///
 /// Abort and timeout can leave hardware activity unresolved. Invariant
 /// failures mean the exact detached polling contract was not preserved. The
 /// retained owner therefore cannot be reused through safe code.
-#[must_use = "a failed IEEE 802.15.4 operation retains a terminal radio owner"]
-pub struct Ieee802154OperationFailed<P> {
+#[must_use = "a failed IEEE 802.15.4 operation retains a terminal owner"]
+pub struct Ieee802154OperationFailed {
     failure: Ieee802154PolledOperationFailure,
-    owner: Ieee802154MacPolicyConfigured<P>,
+    _owner: Ieee802154MacPolicyConfigured,
 }
 
-impl<P> Ieee802154OperationFailed<P> {
+impl Ieee802154OperationFailed {
     /// Return complete typed failure evidence.
     pub const fn failure(&self) -> Ieee802154PolledOperationFailure {
         self.failure
     }
-
-    /// Borrow the integration token for diagnostics without recovering the
-    /// terminal radio owner.
-    pub fn peripheral(&self) -> &P {
-        self.owner.peripheral()
-    }
 }
 
-/// Failed clock readback retaining the dedicated powered route.
-pub struct Ieee802154ClockTransitionFailure<P> {
-    inner: EngineClockFailure<OwnedIeee802154Backend<P>>,
+/// Failed private-reset readback retaining the clocked owner.
+pub struct Ieee802154ResetTransitionFailure {
+    inner: EngineResetFailure<Ieee802154Mac>,
 }
 
-impl<P> fmt::Debug for Ieee802154ClockTransitionFailure<P> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Ieee802154ClockTransitionFailure")
-            .field("error", &self.inner.error())
-            .finish_non_exhaustive()
-    }
-}
-
-impl<P> Ieee802154ClockTransitionFailure<P> {
-    pub const fn error(&self) -> Ieee802154ReadbackError<Ieee802154ClockCheckpoint> {
-        self.inner.error()
-    }
-
-    /// Retry the exact clock sequence without releasing the mutated route.
-    pub fn retry(self) -> Result<Ieee802154Clocked<P>, Self> {
-        establish_ieee802154_clocks(self.inner.into_backend())
-            .map(|inner| Ieee802154Clocked { inner })
-            .map_err(|inner| Self { inner })
-    }
-}
-
-/// Failed private-reset readback retaining the last proved clocked owner.
-pub struct Ieee802154ResetTransitionFailure<P> {
-    inner: EngineResetFailure<OwnedIeee802154Backend<P>>,
-}
-
-impl<P> fmt::Debug for Ieee802154ResetTransitionFailure<P> {
+impl fmt::Debug for Ieee802154ResetTransitionFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Ieee802154ResetTransitionFailure")
@@ -567,13 +480,13 @@ impl<P> fmt::Debug for Ieee802154ResetTransitionFailure<P> {
     }
 }
 
-impl<P> Ieee802154ResetTransitionFailure<P> {
+impl Ieee802154ResetTransitionFailure {
     pub const fn error(&self) -> Ieee802154ReadbackError<Ieee802154ResetCheckpoint> {
         self.inner.error()
     }
 
-    /// Recover the clocked role for diagnosis or an exact reset retry.
-    pub fn into_clocked(self) -> Ieee802154Clocked<P> {
+    /// Recover the clocked owner for diagnosis or an exact reset retry.
+    pub fn into_clocked(self) -> Ieee802154Clocked {
         Ieee802154Clocked {
             inner: self.inner.into_lifecycle(),
         }
@@ -581,11 +494,11 @@ impl<P> Ieee802154ResetTransitionFailure<P> {
 }
 
 /// Failed foundation readback retaining the last proved reset owner.
-pub struct Ieee802154FoundationTransitionFailure<P> {
-    inner: EngineFoundationFailure<OwnedIeee802154Backend<P>>,
+pub struct Ieee802154FoundationTransitionFailure {
+    inner: EngineFoundationFailure<Ieee802154Mac>,
 }
 
-impl<P> fmt::Debug for Ieee802154FoundationTransitionFailure<P> {
+impl fmt::Debug for Ieee802154FoundationTransitionFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Ieee802154FoundationTransitionFailure")
@@ -594,38 +507,39 @@ impl<P> fmt::Debug for Ieee802154FoundationTransitionFailure<P> {
     }
 }
 
-impl<P> Ieee802154FoundationTransitionFailure<P> {
+impl Ieee802154FoundationTransitionFailure {
     pub const fn error(&self) -> Ieee802154ReadbackError<Ieee802154FoundationCheckpoint> {
         self.inner.error()
     }
 
-    /// Recover the reset role for diagnosis or an exact foundation retry.
-    pub fn into_reset(self) -> Ieee802154Reset<P> {
+    /// Recover the reset owner for diagnosis or an exact foundation retry.
+    pub fn into_reset(self) -> Ieee802154Reset {
         Ieee802154Reset {
             inner: self.inner.into_lifecycle(),
         }
     }
 }
 
-/// Failed static-policy readback retaining the exact whole-radio owner until
-/// recovery classifies the strongest still-proved typestate.
-pub struct Ieee802154MacPolicyTransitionFailure<P> {
-    inner: EngineMacPolicyFailure<Ieee802154FoundationConfigured<P>>,
+/// Failed static-policy readback retaining the exact owner until recovery
+/// classifies the strongest still-proved typestate.
+pub struct Ieee802154MacPolicyTransitionFailure {
+    inner: EngineMacPolicyFailure<Ieee802154FoundationConfigured>,
 }
 
 /// Safe owner recovered after a static-policy readback failure.
 ///
 /// Policy-only mismatches preserve the still-proved foundation for an exact
-/// retry. A mismatch in masks, ED sampling, or PTI disproves that foundation
-/// and therefore returns the preceding reset state instead.
-pub enum Ieee802154MacPolicyRecovery<P> {
+/// retry. A mismatch in masks, ED sampling, PTI or the receive-on delay
+/// disproves that foundation and therefore returns the preceding reset state
+/// instead.
+pub enum Ieee802154MacPolicyRecovery {
     /// The foundation still passed and only the requested policy mismatched.
-    Foundation(Ieee802154FoundationConfigured<P>),
+    Foundation(Ieee802154FoundationConfigured),
     /// A foundation invariant failed and must be configured and proved again.
-    Reset(Ieee802154Reset<P>),
+    Reset(Ieee802154Reset),
 }
 
-impl<P> fmt::Debug for Ieee802154MacPolicyTransitionFailure<P> {
+impl fmt::Debug for Ieee802154MacPolicyTransitionFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Ieee802154MacPolicyTransitionFailure")
@@ -634,7 +548,7 @@ impl<P> fmt::Debug for Ieee802154MacPolicyTransitionFailure<P> {
     }
 }
 
-impl<P> Ieee802154MacPolicyTransitionFailure<P> {
+impl Ieee802154MacPolicyTransitionFailure {
     /// Return the first mismatched foundation or policy checkpoint.
     pub const fn error(&self) -> Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint> {
         self.inner.error()
@@ -642,7 +556,7 @@ impl<P> Ieee802154MacPolicyTransitionFailure<P> {
 
     /// Recover the strongest typestate still supported by the failed
     /// readback.
-    pub fn into_recovery(self) -> Ieee802154MacPolicyRecovery<P> {
+    pub fn into_recovery(self) -> Ieee802154MacPolicyRecovery {
         let invalidates_foundation = self.inner.error().checkpoint.invalidates_foundation();
         let foundation = self.inner.into_backend();
         if invalidates_foundation {
@@ -655,112 +569,127 @@ impl<P> Ieee802154MacPolicyTransitionFailure<P> {
     }
 }
 
-impl<P> Ieee802154Owned<P> {
-    /// Execute and prove the shared modem/PHY power prerequisites.
+impl Ieee802154Clocked {
+    /// Release the IEEE 802.15.4 module clocks; clocks another client holds
+    /// stay enabled.
     ///
-    /// The transaction is the same concrete target sequence used before the
-    /// common PHY registration path. It operates only through the retained
-    /// platform token and never converts the radio registers into Wi-Fi.
-    pub fn power_up(self) -> Result<Ieee802154Powered<P>, Ieee802154PowerTransitionFailure<P>> {
-        enter_ieee802154_powered(self.backend)
-    }
-}
-
-fn enter_ieee802154_powered<P>(
-    mut backend: OwnedIeee802154Backend<P>,
-) -> Result<Ieee802154Powered<P>, Ieee802154PowerTransitionFailure<P>> {
-    if let Err(error) = power::execute_owned(&mut power::RoutePower {
-        phy: backend.task.radio_phy_mut(),
-        leases: &mut backend.clocks,
-    }) {
-        return Err(Ieee802154PowerTransitionFailure { backend, error });
-    }
-    Ok(Ieee802154Powered { backend })
-}
-
-impl<P> Ieee802154Powered<P> {
-    /// Consume the powered dedicated owner and prove IEEE 802.15.4 clock gates.
+    /// # Errors
     ///
-    /// Shared modem clock gates are route-owned and reference-counted by the
-    /// PAC. Releasing the route restores the baseline observed by its first
-    /// retained lease; the global ICG state-map initialization is monotonic.
-    pub fn into_ieee802154_clocked(
+    /// The planner rejected the release before any access, or a platform
+    /// request failed and poisoned the modem clocks; the owner is returned.
+    pub fn disable_clocks<T>(
         self,
-    ) -> Result<Ieee802154Clocked<P>, Ieee802154ClockTransitionFailure<P>> {
-        establish_ieee802154_clocks(self.backend)
-            .map(|inner| Ieee802154Clocked { inner })
-            .map_err(|inner| Ieee802154ClockTransitionFailure { inner })
+        lease: &mut SharedRadioLease<'_, T>,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<Ieee802154Powered, Ieee802154ClockTransitionFailure<Self>> {
+        match lease.disable_modem_clocks(&self.inner.backend().task, platform) {
+            Ok(()) => Ok(Ieee802154Powered {
+                mac: self.inner.into_backend(),
+            }),
+            Err(error) => Err(Ieee802154ClockTransitionFailure { owner: self, error }),
+        }
     }
-}
 
-impl<P> Ieee802154Clocked<P> {
     /// Pulse the functional MAC reset and then the APB reset.
-    pub fn reset_mac(self) -> Result<Ieee802154Reset<P>, Ieee802154ResetTransitionFailure<P>> {
+    ///
+    /// # Errors
+    ///
+    /// A reset line did not read back released; the clocked owner is
+    /// retained for a retry.
+    pub fn reset_mac<T>(
+        self,
+        lease: &mut SharedRadioLease<'_, T>,
+    ) -> Result<Ieee802154Reset, Ieee802154ResetTransitionFailure> {
+        let mut port = LeasedResetPort {
+            radio_phy: lease.registers_mut().radio_phy_mut(),
+        };
         self.inner
-            .reset_mac()
+            .reset_mac(&mut port)
             .map(|inner| Ieee802154Reset { inner })
             .map_err(|inner| Ieee802154ResetTransitionFailure { inner })
     }
 
-    /// Borrow the integration token without releasing whole-radio ownership.
-    pub fn peripheral(&self) -> &P {
-        &self.inner.backend().platform
-    }
-}
-
-impl<P> Ieee802154Clocked<P> {
-    /// Consume a terminal common-PHY prerequisite on the retained task owner.
+    /// Join the shared BTBB baseband as the IEEE 802.15.4 client.
     ///
-    /// This narrow bridge neither exposes nor releases the PAC task partition.
-    /// The prerequisite is affine and can only be minted at the higher-layer
-    /// terminal common-PHY proof boundary; the returned marker must remain
-    /// coupled to every production lifecycle state that follows.
-    #[doc(hidden)]
-    pub fn initialize_baseband_and_ieee802154_timing(
-        &mut self,
-        prerequisite: Ieee802154TimingPrerequisite,
-    ) -> Ieee802154TimingReady {
-        self.inner
-            .backend_mut()
-            .task
-            .initialize_baseband_and_ieee802154_timing(prerequisite)
-    }
-}
-
-impl<P> Ieee802154Clocked<P> {
-    /// Borrow the exact platform and shared-PHY partitions for the recovered
-    /// concrete common-PHY target transition.
+    /// This is `esp_btbb_enable`: only the first holder initializes the
+    /// baseband.
     ///
-    /// This method does not run that asynchronous transition or mint a
-    /// registered/RF-ready state. It exists so the PHY crate can compose the
-    /// same `TargetPhyRegisterPort` used by standalone Bluetooth while the
-    /// inactive IEEE interrupt owner stays retained here.
-    #[doc(hidden)]
-    pub fn common_phy_parts(&mut self) -> (&mut P, SharedPhyHal<'_, route::Ieee802154>) {
-        let backend = self.inner.backend_mut();
-        let shared_phy = SharedPhyHal::new(backend.task.radio_phy_mut(), &mut backend.phy_state);
-        (&mut backend.platform, shared_phy)
+    /// # Errors
+    ///
+    /// IEEE 802.15.4 already holds BTBB, or no PHY registration describes the
+    /// shared PHY.
+    ///
+    /// # Safety
+    ///
+    /// The shared PHY registration must be complete, and `gain_parameter`
+    /// must be the byte at offset `0x120` of that registration's `phy_param`
+    /// state. The module clocks and resets BTBB requires are held by this
+    /// clocked owner.
+    #[allow(
+        unsafe_code,
+        reason = "the unsafe signature carries the arbiter's common-PHY prerequisite"
+    )]
+    pub unsafe fn acquire_btbb<T>(
+        &self,
+        lease: &mut SharedRadioLease<'_, T>,
+        gain_parameter: u8,
+    ) -> Result<BtbbAcquired, BtbbError> {
+        // SAFETY: this owner holds the IEEE 802.15.4 module clocks, which
+        // include the BTBB clocks; the caller upholds the registration and
+        // gain provenance.
+        unsafe { lease.btbb_acquire(&self.inner.backend().task, gain_parameter) }
+    }
+
+    /// Apply the IEEE 802.15.4 shared transmit-on delay override.
+    ///
+    /// ESP-IDF's `ieee802154_mac_init` writes it after `esp_btbb_enable`; the
+    /// last write wins and no release restores it.
+    ///
+    /// # Errors
+    ///
+    /// IEEE 802.15.4 does not hold BTBB.
+    pub fn override_tx_on_delay<T>(
+        &self,
+        lease: &mut SharedRadioLease<'_, T>,
+    ) -> Result<(), BtbbError> {
+        lease.override_ieee802154_tx_on_delay(&self.inner.backend().task)
+    }
+
+    /// Leave the shared BTBB baseband. This performs no register access.
+    ///
+    /// # Errors
+    ///
+    /// IEEE 802.15.4 does not hold BTBB.
+    pub fn release_btbb<T>(&self, lease: &mut SharedRadioLease<'_, T>) -> Result<(), BtbbError> {
+        lease.btbb_release(&self.inner.backend().task)
     }
 }
 
-impl<P> Ieee802154Reset<P> {
+impl Ieee802154Reset {
     /// Configure the interrupt-masked, non-operational MAC foundation.
+    ///
+    /// # Errors
+    ///
+    /// A foundation field did not read back; the reset owner is retained.
     pub fn configure_foundation(
         self,
-    ) -> Result<Ieee802154FoundationConfigured<P>, Ieee802154FoundationTransitionFailure<P>> {
+    ) -> Result<Ieee802154FoundationConfigured, Ieee802154FoundationTransitionFailure> {
         self.inner
             .configure_foundation()
             .map(|inner| Ieee802154FoundationConfigured { inner })
             .map_err(|inner| Ieee802154FoundationTransitionFailure { inner })
     }
 
-    /// Borrow the integration token without releasing whole-radio ownership.
-    pub fn peripheral(&self) -> &P {
-        &self.inner.backend().platform
+    /// Retreat to the clocked owner before releasing the module clocks.
+    /// This performs no MMIO.
+    pub fn into_clocked(self) -> Ieee802154Clocked {
+        Ieee802154Clocked {
+            inner: self.inner.into_clocked(),
+        }
     }
 }
 
-impl<P> Ieee802154FoundationConfigured<P> {
+impl Ieee802154FoundationConfigured {
     /// Run the closed `EVENT_STATUS` access-class discriminator.
     ///
     /// This consuming validation transition requires the foundation's proved
@@ -774,7 +703,7 @@ impl<P> Ieee802154FoundationConfigured<P> {
         mut self,
         config: Ieee802154EventStatusProbeConfig,
         isolation: Ieee802154EventStatusProbeIsolation,
-    ) -> Ieee802154EventStatusProbeFinished<P> {
+    ) -> Ieee802154EventStatusProbeFinished {
         let mut hal = self.inner.backend_mut().mac_hal();
         let evidence = run_ieee802154_event_status_probe(&mut hal, config);
         Ieee802154EventStatusProbeFinished {
@@ -789,22 +718,67 @@ impl<P> Ieee802154FoundationConfigured<P> {
     /// This deterministic subset omits the vendor TX-power step because its
     /// RF-dependent mapping remains opaque. No PHY/RF/BTBB, IRQ, DMA, start,
     /// stop, or `EVENT_STATUS` operation occurs.
+    ///
+    /// # Errors
+    ///
+    /// A foundation or policy field did not read back; recovery returns the
+    /// strongest still-proved owner.
     pub fn configure_mac_policy(
         self,
         policy: Ieee802154MacPolicy,
-    ) -> Result<Ieee802154MacPolicyConfigured<P>, Ieee802154MacPolicyTransitionFailure<P>> {
+    ) -> Result<Ieee802154MacPolicyConfigured, Ieee802154MacPolicyTransitionFailure> {
         configure_ieee802154_mac_policy(self, policy)
             .map(|foundation| Ieee802154MacPolicyConfigured { foundation, policy })
             .map_err(|inner| Ieee802154MacPolicyTransitionFailure { inner })
     }
 
-    /// Borrow the integration token without claiming RF readiness.
-    pub fn peripheral(&self) -> &P {
-        &self.inner.backend().platform
+    /// Hand the task and inactive interrupt owners to the operational MAC.
+    ///
+    /// This transition performs no MMIO. Event and abort delivery stay masked
+    /// until the interrupt owner is activated. The operational MAC publishes
+    /// its own PIB; both owners return through [`Self::from_operational`].
+    pub fn into_operational(self) -> Ieee802154Operational {
+        let Ieee802154Mac { task, interrupts } = self.inner.into_backend();
+        Ieee802154Operational {
+            task: Ieee802154TaskOwner::new(task),
+            interrupts: Ieee802154InterruptSetupOwner::new(interrupts),
+        }
+    }
+
+    /// Reunite the quiescent operational owners and prove the foundation
+    /// again.
+    ///
+    /// The interrupt owner is inactive only after its teardown zeroed every
+    /// event and abort enable and consumed the final pending image. No
+    /// register is written here. The operational epoch rewrote the PIB, so
+    /// only the foundation is re-proved; a policy is not.
+    ///
+    /// # Errors
+    ///
+    /// A foundation field did not read back; the reset owner is retained so
+    /// the foundation can be configured again.
+    pub fn from_operational(
+        operational: Ieee802154Operational,
+    ) -> Result<Self, Ieee802154FoundationTransitionFailure> {
+        let Ieee802154Operational { task, interrupts } = operational;
+        Ieee802154Lifecycle::resume(Ieee802154Mac {
+            task: task.into_registers(),
+            interrupts: interrupts.into_pac(),
+        })
+        .map(|inner| Self { inner })
+        .map_err(|inner| Ieee802154FoundationTransitionFailure { inner })
+    }
+
+    /// Retreat to the clocked owner before releasing the module clocks.
+    /// This performs no MMIO.
+    pub fn into_clocked(self) -> Ieee802154Clocked {
+        Ieee802154Clocked {
+            inner: self.inner.into_clocked(),
+        }
     }
 }
 
-impl<P> Ieee802154MacPolicyConfigured<P> {
+impl Ieee802154MacPolicyConfigured {
     /// Run one finite energy-detection command on the policy's proved channel.
     ///
     /// The returned signed code is raw and uncalibrated. The transaction owns
@@ -813,11 +787,15 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
     /// a reusable owner only when the complete snapshot actually consumed by
     /// W1C acknowledgement is exactly lone `ED_DONE`; every other acknowledged
     /// image or terminal condition is retained diagnostically and fails stop.
+    ///
+    /// # Errors
+    ///
+    /// Abort, timeout or an invariant mismatch; the owner is terminal.
     pub fn energy_detection_raw(
         self,
         duration: u16,
         budget: Ieee802154OperationPollBudget,
-    ) -> Result<Ieee802154OperationCompleted<P>, Ieee802154OperationFailed<P>> {
+    ) -> Result<Ieee802154OperationCompleted, Ieee802154OperationFailed> {
         let operation =
             Ieee802154PolledOperation::energy_detection(self.policy.channel(), duration);
         self.run_polled_operation(operation, budget)
@@ -827,12 +805,14 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
     ///
     /// The result is the source-confirmed `CCA_BUSY` bit. It is not an RF
     /// sensitivity, timing-conformance, coexistence, IRQ, or dataplane claim.
-    /// Success returns the reusable owner; abort, timeout, or any invariant
-    /// mismatch is terminal.
+    ///
+    /// # Errors
+    ///
+    /// Abort, timeout or an invariant mismatch; the owner is terminal.
     pub fn clear_channel_assessment(
         self,
         budget: Ieee802154OperationPollBudget,
-    ) -> Result<Ieee802154OperationCompleted<P>, Ieee802154OperationFailed<P>> {
+    ) -> Result<Ieee802154OperationCompleted, Ieee802154OperationFailed> {
         let operation = Ieee802154PolledOperation::clear_channel_assessment(
             self.policy.channel(),
             self.policy.cca_mode(),
@@ -845,7 +825,7 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
         mut self,
         operation: Ieee802154PolledOperation,
         budget: Ieee802154OperationPollBudget,
-    ) -> Result<Ieee802154OperationCompleted<P>, Ieee802154OperationFailed<P>> {
+    ) -> Result<Ieee802154OperationCompleted, Ieee802154OperationFailed> {
         let result = {
             let hal = self.foundation.inner.backend_mut().mac_hal();
             run_ieee802154_polled_operation(hal, operation, budget)
@@ -857,7 +837,7 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
             }),
             Err(failure) => Err(Ieee802154OperationFailed {
                 failure,
-                owner: self,
+                _owner: self,
             }),
         }
     }
@@ -875,7 +855,7 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
         mut self,
         config: Ieee802154EdEventProbeConfig,
         isolation: Ieee802154EdEventProbeIsolation,
-    ) -> Ieee802154EdEventProbeFinished<P> {
+    ) -> Ieee802154EdEventProbeFinished {
         let mut hal = self.foundation.inner.backend_mut().mac_hal();
         let evidence = run_ieee802154_ed_event_probe(&mut hal, config);
         Ieee802154EdEventProbeFinished {
@@ -890,36 +870,10 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
         self.policy
     }
 
-    /// Borrow the integration token without claiming operational readiness.
-    pub fn peripheral(&self) -> &P {
-        self.foundation.peripheral()
-    }
-    /// Hand the task and inactive interrupt owners to the operational MAC.
-    ///
-    /// This transition performs no MMIO. Event and abort delivery stay masked
-    /// until the interrupt owner is activated; the static policy remains
-    /// whatever this owner proved. The route keeps the platform token, the
-    /// retained partitions, the clock leases and the policy until both owners
-    /// return through [`Ieee802154OperationalRoute::into_policy_configured`].
-    pub fn into_operational(self) -> Ieee802154Operational<P> {
-        let OwnedIeee802154Backend {
-            platform,
-            task,
-            interrupts,
-            retained,
-            clocks,
-            phy_state,
-        } = self.foundation.inner.into_backend();
-        Ieee802154Operational {
-            task: Ieee802154TaskOwner::new(task, phy_state),
-            interrupts: Ieee802154InterruptSetupOwner::new(interrupts),
-            route: Ieee802154OperationalRoute {
-                platform,
-                retained,
-                clocks,
-                policy: self.policy,
-            },
-        }
+    /// Keep the foundation and forget the policy. This performs no MMIO: the
+    /// policy readback included the complete foundation.
+    pub fn into_foundation(self) -> Ieee802154FoundationConfigured {
+        self.foundation
     }
 }
 
@@ -927,72 +881,24 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
 ///
 /// The task owner executes commands; the interrupt owner is inactive until
 /// its platform route activates it. Neither is RF readiness.
-#[must_use = "the operational owners must return to their route"]
-pub struct Ieee802154Operational<P> {
-    /// Task-side MAC registers with the route PHY state.
+#[must_use = "the operational owners must return through the foundation owner"]
+pub struct Ieee802154Operational {
+    /// Task-side MAC registers.
     pub task: Ieee802154TaskOwner,
     /// Inactive interrupt ownership for the platform CPU route.
     pub interrupts: Ieee802154InterruptSetupOwner,
-    /// Remaining route ownership retained while the MAC is operational.
-    pub route: Ieee802154OperationalRoute<P>,
 }
 
-/// Route ownership retained while the task and interrupt owners run the MAC.
-#[must_use = "the operational route must reunite with its owners"]
-pub struct Ieee802154OperationalRoute<P> {
-    platform: P,
-    retained: RetainedIeee802154,
-    clocks: SharedClockLeases,
-    policy: Ieee802154MacPolicy,
-}
-
-impl<P> Ieee802154OperationalRoute<P> {
-    /// Return the static policy every command epoch must republish.
-    pub const fn policy(&self) -> Ieee802154MacPolicy {
-        self.policy
-    }
-
-    /// Borrow the integration token without claiming readiness.
-    pub const fn peripheral(&self) -> &P {
-        &self.platform
-    }
-
-    /// Reunite the quiescent operational owners with this route.
-    ///
-    /// The interrupt owner is inactive only after its teardown zeroed every
-    /// event and abort enable and consumed the final pending image. No
-    /// register is written here: the complete foundation and policy readback
-    /// must still hold before the polled owner is returned.
-    ///
-    /// # Errors
-    ///
-    /// A readback mismatch returns the owner through the same failure and
-    /// recovery as a failed cold policy configuration.
-    pub fn into_policy_configured(
-        self,
-        task: Ieee802154TaskOwner,
-        interrupts: Ieee802154InterruptSetupOwner,
-    ) -> Result<Ieee802154MacPolicyConfigured<P>, Ieee802154MacPolicyTransitionFailure<P>> {
-        let Self {
-            platform,
-            retained,
-            clocks,
-            policy,
-        } = self;
-        let (task, phy_state) = task.into_parts();
-        let foundation = Ieee802154FoundationConfigured {
-            inner: Ieee802154Lifecycle::resume_unverified(OwnedIeee802154Backend {
-                platform,
-                task,
-                interrupts: interrupts.into_pac(),
-                retained,
-                clocks,
-                phy_state,
-            }),
-        };
-        verify_ieee802154_mac_policy(foundation, policy)
-            .map(|foundation| Ieee802154MacPolicyConfigured { foundation, policy })
-            .map_err(|inner| Ieee802154MacPolicyTransitionFailure { inner })
+#[cfg(any(test, feature = "validation-probes"))]
+impl Ieee802154Clocked {
+    /// Enter the clocked phase without the modem clock planner, for host
+    /// tests of the later stages. It proves no clock.
+    #[doc(hidden)]
+    pub fn for_validation(partition: Ieee802154RadioPartition) -> Self {
+        let Ieee802154Cold { mac } = Ieee802154Cold::from_partition(partition);
+        Self {
+            inner: Ieee802154Lifecycle::clocked(mac),
+        }
     }
 }
 

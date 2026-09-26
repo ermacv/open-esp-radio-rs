@@ -62,7 +62,7 @@ fn dedicated_route_lends_the_same_narrow_mac_surface() {
     // backed by the dedicated register set rather than by a second raw
     // singleton.
     lease.order_device_accesses();
-    let _parts = task.into_parts(interrupts);
+    let _partition = task.into_partition(interrupts);
 }
 
 #[derive(Debug, Eq, PartialEq)]

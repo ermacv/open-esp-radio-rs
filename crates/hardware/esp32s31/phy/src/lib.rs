@@ -1,5 +1,5 @@
 #![no_std]
-// The private `ieee802154_timing_boundary` module is the sole scoped override.
+// The `ieee802154_client` module is the sole scoped override.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 // The registration and tracking graphs run only through the chip target
 // ports, which exist only for `riscv32`. Host builds type-check the graphs and
@@ -74,7 +74,6 @@ pub mod channel;
 #[cfg(not(feature = "validation-probes"))]
 mod channel;
 mod hardware;
-mod ieee802154_timing_boundary;
 #[cfg(any(target_arch = "riscv32", test))]
 mod lifecycle;
 #[cfg(feature = "validation-probes")]
@@ -89,8 +88,8 @@ pub mod tx;
 mod tx;
 
 pub mod concurrent;
+pub mod ieee802154_client;
 mod registered_bluetooth;
-mod registered_ieee802154;
 mod registered_radio;
 pub mod registered_route;
 mod registered_wifi;
@@ -144,18 +143,6 @@ pub use registered_bluetooth::{
     RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure,
     RegisteredBluetoothPhyTrackPoisoned,
 };
-pub use registered_ieee802154::{
-    RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,
-    RegisteredIeee802154ClientAcquireFailure, RegisteredIeee802154Clocked,
-    RegisteredIeee802154FoundationConfigured, RegisteredIeee802154FoundationTransitionFailure,
-    RegisteredIeee802154MacPolicyConfigured, RegisteredIeee802154MacPolicyRecovery,
-    RegisteredIeee802154MacPolicyTransitionFailure, RegisteredIeee802154OperationCompleted,
-    RegisteredIeee802154OperationFailed, RegisteredIeee802154Operational,
-    RegisteredIeee802154OperationalRoute, RegisteredIeee802154PendingTrack,
-    RegisteredIeee802154PendingTracking, RegisteredIeee802154Reset,
-    RegisteredIeee802154ResetTransitionFailure, RegisteredIeee802154TimingReady,
-    RegisteredIeee802154TrackPoisoned,
-};
 pub use registered_radio::{
     RegisteredPhyClientAcquire, RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,
     RegisteredPhyClientReleaseDisposition, RegisteredPhyClientReleaseFailure,
@@ -199,16 +186,11 @@ pub use target_port::{
 pub use target_port::{
     NoopPhyTargetObserver, PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig,
     PhyRfBoundary, PhyRfCloseFailure, PhyRfWakeFailure, PhyRfWakePoisoned, PhyTargetObserver,
-    PhyTargetPortCounters, PhyTrackingFailure, PhyTrackingSuccess,
-    TargetIeee802154PhyParamTrackingFailure, TargetIeee802154PhyParamTrackingSuccess,
-    TargetIeee802154PhyRegisterConfig, TargetIeee802154PhyRegisterError,
-    TargetIeee802154PhyRegisterFailure, TargetIeee802154PhyRegisterSuccess,
-    TargetPhyParamTrackingError, TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess,
-    TargetPhyRegisterAttempt, TargetPhyRegisterError, TargetPhyRegisterFailure,
-    TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts,
-    run_target_ieee802154_phy_param_tracking, run_target_ieee802154_phy_register,
-    run_target_phy_param_tracking, run_target_phy_register, select_registered_wifi_channel,
-    switch_registered_wifi_channel,
+    PhyTargetPortCounters, PhyTrackingFailure, PhyTrackingSuccess, TargetPhyParamTrackingError,
+    TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess, TargetPhyRegisterAttempt,
+    TargetPhyRegisterError, TargetPhyRegisterFailure, TargetPhyRegisterSuccess,
+    TargetPhyRegisterTerminalParts, run_target_phy_param_tracking, run_target_phy_register,
+    select_registered_wifi_channel, switch_registered_wifi_channel,
 };
 #[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub use target_port::{

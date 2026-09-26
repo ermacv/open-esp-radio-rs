@@ -169,15 +169,8 @@ pub struct WifiRoute<P>(
 /// Bluetooth route: the Controller keeps its hardware outside PHY.
 pub enum BluetoothRoute {}
 
-/// IEEE 802.15.4 route: the registration stays coupled to the clocked role.
-pub struct Ieee802154Route<P>(
-    core::convert::Infallible,
-    core::marker::PhantomData<fn() -> P>,
-);
-
 impl<P> PhyRoute for WifiRoute<P> {}
 impl PhyRoute for BluetoothRoute {}
-impl<P> PhyRoute for Ieee802154Route<P> {}
 
 type Hardware<R> = <R as sealed::PhyRoute>::Hardware;
 type Unclaimed<R> = <R as sealed::PhyRoute>::Unclaimed;

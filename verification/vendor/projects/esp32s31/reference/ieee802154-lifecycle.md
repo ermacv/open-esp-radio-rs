@@ -116,11 +116,12 @@ performs MMIO on `1 -> 0`. Disable visits the same low-bit-first order rather
 than reversing it. An open driver must therefore acquire/release shared clock
 leases and must not clear these fields unconditionally.
 
-The current open ESP-HAL integration relies on the global clock tree to retain
-the upstream `PLL_F160M` gate. Its IEEE transition separately reads back both
-`REF_160M_CTRL0.REF_160M_CLK_EN = 1` and `MODEM_CONF = 0x3d`, fails closed if
-either prerequisite is absent, and claims no refcounted release authority.
-Shared clock release requires an explicit lease from the clock owner.
+The open HAL runs IEEE 802.15.4 as a client of the shared radio arbiter. Its
+clock transition asks the arbiter's modem clock planner for the IEEE 802.15.4
+module, which keeps one refcount per dependency and obtains the upstream
+`PLL_F160M` source and the analog-I2C master clock from the platform clock
+provider. Releasing the module disables only dependencies no other client
+holds.
 
 At the beginning of MAC initialization, reset is performed under the modem
 clock lock in this exact order:
@@ -152,7 +153,10 @@ order:
      `MIDDLE = 2` and the TX/RX setter for the idle scene (`IDLE = 4` by the
      public default configuration);
    - otherwise assign `PTI = 3` and `HW_ACK_PTI = 3` directly.
-8. Call opaque `ieee802154_txon_delay_set()`.
+8. Call opaque `ieee802154_txon_delay_set()`. Its recovered effect is the
+   shared auxiliary transmit-on delay, applied through the arbiter after the
+   BTBB acquisition, and `RXON_DELAY = 50`, which the open MAC foundation
+   writes and reads back.
 9. Clear the software RX-buffer queue and set the software state to idle.
 10. Allocate the IRQ and initialize sleep/retention support.
 

@@ -187,6 +187,16 @@ impl ConcurrentPhy {
         }
     }
 
+    /// Borrow the registered domain when every active client is settled.
+    pub(crate) fn settled(&self) -> Result<&PhyDomain, ConcurrentPhyError> {
+        match &self.slot {
+            Slot::Registered(domain) => Ok(domain),
+            Slot::Empty => Err(ConcurrentPhyError::NotRegistered),
+            Slot::Pending { .. } => Err(ConcurrentPhyError::TrackingPending),
+            Slot::Poisoned => Err(ConcurrentPhyError::Poisoned),
+        }
+    }
+
     pub(crate) fn slot_mut(&mut self) -> &mut Slot {
         &mut self.slot
     }

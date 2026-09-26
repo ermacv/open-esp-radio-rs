@@ -2,10 +2,10 @@
 //!
 //! The task owner and the active interrupt owner together drive the MAC
 //! through the [`ll`](crate::ieee802154::ll) backend. The interrupt owners
-//! expose the reviewed activation and teardown transitions. None of these types can
-//! constructed outside the HAL: `Ieee802154MacPolicyConfigured::into_operational`
-//! hands them out and `Ieee802154OperationalRoute::into_policy_configured`
-//! takes both back, so they never exist apart from their exclusive route. Commands and policy use
+//! expose the reviewed activation and teardown transitions. None of these types can be
+//! constructed outside the HAL: `Ieee802154FoundationConfigured::into_operational`
+//! hands them out and `Ieee802154FoundationConfigured::from_operational`
+//! takes both back, so they never exist apart from their partition. Commands and policy use
 //! the HAL's semantic vocabulary; only the interrupt event vocabulary, which
 //! has no HAL counterpart, is re-exported here.
 
@@ -21,8 +21,6 @@ pub use oer_esp32s31_pac::{
     Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
 };
 
-use crate::phy::restore::PhyRouteState;
-
 use crate::ieee802154::{
     lifecycle::Ieee802154Channel,
     policy::{
@@ -35,23 +33,18 @@ use crate::ieee802154::{
 ///
 /// Every operation is expressed in the HAL's semantic vocabulary; drivers
 /// never name a register-level value type.
-#[must_use = "the IEEE 802.15.4 task owner must be returned to its route"]
+#[must_use = "the IEEE 802.15.4 task owner must be returned to its foundation owner"]
 pub struct Ieee802154TaskOwner {
     registers: PacTaskRegisters,
-    /// The route PHY state travels with the registers that contain the PHY.
-    phy_state: PhyRouteState,
 }
 
 impl Ieee802154TaskOwner {
-    pub(crate) const fn new(registers: PacTaskRegisters, phy_state: PhyRouteState) -> Self {
-        Self {
-            registers,
-            phy_state,
-        }
+    pub(crate) const fn new(registers: PacTaskRegisters) -> Self {
+        Self { registers }
     }
 
-    pub(crate) fn into_parts(self) -> (PacTaskRegisters, PhyRouteState) {
-        (self.registers, self.phy_state)
+    pub(crate) fn into_registers(self) -> PacTaskRegisters {
+        self.registers
     }
 
     /// Borrow the PAC task lease for one low-level accessor.
@@ -103,7 +96,7 @@ impl Ieee802154MacPolicyWrites for Ieee802154TaskOwner {
 }
 
 /// Inactive IEEE 802.15.4 interrupt ownership.
-#[must_use = "the inactive IEEE 802.15.4 interrupt owner must be returned to its route"]
+#[must_use = "the inactive IEEE 802.15.4 interrupt owner must be returned to its foundation owner"]
 pub struct Ieee802154InterruptSetupOwner {
     registers: PacInterruptSetup,
 }

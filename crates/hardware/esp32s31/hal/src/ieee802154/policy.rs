@@ -348,6 +348,8 @@ pub enum Ieee802154MacPolicyCheckpoint {
     TxrxPtiDisabled,
     /// ACK coexistence PTI no longer reads as disabled.
     AckPtiDisabled,
+    /// The receive-on delay no longer reads as the MAC-initialization value.
+    RxOnDelayApplied,
     /// Channel frequency-code readback mismatched.
     Channel,
     /// CCA-mode readback mismatched.
@@ -390,6 +392,7 @@ impl Ieee802154MacPolicyCheckpoint {
                 | Self::EdSampleAverage
                 | Self::TxrxPtiDisabled
                 | Self::AckPtiDisabled
+                | Self::RxOnDelayApplied
         )
     }
 }
@@ -552,12 +555,8 @@ where
 }
 
 /// Prove, without writing, that the foundation invariants and every policy
-/// field still read back as `policy`.
-///
-/// Returning from an operational epoch uses this: the interrupt teardown
-/// restores the masks, and a readback mismatch is reported through the same
-/// checkpoints and recovery as a failed cold configuration.
-pub(crate) fn verify_ieee802154_mac_policy<Backend>(
+/// field read back as `policy`.
+fn verify_ieee802154_mac_policy<Backend>(
     mut backend: Backend,
     policy: Ieee802154MacPolicy,
 ) -> Result<Backend, Ieee802154MacPolicyFailure<Backend>>
@@ -600,6 +599,10 @@ fn verify_foundation_readback(
     verify(
         Ieee802154MacPolicyCheckpoint::AckPtiDisabled,
         foundation.ack_pti().value() == COEX_DISABLED_PTI,
+    )?;
+    verify(
+        Ieee802154MacPolicyCheckpoint::RxOnDelayApplied,
+        foundation.rx_on_delay_applied(),
     )?;
 
     Ok(())

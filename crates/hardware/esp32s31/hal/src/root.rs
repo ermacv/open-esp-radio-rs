@@ -1,5 +1,5 @@
-//! Protocol-neutral radio root, exclusive protocol routes and the concurrent
-//! split.
+//! Protocol-neutral radio root, the exclusive Wi-Fi and Bluetooth routes and
+//! the concurrent split.
 //!
 //! The restricted PAC supplies opaque register partitions and register sets
 //! without any route policy. This module owns the complete neutral root,
@@ -12,9 +12,8 @@
 
 use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
-    BluetoothTaskRegisters, Ieee802154InterruptSetup, Ieee802154Partition, Ieee802154TaskParts,
-    Ieee802154TaskRegisters, MacInterruptSetup, RadioPartitions, SharedRadioParts,
-    SharedRadioRegisters, WifiMacPartition, WifiRadioRegisters,
+    BluetoothTaskRegisters, Ieee802154Partition, MacInterruptSetup, RadioPartitions,
+    SharedRadioParts, SharedRadioRegisters, WifiMacPartition, WifiRadioRegisters,
 };
 
 pub use crate::clock::CommonPhyPowerError;
@@ -110,86 +109,6 @@ impl RadioHardware {
     ) -> Self {
         Self::returned(
             bluetooth_partitions(task, modem_lp_timer, interrupts, retained),
-            phy,
-        )
-    }
-
-    /// Consume the root into the exclusive IEEE 802.15.4 route.
-    ///
-    /// This ownership-only transition follows the same whole-radio rule as
-    /// the Wi-Fi and Bluetooth routes. It performs no module clock,
-    /// common-PHY, BTBB, coexistence, reset, DMA, or interrupt transaction.
-    /// The route owns the IEEE 802.15.4 MAC and the shared resources required
-    /// by the public ESP-IDF enable sequence; Wi-Fi and Bluetooth IRQ
-    /// authority remain retained and inaccessible.
-    pub(crate) fn into_ieee802154(self) -> Ieee802154Route {
-        let RadioPartitions {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy,
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154,
-        } = self.partitions;
-        let phy = PhyRouteState::new(self.phy_registration);
-        let (task, interrupts) = Ieee802154TaskRegisters::new(Ieee802154TaskParts {
-            ieee802154,
-            shared: SharedRadioRegisters::new(SharedRadioParts {
-                radio_phy,
-                coexistence,
-                shared_radio,
-            }),
-        });
-        Ieee802154Route {
-            task,
-            interrupts,
-            phy,
-            retained: RetainedIeee802154 {
-                wifi_mac,
-                wifi_interrupts,
-                bluetooth,
-                bluetooth_modem_lp_timer,
-                bluetooth_interrupts,
-            },
-        }
-    }
-
-    /// Reconstruct the root from an IEEE 802.15.4 route.
-    pub(crate) fn from_ieee802154(route: Ieee802154Route) -> Self {
-        let Ieee802154Route {
-            task,
-            interrupts,
-            phy,
-            retained:
-                RetainedIeee802154 {
-                    wifi_mac,
-                    wifi_interrupts,
-                    bluetooth,
-                    bluetooth_modem_lp_timer,
-                    bluetooth_interrupts,
-                },
-        } = route;
-        let Ieee802154TaskParts { ieee802154, shared } = task.into_parts(interrupts);
-        let SharedRadioParts {
-            radio_phy,
-            coexistence,
-            shared_radio,
-        } = shared.into_parts();
-        Self::returned(
-            RadioPartitions {
-                wifi_mac,
-                wifi_interrupts,
-                radio_phy,
-                coexistence,
-                bluetooth,
-                bluetooth_modem_lp_timer,
-                bluetooth_interrupts,
-                shared_radio,
-                ieee802154,
-            },
             phy,
         )
     }
@@ -339,6 +258,16 @@ pub struct BluetoothPartition {
 #[must_use = "dropping a radio partition permanently loses its register authority"]
 pub struct Ieee802154RadioPartition {
     mac: Ieee802154Partition,
+}
+
+impl Ieee802154RadioPartition {
+    pub(crate) fn into_mac(self) -> Ieee802154Partition {
+        self.mac
+    }
+
+    pub(crate) const fn from_mac(mac: Ieee802154Partition) -> Self {
+        Self { mac }
+    }
 }
 
 /// Protocol partitions of a concurrently split radio root.
@@ -619,14 +548,6 @@ pub(crate) struct BluetoothRoute {
     pub(crate) retained: RetainedWifi,
 }
 
-/// Task registers and inactive interrupt owner of one IEEE 802.15.4 route.
-pub(crate) struct Ieee802154Route {
-    pub(crate) task: Ieee802154TaskRegisters,
-    pub(crate) interrupts: Ieee802154InterruptSetup,
-    pub(crate) phy: PhyRouteState,
-    pub(crate) retained: RetainedIeee802154,
-}
-
 /// Bluetooth and IEEE 802.15.4 partitions retained, but not exposed, while
 /// Wi-Fi is exclusive.
 pub(crate) struct RetainedBluetooth {
@@ -641,15 +562,6 @@ pub(crate) struct RetainedWifi {
     wifi_mac: WifiMacPartition,
     interrupts: MacInterruptSetup,
     ieee802154: Ieee802154Partition,
-}
-
-/// Partitions IEEE 802.15.4 does not use during its exclusive epoch.
-pub(crate) struct RetainedIeee802154 {
-    wifi_mac: WifiMacPartition,
-    wifi_interrupts: MacInterruptSetup,
-    bluetooth: BluetoothControllerPartition,
-    bluetooth_modem_lp_timer: BluetoothModemLpTimerRegisters,
-    bluetooth_interrupts: BluetoothInterruptSetup,
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use super::{
-    BluetoothTaskRegisters, Ieee802154TaskParts, Ieee802154TaskRegisters, MacInterruptMask,
-    RadioPartitions, SharedRadioParts, SharedRadioRegisters, WifiRadioRegisters,
+    BluetoothTaskRegisters, Ieee802154TaskRegisters, MacInterruptMask, RadioPartitions,
+    SharedRadioParts, SharedRadioRegisters, WifiRadioRegisters,
 };
 
 fn wifi_registers(partitions: RadioPartitions) -> (WifiRadioRegisters, super::MacInterruptSetup) {
@@ -47,26 +47,9 @@ fn shared_radio_owner_returns_every_shared_partition() {
 
 #[test]
 fn ieee802154_register_set_reunites_its_interrupt_owner() {
-    let partitions = RadioPartitions::for_validation();
-    let RadioPartitions {
-        ieee802154,
-        radio_phy,
-        coexistence,
-        shared_radio,
-        ..
-    } = partitions;
-    let (task, interrupts) = Ieee802154TaskRegisters::new(Ieee802154TaskParts {
-        ieee802154,
-        shared: SharedRadioRegisters::new(SharedRadioParts {
-            radio_phy,
-            coexistence,
-            shared_radio,
-        }),
-    });
-    let Ieee802154TaskParts {
-        ieee802154, shared, ..
-    } = task.into_parts(interrupts);
-    let _ = (ieee802154, shared.into_parts());
+    let RadioPartitions { ieee802154, .. } = RadioPartitions::for_validation();
+    let (task, interrupts) = Ieee802154TaskRegisters::new(ieee802154);
+    let _partition = task.into_partition(interrupts);
 }
 
 #[test]

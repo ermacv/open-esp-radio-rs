@@ -101,26 +101,14 @@ fn common_power_membership_follows_the_proving_owner() {
 #[test]
 fn btbb_joins_an_initialized_baseband_without_register_access() {
     use crate::owner::PhyInitializationAccess;
-    use oer_esp32s31_pac::{Ieee802154TaskParts, Ieee802154TaskRegisters};
+    use oer_esp32s31_pac::Ieee802154TaskRegisters;
     let RadioPartitions {
         bluetooth,
         ieee802154,
-        radio_phy,
-        coexistence,
-        shared_radio,
         ..
     } = RadioPartitions::for_validation();
     let bluetooth = oer_esp32s31_pac::BluetoothTaskRegisters::new(bluetooth);
-    // The IEEE 802.15.4 owner only proves its identity; its own shared
-    // registers stay unused beside the arbiter under test.
-    let (ieee802154, _interrupts) = Ieee802154TaskRegisters::new(Ieee802154TaskParts {
-        ieee802154,
-        shared: SharedRadioRegisters::new(SharedRadioParts {
-            radio_phy,
-            coexistence,
-            shared_radio,
-        }),
-    });
+    let (ieee802154, _interrupts) = Ieee802154TaskRegisters::new(ieee802154);
     let mut radio = arbiter();
     let mut lease = radio
         .try_acquire()

@@ -1,7 +1,4 @@
-use super::{
-    BluetoothBasebandV2TransitionPort, execute_ieee802154_baseband_body,
-    execute_standalone_bluetooth_transition,
-};
+use super::{BluetoothBasebandV2TransitionPort, execute_standalone_bluetooth_transition};
 use std::vec::Vec;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -26,15 +23,11 @@ impl BluetoothBasebandV2TransitionPort for BoundaryTrace {
 }
 
 #[test]
-fn production_helpers_keep_protocol_boundaries_distinct() {
+fn shared_transition_closes_the_body_with_one_fence() {
     let mut bluetooth = BoundaryTrace::default();
     execute_standalone_bluetooth_transition(&mut bluetooth, 0x6d);
     assert_eq!(
         bluetooth.steps,
         [BoundaryStep::Body(0x6d), BoundaryStep::DeviceFence]
     );
-
-    let mut ieee802154 = BoundaryTrace::default();
-    execute_ieee802154_baseband_body(&mut ieee802154, 0x6d);
-    assert_eq!(ieee802154.steps, [BoundaryStep::Body(0x6d)]);
 }

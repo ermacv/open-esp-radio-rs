@@ -407,9 +407,14 @@ pub struct FoundationReadback {
     ed_uses_average: bool,
     txrx_pti: u8,
     ack_pti: u8,
+    rx_on_delay_applied: bool,
 }
 
 impl FoundationReadback {
+    pub const fn rx_on_delay_applied(self) -> bool {
+        self.rx_on_delay_applied
+    }
+
     pub const fn events_masked(self) -> bool {
         self.events_masked
     }
@@ -434,6 +439,9 @@ impl FoundationReadback {
         self.ack_pti
     }
 }
+
+/// `RXON_DELAY` written by the vendor `ieee802154_txon_delay_set`.
+const RX_ON_DELAY: u16 = 50;
 
 /// Closed classification of `EVENT_ENABLE` for one finite ED/CCA operation.
 #[doc(hidden)]
@@ -1205,6 +1213,7 @@ impl TaskRegisters {
         let tx_abort_enable = self.registers.tx_abort_enable().read();
         let ed_config = self.registers.ed_config().read();
         let coex_pti = self.registers.coex_pti().read();
+        let rx_on_delay = self.registers.rxon_delay().read();
         FoundationReadback {
             events_masked: Ieee802154EventReadback::from_event_enable(&event_enable).is_clear(),
             rx_aborts_masked: rx_abort_enable.events().is_none(),
@@ -1212,6 +1221,7 @@ impl TaskRegisters {
             ed_uses_average: ed_config.ed_sample_mode().is_average(),
             txrx_pti: coex_pti.txrx_pti().bits(),
             ack_pti: coex_pti.ack_pti().bits(),
+            rx_on_delay_applied: rx_on_delay.rxon_delay().bits() == RX_ON_DELAY,
         }
     }
 
@@ -1285,7 +1295,10 @@ impl TaskRegisters {
     /// Apply the sole source-confirmed RXON delay image used by IEEE timing.
     #[doc(hidden)]
     pub fn set_rx_on_delay_50(&mut self) {
-        crate::svd::masked_register_modify::set_ieee802154_rx_on_delay(&self.registers, 50);
+        crate::svd::masked_register_modify::set_ieee802154_rx_on_delay(
+            &self.registers,
+            u32::from(RX_ON_DELAY),
+        );
     }
 
     #[cfg(feature = "validation-probes")]

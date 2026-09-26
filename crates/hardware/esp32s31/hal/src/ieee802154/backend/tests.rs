@@ -7,7 +7,7 @@ use oer_esp32s31_pac::{
     Ieee802154PanIdentity as PacPanIdentity, Ieee802154RxStateCode, Ieee802154TxStateCode,
 };
 
-use crate::root::{Ieee802154Route, RadioHardware};
+use oer_esp32s31_pac::{Ieee802154TaskRegisters, RadioPartitions};
 
 use super::{
     Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154Hal, Ieee802154PacHal,
@@ -23,6 +23,7 @@ enum Operation {
     MaskRxAborts,
     MaskTxAborts,
     AverageEdSampling,
+    RxOnDelay,
     FrequencyCode(u8),
     CcaMode(u8),
     CcaThreshold(i8),
@@ -59,6 +60,7 @@ impl FakeRegisters {
                 true,
                 Ieee802154Pti::new(3).expect("five-bit PTI"),
                 Ieee802154Pti::new(3).expect("five-bit PTI"),
+                true,
             ),
             policy: PacMacPolicySnapshot::new(
                 Ieee802154FrequencyCode::new(48),
@@ -92,6 +94,10 @@ impl Ieee802154RegisterBackend for FakeRegisters {
 
     fn select_average_ed_sampling(&mut self) {
         self.operations.push(Operation::AverageEdSampling);
+    }
+
+    fn apply_rx_on_delay(&mut self) {
+        self.operations.push(Operation::RxOnDelay);
     }
 
     fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
@@ -153,6 +159,7 @@ fn typed_operations_reach_the_backend_without_register_images() {
     hal.mask_all_rx_aborts();
     hal.mask_all_tx_aborts();
     hal.select_average_ed_sampling();
+    hal.apply_rx_on_delay();
     hal.set_frequency_code(Ieee802154FrequencyCode::new(15));
     hal.set_cca_mode(Ieee802154CcaMode::CarrierAndEnergyDetection);
     hal.set_cca_threshold_code(-67);
@@ -177,6 +184,7 @@ fn typed_operations_reach_the_backend_without_register_images() {
             Operation::MaskRxAborts,
             Operation::MaskTxAborts,
             Operation::AverageEdSampling,
+            Operation::RxOnDelay,
             Operation::FrequencyCode(15),
             Operation::CcaMode(3),
             Operation::CcaThreshold(-67),
@@ -252,13 +260,9 @@ fn state_predicate_samples_once_and_makes_no_idle_claim() {
 }
 
 #[test]
-fn production_hal_borrows_the_dedicated_ieee802154_task_partition() {
-    let Ieee802154Route {
-        mut task,
-        mut interrupts,
-        phy,
-        retained,
-    } = RadioHardware::for_validation().into_ieee802154();
+fn production_hal_borrows_the_ieee802154_task_partition() {
+    let RadioPartitions { ieee802154, .. } = RadioPartitions::for_validation();
+    let (mut task, mut interrupts) = Ieee802154TaskRegisters::new(ieee802154);
     {
         let mut hal = Ieee802154PacHal::from_owned(&mut task, &mut interrupts);
 
@@ -269,10 +273,5 @@ fn production_hal_borrows_the_dedicated_ieee802154_task_partition() {
 
     // Reuniting proves the combined borrow consumed neither disjoint
     // ownership half.
-    let _hardware = RadioHardware::from_ieee802154(Ieee802154Route {
-        task,
-        interrupts,
-        phy,
-        retained,
-    });
+    let _partition = task.into_partition(interrupts);
 }

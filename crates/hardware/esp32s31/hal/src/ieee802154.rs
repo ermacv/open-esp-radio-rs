@@ -26,8 +26,8 @@ pub use role::{Ieee802154EdEventProbeFinished, Ieee802154EventStatusProbeFinishe
 
 pub use lifecycle::{
     IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
-    Ieee802154ClockCheckpoint, Ieee802154ClockReadback, Ieee802154FoundationCheckpoint,
-    Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetReadback,
+    Ieee802154FoundationCheckpoint, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
+    Ieee802154ResetReadback,
 };
 
 pub use operation::{
@@ -45,8 +45,7 @@ pub use policy::{
 };
 
 pub use role::{
-    Ieee802154ClockTransitionFailure, Ieee802154Clocked, Ieee802154Operational,
-    Ieee802154OperationalRoute,
+    Ieee802154ClockTransitionFailure, Ieee802154Clocked, Ieee802154Cold, Ieee802154Operational,
 };
 
 #[cfg(feature = "validation-probes")]
@@ -65,7 +64,7 @@ pub use role::{
     Ieee802154FoundationConfigured, Ieee802154FoundationTransitionFailure,
     Ieee802154MacPolicyConfigured, Ieee802154MacPolicyRecovery,
     Ieee802154MacPolicyTransitionFailure, Ieee802154OperationCompleted, Ieee802154OperationFailed,
-    Ieee802154Owned, Ieee802154PowerTransitionFailure, Ieee802154Powered, Ieee802154Reset,
+    Ieee802154PowerTransitionFailure, Ieee802154Powered, Ieee802154Reset,
     Ieee802154ResetTransitionFailure,
 };
 

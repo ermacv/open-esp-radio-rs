@@ -1,9 +1,12 @@
-//! Finite ESP32-S31 IEEE 802.15.4 clock, reset and foundation sequence.
+//! Finite ESP32-S31 IEEE 802.15.4 reset and foundation sequence.
 //!
-//! This module stops before PHY/RF ownership, interrupt routing, DMA buffers or
-//! an operational MAC state. The backend must be constructed from the existing
-//! whole-radio owner; it is not a second peripheral singleton and exposes no
-//! raw register or address operations.
+//! The sequence starts after the shared modem clock planner established the
+//! IEEE 802.15.4 module clocks and stops before PHY/RF ownership, interrupt
+//! routing, DMA buffers or an operational MAC state. The backend is built from
+//! the IEEE 802.15.4 partition; the private MAC resets live in the shared
+//! modem syscon block and are reached through a separate reset port borrowed
+//! from the shared radio lease. Neither exposes raw register or address
+//! operations.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), allow(dead_code))]
@@ -82,29 +85,23 @@ impl TryFrom<u8> for Ieee802154Channel {
     }
 }
 
-/// Closed semantic backend for the finite lifecycle sequence.
+/// Private MAC reset lines in the shared modem syscon block.
 ///
-/// An implementation must retain exclusive access to the existing complete
-/// radio owner for the lifetime of the returned typestate value. In
-/// particular, implementations must not reconstruct the IEEE 802.15.4 block
-/// from an address or independently claim a second peripheral singleton.
-pub(crate) trait Ieee802154LifecycleBackend {
-    fn configure_modem_clock_maps(&mut self);
-    fn configure_modem_source_clock(&mut self);
-    fn enable_wifi_bb_80x1_clock(&mut self);
-    fn enable_etm_clock(&mut self);
-    fn enable_bt_apb_clocks(&mut self);
-    fn enable_bt_ieee802154_common_baseband_clock(&mut self);
-    fn enable_ieee802154_mac_clocks(&mut self);
+/// An implementation borrows the shared radio registers for one reset
+/// transition; it never retains them.
+pub(crate) trait Ieee802154ResetPort {
     fn set_ieee802154_mac_reset(&mut self, asserted: bool);
     fn set_ieee802154_apb_reset(&mut self, asserted: bool);
     fn ieee802154_reset_readback(&self) -> Ieee802154ResetReadback;
-    /// Retain the route-owned MODEM_LPCON coexistence clock.
-    fn enable_coexistence_clock(&mut self);
+}
 
-    /// Join platform and route-owned clock observations.
-    fn ieee802154_clock_readback(&self) -> Ieee802154ClockReadback;
-
+/// Closed semantic MAC backend for the finite foundation sequence.
+///
+/// An implementation must retain exclusive access to the IEEE 802.15.4
+/// partition for the lifetime of the returned typestate value. In
+/// particular, implementations must not reconstruct the IEEE 802.15.4 block
+/// from an address or independently claim a second peripheral singleton.
+pub(crate) trait Ieee802154LifecycleBackend {
     /// Prevent every peripheral event from reaching the future MAC IRQ route.
     fn mask_all_events(&mut self);
 
@@ -118,6 +115,9 @@ pub(crate) trait Ieee802154LifecycleBackend {
     fn set_txrx_pti(&mut self, pti: Ieee802154Pti);
     fn set_ack_pti(&mut self, pti: Ieee802154Pti);
 
+    /// Apply the vendor MAC-initialization receive-on delay.
+    fn apply_rx_on_delay(&mut self);
+
     /// Order completed foundation writes before publishing the next typestate.
     fn order_device_accesses(&mut self);
 
@@ -125,42 +125,11 @@ pub(crate) trait Ieee802154LifecycleBackend {
     fn foundation_snapshot(&mut self) -> Ieee802154FoundationSnapshot;
 }
 
-/// Semantic readback of the complete IEEE 802.15.4 module dependency set.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Ieee802154ClockReadback {
-    pub modem_clock_maps_configured: bool,
-    pub pll_160m_clock_enabled: bool,
-    pub modem_source_clock_configured: bool,
-    pub coexistence_clock_enabled: bool,
-    pub wifi_bb_80x1_clock_enabled: bool,
-    pub etm_clock_enabled: bool,
-    pub bt_apb_clock_enabled: bool,
-    pub modem_security_apb_clock_enabled: bool,
-    pub bt_ieee802154_common_baseband_clock_enabled: bool,
-    pub ieee802154_apb_clock_enabled: bool,
-    pub ieee802154_mac_clock_enabled: bool,
-}
-
 /// Semantic readback after the two private reset pulses.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Ieee802154ResetReadback {
     pub mac_reset_released: bool,
     pub apb_reset_released: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154ClockCheckpoint {
-    ModemClockMaps,
-    Pll160mClock,
-    ModemSourceClock,
-    CoexistenceClock,
-    WifiBb80x1Clock,
-    EtmClock,
-    BtApbClock,
-    ModemSecurityApbClock,
-    BtIeee802154CommonBasebandClock,
-    Ieee802154ApbClock,
-    Ieee802154MacClock,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -177,6 +146,7 @@ pub enum Ieee802154FoundationCheckpoint {
     EdSampleAverage,
     TxrxPtiDisabled,
     AckPtiDisabled,
+    RxOnDelayApplied,
 }
 
 /// One failed semantic readback. Register images never escape the backend.
@@ -188,9 +158,7 @@ pub struct Ieee802154ReadbackError<Checkpoint> {
 }
 
 pub(crate) mod state {
-    /// All module clock dependencies have passed semantic readback.
-    ///
-    /// Shared-clock release authority is not implied.
+    /// The shared modem clock planner holds every IEEE 802.15.4 module clock.
     #[derive(Debug)]
     pub(crate) struct Clocked;
 
@@ -226,16 +194,54 @@ impl<Backend, State> Ieee802154Lifecycle<Backend, State> {
     }
 }
 
-impl<Backend> Ieee802154Lifecycle<Backend, state::FoundationConfigured> {
-    /// Re-enter the foundation phase with an owner returning from an
-    /// operational epoch.
-    ///
-    /// The owner is not yet proved: the caller must pass it through the
-    /// complete foundation and policy readback before exposing it.
-    pub(crate) const fn resume_unverified(backend: Backend) -> Self {
+impl<Backend> Ieee802154Lifecycle<Backend, state::Clocked> {
+    /// Enter the clocked phase once the shared modem clock planner committed
+    /// the IEEE 802.15.4 module clocks for this backend.
+    pub(crate) const fn clocked(backend: Backend) -> Self {
         Self {
             backend,
             _state: PhantomData,
+        }
+    }
+}
+
+impl<Backend, State> Ieee802154Lifecycle<Backend, State> {
+    /// Retreat to the clocked phase before the module clocks are released.
+    ///
+    /// This performs no MMIO: the MAC keeps whatever reset and foundation
+    /// state it had, which no later phase relies on without proving it again.
+    pub(crate) fn into_clocked(self) -> Ieee802154Lifecycle<Backend, state::Clocked> {
+        Ieee802154Lifecycle {
+            backend: self.backend,
+            _state: PhantomData,
+        }
+    }
+}
+
+impl<Backend> Ieee802154Lifecycle<Backend, state::FoundationConfigured> {
+    /// Re-enter the foundation phase with an owner returning from an
+    /// operational epoch, after the complete foundation read back again.
+    ///
+    /// The operational epoch rewrote the MAC PIB, so only the foundation is
+    /// an invariant of the return: masks cleared by interrupt teardown,
+    /// average ED sampling, coexistence-disabled PTIs and the receive-on
+    /// delay. A mismatch disproves the foundation and keeps the reset proof.
+    pub(crate) fn resume(mut backend: Backend) -> Result<Self, Ieee802154FoundationFailure<Backend>>
+    where
+        Backend: Ieee802154LifecycleBackend,
+    {
+        match verify_foundation_snapshot(backend.foundation_snapshot()) {
+            Ok(()) => Ok(Self {
+                backend,
+                _state: PhantomData,
+            }),
+            Err(error) => Err(Ieee802154FoundationFailure {
+                lifecycle: Ieee802154Lifecycle {
+                    backend,
+                    _state: PhantomData,
+                },
+                error,
+            }),
         }
     }
 
@@ -246,23 +252,6 @@ impl<Backend> Ieee802154Lifecycle<Backend, state::FoundationConfigured> {
             backend: self.backend,
             _state: PhantomData,
         }
-    }
-}
-
-/// Failed clock transition which returns the complete backend unchanged.
-#[derive(Debug)]
-pub(crate) struct Ieee802154ClockFailure<Backend> {
-    backend: Backend,
-    error: Ieee802154ReadbackError<Ieee802154ClockCheckpoint>,
-}
-
-impl<Backend> Ieee802154ClockFailure<Backend> {
-    pub(crate) const fn error(&self) -> Ieee802154ReadbackError<Ieee802154ClockCheckpoint> {
-        self.error
-    }
-
-    pub(crate) fn into_backend(self) -> Backend {
-        self.backend
     }
 }
 
@@ -300,47 +289,21 @@ impl<Backend> Ieee802154FoundationFailure<Backend> {
     }
 }
 
-/// Establish the complete vendor module clock dependency set in its reviewed
-/// low-bit-to-high-bit enable order.
-pub(crate) fn establish_ieee802154_clocks<Backend>(
-    mut backend: Backend,
-) -> Result<Ieee802154Lifecycle<Backend, state::Clocked>, Ieee802154ClockFailure<Backend>>
-where
-    Backend: Ieee802154LifecycleBackend,
-{
-    backend.configure_modem_clock_maps();
-    backend.configure_modem_source_clock();
-    backend.enable_coexistence_clock();
-    backend.enable_wifi_bb_80x1_clock();
-    backend.enable_etm_clock();
-    backend.enable_bt_apb_clocks();
-    backend.enable_bt_ieee802154_common_baseband_clock();
-    backend.enable_ieee802154_mac_clocks();
-
-    if let Err(error) = verify_clock_readback(backend.ieee802154_clock_readback()) {
-        return Err(Ieee802154ClockFailure { backend, error });
-    }
-
-    Ok(Ieee802154Lifecycle {
-        backend,
-        _state: PhantomData,
-    })
-}
-
-impl<Backend> Ieee802154Lifecycle<Backend, state::Clocked>
-where
-    Backend: Ieee802154LifecycleBackend,
-{
+impl<Backend> Ieee802154Lifecycle<Backend, state::Clocked> {
     /// Pulse ZBMAC first and ZBMAC APB second, preserving all unrelated resets.
+    ///
+    /// This is the IEEE 802.15.4 case of the vendor
+    /// `modem_clock_module_mac_reset`, which `ieee802154_mac_init` runs first.
     pub(crate) fn reset_mac(
-        mut self,
+        self,
+        port: &mut impl Ieee802154ResetPort,
     ) -> Result<Ieee802154Lifecycle<Backend, state::Reset>, Ieee802154ResetFailure<Backend>> {
-        self.backend.set_ieee802154_mac_reset(true);
-        self.backend.set_ieee802154_mac_reset(false);
-        self.backend.set_ieee802154_apb_reset(true);
-        self.backend.set_ieee802154_apb_reset(false);
+        port.set_ieee802154_mac_reset(true);
+        port.set_ieee802154_mac_reset(false);
+        port.set_ieee802154_apb_reset(true);
+        port.set_ieee802154_apb_reset(false);
 
-        if let Err(error) = verify_reset_readback(self.backend.ieee802154_reset_readback()) {
+        if let Err(error) = verify_reset_readback(port.ieee802154_reset_readback()) {
             return Err(Ieee802154ResetFailure {
                 lifecycle: self,
                 error,
@@ -379,6 +342,7 @@ where
             .expect("reviewed coexistence-disabled PTI fits five bits");
         self.backend.set_txrx_pti(disabled_pti);
         self.backend.set_ack_pti(disabled_pti);
+        self.backend.apply_rx_on_delay();
         self.backend.order_device_accesses();
 
         if let Err(error) = verify_foundation_snapshot(self.backend.foundation_snapshot()) {
@@ -393,55 +357,6 @@ where
             _state: PhantomData,
         })
     }
-}
-
-fn verify_clock_readback(
-    readback: Ieee802154ClockReadback,
-) -> Result<(), Ieee802154ReadbackError<Ieee802154ClockCheckpoint>> {
-    verify(
-        Ieee802154ClockCheckpoint::ModemClockMaps,
-        readback.modem_clock_maps_configured,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::Pll160mClock,
-        readback.pll_160m_clock_enabled,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::ModemSourceClock,
-        readback.modem_source_clock_configured,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::CoexistenceClock,
-        readback.coexistence_clock_enabled,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::WifiBb80x1Clock,
-        readback.wifi_bb_80x1_clock_enabled,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::EtmClock,
-        readback.etm_clock_enabled,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::BtApbClock,
-        readback.bt_apb_clock_enabled,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::ModemSecurityApbClock,
-        readback.modem_security_apb_clock_enabled,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::BtIeee802154CommonBasebandClock,
-        readback.bt_ieee802154_common_baseband_clock_enabled,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::Ieee802154ApbClock,
-        readback.ieee802154_apb_clock_enabled,
-    )?;
-    verify(
-        Ieee802154ClockCheckpoint::Ieee802154MacClock,
-        readback.ieee802154_mac_clock_enabled,
-    )
 }
 
 fn verify_reset_readback(
@@ -483,6 +398,10 @@ fn verify_foundation_snapshot(
     verify(
         Ieee802154FoundationCheckpoint::AckPtiDisabled,
         snapshot.ack_pti().value() == COEX_DISABLED_PTI,
+    )?;
+    verify(
+        Ieee802154FoundationCheckpoint::RxOnDelayApplied,
+        snapshot.rx_on_delay_applied(),
     )
 }
 

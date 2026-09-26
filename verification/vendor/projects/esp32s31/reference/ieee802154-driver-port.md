@@ -83,13 +83,13 @@ defers every decision to a task cannot meet these deadlines.
 
 | ESP-IDF call | Purpose in the driver | Open counterpart in this repository |
 | --- | --- | --- |
-| `esp_phy_enable` / `esp_phy_disable(PHY_MODEM_IEEE802154)` | RF client acquire and release around operations | PHY registration and RF close on `route::Ieee802154` |
-| `esp_btbb_enable` / `esp_btbb_disable` | common BTBB initialization | PHY BTBB and IEEE 802.15.4 timing transition |
+| `esp_phy_enable` / `esp_phy_disable(PHY_MODEM_IEEE802154)` | RF client acquire and release around operations | PHY `join_ieee802154` / `leave_ieee802154` on the arbiter's shared PHY domain |
+| `esp_btbb_enable` / `esp_btbb_disable` | common BTBB initialization | arbiter BTBB reference, taken by `join_ieee802154` with the registration's gain byte |
 | `bt_bb_get_tx_pwr_table` | dBm-to-power-index table | HAL `tx_power` over an external level provider |
-| `esp_coex_ieee802154_*` | PTI scenes, external-coexistence stages, coexistence break notice | coexistence driver; the route uses the disabled PTI baseline |
-| `ieee802154_txon_delay_set` (called by `ieee802154_mac_init`) | TX-on delay | none |
+| `esp_coex_ieee802154_*` | PTI scenes, external-coexistence stages, coexistence break notice | coexistence driver; the MAC foundation uses the disabled PTI baseline |
+| `ieee802154_txon_delay_set` (called by `ieee802154_mac_init`) | TX-on delay | arbiter shared TX-on override in `join_ieee802154`; `RXON_DELAY` in the HAL MAC foundation |
 | `bt_bb_get_cur_rx_info` | receive diagnostic | none |
-| `modem_clock_module_*` | module clock, reset and MAC reset | HAL IEEE 802.15.4 lifecycle |
+| `modem_clock_module_*` | module clock, reset and MAC reset | arbiter modem clock planner; MAC reset in the HAL IEEE 802.15.4 lifecycle |
 | `sleep_retention_*`, `esp_phy_modem_init` | register retention across light sleep | none |
 
 ## Ownership map
@@ -105,7 +105,7 @@ frame semantics belong to the protocol crate.
 | --- | --- | --- |
 | `ieee802154_common_ll.h`: command, event, abort, address, policy, ED, timer, security, pending, status, enhanced-ACK and diagnostic-counter accessors | PAC `ieee802154` | implemented: one typed transaction per accessor on the task register lease, alongside the composite configuration transactions built from the same steps. The diagnostic counters read the sixteen-bit field of `ieee802154_reg.h`; the public struct reads the complete word of the single-counter registers |
 | `ieee802154_ll.h` (S31): `IEEE802154_RSSI_COMPENSATION_VALUE` 0, receive sensitivity -104 | driver engine | partial: RSSI compensation 0; receive sensitivity absent |
-| `ieee802154_mac_init` / `deinit`, `ieee802154_enable` / `disable` | HAL IEEE 802.15.4 lifecycle, HAL `ll`, driver engine | partial: clocks, reset and masked foundation; the engine's `mac_init` reinitializes the PIB, applies `ll::mac_init_registers` and clears the receive ring; `ieee802154_txon_delay_set` and interrupt allocation are not composed. `deinit` writes no MAC register |
+| `ieee802154_mac_init` / `deinit`, `ieee802154_enable` / `disable` | HAL IEEE 802.15.4 lifecycle, PHY `ieee802154_client`, HAL `ll`, driver engine | partial: arbiter power and module clocks, PHY client and BTBB with the TX-on override, MAC reset and masked foundation with `RXON_DELAY`; the engine's `mac_init` reinitializes the PIB, applies `ll::mac_init_registers` and clears the receive ring; the operational owners return through a foundation readback. Interrupt allocation is not composed. `deinit` writes no MAC register |
 | `ieee802154_pib_*`, `ieee802154_pib_update` | HAL `pib` | implemented: mutable PIB with pending mark, per-channel power resolved through the external level provider, pending mode and `rx_when_idle`; the engine publishes it before each operation |
 | `start_ed`, `tx_init`, `rx_init`, `ieee802154_transmit`, `receive`, `energy_detect`, `cca`, `sleep` | driver engine, runtime entry points | implemented |
 | `event_end_process` register steps | HAL `ll` | implemented |

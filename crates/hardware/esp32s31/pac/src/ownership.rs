@@ -16,22 +16,13 @@ pub(crate) struct WifiRadioPeripheralOwners {
 
 /// Physical owners used by one IEEE 802.15.4 task register set.
 ///
-/// ESP-IDF's public IEEE 802.15.4 enable order calls the shared
-/// `esp_btbb_enable` lifecycle. The BTBB baseband it initializes is part of
-/// the shared radio partition, so IEEE 802.15.4 holds no Bluetooth controller
-/// authority.
+/// The MAC, its interrupt route and its ETM channels are the whole IEEE
+/// 802.15.4 authority. Clocks, resets, the common PHY and the shared BTBB
+/// baseband it depends on belong to the shared radio partition.
 pub(crate) struct Ieee802154TaskPeripheralOwners {
     pub(crate) ieee802154_mac: crate::ieee802154::ownership::TaskRegisters,
     pub(crate) ieee802154_interrupt_route: svd::Ieee802154InterruptRoute,
     pub(crate) etm: crate::modem::etm::Ieee802154EtmChannels,
-    pub(crate) radio_phy: RadioPhyRegisters,
-    pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
-    pub(crate) btbb: Ieee802154BtbbPeripheralOwners,
-}
-
-/// Shared-radio partition retained behind the narrow IEEE 802.15.4 BTBB role.
-pub(crate) struct Ieee802154BtbbPeripheralOwners {
-    pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
 }
 
 /// Unique restricted owner of the shared radio-PHY register partition.
@@ -541,45 +532,29 @@ impl WifiRadioRegisters {
     }
 }
 
-/// Complete register ownership for one exclusive IEEE 802.15.4 epoch.
+/// Ordinary task-side owner of the IEEE 802.15.4 MAC partition.
 ///
-/// Raw generated partitions remain private. The public surface is extended
-/// only with reviewed MAC, common-PHY, BTBB, and coexistence transactions;
-/// Wi-Fi and Bluetooth-controller operations cannot be reached through this
-/// role even though their generated owners must be retained for a lossless
-/// protocol switch.
-#[must_use = "the IEEE 802.15.4 radio owner must be released as one epoch"]
+/// It contains no shared radio partition: the modem clocks and resets, the
+/// common PHY and the shared BTBB baseband the MAC depends on are reached
+/// through [`SharedRadioRegisters`]. Possessing this owner does not itself
+/// prove that any of those prerequisites have run.
+#[must_use = "the IEEE 802.15.4 task owner must be reunited before release"]
 pub struct Ieee802154TaskRegisters {
     pub(crate) peripherals: Ieee802154TaskPeripheralOwners,
 }
 
-/// Partitions consumed by one IEEE 802.15.4 task register set.
-pub struct Ieee802154TaskParts {
-    pub ieee802154: Ieee802154Partition,
-    pub shared: SharedRadioRegisters,
-}
-
 impl Ieee802154TaskRegisters {
-    /// Assemble the task register set and split the shared MAC block into its
+    /// Assemble the task register set and split the MAC block into its
     /// disjoint task and interrupt owners. This performs no MMIO.
-    pub fn new(parts: Ieee802154TaskParts) -> (Self, Ieee802154InterruptSetup) {
-        let Ieee802154TaskParts {
-            ieee802154:
-                Ieee802154Partition {
-                    peripherals: ieee802154,
-                    etm,
+    pub fn new(partition: Ieee802154Partition) -> (Self, Ieee802154InterruptSetup) {
+        let Ieee802154Partition {
+            peripherals:
+                svd::peripheral_ownership::Ieee802154Peripherals {
+                    ieee802154_mac,
+                    ieee802154_interrupt_route,
                 },
-            shared:
-                SharedRadioRegisters {
-                    radio_phy,
-                    coexistence,
-                    shared_radio,
-                },
-        } = parts;
-        let svd::peripheral_ownership::Ieee802154Peripherals {
-            ieee802154_mac,
-            ieee802154_interrupt_route,
-        } = ieee802154;
+            etm,
+        } = partition;
         let (task_mac, interrupt_mac) = crate::ieee802154::ownership::split(ieee802154_mac);
         (
             Self {
@@ -587,9 +562,6 @@ impl Ieee802154TaskRegisters {
                     ieee802154_mac: task_mac,
                     ieee802154_interrupt_route,
                     etm,
-                    radio_phy,
-                    coexistence,
-                    btbb: Ieee802154BtbbPeripheralOwners { shared_radio },
                 },
             },
             Ieee802154InterruptSetup {
@@ -599,106 +571,21 @@ impl Ieee802154TaskRegisters {
     }
 
     /// Reunite the MAC block with its inactive interrupt owner and return the
-    /// partitions. This performs no MMIO.
-    pub fn into_parts(self, interrupts: Ieee802154InterruptSetup) -> Ieee802154TaskParts {
+    /// partition. This performs no MMIO.
+    pub fn into_partition(self, interrupts: Ieee802154InterruptSetup) -> Ieee802154Partition {
         let Ieee802154TaskPeripheralOwners {
             ieee802154_mac: task_mac,
             ieee802154_interrupt_route,
             etm,
-            radio_phy,
-            coexistence,
-            btbb: Ieee802154BtbbPeripheralOwners { shared_radio },
         } = self.peripherals;
         let ieee802154_mac = crate::ieee802154::ownership::reunite(task_mac, interrupts.registers);
-        Ieee802154TaskParts {
-            ieee802154: Ieee802154Partition {
-                peripherals: svd::peripheral_ownership::Ieee802154Peripherals {
-                    ieee802154_mac,
-                    ieee802154_interrupt_route,
-                },
-                etm,
+        Ieee802154Partition {
+            peripherals: svd::peripheral_ownership::Ieee802154Peripherals {
+                ieee802154_mac,
+                ieee802154_interrupt_route,
             },
-            shared: SharedRadioRegisters {
-                radio_phy,
-                coexistence,
-                shared_radio,
-            },
+            etm,
         }
-    }
-
-    #[doc(hidden)]
-    pub fn configure_modem_syscon_clock_maps(&mut self) {
-        self.peripherals
-            .radio_phy
-            .configure_ieee802154_modem_clock_maps();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_ieee802154_wifi_bb_clock(&mut self) {
-        self.peripherals.radio_phy.enable_ieee802154_wifi_bb_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_ieee802154_etm_clock(&mut self) {
-        self.peripherals.radio_phy.enable_ieee802154_etm_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_ieee802154_bt_apb_clocks(&mut self) {
-        self.peripherals.radio_phy.enable_ieee802154_bt_apb_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_ieee802154_common_baseband_clock(&mut self) {
-        self.peripherals
-            .radio_phy
-            .enable_ieee802154_common_baseband_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_ieee802154_mac_clocks(&mut self) {
-        self.peripherals.radio_phy.enable_ieee802154_mac_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn modem_syscon_ieee802154_clock_observation(
-        &self,
-    ) -> ModemSysconIeee802154ClockObservation {
-        self.peripherals.radio_phy.ieee802154_clock_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
-        self.peripherals
-            .radio_phy
-            .set_ieee802154_mac_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn set_ieee802154_apb_reset(&mut self, asserted: bool) {
-        self.peripherals
-            .radio_phy
-            .set_ieee802154_apb_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn modem_syscon_ieee802154_reset_observation(
-        &self,
-    ) -> ModemSysconIeee802154ResetObservation {
-        self.peripherals.radio_phy.ieee802154_reset_observation()
-    }
-    /// Borrow the protocol-neutral PHY partition without creating another
-    /// owner.
-    #[doc(hidden)]
-    pub const fn radio_phy(&self) -> &RadioPhyRegisters {
-        &self.peripherals.radio_phy
-    }
-
-    /// Mutably borrow the protocol-neutral PHY partition without creating
-    /// another owner.
-    #[doc(hidden)]
-    pub fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
-        &mut self.peripherals.radio_phy
     }
 
     /// Order descriptor memory and MMIO at a hardware ownership boundary.

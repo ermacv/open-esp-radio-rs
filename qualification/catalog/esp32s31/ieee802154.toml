@@ -13,11 +13,11 @@ level = "lower-primitive"
 [source-facts.source-contract]
 id = "ieee802154-registered-timing-entry"
 composition = "production"
-scope = "Dedicated target registration and client tracking retain the IEEE radio owner through common BTBB and protocol timing into foundation and static MAC policy"
-limits = "This lower target entry is not a public RF-ready service; shared PLL ownership RF retune and the IRQ/DMA operational lifetime remain incomplete as stated in the PHY consumer matrix"
+scope = "The IEEE 802.15.4 arbiter client enters common power and its planner-held module clocks, joins the registered shared PHY domain and the BTBB baseband with the registration's gain byte, applies the transmit-on delay, and hands the MAC foundation to the operational owners, which return through a foundation readback"
+limits = "This lower entry is not a public RF-ready service; tracking scheduling, RF retune and the IRQ/DMA operational lifetime remain incomplete as stated in the PHY consumer matrix"
 source-paths = [
-  "crates/hardware/esp32s31/phy/src/registered_ieee802154.rs",
-  "crates/hardware/esp32s31/phy/src/target_executor.rs",
+  "crates/hardware/esp32s31/hal/src/ieee802154/role.rs",
+  "crates/hardware/esp32s31/phy/src/ieee802154_client.rs",
 ]
 
 [[source-facts]]
@@ -38,7 +38,7 @@ source-paths = [
 [[capabilities]]
 id = "clock-reset-foundation"
 title = "IEEE 802.15.4 clock reset and masked MAC foundation"
-scope = "Whole-radio transition through reviewed clocks private reset exact event and abort masking and semantic readback"
+scope = "Arbiter-client transition through planner-held module clocks, the private reset over the shared lease, exact event and abort masking, the receive-on delay and semantic readback"
 implementation = "complete"
 host = "covered"
 async = "not-applicable"

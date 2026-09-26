@@ -3,13 +3,13 @@
 //! This module is deliberately crate-private. The transaction is the observed
 //! MMIO portion of `bt_bb_v2_init_cmplx(1)`, but it is not a controller-enable
 //! API: the vendor lifecycle first completes common PHY initialization. The
-//! standalone Bluetooth edge closes that body with a device fence. The IEEE
-//! 802.15.4 edge deliberately leaves the body unfenced so its two source-owned
-//! timing overrides and the sole final fence remain one inseparable transition.
+//! transaction belongs to the shared radio owner, which Bluetooth and IEEE
+//! 802.15.4 reach through the HAL's reference-counted BTBB acquisition; it
+//! closes the body with a device fence.
 
 #![deny(unsafe_code)]
 
-use crate::{Ieee802154TaskRegisters, SharedRadioRegisters, device_fence, svd};
+use crate::{SharedRadioRegisters, device_fence, svd};
 
 impl SharedRadioRegisters {
     /// Execute only the exact MMIO path of vendor `bt_bb_v2_init_cmplx(1)`.
@@ -36,40 +36,6 @@ impl SharedRadioRegisters {
     }
 }
 
-impl Ieee802154TaskRegisters {
-    /// Execute the shared BTBB transaction required after common PHY setup.
-    ///
-    /// This crate-private edge is the same recovered
-    /// `bt_bb_v2_init_cmplx(1)` MMIO body used by the standalone Bluetooth
-    /// owner, without the standalone lifecycle fence. The public IEEE 802.15.4
-    /// transition is deliberately defined in `crate::ieee802154::timing`: it appends
-    /// both protocol-specific timing overrides and the sole final fence before
-    /// returning, so downstream code cannot stop at this internal boundary.
-    ///
-    /// # Safety
-    ///
-    /// The caller must prove that controller clocks/resets are active, common
-    /// PHY initialization completed for this same hardware owner, and
-    /// `gain_parameter` came from that terminal PHY state. Every physical
-    /// owner must remain retained until a verified last-owner PHY teardown;
-    /// the task partition must not be reunited into cold ownership after this
-    /// transaction without that teardown.
-    #[allow(
-        unsafe_code,
-        reason = "the unsafe signature encodes the cross-crate common-PHY hardware prerequisite"
-    )]
-    pub(crate) unsafe fn initialize_baseband_v2_arg_one_body_without_fence(
-        &mut self,
-        gain_parameter: u8,
-    ) {
-        let mut port = BluetoothBasebandV2Transaction {
-            radio_phy: &self.peripherals.radio_phy.peripherals,
-            shared_radio: &self.peripherals.btbb.shared_radio,
-        };
-        execute_ieee802154_baseband_body(&mut port, gain_parameter);
-    }
-}
-
 trait BluetoothBasebandV2TransitionPort {
     fn execute_body(&mut self, gain_parameter: u8);
     fn order_device_accesses(&mut self);
@@ -81,13 +47,6 @@ where
 {
     port.execute_body(gain_parameter);
     port.order_device_accesses();
-}
-
-fn execute_ieee802154_baseband_body<Port>(port: &mut Port, gain_parameter: u8)
-where
-    Port: BluetoothBasebandV2TransitionPort,
-{
-    port.execute_body(gain_parameter);
 }
 
 /// One borrow-scoped view of the exact generated owners touched by BTBB v2.

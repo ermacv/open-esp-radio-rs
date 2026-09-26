@@ -4,121 +4,92 @@ use oer_esp32s31_pac::{Ieee802154FoundationSnapshot, Ieee802154Pti};
 
 use super::{
     COEX_DISABLED_PTI, IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel,
-    Ieee802154ChannelError, Ieee802154ClockCheckpoint, Ieee802154ClockReadback,
-    Ieee802154FoundationCheckpoint, Ieee802154LifecycleBackend, Ieee802154ReadbackError,
-    Ieee802154ResetCheckpoint, Ieee802154ResetReadback, establish_ieee802154_clocks,
+    Ieee802154ChannelError, Ieee802154FoundationCheckpoint, Ieee802154Lifecycle,
+    Ieee802154LifecycleBackend, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
+    Ieee802154ResetPort, Ieee802154ResetReadback, state,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
-    ConfigureClockMaps,
-    ConfigureModemSource,
-    EnableCoex,
-    EnableWifiBb80x1,
-    EnableEtm,
-    EnableBtApb,
-    EnableCommonBaseband,
-    EnableIeee802154MacClocks,
-    SetMacReset(bool),
-    SetApbReset(bool),
     MaskEvents,
     MaskRxAborts,
     MaskTxAborts,
     SetEdSampleAverage,
     SetTxrxPti(u8),
     SetAckPti(u8),
+    RxOnDelay,
     DeviceFence,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ResetOperation {
+    Mac(bool),
+    Apb(bool),
 }
 
 #[derive(Debug)]
 struct FakeBackend {
     operations: Vec<Operation>,
-    clock_readback: Ieee802154ClockReadback,
-    reset_readback: Ieee802154ResetReadback,
     foundation_snapshot: Ieee802154FoundationSnapshot,
+}
+
+fn valid_foundation() -> Ieee802154FoundationSnapshot {
+    Ieee802154FoundationSnapshot::new(
+        true,
+        true,
+        true,
+        true,
+        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+        true,
+    )
 }
 
 impl FakeBackend {
     fn ready() -> Self {
         Self {
             operations: Vec::new(),
-            clock_readback: Ieee802154ClockReadback {
-                modem_clock_maps_configured: true,
-                pll_160m_clock_enabled: true,
-                modem_source_clock_configured: true,
-                coexistence_clock_enabled: true,
-                wifi_bb_80x1_clock_enabled: true,
-                etm_clock_enabled: true,
-                bt_apb_clock_enabled: true,
-                modem_security_apb_clock_enabled: true,
-                bt_ieee802154_common_baseband_clock_enabled: true,
-                ieee802154_apb_clock_enabled: true,
-                ieee802154_mac_clock_enabled: true,
-            },
-            reset_readback: Ieee802154ResetReadback {
+            foundation_snapshot: valid_foundation(),
+        }
+    }
+
+    fn clocked(self) -> Ieee802154Lifecycle<Self, state::Clocked> {
+        Ieee802154Lifecycle::clocked(self)
+    }
+}
+
+struct FakeResetPort {
+    operations: Vec<ResetOperation>,
+    readback: Ieee802154ResetReadback,
+}
+
+impl FakeResetPort {
+    fn released() -> Self {
+        Self {
+            operations: Vec::new(),
+            readback: Ieee802154ResetReadback {
                 mac_reset_released: true,
                 apb_reset_released: true,
             },
-            foundation_snapshot: Ieee802154FoundationSnapshot::new(
-                true,
-                true,
-                true,
-                true,
-                Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
-                Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
-            ),
         }
     }
 }
 
-impl Ieee802154LifecycleBackend for FakeBackend {
-    fn configure_modem_source_clock(&mut self) {
-        self.operations.push(Operation::ConfigureModemSource);
-    }
-    fn configure_modem_clock_maps(&mut self) {
-        self.operations.push(Operation::ConfigureClockMaps);
-    }
-
-    fn enable_wifi_bb_80x1_clock(&mut self) {
-        self.operations.push(Operation::EnableWifiBb80x1);
-    }
-
-    fn enable_etm_clock(&mut self) {
-        self.operations.push(Operation::EnableEtm);
-    }
-
-    fn enable_bt_apb_clocks(&mut self) {
-        self.operations.push(Operation::EnableBtApb);
-    }
-
-    fn enable_bt_ieee802154_common_baseband_clock(&mut self) {
-        self.operations.push(Operation::EnableCommonBaseband);
-    }
-
-    fn enable_ieee802154_mac_clocks(&mut self) {
-        self.operations.push(Operation::EnableIeee802154MacClocks);
-    }
-
+impl Ieee802154ResetPort for FakeResetPort {
     fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
-        self.operations.push(Operation::SetMacReset(asserted));
+        self.operations.push(ResetOperation::Mac(asserted));
     }
 
     fn set_ieee802154_apb_reset(&mut self, asserted: bool) {
-        self.operations.push(Operation::SetApbReset(asserted));
+        self.operations.push(ResetOperation::Apb(asserted));
     }
 
     fn ieee802154_reset_readback(&self) -> Ieee802154ResetReadback {
-        self.reset_readback
+        self.readback
     }
+}
 
-    fn enable_coexistence_clock(&mut self) {
-        self.operations.push(Operation::EnableCoex);
-    }
-
-    fn ieee802154_clock_readback(&self) -> Ieee802154ClockReadback {
-        self.clock_readback
-    }
-
+impl Ieee802154LifecycleBackend for FakeBackend {
     fn mask_all_events(&mut self) {
         self.operations.push(Operation::MaskEvents);
     }
@@ -143,6 +114,10 @@ impl Ieee802154LifecycleBackend for FakeBackend {
         self.operations.push(Operation::SetAckPti(pti.value()));
     }
 
+    fn apply_rx_on_delay(&mut self) {
+        self.operations.push(Operation::RxOnDelay);
+    }
+
     fn order_device_accesses(&mut self) {
         self.operations.push(Operation::DeviceFence);
     }
@@ -152,87 +127,45 @@ impl Ieee802154LifecycleBackend for FakeBackend {
     }
 }
 
+const RESET_PULSES: [ResetOperation; 4] = [
+    ResetOperation::Mac(true),
+    ResetOperation::Mac(false),
+    ResetOperation::Apb(true),
+    ResetOperation::Apb(false),
+];
+
 #[test]
 fn exact_sequence_reaches_only_foundation_configured() {
-    let clocked = establish_ieee802154_clocks(FakeBackend::ready()).expect("clock readback");
-    let reset = clocked.reset_mac().expect("reset readback");
+    let mut port = FakeResetPort::released();
+    let reset = FakeBackend::ready()
+        .clocked()
+        .reset_mac(&mut port)
+        .expect("reset readback");
     let configured = reset.configure_foundation().expect("foundation readback");
     let backend = configured.into_backend();
 
+    assert_eq!(port.operations, RESET_PULSES);
     assert_eq!(
         backend.operations,
         [
-            Operation::ConfigureClockMaps,
-            Operation::ConfigureModemSource,
-            Operation::EnableCoex,
-            Operation::EnableWifiBb80x1,
-            Operation::EnableEtm,
-            Operation::EnableBtApb,
-            Operation::EnableCommonBaseband,
-            Operation::EnableIeee802154MacClocks,
-            Operation::SetMacReset(true),
-            Operation::SetMacReset(false),
-            Operation::SetApbReset(true),
-            Operation::SetApbReset(false),
             Operation::MaskEvents,
             Operation::MaskRxAborts,
             Operation::MaskTxAborts,
             Operation::SetEdSampleAverage,
             Operation::SetTxrxPti(COEX_DISABLED_PTI),
             Operation::SetAckPti(COEX_DISABLED_PTI),
+            Operation::RxOnDelay,
             Operation::DeviceFence,
         ]
     );
 }
 
 #[test]
-fn clock_readback_fails_at_the_first_unproved_dependency_and_returns_owner() {
-    let mut backend = FakeBackend::ready();
-    backend.clock_readback.etm_clock_enabled = false;
-    backend.clock_readback.bt_apb_clock_enabled = false;
+fn reset_failure_remains_clocked_and_touches_only_the_reset_port() {
+    let mut port = FakeResetPort::released();
+    port.readback.apb_reset_released = false;
 
-    let failure = match establish_ieee802154_clocks(backend) {
-        Ok(_) => panic!("unproved clocks must fail closed"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        Ieee802154ReadbackError {
-            checkpoint: Ieee802154ClockCheckpoint::EtmClock,
-            expected: true,
-            observed: false,
-        }
-    );
-    assert_eq!(failure.into_backend().operations.len(), 8);
-}
-
-#[test]
-fn clock_readback_requires_the_shared_upstream_pll_gate() {
-    let mut backend = FakeBackend::ready();
-    backend.clock_readback.pll_160m_clock_enabled = false;
-
-    let failure = match establish_ieee802154_clocks(backend) {
-        Ok(_) => panic!("an unavailable upstream PLL must fail closed"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        Ieee802154ReadbackError {
-            checkpoint: Ieee802154ClockCheckpoint::Pll160mClock,
-            expected: true,
-            observed: false,
-        }
-    );
-    assert_eq!(failure.into_backend().operations.len(), 8);
-}
-
-#[test]
-fn reset_failure_remains_clocked_and_returns_owner() {
-    let mut backend = FakeBackend::ready();
-    backend.reset_readback.apb_reset_released = false;
-    let clocked = establish_ieee802154_clocks(backend).expect("clock readback");
-
-    let failure = match clocked.reset_mac() {
+    let failure = match FakeBackend::ready().clocked().reset_mac(&mut port) {
         Ok(_) => panic!("asserted APB reset must fail closed"),
         Err(failure) => failure,
     };
@@ -244,15 +177,13 @@ fn reset_failure_remains_clocked_and_returns_owner() {
             observed: false,
         }
     );
-    let backend = failure.into_lifecycle().into_backend();
-    assert_eq!(
-        &backend.operations[8..],
-        [
-            Operation::SetMacReset(true),
-            Operation::SetMacReset(false),
-            Operation::SetApbReset(true),
-            Operation::SetApbReset(false),
-        ]
+    assert_eq!(port.operations, RESET_PULSES);
+    assert!(
+        failure
+            .into_lifecycle()
+            .into_backend()
+            .operations
+            .is_empty()
     );
 }
 
@@ -266,9 +197,12 @@ fn foundation_failure_remains_reset_with_events_masked_first() {
         true,
         Ieee802154Pti::new(COEX_DISABLED_PTI + 1).expect("five-bit PTI"),
         Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+        true,
     );
-    let clocked = establish_ieee802154_clocks(backend).expect("clock readback");
-    let reset = clocked.reset_mac().expect("reset readback");
+    let reset = backend
+        .clocked()
+        .reset_mac(&mut FakeResetPort::released())
+        .expect("reset readback");
 
     let failure = match reset.configure_foundation() {
         Ok(_) => panic!("unproved coexistence disable must fail closed"),
@@ -283,9 +217,73 @@ fn foundation_failure_remains_reset_with_events_masked_first() {
         }
     );
     let backend = failure.into_lifecycle().into_backend();
-    assert_eq!(backend.operations[12], Operation::MaskEvents);
-    assert_eq!(backend.operations[13], Operation::MaskRxAborts);
-    assert_eq!(backend.operations[14], Operation::MaskTxAborts);
+    assert_eq!(
+        backend.operations[..3],
+        [
+            Operation::MaskEvents,
+            Operation::MaskRxAborts,
+            Operation::MaskTxAborts,
+        ]
+    );
+}
+
+#[test]
+fn foundation_requires_the_receive_on_delay() {
+    let mut backend = FakeBackend::ready();
+    backend.foundation_snapshot = Ieee802154FoundationSnapshot::new(
+        true,
+        true,
+        true,
+        true,
+        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+        false,
+    );
+    let reset = backend
+        .clocked()
+        .reset_mac(&mut FakeResetPort::released())
+        .expect("reset readback");
+    let failure = match reset.configure_foundation() {
+        Ok(_) => panic!("a missing receive-on delay must fail closed"),
+        Err(failure) => failure,
+    };
+    assert_eq!(
+        failure.error().checkpoint,
+        Ieee802154FoundationCheckpoint::RxOnDelayApplied
+    );
+}
+
+#[test]
+fn a_returning_owner_resumes_the_foundation_without_writes() {
+    let resumed =
+        match Ieee802154Lifecycle::<_, state::FoundationConfigured>::resume(FakeBackend::ready()) {
+            Ok(resumed) => resumed,
+            Err(_) => panic!("an intact foundation resumes"),
+        };
+    assert!(resumed.into_backend().operations.is_empty());
+}
+
+#[test]
+fn a_returning_owner_with_unmasked_events_falls_back_to_reset() {
+    let mut backend = FakeBackend::ready();
+    backend.foundation_snapshot = Ieee802154FoundationSnapshot::new(
+        false,
+        true,
+        true,
+        true,
+        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+        Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
+        true,
+    );
+    let failure = match Ieee802154Lifecycle::<_, state::FoundationConfigured>::resume(backend) {
+        Ok(_) => panic!("unmasked events disprove the foundation"),
+        Err(failure) => failure,
+    };
+    assert_eq!(
+        failure.error().checkpoint,
+        Ieee802154FoundationCheckpoint::EventsMasked
+    );
+    let _reset: Ieee802154Lifecycle<FakeBackend, state::Reset> = failure.into_lifecycle();
 }
 
 #[test]

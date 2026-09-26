@@ -1,8 +1,5 @@
 use super::{RadioHardware, RadioPhyReleaseError};
-use crate::{
-    bluetooth::ColdOwner, ieee802154::role::Ieee802154Owned, owner::WifiColdRegisters,
-    phy::restore::PhyRouteState,
-};
+use crate::{bluetooth::ColdOwner, owner::WifiColdRegisters, phy::restore::PhyRouteState};
 
 #[derive(Clone, Copy)]
 enum Restore {
@@ -55,13 +52,6 @@ fn pending_restore_survives_same_route_transitions_and_blocks_every_release() {
         };
         assert_eq!(error, restore.error());
 
-        let mut ieee802154 = Ieee802154Owned::from_hardware((), RadioHardware::for_validation());
-        restore.occupy(ieee802154.phy_state_mut());
-        let Err(failure) = ieee802154.release() else {
-            panic!("IEEE 802.15.4 released a pending restore");
-        };
-        assert_eq!(failure.error(), restore.error());
-
         let bluetooth = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
         let (mut task, interrupts) = bluetooth.separate_interrupt_owner();
         restore.occupy(task.phy_state_mut());
@@ -105,23 +95,6 @@ fn bluetooth_task_and_interrupt_owners_roundtrip_without_mmio() {
 }
 
 #[test]
-fn ieee802154_route_roundtrip_returns_every_other_protocol_owner() {
-    let (_, hardware) = Ieee802154Owned::from_hardware((), RadioHardware::for_validation())
-        .release()
-        .unwrap_or_else(|_| panic!("a fresh IEEE 802.15.4 route has no pending PHY restore"));
-
-    // The IEEE 802.15.4 epoch retains the complete Bluetooth controller
-    // partition behind its BTBB role and never consumes either protocol's
-    // interrupt owner.
-    let hardware = ColdOwner::from_radio_hardware(hardware)
-        .release()
-        .expect("an untouched Bluetooth route can be released");
-    let Ok(_hardware) = WifiColdRegisters::from_hardware(hardware).release() else {
-        panic!("an untouched Wi-Fi route can be released");
-    };
-}
-
-#[test]
 fn registration_epoch_is_replaced_by_registration_and_retired_by_every_route_release() {
     let mut wifi = RadioHardware::for_validation().into_wifi();
     let phy = &mut wifi.phy;
@@ -140,20 +113,14 @@ fn registration_epoch_is_replaced_by_registration_and_retired_by_every_route_rel
     let third = phy.begin_registration_epoch();
     assert!(third != first && third != second);
 
-    let mut ieee802154 = RadioHardware::from_bluetooth(
+    let wifi = RadioHardware::from_bluetooth(
         bluetooth.task,
         bluetooth.modem_lp_timer,
         bluetooth.interrupts,
         bluetooth.phy,
         bluetooth.retained,
     )
-    .into_ieee802154();
-    let phy = &mut ieee802154.phy;
-    assert_eq!(phy.registration_epoch(), None);
-    let fourth = phy.begin_registration_epoch();
-    assert!(fourth != first && fourth != second && fourth != third);
-
-    let wifi = RadioHardware::from_ieee802154(ieee802154).into_wifi();
+    .into_wifi();
     assert_eq!(wifi.phy.registration_epoch(), None);
 }
 

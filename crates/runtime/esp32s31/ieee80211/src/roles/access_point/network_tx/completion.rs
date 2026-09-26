@@ -326,7 +326,7 @@ where
             first_sequence: completion.first_sequence,
             starting_sequence: completion.starting_sequence,
             subframes: completion.subframes,
-            missing: completion.missing,
+            missing_original_indices: completion.missing_original_indices,
         });
         if !republished && let Some(started) = self.exchange_started_micros {
             observer.observe(AggregateTxObservation::ExchangeCompleted {

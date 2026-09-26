@@ -118,7 +118,9 @@ pub enum AggregateTxObservation {
         first_sequence: SequenceNumber,
         starting_sequence: SequenceNumber,
         subframes: u8,
-        missing: u8,
+        /// Original aggregate positions absent from this completion; see
+        /// `AmpduRetryState::missing_original_indices`.
+        missing_original_indices: u32,
     },
     /// Time spent sampling terminal hardware state, classifying BlockAck and
     /// detaching the completed queue, before releasing retained network

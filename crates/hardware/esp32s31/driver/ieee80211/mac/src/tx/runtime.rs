@@ -725,6 +725,8 @@ pub struct AmpduRetryState<const CAPACITY: usize> {
     /// so one mask preserves every non-contiguous sequence after compaction
     /// without carrying a movable 32-entry sequence table.
     pending_original_indices: u32,
+    /// Original aggregate indices absent from the last observed completion.
+    missing_original_indices: u32,
     current_subframes: u8,
     policy: AmpduRetryPolicy,
     aggregate_attempts: u8,
@@ -765,6 +767,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         Ok(Self {
             first_sequence,
             pending_original_indices,
+            missing_original_indices: 0,
             current_subframes: subframes,
             policy,
             aggregate_attempts: 1,
@@ -803,10 +806,13 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         // ordinary BlockAck or an ordinary MPDU attempt count.
         if completion.tx.completes_vendor_trigger_flow() {
             self.trigger_flow_completions = self.trigger_flow_completions.saturating_add(1);
+            self.missing_original_indices = 0;
             return Ok(AmpduRetryDecision::FinishTriggerFlow);
         }
         if completion.tx.disposition() == TxCompletionDisposition::CtsTimeout {
             self.protection_failures = self.protection_failures.saturating_add(1);
+            // No MPDU reached the receiver.
+            self.missing_original_indices = self.pending_original_indices;
             let retry_mask = if observed_subframes == 32 {
                 u32::MAX
             } else {
@@ -838,6 +844,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             }
             index += 1;
         }
+        self.missing_original_indices = retry_original_indices;
         let missing = retry_mask.count_ones() as u8;
         let retain = (missing >= 2 || (missing == 1 && self.policy.retain_single_mpdu))
             && self.aggregate_attempts < self.policy.attempt_limit;
@@ -858,6 +865,13 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     pub const fn current_first_sequence(&self) -> SequenceNumber {
         self.first_sequence
             .wrapping_add(self.pending_original_indices.trailing_zeros() as u16)
+    }
+
+    /// Original aggregate positions (bit `i` is the `i`th MPDU of the first
+    /// publication) absent from the last observed completion. Retries
+    /// compact the descriptor chain; these positions do not move.
+    pub const fn missing_original_indices(&self) -> u32 {
+        self.missing_original_indices
     }
 
     pub const fn aggregate_attempts(&self) -> u8 {

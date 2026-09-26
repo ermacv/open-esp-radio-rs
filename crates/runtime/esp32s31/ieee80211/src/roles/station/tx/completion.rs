@@ -180,7 +180,7 @@ where
                     first_sequence: current_first_sequence,
                     starting_sequence: completion.block_ack.block_ack.starting_sequence,
                     subframes: current_subframes,
-                    missing: decision.missing(),
+                    missing_original_indices: active.retry.missing_original_indices(),
                 });
             }
             let republication = match decision {

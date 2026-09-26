@@ -173,7 +173,8 @@ pub struct ApAmpduCompletion {
     pub first_sequence: SequenceNumber,
     pub starting_sequence: SequenceNumber,
     pub subframes: u8,
-    pub missing: u8,
+    /// Original aggregate positions absent from this completion.
+    pub missing_original_indices: u32,
     pub acknowledged: u8,
     pub aggregate_attempts: u8,
 }
@@ -423,7 +424,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             first_sequence: current_first_sequence,
             starting_sequence: completion.block_ack.block_ack.starting_sequence,
             subframes: current_subframes,
-            missing: decision.missing(),
+            missing_original_indices: retry.missing_original_indices(),
             acknowledged: retry.acknowledged(),
             aggregate_attempts: retry.aggregate_attempts(),
         };

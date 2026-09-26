@@ -16,8 +16,9 @@
 //!   and a later zero-to-one transition re-enables them (for the Wi-Fi
 //!   baseband clock this includes its reset pulse).
 //!
-//! Source: ESP-IDF revision `aeab6dcfbeb44aba4b1f8ed102e3086172833153`
-//! (Apache-2.0), `components/esp_hw_support/modem/port/esp32s31/`
+//! Source: reviewed evidence `ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK`, ESP-IDF
+//! revision `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe` (Apache-2.0),
+//! `components/esp_hw_support/modem/port/esp32s31/`
 //! `modem_clock_impl.c` (`*_CLOCK_DEPS`, `modem_clock_get_module_deps`, the
 //! per-device `modem_clock_*_configure` actions and the I2C-master refcount
 //! exception in `modem_clock_device_context`), `modem/modem_clock.c`

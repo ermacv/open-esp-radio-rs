@@ -290,7 +290,10 @@ chain it calls `r_btdm_sched_delete_specified_items`.
      bit 0 to clear;
    - each chained item that has not executed and does not start after the
      current hardware head is passed to `r_btdm_hal_link_skip_specified_tl`.
-     Result 0 is treated as impossible, and results 2 and 4 end the loop;
+     The head is read once, before the hold; when it is empty, every
+     unexecuted item is skipped. Execution is checked as the loop reaches
+     each item. Result 0 is treated as impossible, and results 2 and 4 end
+     the loop;
    - the hold is released by clearing `0x2010_1204` bit 0.
 
    It then notifies the recycle path.

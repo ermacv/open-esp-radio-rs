@@ -5,8 +5,8 @@
 //! retained from one fill pattern, so every register bit the leaf reads takes
 //! both values across the fills, and compares every register effect exactly
 //! and, where the leaf returns one, the return word.
-use crate::harness::{Arg, Buffer, Input, Result, case, direct, invalid, known};
-use crate::layout::{INPUT, radio_aperture};
+use crate::harness::{Arg, Buffer, Input, Result, case, direct, filled, invalid, known, selection};
+use crate::layout::{INPUT, OUTPUT, radio_aperture};
 use crate::phy::{image_layout, select};
 use crate::session::{Session, image_symbol_id, request};
 use blobray_domain::{
@@ -45,12 +45,19 @@ pub struct MacOptions {
     pub patches: Vec<blobray_application::in_process::ImagePatch>,
 }
 
-/// Values one parameter takes: ABI words, or six-byte addresses the leaf
-/// reads through a pointer to a buffer at `INPUT`.
+/// Values one parameter takes: ABI words, six-byte addresses the leaf reads
+/// through a pointer to a buffer at `INPUT`, or the address of an output
+/// object in the region at `OUTPUT`, filled with `OUTPUT_FILL` and compared
+/// after the leaf; a nullable output also takes the null pointer.
 #[derive(Clone, Copy)]
 pub enum Domain {
     Words(&'static [u32]),
     Addresses(&'static [[u8; 6]]),
+    Output {
+        offset: u32,
+        length: u32,
+        nullable: bool,
+    },
 }
 
 impl Domain {
@@ -58,9 +65,22 @@ impl Domain {
         match self {
             Self::Words(values) => values.len(),
             Self::Addresses(values) => values.len(),
+            Self::Output { nullable, .. } => 1 + usize::from(nullable),
         }
     }
 }
+
+/// A non-null output object of `length` bytes at the start of the region.
+const fn output(length: u32) -> Domain {
+    Domain::Output {
+        offset: 0,
+        length,
+        nullable: false,
+    }
+}
+
+/// Initial bytes of an output object: bytes a leaf leaves alone compare too.
+const OUTPUT_FILL: u8 = 0xa5;
 
 /// One vendor leaf, its production probe and the argument domain of each
 /// parameter, in ABI order; the cases are their product.
@@ -75,7 +95,16 @@ pub struct Leaf {
     /// A bounded feature: the vendor side stops before calling this
     /// function, and only the prefix up to that call is compared.
     pub prefix_until: Option<&'static str>,
+    /// Builds the vendor ABI from the semantic probe words when the vendor
+    /// reads them from its own objects: vendor argument words and the
+    /// initialized objects, as (address, bytes).
+    pub vendor_abi: Option<VendorAbi>,
+    /// The vendor function is a ROM symbol rather than a `libpp.a` root.
+    pub rom: bool,
 }
+
+/// Vendor argument words and initialized objects for the semantic words.
+pub type VendorAbi = fn(&[u32]) -> (Vec<u32>, Vec<(u32, Vec<u8>)>);
 
 const fn leaf(
     vendor: &'static str,
@@ -90,7 +119,14 @@ const fn leaf(
         returns,
         ordering_fences: 0,
         prefix_until: None,
+        vendor_abi: None,
+        rom: false,
     }
+}
+
+/// A leaf whose vendor function is the ROM symbol of that name.
+const fn rom(leaf: Leaf) -> Leaf {
+    Leaf { rom: true, ..leaf }
 }
 
 /// A leaf whose production counterpart adds `fences` ordering fences.
@@ -99,6 +135,42 @@ const fn ordered(leaf: Leaf, fences: u32) -> Leaf {
         ordering_fences: fences,
         ..leaf
     }
+}
+
+/// A leaf whose vendor reads its semantic arguments from objects `abi` builds.
+const fn objects(leaf: Leaf, abi: VendorAbi) -> Leaf {
+    Leaf {
+        vendor_abi: Some(abi),
+        ..leaf
+    }
+}
+
+/// `hal_mac_tx_config_edca` object at `INPUT`: a context pointer, then the
+/// queue byte, the AIFSN byte and the contention-window halfword. The
+/// context holds at 0x34 a pointer to the interface record, whose word at
+/// 0x10 carries the interface in bits 18 and 19. The probe's first word is
+/// the object address itself.
+fn edca_abi(words: &[u32]) -> (Vec<u32>, Vec<(u32, Vec<u8>)>) {
+    const CONTEXT: u32 = INPUT + 0x100;
+    const INTERFACE_RECORD: u32 = INPUT + 0x200;
+    let [_, queue, aifsn, window, interface] = words else {
+        unreachable!("EDCA words: object, queue, AIFSN, window, interface")
+    };
+    let mut object = CONTEXT.to_le_bytes().to_vec();
+    object.extend([*queue as u8, *aifsn as u8]);
+    object.extend((*window as u16).to_le_bytes());
+    let mut context = vec![0u8; 0x38];
+    context[0x34..].copy_from_slice(&INTERFACE_RECORD.to_le_bytes());
+    let mut record = vec![0u8; 0x14];
+    record[0x10..].copy_from_slice(&(interface << 18).to_le_bytes());
+    (
+        vec![INPUT],
+        vec![
+            (INPUT, object),
+            (CONTEXT, context),
+            (INTERFACE_RECORD, record),
+        ],
+    )
 }
 
 /// A leaf compared only up to the vendor's call of `callee`.
@@ -141,6 +213,28 @@ const FLAGS: &[u32] = &[0, 1];
 const IGNORED: &[u32] = &[0, 0xa5a5_5a5a];
 /// RTS thresholds in bytes, including one the 16-bit field truncates.
 const RTS_THRESHOLDS: &[u32] = &[0, 1, 0xffff, 0x1_2345];
+
+/// AIFSN values: zero, a default, the four-bit maximum and one bit beyond.
+const AIFSN: &[u32] = &[0, 2, 15, 0x1f];
+/// Contention windows: zero, a default, the ten-bit maximum and one beyond.
+const WINDOWS: &[u32] = &[0, 0x15, 0x3ff, 0x7ff];
+/// The EDCA object address the probe receives and ignores.
+const EDCA_OBJECT: &[u32] = &[INPUT];
+
+/// STA TSF low and high words, each through a nullable output pointer.
+const TSF_LOW: Domain = Domain::Output {
+    offset: 0,
+    length: 4,
+    nullable: true,
+};
+const TSF_HIGH: Domain = Domain::Output {
+    offset: 4,
+    length: 4,
+    nullable: true,
+};
+
+/// Bytes of the transmit Block Ack record: control, sequence and bitmap.
+const BLOCK_ACK_BYTES: u32 = 12;
 
 /// Every compared leaf.
 pub const LEAVES: &[Leaf] = &[
@@ -321,6 +415,36 @@ pub const LEAVES: &[Leaf] = &[
         ),
         "GetAccess",
     ),
+    leaf(
+        "hal_mac_tx_get_blockack",
+        "open_libpp_tx_trace_hal_mac_tx_get_blockack",
+        &[
+            ("queue", Domain::Words(QUEUES)),
+            ("output_address", output(BLOCK_ACK_BYTES)),
+        ],
+        true,
+    ),
+    objects(
+        leaf(
+            "hal_mac_tx_config_edca",
+            "open_libpp_tx_trace_hal_mac_tx_config_edca",
+            &[
+                ("_vendor_config_address", Domain::Words(EDCA_OBJECT)),
+                ("queue", Domain::Words(QUEUES)),
+                ("aifsn", Domain::Words(AIFSN)),
+                ("contention_window", Domain::Words(WINDOWS)),
+                ("interface", Domain::Words(INTERFACES)),
+            ],
+            true,
+        ),
+        edca_abi,
+    ),
+    rom(leaf(
+        "hal_get_sta_tsf",
+        "open_rom_power_tsf_trace_hal_get_sta_tsf",
+        &[("low", TSF_LOW), ("high", TSF_HIGH)],
+        false,
+    )),
 ];
 
 /// Linked `libpp.a` image with its captured roots and both execution targets.
@@ -375,6 +499,7 @@ impl Mac {
         // The first leaf is the link entry; the others are further roots.
         let mut vendors: Vec<&str> = LEAVES
             .iter()
+            .filter(|l| !l.rom)
             .map(|l| l.vendor)
             .filter(|v| *v != LEAVES[0].vendor)
             .collect();
@@ -411,16 +536,42 @@ impl Mac {
         })
     }
 
+    /// Entry address of the vendor function of `leaf`.
+    fn vendor_entry(&self, leaf: &Leaf) -> Result<u32> {
+        if leaf.rom {
+            Ok(u32::try_from(
+                crate::harness::symbol(
+                    &self.session.inventory,
+                    crate::layout::ROM_INPUT as usize,
+                    leaf.vendor,
+                )?
+                .value,
+            )?)
+        } else {
+            Ok(self.roots[leaf.vendor])
+        }
+    }
+
+    /// Exact code endpoint of the vendor function of `leaf`.
+    fn vendor_endpoint(&self, leaf: &Leaf) -> Result<blobray_domain::CallEndpoint> {
+        if leaf.rom {
+            self.session
+                .input_endpoint(crate::layout::ROM_INPUT, leaf.vendor)
+        } else {
+            self.session.image_endpoint(
+                &self.vendor,
+                &self.image_object,
+                leaf.vendor,
+                self.roots[leaf.vendor],
+            )
+        }
+    }
+
     /// The reviewed contract of a leaf whose production adds ordering
     /// fences: exactly that many full fences, every other effect compared
     /// exactly.
     fn ordering_contract(&mut self, leaf: &Leaf) -> Result<EffectContractRef> {
-        let vendor = self.session.image_endpoint(
-            &self.vendor,
-            &self.image_object,
-            leaf.vendor,
-            self.roots[leaf.vendor],
-        )?;
+        let vendor = self.vendor_endpoint(leaf)?;
         let production = self.session.input_endpoint(2, leaf.probe)?;
         let rule = EffectRule {
             name: "device-ordering-fence".into(),
@@ -474,6 +625,8 @@ impl Mac {
         for indices in &combinations {
             let (mut words, mut memory, mut arguments, mut label) =
                 (vec![], vec![], vec![], String::new());
+            // End of the output region the parameters address.
+            let mut output: Option<u32> = None;
             for ((name, domain), index) in leaf.parameters.iter().zip(indices) {
                 match domain {
                     Domain::Words(values) => {
@@ -489,15 +642,49 @@ impl Mac {
                         arguments.push((*name, Buffer::new(INPUT, bytes).into()));
                         label.push_str(&format!("-{bytes:02x?}"));
                     }
+                    Domain::Output {
+                        offset,
+                        length,
+                        nullable,
+                    } => {
+                        let address = if *nullable && *index == 0 {
+                            0
+                        } else {
+                            OUTPUT + offset
+                        };
+                        words.push(address);
+                        arguments.push((*name, Arg::Word(Some(i64::from(address)))));
+                        output = Some(output.unwrap_or(0).max(offset + length));
+                        label.push_str(&format!("-{address:x}"));
+                    }
                 }
             }
+            let (output_memory, observe) = match output {
+                Some(length) => (
+                    vec![filled(OUTPUT, length, OUTPUT_FILL)?],
+                    vec![selection(OUTPUT, length)],
+                ),
+                None => (vec![], vec![]),
+            };
+            let (vendor_words, mut vendor_memory) = match leaf.vendor_abi {
+                Some(abi) => {
+                    let (vendor_words, objects) = abi(&words);
+                    let objects = objects
+                        .iter()
+                        .map(|(address, bytes)| known(*address, bytes.len() as u32, bytes))
+                        .collect::<Result<Vec<_>>>()?;
+                    (vendor_words, objects)
+                }
+                None => (words.clone(), memory.clone()),
+            };
+            vendor_memory.extend(output_memory.clone());
             for fill in LEAF_FILLS {
                 let mut vendor = direct(
-                    self.roots[leaf.vendor],
-                    &words,
-                    memory.clone(),
+                    self.vendor_entry(leaf)?,
+                    &vendor_words,
+                    vendor_memory.clone(),
                     vec![radio_aperture(fill)],
-                    vec![],
+                    observe.clone(),
                 );
                 if let Some(callee) = leaf.prefix_until {
                     vendor.goal = ExecutionGoal::ObserveCall {
@@ -516,15 +703,16 @@ impl Mac {
                     leaf.probe,
                     arguments.clone(),
                     vec![radio_aperture(fill)],
-                    vec![],
+                    observe.clone(),
                 )?;
+                production.memory.extend(output_memory.clone());
                 production.arguments.resize(8, Some(0));
                 let mut row = case(
                     format!("{}{label}-{fill:02x}", leaf.vendor),
                     vendor,
                     Some(production),
                     SessionReset::Cold,
-                    false,
+                    output.is_some(),
                 );
                 row.stack_fill = Some(fill);
                 let relation = row.relation.as_mut().unwrap();
@@ -577,6 +765,6 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
 pub fn claims() -> Vec<(&'static str, &'static str, &'static str)> {
     LEAVES
         .iter()
-        .map(|l| ("archive", l.vendor, l.probe))
+        .map(|l| (if l.rom { "rom" } else { "archive" }, l.vendor, l.probe))
         .collect()
 }

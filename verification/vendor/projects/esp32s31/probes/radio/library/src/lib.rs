@@ -495,8 +495,16 @@ oer_probe_macros::probe! {
         queue: u32,
         aifsn: u32,
         contention_window: u32,
-        interface: oer_esp32s31_hal::types::MacInterface,
+        interface: u32,
     ) -> u32 {
+        use oer_esp32s31_hal::types::MacInterface;
+        let interface = match interface {
+            0 => MacInterface::Station,
+            1 => MacInterface::AccessPoint,
+            2 => MacInterface::Context2,
+            3 => MacInterface::Context3,
+            _ => panic!("verification MAC interface is out of range"),
+        };
         // The vendor side decodes these semantic arguments from its pointer-rich
         // ABI object. The Rust probe receives the reviewed projection directly;
         // every case keeps both representations and exact MMIO comparison proves

@@ -38,6 +38,12 @@ pub struct Decision {
 /// Reviewed unobserved lines.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "claim of the validation-only radio owner capability in the isolated probe \
+            image, which carries no data the leaf reads; the leaf's register effects and return \
+            compare",
+        places: &[("hal/src/validation.rs", "owner()")],
+    },
+    Decision {
         reason: "device-ordering fences the MAC and power event clears and the ordinary \
             transmit publication add around their register edge: each reviewed contract \
             requires exactly that many, counted but not paired with a vendor effect",

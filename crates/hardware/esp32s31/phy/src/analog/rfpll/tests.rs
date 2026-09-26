@@ -87,11 +87,11 @@ fn complete_cap_candidate(transition: &mut RfpllFrequencyTransition, status: u8)
 fn sdm_image_matches_the_actual_xtal_duty_request() {
     assert_eq!(
         calculate_rfpll_sdm(0x983, 0x31, 0).bytes(),
-        [0x05, 0xaa, 0x2a, 0x31, 0x00]
+        [0x05, 0xaa, 0x2a, 0x31]
     );
     assert_eq!(
         calculate_rfpll_sdm(0x0fa1, 1, 7).bytes(),
-        [0x01, 0xe8, 0x30, 0x3b, 0x00]
+        [0x01, 0xe8, 0x30, 0x3b]
     );
 }
 

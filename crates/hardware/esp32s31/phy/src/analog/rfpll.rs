@@ -30,18 +30,21 @@ use crate::analog::i2c::{PhyI2cAddress, PhyI2cField, analog_registers};
 const LOCK_ATTEMPTS: u8 = 100;
 const CAP_SEARCH_LIMIT: u8 = 10;
 
+/// SDM bytes `phy_write_rfpll_sdm` programs, least significant first. The ROM
+/// also stores bit 27 into a fifth byte of its caller's scratch buffer, which
+/// neither `phy_write_rfpll_sdm` nor any caller reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RfpllSdmImage {
-    bytes: [u8; 5],
+    bytes: [u8; 4],
 }
 
 impl RfpllSdmImage {
-    pub const fn bytes(self) -> [u8; 5] {
+    pub const fn bytes(self) -> [u8; 4] {
         self.bytes
     }
 }
 
-/// Exact stateless body of rev0 ROM `phy_rfpll_set_freq`.
+/// Stateless body of rev0 ROM `phy_rfpll_set_freq`, less its unread fifth byte.
 pub const fn calculate_rfpll_sdm(
     frequency_code: u16,
     crystal_selector: u8,
@@ -72,7 +75,6 @@ pub const fn calculate_rfpll_sdm(
             (encoded >> 3) as u8,
             (encoded >> 11) as u8,
             (encoded >> 19) as u8,
-            ((encoded >> 27) & 1) as u8,
         ],
     }
 }

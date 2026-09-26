@@ -47,6 +47,12 @@ only current scheduler function without an initial counterpart,
 | `r_btdm_sched_check_overlap_in_list` | `r_sym_bt_FovcDCPDYkKMaCv7y4Wb` | identical |
 | `r_btdm_sched_remove_unshareable_entries` | `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` | identical |
 | `r_btdm_sched_rm_item_directly` | `r_sym_bt_hddDtuOCoB0U4KYRErRq` | identical |
+| `r_btdm_sched_delete_from_list` | `r_sym_bt_KmzLfKJ5UUi7zkqz1Nwn` | changed |
+| `r_btdm_sched_delete_specified_items` | `r_sym_bt_qkNMymdnaJnYUfzpKgEp` | identical |
+| `r_btdm_sched_search_deleted_items` | `r_sym_bt_1Q7VVJH4siSgF2fbAf3f` | changed |
+| `r_btdm_sched_skip_specified_sch` | `r_sym_bt_DkrQYQcoyzIHdYi0CzWE` | identical |
+| `r_btdm_sched_stop` | `r_sym_bt_74l62ZLsZuXg67pPHSd7` | changed |
+| `r_btdm_hal_link_skip_specified_tl` | `r_sym_bt_t4aeyhcVrKTNMSlq45XR` | identical |
 | `r_btdm_sched_pick_finished_items` | `r_sym_bt_M9nG353V0svWrv1l1zGw` | identical |
 | `r_btdm_sched_run` | `r_sym_bt_PVKilXLQPu1BjRkm4C6O` | changed |
 | `r_btdm_sched_get_hw_list_header` / `set_hw_list_header` | `r_sym_bt_6wSHUtNRioHeB7CKjVJA` / `r_sym_bt_8m3cRMNRZNfaJ7qVvayk` | identical |
@@ -87,6 +93,7 @@ replace, the role-specific item layouts in the role references.
 | Offset | Meaning in list code |
 | --- | --- |
 | `+0x00` bits 19:0 | Hardware next link. `reset_new_item` clears it together with bit 25 |
+| `+0x00` bit 25 | Set on every deleted, skipped item, and on a preempted item when lock-modify is enabled |
 | `+0x00` bit 24 | Marks the item that the merge reports to its optional first-marked output |
 | `+0x00` bit 22 | When clear, a completed item must not start after the current list head |
 | `+0x18` bits 3:0 | Priority nibble (not consulted on any reachable conflict path) |
@@ -96,7 +103,7 @@ replace, the role-specific item layouts in the role references.
 | `+0x4d` | Item kind; kind 2 is a background item handled by a separate path |
 | `+0x4e` | Halfword flags. Merge clears the low byte; reset sets bit 0 and clears bits 10:8 |
 | `+0x4f` bit 3 | Overlap already resolved; merge inserts by time without removing entries |
-| `+0x4f` bits 2:1 | Set to `0b11` when the item is preempted |
+| `+0x4f` bits 2:1 | Set to `0b11` when the item is preempted; bit 1 alone marks a deleted item |
 | `+0x50` | Previous item in its list, and the caller's insertion hint |
 | `+0x54` | Software link for a chain of new items and for the completion queue |
 
@@ -246,6 +253,57 @@ whose hardware index is set in the mask:
 Queued items are then recycled through their `+0x58` callback, as described in
 [Bluetooth interrupts](bluetooth-interrupt-runtime.md).
 
+## Cancellation
+
+`r_btdm_sched_search_deleted_items(start, predicate, argument)` walks the
+hardware links from `start`. A positive predicate result adds the item to a
+chain linked through `+0x54`, zero skips it and a negative result stops the
+walk. The `sched_txn` delete-by-type, by-state-machine and caller-selection
+functions build such a chain and pass it to `r_btdm_sched_delete_from_list`.
+
+`r_btdm_sched_delete_from_list(list, index, chain)` first calls an external
+sleep-path function. Without a chain it empties the whole list: head, tail and
+current item are cleared. With BUSY clear the hardware head is cleared
+directly. With BUSY set it issues execution modify on the list mask with the
+mode flag set, clears the hardware head and then clears modify START. With a
+chain it calls `r_btdm_sched_delete_specified_items`.
+
+`r_btdm_sched_delete_specified_items(list, index, chain)` has two phases:
+
+1. software unlink: every chained item gets `+0x00` bit 25 and `+0x4f` bit 1
+   and is removed from the list's links, head, tail and current item. Its own
+   hardware next link is kept, so hardware that already holds it can still
+   follow the chain;
+2. for a list with a hardware index:
+   - with BUSY clear, the hardware head is republished from the software head
+     unless sleep policy is enabled;
+   - with BUSY set, it waits for idle lock and modify engines. When the
+     environment enables lock-modify it opens a hold: it waits for
+     lock-modify START to clear, writes the list index to `0x2010_136c` bits
+     7:4, writes `0x80` to `0x2010_1058`, sets `0x2010_1204` bit 0 and waits
+     while BUSY for `0x2010_1324` bit 0, then while BUSY for `0x2010_1208`
+     bit 0 to clear;
+   - each chained item that has not executed and does not start after the
+     current hardware head is passed to `r_btdm_hal_link_skip_specified_tl`.
+     Result 0 is treated as impossible, and results 2 and 4 end the loop;
+   - the hold is released by clearing `0x2010_1204` bit 0.
+
+   It then notifies the recycle path.
+
+`r_btdm_hal_link_skip_specified_tl(index, item)` writes `0x2010_10ec` with
+bit 31 START, the list index in bits 23:20 and the compressed item in bits
+19:0. It waits while BUSY and START are both set. It returns bits 29:28 of the
+register, or 4 when BUSY cleared first, and then clears the register.
+
+`r_btdm_sched_skip_specified_sch(items, index, count)` sets bit 25 on an array
+of items, skips them one by one with the same loop rule and, when
+lock-modify is enabled, performs the same hold as a closing pulse.
+
+`r_btdm_sched_stop` returns when BUSY is clear. Otherwise it disables the
+dynamic interrupts, publishes broker event 3, waits for idle lock and modify
+engines, writes 1 to `0x2010_1004` and asserts if BUSY is still set after
+65536 polls.
+
 ## Open contracts
 
 The bodies above do not establish:
@@ -259,6 +317,8 @@ The bodies above do not establish:
 - the meaning of item `+0x00` bit 22, of `SCHEDULER_STATE` bit 29 and of the
   sleep-timer start source;
 - why insertion begin skips locking when sleep policy is disabled;
-- cancellation of live items (`r_btdm_sched_delete_*`,
-  `r_btdm_sched_skip_specified_sch`, `r_btdm_sched_stop`) and the background
-  list.
+- the effect of the skip request, the hold at `0x2010_1204` and the meaning
+  of the skip results 1 to 3;
+- whether hardware reads item `+0x00` bit 25 as a skip marker;
+- the sleep-path functions called by insertion and deletion, and the
+  background list.

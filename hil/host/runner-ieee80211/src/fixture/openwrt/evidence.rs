@@ -321,7 +321,8 @@ fn snapshot(
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
         ),
         None => format!(
-            "mac=$(ip neigh show {target} | awk '{{for (i = 1; i < NF; i++) if ($i == \"lladdr\") {{print $(i + 1); exit}}}}'); \
+            "ping -c 1 -W 1 {target} >/dev/null 2>&1 || true; \
+             mac=$(ip neigh show {target} | awk '{{for (i = 1; i < NF; i++) if ($i == \"lladdr\") {{print $(i + 1); exit}}}}'); \
              if test -z \"$mac\"; then \
                set -- $(iw dev {} station dump | awk '/^Station / {{print $2}}'); \
                test \"$#\" -eq 1; mac=\"$1\"; \
@@ -420,6 +421,7 @@ fn parse_mac(value: &str) -> Result<[u8; 6]> {
 pub fn resolve_station_mac(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<String> {
     let script = format!(
         "set -eu; \
+         ping -c 1 -W 1 {target} >/dev/null 2>&1 || true; \
          mac=$(ip neigh show {target} | awk '{{for (i = 1; i < NF; i++) if ($i == \"lladdr\") {{print $(i + 1); exit}}}}'); \
          if test -z \"$mac\"; then \
            set -- $(iw dev {} station dump | awk '/^Station / {{print $2}}'); \

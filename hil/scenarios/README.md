@@ -119,15 +119,18 @@ control frames and data sent to the station fixture AP; the target is the one
 station other than the laptop peer that sends that data. It publishes:
 
 - `wifi.protection.rts-cts-before-data`: basis points of the target's data
-  PPDUs that an RTS (target to AP) and CTS (to the target) immediately
-  precede, at least the declared percentage; the remainder bounds observer
-  capture loss.
+  PPDUs immediately preceded, inside its NAV, by the target's RTS or by a CTS
+  to the target, at least the declared percentage. Events are ordered by
+  TSFT, because the observer delivers control frames and A-MPDUs on
+  different paths and stamps one MPDU per A-MPDU. A CTS to the target answers
+  only its RTS, so either observed half shows the exchange; the observer
+  loses single control frames, and the remainder bounds that loss.
 - `wifi.protection.control-rate`: target RTS frames whose PHY differs from
   the required control rate (DSSS/HR under ERP protection, OFDM otherwise),
   exactly zero.
-- `wifi.protection.nav-covers-exchange`: protected PPDUs whose RTS NAV, from
-  the RTS TSFT plus its airtime and Duration, ends before the AP's BlockAck or
-  Ack ends, exactly zero.
+- `wifi.protection.nav-covers-exchange`: protected PPDUs with an observed
+  RTS whose NAV, from the RTS TSFT plus its airtime and Duration, ends before
+  the AP's BlockAck or Ack ends, exactly zero.
 
 Fewer than 50 observed PPDUs, or none with an evaluable NAV, is an
 insufficient observation rather than a pass.

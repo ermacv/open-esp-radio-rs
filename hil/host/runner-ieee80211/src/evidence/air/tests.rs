@@ -15,7 +15,7 @@ pub(crate) fn mac(value: &str) -> MacAddress {
 
 #[test]
 fn decodes_every_field_of_a_record() {
-    let text = "100.0000125\t0x0028\t02:00:00:00:00:01\t02:00:00:00:00:02\t02:00:00:00:00:03\t44\t12\t0\t5\tTrue\t2\t7\t135\t\t\t77\tFalse\t\t\t0a0b\n";
+    let text = "100.0000125\t0x0028\t02:00:00:00:00:01\t02:00:00:00:00:02\t02:00:00:00:00:03\t44\t12\t0\t5\tTrue\t2\t7\t135\t\t\t77\tFalse\t9\t\t\t0a0b\n";
     let frames = parse(text, Payload::Include).unwrap();
     assert_eq!(
         frames,
@@ -36,6 +36,7 @@ fn decodes_every_field_of_a_record() {
             block_ack: None,
             mac_time_micros: Some(77),
             short_preamble: Some(false),
+            ampdu_reference: Some(9),
             erp_information: None,
             ht_protection: None,
             payload: Some(vec![0x0a, 0x0b]),
@@ -46,9 +47,9 @@ fn decodes_every_field_of_a_record() {
 
 #[test]
 fn control_frames_keep_absent_fields_absent() {
-    let text = "5.5\t0x001c\t\t02:00:00:00:00:01\t\t60\t\t\t\t0\t\t4\t5.5\t\t\t\t\t\t\n\
-                6\t0x0019\t02:00:00:00:00:02\t02:00:00:00:00:01\t\t0\t\t\t\t0\t\t7\t24\t4090\t7f00000000000000\t\t\t\t\n\
-                7\t0x0008\t02:00:00:00:00:02\tff:ff:ff:ff:ff:ff\t\t0\t9\t0\t\t0\t\t4\t1\t\t\t\t\t0x02\t0x0003\n";
+    let text = "5.5\t0x001c\t\t02:00:00:00:00:01\t\t60\t\t\t\t0\t\t4\t5.5\t\t\t\t\t\t\t\n\
+                6\t0x0019\t02:00:00:00:00:02\t02:00:00:00:00:01\t\t0\t\t\t\t0\t\t7\t24\t4090\t7f00000000000000\t\t\t\t\t\n\
+                7\t0x0008\t02:00:00:00:00:02\tff:ff:ff:ff:ff:ff\t\t0\t9\t0\t\t0\t\t4\t1\t\t\t\t\t\t0x02\t0x0003\n";
     let frames = parse(text, Payload::Omit).unwrap();
     assert_eq!(frames[0].kind, FrameKind::CTS);
     assert_eq!(frames[0].transmitter, None);
@@ -70,7 +71,7 @@ fn control_frames_keep_absent_fields_absent() {
 #[test]
 fn malformed_records_fail_the_capture() {
     let valid =
-        "1\t0x0004\t02:00:00:00:00:01\tff:ff:ff:ff:ff:ff\t\t0\t3\t0\t\tFalse\t\t6\t6\t\t\t\t\t\t";
+        "1\t0x0004\t02:00:00:00:00:01\tff:ff:ff:ff:ff:ff\t\t0\t3\t0\t\tFalse\t\t6\t6\t\t\t\t\t\t\t";
     parse(valid, Payload::Omit).unwrap();
     for broken in [
         valid.replacen("1\t", "NaN\t", 1),

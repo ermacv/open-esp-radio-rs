@@ -42,15 +42,19 @@ fn exchange(
         let rts_airtime = control_airtime(&rts, RTS_BYTES).unwrap();
         frames.push(rts);
         time += rts_airtime + 10;
-        frames.push(control(
-            at(time, FrameKind::CTS, None, TARGET),
-            phy,
-            rate_kbps,
-        ));
+        let mut cts = control(at(time, FrameKind::CTS, None, TARGET), phy, rate_kbps);
+        cts.duration_micros =
+            Some(duration.saturating_sub(u16::try_from(rts_airtime + 10).unwrap()));
+        frames.push(cts);
         time += control_airtime(&frames[1], ACK_BYTES).unwrap() + 10;
     }
-    frames.push(at(time, FrameKind(0x28), Some(TARGET), AP));
-    frames.push(at(time, FrameKind(0x28), Some(TARGET), AP));
+    // The observer stamps TSFT on one MPDU of the A-MPDU.
+    let mut subframe = at(time, FrameKind(0x28), Some(TARGET), AP);
+    subframe.mac_time_micros = None;
+    subframe.ampdu_reference = Some(u32::try_from(start).unwrap());
+    frames.push(subframe.clone());
+    subframe.mac_time_micros = Some(time);
+    frames.push(subframe);
     time += 300;
     frames.push(control(
         at(time, FrameKind::BLOCK_ACK, Some(AP), TARGET),
@@ -91,6 +95,20 @@ fn unprotected_ppdus_wrong_rates_and_short_nav_are_counted() {
 }
 
 #[test]
+fn either_observed_half_of_an_exchange_shows_protection() {
+    let mut lost_cts = exchange(0, true, AirPhy::Ofdm, 24_000, 600);
+    lost_cts.remove(1);
+    let mut lost_rts = exchange(10_000, true, AirPhy::Ofdm, 24_000, 600);
+    lost_rts.remove(0);
+    let frames = [lost_cts, lost_rts].concat();
+    let evidence = analyze(&frames, AP, None, Expectation { erp: false }).unwrap();
+    assert_eq!((evidence.data_ppdus, evidence.protected_ppdus), (2, 2));
+    assert_eq!((evidence.cts_unobserved, evidence.rts_unobserved), (1, 1));
+    // Only the exchange whose RTS was observed has a judged NAV.
+    assert_eq!(evidence.nav_evaluated, 1);
+}
+
+#[test]
 fn the_target_is_the_dominant_sender_other_than_the_peer() {
     let mut frames = exchange(0, true, AirPhy::Ofdm, 24_000, 400);
     for index in 0..5 {
@@ -101,7 +119,7 @@ fn the_target_is_the_dominant_sender_other_than_the_peer() {
     assert_eq!(evidence.target.as_deref(), Some("02:00:00:00:00:10"));
     assert!(analyze(&[], AP, None, Expectation { erp: false }).is_err());
     let mut untimed = frames.clone();
-    untimed[0].mac_time_micros = None;
+    untimed[1].mac_time_micros = None;
     assert!(analyze(&untimed, AP, Some(LAPTOP), Expectation { erp: false }).is_err());
 }
 

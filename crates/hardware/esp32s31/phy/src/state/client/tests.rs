@@ -572,6 +572,27 @@ fn complete_power_child(
                 } => crate::tracking::power::PhyTxPowerTrackingCompletion::BluetoothIeee802154GainRegenerated {
                     gain_base,
                 },
+                crate::tracking::power::PhyTxPowerTrackingAction::ForceTxRx(action) => {
+                    crate::tracking::power::PhyTxPowerTrackingCompletion::ForceTxRx(
+                        match action {
+                            crate::analog::pbus::PhyForceTxRxAction::Configure { enabled, phase } => {
+                                crate::analog::pbus::PhyForceTxRxCompletion::Configured { enabled, phase }
+                            }
+                            crate::analog::pbus::PhyForceTxRxAction::DelayMicros {
+                                enabled,
+                                completed_phase,
+                                micros,
+                            } => crate::analog::pbus::PhyForceTxRxCompletion::DelayElapsed {
+                                enabled,
+                                completed_phase,
+                                micros,
+                            },
+                            crate::analog::pbus::PhyForceTxRxAction::Complete { .. } => {
+                                unreachable!()
+                            }
+                        },
+                    )
+                }
                 crate::tracking::power::PhyTxPowerTrackingAction::Complete(_) => {
                     return child.commit().unwrap();
                 }

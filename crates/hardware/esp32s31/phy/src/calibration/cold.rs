@@ -4,13 +4,15 @@
 //! module contains only the hardware-operation graph and its bound external
 //! completions.
 
-/// Return the exact pinned ESP32-S31 RF-data record count.
+/// Return the exact pinned ESP32-S31 RF-data record size in bytes.
 ///
-/// The compiled vendor archive returns this independent value verbatim.
+/// The compiled vendor archive's `phy_get_rfdata_num` returns this value
+/// verbatim: a 12-byte header, the 492-byte parameter object and a 4-byte
+/// trailer.
 #[inline]
 #[cfg(feature = "validation-probes")]
 pub const fn phy_get_rfdata_num() -> u32 {
-    0x20c
+    0x1fc
 }
 
 /// Required pinned `libphy.a::phy_internal_delay` vendor-ABI no-op leaf.

@@ -71,7 +71,10 @@ fn thermal_conditions_and_scheduler_deadline_are_independent() {
         },
         state.calibration_tracking_parameters(None),
     );
-    assert_eq!(transition.action(), PhyCalibrationTrackingAction::ClearPbus);
+    assert_eq!(
+        transition.action(),
+        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true }
+    );
 }
 #[test]
 fn inactive_inhibited_and_shared_clients_do_not_invent_work() {

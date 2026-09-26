@@ -7,6 +7,7 @@
 //! no radio or retained-state effect, so it is deliberately absent.
 
 use crate::{
+    analog::pbus::{PhyForceTxRxAction, PhyForceTxRxCompletion, PhyForceTxRxTransition},
     calibration::math::{absolute_temperature, saturate_signed},
     tracking::parameters::{PhyCalibrationTrackClass, temperature_to_tracking_power},
 };
@@ -21,6 +22,9 @@ pub struct PhyTxPowerTrackingParameters {
     pub wifi_gain_base: i8,
     pub bluetooth_ieee802154_gain_base: i8,
     pub relaxed_threshold: bool,
+    /// Vendor `tx_gain_skip_publication`: the Wi-Fi gain child returns before
+    /// its force-TX/RX pair and gain-memory publication.
+    pub wifi_gain_publication_skipped: bool,
 }
 
 /// One invocation of the shared Wi-Fi or Bluetooth/IEEE 802.15.4 parent.
@@ -102,15 +106,25 @@ pub struct PhyTxPowerTrackingOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxPowerTrackingAction {
-    SetBbpllCalibration { enabled: bool },
-    RegenerateWifiGain { channel: u16, gain_base: i8 },
-    RegenerateBluetoothIeee802154Gain { gain_base: i8 },
+    SetBbpllCalibration {
+        enabled: bool,
+    },
+    /// One edge of the gain child's outermost force-TX/RX pair.
+    ForceTxRx(PhyForceTxRxAction),
+    RegenerateWifiGain {
+        channel: u16,
+        gain_base: i8,
+    },
+    RegenerateBluetoothIeee802154Gain {
+        gain_base: i8,
+    },
     Complete(PhyTxPowerTrackingOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxPowerTrackingCompletion {
     BbpllCalibrationSet { enabled: bool },
+    ForceTxRx(PhyForceTxRxCompletion),
     WifiGainRegenerated { channel: u16, gain_base: i8 },
     BluetoothIeee802154GainRegenerated { gain_base: i8 },
 }
@@ -124,7 +138,9 @@ pub enum PhyTxPowerTrackingTransitionError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhyTxPowerTrackingStep {
     BbpllOn,
+    ForceTxRx(PhyForceTxRxTransition),
     RegenerateGain,
+    ReleaseTxRx(PhyForceTxRxTransition),
     BbpllOff,
     Complete,
 }
@@ -133,6 +149,10 @@ enum PhyTxPowerTrackingStep {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyTxPowerTrackingTransition {
     request: PhyTxPowerTrackingRequest,
+    /// The gain child publishes and therefore brackets itself with the
+    /// outermost `phy_force_txrx_off_new` pair; power tracking runs at
+    /// nesting level zero.
+    publishes: bool,
     decision: PhyTxPowerTrackingDecision,
     outcome: PhyTxPowerTrackingOutcome,
     step: PhyTxPowerTrackingStep,
@@ -170,6 +190,8 @@ impl PhyTxPowerTrackingTransition {
 
         Self {
             request,
+            publishes: !(matches!(request.class, PhyCalibrationTrackClass::Wifi)
+                && parameters.wifi_gain_publication_skipped),
             decision,
             outcome,
             step,
@@ -185,6 +207,10 @@ impl PhyTxPowerTrackingTransition {
         match self.step {
             PhyTxPowerTrackingStep::BbpllOn => {
                 PhyTxPowerTrackingAction::SetBbpllCalibration { enabled: true }
+            }
+            PhyTxPowerTrackingStep::ForceTxRx(child)
+            | PhyTxPowerTrackingStep::ReleaseTxRx(child) => {
+                PhyTxPowerTrackingAction::ForceTxRx(child.action())
             }
             PhyTxPowerTrackingStep::RegenerateGain => match self.request.class {
                 PhyCalibrationTrackClass::Wifi => PhyTxPowerTrackingAction::RegenerateWifiGain {
@@ -204,6 +230,14 @@ impl PhyTxPowerTrackingTransition {
         }
     }
 
+    const fn after_gain(&self) -> PhyTxPowerTrackingStep {
+        if self.publishes {
+            PhyTxPowerTrackingStep::ReleaseTxRx(PhyForceTxRxTransition::new(false))
+        } else {
+            PhyTxPowerTrackingStep::BbpllOff
+        }
+    }
+
     pub fn advance(
         &mut self,
         completion: PhyTxPowerTrackingCompletion,
@@ -212,7 +246,39 @@ impl PhyTxPowerTrackingTransition {
             (
                 PhyTxPowerTrackingStep::BbpllOn,
                 PhyTxPowerTrackingCompletion::BbpllCalibrationSet { enabled: true },
-            ) => PhyTxPowerTrackingStep::RegenerateGain,
+            ) => {
+                if self.publishes {
+                    PhyTxPowerTrackingStep::ForceTxRx(PhyForceTxRxTransition::new(true))
+                } else {
+                    PhyTxPowerTrackingStep::RegenerateGain
+                }
+            }
+            (
+                PhyTxPowerTrackingStep::ForceTxRx(mut child),
+                PhyTxPowerTrackingCompletion::ForceTxRx(completion),
+            ) => {
+                child
+                    .advance(completion)
+                    .map_err(|_| PhyTxPowerTrackingTransitionError::WrongCompletion)?;
+                if matches!(child.action(), PhyForceTxRxAction::Complete { .. }) {
+                    PhyTxPowerTrackingStep::RegenerateGain
+                } else {
+                    PhyTxPowerTrackingStep::ForceTxRx(child)
+                }
+            }
+            (
+                PhyTxPowerTrackingStep::ReleaseTxRx(mut child),
+                PhyTxPowerTrackingCompletion::ForceTxRx(completion),
+            ) => {
+                child
+                    .advance(completion)
+                    .map_err(|_| PhyTxPowerTrackingTransitionError::WrongCompletion)?;
+                if matches!(child.action(), PhyForceTxRxAction::Complete { .. }) {
+                    PhyTxPowerTrackingStep::BbpllOff
+                } else {
+                    PhyTxPowerTrackingStep::ReleaseTxRx(child)
+                }
+            }
             (
                 PhyTxPowerTrackingStep::RegenerateGain,
                 PhyTxPowerTrackingCompletion::WifiGainRegenerated { channel, gain_base },
@@ -220,7 +286,7 @@ impl PhyTxPowerTrackingTransition {
                 && channel == self.request.wifi_channel
                 && gain_base == self.decision.gain_base =>
             {
-                PhyTxPowerTrackingStep::BbpllOff
+                self.after_gain()
             }
             (
                 PhyTxPowerTrackingStep::RegenerateGain,
@@ -228,7 +294,7 @@ impl PhyTxPowerTrackingTransition {
             ) if self.request.class == PhyCalibrationTrackClass::BluetoothIeee802154
                 && gain_base == self.decision.gain_base =>
             {
-                PhyTxPowerTrackingStep::BbpllOff
+                self.after_gain()
             }
             (
                 PhyTxPowerTrackingStep::BbpllOff,
@@ -253,6 +319,7 @@ enum PhyTxPowerTrackingExternalOperation {
     SetBbpllCalibration {
         enabled: bool,
     },
+    ForceTxRx(PhyForceTxRxAction),
     RegenerateWifiGain {
         channel: u16,
         gain_base: i8,
@@ -284,6 +351,13 @@ impl PhyTxPowerTrackingExternalBinding {
             PhyTxPowerTrackingAction::SetBbpllCalibration { enabled } => {
                 PhyTxPowerTrackingExternalOperation::SetBbpllCalibration { enabled }
             }
+            PhyTxPowerTrackingAction::ForceTxRx(
+                action @ (PhyForceTxRxAction::Configure { .. }
+                | PhyForceTxRxAction::DelayMicros { .. }),
+            ) => PhyTxPowerTrackingExternalOperation::ForceTxRx(action),
+            PhyTxPowerTrackingAction::ForceTxRx(PhyForceTxRxAction::Complete { .. }) => {
+                return Err(PhyTxPowerTrackingBindingError::UnsupportedAction);
+            }
             PhyTxPowerTrackingAction::RegenerateWifiGain { channel, gain_base } => {
                 PhyTxPowerTrackingExternalOperation::RegenerateWifiGain {
                     channel,
@@ -310,6 +384,9 @@ impl PhyTxPowerTrackingExternalBinding {
             PhyTxPowerTrackingExternalOperation::SetBbpllCalibration { enabled } => {
                 PhyTxPowerTrackingAction::SetBbpllCalibration { enabled }
             }
+            PhyTxPowerTrackingExternalOperation::ForceTxRx(action) => {
+                PhyTxPowerTrackingAction::ForceTxRx(action)
+            }
             PhyTxPowerTrackingExternalOperation::RegenerateWifiGain {
                 channel, gain_base, ..
             } => PhyTxPowerTrackingAction::RegenerateWifiGain { channel, gain_base },
@@ -317,6 +394,18 @@ impl PhyTxPowerTrackingExternalBinding {
                 gain_base,
                 ..
             } => PhyTxPowerTrackingAction::RegenerateBluetoothIeee802154Gain { gain_base },
+        }
+    }
+
+    /// The settle a force-TX/RX timer edge requests; the caller's short-delay
+    /// backend must elapse it before [`Self::execute_target`] completes it.
+    pub const fn delay_micros(&self) -> Option<u32> {
+        match self.operation {
+            PhyTxPowerTrackingExternalOperation::ForceTxRx(PhyForceTxRxAction::DelayMicros {
+                micros,
+                ..
+            }) => Some(micros),
+            _ => None,
         }
     }
 
@@ -331,6 +420,28 @@ impl PhyTxPowerTrackingExternalBinding {
                 oer_esp32s31_hal::phy::i2c::configure_bbpll_calibration(registers, enabled);
                 PhyTxPowerTrackingCompletion::BbpllCalibrationSet { enabled }
             }
+            PhyTxPowerTrackingExternalOperation::ForceTxRx(PhyForceTxRxAction::Configure {
+                enabled,
+                phase,
+            }) => {
+                oer_esp32s31_hal::phy::pbus::configure_force_txrx(registers, enabled, phase);
+                PhyTxPowerTrackingCompletion::ForceTxRx(PhyForceTxRxCompletion::Configured {
+                    enabled,
+                    phase,
+                })
+            }
+            PhyTxPowerTrackingExternalOperation::ForceTxRx(PhyForceTxRxAction::DelayMicros {
+                enabled,
+                completed_phase,
+                micros,
+            }) => PhyTxPowerTrackingCompletion::ForceTxRx(PhyForceTxRxCompletion::DelayElapsed {
+                enabled,
+                completed_phase,
+                micros,
+            }),
+            PhyTxPowerTrackingExternalOperation::ForceTxRx(PhyForceTxRxAction::Complete {
+                ..
+            }) => unreachable!(),
             PhyTxPowerTrackingExternalOperation::RegenerateWifiGain {
                 channel,
                 gain_base,

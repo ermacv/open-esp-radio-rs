@@ -17,9 +17,8 @@ const RX_GAIN_OUTCOME: crate::rx::gain::PhyRxGainInitOutcome =
         dc: Some(crate::rx::gain_calibration::PhyRxGainDcOutcome {
             quality: crate::rx::gain_calibration::PhyRxGainDcQuality::EMPTY,
             wifi_index_dc: [[0; 2]; 8],
-            wifi_dc_base: [0; 2],
+            wifi_fine_dc: [[0; 2]; crate::rx::gain_calibration::FINE_CODES],
             shared_index_dc: [[0; 2]; 11],
-            rxbb_dc_adjustments: [[0; 2]; 6],
         }),
         generated_tables: true,
         wifi_last_index: 69,
@@ -117,12 +116,14 @@ fn completion(action: PhyCalibrationTrackingAction) -> PhyCalibrationTrackingCom
             PhyCalibrationTrackingCompletion::TxGainPublished(PhyCalibrationTxGainCompletion {
                 class: PhyCalibrationTrackClass::Wifi,
                 channel: Some(channel),
+                published: true,
             })
         }
         PhyCalibrationTrackingAction::PublishBluetoothIeee802154TxGain => {
             PhyCalibrationTrackingCompletion::TxGainPublished(PhyCalibrationTxGainCompletion {
                 class: PhyCalibrationTrackClass::BluetoothIeee802154,
                 channel: None,
+                published: true,
             })
         }
         PhyCalibrationTrackingAction::EnableMacBaseband => {
@@ -143,7 +144,7 @@ fn run(
 ) -> Vec<PhyCalibrationTrackingAction> {
     let mut transition = PhyCalibrationTrackingTransition::new(request, parameters);
     let mut actions = Vec::new();
-    for _ in 0..32 {
+    for _ in 0..40 {
         let action = transition.action();
         actions.push(action);
         if matches!(
@@ -165,8 +166,12 @@ fn wifi_inclusive_threshold_runs_common_then_wifi_and_restores_every_guard() {
         },
         PARAMETERS,
     );
-    assert_eq!(actions[0], PhyCalibrationTrackingAction::ClearPbus);
-    assert_eq!(actions[1], PhyCalibrationTrackingAction::CalibrateDcode);
+    assert_eq!(
+        actions[0],
+        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true }
+    );
+    assert_eq!(actions[1], PhyCalibrationTrackingAction::ClearPbus);
+    assert_eq!(actions[2], PhyCalibrationTrackingAction::CalibrateDcode);
     assert!(
         actions.contains(&PhyCalibrationTrackingAction::RestoreChipChannel {
             channel: 11,
@@ -287,16 +292,20 @@ fn common_calibration_restores_gain_before_admitting_the_class_branch() {
             );
             assert_eq!(
                 actions[restored_channel + 2],
+                PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false }
+            );
+            assert_eq!(
+                actions[restored_channel + 3],
                 PhyCalibrationTrackingAction::RestoreTxGainCompensation
             );
             if class_due {
                 assert_eq!(
-                    actions[restored_channel + 3],
+                    actions[restored_channel + 4],
                     PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false }
                 );
             } else {
                 assert!(matches!(
-                    actions[restored_channel + 3],
+                    actions[restored_channel + 4],
                     PhyCalibrationTrackingAction::Complete(_)
                 ));
             }
@@ -324,7 +333,10 @@ fn wrong_completion_preserves_action_and_terminal_rejects_more_work() {
         transition.advance(PhyCalibrationTrackingCompletion::MacBasebandEnabled),
         Err(PhyCalibrationTrackingTransitionError::WrongCompletion)
     );
-    assert_eq!(transition.action(), PhyCalibrationTrackingAction::ClearPbus);
+    assert_eq!(
+        transition.action(),
+        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true }
+    );
     while !matches!(
         transition.action(),
         PhyCalibrationTrackingAction::Complete(_)
@@ -464,6 +476,11 @@ fn dcode_parent_proof_starts_the_existing_complete_hardware_graph() {
         PARAMETERS,
     );
     transition
+        .advance(completion(PhyCalibrationTrackingAction::ForceTxRxOff {
+            enabled: true,
+        }))
+        .unwrap();
+    transition
         .advance(completion(PhyCalibrationTrackingAction::ClearPbus))
         .unwrap();
 
@@ -488,6 +505,11 @@ fn dcode_failure_restores_gain_without_publishing_common_progress() {
         PARAMETERS,
     );
     transition
+        .advance(completion(PhyCalibrationTrackingAction::ForceTxRxOff {
+            enabled: true,
+        }))
+        .unwrap();
+    transition
         .advance(completion(PhyCalibrationTrackingAction::ClearPbus))
         .unwrap();
     let failure = crate::analog::dcode::PhyDcodeFailure::Rfpll {
@@ -503,6 +525,10 @@ fn dcode_failure_restores_gain_without_publishing_common_progress() {
             },
         ))
         .unwrap();
+    // The failed common branch still leaves its force-TX/RX level.
+    let release = PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false };
+    assert_eq!(transition.action(), release);
+    transition.advance(completion(release)).unwrap();
     assert_eq!(
         transition.action(),
         PhyCalibrationTrackingAction::RestoreTxGainCompensation
@@ -525,6 +551,7 @@ fn rx_gain_parent_proof_forces_dc_and_tables_through_complete_hardware_graph() {
         PARAMETERS,
     );
     for action in [
+        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
         PhyCalibrationTrackingAction::DisableWifiBaseband,
@@ -545,9 +572,8 @@ fn rx_gain_parent_proof_forces_dc_and_tables_through_complete_hardware_graph() {
             memory: crate::calibration::baseband::PhyRxGainMemoryParameters {
                 parameter_002: 3,
                 wifi_index_dc: [[0; 2]; 8],
-                wifi_dc_base: [0; 2],
+                wifi_fine_dc: [[0; 2]; crate::rx::gain_calibration::FINE_CODES],
                 shared_index_dc: [[0; 2]; 11],
-                rxbb_dc_adjustments: [[0; 2]; 6],
                 wifi_auxiliary: 0,
             },
         })
@@ -572,6 +598,7 @@ fn channel_parent_proof_starts_the_complete_async_hardware_graph() {
         PARAMETERS,
     );
     for action in [
+        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
         PhyCalibrationTrackingAction::DisableWifiBaseband,
@@ -608,6 +635,7 @@ fn restored_channel_temperature_drives_following_class_threshold_and_references(
         },
     );
     for action in [
+        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
         PhyCalibrationTrackingAction::DisableWifiBaseband,
@@ -624,6 +652,11 @@ fn restored_channel_temperature_drives_following_class_threshold_and_references(
         .unwrap();
     transition
         .advance(PhyCalibrationTrackingCompletion::MacBasebandEnabled)
+        .unwrap();
+    transition
+        .advance(completion(PhyCalibrationTrackingAction::ForceTxRxOff {
+            enabled: false,
+        }))
         .unwrap();
     assert_eq!(
         transition.action(),
@@ -658,6 +691,7 @@ fn restored_temperature_can_remove_tx_demand_without_committing_tx_reference() {
         PARAMETERS,
     );
     for action in [
+        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
         PhyCalibrationTrackingAction::DisableWifiBaseband,
@@ -674,6 +708,11 @@ fn restored_temperature_can_remove_tx_demand_without_committing_tx_reference() {
         .unwrap();
     transition
         .advance(PhyCalibrationTrackingCompletion::MacBasebandEnabled)
+        .unwrap();
+    transition
+        .advance(completion(PhyCalibrationTrackingAction::ForceTxRxOff {
+            enabled: false,
+        }))
         .unwrap();
     transition
         .advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored)
@@ -793,6 +832,7 @@ fn class_tx_gain_publication_captures_pending_dco_for_both_radio_banks() {
                 PhyCalibrationTrackClass::BluetoothIeee802154 => PhyCalibrationTrackClass::Wifi,
             },
             channel: None,
+            published: true,
         };
         assert_eq!(
             transition.advance(PhyCalibrationTrackingCompletion::TxGainPublished(wrong)),
@@ -854,6 +894,7 @@ fn rx_gain_failure_restores_gain_without_publishing_common_progress() {
         PARAMETERS,
     );
     for action in [
+        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
         PhyCalibrationTrackingAction::ClearPbus,
         PhyCalibrationTrackingAction::CalibrateDcode,
         PhyCalibrationTrackingAction::DisableWifiBaseband,
@@ -873,6 +914,10 @@ fn rx_gain_failure_restores_gain_without_publishing_common_progress() {
             },
         ))
         .unwrap();
+    // The failed common branch still leaves its force-TX/RX level.
+    let release = PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false };
+    assert_eq!(transition.action(), release);
+    transition.advance(completion(release)).unwrap();
     assert_eq!(
         transition.action(),
         PhyCalibrationTrackingAction::RestoreTxGainCompensation
@@ -1031,6 +1076,10 @@ fn failed_calibration_cannot_publish_partial_results_even_after_cleanup() {
     });
     let before = state.calibration_tracking_parameters(None);
     let mut child = parent.begin_calibration_tracking(&mut state).unwrap();
+    assert_eq!(child.action(), Action::ForceTxRxOff { enabled: true });
+    child
+        .advance(completion(Action::ForceTxRxOff { enabled: true }))
+        .unwrap();
     assert_eq!(child.action(), Action::ClearPbus);
     child
         .advance(Completion::PbusClearCompleted(
@@ -1060,6 +1109,11 @@ fn failed_calibration_cannot_publish_partial_results_even_after_cleanup() {
         .unwrap();
 
     // Cleanup is still pending; the partially completed common branch cannot commit.
+    let mut child = child.commit().unwrap_err();
+    assert_eq!(child.action(), Action::ForceTxRxOff { enabled: false });
+    child
+        .advance(completion(Action::ForceTxRxOff { enabled: false }))
+        .unwrap();
     let mut child = child.commit().unwrap_err();
     assert_eq!(child.action(), Action::RestoreTxGainCompensation);
     assert_eq!(child.state().calibration_tracking_parameters(None), before);
@@ -1266,5 +1320,32 @@ fn each_measurement_branch_disables_wifi_baseband_before_its_children() {
             PhyCalibrationTrackingAction::DisableWifiBaseband,
             PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw: 0 },
         ]
+    );
+}
+
+#[test]
+fn nested_gain_children_force_again_when_leaving_the_transmit_pair_level() {
+    let actions = run(
+        PhyCalibrationTrackingRequest {
+            clients: crate::tracking::parameters::PhyParamTrackRequest::new(true, true),
+        },
+        PARAMETERS,
+    );
+    let force = PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true };
+    for publication in [
+        PhyCalibrationTrackingAction::PublishWifiTxGain { channel: 11 },
+        PhyCalibrationTrackingAction::PublishBluetoothIeee802154TxGain,
+    ] {
+        let index = actions.iter().position(|a| *a == publication).unwrap();
+        assert_eq!(actions[index + 1], force, "{publication:?}");
+    }
+    // Common pair, transmit pair, and one re-force per gain child.
+    assert_eq!(actions.iter().filter(|a| **a == force).count(), 4);
+    assert_eq!(
+        actions
+            .iter()
+            .filter(|a| **a == PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false })
+            .count(),
+        2
     );
 }

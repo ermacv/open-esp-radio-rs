@@ -1,7 +1,8 @@
 //! Rust-owned ESP32-S31 RX gain DC-calibration primitives.
 //!
-//! The control flow is recovered from rev0 ROM
-//! `phy_pbus_rx_dco_cal_1step` at `0x2f82_91ba`, size `0x2f0`.
+//! The one-step control flow is recovered from archive
+//! `phy_pbus_rx_dco_cal_1step_new`; its measurement children are rev0 ROM
+//! `phy_rxdc_est_min` and `phy_dc_iq_est`.
 //! Debug-only `ets_printf` branches are intentionally absent. Hardware
 //! commands, ten-microsecond intervals, and DC/IQ readiness are explicit
 //! caller-driven actions.
@@ -45,11 +46,6 @@ pub struct PhyRxDcCalibrationRequest {
     pub stage: PhyRxDcCalibrationStage,
     pub control: u16,
     pub initial: [u16; 2],
-    /// Low-to-high estimator delta measured before the per-gain search.
-    ///
-    /// ROM `phy_pbus_rx_dco_cal_1step_new` subtracts this pair from every
-    /// baseband-stage observation. Radio-stage searches leave it at zero.
-    pub reference_delta: [i16; 2],
     pub gain_index: u8,
     pub rx_saturation_detected: bool,
 }
@@ -153,31 +149,14 @@ const fn saturate_signed_5(value: i32) -> i32 {
     }
 }
 
-const fn signed_unit(value: i32) -> i32 {
-    if value > 0 {
-        1
-    } else if value < 0 {
-        -1
-    } else {
-        0
-    }
-}
-
-/// Exact non-I/O correction arithmetic from `phy_pbus_rx_dco_cal_1step`.
-pub const fn rx_dc_calibration_correction(delta: i32, low: i32, threshold: i32, shift: u8) -> i32 {
-    let mut correction = if delta.wrapping_abs() >= threshold {
+/// Exact non-I/O correction arithmetic from `phy_pbus_rx_dco_cal_1step_new`:
+/// an observation below the threshold contributes no correction.
+pub const fn rx_dc_calibration_correction(delta: i32, threshold: i32, shift: u8) -> i32 {
+    if delta.wrapping_abs() >= threshold {
         delta >> shift
     } else {
         0
-    };
-    if correction == 0 {
-        correction = if low.wrapping_abs() < 50 {
-            signed_unit(delta)
-        } else {
-            low >> shift
-        };
     }
-    correction
 }
 
 /// Heap-free translation of one complete RX DC-calibration step.
@@ -255,27 +234,19 @@ impl PhyRxDcCalibrationPolicyState {
                 population.max(2) - 2,
             ),
             PhyRxDcCalibrationStage::Baseband => (
-                estimate
-                    .i
-                    .wrapping_sub(self.low.i)
-                    .wrapping_sub(i32::from(request.reference_delta[0])),
-                estimate
-                    .q
-                    .wrapping_sub(self.low.q)
-                    .wrapping_sub(i32::from(request.reference_delta[1])),
+                estimate.i.wrapping_sub(self.low.i),
+                estimate.q.wrapping_sub(self.low.q),
                 estimate.power.max(self.low.power),
                 if request.shared_radio {
-                    3
-                } else if self.iteration >= 2 {
-                    1
+                    SHARED_BASEBAND_SHIFT
                 } else {
-                    0
+                    WIFI_BASEBAND_SHIFT
                 },
             ),
         };
 
-        let mut correction_i = rx_dc_calibration_correction(delta_i, self.low.i, threshold, shift);
-        let mut correction_q = rx_dc_calibration_correction(delta_q, self.low.q, threshold, shift);
+        let mut correction_i = rx_dc_calibration_correction(delta_i, threshold, shift);
+        let mut correction_q = rx_dc_calibration_correction(delta_q, threshold, shift);
         if request.stage == PhyRxDcCalibrationStage::Baseband {
             if power >= 45 {
                 correction_i = 0;
@@ -325,17 +296,20 @@ impl PhyRxDcCalibrationPolicyState {
     }
 }
 
+/// Right shifts applied to baseband observations of each bank.
+const SHARED_BASEBAND_SHIFT: u8 = 5;
+const WIFI_BASEBAND_SHIFT: u8 = 2;
+/// Baseband observation thresholds of each bank.
+const SHARED_BASEBAND_THRESHOLD: i32 = 25;
+const WIFI_BASEBAND_THRESHOLD: i32 = 3;
+
+/// A radio-stage threshold grows with the population of the six low control
+/// bits read before the search: `2 * population + 1`.
 const fn calibration_threshold(request: PhyRxDcCalibrationRequest, population: u8) -> i32 {
     match request.stage {
-        PhyRxDcCalibrationStage::Radio => {
-            if population < 2 {
-                1
-            } else {
-                (population - 1) as i32
-            }
-        }
-        PhyRxDcCalibrationStage::Baseband if request.shared_radio => 6,
-        PhyRxDcCalibrationStage::Baseband => 1,
+        PhyRxDcCalibrationStage::Radio => 2 * population as i32 + 1,
+        PhyRxDcCalibrationStage::Baseband if request.shared_radio => SHARED_BASEBAND_THRESHOLD,
+        PhyRxDcCalibrationStage::Baseband => WIFI_BASEBAND_THRESHOLD,
     }
 }
 
@@ -639,10 +613,13 @@ impl PhyRxDcCalibrationTransition {
         PhyRxDcMinimumRequest {
             measurement: iteration.wrapping_mul(2).wrapping_add(high as u8),
             control: request.control,
-            // The archive passes zero as the fourth `phy_rxdc_est_min`
-            // argument. ROM forwards that fourth argument to
+            // The fourth `phy_rxdc_est_min` argument is one for both baseband
+            // searches and zero for the radio search. ROM forwards it to
             // `phy_dc_iq_est`; its second argument is unused.
-            mode: 0,
+            mode: match request.stage {
+                PhyRxDcCalibrationStage::Baseband => 1,
+                PhyRxDcCalibrationStage::Radio => 0,
+            },
             rx_saturation_detected: request.rx_saturation_detected,
             previous,
         }
@@ -890,11 +867,12 @@ pub struct PhyRxGainDcOutcome {
     /// Per-search convergence, distinct from successful transaction completion.
     pub quality: PhyRxGainDcQuality,
     pub wifi_index_dc: [[u16; 2]; 8],
-    pub wifi_dc_base: [u16; 2],
+    /// Five `phy_rxdc_fine_cal` radio DC pairs beginning at
+    /// `phy_param[0x16e]`, one per [`fine_code`]. The first is the radio DC
+    /// base of every later Wi-Fi gain; RX gain memory selects one per entry.
+    pub wifi_fine_dc: [[u16; 2]; FINE_CODES],
     /// Eleven calibrated entries beginning at `phy_param[0x1b4]`.
     pub shared_index_dc: [[u16; 2]; 11],
-    /// Six fine RX-baseband corrections beginning at `phy_param[0x1e0]`.
-    pub rxbb_dc_adjustments: [[u16; 2]; 6],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -916,8 +894,6 @@ pub enum PhyRxGainDcClock {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxGainDcDelayPhase {
-    ReferenceLow,
-    ReferenceHigh,
     PbusWorkMode,
     PbusWorkModePulse,
 }
@@ -1026,25 +1002,6 @@ enum DcStep {
         value: u16,
     },
     SharedI2c(MaskedI2cWriteTransition),
-    ReferenceSetup {
-        bank: PhyRxGainDcBank,
-        index: u8,
-    },
-    ReferenceDelay {
-        bank: PhyRxGainDcBank,
-        high: bool,
-    },
-    ReferenceMinimum {
-        bank: PhyRxGainDcBank,
-        high: bool,
-        transition: PhyRxDcMinimumTransition,
-    },
-    ReferenceHigh {
-        bank: PhyRxGainDcBank,
-    },
-    FineSetup {
-        index: u8,
-    },
     FineCode {
         index: u8,
     },
@@ -1084,8 +1041,6 @@ enum DcStep {
         index: u8,
         transition: PhyRxDcCalibrationTransition,
     },
-    PrepareWifiRadioLevel,
-    CalibrateWifiRadio(PhyRxDcCalibrationTransition),
     SharedRestoreI2c(MaskedI2cWriteTransition),
     WifiRxOn {
         index: u8,
@@ -1128,29 +1083,13 @@ pub(crate) const fn rx_off(index: u8) -> PhyPbusForceTest {
     }
 }
 
-pub(crate) const fn reference_setup(index: u8) -> PhyPbusForceTest {
-    match index {
-        0 => PhyPbusForceTest::new(0, 1, 0),
-        1 => PhyPbusForceTest::new(2, 1, 0x100),
-        2 => PhyPbusForceTest::new(3, 1, 0x100),
-        3 => PhyPbusForceTest::new(2, 2, 0x100),
-        4 => PhyPbusForceTest::new(3, 2, 0x100),
-        _ => PhyPbusForceTest::new(1, 2, 0),
-    }
-}
-
-pub(crate) const fn fine_setup(index: u8) -> PhyPbusForceTest {
-    match index {
-        0 => PhyPbusForceTest::new(0, 1, 0),
-        1 => PhyPbusForceTest::new(2, 1, 0x100),
-        2 => PhyPbusForceTest::new(3, 1, 0x100),
-        3 => PhyPbusForceTest::new(2, 2, 0x100),
-        _ => PhyPbusForceTest::new(3, 2, 0x100),
-    }
-}
+/// Radio control codes `phy_rxdc_fine_cal` forces before each of its searches.
+const FINE_CODE_TABLE: [u16; FINE_CODES] = [0x00, 0x20, 0x30, 0x38, 0x3c];
+/// Searches of `phy_rxdc_fine_cal`.
+pub const FINE_CODES: usize = 5;
 
 pub(crate) const fn fine_code(index: u8) -> u16 {
-    [0x00, 0x20, 0x30, 0x38, 0x3c, 0x3e][index as usize]
+    FINE_CODE_TABLE[index as usize]
 }
 
 const fn bank_count(bank: PhyRxGainDcBank) -> u8 {
@@ -1221,13 +1160,10 @@ pub struct PhyRxGainDcTransition {
     parameters: PhyRxGainDcParameters,
     step: DcStep,
     wifi_index_dc: [[u16; 2]; 8],
-    wifi_dc_base: [u16; 2],
+    wifi_fine_dc: [[u16; 2]; FINE_CODES],
     shared_index_dc: [[u16; 2]; 11],
-    rxbb_dc_adjustments: [[u16; 2]; 6],
+    /// Pair carried between the fine searches: vendor reuses one buffer.
     fine_current: [u16; 2],
-    fine_base: [u16; 2],
-    reference_low: crate::calibration::estimator::PhyDcIqEstimate,
-    reference_delta: [i16; 2],
 }
 
 impl PhyRxGainDcTransition {
@@ -1242,7 +1178,6 @@ impl PhyRxGainDcTransition {
                 u8,
                 Result<PhyRxDcCalibrationOutcome, PhyRxDcCalibrationFailure>,
             ),
-            WifiRadio(Result<PhyRxDcCalibrationOutcome, PhyRxDcCalibrationFailure>),
         }
 
         let finished = match &self.step {
@@ -1263,11 +1198,6 @@ impl PhyRxGainDcTransition {
                     .terminal()
                     .ok_or(PhyRxGainDcTransitionError::WrongCompletion)?,
             ),
-            DcStep::CalibrateWifiRadio(transition) => Finished::WifiRadio(
-                transition
-                    .terminal()
-                    .ok_or(PhyRxGainDcTransitionError::WrongCompletion)?,
-            ),
             _ => return Err(PhyRxGainDcTransitionError::WrongCompletion),
         };
 
@@ -1275,35 +1205,17 @@ impl PhyRxGainDcTransition {
             Finished::Fine(index, Ok(outcome)) => {
                 self.quality.record_wifi_fine(index, outcome.converged);
                 self.fine_current = outcome.configuration;
-                if index == 0 {
-                    self.fine_base = outcome.configuration;
-                    self.rxbb_dc_adjustments[0] = [0; 2];
+                self.wifi_fine_dc[index as usize] = outcome.configuration;
+                if usize::from(index) + 1 == FINE_CODES {
+                    self.next_gain(PhyRxGainDcBank::Wifi, 0);
                 } else {
-                    self.rxbb_dc_adjustments[index as usize] = [
-                        outcome.configuration[0].wrapping_sub(self.fine_base[0]),
-                        outcome.configuration[1].wrapping_sub(self.fine_base[1]),
-                    ];
+                    self.step = DcStep::FineCode { index: index + 1 };
                 }
-                self.step = if index == 5 {
-                    DcStep::ReferenceSetup {
-                        bank: PhyRxGainDcBank::Wifi,
-                        index: 0,
-                    }
-                } else {
-                    DcStep::FineCode { index: index + 1 }
-                };
             }
             Finished::Baseband(bank, index, Ok(outcome)) => {
                 self.store_calibration(bank, index, outcome);
             }
-            Finished::WifiRadio(Ok(outcome)) => {
-                self.quality.record_wifi_radio(outcome.converged);
-                self.wifi_dc_base = outcome.configuration;
-                self.next_gain(PhyRxGainDcBank::Wifi, 0);
-            }
-            Finished::Fine(_, Err(failure))
-            | Finished::Baseband(_, _, Err(failure))
-            | Finished::WifiRadio(Err(failure)) => {
+            Finished::Fine(_, Err(failure)) | Finished::Baseband(_, _, Err(failure)) => {
                 self.fail(PhyRxGainDcFailure::Calibration(failure));
             }
         }
@@ -1313,10 +1225,8 @@ impl PhyRxGainDcTransition {
     #[cfg(test)]
     pub(crate) fn minimum_mut(&mut self) -> Option<&mut PhyRxDcMinimumTransition> {
         match &mut self.step {
-            DcStep::ReferenceMinimum { transition, .. } => Some(transition),
             DcStep::FineCalibration { transition, .. }
-            | DcStep::CalibrateBaseband { transition, .. }
-            | DcStep::CalibrateWifiRadio(transition) => transition.minimum_mut(),
+            | DcStep::CalibrateBaseband { transition, .. } => transition.minimum_mut(),
             _ => None,
         }
     }
@@ -1324,21 +1234,8 @@ impl PhyRxGainDcTransition {
     #[cfg(test)]
     pub(crate) fn finish_minimum(&mut self) -> Result<(), PhyRxGainDcTransitionError> {
         match &mut self.step {
-            &mut DcStep::ReferenceMinimum {
-                bank,
-                high,
-                ref transition,
-            } => {
-                match transition.terminal() {
-                    Some(Ok(outcome)) => self.accept_reference(bank, high, outcome),
-                    Some(Err(failure)) => self.fail(PhyRxGainDcFailure::Minimum(failure)),
-                    None => return Err(PhyRxGainDcTransitionError::WrongCompletion),
-                }
-                Ok(())
-            }
             DcStep::FineCalibration { transition, .. }
-            | DcStep::CalibrateBaseband { transition, .. }
-            | DcStep::CalibrateWifiRadio(transition) => transition
+            | DcStep::CalibrateBaseband { transition, .. } => transition
                 .finish_minimum()
                 .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion),
             _ => Err(PhyRxGainDcTransitionError::WrongCompletion),
@@ -1351,15 +1248,9 @@ impl PhyRxGainDcTransition {
     ) -> Result<PhyRxGainDcExternalBinding, PhyRxGainCalibrationBindingError> {
         match self.step {
             DcStep::FineCalibration { ref transition, .. }
-            | DcStep::CalibrateBaseband { ref transition, .. }
-            | DcStep::CalibrateWifiRadio(ref transition) => transition
+            | DcStep::CalibrateBaseband { ref transition, .. } => transition
                 .lower_external()
                 .map(PhyRxGainDcExternalBinding::Calibration),
-            DcStep::ReferenceMinimum { ref transition, .. } => {
-                crate::rx::dc_offset::PhyRxDcMinimumExternalBinding::lower(transition.action())
-                    .map(PhyRxGainDcExternalBinding::Minimum)
-                    .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction)
-            }
             _ => PhyRxGainDcExternalBinding::lower(self.action()),
         }
     }
@@ -1379,17 +1270,9 @@ impl PhyRxGainDcTransition {
             step: DcStep::ConfigureRegisters,
             quality: PhyRxGainDcQuality::EMPTY,
             wifi_index_dc: [[0; 2]; 8],
-            wifi_dc_base: [0; 2],
+            wifi_fine_dc: [[0; 2]; FINE_CODES],
             shared_index_dc: [[0; 2]; 11],
-            rxbb_dc_adjustments: [[0; 2]; 6],
             fine_current: [0x100; 2],
-            fine_base: [0; 2],
-            reference_low: crate::calibration::estimator::PhyDcIqEstimate {
-                i: 0,
-                q: 0,
-                power: 0,
-            },
-            reference_delta: [0; 2],
         }
     }
 
@@ -1397,9 +1280,8 @@ impl PhyRxGainDcTransition {
         PhyRxGainDcOutcome {
             quality: self.quality,
             wifi_index_dc: self.wifi_index_dc,
-            wifi_dc_base: self.wifi_dc_base,
+            wifi_fine_dc: self.wifi_fine_dc,
             shared_index_dc: self.shared_index_dc,
-            rxbb_dc_adjustments: self.rxbb_dc_adjustments,
         }
     }
 
@@ -1419,7 +1301,7 @@ impl PhyRxGainDcTransition {
 
     const fn baseband(&self, bank: PhyRxGainDcBank, index: u8) -> [u16; 2] {
         match bank {
-            PhyRxGainDcBank::Wifi if index != 0 => self.wifi_dc_base,
+            PhyRxGainDcBank::Wifi if index != 0 => self.wifi_fine_dc[0],
             _ => [0x100; 2],
         }
     }
@@ -1459,29 +1341,6 @@ impl PhyRxGainDcTransition {
             DcStep::SharedI2c(ref transition) | DcStep::SharedRestoreI2c(ref transition) => {
                 PhyRxGainDcAction::I2c(transition.action())
             }
-            DcStep::ReferenceSetup { bank, index } => PhyRxGainDcAction::ForcePbus {
-                bank,
-                transaction: reference_setup(index),
-            },
-            DcStep::ReferenceDelay { high, .. } => PhyRxGainDcAction::DelayMicros {
-                phase: if high {
-                    PhyRxGainDcDelayPhase::ReferenceHigh
-                } else {
-                    PhyRxGainDcDelayPhase::ReferenceLow
-                },
-                micros: 10,
-            },
-            DcStep::ReferenceMinimum { ref transition, .. } => {
-                PhyRxGainDcAction::Minimum(transition.action())
-            }
-            DcStep::ReferenceHigh { bank } => PhyRxGainDcAction::ForcePbus {
-                bank,
-                transaction: PhyPbusForceTest::new(1, 2, 0x20),
-            },
-            DcStep::FineSetup { index } => PhyRxGainDcAction::ForcePbus {
-                bank: PhyRxGainDcBank::Wifi,
-                transaction: fine_setup(index),
-            },
             DcStep::WifiRxOn { index } => PhyRxGainDcAction::ForcePbus {
                 bank: PhyRxGainDcBank::Wifi,
                 transaction: rx_on(index, self.parameters.pbus_rx_path_value),
@@ -1497,10 +1356,6 @@ impl PhyRxGainDcTransition {
             DcStep::FineCalibration { ref transition, .. } => {
                 PhyRxGainDcAction::Calibration(transition.action())
             }
-            DcStep::PrepareWifiRadioLevel => PhyRxGainDcAction::ForcePbus {
-                bank: PhyRxGainDcBank::Wifi,
-                transaction: PhyPbusForceTest::new(1, 2, 0),
-            },
             DcStep::SetupRadioI { bank, .. } => PhyRxGainDcAction::ForcePbus {
                 bank,
                 transaction: PhyPbusForceTest::new(2, 1, 0x100),
@@ -1537,8 +1392,7 @@ impl PhyRxGainDcTransition {
                     self.parameters.pbus_rx_path_value,
                 ),
             },
-            DcStep::CalibrateBaseband { ref transition, .. }
-            | DcStep::CalibrateWifiRadio(ref transition) => {
+            DcStep::CalibrateBaseband { ref transition, .. } => {
                 PhyRxGainDcAction::Calibration(transition.action())
             }
             DcStep::RxOff { index, .. } => PhyRxGainDcAction::ForcePbus {
@@ -1595,9 +1449,8 @@ impl PhyRxGainDcTransition {
             }
         }
         if bank == PhyRxGainDcBank::Wifi && index == 0 {
-            // The independent radio DC measurement must start at the low
-            // baseband level, not the previous delta measurement's high level.
-            self.step = DcStep::PrepareWifiRadioLevel;
+            // `phy_rxdc_fine_cal` follows the first Wi-Fi gain.
+            self.step = DcStep::FineCode { index: 0 };
         } else {
             self.next_gain(bank, index);
         }
@@ -1628,57 +1481,10 @@ impl PhyRxGainDcTransition {
                 stage: PhyRxDcCalibrationStage::Baseband,
                 control: 0x800,
                 initial: self.previous(bank, index),
-                reference_delta: self.reference_delta,
                 gain_index: index,
                 rx_saturation_detected: self.parameters.rx_saturation_detected,
             }),
         }
-    }
-
-    /// `phy_rxdc_est_delta` clears both output slots before its two searches.
-    const fn reference_minimum_request(
-        bank: PhyRxGainDcBank,
-        high: bool,
-        rx_saturation_detected: bool,
-    ) -> PhyRxDcMinimumRequest {
-        PhyRxDcMinimumRequest {
-            measurement: match (bank, high) {
-                (PhyRxGainDcBank::Shared, false) => 0,
-                (PhyRxGainDcBank::Shared, true) => 1,
-                (PhyRxGainDcBank::Wifi, false) => 2,
-                (PhyRxGainDcBank::Wifi, true) => 3,
-            },
-            control: 0x800,
-            // `phy_rxdc_est_delta` passes zero in a3 to both
-            // `phy_rxdc_est_min` calls.  Its a1 value is a separate,
-            // unused-by-the-child argument and must not be confused with
-            // the estimator mode.
-            mode: 0,
-            rx_saturation_detected,
-            previous: crate::calibration::estimator::PhyDcIqEstimate {
-                i: 0,
-                q: 0,
-                power: 0,
-            },
-        }
-    }
-
-    fn accept_reference(
-        &mut self,
-        bank: PhyRxGainDcBank,
-        high: bool,
-        outcome: PhyRxDcMinimumOutcome,
-    ) {
-        if !high {
-            self.reference_low = outcome.estimate;
-            self.step = DcStep::ReferenceHigh { bank };
-            return;
-        }
-        self.reference_delta = [
-            outcome.estimate.i.wrapping_sub(self.reference_low.i) as i16,
-            outcome.estimate.q.wrapping_sub(self.reference_low.q) as i16,
-        ];
-        self.step = DcStep::SetupRadioI { bank, index: 0 };
     }
 
     fn after_work_mode(terminal: DcTerminal) -> DcStep {
@@ -1698,44 +1504,19 @@ impl PhyRxGainDcTransition {
     ) -> Result<(), PhyRxGainDcTransitionError> {
         // Child rejection is transactional. Keep its cursor in the parent instead
         // of copying the nested transition for every hardware completion.
-        match (&mut self.step, completion) {
-            (
-                &mut DcStep::ReferenceMinimum {
-                    bank,
-                    high,
-                    ref mut transition,
-                },
-                PhyRxGainDcCompletion::Minimum(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
-                match transition.terminal() {
-                    Some(Ok(outcome)) => {
-                        self.accept_reference(bank, high, outcome);
-                    }
-                    Some(Err(failure)) => {
-                        self.fail(PhyRxGainDcFailure::Minimum(failure));
-                    }
-                    _ => {}
-                }
-                return Ok(());
+        if let (
+            DcStep::FineCalibration { transition, .. }
+            | DcStep::CalibrateBaseband { transition, .. },
+            PhyRxGainDcCompletion::Calibration(completion),
+        ) = (&mut self.step, completion)
+        {
+            transition
+                .advance(completion)
+                .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
+            if transition.terminal().is_some() {
+                self.finish_calibration()?;
             }
-            (
-                DcStep::FineCalibration { transition, .. }
-                | DcStep::CalibrateBaseband { transition, .. }
-                | DcStep::CalibrateWifiRadio(transition),
-                PhyRxGainDcCompletion::Calibration(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
-                if transition.terminal().is_some() {
-                    self.finish_calibration()?;
-                }
-                return Ok(());
-            }
-            _ => {}
+            return Ok(());
         }
         match (self.step, completion) {
             (
@@ -1862,71 +1643,12 @@ impl PhyRxGainDcTransition {
                     .advance(completion)
                     .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
                 self.step = if transition.action() == MaskedI2cWriteAction::Complete {
-                    DcStep::ReferenceSetup {
+                    DcStep::SetupRadioI {
                         bank: PhyRxGainDcBank::Shared,
                         index: 0,
                     }
                 } else {
                     DcStep::SharedI2c(transition)
-                };
-            }
-            (
-                DcStep::ReferenceSetup { bank, index },
-                PhyRxGainDcCompletion::PbusCompleted {
-                    bank: completed_bank,
-                    transaction,
-                },
-            ) if bank == completed_bank && transaction == reference_setup(index) => {
-                self.step = if index == 5 {
-                    DcStep::ReferenceDelay { bank, high: false }
-                } else {
-                    DcStep::ReferenceSetup {
-                        bank,
-                        index: index + 1,
-                    }
-                };
-            }
-            (
-                DcStep::ReferenceDelay { bank, high },
-                PhyRxGainDcCompletion::DelayElapsed { phase, micros: 10 },
-            ) if phase
-                == if high {
-                    PhyRxGainDcDelayPhase::ReferenceHigh
-                } else {
-                    PhyRxGainDcDelayPhase::ReferenceLow
-                } =>
-            {
-                self.step = DcStep::ReferenceMinimum {
-                    bank,
-                    high,
-                    transition: PhyRxDcMinimumTransition::new(Self::reference_minimum_request(
-                        bank,
-                        high,
-                        self.parameters.rx_saturation_detected,
-                    )),
-                };
-            }
-
-            (
-                DcStep::ReferenceHigh { bank },
-                PhyRxGainDcCompletion::PbusCompleted {
-                    bank: completed_bank,
-                    transaction,
-                },
-            ) if bank == completed_bank && transaction == PhyPbusForceTest::new(1, 2, 0x20) => {
-                self.step = DcStep::ReferenceDelay { bank, high: true };
-            }
-            (
-                DcStep::FineSetup { index },
-                PhyRxGainDcCompletion::PbusCompleted {
-                    bank: PhyRxGainDcBank::Wifi,
-                    transaction,
-                },
-            ) if transaction == fine_setup(index) => {
-                self.step = if index == 4 {
-                    DcStep::FineCode { index: 0 }
-                } else {
-                    DcStep::FineSetup { index: index + 1 }
                 };
             }
             (
@@ -1943,7 +1665,6 @@ impl PhyRxGainDcTransition {
                         stage: PhyRxDcCalibrationStage::Radio,
                         control: 0x800,
                         initial: self.fine_current,
-                        reference_delta: [0; 2],
                         gain_index: 0,
                         rx_saturation_detected: self.parameters.rx_saturation_detected,
                     }),
@@ -2041,38 +1762,6 @@ impl PhyRxGainDcTransition {
                 self.step = self.baseband_calibration_step(PhyRxGainDcBank::Shared, index);
             }
 
-            (
-                DcStep::PrepareWifiRadioLevel,
-                PhyRxGainDcCompletion::PbusCompleted {
-                    bank: PhyRxGainDcBank::Wifi,
-                    transaction,
-                },
-            ) if transaction == PhyPbusForceTest::new(1, 2, 0) => {
-                self.step = DcStep::CalibrateWifiRadio(PhyRxDcCalibrationTransition::new(
-                    PhyRxDcCalibrationRequest {
-                        shared_radio: false,
-                        stage: PhyRxDcCalibrationStage::Radio,
-                        control: 0x800,
-                        initial: [0x100; 2],
-                        reference_delta: [0; 2],
-                        gain_index: 0,
-                        rx_saturation_detected: self.parameters.rx_saturation_detected,
-                    },
-                ));
-            }
-            (
-                DcStep::PrepareWifiRadioLevel,
-                PhyRxGainDcCompletion::PbusTimedOut {
-                    bank: PhyRxGainDcBank::Wifi,
-                    transaction,
-                },
-            ) if transaction == PhyPbusForceTest::new(1, 2, 0) => {
-                self.fail(PhyRxGainDcFailure::Pbus {
-                    bank: PhyRxGainDcBank::Wifi,
-                    transaction,
-                });
-            }
-
             (DcStep::SharedRestoreI2c(mut transition), PhyRxGainDcCompletion::I2c(completion)) => {
                 transition
                     .advance(completion)
@@ -2119,7 +1808,12 @@ impl PhyRxGainDcTransition {
                     clock: PhyRxGainDcClock::Tx,
                     enabled: true,
                 },
-            ) => self.step = DcStep::FineSetup { index: 0 },
+            ) => {
+                self.step = DcStep::SetupRadioI {
+                    bank: PhyRxGainDcBank::Wifi,
+                    index: 0,
+                }
+            }
             (
                 DcStep::RxOn { index },
                 PhyRxGainDcCompletion::PbusTimedOut {
@@ -2133,9 +1827,7 @@ impl PhyRxGainDcTransition {
                 });
             }
             (
-                DcStep::ReferenceSetup { bank, .. }
-                | DcStep::ReferenceHigh { bank }
-                | DcStep::SetupRadioI { bank, .. }
+                DcStep::SetupRadioI { bank, .. }
                 | DcStep::SetupRadioQ { bank, .. }
                 | DcStep::SetupBasebandI { bank, .. }
                 | DcStep::SetupBasebandQ { bank, .. }
@@ -2163,7 +1855,7 @@ impl PhyRxGainDcTransition {
                 });
             }
             (
-                DcStep::WifiRxOn { .. } | DcStep::FineSetup { .. } | DcStep::FineCode { .. },
+                DcStep::WifiRxOn { .. } | DcStep::FineCode { .. },
                 PhyRxGainDcCompletion::PbusTimedOut {
                     bank: PhyRxGainDcBank::Wifi,
                     transaction,

@@ -90,9 +90,6 @@ pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
             PhyRfCloseOperation::DisableHardwareFrequencyControl => {
                 oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, false);
             }
-            PhyRfCloseOperation::ForceTxRxOff { phase } => {
-                oer_esp32s31_hal::phy::pbus::configure_force_txrx(registers, true, phase);
-            }
             PhyRfCloseOperation::SettleOneMicrosecond => {
                 if !D::ShortDelay::settle_micros(1) {
                     return Err(PhyTargetPortError::HardwareCapabilityUnavailable);

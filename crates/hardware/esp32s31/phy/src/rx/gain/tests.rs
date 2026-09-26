@@ -5,9 +5,8 @@ fn parameters() -> PhyRxGainMemoryParameters {
     PhyRxGainMemoryParameters {
         parameter_002: 0xbf,
         wifi_index_dc: [[0x100; 2]; 8],
-        wifi_dc_base: [0x100; 2],
+        wifi_fine_dc: [[0x100; 2]; crate::rx::gain_calibration::FINE_CODES],
         shared_index_dc: [[0x100; 2]; 11],
-        rxbb_dc_adjustments: [[0; 2]; 6],
         wifi_auxiliary: 0,
     }
 }
@@ -67,16 +66,15 @@ fn complete(action: PhyRxGainPublishAction) -> PhyRxGainPublishCompletion {
 }
 
 #[test]
-fn recalibration_publishes_fresh_rxbb_corrections_only_in_wifi_bank() {
+fn recalibration_publishes_fresh_fine_dc_only_in_wifi_bank() {
     fn publish(old: u16, fresh: u16) -> Vec<(PhyRxGainBank, PhyGainMemoryEntry)> {
         let mut parameters = init_parameters();
-        parameters.memory.rxbb_dc_adjustments = [[old; 2]; 6];
+        parameters.memory.wifi_fine_dc = [[old; 2]; crate::rx::gain_calibration::FINE_CODES];
         let outcome = PhyRxGainDcOutcome {
             quality: Default::default(),
             wifi_index_dc: [[0x100; 2]; 8],
-            wifi_dc_base: [0x100; 2],
+            wifi_fine_dc: [[fresh, fresh.wrapping_neg()]; crate::rx::gain_calibration::FINE_CODES],
             shared_index_dc: [[0x100; 2]; 11],
-            rxbb_dc_adjustments: [[fresh, fresh.wrapping_neg()]; 6],
         };
         let mut root = PhyRxGainInitTransition::new(parameters);
         // Exercise the real handoff after a completed measurement, including
@@ -116,7 +114,7 @@ fn recalibration_publishes_fresh_rxbb_corrections_only_in_wifi_bank() {
     assert_eq!(
         fresh,
         publish(19, 3),
-        "old corrections must not leak into publication"
+        "old fine DC pairs must not leak into publication"
     );
     let changed = publish(0, 7);
     for bank in [PhyRxGainBank::Wifi, PhyRxGainBank::Shared] {
@@ -452,6 +450,33 @@ fn cursor_lowering_keeps_terminal_products_out_of_hardware_admission() {
     assert_eq!(root.prepare_external(), Ok(None));
 }
 
+/// Complete one non-estimator action of a one-step RX-DC child.
+fn complete_calibration(
+    action: crate::rx::gain_calibration::PhyRxDcCalibrationAction,
+) -> crate::rx::gain_calibration::PhyRxDcCalibrationCompletion {
+    use crate::rx::gain_calibration::{
+        PhyRxDcCalibrationAction as A, PhyRxDcCalibrationCompletion as C,
+    };
+    match action {
+        A::PrepareControlRestore => C::ControlRestorePrepared,
+        A::ReadPbus { selector, path } => C::PbusRead {
+            selector,
+            path,
+            value: 0,
+        },
+        A::ForcePbus(transaction) => C::PbusForceCompleted(transaction),
+        A::DelayMicros {
+            measurement,
+            micros,
+        } => C::DelayElapsed {
+            measurement,
+            micros,
+        },
+        A::RestoreControl => C::ControlRestored,
+        other => panic!("unexpected calibration action {other:?}"),
+    }
+}
+
 /// Drive the real cold prefix with successful hardware observations, stopping
 /// at the first borrowed estimator. No test-only state construction bypasses
 /// the parent's preparation or RF/clock sequence.
@@ -514,6 +539,9 @@ fn root_at_minimum() -> PhyRxGainInitTransition {
                 }),
                 PhyRxGainDcAction::DelayMicros { phase, micros } => {
                     PhyRxGainDcCompletion::DelayElapsed { phase, micros }
+                }
+                PhyRxGainDcAction::Calibration(action) => {
+                    PhyRxGainDcCompletion::Calibration(complete_calibration(action))
                 }
                 other => panic!("unexpected DC prefix {other:?}"),
             }),
@@ -585,9 +613,13 @@ fn root_borrowed_minimum_commits_only_terminal_results_and_preserves_failure_cle
                 other => panic!("unexpected estimator action {other:?}"),
             });
             stepwise
-                .advance(PhyRxGainInitCompletion::Dc(PhyRxGainDcCompletion::Minimum(
-                    completion,
-                )))
+                .advance(PhyRxGainInitCompletion::Dc(
+                    PhyRxGainDcCompletion::Calibration(
+                        crate::rx::gain_calibration::PhyRxDcCalibrationCompletion::Minimum(
+                            completion,
+                        ),
+                    ),
+                ))
                 .unwrap();
             fused.minimum_mut().unwrap().advance(completion).unwrap();
             if fused.minimum_mut().unwrap().terminal().is_some() {
@@ -641,6 +673,11 @@ fn root_borrowed_minimum_commits_only_terminal_results_and_preserves_failure_cle
                     }
                     PhyRxGainInitAction::RestoreDcControl => {
                         PhyRxGainInitCompletion::DcControlRestored
+                    }
+                    PhyRxGainInitAction::Dc(PhyRxGainDcAction::Calibration(action)) => {
+                        PhyRxGainInitCompletion::Dc(PhyRxGainDcCompletion::Calibration(
+                            complete_calibration(action),
+                        ))
                     }
                     PhyRxGainInitAction::Failed(PhyRxGainInitFailure::Dc(_)) => break,
                     other => panic!("unexpected failure cleanup {other:?}"),

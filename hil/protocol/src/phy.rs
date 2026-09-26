@@ -113,14 +113,13 @@ impl PhyTimingEvidence {
 
 /// Per-search convergence of the most recently completed RX DC product.
 /// False baseband entries identify initial coefficient pairs reused after the
-/// iteration limit; false radio/fine entries retain the last correction.
+/// iteration limit; false fine radio entries retain the last correction.
 /// All-false is a completed product with no converged search, not missing data.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PhyRxGainQualityEvidence {
     pub shared_baseband: [bool; 11],
     pub wifi_baseband: [bool; 8],
-    pub wifi_fine: [bool; 6],
-    pub wifi_radio: bool,
+    pub wifi_fine: [bool; 5],
 }
 
 /// Disjoint regions of the direct blocking RX-gain transaction.

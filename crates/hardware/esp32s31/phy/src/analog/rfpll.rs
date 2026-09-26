@@ -1,17 +1,18 @@
 //! Event-driven ESP32-S31 RFPLL frequency programming.
 //!
-//! The primary reference is the complete rev0 ROM graph rooted at
-//! `phy_set_rf_freq_offset` (`0x2f82_5c10`). The graph includes
-//! `phy_set_rfpll_freq`, `phy_rfpll_set_freq`, `phy_write_rfpll_sdm`,
-//! `phy_restart_cal`, `phy_wait_rfpll_cal_end`, `phy_read_pll_cap`,
-//! `phy_write_pll_cap`, and `phy_rfpll_cap_init_cal`.
+//! The reference is the pinned archive graph rooted at
+//! `phy_set_rf_freq_offset_new`. Its `phy_set_rfpll_freq_new` repeats rev0 ROM
+//! `phy_set_rfpll_freq` through `phy_rfpll_set_freq`, `phy_write_rfpll_sdm`,
+//! `phy_restart_cal`, `phy_wait_rfpll_cal_end` and `phy_read_pll_cap`, then
+//! tail-calls the archive capacitor search `phy_rfpll_cap_init_cal_new`
+//! instead of ROM `phy_rfpll_cap_init_cal`. The table-selected channel path is
+//! `phy_set_channel_rfpll_freq_new`; its `phy_freq_set_reg` is a ROM jump to
+//! `phy_nrx_freq_set`.
 //!
-//! ROM busy-waits through synchronous PHY-I2C calls, delays inside two loops,
-//! prints after a missed lock deadline, and has a hardware-dependent
-//! capacitor-search path which can fail to reach its equality bound. Rust
-//! exposes every I2C transaction and timer interval as an identity-bound
-//! external completion. A missed lock remains ordinary outcome data; the
-//! non-terminating ROM search condition becomes a typed failure.
+//! The vendor busy-waits through synchronous PHY-I2C calls, delays inside two
+//! loops and prints after a missed lock deadline. Rust exposes every I2C
+//! transaction and timer interval as an identity-bound external completion.
+//! A missed lock remains ordinary outcome data.
 
 /// Required pinned `libphy.a` vendor-ABI no-op leaf; the ESP32-S31 body is one
 /// `ret` and does not touch shared RFPLL state.
@@ -19,16 +20,24 @@
 #[cfg(feature = "validation-probes")]
 pub const fn phy_bbpll_en_usb() {}
 
-/// Return the exact RF-calibration data version used by the pinned archive.
+/// Return the exact RF-calibration data version of the pinned archive's
+/// `phy_get_rf_cal_version`.
 #[inline]
 pub const fn phy_get_rf_cal_version() -> u32 {
-    100
+    102
 }
 
 use crate::analog::i2c::{PhyI2cAddress, PhyI2cField, analog_registers};
 
 const LOCK_ATTEMPTS: u8 = 100;
-const CAP_SEARCH_LIMIT: u8 = 10;
+/// Capacitor-status samples one search direction permits.
+pub const CAP_SEARCH_SAMPLES_PER_DIRECTION: u8 = 30;
+/// Direction-specific boundary statuses which end one search direction early.
+const CAP_SEARCH_BOUNDARIES: u8 = 2;
+/// Two-bit capacitor-search statuses.
+const CAP_STATUS_ACCEPTED: u8 = 0;
+const CAP_STATUS_INCREASE: u8 = 1;
+const CAP_STATUS_DECREASE: u8 = 2;
 
 /// SDM bytes `phy_write_rfpll_sdm` programs, least significant first. The ROM
 /// also stores bit 27 into a fifth byte of its caller's scratch buffer, which
@@ -99,7 +108,7 @@ pub enum RfpllFrequencyFailure {
     /// The table-selection entry supports only the initialized 2.4-GHz domain.
     UnsupportedChannelFrequency(u16),
     /// Defensive terminal retained for callers which persist this public
-    /// outcome. The bounded rev0 ROM search completes both ten-sample phases,
+    /// outcome. The bounded archive search completes both directions,
     /// including the no-accepted-sample case, so the exact transition does
     /// not normally emit it.
     CapacitorSearchDeadlineExceeded {
@@ -192,6 +201,7 @@ struct CapSearchState {
     initial: u16,
     phase: CapSearchPhase,
     phase_attempts: u8,
+    boundaries: u8,
     accepted: u8,
     sum: u16,
     lock_observed: bool,
@@ -294,7 +304,7 @@ impl RfpllFrequencyTransition {
     }
 
     /// Program the synthesizer directly, including capacitor calibration.
-    /// This is the `phy_set_rf_freq_offset` path used to build channel tables;
+    /// This is the `phy_set_rf_freq_offset_new` path used to build channel tables;
     /// `frequency_code` is MHz and must not select an already-built table.
     pub const fn new(request: RfpllFrequencyRequest) -> Self {
         Self {
@@ -311,7 +321,7 @@ impl RfpllFrequencyTransition {
     }
 
     /// Select an initialized 2.4-GHz frequency table, then update NRX.
-    /// Matches the supported `phy_set_channel_rfpll_freq` branch for both a
+    /// Matches the supported `phy_set_channel_rfpll_freq_new` branch for both a
     /// channel number and MHz input. It does not establish analog PLL lock.
     pub const fn channel(request: RfpllFrequencyRequest) -> Self {
         let frequency = Self::programmed_frequency(request);
@@ -445,6 +455,7 @@ impl RfpllFrequencyTransition {
                 RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(CapSearchState {
                     phase: CapSearchPhase::Up,
                     phase_attempts: 0,
+                    boundaries: 0,
                     ..search
                 }));
         } else {
@@ -612,6 +623,7 @@ impl RfpllFrequencyTransition {
                     initial,
                     phase: CapSearchPhase::Down,
                     phase_attempts: 0,
+                    boundaries: 0,
                     accepted: 0,
                     sum: 0,
                     lock_observed,
@@ -651,26 +663,24 @@ impl RfpllFrequencyTransition {
                     value,
                 },
             ) => {
-                if value == 0 {
+                if value == CAP_STATUS_ACCEPTED {
                     search.sum = search.sum.wrapping_add(search.candidate());
                     search.accepted = search.accepted.wrapping_add(1);
-                    search.phase_attempts = search.phase_attempts.wrapping_add(1);
-                    if search.phase_attempts == CAP_SEARCH_LIMIT {
-                        self.finish_cap_phase(search);
-                    } else {
-                        self.step =
-                            RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(search));
-                    }
-                } else if search.accepted != 0 {
+                } else if matches!(
+                    (search.phase, value),
+                    (CapSearchPhase::Down, CAP_STATUS_INCREASE)
+                        | (CapSearchPhase::Up, CAP_STATUS_DECREASE)
+                ) {
+                    search.boundaries += 1;
+                }
+                search.phase_attempts += 1;
+                if search.phase_attempts == CAP_SEARCH_SAMPLES_PER_DIRECTION
+                    || search.boundaries == CAP_SEARCH_BOUNDARIES
+                {
                     self.finish_cap_phase(search);
                 } else {
-                    search.phase_attempts = search.phase_attempts.wrapping_add(1);
-                    if search.phase_attempts == CAP_SEARCH_LIMIT {
-                        self.finish_cap_phase(search);
-                    } else {
-                        self.step =
-                            RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(search));
-                    }
+                    self.step =
+                        RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(search));
                 }
                 return Ok(());
             }

@@ -68,8 +68,11 @@ enum Step {
     Complete,
 }
 
-/// A single non-cloneable search. Each direction permits at most ten samples
-/// and stops after two direction-specific boundary observations. These need
+/// Status samples one search direction permits, shared with direct programming.
+pub use crate::analog::rfpll::CAP_SEARCH_SAMPLES_PER_DIRECTION as SAMPLES_PER_DIRECTION;
+
+/// A single non-cloneable search. Each direction permits at most
+/// [`SAMPLES_PER_DIRECTION`] samples and stops after two direction-specific boundary observations. These need
 /// not be consecutive; other statuses do not reset the boundary count.
 #[derive(Debug, Eq, PartialEq)]
 pub struct Search {
@@ -159,7 +162,7 @@ impl Search {
                     self.boundaries += 1;
                 }
                 self.offset += 1;
-                if self.offset == 10 || self.boundaries == 2 {
+                if self.offset == SAMPLES_PER_DIRECTION || self.boundaries == 2 {
                     match self.phase {
                         Phase::Down => {
                             self.phase = Phase::Up;

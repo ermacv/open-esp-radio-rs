@@ -65,7 +65,7 @@ pub fn configure_calibration_mode(registers: &mut impl SharedPhyAccess) {
 
 /// Prepare the two TX-DC power-detector fields for calibration.
 ///
-/// Current esp-phy-lib b88e4b76 `phy_txdc_cal_pwdet_init`, size
+/// Pinned esp-phy-lib `phy_txdc_cal_pwdet_init`, size
 /// `0x232`, first reads `POWER_DETECTOR_TABLE_1` and
 /// `POWER_DETECTOR_CONTROL`, then replaces the low table byte with `0xf0` and
 /// the calibration field with `0x78`. The route restore slot retains the
@@ -84,7 +84,7 @@ pub fn prepare_txdc_calibration(
 
 /// Select the TX-DC PWDET SAR mode after the initial PBus setup.
 ///
-/// Current esp-phy-lib b88e4b76 `phy_txdc_cal_pwdet_init`, size
+/// Pinned esp-phy-lib `phy_txdc_cal_pwdet_init`, size
 /// `0x232`, replaces the two-bit PAC SAR-mode field with one at this point.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_txdc_sar(registers: &mut impl SharedPhyAccess) {
@@ -94,7 +94,7 @@ pub fn configure_txdc_sar(registers: &mut impl SharedPhyAccess) {
 
 /// Restore the saved TX-DC fields and select the final SAR mode.
 ///
-/// The cleanup-enabled tail of esp-phy-lib b88e4b76
+/// The cleanup-enabled tail of the pinned esp-phy-lib
 /// `phy_txdc_cal_pwdet_init`, size `0x232`, restores
 /// the table-one low byte and control calibration field, then sets the
 /// two-bit SAR-mode field. A caller without a pending restore operation is

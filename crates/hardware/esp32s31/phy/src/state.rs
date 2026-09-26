@@ -7,6 +7,7 @@
 
 #[cfg(test)]
 use crate::calibration::bluetooth::{PhyBluetoothTxDcTransition, PhyBluetoothTxPowerTransition};
+use crate::rx::gain_calibration::FINE_CODES;
 use crate::{
     analog::crystal_duty::XtalDutyCalibrationParameters,
     analog::dcode::{PhyDcodeOutcome, PhyDcodeParameters},
@@ -216,9 +217,8 @@ struct WifiPhyState {
     wifi_rx_table_last_index: u8,
     shared_rx_table_last_index: u8,
     wifi_index_dc: [[u16; 2]; 8],
-    wifi_dc_base: [u16; 2],
+    wifi_fine_dc: [[u16; 2]; FINE_CODES],
     shared_index_dc: [[u16; 2]; 11],
-    rxbb_dc_adjustments: [[u16; 2]; 6],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -268,7 +268,7 @@ pub struct PhyCalibrationSnapshot {
     pub bluetooth: PhyBluetoothCalibration,
 }
 
-pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 6;
+pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 7;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationCacheError {
@@ -324,9 +324,8 @@ pub struct PhyWifiCalibration {
     pub wifi_rx_table_last_index: u8,
     pub shared_rx_table_last_index: u8,
     pub wifi_index_dc: [[u16; 2]; 8],
-    pub wifi_dc_base: [u16; 2],
+    pub wifi_fine_dc: [[u16; 2]; FINE_CODES],
     pub shared_index_dc: [[u16; 2]; 11],
-    pub rxbb_dc_adjustments: [[u16; 2]; 6],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -526,9 +525,8 @@ impl PhyState {
                 wifi_rx_table_last_index: 0,
                 shared_rx_table_last_index: 0,
                 wifi_index_dc: [[0; 2]; 8],
-                wifi_dc_base: [0; 2],
+                wifi_fine_dc: [[0; 2]; FINE_CODES],
                 shared_index_dc: [[0; 2]; 11],
-                rxbb_dc_adjustments: [[0; 2]; 6],
             },
             bluetooth: BluetoothPhyState {
                 power_tracking: 1,
@@ -772,22 +770,28 @@ impl PhyState {
         calculate_bluetooth_tx_gain(parameters)
     }
 
-    pub(crate) fn bluetooth_tx_gain_init_transition(&self) -> PhyBluetoothTxGainInitTransition {
-        PhyBluetoothTxGainInitTransition::new(PhyBluetoothTxGainInitParameters {
-            crystal_selector: self.common.crystal_selector,
-            capacitance: self.wifi.tx_capacitance,
-            tx_dc_calibrated: self.bluetooth.tx_dc_calibrated,
-            tx_dc: PhyTxDcParameters {
-                pbus_rx_path_value: self.config.pbus_rx_path,
+    pub(crate) fn bluetooth_tx_gain_init_transition(
+        &self,
+        depth: crate::analog::pbus::PhyForceTxRxDepth,
+    ) -> PhyBluetoothTxGainInitTransition {
+        PhyBluetoothTxGainInitTransition::new(
+            PhyBluetoothTxGainInitParameters {
+                crystal_selector: self.common.crystal_selector,
+                capacitance: self.wifi.tx_capacitance,
+                tx_dc_calibrated: self.bluetooth.tx_dc_calibrated,
+                tx_dc: PhyTxDcParameters {
+                    pbus_rx_path_value: self.config.pbus_rx_path,
+                },
+                tx_path_value: self.config.bluetooth_tx_path,
+                tx_power: self.bluetooth_tx_power_parameters(),
+                tx_dc_pwdet: PhyTxDcPwdetParameters {
+                    dco: self.bluetooth.tx_dco,
+                    clear_tone_after_ready: self.common.clear_tone_after_ready,
+                },
+                gain: self.bluetooth_tx_gain_parameters(),
             },
-            tx_path_value: self.config.bluetooth_tx_path,
-            tx_power: self.bluetooth_tx_power_parameters(),
-            tx_dc_pwdet: PhyTxDcPwdetParameters {
-                dco: self.bluetooth.tx_dco,
-                clear_tone_after_ready: self.common.clear_tone_after_ready,
-            },
-            gain: self.bluetooth_tx_gain_parameters(),
-        })
+            depth,
+        )
     }
 
     pub fn apply_bluetooth_tx_gain_init_outcome(&mut self, outcome: PhyBluetoothTxGainInitOutcome) {
@@ -867,9 +871,8 @@ impl PhyState {
         PhyRxGainMemoryParameters {
             parameter_002: self.config.pbus_rx_path,
             wifi_index_dc: self.wifi.wifi_index_dc,
-            wifi_dc_base: self.wifi.wifi_dc_base,
+            wifi_fine_dc: self.wifi.wifi_fine_dc,
             shared_index_dc: self.wifi.shared_index_dc,
-            rxbb_dc_adjustments: self.wifi.rxbb_dc_adjustments,
             wifi_auxiliary: self.wifi.rx_iq_coefficients[0],
         }
     }
@@ -887,9 +890,8 @@ impl PhyState {
 
     pub fn apply_rx_gain_dc_outcome(&mut self, outcome: PhyRxGainDcOutcome) {
         self.wifi.wifi_index_dc = outcome.wifi_index_dc;
-        self.wifi.wifi_dc_base = outcome.wifi_dc_base;
+        self.wifi.wifi_fine_dc = outcome.wifi_fine_dc;
         self.wifi.shared_index_dc = outcome.shared_index_dc;
-        self.wifi.rxbb_dc_adjustments = outcome.rxbb_dc_adjustments;
     }
 
     pub const fn rx_gain_init_parameters(&self) -> PhyRxGainInitParameters {
@@ -1089,6 +1091,7 @@ impl PhyState {
             wifi_gain_base: self.wifi.tracking_gain_base as i8,
             bluetooth_ieee802154_gain_base: self.bluetooth.tracking_gain_base as i8,
             relaxed_threshold,
+            wifi_gain_publication_skipped: self.config.tx_gain_skip_publication,
         }
     }
 
@@ -1480,9 +1483,8 @@ impl PhyState {
         restored.wifi.wifi_rx_table_last_index = snapshot.wifi.wifi_rx_table_last_index;
         restored.wifi.shared_rx_table_last_index = snapshot.wifi.shared_rx_table_last_index;
         restored.wifi.wifi_index_dc = snapshot.wifi.wifi_index_dc;
-        restored.wifi.wifi_dc_base = snapshot.wifi.wifi_dc_base;
+        restored.wifi.wifi_fine_dc = snapshot.wifi.wifi_fine_dc;
         restored.wifi.shared_index_dc = snapshot.wifi.shared_index_dc;
-        restored.wifi.rxbb_dc_adjustments = snapshot.wifi.rxbb_dc_adjustments;
 
         restored.bluetooth.tx_dc_calibrated = snapshot.bluetooth.tx_dc_calibrated;
         restored.bluetooth.tx_power_calibrated = snapshot.bluetooth.tx_power_calibrated;
@@ -1562,9 +1564,8 @@ impl PhyState {
                 wifi_rx_table_last_index: self.wifi.wifi_rx_table_last_index,
                 shared_rx_table_last_index: self.wifi.shared_rx_table_last_index,
                 wifi_index_dc: self.wifi.wifi_index_dc,
-                wifi_dc_base: self.wifi.wifi_dc_base,
+                wifi_fine_dc: self.wifi.wifi_fine_dc,
                 shared_index_dc: self.wifi.shared_index_dc,
-                rxbb_dc_adjustments: self.wifi.rxbb_dc_adjustments,
             },
             bluetooth: PhyBluetoothCalibration {
                 tx_dc_calibrated: self.bluetooth.tx_dc_calibrated,

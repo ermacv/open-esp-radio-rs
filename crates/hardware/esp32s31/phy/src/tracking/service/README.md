@@ -107,8 +107,7 @@ boundary pauses Wi-Fi even for short sensor and compensation operations.
 
 ## Vendor correspondence
 
-The reviewed current archive (`b88e4b76e090ae59c51cb00b916d38def895b396`,
-SHA-256 `d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580`)
+The pinned archive (the `libphy` pin of `verification/vendor/projects/esp32s31/artifacts.toml`)
 invokes power/I2C children before its combined calibration parent and samples
 temperature at the end. Its calibration parent brackets common and TX work
 with separate grant hooks. The service deliberately observes before deciding

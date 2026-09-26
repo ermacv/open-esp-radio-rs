@@ -3,8 +3,8 @@
 /// Results of all searches in one completed common RX DC calibration.
 ///
 /// False means the bounded outer search exhausted its iteration limit.
-/// Baseband searches then publish their initial coefficient pair; radio and
-/// fine searches publish their last correction, following the vendor policy.
+/// Baseband searches then publish their initial coefficient pair; fine
+/// radio searches publish their last correction, following the vendor policy.
 /// This is measurement quality, not a transport error or RF admission decision.
 /// An absent RX calibration is represented by the parent's `Option`.
 /// The compact private representation stays within the existing SRAM budget.
@@ -15,7 +15,7 @@ pub struct PhyRxGainDcQuality {
 
 impl PhyRxGainDcQuality {
     pub(crate) const EMPTY: Self = Self { converged: 0 };
-    const ALL: u32 = (1 << 26) - 1;
+    const ALL: u32 = (1 << (19 + super::FINE_CODES)) - 1;
     const BASEBAND: u32 = (1 << 19) - 1;
     fn record(&mut self, index: u8, converged: bool) {
         let mask = 1 << index;
@@ -30,11 +30,8 @@ impl PhyRxGainDcQuality {
         self.record(11 + index, converged);
     }
     pub(crate) fn record_wifi_fine(&mut self, index: u8, converged: bool) {
-        debug_assert!(index < 6);
+        debug_assert!(usize::from(index) < super::FINE_CODES);
         self.record(19 + index, converged);
-    }
-    pub(crate) fn record_wifi_radio(&mut self, converged: bool) {
-        self.record(25, converged);
     }
     /// Shared-radio baseband results, indexed by gain 0 through 10.
     pub fn shared_baseband(self) -> [bool; 11] {
@@ -44,13 +41,10 @@ impl PhyRxGainDcQuality {
     pub fn wifi_baseband(self) -> [bool; 8] {
         core::array::from_fn(|index| self.converged & (1 << (11 + index)) != 0)
     }
-    /// Results of the six fine-code searches, in calibration order.
-    pub fn wifi_fine(self) -> [bool; 6] {
+    /// Results of the fine radio searches after Wi-Fi baseband gain zero,
+    /// in calibration order.
+    pub fn wifi_fine(self) -> [bool; super::FINE_CODES] {
         core::array::from_fn(|index| self.converged & (1 << (19 + index)) != 0)
-    }
-    /// Independent Wi-Fi radio DC search after baseband gain zero.
-    pub const fn wifi_radio(self) -> bool {
-        self.converged & (1 << 25) != 0
     }
     /// Whether every search converged before its iteration limit.
     pub const fn all_converged(self) -> bool {
@@ -61,7 +55,7 @@ impl PhyRxGainDcQuality {
         (Self::ALL & !self.converged).count_ones()
     }
     /// Baseband searches whose initial pair was used after exhaustion.
-    /// Radio and fine-code exhaustion does not restore the initial pair.
+    /// Fine-code exhaustion does not restore the initial pair.
     pub const fn initial_pairs_reused(self) -> u32 {
         (Self::BASEBAND & !self.converged).count_ones()
     }

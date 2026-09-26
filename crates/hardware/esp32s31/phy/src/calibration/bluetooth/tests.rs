@@ -241,7 +241,9 @@ fn bluetooth_power_outcome_publishes_bt_fields_only() {
 
 #[test]
 fn bluetooth_gain_parent_starts_with_the_recovered_full_frequency_rfpll() {
-    let mut transition = crate::state::PhyState::default().bluetooth_tx_gain_init_transition();
+    let mut transition = crate::state::PhyState::default().bluetooth_tx_gain_init_transition(
+        crate::analog::pbus::PhyForceTxRxDepth::OUTERMOST.nested(),
+    );
 
     assert!(matches!(
         transition.step_local().unwrap(),
@@ -261,7 +263,9 @@ fn bluetooth_gain_parent_starts_with_the_recovered_full_frequency_rfpll() {
 
 #[test]
 fn retained_bluetooth_calibration_skips_only_expensive_children() {
-    let mut transition = crate::state::PhyState::default().bluetooth_tx_gain_init_transition();
+    let mut transition = crate::state::PhyState::default().bluetooth_tx_gain_init_transition(
+        crate::analog::pbus::PhyForceTxRxDepth::OUTERMOST.nested(),
+    );
     transition.parameters.tx_dc_calibrated = true;
     transition
         .parameters
@@ -290,4 +294,86 @@ fn retained_bluetooth_calibration_skips_only_expensive_children() {
         transition.step_local().unwrap(),
         PhyBluetoothTxGainInitLocalStep::External(PhyBluetoothTxGainInitAction::TxDcPwdet(_))
     ));
+}
+
+/// Drive a transition parked before publication to completion; returns the
+/// force-TX/RX writes before and after the gain-memory publication.
+fn force_writes_around_publication(
+    depth: crate::analog::pbus::PhyForceTxRxDepth,
+) -> [std::vec::Vec<(bool, u8)>; 2] {
+    use crate::analog::pbus::{PhyForceTxRxAction, PhyForceTxRxCompletion};
+    let state = crate::state::PhyState::default();
+    let mut transition = state.bluetooth_tx_gain_init_transition(depth);
+    let publication = PhyBluetoothTxGainPublication::new(state.bluetooth_tx_gain_image());
+    transition.power = Some(PhyBluetoothTxPowerOutcome {
+        calibration: crate::tx::power::PhyTxPowerOutcome {
+            reference_codes: [80, 120],
+            power_curve: [-3, 4, 5],
+            point_corrections: [6, -7, 8],
+            power_adjustment: -9,
+            final_attenuation: 13,
+            current_channel: 11,
+            calibration_performed: true,
+        },
+    });
+    transition.step =
+        PhyBluetoothTxGainInitStep::Gain(PhyBluetoothTxGainChild::new(publication, depth));
+    let mut writes = [std::vec::Vec::new(), std::vec::Vec::new()];
+    let mut published = false;
+    loop {
+        let completion = match transition.step_local().unwrap() {
+            PhyBluetoothTxGainInitLocalStep::StateAdvanced => continue,
+            PhyBluetoothTxGainInitLocalStep::Complete(_) => return writes,
+            PhyBluetoothTxGainInitLocalStep::Failed(failure) => panic!("{failure:?}"),
+            PhyBluetoothTxGainInitLocalStep::External(action) => match action {
+                PhyBluetoothTxGainInitAction::Publish(publication) => {
+                    published = true;
+                    PhyBluetoothTxGainInitCompletion::Published(publication)
+                }
+                PhyBluetoothTxGainInitAction::ForceTxRx(PhyForceTxRxAction::Configure {
+                    enabled,
+                    phase,
+                }) => {
+                    writes[usize::from(published)].push((enabled, phase));
+                    PhyBluetoothTxGainInitCompletion::ForceTxRx(
+                        PhyForceTxRxCompletion::Configured { enabled, phase },
+                    )
+                }
+                PhyBluetoothTxGainInitAction::ForceTxRx(PhyForceTxRxAction::DelayMicros {
+                    enabled,
+                    completed_phase,
+                    micros,
+                }) => PhyBluetoothTxGainInitCompletion::ForceTxRx(
+                    PhyForceTxRxCompletion::DelayElapsed {
+                        enabled,
+                        completed_phase,
+                        micros,
+                    },
+                ),
+                action => panic!("unexpected action {action:?}"),
+            },
+        };
+        transition.advance_external(completion).unwrap();
+    }
+}
+
+#[test]
+fn gain_child_force_pair_follows_the_vendor_nesting_count() {
+    let outermost = crate::analog::pbus::PhyForceTxRxDepth::OUTERMOST;
+    assert_eq!(
+        force_writes_around_publication(outermost),
+        [
+            std::vec![(true, 0), (true, 1)],
+            std::vec![(false, 0), (false, 1)]
+        ]
+    );
+    // Inside the registration pair the child's release forces again.
+    assert_eq!(
+        force_writes_around_publication(outermost.nested()),
+        [std::vec![], std::vec![(true, 0), (true, 1)]]
+    );
+    assert_eq!(
+        force_writes_around_publication(outermost.nested().nested()),
+        [std::vec![], std::vec![]]
+    );
 }

@@ -405,7 +405,48 @@ enum PhyForceTxRxStep {
     Complete,
 }
 
-/// Async-capable owner of complete rev0 ROM `phy_force_txrx_off`.
+/// Nesting count of archive `phy_force_txrx_off_new` held by the callers of
+/// one balanced force/release call pair.
+///
+/// The vendor keeps the count in `phy_param`. Each call changes it by one;
+/// a call leaving it at one runs the force sequence, and a call leaving it at
+/// zero runs the release sequence. A pair entered at depth zero therefore
+/// forces and releases, a pair entered at depth one releases by forcing again,
+/// and deeper pairs touch no hardware. OER radio owners are serialized, so the
+/// depth of every pair is known from its caller instead of a mutable counter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyForceTxRxDepth(u8);
+
+impl PhyForceTxRxDepth {
+    /// No caller holds a force level.
+    pub const OUTERMOST: Self = Self(0);
+
+    /// The depth seen by a pair nested inside a pair entered at `self`.
+    pub const fn nested(self) -> Self {
+        Self(self.0 + 1)
+    }
+
+    /// Sequence the pair's first call runs.
+    pub const fn enter(self) -> Option<PhyForceTxRxTransition> {
+        match self.0 {
+            0 => Some(PhyForceTxRxTransition::new(true)),
+            _ => None,
+        }
+    }
+
+    /// Sequence the pair's second call runs, restoring the count to `self`.
+    pub const fn leave(self) -> Option<PhyForceTxRxTransition> {
+        match self.0 {
+            0 => Some(PhyForceTxRxTransition::new(false)),
+            1 => Some(PhyForceTxRxTransition::new(true)),
+            _ => None,
+        }
+    }
+}
+
+/// Async-capable owner of one force or release sequence: complete rev0 ROM
+/// `phy_force_txrx_off`, and the hardware part of archive
+/// `phy_force_txrx_off_new` selected by [`PhyForceTxRxDepth`].
 ///
 /// Both branches perform two distinct force-mode writes and retain the
 /// one-microsecond delay following each write as an external timer edge.

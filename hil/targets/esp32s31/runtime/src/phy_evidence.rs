@@ -6,6 +6,5 @@ pub(super) fn rx_quality(
         shared_baseband: quality.shared_baseband(),
         wifi_baseband: quality.wifi_baseband(),
         wifi_fine: quality.wifi_fine(),
-        wifi_radio: quality.wifi_radio(),
     }
 }

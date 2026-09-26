@@ -100,6 +100,8 @@ fn rf_completion(action: PhyRxIqRfCalibrationAction) -> PhyRxIqRfCalibrationComp
     }
 }
 
+const CAP_STATUSES: [u8; 6] = [0, 1, 1, 0, 2, 2];
+
 fn rfpll_completion(
     action: RfpllFrequencyAction,
     cap_status_reads: &mut u8,
@@ -115,8 +117,11 @@ fn rfpll_completion(
             let value = if field == analog_registers::RFPLL_LOCK_STATUS {
                 1
             } else if field == analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS {
-                *cap_status_reads = cap_status_reads.wrapping_add(1);
-                if *cap_status_reads & 1 == 1 { 0 } else { 1 }
+                // Accept the first candidate of each direction, then end the
+                // direction with its two boundary statuses.
+                let status = CAP_STATUSES[usize::from(*cap_status_reads)];
+                *cap_status_reads += 1;
+                status
             } else {
                 0
             };
@@ -532,7 +537,7 @@ fn root_success_traverses_every_child_and_commits_channel_six() {
         assert!(steps < 240);
     }
     assert_eq!(configured_phase, Some(0));
-    assert_eq!(cap_status_reads, 4);
+    assert_eq!(usize::from(cap_status_reads), CAP_STATUSES.len());
 }
 
 #[test]

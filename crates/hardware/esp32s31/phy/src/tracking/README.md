@@ -178,7 +178,7 @@ flowchart TD
 
 ## Current parent and grant boundaries
 
-The outer graph follows `phy_param_track_tot` in esp-phy-lib `b88e4b76`:
+The outer graph follows `phy_param_track_tot` in the pinned esp-phy-lib:
 
 ```mermaid
 flowchart LR
@@ -414,12 +414,19 @@ using the same table-selection entry as D-code. Direct synthesizer programming
 remains a separate entry for cold frequency-table construction. RX gain does
 not run a capacitor search merely because its input is expressed in MHz.
 
-The RX-gain root retains newly measured per-gain DC, Wi-Fi base DC and RXBB
-fine corrections until both gain banks are published. Wi-Fi entries use those
-fresh corrections; the shared Bluetooth/IEEE 802.15.4 bank uses fixed baseband
-DC with its own per-gain radio DC. The independent Wi-Fi radio-DC measurement
-starts only after the low PBus level has been acknowledged. A timeout cannot
-advance it to measurement. Parent semantic state is committed only after the
+The RX-gain root retains newly measured per-gain DC and the five fine radio DC
+pairs of `phy_rxdc_fine_cal` until both gain banks are published. Each Wi-Fi
+entry selects the fine pair of its baseband-bit population, saturated at the
+last code; the shared Bluetooth/IEEE 802.15.4 bank uses fixed baseband DC with
+its own per-gain radio DC. The fine searches follow Wi-Fi gain zero, each
+starting from the previous pair after its code is acknowledged. A timeout
+cannot advance a search to measurement.
+
+Every `phy_force_txrx_off_new` pair follows the vendor nesting count, which
+production carries as a static `PhyForceTxRxDepth`: the common branch and the
+TX envelope each enter at depth zero (force, then release), their nested
+channel and gain children release by forcing again at depth one, and deeper
+pairs touch no hardware. `phy_close_rf` no longer forces TX/RX. Parent semantic state is committed only after the
 complete calibration child, including channel and baseband restoration.
 
 The channel and runtime gain regeneration use the current S31 Wi-Fi coefficient
@@ -438,8 +445,7 @@ The production semantic state does not import this vendor calibration image.
 
 A known producer is `librftest.a::set_rate_power_index`, in the optional
 `CONFIG_ESP_PHY_ENABLE_CERT_TEST` composition. The authenticated S31 RF-test
-archive at `b88e4b76e090ae59c51cb00b916d38def895b396` has SHA-256
-`547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e`.
+archive is the `librftest` pin of `verification/vendor/projects/esp32s31/artifacts.toml`.
 The function subtracts signed attenuation from the selected target power,
 narrows to a signed byte, and selects a MAC power index. Above its code ceiling
 of 84 it stores the excess as the additive adjustment and regenerates Wi-Fi gain

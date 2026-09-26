@@ -1,10 +1,9 @@
 # Runtime RFPLL correction
 
 This component owns the finite measured capacitor search and conditional
-frequency-memory update. Its source reference is `phy_rfpll_cap_init_cal_new`
-and `phy_rfpll_cap_correct_new` in esp-phy-lib revision
-`b88e4b76e090ae59c51cb00b916d38def895b396`, archive SHA-256
-`d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580`.
+frequency-memory update. Its source reference is `phy_rfpll_cap_init_cal_track`
+and `phy_rfpll_cap_correct_track` of the pinned esp-phy-lib `libphy.a`
+(`verification/vendor/projects/esp32s31/artifacts.toml`).
 
 `search::Search` issues helper operations and accepts their completions. It
 keeps requested capacitor values separate from the helper's programmed value:
@@ -27,7 +26,7 @@ flowchart TD
     delta -- No --> done
 ```
 
-Each direction permits at most ten status samples and ends early after two
+Each direction permits at most thirty status samples and ends early after two
 direction-specific boundary observations. The observations need not be
 consecutive. Every candidate write is followed by an explicit five-microsecond
 settle before reading status. The final write has no additional search settle.

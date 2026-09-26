@@ -50,7 +50,7 @@ fn independent_references_select_only_due_hardware_branches() {
         assert!(forced.decision().transmit.is_due());
         assert_eq!(
             PhyCalibrationTrackingTransition::new(request, forced).action(),
-            PhyCalibrationTrackingAction::ClearPbus,
+            PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
         );
         // Observing demand did not commit or overwrite the source references.
         assert_eq!(unchanged.transmit_reference_temperature, 50);

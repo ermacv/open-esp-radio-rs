@@ -1,8 +1,8 @@
 use super::RfpllFrequencyFailure;
 use super::{
-    CAP_SEARCH_LIMIT, RfpllFrequencyAction, RfpllFrequencyBindingError, RfpllFrequencyCompletion,
-    RfpllFrequencyExternalBinding, RfpllFrequencyI2cBinding, RfpllFrequencyOutcome,
-    RfpllFrequencyRequest, RfpllFrequencyTransition, calculate_rfpll_sdm,
+    CAP_SEARCH_SAMPLES_PER_DIRECTION, RfpllFrequencyAction, RfpllFrequencyBindingError,
+    RfpllFrequencyCompletion, RfpllFrequencyExternalBinding, RfpllFrequencyI2cBinding,
+    RfpllFrequencyOutcome, RfpllFrequencyRequest, RfpllFrequencyTransition, calculate_rfpll_sdm,
 };
 use crate::analog::i2c::analog_registers;
 
@@ -133,8 +133,11 @@ fn capacitor_search_restarts_the_upward_offset_and_keeps_the_shared_sum() {
     });
     enter_cap_search(&mut transition, 100, 0);
 
-    let candidates = [0, 0, 1, 0, 1].map(|status| complete_cap_candidate(&mut transition, status));
-    assert_eq!(candidates, [100, 99, 98, 101, 102]);
+    // Each direction ends after its second, not necessarily consecutive,
+    // boundary status: increase downward, decrease upward.
+    let candidates =
+        [0, 1, 2, 0, 1, 0, 2, 2].map(|status| complete_cap_candidate(&mut transition, status));
+    assert_eq!(candidates, [100, 99, 98, 97, 96, 101, 102, 103]);
 
     advance_writes(&mut transition, 2);
     transition
@@ -144,13 +147,13 @@ fn capacitor_search_restarts_the_upward_offset_and_keeps_the_shared_sum() {
         panic!("expected completion");
     };
     assert_eq!(outcome.initial_cap, 100);
-    assert_eq!(outcome.final_cap, (100 + 99 + 101) / 3);
+    assert_eq!(outcome.final_cap, (100 + 97 + 101) / 3);
     assert_eq!(outcome.accepted_cap_samples, 3);
     assert!(outcome.lock_observed);
 }
 
 #[test]
-fn bounded_rom_cap_path_preserves_initial_when_no_sample_is_accepted() {
+fn bounded_cap_path_preserves_initial_when_no_sample_is_accepted() {
     let mut transition = RfpllFrequencyTransition::new(RfpllFrequencyRequest {
         crystal_selector: 0x31,
         frequency_code: 0x983,
@@ -158,8 +161,9 @@ fn bounded_rom_cap_path_preserves_initial_when_no_sample_is_accepted() {
     });
     enter_cap_search(&mut transition, 100, 0);
     let mut index = 0;
-    while index != CAP_SEARCH_LIMIT * 2 {
-        complete_cap_candidate(&mut transition, 1);
+    while index != CAP_SEARCH_SAMPLES_PER_DIRECTION * 2 {
+        // Neither accepted nor a boundary: both directions run to their bound.
+        complete_cap_candidate(&mut transition, 3);
         index += 1;
     }
     advance_writes(&mut transition, 2);

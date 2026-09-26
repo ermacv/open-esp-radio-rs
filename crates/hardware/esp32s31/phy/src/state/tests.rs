@@ -67,9 +67,8 @@ fn complete_calibration_cache() -> PhyCalibrationCache {
     state.wifi.wifi_rx_table_last_index = PHY_WIFI_RX_GAIN_LAST_INDEX;
     state.wifi.shared_rx_table_last_index = PHY_SHARED_RX_GAIN_LAST_INDEX;
     state.wifi.wifi_index_dc = [[31; 2]; 8];
-    state.wifi.wifi_dc_base = [32; 2];
+    state.wifi.wifi_fine_dc = [[32; 2]; crate::rx::gain_calibration::FINE_CODES];
     state.wifi.shared_index_dc = [[33; 2]; 11];
-    state.wifi.rxbb_dc_adjustments = [[34; 2]; 6];
     state.bluetooth.tx_dc_calibrated = true;
     state.bluetooth.tx_power_calibrated = true;
     state.bluetooth.tx_dco = [[35; 4]; 3];
@@ -157,9 +156,8 @@ fn calibration_tracking_references_are_semantic_and_commit_per_branch() {
             dc: Some(crate::rx::gain_calibration::PhyRxGainDcOutcome {
                 quality: Default::default(),
                 wifi_index_dc: [[1; 2]; 8],
-                wifi_dc_base: [2; 2],
+                wifi_fine_dc: [[2; 2]; crate::rx::gain_calibration::FINE_CODES],
                 shared_index_dc: [[3; 2]; 11],
-                rxbb_dc_adjustments: [[4; 2]; 6],
             }),
             generated_tables: true,
             wifi_last_index: 69,
@@ -284,6 +282,7 @@ fn periodic_gain_tracking_commits_only_terminal_runtime_outcomes() {
             wifi_gain_base: 0,
             bluetooth_ieee802154_gain_base: 0,
             relaxed_threshold: true,
+            wifi_gain_publication_skipped: false,
         }
     );
 
@@ -308,6 +307,7 @@ fn periodic_gain_tracking_commits_only_terminal_runtime_outcomes() {
             wifi_gain_base: 0,
             bluetooth_ieee802154_gain_base: 5,
             relaxed_threshold: false,
+            wifi_gain_publication_skipped: false,
         }
     );
 

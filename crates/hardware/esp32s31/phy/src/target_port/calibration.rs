@@ -347,30 +347,6 @@ fn rx_gain_rfpll_direct<D: PhyShortDelay>(
     all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
     unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
 )]
-fn rx_minimum_value<D: PhyShortDelay>(
-    request: crate::rx::dc_offset::PhyRxDcMinimumRequest,
-    registers: &mut impl SharedPhyAccess,
-    budget: &mut crate::target_executor::DirectOperationBudget,
-    execution: &mut crate::tracking::observation::RxGainExecution,
-) -> Result<crate::rx::dc_offset::PhyRxDcMinimumOutcome, DirectRxGainDcError> {
-    let completion = crate::rx::dc_offset::PhyRxDcMinimumTargetTransaction::new(request)
-        .execute_target::<D>(budget.remaining(), registers)?
-        .ok_or(PhyTargetPortError::RfOperationLimit)?;
-    if !budget.consume(completion.operations()) {
-        return Err(PhyTargetPortError::RfOperationLimit.into());
-    }
-    execution.minimum_searches += 1;
-    execution.minimum_operations += completion.operations();
-    execution.settle_1us += 2 * u32::from(completion.estimators());
-    completion
-        .into_terminal()
-        .map_err(|failure| crate::rx::gain_calibration::PhyRxGainDcFailure::Minimum(failure).into())
-}
-
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 fn rx_gain_one_step_direct<D: PhyShortDelay>(
     request: crate::rx::gain_calibration::PhyRxDcCalibrationRequest,
     registers: &mut impl SharedPhyContext,
@@ -391,74 +367,6 @@ fn rx_gain_one_step_direct<D: PhyShortDelay>(
         }
         None => Err(PhyTargetPortError::UnexpectedBinding.into()),
     }
-}
-
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
-fn rx_gain_reference_direct<D: PhyShortDelay>(
-    bank: crate::rx::gain_calibration::PhyRxGainDcBank,
-    measurement_base: u8,
-    rx_saturation_detected: bool,
-    registers: &mut impl SharedPhyContext,
-    budget: &mut crate::target_executor::DirectOperationBudget,
-    execution: &mut crate::tracking::observation::RxGainExecution,
-) -> Result<[i16; 2], DirectRxGainDcError> {
-    use crate::rx::gain_calibration::reference_setup;
-    for index in 0..6 {
-        force_rx_gain_pbus(registers, bank, reference_setup(index))?;
-    }
-    if !D::settle_micros(10) {
-        return Err(PhyTargetPortError::HardwareCapabilityUnavailable.into());
-    }
-    execution.settle_10us += 1;
-    let low = rx_minimum_value::<D>(
-        crate::rx::dc_offset::PhyRxDcMinimumRequest {
-            measurement: measurement_base,
-            control: 0x800,
-            mode: 0,
-            // `phy_rxdc_est_delta` clears both output slots.
-            rx_saturation_detected,
-            previous: crate::calibration::estimator::PhyDcIqEstimate {
-                i: 0,
-                q: 0,
-                power: 0,
-            },
-        },
-        registers,
-        budget,
-        execution,
-    )?;
-    force_rx_gain_pbus(
-        registers,
-        bank,
-        crate::analog::pbus::PhyPbusForceTest::new(1, 2, 0x20),
-    )?;
-    if !D::settle_micros(10) {
-        return Err(PhyTargetPortError::HardwareCapabilityUnavailable.into());
-    }
-    execution.settle_10us += 1;
-    let high = rx_minimum_value::<D>(
-        crate::rx::dc_offset::PhyRxDcMinimumRequest {
-            measurement: measurement_base + 1,
-            control: 0x800,
-            mode: 0,
-            rx_saturation_detected,
-            previous: crate::calibration::estimator::PhyDcIqEstimate {
-                i: 0,
-                q: 0,
-                power: 0,
-            },
-        },
-        registers,
-        budget,
-        execution,
-    )?;
-    Ok([
-        high.estimate.i.wrapping_sub(low.estimate.i) as i16,
-        high.estimate.q.wrapping_sub(low.estimate.q) as i16,
-    ])
 }
 
 #[cfg_attr(
@@ -506,18 +414,17 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
     use crate::{
         analog::{i2c::analog_registers, pbus::PhyPbusForceTest},
         rx::gain_calibration::{
-            PhyRxDcCalibrationRequest, PhyRxDcCalibrationStage, PhyRxGainDcBank,
-            PhyRxGainDcOutcome, SHARED_CALIBRATION_GAIN, WIFI_CALIBRATION_GAIN, fine_code,
-            fine_setup, rx_on, set_rx_gain_transaction, shared_mixer_dgain_transaction,
+            FINE_CODES, PhyRxDcCalibrationRequest, PhyRxDcCalibrationStage, PhyRxGainDcBank,
+            PhyRxGainDcOutcome, SHARED_CALIBRATION_GAIN, WIFI_CALIBRATION_GAIN, fine_code, rx_on,
+            set_rx_gain_transaction, shared_mixer_dgain_transaction,
         },
     };
 
     let mut outcome = PhyRxGainDcOutcome {
         quality: crate::rx::gain_calibration::PhyRxGainDcQuality::EMPTY,
         wifi_index_dc: [[0; 2]; 8],
-        wifi_dc_base: [0; 2],
+        wifi_fine_dc: [[0; 2]; FINE_CODES],
         shared_index_dc: [[0; 2]; 11],
-        rxbb_dc_adjustments: [[0; 2]; 6],
     };
     let run = (|| -> Result<(), DirectRxGainDcError> {
         crate::hardware::configure_phy_rx_gain_dc_registers(registers, true);
@@ -544,14 +451,6 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
             registers,
             analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE,
             0,
-        )?;
-        let shared_reference = rx_gain_reference_direct::<D>(
-            PhyRxGainDcBank::Shared,
-            0,
-            parameters.rx_saturation_detected,
-            registers,
-            budget,
-            execution,
         )?;
         for index in 0..SHARED_CALIBRATION_GAIN.len() as u8 {
             let previous = if index == 0 {
@@ -601,7 +500,6 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                     stage: PhyRxDcCalibrationStage::Baseband,
                     control: 0x800,
                     initial: previous,
-                    reference_delta: shared_reference,
                     gain_index: index,
                     rx_saturation_detected: parameters.rx_saturation_detected,
                 },
@@ -631,53 +529,6 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
         }
         oer_esp32s31_hal::phy::pbus::configure_rx_clock(registers, true);
         oer_esp32s31_hal::phy::pbus::configure_tx_clock(registers, true);
-        for index in 0..5 {
-            force_rx_gain_pbus(registers, PhyRxGainDcBank::Wifi, fine_setup(index))?;
-        }
-        let mut fine_current = [0x100; 2];
-        let mut fine_base = [0; 2];
-        for index in 0..6_u8 {
-            force_rx_gain_pbus(
-                registers,
-                PhyRxGainDcBank::Wifi,
-                PhyPbusForceTest::new(1, 2, fine_code(index)),
-            )?;
-            let calibrated = rx_gain_one_step_direct::<D>(
-                PhyRxDcCalibrationRequest {
-                    shared_radio: false,
-                    stage: PhyRxDcCalibrationStage::Radio,
-                    control: 0x800,
-                    initial: fine_current,
-                    reference_delta: [0; 2],
-                    gain_index: 0,
-                    rx_saturation_detected: parameters.rx_saturation_detected,
-                },
-                registers,
-                budget,
-                execution,
-            )?;
-            outcome
-                .quality
-                .record_wifi_fine(index, calibrated.converged);
-            fine_current = calibrated.configuration;
-            if index == 0 {
-                fine_base = fine_current;
-                outcome.rxbb_dc_adjustments[0] = [0; 2];
-            } else {
-                outcome.rxbb_dc_adjustments[index as usize] = [
-                    fine_current[0].wrapping_sub(fine_base[0]),
-                    fine_current[1].wrapping_sub(fine_base[1]),
-                ];
-            }
-        }
-        let wifi_reference = rx_gain_reference_direct::<D>(
-            PhyRxGainDcBank::Wifi,
-            2,
-            parameters.rx_saturation_detected,
-            registers,
-            budget,
-            execution,
-        )?;
         for index in 0..WIFI_CALIBRATION_GAIN.len() as u8 {
             let previous = if index == 0 {
                 [0x100; 2]
@@ -687,7 +538,7 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
             let baseband = if index == 0 {
                 [0x100; 2]
             } else {
-                outcome.wifi_dc_base
+                outcome.wifi_fine_dc[0]
             };
             force_rx_gain_pbus(
                 registers,
@@ -726,7 +577,6 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                     stage: PhyRxDcCalibrationStage::Baseband,
                     control: 0x800,
                     initial: previous,
-                    reference_delta: wifi_reference,
                     gain_index: index,
                     rx_saturation_detected: parameters.rx_saturation_detected,
                 },
@@ -739,27 +589,32 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
                 .record_wifi_baseband(index, calibrated.converged);
             outcome.wifi_index_dc[index as usize] = calibrated.configuration;
             if index == 0 {
-                force_rx_gain_pbus(
-                    registers,
-                    PhyRxGainDcBank::Wifi,
-                    PhyPbusForceTest::new(1, 2, 0),
-                )?;
-                let radio = rx_gain_one_step_direct::<D>(
-                    PhyRxDcCalibrationRequest {
-                        shared_radio: false,
-                        stage: PhyRxDcCalibrationStage::Radio,
-                        control: 0x800,
-                        initial: [0x100; 2],
-                        reference_delta: [0; 2],
-                        gain_index: 0,
-                        rx_saturation_detected: parameters.rx_saturation_detected,
-                    },
-                    registers,
-                    budget,
-                    execution,
-                )?;
-                outcome.quality.record_wifi_radio(radio.converged);
-                outcome.wifi_dc_base = radio.configuration;
+                // `phy_rxdc_fine_cal`: one radio search per fine code, each
+                // starting from the previous search's pair.
+                let mut fine_current = [0x100; 2];
+                for fine in 0..FINE_CODES as u8 {
+                    force_rx_gain_pbus(
+                        registers,
+                        PhyRxGainDcBank::Wifi,
+                        PhyPbusForceTest::new(1, 2, fine_code(fine)),
+                    )?;
+                    let calibrated = rx_gain_one_step_direct::<D>(
+                        PhyRxDcCalibrationRequest {
+                            shared_radio: false,
+                            stage: PhyRxDcCalibrationStage::Radio,
+                            control: 0x800,
+                            initial: fine_current,
+                            gain_index: 0,
+                            rx_saturation_detected: parameters.rx_saturation_detected,
+                        },
+                        registers,
+                        budget,
+                        execution,
+                    )?;
+                    outcome.quality.record_wifi_fine(fine, calibrated.converged);
+                    fine_current = calibrated.configuration;
+                    outcome.wifi_fine_dc[fine as usize] = fine_current;
+                }
             }
         }
         Ok(())

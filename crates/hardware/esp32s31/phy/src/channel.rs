@@ -17,6 +17,7 @@
 
 use crate::analog::{
     i2c::{PhyI2cAddress, analog_registers},
+    pbus::{PhyForceTxRxAction, PhyForceTxRxCompletion, PhyForceTxRxDepth, PhyForceTxRxTransition},
     temperature::{
         PhyTemperatureAction, PhyTemperatureCompletion, PhyTemperatureFailure,
         PhyTemperatureOutcome, PhyTemperatureTransition,
@@ -26,8 +27,8 @@ use crate::analog::{
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 
 // ESP32-S31 Wi-Fi gain profile consumed by `phy_wifi_get_tx_tab_new` in
-// esp-phy-lib b88e4b76e090ae59c51cb00b916d38def895b396, libphy.a SHA-256
-// d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580.
+// esp-phy-lib 20f1db053a0e6cb9f1c09d255c43bf42483041d0, libphy.a SHA-256
+// 116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2.
 // phy_tx_gain.o .rodata offsets 0x6c/0x90/0xb4: 18 little-endian halfwords
 // each. LOW/MID are RF/baseband settings; HIGH contains signed gain reference
 // values used for interval selection and residual digital correction. Physical
@@ -217,6 +218,11 @@ pub enum PhyChipChannelFailure {
 pub enum PhyChipChannelDelay {
     FrequencyStartPulse,
     FrequencySettle,
+    /// Settle after one force-TX/RX write of the given direction and phase.
+    ForceTxRx {
+        enabled: bool,
+        completed_phase: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -229,6 +235,11 @@ pub enum PhyChipChannelI2cPhase {
 pub enum PhyChipChannelAction {
     SetAgc {
         enabled: bool,
+    },
+    /// One force-TX/RX write selected by the `phy_force_txrx_off_new` depth.
+    ConfigureForceTxRx {
+        enabled: bool,
+        phase: u8,
     },
     SetBbpllCalibration {
         enabled: bool,
@@ -279,6 +290,10 @@ pub enum PhyChipChannelAction {
 pub enum PhyChipChannelCompletion {
     AgcSet {
         enabled: bool,
+    },
+    ForceTxRxConfigured {
+        enabled: bool,
+        phase: u8,
     },
     BbpllCalibrationSet {
         enabled: bool,
@@ -354,13 +369,16 @@ enum CleanupContinuation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Step {
     DisableAgc,
+    ForceTxRx(PhyForceTxRxTransition),
     EnableBbpll,
     Temperature(PhyTemperatureTransition),
     StartFrequencySwitch,
     FrequencyStartDelay,
     ClearFrequencySwitch,
     FrequencySettleDelay,
-    AwaitFrequencyReady { samples: u32 },
+    AwaitFrequencyReady {
+        samples: u32,
+    },
     ConfigureNrxFirst,
     ConfigureBssCbw,
     ConfigureRxCompensationFirst,
@@ -368,11 +386,16 @@ enum Step {
     ConfigureNrxSecond,
     CalculateTxGain,
     PublishTxGain(PhyWifiTxGainImage),
+    /// The TX-gain child's release, which forces again at depth one.
+    ReassertTxRx(PhyForceTxRxTransition),
     CaptureTxCap,
-    PublishTxCapCommandMemory { value: u8 },
+    PublishTxCapCommandMemory {
+        value: u8,
+    },
     ConfigureChannelCbw,
     ConfigureRxCompensationSecond,
     DisableBbpll(CleanupContinuation),
+    ReleaseTxRx(PhyForceTxRxTransition, CleanupContinuation),
     ClearDcMemory(CleanupContinuation),
     EnableAgc(CleanupContinuation),
     Complete(PhyChipChannelOutcome),
@@ -437,6 +460,59 @@ pub(crate) const fn retained_tx_cap_value(channel: u16, capacitance: [u8; 6]) ->
     capacitance[index] | capacitance[index + 1].wrapping_shl(4)
 }
 
+const fn force_txrx_action(child: PhyForceTxRxTransition) -> PhyChipChannelAction {
+    match child.action() {
+        PhyForceTxRxAction::Configure { enabled, phase } => {
+            PhyChipChannelAction::ConfigureForceTxRx { enabled, phase }
+        }
+        PhyForceTxRxAction::DelayMicros {
+            enabled,
+            completed_phase,
+            micros,
+        } => PhyChipChannelAction::DelayMicros {
+            phase: PhyChipChannelDelay::ForceTxRx {
+                enabled,
+                completed_phase,
+            },
+            micros,
+        },
+        // The parent leaves a force step as soon as its child completes.
+        PhyForceTxRxAction::Complete { .. } => unreachable!(),
+    }
+}
+
+/// Advance a force-TX/RX child; `true` once both writes and settles completed.
+fn advance_force_txrx(
+    child: &mut PhyForceTxRxTransition,
+    completion: PhyChipChannelCompletion,
+) -> Result<bool, PhyChipChannelTransitionError> {
+    let completion = match completion {
+        PhyChipChannelCompletion::ForceTxRxConfigured { enabled, phase } => {
+            PhyForceTxRxCompletion::Configured { enabled, phase }
+        }
+        PhyChipChannelCompletion::DelayElapsed {
+            phase:
+                PhyChipChannelDelay::ForceTxRx {
+                    enabled,
+                    completed_phase,
+                },
+            micros,
+        } => PhyForceTxRxCompletion::DelayElapsed {
+            enabled,
+            completed_phase,
+            micros,
+        },
+        _ => return Err(PhyChipChannelTransitionError::WrongCompletion),
+    };
+    child
+        .advance(completion)
+        .map_err(|_| PhyChipChannelTransitionError::WrongCompletion)?;
+    Ok(matches!(
+        child.action(),
+        PhyForceTxRxAction::Complete { .. }
+    ))
+}
+
 impl PhyChipChannelRequest {
     pub const fn validate(self) -> Result<(), PhyChipChannelFailure> {
         let channel = normalized_channel(self.channel_or_frequency);
@@ -458,6 +534,8 @@ impl PhyChipChannelRequest {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyChipChannelTransition {
     request: PhyChipChannelRequest,
+    /// Force-TX/RX nesting count held by the caller.
+    depth: PhyForceTxRxDepth,
     channel: u16,
     frequency_mhz: u16,
     temperature: Option<PhyTemperatureOutcome>,
@@ -465,7 +543,15 @@ pub struct PhyChipChannelTransition {
 }
 
 impl PhyChipChannelTransition {
+    /// Outermost channel programming: no caller holds a force-TX/RX level.
     pub const fn new(request: PhyChipChannelRequest) -> Self {
+        Self::at_depth(request, PhyForceTxRxDepth::OUTERMOST)
+    }
+
+    /// Channel programming inside callers holding `depth` force-TX/RX levels.
+    /// The root's own pair and the nested TX-gain child's pair run the
+    /// sequences [`PhyForceTxRxDepth`] selects.
+    pub const fn at_depth(request: PhyChipChannelRequest, depth: PhyForceTxRxDepth) -> Self {
         let channel = normalized_channel(request.channel_or_frequency);
         let frequency_mhz = channel_to_frequency(request.channel_or_frequency);
         let step = match request.validate() {
@@ -474,6 +560,7 @@ impl PhyChipChannelTransition {
         };
         Self {
             request,
+            depth,
             channel,
             frequency_mhz,
             temperature: None,
@@ -515,6 +602,9 @@ impl PhyChipChannelTransition {
     pub const fn action(self) -> PhyChipChannelAction {
         match self.step {
             Step::DisableAgc => PhyChipChannelAction::SetAgc { enabled: false },
+            Step::ForceTxRx(child) | Step::ReassertTxRx(child) | Step::ReleaseTxRx(child, _) => {
+                force_txrx_action(child)
+            }
             Step::EnableBbpll => PhyChipChannelAction::SetBbpllCalibration { enabled: true },
             Step::Temperature(transition) => PhyChipChannelAction::Temperature(transition.action()),
             Step::StartFrequencySwitch => PhyChipChannelAction::StartFrequencySwitch {
@@ -579,7 +669,31 @@ impl PhyChipChannelTransition {
     ) -> Result<(), PhyChipChannelTransitionError> {
         self.step = match (self.step, completion) {
             (Step::DisableAgc, PhyChipChannelCompletion::AgcSet { enabled: false }) => {
-                Step::EnableBbpll
+                match self.depth.enter() {
+                    Some(child) => Step::ForceTxRx(child),
+                    None => Step::EnableBbpll,
+                }
+            }
+            (Step::ReassertTxRx(mut child), completion) => {
+                if advance_force_txrx(&mut child, completion)? {
+                    Step::CaptureTxCap
+                } else {
+                    Step::ReassertTxRx(child)
+                }
+            }
+            (Step::ForceTxRx(mut child), completion) => {
+                if advance_force_txrx(&mut child, completion)? {
+                    Step::EnableBbpll
+                } else {
+                    Step::ForceTxRx(child)
+                }
+            }
+            (Step::ReleaseTxRx(mut child, continuation), completion) => {
+                if advance_force_txrx(&mut child, completion)? {
+                    Step::ClearDcMemory(continuation)
+                } else {
+                    Step::ReleaseTxRx(child, continuation)
+                }
             }
             (
                 Step::EnableBbpll,
@@ -717,8 +831,13 @@ impl PhyChipChannelTransition {
                     Step::PublishTxGain(image)
                 }
             }
+            // `phy_wifi_set_tx_gain_new` brackets its publication with a
+            // pair nested inside this root's pair.
             (Step::PublishTxGain(_), PhyChipChannelCompletion::TxGainPublished) => {
-                Step::CaptureTxCap
+                match self.depth.nested().leave() {
+                    Some(child) => Step::ReassertTxRx(child),
+                    None => Step::CaptureTxCap,
+                }
             }
             (
                 Step::CaptureTxCap,
@@ -765,7 +884,10 @@ impl PhyChipChannelTransition {
             (
                 Step::DisableBbpll(continuation),
                 PhyChipChannelCompletion::BbpllCalibrationSet { enabled: false },
-            ) => Step::ClearDcMemory(continuation),
+            ) => match self.depth.leave() {
+                Some(child) => Step::ReleaseTxRx(child, continuation),
+                None => Step::ClearDcMemory(continuation),
+            },
             (Step::ClearDcMemory(continuation), PhyChipChannelCompletion::DcMemoryCleared) => {
                 Step::EnableAgc(continuation)
             }
@@ -799,6 +921,7 @@ impl PhyChipChannelMmioBinding {
     pub fn new(action: PhyChipChannelAction) -> Result<Self, PhyChipChannelBindingError> {
         match action {
             PhyChipChannelAction::SetAgc { .. }
+            | PhyChipChannelAction::ConfigureForceTxRx { .. }
             | PhyChipChannelAction::SetBbpllCalibration { .. }
             | PhyChipChannelAction::StartFrequencySwitch { .. }
             | PhyChipChannelAction::ClearFrequencySwitch
@@ -827,6 +950,10 @@ impl PhyChipChannelMmioBinding {
             PhyChipChannelAction::SetAgc { enabled } => {
                 channel.set_agc_enabled(enabled);
                 PhyChipChannelCompletion::AgcSet { enabled }
+            }
+            PhyChipChannelAction::ConfigureForceTxRx { enabled, phase } => {
+                oer_esp32s31_hal::phy::pbus::configure_force_txrx(channel, enabled, phase);
+                PhyChipChannelCompletion::ForceTxRxConfigured { enabled, phase }
             }
             PhyChipChannelAction::SetBbpllCalibration { enabled } => {
                 channel.set_bbpll_calibration_enabled(enabled);
@@ -893,6 +1020,10 @@ impl PhyChipChannelMmioBinding {
             PhyChipChannelAction::SetAgc { enabled } => {
                 crate::hardware::set_phy_channel_agc(registers, enabled);
                 PhyChipChannelCompletion::AgcSet { enabled }
+            }
+            PhyChipChannelAction::ConfigureForceTxRx { enabled, phase } => {
+                oer_esp32s31_hal::phy::pbus::configure_force_txrx(registers, enabled, phase);
+                PhyChipChannelCompletion::ForceTxRxConfigured { enabled, phase }
             }
             PhyChipChannelAction::SetBbpllCalibration { enabled } => {
                 oer_esp32s31_hal::phy::i2c::configure_bbpll_calibration(registers, enabled);

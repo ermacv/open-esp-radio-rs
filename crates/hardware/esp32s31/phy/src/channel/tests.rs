@@ -51,6 +51,9 @@ fn temperature_completion(action: PhyTemperatureAction) -> PhyTemperatureComplet
 fn direct_completion(action: PhyChipChannelAction, ready: bool) -> PhyChipChannelCompletion {
     match action {
         PhyChipChannelAction::SetAgc { enabled } => PhyChipChannelCompletion::AgcSet { enabled },
+        PhyChipChannelAction::ConfigureForceTxRx { enabled, phase } => {
+            PhyChipChannelCompletion::ForceTxRxConfigured { enabled, phase }
+        }
         PhyChipChannelAction::SetBbpllCalibration { enabled } => {
             PhyChipChannelCompletion::BbpllCalibrationSet { enabled }
         }
@@ -131,6 +134,87 @@ fn pure_channel_frequency_helpers_match_24ghz_reference_edges() {
     assert_eq!(frequency_to_channel(2_412), 1);
     assert_eq!(frequency_to_channel(2_462), 11);
     assert_eq!(frequency_to_channel(2_484), 14);
+}
+
+/// Force-TX/RX writes and the neighbouring AGC/BBPLL edges of one channel run.
+fn force_edges(mut transition: PhyChipChannelTransition) -> std::vec::Vec<PhyChipChannelAction> {
+    let mut edges = std::vec::Vec::new();
+    loop {
+        let action = transition.action();
+        match action {
+            PhyChipChannelAction::Complete(_) | PhyChipChannelAction::Failed(_) => return edges,
+            PhyChipChannelAction::SetAgc { .. }
+            | PhyChipChannelAction::SetBbpllCalibration { .. }
+            | PhyChipChannelAction::ConfigureForceTxRx { .. }
+            | PhyChipChannelAction::ClearDcMemory => edges.push(action),
+            PhyChipChannelAction::DelayMicros {
+                phase: PhyChipChannelDelay::ForceTxRx { .. },
+                ..
+            } => edges.push(action),
+            _ => {}
+        }
+        transition.advance(direct_completion(action, true)).unwrap();
+    }
+}
+
+#[test]
+fn channel_force_pairs_follow_the_vendor_nesting_count() {
+    let sequence = |enabled| {
+        (0..2).flat_map(move |phase| {
+            [
+                PhyChipChannelAction::ConfigureForceTxRx { enabled, phase },
+                PhyChipChannelAction::DelayMicros {
+                    phase: PhyChipChannelDelay::ForceTxRx {
+                        enabled,
+                        completed_phase: phase,
+                    },
+                    micros: 1,
+                },
+            ]
+        })
+    };
+    let agc = |enabled| PhyChipChannelAction::SetAgc { enabled };
+    let bbpll = |enabled| PhyChipChannelAction::SetBbpllCalibration { enabled };
+    let depth_one = PhyForceTxRxDepth::OUTERMOST.nested();
+    // Outermost: force, re-force when the nested TX-gain pair leaves the
+    // count at one, release when the root leaves it at zero.
+    let outermost: std::vec::Vec<_> = [agc(false)]
+        .into_iter()
+        .chain(sequence(true))
+        .chain([bbpll(true)])
+        .chain(sequence(true))
+        .chain([bbpll(false)])
+        .chain(sequence(false))
+        .chain([PhyChipChannelAction::ClearDcMemory, agc(true)])
+        .collect();
+    assert_eq!(
+        force_edges(PhyChipChannelTransition::new(REQUEST)),
+        outermost
+    );
+    // Depth one: only the root's release, which leaves the count at one.
+    let nested: std::vec::Vec<_> = [agc(false), bbpll(true), bbpll(false)]
+        .into_iter()
+        .chain(sequence(true))
+        .chain([PhyChipChannelAction::ClearDcMemory, agc(true)])
+        .collect();
+    assert_eq!(
+        force_edges(PhyChipChannelTransition::at_depth(REQUEST, depth_one)),
+        nested
+    );
+    // Depth two: every pair stays above one.
+    assert_eq!(
+        force_edges(PhyChipChannelTransition::at_depth(
+            REQUEST,
+            depth_one.nested()
+        )),
+        [
+            agc(false),
+            bbpll(true),
+            bbpll(false),
+            PhyChipChannelAction::ClearDcMemory,
+            agc(true),
+        ]
+    );
 }
 
 #[test]
@@ -235,6 +319,20 @@ fn frequency_timeout_runs_full_radio_cleanup() {
     transition
         .advance(PhyChipChannelCompletion::BbpllCalibrationSet { enabled: false })
         .unwrap();
+    // The failed channel still leaves its force-TX/RX level.
+    for phase in 0..2 {
+        assert_eq!(
+            transition.action(),
+            PhyChipChannelAction::ConfigureForceTxRx {
+                enabled: false,
+                phase
+            }
+        );
+        let completion = direct_completion(transition.action(), false);
+        transition.advance(completion).unwrap();
+        let completion = direct_completion(transition.action(), false);
+        transition.advance(completion).unwrap();
+    }
     assert_eq!(transition.action(), PhyChipChannelAction::ClearDcMemory);
     transition
         .advance(PhyChipChannelCompletion::DcMemoryCleared)

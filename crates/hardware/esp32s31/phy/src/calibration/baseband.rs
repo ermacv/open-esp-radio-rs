@@ -65,9 +65,9 @@ pub struct PhyGeneratedRxGainTable {
 pub struct PhyRxGainMemoryParameters {
     pub parameter_002: u8,
     pub wifi_index_dc: [[u16; 2]; 8],
-    pub wifi_dc_base: [u16; 2],
+    /// Fine radio DC pairs of `phy_rxdc_fine_cal`.
+    pub wifi_fine_dc: [[u16; 2]; crate::rx::gain_calibration::FINE_CODES],
     pub shared_index_dc: [[u16; 2]; 11],
-    pub rxbb_dc_adjustments: [[u16; 2]; 6],
     pub wifi_auxiliary: u16,
 }
 
@@ -122,18 +122,18 @@ pub fn phy_generated_rx_gain_memory_entry(
         selected_bits = selected_bits.wrapping_add(((encoded >> bit) & 1) as u8);
         bit += 1;
     }
-    let adjustment = parameters.rxbb_dc_adjustments[if selected_bits > 5 {
-        5
+    // `phy_get_rxbb_dc_new` selects the fine pair of the population of
+    // entry bits 4..=9, saturated at the last fine code. The vendor publisher
+    // discards it for the shared bank, whose per-gain radio DC values still
+    // come from shared_index_dc.
+    let last_fine = crate::rx::gain_calibration::FINE_CODES - 1;
+    let fine = parameters.wifi_fine_dc[if usize::from(selected_bits) > last_fine {
+        last_fine
     } else {
         selected_bits as usize
     }];
-    // The current vendor publisher discards the RXBB correction for the
-    // shared bank. Its per-gain radio DC values still come from shared_index_dc.
     let [dc_i, dc_q] = match bank {
-        PhyRxGainBank::Wifi => [
-            parameters.wifi_dc_base[0].wrapping_add(adjustment[0]),
-            parameters.wifi_dc_base[1].wrapping_add(adjustment[1]),
-        ],
+        PhyRxGainBank::Wifi => fine,
         PhyRxGainBank::Shared => [0x100, 0x100],
     };
     let auxiliary = match bank {
@@ -850,12 +850,17 @@ impl PhyBbInitTransition {
         self.step = PhyBbInitStep::FailureDisableForcedDigitalGain(failure);
     }
 
+    /// `phy_bb_init` runs inside the registration's force-TX/RX pair, so its
+    /// channel programming is nested one level deep.
     fn channel_transition(&self) -> crate::channel::PhyChipChannelTransition {
-        crate::channel::PhyChipChannelTransition::new(crate::channel::PhyChipChannelRequest {
-            channel_or_frequency: self.channel_or_frequency,
-            cbw: 0,
-            parameters: self.state.channel_parameters(),
-        })
+        crate::channel::PhyChipChannelTransition::at_depth(
+            crate::channel::PhyChipChannelRequest {
+                channel_or_frequency: self.channel_or_frequency,
+                cbw: 0,
+                parameters: self.state.channel_parameters(),
+            },
+            crate::analog::pbus::PhyForceTxRxDepth::OUTERMOST.nested(),
+        )
     }
 
     pub fn step_local(&mut self) -> Result<PhyBbInitLocalStep, PhyBbInitTransitionError> {
@@ -981,7 +986,10 @@ impl PhyBbInitTransition {
             PhyBbInitStep::TxCfr(transition) => match transition.action() {
                 PhyTxCfrAction::Complete(_) => {
                     self.step = PhyBbInitStep::BluetoothTxGain(
-                        self.state.bluetooth_tx_gain_init_transition(),
+                        // Nested in the registration's force-TX/RX pair.
+                        self.state.bluetooth_tx_gain_init_transition(
+                            crate::analog::pbus::PhyForceTxRxDepth::OUTERMOST.nested(),
+                        ),
                     );
                     PhyBbInitLocalStep::StateAdvanced
                 }

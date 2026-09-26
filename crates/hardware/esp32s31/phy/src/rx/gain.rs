@@ -1027,8 +1027,7 @@ impl PhyRxGainInitTransition {
     fn memory_with_dc(&self, outcome: PhyRxGainDcOutcome) -> Option<PhyRxGainMemoryParameters> {
         let mut memory = self.parameters?.memory;
         memory.wifi_index_dc = outcome.wifi_index_dc;
-        memory.wifi_dc_base = outcome.wifi_dc_base;
-        memory.rxbb_dc_adjustments = outcome.rxbb_dc_adjustments;
+        memory.wifi_fine_dc = outcome.wifi_fine_dc;
         let mut index = 0;
         while index != outcome.shared_index_dc.len() {
             memory.shared_index_dc[index] = outcome.shared_index_dc[index];

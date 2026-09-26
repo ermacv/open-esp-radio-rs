@@ -32,9 +32,8 @@ fn rx_gain_memory_entry_uses_only_copied_owner_state() {
     let parameters = PhyRxGainMemoryParameters {
         parameter_002: 0xbf,
         wifi_index_dc,
-        wifi_dc_base: [10, 20],
+        wifi_fine_dc: [[11, 22]; crate::rx::gain_calibration::FINE_CODES],
         shared_index_dc: [[0; 2]; 11],
-        rxbb_dc_adjustments: [[1, 2]; 6],
         wifi_auxiliary: 5,
     };
     let table = generate_phy_rx_gain_table(PhyRxGainBank::Wifi);
@@ -304,13 +303,15 @@ fn complete_parent_failure_always_restores_idle_mode_and_agc() {
     let state = crate::state::PhyState::default();
     let parameters = state.channel_parameters();
     let mut transition = super::PhyBbInitTransition::new(state);
-    transition.step = super::PhyBbInitStep::Channel(crate::channel::PhyChipChannelTransition::new(
-        crate::channel::PhyChipChannelRequest {
-            channel_or_frequency: 0,
-            cbw: 0,
-            parameters,
-        },
-    ));
+    transition.step =
+        super::PhyBbInitStep::Channel(crate::channel::PhyChipChannelTransition::at_depth(
+            crate::channel::PhyChipChannelRequest {
+                channel_or_frequency: 0,
+                cbw: 0,
+                parameters,
+            },
+            crate::analog::pbus::PhyForceTxRxDepth::OUTERMOST.nested(),
+        ));
     assert_eq!(
         transition.step_local().unwrap(),
         super::PhyBbInitLocalStep::StateAdvanced

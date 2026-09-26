@@ -10,7 +10,7 @@ use oer_esp32s31_phy::{
 use serde::{Deserialize, Serialize};
 
 pub const MAX_ENCODED_LEN: usize = crate::console::STARTUP_ARTIFACT_CAPACITY;
-const MAGIC: [u8; 8] = *b"ORCAL006";
+const MAGIC: [u8; 8] = *b"ORCAL007";
 
 #[derive(Serialize, Deserialize)]
 struct Artifact {
@@ -72,9 +72,8 @@ struct Wifi {
     wifi_rx_table_last_index: u8,
     shared_rx_table_last_index: u8,
     wifi_index_dc: [[u16; 2]; 8],
-    wifi_dc_base: [u16; 2],
+    wifi_fine_dc: [[u16; 2]; oer_esp32s31_phy::rx::gain_calibration::FINE_CODES],
     shared_index_dc: [[u16; 2]; 11],
-    rxbb_dc_adjustments: [[u16; 2]; 6],
 }
 
 #[derive(Serialize, Deserialize)]

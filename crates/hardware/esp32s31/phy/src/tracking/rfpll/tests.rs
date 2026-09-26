@@ -3,7 +3,11 @@ use crate::analog::frequency::{
     PhyFrequencyCapMemoryAction as MemoryAction,
     PhyFrequencyCapMemoryCompletion as MemoryCompletion,
 };
-use search::{Action as SearchAction, Completion as SearchCompletion, Status};
+use search::{
+    Action as SearchAction, Completion as SearchCompletion, SAMPLES_PER_DIRECTION, Status,
+};
+
+const DIRECTION: usize = SAMPLES_PER_DIRECTION as usize;
 
 fn complete_search_action(action: SearchAction, initial: u16, status: Status) -> SearchCompletion {
     match action {
@@ -21,7 +25,7 @@ fn run_search(initial: u16, statuses: &[Status]) -> (search::Outcome, std::vec::
     let mut samples = 0;
     let mut writes = std::vec::Vec::new();
     let mut settles = 0;
-    for _ in 0..100 {
+    for _ in 0..8 * DIRECTION {
         let action = search.action();
         if let SearchAction::Complete(outcome) = action {
             assert_eq!(samples, statuses.len());
@@ -51,24 +55,30 @@ fn run_search(initial: u16, statuses: &[Status]) -> (search::Outcome, std::vec::
     panic!("finite search did not terminate");
 }
 
+fn mean(candidates: &[i16]) -> i16 {
+    candidates.iter().sum::<i16>() / candidates.len() as i16
+}
+
 #[test]
 fn measured_correction_is_not_limited_to_two() {
-    let mut statuses = [Status::Accepted; 12];
+    let mut statuses = [Status::Accepted; DIRECTION + 2];
     statuses[..2].fill(Status::Increase);
     let (outcome, writes) = run_search(100, &statuses);
-    assert_eq!(outcome.delta(), 5);
-    assert_eq!(outcome.accepted_samples, 10);
-    assert_eq!(
-        writes,
-        [
-            100, 99, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 105
-        ]
-    );
+    assert_eq!(outcome.accepted_samples, SAMPLES_PER_DIRECTION);
+    let upward = (101..).take(DIRECTION).collect::<std::vec::Vec<i16>>();
+    assert_eq!(outcome.delta(), mean(&upward) - 100);
+    assert_eq!(&writes[..2], &[100, 99]);
+    assert_eq!(&writes[2..2 + DIRECTION], upward.as_slice());
+    assert_eq!(writes.last(), Some(&(100 + outcome.delta())));
 
     statuses.fill(Status::Accepted);
-    statuses[10..].fill(Status::Decrease);
+    statuses[DIRECTION..].fill(Status::Decrease);
     let (outcome, _) = run_search(100, &statuses);
-    assert_eq!(outcome.delta(), -5);
+    let downward = (0..DIRECTION as i16).map(|offset| 100 - offset);
+    assert_eq!(
+        outcome.delta(),
+        mean(&downward.collect::<std::vec::Vec<_>>()) - 100
+    );
 }
 
 #[test]
@@ -92,7 +102,7 @@ fn direction_boundaries_need_not_be_consecutive() {
 #[test]
 fn no_accepted_samples_preserves_initial_cap_after_bounded_search() {
     for status in [Status::Other, Status::Accepted] {
-        let (outcome, _) = run_search(100, &[status; 20]);
+        let (outcome, _) = run_search(100, &[status; 2 * DIRECTION]);
         assert_eq!(outcome.delta(), 0);
     }
     let (outcome, writes) = run_search(
@@ -110,16 +120,16 @@ fn no_accepted_samples_preserves_initial_cap_after_bounded_search() {
 
 #[test]
 fn opposite_direction_status_does_not_terminate_a_phase() {
-    let mut statuses = [Status::Decrease; 20];
-    statuses[10..].fill(Status::Increase);
+    let mut statuses = [Status::Decrease; 2 * DIRECTION];
+    statuses[DIRECTION..].fill(Status::Increase);
     let (outcome, writes) = run_search(100, &statuses);
     assert_eq!(outcome.accepted_samples, 0);
-    assert_eq!(writes.len(), 21);
+    assert_eq!(writes.len(), 2 * DIRECTION + 1);
 }
 
 #[test]
 fn search_preserves_signed_candidate_and_wrapping_accumulation() {
-    let (outcome, writes) = run_search(0, &[Status::Accepted; 20]);
+    let (outcome, writes) = run_search(0, &[Status::Accepted; 2 * DIRECTION]);
     assert_eq!(&writes[..3], &[0, -1, -2]);
     assert_eq!(outcome.selected_cap, 0);
     // Vendor accumulates the requested u16 candidate, even when the helper
@@ -198,9 +208,11 @@ fn correction_updates_memory_only_for_nonzero_delta_and_waits_for_restore() {
                     value,
                 }) => {
                     assert!(measured);
+                    let upward = (101..).take(DIRECTION).collect::<std::vec::Vec<i16>>();
                     assert_eq!(
-                        value, 105,
-                        "every entry receives the measured +5 correction"
+                        value as i16,
+                        mean(&upward),
+                        "every entry receives the full measured correction"
                     );
                     memory_writes += 1;
                     Completion::Memory(MemoryCompletion::MemoryWritten {

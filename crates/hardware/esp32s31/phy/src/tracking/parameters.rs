@@ -1,7 +1,7 @@
 //! Owned outer transition for the current S31 `phy_param_track_tot` order.
 //!
-//! Reference: esp-phy-lib b88e4b76, archive SHA-256
-//! `d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580`.
+//! Reference: the pinned esp-phy-lib `libphy.a` of
+//! `verification/vendor/projects/esp32s31/artifacts.toml`.
 //! RFPLL precedes BT/154 power, Wi-Fi I2C/power, one combined RX/TX
 //! calibration child, then temperature acquisition. The finite graph is
 //! separate from physical admission and child hardware equivalence. The

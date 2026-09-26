@@ -166,7 +166,6 @@ impl Default for PhyRfWakeTransition {
 pub(crate) enum PhyRfCloseOperation {
     EnterCritical,
     DisableHardwareFrequencyControl,
-    ForceTxRxOff { phase: u8 },
     SettleOneMicrosecond,
     DisableAgc,
     ClearBasebandControl,
@@ -182,13 +181,9 @@ pub(crate) enum PhyRfCloseOperation {
 /// observation. The S31 critical-section callbacks are empty functions, but
 /// their boundaries remain explicit so a future implementation cannot move
 /// physical work across them accidentally.
-pub(crate) const PHY_RF_CLOSE_OPERATIONS: [PhyRfCloseOperation; 17] = [
+pub(crate) const PHY_RF_CLOSE_OPERATIONS: [PhyRfCloseOperation; 13] = [
     PhyRfCloseOperation::EnterCritical,
     PhyRfCloseOperation::DisableHardwareFrequencyControl,
-    PhyRfCloseOperation::ForceTxRxOff { phase: 0 },
-    PhyRfCloseOperation::SettleOneMicrosecond,
-    PhyRfCloseOperation::ForceTxRxOff { phase: 1 },
-    PhyRfCloseOperation::SettleOneMicrosecond,
     PhyRfCloseOperation::DisableAgc,
     PhyRfCloseOperation::ClearBasebandControl,
     PhyRfCloseOperation::SettleOneMicrosecond,
@@ -293,7 +288,7 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(trace.len(), 17);
+        assert_eq!(trace.len(), PHY_RF_CLOSE_OPERATIONS.len());
         assert_eq!(trace.first(), Some(&PhyRfCloseOperation::EnterCritical));
         assert_eq!(trace.last(), Some(&PhyRfCloseOperation::ExitCritical));
         assert_eq!(
@@ -301,7 +296,7 @@ mod tests {
                 .iter()
                 .filter(|operation| matches!(operation, PhyRfCloseOperation::SettleOneMicrosecond))
                 .count(),
-            3
+            1
         );
         assert_eq!(
             trace

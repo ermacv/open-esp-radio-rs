@@ -467,6 +467,8 @@ fn point_index(point: PhyChannelFrequencyRfpllPoint) -> usize {
     }
 }
 
+const CAP_STATUSES: [u8; 6] = [0, 1, 1, 0, 2, 2];
+
 fn rfpll_completion(
     point: PhyChannelFrequencyRfpllPoint,
     action: RfpllFrequencyAction,
@@ -484,7 +486,9 @@ fn rfpll_completion(
                 1
             } else if field == crate::analog::i2c::analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS {
                 let index = point_index(point);
-                let status = if status_reads[index] & 1 == 0 { 0 } else { 1 };
+                // Accept the first candidate of each direction, then end the
+                // direction with its two boundary statuses.
+                let status = CAP_STATUSES[usize::from(status_reads[index])];
                 status_reads[index] += 1;
                 status
             } else {
@@ -617,7 +621,7 @@ fn channel_frequency_init_composes_the_complete_cold_graph() {
     }
 
     assert!(rfpll_actions.iter().all(|count| *count != 0));
-    assert_eq!(status_reads, [4, 4, 4]);
+    assert_eq!(status_reads, [CAP_STATUSES.len() as u8; 3]);
     assert_eq!(table_writes, 85 * 3);
 }
 

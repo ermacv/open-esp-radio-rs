@@ -760,6 +760,15 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                     Self::complete_tx_dc_pwdet(binding, registers).await?,
                 ))
             }
+            PhyBluetoothTxGainInitExternalBinding::ForceTxRx(binding) => {
+                Ok(PhyBluetoothTxGainInitCompletion::ForceTxRx(match binding {
+                    PhyForceTxRxExternalBinding::Mmio(binding) => binding.execute_target(registers),
+                    PhyForceTxRxExternalBinding::Timer(binding) => {
+                        D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
+                        binding.into_completion()
+                    }
+                }))
+            }
             PhyBluetoothTxGainInitExternalBinding::Publish(binding) => {
                 Ok(binding.execute_target(registers))
             }
@@ -1941,6 +1950,11 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             let binding = child
                 .lower_external()
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            if let Some(micros) = binding.delay_micros()
+                && !D::ShortDelay::settle_micros(micros)
+            {
+                return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+            }
             let completion = binding.execute_target(platform, registers);
             child
                 .advance(completion)

@@ -6,7 +6,6 @@ const RADIO: PhyRxDcCalibrationRequest = PhyRxDcCalibrationRequest {
     stage: PhyRxDcCalibrationStage::Radio,
     control: 0x800,
     initial: [0x100, 0x100],
-    reference_delta: [0, 0],
     gain_index: 0,
     rx_saturation_detected: false,
 };
@@ -21,12 +20,45 @@ fn outcome(request: PhyRxDcMinimumRequest, i: i32, q: i32, power: i32) -> PhyRxD
 }
 
 #[test]
-fn correction_matches_sign_and_large_low_fallbacks() {
-    assert_eq!(rx_dc_calibration_correction(0, 0, 2, 0), 0);
-    assert_eq!(rx_dc_calibration_correction(1, 0, 2, 0), 1);
-    assert_eq!(rx_dc_calibration_correction(-1, 0, 2, 0), -1);
-    assert_eq!(rx_dc_calibration_correction(0, 64, 2, 3), 8);
-    assert_eq!(rx_dc_calibration_correction(24, 0, 2, 3), 3);
+fn correction_is_zero_below_the_threshold_without_a_unit_step() {
+    assert_eq!(rx_dc_calibration_correction(0, 2, 0), 0);
+    assert_eq!(rx_dc_calibration_correction(1, 2, 0), 0);
+    assert_eq!(rx_dc_calibration_correction(-1, 2, 0), 0);
+    assert_eq!(rx_dc_calibration_correction(2, 2, 0), 2);
+    assert_eq!(rx_dc_calibration_correction(24, 2, 3), 3);
+    assert_eq!(rx_dc_calibration_correction(-24, 2, 3), -3);
+}
+
+#[test]
+fn stage_thresholds_and_estimator_modes_follow_the_current_archive() {
+    let baseband = |shared_radio| PhyRxDcCalibrationRequest {
+        shared_radio,
+        stage: PhyRxDcCalibrationStage::Baseband,
+        ..RADIO
+    };
+    for population in [0, 1, 3, 6] {
+        assert_eq!(
+            calibration_threshold(RADIO, population),
+            2 * i32::from(population) + 1
+        );
+    }
+    assert_eq!(calibration_threshold(baseband(true), 6), 25);
+    assert_eq!(calibration_threshold(baseband(false), 6), 3);
+    let empty = PhyDcIqEstimate {
+        i: 0,
+        q: 0,
+        power: 0,
+    };
+    for high in [false, true] {
+        assert_eq!(
+            PhyRxDcCalibrationTransition::minimum_request_at(baseband(false), 0, high, empty).mode,
+            1
+        );
+    }
+    assert_eq!(
+        PhyRxDcCalibrationTransition::minimum_request_at(RADIO, 0, false, empty).mode,
+        0
+    );
 }
 
 #[test]
@@ -47,11 +79,6 @@ fn gain_tables_and_reference_mode_match_vendor_rodata_and_calls() {
     assert_eq!(shared_mixer_dgain(8), 0);
     assert_eq!(shared_mixer_dgain(9), 4);
     assert_eq!(shared_mixer_dgain(10), 7);
-    assert_eq!(
-        PhyRxGainDcTransition::reference_minimum_request(PhyRxGainDcBank::Shared, false, false)
-            .mode,
-        0
-    );
 }
 
 #[test]
@@ -263,7 +290,7 @@ fn cleanup_work_mode_pulse_uses_the_vendor_two_microsecond_delay() {
 }
 
 #[test]
-fn independent_wifi_radio_measurement_waits_for_low_level_publication() {
+fn fine_calibration_follows_the_first_wifi_gain_and_carries_its_pair() {
     let parameters = PhyRxGainDcParameters {
         crystal_selector: 0,
         pbus_rx_path_value: 0,
@@ -281,7 +308,7 @@ fn independent_wifi_radio_measurement_waits_for_low_level_publication() {
             readiness_activity_edges: 0,
         },
     );
-    let transaction = PhyPbusForceTest::new(1, 2, 0);
+    let transaction = PhyPbusForceTest::new(1, 2, fine_code(0));
     assert_eq!(
         transition.action(),
         PhyRxGainDcAction::ForcePbus {
@@ -300,21 +327,66 @@ fn independent_wifi_radio_measurement_waits_for_low_level_publication() {
         failed.step,
         DcStep::ClockOff(_, DcTerminal::Failed(PhyRxGainDcFailure::Pbus { .. }))
     ));
-    assert!(
+    for fine in 0..FINE_CODES as u8 {
+        let transaction = PhyPbusForceTest::new(1, 2, fine_code(fine));
         transition
             .advance(PhyRxGainDcCompletion::PbusCompleted {
-                bank: PhyRxGainDcBank::Shared,
-                transaction
+                bank: PhyRxGainDcBank::Wifi,
+                transaction,
             })
-            .is_err()
-    );
-    transition
-        .advance(PhyRxGainDcCompletion::PbusCompleted {
+            .unwrap();
+        let DcStep::FineCalibration {
+            index,
+            transition: child,
+        } = transition.step
+        else {
+            panic!("fine code must start a radio search");
+        };
+        assert_eq!(index, fine);
+        // Each search starts from the pair the previous one produced.
+        let expected = if fine == 0 {
+            [0x100; 2]
+        } else {
+            transition.wifi_fine_dc[usize::from(fine) - 1]
+        };
+        assert_eq!(child.request.initial, expected);
+        assert_eq!(child.request.stage, PhyRxDcCalibrationStage::Radio);
+        let configuration = [0x100 + u16::from(fine), 0x110 + u16::from(fine)];
+        transition.step = DcStep::FineCalibration {
+            index,
+            transition: PhyRxDcCalibrationTransition {
+                step: Step::Complete(PhyRxDcCalibrationOutcome {
+                    request: child.request,
+                    configuration,
+                    iterations: 1,
+                    converged: true,
+                    readiness_activity_edges: 0,
+                }),
+                ..child
+            },
+        };
+        transition.finish_calibration().unwrap();
+        assert_eq!(transition.wifi_fine_dc[usize::from(fine)], configuration);
+    }
+    // The next Wi-Fi gain uses the first fine pair as its baseband setup.
+    assert!(matches!(
+        transition.step,
+        DcStep::SetupRadioI {
             bank: PhyRxGainDcBank::Wifi,
-            transaction,
-        })
-        .unwrap();
-    assert!(matches!(transition.step, DcStep::CalibrateWifiRadio(_)));
+            index: 1
+        }
+    ));
+    assert_eq!(
+        transition.baseband(PhyRxGainDcBank::Wifi, 1),
+        transition.wifi_fine_dc[0]
+    );
+    assert!(
+        transition
+            .quality
+            .wifi_fine()
+            .iter()
+            .all(|converged| *converged)
+    );
 }
 
 #[test]
@@ -347,20 +419,12 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
     });
     let i2c_invalid =
         PhyRxGainDcCompletion::I2c(MaskedI2cWriteCompletion::I2cWriteCompleted { address });
-    let minimum = PhyRxDcMinimumTransition::new(PhyRxGainDcTransition::reference_minimum_request(
-        PhyRxGainDcBank::Shared,
-        false,
-        false,
-    ));
+    let minimum = PhyRxDcMinimumTransition::new(
+        PhyRxDcCalibrationTransition::new(RADIO).minimum_request(false),
+    );
     let PhyRxDcMinimumAction::DcIq(PhyDcIqAction::Configure(request)) = minimum.action() else {
         panic!("estimator configure");
     };
-    let minimum_valid = PhyRxGainDcCompletion::Minimum(PhyRxDcMinimumCompletion::DcIq(
-        PhyDcIqCompletion::Configured(request),
-    ));
-    let minimum_invalid = PhyRxGainDcCompletion::Minimum(PhyRxDcMinimumCompletion::DcIq(
-        PhyDcIqCompletion::ReadinessTimedOut(request),
-    ));
     let calibration = PhyRxDcCalibrationTransition::new(RADIO);
     let calibration_valid =
         PhyRxGainDcCompletion::Calibration(PhyRxDcCalibrationCompletion::ControlRestorePrepared);
@@ -395,24 +459,10 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
             nested_valid,
             nested_invalid,
         ),
-        (
-            DcStep::CalibrateWifiRadio(nested),
-            nested_valid,
-            nested_invalid,
-        ),
         (DcStep::Rfpll(pll), pll_valid, pll_invalid),
         (DcStep::WifiRfpll(pll), pll_valid, pll_invalid),
         (DcStep::SharedI2c(i2c), i2c_valid, i2c_invalid),
         (DcStep::SharedRestoreI2c(i2c), i2c_valid, i2c_invalid),
-        (
-            DcStep::ReferenceMinimum {
-                bank: PhyRxGainDcBank::Shared,
-                high: false,
-                transition: minimum,
-            },
-            minimum_valid,
-            minimum_invalid,
-        ),
         (
             DcStep::FineCalibration {
                 index: 2,
@@ -430,11 +480,6 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
             calibration_valid,
             calibration_invalid,
         ),
-        (
-            DcStep::CalibrateWifiRadio(calibration),
-            calibration_valid,
-            calibration_invalid,
-        ),
     ] {
         let mut dc = PhyRxGainDcTransition::new(PhyRxGainDcParameters {
             crystal_selector: 0,
@@ -444,7 +489,7 @@ fn every_fallible_dc_child_rejects_without_changing_accumulated_results() {
         dc.step = step;
         dc.wifi_index_dc = [[0x101, 0x102]; 8];
         dc.shared_index_dc = [[0x121, 0x122]; 11];
-        dc.rxbb_dc_adjustments = [[3, 7]; 6];
+        dc.wifi_fine_dc = [[3, 7]; FINE_CODES];
         assert_eq!(
             dc.lower_external(),
             PhyRxGainDcExternalBinding::lower(dc.action())
@@ -478,28 +523,15 @@ fn borrowed_minimum_matches_stepwise_parent_and_preserves_cleanup() {
     };
     for timeout in [false, true] {
         for high in [false, true] {
-            let minimum =
-                PhyRxDcMinimumTransition::new(PhyRxGainDcTransition::reference_minimum_request(
-                    PhyRxGainDcBank::Shared,
-                    high,
-                    false,
-                ));
+            let minimum = PhyRxDcMinimumTransition::new(
+                PhyRxDcCalibrationTransition::new(RADIO).minimum_request(high),
+            );
             let mut calibration = PhyRxDcCalibrationTransition::new(RADIO);
             calibration.step = Step::Minimum {
                 high,
                 transition: minimum,
             };
             for step in [
-                DcStep::ReferenceMinimum {
-                    bank: PhyRxGainDcBank::Shared,
-                    high,
-                    transition: minimum,
-                },
-                DcStep::ReferenceMinimum {
-                    bank: PhyRxGainDcBank::Wifi,
-                    high,
-                    transition: minimum,
-                },
                 DcStep::FineCalibration {
                     index: 2,
                     transition: calibration,
@@ -509,7 +541,6 @@ fn borrowed_minimum_matches_stepwise_parent_and_preserves_cleanup() {
                     index: 1,
                     transition: calibration,
                 },
-                DcStep::CalibrateWifiRadio(calibration),
             ] {
                 let mut fused = PhyRxGainDcTransition::new(PhyRxGainDcParameters {
                     crystal_selector: 0,
@@ -573,14 +604,9 @@ fn borrowed_minimum_matches_stepwise_parent_and_preserves_cleanup() {
                         }
                         other => panic!("unexpected action {other:?}"),
                     });
-                    let parent_completion = match step {
-                        DcStep::ReferenceMinimum { .. } => {
-                            PhyRxGainDcCompletion::Minimum(completion)
-                        }
-                        _ => PhyRxGainDcCompletion::Calibration(
-                            PhyRxDcCalibrationCompletion::Minimum(completion),
-                        ),
-                    };
+                    let parent_completion = PhyRxGainDcCompletion::Calibration(
+                        PhyRxDcCalibrationCompletion::Minimum(completion),
+                    );
                     stepwise.advance(parent_completion).unwrap();
                     fused.minimum_mut().unwrap().advance(completion).unwrap();
                     if fused.minimum_mut().unwrap().terminal().is_some() {

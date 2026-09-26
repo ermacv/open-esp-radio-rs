@@ -1,6 +1,6 @@
 //! Rust-owned TX-DC calibration through the power detector.
 //!
-//! Current esp-phy-lib b88e4b76 supplies the 562-byte root
+//! The pinned esp-phy-lib supplies the 562-byte root
 //! `phy_txdc_cal_pwdet_init` and its 948-byte search child
 //! `phy_txdc_cal_pwdet_new`. Runtime Wi-Fi and BT/154 use the cleanup-enabled
 //! form; vendor diagnostic branches are omitted.

@@ -252,10 +252,10 @@ qualified maximum thermal deferral is implemented.
 
 A completed common RX calibration carries
 [`PhyRxGainDcQuality`](src/rx/gain_calibration/quality.rs) alongside its
-coefficients. It identifies convergence for every shared/Wi-Fi baseband gain,
-the six fine-code searches and the independent Wi-Fi radio search. Exhausting
-a baseband search retains its initial pair; radio/fine searches retain their
-last correction. These vendor-compatible outcomes complete the transaction,
+coefficients. It identifies convergence for every shared/Wi-Fi baseband gain
+and the five `phy_rxdc_fine_cal` radio searches after Wi-Fi gain zero.
+Exhausting a baseband search retains its initial pair; fine searches retain
+their last correction. These vendor-compatible outcomes complete the transaction,
 but do not mean every search converged. Completion flags describe lifecycle;
 quality remains a separate result. A skipped DC branch has no new quality.
 
@@ -394,9 +394,8 @@ radiated power, sensitivity or sustained thermal stability.
 
 ## Vendor reference scope
 
-The runtime parent order and combined RX/TX transaction follow esp-phy-lib
-`b88e4b76e090ae59c51cb00b916d38def895b396`, SHA-256
-`d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580`.
+The runtime parent order and combined RX/TX transaction follow the pinned
+esp-phy-lib `libphy.a` of `verification/vendor/projects/esp32s31/artifacts.toml`.
 RX has its own temperature reference; TX uses one shared reference and retains
 separate Wi-Fi and BT/154 calibration results. Authenticated parent-boundary
 execution checks call order and arguments with explicit child models. Compiled

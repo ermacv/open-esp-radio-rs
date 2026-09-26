@@ -1,8 +1,8 @@
 //! Measured RFPLL capacitor correction from the current ESP32-S31 archive.
 //!
-//! Reference: esp-phy-lib `b88e4b76e090ae59c51cb00b916d38def895b396`,
-//! libphy SHA-256 `d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580`,
-//! `phy_rfpll_cap_init_cal_new` and `phy_rfpll_cap_correct_new`.
+//! Reference: `phy_rfpll_cap_init_cal_track` and `phy_rfpll_cap_correct_track`
+//! of the pinned esp-phy-lib `libphy.a`
+//! (`verification/vendor/projects/esp32s31/artifacts.toml`).
 //! This finite child is the production RFPLL capacitor correction. It does
 //! not enable automatic tracking or grant access to RF. The target-only
 //! `crate::target_port::rfpll` executes the

@@ -33,8 +33,8 @@ pub const fn bluetooth_baseband_to_gain_index(baseband: u32) -> u32 {
 }
 
 // ESP32-S31 BT/154 gain profile from `phy_bt_get_tx_tab_new` in esp-phy-lib
-// b88e4b76e090ae59c51cb00b916d38def895b396, libphy.a SHA-256
-// d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580.
+// 20f1db053a0e6cb9f1c09d255c43bf42483041d0, libphy.a SHA-256
+// 116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2.
 // phy_tx_gain.o .rodata offsets 0/0x24/0x48: 18 little-endian halfwords each.
 // LOW/MID encode RF/baseband settings; HIGH contains signed gain references.
 // Physical gain units are not established. This profile retains subtractive
@@ -160,6 +160,149 @@ impl PhyBluetoothTxGainPublication {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(self, registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess) {
         crate::hardware::publish_bluetooth_tx_gain_memory(registers, self.image);
+    }
+}
+
+/// One edge of the Bluetooth gain child.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxGainChildAction {
+    ForceTxRx(crate::analog::pbus::PhyForceTxRxAction),
+    Publish(PhyBluetoothTxGainPublication),
+    Complete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxGainChildCompletion {
+    ForceTxRx(crate::analog::pbus::PhyForceTxRxCompletion),
+    Published(PhyBluetoothTxGainPublication),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyBluetoothTxGainChildStep {
+    Enter(crate::analog::pbus::PhyForceTxRxTransition),
+    Publish,
+    Leave(crate::analog::pbus::PhyForceTxRxTransition),
+    Complete,
+}
+
+/// Archive `phy_bt_set_tx_gain_new` after its gain calculation: gain-memory
+/// publication bracketed by a `phy_force_txrx_off_new` pair entered at
+/// `depth`. The grant callbacks around the pair are empty on this target.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyBluetoothTxGainChild {
+    publication: PhyBluetoothTxGainPublication,
+    depth: crate::analog::pbus::PhyForceTxRxDepth,
+    step: PhyBluetoothTxGainChildStep,
+}
+
+impl PhyBluetoothTxGainChild {
+    pub const fn new(
+        publication: PhyBluetoothTxGainPublication,
+        depth: crate::analog::pbus::PhyForceTxRxDepth,
+    ) -> Self {
+        Self {
+            publication,
+            depth,
+            step: match depth.enter() {
+                Some(child) => PhyBluetoothTxGainChildStep::Enter(child),
+                None => PhyBluetoothTxGainChildStep::Publish,
+            },
+        }
+    }
+
+    pub const fn publication(&self) -> PhyBluetoothTxGainPublication {
+        self.publication
+    }
+
+    pub const fn action(&self) -> PhyBluetoothTxGainChildAction {
+        match self.step {
+            PhyBluetoothTxGainChildStep::Enter(child)
+            | PhyBluetoothTxGainChildStep::Leave(child) => {
+                PhyBluetoothTxGainChildAction::ForceTxRx(child.action())
+            }
+            PhyBluetoothTxGainChildStep::Publish => {
+                PhyBluetoothTxGainChildAction::Publish(self.publication)
+            }
+            PhyBluetoothTxGainChildStep::Complete => PhyBluetoothTxGainChildAction::Complete,
+        }
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: PhyBluetoothTxGainChildCompletion,
+    ) -> Result<(), PhyBluetoothTxGainInitTransitionError> {
+        use crate::analog::pbus::PhyForceTxRxAction;
+        use PhyBluetoothTxGainChildStep as Step;
+        self.step = match (self.step, completion) {
+            (Step::Enter(mut child), PhyBluetoothTxGainChildCompletion::ForceTxRx(completion)) => {
+                child
+                    .advance(completion)
+                    .map_err(|_| PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
+                match child.action() {
+                    PhyForceTxRxAction::Complete { .. } => Step::Publish,
+                    _ => Step::Enter(child),
+                }
+            }
+            (Step::Publish, PhyBluetoothTxGainChildCompletion::Published(published))
+                if published == self.publication =>
+            {
+                match self.depth.leave() {
+                    Some(child) => Step::Leave(child),
+                    None => Step::Complete,
+                }
+            }
+            (Step::Leave(mut child), PhyBluetoothTxGainChildCompletion::ForceTxRx(completion)) => {
+                child
+                    .advance(completion)
+                    .map_err(|_| PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
+                match child.action() {
+                    PhyForceTxRxAction::Complete { .. } => Step::Complete,
+                    _ => Step::Leave(child),
+                }
+            }
+            (Step::Complete, _) => {
+                return Err(PhyBluetoothTxGainInitTransitionError::AlreadyComplete);
+            }
+            _ => return Err(PhyBluetoothTxGainInitTransitionError::WrongCompletion),
+        };
+        Ok(())
+    }
+
+    /// Execute the complete child as one blocking target transaction.
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target<D: crate::target_executor::PhyShortDelay>(
+        mut self,
+        registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    ) -> Result<(), crate::target_executor::PhyTargetPortError> {
+        use crate::{
+            analog::pbus::PhyForceTxRxExternalBinding, target_executor::PhyTargetPortError,
+        };
+        loop {
+            let completion = match self.action() {
+                PhyBluetoothTxGainChildAction::Complete => return Ok(()),
+                PhyBluetoothTxGainChildAction::Publish(publication) => {
+                    publication.execute_target(registers);
+                    PhyBluetoothTxGainChildCompletion::Published(publication)
+                }
+                PhyBluetoothTxGainChildAction::ForceTxRx(action) => {
+                    let binding = PhyForceTxRxExternalBinding::lower(action)
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                    PhyBluetoothTxGainChildCompletion::ForceTxRx(match binding {
+                        PhyForceTxRxExternalBinding::Mmio(binding) => {
+                            binding.execute_target(registers)
+                        }
+                        PhyForceTxRxExternalBinding::Timer(binding) => {
+                            if !D::settle_micros(binding.micros()) {
+                                return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
+                            }
+                            binding.into_completion()
+                        }
+                    })
+                }
+            };
+            self.advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
     }
 }
 
@@ -653,6 +796,8 @@ pub enum PhyBluetoothTxGainInitAction {
     TxDc(crate::tx::dc_offset::PhyTxDcAction),
     TxPower(PhyBluetoothTxPowerAction),
     TxDcPwdet(crate::tx::dc_power_detector::PhyTxDcPwdetAction),
+    /// One edge of the gain child's `phy_force_txrx_off_new` pair.
+    ForceTxRx(crate::analog::pbus::PhyForceTxRxAction),
     Publish(PhyBluetoothTxGainPublication),
 }
 
@@ -663,6 +808,7 @@ pub enum PhyBluetoothTxGainInitCompletion {
     TxDc(crate::tx::dc_offset::PhyTxDcCompletion),
     TxPower(PhyBluetoothTxPowerCompletion),
     TxDcPwdet(crate::tx::dc_power_detector::PhyTxDcPwdetCompletion),
+    ForceTxRx(crate::analog::pbus::PhyForceTxRxCompletion),
     Published(PhyBluetoothTxGainPublication),
 }
 
@@ -687,7 +833,7 @@ enum PhyBluetoothTxGainInitStep {
     TxDc(PhyBluetoothTxDcTransition),
     TxPower(PhyBluetoothTxPowerTransition),
     TxDcPwdet(PhyBluetoothTxDcPwdetTransition),
-    Publish(PhyBluetoothTxGainPublication),
+    Gain(PhyBluetoothTxGainChild),
     Complete(PhyBluetoothTxGainInitOutcome),
     Failed(PhyBluetoothTxGainInitFailure),
 }
@@ -701,6 +847,8 @@ enum PhyBluetoothTxGainInitStep {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyBluetoothTxGainInitTransition {
     parameters: PhyBluetoothTxGainInitParameters,
+    /// Force-TX/RX nesting count held by the caller of the gain child.
+    depth: crate::analog::pbus::PhyForceTxRxDepth,
     step: PhyBluetoothTxGainInitStep,
     dco: [[u16; 4]; 3],
     power: Option<PhyBluetoothTxPowerOutcome>,
@@ -708,8 +856,14 @@ pub struct PhyBluetoothTxGainInitTransition {
 }
 
 impl PhyBluetoothTxGainInitTransition {
-    pub const fn new(parameters: PhyBluetoothTxGainInitParameters) -> Self {
+    /// `depth` is the force-TX/RX nesting count held when the vendor
+    /// `phy_bt_set_tx_gain_new` child brackets its publication.
+    pub const fn new(
+        parameters: PhyBluetoothTxGainInitParameters,
+        depth: crate::analog::pbus::PhyForceTxRxDepth,
+    ) -> Self {
         Self {
+            depth,
             step: PhyBluetoothTxGainInitStep::Rfpll(
                 crate::analog::rfpll::RfpllFrequencyTransition::new(
                     crate::analog::rfpll::RfpllFrequencyRequest {
@@ -825,7 +979,10 @@ impl PhyBluetoothTxGainInitTransition {
                     self.gain.seed = Self::packed_seed(self.dco);
                     let publication =
                         PhyBluetoothTxGainPublication::new(calculate_bluetooth_tx_gain(self.gain));
-                    self.step = PhyBluetoothTxGainInitStep::Publish(publication);
+                    self.step = PhyBluetoothTxGainInitStep::Gain(PhyBluetoothTxGainChild::new(
+                        publication,
+                        self.depth,
+                    ));
                     PhyBluetoothTxGainInitLocalStep::StateAdvanced
                 }
                 crate::tx::dc_power_detector::PhyTxDcPwdetAction::Failed(failure) => {
@@ -838,11 +995,31 @@ impl PhyBluetoothTxGainInitTransition {
                     PhyBluetoothTxGainInitAction::TxDcPwdet(action),
                 ),
             },
-            PhyBluetoothTxGainInitStep::Publish(publication) => {
-                PhyBluetoothTxGainInitLocalStep::External(PhyBluetoothTxGainInitAction::Publish(
-                    publication,
-                ))
-            }
+            PhyBluetoothTxGainInitStep::Gain(child) => match child.action() {
+                PhyBluetoothTxGainChildAction::Complete => {
+                    let power = self
+                        .power
+                        .ok_or(PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
+                    self.step =
+                        PhyBluetoothTxGainInitStep::Complete(PhyBluetoothTxGainInitOutcome {
+                            tx_dc_calibrated: true,
+                            dco: self.dco,
+                            tx_power: power,
+                            gain: child.publication().image(),
+                        });
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                PhyBluetoothTxGainChildAction::Publish(publication) => {
+                    PhyBluetoothTxGainInitLocalStep::External(
+                        PhyBluetoothTxGainInitAction::Publish(publication),
+                    )
+                }
+                PhyBluetoothTxGainChildAction::ForceTxRx(action) => {
+                    PhyBluetoothTxGainInitLocalStep::External(
+                        PhyBluetoothTxGainInitAction::ForceTxRx(action),
+                    )
+                }
+            },
             PhyBluetoothTxGainInitStep::Complete(outcome) => {
                 PhyBluetoothTxGainInitLocalStep::Complete(outcome)
             }
@@ -912,18 +1089,18 @@ impl PhyBluetoothTxGainInitTransition {
                 PhyBluetoothTxGainInitStep::TxDcPwdet(transition)
             }
             (
-                PhyBluetoothTxGainInitStep::Publish(publication),
-                PhyBluetoothTxGainInitCompletion::Published(completed),
-            ) if publication == completed => {
-                let power = self
-                    .power
-                    .ok_or(PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
-                PhyBluetoothTxGainInitStep::Complete(PhyBluetoothTxGainInitOutcome {
-                    tx_dc_calibrated: true,
-                    dco: self.dco,
-                    tx_power: power,
-                    gain: publication.image(),
-                })
+                PhyBluetoothTxGainInitStep::Gain(mut child),
+                PhyBluetoothTxGainInitCompletion::Published(published),
+            ) => {
+                child.advance(PhyBluetoothTxGainChildCompletion::Published(published))?;
+                PhyBluetoothTxGainInitStep::Gain(child)
+            }
+            (
+                PhyBluetoothTxGainInitStep::Gain(mut child),
+                PhyBluetoothTxGainInitCompletion::ForceTxRx(completion),
+            ) => {
+                child.advance(PhyBluetoothTxGainChildCompletion::ForceTxRx(completion))?;
+                PhyBluetoothTxGainInitStep::Gain(child)
             }
             (
                 PhyBluetoothTxGainInitStep::Complete(_) | PhyBluetoothTxGainInitStep::Failed(_),
@@ -1179,6 +1356,7 @@ pub enum PhyBluetoothTxGainInitExternalBinding {
     TxDc(crate::tx::dc_offset::PhyTxDcExternalBinding),
     TxPower(PhyBluetoothTxPowerExternalBinding),
     TxDcPwdet(crate::tx::dc_power_detector::PhyTxDcPwdetExternalBinding),
+    ForceTxRx(crate::analog::pbus::PhyForceTxRxExternalBinding),
     Publish(PhyBluetoothTxGainPublicationBinding),
 }
 
@@ -1208,6 +1386,11 @@ impl PhyBluetoothTxGainInitExternalBinding {
             PhyBluetoothTxGainInitAction::TxDcPwdet(action) => {
                 crate::tx::dc_power_detector::PhyTxDcPwdetExternalBinding::lower(action)
                     .map(Self::TxDcPwdet)
+                    .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+            PhyBluetoothTxGainInitAction::ForceTxRx(action) => {
+                crate::analog::pbus::PhyForceTxRxExternalBinding::lower(action)
+                    .map(Self::ForceTxRx)
                     .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
             }
             PhyBluetoothTxGainInitAction::Publish(publication) => Ok(Self::Publish(

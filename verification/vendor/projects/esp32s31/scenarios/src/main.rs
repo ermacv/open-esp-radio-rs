@@ -85,6 +85,9 @@ enum Scenario {
         /// Authenticated `libpp.a`.
         #[arg(long)]
         libpp: PathBuf,
+        /// Authenticated vendor Wi-Fi firmware supplying network-stack symbols.
+        #[arg(long)]
+        phy_sdk: PathBuf,
     },
     /// Combined calibration and parameter tracking parents with their real
     /// children, RFPLL corrections and failed-TX containment.
@@ -469,11 +472,12 @@ fn channel(common: Common) -> Result<Outcome> {
     ))
 }
 
-fn wifi_mac(common: Common, libpp: PathBuf) -> Result<Outcome> {
+fn wifi_mac(common: Common, libpp: PathBuf, phy_sdk: PathBuf) -> Result<Outcome> {
     let options = mac::MacOptions {
         binary: common.binary,
         libpp,
         rom: common.rom,
+        phy_sdk,
         production: common.production,
         linker: common.linker,
         output: common.output,
@@ -723,7 +727,7 @@ fn all(
         ),
         (
             "wifi-mac",
-            Box::new(|| wifi_mac(within("wifi-mac"), libpp.clone())),
+            Box::new(|| wifi_mac(within("wifi-mac"), libpp.clone(), phy_sdk.clone())),
         ),
     ];
     // Scenarios share no state: each owns its session and output directory.
@@ -868,7 +872,11 @@ fn main() -> ExitCode {
         Scenario::RxGain { common, phy_sdk } => single(rx_gain(common, phy_sdk)),
         Scenario::TxDc { common, phy_sdk } => single(tx_dc(common, phy_sdk)),
         Scenario::Tracking { common, phy_sdk } => single(tracking(common, phy_sdk)),
-        Scenario::WifiMac { common, libpp } => single(wifi_mac(common, libpp)),
+        Scenario::WifiMac {
+            common,
+            libpp,
+            phy_sdk,
+        } => single(wifi_mac(common, libpp, phy_sdk)),
         Scenario::All {
             common,
             sdk,

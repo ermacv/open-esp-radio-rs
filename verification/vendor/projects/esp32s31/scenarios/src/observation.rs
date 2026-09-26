@@ -38,9 +38,9 @@ pub struct Decision {
 /// Reviewed unobserved lines.
 pub const DECISIONS: &[Decision] = &[
     Decision {
-        reason: "device-ordering fence the MAC and power event clears add after their \
-            acknowledge write: the reviewed contract of each clear requires exactly one, \
-            counted but not paired with a vendor effect",
+        reason: "device-ordering fences the MAC and power event clears and the ordinary \
+            transmit publication add around their register edge: each reviewed contract \
+            requires exactly that many, counted but not paired with a vendor effect",
         places: &[
             (
                 "pac/raw/src/lib.rs",
@@ -48,6 +48,7 @@ pub const DECISIONS: &[Decision] = &[
             ),
             ("pac/src/ownership.rs", "svd::device_access::fence();"),
             ("pac/src/wifi/mac/interrupt.rs", "device_fence();"),
+            ("pac/src/wifi/mac/tx.rs", "device_fence();"),
         ],
     },
     Decision {

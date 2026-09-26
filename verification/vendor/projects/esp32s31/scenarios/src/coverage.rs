@@ -58,6 +58,22 @@ pub struct Decision {
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "the body of `hal_mac_txq_enable` after its publication edge: `GetAccess` \
+            access bookkeeping, HE and MU-EDCA queue state and test statistics; the ordinary \
+            transmit claim compares the prefix before that call, and production's transmit \
+            engine owns its own queue bookkeeping",
+        places: &[
+            Place::Range {
+                function: "hal_mac_txq_enable",
+                start: 0x22,
+                end: 0xbc,
+            },
+            Place::Function("esp_test_tx_enab_statistics"),
+            Place::Function("is_use_muedca"),
+            Place::Function("wifi_he_get_hetb_tid_bitmap"),
+        ],
+    },
+    Decision {
         reason: "MAC selectors outside the claimed bounded features: `hal_mac_tsf_reset` \
             selector 1 (the mesh TSF `wDev_Mesh_Enable_Tsf` enables), 3 and other values, and \
             `hal_mac_clr_txq_state` selectors other than 2; production has no mesh role and \

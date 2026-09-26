@@ -39,8 +39,9 @@
 //! The current production baseline is externally retained and unknown: ESP-HAL
 //! owns the upstream 160 MHz clock policy and existing Wi-Fi initialization may
 //! already have enabled shared dependencies. Such a planner rejects acquisition
-//! and release planning. The managed constructor remains test-only until every
-//! radio client and the upstream PLL owner migrate to one common manager.
+//! and release planning. A concurrently split radio instead runs a managed
+//! planner inside its arbiter: every client goes through the arbiter and the
+//! upstream PLL and analog-I2C halves through the platform clock provider.
 
 #![forbid(unsafe_code)]
 #![allow(
@@ -327,6 +328,25 @@ impl<'identity> ModemClockPlanner<'identity> {
         Self {
             identity,
             baseline: Baseline::ExternallyRetained,
+            wifi_initialized: false,
+            counts: [0; DEPENDENCY_COUNT],
+            slots: [LeaseSlot::EMPTY; MAX_ACTIVE_LEASES],
+        }
+    }
+
+    /// Construct the managed epoch of a concurrently split radio.
+    ///
+    /// The concurrent split removes every exclusive route, so the arbiter's
+    /// clients are the only owners of the modem gates, and the upstream PLL
+    /// and analog-I2C halves go through the platform provider. Counts start
+    /// at zero, as the vendor's do: a zero-to-one edge enables a gate whatever
+    /// its prior state, and a one-to-zero edge disables it.
+    pub(crate) const fn for_concurrent_radio(
+        identity: &'identity ModemClockPlannerIdentity,
+    ) -> Self {
+        Self {
+            identity,
+            baseline: Baseline::Managed,
             wifi_initialized: false,
             counts: [0; DEPENDENCY_COUNT],
             slots: [LeaseSlot::EMPTY; MAX_ACTIVE_LEASES],
@@ -833,6 +853,7 @@ impl<'planner, 'lease> ModemClockReleaseCommitReady<'planner, 'lease> {
 
 mod executor;
 pub use executor::{PlatformClockError, PlatformClockProvider};
+pub(crate) use executor::{execute_acquire, execute_release};
 
 #[cfg(test)]
 mod tests;

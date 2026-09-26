@@ -18,6 +18,12 @@
 //! the cold-power baseline. Refcounted modem clock dependencies are the shared
 //! modem clock planner's, and are not part of this membership.
 //!
+//! Modem clocks are reference-counted per dependency by the shared modem clock
+//! planner inside the arbiter: each client enables and disables its module's
+//! clocks through the lease, and a client leaving never disables a clock
+//! another client still holds. The platform clock provider supplies the
+//! upstream 160 MHz source and the analog-I2C master clock.
+//!
 //! A lease is not a coexistence grant: it serializes register access, not
 //! air time. Forgetting a lease with `mem::forget` leaks it: the arbiter
 //! stays busy and no later route can reach the shared registers, which is a
@@ -34,6 +40,11 @@ use oer_esp32s31_pac::{
 };
 
 pub use crate::clock::{CommonRadioPowerError, RadioClient};
+use crate::power::clock::{
+    ModemClockLease, ModemClockModule, ModemClockPlanner, ModemClockPlannerIdentity,
+    PoisonedModemClockAcquire, PoisonedModemClockRelease, execute_acquire, execute_release,
+};
+pub use crate::power::{PlatformClockError, PlatformClockProvider};
 use crate::{
     clock::CommonRadioPower,
     owner::{PhyRegistrationEpoch, SharedPhyHal, route},
@@ -106,7 +117,77 @@ struct SharedRadioState<T> {
     phy: PhyRouteState,
     power: CommonRadioPower,
     btbb_clients: u8,
+    clocks: ModemClocks,
     attachment: T,
+}
+
+/// Identity of the one concurrent planner epoch; the radio is a singleton.
+static CONCURRENT_CLOCK_IDENTITY: ModemClockPlannerIdentity = ModemClockPlannerIdentity::new();
+
+/// Modem clock planner and the module lease each client holds.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the arbiter keeps the allocation-free planner or its poisoned owner inline"
+)]
+enum ModemClocks {
+    Ready {
+        planner: ModemClockPlanner<'static>,
+        leases: [Option<ModemClockLease<'static>>; 3],
+    },
+    /// A transaction failed at a physical edge; the retained owner prevents
+    /// any further modem clock change.
+    Poisoned {
+        _acquire: Option<PoisonedModemClockAcquire<'static>>,
+        _release: Option<PoisonedModemClockRelease<'static, 'static>>,
+    },
+    /// Transient state while one transaction owns the planner.
+    InFlight,
+}
+
+impl ModemClocks {
+    const fn new() -> Self {
+        Self::Ready {
+            planner: ModemClockPlanner::for_concurrent_radio(&CONCURRENT_CLOCK_IDENTITY),
+            leases: [None, None, None],
+        }
+    }
+
+    fn any_held(&self) -> bool {
+        match self {
+            Self::Ready { leases, .. } => leases.iter().any(Option::is_some),
+            Self::Poisoned { .. } | Self::InFlight => true,
+        }
+    }
+}
+
+/// Why a client's modem clocks cannot change.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModemClockError {
+    /// The client already holds its modem clocks.
+    AlreadyEnabled,
+    /// The client does not hold its modem clocks.
+    NotEnabled,
+    /// The planner rejected the request before any register access.
+    Rejected,
+    /// A platform clock request failed at a physical edge; modem clocks are
+    /// poisoned until reset.
+    Poisoned,
+}
+
+const fn client_index(client: RadioClient) -> usize {
+    match client {
+        RadioClient::Wifi => 0,
+        RadioClient::Bluetooth => 1,
+        RadioClient::Ieee802154 => 2,
+    }
+}
+
+const fn client_module(client: RadioClient) -> ModemClockModule {
+    match client {
+        RadioClient::Wifi => ModemClockModule::Wifi,
+        RadioClient::Bluetooth => ModemClockModule::Bluetooth,
+        RadioClient::Ieee802154 => ModemClockModule::Ieee802154,
+    }
 }
 
 /// Unique arbiter of the shared radio partitions.
@@ -146,6 +227,7 @@ impl<T> SharedRadio<T> {
                 phy,
                 power: CommonRadioPower::default(),
                 btbb_clients: 0,
+                clocks: ModemClocks::new(),
                 attachment,
             }),
         }
@@ -176,7 +258,8 @@ impl<T> SharedRadio<T> {
     /// or a PHY calibration still owns a restore obligation.
     #[allow(
         clippy::type_complexity,
-        reason = "the parts are returned exactly as arbitration held them"
+        clippy::result_large_err,
+        reason = "the parts, or the unchanged arbiter, are returned exactly as held"
     )]
     pub(crate) fn into_parts(
         self,
@@ -190,6 +273,12 @@ impl<T> SharedRadio<T> {
         }
         if state.btbb_clients != 0 {
             return Err((Self::from_state(state), SharedRadioReleaseError::BtbbHeld));
+        }
+        if state.clocks.any_held() {
+            return Err((
+                Self::from_state(state),
+                SharedRadioReleaseError::ModemClocksHeld,
+            ));
         }
         if let Err(error) = crate::root::check_phy_restore_complete(&state.phy) {
             return Err((
@@ -335,6 +424,8 @@ pub enum SharedRadioReleaseError {
     CommonPowerHeld,
     /// A client still holds the shared BTBB baseband.
     BtbbHeld,
+    /// A client still holds modem clocks, or they are poisoned.
+    ModemClocksHeld,
     /// A PHY calibration still owns a restore obligation.
     Restore(crate::root::RadioPhyReleaseError),
 }
@@ -506,6 +597,118 @@ impl<T> SharedRadioLease<'_, T> {
     pub fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Shared> {
         let state = self.state_mut();
         SharedPhyHal::new(state.registers.radio_phy_mut(), &mut state.phy)
+    }
+
+    /// Enable the modem clocks of the protocol that owns `owner`.
+    ///
+    /// This is ESP-IDF's reference-counted `modem_clock_module_enable` for the
+    /// client's module: the monotonic modem ICG maps are ORed in, then only
+    /// dependencies at zero references are enabled. The upstream 160 MHz
+    /// source and the analog-I2C master clock go through `platform`.
+    ///
+    /// # Errors
+    ///
+    /// The client already holds its clocks, the planner rejected the request
+    /// before any access, or a platform request failed and poisoned the modem
+    /// clocks.
+    pub fn enable_modem_clocks<O: RadioClientOwner>(
+        &mut self,
+        _owner: &O,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), ModemClockError> {
+        let index = client_index(O::CLIENT);
+        let state = self.state_mut();
+        let (planner, mut leases) =
+            match core::mem::replace(&mut state.clocks, ModemClocks::InFlight) {
+                ModemClocks::Ready { planner, leases } => (planner, leases),
+                other => {
+                    state.clocks = other;
+                    return Err(ModemClockError::Poisoned);
+                }
+            };
+        if leases[index].is_some() {
+            state.clocks = ModemClocks::Ready { planner, leases };
+            return Err(ModemClockError::AlreadyEnabled);
+        }
+        let prepared = match planner.prepare_module_acquire(client_module(O::CLIENT)) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                state.clocks = ModemClocks::Ready {
+                    planner: failure.into_planner(),
+                    leases,
+                };
+                return Err(ModemClockError::Rejected);
+            }
+        };
+        let phy = state.registers.radio_phy_mut();
+        phy.prepare_modem_syscon_clock_map();
+        phy.prepare_shared_modem_clock_map();
+        match execute_acquire(prepared, phy, platform) {
+            Ok((planner, lease)) => {
+                leases[index] = Some(lease);
+                state.clocks = ModemClocks::Ready { planner, leases };
+                Ok(())
+            }
+            Err(poisoned) => {
+                // Remaining leases retire with the poisoned planner epoch.
+                state.clocks = ModemClocks::Poisoned {
+                    _acquire: Some(poisoned),
+                    _release: None,
+                };
+                Err(ModemClockError::Poisoned)
+            }
+        }
+    }
+
+    /// Disable the modem clocks of the protocol that owns `owner`; only
+    /// dependencies no other client holds are disabled.
+    ///
+    /// # Errors
+    ///
+    /// The client does not hold its clocks, the planner rejected the release
+    /// before any access, or a platform request failed and poisoned the modem
+    /// clocks.
+    pub fn disable_modem_clocks<O: RadioClientOwner>(
+        &mut self,
+        _owner: &O,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), ModemClockError> {
+        let index = client_index(O::CLIENT);
+        let state = self.state_mut();
+        let (planner, mut leases) =
+            match core::mem::replace(&mut state.clocks, ModemClocks::InFlight) {
+                ModemClocks::Ready { planner, leases } => (planner, leases),
+                other => {
+                    state.clocks = other;
+                    return Err(ModemClockError::Poisoned);
+                }
+            };
+        let Some(lease) = leases[index].take() else {
+            state.clocks = ModemClocks::Ready { planner, leases };
+            return Err(ModemClockError::NotEnabled);
+        };
+        let prepared = match planner.prepare_release(lease) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let (planner, lease) = failure.into_owners();
+                leases[index] = Some(lease);
+                state.clocks = ModemClocks::Ready { planner, leases };
+                return Err(ModemClockError::Rejected);
+            }
+        };
+        match execute_release(prepared, state.registers.radio_phy_mut(), platform) {
+            Ok(planner) => {
+                state.clocks = ModemClocks::Ready { planner, leases };
+                Ok(())
+            }
+            Err(poisoned) => {
+                state.clocks = ModemClocks::Poisoned {
+                    _acquire: None,
+                    _release: Some(poisoned),
+                };
+                Err(ModemClockError::Poisoned)
+            }
+        }
     }
 
     /// Borrow the upper layer's attachment.

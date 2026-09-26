@@ -188,3 +188,37 @@ fn an_until_proof_needs_a_non_empty_window() {
         }
     );
 }
+
+struct NoPlatform;
+
+impl crate::power::PlatformClockProvider for NoPlatform {
+    fn acquire_pll_f160m(&mut self) -> Result<(), crate::power::PlatformClockError> {
+        Err(crate::power::PlatformClockError)
+    }
+    fn release_pll_f160m(&mut self) -> Result<(), crate::power::PlatformClockError> {
+        Err(crate::power::PlatformClockError)
+    }
+    fn acquire_analog_i2c_clock(&mut self) -> Result<(), crate::power::PlatformClockError> {
+        Err(crate::power::PlatformClockError)
+    }
+    fn release_analog_i2c_clock(&mut self) -> Result<(), crate::power::PlatformClockError> {
+        Err(crate::power::PlatformClockError)
+    }
+}
+
+#[test]
+fn a_client_cannot_disable_modem_clocks_it_never_enabled() {
+    let wifi =
+        oer_esp32s31_pac::WifiRadioRegisters::new(RadioPartitions::for_validation().wifi_mac);
+    let radio = arbiter();
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+    // Rejected before any register access.
+    assert_eq!(
+        lease.disable_modem_clocks(&wifi, &mut NoPlatform),
+        Err(ModemClockError::NotEnabled)
+    );
+    drop(lease);
+    assert!(radio.into_parts().is_ok());
+}

@@ -603,6 +603,9 @@ impl PhyState {
         self.wifi.tx_i2c_tracking_band = outcome.band;
     }
 
+    /// Owned 802.11p configuration. Channel selection has no 802.11p step:
+    /// complete `phy_chip_set_chan` passes these bytes to `phy_11p_set`,
+    /// whose body only writes them back to the same `phy_param` bytes.
     pub fn set_dot11p_configuration(&mut self, enabled: u8, configuration: u8) {
         self.wifi.dot11p_enabled = enabled;
         self.wifi.dot11p_configuration = configuration;
@@ -1292,8 +1295,6 @@ impl PhyState {
             frequency_offset: 0,
             crystal_selector: self.common.crystal_selector,
             channel_14_mic_enabled: self.config.channel_14_mic_enabled,
-            dot11p_enabled: self.wifi.dot11p_enabled != 0,
-            dot11p_config: self.wifi.dot11p_configuration,
             tx_gain_skip_publication: self.config.tx_gain_skip_publication,
             tx_gain_seed: self.wifi_seed(),
             tx_gain_config: self.wifi.tx_iq_config,

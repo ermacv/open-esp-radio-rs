@@ -52,10 +52,6 @@ pub struct PhyChipChannelParameters {
     /// The qualified basic AP/STA profile requires this vendor option to be
     /// disabled. Channel 14 is rejected independently.
     pub channel_14_mic_enabled: bool,
-    /// Preserved as owned state. The complete `phy_11p_set` body only writes
-    /// these two bytes back to the former `phy_param` image.
-    pub dot11p_enabled: bool,
-    pub dot11p_config: u8,
     pub tx_gain_skip_publication: bool,
     pub tx_gain_seed: [u32; 6],
     pub tx_gain_config: u16,

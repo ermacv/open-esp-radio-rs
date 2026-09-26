@@ -4,8 +4,6 @@ const PARAMETERS: PhyChipChannelParameters = PhyChipChannelParameters {
     frequency_offset: 0,
     crystal_selector: 3,
     channel_14_mic_enabled: false,
-    dot11p_enabled: false,
-    dot11p_config: 0,
     tx_gain_skip_publication: false,
     tx_gain_seed: [1, 2, 3, 4, 5, 6],
     tx_gain_config: 0x1234,

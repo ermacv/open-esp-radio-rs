@@ -4,7 +4,8 @@
 //! and filter, and then serves the host's commands until it stops: transmit
 //! and report the outcome with any acknowledgement, enter receive mode,
 //! report and forget the frames received so far, and change the automatic
-//! frame-pending decision. Received frames accumulate between collections,
+//! frame-pending decision. The host may ask for enhanced ACKs of 2015
+//! frames. Received frames accumulate between collections,
 //! so the host can drive the peer while the device listens.
 
 use core::cell::Cell;
@@ -16,7 +17,9 @@ use embassy_futures::{
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Timer, with_timeout};
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
-use oer_esp32s31_ieee802154_runtime::{Ieee802154OwnedFrame, Ieee802154RadioEvent};
+use oer_esp32s31_ieee802154_runtime::{
+    Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
+};
 use oer_esp32s31_ieee802154_system::{
     Ieee802154PhyMaintenance, Ieee802154System, Ieee802154SystemRuntime, MAINTENANCE_PERIOD_MICROS,
 };
@@ -97,11 +100,18 @@ impl Session {
             .map_err(|_| Ieee802154SessionResult::CommandRejected)
     }
 
-    /// Apply the host's identity and filter to an enabled radio.
+    /// Apply the host's identity and filter to an enabled radio, and
+    /// install the enhanced-ACK generator the host asked for.
     fn configure(
         &mut self,
         config: Ieee802154SessionConfig,
     ) -> Result<(), Ieee802154SessionResult> {
+        let generator = config
+            .enhanced_ack
+            .then(Ieee802154EnhancedAckGenerator::new);
+        self.runtime
+            .with_enhanced_ack(|installed| *installed = generator)
+            .map_err(|_| Ieee802154SessionResult::StartFailed)?;
         let id = self.id();
         self.submit(RadioCommand::Enable { id })?;
         for configuration in [

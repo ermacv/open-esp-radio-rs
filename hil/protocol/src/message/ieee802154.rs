@@ -445,6 +445,9 @@ pub struct Ieee802154SessionConfig {
     /// Track the shared PHY in the background once per tracking period,
     /// instead of on `MaintainIeee802154SessionPhy` requests.
     pub background_maintenance: bool,
+    /// Answer 2015 frames that request an ACK with an unsecured enhanced
+    /// ACK; otherwise they get no ACK.
+    pub enhanced_ack: bool,
 }
 
 /// When shared PHY tracking may start.

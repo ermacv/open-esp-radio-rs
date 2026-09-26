@@ -1972,6 +1972,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         promiscuous: true,
         maintenance_policy: crate::Ieee802154SessionMaintenancePolicy::Quiesced,
         background_maintenance: true,
+        enhanced_ack: true,
     };
     assert!(config.validate());
     assert!(

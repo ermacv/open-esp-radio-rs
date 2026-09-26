@@ -89,6 +89,27 @@ pub fn data_request(sequence: u8, destination: u16, source: u16) -> Vec<u8> {
     frame
 }
 
+/// A 2015 data frame with PAN ID compression and short addresses,
+/// requesting an ACK.
+pub fn data_frame_2015(sequence: u8, destination: u16, source: u16) -> Vec<u8> {
+    let mut frame = data_frame(true, sequence, destination, source);
+    frame[1] = 0xa8;
+    frame
+}
+
+/// The enhanced acknowledgement IEEE 802.15.4-2015 prescribes for
+/// [`data_frame_2015`] from `source`: an unsecured 2015 ACK with the
+/// frame-pending bit, the echoed sequence, the destination PAN ID and
+/// `source` as destination, without source address or PAN ID compression.
+pub fn enhanced_acknowledgement(sequence: u8, source: u16, pending: bool) -> Vec<u8> {
+    let control: u16 = 0x2802 | if pending { 0x0010 } else { 0 };
+    let mut frame = control.to_le_bytes().to_vec();
+    frame.push(sequence);
+    frame.extend_from_slice(&PAN_ID.to_le_bytes());
+    frame.extend_from_slice(&source.to_le_bytes());
+    frame
+}
+
 /// An immediate acknowledgement of `sequence`, and its frame-pending bit.
 pub fn acknowledgement(frame: &[u8], sequence: u8) -> Option<bool> {
     match frame {
@@ -106,6 +127,7 @@ struct BootReport {
     peer_to_device: Vec<String>,
     filtered: String,
     pending: String,
+    enhanced_ack: String,
     maintenance: String,
 }
 
@@ -203,6 +225,7 @@ fn exchange<L: PeerLink>(
                 promiscuous: false,
                 maintenance_policy: Ieee802154SessionMaintenancePolicy::Vendor,
                 background_maintenance: false,
+                enhanced_ack: true,
             },
             START_TIMEOUT,
         )?,
@@ -250,6 +273,16 @@ fn exchange<L: PeerLink>(
     check_peer_acknowledged(peer.next_event(PEER_EVENT_TIMEOUT)?, 0x71, true)?;
     let _ = capture.collect_ieee802154_session()?;
 
+    // The peer's address is in the pending table, so the enhanced ACK of
+    // its 2015 frame carries frame pending.
+    let frame = data_frame_2015(0x72, DEVICE_SHORT, PEER_SHORT);
+    peer.transmit(false, &frame)?;
+    check_peer_enhanced_ack(
+        peer.next_event(PEER_EVENT_TIMEOUT)?,
+        &enhanced_acknowledgement(0x72, PEER_SHORT, true),
+    )?;
+    check_device_received(&capture.collect_ieee802154_session()?, &[frame])?;
+
     std::thread::sleep(TRACKING_DUE_AFTER);
     let maintained = capture.maintain_ieee802154_session_phy(MAINTENANCE_TIMEOUT)?;
     if maintained != Ieee802154SessionPhyMaintenance::Tracked {
@@ -283,6 +316,7 @@ fn exchange<L: PeerLink>(
         peer_to_device,
         filtered: String::from("foreign destination unacknowledged and unreported"),
         pending: String::from("data request acknowledged with frame pending"),
+        enhanced_ack: String::from("2015 frame acknowledged with the enhanced ACK"),
         maintenance: String::from("tracked, then exchanged in both directions"),
     })
 }
@@ -340,6 +374,15 @@ pub(crate) fn check_peer_acknowledged(
             "device acknowledgement of seq={sequence} (pending={pending}) missing: {other:?}"
         )
         .into()),
+    }
+}
+
+pub(crate) fn check_peer_enhanced_ack(event: Option<PeerEvent>, expected: &[u8]) -> Result<()> {
+    match event {
+        Some(PeerEvent::Transmitted {
+            acknowledgement: Some(ack),
+        }) if ack.bytes == expected => Ok(()),
+        other => Err(format!("device enhanced ACK {expected:02x?} missing: {other:?}").into()),
     }
 }
 

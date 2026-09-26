@@ -121,3 +121,46 @@ fn device_receptions_match_the_sent_frames_in_order() {
     lost.result = Ieee802154SessionResult::EventsLost;
     assert!(check_device_received(&lost, &sent).is_err());
 }
+
+/// The 2015 frame differs from the 2006 one only in its frame version, and
+/// its enhanced ACK is an unsecured 2015 ACK to the source with the PAN ID.
+#[test]
+fn the_2015_exchange_carries_the_documented_headers() {
+    assert_eq!(
+        data_frame_2015(0x72, DEVICE_SHORT, PEER_SHORT)[..9],
+        [0x61, 0xa8, 0x72, 0x45, 0x4f, 0x01, 0x00, 0x02, 0x00]
+    );
+    assert_eq!(
+        enhanced_acknowledgement(0x72, PEER_SHORT, true),
+        [0x12, 0x28, 0x72, 0x45, 0x4f, 0x02, 0x00]
+    );
+    assert_eq!(
+        enhanced_acknowledgement(0x72, PEER_SHORT, false)[..2],
+        [0x02, 0x28]
+    );
+}
+
+#[test]
+fn the_enhanced_ack_is_matched_exactly() {
+    let expected = enhanced_acknowledgement(0x72, PEER_SHORT, true);
+    let transmitted = |bytes: Vec<u8>| {
+        Some(PeerEvent::Transmitted {
+            acknowledgement: Some(PeerAck {
+                bytes,
+                pending: true,
+                rssi_dbm: -30,
+                lqi: 255,
+            }),
+        })
+    };
+    check_peer_enhanced_ack(transmitted(expected.clone()), &expected).unwrap();
+    assert!(
+        check_peer_enhanced_ack(
+            transmitted(enhanced_acknowledgement(0x72, PEER_SHORT, false)),
+            &expected
+        )
+        .is_err()
+    );
+    assert!(check_peer_enhanced_ack(transmitted(ack(0x72, true)), &expected).is_err());
+    assert!(check_peer_enhanced_ack(Some(PeerEvent::TransmitFailed(3)), &expected).is_err());
+}

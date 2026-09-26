@@ -132,6 +132,7 @@ fn session(capture: &SerialCapture, config: &Config) -> Result<Ieee802154Session
                 promiscuous: false,
                 maintenance_policy: config.policy,
                 background_maintenance: true,
+                enhanced_ack: false,
             },
             START_TIMEOUT,
         )?,

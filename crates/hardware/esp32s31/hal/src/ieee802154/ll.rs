@@ -283,6 +283,10 @@ pub fn mac_init_registers<Ll: Ieee802154LowLevel + ?Sized>(ll: &mut Ll) {
 
 /// The task owner and its active interrupt owner, held together for the
 /// life of an interrupt-driven MAC epoch.
+///
+/// The public driver runs its operation starts, stops and interrupt handler
+/// under one critical section over the complete MAC register block, so this
+/// pair is the only implementation of [`Ieee802154LowLevel`] over hardware.
 #[must_use = "the MAC owners must be separated and returned to their route"]
 pub struct Ieee802154MacOwners {
     task: Ieee802154TaskOwner,
@@ -299,34 +303,9 @@ impl Ieee802154MacOwners {
     pub fn into_parts(self) -> (Ieee802154TaskOwner, Ieee802154InterruptOwner) {
         (self.task, self.interrupts)
     }
-
-    /// Borrow both owners as one LL port.
-    pub fn port(&mut self) -> Ieee802154MacPort<'_> {
-        Ieee802154MacPort::new(&mut self.task, &mut self.interrupts)
-    }
 }
 
-/// The MAC task and interrupt owners joined for one critical section.
-///
-/// The public driver runs its operation starts, stops and interrupt handler
-/// under one critical section over the complete MAC register block, so this
-/// port is the only implementation of [`Ieee802154LowLevel`] over hardware.
-pub struct Ieee802154MacPort<'owners> {
-    task: &'owners mut Ieee802154TaskOwner,
-    interrupts: &'owners mut Ieee802154InterruptOwner,
-}
-
-impl<'owners> Ieee802154MacPort<'owners> {
-    /// Join the task owner with its active interrupt owner.
-    pub fn new(
-        task: &'owners mut Ieee802154TaskOwner,
-        interrupts: &'owners mut Ieee802154InterruptOwner,
-    ) -> Self {
-        Self { task, interrupts }
-    }
-}
-
-impl Ieee802154LowLevel for Ieee802154MacPort<'_> {
+impl Ieee802154LowLevel for Ieee802154MacOwners {
     fn set_command(&mut self, command: Ieee802154LlCommand) {
         self.task.lease().request_mac_command(command.into_pac());
     }
@@ -585,6 +564,9 @@ impl Ieee802154LowLevel for Ieee802154MacPort<'_> {
         self.task.lease().set_etm_route(route);
     }
 }
+
+#[cfg(feature = "ll-model")]
+pub mod model;
 
 #[cfg(test)]
 pub(crate) mod tests;

@@ -248,10 +248,11 @@ id = "ieee802154-capability-sources-and-publication-scope"
 domain = "ieee802154"
 title = "Capability sources and publication scope"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary, not the S31 backend's supported-feature image. In particular,\n`CSMA_CA`, `SCHEDULED_TRANSMIT`, `AUTOMATIC_ACKNOWLEDGEMENT`, `SECURITY_OFFLOAD`\nand `SOURCE_MATCH` constants do not compose their corresponding operations.\nThe same applies to portable commands, configuration and software sleep states.\n\nThe [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) starts the\noperations of the [MAC engine](src/engine.rs) ported from the public ESP-IDF\ndriver. These are runtime entry points, not a complete public RF-ready\nservice, and CCA-gated transmission is not a CSMA/CA scheduler."
+overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary. The [radio role](../../../../roles/esp32s31/ieee802154/radio/src/lib.rs)\nadvertises the subset the engine implements; `CSMA_CA`, `SECURITY_OFFLOAD` and\n`SOURCE_MATCH` are not advertised. An advertised capability is source coverage,\nnot RF qualification.\n\nThe [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) admits portable\ncommands through the role, which starts the operations of the [MAC engine](src/engine.rs)\nported from the public ESP-IDF driver. These are runtime entry points, not a\ncomplete public RF-ready service, and CCA-gated transmission is not a CSMA/CA\nscheduler."
 packages = [
     "oer-ieee802154",
     "oer-esp32s31-ieee802154-runtime",
+    "oer-esp32s31-ieee802154-radio",
     "oer-esp32s31-ieee802154",
 ]
 
@@ -787,16 +788,17 @@ id = "ieee802154-source-portable-radio-capabilities"
 section = "ieee802154-capability-sources-and-publication-scope"
 title = "Portable `RadioCapabilities` vocabulary"
 kind = "source-reference"
-details = "The portable capability dictionary is not the S31 backend supported-feature image and does not compose its named operations."
-packages = ["oer-ieee802154"]
+details = "The portable capability dictionary is a vocabulary; the radio role advertises the engine-backed subset as source coverage, not RF qualification."
+packages = ["oer-ieee802154", "oer-esp32s31-ieee802154-radio"]
 
 [[references]]
 id = "ieee802154-source-lower-runtime-entry-points"
 section = "ieee802154-capability-sources-and-publication-scope"
 title = "Runtime operation entry points"
 kind = "source-reference"
-details = "The runtime operations start the ported vendor operations; they do not establish a complete public RF-ready service, and CCA-gated transmission is not a CSMA/CA scheduler."
+details = "Portable commands start the ported vendor operations through the role; they do not establish a complete public RF-ready service, and CCA-gated transmission is not a CSMA/CA scheduler."
 packages = [
     "oer-esp32s31-ieee802154-runtime",
+    "oer-esp32s31-ieee802154-radio",
     "oer-esp32s31-ieee802154",
 ]

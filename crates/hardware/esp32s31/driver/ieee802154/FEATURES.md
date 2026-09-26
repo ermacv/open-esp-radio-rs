@@ -30,9 +30,9 @@ Canonical section: `ieee802154-qualification-scope-mapping`.
 ## Capability sources and publication scope
 
 Canonical section: `ieee802154-capability-sources-and-publication-scope`.
-Portable `RadioCapabilities` is a vocabulary, not an ESP32-S31 backend
-advertisement, and vendor API declarations are inventory references rather
-than open-driver evidence.
+Portable `RadioCapabilities` is a vocabulary; the ESP32-S31 radio role
+advertises the subset the engine implements as source coverage. Vendor API
+declarations are inventory references rather than open-driver evidence.
 
 ## PHY and RF
 

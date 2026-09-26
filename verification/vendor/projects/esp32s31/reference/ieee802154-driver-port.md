@@ -122,7 +122,7 @@ frame semantics belong to the protocol crate.
 | `esp_ieee802154_util.c` coexistence scenes, channel conversion | coexistence driver, HAL | partial: channel conversion only |
 | `ieee802154_sleep`, `rf_enable` / `rf_disable`, sleep retention | driver engine, HAL and PHY | partial: engine sleep state; RF gating (off in the default build) and retention absent |
 | `esp_ieee802154_debug.c` | not ported: optional statistics | absent |
-| `esp_ieee802154.c` public API | driver engine | partial: PIB, identity, ACK-timeout, transmit-security, pending-table and operation entry points of interface zero; event callbacks are the engine environment; statistics, coexistence configuration and RSSI of the last frame absent |
+| `esp_ieee802154.c` public API | driver engine, radio role over the portable contract | partial: PIB, identity, ACK-timeout, transmit-security, pending-table and operation entry points of interface zero; event callbacks are the engine environment; statistics, coexistence configuration and RSSI of the last frame absent |
 
 The masked foundation with serialized polled ED and CCA has no ESP-IDF
 counterpart. It is retained as a HIL diagnostic path only.

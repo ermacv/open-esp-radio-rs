@@ -11,10 +11,12 @@ description = "Executor-independent ESP32-S31 IEEE 802.15.4 radio runtime over t
 embassy-sync = "0.8.0"
 oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal" }
 oer-esp32s31-ieee802154 = { path = "../../../hardware/esp32s31/driver/ieee802154" }
+oer-esp32s31-ieee802154-radio = { path = "../../../roles/esp32s31/ieee802154/radio" }
 oer-ieee802154 = { path = "../../../protocols/ieee802154" }
 
 [dev-dependencies]
 embassy-futures = "0.1.2"
+oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal", features = ["ll-model"] }
 
 [lints]
 workspace = true

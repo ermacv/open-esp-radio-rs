@@ -9,6 +9,8 @@ description = "Ownership and async HAL boundaries for the ESP32-S31 radio"
 
 [features]
 validation-probes = ["oer-esp32s31-pac/validation-probes"]
+# A register model of the LL backend for host tests of the engine's users.
+ll-model = []
 
 [dependencies]
 oer-memory = { path = "../../../memory" }

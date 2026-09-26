@@ -18,7 +18,13 @@ protocol compositions are clients of the system:
   clock sources for one radio transaction.
 - `RadioGuard::prepare_phy` is the first-client half of `esp_phy_enable`: it
   registers the shared PHY domain once, with the calibration identity given
-  to `new`, or wakes its closed RF.
+  to `new` and the retained cache given to `RadioSystem::with_calibration_cache`,
+  or wakes its closed RF. It reports `RadioPhyPrepared::Registered` with the
+  registration's calibration path and fresh cache, `Woken` or `AlreadyOpen`.
+  The domain stays registered across RF close and wake, as ESP-IDF's
+  calibrated PHY does, so only the first preparation registers.
+- `RadioGuard::calibration_cache` captures the registered domain's current
+  state as the cache for the next cold registration.
 - `RadioGuard::close_phy_if_idle` is the last-client half of
   `esp_phy_disable`: it closes RF when no client remains.
 - `RadioSystem::run_tracking` is the vendor periodic `phy_track_pll` timer.
@@ -43,7 +49,7 @@ system.
 
 ## Limits
 
-The system keeps no calibration cache across registrations or resets, and
-does not compose coexistence policy. There is no modem retention or light
+Persisting the calibration cache across resets is the caller's policy, and
+the system does not compose coexistence policy. There is no modem retention or light
 sleep: RF close keeps the registration and calibration, nothing else. A tracking failure
 leaves the domain poisoned; the chip must be reset.

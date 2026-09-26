@@ -250,6 +250,26 @@ impl ConcurrentPhy {
         self.settled().map(PhyDomain::phy_state)
     }
 
+    /// Capture the registered domain's current calibration state as a cache
+    /// for a later cold registration: the final-state handoff. RF may be
+    /// open or closed; the state stays registered in both.
+    ///
+    /// # Errors
+    ///
+    /// The domain is not registered, awaits tracking or is poisoned.
+    pub fn calibration_cache(
+        &self,
+        identity: crate::PhyCalibrationIdentity,
+    ) -> Result<crate::PhyCalibrationCache, ConcurrentPhyError> {
+        let domain = match &self.slot {
+            Slot::Registered(domain) | Slot::RfClosed(domain) => domain,
+            Slot::Empty => return Err(ConcurrentPhyError::NotRegistered),
+            Slot::Pending { .. } => return Err(ConcurrentPhyError::TrackingPending),
+            Slot::Poisoned => return Err(ConcurrentPhyError::Poisoned),
+        };
+        Ok(domain.phy_state().calibration_cache(identity))
+    }
+
     /// Whether the domain is registered with RF closed.
     pub const fn rf_closed(&self) -> bool {
         matches!(self.slot, Slot::RfClosed(_))

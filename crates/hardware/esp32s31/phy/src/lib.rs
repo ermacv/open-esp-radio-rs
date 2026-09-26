@@ -88,6 +88,7 @@ pub mod tx;
 #[cfg(not(feature = "validation-probes"))]
 mod tx;
 
+pub mod concurrent;
 mod registered_bluetooth;
 mod registered_ieee802154;
 mod registered_radio;
@@ -189,6 +190,11 @@ pub const HARDWARE_EDGE_LIMIT: u16 = 10_000;
 pub use oer_esp32s31_hal::phy::delay::RomShortDelay;
 #[cfg(target_arch = "riscv32")]
 pub use target_executor::{PhyAsyncDelay, PhyShortDelay, PhyTargetPortError};
+#[cfg(target_arch = "riscv32")]
+pub use target_port::{
+    ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
+    maintain_concurrent_phy, register_concurrent_phy,
+};
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
     NoopPhyTargetObserver, PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig,

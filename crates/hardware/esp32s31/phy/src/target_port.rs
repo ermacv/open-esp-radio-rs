@@ -138,6 +138,11 @@ use crate::{
     },
 };
 
+mod concurrent;
+pub use concurrent::{
+    ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
+    maintain_concurrent_phy, register_concurrent_phy,
+};
 mod domain;
 pub use domain::{
     PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig, PhyRfCloseFailure,

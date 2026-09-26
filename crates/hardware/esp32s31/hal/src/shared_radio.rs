@@ -308,6 +308,17 @@ impl<'client> ClientQuiescence<'client> {
         })
     }
 
+    /// Mint a proof for a validation or host-test image, without any owner.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub const fn for_validation(client: RadioClient, span: QuiescentSpan) -> Self {
+        Self {
+            client,
+            span,
+            _hold: core::marker::PhantomData,
+        }
+    }
+
     pub const fn client(&self) -> RadioClient {
         self.client
     }

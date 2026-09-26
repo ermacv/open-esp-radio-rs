@@ -198,6 +198,24 @@ MAC initialization tail after the retained wake; its report records
 provides `BluetoothStopped::from_retained` and the retained release after PHY
 close; no LE Controller currently composes the Bluetooth side of the handoff.
 
+### Concurrent clients
+
+For concurrently running protocols the registered domain lives beside the
+shared registers in the HAL radio arbiter, as `SharedRadio<ConcurrentPhy>`.
+Every operation takes the arbiter's lease, so the domain and the shared PHY are
+serialized by one mechanism:
+
+- `register_concurrent_phy` registers the domain once through the lease's
+  shared-PHY borrow;
+- `acquire_client` and `release_client` enter and leave Wi-Fi, Bluetooth and
+  IEEE 802.15.4 as clients of the one client set;
+- `evaluate_periodic_tracking` and an acquisition that needs initial tracking
+  leave the domain pending, and no client operation proceeds until it settles;
+- `admit_maintenance` checks, without register access, that every active client
+  presents a `ClientQuiescence` proof whose window is open;
+  `maintain_concurrent_phy` then runs the tracking transaction inside the
+  earliest `release_by` window. A started failure poisons the domain.
+
 Protocol runtimes must first return their real TX, RX DMA, IRQ, MAC/LL and
 per-protocol receive-enable owners to the composition. Consequently neither
 `PhyClientState::release`, a zero client mask nor a coex request can call the

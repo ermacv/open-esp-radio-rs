@@ -221,7 +221,7 @@ fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
 }
 
 #[test]
-fn ap_aggregate_config_carries_the_protection_selected_for_its_length() {
+fn ap_aggregate_config_is_protected_by_bss_rules_not_by_its_length() {
     use oer_esp32s31_ieee80211_mac::tx::protection::{BasicRates, BssProtection, TxProtection};
     use oer_ieee80211_mac::protection::HtProtectionMode;
 
@@ -245,13 +245,9 @@ fn ap_aggregate_config_carries_the_protection_selected_for_its_length() {
     );
     let short = tx.ht_ampdu_config(rate, 2_000, 2, 1).unwrap();
     assert_eq!(short.control.protection, TxProtection::None);
-    let long = tx.ht_ampdu_config(rate, 4_000, 4, 1).unwrap();
-    assert_eq!(
-        long.control.protection,
-        TxProtection::RtsCts {
-            rate: LegacyRate::Ofdm24M
-        }
-    );
+    // An aggregate above dot11RTSThreshold still carries no length RTS.
+    let long = tx.ht_ampdu_config(rate, 48_000, 32, 1).unwrap();
+    assert_eq!(long.control.protection, TxProtection::None);
 
     tx.install_bss_protection(BssProtection {
         ht: HtProtectionMode::NonHtMixed,

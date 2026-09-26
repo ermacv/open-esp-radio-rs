@@ -13,7 +13,7 @@ pub use crate::tx::{
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     edca::EdcaContentionParameters,
-    tx::protection::{ProtectedPpdu, TxProtectionDecision, TxReceiver},
+    tx::protection::{ProtectedPpdu, TxProtectionDecision, TxPsdu, TxReceiver},
     tx::runtime::{
         OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
         OrdinaryRetryError, OrdinaryRetryRatePolicy, VENDOR_RTS_THRESHOLD_BYTES,
@@ -1040,7 +1040,9 @@ where
         self.policy.protection().select(ProtectedPpdu {
             rate,
             receiver,
-            psdu_length,
+            psdu: TxPsdu::Mpdu {
+                length: psdu_length,
+            },
         })
     }
 

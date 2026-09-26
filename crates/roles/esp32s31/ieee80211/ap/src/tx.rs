@@ -21,7 +21,7 @@ use oer_esp32s31_ieee80211_mac::tx::{
     HtAmpduTxConfig, HtChannelWidth, HtDuplicateCertificationRequest, HtDuplicateRate,
     HtDuplicateTxLinkCapabilities, HtDuplicateTxSelection, HtGuardInterval, HtMcs, HtRate,
     LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate,
-    protection::{BssProtection, ProtectedPpdu, TxReceiver},
+    protection::{BssProtection, ProtectedPpdu, TxPsdu, TxReceiver},
     select_esp32s31_ht_duplicate_tx,
 };
 
@@ -211,7 +211,9 @@ where
         let (_, control) = self.ordinary.control_frame_for(ProtectedPpdu {
             rate: TxPhyRate::Ht(rate),
             receiver: TxReceiver::Individual,
-            psdu_length: u32::from(aggregate_length),
+            psdu: TxPsdu::Ampdu {
+                length: u32::from(aggregate_length),
+            },
         });
         ht_ampdu_publication_config(
             AmpduTxRoleAdapter {

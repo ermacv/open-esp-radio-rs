@@ -45,11 +45,19 @@ const fn he(mcs: HeMcs) -> HeRate {
     HeRate::new(mcs, HeGuardIntervalAndLtf::TwoLtf800Ns)
 }
 
-fn ppdu(rate: TxPhyRate, receiver: TxReceiver, psdu_length: u32) -> ProtectedPpdu {
+fn ppdu(rate: TxPhyRate, receiver: TxReceiver, length: u32) -> ProtectedPpdu {
     ProtectedPpdu {
         rate,
         receiver,
-        psdu_length,
+        psdu: TxPsdu::Mpdu { length },
+    }
+}
+
+fn ampdu(rate: TxPhyRate, receiver: TxReceiver, length: u32) -> ProtectedPpdu {
+    ProtectedPpdu {
+        rate,
+        receiver,
+        psdu: TxPsdu::Ampdu { length },
     }
 }
 
@@ -339,6 +347,34 @@ fn length_threshold_requests_rts_only_above_the_threshold_and_never_for_groups()
 }
 
 #[test]
+fn an_aggregate_is_protected_only_by_bss_rules_never_by_its_length() {
+    let policy = WifiTxProtectionPolicy::default();
+    let rate = ht(HtMcs::Mcs7, HtChannelWidth::Mhz40);
+    // A full BA32 aggregate is far above dot11RTSThreshold, but the vendor
+    // A-MPDU path never consults the single-MPDU length rule.
+    let aggregate = policy.select(ampdu(rate, TxReceiver::Individual, 48_000));
+    assert_eq!(aggregate.protection, TxProtection::None);
+    assert!(aggregate.reasons.is_empty());
+    assert_eq!(
+        policy
+            .select(ppdu(rate, TxReceiver::Individual, 2_347))
+            .reasons,
+        TxProtectionReasons::LENGTH
+    );
+    let protected = self::policy(bss(
+        ErpProtection::new(false, false),
+        HtProtectionMode::NonHtMixed,
+        basic(OFDM_BASIC),
+    ));
+    assert_eq!(
+        protected
+            .select(ampdu(rate, TxReceiver::Individual, 48_000))
+            .reasons,
+        TxProtectionReasons::HT
+    );
+}
+
+#[test]
 fn rts_supersedes_cts_to_self_and_keeps_the_erp_dsss_control_rate() {
     let policy = policy(bss(
         ErpProtection::new(true, false),
@@ -400,7 +436,7 @@ fn he_txop_threshold_requests_rts_for_individual_he_ppdus_above_the_budget() {
     let budget = u32::from(rule.maximum_unprotected_apep_bytes(rate));
     assert_eq!(
         policy
-            .select(ppdu(TxPhyRate::He(rate), TxReceiver::Individual, budget))
+            .select(ampdu(TxPhyRate::He(rate), TxReceiver::Individual, budget))
             .protection,
         TxProtection::None
     );
@@ -418,7 +454,7 @@ fn he_txop_threshold_requests_rts_for_individual_he_ppdus_above_the_budget() {
     assert_eq!(decision.reasons, TxProtectionReasons::HE_TXOP_DURATION);
     assert_eq!(
         policy
-            .select(ppdu(TxPhyRate::He(rate), TxReceiver::Group, budget + 1))
+            .select(ampdu(TxPhyRate::He(rate), TxReceiver::Group, budget + 1))
             .protection,
         TxProtection::None
     );

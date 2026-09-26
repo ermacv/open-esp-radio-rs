@@ -998,7 +998,9 @@ where
                 let (_, control) = self.ordinary.control_frame_for(ProtectedPpdu {
                     rate: TxPhyRate::Ht(rate),
                     receiver: TxReceiver::Individual,
-                    psdu_length: u32::from(aggregate_length),
+                    psdu: TxPsdu::Ampdu {
+                        length: u32::from(aggregate_length),
+                    },
                 });
                 let config = ht_ampdu_publication_config(
                     role_policy.role(),
@@ -1040,7 +1042,9 @@ where
                     .control_frame_for(ProtectedPpdu {
                         rate: TxPhyRate::He(rate),
                         receiver: TxReceiver::Individual,
-                        psdu_length: u32::from(aggregate_length),
+                        psdu: TxPsdu::Ampdu {
+                            length: u32::from(aggregate_length),
+                        },
                     })
                     .1;
                 config.aifsn = contention.aifsn();
@@ -1130,9 +1134,9 @@ where
         phase: PreparedTxSchedulerPhase,
         at_micros: u64,
     ) {
-        if !self.has_prepared_network_tx() {
-            return;
-        }
+        // Every boundary is observed, including those without a prepared
+        // successor: the observer classifies publications that did not enter
+        // through the prepared path instead of silently losing them.
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::PreparedSchedulerPhase { phase, at_micros });
         }

@@ -204,7 +204,9 @@ where
                 let (_, control) = self.ordinary.control_frame_for(ProtectedPpdu {
                     rate: active.config.rate(),
                     receiver: TxReceiver::Individual,
-                    psdu_length: u32::from(aggregate.bytes),
+                    psdu: TxPsdu::Ampdu {
+                        length: u32::from(aggregate.bytes),
+                    },
                 });
                 active.config.update_retained_retry(
                     aggregate.bytes,

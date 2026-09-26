@@ -7,7 +7,7 @@
 //! | ERP Use_Protection | BSS ERP element | CTS-to-self at a DSSS/HR rate, any receiver |
 //! | HT Protection | BSS HT Operation element | RTS/CTS to an individual receiver, CTS-to-self to a group |
 //! | HE TXOP Duration RTS Threshold | BSS HE Operation element | RTS/CTS to an individual receiver |
-//! | dot11RTSThreshold | Local configuration | RTS/CTS to an individual receiver |
+//! | dot11RTSThreshold | Local configuration | RTS/CTS before one long individual MPDU, never an A-MPDU |
 //!
 //! An RTS/CTS exchange also sets the NAV of every station that hears the CTS,
 //! so it supersedes CTS-to-self when both are required. Group-addressed PPDUs
@@ -271,14 +271,29 @@ impl TxReceiver {
     }
 }
 
+/// The PSDU carried by one PPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxPsdu {
+    /// One MPDU; `length` includes MIC and FCS.
+    Mpdu { length: u32 },
+    /// One A-MPDU; `length` is the complete aggregate, the HE APEP length.
+    Ampdu { length: u32 },
+}
+
+impl TxPsdu {
+    pub const fn length(self) -> u32 {
+        match self {
+            Self::Mpdu { length } | Self::Ampdu { length } => length,
+        }
+    }
+}
+
 /// One PPDU presented for protection selection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProtectedPpdu {
     pub rate: TxPhyRate,
     pub receiver: TxReceiver,
-    /// PSDU bytes on air: MPDU with MIC and FCS, the complete A-MPDU, or the
-    /// HE APEP length.
-    pub psdu_length: u32,
+    pub psdu: TxPsdu,
 }
 
 /// Why one PPDU is protected; several sources can apply at once.
@@ -401,13 +416,19 @@ impl WifiTxProtectionPolicy {
         let he_txop = match (self.bss.he_txop_rts_threshold, ppdu.rate) {
             (Some(threshold), TxPhyRate::He(rate)) => {
                 let rule = HeTxopRtsRule::new(threshold, self.bss.he_packet_padding);
-                ppdu.psdu_length > u32::from(rule.maximum_unprotected_apep_bytes(rate))
+                ppdu.psdu.length() > u32::from(rule.maximum_unprotected_apep_bytes(rate))
             }
             _ => false,
         };
-        let length = self
-            .rts_length_threshold
-            .is_some_and(|threshold| ppdu.psdu_length > u32::from(threshold.0));
+        // Complete `lmacIsLongFrame` is reached only from `lmacTxFrame`, the
+        // single-MPDU path; the vendor A-MPDU path never consults the length
+        // threshold. An aggregate is protected only by the BSS rules above.
+        let length = match ppdu.psdu {
+            TxPsdu::Mpdu { length } => self
+                .rts_length_threshold
+                .is_some_and(|threshold| length > u32::from(threshold.0)),
+            TxPsdu::Ampdu { .. } => false,
+        };
         let erp = self.bss.erp.use_protection() && non_dsss;
         let reasons = TxProtectionReasons::default()
             .with(TxProtectionReasons::ERP, erp)

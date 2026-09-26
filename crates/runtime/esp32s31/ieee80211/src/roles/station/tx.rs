@@ -49,7 +49,7 @@ use oer_esp32s31_ieee80211_mac::{
             HeAmpduPolicy, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduTxError,
             RetainedAmpduRetryCompletionError, RetainedDmaAmpduTx,
         },
-        protection::{ProtectedPpdu, TxReceiver},
+        protection::{ProtectedPpdu, TxPsdu, TxReceiver},
         runtime::{
             AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState, WifiTxTraffic,
             WifiTxTrafficError, WmmTxopUnsupported,

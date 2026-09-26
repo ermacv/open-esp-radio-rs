@@ -440,6 +440,21 @@ pub struct Ieee802154SessionConfig {
     /// Extended address in over-the-air byte order.
     pub extended_address: [u8; 8],
     pub promiscuous: bool,
+    /// Admission of shared PHY tracking in this session.
+    pub maintenance_policy: Ieee802154SessionMaintenancePolicy,
+    /// Track the shared PHY in the background once per tracking period,
+    /// instead of on `MaintainIeee802154SessionPhy` requests.
+    pub background_maintenance: bool,
+}
+
+/// When shared PHY tracking may start.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154SessionMaintenancePolicy {
+    /// ESP-IDF's admission: tracking runs with the radio running.
+    #[default]
+    Vendor,
+    /// The device pauses its MAC and proves quiescence first.
+    Quiesced,
 }
 
 impl Ieee802154SessionConfig {
@@ -546,4 +561,23 @@ pub enum Ieee802154SessionPhyMaintenance {
     /// The domain rejected the maintenance or tracking failed.
     #[default]
     Failed,
+}
+
+/// Outcomes of the background PHY maintenance of one session.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionMaintenanceCounts {
+    pub not_due: u16,
+    pub tracked: u16,
+    pub awaiting_other_clients: u16,
+    pub busy: u16,
+    /// An attempt failed and background maintenance ended.
+    pub failed: bool,
+}
+
+/// Terminal observation of one session.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionStopEvidence {
+    pub result: Ieee802154SessionResult,
+    /// Background maintenance outcomes; all zero without it.
+    pub maintenance: Ieee802154SessionMaintenanceCounts,
 }

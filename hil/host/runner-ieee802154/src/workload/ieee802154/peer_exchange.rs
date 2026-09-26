@@ -23,7 +23,8 @@ use std::{fs, path::Path, time::Duration};
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
     Ieee802154AirTxOutcome, Ieee802154SessionConfig, Ieee802154SessionFrame,
-    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
+    Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
+    Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionTransmitEvidence,
     Ieee802154SessionTransmitRequest, ieee802154_frame_crc32c,
 };
@@ -167,7 +168,7 @@ fn write_report(output: &Path, reports: &[BootReport], failure: Option<&str>) ->
     Ok(())
 }
 
-fn session_frame(bytes: &[u8]) -> Result<Ieee802154SessionFrame> {
+pub(crate) fn session_frame(bytes: &[u8]) -> Result<Ieee802154SessionFrame> {
     Ieee802154SessionFrame::from_slice(bytes)
         .map_err(|_| "frame exceeds the session capacity".into())
 }
@@ -200,6 +201,8 @@ fn exchange<L: PeerLink>(
                 short_address: DEVICE_SHORT,
                 extended_address: DEVICE_EXTENDED,
                 promiscuous: false,
+                maintenance_policy: Ieee802154SessionMaintenancePolicy::Vendor,
+                background_maintenance: false,
             },
             START_TIMEOUT,
         )?,
@@ -269,7 +272,10 @@ fn exchange<L: PeerLink>(
     check_peer_acknowledged(peer.next_event(PEER_EVENT_TIMEOUT)?, 0x61, false)?;
     check_device_received(&capture.collect_ieee802154_session()?, &[frame])?;
 
-    expect_session("stop", capture.stop_ieee802154_session(COMMAND_TIMEOUT)?)?;
+    expect_session(
+        "stop",
+        capture.stop_ieee802154_session(COMMAND_TIMEOUT)?.result,
+    )?;
     peer.sleep()?;
     Ok(BootReport {
         boot,
@@ -281,7 +287,7 @@ fn exchange<L: PeerLink>(
     })
 }
 
-fn expect_session(step: &str, result: Ieee802154SessionResult) -> Result<()> {
+pub(crate) fn expect_session(step: &str, result: Ieee802154SessionResult) -> Result<()> {
     if result == Ieee802154SessionResult::Done {
         Ok(())
     } else {

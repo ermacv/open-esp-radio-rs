@@ -158,6 +158,7 @@ ieee802154-radio = [
     "ieee802154-diagnostic",
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-phy",
+    "dep:oer-esp32s31-phy-runtime",
     "dep:oer-esp32s31-radio-esp-hal",
     "dep:oer-esp32s31-ieee802154",
     "dep:oer-esp32s31-ieee802154-runtime",
@@ -188,6 +189,7 @@ oer-network-interface = { workspace = true, optional = true }
 oer-esp32s31-ieee80211-system = { workspace = true, optional = true }
 oer-esp32s31-hal = { workspace = true, optional = true }
 oer-esp32s31-phy = { workspace = true, optional = true }
+oer-esp32s31-phy-runtime = { workspace = true, optional = true }
 oer-bluetooth-ll = { workspace = true, optional = true }
 oer-bluetooth-radio = { workspace = true, optional = true }
 oer-esp32s31-bluetooth = { workspace = true, optional = true }

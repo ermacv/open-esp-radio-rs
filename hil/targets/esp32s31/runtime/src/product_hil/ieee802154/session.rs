@@ -7,18 +7,30 @@
 //! frame-pending decision. Received frames accumulate between collections,
 //! so the host can drive the peer while the device listens.
 
-use embassy_futures::select::{Either, select};
-use embassy_time::{Duration, with_timeout};
+use core::cell::Cell;
+
+use embassy_futures::{
+    join::join,
+    select::{Either, select},
+};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
+use embassy_time::{Duration, Timer, with_timeout};
+use oer_esp32s31_hal::shared_radio::SharedRadio;
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154_runtime::{Ieee802154OwnedFrame, Ieee802154RadioEvent};
-use oer_esp32s31_ieee802154_system::{Ieee802154PhyMaintenance, Ieee802154SystemRuntime};
+use oer_esp32s31_ieee802154_system::{
+    Ieee802154PhyMaintenance, Ieee802154System, Ieee802154SystemRuntime,
+};
+use oer_esp32s31_phy::{PhyTargetObserver, concurrent::ConcurrentPhy, run_concurrent_phy_tracking};
+use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_hil_protocol::{
     Event as HilEvent, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirTxOutcome,
     Ieee802154SessionAck, Ieee802154SessionConfig, Ieee802154SessionFrame,
+    Ieee802154SessionMaintenanceCounts, Ieee802154SessionMaintenancePolicy,
     Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
-    Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, RejectReason,
-    ieee802154_frame_crc32c,
+    Ieee802154SessionStopEvidence, Ieee802154SessionTransmitEvidence,
+    Ieee802154SessionTransmitRequest, RejectReason, ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, RadioCommand, RequestId,
@@ -198,57 +210,19 @@ impl Session {
     }
 }
 
-/// Run one peer session until the host stops it. The image is terminal.
-pub(in crate::product_hil) async fn run_session(
-    platform: EspHalRadioPeripheral,
-    request_id: u32,
-    config: Ieee802154SessionConfig,
-) {
-    let Some(channel) = Channel::new(config.channel).ok() else {
-        publish_event_reliably(
-            0,
-            request_id,
-            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::UnsupportedSetup),
-        )
-        .await;
-        return;
-    };
-    let Some((mut client, parked)) = Client::claim(platform) else {
-        publish_event_reliably(
-            0,
-            request_id,
-            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::UnsupportedSetup),
-        )
-        .await;
-        return;
-    };
-    let started = {
-        let started = core::pin::pin!(client.start(parked));
-        started.await
-    };
-    let Some(mut system) = started else {
-        publish_event_reliably(
-            0,
-            request_id,
-            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::StartFailed),
-        )
-        .await;
-        return;
-    };
-    let mut session = Session {
-        runtime: system.runtime(),
-        channel,
-        next_id: 0,
-        received: Received::default(),
-        lost: false,
-    };
-    let started = match session.configure(config) {
-        Ok(()) => Ieee802154SessionResult::Done,
-        Err(result) => result,
-    };
-    publish_event_reliably(0, request_id, HilEvent::Ieee802154SessionStarted(started)).await;
+/// The foreground maintainer: the running system and what PHY maintenance
+/// borrows.
+type Foreground<'a> = (
+    &'a mut Ieee802154System,
+    &'a SharedRadio<ConcurrentPhy>,
+    &'a mut EspHalRadioPeripheral,
+);
 
-    let stop_request = loop {
+/// Serve host commands until the host stops the session; returns the stop
+/// request. `foreground` serves explicit maintenance requests; without it
+/// background maintenance owns the schedule.
+async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) -> u32 {
+    loop {
         let command = match select(
             receive_ieee802154_session_command(),
             session.runtime.next_event(),
@@ -308,9 +282,18 @@ pub(in crate::product_hil) async fn run_session(
                 publish_event_reliably(0, request_id, response).await;
             }
             Ieee802154SessionCommand::MaintainPhy { request_id } => {
+                let Some((system, radio, platform)) = foreground.as_mut() else {
+                    // Background maintenance owns the schedule.
+                    publish_event_reliably(
+                        0,
+                        request_id,
+                        HilEvent::Rejected(RejectReason::InvalidState),
+                    )
+                    .await;
+                    continue;
+                };
                 // Maintenance holds the tracking future; pin it in place.
-                let maintained =
-                    core::pin::pin!(system.maintain_phy(&client.radio, &mut client.platform));
+                let maintained = core::pin::pin!(system.maintain_phy(radio, *platform));
                 let outcome = match maintained.await {
                     Ok(Ieee802154PhyMaintenance::NotDue) => Ieee802154SessionPhyMaintenance::NotDue,
                     Ok(Ieee802154PhyMaintenance::Tracked) => {
@@ -329,8 +312,195 @@ pub(in crate::product_hil) async fn run_session(
                 )
                 .await;
             }
-            Ieee802154SessionCommand::Stop { request_id } => break request_id,
+            Ieee802154SessionCommand::Stop { request_id } => return request_id,
         }
+    }
+}
+
+const fn count(
+    mut counts: Ieee802154SessionMaintenanceCounts,
+    outcome: Ieee802154PhyMaintenance,
+) -> Ieee802154SessionMaintenanceCounts {
+    match outcome {
+        Ieee802154PhyMaintenance::NotDue => counts.not_due = counts.not_due.saturating_add(1),
+        Ieee802154PhyMaintenance::Tracked => counts.tracked = counts.tracked.saturating_add(1),
+        Ieee802154PhyMaintenance::AwaitingOtherClients => {
+            counts.awaiting_other_clients = counts.awaiting_other_clients.saturating_add(1)
+        }
+        Ieee802154PhyMaintenance::Busy => counts.busy = counts.busy.saturating_add(1),
+    }
+    counts
+}
+
+/// The vendor loop's ticks: counted into the session's maintenance counts,
+/// and whether one is running, since the loop may be cancelled only between
+/// ticks.
+struct Ticks<'a> {
+    counts: &'a Cell<Ieee802154SessionMaintenanceCounts>,
+    running: Cell<bool>,
+}
+
+impl<'a> Ticks<'a> {
+    const fn new(counts: &'a Cell<Ieee802154SessionMaintenanceCounts>) -> Self {
+        Self {
+            counts,
+            running: Cell::new(false),
+        }
+    }
+
+    /// Observe one tick; the loop creates it under the lease, just before
+    /// the tick, and drops it when the tick ends.
+    fn tick(&self) -> TickObserver<'_, 'a> {
+        let mut counts = self.counts.get();
+        counts.not_due = counts.not_due.saturating_add(1);
+        self.counts.set(counts);
+        self.running.set(true);
+        TickObserver {
+            ticks: self,
+            tracked: false,
+        }
+    }
+
+    /// Resolve once `stop` has resolved and no tick is running.
+    async fn between_ticks(&self, stop: impl Future<Output = ()>) {
+        stop.await;
+        while self.running.get() {
+            Timer::after(TICK_POLL).await;
+        }
+    }
+}
+
+/// Poll interval for the end of a running tick after stop.
+const TICK_POLL: Duration = Duration::from_micros(100);
+
+/// A tick that started a tracking operation tracked; any other was not due.
+struct TickObserver<'t, 'a> {
+    ticks: &'t Ticks<'a>,
+    tracked: bool,
+}
+
+impl PhyTargetObserver for TickObserver<'_, '_> {
+    fn operation_started(&mut self) {
+        if !core::mem::replace(&mut self.tracked, true) {
+            let mut counts = self.ticks.counts.get();
+            counts.not_due = counts.not_due.saturating_sub(1);
+            counts.tracked = counts.tracked.saturating_add(1);
+            self.ticks.counts.set(counts);
+        }
+    }
+}
+
+impl Drop for TickObserver<'_, '_> {
+    fn drop(&mut self) {
+        self.ticks.running.set(false);
+    }
+}
+
+/// Run one peer session until the host stops it. The image is terminal.
+pub(in crate::product_hil) async fn run_session(
+    platform: EspHalRadioPeripheral,
+    request_id: u32,
+    config: Ieee802154SessionConfig,
+) {
+    let Some(channel) = Channel::new(config.channel).ok() else {
+        publish_event_reliably(
+            0,
+            request_id,
+            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::UnsupportedSetup),
+        )
+        .await;
+        return;
+    };
+    let Some((mut client, parked)) = Client::claim(platform) else {
+        publish_event_reliably(
+            0,
+            request_id,
+            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::UnsupportedSetup),
+        )
+        .await;
+        return;
+    };
+    let started = {
+        let started = core::pin::pin!(client.start(parked));
+        started.await
+    };
+    let Some(mut system) = started else {
+        publish_event_reliably(
+            0,
+            request_id,
+            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::StartFailed),
+        )
+        .await;
+        return;
+    };
+    let mut session = Session {
+        runtime: system.runtime(),
+        channel,
+        next_id: 0,
+        received: Received::default(),
+        lost: false,
+    };
+    let started = match client
+        .set_maintenance_policy(config.maintenance_policy)
+        .and_then(|()| session.configure(config))
+    {
+        Ok(()) => Ieee802154SessionResult::Done,
+        Err(result) => result,
+    };
+    publish_event_reliably(0, request_id, HilEvent::Ieee802154SessionStarted(started)).await;
+
+    let counts = Cell::new(Ieee802154SessionMaintenanceCounts::default());
+    let stop_request = if config.background_maintenance {
+        let stop = Signal::<CriticalSectionRawMutex, ()>::new();
+        let maintenance = async {
+            let maintained = match config.maintenance_policy {
+                // The domain's own periodic loop, as the vendor timer runs it.
+                Ieee802154SessionMaintenancePolicy::Vendor => {
+                    let ticks = Ticks::new(&counts);
+                    let mut clock = EmbassyPhyTime;
+                    let tracking = core::pin::pin!(run_concurrent_phy_tracking::<
+                        EspHalRadioPeripheral,
+                        EmbassyPhyTime,
+                        _,
+                    >(
+                        &client.radio,
+                        &mut client.platform,
+                        &mut clock,
+                        || ticks.tick(),
+                    ));
+                    // The loop returns only on failure.
+                    let stopped = core::pin::pin!(ticks.between_ticks(stop.wait()));
+                    matches!(select(tracking, stopped).await, Either::Second(()))
+                }
+                Ieee802154SessionMaintenancePolicy::Quiesced => system
+                    .maintain_phy_until(
+                        &client.radio,
+                        &mut client.platform,
+                        stop.wait(),
+                        |outcome| counts.set(count(counts.get(), outcome)),
+                    )
+                    .await
+                    .is_ok(),
+            };
+            if !maintained {
+                let mut failed = counts.get();
+                failed.failed = true;
+                counts.set(failed);
+            }
+        };
+        let commands = async {
+            let request = core::pin::pin!(serve(&mut session, None)).await;
+            stop.signal(());
+            request
+        };
+        let ((), request) = core::pin::pin!(join(maintenance, commands)).await;
+        request
+    } else {
+        core::pin::pin!(serve(
+            &mut session,
+            Some((&mut system, &client.radio, &mut client.platform)),
+        ))
+        .await
     };
 
     let id = session.id();
@@ -345,5 +515,13 @@ pub(in crate::product_hil) async fn run_session(
         Some(_parked) => Ieee802154SessionResult::Done,
         None => Ieee802154SessionResult::StopFailed,
     };
-    publish_event_reliably(0, stop_request, HilEvent::Ieee802154SessionStopped(stopped)).await;
+    publish_event_reliably(
+        0,
+        stop_request,
+        HilEvent::Ieee802154SessionStopped(Ieee802154SessionStopEvidence {
+            result: stopped,
+            maintenance: counts.get(),
+        }),
+    )
+    .await;
 }

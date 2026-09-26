@@ -62,7 +62,8 @@
     "ieee802154/event-status": false,
     "ieee802154/ed-event": true,
     "ieee802154/air-check": true,
-    "ieee802154/peer-exchange": false
+    "ieee802154/peer-exchange": false,
+    "ieee802154/background-maintenance": true
   },
   "build": {
     "profile": "debug"

@@ -209,6 +209,7 @@ vendor-anchors = [
 hil-requirements = [
   { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
   { scenario = "ieee802154-peer-exchange", minimum-repetitions = 1 },
+  { scenario = "ieee802154-background-maintenance-vendor", minimum-repetitions = 1 },
 ]
 gaps = [
   { axis = "implementation", id = "joint-phy-maintenance-with-other-clients-missing" },

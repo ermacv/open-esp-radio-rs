@@ -9,10 +9,14 @@ use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
 use oer_esp32s31_phy::{
-    PhyCalibrationIdentity, PhyRegisterConfig, concurrent::ConcurrentPhy, phy_get_rf_cal_version,
+    PhyCalibrationIdentity, PhyRegisterConfig,
+    concurrent::{ConcurrentPhy, MaintenancePolicy},
+    phy_get_rf_cal_version,
 };
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
-use oer_hil_protocol::Ieee802154AirTxOutcome;
+use oer_hil_protocol::{
+    Ieee802154AirTxOutcome, Ieee802154SessionMaintenancePolicy, Ieee802154SessionResult,
+};
 use oer_ieee802154::TxStatus;
 use static_cell::ConstStaticCell;
 
@@ -73,6 +77,22 @@ impl Client {
             self.defaults,
         ));
         started.await.ok()
+    }
+
+    /// Set the shared domain's tracking admission for this session.
+    pub(super) fn set_maintenance_policy(
+        &self,
+        policy: Ieee802154SessionMaintenancePolicy,
+    ) -> Result<(), Ieee802154SessionResult> {
+        let mut lease = self
+            .radio
+            .try_acquire()
+            .map_err(|_| Ieee802154SessionResult::StartFailed)?;
+        lease.attachment_mut().set_maintenance_policy(match policy {
+            Ieee802154SessionMaintenancePolicy::Vendor => MaintenancePolicy::Vendor,
+            Ieee802154SessionMaintenancePolicy::Quiesced => MaintenancePolicy::Quiesced,
+        });
+        Ok(())
     }
 
     /// Stop the client. Teardown holds the RF close future, pinned in place.

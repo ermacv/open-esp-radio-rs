@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 172;
+pub const PROTOCOL_VERSION: u16 = 173;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -1186,7 +1186,7 @@ pub enum Event {
     /// Correlated result of [`Command::CollectIeee802154Session`].
     Ieee802154SessionReceived(Ieee802154SessionReceiveEvidence),
     /// Correlated result of [`Command::StopIeee802154Session`].
-    Ieee802154SessionStopped(Ieee802154SessionResult),
+    Ieee802154SessionStopped(Ieee802154SessionStopEvidence),
     /// Correlated result of [`Command::MaintainIeee802154SessionPhy`].
     Ieee802154SessionPhyMaintained(Ieee802154SessionPhyMaintenance),
     Accepted,

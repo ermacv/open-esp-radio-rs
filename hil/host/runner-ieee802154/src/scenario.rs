@@ -19,6 +19,35 @@ pub enum Ieee802154Scenario {
     EdEvent(Diagnostic),
     AirCheck(AirCheck),
     PeerExchange(PeerExchange),
+    BackgroundMaintenance(BackgroundMaintenance),
+}
+
+/// Background PHY maintenance of the running client.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundMaintenance {
+    pub boots: u8,
+    pub channel: u8,
+    /// Tracking periods the session runs.
+    pub periods: u8,
+    pub policy: MaintenancePolicy,
+}
+
+/// Shared PHY tracking admission under test.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MaintenancePolicy {
+    Vendor,
+    Quiesced,
+}
+
+impl MaintenancePolicy {
+    const fn session(self) -> oer_hil_protocol::Ieee802154SessionMaintenancePolicy {
+        match self {
+            Self::Vendor => oer_hil_protocol::Ieee802154SessionMaintenancePolicy::Vendor,
+            Self::Quiesced => oer_hil_protocol::Ieee802154SessionMaintenancePolicy::Quiesced,
+        }
+    }
 }
 
 /// An exchange with the IEEE 802.15.4 reference peer.
@@ -71,6 +100,11 @@ impl Ieee802154Scenario {
                 bounded(diagnostic.poll_limit, 1, 1_000_000, "poll_limit")?;
                 bounded(diagnostic.timer_threshold, 1, 1_000, "timer_threshold")
             }
+            Self::BackgroundMaintenance(maintenance) => {
+                bounded(maintenance.boots, 1, 20, "boots")?;
+                bounded(maintenance.channel, 11, 26, "channel")?;
+                bounded(maintenance.periods, 2, 30, "periods")
+            }
             Self::PeerExchange(exchange) => {
                 bounded(exchange.boots, 1, 20, "boots")?;
                 bounded(exchange.channel, 11, 26, "channel")?;
@@ -96,7 +130,9 @@ impl Ieee802154Scenario {
         let mut plan = Plan::target_only(match self {
             Self::EventStatus(_) => ImageClass::DiagnosticIeee802154EventStatus,
             Self::EdEvent(_) => ImageClass::DiagnosticIeee802154EdEvent,
-            Self::AirCheck(_) | Self::PeerExchange(_) => ImageClass::DiagnosticIeee802154Radio,
+            Self::AirCheck(_) | Self::PeerExchange(_) | Self::BackgroundMaintenance(_) => {
+                ImageClass::DiagnosticIeee802154Radio
+            }
         });
         plan.requirements.ieee802154_peer = matches!(self, Self::PeerExchange(_));
         plan
@@ -126,6 +162,16 @@ impl Ieee802154Scenario {
                     boots,
                     poll_limit,
                     timer_threshold,
+                },
+                output,
+                context,
+            ),
+            Self::BackgroundMaintenance(maintenance) => ieee802154::background_maintenance::run(
+                ieee802154::background_maintenance::Config {
+                    boots: maintenance.boots,
+                    channel: maintenance.channel,
+                    policy: maintenance.policy.session(),
+                    periods: maintenance.periods,
                 },
                 output,
                 context,

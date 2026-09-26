@@ -1970,6 +1970,8 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         short_address: u16::MAX,
         extended_address: [u8::MAX; 8],
         promiscuous: true,
+        maintenance_policy: crate::Ieee802154SessionMaintenancePolicy::Quiesced,
+        background_maintenance: true,
     };
     assert!(config.validate());
     assert!(
@@ -2030,7 +2032,16 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
             total: u16::MAX,
             frames,
         }),
-        Event::Ieee802154SessionStopped(Ieee802154SessionResult::Done),
+        Event::Ieee802154SessionStopped(crate::Ieee802154SessionStopEvidence {
+            result: Ieee802154SessionResult::Done,
+            maintenance: crate::Ieee802154SessionMaintenanceCounts {
+                not_due: u16::MAX,
+                tracked: u16::MAX,
+                awaiting_other_clients: u16::MAX,
+                busy: u16::MAX,
+                failed: true,
+            },
+        }),
         Event::Ieee802154SessionPhyMaintained(crate::Ieee802154SessionPhyMaintenance::Tracked),
     ] {
         round_trip(Envelope::new(7, 3, 9, 2, event));

@@ -1314,7 +1314,10 @@ impl SerialCapture {
         }
     }
 
-    pub fn stop_ieee802154_session(&self, timeout: Duration) -> Result<Ieee802154SessionResult> {
+    pub fn stop_ieee802154_session(
+        &self,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionStopEvidence> {
         match self
             .send_command(0, Command::StopIeee802154Session, timeout)?
             .body

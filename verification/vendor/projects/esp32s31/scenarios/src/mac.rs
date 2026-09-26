@@ -39,14 +39,39 @@ const QUEUES: &[u32] = &[0, 1, 2, 3];
 const EVENT_MASKS: &[u32] = &[0, 1, 0x5a5a_a5a5, u32::MAX];
 
 /// Private inputs and budget of the MAC scenario.
+/// One leaf suite: its archives, pinned by artifact id (the first at
+/// session input 0, the others from `EXTRA_ARCHIVE_INPUT` on), its leaves,
+/// and whether it carries the Wi-Fi rate tables and retry sequences.
+pub struct Suite {
+    pub title: &'static str,
+    pub archives: &'static [&'static str],
+    pub leaves: &'static [Leaf],
+    pub wifi: bool,
+    /// Symbols the link declares absent: referenced only after compared
+    /// prefixes.
+    pub absent: &'static [&'static str],
+}
+
+/// Session input of the second suite archive.
+const EXTRA_ARCHIVE_INPUT: u64 = 4;
+
+/// The Wi-Fi MAC suite over `libpp.a` and `libnet80211.a`.
+pub const WIFI_MAC: Suite = Suite {
+    title: "Wi-Fi MAC HAL leaf comparison",
+    archives: &["libpp", "libnet80211"],
+    leaves: LEAVES,
+    wifi: true,
+    absent: ABSENT,
+};
+
 pub struct MacOptions {
     pub binary: PathBuf,
-    pub libpp: PathBuf,
-    /// Pinned `libnet80211.a`, whose roots call into `libpp.a`.
-    pub libnet80211: PathBuf,
+    pub suite: &'static Suite,
+    /// One path per suite archive, in the suite's order.
+    pub archives: Vec<PathBuf>,
     pub rom: PathBuf,
-    /// Authenticated vendor Wi-Fi firmware: supplies the network-stack data
-    /// and logging symbols that code after a compared prefix references.
+    /// Authenticated vendor firmware: supplies the network-stack data and
+    /// logging symbols that code after a compared prefix references.
     pub phy_sdk: PathBuf,
     pub production: PathBuf,
     pub linker: PathBuf,
@@ -112,8 +137,8 @@ pub struct Leaf {
     pub vendor_abi: Option<VendorAbi>,
     /// The vendor function is a ROM symbol rather than a `libpp.a` root.
     pub rom: bool,
-    /// The vendor function is a `libnet80211.a` root linked with `libpp.a`.
-    pub net80211: bool,
+    /// Session input of the archive defining the vendor function.
+    pub archive: u64,
     /// Object states the builder receives after the probe words: a further
     /// case dimension that reaches the probe only through the objects.
     pub states: &'static [u32],
@@ -161,7 +186,7 @@ pub struct Vendor<'a> {
 }
 
 impl Vendor<'_> {
-    fn symbol(&self, name: &str) -> Result<u32> {
+    pub(crate) fn symbol(&self, name: &str) -> Result<u32> {
         (self.resolve)(name)
     }
 
@@ -182,6 +207,7 @@ pub(crate) fn call_boundary(image: &BTreeMap<String, u32>, name: &str) -> CallBo
 
 /// `libpp.a[trc.o]` 802.11g retry data: the rate-code-to-record index table
 /// `rc11GRate2SchedIdx` reads, and the schedule arena `rc11GSchedTbl`.
+#[derive(Default)]
 pub struct RateTables {
     pub index: Vec<u8>,
     pub arena: Vec<u8>,
@@ -280,7 +306,7 @@ impl RateTables {
     }
 }
 
-const fn leaf(
+pub(crate) const fn leaf(
     vendor: &'static str,
     probe: &'static str,
     parameters: &'static [(&'static str, Domain)],
@@ -295,7 +321,7 @@ const fn leaf(
         prefix_until: None,
         vendor_abi: None,
         rom: false,
-        net80211: false,
+        archive: 0,
         states: &[],
         dispatch: None,
         quiet_calls: &[],
@@ -303,7 +329,7 @@ const fn leaf(
 }
 
 /// A dispatcher leaf compared up to the callee `select` names.
-const fn dispatching(leaf: Leaf, select: Dispatch) -> Leaf {
+pub(crate) const fn dispatching(leaf: Leaf, select: Dispatch) -> Leaf {
     Leaf {
         dispatch: Some(select),
         ..leaf
@@ -311,7 +337,7 @@ const fn dispatching(leaf: Leaf, select: Dispatch) -> Leaf {
 }
 
 /// A leaf whose vendor `calls` return zero with no other effect.
-const fn quiet(leaf: Leaf, calls: &'static [&'static str]) -> Leaf {
+pub(crate) const fn quiet(leaf: Leaf, calls: &'static [&'static str]) -> Leaf {
     Leaf {
         quiet_calls: calls,
         ..leaf
@@ -319,20 +345,26 @@ const fn quiet(leaf: Leaf, calls: &'static [&'static str]) -> Leaf {
 }
 
 /// A leaf whose vendor function is the ROM symbol of that name.
-const fn rom(leaf: Leaf) -> Leaf {
+pub(crate) const fn rom(leaf: Leaf) -> Leaf {
     Leaf { rom: true, ..leaf }
 }
 
 /// A leaf whose vendor function is the `libnet80211.a` root of that name.
 const fn net80211(leaf: Leaf) -> Leaf {
+    in_archive(leaf, NET80211_INPUT)
+}
+
+/// A leaf whose vendor function the suite archive at session input `input`
+/// defines.
+pub(crate) const fn in_archive(leaf: Leaf, input: u64) -> Leaf {
     Leaf {
-        net80211: true,
+        archive: input,
         ..leaf
     }
 }
 
 /// A leaf whose production counterpart adds `fences` ordering fences.
-const fn ordered(leaf: Leaf, fences: u32) -> Leaf {
+pub(crate) const fn ordered(leaf: Leaf, fences: u32) -> Leaf {
     Leaf {
         ordering_fences: fences,
         ..leaf
@@ -340,12 +372,12 @@ const fn ordered(leaf: Leaf, fences: u32) -> Leaf {
 }
 
 /// A leaf whose objects also take each of `states`.
-const fn stated(leaf: Leaf, states: &'static [u32]) -> Leaf {
+pub(crate) const fn stated(leaf: Leaf, states: &'static [u32]) -> Leaf {
     Leaf { states, ..leaf }
 }
 
 /// A leaf whose vendor reads its semantic arguments from objects `abi` builds.
-const fn objects(leaf: Leaf, abi: VendorAbi) -> Leaf {
+pub(crate) const fn objects(leaf: Leaf, abi: VendorAbi) -> Leaf {
     Leaf {
         vendor_abi: Some(abi),
         ..leaf
@@ -1034,7 +1066,7 @@ fn tx_error_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
 }
 
 /// A leaf compared only up to the vendor's call of `callee`.
-const fn prefix(leaf: Leaf, callee: &'static str) -> Leaf {
+pub(crate) const fn prefix(leaf: Leaf, callee: &'static str) -> Leaf {
     Leaf {
         prefix_until: Some(callee),
         ..leaf
@@ -1562,6 +1594,7 @@ fn rx_disable_all_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
 /// Linked `libpp.a` image with its captured roots and both execution targets.
 pub struct Mac {
     pub session: Session,
+    pub suite: &'static Suite,
     pub rates: RateTables,
     pub roots: BTreeMap<String, u32>,
     pub image_object: ObjectId,
@@ -1583,11 +1616,15 @@ impl std::ops::DerefMut for Mac {
 
 impl Mac {
     pub fn new(options: &MacOptions) -> Result<Self> {
-        let inputs = [
+        let suite = options.suite;
+        if options.archives.len() != suite.archives.len() {
+            return Err(invalid("one path per suite archive"));
+        }
+        let mut inputs = vec![
             Input {
-                role: "libpp",
-                path: &options.libpp,
-                sha256: Some(crate::artifacts::sha256("libpp")),
+                role: suite.archives[0],
+                path: &options.archives[0],
+                sha256: Some(crate::artifacts::sha256(suite.archives[0])),
             },
             Input {
                 role: "rom",
@@ -1600,29 +1637,43 @@ impl Mac {
                 sha256: None,
             },
             crate::phy::phy_sdk_input(&options.phy_sdk),
-            Input {
-                role: "libnet80211",
-                path: &options.libnet80211,
-                sha256: Some(crate::artifacts::sha256("libnet80211")),
-            },
         ];
+        for (id, path) in suite.archives.iter().zip(&options.archives).skip(1) {
+            inputs.push(Input {
+                role: id,
+                path,
+                sha256: Some(crate::artifacts::sha256(id)),
+            });
+        }
+        let archive_inputs: Vec<u64> = [0]
+            .into_iter()
+            .chain((0..suite.archives.len() as u64 - 1).map(|i| EXTRA_ARCHIVE_INPUT + i))
+            .collect();
         let mut session = Session::start(
             &options.binary,
             &options.output,
             options.budget,
             &inputs,
-            "Wi-Fi MAC HAL leaf comparison",
+            suite.title,
             &options.patches,
         )?;
         // The first leaf is the link entry; the others are further roots,
         // each selected in the archive that defines it.
-        let mut vendors: Vec<(u64, &str)> = LEAVES
+        let leaves = suite.leaves;
+        let wifi_roots: Vec<(u64, &str)> = if suite.wifi {
+            [(0, RateTables::INDEX_CALLER)]
+                .into_iter()
+                .chain(crate::retry::ROOTS.iter().map(|root| (0, *root)))
+                .collect()
+        } else {
+            vec![]
+        };
+        let mut vendors: Vec<(u64, &str)> = leaves
             .iter()
             .filter(|l| !l.rom)
-            .map(|l| (if l.net80211 { NET80211_INPUT } else { 0 }, l.vendor))
-            .filter(|(_, v)| *v != LEAVES[0].vendor)
-            .chain([(0, RateTables::INDEX_CALLER)])
-            .chain(crate::retry::ROOTS.iter().map(|root| (0, *root)))
+            .map(|l| (l.archive, l.vendor))
+            .filter(|(_, v)| *v != leaves[0].vendor)
+            .chain(wifi_roots)
             .collect();
         vendors.sort_unstable();
         vendors.dedup();
@@ -1633,19 +1684,33 @@ impl Mac {
         let link = LinkRequest {
             companions: vec![],
             revision: Some(session.revision.clone()),
-            inputs: vec![0, NET80211_INPUT],
-            entry: select(&session, 0, LEAVES[0].vendor)?,
+            inputs: archive_inputs,
+            entry: select(&session, leaves[0].archive as usize, leaves[0].vendor)?,
             roots,
             layout: image_layout(),
-            absent: ABSENT.iter().map(|n| (*n).to_owned()).collect(),
+            absent: suite.absent.iter().map(|n| (*n).to_owned()).collect(),
         };
         let linked = session.link(
             &link,
             &options.linker,
-            LEAVES[0].vendor,
+            leaves[0].vendor,
             &[crate::layout::ROM_INPUT, PHY_SDK_INPUT],
         )?;
         let (vendor, production) = session.targets(&linked.image)?;
+        if !suite.wifi {
+            return Ok(Self {
+                suite,
+                rates: RateTables::default(),
+                image_object: ObjectId {
+                    artifact: linked.manifest.elf.clone(),
+                    location: ObjectLocation::Standalone,
+                },
+                roots: linked.roots,
+                vendor,
+                production,
+                session,
+            });
+        }
         let image = image_symbols(&session.run.join("image/image.elf"))?;
         let dot11n_index = schedule_indices(
             &mut session,
@@ -1695,6 +1760,7 @@ impl Mac {
             )));
         }
         Ok(Self {
+            suite,
             rates,
             image_object: ObjectId {
                 artifact: linked.manifest.elf.clone(),
@@ -2092,7 +2158,7 @@ impl Mac {
 
 /// Compare every leaf; each must MATCH in every case and record effects.
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
-    for leaf in LEAVES {
+    for leaf in ctx.suite.leaves {
         let mut rows = vec![];
         let (mut initial, mut case_words, mut positions) = (vec![], vec![], vec![]);
         for (setup, row, bytes, words) in ctx.cases(leaf)? {
@@ -2160,10 +2226,16 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
 }
 
 /// Evidence claims: every leaf with its production probe.
-pub fn claims() -> Vec<(&'static str, &'static str, &'static str)> {
-    LEAVES
+pub fn claims(ctx: &Mac) -> Vec<(&'static str, &'static str, &'static str)> {
+    let retry: &[_] = if ctx.suite.wifi {
+        crate::retry::CLAIMS
+    } else {
+        &[]
+    };
+    ctx.suite
+        .leaves
         .iter()
         .map(|l| (if l.rom { "rom" } else { "archive" }, l.vendor, l.probe))
-        .chain(crate::retry::CLAIMS.iter().copied())
+        .chain(retry.iter().copied())
         .collect()
 }

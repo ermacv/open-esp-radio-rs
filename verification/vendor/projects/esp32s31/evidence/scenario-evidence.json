@@ -4,10 +4,14 @@
   "target": "esp32s31",
   "inputs": {
     "archive": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
+    "bluetooth-production": "eb7c76de97010136088c391955036b15f9825ee37c031152d9b147cee7610944",
+    "libble_app": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
+    "libbtbb": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
+    "libbtdm_common": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "libnet80211": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "libpp": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "51d9049790470d8a066894dc1ae4fd9b24718743b0461d18ec32beb25885f731",
+    "production": "62b61114ac40a1585752fb7810aece65c3abb232cd1cb16ff70fafc19e284674",
     "rftest": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a",
     "rom": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -20,6 +24,14 @@
     {
       "path": "crates/adapters/esp-hal/esp32s31/ieee80211",
       "sha256": "ee11189c03ab4f50f8e0badb3e731f5a9765413ace28634e999e3c361af63b5e"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/bluetooth",
+      "sha256": "7fdc1692169a160c8585f3de1160fd75e3dcc9880d1f15a384cd6d0917ac50d0"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/bluetooth/memory",
+      "sha256": "53595a97604a36e08c8018e24349a9ba28980f5e4847c4413286eb99d5e5f0b9"
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
@@ -39,19 +51,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "b3d4ba615ecb97c93c9f8a2f67886862e81740aa6aa2b2597fadde75285c52cb"
+      "sha256": "a97b9bae004a6f4b6ad2ef6207b12cd201479ebb84fc32dcc24afe671f26a924"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "3783d5e79e27c7bb84fcfc2db4151a4370928eb25f3b531e7b554237566ad50d"
+      "sha256": "27e5004e7153f0f4382af246202db156f83ef5d7c6950459127389b82438cac4"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "6157b673203cffbdc113e0f24b0654a17c39433dab1aa81f9b000030219af31e"
+      "sha256": "e89b653d444cd064a8a73d628c2e04d0429a9274795c2de709d432d04c341424"
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "3e8bc8308945004847f5774483998a58d94123db16290641a624daf90164a98e"
+      "sha256": "a96e5ed143937644f36c04c3b526484aa0c1b823c029552f4edf12309653ca3c"
     },
     {
       "path": "crates/memory",
@@ -60,6 +72,10 @@
     {
       "path": "crates/network/interface",
       "sha256": "936e8ccb161f6833f287b8e5c3a550cc140f87d200a1d2356111a4976c7847d5"
+    },
+    {
+      "path": "crates/protocols/bluetooth/hci",
+      "sha256": "01f938f6fa3d65146a652ca1d47934315c0abeada97ba3b79e69055703ca5da9"
     },
     {
       "path": "crates/protocols/ieee80211/ap",
@@ -95,7 +111,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211",
-      "sha256": "136d3fc791a10870b64e0d6ed12da9c0f1731e93e35c4f87cfc8d56f4a32a394"
+      "sha256": "891b41f98f5d7dbd238fbce90b3436fdc98d79bff21f9ad89f5484034b70b322"
     },
     {
       "path": "crates/runtime/ieee80211",
@@ -146,6 +162,14 @@
       "sha256": "783ed7cbd4f2c0ec72a4604426a45f8009bc71859b8f6ac5c96c449f6abe18a1"
     },
     {
+      "path": "verification/vendor/projects/esp32s31/probes/bluetooth/elf",
+      "sha256": "1faa0c81aa46a39f324ff3c05c8358259153972bd88004e8b9806820a28fd0e1"
+    },
+    {
+      "path": "verification/vendor/projects/esp32s31/probes/bluetooth/library",
+      "sha256": "e69a5583bbb883ee0dd355dc68b9624e895bbc6e96d293ee7bae5b8d563eddbb"
+    },
+    {
       "path": "verification/vendor/projects/esp32s31/probes/radio/elf",
       "sha256": "ef4c2a4d28d2f6858d333417fb2dc7401b31ca7d57ef9ecbb1dd96ece1801dd5"
     },
@@ -155,7 +179,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "8849922d95ba2a19e49605c7fe6e7725431a2177328447b41783ce76a90447f0"
+      "sha256": "45601466d382ccae055ee00538a74a74339d0a16d58a518c020e6429c9c31165"
     },
     {
       "path": "verification/vendor/schema",
@@ -341,7 +365,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "c7cf750acf55547753e4a65bc28f1f44eda483a7754817d05a3af7a2e0de733b"
+        "a0232f8a653723a7311b4d3fb859c45fec387276784532625c898e8810b0975f"
       ],
       "coverage": {
         "blocks": {
@@ -377,7 +401,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "c558909b1861ad76e3037b7e1df17f31bbca1050fe8c454e3ee4655d77300676"
+        "1e3d9582ce8fe5ea36f6779fb261ac5b7fb756e42959a79b4fdb3927f98f4d32"
       ],
       "coverage": {
         "blocks": {
@@ -413,7 +437,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "6071be068cbd5dd9de4aa2feb89dd7197b817291a5c8dc3a8225bad07bfac0be"
+        "72f05297df019d0520a42f76bfc2fdcbf086510a3ea6796f1d00fa7a29f7b17a"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +473,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "49a4ad9a48b58a78cee5454fe40e4004e57e319350298e3ec1c382508b6c96f0"
+        "6575e1c83ca927eff65418d2f54a54f65ebbe291b4cbf1c20a8ef08c01412264"
       ],
       "coverage": {
         "blocks": {
@@ -485,7 +509,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "4dc0455e9cb3c4d847c581911350f61feb67b55e551e45b17e506a7c69f77442"
+        "abd1a67909a6b2940ca87a465bf7b98344f3be1d9a8f0929e0cdbe373a40dba8"
       ],
       "coverage": {
         "blocks": {
@@ -521,7 +545,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "4d55ddd7634e230167631a69832726e9f4c98467f8f4db221f01629fda1c71dc"
+        "ae50720cb74f4ef8890eea30347a9b9c343811dae4f82a88f3fdcab784c2e492"
       ],
       "coverage": {
         "blocks": {
@@ -727,7 +751,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "1022de45e798104122871d5d7f5cd25c0165cb03e07085274d3d8e1fefacf541"
+        "e9ed5d870330a5fbfc508f3cecf5c6f0b9df17580e0ad35067b6fc52c731b3f5"
       ],
       "coverage": {
         "blocks": {
@@ -763,7 +787,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "4adb33783bc7d99852e451dcbde56a7b4a22fb263ad7fa0cdb0a4c8734dff6b4"
+        "4f4f1716908faaf25ca2f0a7b04ce4f2a5afb2bcaadc8fabde8df92c5a045974"
       ],
       "coverage": {
         "blocks": {
@@ -799,8 +823,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "1455fe11b00b294816ca8aaebb736c8f2386a68dfa0a60fc22eaf0eba56e7ec3",
-        "bd2c53468c6619c14a9207dde1916360f18c204816f7184709ce4407bb9809a4"
+        "59ee1763c2234c7278799ee1fbdf4893d4c963f04a6cbc3a14e5420608da15f6",
+        "ffcd4f36c0c6f13c6c8b3b4e7e18bb6fb55156d266ce100752dc54da0d52aec6"
       ],
       "coverage": {
         "blocks": {
@@ -836,7 +860,7 @@
       "verdict": "match",
       "cases": 101,
       "reviews": [
-        "f08e63df450d8457a9d954a141f0ba7fea7413d6185ab11a0115685b0492a7f6"
+        "94a08565a2faa97e2936e9205b5bd05456af2585692f0ec34a9a66fb4c4155cc"
       ],
       "coverage": {
         "blocks": {
@@ -872,8 +896,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "9b8e44c991fd60ddf2823adbcdb2ce52569e5ddacb91ae9cff848bdafacf8c45",
-        "bb417eea338ba67502c2c0005426779b9d52bc8f85043d6e501d812eb7f71360"
+        "24d50b6d4463361cf33ae15f630e2fb90a907c4945c2ecaac0ad3486954178fc",
+        "5c8a1088ecbc1c690ac47bb634a3802c8872772878c02414fcf60aedf49821e4"
       ],
       "coverage": {
         "blocks": {
@@ -909,8 +933,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "4de29a861deba8a117e26b0ecb7ab70b10d6a6754592a7c4691935e4d8906255",
-        "c6d7dba7381593296d053e1e184dbe883b7358d923e5e25f1164d8b682206ff6"
+        "47181fe7e1ead881ad1896523530be7ab2227c9a9e2fc6186ef2d292b96d5e68",
+        "b1742ad082ec84ab3e69b4e8e4838fa83addfdc667b2da3eba904b2bef72b1f0"
       ],
       "coverage": {
         "blocks": {
@@ -946,9 +970,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "001b38dded282f5ecc0db2d733411e0f7dba051ce4df2a06b00a6473db5c1cb1",
-        "3ef2de40f91e71a10569d04e886725154cb6eeaf327ebeac8e541a066b389411",
-        "e0ac5974f28aca2f2a86cf30a34242010ef151f86a94cd167ee82a0169c41d26"
+        "39eca17c0c63c2173ab462238983a5ae81ba6a54d8bf20690fca69fa9b0e85c4",
+        "461bce4a888d2ae177887c8da956fe30d71fad8b7faa119329a5654e1fc5539a",
+        "f797e2782be047739b51d74da2142852c265cd32d0ca03832d2323a9fa16df34"
       ],
       "coverage": {
         "blocks": {
@@ -984,8 +1008,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "7a4c68342e472ebe22ec35e46c74ee77f1581eb4aaa9c91ac9e4a97ec8fc73e5",
-        "d603dcae90e5a9a1d602f75ce513342b82c8bf79b5be57a49b85a924d9f8d8cd"
+        "3d5bce81f2cb26c1278f3dbd1d994e28f9d10f83a70f8a6ffdb161da6b19a54e",
+        "5debc4afc23de3c9c0d1c3f3a9328160d62f0793d5189973bdaa31ab03ae21ee"
       ],
       "coverage": {
         "blocks": {
@@ -1021,8 +1045,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "22ceb7ef9a3719ec502c2ce661f8da7a03c78a6bfc163e7bbff07cf536af00fa",
-        "c9232bcdcc625c1b3c52eaf7e176080423a62c26b844a79deeaa410729cb2ff7"
+        "142307bc385a5b013b6b08caeeb0c4af0a5f7f89d083919974749282c9006372",
+        "a49d669f9d31b594fe00d4e13caa7b5f2711946bf37f4d53335202b661a7170d"
       ],
       "coverage": {
         "blocks": {
@@ -1058,8 +1082,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "a19360e847e8bf9d4a38ecb02337faa5faf6d04bab502b16d3facf944676eaca",
-        "d0223179116187c20ba716abca98bec9f13216e98c76a683343e11552b6d1c1c"
+        "140cba276fba8d09c812e7b09a60284ecc34d73acfc8e45ff0cf20608ebe1c6a",
+        "a85e0f70f74c0b396f142c5e5cba31c4921685c2ce400230ac5841dc61b248eb"
       ],
       "coverage": {
         "blocks": {
@@ -1197,7 +1221,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "9f2264e4290ae36a8c1c8b01bce7af0fac8e68095fa0f15122b3ef6e8560627c"
+        "77cafe887758ccf81e78f55791112f64374a942ba434d1fd6fdbb61085845411"
       ],
       "coverage": {
         "blocks": {
@@ -1267,7 +1291,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "3bdacef60b07714402642c70fb42189dcaa958f9d523e42481d1ce30c0f02c45"
+        "0e23c4f36b034a041d4dfab6c87689a5eb69dcc61b7cd3be3f3eb6c18da0d8bf"
       ],
       "coverage": {
         "blocks": {
@@ -1915,7 +1939,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "b97cf97f71b4dcae068d1372fc82d9647d792827c65027de2de3cc1302704199"
+        "e234c9abed5d88808cde541d2bba93e23ff546ab7ad8f77317e697688509877e"
       ],
       "coverage": {
         "blocks": {
@@ -2418,6 +2442,186 @@
         "reviewed": 8,
         "untriaged": 0
       }
+    },
+    {
+      "suite": "bluetooth",
+      "source": "archive",
+      "symbol": "r_sym_ble_jhaN9KOsH0u0RgIu2DI9",
+      "production": "open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_uuf_z",
+      "verdict": "match",
+      "cases": 48,
+      "reviews": [
+        "f0c7354b1ce924950754f29649a0fb8bd5c04ffbf67c1a432f74c4ad18cd5494"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 6,
+          "total": 7
+        },
+        "directions": {
+          "reached": 5,
+          "total": 6
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 2
+      },
+      "observation": {
+        "executed": 16,
+        "observed": 13,
+        "reviewed": 2,
+        "untriaged": 1
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "bluetooth",
+      "source": "archive",
+      "symbol": "r_sym_ble_95olV4pLl0ue84SnuzXf",
+      "production": "open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_penk",
+      "verdict": "match",
+      "cases": 48,
+      "reviews": [
+        "4f9c5fab2e0aefd6d67596730a7e8bbd6f77d42b990e16dc9c6b8443c66e222b"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 6,
+          "total": 7
+        },
+        "directions": {
+          "reached": 5,
+          "total": 6
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 2
+      },
+      "observation": {
+        "executed": 16,
+        "observed": 13,
+        "reviewed": 2,
+        "untriaged": 1
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "bluetooth",
+      "source": "archive",
+      "symbol": "r_sym_nrtIsr_kgxM2CJfVperrlVjmB4B",
+      "production": "open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [
+        "553b22ed2c4847cdf20dcc402fee2d71567b15ed21906f0f3a0ad4c5643cee7b"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 14
+        },
+        "directions": {
+          "reached": 0,
+          "total": 12
+        },
+        "open": 1,
+        "excluded": 0,
+        "untriaged": 26
+      },
+      "observation": {
+        "executed": 20,
+        "observed": 17,
+        "reviewed": 2,
+        "untriaged": 1
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "bluetooth",
+      "source": "archive",
+      "symbol": "r_sym_bt_XPuqTHliEO5V9xpR7aJR",
+      "production": "open_ble_scheduler_trace_r_sym_bt_x_puq_thli_eo5_v9xp_r7a_jr",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [
+        "2b37f8f3053637cba34d5b66040288cc770bcaedf152638f81ea6f4bbe60ecb3"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 3,
+          "total": 3
+        },
+        "directions": {
+          "reached": 2,
+          "total": 2
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 20,
+        "observed": 17,
+        "reviewed": 2,
+        "untriaged": 1
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "bluetooth",
+      "source": "archive",
+      "symbol": "bt_bb_v2_init_cmplx",
+      "production": "open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1",
+      "verdict": "match",
+      "cases": 12,
+      "reviews": [
+        "637e46ce7c4304821cde0c1b7e83139a6cb99abad7e85eb1b827328dad617a36"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 27,
+          "total": 27
+        },
+        "directions": {
+          "reached": 1,
+          "total": 2
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 1
+      },
+      "observation": {
+        "executed": 744,
+        "observed": 740,
+        "reviewed": 2,
+        "untriaged": 2
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
     }
   ],
   "untriaged": [
@@ -2825,6 +3029,11 @@
       "function": "__popcountsi2",
       "offset": 0,
       "kind": "block"
+    },
+    {
+      "function": "bt_bb_v2_init_cmplx",
+      "offset": 126,
+      "kind": "taken"
     },
     {
       "function": "chm_get_current_band",
@@ -18492,6 +18701,156 @@
       "kind": "block"
     },
     {
+      "function": "r_ble_log_reset_buf_index_flag",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "r_ble_log_reset_buf_index_flag",
+      "offset": 8,
+      "kind": "taken"
+    },
+    {
+      "function": "r_ble_log_reset_buf_index_flag",
+      "offset": 8,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "r_ble_log_reset_buf_index_flag",
+      "offset": 10,
+      "kind": "block"
+    },
+    {
+      "function": "r_ble_log_reset_buf_index_flag",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_ble_95olV4pLl0ue84SnuzXf",
+      "offset": 14,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "r_sym_ble_95olV4pLl0ue84SnuzXf",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_ble_jhaN9KOsH0u0RgIu2DI9",
+      "offset": 14,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "r_sym_ble_jhaN9KOsH0u0RgIu2DI9",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 4,
+      "kind": "taken"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 4,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 8,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 24,
+      "kind": "taken"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 24,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 26,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 34,
+      "kind": "taken"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 34,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 36,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 38,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 42,
+      "kind": "taken"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 42,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 46,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 60,
+      "kind": "unresolved"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 64,
+      "kind": "taken"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 64,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 66,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 78,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 92,
+      "kind": "block"
+    },
+    {
+      "function": "r_sym_bt_OBoFn3bgoHEVQdNFtCsb",
+      "offset": 96,
+      "kind": "block"
+    },
+    {
       "function": "rate2str",
       "offset": 0,
       "kind": "block"
@@ -22068,6 +22427,26 @@
     }
   ],
   "unobserved": [
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
+      "line": 49
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
+      "line": 71
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/interrupt.rs",
+      "line": 564
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/memory_lists.rs",
+      "line": 237
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler.rs",
+      "line": 397
+    },
     {
       "path": "crates/hardware/esp32s31/pac/src/phy/baseband.rs",
       "line": 537

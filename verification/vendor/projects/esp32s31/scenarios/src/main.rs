@@ -2,7 +2,7 @@
 use clap::{Parser, Subcommand};
 use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Entry, Index};
 use oer_esp32s31_vendor_scenarios::{
-    calibration_leaves, calibration_prefix, channel, coverage,
+    ble, calibration_leaves, calibration_prefix, channel, coverage,
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
@@ -77,9 +77,24 @@ enum Scenario {
         /// Authenticated `libnet80211.a` (Wi-Fi MAC roots calling `libpp.a`).
         #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libnet80211"))]
         libnet80211: PathBuf,
+        /// Compiled Bluetooth probe image.
+        #[arg(long)]
+        bluetooth_production: PathBuf,
         /// Write the native evidence index qualification reads.
         #[arg(long)]
         index: Option<PathBuf>,
+    },
+    /// Bluetooth LE controller leaves of the pinned Bluetooth archives
+    /// against the compiled Bluetooth probe image.
+    Bluetooth {
+        #[command(flatten)]
+        common: Common,
+        /// Compiled Bluetooth probe image.
+        #[arg(long)]
+        bluetooth_production: PathBuf,
+        /// Authenticated vendor firmware supplying logging symbols.
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
+        phy_sdk: PathBuf,
     },
     /// Wi-Fi MAC HAL leaves of `libpp.a` over every radio register fill.
     WifiMac {
@@ -490,8 +505,8 @@ fn wifi_mac(
 ) -> Result<Outcome> {
     let options = mac::MacOptions {
         binary: common.binary,
-        libpp,
-        libnet80211,
+        suite: &mac::WIFI_MAC,
+        archives: vec![libpp, libnet80211],
         rom: common.rom,
         phy_sdk,
         production: common.production,
@@ -503,11 +518,49 @@ fn wifi_mac(
     let mut ctx = mac::Mac::new(&options)?;
     mac::exercise(&mut ctx)?;
     retry::exercise(&mut ctx)?;
-    let claims = ctx
-        .session
-        .claims("wifi-mac", &ctx.roots, &mac::claims(), coverage::DECISIONS)?;
+    let claims = ctx.session.claims(
+        "wifi-mac",
+        &ctx.roots,
+        &mac::claims(&ctx),
+        coverage::DECISIONS,
+    )?;
     Ok((
         finish(&[], "authenticated Wi-Fi MAC HAL leaves passed", &ctx.run),
+        claims,
+    ))
+}
+
+fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Outcome> {
+    let options = mac::MacOptions {
+        binary: common.binary,
+        suite: &ble::BLUETOOTH,
+        archives: ble::BLUETOOTH
+            .archives
+            .iter()
+            .map(|id| oer_esp32s31_vendor_scenarios::artifacts::default_path(id))
+            .collect(),
+        rom: common.rom,
+        phy_sdk,
+        production,
+        linker: common.linker,
+        output: common.output,
+        budget: common.budget,
+        patches: common.patches,
+    };
+    let mut ctx = mac::Mac::new(&options)?;
+    mac::exercise(&mut ctx)?;
+    let claims = ctx.session.claims(
+        "bluetooth",
+        &ctx.roots,
+        &mac::claims(&ctx),
+        coverage::DECISIONS,
+    )?;
+    Ok((
+        finish(
+            &[],
+            "authenticated Bluetooth controller leaves passed",
+            &ctx.run,
+        ),
         claims,
     ))
 }
@@ -567,7 +620,9 @@ fn tracking(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
 mod evidence {
     use super::*;
 
-    use oer_esp32s31_vendor_scenarios::{PROBES_MANIFEST, PROBES_PACKAGE, PROBES_TARGET};
+    use oer_esp32s31_vendor_scenarios::{
+        BLUETOOTH_PROBES_PACKAGE, PROBES_MANIFEST, PROBES_PACKAGE, PROBES_TARGET,
+    };
 
     /// Qualification target of this scenario package.
     const TARGET: &str = "esp32s31";
@@ -646,7 +701,7 @@ mod evidence {
 
     pub fn index(
         common: &Common,
-        optional: &[&PathBuf; 5],
+        optional: &[&PathBuf; 6],
         entries: Vec<Entry>,
         untriaged: Vec<evidence_index::Location>,
         unobserved: Vec<evidence_index::SourceLine>,
@@ -663,11 +718,24 @@ mod evidence {
             ("rftest", optional[2]),
             ("libpp", optional[3]),
             ("libnet80211", optional[4]),
+            ("bluetooth-production", optional[5]),
         ] {
             inputs.insert(role.to_owned(), sha256(path)?);
         }
+        for id in ble::BLUETOOTH.archives {
+            inputs.insert(
+                (*id).to_owned(),
+                sha256(&oer_esp32s31_vendor_scenarios::artifacts::default_path(id))?,
+            );
+        }
         let mut directories =
             path_closure(&root, PROBES_MANIFEST, PROBES_PACKAGE, Some(PROBES_TARGET))?;
+        directories.extend(path_closure(
+            &root,
+            PROBES_MANIFEST,
+            BLUETOOTH_PROBES_PACKAGE,
+            Some(PROBES_TARGET),
+        )?);
         directories.extend(path_closure(&root, TOOL_MANIFEST, TOOL_PACKAGE, None)?);
         directories.push(PathBuf::from(SCHEMA_SOURCES));
         directories.sort();
@@ -697,16 +765,26 @@ mod evidence {
     }
 }
 
-/// Run every PHY comparison scenario; each must pass with no unmet obligation.
-fn all(
-    common: Common,
+/// Every vendor input and extra production image `all` requires.
+struct AllInputs {
     sdk: PathBuf,
     phy_sdk: PathBuf,
     rftest: PathBuf,
     libpp: PathBuf,
     libnet80211: PathBuf,
-    index: Option<PathBuf>,
-) -> Result<ExitCode> {
+    bluetooth_production: PathBuf,
+}
+
+/// Run every PHY comparison scenario; each must pass with no unmet obligation.
+fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<ExitCode> {
+    let AllInputs {
+        sdk,
+        phy_sdk,
+        rftest,
+        libpp,
+        libnet80211,
+        bluetooth_production,
+    } = inputs;
     if !common.patches.is_empty() {
         if index.is_some() {
             return Err("a point-mutant run writes no evidence index".into());
@@ -751,6 +829,16 @@ fn all(
                     within("wifi-mac"),
                     libpp.clone(),
                     libnet80211.clone(),
+                    phy_sdk.clone(),
+                )
+            }),
+        ),
+        (
+            "bluetooth",
+            Box::new(|| {
+                bluetooth(
+                    within("bluetooth"),
+                    bluetooth_production.clone(),
                     phy_sdk.clone(),
                 )
             }),
@@ -864,7 +952,14 @@ fn all(
     if let Some(path) = index {
         let index = evidence::index(
             &common,
-            &[&sdk, &phy_sdk, &rftest, &libpp, &libnet80211],
+            &[
+                &sdk,
+                &phy_sdk,
+                &rftest,
+                &libpp,
+                &libnet80211,
+                &bluetooth_production,
+            ],
             entries,
             coverage::uncovered_everywhere(&closures, untriaged)
                 .into_iter()
@@ -904,6 +999,11 @@ fn main() -> ExitCode {
             libnet80211,
             phy_sdk,
         } => single(wifi_mac(common, libpp, libnet80211, phy_sdk)),
+        Scenario::Bluetooth {
+            common,
+            bluetooth_production,
+            phy_sdk,
+        } => single(bluetooth(common, bluetooth_production, phy_sdk)),
         Scenario::All {
             common,
             sdk,
@@ -911,8 +1011,20 @@ fn main() -> ExitCode {
             rftest,
             libpp,
             libnet80211,
+            bluetooth_production,
             index,
-        } => all(common, sdk, phy_sdk, rftest, libpp, libnet80211, index),
+        } => all(
+            common,
+            AllInputs {
+                sdk,
+                phy_sdk,
+                rftest,
+                libpp,
+                libnet80211,
+                bluetooth_production,
+            },
+            index,
+        ),
         Scenario::Research {
             binary,
             library,

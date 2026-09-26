@@ -47,8 +47,8 @@ are the measurement authority, not this documentation.
 
 ## All PHY comparison scenarios
 
-`all` runs every stage-11/12 PHY comparison scenario (`gain`, `i2c`, `channel`,
-`rx-gain`, `tx-dc`, `tracking`) in sequence under one budget, each in its own
+`all` runs every native comparison scenario (`gain`, `i2c`, `channel`,
+`rx-gain`, `tx-dc`, `tracking`, `wifi-mac`, `bluetooth`) under one budget, each in its own
 directory below `--output`. It requires every optional input, so no obligation
 is left unmet, stops at the first failure and prints each scenario's duration.
 With `--index <path>` it then writes the native evidence index qualification
@@ -62,6 +62,7 @@ Blobray change; until then qualification treats the index as stale. See
 ```console
 cargo xtask vendor-scenario all \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
+  --bluetooth-production target/verification/esp32s31-bluetooth-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-bluetooth-elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog \
   --index verification/vendor/projects/esp32s31/evidence/scenario-evidence.json
 ```

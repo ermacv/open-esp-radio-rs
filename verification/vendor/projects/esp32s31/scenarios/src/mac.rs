@@ -27,6 +27,8 @@ const ABSENT: &[&str] = &["putchar"];
 const PROBE_INPUT: usize = 2;
 /// Input index of the vendor Wi-Fi firmware.
 const PHY_SDK_INPUT: u64 = 3;
+/// Input index of the pinned `libnet80211.a`.
+const NET80211_INPUT: u64 = 4;
 /// Radio register fills: all clear, all set and two alternating patterns.
 pub const LEAF_FILLS: [u8; 4] = [0x00, 0xff, 0x5a, 0xa5];
 /// Guest events one leaf case may record.
@@ -40,6 +42,8 @@ const EVENT_MASKS: &[u32] = &[0, 1, 0x5a5a_a5a5, u32::MAX];
 pub struct MacOptions {
     pub binary: PathBuf,
     pub libpp: PathBuf,
+    /// Pinned `libnet80211.a`, whose roots call into `libpp.a`.
+    pub libnet80211: PathBuf,
     pub rom: PathBuf,
     /// Authenticated vendor Wi-Fi firmware: supplies the network-stack data
     /// and logging symbols that code after a compared prefix references.
@@ -87,6 +91,8 @@ const fn output(length: u32) -> Domain {
 
 /// Initial bytes of an output object: bytes a leaf leaves alone compare too.
 const OUTPUT_FILL: u8 = 0xa5;
+/// Source of the bytes a setup phase copies into a linked-image object.
+const IMAGE_SOURCE: u32 = 0x3fff_b000;
 
 /// One vendor leaf, its production probe and the argument domain of each
 /// parameter, in ABI order; the cases are their product.
@@ -106,6 +112,8 @@ pub struct Leaf {
     pub vendor_abi: Option<VendorAbi>,
     /// The vendor function is a ROM symbol rather than a `libpp.a` root.
     pub rom: bool,
+    /// The vendor function is a `libnet80211.a` root linked with `libpp.a`.
+    pub net80211: bool,
     /// Object states the builder receives after the probe words: a further
     /// case dimension that reaches the probe only through the objects.
     pub states: &'static [u32],
@@ -133,6 +141,10 @@ pub struct Objects {
     /// Object bytes both sides share and the relation compares after the
     /// leaf, as (address, length); each side receives the same objects.
     pub compared: Vec<(u32, u32)>,
+    /// Vendor objects inside the linked image's data, as (address, bytes):
+    /// setup phases copy them in with the captured ROM `memcpy`, and the
+    /// compared phase keeps them warm.
+    pub image: Vec<(u32, Vec<u8>)>,
 }
 
 /// Builds a case's objects from the semantic probe words, followed by the
@@ -143,12 +155,28 @@ pub type VendorAbi = fn(&[u32], &Vendor<'_>) -> Result<Objects>;
 /// addresses and data sections of the captured archive.
 pub struct Vendor<'a> {
     pub resolve: &'a dyn Fn(&str) -> Result<u32>,
+    /// Symbols the linked image defines; any other symbol is a ROM address.
+    pub image: &'a BTreeMap<String, u32>,
     pub rates: &'a RateTables,
 }
 
 impl Vendor<'_> {
     fn symbol(&self, name: &str) -> Result<u32> {
         (self.resolve)(name)
+    }
+
+    /// The boundary of a call model answering `name`: captured code when the
+    /// linked image defines it, an unmapped address otherwise.
+    fn boundary(&self, name: &str) -> CallBoundary {
+        call_boundary(self.image, name)
+    }
+}
+
+fn call_boundary(image: &BTreeMap<String, u32>, name: &str) -> CallBoundary {
+    if image.contains_key(name) {
+        CallBoundary::CapturedCode
+    } else {
+        CallBoundary::Unmapped
     }
 }
 
@@ -219,6 +247,7 @@ const fn leaf(
         prefix_until: None,
         vendor_abi: None,
         rom: false,
+        net80211: false,
         states: &[],
         dispatch: None,
         quiet_calls: &[],
@@ -244,6 +273,14 @@ const fn quiet(leaf: Leaf, calls: &'static [&'static str]) -> Leaf {
 /// A leaf whose vendor function is the ROM symbol of that name.
 const fn rom(leaf: Leaf) -> Leaf {
     Leaf { rom: true, ..leaf }
+}
+
+/// A leaf whose vendor function is the `libnet80211.a` root of that name.
+const fn net80211(leaf: Leaf) -> Leaf {
+    Leaf {
+        net80211: true,
+        ..leaf
+    }
 }
 
 /// A leaf whose production counterpart adds `fences` ordering fences.
@@ -472,6 +509,7 @@ fn ppdu_abi(_words: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
         production: vec![(INPUT, words(&PPDU_CANONICAL))],
         calls: vec![clamp],
         compared: vec![],
+        ..Default::default()
     })
 }
 
@@ -521,7 +559,7 @@ fn rate_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
         lifetime: RegionLifetime::Phase,
         binding: CallBinding {
             address: resolve("wifi_assert")?,
-            boundary: CallBoundary::Unmapped,
+            boundary: vendor.boundary("wifi_assert"),
             allow_tail: false,
         },
         argument_words: 1,
@@ -539,6 +577,7 @@ fn rate_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
         production: objects,
         calls: vec![assert],
         compared: vec![(RATE_SELECTED, 1)],
+        ..Default::default()
     })
 }
 
@@ -665,8 +704,9 @@ const TSF_HIGH: Domain = Domain::Output {
 /// Bytes of the transmit Block Ack record: control, sequence and bitmap.
 const BLOCK_ACK_BYTES: u32 = 12;
 
-/// One case with the initial bytes of its compared objects and its probe words.
-type LeafCase = (ExecutionCase, Vec<u8>, Vec<u32>);
+/// One case: its setup phases, the compared phase, the initial bytes of its
+/// compared objects and its probe words.
+type LeafCase = (Vec<ExecutionCase>, ExecutionCase, Vec<u8>, Vec<u32>);
 
 /// Every compared leaf.
 pub const LEAVES: &[Leaf] = &[
@@ -924,6 +964,35 @@ pub const LEAVES: &[Leaf] = &[
         ),
         &["wifi_assert"],
     ),
+    net80211(objects(
+        leaf(
+            "wifi_set_rx_policy",
+            "open_wifi_sta_ap_trace_wifi_set_rx_policy",
+            &[
+                ("policy", Domain::Words(RX_POLICIES)),
+                ("address_low", Domain::Words(RX_ADDRESS_LOW)),
+                ("address_high", Domain::Words(RX_ADDRESS_HIGH)),
+                ("mode", Domain::Words(RX_MODES)),
+            ],
+            false,
+        ),
+        rx_policy_abi,
+    )),
+    // Production publishes the interface addresses in its cold transaction
+    // and claims only the suffix of policy zero; the vendor address
+    // republication is answered without effect.
+    quiet(
+        net80211(objects(
+            leaf(
+                "wifi_set_rx_policy",
+                "open_wifi_sta_ap_trace_disable_all_role_receive",
+                &[("_policy", Domain::Words(&[RX_POLICY_NONE]))],
+                false,
+            ),
+            rx_disable_all_abi,
+        )),
+        &["ic_set_mac"],
+    ),
 ];
 
 /// Every byte of data section `section` of `object` in the captured archive.
@@ -942,6 +1011,61 @@ fn vendor_section(session: &Session, object: &str, section: &str) -> Result<Vec<
     );
     let name = format!("section{}", section.replace('.', "-"));
     session.data(&name, &request, &session.run.join(&name))
+}
+
+/// `wifi_set_rx_policy` policies the production role-receive HAL admits:
+/// station disabled, station, access point and access point disabled.
+const RX_POLICIES: &[u32] = &[2, 6, 8, 9];
+/// Low and high words of the policy address: all clear and a pattern.
+const RX_ADDRESS_LOW: &[u32] = &[0, 0x3322_1100];
+const RX_ADDRESS_HIGH: &[u32] = &[0, 0x5544];
+/// `wifi_set_rx_policy` code that republishes both interface addresses and
+/// disables both receive contexts.
+const RX_POLICY_NONE: u32 = 0;
+/// Station receive modes of policy six.
+const RX_MODES: &[u32] = &[1, 2];
+/// `g_ic` bytes the policy reads and writes, and its fields: the word
+/// pointing to the station record, the station-mode word and the
+/// access-point address.
+const IC_BYTES: usize = 0x2d0;
+const IC_STATION: usize = 0;
+const IC_STATION_MODE: usize = 0x74;
+const IC_AP_ADDRESS: usize = 0x214;
+/// Station record word at 0x1460 points to the BSS record, whose bytes
+/// 4..10 carry the BSSID.
+const RX_STATION: u32 = 0x3fff_7000;
+const RX_STATION_BSS: u32 = 0x1460;
+const RX_BSS: u32 = 0x3fff_9000;
+
+/// The policy's `g_ic` context and station records built from the probe
+/// words: policy, address low and high words and the station mode.
+fn rx_policy_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [policy, low, high, mode] = words else {
+        unreachable!("receive-policy words: policy, address low, address high, mode")
+    };
+    let mut address = low.to_le_bytes().to_vec();
+    address.extend(&high.to_le_bytes()[..2]);
+    let mut context = vec![0u8; IC_BYTES];
+    context[IC_STATION..IC_STATION + 4].copy_from_slice(&RX_STATION.to_le_bytes());
+    context[IC_STATION_MODE..IC_STATION_MODE + 4]
+        .copy_from_slice(&u32::from(*mode == 2).to_le_bytes());
+    context[IC_AP_ADDRESS..IC_AP_ADDRESS + 6].copy_from_slice(&address);
+    let mut bss = vec![0u8; 4];
+    bss.extend(&address);
+    Ok(Objects {
+        vendor_words: vec![*policy],
+        vendor: vec![
+            (RX_STATION + RX_STATION_BSS, RX_BSS.to_le_bytes().to_vec()),
+            (RX_BSS, bss),
+        ],
+        image: vec![(vendor.symbol("g_ic")?, context)],
+        ..Default::default()
+    })
+}
+
+/// The policy-zero `g_ic` context: no address and the first station mode.
+fn rx_disable_all_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    rx_policy_abi(&[words[0], 0, 0, RX_MODES[0]], vendor)
 }
 
 /// Linked `libpp.a` image with its captured roots and both execution targets.
@@ -985,6 +1109,11 @@ impl Mac {
                 sha256: None,
             },
             crate::phy::phy_sdk_input(&options.phy_sdk),
+            Input {
+                role: "libnet80211",
+                path: &options.libnet80211,
+                sha256: Some(crate::artifacts::sha256("libnet80211")),
+            },
         ];
         let session = Session::start(
             &options.binary,
@@ -994,23 +1123,24 @@ impl Mac {
             "Wi-Fi MAC HAL leaf comparison",
             &options.patches,
         )?;
-        // The first leaf is the link entry; the others are further roots.
-        let mut vendors: Vec<&str> = LEAVES
+        // The first leaf is the link entry; the others are further roots,
+        // each selected in the archive that defines it.
+        let mut vendors: Vec<(u64, &str)> = LEAVES
             .iter()
             .filter(|l| !l.rom)
-            .map(|l| l.vendor)
-            .filter(|v| *v != LEAVES[0].vendor)
+            .map(|l| (if l.net80211 { NET80211_INPUT } else { 0 }, l.vendor))
+            .filter(|(_, v)| *v != LEAVES[0].vendor)
             .collect();
         vendors.sort_unstable();
         vendors.dedup();
         let roots = vendors
             .iter()
-            .map(|v| select(&session, 0, v))
+            .map(|(input, v)| select(&session, *input as usize, v))
             .collect::<Result<Vec<_>>>()?;
         let link = LinkRequest {
             companions: vec![],
             revision: Some(session.revision.clone()),
-            inputs: vec![0],
+            inputs: vec![0, NET80211_INPUT],
             entry: select(&session, 0, LEAVES[0].vendor)?,
             roots,
             layout: image_layout(),
@@ -1224,6 +1354,7 @@ impl Mac {
                     vendor_calls,
                     compared,
                     initial,
+                    image,
                 ) = match leaf.vendor_abi {
                     Some(abi) => {
                         let mut semantic = words.clone();
@@ -1232,6 +1363,7 @@ impl Mac {
                             &semantic,
                             &Vendor {
                                 resolve: &rom,
+                                image: &image_symbols,
                                 rates: &self.rates,
                             },
                         )?;
@@ -1243,11 +1375,13 @@ impl Mac {
                             objects.calls,
                             objects.compared,
                             initial,
+                            objects.image,
                         )
                     }
                     None => (
                         words.clone(),
                         memory.clone(),
+                        vec![],
                         vec![],
                         vec![],
                         vec![],
@@ -1278,7 +1412,7 @@ impl Mac {
                             lifetime: RegionLifetime::Phase,
                             binding: CallBinding {
                                 address: rom(name)?,
-                                boundary: CallBoundary::Unmapped,
+                                boundary: call_boundary(&image_symbols, name),
                                 allow_tail: true,
                             },
                             argument_words: 1,
@@ -1347,11 +1481,56 @@ impl Mac {
                     production.memory.extend(output_memory.clone());
                     production.memory.extend(production_memory.clone());
                     production.arguments.resize(8, Some(0));
+                    let name = format!("{}{label}{state_label}-{fill:02x}", leaf.vendor);
+                    // Each image object is copied in by the captured ROM
+                    // `memcpy`; production has no counterpart and copies
+                    // nothing.
+                    let memcpy = u32::try_from(
+                        crate::harness::symbol(
+                            &self.session.inventory,
+                            crate::layout::ROM_INPUT as usize,
+                            "memcpy",
+                        )?
+                        .value,
+                    )?;
+                    let mut setup = vec![];
+                    for (index, (address, bytes)) in image.iter().enumerate() {
+                        let length = bytes.len() as u32;
+                        let mut phase = case(
+                            format!("{name}-image-{index}"),
+                            direct(
+                                memcpy,
+                                &[*address, IMAGE_SOURCE, length],
+                                vec![known(IMAGE_SOURCE, length, bytes)?],
+                                vec![],
+                                vec![],
+                            ),
+                            Some(direct(
+                                memcpy,
+                                &[IMAGE_SOURCE, IMAGE_SOURCE, 0],
+                                vec![],
+                                vec![],
+                                vec![],
+                            )),
+                            if index == 0 {
+                                SessionReset::Cold
+                            } else {
+                                SessionReset::Warm
+                            },
+                            false,
+                        );
+                        phase.stack_fill = Some(fill);
+                        setup.push(phase);
+                    }
                     let mut row = case(
-                        format!("{}{label}{state_label}-{fill:02x}", leaf.vendor),
+                        name,
                         vendor,
                         Some(production),
-                        SessionReset::Cold,
+                        if setup.is_empty() {
+                            SessionReset::Cold
+                        } else {
+                            SessionReset::Warm
+                        },
                         false,
                     );
                     row.stack_fill = Some(fill);
@@ -1364,7 +1543,7 @@ impl Mac {
                             replacement: index,
                         })
                         .collect();
-                    rows.push((row, initial.clone(), words.clone()));
+                    rows.push((setup, row, initial.clone(), words.clone()));
                 }
             }
         }
@@ -1376,13 +1555,14 @@ impl Mac {
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
     for leaf in LEAVES {
         let mut rows = vec![];
-        let (mut initial, mut case_words) = (vec![], vec![]);
-        for (row, bytes, words) in ctx.cases(leaf)? {
+        let (mut initial, mut case_words, mut positions) = (vec![], vec![], vec![]);
+        for (setup, row, bytes, words) in ctx.cases(leaf)? {
+            rows.extend(setup);
+            positions.push(rows.len() as u32);
             rows.push(row);
             initial.push(bytes);
             case_words.push(words);
         }
-        let count = rows.len() as u32;
         let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
         let records = ctx
             .submit(
@@ -1392,7 +1572,7 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
             )?
             .records
             .clone();
-        for case in 0..count {
+        for (index, case) in positions.into_iter().enumerate() {
             for side in [false, true] {
                 if !crate::i2c::all_complete(&records, case, side) {
                     return Err(invalid(format!(
@@ -1402,7 +1582,7 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
                 }
             }
             if leaf.dispatch.is_some() {
-                let expected = case_words[case as usize][0];
+                let expected = case_words[index][0];
                 for side in [false, true] {
                     let argument = crate::evidence::events(&records, case, side)
                         .iter()
@@ -1424,7 +1604,7 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
             }
             // A leaf must act: a register effect, or a write that changes an
             // object it is compared through.
-            let initial = &initial[case as usize];
+            let initial = &initial[index];
             if crate::evidence::phy_effects(&crate::evidence::events(&records, case, false))
                 .is_empty()
                 && (initial.is_empty()

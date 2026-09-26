@@ -698,6 +698,58 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// Register-only production projection of vendor `wifi_set_rx_policy`
+    /// policies two, six, eight and nine through the role-receive HAL.
+    ///
+    /// The address words carry the policy's BSSID or access-point address;
+    /// `mode` selects the policy-six station submode and is ignored
+    /// otherwise.
+    pub fn open_wifi_sta_ap_trace_wifi_set_rx_policy(
+        policy: u32,
+        address_low: u32,
+        address_high: u32,
+        mode: u32,
+    ) -> u32 {
+        use oer_esp32s31_hal::{
+            ieee80211::mac::validation_configure_role_receive_policy,
+            types::{MacRoleReceivePolicy, MacStaPolicyMode},
+        };
+
+        let low = address_low.to_le_bytes();
+        let high = address_high.to_le_bytes();
+        let address = [low[0], low[1], low[2], low[3], high[0], high[1]];
+        let policy = match policy {
+            2 => MacRoleReceivePolicy::StationDisabled,
+            6 => MacRoleReceivePolicy::Station {
+                bssid: address,
+                mode: if mode == 2 {
+                    MacStaPolicyMode::Mode2
+                } else {
+                    MacStaPolicyMode::Mode1
+                },
+            },
+            8 => MacRoleReceivePolicy::AccessPoint { address },
+            9 => MacRoleReceivePolicy::AccessPointDisabled,
+            _ => return 0,
+        };
+        validation_configure_role_receive_policy(policy);
+        1
+    }
+}
+
+oer_probe_macros::probe! {
+    /// The role-neutral suffix of vendor `wifi_set_rx_policy(0)`: the exact
+    /// production operation that disables both receive contexts after the
+    /// cold transaction published the interface addresses.
+    pub fn open_wifi_sta_ap_trace_disable_all_role_receive(_policy: u32) -> u32 {
+        oer_esp32s31_ieee80211_mac::sta_ap_registers::disable_all_role_receive_registers(
+            &mut RadioRuntimeOwner::claim_for_validation().wifi_mac_hal(),
+        );
+        1
+    }
+}
+
+oer_probe_macros::probe! {
     /// ABI projection around the exact production normal-rate selector.
     ///
     /// The vendor entry receives a pointer-rich descriptor and stores the chosen

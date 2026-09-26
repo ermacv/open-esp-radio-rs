@@ -830,6 +830,12 @@ impl Session {
             for block in &function.uncovered_blocks {
                 add(*block, LocationKind::Block);
             }
+            for site in &function.followed {
+                add(*site, LocationKind::Followed);
+            }
+            for site in &function.unresolved {
+                add(*site, LocationKind::Unresolved);
+            }
             for direction in &function.uncovered_directions {
                 add(
                     direction.site,
@@ -847,9 +853,14 @@ impl Session {
             reached: c.reached,
             total: c.total,
         };
+        let open = locations
+            .iter()
+            .filter(|l| matches!(l.kind, LocationKind::Followed | LocationKind::Unresolved))
+            .count() as u64;
         let coverage = evidence_index::Coverage {
             blocks: count(&root.blocks),
             directions: count(&root.directions),
+            open,
             excluded: excluded.len() as u64,
             untriaged: untriaged.len() as u64,
         };

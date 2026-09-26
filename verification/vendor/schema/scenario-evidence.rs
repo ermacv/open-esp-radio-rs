@@ -13,7 +13,7 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Index format.
-pub const SCHEMA: u32 = 5;
+pub const SCHEMA: u32 = 6;
 /// Producer command recorded in every index.
 pub const COMMAND: &str = "vendor-scenario all";
 /// The only verdict an entry carries: a claim exists only when its root
@@ -104,13 +104,18 @@ pub struct Coverage {
     pub blocks: Count,
     /// Both directions of every conditional branch.
     pub directions: Count,
-    /// Uncovered blocks and directions a reviewed decision excludes.
+    /// Transfer sites the closure leaves open: indirect transfers followed
+    /// only to their executed targets, and unresolved transfers.
+    pub open: u64,
+    /// Uncovered blocks and directions and open sites a reviewed decision
+    /// excludes.
     pub excluded: u64,
-    /// Uncovered blocks and directions without a decision.
+    /// Uncovered blocks and directions and open sites without a decision.
     pub untriaged: u64,
 }
 
-/// One vendor block or branch direction, by function symbol and offset.
+/// One vendor block, branch direction or open transfer site, by function
+/// symbol and offset.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Location {
@@ -125,6 +130,12 @@ pub enum LocationKind {
     Block,
     Taken,
     Fallthrough,
+    /// An indirect transfer the closure follows only to its executed
+    /// targets; targets no execution reached are outside the closure.
+    Followed,
+    /// A transfer whose target the closure cannot determine, or that leaves
+    /// the executable captured code.
+    Unresolved,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -239,6 +250,7 @@ impl Index {
                 || c.excluded + c.untriaged
                     != (c.blocks.total - c.blocks.reached)
                         + (c.directions.total - c.directions.reached)
+                        + c.open
             {
                 return Err(format!(
                     "entry {} {} has inconsistent coverage",

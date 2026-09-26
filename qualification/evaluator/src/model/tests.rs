@@ -237,6 +237,7 @@ pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> Nati
                         reached: 0,
                         total: 0,
                     },
+                    open: 0,
                     excluded: 0,
                     untriaged: 0,
                 },
@@ -417,6 +418,17 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
     // Listed locations are ascending and unique.
     listed.untriaged = vec![location(4), location(4)];
     assert!(listed.validate("test-radio").is_err());
+    // An open transfer site must be excluded or untriaged like a block.
+    assert!(rejected(&|i| i.entries[0].coverage.open = 1));
+    let mut open = evidence.index.clone();
+    open.entries[0].coverage.open = 1;
+    open.entries[0].coverage.untriaged = 1;
+    open.untriaged = vec![scenario_evidence::Location {
+        function: "set_channel".into(),
+        offset: 8,
+        kind: scenario_evidence::LocationKind::Followed,
+    }];
+    open.validate("test-radio").unwrap();
 }
 
 #[test]

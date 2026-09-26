@@ -126,7 +126,10 @@ native evidence index
   and how many of the rest a reviewed decision covers or remain untriaged;
 - every untriaged uncovered location of the claimed closures that no claim
   whose closure contains its function reaches, by vendor function, offset
-  and kind (block, taken or fallthrough direction);
+  and kind (block, taken or fallthrough direction, or a transfer site the
+  closure leaves open: an indirect transfer followed only to its executed
+  targets, so that other targets such as further jump-table arms are outside
+  the closure, or an unresolved transfer);
 - every executed production hardware line that no scenario's compared observations
   depend on and no reviewed decision covers, by path and line;
 - every persistent vendor byte a claim's cases write without comparing it and

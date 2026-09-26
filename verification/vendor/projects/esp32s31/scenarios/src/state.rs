@@ -59,9 +59,34 @@ const AP_TSF_START: Claim = (
     "hal_mac_tsf_reset",
     "open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset",
 );
+const RX_POLICY: Claim = (
+    "wifi_set_rx_policy",
+    "open_wifi_sta_ap_trace_wifi_set_rx_policy",
+);
+const RX_POLICY_NONE: Claim = (
+    "wifi_set_rx_policy",
+    "open_wifi_sta_ap_trace_disable_all_role_receive",
+);
 
 /// Reviewed unprojected vendor state.
 pub const DECISIONS: &[Decision] = &[
+    Decision {
+        reason: "`ieee80211_supplicant.o` current-policy byte `g_ic+0x2cc`: only the \
+            remain-on-channel policy 13 saves it into `g_offchan_ctx` and `roc_op_end` tests it \
+            for that policy; production has no remain-on-channel owner, and its role owners \
+            hold the applied receive configuration as the typed `MacRoleReceivePolicy` they pass",
+        places: &[
+            place(RX_POLICY, "g_ic", 0x2cc, 0x2cd),
+            place(RX_POLICY_NONE, "g_ic", 0x2cc, 0x2cd),
+        ],
+    },
+    Decision {
+        reason: "`if_hwctrl.o` interface-one address shadow in `if_ctrl` that `ic_set_mac` \
+            copies after programming the address registers, for `ic_get_addr` callers; \
+            production callers own the access-point address they pass to \
+            `configure_role_receive_policy`, and the register writes are compared",
+        places: &[place(RX_POLICY, "if_ctrl", 10, 16)],
+    },
     Decision {
         reason: "`wdev.o` beacon-schedule cursor `BcnSendTick` that a fresh AP TSF epoch clears \
             for `wDev_Get_Next_TBTT`: production keeps the TBTT cursor in the AP engine's beacon \

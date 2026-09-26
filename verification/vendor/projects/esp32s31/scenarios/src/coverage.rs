@@ -133,8 +133,51 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "receive-policy codes above 13 and interface indices above the vendor bounds \
+            (3 for addresses and BSSID checks, 2 for receive filters), which fail or log: \
+            production's typed `MacRoleReceivePolicy` and `MacInterface` cannot express them",
+        places: &[
+            Place::Range {
+                function: "wifi_set_rx_policy",
+                start: 0x16,
+                end: 0x18,
+            },
+            Place::Range {
+                function: "wifi_set_rx_policy",
+                start: 0x1b8,
+                end: 0x1bc,
+            },
+            Place::Range {
+                function: "ic_set_rx_policy_ubssid_check",
+                start: 0x2,
+                end: 0x4,
+            },
+            Place::Range {
+                function: "ic_set_rx_policy_ubssid_check",
+                start: 0x1a,
+                end: 0x1e,
+            },
+            Place::Range {
+                function: "ic_set_mac",
+                start: 0x4,
+                end: 0x1e,
+            },
+            Place::Range {
+                function: "hal_mac_rx_set_policy",
+                start: 0x6,
+                end: 0x8,
+            },
+            Place::Range {
+                function: "hal_mac_rx_set_policy",
+                start: 0xce,
+                end: 0xd2,
+            },
+        ],
+    },
+    Decision {
         reason: "vendor diagnostic formatting; production emits no vendor console output",
         places: &[
+            Place::Function("wifi_log"),
             Place::Function("ets_printf"),
             Place::Function("ets_vprintf"),
             Place::Function("_cvt"),
@@ -698,7 +741,7 @@ pub fn uncovered_everywhere(
         .collect()
 }
 
-/// A block or a branch direction, for the index.
+/// A block, a branch direction or an open transfer site, for the index.
 pub fn location(function: &str, entry: u32, address: u32, kind: LocationKind) -> Location {
     Location {
         function: function.to_owned(),

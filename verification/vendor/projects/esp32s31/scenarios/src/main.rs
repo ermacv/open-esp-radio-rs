@@ -74,6 +74,9 @@ enum Scenario {
         /// Authenticated `libpp.a` (Wi-Fi MAC HAL leaves).
         #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libpp"))]
         libpp: PathBuf,
+        /// Authenticated `libnet80211.a` (Wi-Fi MAC roots calling `libpp.a`).
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libnet80211"))]
+        libnet80211: PathBuf,
         /// Write the native evidence index qualification reads.
         #[arg(long)]
         index: Option<PathBuf>,
@@ -85,6 +88,9 @@ enum Scenario {
         /// Authenticated `libpp.a`.
         #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libpp"))]
         libpp: PathBuf,
+        /// Authenticated `libnet80211.a`.
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libnet80211"))]
+        libnet80211: PathBuf,
         /// Authenticated vendor Wi-Fi firmware supplying network-stack symbols.
         #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
@@ -476,10 +482,16 @@ fn channel(common: Common) -> Result<Outcome> {
     ))
 }
 
-fn wifi_mac(common: Common, libpp: PathBuf, phy_sdk: PathBuf) -> Result<Outcome> {
+fn wifi_mac(
+    common: Common,
+    libpp: PathBuf,
+    libnet80211: PathBuf,
+    phy_sdk: PathBuf,
+) -> Result<Outcome> {
     let options = mac::MacOptions {
         binary: common.binary,
         libpp,
+        libnet80211,
         rom: common.rom,
         phy_sdk,
         production: common.production,
@@ -633,7 +645,7 @@ mod evidence {
 
     pub fn index(
         common: &Common,
-        optional: &[&PathBuf; 4],
+        optional: &[&PathBuf; 5],
         entries: Vec<Entry>,
         untriaged: Vec<evidence_index::Location>,
         unobserved: Vec<evidence_index::SourceLine>,
@@ -649,6 +661,7 @@ mod evidence {
             ("phy-sdk", optional[1]),
             ("rftest", optional[2]),
             ("libpp", optional[3]),
+            ("libnet80211", optional[4]),
         ] {
             inputs.insert(role.to_owned(), sha256(path)?);
         }
@@ -690,6 +703,7 @@ fn all(
     phy_sdk: PathBuf,
     rftest: PathBuf,
     libpp: PathBuf,
+    libnet80211: PathBuf,
     index: Option<PathBuf>,
 ) -> Result<ExitCode> {
     if !common.patches.is_empty() {
@@ -731,7 +745,14 @@ fn all(
         ),
         (
             "wifi-mac",
-            Box::new(|| wifi_mac(within("wifi-mac"), libpp.clone(), phy_sdk.clone())),
+            Box::new(|| {
+                wifi_mac(
+                    within("wifi-mac"),
+                    libpp.clone(),
+                    libnet80211.clone(),
+                    phy_sdk.clone(),
+                )
+            }),
         ),
     ];
     // Scenarios share no state: each owns its session and output directory.
@@ -842,7 +863,7 @@ fn all(
     if let Some(path) = index {
         let index = evidence::index(
             &common,
-            &[&sdk, &phy_sdk, &rftest, &libpp],
+            &[&sdk, &phy_sdk, &rftest, &libpp, &libnet80211],
             entries,
             coverage::uncovered_everywhere(&closures, untriaged)
                 .into_iter()
@@ -879,16 +900,18 @@ fn main() -> ExitCode {
         Scenario::WifiMac {
             common,
             libpp,
+            libnet80211,
             phy_sdk,
-        } => single(wifi_mac(common, libpp, phy_sdk)),
+        } => single(wifi_mac(common, libpp, libnet80211, phy_sdk)),
         Scenario::All {
             common,
             sdk,
             phy_sdk,
             rftest,
             libpp,
+            libnet80211,
             index,
-        } => all(common, sdk, phy_sdk, rftest, libpp, index),
+        } => all(common, sdk, phy_sdk, rftest, libpp, libnet80211, index),
         Scenario::Research {
             binary,
             library,

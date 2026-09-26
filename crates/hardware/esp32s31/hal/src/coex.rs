@@ -7,6 +7,9 @@
 //! the values read here. A timer write or a PTI value does not report RF
 //! admission or grant revocation; the hardware arbitrates by priority and
 //! gives the CPU no grant acknowledgement.
+//!
+//! Timer 5 is not lent: the arbiter programs it for the PHY grant-protect
+//! request (`SharedRadioLease::acquire_phy_grant_protect`).
 
 use oer_esp32s31_pac::{
     CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister,
@@ -17,14 +20,12 @@ use oer_esp32s31_pac::{
 pub const COEX_EVENT_COUNT: usize = 49;
 
 /// Complete `coex_pti_tab` of esp-coex-lib
-/// `02c57071231dbe9f7555afcbb8ef86e35f517292`
-/// (`esp32s31/libcoexist.a` sha256
-/// `7fdcdc9d8e225379af71953d9a67d03076e8358e0231b611be7d6f487824f0b7`,
-/// `coexist_core.o` section `.dram1.2`, 49 bytes), the revision paired with
-/// the pinned esp-phy-lib `b88e4b76`. Events 0 through 47 equal the earlier
-/// reviewed archive `9b8f55b1`; event 48 is new. Index is the
-/// event number. Events 1, 3, 10 and 15 are the cold Wi-Fi MAC priorities
-/// (5, 7, 3 and 1); event 48 is the PHY grant-protect request (15).
+/// `c758e7b56e0fa22177a0539796e1df59978dc322` (`esp32s31/libcoexist.a`
+/// sha256 `13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147`,
+/// `coexist_core.o` section `.dram1.2`, 49 bytes), the pinned archive of
+/// `verification/vendor/projects/esp32s31/artifacts.toml`. Index is the event
+/// number. Events 1, 3, 10 and 15 are the cold Wi-Fi MAC priorities (5, 7, 3
+/// and 1); event 48 is the PHY grant-protect request (15).
 const VENDOR_PTI_TABLE: [u8; COEX_EVENT_COUNT] = [
     0x0a, 0x05, 0x07, 0x07, 0x0a, 0x01, 0x01, 0x01, 0x01, 0x07, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01,
     0x04, 0x09, 0x04, 0x04, 0x09, 0x04, 0x09, 0x04, 0x04, 0x05, 0x05, 0x05, 0x05, 0x04, 0x04, 0x04,
@@ -96,7 +97,58 @@ impl CoexPtiTable {
     }
 }
 
-/// Borrowed authority over the five coexistence hardware timers.
+/// One coexistence timer the coexistence policy may program.
+///
+/// Timer 5 is not among them: the arbiter reserves it for the PHY
+/// grant-protect request (vendor event 48), so no policy request can
+/// withdraw or overwrite that protection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum CoexPolicyTimer {
+    Timer0 = 0,
+    Timer1 = 1,
+    Timer2 = 2,
+    Timer3 = 3,
+    Timer4 = 4,
+}
+
+impl CoexPolicyTimer {
+    pub const ALL: [Self; 5] = [
+        Self::Timer0,
+        Self::Timer1,
+        Self::Timer2,
+        Self::Timer3,
+        Self::Timer4,
+    ];
+
+    /// A policy timer, or `None` for the reserved timer or beyond the bank.
+    pub const fn new(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Timer0),
+            1 => Some(Self::Timer1),
+            2 => Some(Self::Timer2),
+            3 => Some(Self::Timer3),
+            4 => Some(Self::Timer4),
+            _ => None,
+        }
+    }
+
+    pub const fn value(self) -> u8 {
+        self as u8
+    }
+
+    const fn register(self) -> CoexTimerRegister {
+        match self {
+            Self::Timer0 => CoexTimerRegister::Timer0,
+            Self::Timer1 => CoexTimerRegister::Timer1,
+            Self::Timer2 => CoexTimerRegister::Timer2,
+            Self::Timer3 => CoexTimerRegister::Timer3,
+            Self::Timer4 => CoexTimerRegister::Timer4,
+        }
+    }
+}
+
+/// Borrowed authority over the policy timers of the coexistence bank.
 ///
 /// Every method is one finite register transaction. A write does not report
 /// RF admission or grant revocation.
@@ -112,39 +164,40 @@ impl<'registers> CoexTimerBank<'registers> {
     /// Publish the client and PTI request fields of one timer.
     pub fn configure(
         &mut self,
-        timer: CoexTimerRegister,
+        timer: CoexPolicyTimer,
         client: CoexTimerClientValue,
         pti: CoexTimerPtiValue,
     ) {
-        self.registers.configure_coex_timer(timer, client, pti);
+        self.registers
+            .configure_coex_timer(timer.register(), client, pti);
     }
 
     /// Publish one already converted primary target tick image.
-    pub fn set_primary_target(&mut self, timer: CoexTimerRegister, tick_image: u32) {
+    pub fn set_primary_target(&mut self, timer: CoexPolicyTimer, tick_image: u32) {
         self.registers
-            .set_coex_timer_primary_target(timer, tick_image);
+            .set_coex_timer_primary_target(timer.register(), tick_image);
     }
 
     /// Publish one already converted secondary target tick image.
-    pub fn set_secondary_target(&mut self, timer: CoexTimerRegister, tick_image: u32) {
+    pub fn set_secondary_target(&mut self, timer: CoexPolicyTimer, tick_image: u32) {
         self.registers
-            .set_coex_timer_secondary_target(timer, tick_image);
+            .set_coex_timer_secondary_target(timer.register(), tick_image);
     }
 
-    pub fn enable(&mut self, timer: CoexTimerRegister) {
-        self.registers.enable_coex_timer(timer);
+    pub fn enable(&mut self, timer: CoexPolicyTimer) {
+        self.registers.enable_coex_timer(timer.register());
     }
 
-    pub fn disable(&mut self, timer: CoexTimerRegister) {
-        self.registers.disable_coex_timer(timer);
+    pub fn disable(&mut self, timer: CoexPolicyTimer) {
+        self.registers.disable_coex_timer(timer.register());
     }
 
-    pub fn force(&mut self, timer: CoexTimerRegister) {
-        self.registers.force_coex_timer(timer);
+    pub fn force(&mut self, timer: CoexPolicyTimer) {
+        self.registers.force_coex_timer(timer.register());
     }
 
-    pub fn unforce(&mut self, timer: CoexTimerRegister) {
-        self.registers.unforce_coex_timer(timer);
+    pub fn unforce(&mut self, timer: CoexPolicyTimer) {
+        self.registers.unforce_coex_timer(timer.register());
     }
 
     /// Sample the shared coexistence low-power clock selection once.

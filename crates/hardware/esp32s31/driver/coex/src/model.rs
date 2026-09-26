@@ -2,12 +2,16 @@ pub use oer_esp32s31_hal::coex::{COEX_EVENT_COUNT, CoexEventId, CoexPti, CoexPti
 
 pub const COEX_TIMER_COUNT: usize = 5;
 
-// Complete `coex_core_timer_idx_get` switch image. Element zero corresponds
-// to event one; 0xff means that the event has no hardware timer.
-const REVIEWED_TIMER_MAP: [u8; 46] = [
+// Complete `coex_core_timer_idx_get` switch image of esp-coex-lib
+// c758e7b56e0fa22177a0539796e1df59978dc322 (`esp32s31/libcoexist.a` sha256
+// 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147,
+// `coexist_core.o` `.rodata.CSWTCH.31`). Element zero corresponds to event
+// one; 0xff means that the event has no hardware timer. Event 48 selects
+// timer 5, which the radio arbiter reserves for the PHY grant-protect request.
+const REVIEWED_TIMER_MAP: [u8; 48] = [
     0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0x04, 0xff, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03, 0x03,
+    0xff, 0xff, 0xff, 0x04, 0xff, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03, 0x03, 0xff, 0x05,
 ];
 
 // Complete `g_coex_param` initializer. `coex_core_event_duration_get` maps
@@ -26,11 +30,11 @@ pub enum CoexError {
     Hardware,
 }
 
-/// The hardware timer a vendor core request for `event` programs, or `None`
-/// for an event without a timer.
+/// The policy timer a vendor core request for `event` programs, or `None`
+/// for an event without a timer and for the arbiter's grant-protect event 48.
 pub const fn timer_index(event: CoexEventId) -> Option<CoexTimerIndex> {
     let value = event.value();
-    if value == 0 || value > 46 {
+    if value == 0 || value as usize > REVIEWED_TIMER_MAP.len() {
         return None;
     }
     match REVIEWED_TIMER_MAP[(value - 1) as usize] {

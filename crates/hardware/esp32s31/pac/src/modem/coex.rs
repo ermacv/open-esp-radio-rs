@@ -4,7 +4,7 @@
 
 use crate::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickInput, SharedRadioRegisters};
 
-pub const COEX_TIMER_COUNT: u8 = 5;
+pub const COEX_TIMER_COUNT: u8 = 6;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -14,6 +14,7 @@ pub enum CoexTimerRegister {
     Timer2 = 2,
     Timer3 = 3,
     Timer4 = 4,
+    Timer5 = 5,
 }
 
 impl CoexTimerRegister {
@@ -23,6 +24,7 @@ impl CoexTimerRegister {
         Self::Timer2,
         Self::Timer3,
         Self::Timer4,
+        Self::Timer5,
     ];
 
     pub const fn new(value: u8) -> Option<Self> {
@@ -32,6 +34,7 @@ impl CoexTimerRegister {
             2 => Some(Self::Timer2),
             3 => Some(Self::Timer3),
             4 => Some(Self::Timer4),
+            5 => Some(Self::Timer5),
             _ => None,
         }
     }

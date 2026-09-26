@@ -119,10 +119,10 @@ scope-and-limitations = "The model retains five reviewed duration entries and re
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-five-entry-hardware-timer-bank"
 section = "coex-internal-arbitration-hardware-and-models"
-title = "Five-entry hardware timer bank"
+title = "Six-entry hardware timer bank"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[Register model](../../../../../registers/esp32s31/model/peripherals/coex-hw-timer.toml) and typed PAC access describe configuration, targets and enable/disable controls. Concrete core-to-MMIO access is validation-only."
+scope-and-limitations = "[Register model](../../../../../registers/esp32s31/model/peripherals/coex-hw-timer.toml) and typed PAC access describe configuration, targets and enable/disable controls. The radio arbiter lends timers 0 through 4 to the coexistence policy and reserves timer 5 for its PHY grant-protect request (vendor event 48). Concrete core-to-MMIO access of the policy timers is validation-only."
 documents = ["registers/esp32s31/model/peripherals/coex-hw-timer.toml"]
 
 [[items]]

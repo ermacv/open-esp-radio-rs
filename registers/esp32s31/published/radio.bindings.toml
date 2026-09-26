@@ -42680,6 +42680,124 @@ bit-width = 31
 access = "read-write"
 
 [[registers]]
+address = 537982032
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.CONFIGURATION5"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "configuration"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "PRIMARY_TICK_IMAGE"
+method = "primary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_2"
+method = "parameter_2"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_1"
+method = "parameter_1"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537982036
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.SECONDARY_TARGET5"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "secondary_target"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "SECONDARY_TICK_IMAGE"
+method = "secondary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537982040
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.ENABLE_CONTROL5"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "enable_control"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537982044
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.DISABLE_CONTROL5"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "disable_control"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "DISABLE"
+method = "disable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
 address = 537982976
 width = 32
 access = "read-write"

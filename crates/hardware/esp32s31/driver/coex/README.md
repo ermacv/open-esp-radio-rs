@@ -3,7 +3,9 @@
 This crate owns the recovered timer programming sequence, clock conversion,
 event-to-timer mapping and software schedule state. The radio arbiter owns the
 event priority table: `CoexTimerHardware::pti` reads it when a request is
-programmed, and a priority change goes through the arbiter's lease. It does not implement RF grant
+programmed, and a priority change goes through the arbiter's lease. The
+arbiter lends only timers 0 through 4: timer 5 carries its PHY grant-protect
+request, so event 48 has no policy timer. It does not implement RF grant
 notification or a joint Wi-Fi/Bluetooth/IEEE 802.15.4 runtime. See
 [source capabilities](FEATURES.md) for those boundaries.
 

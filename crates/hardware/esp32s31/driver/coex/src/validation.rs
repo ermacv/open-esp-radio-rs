@@ -6,9 +6,9 @@
 use core::cell::RefCell;
 
 use oer_esp32s31_hal::{
-    coex::CoexTimerBank,
+    coex::{CoexPolicyTimer, CoexTimerBank},
     owner::RadioRuntimeOwner,
-    types::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister},
+    types::{CoexTimerClientValue, CoexTimerPtiValue},
 };
 
 use crate::{
@@ -16,13 +16,13 @@ use crate::{
     CoexPtiTable, CoexTimerClock, CoexTimerHardware, CoexTimerIndex, hal::timer_clock,
 };
 
-const fn bank_timer(index: CoexTimerIndex) -> CoexTimerRegister {
+const fn bank_timer(index: CoexTimerIndex) -> CoexPolicyTimer {
     match index {
-        CoexTimerIndex::Timer0 => CoexTimerRegister::Timer0,
-        CoexTimerIndex::Timer1 => CoexTimerRegister::Timer1,
-        CoexTimerIndex::Timer2 => CoexTimerRegister::Timer2,
-        CoexTimerIndex::Timer3 => CoexTimerRegister::Timer3,
-        CoexTimerIndex::Timer4 => CoexTimerRegister::Timer4,
+        CoexTimerIndex::Timer0 => CoexPolicyTimer::Timer0,
+        CoexTimerIndex::Timer1 => CoexPolicyTimer::Timer1,
+        CoexTimerIndex::Timer2 => CoexPolicyTimer::Timer2,
+        CoexTimerIndex::Timer3 => CoexPolicyTimer::Timer3,
+        CoexTimerIndex::Timer4 => CoexPolicyTimer::Timer4,
     }
 }
 
@@ -114,8 +114,8 @@ impl CoexTimerHardware for TimerPort<'_, '_> {
     }
 }
 
-fn with_timer(index: u32, operation: impl FnOnce(&mut CoexTimerBank<'_>, CoexTimerRegister)) {
-    let Some(timer) = CoexTimerRegister::new(index as u8) else {
+fn with_timer(index: u32, operation: impl FnOnce(&mut CoexTimerBank<'_>, CoexPolicyTimer)) {
+    let Some(timer) = CoexPolicyTimer::new(index as u8) else {
         return;
     };
     let mut owner = RadioRuntimeOwner::claim_for_validation();

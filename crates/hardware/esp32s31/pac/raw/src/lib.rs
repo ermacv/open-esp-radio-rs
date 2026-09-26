@@ -30924,14 +30924,14 @@ pub mod wifi_mac_tsf_timer {
         }
     }
 }
-#[doc = "Five-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The independent 46-event coex_core_timer_idx_get table returns only timer indices zero through four or 0xff for an invalid event."]
+#[doc = "Six-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The 48-event coex_core_timer_idx_get table of the pinned archive returns timer indices zero through five or 0xff; index five is used only by the PHY grant-protect event 48."]
 pub type CoexHwTimer = crate::Periph<coex_hw_timer::RegisterBlock, 0x2010_f400>;
 impl core::fmt::Debug for CoexHwTimer {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("CoexHwTimer").finish()
     }
 }
-#[doc = "Five-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The independent 46-event coex_core_timer_idx_get table returns only timer indices zero through four or 0xff for an invalid event."]
+#[doc = "Six-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The 48-event coex_core_timer_idx_get table of the pinned archive returns timer indices zero through five or 0xff; index five is used only by the PHY grant-protect event 48."]
 pub mod coex_hw_timer {
     #[repr(C)]
     #[doc = "Register block"]
@@ -30945,26 +30945,26 @@ pub mod coex_hw_timer {
         disable_control: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x14 - Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
+        #[doc = "0x00..0x18 - Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
         #[inline(always)]
         pub const fn configuration(&self, n: usize) -> &Configuration {
             #[allow(clippy::no_effect)]
-            [(); 5][n];
+            [(); 6][n];
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x14 - Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
+        #[doc = "0x00..0x18 - Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
         #[inline(always)]
         pub fn configuration_iter(&self) -> impl Iterator<Item = &Configuration> {
-            (0..5).map(move |n| unsafe {
+            (0..6).map(move |n| unsafe {
                 &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast()
             })
         }
-        #[doc = "0x04..0x18 - Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
+        #[doc = "0x04..0x1c - Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
         #[inline(always)]
         pub const fn secondary_target(&self, n: usize) -> &SecondaryTarget {
             #[allow(clippy::no_effect)]
-            [(); 5][n];
+            [(); 6][n];
             unsafe {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
@@ -30974,10 +30974,10 @@ pub mod coex_hw_timer {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x18 - Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
+        #[doc = "0x04..0x1c - Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
         #[inline(always)]
         pub fn secondary_target_iter(&self) -> impl Iterator<Item = &SecondaryTarget> {
-            (0..5).map(move |n| unsafe {
+            (0..6).map(move |n| unsafe {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
                     .add(4)
@@ -30985,11 +30985,11 @@ pub mod coex_hw_timer {
                     .cast()
             })
         }
-        #[doc = "0x08..0x1c - coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
+        #[doc = "0x08..0x20 - coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
         #[inline(always)]
         pub const fn enable_control(&self, n: usize) -> &EnableControl {
             #[allow(clippy::no_effect)]
-            [(); 5][n];
+            [(); 6][n];
             unsafe {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
@@ -30999,10 +30999,10 @@ pub mod coex_hw_timer {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x08..0x1c - coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
+        #[doc = "0x08..0x20 - coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
         #[inline(always)]
         pub fn enable_control_iter(&self) -> impl Iterator<Item = &EnableControl> {
-            (0..5).map(move |n| unsafe {
+            (0..6).map(move |n| unsafe {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
                     .add(8)
@@ -31010,11 +31010,11 @@ pub mod coex_hw_timer {
                     .cast()
             })
         }
-        #[doc = "0x0c..0x20 - coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
+        #[doc = "0x0c..0x24 - coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
         #[inline(always)]
         pub const fn disable_control(&self, n: usize) -> &DisableControl {
             #[allow(clippy::no_effect)]
-            [(); 5][n];
+            [(); 6][n];
             unsafe {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
@@ -31024,10 +31024,10 @@ pub mod coex_hw_timer {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x0c..0x20 - coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
+        #[doc = "0x0c..0x24 - coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
         #[inline(always)]
         pub fn disable_control_iter(&self) -> impl Iterator<Item = &DisableControl> {
-            (0..5).map(move |n| unsafe {
+            (0..6).map(move |n| unsafe {
                 &*core::ptr::from_ref(self)
                     .cast::<u8>()
                     .add(12)

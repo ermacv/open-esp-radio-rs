@@ -123,14 +123,14 @@ name = "coex-hw-timer"
 address-space = "cpu"
 kind = "mmio"
 start = 0x2010F400
-end-exclusive = 0x2010F450
+end-exclusive = 0x2010F460
 permissions = "rw"
 
 [[regions]]
 name = "modem-lpcon-platform-high"
 address-space = "cpu"
 kind = "mmio"
-start = 0x2010F450
+start = 0x2010F460
 end-exclusive = 0x2010F800
 permissions = "rw"
 

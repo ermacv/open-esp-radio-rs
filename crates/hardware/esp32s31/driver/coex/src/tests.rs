@@ -125,6 +125,14 @@ fn timer_map_rejects_ff_entries_and_reaches_every_timer() {
     });
     assert_eq!(indices, [0, 1, 4, 2, 3, 3]);
     assert_eq!(crate::timer_index(CoexEventId::new(3).unwrap()), None);
+    assert_eq!(crate::timer_index(CoexEventId::new(47).unwrap()), None);
+}
+
+/// Event 48 selects the arbiter's grant-protect timer, which no policy
+/// request may program or withdraw.
+#[test]
+fn the_grant_protect_event_has_no_policy_timer() {
+    assert_eq!(crate::timer_index(CoexEventId::new(48).unwrap()), None);
 }
 
 #[test]

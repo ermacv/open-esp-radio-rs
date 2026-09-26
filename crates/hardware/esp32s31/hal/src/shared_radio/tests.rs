@@ -251,3 +251,19 @@ fn the_arbiter_keeps_one_coexistence_priority_table_across_leases() {
     drop(lease);
     assert!(radio.into_parts().is_ok());
 }
+
+#[test]
+fn the_phy_grant_protect_request_cannot_be_withdrawn_before_it_is_programmed() {
+    let radio = arbiter();
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+    assert!(!lease.phy_grant_protected());
+    // Rejected before any register access.
+    assert_eq!(
+        lease.release_phy_grant_protect(),
+        Err(PhyGrantProtectError::NotProtected)
+    );
+    drop(lease);
+    assert!(radio.into_parts().is_ok());
+}

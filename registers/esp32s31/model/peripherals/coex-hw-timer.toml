@@ -2,15 +2,15 @@ schema = 2
 
 [[peripherals]]
 name = "COEX_HW_TIMER"
-description = "Five-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The independent 46-event coex_core_timer_idx_get table returns only timer indices zero through four or 0xff for an invalid event."
+description = "Six-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The 48-event coex_core_timer_idx_get table of the pinned archive returns timer indices zero through five or 0xff; index five is used only by the PHY grant-protect event 48."
 baseAddress = 0x2010F400
 
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-dim = 5
+dim = 6
 dimIncrement = 0x10
-dimIndex = "0,1,2,3,4"
+dimIndex = "0,1,2,3,4,5"
 name = "CONFIGURATION%s"
 description = "Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."
 addressOffset = 0x0
@@ -53,9 +53,9 @@ bitWidth = 2
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-dim = 5
+dim = 6
 dimIncrement = 0x10
-dimIndex = "0,1,2,3,4"
+dimIndex = "0,1,2,3,4,5"
 name = "SECONDARY_TARGET%s"
 description = "Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."
 addressOffset = 0x4
@@ -78,9 +78,9 @@ bitWidth = 8
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-dim = 5
+dim = 6
 dimIncrement = 0x10
-dimIndex = "0,1,2,3,4"
+dimIndex = "0,1,2,3,4,5"
 name = "ENABLE_CONTROL%s"
 description = "coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."
 addressOffset = 0x8
@@ -100,9 +100,9 @@ bitWidth = 31
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-dim = 5
+dim = 6
 dimIncrement = 0x10
-dimIndex = "0,1,2,3,4"
+dimIndex = "0,1,2,3,4,5"
 name = "DISABLE_CONTROL%s"
 description = "coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."
 addressOffset = 0xC
@@ -121,35 +121,35 @@ bitWidth = 31
 
 [[review]]
 entity = "COEX_HW_TIMER"
-sources = ["BLOB_LIBCOEX_HW_TIMER"]
+sources = ["BLOB_LIBCOEX_HW_TIMER", "BLOB_LIBCOEX_PHY_GRANT_PROTECT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "COEX_HW_TIMER.CONFIGURATION%s"
-sources = ["BLOB_LIBCOEX_HW_TIMER"]
+sources = ["BLOB_LIBCOEX_HW_TIMER", "BLOB_LIBCOEX_PHY_GRANT_PROTECT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "COEX_HW_TIMER.SECONDARY_TARGET%s"
-sources = ["BLOB_LIBCOEX_HW_TIMER"]
+sources = ["BLOB_LIBCOEX_HW_TIMER", "BLOB_LIBCOEX_PHY_GRANT_PROTECT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
 entity = "COEX_HW_TIMER.ENABLE_CONTROL%s"
-sources = ["BLOB_LIBCOEX_HW_TIMER"]
+sources = ["BLOB_LIBCOEX_HW_TIMER", "BLOB_LIBCOEX_PHY_GRANT_PROTECT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "COEX_HW_TIMER.DISABLE_CONTROL%s"
-sources = ["BLOB_LIBCOEX_HW_TIMER"]
+sources = ["BLOB_LIBCOEX_HW_TIMER", "BLOB_LIBCOEX_PHY_GRANT_PROTECT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

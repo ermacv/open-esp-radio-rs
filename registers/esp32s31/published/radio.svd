@@ -13196,13 +13196,13 @@
     </peripheral>
     <peripheral>
       <name>COEX_HW_TIMER</name>
-      <description>Five-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The independent 46-event coex_core_timer_idx_get table returns only timer indices zero through four or 0xff for an invalid event.</description>
+      <description>Six-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The 48-event coex_core_timer_idx_get table of the pinned archive returns timer indices zero through five or 0xff; index five is used only by the PHY grant-protect event 48.</description>
       <baseAddress>0x2010F400</baseAddress>
       <registers>
         <register>
-          <dim>5</dim>
+          <dim>6</dim>
           <dimIncrement>0x10</dimIncrement>
-          <dimIndex>0-4</dimIndex>
+          <dimIndex>0-5</dimIndex>
           <name>CONFIGURATION%s</name>
           <description>Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000.</description>
           <addressOffset>0x0</addressOffset>
@@ -13254,9 +13254,9 @@
           </fields>
         </register>
         <register>
-          <dim>5</dim>
+          <dim>6</dim>
           <dimIncrement>0x10</dimIncrement>
-          <dimIndex>0-4</dimIndex>
+          <dimIndex>0-5</dimIndex>
           <name>SECONDARY_TARGET%s</name>
           <description>Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument.</description>
           <addressOffset>0x4</addressOffset>
@@ -13282,9 +13282,9 @@
           </fields>
         </register>
         <register>
-          <dim>5</dim>
+          <dim>6</dim>
           <dimIncrement>0x10</dimIncrement>
-          <dimIndex>0-4</dimIndex>
+          <dimIndex>0-5</dimIndex>
           <name>ENABLE_CONTROL%s</name>
           <description>coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction.</description>
           <addressOffset>0x8</addressOffset>
@@ -13304,9 +13304,9 @@
           </fields>
         </register>
         <register>
-          <dim>5</dim>
+          <dim>6</dim>
           <dimIncrement>0x10</dimIncrement>
-          <dimIndex>0-4</dimIndex>
+          <dimIndex>0-5</dimIndex>
           <name>DISABLE_CONTROL%s</name>
           <description>coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction.</description>
           <addressOffset>0xC</addressOffset>

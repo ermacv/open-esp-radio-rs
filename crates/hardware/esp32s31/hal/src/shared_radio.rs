@@ -35,8 +35,8 @@ use core::{
 };
 
 use oer_esp32s31_pac::{
-    BluetoothSchedulerStopped, BluetoothTaskRegisters, Ieee802154TaskRegisters,
-    SharedRadioRegisters, WifiRadioRegisters,
+    BluetoothSchedulerStopped, BluetoothTaskRegisters, CoexTimerClientValue, CoexTimerPtiValue,
+    CoexTimerRegister, Ieee802154TaskRegisters, SharedRadioRegisters, WifiRadioRegisters,
 };
 
 pub use crate::clock::{CommonRadioPowerError, RadioClient};
@@ -120,6 +120,7 @@ struct SharedRadioState<T> {
     btbb_clients: u8,
     clocks: ModemClocks,
     coex_pti: CoexPtiTable,
+    phy_grant_protected: bool,
     attachment: T,
 }
 
@@ -260,6 +261,7 @@ impl<T> SharedRadio<T> {
                 btbb_clients: 0,
                 clocks: ModemClocks::new(),
                 coex_pti: CoexPtiTable::VENDOR,
+                phy_grant_protected: false,
                 attachment,
             }),
         }
@@ -310,6 +312,12 @@ impl<T> SharedRadio<T> {
             return Err((
                 Self::from_state(state),
                 SharedRadioReleaseError::ModemClocksHeld,
+            ));
+        }
+        if state.phy_grant_protected {
+            return Err((
+                Self::from_state(state),
+                SharedRadioReleaseError::PhyGrantProtectHeld,
             ));
         }
         if let Err(error) = crate::root::check_phy_restore_complete(&state.phy) {
@@ -458,9 +466,28 @@ pub enum SharedRadioReleaseError {
     BtbbHeld,
     /// A client still holds modem clocks, or they are poisoned.
     ModemClocksHeld,
+    /// The PHY grant-protect request is still programmed.
+    PhyGrantProtectHeld,
     /// A PHY calibration still owns a restore obligation.
     Restore(crate::root::RadioPhyReleaseError),
 }
+
+/// Why the PHY grant-protect request cannot change.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyGrantProtectError {
+    /// The request is already programmed; the vendor event has no nesting.
+    AlreadyProtected,
+    /// No request is programmed.
+    NotProtected,
+}
+
+/// The coexistence request kind of `phy_acquire_grant_protect` (`2`), as
+/// the timer client field value: `coex_core_request` maps request kinds
+/// 0 through 4 through its five-byte table `02 01 00 03 04`.
+const PHY_GRANT_PROTECT_CLIENT: u32 = 0;
+
+/// The vendor PHY grant-protect event.
+const PHY_GRANT_PROTECT_EVENT: u8 = 48;
 
 /// Another holder owns the shared radio lease.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -801,6 +828,66 @@ impl<T> SharedRadioLease<'_, T> {
     /// from the new value.
     pub fn set_coex_pti(&mut self, event: CoexEventId, pti: CoexPti) {
         self.state_mut().coex_pti.set(event, pti);
+    }
+
+    /// Program the PHY grant-protect request, as the pinned archive's
+    /// `phy_acquire_grant_protect` does: `coex_core_request(2, 48, 0, 0)`
+    /// sets timer 5 to the request-kind client field, the event's priority
+    /// and zero primary and secondary targets, then enables it.
+    ///
+    /// Zero timing arguments convert to zero tick images for every clock
+    /// selection, so no clock sample is taken. This is a priority request
+    /// to the hardware arbiter, never a grant acknowledgement: it does not
+    /// prove any other radio stopped.
+    ///
+    /// # Errors
+    ///
+    /// The request is already programmed; nothing is written.
+    pub fn acquire_phy_grant_protect(&mut self) -> Result<(), PhyGrantProtectError> {
+        let state = self.state_mut();
+        if state.phy_grant_protected {
+            return Err(PhyGrantProtectError::AlreadyProtected);
+        }
+        let Some(event) = CoexEventId::new(PHY_GRANT_PROTECT_EVENT) else {
+            unreachable!("event 48 is in the vendor table");
+        };
+        let (Some(client), Some(pti)) = (
+            CoexTimerClientValue::new(PHY_GRANT_PROTECT_CLIENT),
+            CoexTimerPtiValue::new(u32::from(state.coex_pti.pti(event).value())),
+        ) else {
+            unreachable!("the client and four-bit priority are in their domains");
+        };
+        let registers = &mut state.registers;
+        registers.configure_coex_timer(CoexTimerRegister::Timer5, client, pti);
+        registers.set_coex_timer_primary_target(CoexTimerRegister::Timer5, 0);
+        registers.set_coex_timer_secondary_target(CoexTimerRegister::Timer5, 0);
+        registers.enable_coex_timer(CoexTimerRegister::Timer5);
+        state.phy_grant_protected = true;
+        Ok(())
+    }
+
+    /// Withdraw the PHY grant-protect request, as
+    /// `phy_release_grant_protect` does: `coex_core_release(2, 48)` disables
+    /// timer 5.
+    ///
+    /// # Errors
+    ///
+    /// No request is programmed; nothing is written.
+    pub fn release_phy_grant_protect(&mut self) -> Result<(), PhyGrantProtectError> {
+        let state = self.state_mut();
+        if !state.phy_grant_protected {
+            return Err(PhyGrantProtectError::NotProtected);
+        }
+        state
+            .registers
+            .disable_coex_timer(CoexTimerRegister::Timer5);
+        state.phy_grant_protected = false;
+        Ok(())
+    }
+
+    /// Whether the PHY grant-protect request is programmed.
+    pub fn phy_grant_protected(&self) -> bool {
+        self.state().phy_grant_protected
     }
 
     /// Borrow the coexistence timer bank for one policy transaction.

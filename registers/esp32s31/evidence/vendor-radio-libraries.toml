@@ -374,6 +374,10 @@ id = "BLOB_LIBCOEX_PTI_TABLE"
 description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; complete coexist_api.o coex_pti_get tail-calls complete coexist_core.o coex_core_pti_get size 0x1e, which bounds-checks only the output pointer and copies coex_pti_tab[event]. The complete 48-byte coex_pti_tab object in coexist_core.o .dram1.2 gives cold defaults event 1 = 5, event 3 = 7, event 10 = 3 and event 15 = 1. These are the only events queried by complete hal_init and hal_set_ofdma_sequence_pti. Runtime coexistence may mutate the table, so the PAC fields do not hardcode these policy values."
 
 [[sources]]
+id = "BLOB_LIBCOEX_PHY_GRANT_PROTECT"
+description = "espressif/esp-coex-lib commit c758e7b56e0fa22177a0539796e1df59978dc322, esp32s31/libcoexist.a, sha256 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147; complete coexist_api.o phy_acquire_grant_protect tail-calls coex_core_request(2, 48, 0, 0) and phy_release_grant_protect tail-calls coex_core_release(2, 48). Complete coexist_core.o coex_core_timer_idx_get accepts events 1 through 48; its 48-byte switch table maps event 48 to timer index 5 and every other event to 0 through 4 or 0xff. The complete coexist_hw.o timer leaves are byte-identical to the earlier archive, so index 5 addresses the sixth 0x10-byte entry at 0x2010f450. The coex_pti_tab object in .dram1.2 is 49 bytes, with event 48 = 15. The strong hooks replace the empty weak phy_acquire_grant_protect/phy_release_grant_protect of the paired esp-phy-lib archive."
+
+[[sources]]
 id = "BLOB_LIBCOEX_HW_TIMER"
 description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; complete coexist_hw.o coex_hw_timer_set/enable/disable/force/unforce leaves prove the 0x2010f400 + index*0x10 bank, word offsets and ordered RMW masks. Complete coexist_core.o coex_core_timer_idx_get guards event numbers 1 through 46 and its complete 46-byte switch table contains only timer indices 0,1,2,3,4 or 0xff, proving the reviewed five-entry domain used by core request/release."
 

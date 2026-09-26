@@ -50,6 +50,7 @@ oer-esp32s31-radio-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31
 oer-esp32s31-ieee802154 = { path = "../../../crates/hardware/esp32s31/driver/ieee802154" }
 oer-esp32s31-ieee802154-runtime = { path = "../../../crates/runtime/esp32s31/ieee802154" }
 oer-esp32s31-ieee802154-system = { path = "../../../crates/composition/esp32s31/embassy/ieee802154" }
+oer-esp32s31-radio-system = { path = "../../../crates/composition/esp32s31/embassy/radio" }
 oer-ieee802154 = { path = "../../../crates/protocols/ieee802154" }
 oer-esp32s31-executor-embassy = { path = "../../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }
 oer-esp32s31-ieee80211-system = { path = "../../../crates/composition/esp32s31/embassy/ieee80211", default-features = false }

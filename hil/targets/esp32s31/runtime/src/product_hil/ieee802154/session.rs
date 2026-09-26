@@ -15,14 +15,14 @@ use embassy_futures::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Timer, with_timeout};
-use oer_esp32s31_hal::shared_radio::SharedRadio;
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154_runtime::{Ieee802154OwnedFrame, Ieee802154RadioEvent};
 use oer_esp32s31_ieee802154_system::{
-    Ieee802154PhyMaintenance, Ieee802154System, Ieee802154SystemRuntime,
+    Ieee802154PhyMaintenance, Ieee802154System, Ieee802154SystemRuntime, MAINTENANCE_PERIOD_MICROS,
 };
-use oer_esp32s31_phy::{PhyTargetObserver, concurrent::ConcurrentPhy, run_concurrent_phy_tracking};
-use oer_esp32s31_phy_runtime::EmbassyPhyTime;
+use oer_esp32s31_phy::ConcurrentTrackingTick;
+use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
+use oer_esp32s31_radio_system::RadioSystem;
 use oer_hil_protocol::{
     Event as HilEvent, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirTxOutcome,
     Ieee802154SessionAck, Ieee802154SessionConfig, Ieee802154SessionFrame,
@@ -41,6 +41,8 @@ use super::client::{Client, tx_outcome};
 use crate::console::{
     Ieee802154SessionCommand, publish_event_reliably, receive_ieee802154_session_command,
 };
+
+type Radio = RadioSystem<EspHalRadioPeripheral, EspHalRadioClocks>;
 
 /// Bound on one transmission's terminal event.
 const TRANSMIT_TIMEOUT: Duration = Duration::from_millis(500);
@@ -212,11 +214,7 @@ impl Session {
 
 /// The foreground maintainer: the running system and what PHY maintenance
 /// borrows.
-type Foreground<'a> = (
-    &'a mut Ieee802154System,
-    &'a SharedRadio<ConcurrentPhy>,
-    &'a mut EspHalRadioPeripheral,
-);
+type Foreground<'a> = (&'a mut Ieee802154System, &'a Radio);
 
 /// Serve host commands until the host stops the session; returns the stop
 /// request. `foreground` serves explicit maintenance requests; without it
@@ -282,7 +280,7 @@ async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) ->
                 publish_event_reliably(0, request_id, response).await;
             }
             Ieee802154SessionCommand::MaintainPhy { request_id } => {
-                let Some((system, radio, platform)) = foreground.as_mut() else {
+                let Some((system, radio)) = foreground.as_mut() else {
                     // Background maintenance owns the schedule.
                     publish_event_reliably(
                         0,
@@ -293,7 +291,7 @@ async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) ->
                     continue;
                 };
                 // Maintenance holds the tracking future; pin it in place.
-                let maintained = core::pin::pin!(system.maintain_phy(radio, *platform));
+                let maintained = core::pin::pin!(system.maintain_phy(radio));
                 let outcome = match maintained.await {
                     Ok(Ieee802154PhyMaintenance::NotDue) => Ieee802154SessionPhyMaintenance::NotDue,
                     Ok(Ieee802154PhyMaintenance::Tracked) => {
@@ -332,67 +330,43 @@ const fn count(
     counts
 }
 
-/// The vendor loop's ticks: counted into the session's maintenance counts,
-/// and whether one is running, since the loop may be cancelled only between
-/// ticks.
-struct Ticks<'a> {
-    counts: &'a Cell<Ieee802154SessionMaintenanceCounts>,
-    running: Cell<bool>,
-}
-
-impl<'a> Ticks<'a> {
-    const fn new(counts: &'a Cell<Ieee802154SessionMaintenanceCounts>) -> Self {
-        Self {
-            counts,
-            running: Cell::new(false),
+/// The radio's periodic tracking, as `RadioSystem::run_tracking` runs it,
+/// until `stop` resolves; each tick is counted. Stop is taken only while the
+/// loop waits between ticks, so a running tick always completes. Returns
+/// whether every tick succeeded.
+async fn track_until(
+    radio: &Radio,
+    stop: impl Future<Output = ()>,
+    counts: &Cell<Ieee802154SessionMaintenanceCounts>,
+) -> bool {
+    let mut stop = core::pin::pin!(stop);
+    loop {
+        match select(
+            Timer::after_micros(MAINTENANCE_PERIOD_MICROS),
+            stop.as_mut(),
+        )
+        .await
+        {
+            Either::First(()) => {}
+            Either::Second(()) => return true,
         }
-    }
-
-    /// Observe one tick; the loop creates it under the lease, just before
-    /// the tick, and drops it when the tick ends.
-    fn tick(&self) -> TickObserver<'_, 'a> {
-        let mut counts = self.counts.get();
-        counts.not_due = counts.not_due.saturating_add(1);
-        self.counts.set(counts);
-        self.running.set(true);
-        TickObserver {
-            ticks: self,
-            tracked: false,
+        let tick = core::pin::pin!(radio.track()).await;
+        let mut tick_counts = counts.get();
+        match tick {
+            Ok(ConcurrentTrackingTick::NotDue) => {
+                tick_counts.not_due = tick_counts.not_due.saturating_add(1);
+            }
+            Ok(ConcurrentTrackingTick::Tracked(_)) => {
+                tick_counts.tracked = tick_counts.tracked.saturating_add(1);
+            }
+            Ok(ConcurrentTrackingTick::AwaitingQuiescence) => {
+                tick_counts.awaiting_other_clients =
+                    tick_counts.awaiting_other_clients.saturating_add(1);
+            }
+            // The session's client keeps the domain registered and open.
+            Ok(ConcurrentTrackingTick::Unavailable(_)) | Err(_) => return false,
         }
-    }
-
-    /// Resolve once `stop` has resolved and no tick is running.
-    async fn between_ticks(&self, stop: impl Future<Output = ()>) {
-        stop.await;
-        while self.running.get() {
-            Timer::after(TICK_POLL).await;
-        }
-    }
-}
-
-/// Poll interval for the end of a running tick after stop.
-const TICK_POLL: Duration = Duration::from_micros(100);
-
-/// A tick that started a tracking operation tracked; any other was not due.
-struct TickObserver<'t, 'a> {
-    ticks: &'t Ticks<'a>,
-    tracked: bool,
-}
-
-impl PhyTargetObserver for TickObserver<'_, '_> {
-    fn operation_started(&mut self) {
-        if !core::mem::replace(&mut self.tracked, true) {
-            let mut counts = self.ticks.counts.get();
-            counts.not_due = counts.not_due.saturating_sub(1);
-            counts.tracked = counts.tracked.saturating_add(1);
-            self.ticks.counts.set(counts);
-        }
-    }
-}
-
-impl Drop for TickObserver<'_, '_> {
-    fn drop(&mut self) {
-        self.ticks.running.set(false);
+        counts.set(tick_counts);
     }
 }
 
@@ -440,10 +414,10 @@ pub(in crate::product_hil) async fn run_session(
         received: Received::default(),
         lost: false,
     };
-    let started = match client
+    client
         .set_maintenance_policy(config.maintenance_policy)
-        .and_then(|()| session.configure(config))
-    {
+        .await;
+    let started = match session.configure(config) {
         Ok(()) => Ieee802154SessionResult::Done,
         Err(result) => result,
     };
@@ -456,29 +430,12 @@ pub(in crate::product_hil) async fn run_session(
             let maintained = match config.maintenance_policy {
                 // The domain's own periodic loop, as the vendor timer runs it.
                 Ieee802154SessionMaintenancePolicy::Vendor => {
-                    let ticks = Ticks::new(&counts);
-                    let mut clock = EmbassyPhyTime;
-                    let tracking = core::pin::pin!(run_concurrent_phy_tracking::<
-                        EspHalRadioPeripheral,
-                        EmbassyPhyTime,
-                        _,
-                    >(
-                        &client.radio,
-                        &mut client.platform,
-                        &mut clock,
-                        || ticks.tick(),
-                    ));
-                    // The loop returns only on failure.
-                    let stopped = core::pin::pin!(ticks.between_ticks(stop.wait()));
-                    matches!(select(tracking, stopped).await, Either::Second(()))
+                    track_until(&client.radio, stop.wait(), &counts).await
                 }
                 Ieee802154SessionMaintenancePolicy::Quiesced => system
-                    .maintain_phy_until(
-                        &client.radio,
-                        &mut client.platform,
-                        stop.wait(),
-                        |outcome| counts.set(count(counts.get(), outcome)),
-                    )
+                    .maintain_phy_until(&client.radio, stop.wait(), |outcome| {
+                        counts.set(count(counts.get(), outcome))
+                    })
                     .await
                     .is_ok(),
             };
@@ -496,11 +453,7 @@ pub(in crate::product_hil) async fn run_session(
         let ((), request) = core::pin::pin!(join(maintenance, commands)).await;
         request
     } else {
-        core::pin::pin!(serve(
-            &mut session,
-            Some((&mut system, &client.radio, &mut client.platform)),
-        ))
-        .await
+        core::pin::pin!(serve(&mut session, Some((&mut system, &client.radio)),)).await
     };
 
     let id = session.id();

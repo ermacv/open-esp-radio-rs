@@ -4,19 +4,15 @@ use core::pin::pin;
 
 use esp_hal::{efuse, time::Instant};
 use oer_esp32s31_hal::root::RadioHardware;
-use oer_esp32s31_hal::shared_radio::SharedRadio;
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
 use oer_esp32s31_phy::{
-    PhyCalibrationIdentity, PhyRegisterConfig,
-    concurrent::{ConcurrentPhy, MaintenancePolicy},
-    phy_get_rf_cal_version,
+    PhyCalibrationIdentity, concurrent::MaintenancePolicy, phy_get_rf_cal_version,
 };
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
-use oer_hil_protocol::{
-    Ieee802154AirTxOutcome, Ieee802154SessionMaintenancePolicy, Ieee802154SessionResult,
-};
+use oer_esp32s31_radio_system::RadioSystem;
+use oer_hil_protocol::{Ieee802154AirTxOutcome, Ieee802154SessionMaintenancePolicy};
 use oer_ieee802154::TxStatus;
 use static_cell::ConstStaticCell;
 
@@ -40,9 +36,7 @@ fn calibration_identity() -> PhyCalibrationIdentity {
 /// The concurrently split radio and the IEEE 802.15.4 client's owners. The
 /// images are terminal: the radio stays split.
 pub(super) struct Client {
-    pub(super) radio: SharedRadio<ConcurrentPhy>,
-    pub(super) platform: EspHalRadioPeripheral,
-    pub(super) clocks: EspHalRadioClocks,
+    pub(super) radio: RadioSystem<EspHalRadioPeripheral, EspHalRadioClocks>,
     pub(super) defaults: Ieee802154PibDefaults,
 }
 
@@ -51,53 +45,39 @@ impl Client {
     pub(super) fn claim(platform: EspHalRadioPeripheral) -> Option<(Self, Ieee802154Parked)> {
         let hardware = RadioHardware::take()?;
         let buffers = BUFFERS.try_take()?;
-        let (radio, partitions) = hardware.into_concurrent(ConcurrentPhy::new());
+        let (radio, partitions) = RadioSystem::new(
+            hardware,
+            platform,
+            EspHalRadioClocks::new(),
+            calibration_identity(),
+        );
         let defaults = Ieee802154PibDefaults::default();
         let parked = Ieee802154Parked::new(partitions.ieee802154, buffers, defaults);
-        Some((
-            Self {
-                radio,
-                platform,
-                clocks: EspHalRadioClocks::new(),
-                defaults,
-            },
-            parked,
-        ))
+        Some((Self { radio, defaults }, parked))
     }
 
     /// Start the client. Bring-up holds the PHY registration future, so it
     /// is pinned in place.
     pub(super) async fn start(&mut self, parked: Ieee802154Parked) -> Option<Ieee802154System> {
-        let started = pin!(start(
-            &self.radio,
-            parked,
-            &mut self.platform,
-            &mut self.clocks,
-            PhyRegisterConfig::new(calibration_identity()),
-            self.defaults,
-        ));
+        let started = pin!(start(&self.radio, parked, self.defaults));
         started.await.ok()
     }
 
     /// Set the shared domain's tracking admission for this session.
-    pub(super) fn set_maintenance_policy(
-        &self,
-        policy: Ieee802154SessionMaintenancePolicy,
-    ) -> Result<(), Ieee802154SessionResult> {
-        let mut lease = self
-            .radio
-            .try_acquire()
-            .map_err(|_| Ieee802154SessionResult::StartFailed)?;
-        lease.attachment_mut().set_maintenance_policy(match policy {
-            Ieee802154SessionMaintenancePolicy::Vendor => MaintenancePolicy::Vendor,
-            Ieee802154SessionMaintenancePolicy::Quiesced => MaintenancePolicy::Quiesced,
-        });
-        Ok(())
+    pub(super) async fn set_maintenance_policy(&self, policy: Ieee802154SessionMaintenancePolicy) {
+        let mut guard = self.radio.lock().await;
+        guard
+            .lease()
+            .attachment_mut()
+            .set_maintenance_policy(match policy {
+                Ieee802154SessionMaintenancePolicy::Vendor => MaintenancePolicy::Vendor,
+                Ieee802154SessionMaintenancePolicy::Quiesced => MaintenancePolicy::Quiesced,
+            });
     }
 
     /// Stop the client. Teardown holds the RF close future, pinned in place.
     pub(super) async fn stop(&mut self, system: Ieee802154System) -> Option<Ieee802154Parked> {
-        let stopped = pin!(system.stop(&self.radio, &mut self.platform, &mut self.clocks));
+        let stopped = pin!(system.stop(&self.radio));
         stopped.await.ok()
     }
 }

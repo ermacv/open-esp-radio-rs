@@ -157,7 +157,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "553b14cfa3011b0143465d098687ead886c840ac358127f654841e907e040657"
+      "sha256": "8f38d3d9710540c4ba2c385004766a85a8790fa5880150b354ced0af2b08de7f"
     },
     {
       "path": "verification/vendor/schema",
@@ -348,8 +348,8 @@
           "reached": 5,
           "total": 6
         },
-        "excluded": 0,
-        "untriaged": 2
+        "excluded": 2,
+        "untriaged": 0
       },
       "observation": {
         "executed": 39,
@@ -406,8 +406,8 @@
           "reached": 5,
           "total": 6
         },
-        "excluded": 0,
-        "untriaged": 2
+        "excluded": 2,
+        "untriaged": 0
       },
       "observation": {
         "executed": 39,
@@ -435,8 +435,8 @@
           "reached": 8,
           "total": 10
         },
-        "excluded": 1,
-        "untriaged": 2
+        "excluded": 3,
+        "untriaged": 0
       },
       "observation": {
         "executed": 39,
@@ -628,8 +628,8 @@
           "reached": 29,
           "total": 32
         },
-        "excluded": 1,
-        "untriaged": 4
+        "excluded": 3,
+        "untriaged": 2
       },
       "observation": {
         "executed": 105,
@@ -657,8 +657,8 @@
           "reached": 39,
           "total": 54
         },
-        "excluded": 10,
-        "untriaged": 14
+        "excluded": 13,
+        "untriaged": 11
       },
       "observation": {
         "executed": 199,
@@ -686,8 +686,8 @@
           "reached": 24,
           "total": 54
         },
-        "excluded": 13,
-        "untriaged": 46
+        "excluded": 16,
+        "untriaged": 43
       },
       "observation": {
         "executed": 149,
@@ -716,8 +716,8 @@
           "reached": 94,
           "total": 606
         },
-        "excluded": 944,
-        "untriaged": 21
+        "excluded": 946,
+        "untriaged": 19
       },
       "observation": {
         "executed": 368,
@@ -745,8 +745,8 @@
           "reached": 28,
           "total": 36
         },
-        "excluded": 7,
-        "untriaged": 5
+        "excluded": 9,
+        "untriaged": 3
       },
       "observation": {
         "executed": 95,
@@ -776,8 +776,8 @@
           "reached": 189,
           "total": 702
         },
-        "excluded": 946,
-        "untriaged": 22
+        "excluded": 948,
+        "untriaged": 20
       },
       "observation": {
         "executed": 452,
@@ -836,8 +836,8 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 998,
-        "untriaged": 141
+        "excluded": 1000,
+        "untriaged": 139
       },
       "observation": {
         "executed": 1388,
@@ -866,8 +866,8 @@
           "reached": 358,
           "total": 982
         },
-        "excluded": 1009,
-        "untriaged": 139
+        "excluded": 1012,
+        "untriaged": 136
       },
       "observation": {
         "executed": 1823,
@@ -879,23 +879,8 @@
   ],
   "untriaged": [
     {
-      "function": "phy_get_i2c_read_mask_new",
-      "offset": 10,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_get_i2c_read_mask_new",
-      "offset": 32,
-      "kind": "block"
-    },
-    {
       "function": "phy_get_tx_gain_value",
       "offset": 16,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_track_new",
-      "offset": 66,
       "kind": "taken"
     },
     {

@@ -496,6 +496,32 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "reentrancy guard `phy_param[0x194]` that RFPLL capacitance tracking sets for \
+            the duration of its correction: production's exclusive radio ownership makes a \
+            nested correction impossible",
+        places: &[Place::Range {
+            function: "phy_rfpll_cap_track_new",
+            start: 0x42,
+            end: 0x43,
+        }],
+    },
+    Decision {
+        reason: "analog I2C read-mask default for block identifiers outside 10 to 109: every \
+            analog register the claimed closures access lies in blocks 0x62 to 0x6d",
+        places: &[
+            Place::Range {
+                function: "phy_get_i2c_read_mask_new",
+                start: 0xa,
+                end: 0xb,
+            },
+            Place::Range {
+                function: "phy_get_i2c_read_mask_new",
+                start: 0x20,
+                end: 0x24,
+            },
+        ],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

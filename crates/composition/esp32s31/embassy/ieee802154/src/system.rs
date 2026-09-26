@@ -44,7 +44,7 @@ use oer_esp32s31_phy::{
     state::client::PhyModemClient,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
-use oer_esp32s31_radio_system::{RadioGuard, RadioPhyError, RadioSystem};
+use oer_esp32s31_radio_runtime::{RadioGuard, RadioPhyError, RadioSystem};
 use oer_ieee802154::{AcceptedCommand, RadioCommand};
 
 use crate::maintenance::{

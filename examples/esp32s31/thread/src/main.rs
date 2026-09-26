@@ -33,7 +33,7 @@ use oer_esp32s31_ieee802154_system::{
 };
 use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
-use oer_esp32s31_radio_system::RadioSystem;
+use oer_esp32s31_radio_runtime::RadioSystem;
 use openthread::{OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket};
 use static_cell::{ConstStaticCell, StaticCell};
 

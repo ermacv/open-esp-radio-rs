@@ -25,7 +25,7 @@ use oer_esp32s31_bluetooth_system::{BluetoothEntropy, BluetoothParked, start_blu
 use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothHostTransport, BluetoothSystem};
 use oer_esp32s31_hal::root::{ConcurrentPartitions, RadioHardware};
 use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
-use oer_esp32s31_radio_system::RadioSystem;
+use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 use static_cell::StaticCell;
 

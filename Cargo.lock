@@ -2556,7 +2556,7 @@ dependencies = [
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
  "oer-esp32s31-radio-esp-hal",
- "oer-esp32s31-radio-system",
+ "oer-esp32s31-radio-runtime",
  "oer-esp32s31-soc-esp-hal",
  "static_cell",
 ]
@@ -2857,7 +2857,7 @@ dependencies = [
  "oer-esp32s31-ieee802154-runtime",
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
- "oer-esp32s31-radio-system",
+ "oer-esp32s31-radio-runtime",
  "oer-ieee802154",
 ]
 
@@ -2911,7 +2911,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-radio-system"
+name = "oer-esp32s31-radio-runtime"
 version = "0.1.0"
 dependencies = [
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",

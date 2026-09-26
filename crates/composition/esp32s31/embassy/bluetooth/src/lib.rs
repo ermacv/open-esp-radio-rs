@@ -4,7 +4,7 @@
 //! ESP32-S31 Bluetooth LE radio composition over Embassy-compatible time.
 //!
 //! The Bluetooth Controller is a client of the shared radio
-//! (`oer-esp32s31-radio-system`). [`BluetoothParked::new`] claims the static
+//! (`oer-esp32s31-radio-runtime`). [`BluetoothParked::new`] claims the static
 //! controller memory once per boot: the BLE PHY environment, the
 //! direction-finding workspace, one pool per role and both global receive
 //! chains, all placed in internal SRAM. [`start`] then runs one Controller

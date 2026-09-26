@@ -110,3 +110,23 @@ fn releasing_clocks_the_planner_never_granted_keeps_the_clocked_owner() {
     assert_eq!(failure.error(), ModemClockError::NotEnabled);
     let _clocked: Ieee802154Clocked = failure.into_owner();
 }
+
+#[test]
+fn a_clocked_owner_proves_its_own_quiescence_window() {
+    use crate::shared_radio::{EmptyQuiescentWindow, QuiescentSpan};
+    let (_shared, partitions) = RadioHardware::for_validation().into_concurrent(());
+    let mut clocked = Ieee802154Clocked::for_validation(partitions.ieee802154);
+
+    let proof = clocked
+        .quiescence(10, 20)
+        .unwrap_or_else(|_| panic!("a nonempty window is accepted"));
+    assert_eq!(proof.client(), RadioClient::Ieee802154);
+    assert_eq!(
+        proof.span(),
+        QuiescentSpan::Until {
+            issued_at_micros: 10,
+            release_by_micros: 20
+        }
+    );
+    assert_eq!(clocked.quiescence(20, 20).err(), Some(EmptyQuiescentWindow));
+}

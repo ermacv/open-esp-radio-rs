@@ -59,8 +59,8 @@ use crate::{
     },
     root::Ieee802154RadioPartition,
     shared_radio::{
-        BtbbAcquired, BtbbError, CommonRadioPowerError, ModemClockError, PlatformClockProvider,
-        SharedRadioLease,
+        BtbbAcquired, BtbbError, ClientQuiescence, CommonRadioPowerError, EmptyQuiescentWindow,
+        ModemClockError, PlatformClockProvider, SharedRadioLease,
     },
 };
 
@@ -588,6 +588,27 @@ impl Ieee802154Clocked {
             }),
             Err(error) => Err(Ieee802154ClockTransitionFailure { owner: self, error }),
         }
+    }
+
+    /// Prove that IEEE 802.15.4 performs no RF and leaves the shared PHY
+    /// alone until `release_by_micros`, for shared PHY maintenance.
+    ///
+    /// A clocked owner has not reset or started the MAC, and the proof borrows
+    /// it mutably, so no IEEE 802.15.4 operation can start while it lives.
+    ///
+    /// # Errors
+    ///
+    /// The window is empty.
+    pub fn quiescence(
+        &mut self,
+        issued_at_micros: u64,
+        release_by_micros: u64,
+    ) -> Result<ClientQuiescence<'_>, EmptyQuiescentWindow> {
+        ClientQuiescence::until(
+            &mut self.inner.backend_mut().task,
+            issued_at_micros,
+            release_by_micros,
+        )
     }
 
     /// Pulse the functional MAC reset and then the APB reset.

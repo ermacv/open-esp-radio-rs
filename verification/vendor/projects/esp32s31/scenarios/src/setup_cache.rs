@@ -66,13 +66,18 @@ impl Entry {
         }
     }
 
-    /// A file stored with the entry.
+    /// A file or directory stored with the entry.
     pub fn file(&self, name: &str) -> PathBuf {
         self.path.join("files").join(name)
     }
 
-    /// Store `value` with `files` (name, source path). The entry becomes
-    /// visible only once complete, so an interrupted store is a miss.
+    /// Copy the stored file or directory `name` to `destination`.
+    pub fn restore(&self, name: &str, destination: &Path) -> Result<()> {
+        copy_tree(&self.file(name), destination)
+    }
+
+    /// Store `value` with `files` (name, source file or directory). The entry
+    /// becomes visible only once complete, so an interrupted store is a miss.
     pub fn store<T: Serialize>(&self, value: &T, files: &[(&str, &Path)]) -> Result<()> {
         let parent = self
             .path
@@ -84,7 +89,7 @@ impl Entry {
             .tempdir_in(parent)?;
         fs::create_dir_all(staging.path().join("files"))?;
         for (name, source) in files {
-            fs::copy(source, staging.path().join("files").join(name))?;
+            copy_tree(source, &staging.path().join("files").join(name))?;
         }
         fs::write(staging.path().join(VALUE), serde_json::to_vec(value)?)?;
         let staged = staging.keep();
@@ -98,6 +103,20 @@ impl Entry {
             Err(e) => Err(e.into()),
         }
     }
+}
+
+/// Copy a file, or a directory with everything below it.
+fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
+    if source.is_dir() {
+        fs::create_dir_all(destination)?;
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            copy_tree(&entry.path(), &destination.join(entry.file_name()))?;
+        }
+    } else {
+        fs::copy(source, destination)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -121,6 +140,17 @@ mod tests {
         entry.store(&7u32, &[("image.elf", &file)]).unwrap();
         assert_eq!(entry.load::<u32>().unwrap(), Some(7));
         assert_eq!(fs::read(entry.file("image.elf")).unwrap(), b"image");
+        // Directories round-trip with their contents.
+        let tree = dir.path().join("tree");
+        fs::create_dir_all(tree.join("nested")).unwrap();
+        fs::write(tree.join("nested/leaf"), b"leaf").unwrap();
+        let directory = first.entry("tree", &"request").unwrap();
+        directory.store(&(), &[("tree", &tree)]).unwrap();
+        directory.restore("tree", &dir.path().join("copy")).unwrap();
+        assert_eq!(
+            fs::read(dir.path().join("copy/nested/leaf")).unwrap(),
+            b"leaf"
+        );
         // Another document, input or engine selects another entry.
         assert!(
             first

@@ -93,9 +93,10 @@ pub struct Session {
     pub artifacts: Vec<Artifact>,
     /// Authenticated bytes of each captured input, by input index.
     inputs: Vec<Vec<u8>>,
-    roles: Vec<String>,
     /// Setup results memoized by Blobray, input and request content.
     cache: crate::setup_cache::SetupCache,
+    /// Session setup entry holding the project snapshot.
+    setup: crate::setup_cache::Entry,
     /// Whether this run's Blobray project exists; it is created only when a
     /// setup operation misses the cache.
     project: std::cell::Cell<bool>,
@@ -124,6 +125,9 @@ pub fn path_arg(path: &Path) -> OsString {
     path.as_os_str().to_owned()
 }
 
+/// Name of the project snapshot stored with the session setup entry.
+const PROJECT_SNAPSHOT: &str = "project";
+
 /// Input index of the compiled production probe ELF.
 const PROBE_INPUT: usize = 2;
 
@@ -134,10 +138,10 @@ impl Session {
         if self.project.get() {
             return Ok(());
         }
-        let roles: Vec<&str> = self.roles.iter().map(String::as_str).collect();
-        let revision = self.runner.import(&roles, &self.inputs)?;
-        if revision != self.revision {
-            return Err(invalid("imported revision differs from the cached setup"));
+        self.setup
+            .restore(PROJECT_SNAPSHOT, &self.run.join("project"))?;
+        if self.runner.inventory()? != self.inventory {
+            return Err(invalid("restored project differs from the cached setup"));
         }
         self.project.set(true);
         Ok(())
@@ -204,7 +208,13 @@ impl Session {
                     let inventory = runner.inventory()?;
                     let probes =
                         ProbeCatalog::capture(&runner, &revision, &inventory, PROBE_INPUT)?;
-                    entry.store(&(&revision, &inventory, &probes), &[])?;
+                    // The project snapshot lets a later run that misses
+                    // another setup entry restore this exact revision: a
+                    // fresh import creates a new project identity.
+                    entry.store(
+                        &(&revision, &inventory, &probes),
+                        &[(PROJECT_SNAPSHOT, &run.join("project"))],
+                    )?;
                     (revision, inventory, probes, true)
                 }
             };
@@ -219,8 +229,8 @@ impl Session {
             probes,
             artifacts: vec![],
             inputs: contents,
-            roles: roles.iter().map(|r| (*r).to_owned()).collect(),
             cache,
+            setup: entry,
             project: std::cell::Cell::new(project),
             images: Default::default(),
             effects: vec![],

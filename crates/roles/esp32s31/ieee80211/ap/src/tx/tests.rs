@@ -221,10 +221,9 @@ fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
 }
 
 #[test]
-fn required_protection_blocks_ap_aggregate_and_ordinary_retry_series() {
+fn ap_aggregate_config_carries_the_protection_selected_for_its_length() {
     use oer_esp32s31_ieee80211_mac::tx::protection::{
-        ErpProtectionMode, HtProtectionMode, TxProtectionAdmissionError, TxProtectionMechanism,
-        TxProtectionReason, TxProtectionRequest, WifiTxProtectionPolicy,
+        BasicRates, BssProtection, HtProtectionMode, TxProtection,
     };
 
     let mut slot = pin!(TxSlot::<256>::new_model());
@@ -240,41 +239,35 @@ fn required_protection_blocks_ap_aggregate_and_ordinary_retry_series() {
             publication_timeout_micros: 1_000,
         },
     );
-    tx.install_tx_protection_policy(WifiTxProtectionPolicy::new(
-        ErpProtectionMode::None,
-        HtProtectionMode::NonHtMixed,
-        None,
-    ));
     let rate = HtRate::new(
         HtMcs::Mcs7,
         HtGuardInterval::Long800Ns,
         HtChannelWidth::Mhz20,
     );
-
+    let short = tx.ht_ampdu_config(rate, 2_000, 2, 1).unwrap();
+    assert_eq!(short.control.protection, TxProtection::None);
+    let long = tx.ht_ampdu_config(rate, 4_000, 4, 1).unwrap();
     assert_eq!(
-        tx.require_unprotected_ht_aggregate(rate),
-        Err(TxProtectionAdmissionError::PhysicalPublicationUnverified {
-            request: TxProtectionRequest {
-                mechanism: TxProtectionMechanism::RtsCts,
-                reason: TxProtectionReason::Ht(HtProtectionMode::NonHtMixed),
-            },
-        })
+        long.control.protection,
+        TxProtection::RtsCts {
+            rate: LegacyRate::Ofdm24M
+        }
     );
-    tx.install_tx_protection_policy(WifiTxProtectionPolicy::new(
-        ErpProtectionMode::CtsToSelf,
-        HtProtectionMode::None,
-        None,
-    ));
+
+    tx.install_bss_protection(BssProtection {
+        ht: HtProtectionMode::NonHtMixed,
+        basic_rates: BasicRates::from_rate_elements(&[0x82, 0x84, 0x8b, 0x96], &[]),
+        short_preamble: true,
+        ..BssProtection::UNPROTECTED
+    });
     assert_eq!(
-        tx.require_unprotected_data_retry_series(LegacyRate::Ofdm24M, false),
-        Err(ApTxError::Ordinary(OrdinaryTxError::Protection(
-            TxProtectionAdmissionError::PhysicalPublicationUnverified {
-                request: TxProtectionRequest {
-                    mechanism: TxProtectionMechanism::CtsToSelf,
-                    reason: TxProtectionReason::ErpUseProtection,
-                },
-            },
-        ),))
+        tx.ht_ampdu_config(rate, 2_000, 2, 1)
+            .unwrap()
+            .control
+            .protection,
+        TxProtection::RtsCts {
+            rate: LegacyRate::Cck11MShort
+        }
     );
     assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
 }

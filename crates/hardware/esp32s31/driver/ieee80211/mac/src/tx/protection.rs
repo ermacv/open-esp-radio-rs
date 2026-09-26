@@ -1,43 +1,84 @@
-//! Negotiated TX-protection policy and the ESP32-S31 publication frontier.
+//! Per-PPDU selection of the IEEE 802.11 protection exchange.
 //!
-//! ERP, HT and HE Operation elements can require protection independently of
-//! the selected data rate.  This module keeps those protocol decisions typed
-//! and host-testable. The recovered request fields and bounded HT40 on-air
-//! observations do not establish the complete ordinary protected-publication
-//! contract across rates, receivers, retry and queue-clear transitions.
-//! Descriptor-bound preparation replaces both software protection requests
-//! while the queue is idle; each PPDU configuration carries its explicit mode.
-//! SOURCE\[HIL_OPEN_HT40_PROTECTION_TURNOVER_2026_09_21] observes bounded HT40
-//! aggregate turnover. SOURCE\[HIL_OPEN_HT40_MISSING_CTS_RECOVERY_2026_09_21]
-//! observes bounded ordinary HT40 recovery after one missing CTS. Retry
-//! exhaustion, aggregate recovery and other queue/PHY combinations still need
-//! on-air qualification; a finite HE threshold additionally needs a
-//! PHY-specific byte conversion.
-//! Admission therefore remains closed when negotiated policy requires protection.
+//! Four independent sources can require a control frame before a PPDU:
+//!
+//! | Source | Owner | Mechanism |
+//! | --- | --- | --- |
+//! | ERP Use_Protection | BSS ERP element | CTS-to-self at a DSSS/HR rate, any receiver |
+//! | HT Protection | BSS HT Operation element | RTS/CTS to an individual receiver, CTS-to-self to a group |
+//! | HE TXOP Duration RTS Threshold | BSS HE Operation element | RTS/CTS to an individual receiver |
+//! | dot11RTSThreshold | Local configuration | RTS/CTS to an individual receiver |
+//!
+//! An RTS/CTS exchange also sets the NAV of every station that hears the CTS,
+//! so it supersedes CTS-to-self when both are required. Group-addressed PPDUs
+//! never carry an RTS: they have no receiver that could answer it.
+//!
+//! [`WifiTxProtectionPolicy::select`] is total. Every PPDU the ordinary and
+//! aggregate owners publish receives exactly one [`TxProtection`]; there is no
+//! admission frontier for a protection requirement. The ESP32-S31 MAC generates
+//! the RTS or CTS frame, its Duration and the SIFS sequence from the queue
+//! request flag and the programmed PPDU.
+//!
+//! The pinned vendor PP does not implement ERP or HT protection: it stores the
+//! HT Protection field without reading it and never requests CTS-to-self.
+//! Its only protection sources are the length threshold in `lmacTxFrame` and
+//! the HE byte threshold in `ppCheckTxRTS`. The ERP and HT rows above follow
+//! IEEE 802.11 and the Linux mac80211, mt76x02 and rt2800 implementations.
 
-use crate::tx::{HeEdcaTxopLimit, HtChannelWidth, LegacyRate, TxPhyRate};
+use core::num::NonZeroU16;
 
-/// ERP Use Protection policy advertised by one infrastructure BSS.
+use crate::tx::{HeMcs, HeRate, HtChannelWidth, LegacyRate, TxPhyRate};
+
+/// ERP Information element facts which affect protection.
+///
+/// Stored as the element's Use_Protection (bit one) and Barker_Preamble_Mode
+/// (bit two); NonERP_Present is not a transmit requirement.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ErpProtectionMode {
-    #[default]
-    None,
-    /// Protect ERP-OFDM traffic, preferring CTS-to-Self for the bounded open
-    /// policy until a complete RTS exchange is available.
-    CtsToSelf,
-}
+pub struct ErpProtection(u8);
 
-impl ErpProtectionMode {
-    /// Decode the one-byte ERP Information element payload.
+impl ErpProtection {
+    const USE_PROTECTION: u8 = 1 << 1;
+    const BARKER_PREAMBLE_MODE: u8 = 1 << 2;
+
+    /// No non-ERP station requires protection.
+    pub const NONE: Self = Self(0);
+
+    /// Decode the one-byte ERP Information element payload. An absent
+    /// element carries no protection requirement.
     pub const fn from_information(information: Option<u8>) -> Self {
         match information {
-            Some(value) if value & 0x02 != 0 => Self::CtsToSelf,
-            _ => Self::None,
+            Some(value) => Self(value & (Self::USE_PROTECTION | Self::BARKER_PREAMBLE_MODE)),
+            None => Self::NONE,
         }
+    }
+
+    pub const fn new(use_protection: bool, long_preamble_required: bool) -> Self {
+        Self(
+            if use_protection { Self::USE_PROTECTION } else { 0 }
+                | if long_preamble_required {
+                    Self::BARKER_PREAMBLE_MODE
+                } else {
+                    0
+                },
+        )
+    }
+
+    pub const fn use_protection(self) -> bool {
+        self.0 & Self::USE_PROTECTION != 0
+    }
+
+    /// Barker_Preamble_Mode: DSSS/HR control frames use the long preamble.
+    pub const fn long_preamble_required(self) -> bool {
+        self.0 & Self::BARKER_PREAMBLE_MODE != 0
+    }
+
+    /// Encode the ERP Information payload with NonERP_Present.
+    pub const fn information(self, non_erp_present: bool) -> u8 {
+        self.0 | non_erp_present as u8
     }
 }
 
-/// Two-bit HT Protection field from the HT Operation element.
+/// Two-bit HT Protection field of the HT Operation element.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum HtProtectionMode {
     #[default]
@@ -48,7 +89,7 @@ pub enum HtProtectionMode {
 }
 
 impl HtProtectionMode {
-    /// Decode a complete 24-byte HT Operation IE retained by scan.
+    /// Decode a complete 24-byte HT Operation element.
     pub const fn from_operation_ie(operation: Option<&[u8; 24]>) -> Self {
         let Some(operation) = operation else {
             return Self::None;
@@ -56,209 +97,492 @@ impl HtProtectionMode {
         if operation[0] != 61 || operation[1] != 22 {
             return Self::None;
         }
-        match operation[4] & 0x03 {
+        Self::from_field(operation[4])
+    }
+
+    /// Decode the low two bits of HT Operation Information byte one.
+    pub const fn from_field(field: u8) -> Self {
+        match field & 0x03 {
             1 => Self::Nonmember,
             2 => Self::TwentyMhz,
             3 => Self::NonHtMixed,
             _ => Self::None,
         }
     }
+
+    pub const fn field(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Nonmember => 1,
+            Self::TwentyMhz => 2,
+            Self::NonHtMixed => 3,
+        }
+    }
+
+    /// Whether this mode protects one HT or HE PPDU of the given width.
+    ///
+    /// Nonmember and non-HT mixed modes protect every HT PPDU; 20-MHz mode
+    /// protects only 40-MHz PPDUs. HE PPDUs follow the HT rules, as in
+    /// mt76x02 and rt2800, because non-HE stations cannot decode them either.
+    const fn protects(self, forty_mhz: bool) -> bool {
+        match self {
+            Self::None => false,
+            Self::TwentyMhz => forty_mhz,
+            Self::Nonmember | Self::NonHtMixed => true,
+        }
+    }
 }
 
 /// Finite HE TXOP Duration RTS Threshold in the element's native 32-us units.
 ///
-/// Encodings zero and 1023 select the peer's disabled/default behavior in the
-/// recovered parser and therefore do not construct this type.
+/// Encodings zero and 1023 disable the rule, as in the complete vendor
+/// `ieee80211_parse_heopr`, and do not construct this type.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct HeTxopDurationRtsThreshold(u16);
+pub struct HeTxopDurationRtsThreshold(NonZeroU16);
 
 impl HeTxopDurationRtsThreshold {
     pub const fn new(units_32_us: u16) -> Option<Self> {
-        if units_32_us == 0 || units_32_us >= 0x03ff {
-            None
-        } else {
-            Some(Self(units_32_us))
+        if units_32_us >= 0x03ff {
+            return None;
+        }
+        match NonZeroU16::new(units_32_us) {
+            Some(units) => Some(Self(units)),
+            None => None,
         }
     }
 
     pub const fn units_32_us(self) -> u16 {
+        self.0.get()
+    }
+}
+
+/// Peer nominal packet padding used by the vendor HE RTS byte table.
+///
+/// SOURCE: complete `libnet80211.a[ieee80211_he.o]::ieee80211_parse_hecap`
+/// stores this code at node offset `0x354`; complete
+/// `libpp.a[if_hwctrl.o]::ic_set_he_rts_threshold_bytes_tab` subtracts 8 us
+/// for code one, 16 us for code two and nothing for any other code.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum HePacketPadding {
+    #[default]
+    None,
+    Us8,
+    Us16,
+}
+
+impl HePacketPadding {
+    pub const fn from_vendor_code(code: u8) -> Self {
+        match code {
+            1 => Self::Us8,
+            2 => Self::Us16,
+            _ => Self::None,
+        }
+    }
+
+    const fn micros(self) -> f32 {
+        match self {
+            Self::None => 0.0,
+            Self::Us8 => 8.0,
+            Self::Us16 => 16.0,
+        }
+    }
+}
+
+/// HE TXOP duration rule applied by one associated non-AP HE station.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeTxopRtsRule {
+    threshold: HeTxopDurationRtsThreshold,
+    padding: HePacketPadding,
+}
+
+impl HeTxopRtsRule {
+    pub const fn new(threshold: HeTxopDurationRtsThreshold, padding: HePacketPadding) -> Self {
+        Self { threshold, padding }
+    }
+
+    pub const fn threshold(self) -> HeTxopDurationRtsThreshold {
+        self.threshold
+    }
+
+    pub const fn padding(self) -> HePacketPadding {
+        self.padding
+    }
+
+    /// Largest HE SU APEP length whose TXOP stays below the threshold.
+    ///
+    /// SOURCE: complete `libpp.a[if_hwctrl.o]::
+    /// ic_set_he_rts_threshold_bytes_tab` and its `.data` tables in
+    /// `libpp.a[hal_mac_ctl.o]` (`he_preamble_su`, `he_time_per_sym`,
+    /// `he_data_bits_per_sym`), plus complete `libpp.a[pp_he.o]::
+    /// get_estimated_batime`. The vendor evaluates, in single precision,
+    /// `threshold * 32 - 20 - preamble - 16 - padding`, subtracts the
+    /// BlockAck estimate, divides by the symbol duration, floors, multiplies
+    /// by the RU242 data bits per symbol, subtracts the 22 SERVICE/tail bits
+    /// and shifts right by three. DCM halves the data bits for MCS 0, 1, 3
+    /// and 4. The halfword table stores the arithmetic result modulo 2^16;
+    /// a budget no larger than the BlockAck estimate stores zero.
+    /// Complete `ic_get_he_rts_threshold_bytes` selects row one for both
+    /// 0.8-us guard-interval configurations.
+    pub fn maximum_unprotected_apep_bytes(self, rate: HeRate) -> u16 {
+        const PREAMBLE_US: [f32; 3] = [23.2, 24.0, 32.0];
+        const SYMBOL_US: [f32; 3] = [13.6, 14.4, 16.0];
+        const DATA_BITS_PER_SYMBOL_RU242: [i32; 10] =
+            [117, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
+        let row = match rate.guard_interval_and_ltf() {
+            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => 0,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => 1,
+            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => 2,
+        };
+        let mcs = rate.mcs();
+        let block_ack_us = match mcs {
+            HeMcs::Mcs0 => 68,
+            HeMcs::Mcs1 | HeMcs::Mcs2 => 44,
+            _ => 32,
+        } as f32;
+        let budget = (i32::from(self.threshold.units_32_us()) * 32 - 20) as f32
+            - PREAMBLE_US[row]
+            - 16.0
+            - self.padding.micros();
+        if block_ack_us >= budget {
+            return 0;
+        }
+        // The quotient is positive here, so truncation equals `floor`.
+        let symbols = ((budget - block_ack_us) / SYMBOL_US[row]) as i32;
+        let mut bits = DATA_BITS_PER_SYMBOL_RU242[mcs.index() as usize];
+        if rate.is_dcm() {
+            bits /= 2;
+        }
+        ((bits * symbols - 22) >> 3) as u16
+    }
+}
+
+/// Non-HT rates in one BSSBasicRateSet.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BasicRates(u16);
+
+impl BasicRates {
+    const ORDER: [(u8, LegacyRate); 12] = [
+        (2, LegacyRate::Dsss1MLong),
+        (4, LegacyRate::Dsss2MLong),
+        (11, LegacyRate::Cck5M5Long),
+        (22, LegacyRate::Cck11MLong),
+        (12, LegacyRate::Ofdm6M),
+        (18, LegacyRate::Ofdm9M),
+        (24, LegacyRate::Ofdm12M),
+        (36, LegacyRate::Ofdm18M),
+        (48, LegacyRate::Ofdm24M),
+        (72, LegacyRate::Ofdm36M),
+        (96, LegacyRate::Ofdm48M),
+        (108, LegacyRate::Ofdm54M),
+    ];
+
+    /// Rates that every ERP station supports when a BSS names no usable rate.
+    pub const ERP_MANDATORY: Self = Self(0b0000_0001_0101_1111);
+
+    /// Collect rates marked basic (bit seven) in Supported Rates and Extended
+    /// Supported Rates element bodies, in 500-kbit/s units.
+    pub fn from_rate_elements(supported: &[u8], extended: &[u8]) -> Self {
+        let mut mask = 0;
+        for encoded in supported.iter().chain(extended) {
+            if encoded & 0x80 == 0 {
+                continue;
+            }
+            for (index, (units, _)) in Self::ORDER.iter().enumerate() {
+                if encoded & 0x7f == *units {
+                    mask |= 1 << index;
+                }
+            }
+        }
+        Self(mask)
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    fn rates(self) -> impl Iterator<Item = LegacyRate> {
+        Self::ORDER
+            .into_iter()
+            .enumerate()
+            .filter(move |(index, _)| self.0 & (1 << index) != 0)
+            .map(|(_, (_, rate))| rate)
+    }
+}
+
+/// Protection facts advertised by the BSS that one PPDU belongs to.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BssProtection {
+    pub erp: ErpProtection,
+    pub ht: HtProtectionMode,
+    pub he_txop_rts: Option<HeTxopRtsRule>,
+    pub basic_rates: BasicRates,
+    /// Capability Information Short Preamble.
+    pub short_preamble: bool,
+}
+
+impl BssProtection {
+    /// A BSS without protection requirements whose basic rates are unknown.
+    pub const UNPROTECTED: Self = Self {
+        erp: ErpProtection::NONE,
+        ht: HtProtectionMode::None,
+        he_txop_rts: None,
+        basic_rates: BasicRates(0),
+        short_preamble: false,
+    };
+}
+
+/// Local dot11RTSThreshold in PSDU bytes.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RtsLengthThreshold(u16);
+
+impl RtsLengthThreshold {
+    /// Complete `lmacInit` stores 0x092a at `lmacConfMib+0x16`; complete
+    /// `lmacIsLongFrame` requests RTS for a longer individual PSDU.
+    pub const VENDOR_DEFAULT: Self = Self(0x092a);
+
+    pub const fn new(bytes: u16) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn bytes(self) -> u16 {
         self.0
     }
-
-    /// Whether one explicit nonzero TXOP ceiling proves that the HE PPDU
-    /// cannot cross this threshold.
-    pub const fn admits_unprotected_txop(self, txop: HeEdcaTxopLimit) -> bool {
-        !txop.is_default() && (txop.units_32_us() as u16) <= self.0
-    }
 }
 
-/// Association/BSS facts which can require an on-air protection exchange.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct WifiTxProtectionPolicy {
-    erp: ErpProtectionMode,
-    ht: HtProtectionMode,
-    he_txop_duration_rts_threshold: Option<HeTxopDurationRtsThreshold>,
-}
-
-impl WifiTxProtectionPolicy {
-    pub const fn new(
-        erp: ErpProtectionMode,
-        ht: HtProtectionMode,
-        he_txop_duration_rts_threshold: Option<HeTxopDurationRtsThreshold>,
-    ) -> Self {
-        Self {
-            erp,
-            ht,
-            he_txop_duration_rts_threshold,
-        }
-    }
-
-    pub const fn erp(self) -> ErpProtectionMode {
-        self.erp
-    }
-
-    pub const fn ht(self) -> HtProtectionMode {
-        self.ht
-    }
-
-    pub const fn he_txop_duration_rts_threshold(self) -> Option<HeTxopDurationRtsThreshold> {
-        self.he_txop_duration_rts_threshold
-    }
-
-    pub const fn with_he_txop_duration_rts_threshold(
-        mut self,
-        threshold: Option<HeTxopDurationRtsThreshold>,
-    ) -> Self {
-        self.he_txop_duration_rts_threshold = threshold;
-        self
-    }
-
-    /// Admit only an exchange which needs no unreviewed physical protection.
-    ///
-    /// `he_txop` must be the already-bounded effective WMM/integration
-    /// ceiling.  `None` is correct for an ordinary HE S-MPDU because that path
-    /// currently owns no exact PPDU-duration calculation.
-    pub const fn require_unprotected(
-        self,
-        rate: TxPhyRate,
-        receiver: TxProtectionReceiver,
-        he_txop: Option<HeEdcaTxopLimit>,
-    ) -> Result<(), TxProtectionAdmissionError> {
-        let request = match rate {
-            TxPhyRate::Legacy(rate) => {
-                if matches!(self.erp, ErpProtectionMode::CtsToSelf) && legacy_is_ofdm(rate) {
-                    Some(TxProtectionRequest {
-                        mechanism: TxProtectionMechanism::CtsToSelf,
-                        reason: TxProtectionReason::ErpUseProtection,
-                    })
-                } else {
-                    None
-                }
-            }
-            TxPhyRate::Ht(rate) => {
-                let required = match self.ht {
-                    HtProtectionMode::None => false,
-                    HtProtectionMode::TwentyMhz => {
-                        matches!(rate.channel_width, HtChannelWidth::Mhz40)
-                    }
-                    HtProtectionMode::Nonmember | HtProtectionMode::NonHtMixed => true,
-                };
-                if required {
-                    Some(TxProtectionRequest {
-                        mechanism: receiver.protection_mechanism(),
-                        reason: TxProtectionReason::Ht(self.ht),
-                    })
-                } else {
-                    None
-                }
-            }
-            TxPhyRate::He(_) => {
-                let Some(threshold) = self.he_txop_duration_rts_threshold else {
-                    return Ok(());
-                };
-                let Some(txop) = he_txop else {
-                    return Err(TxProtectionAdmissionError::HePpduDurationUnowned { threshold });
-                };
-                if threshold.admits_unprotected_txop(txop) {
-                    None
-                } else {
-                    Some(TxProtectionRequest {
-                        mechanism: receiver.protection_mechanism(),
-                        reason: TxProtectionReason::HeTxopDurationThreshold { threshold, txop },
-                    })
-                }
-            }
-        };
-        match request {
-            Some(request) => {
-                Err(TxProtectionAdmissionError::PhysicalPublicationUnverified { request })
-            }
-            None => Ok(()),
-        }
-    }
-}
-
+/// Receiver class taken from the MPDU Address 1 field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxProtectionReceiver {
+pub enum TxReceiver {
     Individual,
     Group,
 }
 
-impl TxProtectionReceiver {
-    const fn protection_mechanism(self) -> TxProtectionMechanism {
+impl TxReceiver {
+    /// Classify the receiver address (RA). The Ethernet destination of a
+    /// To-DS frame is Address 3 and does not select the exchange.
+    pub const fn from_address1(address1: &[u8; 6]) -> Self {
+        if address1[0] & 1 != 0 {
+            Self::Group
+        } else {
+            Self::Individual
+        }
+    }
+}
+
+/// One PPDU presented for protection selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProtectedPpdu {
+    pub rate: TxPhyRate,
+    pub receiver: TxReceiver,
+    /// PSDU bytes on air: MPDU with MIC and FCS, the complete A-MPDU, or the
+    /// HE APEP length.
+    pub psdu_length: u32,
+}
+
+/// Why one PPDU is protected; several sources can apply at once.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TxProtectionReasons(u8);
+
+impl TxProtectionReasons {
+    pub const ERP: Self = Self(1 << 0);
+    pub const HT: Self = Self(1 << 1);
+    pub const HE_TXOP_DURATION: Self = Self(1 << 2);
+    pub const LENGTH: Self = Self(1 << 3);
+
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    const fn with(self, other: Self, present: bool) -> Self {
+        if present {
+            Self(self.0 | other.0)
+        } else {
+            self
+        }
+    }
+}
+
+/// Control exchange that precedes one PPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxProtection {
+    None,
+    CtsToSelf { rate: LegacyRate },
+    RtsCts { rate: LegacyRate },
+}
+
+impl TxProtection {
+    /// Transmit rate of the protection frame, if any.
+    pub const fn control_rate(self) -> Option<LegacyRate> {
         match self {
-            Self::Individual => TxProtectionMechanism::RtsCts,
-            Self::Group => TxProtectionMechanism::CtsToSelf,
+            Self::None => None,
+            Self::CtsToSelf { rate } | Self::RtsCts { rate } => Some(rate),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxProtectionMechanism {
-    RtsCts,
-    CtsToSelf,
+pub struct TxProtectionDecision {
+    pub protection: TxProtection,
+    pub reasons: TxProtectionReasons,
 }
 
+impl TxProtectionDecision {
+    pub const UNPROTECTED: Self = Self {
+        protection: TxProtection::None,
+        reasons: TxProtectionReasons(0),
+    };
+}
+
+/// BSS requirements plus the local length threshold for one transmitter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxProtectionReason {
-    ErpUseProtection,
-    Ht(HtProtectionMode),
-    HeTxopDurationThreshold {
-        threshold: HeTxopDurationRtsThreshold,
-        txop: HeEdcaTxopLimit,
-    },
+pub struct WifiTxProtectionPolicy {
+    bss: BssProtection,
+    rts_length_threshold: Option<RtsLengthThreshold>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TxProtectionRequest {
-    pub mechanism: TxProtectionMechanism,
-    pub reason: TxProtectionReason,
+impl Default for WifiTxProtectionPolicy {
+    fn default() -> Self {
+        Self::new(Some(RtsLengthThreshold::VENDOR_DEFAULT))
+    }
 }
 
-/// Exact frontier which prevented a queue publication.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxProtectionAdmissionError {
-    /// An HE ordinary path has no exact PPDU-duration owner, so it cannot
-    /// prove that a finite advertised threshold is not crossed.
-    HePpduDurationUnowned {
-        threshold: HeTxopDurationRtsThreshold,
-    },
-    /// Protocol policy requires protection, but the full physical generated
-    /// control-frame and queue lifecycle has not been reviewed.
-    PhysicalPublicationUnverified { request: TxProtectionRequest },
+impl WifiTxProtectionPolicy {
+    /// A transmitter outside any BSS, with its local length threshold.
+    pub const fn new(rts_length_threshold: Option<RtsLengthThreshold>) -> Self {
+        Self {
+            bss: BssProtection::UNPROTECTED,
+            rts_length_threshold,
+        }
+    }
+
+    pub const fn bss(self) -> BssProtection {
+        self.bss
+    }
+
+    pub const fn rts_length_threshold(self) -> Option<RtsLengthThreshold> {
+        self.rts_length_threshold
+    }
+
+    /// Replace the BSS facts, keeping the local length threshold.
+    pub fn install_bss(&mut self, bss: BssProtection) {
+        self.bss = bss;
+    }
+
+    /// Replace the local dot11RTSThreshold; `None` disables the length rule.
+    pub fn set_rts_length_threshold(&mut self, threshold: Option<RtsLengthThreshold>) {
+        self.rts_length_threshold = threshold;
+    }
+
+    /// Leave the BSS: no BSS requirement remains.
+    pub fn clear_bss(&mut self) {
+        self.bss = BssProtection::UNPROTECTED;
+    }
+
+    /// Select the exchange and its control-frame rate for one PPDU.
+    pub fn select(&self, ppdu: ProtectedPpdu) -> TxProtectionDecision {
+        let individual = matches!(ppdu.receiver, TxReceiver::Individual);
+        let (non_dsss, ht_protected) = match ppdu.rate {
+            TxPhyRate::Legacy(rate) => (!is_dsss(rate), false),
+            TxPhyRate::Ht(rate) => (
+                true,
+                self.bss
+                    .ht
+                    .protects(matches!(rate.channel_width, HtChannelWidth::Mhz40)),
+            ),
+            TxPhyRate::He(_) => (true, self.bss.ht.protects(false)),
+        };
+        let he_txop = match (self.bss.he_txop_rts, ppdu.rate) {
+            (Some(rule), TxPhyRate::He(rate)) => {
+                ppdu.psdu_length > u32::from(rule.maximum_unprotected_apep_bytes(rate))
+            }
+            _ => false,
+        };
+        let length = self
+            .rts_length_threshold
+            .is_some_and(|threshold| ppdu.psdu_length > u32::from(threshold.0));
+        let erp = self.bss.erp.use_protection() && non_dsss;
+        let reasons = TxProtectionReasons::default()
+            .with(TxProtectionReasons::ERP, erp)
+            .with(TxProtectionReasons::HT, ht_protected)
+            .with(TxProtectionReasons::HE_TXOP_DURATION, individual && he_txop)
+            .with(TxProtectionReasons::LENGTH, individual && length);
+
+        let rts = individual && (ht_protected || he_txop || length);
+        let protection = if rts {
+            TxProtection::RtsCts {
+                rate: self.control_rate(ppdu.rate),
+            }
+        } else if erp || ht_protected {
+            TxProtection::CtsToSelf {
+                rate: self.control_rate(ppdu.rate),
+            }
+        } else {
+            TxProtection::None
+        };
+        TxProtectionDecision {
+            protection,
+            reasons,
+        }
+    }
+
+    /// Control-frame rate for one data rate.
+    ///
+    /// The fastest basic rate not faster than the data rate, or the slowest
+    /// basic rate when all are faster, as in mac80211 `rate_control_*`. Under
+    /// ERP protection only DSSS/HR rates are eligible so that non-ERP
+    /// stations decode the NAV. A BSS whose basic set names no eligible rate
+    /// falls back to the ERP mandatory set. DSSS/HR control frames use the
+    /// short preamble only when the BSS allows it and does not require
+    /// Barker long preambles; 1 Mbit/s always uses the long preamble.
+    fn control_rate(&self, data: TxPhyRate) -> LegacyRate {
+        let dsss_only = self.bss.erp.use_protection();
+        let eligible = |rate: &LegacyRate| !dsss_only || is_dsss(*rate);
+        let basic = if self.bss.basic_rates.rates().any(|rate| eligible(&rate)) {
+            self.bss.basic_rates
+        } else {
+            BasicRates::ERP_MANDATORY
+        };
+        let data_kbps = data.nominal_kbps();
+        let mut fastest_not_faster = None;
+        let mut slowest = None;
+        for rate in basic.rates().filter(eligible) {
+            let kbps = rate.nominal_kbps();
+            if kbps <= data_kbps
+                && fastest_not_faster.is_none_or(|best: LegacyRate| kbps > best.nominal_kbps())
+            {
+                fastest_not_faster = Some(rate);
+            }
+            if slowest.is_none_or(|low: LegacyRate| kbps < low.nominal_kbps()) {
+                slowest = Some(rate);
+            }
+        }
+        let rate = fastest_not_faster
+            .or(slowest)
+            .expect("the ERP mandatory set contains an eligible rate");
+        let short = self.bss.short_preamble && !self.bss.erp.long_preamble_required();
+        match (rate, short) {
+            (LegacyRate::Dsss2MLong, true) => LegacyRate::Dsss2MShort,
+            (LegacyRate::Cck5M5Long, true) => LegacyRate::Cck5M5Short,
+            (LegacyRate::Cck11MLong, true) => LegacyRate::Cck11MShort,
+            (rate, _) => rate,
+        }
+    }
 }
 
-const fn legacy_is_ofdm(rate: LegacyRate) -> bool {
+const fn is_dsss(rate: LegacyRate) -> bool {
     matches!(
         rate,
-        LegacyRate::Ofdm6M
-            | LegacyRate::Ofdm9M
-            | LegacyRate::Ofdm12M
-            | LegacyRate::Ofdm18M
-            | LegacyRate::Ofdm24M
-            | LegacyRate::Ofdm36M
-            | LegacyRate::Ofdm48M
-            | LegacyRate::Ofdm54M
+        LegacyRate::Dsss1MLong
+            | LegacyRate::Dsss2MLong
+            | LegacyRate::Dsss2MShort
+            | LegacyRate::Cck5M5Long
+            | LegacyRate::Cck5M5Short
+            | LegacyRate::Cck11MLong
+            | LegacyRate::Cck11MShort
     )
 }
 

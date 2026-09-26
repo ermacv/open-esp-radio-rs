@@ -21,9 +21,9 @@ use oer_memory::StableDmaBacking;
 use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState};
 
 use super::{
-    HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduLength, HtAmpduTxCompletion,
-    HtAmpduTxError, HtAmpduTxFormat, HtAmpduTxStorage, RetainedAmpduRetryCompletion,
-    RetainedAmpduRetryCompletionError, TX_AMPDU_METADATA_SIZE,
+    AmpduRepublication, HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduLength,
+    HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxFormat, HtAmpduTxStorage,
+    RetainedAmpduRetryCompletion, RetainedAmpduRetryCompletionError, TX_AMPDU_METADATA_SIZE,
 };
 
 /// Idle resources required by the safe external-buffer A-MPDU path.
@@ -326,19 +326,21 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         ))
     }
 
-    /// Retain selected MPDUs and set their Retry bit through the allocation
-    /// owner rather than by reconstructing slices from descriptor addresses.
+    /// Retain selected MPDUs for another publication. A retransmission sets
+    /// their Retry bit through the allocation owner rather than by
+    /// reconstructing slices from descriptor addresses.
     pub fn retain_for_ampdu_retry(
         &mut self,
         cookie: TxCookie,
         retry_mask: u32,
+        republication: AmpduRepublication,
     ) -> Result<HtAmpduLength, HtAmpduTxError> {
         let locations = self
             .storage
             .as_ref()
             .expect("retained DMA owner keeps storage until teardown")
             .as_ref()
-            .retry_frame_locations(cookie, retry_mask)?;
+            .retry_frame_locations(cookie, retry_mask, republication)?;
 
         // Resolve every selected frame before mutating any of them. A stale
         // address therefore fails closed without a partially rewritten batch.
@@ -363,7 +365,7 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             }
         }
 
-        {
+        if republication == AmpduRepublication::Retransmission {
             let dma = self
                 .dma
                 .as_mut()
@@ -391,7 +393,7 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             .dma_mut()
             .compact_active_backings(&source_indices[..retained_count])
         {
-            // Retry bits have already been changed in retained frame bytes.
+            // Retry bits may already have changed in retained frame bytes.
             // An impossible metadata/backing disagreement is therefore no
             // longer a recoverable Detached aggregate.
             self.quarantine();

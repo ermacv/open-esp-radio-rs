@@ -21,8 +21,8 @@ use oer_esp32s31_ieee80211::{
 use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpTxPacketNumberError, StaPairwiseCcmpSlot},
     tx::{
-        LegacyTxQueue, TxError, TxHardware, TxPhyRate,
-        protection::TxProtectionAdmissionError,
+        LegacyTxQueue, TxControlFrame, TxError, TxHardware, TxPhyRate,
+        protection::{ProtectedPpdu, TxProtectionDecision},
         runtime::{OrdinaryRetryError, WifiTxRuntimePolicy, WifiTxTraffic, WifiTxTrafficError},
     },
 };
@@ -149,7 +149,6 @@ pub enum SingleMpduTxError {
     Encode(StationFrameError),
     Tx(TxError),
     Retry(OrdinaryRetryError),
-    Protection(TxProtectionAdmissionError),
     Traffic(WifiTxTrafficError),
     TrafficSelectionMismatch {
         expected: WifiTxTraffic,
@@ -218,7 +217,6 @@ impl From<OrdinaryTxError> for SingleMpduTxError {
             OrdinaryTxError::DeadlineOverflow => Self::DeadlineOverflow,
             OrdinaryTxError::Tx(error) => Self::Tx(error),
             OrdinaryTxError::Retry(error) => Self::Retry(error),
-            OrdinaryTxError::Protection(error) => Self::Protection(error),
             OrdinaryTxError::RadioResetRequired(reason) => Self::RadioResetRequired(reason),
         }
     }
@@ -344,6 +342,11 @@ where
 
     pub const fn power_profile(&self) -> &P {
         self.ordinary.power()
+    }
+
+    /// Protection and control frame for one aggregate PPDU to the BSSID.
+    pub fn control_frame_for(&self, ppdu: ProtectedPpdu) -> (TxProtectionDecision, TxControlFrame) {
+        self.ordinary.control_frame_for(ppdu)
     }
 
     pub fn contention_publication(
@@ -612,12 +615,6 @@ where
         let destination: [u8; 6] = ethernet[..6]
             .try_into()
             .expect("validated Ethernet destination");
-        self.ordinary.require_unprotected_retry_series(
-            self.config.exchange.initial_rate,
-            oer_esp32s31_ieee80211_mac::tx::runtime::OrdinaryRetryRatePolicy::Normal,
-            self.config.exchange.publication_limit,
-            destination[0] & 1 != 0,
-        )?;
         let source = ethernet[6..12]
             .try_into()
             .expect("validated Ethernet source");

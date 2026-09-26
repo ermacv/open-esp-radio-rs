@@ -66,7 +66,7 @@ pub(super) struct MockMmio {
     pub(super) tx_collision_pending: [bool; 4],
     pub(super) tx_queue_attached: [bool; 4],
     pub(super) tx_detach_fails: [bool; 4],
-    pub(super) tx_protection: [oer_esp32s31_ieee80211_mac::tx::MacTxProtection; 4],
+    pub(super) tx_control: [Option<oer_esp32s31_hal::types::MacTxControlFrame>; 4],
     pub(super) rx_last_descriptor_low: u32,
     pub(super) rx_next_descriptor_low: u32,
     pub(super) rx_walker_enabled: bool,
@@ -496,7 +496,7 @@ impl TxHardware for MockMmio {
         queue: u8,
         program: MacLegacyTxProgram,
     ) -> bool {
-        self.tx_protection[usize::from(queue)] = program.protection();
+        self.tx_control[usize::from(queue)] = Some(program.control());
         true
     }
 
@@ -506,7 +506,7 @@ impl TxHardware for MockMmio {
         queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
-        self.tx_protection[usize::from(queue)] = program.protection();
+        self.tx_control[usize::from(queue)] = Some(program.control());
         true
     }
 
@@ -516,7 +516,7 @@ impl TxHardware for MockMmio {
         queue: u8,
         program: oer_esp32s31_hal::types::MacHeTxProgram,
     ) -> bool {
-        self.tx_protection[usize::from(queue)] = program.protection();
+        self.tx_control[usize::from(queue)] = Some(program.control());
         true
     }
 

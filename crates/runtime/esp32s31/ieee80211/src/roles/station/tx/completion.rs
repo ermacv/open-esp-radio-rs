@@ -183,18 +183,34 @@ where
                     missing: decision.missing(),
                 });
             }
-            if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
+            let republication = match decision {
+                AmpduRetryDecision::RetainAggregate { retry_mask } => {
+                    Some((retry_mask, AmpduRepublication::Retransmission))
+                }
+                AmpduRetryDecision::RepublishUnchanged { retry_mask } => {
+                    Some((retry_mask, AmpduRepublication::AfterProtectionFailure))
+                }
+                AmpduRetryDecision::Finish { .. } | AmpduRetryDecision::FinishTriggerFlow => None,
+            };
+            if let Some((retry_mask, republication)) = republication {
                 let queue = active.traffic.queue();
-                let aggregate = self
-                    .ampdu
-                    .active_mut()
-                    .retain_for_ampdu_retry(cookie, retry_mask)?;
+                let aggregate = self.ampdu.active_mut().retain_for_ampdu_retry(
+                    cookie,
+                    retry_mask,
+                    republication,
+                )?;
                 self.ordinary.record_retry_failure(queue);
                 let (_, contention_window) = self.ordinary.contention_publication(queue);
+                let (_, control) = self.ordinary.control_frame_for(ProtectedPpdu {
+                    rate: active.config.rate(),
+                    receiver: TxReceiver::Individual,
+                    psdu_length: u32::from(aggregate.bytes),
+                });
                 active.config.update_retained_retry(
                     aggregate.bytes,
                     aggregate.subframes,
                     contention_window,
+                    control,
                 );
                 if let Err(error) = self.publish_attempt(hardware, &mut active) {
                     self.cancel_prepared();

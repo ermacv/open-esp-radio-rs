@@ -561,10 +561,6 @@ where
                 let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                     AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
                 })?;
-                ordinary
-                    .require_unprotected_ht_aggregate(admission.rate())
-                    .map_err(ApAmpduError::Protection)
-                    .map_err(AccessPointDatapathError::Aggregate)?;
                 let (mut frame, mut second) = match network.try_materialize_pair(frame, second) {
                     Ok(frames) => frames,
                     Err((frame, second)) => {

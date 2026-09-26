@@ -14,8 +14,13 @@ fn role_adapter_changes_only_interface_and_key_authority() {
         protection_spacing: HtProtectionSpacing::Density0To4,
         data_power_primary: 1,
         data_power_alternate: 2,
-        rts_power_primary: 3,
-        rts_power_alternate: 4,
+        control: TxControlFrame {
+            protection: oer_esp32s31_ieee80211_mac::tx::protection::TxProtection::RtsCts {
+                rate: oer_esp32s31_ieee80211_mac::tx::LegacyRate::Ofdm24M,
+            },
+            power_primary: 3,
+            power_alternate: 4,
+        },
         aifsn: 3,
         contention_window: 15,
         scheduler_priority: 1,
@@ -43,6 +48,8 @@ fn role_adapter_changes_only_interface_and_key_authority() {
     assert_eq!(access_point.hardware_key_selector, 8);
     assert_eq!(station.aggregate_length, access_point.aggregate_length);
     assert_eq!(station.rate, access_point.rate);
+    assert_eq!(station.control, inputs.control);
+    assert_eq!(access_point.control, inputs.control);
 }
 
 #[test]

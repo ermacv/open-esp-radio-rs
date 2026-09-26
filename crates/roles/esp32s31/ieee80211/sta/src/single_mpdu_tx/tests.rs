@@ -4,8 +4,8 @@ use core::{
 };
 
 use oer_esp32s31_hal::types::{
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacKeyInstallOutcome, MacLegacyRate, MacLegacyTxProgram, MacTxCompletionObservation,
+    MacTxDetachOutcome, MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
 };
 
 use oer_esp32s31_ieee80211_mac::{
@@ -13,10 +13,7 @@ use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     tx::{
         HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxSlot, TxSlotState,
-        protection::{
-            ErpProtectionMode, HtProtectionMode, TxProtectionAdmissionError, TxProtectionMechanism,
-            TxProtectionReason, TxProtectionRequest, WifiTxProtectionPolicy,
-        },
+        protection::{BssProtection, ErpProtection, RtsLengthThreshold},
         runtime::VENDOR_SHORT_RETRY_LIMIT,
     },
 };
@@ -335,7 +332,7 @@ fn successful_esp_now_publication_commits_one_sequence_exactly_once() {
 }
 
 #[test]
-fn required_erp_protection_fails_before_sequence_dma_or_publication() {
+fn broadcast_ethernet_destination_is_protected_as_the_individual_bssid_receiver() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -343,68 +340,38 @@ fn required_erp_protection_fails_before_sequence_dma_or_publication() {
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
     tx.policy_mut()
-        .install_protection(WifiTxProtectionPolicy::new(
-            ErpProtectionMode::CtsToSelf,
-            HtProtectionMode::None,
-            None,
-        ));
-    let sequence = tx.sequences.peek_qos(0);
+        .set_rts_length_threshold(Some(RtsLengthThreshold::new(16)));
+    let mut frame = ethernet();
+    frame[..6].fill(0xff);
 
-    assert_eq!(
-        tx.start(&mut hardware, &ethernet()),
-        Err(SingleMpduTxError::Protection(
-            TxProtectionAdmissionError::PhysicalPublicationUnverified {
-                request: TxProtectionRequest {
-                    mechanism: TxProtectionMechanism::CtsToSelf,
-                    reason: TxProtectionReason::ErpUseProtection,
-                }
-            }
-        ))
-    );
-    assert_eq!(tx.sequences.peek_qos(0), sequence);
-    assert_eq!(hardware.publications, 0);
-    assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
-    assert_eq!(tx.slot_state(), TxSlotState::Free);
+    assert_eq!(tx.start(&mut hardware, &frame), Ok(WifiTxProgress::Pending));
+    let (_, program) = hardware.legacy.unwrap();
+    assert_eq!(program.control().protection, MacTxProtection::RtsCts);
+    assert_eq!(program.control().rate, MacLegacyRate::Ofdm24M);
+    assert_eq!(hardware.publications, 1);
 }
 
 #[test]
-fn late_retry_protection_fails_before_sequence_dma_or_publication() {
-    use oer_esp32s31_ieee80211_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate};
-
+fn erp_protection_publishes_cts_to_self_at_a_dsss_rate() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-    tx.config.exchange.initial_rate = TxPhyRate::Ht(HtRate::new(
-        HtMcs::Mcs7,
-        HtGuardInterval::Long800Ns,
-        HtChannelWidth::Mhz20,
-    ));
-    tx.policy_mut()
-        .install_protection(WifiTxProtectionPolicy::new(
-            ErpProtectionMode::CtsToSelf,
-            HtProtectionMode::None,
-            None,
-        ));
-    let sequence = tx.sequences.peek_qos(0);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    tx.policy_mut().install_bss_protection(BssProtection {
+        erp: ErpProtection::new(true, false),
+        ..BssProtection::UNPROTECTED
+    });
 
     assert_eq!(
         tx.start(&mut hardware, &ethernet()),
-        Err(SingleMpduTxError::Protection(
-            TxProtectionAdmissionError::PhysicalPublicationUnverified {
-                request: TxProtectionRequest {
-                    mechanism: TxProtectionMechanism::CtsToSelf,
-                    reason: TxProtectionReason::ErpUseProtection,
-                }
-            }
-        ))
+        Ok(WifiTxProgress::Pending)
     );
-    assert_eq!(tx.sequences.peek_qos(0), sequence);
-    assert_eq!(hardware.publications, 0);
-    assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
-    assert_eq!(tx.slot_state(), TxSlotState::Free);
+    let (_, program) = hardware.legacy.unwrap();
+    assert_eq!(program.control().protection, MacTxProtection::CtsToSelf);
+    assert_eq!(program.control().rate, MacLegacyRate::Cck11MLong);
+    assert_eq!(hardware.publications, 1);
 }
 
 #[test]

@@ -18,7 +18,7 @@ use oer_esp32s31_ieee80211_mac::{
     he::{He20InstallError, He20PeerHardware, program_he20_peer_state},
     init::StaNoiseFloorHardware,
     rate::control::{BeamformingReportHardware, StaLinkMetric, StaRateControlAssociation},
-    tx::{HtPeerAmpduParameters, protection::WifiTxProtectionPolicy},
+    tx::{HtPeerAmpduParameters, protection::BssProtection},
 };
 
 use {
@@ -41,7 +41,7 @@ pub trait StaPeerTransmit {
 
     fn install_wmm_edca(&mut self, parameters: WmmParameterSet) -> Result<(), EdcaParametersError>;
 
-    fn install_tx_protection_policy(&mut self, policy: WifiTxProtectionPolicy);
+    fn install_bss_protection(&mut self, protection: BssProtection);
 }
 
 /// Opaque proof that scan-time policy was derived and installed for this
@@ -155,7 +155,7 @@ impl StaPeerPort {
         let policy = StaPeerScanPolicy::new(access_point).map_err(StaPeerPortError::ScanPolicy)?;
         transmit.install_ht_ampdu_policy(policy.ht_ampdu);
         transmit.install_he_bss_color(policy.he_bss_color);
-        transmit.install_tx_protection_policy(policy.protection);
+        transmit.install_bss_protection(policy.protection);
         if let Some(parameters) = policy.wmm.parameters() {
             transmit
                 .install_wmm_edca(parameters)
@@ -192,7 +192,7 @@ impl StaPeerPort {
 
         radio.transmit.install_ht_ampdu_policy(plan.ht_ampdu);
         radio.transmit.install_he_bss_color(plan.he_bss_color);
-        radio.transmit.install_tx_protection_policy(plan.protection);
+        radio.transmit.install_bss_protection(plan.protection);
         if plan.wmm.source() == StaWmmSource::AssociationResponse {
             let parameters = plan
                 .wmm

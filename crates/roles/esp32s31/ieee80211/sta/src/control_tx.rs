@@ -33,8 +33,8 @@ use oer_esp32s31_ieee80211_mac::{
     tx::{
         HtPeerAmpduParameters, LegacyRate, LegacyTxQueue, TxCompletion, TxError, TxHardware,
         TxPhyRate,
-        protection::{TxProtectionAdmissionError, WifiTxProtectionPolicy},
-        runtime::{OrdinaryRetryError, OrdinaryRetryRatePolicy, WifiTxRuntimePolicy},
+        protection::BssProtection,
+        runtime::{OrdinaryRetryError, WifiTxRuntimePolicy},
     },
 };
 
@@ -88,7 +88,6 @@ pub enum ControlTxError {
     DeadlineOverflow,
     Tx(TxError),
     Retry(OrdinaryRetryError),
-    Protection(TxProtectionAdmissionError),
     HardwareTimeout,
     CollisionLimit,
     RadioResetRequired(TxResetReason),
@@ -111,7 +110,6 @@ impl ControlTxError {
                 | Self::BufferSizeOverflow
                 | Self::DeadlineOverflow
                 | Self::Retry(_)
-                | Self::Protection(_)
                 | Self::HardwareTimeout
                 | Self::CollisionLimit
         )
@@ -126,7 +124,6 @@ impl From<OrdinaryTxError> for ControlTxError {
             OrdinaryTxError::DeadlineOverflow => Self::DeadlineOverflow,
             OrdinaryTxError::Tx(error) => Self::Tx(error),
             OrdinaryTxError::Retry(error) => Self::Retry(error),
-            OrdinaryTxError::Protection(error) => Self::Protection(error),
             OrdinaryTxError::RadioResetRequired(reason) => Self::RadioResetRequired(reason),
         }
     }
@@ -327,8 +324,10 @@ where
         self.ordinary.policy_mut().install_wmm(parameters)
     }
 
-    pub fn install_tx_protection_policy(&mut self, policy: WifiTxProtectionPolicy) {
-        self.ordinary.policy_mut().install_protection(policy);
+    pub fn install_bss_protection(&mut self, protection: BssProtection) {
+        self.ordinary
+            .policy_mut()
+            .install_bss_protection(protection);
     }
 
     /// Send one active-scan Probe Request. The optional current-channel IE is
@@ -432,12 +431,6 @@ where
         rate: TxPhyRate,
         hardware_key_selector: u8,
     ) -> Result<TxCompletion, ControlTxError> {
-        self.ordinary.require_unprotected_retry_series(
-            rate,
-            OrdinaryRetryRatePolicy::Normal,
-            self.config.unicast_attempt_limit,
-            frame.destination[0] & 1 != 0,
-        )?;
         let frame_length = frame
             .encode(&mut self.ordinary.buffer_mut()?[TX_METADATA_SIZE..])
             .map_err(ControlTxError::StationEncode)?;
@@ -608,8 +601,8 @@ where
         ControlTransmitter::install_wmm_edca(self, parameters)
     }
 
-    fn install_tx_protection_policy(&mut self, policy: WifiTxProtectionPolicy) {
-        ControlTransmitter::install_tx_protection_policy(self, policy);
+    fn install_bss_protection(&mut self, protection: BssProtection) {
+        ControlTransmitter::install_bss_protection(self, protection);
     }
 }
 

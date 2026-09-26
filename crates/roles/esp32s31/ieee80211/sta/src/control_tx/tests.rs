@@ -5,16 +5,13 @@ use core::{
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_hal::types::{
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacKeyInstallOutcome, MacLegacyRate, MacLegacyTxProgram, MacTxCompletionObservation,
+    MacTxControlFrame, MacTxDetachOutcome, MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
 };
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
-    tx::protection::{
-        ErpProtectionMode, HtProtectionMode, TxProtectionAdmissionError, TxProtectionMechanism,
-        TxProtectionReason, TxProtectionRequest, WifiTxProtectionPolicy,
-    },
+    tx::protection::{BssProtection, ErpProtection},
     tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, TxSlotState},
 };
 use oer_ieee80211_mac::station::StaTxSequenceCounters;
@@ -192,24 +189,24 @@ fn authentication_is_encoded_and_completed_by_the_shared_owner() {
 }
 
 #[test]
-fn protected_control_preflight_rejects_before_encode_or_dma() {
+fn erp_protected_eapol_data_publishes_cts_to_self_with_the_control_rate_power() {
     let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
     let mut hardware = Hardware {
         prepare: true,
+        completions: [Some(completion(0)), None],
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut());
-    tx.install_tx_protection_policy(WifiTxProtectionPolicy::new(
-        ErpProtectionMode::CtsToSelf,
-        HtProtectionMode::None,
-        None,
-    ));
+    tx.install_bss_protection(BssProtection {
+        erp: ErpProtection::new(true, false),
+        ..BssProtection::UNPROTECTED
+    });
     let result = crate::test_support::block_on(tx.transmit_protected_data(
         &mut hardware,
         StaProtectedDataFrame {
             source: [2, 3, 4, 5, 6, 7],
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            destination: [0xff; 6],
             sequence_number: SequenceNumber::new(7).unwrap(),
             user_priority: 0,
             peer_qos: true,
@@ -221,27 +218,17 @@ fn protected_control_preflight_rejects_before_encode_or_dma() {
         TxPhyRate::Legacy(LegacyRate::Ofdm24M),
         1,
     ));
+    assert!(result.is_ok());
+    assert_eq!(hardware.publications, 1);
+    let (_, program) = hardware.legacy.unwrap();
     assert_eq!(
-        result,
-        Err(ControlTxError::Protection(
-            TxProtectionAdmissionError::PhysicalPublicationUnverified {
-                request: TxProtectionRequest {
-                    mechanism: TxProtectionMechanism::CtsToSelf,
-                    reason: TxProtectionReason::ErpUseProtection,
-                },
-            },
-        ))
-    );
-    assert_eq!(hardware.publications, 0);
-    assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
-    assert!(
-        tx.ordinary
-            .slot
-            .as_mut()
-            .buffer_mut()
-            .unwrap()
-            .iter()
-            .all(|byte| *byte == 0)
+        program.control(),
+        MacTxControlFrame {
+            protection: MacTxProtection::CtsToSelf,
+            rate: MacLegacyRate::Cck11MLong,
+            power_primary: 5,
+            power_alternate: 6,
+        }
     );
 }
 

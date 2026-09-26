@@ -21,8 +21,7 @@ use oer_esp32s31_ieee80211_mac::tx::{
     HtAmpduTxConfig, HtChannelWidth, HtDuplicateCertificationRequest, HtDuplicateRate,
     HtDuplicateTxLinkCapabilities, HtDuplicateTxSelection, HtGuardInterval, HtMcs, HtRate,
     LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate,
-    protection::{TxProtectionAdmissionError, TxProtectionReceiver, WifiTxProtectionPolicy},
-    runtime::OrdinaryRetryRatePolicy,
+    protection::{BssProtection, ProtectedPpdu, TxReceiver},
     select_esp32s31_ht_duplicate_tx,
 };
 
@@ -171,44 +170,10 @@ where
         self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes()
     }
 
-    pub fn install_tx_protection_policy(&mut self, policy: WifiTxProtectionPolicy) {
-        self.ordinary.policy_mut().install_protection(policy);
-    }
-
-    /// Preflight one AP HT aggregate before its retained arena reaches DMA.
-    pub fn require_unprotected_ht_aggregate(
-        &self,
-        rate: HtRate,
-    ) -> Result<(), TxProtectionAdmissionError> {
-        self.ordinary.policy().protection().require_unprotected(
-            TxPhyRate::Ht(rate),
-            TxProtectionReceiver::Individual,
-            None,
-        )
-    }
-
-    /// Preflight every initial/retry rate of one AP ordinary data MPDU.
-    ///
-    /// AP protocol encoders call this after their complete output-capacity
-    /// admission but before advancing sequence or CCMP PN ownership. The
-    /// common ordinary start edge repeats the same check before DMA.
-    pub fn require_unprotected_data_retry_series(
-        &self,
-        rate: LegacyRate,
-        group_receiver: bool,
-    ) -> Result<(), ApTxError> {
-        let class = if group_receiver {
-            ApTxClass::GroupData
-        } else {
-            ApTxClass::Data
-        };
-        self.ordinary.require_unprotected_retry_series(
-            TxPhyRate::Legacy(rate),
-            OrdinaryRetryRatePolicy::Normal,
-            class.publication_limit(rate),
-            group_receiver,
-        )?;
-        Ok(())
+    pub fn install_bss_protection(&mut self, protection: BssProtection) {
+        self.ordinary
+            .policy_mut()
+            .install_bss_protection(protection);
     }
 
     pub fn now_micros(&self) -> u64 {
@@ -243,10 +208,11 @@ where
         let queue = LegacyTxQueue::BestEffort;
         let (contention, contention_window) = self.ordinary.contention_publication(queue);
         let data_power = self.ordinary.power().power_pair(rate.power_lookup_code());
-        let rts_power = self
-            .ordinary
-            .power()
-            .power_pair(rate.vendor_rts_rate().code());
+        let (_, control) = self.ordinary.control_frame_for(ProtectedPpdu {
+            rate: TxPhyRate::Ht(rate),
+            receiver: TxReceiver::Individual,
+            psdu_length: u32::from(aggregate_length),
+        });
         ht_ampdu_publication_config(
             AmpduTxRoleAdapter {
                 interface: MacInterface::AccessPoint,
@@ -259,8 +225,7 @@ where
                 protection_spacing: self.ordinary.policy().ht_ampdu().protection_spacing(),
                 data_power_primary: data_power.primary as u8,
                 data_power_alternate: data_power.alternate as u8,
-                rts_power_primary: rts_power.primary as u8,
-                rts_power_alternate: rts_power.alternate as u8,
+                control,
                 aifsn: contention.aifsn(),
                 contention_window,
                 scheduler_priority: queue.vendor_data_scheduler_priority(),

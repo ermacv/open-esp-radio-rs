@@ -13,16 +13,16 @@ use oer_embassy_net_owned::{
     NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources, OwnedNetworkDevice,
 };
 
-use oer_esp32s31_hal::types::MacTxCompletionObservation;
+use oer_esp32s31_hal::types::{MacHtAmpduCompletionObservation, MacTxCompletionObservation};
 
 use oer_esp32s31_ieee80211_mac::{
     rx::HeGuardIntervalAndLtf,
     tx::{
-        HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, TxSlot,
+        HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxSlot,
         ampdu::{HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage},
         protection::{
-            ErpProtectionMode, HeTxopDurationRtsThreshold, HtProtectionMode,
-            TxProtectionAdmissionError, TxProtectionReason, WifiTxProtectionPolicy,
+            BssProtection, HePacketPadding, HeTxopDurationRtsThreshold, HeTxopRtsRule,
+            TxProtection,
         },
     },
 };
@@ -709,13 +709,6 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
         .policy_mut()
         .install_wmm(parse_wmm_parameter_element(&STANDARD_WMM).unwrap())
         .unwrap();
-    ordinary
-        .policy_mut()
-        .install_protection(WifiTxProtectionPolicy::new(
-            ErpProtectionMode::None,
-            HtProtectionMode::None,
-            HeTxopDurationRtsThreshold::new(94),
-        ));
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut tx = ConnectedTx::new_for_test(
         ordinary,
@@ -794,7 +787,7 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
 }
 
 #[test]
-fn he_txop_above_rts_threshold_fails_before_aggregate_sequence_or_dma() {
+fn he_aggregate_above_the_txop_threshold_uses_rts_and_survives_a_cts_timeout() {
     let (mut device, network) = make_network();
     send_ipv4_dscp_frame(&mut device, 1, 46);
     send_ipv4_dscp_frame(&mut device, 2, 46);
@@ -806,14 +799,14 @@ fn he_txop_above_rts_threshold_fails_before_aggregate_sequence_or_dma() {
         .policy_mut()
         .install_wmm(parse_wmm_parameter_element(&STANDARD_WMM).unwrap())
         .unwrap();
-    let threshold = HeTxopDurationRtsThreshold::new(93).unwrap();
-    ordinary
-        .policy_mut()
-        .install_protection(WifiTxProtectionPolicy::new(
-            ErpProtectionMode::None,
-            HtProtectionMode::None,
-            Some(threshold),
-        ));
+    // Two 32-us units leave no APEP budget after the preamble and BlockAck.
+    ordinary.policy_mut().install_bss_protection(BssProtection {
+        he_txop_rts: Some(HeTxopRtsRule::new(
+            HeTxopDurationRtsThreshold::new(2).unwrap(),
+            HePacketPadding::None,
+        )),
+        ..BssProtection::UNPROTECTED
+    });
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut tx = ConnectedTx::new_for_test(
         ordinary,
@@ -832,29 +825,45 @@ fn he_txop_above_rts_threshold_fails_before_aggregate_sequence_or_dma() {
     .unwrap();
     tx.set_block_ack_window(5, Some(TEST_SLOTS as u16));
 
-    let error = tx
-        .start_network(&mut hardware, first, &network.tx_consumer())
-        .unwrap_err();
-    let AggregateTxError::Protection(TxProtectionAdmissionError::PhysicalPublicationUnverified {
-        request,
-    }) = error
-    else {
-        panic!("unexpected protection admission result: {error:?}");
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending)
+    );
+    let rts = TxProtection::RtsCts {
+        rate: LegacyRate::Ofdm24M,
     };
+    let ConnectedTxActive::Aggregate(active) = &tx.active else {
+        panic!("protected video traffic must still own an HE aggregate");
+    };
+    assert_eq!(active.config.control().protection, rts);
+    let subframes = active.retry.current_subframes();
+    assert_eq!(hardware.he_publications, 1);
+
+    hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
+        MacTxCompletionObservation::new_model(2, 0),
+        0,
+        7,
+        u64::MAX,
+        false,
+    ));
     assert_eq!(
-        request.reason,
-        TxProtectionReason::HeTxopDurationThreshold {
-            threshold,
-            txop: HeEdcaTxopLimit::from_units_32_us(94).unwrap(),
-        }
+        tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE,
+            },
+        ),
+        Ok(WifiTxProgress::Pending)
     );
-    assert_eq!(
-        tx.ordinary.peek_qos_sequence(5),
-        Some(SequenceNumber::new(7).unwrap())
-    );
-    assert_eq!(hardware.he_publications, 0);
+    assert_eq!(hardware.he_publications, 2);
+    let ConnectedTxActive::Aggregate(active) = &tx.active else {
+        panic!("a CTS timeout must retain the aggregate");
+    };
+    assert_eq!(active.retry.current_subframes(), subframes);
+    assert_eq!(active.retry.protection_failures(), 1);
+    assert_eq!(active.retry.acknowledged(), 0);
+    assert_eq!(active.config.control().protection, rts);
     assert_eq!(hardware.legacy_publications, 0);
-    assert_eq!(hardware.ht_publications, 0);
 }
 
 #[test]

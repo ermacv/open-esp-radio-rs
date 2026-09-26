@@ -13,15 +13,15 @@ pub use crate::tx::{
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     edca::EdcaContentionParameters,
-    tx::protection::{TxProtectionAdmissionError, TxProtectionReceiver},
+    tx::protection::{ProtectedPpdu, TxProtectionDecision, TxReceiver},
     tx::runtime::{
         OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
         OrdinaryRetryError, OrdinaryRetryRatePolicy, VENDOR_RTS_THRESHOLD_BYTES,
         WifiTxRuntimePolicy,
     },
     tx::{
-        HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxCookie,
-        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
+        HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxControlFrame,
+        TxCookie, TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
@@ -100,6 +100,8 @@ pub struct OrdinaryTxReport {
     pub completion: Option<TxCompletion>,
     /// Re-publications performed while this transaction retained its MPDU.
     pub retries: OrdinaryTxRetryReport,
+    /// Protection selected for the final publication.
+    pub protection: TxProtectionDecision,
 }
 
 /// Exact causes of re-publication within one ordinary-MPDU transaction.
@@ -128,6 +130,8 @@ pub struct OrdinaryTxActiveSnapshot {
     pub current_rate: TxPhyRate,
     pub retry_bit_set: bool,
     pub retries: OrdinaryTxRetryReport,
+    /// Protection selected for the current publication.
+    pub protection: TxProtectionDecision,
 }
 
 impl OrdinaryTxRetryReport {
@@ -177,7 +181,6 @@ pub enum OrdinaryTxError {
     DeadlineOverflow,
     Tx(TxError),
     Retry(OrdinaryRetryError),
-    Protection(TxProtectionAdmissionError),
     RadioResetRequired(TxResetReason),
 }
 
@@ -193,10 +196,21 @@ impl From<OrdinaryRetryError> for OrdinaryTxError {
     }
 }
 
-impl From<TxProtectionAdmissionError> for OrdinaryTxError {
-    fn from(error: TxProtectionAdmissionError) -> Self {
-        Self::Protection(error)
-    }
+/// Control frame for one PPDU: the selected protection and the calibrated
+/// power of its control rate.
+pub fn control_frame<P: WifiTxPowerProfile>(
+    power: &P,
+    data: TxPhyRate,
+    decision: TxProtectionDecision,
+) -> TxControlFrame {
+    let mut control = TxControlFrame {
+        protection: decision.protection,
+        ..TxControlFrame::UNPROTECTED
+    };
+    let pair = power.power_pair(control.rate(data).code());
+    control.power_primary = pair.primary as u8;
+    control.power_alternate = pair.alternate as u8;
+    control
 }
 
 /// Everything needed to publish one already encoded MPDU.
@@ -224,7 +238,9 @@ struct ActiveTx {
     hardware_key_selector: u8,
     scheduler_priority: u8,
     packet_priority: u8,
-    group_receiver: bool,
+    receiver: TxReceiver,
+    /// Protection selected for the current publication.
+    protection: TxProtectionDecision,
     completion_timeout_us: u64,
     /// Next service boundary: publication expiry or abort-settle expiry.
     /// The previous phase's deadline is no longer actionable after transition.
@@ -313,6 +329,7 @@ where
                     current_rate: active.retry.current_rate()?,
                     retry_bit_set: active.retries.ack_timeouts != 0,
                     retries: active.retries,
+                    protection: active.protection,
                 })
             })
             .transpose()
@@ -468,27 +485,6 @@ where
         self.slot.as_mut().buffer_mut().map_err(Into::into)
     }
 
-    /// Preflight every rate which one upper-layer encode may publish before
-    /// it consumes sequence or CCMP state. The common start edge repeats this
-    /// check against its retained retry owner, so this is an early ownership
-    /// boundary rather than a bypassable enforcement point.
-    pub fn require_unprotected_retry_series(
-        &self,
-        initial_rate: TxPhyRate,
-        retry_rate_policy: OrdinaryRetryRatePolicy,
-        publication_limit: u8,
-        group_receiver: bool,
-    ) -> Result<(), OrdinaryTxError> {
-        let retry = OrdinaryMpduRetryState::new_with_rate_policy(
-            LegacyTxQueue::BestEffort,
-            initial_rate,
-            retry_rate_policy,
-            publication_limit,
-            OrdinaryFrameClass::Short,
-        )?;
-        self.require_unprotected_retry_state(&retry, group_receiver)
-    }
-
     pub fn start<H: TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -533,7 +529,13 @@ where
         }
         let hardware_frame_length = u32::try_from(hardware_frame_length)
             .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?;
-        let group_receiver = self.slot.as_mut().buffer_mut()?[TX_METADATA_SIZE + 4] & 1 != 0;
+        let receiver = {
+            let buffer = self.slot.as_mut().buffer_mut()?;
+            let address1: [u8; 6] = buffer[TX_METADATA_SIZE + 4..TX_METADATA_SIZE + 10]
+                .try_into()
+                .expect("an encoded MPDU carries Address 1");
+            TxReceiver::from_address1(&address1)
+        };
         let retry = OrdinaryMpduRetryState::new_with_rate_policy(
             LegacyTxQueue::from_access_category(plan.exchange.access_category),
             plan.exchange.initial_rate,
@@ -545,7 +547,6 @@ where
                 OrdinaryFrameClass::Short
             },
         )?;
-        self.require_unprotected_retry_state(&retry, group_receiver)?;
         {
             let buffer = self.slot.as_mut().buffer_mut()?;
             buffer[..4].copy_from_slice(&hardware_frame_length.to_le_bytes());
@@ -570,7 +571,8 @@ where
             hardware_key_selector: plan.hardware_key_selector,
             scheduler_priority: plan.scheduler_priority,
             packet_priority: plan.packet_priority,
-            group_receiver,
+            receiver,
+            protection: TxProtectionDecision::UNPROTECTED,
             completion_timeout_us: plan.exchange.publication_timeout_micros,
             deadline_micros: 0,
             phase: OrdinaryTxPhase::Published,
@@ -581,24 +583,6 @@ where
         self.last_outcome = None;
         self.active = Some(active);
         Ok(WifiTxProgress::Pending)
-    }
-
-    fn require_unprotected_retry_state(
-        &self,
-        retry: &OrdinaryMpduRetryState,
-        group_receiver: bool,
-    ) -> Result<(), OrdinaryTxError> {
-        let receiver = if group_receiver {
-            TxProtectionReceiver::Group
-        } else {
-            TxProtectionReceiver::Individual
-        };
-        for rate in retry.possible_rates() {
-            self.policy
-                .protection()
-                .require_unprotected(rate?, receiver, None)?;
-        }
-        Ok(())
     }
 
     /// Consume one IRQ/deadline edge and retain or release DMA ownership.
@@ -793,12 +777,14 @@ where
                         },
                         attempts,
                         final_rate,
-                        acknowledged: (!active.group_receiver).then_some(success),
+                        acknowledged: (active.receiver == TxReceiver::Individual)
+                            .then_some(success),
                         ack_snr_db: completion.ack_snr_sample(),
                         airtime_micros: None,
                     },
                     completion: Some(completion),
                     retries: active.retries,
+                    protection: active.protection,
                 };
                 self.last_outcome = Some(if success {
                     OrdinaryTxOutcome::Success(report)
@@ -846,12 +832,13 @@ where
                     result: MacTxResult::HardwareTimeout,
                     attempts,
                     final_rate,
-                    acknowledged: (!active.group_receiver).then_some(false),
+                    acknowledged: (active.receiver == TxReceiver::Individual).then_some(false),
                     ack_snr_db: None,
                     airtime_micros: None,
                 },
                 completion: None,
                 retries: active.retries,
+                protection: active.protection,
             };
             self.last_outcome = Some(OrdinaryTxOutcome::HardwareTimeout(report));
             return Ok(WifiTxProgress::Complete);
@@ -878,6 +865,7 @@ where
                     },
                     completion: None,
                     retries: active.retries,
+                    protection: active.protection,
                 };
                 self.last_outcome = Some(OrdinaryTxOutcome::CollisionLimit(report));
                 Ok(WifiTxProgress::Complete)
@@ -917,56 +905,67 @@ where
             .slot
             .as_mut()
             .reserve(active.descriptor_capacity, active.transfer_length)?;
-        let result = self.submit_reserved_attempt(hardware, cookie, active);
-        if let Err(error) = result {
-            self.slot.as_mut().cancel_reservation(cookie)?;
-            return Err(error);
-        }
+        let protection = match self.submit_reserved_attempt(hardware, cookie, active) {
+            Ok(protection) => protection,
+            Err(error) => {
+                self.slot.as_mut().cancel_reservation(cookie)?;
+                return Err(error);
+            }
+        };
+        active.protection = protection;
         active.cookie = cookie;
         active.deadline_micros = deadline_micros;
         Ok(())
     }
 
+    /// Program one reserved publication and return its selected protection.
     fn submit_reserved_attempt<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         cookie: TxCookie,
         active: &ActiveTx,
-    ) -> Result<(), OrdinaryTxError> {
+    ) -> Result<TxProtectionDecision, OrdinaryTxError> {
         let queue = active.route.queue();
         let rate = active.retry.current_rate()?;
         let contention = self.policy.contention_parameters(queue);
         let contention_window = self.policy.select_backoff(queue, self.entropy.next_u32());
+        let psdu_length = u16::try_from(
+            active
+                .frame_length
+                .checked_add(active.hardware_mic_length + TX_FCS_SIZE)
+                .ok_or(OrdinaryTxError::BufferSizeOverflow)?,
+        )
+        .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?;
         match rate {
             TxPhyRate::Legacy(rate) => {
-                let signal = u16::try_from(
-                    active
-                        .frame_length
-                        .checked_add(active.hardware_mic_length + TX_FCS_SIZE)
-                        .ok_or(OrdinaryTxError::BufferSizeOverflow)?,
-                )
-                .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?;
-                let mut config = LegacyTxConfig::management_1m(signal);
+                let decision = self.select_protection(
+                    active.receiver,
+                    TxPhyRate::Legacy(rate),
+                    psdu_length.into(),
+                );
+                let mut config = LegacyTxConfig::management_1m(psdu_length);
                 config.rate = rate;
-                config.rts_rate = rate.vendor_rts_rate();
-                let data_power = self.power.power_pair(rate.code());
-                let rts_power = self.power.power_pair(config.rts_rate.code());
-                config.data_power = data_power.primary as u8;
-                config.rts_power_low = rts_power.primary as u8;
-                config.rts_power_high = rts_power.alternate as u8;
+                config.control = self.control_frame(TxPhyRate::Legacy(rate), decision);
+                config.data_power = self.power.power_pair(rate.code()).primary as u8;
                 config.aifsn = contention.aifsn();
                 config.contention_window = contention_window;
                 config.scheduler_priority = active.scheduler_priority;
                 config.pti = active.packet_priority;
                 config.pti_count = 1;
-                config.group_receiver = active.group_receiver;
+                config.group_receiver = active.receiver == TxReceiver::Group;
                 config.hardware_key_selector = active.hardware_key_selector;
                 config.interface = active.route.mac_interface();
                 self.slot
                     .as_mut()
                     .submit_legacy(hardware, cookie, queue, config)?;
+                Ok(decision)
             }
             TxPhyRate::Ht(rate) => {
+                let decision = self.select_protection(
+                    active.receiver,
+                    TxPhyRate::Ht(rate),
+                    psdu_length.into(),
+                );
                 let frame_length = u16::try_from(active.frame_length)
                     .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?;
                 let mic_length = u8::try_from(active.hardware_mic_length)
@@ -974,12 +973,9 @@ where
                 let mut config = HtTxConfig::single_mpdu(rate, frame_length, mic_length)
                     .ok_or(OrdinaryTxError::BufferSizeOverflow)?;
                 let data_power = self.power.power_pair(rate.power_lookup_code());
-                let rts_rate = rate.vendor_rts_rate();
-                let rts_power = self.power.power_pair(rts_rate.code());
                 config.data_power_primary = data_power.primary as u8;
                 config.data_power_alternate = data_power.alternate as u8;
-                config.rts_power_primary = rts_power.primary as u8;
-                config.rts_power_alternate = rts_power.alternate as u8;
+                config.control = self.control_frame(TxPhyRate::Ht(rate), decision);
                 config.protection_spacing = self.policy.ht_ampdu().protection_spacing();
                 config.aifsn = contention.aifsn();
                 config.contention_window = contention_window;
@@ -991,6 +987,7 @@ where
                 self.slot
                     .as_mut()
                     .submit_ht(hardware, cookie, queue, config)?;
+                Ok(decision)
             }
             TxPhyRate::He(rate) => {
                 let mpdu_length = u16::try_from(
@@ -1003,13 +1000,15 @@ where
                 let mut config =
                     HeSmpduTxConfig::new(rate, self.policy.he_bss_color(), mpdu_length)
                         .ok_or(OrdinaryTxError::BufferSizeOverflow)?;
+                let decision = self.select_protection(
+                    active.receiver,
+                    TxPhyRate::He(rate),
+                    config.apep_length().into(),
+                );
                 let data_power = self.power.power_pair(rate.power_lookup_code());
-                let rts_rate = rate.vendor_rts_rate();
-                let rts_power = self.power.power_pair(rts_rate.code());
                 config.data_power_primary = data_power.primary as u8;
                 config.data_power_alternate = data_power.alternate as u8;
-                config.rts_power_primary = rts_power.primary as u8;
-                config.rts_power_alternate = rts_power.alternate as u8;
+                config.control = self.control_frame(TxPhyRate::He(rate), decision);
                 config.aifsn = contention.aifsn();
                 config.contention_window = contention_window;
                 config.scheduler_priority = active.scheduler_priority;
@@ -1020,9 +1019,33 @@ where
                 self.slot
                     .as_mut()
                     .submit_he_smpdu(hardware, cookie, queue, config)?;
+                Ok(decision)
             }
         }
-        Ok(())
+    }
+
+    /// Select protection and its control frame for one PPDU which another
+    /// owner (an aggregate path) publishes under this BSS policy.
+    pub fn control_frame_for(&self, ppdu: ProtectedPpdu) -> (TxProtectionDecision, TxControlFrame) {
+        let decision = self.policy.protection().select(ppdu);
+        (decision, control_frame(&self.power, ppdu.rate, decision))
+    }
+
+    fn select_protection(
+        &self,
+        receiver: TxReceiver,
+        rate: TxPhyRate,
+        psdu_length: u32,
+    ) -> TxProtectionDecision {
+        self.policy.protection().select(ProtectedPpdu {
+            rate,
+            receiver,
+            psdu_length,
+        })
+    }
+
+    fn control_frame(&self, data: TxPhyRate, decision: TxProtectionDecision) -> TxControlFrame {
+        control_frame(&self.power, data, decision)
     }
 
     fn reset_required(

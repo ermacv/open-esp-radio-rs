@@ -89,7 +89,7 @@ struct DetachingCompletionHardware {
     abort_requested: bool,
     detach_failed: bool,
     reject_publication: bool,
-    protection: Option<crate::tx::MacTxProtection>,
+    control: Option<oer_esp32s31_hal::types::MacTxControlFrame>,
 }
 
 impl DetachingCompletionHardware {
@@ -102,7 +102,7 @@ impl DetachingCompletionHardware {
             abort_requested: false,
             detach_failed: false,
             reject_publication: false,
-            protection: None,
+            control: None,
             completion: Some(MacHtAmpduCompletionObservation::new_model(
                 MacTxCompletionObservation::new_model(0, 0),
                 0,
@@ -133,7 +133,7 @@ impl TxHardware for DetachingCompletionHardware {
         program: MacHtTxProgram,
     ) -> bool {
         if !self.reject_publication {
-            self.protection = Some(program.protection());
+            self.control = Some(program.control());
         }
         !self.reject_publication
     }
@@ -454,7 +454,11 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
     );
 
     let retained = owner
-        .retain_for_ampdu_retry(cookie, observed.decision.retry_mask())
+        .retain_for_ampdu_retry(
+            cookie,
+            observed.decision.retry_mask(),
+            AmpduRepublication::Retransmission,
+        )
         .unwrap();
     assert_eq!(retained.subframes, 2);
     let retry_config = HtAmpduTxConfig::new(rate, retained.bytes, retained.subframes).unwrap();
@@ -486,7 +490,9 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
     // A following partial BlockAck is expressed in the compacted logical
     // index space. Retaining logical slot one must therefore keep original
     // backing three, not physical backing one.
-    let retry = owner.retain_for_ampdu_retry(cookie, 0b10).unwrap();
+    let retry = owner
+        .retain_for_ampdu_retry(cookie, 0b10, AmpduRepublication::Retransmission)
+        .unwrap();
     assert_eq!(retry.subframes, 1);
     let retry_config = HtAmpduTxConfig::new(rate, retry.bytes, retry.subframes).unwrap();
     let mut hardware = DetachingCompletionHardware::successful();
@@ -1020,7 +1026,7 @@ fn detached_pool_compacts_only_missing_frames_for_ampdu_retry() {
 
     let aggregate = storage
         .as_mut()
-        .retain_for_ampdu_retry(cookie, 0b1010)
+        .retain_for_ampdu_retry(cookie, 0b1010, AmpduRepublication::Retransmission)
         .unwrap();
     assert_eq!(aggregate.subframes, 2);
     assert_eq!(storage.frame_count(), 2);
@@ -1033,6 +1039,52 @@ fn detached_pool_compacts_only_missing_frames_for_ampdu_retry() {
         assert_eq!(view.buffers[3].0[TX_AMPDU_METADATA_SIZE], 3);
         assert_eq!(view.buffers[1].0[TX_AMPDU_METADATA_SIZE + 1], 0x49);
         assert_eq!(view.buffers[3].0[TX_AMPDU_METADATA_SIZE + 1], 0x49);
+    }
+    storage.as_mut().cancel(cookie).unwrap();
+}
+
+#[test]
+fn protection_failure_republishes_every_frame_without_the_retry_bit() {
+    let storage = HtAmpduTxStorage::<4, 256>::new();
+    let mut storage = core::pin::pin!(storage);
+    let cookie = storage.as_mut().begin().unwrap();
+    for index in 0..3_u8 {
+        let frame = storage.as_mut().next_frame_buffer(cookie).unwrap();
+        frame[..32].fill(index);
+        frame[1] = 0x41;
+        storage.as_mut().commit_frame(cookie, 32, 8, 0).unwrap();
+    }
+    let original = storage.prepared_aggregate(cookie).unwrap();
+    {
+        let storage = storage.as_mut().project();
+        *storage.state = TxSlotState::Completed;
+        *storage.detached = true;
+    }
+
+    assert_eq!(
+        storage.as_mut().retain_for_ampdu_retry(
+            cookie,
+            0b011,
+            AmpduRepublication::AfterProtectionFailure
+        ),
+        Err(HtAmpduTxError::InvalidRetryMask {
+            mask: 0b011,
+            count: 3
+        })
+    );
+    let aggregate = storage
+        .as_mut()
+        .retain_for_ampdu_retry(cookie, 0b111, AmpduRepublication::AfterProtectionFailure)
+        .unwrap();
+    assert_eq!(aggregate, original);
+    assert_eq!(storage.state(), TxSlotState::Reserved);
+    let view = storage.as_ref().get_ref();
+    for index in 0..3 {
+        assert_eq!(
+            view.buffer_addresses[index],
+            view.buffers[index].0.as_ptr().addr()
+        );
+        assert_eq!(view.buffers[index].0[TX_AMPDU_METADATA_SIZE + 1], 0x41);
     }
     storage.as_mut().cancel(cookie).unwrap();
 }
@@ -1059,7 +1111,7 @@ fn detached_he_pool_retains_one_missing_mpdu_at_the_original_rate() {
 
     let retained = storage
         .as_mut()
-        .retain_for_ampdu_retry(cookie, 0b1)
+        .retain_for_ampdu_retry(cookie, 0b1, AmpduRepublication::Retransmission)
         .unwrap();
     assert_eq!(retained.subframes, 1);
     let buffer = &storage.as_ref().get_ref().buffers[0].0;

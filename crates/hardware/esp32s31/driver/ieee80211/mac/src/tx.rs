@@ -14,8 +14,6 @@ extern crate alloc;
 #[cfg(not(target_pointer_width = "32"))]
 use alloc::boxed::Box;
 
-pub use oer_esp32s31_hal::types::MacTxProtection;
-
 pub use oer_memory::{HardwareOwnedTxDma, PreparedTxDma};
 
 use oer_esp32s31_hal::types::{
@@ -23,8 +21,8 @@ use oer_esp32s31_hal::types::{
     MacHeTxFormat, MacHeTxParameters, MacHeTxProgram, MacHtChannelWidth, MacHtGuardInterval,
     MacHtMcs, MacHtProtectionSpacing, MacHtRate, MacHtTxFormat, MacHtTxParameters, MacHtTxProgram,
     MacInterface, MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram,
-    MacPartialRuPowerSelector, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
-    MacTxQueueDetached,
+    MacPartialRuPowerSelector, MacTxCompletionObservation, MacTxControlFrame, MacTxDetachOutcome,
+    MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
 };
 
 pub use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaState as TxSlotState;
@@ -640,7 +638,8 @@ pub enum LegacyRate {
 }
 
 impl LegacyRate {
-    const fn pac_rate(self) -> MacLegacyRate {
+    /// HAL selector published for this rate.
+    pub const fn pac_rate(self) -> MacLegacyRate {
         match self {
             Self::Dsss1MLong => MacLegacyRate::Dsss1MLong,
             Self::Dsss2MLong => MacLegacyRate::Dsss2MLong,
@@ -723,7 +722,7 @@ impl LegacyRate {
     /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
     /// mac_tx_get_rts_rate` (size `0x96`) and the exhaustive reviewed
     /// production reconstruction.
-    pub const fn vendor_rts_rate(self) -> Self {
+    pub const fn vendor_control_rate(self) -> Self {
         match self {
             Self::Dsss1MLong => Self::Dsss1MLong,
             Self::Dsss2MLong | Self::Cck5M5Long | Self::Cck11MLong => Self::Dsss2MLong,
@@ -1041,7 +1040,7 @@ impl HtRate {
     /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
     /// mac_tx_get_rts_rate` (size 0x96). Both GI code ranges select 6M for
     /// MCS0, 12M for MCS1/2 and 24M for MCS3..7.
-    pub const fn vendor_rts_rate(self) -> LegacyRate {
+    pub const fn vendor_control_rate(self) -> LegacyRate {
         match self.mcs {
             HtMcs::Mcs0 => LegacyRate::Ofdm6M,
             HtMcs::Mcs1 | HtMcs::Mcs2 => LegacyRate::Ofdm12M,
@@ -1827,7 +1826,7 @@ impl HeRate {
         16 + self.mcs.index()
     }
 
-    pub const fn vendor_rts_rate(self) -> LegacyRate {
+    pub const fn vendor_control_rate(self) -> LegacyRate {
         match self.mcs {
             HeMcs::Mcs0 => LegacyRate::Ofdm6M,
             HeMcs::Mcs1 | HeMcs::Mcs2 => LegacyRate::Ofdm12M,
@@ -2404,6 +2403,19 @@ pub enum TxPhyRate {
 }
 
 impl TxPhyRate {
+    /// Control rate published in LENGTH_CONTROL for an unprotected PPDU.
+    ///
+    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::mac_tx_get_rts_rate`
+    /// (size `0x96`), whose result complete `mac_tx_set_len` writes for every
+    /// PPDU.
+    pub const fn vendor_control_rate(self) -> LegacyRate {
+        match self {
+            Self::Legacy(rate) => rate.vendor_control_rate(),
+            Self::Ht(rate) => rate.vendor_control_rate(),
+            Self::He(rate) => rate.vendor_control_rate(),
+        }
+    }
+
     pub const fn from_code(code: u8, ht_width: HtChannelWidth) -> Option<Self> {
         if let Some(rate) = LegacyRate::from_code(code) {
             return Some(Self::Legacy(rate));
@@ -2498,6 +2510,47 @@ impl TxPhyRate {
     }
 }
 
+/// Control frame published with one PPDU.
+///
+/// `protection` comes from [`protection::WifiTxProtectionPolicy::select`].
+/// The power pair is the calibrated entry for [`Self::rate`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TxControlFrame {
+    pub protection: protection::TxProtection,
+    pub power_primary: u8,
+    pub power_alternate: u8,
+}
+
+impl TxControlFrame {
+    pub const UNPROTECTED: Self = Self {
+        protection: protection::TxProtection::None,
+        power_primary: 0,
+        power_alternate: 0,
+    };
+
+    /// Rate of the control frame, or the vendor LENGTH_CONTROL image for an
+    /// unprotected PPDU at `data`.
+    pub const fn rate(self, data: TxPhyRate) -> LegacyRate {
+        match self.protection.control_rate() {
+            Some(rate) => rate,
+            None => data.vendor_control_rate(),
+        }
+    }
+
+    const fn pac(self, data: TxPhyRate) -> MacTxControlFrame {
+        MacTxControlFrame {
+            protection: match self.protection {
+                protection::TxProtection::None => MacTxProtection::None,
+                protection::TxProtection::CtsToSelf { .. } => MacTxProtection::CtsToSelf,
+                protection::TxProtection::RtsCts { .. } => MacTxProtection::RtsCts,
+            },
+            rate: self.rate(data).pac_rate(),
+            power_primary: self.power_primary,
+            power_alternate: self.power_alternate,
+        }
+    }
+}
+
 /// Inputs for one finite non-HE q0 attempt.
 ///
 /// For the direct raw q0 management path, `signal` is the transmitted
@@ -2506,14 +2559,11 @@ impl TxPhyRate {
 /// dBm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LegacyTxConfig {
-    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
-    pub protection: MacTxProtection,
+    /// Control frame published with this PPDU.
+    pub control: TxControlFrame,
     pub rate: LegacyRate,
-    pub rts_rate: LegacyRate,
     pub signal: u16,
     pub data_power: u8,
-    pub rts_power_low: u8,
-    pub rts_power_high: u8,
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
@@ -2550,15 +2600,13 @@ pub struct LegacyTxConfig {
 /// FCS. Power bytes are calibrated PHY gain-table indices, not dBm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtTxConfig {
-    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
-    pub protection: MacTxProtection,
+    /// Control frame published with this PPDU.
+    pub control: TxControlFrame,
     pub rate: HtRate,
     pub protection_spacing: HtProtectionSpacing,
     pub length: u16,
     pub data_power_primary: u8,
     pub data_power_alternate: u8,
-    pub rts_power_primary: u8,
-    pub rts_power_alternate: u8,
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
@@ -2586,14 +2634,12 @@ impl HtTxConfig {
             return None;
         }
         Some(Self {
-            protection: MacTxProtection::None,
+            control: TxControlFrame::UNPROTECTED,
             rate,
             protection_spacing: HtProtectionSpacing::Density0To4,
             length,
             data_power_primary: 0,
             data_power_alternate: 0,
-            rts_power_primary: 0,
-            rts_power_alternate: 0,
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::DirectMpdu.fresh_queue_timeout(),
@@ -2607,15 +2653,13 @@ impl HtTxConfig {
 
     const fn pac_parameters(self) -> MacHtTxParameters {
         MacHtTxParameters {
-            protection: self.protection,
+            control: self.control.pac(TxPhyRate::Ht(self.rate)),
             rate: self.rate.pac_rate(),
             format: MacHtTxFormat::SingleMpdu,
             length: self.length,
             descriptor_count: 1,
             data_power_primary: self.data_power_primary,
             data_power_alternate: self.data_power_alternate,
-            rts_power_primary: self.rts_power_primary,
-            rts_power_alternate: self.rts_power_alternate,
             protection_spacing: self.protection_spacing.pac_spacing(),
             timeout: self.timeout,
             scheduler_priority: self.scheduler_priority,
@@ -2638,8 +2682,8 @@ impl HtTxConfig {
 /// publishing APEP length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeSmpduTxConfig {
-    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
-    pub protection: MacTxProtection,
+    /// Control frame published with this PPDU.
+    pub control: TxControlFrame,
     pub rate: HeRate,
     pub bss_color: u8,
     pub spatial_reuse: u8,
@@ -2647,8 +2691,6 @@ pub struct HeSmpduTxConfig {
     pub mpdu_length: u16,
     pub data_power_primary: u8,
     pub data_power_alternate: u8,
-    pub rts_power_primary: u8,
-    pub rts_power_alternate: u8,
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
@@ -2680,15 +2722,13 @@ impl HeSmpduTxConfig {
             return None;
         }
         Some(Self {
-            protection: MacTxProtection::None,
+            control: TxControlFrame::UNPROTECTED,
             rate,
             bss_color,
             spatial_reuse: 0,
             mpdu_length,
             data_power_primary: 0,
             data_power_alternate: 0,
-            rts_power_primary: 0,
-            rts_power_alternate: 0,
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
@@ -2723,7 +2763,7 @@ impl HeSmpduTxConfig {
 
     const fn pac_parameters(self) -> MacHeTxParameters {
         MacHeTxParameters {
-            protection: self.protection,
+            control: self.control.pac(TxPhyRate::He(self.rate)),
             rate: self.rate.pac_rate(),
             format: MacHeTxFormat::Smpdu,
             apep_length: self.apep_length(),
@@ -2733,8 +2773,6 @@ impl HeSmpduTxConfig {
             software_he_control: None,
             data_power_primary: self.data_power_primary,
             data_power_alternate: self.data_power_alternate,
-            rts_power_primary: self.rts_power_primary,
-            rts_power_alternate: self.rts_power_alternate,
             protection_spacing: self.protection_spacing,
             timeout: self.timeout,
             scheduler_priority: self.scheduler_priority,
@@ -2756,16 +2794,14 @@ impl HeSmpduTxConfig {
 /// type never adds a second FCS or guesses delimiter padding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtAmpduTxConfig {
-    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
-    pub protection: MacTxProtection,
+    /// Control frame published with this PPDU.
+    pub control: TxControlFrame,
     pub rate: HtRate,
     pub protection_spacing: HtProtectionSpacing,
     pub aggregate_length: u16,
     pub subframes: u8,
     pub data_power_primary: u8,
     pub data_power_alternate: u8,
-    pub rts_power_primary: u8,
-    pub rts_power_alternate: u8,
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
@@ -2787,15 +2823,13 @@ impl HtAmpduTxConfig {
             return None;
         }
         Some(Self {
-            protection: MacTxProtection::None,
+            control: TxControlFrame::UNPROTECTED,
             rate,
             protection_spacing: HtProtectionSpacing::Density0To4,
             aggregate_length,
             subframes,
             data_power_primary: 0,
             data_power_alternate: 0,
-            rts_power_primary: 0,
-            rts_power_alternate: 0,
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
@@ -2809,15 +2843,13 @@ impl HtAmpduTxConfig {
 
     pub(crate) const fn pac_parameters(self) -> MacHtTxParameters {
         MacHtTxParameters {
-            protection: self.protection,
+            control: self.control.pac(TxPhyRate::Ht(self.rate)),
             rate: self.rate.pac_rate(),
             format: MacHtTxFormat::Ampdu,
             length: self.aggregate_length,
             descriptor_count: self.subframes,
             data_power_primary: self.data_power_primary,
             data_power_alternate: self.data_power_alternate,
-            rts_power_primary: self.rts_power_primary,
-            rts_power_alternate: self.rts_power_alternate,
             protection_spacing: self.protection_spacing.pac_spacing(),
             timeout: self.timeout,
             scheduler_priority: self.scheduler_priority,
@@ -2895,8 +2927,8 @@ impl HeTriggerBasedTxConfig {
 /// sends a matching Trigger frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeAmpduTxConfig {
-    /// Explicit control exchange; protocol admission and NAV remain caller-owned.
-    pub protection: MacTxProtection,
+    /// Control frame published with this PPDU.
+    pub control: TxControlFrame,
     rate: HeRate,
     ampdu_density: HtAmpduDensity,
     txop_limit: HeEdcaTxopLimit,
@@ -2913,8 +2945,6 @@ pub struct HeAmpduTxConfig {
     pub subframes: u8,
     pub data_power_primary: u8,
     pub data_power_alternate: u8,
-    pub rts_power_primary: u8,
-    pub rts_power_alternate: u8,
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
@@ -2975,7 +3005,7 @@ impl HeAmpduTxConfig {
             return None;
         }
         Some(Self {
-            protection: MacTxProtection::None,
+            control: TxControlFrame::UNPROTECTED,
             rate,
             ampdu_density,
             txop_limit,
@@ -2995,8 +3025,6 @@ impl HeAmpduTxConfig {
             subframes,
             data_power_primary: 0,
             data_power_alternate: 0,
-            rts_power_primary: 0,
-            rts_power_alternate: 0,
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
@@ -3056,7 +3084,7 @@ impl HeAmpduTxConfig {
 
     pub(crate) const fn pac_parameters(self) -> MacHeTxParameters {
         MacHeTxParameters {
-            protection: self.protection,
+            control: self.control.pac(TxPhyRate::He(self.rate)),
             rate: self.rate.pac_rate(),
             format: MacHeTxFormat::Ampdu,
             apep_length: self.aggregate_length,
@@ -3066,8 +3094,6 @@ impl HeAmpduTxConfig {
             software_he_control: None,
             data_power_primary: self.data_power_primary,
             data_power_alternate: self.data_power_alternate,
-            rts_power_primary: self.rts_power_primary,
-            rts_power_alternate: self.rts_power_alternate,
             protection_spacing: self.protection_spacing,
             timeout: self.timeout,
             scheduler_priority: self.scheduler_priority,
@@ -3109,24 +3135,44 @@ impl AmpduTxConfig {
         }
     }
 
-    /// Replace only the fields that change after a partial BlockAck retry.
+    /// Replace only the fields that change when a retained aggregate is
+    /// published again: its geometry, the next backoff and the protection
+    /// selected for the new length.
     pub fn update_retained_retry(
         &mut self,
         aggregate_length: u16,
         subframes: u8,
         contention_window: u16,
+        control: TxControlFrame,
     ) {
         match self {
             Self::Ht(config) => {
                 config.aggregate_length = aggregate_length;
                 config.subframes = subframes;
                 config.contention_window = contention_window;
+                config.control = control;
             }
             Self::He(config) => {
                 config.aggregate_length = aggregate_length;
                 config.subframes = subframes;
                 config.contention_window = contention_window;
+                config.control = control;
             }
+        }
+    }
+
+    /// PSDU length presented to protection selection.
+    pub const fn aggregate_length(self) -> u16 {
+        match self {
+            Self::Ht(config) => config.aggregate_length,
+            Self::He(config) => config.aggregate_length,
+        }
+    }
+
+    pub const fn control(self) -> TxControlFrame {
+        match self {
+            Self::Ht(config) => config.control,
+            Self::He(config) => config.control,
         }
     }
 }
@@ -3144,13 +3190,10 @@ impl LegacyTxConfig {
     /// `libcoexist.a[coexist_core.o]`.
     pub const fn management_1m(signal: u16) -> Self {
         Self {
-            protection: MacTxProtection::None,
+            control: TxControlFrame::UNPROTECTED,
             rate: LegacyRate::Dsss1MLong,
-            rts_rate: LegacyRate::Dsss1MLong,
             signal,
             data_power: 8,
-            rts_power_low: 8,
-            rts_power_high: 8,
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::DirectMpdu.fresh_queue_timeout(),
@@ -3336,13 +3379,10 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         let program = MacLegacyTxProgram::new(
             &publication,
             MacLegacyTxParameters {
-                protection: config.protection,
+                control: config.control.pac(TxPhyRate::Legacy(config.rate)),
                 rate: config.rate.pac_rate(),
-                rts_rate: config.rts_rate.pac_rate(),
                 signal: config.signal,
                 data_power: config.data_power,
-                rts_power_low: config.rts_power_low,
-                rts_power_high: config.rts_power_high,
                 group_receiver: config.group_receiver,
                 hardware_key_selector: config.hardware_key_selector,
                 interface: config.interface,

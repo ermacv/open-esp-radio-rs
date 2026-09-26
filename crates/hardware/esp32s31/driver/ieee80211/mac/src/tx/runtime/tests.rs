@@ -199,7 +199,7 @@ fn ordinary_retry_owns_rate_ladder_and_edca_transitions() {
 }
 
 #[test]
-fn cts_failures_cover_the_admitted_series_beyond_the_mpdu_retry_limit() {
+fn cts_failures_continue_the_rate_series_beyond_the_mpdu_retry_limit() {
     for frame_class in [OrdinaryFrameClass::Short, OrdinaryFrameClass::Long] {
         let queue = LegacyTxQueue::BestEffort;
         let mut policy = WifiTxRuntimePolicy::vendor_defaults();
@@ -210,10 +210,11 @@ fn cts_failures_cover_the_admitted_series_beyond_the_mpdu_retry_limit() {
             frame_class,
         )
         .unwrap();
-        let admitted: std::vec::Vec<_> = retry.possible_rates().collect();
-        assert_eq!(admitted.len(), usize::from(VENDOR_SHORT_RETRY_LIMIT));
-        for (index, rate) in admitted.into_iter().enumerate() {
-            assert_eq!(retry.current_rate(), rate);
+        for index in 0..usize::from(VENDOR_SHORT_RETRY_LIMIT) {
+            assert_eq!(
+                retry.current_rate(),
+                retry.rate_after_failed_attempts(index as u8)
+            );
             assert_eq!(usize::from(retry.publications()), index + 1);
             let decision =
                 retry.observe_completion(&mut policy, TxCompletionDisposition::CtsTimeout);
@@ -406,6 +407,29 @@ fn partial_block_ack_compacts_sequences_across_retained_attempts() {
     assert_eq!(state.acknowledged(), 4);
     assert_eq!(state.aggregate_attempts(), 2);
     assert_eq!(state.block_ack_mpdu_attempts(), 6);
+}
+
+#[test]
+fn cts_timeout_republishes_the_unchanged_aggregate_until_the_short_retry_limit() {
+    let mut state =
+        AmpduRetryState::<32>::new(SequenceNumber::new(40).unwrap(), 3, HT_POLICY).unwrap();
+    // Status two is a CTS timeout; a stale bitmap must not be consumed.
+    let cts_timeout = completion(2, 40, u64::MAX);
+    for failure in 1..VENDOR_SHORT_RETRY_LIMIT {
+        assert_eq!(
+            state.observe(cts_timeout, 3),
+            Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask: 0b111 })
+        );
+        assert_eq!(state.protection_failures(), failure);
+    }
+    assert_eq!(state.current_subframes(), 3);
+    assert_eq!(state.acknowledged(), 0);
+    assert_eq!(state.block_ack_mpdu_attempts(), 0);
+    assert_eq!(state.aggregate_attempts(), 1);
+    assert_eq!(
+        state.observe(cts_timeout, 3),
+        Ok(AmpduRetryDecision::Finish { retry_mask: 0b111 })
+    );
 }
 
 #[test]

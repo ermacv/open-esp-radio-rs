@@ -4,21 +4,18 @@ use core::{
 };
 
 use oer_esp32s31_hal::types::{
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacKeyInstallOutcome, MacLegacyRate, MacLegacyTxProgram, MacTxCompletionObservation,
+    MacTxDetachOutcome, MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
 };
 
-use oer_esp32s31_ieee80211::ordinary_tx::{OrdinaryTxError, WifiTxPowerPair};
+use oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerPair;
 
 use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware,
     crypto::CcmpKeyHardware,
     tx::{
         HardwareOwnedTxDma, PreparedTxDma, TxSlot,
-        protection::{
-            ErpProtectionMode, HtProtectionMode, TxProtectionAdmissionError, TxProtectionMechanism,
-            TxProtectionReason,
-        },
+        protection::{ErpProtection, HtProtectionMode},
         runtime::WifiTxRuntimePolicy,
     },
 };
@@ -38,6 +35,7 @@ use super::*;
 struct Hardware {
     completion: Option<MacTxCompletionObservation>,
     publications: u8,
+    legacy: Option<MacLegacyTxProgram>,
 }
 
 impl ApRxPolicyHardware for Hardware {
@@ -70,8 +68,9 @@ impl TxHardware for Hardware {
         &mut self,
         _dma: &dyn PreparedTxDma,
         _queue: u8,
-        _program: MacLegacyTxProgram,
+        program: MacLegacyTxProgram,
     ) -> bool {
+        self.legacy = Some(program);
         true
     }
 
@@ -239,7 +238,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
 }
 
 #[test]
-fn mixed_bss_protection_rejects_ordinary_and_amsdu_before_sequence_pn_or_dma() {
+fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
     let ap = [2, 0, 0, 0, 0, 1];
     let target = [2, 0, 0, 0, 0, 2];
     let legacy = [2, 0, 0, 0, 0, 3];
@@ -303,14 +302,8 @@ fn mixed_bss_protection_rejects_ordinary_and_amsdu_before_sequence_pn_or_dma() {
         2,
     )
     .unwrap_or_else(|_| panic!("Open mixed AP starts"));
-    assert_eq!(
-        engine.tx_protection_policy().erp(),
-        ErpProtectionMode::CtsToSelf
-    );
-    assert_eq!(
-        engine.tx_protection_policy().ht(),
-        HtProtectionMode::NonHtMixed
-    );
+    assert_eq!(engine.bss_protection().erp, ErpProtection::new(true, false));
+    assert_eq!(engine.bss_protection().ht, HtProtectionMode::NonHtMixed);
 
     let mut slot = pin!(TxSlot::<512>::new_model());
     let mut mac = ApMac::new(
@@ -338,33 +331,15 @@ fn mixed_bss_protection_rejects_ordinary_and_amsdu_before_sequence_pn_or_dma() {
     let qos_sequence = mac.engine.current_qos_sequence(target, 0);
     let mut scratch = [0_u8; 256];
 
-    let ordinary = mac
-        .publish_ethernet(&mut hardware, target, &first, &mut scratch)
-        .unwrap_err();
-    let ApMacError::Transmit(ApTxError::Ordinary(OrdinaryTxError::Protection(
-        TxProtectionAdmissionError::PhysicalPublicationUnverified { request },
-    ))) = ordinary
-    else {
-        panic!("unexpected ordinary protection result: {ordinary:?}");
-    };
-    assert_eq!(request.mechanism, TxProtectionMechanism::CtsToSelf);
-    assert_eq!(request.reason, TxProtectionReason::ErpUseProtection);
-    assert_eq!(mac.engine.current_data_sequence(), data_sequence);
+    mac.publish_ethernet(&mut hardware, target, &first, &mut scratch)
+        .unwrap();
+    assert_eq!(hardware.publications, 1);
+    let control = hardware.legacy.unwrap().control();
+    assert_eq!(control.protection, MacTxProtection::CtsToSelf);
+    assert_eq!(control.rate, MacLegacyRate::Cck11MShort);
+    assert_ne!(mac.engine.current_data_sequence(), data_sequence);
     assert_eq!(mac.engine.current_qos_sequence(target, 0), qos_sequence);
-
-    let amsdu = mac
-        .publish_amsdu_pair(&mut hardware, &first, &second, &mut scratch)
-        .unwrap_err();
-    assert!(matches!(
-        amsdu,
-        ApMacError::Transmit(ApTxError::Ordinary(OrdinaryTxError::Protection(
-            TxProtectionAdmissionError::PhysicalPublicationUnverified { .. }
-        )))
-    ));
-    assert_eq!(mac.engine.current_data_sequence(), data_sequence);
-    assert_eq!(mac.engine.current_qos_sequence(target, 0), qos_sequence);
-    assert_eq!(hardware.publications, 0);
-    assert!(!mac.tx_pending());
+    assert!(mac.tx_pending());
 }
 
 mod probe;

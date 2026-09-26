@@ -104,8 +104,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
         retry_mask: u32,
+        republication: super::AmpduRepublication,
     ) -> Result<HtAmpduLength, HtAmpduTxError> {
-        let locations = self.as_ref().retry_frame_locations(cookie, retry_mask)?;
+        let locations = self
+            .as_ref()
+            .retry_frame_locations(cookie, retry_mask, republication)?;
         for location in locations.iter().flatten() {
             if !self.as_ref().get_ref().internal_frame_matches(*location) {
                 return Err(HtAmpduTxError::BackingUnavailable {
@@ -113,14 +116,19 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 });
             }
         }
-        self.as_mut().mark_internal_retry_frames(&locations);
+        if republication == super::AmpduRepublication::Retransmission {
+            self.as_mut().mark_internal_retry_frames(&locations);
+        }
         self.compact_retry_metadata(locations)
     }
 
+    /// Resolve the retained frames. A republication after a protection
+    /// failure must retain the complete aggregate.
     pub(super) fn retry_frame_locations(
         self: Pin<&Self>,
         cookie: TxCookie,
         retry_mask: u32,
+        republication: super::AmpduRepublication,
     ) -> Result<[Option<RetryFrameLocation>; SLOTS], HtAmpduTxError> {
         let storage = self.get_ref();
         if storage.state != TxSlotState::Completed || storage.active != cookie || !storage.detached
@@ -133,7 +141,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         } else {
             (1_u32 << old_count) - 1
         };
-        if retry_mask == 0 || retry_mask & !valid_mask != 0 {
+        let incomplete_republication = republication
+            == super::AmpduRepublication::AfterProtectionFailure
+            && retry_mask != valid_mask;
+        if retry_mask == 0 || retry_mask & !valid_mask != 0 || incomplete_republication {
             return Err(HtAmpduTxError::InvalidRetryMask {
                 mask: retry_mask,
                 count: storage.count,

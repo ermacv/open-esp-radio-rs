@@ -8,7 +8,7 @@ use oer_esp32s31_hal::types::{
 
 use oer_esp32s31_ieee80211_mac::{
     rate::schedule::RateScheduleKind,
-    tx::protection::{ErpProtectionMode, HeTxopDurationRtsThreshold, HtProtectionMode},
+    tx::protection::{BssProtection, HePacketPadding, HeTxopDurationRtsThreshold, HeTxopRtsRule},
 };
 
 use oer_ieee80211_mac::{
@@ -36,7 +36,7 @@ enum Event {
     Ht,
     Color(u8),
     Wmm,
-    Protection(WifiTxProtectionPolicy),
+    Protection(BssProtection),
     HePeer(Option<u16>),
     HeAssociation(u16),
     BufferStatus,
@@ -141,8 +141,8 @@ impl StaPeerTransmit for MockTransmit {
         Ok(())
     }
 
-    fn install_tx_protection_policy(&mut self, policy: WifiTxProtectionPolicy) {
-        self.push(Event::Protection(policy));
+    fn install_bss_protection(&mut self, protection: BssProtection) {
+        self.push(Event::Protection(protection));
     }
 }
 
@@ -189,7 +189,7 @@ fn port_owns_scan_and_association_peer_programming() {
         &[
             Some(Event::Ht),
             Some(Event::Color(5)),
-            Some(Event::Protection(WifiTxProtectionPolicy::default())),
+            Some(Event::Protection(BssProtection::UNPROTECTED)),
         ]
     );
 
@@ -233,14 +233,15 @@ fn port_owns_scan_and_association_peer_programming() {
         &[
             Some(Event::Ht),
             Some(Event::Color(5)),
-            Some(Event::Protection(WifiTxProtectionPolicy::default())),
+            Some(Event::Protection(BssProtection::UNPROTECTED)),
             Some(Event::Ht),
             Some(Event::Color(5)),
-            Some(Event::Protection(WifiTxProtectionPolicy::new(
-                ErpProtectionMode::None,
-                HtProtectionMode::None,
-                Some(threshold),
-            ))),
+            // HE PHY Capabilities without PPE Thresholds advertise Nominal
+            // Packet Padding code two (16 us) in element byte 18.
+            Some(Event::Protection(BssProtection {
+                he_txop_rts: Some(HeTxopRtsRule::new(threshold, HePacketPadding::Us16)),
+                ..BssProtection::UNPROTECTED
+            })),
             Some(Event::Wmm),
         ]
     );

@@ -109,3 +109,44 @@ fn rejected_association_cannot_produce_a_peer_plan() {
         StaPeerAssociationPlanError::AssociationRejected(17)
     );
 }
+
+#[test]
+fn scan_policy_collects_every_bss_protection_fact() {
+    let mut access_point = ScanRecord::EMPTY;
+    access_point.capability_info = 0x0421;
+    access_point.supported_rates = [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24];
+    access_point.supported_rates_len = 8;
+    access_point.erp_information = Some(0x07);
+    access_point.ht_operation_ie[..2].copy_from_slice(&[61, 22]);
+    access_point.ht_operation_ie[4] = 0x03;
+    access_point.ht_operation_ie_present = true;
+
+    let protection = StaPeerScanPolicy::new(&access_point).unwrap().protection;
+    assert_eq!(protection.erp, ErpProtection::new(true, true));
+    assert_eq!(protection.ht, HtProtectionMode::NonHtMixed);
+    assert!(protection.short_preamble);
+    assert_eq!(
+        protection.basic_rates,
+        BasicRates::from_rate_elements(&[0x82, 0x84, 0x8b, 0x96], &[])
+    );
+    assert_eq!(protection.he_txop_rts, None);
+}
+
+#[test]
+fn vendor_packet_padding_follows_nominal_padding_or_the_ru242_ppe_exception() {
+    let mut element = HE20_MCS9_CAPABILITY.to_vec();
+    element[18] = 0x40;
+    assert_eq!(vendor_packet_padding(&element), HePacketPadding::Us8);
+    element[18] = 0x00;
+    assert_eq!(vendor_packet_padding(&element), HePacketPadding::None);
+
+    // PPE Thresholds present: RU242 selected, PPET16 zero and PPET8 None.
+    element[15] |= 0x80;
+    element.extend_from_slice(&[0x08, 0x1c]);
+    element[24] = 0x08;
+    element[25] = 0x1c;
+    assert_eq!(vendor_packet_padding(&element), HePacketPadding::Us16);
+    element[25] = 0x00;
+    assert_eq!(vendor_packet_padding(&element), HePacketPadding::None);
+    assert_eq!(vendor_packet_padding(&element[..10]), HePacketPadding::None);
+}

@@ -7,7 +7,9 @@
 
 use oer_esp32s31_hal::types::MacInterface;
 use oer_esp32s31_ieee80211_mac::tx::ampdu::TX_BLOCK_ACK_MAX_WINDOW;
-use oer_esp32s31_ieee80211_mac::tx::{HtAmpduTxConfig, HtProtectionSpacing, HtRate};
+use oer_esp32s31_ieee80211_mac::tx::{
+    HtAmpduTxConfig, HtProtectionSpacing, HtRate, TxControlFrame,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmpduTxRoleAdapter {
@@ -97,8 +99,7 @@ pub struct HtAmpduPublicationInputs {
     pub protection_spacing: HtProtectionSpacing,
     pub data_power_primary: u8,
     pub data_power_alternate: u8,
-    pub rts_power_primary: u8,
-    pub rts_power_alternate: u8,
+    pub control: TxControlFrame,
     pub aifsn: u8,
     pub contention_window: u16,
     pub scheduler_priority: u8,
@@ -113,8 +114,7 @@ pub fn ht_ampdu_publication_config(
     config.protection_spacing = inputs.protection_spacing;
     config.data_power_primary = inputs.data_power_primary;
     config.data_power_alternate = inputs.data_power_alternate;
-    config.rts_power_primary = inputs.rts_power_primary;
-    config.rts_power_alternate = inputs.rts_power_alternate;
+    config.control = inputs.control;
     config.aifsn = inputs.aifsn;
     config.contention_window = inputs.contention_window;
     config.interface = role.interface;

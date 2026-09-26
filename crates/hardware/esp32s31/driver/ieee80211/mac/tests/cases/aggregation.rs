@@ -261,8 +261,17 @@ fn aggregate_config_updates_the_same_retry_geometry_for_ht_and_he() {
         HtGuardInterval::Short400Ns,
         HtChannelWidth::Mhz40,
     );
+    let control = oer_esp32s31_ieee80211_mac::tx::TxControlFrame {
+        protection: oer_esp32s31_ieee80211_mac::tx::protection::TxProtection::RtsCts {
+            rate: oer_esp32s31_ieee80211_mac::tx::LegacyRate::Ofdm24M,
+        },
+        power_primary: 1,
+        power_alternate: 2,
+    };
     let mut ht = AmpduTxConfig::Ht(HtAmpduTxConfig::new(ht_rate, 1_000, 2).unwrap());
-    ht.update_retained_retry(512, 1, 31);
+    ht.update_retained_retry(512, 1, 31, control);
+    assert_eq!(ht.control(), control);
+    assert_eq!(ht.aggregate_length(), 512);
     assert_eq!(ht.rate(), TxPhyRate::Ht(ht_rate));
     assert_eq!(ht.hardware_key_selector(), 0);
     assert!(matches!(
@@ -279,7 +288,8 @@ fn aggregate_config_updates_the_same_retry_geometry_for_ht_and_he() {
     let mut he = AmpduTxConfig::He(
         HeAmpduTxConfig::new(he_rate, 7, 1_000, 2, HtAmpduDensity::NoRestriction).unwrap(),
     );
-    he.update_retained_retry(640, 1, 63);
+    he.update_retained_retry(640, 1, 63, control);
+    assert_eq!(he.control(), control);
     assert_eq!(he.rate(), TxPhyRate::He(he_rate));
     assert_eq!(he.hardware_key_selector(), 0);
     assert!(matches!(

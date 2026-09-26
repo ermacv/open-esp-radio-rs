@@ -163,7 +163,7 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
         .handle_management(&mut hardware, &authentication, [7; 32], 9, 1, &mut output)
         .unwrap();
     assert_eq!(
-        engine.tx_protection_policy().ht(),
+        engine.bss_protection().ht,
         HtProtectionMode::None,
         "an authenticated but not associated station is not an HT BSS member"
     );
@@ -179,7 +179,7 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
         .handle_management(&mut hardware, &association, [7; 32], 9, 2, &mut output)
         .unwrap();
     assert_eq!(
-        engine.tx_protection_policy().ht(),
+        engine.bss_protection().ht,
         HtProtectionMode::NonHtMixed,
         "an associated station without HT Capabilities requires mixed-mode protection"
     );

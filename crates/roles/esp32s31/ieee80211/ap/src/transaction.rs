@@ -387,7 +387,7 @@ where
             return Err(ApMacError::AggregateAdapterUnavailable(pending.kind()));
         }
         self.transmit
-            .install_tx_protection_policy(self.engine.tx_protection_policy());
+            .install_bss_protection(self.engine.bss_protection());
         Ok((&mut self.engine, &mut self.transmit))
     }
 
@@ -656,7 +656,7 @@ where
     {
         self.require_idle()?;
         self.transmit
-            .install_tx_protection_policy(self.engine.tx_protection_policy());
+            .install_bss_protection(self.engine.bss_protection());
         let hardware_mic_length = if self.engine.security_mode() == WifiSecurityMode::Open {
             0
         } else {
@@ -687,8 +687,6 @@ where
                     ApServiceError::UnknownPeer,
                 )))?
         };
-        self.transmit
-            .require_unprotected_data_retry_series(rate, peer[0] & 1 != 0)?;
         let encoded = self
             .engine
             .commit_prepared_data(prepared, &mut scratch[..scratch_capacity])?;
@@ -738,7 +736,7 @@ where
     {
         self.require_idle()?;
         self.transmit
-            .install_tx_protection_policy(self.engine.tx_protection_policy());
+            .install_bss_protection(self.engine.bss_protection());
         let hardware_mic_length = if self.engine.security_mode() == WifiSecurityMode::Open {
             0
         } else {
@@ -763,8 +761,6 @@ where
             .ok_or(ApMacError::Engine(ApEngineError::Service(
                 ApServiceError::UnknownPeer,
             )))?;
-        self.transmit
-            .require_unprotected_data_retry_series(rate, false)?;
         let encoded = self
             .engine
             .commit_prepared_amsdu(prepared, &mut scratch[..scratch_capacity])?;

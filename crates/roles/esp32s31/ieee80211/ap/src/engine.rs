@@ -22,7 +22,7 @@ use oer_esp32s31_ieee80211_mac::{
     ap_policy::{configure_ap_receive_policy, disable_ap_receive_policy},
     ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf},
     crypto::CryptoKeyError,
-    tx::protection::{ErpProtectionMode, HtProtectionMode, WifiTxProtectionPolicy},
+    tx::protection::{BasicRates, BssProtection, ErpProtection, HtProtectionMode},
 };
 
 use oer_ieee80211_mac::{
@@ -613,13 +613,14 @@ impl<'storage> ApEngine<'storage> {
         self.service.peer_status(peer)
     }
 
-    /// Derive the BSS-wide HT protection requirement from associated peers.
+    /// Derive this BSS's protection facts from its associated peers.
     ///
     /// A peer which reached Association without HT capabilities places an HT
     /// BSS in non-HT mixed mode. A maximum advertised legacy rate no faster
-    /// than 11 Mbit/s cannot prove ERP membership, so that peer conservatively
-    /// enables ERP Use Protection. Any OFDM maximum is positive ERP proof.
-    pub fn tx_protection_policy(&self) -> WifiTxProtectionPolicy {
+    /// than 11 Mbit/s cannot prove ERP membership, so that peer enables ERP
+    /// Use Protection. Any OFDM maximum is positive ERP proof. Basic rates and
+    /// the short-preamble capability are those of the local advertisement.
+    pub fn bss_protection(&self) -> BssProtection {
         let mut non_erp_member = false;
         let mut non_ht_member = false;
         for peer in self
@@ -630,19 +631,21 @@ impl<'storage> ApEngine<'storage> {
             non_erp_member |= peer.maximum_legacy_rate_500kbps <= 22;
             non_ht_member |= peer.ht.is_none();
         }
-        WifiTxProtectionPolicy::new(
-            if non_erp_member {
-                ErpProtectionMode::CtsToSelf
-            } else {
-                ErpProtectionMode::None
-            },
-            if non_ht_member {
+        let advertisement = &crate::profile::ADVERTISEMENT;
+        BssProtection {
+            erp: ErpProtection::new(non_erp_member, false),
+            ht: if non_ht_member {
                 HtProtectionMode::NonHtMixed
             } else {
                 HtProtectionMode::None
             },
-            None,
-        )
+            he_txop_rts: None,
+            basic_rates: BasicRates::from_rate_elements(
+                advertisement.legacy_rates.supported(),
+                advertisement.legacy_rates.extended(),
+            ),
+            short_preamble: advertisement.capabilities(WifiSecurityMode::Open) & (1 << 5) != 0,
+        }
     }
 
     #[inline(always)]

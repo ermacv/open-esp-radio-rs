@@ -43,11 +43,11 @@ use oer_esp32s31_ieee80211_mac::{
         AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, HeTriggerBasedTxConfig, LegacyTxQueue,
         TxCookie, TxPhyRate, TxSlotState,
         ampdu::{
-            AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy,
-            HtAmpduFrameRequest, HtAmpduHardware, HtAmpduTxError,
+            AmpduFrameLayout, AmpduFrameSize, AmpduRepublication, HeAmpduFrameRequest,
+            HeAmpduPolicy, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduTxError,
             RetainedAmpduRetryCompletionError, RetainedDmaAmpduTx,
         },
-        protection::{TxProtectionAdmissionError, TxProtectionReceiver},
+        protection::{ProtectedPpdu, TxReceiver},
         runtime::{
             AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState, WifiTxTraffic,
             WifiTxTrafficError, WmmTxopUnsupported,
@@ -210,7 +210,6 @@ pub enum AggregateTxError {
     Retry(AmpduRetryError),
     Traffic(WifiTxTrafficError),
     Unsupported(WmmTxopUnsupported),
-    Protection(TxProtectionAdmissionError),
     RolePolicy(HtAmpduTxRolePolicyError),
     Ordinary(SingleMpduTxError),
     /// An aggregate detached one MPDU into the ordinary owner, but that owner
@@ -261,12 +260,6 @@ impl From<WifiTxTrafficError> for AggregateTxError {
 impl From<WmmTxopUnsupported> for AggregateTxError {
     fn from(error: WmmTxopUnsupported) -> Self {
         Self::Unsupported(error)
-    }
-}
-
-impl From<TxProtectionAdmissionError> for AggregateTxError {
-    fn from(error: TxProtectionAdmissionError) -> Self {
-        Self::Protection(error)
     }
 }
 

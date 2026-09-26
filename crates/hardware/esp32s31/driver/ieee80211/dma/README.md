@@ -7,13 +7,13 @@ The diagnostic PSRAM and aggregate paths have separate admission contracts.
 
 ## Ordinary TX handoff and reuse
 
-The upper ordinary-TX owner checks [protection policy](../mac/src/tx/protection.rs)
-before reserving or publishing DMA. An ordinary exchange requiring RTS/CTS or
-CTS-to-Self returns `PhysicalPublicationUnverified` until its physical
-publication and completion contract is qualified. In particular,
-an HT Nonmember group exchange can stop the connected runner with
-`HardwareFailure` during AP-loss recovery. That admission failure is distinct
-from a stuck DMA transaction; it does not establish a detach or reuse failure.
+Every ordinary and aggregate publication carries one control frame selected by
+the [protection policy](../mac/src/tx/protection.rs) for that PPDU's rate,
+Address 1 receiver and PSDU length: none, CTS-to-self or RTS/CTS, with the
+control-frame rate and its calibrated power. Selection happens again on every
+retry and every retained-aggregate republication; it never rejects a
+publication. The MAC generates the RTS or CTS frame and its Duration from the
+queue request and the programmed PPDU.
 
 The reviewed queue control has separate software RTS and CTS requests. Ordinary
 descriptor-bound preparation replaces both requests with the PPDU's explicit
@@ -21,9 +21,13 @@ mode while the queue is idle. The RTS helper preserves CTS and spacing; cold HE
 initialization clears CTS and retains RTS and spacing. The RTS request, optional
 HE byte-threshold publication, threshold disable and cold-init reset follow the
 reviewed [queue argument provenance](../../../../../../registers/esp32s31/evidence/vendor-libpp.toml);
-they have no native compiled vendor comparison. The register transactions do not establish a CTS frame, its NAV duration, its relation to the protected
-MPDU, or completion ownership. The ordinary API therefore still rejects a
-protection-required exchange before DMA publication.
+they have no native compiled vendor comparison. The pinned vendor never
+requests CTS-to-self, so that request has no vendor oracle; its on-air contract
+comes from HIL captures.
+
+A CTS timeout means the data PPDU was not transmitted. The ordinary owner
+republishes the MPDU without the Retry bit; an aggregate owner republishes the
+unchanged aggregate, also without Retry bits, until the short-retry limit.
 
 [`PinnedTxDmaStorage`](src/tx_storage.rs) permanently retains its allocation.
 Dropping the movable owner does not free or detach hardware-visible memory.

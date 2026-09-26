@@ -21,11 +21,10 @@ use oer_esp32s31_ieee80211::ampdu_tx::{
 use oer_esp32s31_ieee80211_mac::tx::{
     HtRate, LegacyTxQueue, TxCookie,
     ampdu::{
-        AmpduFrameLayout, AmpduFrameSize, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduTxError,
-        HtAmpduTxResources, RetainedAmpduDmaStorage, RetainedAmpduRetryCompletionError,
-        RetainedDmaAmpduTx, TX_AMPDU_METADATA_SIZE,
+        AmpduFrameLayout, AmpduFrameSize, AmpduRepublication, HtAmpduFrameRequest, HtAmpduHardware,
+        HtAmpduTxError, HtAmpduTxResources, RetainedAmpduDmaStorage,
+        RetainedAmpduRetryCompletionError, RetainedDmaAmpduTx, TX_AMPDU_METADATA_SIZE,
     },
-    protection::TxProtectionAdmissionError,
     runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 
@@ -127,7 +126,6 @@ pub enum ApAmpduError {
     Hardware(HtAmpduTxError),
     Retry(AmpduRetryError),
     RolePolicy(HtAmpduTxRolePolicyError),
-    Protection(TxProtectionAdmissionError),
 }
 
 impl From<HtAmpduTxError> for ApAmpduError {
@@ -352,9 +350,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
     {
         let prepared = self.prepared()?;
-        ordinary
-            .require_unprotected_ht_aggregate(prepared.rate)
-            .map_err(ApAmpduError::Protection)?;
         let config = ordinary
             .ht_ampdu_config(
                 prepared.rate,
@@ -432,8 +427,19 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             acknowledged: retry.acknowledged(),
             aggregate_attempts: retry.aggregate_attempts(),
         };
-        if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
-            let aggregate = self.inner.retain_for_ampdu_retry(cookie, retry_mask)?;
+        let republication = match decision {
+            AmpduRetryDecision::RetainAggregate { retry_mask } => {
+                Some((retry_mask, AmpduRepublication::Retransmission))
+            }
+            AmpduRetryDecision::RepublishUnchanged { retry_mask } => {
+                Some((retry_mask, AmpduRepublication::AfterProtectionFailure))
+            }
+            AmpduRetryDecision::Finish { .. } | AmpduRetryDecision::FinishTriggerFlow => None,
+        };
+        if let Some((retry_mask, republication)) = republication {
+            let aggregate = self
+                .inner
+                .retain_for_ampdu_retry(cookie, retry_mask, republication)?;
             ordinary.record_aggregate_retry_failure();
             let refreshed = ordinary
                 .ht_ampdu_config(

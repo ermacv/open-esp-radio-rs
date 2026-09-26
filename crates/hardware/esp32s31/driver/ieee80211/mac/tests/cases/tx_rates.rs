@@ -30,7 +30,7 @@ fn ht_rate_codes_keep_gi_separate_from_power_lookup_and_width() {
     assert_eq!(sgi.nominal_kbps(), 150_000);
     assert_eq!(lgi.vendor_ampdu_byte_limit(), Some(65_535));
     assert_eq!(sgi.vendor_ampdu_byte_limit(), None);
-    assert_eq!(sgi.vendor_rts_rate(), LegacyRate::Ofdm24M);
+    assert_eq!(sgi.vendor_control_rate(), LegacyRate::Ofdm24M);
     assert_eq!(sgi.vendor_retry_rate(0), Some(TxPhyRate::Ht(sgi)));
     assert_eq!(
         sgi.vendor_retry_rate(2),
@@ -51,7 +51,7 @@ fn ht_rate_codes_keep_gi_separate_from_power_lookup_and_width() {
             HtGuardInterval::Short400Ns,
             HtChannelWidth::Mhz20,
         )
-        .vendor_rts_rate(),
+        .vendor_control_rate(),
         LegacyRate::Ofdm6M,
     );
     assert_eq!(
@@ -69,7 +69,7 @@ fn ht_rate_codes_keep_gi_separate_from_power_lookup_and_width() {
             HtGuardInterval::Long800Ns,
             HtChannelWidth::Mhz20,
         )
-        .vendor_rts_rate(),
+        .vendor_control_rate(),
         LegacyRate::Ofdm12M,
     );
 }
@@ -527,7 +527,7 @@ fn legacy_rts_rates_match_the_complete_vendor_selector() {
         (LegacyRate::Ofdm9M, LegacyRate::Ofdm6M),
     ];
     for (data, expected) in cases {
-        assert_eq!(data.vendor_rts_rate(), expected);
+        assert_eq!(data.vendor_control_rate(), expected);
     }
 }
 

@@ -129,6 +129,17 @@ pub enum HtAmpduTxFormat {
     HeAmpdu,
 }
 
+/// Why a detached aggregate is published again.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmpduRepublication {
+    /// BlockAck reported the selected MPDUs missing. They were on air, so
+    /// each retained MPDU gains the IEEE 802.11 Retry bit.
+    Retransmission,
+    /// The RTS/CTS exchange failed before the data PPDU. Every MPDU is
+    /// retained unchanged: none was transmitted.
+    AfterProtectionFailure,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HtAmpduTxCompletion {
     pub tx: TxCompletion,

@@ -7,7 +7,8 @@ use oer_esp32s31_ieee80211_mac::{
         StaRateControlAssociationInput, StaRateControlPeerHighestRate, StaRateControlPhy,
     },
     tx::protection::{
-        ErpProtectionMode, HeTxopDurationRtsThreshold, HtProtectionMode, WifiTxProtectionPolicy,
+        BasicRates, BssProtection, ErpProtection, HePacketPadding, HeTxopDurationRtsThreshold,
+        HeTxopRtsRule, HtProtectionMode,
     },
     tx::{HeMcs, HtPeerAmpduParameters},
 };
@@ -20,6 +21,41 @@ use {
     oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::station::AssociationResponse,
     oer_ieee80211_mac::station::association::PhyMode,
 };
+
+/// Capability Information Short Preamble bit.
+const CAPABILITY_SHORT_PREAMBLE: u16 = 1 << 5;
+
+/// Peer nominal packet padding as the vendor stores it for the HE RTS table.
+///
+/// SOURCE: complete `libnet80211.a[ieee80211_he.o]::ieee80211_parse_hecap`.
+/// `he_capability_ie` is the complete extension element, so HE PHY
+/// Capabilities byte six (PPE Thresholds Present, bit seven) is element byte
+/// 15 and byte nine is element byte 18. Without PPE Thresholds the vendor
+/// stores Nominal Packet Padding (byte 18 bits 7:6). With PPE Thresholds it
+/// stores code two only when the NSS1/RU242 PPET16 is zero and PPET8 is None
+/// (element bytes 24/25); otherwise the freshly allocated node keeps zero.
+fn vendor_packet_padding(he_capability_ie: &[u8]) -> HePacketPadding {
+    let Some(&phy_byte_six) = he_capability_ie.get(15) else {
+        return HePacketPadding::None;
+    };
+    if phy_byte_six & 0x80 == 0 {
+        return he_capability_ie
+            .get(18)
+            .map_or(HePacketPadding::None, |byte| {
+                HePacketPadding::from_vendor_code(byte >> 6)
+            });
+    }
+    let (Some(&first), Some(&second)) = (he_capability_ie.get(24), he_capability_ie.get(25)) else {
+        return HePacketPadding::None;
+    };
+    let ru242 = (first >> 3) & 0x01 != 0;
+    let ppet16 = (first >> 7) | ((second & 0x03) << 1);
+    if ru242 && ppet16 == 0 && second & 0x1c == 0x1c {
+        HePacketPadding::Us16
+    } else {
+        HePacketPadding::None
+    }
+}
 
 /// Origin of the active WMM parameters for one station link.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,7 +133,7 @@ pub struct StaPeerScanPolicy {
     pub wmm: StaWmmPolicy,
     pub he_bss_color: u8,
     pub he_capabilities: Option<He20Capabilities>,
-    pub protection: WifiTxProtectionPolicy,
+    pub protection: BssProtection,
 }
 
 impl StaPeerScanPolicy {
@@ -113,11 +149,16 @@ impl StaPeerScanPolicy {
         let ht_capabilities = access_point.ht_peer_capabilities();
         let he_bss_color = parse_he20_operation(access_point.he_operation_ie_bytes())
             .map_or(0, |operation| operation.effective_bss_color());
-        let protection = WifiTxProtectionPolicy::new(
-            ErpProtectionMode::from_information(access_point.erp_information()),
-            HtProtectionMode::from_operation_ie(access_point.ht_operation_ie_bytes()),
-            None,
-        );
+        let protection = BssProtection {
+            erp: ErpProtection::from_information(access_point.erp_information()),
+            ht: HtProtectionMode::from_operation_ie(access_point.ht_operation_ie_bytes()),
+            he_txop_rts: None,
+            basic_rates: BasicRates::from_rate_elements(
+                access_point.supported_rates_bytes(),
+                access_point.extended_supported_rates_bytes(),
+            ),
+            short_preamble: access_point.capability_info & CAPABILITY_SHORT_PREAMBLE != 0,
+        };
         Ok(Self {
             ht_ampdu,
             ht_capabilities,
@@ -207,11 +248,18 @@ impl StaPeerScanPolicy {
             },
         });
 
-        let protection = self.protection.with_he_txop_duration_rts_threshold(
-            he_peer_state
+        let protection = BssProtection {
+            he_txop_rts: he_peer_state
                 .and_then(|state| state.rts_threshold)
-                .and_then(HeTxopDurationRtsThreshold::new),
-        );
+                .and_then(HeTxopDurationRtsThreshold::new)
+                .map(|threshold| {
+                    HeTxopRtsRule::new(
+                        threshold,
+                        vendor_packet_padding(access_point.he_capability_ie_bytes()),
+                    )
+                }),
+            ..self.protection
+        };
 
         Ok(StaPeerAssociationPlan {
             association_phy,
@@ -244,7 +292,7 @@ pub struct StaPeerAssociationPlan {
     pub noise_floor_dbm: i8,
     pub link_metric: StaLinkMetric,
     pub rate_control: StaRateControlAssociation,
-    pub protection: WifiTxProtectionPolicy,
+    pub protection: BssProtection,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,18 +1,30 @@
 use crate::{support::*, *};
 
 #[test]
-fn each_publication_carries_its_protection_across_phy_and_queue_changes() {
+fn each_publication_carries_its_control_frame_across_phy_and_queue_changes() {
+    use oer_esp32s31_hal::types::{MacLegacyRate, MacTxControlFrame, MacTxProtection};
     use oer_esp32s31_ieee80211_mac::rx::HeGuardIntervalAndLtf;
-    use oer_esp32s31_ieee80211_mac::tx::{HeSmpduTxConfig, HtTxConfig, MacTxProtection};
+    use oer_esp32s31_ieee80211_mac::tx::{
+        HeSmpduTxConfig, HtTxConfig, TxControlFrame, protection::TxProtection,
+    };
 
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = MockMmio::default();
-    let mut expected = [MacTxProtection::None; 4];
+    let mut expected = [None; 4];
     for protection in [
-        MacTxProtection::CtsToSelf,
-        MacTxProtection::RtsCts,
-        MacTxProtection::None,
+        TxProtection::CtsToSelf {
+            rate: LegacyRate::Cck11MShort,
+        },
+        TxProtection::RtsCts {
+            rate: LegacyRate::Ofdm12M,
+        },
+        TxProtection::None,
     ] {
+        let control = TxControlFrame {
+            protection,
+            power_primary: 5,
+            power_alternate: 6,
+        };
         for queue in [
             LegacyTxQueue::Voice,
             LegacyTxQueue::Video,
@@ -21,13 +33,15 @@ fn each_publication_carries_its_protection_across_phy_and_queue_changes() {
         ] {
             for phy in 0..3 {
                 let cookie = slot.as_mut().reserve(512, 100).unwrap();
-                match phy {
+                // Unprotected PPDUs publish the vendor rate of their data rate.
+                let unprotected_rate = match phy {
                     0 => {
                         let mut config = LegacyTxConfig::management_1m(100);
-                        config.protection = protection;
+                        config.control = control;
                         slot.as_mut()
                             .submit_legacy(&mut hardware, cookie, queue, config)
                             .unwrap();
+                        MacLegacyRate::Dsss1MLong
                     }
                     1 => {
                         let mut config = HtTxConfig::single_mpdu(
@@ -40,10 +54,11 @@ fn each_publication_carries_its_protection_across_phy_and_queue_changes() {
                             0,
                         )
                         .unwrap();
-                        config.protection = protection;
+                        config.control = control;
                         slot.as_mut()
                             .submit_ht(&mut hardware, cookie, queue, config)
                             .unwrap();
+                        MacLegacyRate::Ofdm24M
                     }
                     _ => {
                         let mut config = HeSmpduTxConfig::new(
@@ -52,15 +67,30 @@ fn each_publication_carries_its_protection_across_phy_and_queue_changes() {
                             96,
                         )
                         .unwrap();
-                        config.protection = protection;
+                        config.control = control;
                         slot.as_mut()
                             .submit_he_smpdu(&mut hardware, cookie, queue, config)
                             .unwrap();
+                        MacLegacyRate::Ofdm6M
                     }
-                }
+                };
+                let (mechanism, rate) = match protection {
+                    TxProtection::None => (MacTxProtection::None, unprotected_rate),
+                    TxProtection::CtsToSelf { .. } => {
+                        (MacTxProtection::CtsToSelf, MacLegacyRate::Cck11MShort)
+                    }
+                    TxProtection::RtsCts { .. } => {
+                        (MacTxProtection::RtsCts, MacLegacyRate::Ofdm12M)
+                    }
+                };
                 let index = usize::from(queue.hardware_index());
-                expected[index] = protection;
-                assert_eq!(hardware.tx_protection, expected);
+                expected[index] = Some(MacTxControlFrame {
+                    protection: mechanism,
+                    rate,
+                    power_primary: 5,
+                    power_alternate: 6,
+                });
+                assert_eq!(hardware.tx_control, expected);
                 assert_eq!(slot.state(), TxSlotState::HardwareOwned);
                 hardware.set_tx_completion(
                     queue.hardware_index(),

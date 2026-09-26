@@ -434,15 +434,6 @@ where
                     self.prepared_first = Some(frame);
                     return Ok(true);
                 }
-                {
-                    let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
-                        AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
-                    })?;
-                    ordinary
-                        .require_unprotected_ht_aggregate(admission.rate())
-                        .map_err(ApAmpduError::Protection)
-                        .map_err(AccessPointDatapathError::Aggregate)?;
-                }
                 let mut length_budget = aggregate
                     .standby_mut()
                     .expect("checked standby arena")
@@ -557,15 +548,6 @@ where
                 return Ok(false);
             }
             let peer = admission.peer();
-            {
-                let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
-                    AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
-                })?;
-                ordinary
-                    .require_unprotected_ht_aggregate(admission.rate())
-                    .map_err(ApAmpduError::Protection)
-                    .map_err(AccessPointDatapathError::Aggregate)?;
-            }
             let (mut first, mut frame) = match network.try_materialize_pair(first, frame) {
                 Ok(frames) => frames,
                 Err((first, frame)) => {

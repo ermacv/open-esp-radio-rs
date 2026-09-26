@@ -129,11 +129,6 @@ where
                 );
             }
         };
-        self.ordinary.policy().protection().require_unprotected(
-            self.config.rate,
-            TxProtectionReceiver::Individual,
-            matches!(self.config.rate, TxPhyRate::He(_)).then_some(traffic.he_txop_limit),
-        )?;
 
         // Ordinary TX validates Ethernet length before consuming sequence or
         // CCMP state. Establish the extra in-place A-MPDU prefix geometry at
@@ -1000,10 +995,11 @@ where
                     .ordinary
                     .power_profile()
                     .power_pair(rate.power_lookup_code());
-                let rts_power = self
-                    .ordinary
-                    .power_profile()
-                    .power_pair(rate.vendor_rts_rate().code());
+                let (_, control) = self.ordinary.control_frame_for(ProtectedPpdu {
+                    rate: TxPhyRate::Ht(rate),
+                    receiver: TxReceiver::Individual,
+                    psdu_length: u32::from(aggregate_length),
+                });
                 let config = ht_ampdu_publication_config(
                     role_policy.role(),
                     HtAmpduPublicationInputs {
@@ -1013,8 +1009,7 @@ where
                         protection_spacing: self.ordinary.policy().ht_ampdu().protection_spacing(),
                         data_power_primary: data_power.primary as u8,
                         data_power_alternate: data_power.alternate as u8,
-                        rts_power_primary: rts_power.primary as u8,
-                        rts_power_alternate: rts_power.alternate as u8,
+                        control,
                         aifsn: contention.aifsn(),
                         contention_window,
                         scheduler_priority: queue.vendor_data_scheduler_priority(),
@@ -1038,14 +1033,16 @@ where
                     .ordinary
                     .power_profile()
                     .power_pair(rate.power_lookup_code());
-                let rts_power = self
-                    .ordinary
-                    .power_profile()
-                    .power_pair(rate.vendor_rts_rate().code());
                 config.data_power_primary = data_power.primary as u8;
                 config.data_power_alternate = data_power.alternate as u8;
-                config.rts_power_primary = rts_power.primary as u8;
-                config.rts_power_alternate = rts_power.alternate as u8;
+                config.control = self
+                    .ordinary
+                    .control_frame_for(ProtectedPpdu {
+                        rate: TxPhyRate::He(rate),
+                        receiver: TxReceiver::Individual,
+                        psdu_length: u32::from(aggregate_length),
+                    })
+                    .1;
                 config.aifsn = contention.aifsn();
                 config.contention_window = contention_window;
                 config.scheduler_priority = queue.vendor_data_scheduler_priority();

@@ -15,7 +15,7 @@ use crate::{
     edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
     rate::schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
     tx::ampdu::HtAmpduTxCompletion,
-    tx::protection::WifiTxProtectionPolicy,
+    tx::protection::{BssProtection, RtsLengthThreshold, WifiTxProtectionPolicy},
     tx::{
         HeEdcaTxopLimit, HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue,
         TxCompletionDisposition, TxPhyRate,
@@ -139,11 +139,9 @@ impl WifiTxRuntimePolicy {
             ht_ampdu: HtPeerAmpduParameters::from_capability_byte(0),
             he_bss_color: 0,
             edca: EdcaQueues::vendor_defaults(),
-            protection: WifiTxProtectionPolicy::new(
-                crate::tx::protection::ErpProtectionMode::None,
-                crate::tx::protection::HtProtectionMode::None,
-                None,
-            ),
+            protection: WifiTxProtectionPolicy::new(Some(
+                crate::tx::protection::RtsLengthThreshold::VENDOR_DEFAULT,
+            )),
         }
     }
 
@@ -164,10 +162,20 @@ impl WifiTxRuntimePolicy {
         self.he_bss_color
     }
 
-    /// Atomically replace the association/BSS protection facts.  Active TX
-    /// owners retain this value across ordinary and A-MPDU retries.
-    pub fn install_protection(&mut self, protection: WifiTxProtectionPolicy) {
-        self.protection = protection;
+    /// Replace the BSS protection facts. Every later publication, including
+    /// a retry of an active exchange, selects its protection from them.
+    pub fn install_bss_protection(&mut self, bss: BssProtection) {
+        self.protection.install_bss(bss);
+    }
+
+    /// Leave the BSS: only the local length threshold remains.
+    pub fn clear_bss_protection(&mut self) {
+        self.protection.clear_bss();
+    }
+
+    /// Replace the local dot11RTSThreshold; `None` disables the length rule.
+    pub fn set_rts_length_threshold(&mut self, threshold: Option<RtsLengthThreshold>) {
+        self.protection.set_rts_length_threshold(threshold);
     }
 
     pub const fn protection(&self) -> WifiTxProtectionPolicy {
@@ -489,27 +497,7 @@ impl OrdinaryMpduRetryState {
         self.rate_after_failed_attempts(retry_index)
     }
 
-    /// Every rate reachable during this exchange, including CTS failures and
-    /// collisions which do not consume the MPDU retry limit.
-    ///
-    /// Admission must inspect this entire series before consuming sequence,
-    /// packet-number or DMA ownership. Repeated rates are retained so missing
-    /// schedule entries cannot be hidden by a shorter MPDU retry budget.
-    pub fn possible_rates(
-        &self,
-    ) -> impl Iterator<Item = Result<TxPhyRate, OrdinaryRetryError>> + '_ {
-        let class_limit = match self.frame_class {
-            OrdinaryFrameClass::Short => VENDOR_SHORT_RETRY_LIMIT,
-            OrdinaryFrameClass::Long => VENDOR_LONG_RETRY_LIMIT,
-        };
-        let limit = VENDOR_SHORT_RETRY_LIMIT.max(self.mpdu_retry_limit.min(class_limit));
-        (0..limit).map(|index| self.rate_after_failed_attempts(index))
-    }
-
-    /// Inspect one possible retry-series rate without advancing ownership.
-    ///
-    /// Admission uses this before DMA publication so a later fallback cannot
-    /// cross into a protection-required PHY after sequence/PN consumption.
+    /// Inspect one retry-series rate without advancing ownership.
     pub fn rate_after_failed_attempts(
         &self,
         failed_attempts: u8,
@@ -690,6 +678,14 @@ pub enum AmpduRetryError {
 pub enum AmpduRetryDecision {
     /// Retain and compact the selected MPDUs, then publish another A-MPDU.
     RetainAggregate { retry_mask: u32 },
+    /// The protection exchange failed before the data PPDU: publish the same
+    /// aggregate again. No MPDU was transmitted, so none gains the Retry bit.
+    ///
+    /// SOURCE: complete `libpp.a[lmac.o]::lmacProcessCtsTimeout` calls
+    /// `lmacProcessShortRetryFail(queue, 0, 1)`, which advances the short
+    /// retry count and contention window, skips the Retry-bit leaf and
+    /// re-enters `lmacEndFrameExchangeSequence` with the unchanged frame.
+    RepublishUnchanged { retry_mask: u32 },
     /// End aggregate ownership; selected MPDUs require individual retry.
     Finish { retry_mask: u32 },
     /// End ownership through the vendor Trigger-based completion path.
@@ -702,7 +698,9 @@ pub enum AmpduRetryDecision {
 impl AmpduRetryDecision {
     pub const fn retry_mask(self) -> u32 {
         match self {
-            Self::RetainAggregate { retry_mask } | Self::Finish { retry_mask } => retry_mask,
+            Self::RetainAggregate { retry_mask }
+            | Self::RepublishUnchanged { retry_mask }
+            | Self::Finish { retry_mask } => retry_mask,
             Self::FinishTriggerFlow => 0,
         }
     }
@@ -729,6 +727,7 @@ pub struct AmpduRetryState<const CAPACITY: usize> {
     acknowledged: u8,
     block_ack_mpdu_attempts: u16,
     trigger_flow_completions: u8,
+    protection_failures: u8,
 }
 
 impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
@@ -768,6 +767,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             acknowledged: 0,
             block_ack_mpdu_attempts: 0,
             trigger_flow_completions: 0,
+            protection_failures: 0,
         })
     }
 
@@ -800,6 +800,21 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         if completion.tx.completes_vendor_trigger_flow() {
             self.trigger_flow_completions = self.trigger_flow_completions.saturating_add(1);
             return Ok(AmpduRetryDecision::FinishTriggerFlow);
+        }
+        if completion.tx.disposition() == TxCompletionDisposition::CtsTimeout {
+            self.protection_failures = self.protection_failures.saturating_add(1);
+            let retry_mask = if observed_subframes == 32 {
+                u32::MAX
+            } else {
+                (1_u32 << observed_subframes) - 1
+            };
+            // The vendor short-retry limit ends the exchange through the
+            // same aggregate-failure path as an exhausted data retry.
+            return Ok(if self.protection_failures >= VENDOR_SHORT_RETRY_LIMIT {
+                AmpduRetryDecision::Finish { retry_mask }
+            } else {
+                AmpduRetryDecision::RepublishUnchanged { retry_mask }
+            });
         }
         self.block_ack_mpdu_attempts = self
             .block_ack_mpdu_attempts
@@ -851,6 +866,11 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
 
     pub const fn block_ack_mpdu_attempts(&self) -> u16 {
         self.block_ack_mpdu_attempts
+    }
+
+    /// Protection exchanges (RTS/CTS) that failed before the data PPDU.
+    pub const fn protection_failures(&self) -> u8 {
+        self.protection_failures
     }
 
     /// Number of terminal completions handled through `lmacProcessTBSuccess`

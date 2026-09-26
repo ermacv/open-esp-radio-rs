@@ -95,13 +95,6 @@ unsafe impl Sync for SharedRadio where SharedRadioRegisters: Send {}
 impl SharedRadio {
     /// Place the shared owner and its PHY state under arbitration. This
     /// performs no MMIO.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the concurrent radio root split is the production constructor"
-        )
-    )]
     pub(crate) fn new(registers: SharedRadioRegisters, phy: PhyRouteState) -> Self {
         Self {
             held: AtomicBool::new(false),
@@ -131,17 +124,55 @@ impl SharedRadio {
     }
 
     /// Leave arbitration. Consuming the arbiter proves no lease is alive.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the concurrent radio root reunion is the production caller"
-        )
-    )]
-    pub(crate) fn into_parts(self) -> (SharedRadioRegisters, PhyRouteState) {
-        let SharedRadioState { registers, phy, .. } = self.state.into_inner();
-        (registers, phy)
+    ///
+    /// # Errors
+    ///
+    /// Returns the unchanged arbiter while a client still holds common power
+    /// or a PHY calibration still owns a restore obligation.
+    pub(crate) fn into_parts(
+        self,
+    ) -> Result<(SharedRadioRegisters, PhyRouteState), (Self, SharedRadioReleaseError)> {
+        let state = self.state.into_inner();
+        if state.power.any_client() {
+            return Err((
+                Self::from_state(state),
+                SharedRadioReleaseError::CommonPowerHeld,
+            ));
+        }
+        if let Err(error) = crate::root::check_phy_restore_complete(&state.phy) {
+            return Err((
+                Self::from_state(state),
+                SharedRadioReleaseError::Restore(error),
+            ));
+        }
+        Ok((state.registers, state.phy))
     }
+
+    fn from_state(state: SharedRadioState) -> Self {
+        Self {
+            held: AtomicBool::new(false),
+            state: UnsafeCell::new(state),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn phy_state_mut_for_test(&mut self) -> &mut PhyRouteState {
+        &mut self.state.get_mut().phy
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hold_common_power_for_test(&mut self, client: RadioClient) {
+        self.state.get_mut().power.hold_for_test(client);
+    }
+}
+
+/// Why the shared radio cannot leave arbitration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SharedRadioReleaseError {
+    /// A client still holds common radio power.
+    CommonPowerHeld,
+    /// A PHY calibration still owns a restore obligation.
+    Restore(crate::root::RadioPhyReleaseError),
 }
 
 /// Another holder owns the shared radio lease.

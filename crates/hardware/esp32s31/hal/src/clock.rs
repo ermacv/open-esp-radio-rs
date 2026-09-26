@@ -309,6 +309,16 @@ impl CommonRadioPower {
         self.clients & client.bit() != 0
     }
 
+    /// Whether any client holds common power.
+    pub(crate) const fn any_client(&self) -> bool {
+        self.clients != 0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hold_for_test(&mut self, client: RadioClient) {
+        self.clients |= client.bit();
+    }
+
     /// Enter common power; only the first client runs the power sequence.
     ///
     /// A failed sequence admits no client. It keeps the original baseline

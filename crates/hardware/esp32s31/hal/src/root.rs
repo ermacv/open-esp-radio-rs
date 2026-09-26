@@ -1,10 +1,14 @@
-//! Protocol-neutral radio root and exclusive protocol routes.
+//! Protocol-neutral radio root, exclusive protocol routes and the concurrent
+//! split.
 //!
 //! The restricted PAC supplies opaque register partitions and register sets
 //! without any route policy. This module owns the complete neutral root,
 //! decides which partitions each exclusive protocol route consumes, retains
 //! the remaining partitions privately and reconstructs the root only after
-//! the route's restore obligations are complete.
+//! the route's restore obligations are complete. For concurrently running
+//! protocols, [`RadioHardware::into_concurrent`] instead hands every protocol
+//! partition out at once and places the shared partitions under the
+//! [`SharedRadio`] arbiter; [`RadioHardware::from_concurrent`] reunites them.
 
 use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
@@ -18,6 +22,7 @@ use crate::{
     clock::CommonPhyPower,
     phy::{registration::PhyRegistration, restore::PhyRouteState},
     route_registers::{BluetoothRegisters, WifiRegisters},
+    shared_radio::{SharedRadio, SharedRadioReleaseError},
 };
 
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
@@ -314,6 +319,161 @@ fn bluetooth_partitions(
         bluetooth_interrupts: interrupts,
         shared_radio,
         ieee802154,
+    }
+}
+
+/// Wi-Fi MAC partition and its interrupt setup, taken from a concurrent split.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct WifiPartition {
+    mac: WifiMacPartition,
+    interrupts: MacInterruptSetup,
+}
+
+/// Bluetooth controller, modem low-power timer and interrupt partitions,
+/// taken from a concurrent split.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct BluetoothPartition {
+    controller: BluetoothControllerPartition,
+    modem_lp_timer: BluetoothModemLpTimerRegisters,
+    interrupts: BluetoothInterruptSetup,
+}
+
+/// IEEE 802.15.4 MAC partition, taken from a concurrent split.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct Ieee802154RadioPartition {
+    mac: Ieee802154Partition,
+}
+
+/// Protocol partitions of a concurrently split radio root.
+///
+/// Each field can move to its own protocol route; the shared radio stays with
+/// the [`SharedRadio`] arbiter returned beside it.
+pub struct ConcurrentPartitions {
+    pub wifi: WifiPartition,
+    pub bluetooth: BluetoothPartition,
+    pub ieee802154: Ieee802154RadioPartition,
+}
+
+/// Why a concurrent split cannot become the neutral root again.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConcurrentReunionError {
+    Shared(SharedRadioReleaseError),
+}
+
+/// Rejected reunion returning both unchanged owners.
+#[must_use = "a rejected reunion still owns the arbiter and every partition"]
+pub struct ConcurrentReunionFailure {
+    shared: SharedRadio,
+    partitions: ConcurrentPartitions,
+    error: ConcurrentReunionError,
+}
+
+impl ConcurrentReunionFailure {
+    pub const fn error(&self) -> ConcurrentReunionError {
+        self.error
+    }
+
+    pub fn into_parts(self) -> (SharedRadio, ConcurrentPartitions) {
+        (self.shared, self.partitions)
+    }
+}
+
+impl RadioHardware {
+    /// Split the root for concurrently running protocols. This performs no
+    /// MMIO.
+    ///
+    /// The shared radio partitions and the shared PHY state go to the
+    /// returned [`SharedRadio`] arbiter, and every protocol partition to
+    /// [`ConcurrentPartitions`]. The two are separate owners so a protocol
+    /// can take its partition while other routes hold arbiter leases.
+    pub fn into_concurrent(self) -> (SharedRadio, ConcurrentPartitions) {
+        let RadioPartitions {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy,
+            coexistence,
+            bluetooth,
+            bluetooth_modem_lp_timer,
+            bluetooth_interrupts,
+            shared_radio,
+            ieee802154,
+        } = self.partitions;
+        (
+            SharedRadio::new(
+                SharedRadioRegisters::new(SharedRadioParts {
+                    radio_phy,
+                    coexistence,
+                    shared_radio,
+                }),
+                PhyRouteState::new(self.phy_registration),
+            ),
+            ConcurrentPartitions {
+                wifi: WifiPartition {
+                    mac: wifi_mac,
+                    interrupts: wifi_interrupts,
+                },
+                bluetooth: BluetoothPartition {
+                    controller: bluetooth,
+                    modem_lp_timer: bluetooth_modem_lp_timer,
+                    interrupts: bluetooth_interrupts,
+                },
+                ieee802154: Ieee802154RadioPartition { mac: ieee802154 },
+            },
+        )
+    }
+
+    /// Reunite a concurrent split into the neutral root. This performs no
+    /// MMIO.
+    ///
+    /// Consuming the arbiter proves no lease is alive. Leaving retires the
+    /// PHY registration, as every route return does.
+    ///
+    /// # Errors
+    ///
+    /// Returns both owners while a client holds common power or a PHY
+    /// calibration still owns a restore obligation.
+    #[allow(
+        clippy::result_large_err,
+        reason = "rejection returns the arbiter and every partition without allocation"
+    )]
+    pub fn from_concurrent(
+        shared: SharedRadio,
+        partitions: ConcurrentPartitions,
+    ) -> Result<Self, ConcurrentReunionFailure> {
+        let (registers, phy) = match shared.into_parts() {
+            Ok(parts) => parts,
+            Err((shared, error)) => {
+                return Err(ConcurrentReunionFailure {
+                    shared,
+                    partitions,
+                    error: ConcurrentReunionError::Shared(error),
+                });
+            }
+        };
+        let SharedRadioParts {
+            radio_phy,
+            coexistence,
+            shared_radio,
+        } = registers.into_parts();
+        let ConcurrentPartitions {
+            wifi,
+            bluetooth,
+            ieee802154,
+        } = partitions;
+        Ok(Self::returned(
+            RadioPartitions {
+                wifi_mac: wifi.mac,
+                wifi_interrupts: wifi.interrupts,
+                radio_phy,
+                coexistence,
+                bluetooth: bluetooth.controller,
+                bluetooth_modem_lp_timer: bluetooth.modem_lp_timer,
+                bluetooth_interrupts: bluetooth.interrupts,
+                shared_radio,
+                ieee802154: ieee802154.mac,
+            },
+            phy,
+        ))
     }
 }
 

@@ -63,7 +63,9 @@ fn registration_epoch_persists_across_leases() {
         .unwrap_or_else(|_| panic!("a dropped lease frees the arbiter"));
     assert_eq!(lease.registration_epoch(), Some(epoch));
     drop(lease);
-    let (_registers, phy) = radio.into_parts();
+    let (_registers, phy) = radio
+        .into_parts()
+        .unwrap_or_else(|_| panic!("an idle arbiter leaves arbitration"));
     assert_eq!(phy.registration_epoch(), Some(epoch));
 }
 

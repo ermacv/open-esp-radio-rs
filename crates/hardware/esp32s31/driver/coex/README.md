@@ -56,4 +56,6 @@ request grants none of those authorities, and the immediate retained RF
 close/wake cycle is not connected modem sleep.
 
 IEEE 802.15.4 is not an inferred third numeric `CoexClient`. Its MAC PTI fields
-and reviewed vendor wrappers have a distinct interface, currently uncomposed.
+and reviewed vendor wrappers have a distinct interface. The radio arbiter
+resolves its four coexistence levels (high, middle, low, idle) from table
+events 41 through 44; publishing them per operation scene is not composed.

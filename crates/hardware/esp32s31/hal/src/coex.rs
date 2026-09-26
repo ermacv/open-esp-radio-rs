@@ -92,8 +92,39 @@ impl CoexPtiTable {
         self.0[event.0 as usize] = pti.0;
     }
 
+    /// The priority of an IEEE 802.15.4 coexistence level.
+    pub const fn ieee802154_pti(&self, level: Ieee802154CoexLevel) -> CoexPti {
+        self.pti(level.event())
+    }
+
     pub const fn as_bytes(&self) -> &[u8; COEX_EVENT_COUNT] {
         &self.0
+    }
+}
+
+/// IEEE 802.15.4 coexistence priority level (`ieee802154_coex_event_t`).
+///
+/// The pinned archive's `coex_ieee802154_pti_get` reads the priority of
+/// level `n` from the shared table at event `40 + n`
+/// (esp-coex-lib `c758e7b56e0fa22177a0539796e1df59978dc322`,
+/// `esp32s31/libcoexist.a` sha256
+/// `13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147`,
+/// `coexist_api.o`); `esp_coex_ieee802154_txrx_pti_set` and
+/// `esp_coex_ieee802154_ack_pti_set` publish that priority unchanged to the
+/// MAC's five-bit TX/RX and ACK PTI fields.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum Ieee802154CoexLevel {
+    High = 1,
+    Middle = 2,
+    Low = 3,
+    Idle = 4,
+}
+
+impl Ieee802154CoexLevel {
+    /// The shared-table event that holds this level's priority.
+    pub const fn event(self) -> CoexEventId {
+        CoexEventId(40 + self as u8)
     }
 }
 

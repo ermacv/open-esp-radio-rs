@@ -259,7 +259,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "IEEE 802.15.4 operation priorities"
 status = "fail-closed"
 level = "composed-product"
-scope-and-limitations = "[Static MAC policy](../../hal/src/ieee802154/policy.rs) requires TX/RX and ACK PTI disabled. No operation-dependent coexistence lifecycle replaces that policy."
+scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the shared table, as `coex_ieee802154_pti_get` does. The [static MAC policy](../../hal/src/ieee802154/policy.rs) still requires TX/RX and ACK PTI disabled, as the vendor build without software coexistence does; no operation-dependent scene lifecycle publishes the levels."
 packages = ["oer-esp32s31-hal"]
 
 [[items]]

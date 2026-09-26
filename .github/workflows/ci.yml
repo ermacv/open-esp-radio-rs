@@ -35,7 +35,8 @@ jobs:
             platform/esp32s31/Cargo.toml \
             hil/targets/esp32s31/Cargo.toml \
             examples/*/Cargo.toml \
-            verification/vendor/projects/esp32s31/probes/Cargo.toml
+            verification/vendor/projects/esp32s31/probes/Cargo.toml \
+            verification/vendor/projects/esp32s31/ieee802154-host/Cargo.toml
           do
             echo "::group::$manifest"
             cargo fmt --all --manifest-path "$manifest" -- --check

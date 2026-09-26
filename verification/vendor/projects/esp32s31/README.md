@@ -462,6 +462,7 @@ named addresses, not a campaign.
 | `scenarios/` | Typed comparison scenarios, their expected verdicts and claim tables |
 | `evidence/` | Committed native evidence index consumed by qualification |
 | `probes/` | Compiled calls into production code for comparison |
+| `ieee802154-host/` | [Host stand](ieee802154-host/README.md) that compiles the public ESP-IDF IEEE 802.15.4 driver against recorded boundaries |
 | `reference/` | Human-readable pinned source/artifact contracts |
 
 The [technical references](reference/README.md) describe Bluetooth Controller,

@@ -1,0 +1,133 @@
+# Public ESP-IDF sources compiled by the IEEE 802.15.4 host stand.
+#
+# `build.rs` reads every listed file from `OER_ESP_IDF_DIR` and refuses to
+# build unless its SHA-256 matches. The list is exactly the translation units
+# and the ESP-IDF headers they include (`gcc -MM` with the host shims), so a
+# changed or missing vendor file cannot silently alter the compared driver.
+
+revision = "7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe"
+
+[[source]]
+path = "components/esp_coex/include/esp_coex_i154.h"
+sha256 = "4989f8d5a99300cf75419d099d735e38fb27be3f083bb79e7abe8a5af0d34f3e"
+
+[[source]]
+path = "components/esp_hal_ieee802154/esp32s31/ieee802154_periph.c"
+sha256 = "56246b6b482752e0d217e2391acb4869ae02cd18068c5ee3b361a4b7ae110995"
+
+[[source]]
+path = "components/esp_hal_ieee802154/esp32s31/include/hal/ieee802154_ll.h"
+sha256 = "a66a3562ff6ef62ffa6dda90bc08e97f0d4509bcf3817cdc57795fd97daeaa30"
+
+[[source]]
+path = "components/esp_hal_ieee802154/include/hal/ieee802154_common_ll.h"
+sha256 = "ba4ce294b402df311f25c4d0ce9cb33449e3eb41993aff94a25df5a66142d471"
+
+[[source]]
+path = "components/esp_hal_ieee802154/include/hal/ieee802154_periph.h"
+sha256 = "603e619ed574592ec6196ea68b4af35c1afa15ebd08050691c7f63d67a0896e0"
+
+[[source]]
+path = "components/ieee802154/driver/esp_ieee802154_ack.c"
+sha256 = "525e1ac8b3e5bad9bfb74b7e786d72e23fd83405e3c09fbc85b8c2cb387b8a1c"
+
+[[source]]
+path = "components/ieee802154/driver/esp_ieee802154_dev.c"
+sha256 = "9aaccfa2832cb89bfdfd98086a984269e621400a272b02926c4e088d16222830"
+
+[[source]]
+path = "components/ieee802154/driver/esp_ieee802154_event.c"
+sha256 = "c62a7bc108dce00e4b907c9521ad4de0c49080d6f6f5b091481f5c2f4af94063"
+
+[[source]]
+path = "components/ieee802154/driver/esp_ieee802154_frame.c"
+sha256 = "af84dc5dcc04d1ee20fd2f686ebc7220793791c7eb50bfd41107727a58d2df3d"
+
+[[source]]
+path = "components/ieee802154/driver/esp_ieee802154_pib.c"
+sha256 = "4bc94779b0c29fdfc77dcdf0c6d3d66fad5d02324aa951d9f19877bc62532cf4"
+
+[[source]]
+path = "components/ieee802154/driver/esp_ieee802154_sec.c"
+sha256 = "7f5cae45d08ec496b78fd18cfa788be8557ba91d40eb6fe77b42967961bbdc19"
+
+[[source]]
+path = "components/ieee802154/driver/esp_ieee802154_timer.c"
+sha256 = "66a2b68bb718d8fa878cbf28488af810ecb902288fde26dc7a0e5b32dcbd1326"
+
+[[source]]
+path = "components/ieee802154/driver/esp_ieee802154_util.c"
+sha256 = "e1a012d5f359e2445128977e82a304ba94c100c2994729e062e26586596df38a"
+
+[[source]]
+path = "components/ieee802154/esp_ieee802154.c"
+sha256 = "a83716d9944d4ffba1998cc64ebb635a605b60fc77c74ae6070e83a1c617f1bc"
+
+[[source]]
+path = "components/ieee802154/include/esp_ieee802154.h"
+sha256 = "244f330affef9e4d4383275c678bfb2a0a5027725ffa8ebf1266897db2ca1e59"
+
+[[source]]
+path = "components/ieee802154/include/esp_ieee802154_types.h"
+sha256 = "5206f935bfaee354562e7ab87d499a196db251aa52f1d1bd9051bb32b4957424"
+
+[[source]]
+path = "components/ieee802154/private_include/esp_ieee802154_ack.h"
+sha256 = "977df90ca0c0db4f2148c66d8956c49bdfd7418e7a33925b6495144be6db197d"
+
+[[source]]
+path = "components/ieee802154/private_include/esp_ieee802154_dev.h"
+sha256 = "afdb884e6dc78f19c9d72adedfc1ea7fdbbdebb86d1e7aaa80bb89e62a74bfd3"
+
+[[source]]
+path = "components/ieee802154/private_include/esp_ieee802154_event.h"
+sha256 = "7cb1e76c74bd417e3c5ce5842bbe243c4045ac26104d0c7b1ec8175fe8eb9d07"
+
+[[source]]
+path = "components/ieee802154/private_include/esp_ieee802154_frame.h"
+sha256 = "c4d326c59bd71a43db2de265ab3886064faf95ee018a541fc2deb0bc5609d1e1"
+
+[[source]]
+path = "components/ieee802154/private_include/esp_ieee802154_pib.h"
+sha256 = "cdad2d0fa07babe25f0174d69d551ca7acb6bd250ff9614961d0bff55638d835"
+
+[[source]]
+path = "components/ieee802154/private_include/esp_ieee802154_sec.h"
+sha256 = "b4e8dee38a3b67082fdffffc09cdcaed3f15a3af578231915231946dce8cd3b9"
+
+[[source]]
+path = "components/ieee802154/private_include/esp_ieee802154_timer.h"
+sha256 = "e5ab8062c0c4b9195bd597a79a6aabb692fdb686a9599a034db36a46d8f89bd6"
+
+[[source]]
+path = "components/ieee802154/private_include/esp_ieee802154_util.h"
+sha256 = "4ca86544b16248e1d66b85cc84df8ac37bde50727189b3b242513aab22e19017"
+
+[[source]]
+path = "components/soc/esp32s31/include/soc/interrupts.h"
+sha256 = "1a4f155b87090376b1a40ac62e19de344c7f10dc53d9b4451b66d545e9e4717d"
+
+[[source]]
+path = "components/soc/esp32s31/include/soc/periph_defs.h"
+sha256 = "4e0b93faf5d62efcd0e4e9303298af066f7d62acd42a6fbe3b546683248e947e"
+
+[[source]]
+path = "components/soc/esp32s31/include/soc/soc_caps.h"
+sha256 = "002387dadb652c01af2fd606d90131a67eef24dbe74234a5ae6b0bb0d32ab1e4"
+
+[[source]]
+path = "components/soc/esp32s31/include/soc/soc.h"
+sha256 = "b19cf9e6916f1416b8385160c6de277ff64f8cd80e9cb22d44833d9f9654e92b"
+
+[[source]]
+path = "components/soc/esp32s31/register/soc/ieee802154_reg.h"
+sha256 = "fd3f944ac97634605083031f96c0f942af26a81a9e9a3123281c59e5719f9d9c"
+
+[[source]]
+path = "components/soc/esp32s31/register/soc/ieee802154_struct.h"
+sha256 = "da13c2bc78cd6ef35a4e54ddddf11ce48fda967746193f1a0ad03578a5881752"
+
+[[source]]
+path = "components/soc/esp32s31/register/soc/reg_base.h"
+sha256 = "24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d"
+

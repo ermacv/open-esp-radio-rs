@@ -14,6 +14,11 @@ The [lifecycle](ieee802154-lifecycle.md), [dataplane](ieee802154-dataplane.md)
 and [control](ieee802154-control.md) references record the reviewed contracts
 of individual paths in detail.
 
+Because the driver is source, the [host stand](../ieee802154-host/README.md)
+compiles exactly these files and runs them against recorded register-layer,
+platform and callback boundaries; ported behavior is compared with that
+stand rather than with a captured binary.
+
 ## Source ledger
 
 The files were fetched from the pinned commit and hashed locally. Together they

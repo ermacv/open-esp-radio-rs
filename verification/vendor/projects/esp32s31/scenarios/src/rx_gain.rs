@@ -76,6 +76,12 @@ const ESTIMATOR_SAMPLE: u32 = 0x2010_0464;
 const ESTIMATOR_NEGATED: u32 = 0x2010_0468;
 const ESTIMATOR_MAGNITUDE: u32 = 0x2010_046c;
 const ESTIMATOR_ACTIVITY: u32 = 0x2010_08d0;
+/// Nonzero activity field (bits 20-21) of `ESTIMATOR_ACTIVITY`.
+const ESTIMATOR_ACTIVE: u32 = 1 << 20;
+/// Probe flag and `phy_param` byte of a detected RX saturation, which admits
+/// estimates whose readiness wait saw activity.
+const RX_SATURATION_FLAG: u8 = 4;
+const RX_SATURATION_DETECTED: usize = 0x1ae;
 /// PBus readiness word of the calibration path.
 const PBUS_READY: u32 = 0x2010_0894;
 const PBUS_READY_VALUE: u32 = 0x0100_0100;
@@ -95,6 +101,9 @@ const SLOW_MINIMA: u32 = 20;
 const SLOW_MINIMUM_POLLS: u32 = 9_000;
 /// Event capacity of the shared-budget case: every slow poll is a recorded read.
 const BUDGET_EVENTS: u32 = SLOW_MINIMA * (SLOW_MINIMUM_POLLS + 1) + MAX_EVENTS;
+/// Event capacity of an activity root: every minimum search makes all its
+/// attempts, each with a not-ready poll and an activity read.
+const ACTIVITY_EVENTS: u32 = 1 << 18;
 /// Cases of one profile: parameter setup, callback installation and the root.
 const PROFILE_CASES: u32 = 3;
 /// Case index of the root within its profile.
@@ -116,6 +125,9 @@ pub struct Profile {
     /// Guard flags; zero executes calibration.
     pub flags: u8,
     pub estimator: Estimator,
+    /// Every estimator readiness wait first sees activity, then readiness.
+    pub activity: bool,
+    pub rx_saturation: bool,
     pub seed: u16,
     pub fill: u8,
     /// Work-mode settle branch and delayed analog I2C completion.
@@ -139,8 +151,10 @@ impl Profile {
             ),
         };
         format!(
-            "rx-flags{}-{estimator}-seed{}-fill{:x}-settle{}",
+            "rx-flags{}-{estimator}{}{}-seed{}-fill{:x}-settle{}",
             self.flags,
+            if self.activity { "-activity" } else { "" },
+            if self.rx_saturation { "-saturated" } else { "" },
             self.seed,
             self.fill,
             u8::from(self.settle)
@@ -158,6 +172,8 @@ fn profiles(flags: &[u8], estimators: &[Estimator]) -> Vec<Profile> {
                         result.push(Profile {
                             flags,
                             estimator,
+                            activity: false,
+                            rx_saturation: false,
                             seed,
                             fill,
                             settle,
@@ -189,6 +205,19 @@ pub fn calibration_profiles() -> Vec<Profile> {
             .chain([Estimator::Cycle(CALIBRATION_CYCLE)])
             .collect::<Vec<_>>(),
     )
+}
+
+/// Complete calibration whose every readiness wait sees activity, admitted
+/// because an RX saturation was detected.
+pub fn activity_profiles() -> Vec<Profile> {
+    profiles(&[0], &[Estimator::Constant(0)])
+        .into_iter()
+        .map(|p| Profile {
+            activity: true,
+            rx_saturation: true,
+            ..p
+        })
+        .collect()
 }
 
 /// Accumulator value of one RX-DC estimate: the calibration requests
@@ -276,6 +305,7 @@ pub fn parameter_image(profile: &Profile) -> Vec<u8> {
     for offset in CLEARED {
         image[offset] = 0;
     }
+    image[RX_SATURATION_DETECTED] = u8::from(profile.rx_saturation);
     image
 }
 
@@ -366,9 +396,31 @@ pub fn rx_models(profile: &Profile, ready: bool) -> Vec<DeviceDeclaration> {
                 CHANNEL_STATUS,
                 if ready { CHANNEL_READY } else { 0 },
             ),
-            ("estimator-ready", ESTIMATOR_READY, ESTIMATOR_DONE),
         ] {
             models.push(constant_read(id, address, value));
+        }
+        if profile.activity {
+            models.push(DeviceDeclaration {
+                id: "estimator-ready".into(),
+                applicability: "estimator readiness after one not-ready poll".into(),
+                lifetime: blobray_domain::RegionLifetime::Phase,
+                behavior: blobray_domain::DeviceBehavior::CyclicRead {
+                    address: ESTIMATOR_READY,
+                    width: 4,
+                    values: vec![0, ESTIMATOR_DONE],
+                },
+            });
+            models.push(constant_read(
+                "estimator-activity",
+                ESTIMATOR_ACTIVITY,
+                ESTIMATOR_ACTIVE,
+            ));
+        } else {
+            models.push(constant_read(
+                "estimator-ready",
+                ESTIMATOR_READY,
+                ESTIMATOR_DONE,
+            ));
         }
         models.extend(estimator_models(profile.estimator));
     }
@@ -385,9 +437,10 @@ pub fn rx_models(profile: &Profile, ready: bool) -> Vec<DeviceDeclaration> {
 }
 
 /// Reviewed rules of the RX root: transport plumbing, the PBus status polling
-/// interval and the vendor's unused skipped-DC snapshot.
-pub fn rx_rules() -> Vec<EffectRule> {
-    let mut rules = plumbing(&[PBUS_STATUS], MAX_EVENTS);
+/// interval and the vendor's unused skipped-DC snapshot, each selecting at
+/// most `maximum` effects.
+pub fn rx_rules(maximum: u32) -> Vec<EffectRule> {
+    let mut rules = plumbing(&[PBUS_STATUS], maximum);
     for successor in SKIPPED_DC_SUCCESSORS {
         rules.push(omitted_read_before(
             format!("skipped-dc-snapshot-{successor:08x}"),
@@ -405,6 +458,8 @@ pub struct RxGain {
     rom_delay: u32,
     production_delay: u32,
     effects: EffectContractRef,
+    /// The same rules for activity roots, within their event capacity.
+    activity_effects: EffectContractRef,
     committed: ProjectionRef,
 }
 
@@ -457,12 +512,25 @@ impl RxGain {
             &COMMITTED,
             applicability,
         );
-        let contract = phy_contract(vendor, production, rx_rules(), applicability);
+        let review = "every RX register effect compares exactly except transport polling and the unused skipped-DC snapshot";
+        let contract = phy_contract(
+            vendor.clone(),
+            production.clone(),
+            rx_rules(MAX_EVENTS),
+            applicability,
+        );
         let effects = image.review_effects(
             "rx-effects",
             "esp32s31.phy.rx-gain.effects",
             contract,
-            "every RX register effect compares exactly except transport polling and the unused skipped-DC snapshot",
+            review,
+        )?;
+        let contract = phy_contract(vendor, production, rx_rules(ACTIVITY_EVENTS), applicability);
+        let activity_effects = image.review_effects(
+            "rx-activity-effects",
+            "esp32s31.phy.rx-gain.activity-effects",
+            contract,
+            review,
         )?;
         let committed = image.review_projection(
             "rx-committed",
@@ -475,6 +543,7 @@ impl RxGain {
             production_delay: image.sym(2, "ets_delay_us"),
             image,
             effects,
+            activity_effects,
             committed,
         })
     }
@@ -504,7 +573,11 @@ impl RxGain {
             PRODUCTION_ENTRY,
             vec![
                 ("input", Buffer::new(INPUT, input).into()),
-                ("flags", i64::from(profile.flags).into()),
+                (
+                    "flags",
+                    i64::from(profile.flags | u8::from(profile.rx_saturation) * RX_SATURATION_FLAG)
+                        .into(),
+                ),
                 ("crystal_selector", 0.into()),
                 ("pbus_rx_path", i64::from(RX_PATH).into()),
                 ("output", Buffer::new(OUTPUT, seeded_output(profile)).into()),
@@ -529,7 +602,11 @@ impl RxGain {
         // Blobray compares every effect and the committed state under the
         // reviewed contract and projection.
         let relation = root.relation.as_mut().unwrap();
-        relation.effects = Some(self.effects.clone());
+        relation.effects = Some(if profile.activity {
+            self.activity_effects.clone()
+        } else {
+            self.effects.clone()
+        });
         relation.projection = Some(self.committed.clone());
         Ok(with_stack_fill(
             vec![
@@ -569,9 +646,10 @@ fn check(label: &str, records: &[ExecutionEvidence], root: u32) {
 
 /// Each matrix is one request; every profile starts cold with its own stack fill.
 pub fn exercise(ctx: &mut RxGain) -> Result<()> {
-    for (name, matrix) in [
-        ("publication", publication_profiles()),
-        ("calibration", calibration_profiles()),
+    for (name, matrix, capacity) in [
+        ("publication", publication_profiles(), MAX_EVENTS),
+        ("calibration", calibration_profiles(), MAX_EVENTS),
+        ("activity", activity_profiles(), ACTIVITY_EVENTS),
     ] {
         let mut rows = vec![];
         for profile in &matrix {
@@ -583,7 +661,7 @@ pub fn exercise(ctx: &mut RxGain) -> Result<()> {
             FILLS[0],
             Right::Production,
             ComparisonVerdict::Match,
-            MAX_EVENTS,
+            capacity,
         )?;
         for (i, profile) in matrix.iter().enumerate() {
             let root = i as u32 * PROFILE_CASES + ROOT;
@@ -630,6 +708,8 @@ fn containment(ctx: &mut RxGain) -> Result<()> {
         let profile = Profile {
             flags: 0,
             estimator: Estimator::Constant(0),
+            activity: false,
+            rx_saturation: false,
             seed: 17,
             fill,
             settle: false,
@@ -788,6 +868,13 @@ mod tests {
         assert!(publication.iter().all(|p| !p.calibrates()));
         let calibration = calibration_profiles();
         assert_eq!(calibration.len(), 6 * 2 * FILLS.len() * 2);
+        let activity = activity_profiles();
+        assert_eq!(activity.len(), 2 * FILLS.len() * 2);
+        assert!(
+            activity
+                .iter()
+                .all(|p| p.activity && p.rx_saturation && p.calibrates())
+        );
         let samples: std::collections::BTreeSet<_> =
             calibration.iter().map(|p| p.estimator).collect();
         assert!(
@@ -802,6 +889,8 @@ mod tests {
         let profile = Profile {
             flags: DC_CALIBRATED | TABLES_INITIALIZED,
             estimator: Estimator::Constant(0),
+            activity: false,
+            rx_saturation: false,
             seed: 17,
             fill: 0x5a,
             settle: false,
@@ -842,7 +931,7 @@ mod tests {
 
     #[test]
     fn contract_selects_only_the_skipped_dc_snapshot_and_polling_waits() {
-        let rules = rx_rules();
+        let rules = rx_rules(MAX_EVENTS);
         let selected = |event: &ExecutionEvent, next: &ExecutionEvent| {
             rules
                 .iter()

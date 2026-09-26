@@ -5,7 +5,7 @@
   "inputs": {
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "b8b2c11c4a03903cb1d85062bdb1936ad12d2d2f54db2283c57f7bc1a23cffc4",
+    "production": "aed748e8fc43224d2f704d71533f0debc69c6f25c6bb2646d4484fa196be3043",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
     "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -49,7 +49,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "fbd3c2fe03ad20cfd7fb409ef0fad53cab8949083a417a44f18ec846d60f4108"
+      "sha256": "288cdf1aa3b78a5cebbbb3c23491f46e079ce87c428b17d75dea931cc45d62fb"
     },
     {
       "path": "crates/memory",
@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "e6c922833c2851e93e046f57a06154e449d20aa94c63256791e52f02182d0ac6"
+      "sha256": "126695446dcdbc2a786f9db4f35943411b311894d86f91c92d61031b56b31163"
     },
     {
       "path": "verification/vendor/schema",
@@ -304,7 +304,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "d37262dbe8dd2513e88ddfc8c518e45fb2147848a90ae615541843aa897193fa"
+        "1c3620be19d5f16fddec97550add9fa5949eda8bc151003bfaab1b710a272e8d"
       ],
       "coverage": {
         "blocks": {
@@ -333,7 +333,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "968b181ab372910dd5c96e888f069e5842db53c4daeaf94ec22da8057d5cfdda"
+        "fd1e2224e42c60659d65bb003956fa8fe9b4e9c58188e5be3b0237de976a4dee"
       ],
       "coverage": {
         "blocks": {
@@ -362,7 +362,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "bfd47b815d9483e19a3d9addc7fef415c375a92a74555b080afd8aaff2375f81"
+        "e4377d1312746d07ce01a64bc0550d50b385c4546053b143fd3a0aca87b84d93"
       ],
       "coverage": {
         "blocks": {
@@ -391,7 +391,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "1b3c74c45e4345e66619fe393868042a295bd606b0bc0c202d7c3eb2fe60a030"
+        "d54bdcf35bb9858abf8e1514e8a5ab8bce9c4ec52826132c6a2839cc47689fae"
       ],
       "coverage": {
         "blocks": {
@@ -420,7 +420,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "5d83f35f799b07e6863a450b2b9aa158ca16cc9358ffdfb2793321b3de5ba053"
+        "75a2ab033a4eefbf99a3bde0c97866b52b3550eb49890877a49c0e365615d474"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +449,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "5fc4e1458d56dd0ffa4a8a6abcbc3b056ed9104246e21a5c0064efe9a1f4fd16"
+        "7e954808661a9d3d6e01f3a746e447d0b3672a13f162bece4d11f9a2b54938b6"
       ],
       "coverage": {
         "blocks": {
@@ -613,7 +613,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "7fbc38a2a6fba56abc770496f17b290afd3a43a27dcfaaf1074bedeec552f618"
+        "fe9fba4ec6833a7c0b99559c0c9523498b5f261b8fdf891b6426806ca167e083"
       ],
       "coverage": {
         "blocks": {
@@ -642,7 +642,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "7899bfb0a0f47c2bce6c776b0bf7ecbfed8392e6b470ef8935fa1606a93c6024"
+        "f6f28e2f8241c9fd84fce3be827c5e367dc5b97d90c2ba576abe50754e7ed36b"
       ],
       "coverage": {
         "blocks": {
@@ -671,7 +671,7 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "bf61bdaecce67ba7d4e0b93527d146dca89a7403d3ce3b20f7ceab6d934728a2"
+        "afebc0e7769ead540474dfce411ff158cb1f815e1a00f7f9705e16c4f4abb71b"
       ],
       "coverage": {
         "blocks": {
@@ -700,8 +700,8 @@
       "verdict": "match",
       "cases": 68,
       "reviews": [
-        "311a16d9faa9db83b14a174b65ed230b48e1de35e1afb5a2aed0a81dda7b6e1d",
-        "eebe4bbac525eceae5a2ad224c6ed988ffa13b3064b719f36edf49de0806c70b"
+        "2216195e6dfe302bab0e1ddb7e762ebcde984367d491d13b47cfbddc04196455",
+        "6bf9bc654faa002e4399c0fc9a4c0f07b9318487441ab7617b703ba4ee10a619"
       ],
       "coverage": {
         "blocks": {
@@ -730,7 +730,7 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "278f5e7ca762f642f42585e855f559e2de8660f690ded8e2971cc17246b5d379"
+        "d314633d92d330243ac1e9d906466a9463337b28dd08c2aa87be82a8d4380c12"
       ],
       "coverage": {
         "blocks": {
@@ -757,26 +757,27 @@
       "symbol": "phy_set_rx_gain_table",
       "production": "open_phy_calibration_trace_rx_gain",
       "verdict": "match",
-      "cases": 64,
+      "cases": 72,
       "reviews": [
-        "850fb591cd462b7411ab84fa25ad39a4013c35ac339757dd0404d7bb3743aa01",
-        "d4ed8f74b85e2d9f28c22bf4f49d26c258f32299852ba1d248943e12c97af307"
+        "21096fbe4c893f918bc069d12e885245a485d0e8919d33ee64f8c3c64b926209",
+        "2551a4631b117d45d6caa7d1871ffb490452893897b74c07299caefbf26fbc63",
+        "5a792f15cbc359d2a0acbbfe49242d96ad5e097b76d5e5b1c2bbeea25863853d"
       ],
       "coverage": {
         "blocks": {
-          "reached": 242,
+          "reached": 245,
           "total": 703
         },
         "directions": {
-          "reached": 172,
+          "reached": 176,
           "total": 702
         },
         "excluded": 910,
-        "untriaged": 81
+        "untriaged": 74
       },
       "observation": {
-        "executed": 447,
-        "observed": 426,
+        "executed": 449,
+        "observed": 428,
         "reviewed": 14,
         "untriaged": 7
       }
@@ -789,8 +790,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "1cf251e122c1bccf856aff2884caccbed8ea43ad727e77179e100c61f3c4044c",
-        "59827eda8fd1fb87c56c73dad4cb5463d23fa74746e5d3eab33094acbfd94e0e"
+        "1c6262e993be1d75f9ce96b8ab4c4370ee1617cf4d3fade48bf6dba4df114bd0",
+        "9bedb8c449e5b093e6f848eae283db5daf1d602e71df73e508e0c6906138a1d0"
       ],
       "coverage": {
         "blocks": {
@@ -819,8 +820,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "5519e1803505f80c9d0cc23e8f619bd6bd1968864682ccc117e7bedb58b43262",
-        "dd07ff466b4762438603acc5c08f7637855dfb18a62fd19b93f37f23d62f8fdf"
+        "5adf432407eabf95a34654a51a86561cd431c14295c7f3074d5343d6b8b883e6",
+        "c61d1bff1c344c6318c8d7b41d6ce821bb233c573aa43b1b7f3a1a7e784f87ad"
       ],
       "coverage": {
         "blocks": {
@@ -835,10 +836,10 @@
         "untriaged": 208
       },
       "observation": {
-        "executed": 1387,
-        "observed": 1343,
+        "executed": 1385,
+        "observed": 1340,
         "reviewed": 31,
-        "untriaged": 13
+        "untriaged": 14
       }
     },
     {
@@ -849,8 +850,8 @@
       "verdict": "match",
       "cases": 320,
       "reviews": [
-        "20ccca759dc444f000973101a69774aea8d1e18c6ef8a3c5b2c2a5f7ed74fe66",
-        "ae2a11cd9143ebfdcdb7d7f320a325aae4aef05d4c7c88f330a5e36612727d63"
+        "1511ea5a827bc953180b91affa2577bf21f87799d566878a42e5c6805654ef64",
+        "6244da178598df9756f86be040de61c05cdb704d7aa0d486a5aaf0245f796d75"
       ],
       "coverage": {
         "blocks": {
@@ -865,10 +866,10 @@
         "untriaged": 225
       },
       "observation": {
-        "executed": 1814,
-        "observed": 1743,
+        "executed": 1812,
+        "observed": 1740,
         "reviewed": 55,
-        "untriaged": 16
+        "untriaged": 17
       }
     }
   ],
@@ -1075,28 +1076,8 @@
     },
     {
       "function": "phy_iq_est_enable",
-      "offset": 144,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_iq_est_enable",
-      "offset": 158,
-      "kind": "block"
-    },
-    {
-      "function": "phy_iq_est_enable",
       "offset": 166,
       "kind": "taken"
-    },
-    {
-      "function": "phy_iq_est_enable",
-      "offset": 166,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_iq_est_enable",
-      "offset": 168,
-      "kind": "block"
     },
     {
       "function": "phy_linear_to_db",
@@ -1275,23 +1256,8 @@
     },
     {
       "function": "phy_rxdc_est_min",
-      "offset": 74,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rxdc_est_min",
-      "offset": 76,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rxdc_est_min",
       "offset": 82,
       "kind": "taken"
-    },
-    {
-      "function": "phy_rxdc_est_min",
-      "offset": 82,
-      "kind": "fallthrough"
     },
     {
       "function": "phy_rxdc_est_min",

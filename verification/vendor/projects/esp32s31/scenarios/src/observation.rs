@@ -40,7 +40,6 @@ pub const DECISIONS: &[Decision] = &[
         reason: "execution statistics of the RX-gain and TX-DC executors; they \
             report effort to production diagnostics and have no vendor counterpart",
         places: &[
-            ("rx/gain_calibration.rs", "stats.minimum_searches += 1;"),
             (
                 "rx/gain_calibration.rs",
                 "stats.minimum_operations += completion.operations();",
@@ -52,10 +51,6 @@ pub const DECISIONS: &[Decision] = &[
             (
                 "target_port/calibration.rs",
                 "execution.minimum_searches += 1;",
-            ),
-            (
-                "target_port/calibration.rs",
-                "execution.minimum_operations += completion.operations();",
             ),
             (
                 "target_port/calibration.rs",
@@ -194,6 +189,17 @@ pub const DECISIONS: &[Decision] = &[
             commit reads only its variant and `enabled`, and the vendor diagnostics select \
             only console output, which production does not emit",
         places: &[("tracking/parameters.rs", "Ok(Self {")],
+    },
+    Decision {
+        reason: "measurement identity of the event-driven RX-DC host model: the ROM search \
+            has no corresponding field and the direct target transaction never reads it",
+        places: &[
+            (
+                "rx/gain_calibration.rs",
+                "measurement: iteration.wrapping_mul(2).wrapping_add(high as u8),",
+            ),
+            ("rx/gain_calibration.rs", "policy.iteration,"),
+        ],
     },
     Decision {
         reason: "temperature acquisition provenance, a production scheduling record with no \

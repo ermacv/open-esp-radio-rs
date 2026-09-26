@@ -4,7 +4,7 @@ use crate::Result;
 use crate::evidence::air::{self, AirFrame, FrameKind, MacAddress};
 use crate::fixture::{
     local,
-    openwrt::capture::{RemoteCapture, ssh, ssh_target},
+    openwrt::capture::{RemoteCapture, SnapshotLength, ssh, ssh_target},
 };
 use hil_core::{lab::config::LabConfig, lab::config::StationFixtureConfig};
 use oer_process::CommandExt as _;
@@ -62,6 +62,7 @@ impl Capture {
             observer,
             geometry,
             &filter,
+            SnapshotLength::Headers,
             output.join("independent-openwrt-air.pcap"),
             duration,
         )?;
@@ -143,6 +144,7 @@ pub fn observe_beacons(
         observer,
         geometry,
         &format!("type mgt subtype beacon and wlan addr2 {bssid}"),
+        SnapshotLength::Complete,
         output.join("beacons.pcap"),
         duration,
     )?;

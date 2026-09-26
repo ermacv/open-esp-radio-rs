@@ -168,11 +168,13 @@ impl RemoteCapture {
         config: &hil_core::lab::config::AirObserverConfig,
         geometry: crate::fixture::channel::Geometry,
         filter: &str,
+        snapshot_length: SnapshotLength,
         output: PathBuf,
         duration: Duration,
     ) -> Result<Self> {
         let remote = RemoteInterface::new(config.interface.clone())?;
-        let script = remote.independent_script(config, geometry, filter, duration)?;
+        let script =
+            remote.independent_script(config, geometry, filter, snapshot_length, duration)?;
         let mut owner = Self {
             ssh_target: config.ssh_target.clone(),
             remote,
@@ -311,6 +313,7 @@ impl RemoteInterface {
         config: &hil_core::lab::config::AirObserverConfig,
         geometry: crate::fixture::channel::Geometry,
         filter: &str,
+        snapshot_length: SnapshotLength,
         duration: Duration,
     ) -> Result<String> {
         let interface = &self.interface;
@@ -318,7 +321,8 @@ impl RemoteInterface {
         let directory = &self.directory;
         let controlled = capture_process::controlled(
             &format!(
-                "tcpdump -B 4096 -i {interface} -n -s 128 -U -w {} {}",
+                "tcpdump -B 4096 -i {interface} -n -s {} -U -w {} {}",
+                snapshot_length.bytes(),
                 self.capture(),
                 capture_process::quote(filter)
             ),
@@ -350,5 +354,23 @@ ulimit -f 131072
             duration.saturating_add(Duration::from_secs(120)).as_secs(),
             capture_process::quote(&script)
         ))
+    }
+}
+
+/// How much of each frame the independent observer retains.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::fixture) enum SnapshotLength {
+    /// MAC headers and short control frames, enough for traffic analysis.
+    Headers,
+    /// Complete management frames, including every information element.
+    Complete,
+}
+
+impl SnapshotLength {
+    const fn bytes(self) -> u16 {
+        match self {
+            Self::Headers => 128,
+            Self::Complete => 2304,
+        }
     }
 }

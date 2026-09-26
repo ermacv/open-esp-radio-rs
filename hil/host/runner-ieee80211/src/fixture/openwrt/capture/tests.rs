@@ -85,9 +85,25 @@ esac
                     center: 2462,
                 },
                 "type mgt",
+                SnapshotLength::Headers,
                 Duration::from_secs(1),
             )
             .unwrap();
+        assert!(script.contains("-s 128"));
+        let complete = remote
+            .independent_script(
+                &config,
+                crate::fixture::channel::Geometry {
+                    frequency: 2472,
+                    width: 40,
+                    center: 2462,
+                },
+                "type mgt",
+                SnapshotLength::Complete,
+                Duration::from_secs(1),
+            )
+            .unwrap();
+        assert!(complete.contains("-s 2304"));
         let result = Command::new("sh")
             .args(["-c", &script])
             .env(

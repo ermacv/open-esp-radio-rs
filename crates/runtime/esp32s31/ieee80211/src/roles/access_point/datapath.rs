@@ -929,18 +929,6 @@ where
         }
     }
 
-    fn classify_network_tx<I>(
-        &mut self,
-        _interface: NetworkInterfaceId,
-        network: &I,
-    ) -> Result<(), Self::Error>
-    where
-        I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
-    {
-        self.network_tx
-            .classify_network_backlog(self.control.mac.engine_mut(), network)
-    }
-
     fn tx_batch_demand<I>(&self, _interface: NetworkInterfaceId, network: &I) -> TxBatchDemand
     where
         I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,

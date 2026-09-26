@@ -12,7 +12,7 @@ use oer_embassy_net_owned::{NetworkInterfaceId, OwnedEndpointResources};
 use std::boxed::Box;
 
 use super::{
-    super::{AccessPointNetworkTx, AccessPointTxStorage, queue::AP_ACTIVE_FRAME_CAPACITY},
+    super::{AccessPointNetworkTx, AccessPointTxStorage},
     fifo::Fifo,
     support::{allocator, packet, with_authorized_ap},
 };
@@ -63,6 +63,21 @@ macro_rules! access_point {
     };
 }
 
+/// Retain every FIFO owner as the AP does while regrouping a start.
+fn retain_all(
+    ap: &mut AccessPointNetworkTx<
+        '_,
+        <Source as SelectedBurstMaterializer>::PhysicalFrame,
+        <Source as SelectedBurstMaterializer>::SoftwareFrame,
+    >,
+    engine: &mut super::super::ApEngine<'_>,
+    fifo: &Fifo<'_, Source>,
+) {
+    while let Some(frame) = fifo.try_take() {
+        ap.retain_active_frame(engine, frame).unwrap();
+    }
+}
+
 #[test]
 fn a_single_mpdu_peer_completes_the_batch_behind_an_aggregating_backlog() {
     let (source, mut publish) = source::<8>();
@@ -77,8 +92,7 @@ fn a_single_mpdu_peer_completes_the_batch_behind_an_aggregating_backlog() {
             TxBatchDemand::single(2),
             "an unclassified owner has no known destination to wait for"
         );
-        ap.classify_network_backlog(engine, &fifo).unwrap();
-        assert_eq!(fifo.queue_len(), 0);
+        retain_all(&mut ap, engine, &fifo);
         assert_eq!(ap.active_frames.len(), 2);
         assert_eq!(
             ap.batch_demand(target, &fifo),
@@ -90,7 +104,7 @@ fn a_single_mpdu_peer_completes_the_batch_behind_an_aggregating_backlog() {
         );
 
         publish(SINGLE, 2);
-        ap.classify_network_backlog(engine, &fifo).unwrap();
+        retain_all(&mut ap, engine, &fifo);
         assert_eq!(
             ap.batch_demand(target, &fifo),
             TxBatchDemand {
@@ -99,7 +113,7 @@ fn a_single_mpdu_peer_completes_the_batch_behind_an_aggregating_backlog() {
             },
             "a peer without a Block Ack agreement is never delayed"
         );
-        assert_eq!(ap.active_frames.len(), 3, "classification loses no owner");
+        assert_eq!(ap.active_frames.len(), 3);
     });
 }
 
@@ -112,22 +126,19 @@ fn group_traffic_completes_the_batch() {
         let fifo = Fifo::<_>(source);
         publish(AGGREGATING, 0);
         publish(GROUP, 1);
-        ap.classify_network_backlog(engine, &fifo).unwrap();
+        retain_all(&mut ap, engine, &fifo);
         assert!(ap.batch_demand(target, &fifo).complete());
     });
 }
 
 #[test]
-fn destination_queues_are_inspected_without_classification() {
+fn destination_queues_are_inspected_in_place() {
     let (source, mut publish) = source::<8>();
     let source = &source;
-    let mut ap = access_point!();
-    with_authorized_ap(|engine| {
+    let ap = access_point!();
+    with_authorized_ap(|_| {
         publish(AGGREGATING, 0);
         publish(AGGREGATING, 1);
-        ap.classify_network_backlog(engine, source).unwrap();
-        assert_eq!(source.queue_len(), 2, "a classified source stays intact");
-        assert_eq!(ap.active_frames.len(), 0);
         assert_eq!(
             ap.batch_demand(target, source),
             TxBatchDemand {
@@ -143,50 +154,5 @@ fn destination_queues_are_inspected_without_classification() {
                 ready: 1
             }
         );
-    });
-}
-
-#[test]
-fn classification_stops_at_the_retention_bound() {
-    const SOURCE: usize = AP_ACTIVE_FRAME_CAPACITY + 1;
-    let (source, mut publish) = source::<SOURCE>();
-    let source = &source;
-    let mut ap = access_point!();
-    with_authorized_ap(|engine| {
-        let fifo = Fifo::<_>(source);
-        for sequence in 0..SOURCE {
-            publish(AGGREGATING, sequence as u8);
-        }
-        ap.classify_network_backlog(engine, &fifo).unwrap();
-        assert_eq!(ap.active_frames.len(), AP_ACTIVE_FRAME_CAPACITY);
-        assert_eq!(
-            fifo.queue_len(),
-            1,
-            "the unreserved owner stays at the source"
-        );
-        assert!(
-            ap.batch_demand(target, &fifo).complete(),
-            "waiting cannot grow a batch while retention is full"
-        );
-    });
-}
-
-#[test]
-fn a_staged_successor_leaves_the_fifo_backlog_at_the_source() {
-    let (source, mut publish) = source::<8>();
-    let source = &source;
-    let mut ap = access_point!();
-    with_authorized_ap(|engine| {
-        let fifo = Fifo::<_>(source);
-        publish(AGGREGATING, 0);
-        publish(SINGLE, 1);
-        // Model the successor staged during the active exchange.
-        ap.prepared_first_key = Some(super::super::ApTxFlowKey::unbound_from_ethernet(
-            &[AGGREGATING; 6],
-        ));
-        ap.classify_network_backlog(engine, &fifo).unwrap();
-        assert_eq!(fifo.queue_len(), 2);
-        assert_eq!(ap.active_frames.len(), 0);
-        ap.prepared_first_key = None;
     });
 }

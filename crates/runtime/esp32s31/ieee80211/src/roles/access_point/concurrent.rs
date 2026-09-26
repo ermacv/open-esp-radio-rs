@@ -999,28 +999,6 @@ where
         self.network_tx.has_prepared()
     }
 
-    fn classify_network<I>(&mut self, network: &I) -> Result<(), Self::Error>
-    where
-        I: SelectedBurstMaterializer<
-                SoftwareFrame = SoftwareFrame,
-                PhysicalFrame = PinnedTxFrame<
-                    'resources,
-                    M,
-                    FRAME_CAPACITY,
-                    HEADROOM,
-                    TRAILER,
-                    QUEUE_DEPTH,
-                >,
-            >,
-    {
-        let Some(active) = self.protocol.active_mut() else {
-            return Ok(());
-        };
-        self.network_tx
-            .classify_network_backlog(active.processor.mac.engine_mut(), network)
-            .map_err(StaApAccessPointTxError::Operation)
-    }
-
     fn batch_demand<I>(&self, network: &I) -> TxBatchDemand
     where
         I: SelectedBurstMaterializer<

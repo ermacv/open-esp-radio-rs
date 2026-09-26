@@ -26,7 +26,6 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
             recycled_rx_probe_coalescing_level,
             rx_frame_deficit,
             pair_tx_served_frames,
-            tx_batch_states,
         } = self;
         match map(services) {
             Ok(services) => Ok(DatapathRunner {
@@ -45,7 +44,6 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
                 recycled_rx_probe_coalescing_level,
                 rx_frame_deficit,
                 pair_tx_served_frames,
-                tx_batch_states,
             }),
             Err(services) => Err(DatapathRunner {
                 services,
@@ -63,7 +61,6 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
                 recycled_rx_probe_coalescing_level,
                 rx_frame_deficit,
                 pair_tx_served_frames,
-                tx_batch_states,
             }),
         }
     }
@@ -100,7 +97,6 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
             recycled_rx_probe_coalescing_level: self.recycled_rx_probe_coalescing_level,
             rx_frame_deficit: self.rx_frame_deficit,
             pair_tx_served_frames: self.pair_tx_served_frames,
-            tx_batch_states: self.tx_batch_states,
         }
     }
 }
@@ -170,7 +166,6 @@ where
             recycled_rx_probe_coalescing_level: 0,
             rx_frame_deficit: 0,
             pair_tx_served_frames: [0; 2],
-            tx_batch_states: [TxBatchState::new(); 2],
         }
     }
 
@@ -256,30 +251,6 @@ where
                 }
             }
         }
-    }
-
-    pub(super) fn tx_batch_state_slot(&self, interface: NetworkInterfaceId) -> usize {
-        match self.interfaces {
-            DatapathInterfaceScope::Single(owned) => {
-                assert_eq!(interface, owned);
-                0
-            }
-            DatapathInterfaceScope::Pair { first, second: _ } if interface == first => 0,
-            DatapathInterfaceScope::Pair { first: _, second } => {
-                assert_eq!(interface, second);
-                1
-            }
-        }
-    }
-
-    /// Whether one logical interface owns queued or retained network TX at
-    /// the current hardware-idle boundary. This is deliberately per VIF: a
-    /// busy peer must not keep an inactive role's batching history warm.
-    pub(super) fn network_tx_pending_for(&self, interface: NetworkInterfaceId) -> bool {
-        let _ = self.tx_batch_state_slot(interface);
-        self.network.tx_queue_len(interface) != 0
-            || (self.services.has_prepared_tx()
-                && self.retained_prepared_tx_interface() == interface)
     }
 
     pub(super) fn try_receive_network_tx(&mut self) -> Option<N::TxFrame> {

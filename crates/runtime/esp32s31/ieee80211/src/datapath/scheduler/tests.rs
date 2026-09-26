@@ -104,8 +104,6 @@ fn exercise_pause(active: bool, fail_completion: bool) {
         },
     );
     runner.prepared_tx_interface = Some(interface);
-    let batch_deadline = Instant::now() + Duration::from_secs(1);
-    runner.tx_batch_states[0].collection_deadline = Some(batch_deadline);
     if active {
         runner.begin_active_tx(interface, DatapathTxOrigin::Network);
     }
@@ -135,10 +133,6 @@ fn exercise_pause(active: bool, fail_completion: bool) {
         .try_map_services(Ok::<_, ()>)
         .unwrap_or_else(|_| panic!("successful restoration"));
     assert_eq!(runner.services.stops, 0);
-    assert_eq!(
-        runner.tx_batch_states[0].collection_deadline,
-        Some(batch_deadline)
-    );
     assert_eq!(
         runner.services.prepared.as_ref().unwrap().as_ptr(),
         original
@@ -350,7 +344,7 @@ enum ChainEvent {
     Control,
 }
 
-/// A saturated role: every completion leaves a complete successor until the
+/// A saturated role: every completion leaves a one-MPDU successor until the
 /// configured count is exhausted.
 struct ChainServices<'a> {
     completion: &'a Signal<NoopRawMutex, ()>,
@@ -425,6 +419,18 @@ impl<S: SoftwareTxFrame + 'static, P: MaterializedTxFrame + 'static> DatapathSer
         usize::from(self.prepared.is_some())
     }
 
+    /// A 32-MPDU Block Ack window: every successor is far below its target
+    /// and must still be published without waiting for more owners.
+    fn tx_batch_demand<I>(&self, _: NetworkInterfaceId, _: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P>,
+    {
+        TxBatchDemand {
+            target: 32,
+            ready: usize::from(self.prepared.is_some()),
+        }
+    }
+
     fn start_prepared_tx<I>(&mut self, _: &I) -> Result<WifiTxProgress, ()>
     where
         I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P>,
@@ -436,7 +442,7 @@ impl<S: SoftwareTxFrame + 'static, P: MaterializedTxFrame + 'static> DatapathSer
 }
 
 #[test]
-fn complete_successors_chain_after_each_completion_but_yield_to_ready_control() {
+fn partial_successors_publish_without_waiting_but_yield_to_ready_control() {
     let storage = Box::leak(Box::new(PacketPoolStorage::<2>::new()));
     let allocator = Box::leak(Box::new(PacketPool::new(storage))).allocator();
     let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));

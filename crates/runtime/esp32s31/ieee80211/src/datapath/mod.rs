@@ -46,27 +46,20 @@ pub use tx_performance::{
     TX_PERFORMANCE, TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot,
 };
 
-/// Maximum latency added while collecting one already-detected network burst.
-// This is a burst-only deadline: the first frame after an observed quiet
-// period bypasses it completely.
-const TX_BATCH_MAX_WAIT: Duration = Duration::from_millis(2);
-/// Maximum gap between single-frame admissions that still identifies one
-/// continuous producer burst. Isolated traffic never enters batching mode.
-const TX_BURST_ENTRY_GAP: Duration = Duration::from_millis(2);
-/// Keep a proven burst warm across a short, explicitly observed empty
-/// producer frontier. The next frame after a longer idle interval returns to
-/// the immediate path; time spent inside an active hardware transaction does
-/// not count as producer silence.
-const TX_BURST_QUIET_TIMEOUT: Duration = Duration::from_millis(4);
 const RX_TX_FAIRNESS_QUANTUM_FRAMES: u32 = 8;
 
 /// Aggregation demand of the next network batch of one logical interface.
 ///
-/// `target` is the number of MPDUs worth collecting for the destination the
-/// batch would serve: its negotiated Block Ack window, or one for a peer
-/// without an operational agreement and for group traffic. `ready` counts the
-/// owners already visible for that destination. A scheduler waits for more
-/// frames only while the demand is incomplete.
+/// `target` is the number of MPDUs one batch can carry for the destination it
+/// would serve: its negotiated Block Ack window, or one for a peer without an
+/// operational agreement and for group traffic. `ready` counts the owners
+/// already visible for that destination.
+///
+/// The scheduler never delays air time for a demand. Like the Linux TXQ
+/// drivers, a batch is formed from what is queued when the medium can take
+/// it; accumulation happens while the preceding PPDU is on air. The demand
+/// only bounds how many new owners justify waking the scheduler to extend a
+/// prepared successor during an active exchange.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxBatchDemand {
     pub target: usize,
@@ -163,96 +156,6 @@ const fn tx_lookahead_allowed(
     requested
         && matches!(interfaces, DatapathInterfaceScope::Single(_))
         && matches!(origin, DatapathTxOrigin::Network)
-}
-
-#[derive(Clone, Copy, Debug)]
-struct TxBatchState {
-    /// A started transaction may be followed directly by a prepared standby
-    /// without the scheduler ever observing an empty publication frontier.
-    continuation_armed: bool,
-    burst: bool,
-    idle_since: Option<Instant>,
-    collection_deadline: Option<Instant>,
-}
-
-impl TxBatchState {
-    const fn new() -> Self {
-        Self {
-            continuation_armed: false,
-            burst: false,
-            idle_since: None,
-            collection_deadline: None,
-        }
-    }
-
-    /// Return a bounded collection deadline only after queue history proves a
-    /// burst. The first frame after a quiet period always remains immediate.
-    fn collection_deadline(&mut self, demand: TxBatchDemand, now: Instant) -> Option<Instant> {
-        let TxBatchDemand {
-            target,
-            ready: ready_frames,
-        } = demand;
-        if target <= 1 || ready_frames == 0 || demand.complete() {
-            self.collection_deadline = None;
-            if demand.complete() && target > 1 {
-                self.burst = true;
-            }
-            return None;
-        }
-
-        if let Some(idle_since) = self.idle_since.take() {
-            let quiet_for = now.duration_since(idle_since);
-            if self.burst {
-                if quiet_for >= TX_BURST_QUIET_TIMEOUT {
-                    self.burst = false;
-                    self.continuation_armed = false;
-                }
-            } else if self.continuation_armed && quiet_for <= TX_BURST_ENTRY_GAP {
-                self.burst = true;
-            } else {
-                self.continuation_armed = false;
-            }
-        } else if self.continuation_armed {
-            // No empty scheduler boundary separated this publication from the
-            // preceding active transaction. This is a proven continuation
-            // even when the hardware transaction itself exceeded the entry
-            // time used for an observed empty gap.
-            self.burst = true;
-        }
-
-        if ready_frames >= 2 {
-            self.burst = true;
-        }
-
-        if !self.burst {
-            self.collection_deadline = None;
-            return None;
-        }
-
-        let deadline = *self
-            .collection_deadline
-            .get_or_insert(now + TX_BATCH_MAX_WAIT);
-        if now < deadline {
-            Some(deadline)
-        } else {
-            self.collection_deadline = None;
-            None
-        }
-    }
-
-    fn note_started(&mut self, frames: usize) {
-        self.continuation_armed = true;
-        self.idle_since = None;
-        self.collection_deadline = None;
-        if frames >= 2 {
-            self.burst = true;
-        }
-    }
-
-    fn note_idle(&mut self, now: Instant) {
-        self.idle_since.get_or_insert(now);
-        self.collection_deadline = None;
-    }
 }
 
 /// Scheduler-owned limit for one role-specific protocol RX turn.
@@ -534,24 +437,9 @@ where {
         false
     }
 
-    /// Move a source's visible backlog into role-owned per-destination
-    /// retention, so [`Self::tx_batch_demand`] can attribute every owner to its
-    /// destination. Sources that expose destination queues need no such step;
-    /// roles without destination-dependent aggregation leave the source intact.
-    fn classify_network_tx<I>(
-        &mut self,
-        _interface: NetworkInterfaceId,
-        _network: &I,
-    ) -> Result<(), Self::Error>
-    where
-        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
-    {
-        Ok(())
-    }
-
-    /// Aggregation demand of the next network batch of `interface`, before
-    /// its first frame is claimed. Non-aggregate services keep the default
-    /// immediate single-frame path.
+    /// Aggregation demand of the next network batch of `interface`; see
+    /// [`TxBatchDemand`]. Non-aggregate services keep the single-frame
+    /// default.
     fn tx_batch_demand<I>(&self, _interface: NetworkInterfaceId, network: &I) -> TxBatchDemand
     where
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
@@ -659,7 +547,6 @@ pub struct DatapathRunner<'irq, M: RawMutex, N, B, R> {
     /// aggregate sizes do not turn transaction round-robin into airtime-sized
     /// starvation. The counters reset whenever only one VIF is runnable.
     pair_tx_served_frames: [u64; 2],
-    tx_batch_states: [TxBatchState; 2],
 }
 
 pub mod execution;
@@ -670,5 +557,3 @@ mod service;
 
 #[cfg(all(test, feature = "owned-network"))]
 mod owned_tests;
-#[cfg(test)]
-mod tests;

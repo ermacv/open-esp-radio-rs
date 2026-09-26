@@ -193,18 +193,16 @@ where
         if !self.services.prepared_tx_start_ready() {
             return Ok(None);
         }
-        if !self.competing_tx_pending(interface) {
-            self.services.classify_network_tx(interface, &network)?;
-        }
+        // A complete-or-not successor is published now; it has already
+        // absorbed every owner queued while its predecessor was on air.
         let admitted = self.services.prepared_tx_frame_count().max(1);
-        let target = self.services.tx_batch_demand(interface, &network).target;
         drop(network);
         #[cfg(any(feature = "diagnostics", test))]
         self.services.mark_prepared_tx_scheduler_phase(
             PreparedTxSchedulerPhase::PreparedBatchChecked,
             Instant::now().as_micros(),
         );
-        Ok((admitted >= target).then_some((interface, admitted)))
+        Ok(Some((interface, admitted)))
     }
 
     pub(super) const fn network_turn_owed(&self) -> bool {
@@ -245,8 +243,6 @@ where
             tx_phase_started,
             Core0PerformanceSample::read(),
         );
-        let slot = self.tx_batch_state_slot(interface);
-        self.tx_batch_states[slot].note_started(admitted);
         self.prepared_tx_interface = self.services.has_prepared_tx().then_some(interface);
         if progress == WifiTxProgress::Pending {
             self.begin_active_tx(interface, DatapathTxOrigin::Network);

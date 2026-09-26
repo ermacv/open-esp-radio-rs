@@ -316,22 +316,6 @@ where
                 self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.network_pending_completed();
-            let now = Instant::now();
-            match self.interfaces {
-                DatapathInterfaceScope::Single(interface) => {
-                    if !self.network_tx_pending_for(interface) {
-                        self.tx_batch_states[0].note_idle(now);
-                    }
-                }
-                DatapathInterfaceScope::Pair { first, second } => {
-                    if !self.network_tx_pending_for(first) {
-                        self.tx_batch_states[0].note_idle(now);
-                    }
-                    if !self.network_tx_pending_for(second) {
-                        self.tx_batch_states[1].note_idle(now);
-                    }
-                }
-            }
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.tx_checks_completed();
 
@@ -386,29 +370,11 @@ where
                 continue;
             }
 
-            let mut wait_for_batch_until = None;
             if network_tx_pending {
-                let interface = self
-                    .next_network_tx_interface()
-                    .expect("pending network TX has one VIF owner");
-                let network_tx = self.network.tx_consumer(interface);
-                // Classified owners are retained by this VIF and take
-                // precedence at the next turn. Like standby preparation,
-                // classification yields while the other VIF has queued TX.
-                if !self.competing_tx_pending(interface) {
-                    self.services.classify_network_tx(interface, &network_tx)?;
-                }
-                let demand = self.services.tx_batch_demand(interface, &network_tx);
-                drop(network_tx);
-                let slot = self.tx_batch_state_slot(interface);
-                wait_for_batch_until =
-                    self.tx_batch_states[slot].collection_deadline(demand, Instant::now());
-
-                if wait_for_batch_until.is_none() {
-                    // A partial standby arena and newly queued frames form
-                    // one batch. Extend it once; the aggregate owner drains
-                    // every immediately ready lease up to the negotiated
-                    // target.
+                {
+                    // A batch is formed from what is queued now; accumulation
+                    // happens while the preceding PPDU is on air. A partial
+                    // prepared successor absorbs the newly queued owners once.
                     if self.services.has_prepared_tx() {
                         let interface = self.retained_prepared_tx_interface();
                         let network_tx = self.network.tx_consumer(interface);
@@ -453,8 +419,6 @@ where
                     CORE0_PERFORMANCE.record_tx_initial_network_frames(admitted);
                     self.account_tx_frames(admitted);
                     self.account_pair_tx_frames(interface, admitted);
-                    let slot = self.tx_batch_state_slot(interface);
-                    self.tx_batch_states[slot].note_started(admitted);
                     if progress == WifiTxProgress::Pending {
                         self.begin_active_tx(interface, DatapathTxOrigin::Network);
                         // The loop head is the single scheduling boundary:
@@ -508,10 +472,7 @@ where
             match select(
                 stop.as_mut(),
                 select3(wait_rx, self.services.wait_control_ready(), async {
-                    if let Some(deadline) = wait_for_batch_until {
-                        let _ =
-                            select(self.network.wait_tx_publication(), Timer::at(deadline)).await;
-                    } else if let Some(interface) = prepared_tx_interface {
+                    if let Some(interface) = prepared_tx_interface {
                         network.wait_tx_ready(interface).await;
                     } else {
                         match interfaces {

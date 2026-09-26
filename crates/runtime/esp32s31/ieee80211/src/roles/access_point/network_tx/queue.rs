@@ -399,34 +399,6 @@ where
         Ok(())
     }
 
-    /// Move a FIFO source's visible backlog into per-destination retention.
-    ///
-    /// Each owner leaves the source only after its retention credit is known
-    /// to exist, so a full arena leaves the remaining backlog in place. A
-    /// source with destination queues is already classified and stays intact.
-    /// A staged successor already fixes the next destination, so its demand
-    /// does not depend on the backlog; saturated transmission then keeps owners
-    /// at the source for the successor's own matching claims.
-    pub(in super::super) fn classify_network_backlog(
-        &mut self,
-        engine: &mut ApEngine<'_>,
-        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
-    ) -> Result<(), AccessPointDatapathError> {
-        if network.destination_queues().is_some() || self.prepared_destination().is_some() {
-            return Ok(());
-        }
-        for _ in 0..network.queue_len() {
-            if self.frame_arena.remaining_capacity() == 0 {
-                break;
-            }
-            let Some(frame) = network.try_take() else {
-                break;
-            };
-            self.retain_active_frame(engine, frame)?;
-        }
-        Ok(())
-    }
-
     /// Aggregation demand of the next network batch.
     ///
     /// A staged successor fixes its destination. Otherwise the batch is

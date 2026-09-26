@@ -475,15 +475,6 @@ where
         false
     }
 
-    /// Move a FIFO source's backlog into role-owned per-destination
-    /// retention before [`Self::batch_demand`] inspects it.
-    fn classify_network<I>(&mut self, _network: &I) -> Result<(), Self::Error>
-    where
-        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
-    {
-        Ok(())
-    }
-
     /// Aggregation demand of this role's next network batch.
     fn batch_demand<I>(&self, network: &I) -> TxBatchDemand
     where
@@ -919,26 +910,6 @@ where
 
     fn has_prepared_tx(&self) -> bool {
         retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared()).is_some()
-    }
-
-    fn classify_network_tx<I>(
-        &mut self,
-        interface: NetworkInterfaceId,
-        network: &I,
-    ) -> Result<(), Self::Error>
-    where
-        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
-    {
-        match self.role_for(interface) {
-            DatapathPairRole::First => self
-                .first_tx
-                .classify_network(network)
-                .map_err(DatapathPairedServiceError::FirstTx),
-            DatapathPairRole::Second => self
-                .second_tx
-                .classify_network(network)
-                .map_err(DatapathPairedServiceError::SecondTx),
-        }
     }
 
     fn tx_batch_demand<I>(&self, interface: NetworkInterfaceId, network: &I) -> TxBatchDemand

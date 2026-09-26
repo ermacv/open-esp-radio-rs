@@ -130,6 +130,18 @@ pub const DECISIONS: &[Decision] = &[
             ),
         ],
     },
+    Decision {
+        reason: "power sentinel of an incomplete RX-DC minimum search: the search is \
+            incomplete only when its best power is at least 48, and every consumer \
+            thresholds power at 45 (baseband corrections) or 46 (convergence), so the \
+            sentinel 56 decides exactly as the best power it replaces",
+        places: &[("rx/dc_offset.rs", "if !complete {")],
+    },
+    Decision {
+        reason: "initial correction of the event-driven RX-DC host model; the target \
+            runs the calibration as one direct transaction starting from the request",
+        places: &[("rx/gain_calibration.rs", "current: request.initial,")],
+    },
 ];
 
 /// Executed and observed production PHY lines.

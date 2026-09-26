@@ -100,13 +100,22 @@ const PROFILE_CASES: u32 = 3;
 /// Case index of the root within its profile.
 const ROOT: u32 = 2;
 
+/// Signed DC estimator accumulator stream of the calibration path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Estimator {
+    /// Every estimate reads this sample, with a matching power accumulator.
+    Constant(i32),
+    /// Successive estimates read these samples in turn with a zero power
+    /// accumulator, so estimates differ as corrections take effect.
+    Cycle(&'static [i32]),
+}
+
 /// One RX root profile.
 #[derive(Clone, Copy, Debug)]
 pub struct Profile {
     /// Guard flags; zero executes calibration.
     pub flags: u8,
-    /// Signed estimator sample of the calibration path.
-    pub sample: i32,
+    pub estimator: Estimator,
     pub seed: u16,
     pub fill: u8,
     /// Work-mode settle branch and delayed analog I2C completion.
@@ -118,10 +127,20 @@ impl Profile {
         self.flags == 0
     }
     fn label(&self) -> String {
+        let estimator = match self.estimator {
+            Estimator::Constant(sample) => format!("sample{sample}"),
+            Estimator::Cycle(samples) => format!(
+                "cycle{}",
+                samples
+                    .iter()
+                    .map(i32::to_string)
+                    .collect::<Vec<_>>()
+                    .join("_")
+            ),
+        };
         format!(
-            "rx-flags{}-sample{}-seed{}-fill{:x}-settle{}",
+            "rx-flags{}-{estimator}-seed{}-fill{:x}-settle{}",
             self.flags,
-            self.sample,
             self.seed,
             self.fill,
             u8::from(self.settle)
@@ -129,16 +148,16 @@ impl Profile {
     }
 }
 
-fn profiles(flags: &[u8], samples: &[i32]) -> Vec<Profile> {
+fn profiles(flags: &[u8], estimators: &[Estimator]) -> Vec<Profile> {
     let mut result = vec![];
-    for &sample in samples {
+    for &estimator in estimators {
         for &flags in flags {
             for seed in [1, 17] {
                 for fill in FILLS {
                     for settle in [false, true] {
                         result.push(Profile {
                             flags,
-                            sample,
+                            estimator,
                             seed,
                             fill,
                             settle,
@@ -153,12 +172,72 @@ fn profiles(flags: &[u8], samples: &[i32]) -> Vec<Profile> {
 
 /// Publication through both table/DC guards.
 pub fn publication_profiles() -> Vec<Profile> {
-    profiles(&[DC_CALIBRATED, DC_CALIBRATED | TABLES_INITIALIZED], &[0])
+    profiles(
+        &[DC_CALIBRATED, DC_CALIBRATED | TABLES_INITIALIZED],
+        &[Estimator::Constant(0)],
+    )
 }
 
-/// Complete calibration with zero, small and saturating signed samples.
+/// Complete calibration with zero, small and saturating signed samples, and
+/// with a periodic stream whose corrections reach the published codes.
 pub fn calibration_profiles() -> Vec<Profile> {
-    profiles(&[0], &[0, 64, -64, 1 << 24, -(1 << 24)])
+    profiles(
+        &[0],
+        &[0, 64, -64, 1 << 24, -(1 << 24)]
+            .map(Estimator::Constant)
+            .into_iter()
+            .chain([Estimator::Cycle(CALIBRATION_CYCLE)])
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Accumulator value of one RX-DC estimate: the calibration requests
+/// estimator control `0x800`, and the estimator shifts the accumulator right
+/// by six and divides it by the control plus one.
+const ESTIMATE_UNIT: i32 = (1 << 6) * (0x800 + 1);
+
+/// Estimator stream whose three-read period is odd against the low/high read
+/// pair of a baseband iteration, so successive iterations see different
+/// deltas: corrections are applied until a later iteration converges and
+/// publishes the corrected code, and a seven-unit delta against a fifty-unit
+/// low estimate reaches the low-estimate correction of the shared bank.
+const CALIBRATION_CYCLE: &[i32] = &[50 * ESTIMATE_UNIT, 57 * ESTIMATE_UNIT, 50 * ESTIMATE_UNIT];
+
+/// Sample, negated-sample and power accumulator reads of `estimator`.
+fn estimator_models(estimator: Estimator) -> Vec<DeviceDeclaration> {
+    let streams = |sample: i32, power: u32| {
+        [
+            ("estimator-sample", ESTIMATOR_SAMPLE, sample as u32),
+            (
+                "estimator-negated",
+                ESTIMATOR_NEGATED,
+                sample.wrapping_neg() as u32,
+            ),
+            ("estimator-magnitude", ESTIMATOR_MAGNITUDE, power),
+        ]
+    };
+    match estimator {
+        Estimator::Constant(sample) => streams(sample, sample.unsigned_abs())
+            .into_iter()
+            .map(|(id, address, value)| constant_read(id, address, value))
+            .collect(),
+        Estimator::Cycle(samples) => (0..3)
+            .map(|stream| {
+                let reads = samples.iter().map(|&sample| streams(sample, 0)[stream]);
+                let (id, address, _) = streams(0, 0)[stream];
+                DeviceDeclaration {
+                    id: id.into(),
+                    applicability: "periodic synthetic DC estimator stream with zero power".into(),
+                    lifetime: blobray_domain::RegionLifetime::Phase,
+                    behavior: blobray_domain::DeviceBehavior::CyclicRead {
+                        address,
+                        width: 4,
+                        values: reads.map(|(_, _, value)| value).collect(),
+                    },
+                }
+            })
+            .collect(),
+    }
 }
 
 /// Deterministic 9-bit per-gain DC words, signed RXBB adjustments and the
@@ -280,7 +359,6 @@ pub fn rx_models(profile: &Profile, ready: bool) -> Vec<DeviceDeclaration> {
                 reads: None,
             }],
         ));
-        let sample = profile.sample;
         for (id, address, value) in [
             ("pbus-ready", PBUS_READY, PBUS_READY_VALUE),
             (
@@ -289,20 +367,10 @@ pub fn rx_models(profile: &Profile, ready: bool) -> Vec<DeviceDeclaration> {
                 if ready { CHANNEL_READY } else { 0 },
             ),
             ("estimator-ready", ESTIMATOR_READY, ESTIMATOR_DONE),
-            ("estimator-sample", ESTIMATOR_SAMPLE, sample as u32),
-            (
-                "estimator-negated",
-                ESTIMATOR_NEGATED,
-                sample.wrapping_neg() as u32,
-            ),
-            (
-                "estimator-magnitude",
-                ESTIMATOR_MAGNITUDE,
-                sample.unsigned_abs(),
-            ),
         ] {
             models.push(constant_read(id, address, value));
         }
+        models.extend(estimator_models(profile.estimator));
     }
     models.insert(
         0,
@@ -561,7 +629,7 @@ fn containment(ctx: &mut RxGain) -> Result<()> {
     for fill in FILLS {
         let profile = Profile {
             flags: 0,
-            sample: 0,
+            estimator: Estimator::Constant(0),
             seed: 17,
             fill,
             settle: false,
@@ -661,7 +729,7 @@ fn negative(ctx: &mut RxGain) -> Result<()> {
     let mut changed = ctx.rows(&profile)?;
     // A saturating sample drives a different minimum search.
     let other = Profile {
-        sample: 1 << 24,
+        estimator: Estimator::Constant(1 << 24),
         ..profile
     };
     changed[ROOT as usize].replacement =
@@ -719,16 +787,21 @@ mod tests {
         assert_eq!(publication.len(), 2 * 2 * FILLS.len() * 2);
         assert!(publication.iter().all(|p| !p.calibrates()));
         let calibration = calibration_profiles();
-        assert_eq!(calibration.len(), 5 * 2 * FILLS.len() * 2);
-        let samples: std::collections::BTreeSet<_> = calibration.iter().map(|p| p.sample).collect();
-        assert!(samples.contains(&(1 << 24)) && samples.contains(&-(1 << 24)));
+        assert_eq!(calibration.len(), 6 * 2 * FILLS.len() * 2);
+        let samples: std::collections::BTreeSet<_> =
+            calibration.iter().map(|p| p.estimator).collect();
+        assert!(
+            samples.contains(&Estimator::Constant(1 << 24))
+                && samples.contains(&Estimator::Constant(-(1 << 24)))
+                && samples.contains(&Estimator::Cycle(CALIBRATION_CYCLE))
+        );
     }
 
     #[test]
     fn parameter_image_places_every_semantic_field() {
         let profile = Profile {
             flags: DC_CALIBRATED | TABLES_INITIALIZED,
-            sample: 0,
+            estimator: Estimator::Constant(0),
             seed: 17,
             fill: 0x5a,
             settle: false,

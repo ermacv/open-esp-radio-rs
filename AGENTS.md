@@ -37,7 +37,12 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   packing and structural checks.
 - `hil/` contains the typed HIL protocol, host runner, targets, and scenarios.
 - `verification/vendor/` holds reviewed vendor-comparison inputs; `_oracles/`
-  is private input and must never be committed.
+  is private input and must never be committed. The single pin of every
+  vendor archive, ROM ELF and SDK firmware (repository, revision, SHA-256) is
+  `verification/vendor/projects/<chip>/artifacts.toml`; `cargo xtask
+  vendor-fetch <chip>` downloads and verifies them into `target/vendor/`, and
+  the vendor scenarios default to those paths. Hashes elsewhere record where a
+  reviewed fact was observed and are not pins.
 - `qualification/` owns capability programs and their independent evaluator.
   `registers/` owns reviewed hardware models, publication policy and generated
   SVD/bindings. `tools/` contains Blobray, memory analysis and repository checks

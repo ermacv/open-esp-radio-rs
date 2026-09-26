@@ -31,6 +31,12 @@ enum Task {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<std::ffi::OsString>,
     },
+    /// Download the chip's pinned vendor artifacts into `target/vendor` and
+    /// verify every artifact against `artifacts.toml`.
+    VendorFetch {
+        #[arg(default_value = "esp32s31")]
+        chip: String,
+    },
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
@@ -109,6 +115,7 @@ fn run() -> Result<std::process::ExitCode> {
         Task::VendorScenario { chip, args } => {
             return oer_xtask::vendor_scenario::run(&ctx, &chip, &args);
         }
+        Task::VendorFetch { chip } => oer_xtask::vendor_fetch::run(&ctx, &chip),
         Task::Doc => oer_xtask::doc::run(&ctx),
         Task::Check { check } => match check {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),

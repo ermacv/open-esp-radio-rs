@@ -15,6 +15,7 @@ pub mod graph;
 pub mod hil;
 pub mod paths;
 pub mod process;
+pub mod vendor_fetch;
 pub mod vendor_scenario;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

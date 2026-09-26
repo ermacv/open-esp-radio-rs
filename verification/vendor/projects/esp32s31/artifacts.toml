@@ -1,0 +1,160 @@
+# The single pin of every ESP32-S31 vendor artifact this repository compares
+# against.
+#
+# Each artifact names its upstream source and SHA-256. `cargo xtask
+# vendor-fetch esp32s31` downloads every fetchable artifact into
+# `target/vendor/<source>/<revision>/<path>` and verifies it; the vendor
+# scenarios default to those paths and authenticate every input against this
+# file. Changing a pin means changing this file, and production follows the
+# pinned behaviour. Historical hashes in reviewed register evidence and
+# reference notes record the artifact a fact was observed in; they are not
+# pins.
+schema = 1
+
+[[source]]
+id = "esp-phy-lib"
+kind = "git"
+repository = "https://github.com/espressif/esp-phy-lib"
+revision = "20f1db053a0e6cb9f1c09d255c43bf42483041d0"
+
+[[source]]
+id = "esp32-wifi-lib"
+kind = "git"
+repository = "https://github.com/espressif/esp32-wifi-lib"
+revision = "af55a0ca258ce9d791d1661d7c2bbb65f08c0c21"
+
+[[source]]
+id = "esp-coex-lib"
+kind = "git"
+repository = "https://github.com/espressif/esp-coex-lib"
+revision = "c758e7b56e0fa22177a0539796e1df59978dc322"
+
+[[source]]
+id = "esp32s31-bt-lib"
+kind = "git"
+repository = "https://github.com/espressif/esp32s31-bt-lib"
+revision = "10c507788e9da0993709cf82e405c896561172d8"
+
+# Release tarball of ROM ELFs; `path` names the member.
+[[source]]
+id = "esp-rom-elfs"
+kind = "release"
+repository = "https://github.com/espressif/esp-rom-elfs"
+revision = "20260528"
+asset = "esp-rom-elfs-20260528.tar.gz"
+sha256 = "caa463d3cbef2430a5a35847c1d9f2f152403b17a802050927ff60c8da54fe46"
+
+# Built locally from an ESP-IDF tree; never fetched. `path` is where the
+# scenarios expect the build output below the repository root.
+[[source]]
+id = "local-build"
+kind = "local"
+
+[[artifact]]
+id = "libphy"
+source = "esp-phy-lib"
+path = "esp32s31/libphy.a"
+sha256 = "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2"
+
+[[artifact]]
+id = "librftest"
+source = "esp-phy-lib"
+path = "esp32s31/librftest.a"
+sha256 = "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a"
+
+[[artifact]]
+id = "libbtbb"
+source = "esp-phy-lib"
+path = "esp32s31/libbtbb.a"
+sha256 = "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895"
+
+[[artifact]]
+id = "libbttestmode"
+source = "esp-phy-lib"
+path = "esp32s31/libbttestmode.a"
+sha256 = "2d8151fd417b34cf8de716f503d212223f652b06f2defae439f915ccdf661118"
+
+[[artifact]]
+id = "libpp"
+source = "esp32-wifi-lib"
+path = "esp32s31/libpp.a"
+sha256 = "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4"
+
+[[artifact]]
+id = "libnet80211"
+source = "esp32-wifi-lib"
+path = "esp32s31/libnet80211.a"
+sha256 = "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d"
+
+[[artifact]]
+id = "libcore"
+source = "esp32-wifi-lib"
+path = "esp32s31/libcore.a"
+sha256 = "7199d31d655adc31af612502f96febe1ba1607cdb8ba2a77c8c140fc08dda9de"
+
+[[artifact]]
+id = "libespnow"
+source = "esp32-wifi-lib"
+path = "esp32s31/libespnow.a"
+sha256 = "f15f64b73a53b0a0a059cf5d433f7167ce520ab2df63c8a7b656712e939f0698"
+
+[[artifact]]
+id = "libmesh"
+source = "esp32-wifi-lib"
+path = "esp32s31/libmesh.a"
+sha256 = "9a7b11fa8114a588cfeac9332f7136938d92601d93eda327e9b7a0b2d05572b6"
+
+[[artifact]]
+id = "libsmartconfig"
+source = "esp32-wifi-lib"
+path = "esp32s31/libsmartconfig.a"
+sha256 = "ddb9c932ead9a7a1fac3c6aefec4f33bc023e19a800cb829ee4d69c41f68101b"
+
+[[artifact]]
+id = "libwapi"
+source = "esp32-wifi-lib"
+path = "esp32s31/libwapi.a"
+sha256 = "8677d30cbd8805258a774c16ddd584e268f92899e43a75ec52eacd53c871b7d7"
+
+[[artifact]]
+id = "libcoexist"
+source = "esp-coex-lib"
+path = "esp32s31/libcoexist.a"
+sha256 = "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147"
+
+[[artifact]]
+id = "libble_app"
+source = "esp32s31-bt-lib"
+path = "libble_app.a"
+sha256 = "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723"
+
+[[artifact]]
+id = "libbredr_app"
+source = "esp32s31-bt-lib"
+path = "libbredr_app.a"
+sha256 = "813f8a34e98694be4e19e9ac5d0ce5e805f531c73154c35f98e22143834ad851"
+
+[[artifact]]
+id = "libbtdm_common"
+source = "esp32s31-bt-lib"
+path = "libbtdm_common.a"
+sha256 = "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41"
+
+[[artifact]]
+id = "rom"
+source = "esp-rom-elfs"
+path = "esp32s31_rev0_rom.elf"
+sha256 = "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87"
+
+# ESP-IDF firmware of the PHY vendor-tracking reference project.
+[[artifact]]
+id = "sdk"
+source = "local-build"
+path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/bootloader/bootloader.elf"
+sha256 = "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
+
+[[artifact]]
+id = "phy-sdk"
+source = "local-build"
+path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/phy_tracking_reference.elf"
+sha256 = "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"

@@ -26,7 +26,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `network/interface/` | Stack-neutral interface, link and error values |
 | `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Frame/protocol code, MAC contracts, role policy and security |
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |
-| `protocols/bluetooth/le/ll/` | Portable LE PDU codecs and protocol-role state |
+| `protocols/bluetooth/le/ll/` | Portable LE PDU codecs, protocol-role state and the Direct Test Mode session planner |
 | `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values |
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` retains bootstrap, command/response authority and `le` policies |
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |

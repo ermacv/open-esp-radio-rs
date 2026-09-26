@@ -14,6 +14,9 @@
 //! post-maintenance recovery obligations. This protocol decision grants no
 //! hardware access or timing budget; both remain with the lower radio owner.
 
+#[cfg(test)]
+extern crate std;
+
 mod address;
 pub mod advertiser;
 pub mod advertising;
@@ -21,6 +24,7 @@ pub mod advertising_lifecycle;
 pub mod connectable_advertising;
 pub mod connection;
 pub mod control;
+pub mod dtm;
 pub mod scanning;
 pub mod security;
 

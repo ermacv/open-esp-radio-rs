@@ -19335,68 +19335,6 @@ bits and the unobserved words inside each stride remain unknown.
       </registers>
     </peripheral>
     <peripheral>
-      <name>BTDM_LOW_POWER_CONFIG</name>
-      <description>Sparse low-power configuration/status words reached by complete BTDM runtime
-and btdm_sleep.c functions. Positional names preserve exact access direction
-and complete images without inventing clock, calibration or RTC semantics.
-</description>
-      <baseAddress>0x20108800</baseAddress>
-      <registers>
-        <register>
-          <name>STATUS_0000</name>
-          <description>Complete word read by two BTDM sleep/runtime functions. Inner encoding remains unknown.</description>
-          <addressOffset>0x0</addressOffset>
-          <size>0x20</size>
-          <access>read-only</access>
-          <fields>
-            <field>
-              <name>IMAGE</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>COMMAND_0004</name>
-          <description>Complete functions publish dynamic complete images and the independently observed finite complete images 0x10, 0x20, 0x40 and 0x80. Whole-word authority remains a register-level fact.</description>
-          <addressOffset>0x4</addressOffset>
-          <size>0x20</size>
-          <access>write-only</access>
-        </register>
-        <register>
-          <name>COMMAND_0008</name>
-          <description>Complete word receives runtime-derived images and the independently observed finite images 0x10, 0x20, 0x40 and 0x80.</description>
-          <addressOffset>0x8</addressOffset>
-          <size>0x20</size>
-          <access>write-only</access>
-          <fields>
-            <field>
-              <name>IMAGE</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <dim>8</dim>
-          <dimIncrement>0x4</dimIncrement>
-          <dimIndex>0-7</dimIndex>
-          <name>CONFIG%s</name>
-          <description>Eight complete configuration words initialized to the finite sequence 69, 17, 67, 18, 70, 17, 70, 15 and later consumed by BTDM runtime functions.</description>
-          <addressOffset>0x2C</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <fields>
-            <field>
-              <name>IMAGE</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-            </field>
-          </fields>
-        </register>
-      </registers>
-    </peripheral>
-    <peripheral>
       <name>BTDM_RUNTIME_CONTROL</name>
       <description>Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31
 functions prove only the recorded access directions, finite images, low-24-bit
@@ -24030,6 +23968,216 @@ polled or validation transaction starts with both CPU routes detached.</descript
               <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>22</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>MODEM_ETM</name>
+      <description>ESP32-S31 modem event-task matrix at MODEM_BASE + 0x8800, shared by the
+IEEE 802.15.4 and Bluetooth lifecycles. The public IEEE 802.15.4 driver names
+the channel-enable, set and clear words and the per-channel event/task pair
+at an eight-byte stride, and programs channels zero and one; the BTDM runtime
+programs channels four through seven through the same words. Channel bits and
+identifiers without a reviewed user remain absent and no reset values are
+claimed.</description>
+      <baseAddress>0x20108800</baseAddress>
+      <registers>
+        <register>
+          <name>CHANNEL_ENABLE</name>
+          <description>Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled; the BTDM runtime reads the complete word.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>CH0</name>
+              <description>Channel 0 is enabled.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH1</name>
+              <description>Channel 1 is enabled.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH4</name>
+              <description>Channel 4 is enabled.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH5</name>
+              <description>Channel 5 is enabled.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH6</name>
+              <description>Channel 6 is enabled.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH7</name>
+              <description>Channel 7 is enabled.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CHANNEL_ENABLE_SET</name>
+          <description>Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>CH0</name>
+              <description>Enable channel 0.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH1</name>
+              <description>Enable channel 1.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH4</name>
+              <description>Enable channel 4.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH5</name>
+              <description>Enable channel 5.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH6</name>
+              <description>Enable channel 6.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH7</name>
+              <description>Enable channel 7.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CHANNEL_ENABLE_CLEAR</name>
+          <description>Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>CH0</name>
+              <description>Disable channel 0.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH1</name>
+              <description>Disable channel 1.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH4</name>
+              <description>Disable channel 4.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH5</name>
+              <description>Disable channel 5.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH6</name>
+              <description>Disable channel 6.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH7</name>
+              <description>Disable channel 7.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>8</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-7</dimIndex>
+          <name>CH%s_EVENT</name>
+          <description>Complete event identifier monitored by the selected channel.</description>
+          <addressOffset>0xC</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>ID</name>
+              <description>Event identifier written as a complete word.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <enumeratedValues>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>IEEE802154_TIMER1_OVERFLOW</name>
+                  <value>79</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>IEEE802154_TIMER0_OVERFLOW</name>
+                  <value>80</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>8</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-7</dimIndex>
+          <name>CH%s_TASK</name>
+          <description>Complete task identifier triggered when the selected channel's event occurs.</description>
+          <addressOffset>0x10</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>ID</name>
+              <description>Task identifier written as a complete word.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <enumeratedValues>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>IEEE802154_ED_TRIG_TX</name>
+                  <value>84</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>IEEE802154_RX_START</name>
+                  <value>85</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>IEEE802154_TX_START</name>
+                  <value>88</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>

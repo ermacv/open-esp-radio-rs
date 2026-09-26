@@ -45645,165 +45645,6 @@ pub mod btdm_scheduler_table {
         }
     }
 }
-#[doc = "Sparse low-power configuration/status words reached by complete BTDM runtime and btdm_sleep.c functions. Positional names preserve exact access direction and complete images without inventing clock, calibration or RTC semantics."]
-pub type BtdmLowPowerConfig = crate::Periph<btdm_low_power_config::RegisterBlock, 0x2010_8800>;
-impl core::fmt::Debug for BtdmLowPowerConfig {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BtdmLowPowerConfig").finish()
-    }
-}
-#[doc = "Sparse low-power configuration/status words reached by complete BTDM runtime and btdm_sleep.c functions. Positional names preserve exact access direction and complete images without inventing clock, calibration or RTC semantics."]
-pub mod btdm_low_power_config {
-    #[repr(C)]
-    #[doc = "Register block"]
-    pub struct RegisterBlock {
-        status_0000: Status0000,
-        command_0004: Command0004,
-        command_0008: Command0008,
-        _reserved3: [u8; 0x20],
-        config: [Config; 8],
-    }
-    impl RegisterBlock {
-        #[doc = "0x00 - Complete word read by two BTDM sleep/runtime functions. Inner encoding remains unknown."]
-        #[inline(always)]
-        pub const fn status_0000(&self) -> &Status0000 {
-            &self.status_0000
-        }
-        #[doc = "0x04 - Complete functions publish dynamic complete images and the independently observed finite complete images 0x10, 0x20, 0x40 and 0x80. Whole-word authority remains a register-level fact."]
-        #[inline(always)]
-        pub const fn command_0004(&self) -> &Command0004 {
-            &self.command_0004
-        }
-        #[doc = "0x08 - Complete word receives runtime-derived images and the independently observed finite images 0x10, 0x20, 0x40 and 0x80."]
-        #[inline(always)]
-        pub const fn command_0008(&self) -> &Command0008 {
-            &self.command_0008
-        }
-        #[doc = "0x2c..0x4c - Eight complete configuration words initialized to the finite sequence 69, 17, 67, 18, 70, 17, 70, 15 and later consumed by BTDM runtime functions."]
-        #[inline(always)]
-        pub const fn config(&self, n: usize) -> &Config {
-            &self.config[n]
-        }
-        #[doc = "Iterator for array of:"]
-        #[doc = "0x2c..0x4c - Eight complete configuration words initialized to the finite sequence 69, 17, 67, 18, 70, 17, 70, 15 and later consumed by BTDM runtime functions."]
-        #[inline(always)]
-        pub fn config_iter(&self) -> impl Iterator<Item = &Config> {
-            self.config.iter()
-        }
-    }
-    #[doc = "STATUS_0000 (r) register accessor: Complete word read by two BTDM sleep/runtime functions. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`status_0000::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status_0000`] module"]
-    #[doc(alias = "STATUS_0000")]
-    pub type Status0000 = crate::Reg<status_0000::Status0000Spec>;
-    #[doc = "Complete word read by two BTDM sleep/runtime functions. Inner encoding remains unknown."]
-    pub mod status_0000 {
-        #[doc = "Register `STATUS_0000` reader"]
-        pub type R = crate::R<Status0000Spec>;
-        #[doc = "Field `IMAGE` reader - "]
-        pub type ImageR = crate::FieldReader<u32>;
-        impl R {
-            #[doc = "Bits 0:31"]
-            #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
-            }
-        }
-        #[doc = "Complete word read by two BTDM sleep/runtime functions. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`status_0000::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Status0000Spec;
-        impl crate::RegisterSpec for Status0000Spec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`status_0000::R`](R) reader structure"]
-        impl crate::Readable for Status0000Spec {}
-    }
-    #[doc = "COMMAND_0004 (w) register accessor: Complete functions publish dynamic complete images and the independently observed finite complete images 0x10, 0x20, 0x40 and 0x80. Whole-word authority remains a register-level fact.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0004::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0004`] module"]
-    #[doc(alias = "COMMAND_0004")]
-    pub type Command0004 = crate::Reg<command_0004::Command0004Spec>;
-    #[doc = "Complete functions publish dynamic complete images and the independently observed finite complete images 0x10, 0x20, 0x40 and 0x80. Whole-word authority remains a register-level fact."]
-    pub mod command_0004 {
-        #[doc = "Register `COMMAND_0004` writer"]
-        pub type W = crate::W<Command0004Spec>;
-        impl core::fmt::Debug for crate::generic::Reg<Command0004Spec> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                write!(f, "(not readable)")
-            }
-        }
-        impl W {}
-        #[doc = "Complete functions publish dynamic complete images and the independently observed finite complete images 0x10, 0x20, 0x40 and 0x80. Whole-word authority remains a register-level fact.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0004::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0004Spec;
-        impl crate::RegisterSpec for Command0004Spec {
-            type Ux = u32;
-        }
-        #[doc = "`write(|w| ..)` method takes [`command_0004::W`](W) writer structure"]
-        impl crate::Writable for Command0004Spec {
-            type Safety = crate::Unsafe;
-        }
-    }
-    #[doc = "COMMAND_0008 (w) register accessor: Complete word receives runtime-derived images and the independently observed finite images 0x10, 0x20, 0x40 and 0x80.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0008::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0008`] module"]
-    #[doc(alias = "COMMAND_0008")]
-    pub type Command0008 = crate::Reg<command_0008::Command0008Spec>;
-    #[doc = "Complete word receives runtime-derived images and the independently observed finite images 0x10, 0x20, 0x40 and 0x80."]
-    pub mod command_0008 {
-        #[doc = "Register `COMMAND_0008` writer"]
-        pub type W = crate::W<Command0008Spec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
-        impl W {
-            #[doc = "Bits 0:31"]
-            #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0008Spec> {
-                ImageW::new(self, 0)
-            }
-        }
-        #[doc = "Complete word receives runtime-derived images and the independently observed finite images 0x10, 0x20, 0x40 and 0x80.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0008::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0008Spec;
-        impl crate::RegisterSpec for Command0008Spec {
-            type Ux = u32;
-        }
-        #[doc = "`write(|w| ..)` method takes [`command_0008::W`](W) writer structure"]
-        impl crate::Writable for Command0008Spec {
-            type Safety = crate::Unsafe;
-        }
-    }
-    #[doc = "CONFIG (rw) register accessor: Eight complete configuration words initialized to the finite sequence 69, 17, 67, 18, 70, 17, 70, 15 and later consumed by BTDM runtime functions.\n\nYou can [`read`](crate::Reg::read) this register and get [`config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@config`] module"]
-    #[doc(alias = "CONFIG")]
-    pub type Config = crate::Reg<config::ConfigSpec>;
-    #[doc = "Eight complete configuration words initialized to the finite sequence 69, 17, 67, 18, 70, 17, 70, 15 and later consumed by BTDM runtime functions."]
-    pub mod config {
-        #[doc = "Register `CONFIG%s` reader"]
-        pub type R = crate::R<ConfigSpec>;
-        #[doc = "Register `CONFIG%s` writer"]
-        pub type W = crate::W<ConfigSpec>;
-        #[doc = "Field `IMAGE` reader - "]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
-        impl R {
-            #[doc = "Bits 0:31"]
-            #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:31"]
-            #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, ConfigSpec> {
-                ImageW::new(self, 0)
-            }
-        }
-        #[doc = "Eight complete configuration words initialized to the finite sequence 69, 17, 67, 18, 70, 17, 70, 15 and later consumed by BTDM runtime functions.\n\nYou can [`read`](crate::Reg::read) this register and get [`config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct ConfigSpec;
-        impl crate::RegisterSpec for ConfigSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`config::R`](R) reader structure"]
-        impl crate::Readable for ConfigSpec {}
-        #[doc = "`write(|w| ..)` method takes [`config::W`](W) writer structure"]
-        impl crate::Writable for ConfigSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-}
 #[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and four isolated RMW controls. The independently role-mapped runtime-timer start command is named; all other positional names deliberately avoid assigning undocumented peripheral semantics."]
 pub type BtdmRuntimeControl = crate::Periph<btdm_runtime_control::RegisterBlock, 0x2010_d000>;
 impl core::fmt::Debug for BtdmRuntimeControl {
@@ -57007,6 +56848,653 @@ pub mod ieee802154_interrupt_route {
         impl crate::Resettable for Core1RouteSpec {}
     }
 }
+#[doc = "ESP32-S31 modem event-task matrix at MODEM_BASE + 0x8800, shared by the IEEE 802.15.4 and Bluetooth lifecycles. The public IEEE 802.15.4 driver names the channel-enable, set and clear words and the per-channel event/task pair at an eight-byte stride, and programs channels zero and one; the BTDM runtime programs channels four through seven through the same words. Channel bits and identifiers without a reviewed user remain absent and no reset values are claimed."]
+pub type ModemEtm = crate::Periph<modem_etm::RegisterBlock, 0x2010_8800>;
+impl core::fmt::Debug for ModemEtm {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ModemEtm").finish()
+    }
+}
+#[doc = "ESP32-S31 modem event-task matrix at MODEM_BASE + 0x8800, shared by the IEEE 802.15.4 and Bluetooth lifecycles. The public IEEE 802.15.4 driver names the channel-enable, set and clear words and the per-channel event/task pair at an eight-byte stride, and programs channels zero and one; the BTDM runtime programs channels four through seven through the same words. Channel bits and identifiers without a reviewed user remain absent and no reset values are claimed."]
+pub mod modem_etm {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        channel_enable: ChannelEnable,
+        channel_enable_set: ChannelEnableSet,
+        channel_enable_clear: ChannelEnableClear,
+        ch_event: (),
+        _reserved4: [u8; 0x04],
+        ch_task: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled; the BTDM runtime reads the complete word."]
+        #[inline(always)]
+        pub const fn channel_enable(&self) -> &ChannelEnable {
+            &self.channel_enable
+        }
+        #[doc = "0x04 - Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images."]
+        #[inline(always)]
+        pub const fn channel_enable_set(&self) -> &ChannelEnableSet {
+            &self.channel_enable_set
+        }
+        #[doc = "0x08 - Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images."]
+        #[inline(always)]
+        pub const fn channel_enable_clear(&self) -> &ChannelEnableClear {
+            &self.channel_enable_clear
+        }
+        #[doc = "0x0c..0x2c - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch_event(&self, n: usize) -> &ChEvent {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(12)
+                    .add(8 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x0c..0x2c - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub fn ch_event_iter(&self) -> impl Iterator<Item = &ChEvent> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(12)
+                    .add(8 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x0c - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch0_event(&self) -> &ChEvent {
+            self.ch_event(0)
+        }
+        #[doc = "0x14 - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch1_event(&self) -> &ChEvent {
+            self.ch_event(1)
+        }
+        #[doc = "0x1c - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch2_event(&self) -> &ChEvent {
+            self.ch_event(2)
+        }
+        #[doc = "0x24 - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch3_event(&self) -> &ChEvent {
+            self.ch_event(3)
+        }
+        #[doc = "0x2c - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch4_event(&self) -> &ChEvent {
+            self.ch_event(4)
+        }
+        #[doc = "0x34 - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch5_event(&self) -> &ChEvent {
+            self.ch_event(5)
+        }
+        #[doc = "0x3c - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch6_event(&self) -> &ChEvent {
+            self.ch_event(6)
+        }
+        #[doc = "0x44 - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch7_event(&self) -> &ChEvent {
+            self.ch_event(7)
+        }
+        #[doc = "0x10..0x30 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch_task(&self, n: usize) -> &ChTask {
+            #[allow(clippy::no_effect)]
+            [(); 8][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(16)
+                    .add(8 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x10..0x30 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub fn ch_task_iter(&self) -> impl Iterator<Item = &ChTask> {
+            (0..8).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(16)
+                    .add(8 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x10 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch0_task(&self) -> &ChTask {
+            self.ch_task(0)
+        }
+        #[doc = "0x18 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch1_task(&self) -> &ChTask {
+            self.ch_task(1)
+        }
+        #[doc = "0x20 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch2_task(&self) -> &ChTask {
+            self.ch_task(2)
+        }
+        #[doc = "0x28 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch3_task(&self) -> &ChTask {
+            self.ch_task(3)
+        }
+        #[doc = "0x30 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch4_task(&self) -> &ChTask {
+            self.ch_task(4)
+        }
+        #[doc = "0x38 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch5_task(&self) -> &ChTask {
+            self.ch_task(5)
+        }
+        #[doc = "0x40 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch6_task(&self) -> &ChTask {
+            self.ch_task(6)
+        }
+        #[doc = "0x48 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch7_task(&self) -> &ChTask {
+            self.ch_task(7)
+        }
+    }
+    #[doc = "CHANNEL_ENABLE (r) register accessor: Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled; the BTDM runtime reads the complete word.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable`] module"]
+    #[doc(alias = "CHANNEL_ENABLE")]
+    pub type ChannelEnable = crate::Reg<channel_enable::ChannelEnableSpec>;
+    #[doc = "Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled; the BTDM runtime reads the complete word."]
+    pub mod channel_enable {
+        #[doc = "Register `CHANNEL_ENABLE` reader"]
+        pub type R = crate::R<ChannelEnableSpec>;
+        #[doc = "Field `CH0` reader - Channel 0 is enabled."]
+        pub type Ch0R = crate::BitReader;
+        #[doc = "Field `CH1` reader - Channel 1 is enabled."]
+        pub type Ch1R = crate::BitReader;
+        #[doc = "Field `CH4` reader - Channel 4 is enabled."]
+        pub type Ch4R = crate::BitReader;
+        #[doc = "Field `CH5` reader - Channel 5 is enabled."]
+        pub type Ch5R = crate::BitReader;
+        #[doc = "Field `CH6` reader - Channel 6 is enabled."]
+        pub type Ch6R = crate::BitReader;
+        #[doc = "Field `CH7` reader - Channel 7 is enabled."]
+        pub type Ch7R = crate::BitReader;
+        impl R {
+            #[doc = "Bit 0 - Channel 0 is enabled."]
+            #[inline(always)]
+            pub fn ch0(&self) -> Ch0R {
+                Ch0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Channel 1 is enabled."]
+            #[inline(always)]
+            pub fn ch1(&self) -> Ch1R {
+                Ch1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Channel 4 is enabled."]
+            #[inline(always)]
+            pub fn ch4(&self) -> Ch4R {
+                Ch4R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Channel 5 is enabled."]
+            #[inline(always)]
+            pub fn ch5(&self) -> Ch5R {
+                Ch5R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Channel 6 is enabled."]
+            #[inline(always)]
+            pub fn ch6(&self) -> Ch6R {
+                Ch6R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Channel 7 is enabled."]
+            #[inline(always)]
+            pub fn ch7(&self) -> Ch7R {
+                Ch7R::new(((self.bits >> 7) & 1) != 0)
+            }
+        }
+        #[doc = "Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled; the BTDM runtime reads the complete word.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChannelEnableSpec;
+        impl crate::RegisterSpec for ChannelEnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`channel_enable::R`](R) reader structure"]
+        impl crate::Readable for ChannelEnableSpec {}
+    }
+    #[doc = "CHANNEL_ENABLE_SET (rw) register accessor: Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_set::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_set::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable_set`] module"]
+    #[doc(alias = "CHANNEL_ENABLE_SET")]
+    pub type ChannelEnableSet = crate::Reg<channel_enable_set::ChannelEnableSetSpec>;
+    #[doc = "Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images."]
+    pub mod channel_enable_set {
+        #[doc = "Register `CHANNEL_ENABLE_SET` reader"]
+        pub type R = crate::R<ChannelEnableSetSpec>;
+        #[doc = "Register `CHANNEL_ENABLE_SET` writer"]
+        pub type W = crate::W<ChannelEnableSetSpec>;
+        #[doc = "Field `CH0` reader - Enable channel 0."]
+        pub type Ch0R = crate::BitReader;
+        #[doc = "Field `CH0` writer - Enable channel 0."]
+        pub type Ch0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH1` reader - Enable channel 1."]
+        pub type Ch1R = crate::BitReader;
+        #[doc = "Field `CH1` writer - Enable channel 1."]
+        pub type Ch1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH4` reader - Enable channel 4."]
+        pub type Ch4R = crate::BitReader;
+        #[doc = "Field `CH4` writer - Enable channel 4."]
+        pub type Ch4W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH5` reader - Enable channel 5."]
+        pub type Ch5R = crate::BitReader;
+        #[doc = "Field `CH5` writer - Enable channel 5."]
+        pub type Ch5W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH6` reader - Enable channel 6."]
+        pub type Ch6R = crate::BitReader;
+        #[doc = "Field `CH6` writer - Enable channel 6."]
+        pub type Ch6W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH7` reader - Enable channel 7."]
+        pub type Ch7R = crate::BitReader;
+        #[doc = "Field `CH7` writer - Enable channel 7."]
+        pub type Ch7W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Enable channel 0."]
+            #[inline(always)]
+            pub fn ch0(&self) -> Ch0R {
+                Ch0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Enable channel 1."]
+            #[inline(always)]
+            pub fn ch1(&self) -> Ch1R {
+                Ch1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Enable channel 4."]
+            #[inline(always)]
+            pub fn ch4(&self) -> Ch4R {
+                Ch4R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Enable channel 5."]
+            #[inline(always)]
+            pub fn ch5(&self) -> Ch5R {
+                Ch5R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Enable channel 6."]
+            #[inline(always)]
+            pub fn ch6(&self) -> Ch6R {
+                Ch6R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Enable channel 7."]
+            #[inline(always)]
+            pub fn ch7(&self) -> Ch7R {
+                Ch7R::new(((self.bits >> 7) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Enable channel 0."]
+            #[inline(always)]
+            pub fn ch0(&mut self) -> Ch0W<'_, ChannelEnableSetSpec> {
+                Ch0W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Enable channel 1."]
+            #[inline(always)]
+            pub fn ch1(&mut self) -> Ch1W<'_, ChannelEnableSetSpec> {
+                Ch1W::new(self, 1)
+            }
+            #[doc = "Bit 4 - Enable channel 4."]
+            #[inline(always)]
+            pub fn ch4(&mut self) -> Ch4W<'_, ChannelEnableSetSpec> {
+                Ch4W::new(self, 4)
+            }
+            #[doc = "Bit 5 - Enable channel 5."]
+            #[inline(always)]
+            pub fn ch5(&mut self) -> Ch5W<'_, ChannelEnableSetSpec> {
+                Ch5W::new(self, 5)
+            }
+            #[doc = "Bit 6 - Enable channel 6."]
+            #[inline(always)]
+            pub fn ch6(&mut self) -> Ch6W<'_, ChannelEnableSetSpec> {
+                Ch6W::new(self, 6)
+            }
+            #[doc = "Bit 7 - Enable channel 7."]
+            #[inline(always)]
+            pub fn ch7(&mut self) -> Ch7W<'_, ChannelEnableSetSpec> {
+                Ch7W::new(self, 7)
+            }
+        }
+        #[doc = "Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_set::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_set::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChannelEnableSetSpec;
+        impl crate::RegisterSpec for ChannelEnableSetSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`channel_enable_set::R`](R) reader structure"]
+        impl crate::Readable for ChannelEnableSetSpec {}
+        #[doc = "`write(|w| ..)` method takes [`channel_enable_set::W`](W) writer structure"]
+        impl crate::Writable for ChannelEnableSetSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CHANNEL_ENABLE_CLEAR (rw) register accessor: Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable_clear`] module"]
+    #[doc(alias = "CHANNEL_ENABLE_CLEAR")]
+    pub type ChannelEnableClear = crate::Reg<channel_enable_clear::ChannelEnableClearSpec>;
+    #[doc = "Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images."]
+    pub mod channel_enable_clear {
+        #[doc = "Register `CHANNEL_ENABLE_CLEAR` reader"]
+        pub type R = crate::R<ChannelEnableClearSpec>;
+        #[doc = "Register `CHANNEL_ENABLE_CLEAR` writer"]
+        pub type W = crate::W<ChannelEnableClearSpec>;
+        #[doc = "Field `CH0` reader - Disable channel 0."]
+        pub type Ch0R = crate::BitReader;
+        #[doc = "Field `CH0` writer - Disable channel 0."]
+        pub type Ch0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH1` reader - Disable channel 1."]
+        pub type Ch1R = crate::BitReader;
+        #[doc = "Field `CH1` writer - Disable channel 1."]
+        pub type Ch1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH4` reader - Disable channel 4."]
+        pub type Ch4R = crate::BitReader;
+        #[doc = "Field `CH4` writer - Disable channel 4."]
+        pub type Ch4W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH5` reader - Disable channel 5."]
+        pub type Ch5R = crate::BitReader;
+        #[doc = "Field `CH5` writer - Disable channel 5."]
+        pub type Ch5W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH6` reader - Disable channel 6."]
+        pub type Ch6R = crate::BitReader;
+        #[doc = "Field `CH6` writer - Disable channel 6."]
+        pub type Ch6W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH7` reader - Disable channel 7."]
+        pub type Ch7R = crate::BitReader;
+        #[doc = "Field `CH7` writer - Disable channel 7."]
+        pub type Ch7W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Disable channel 0."]
+            #[inline(always)]
+            pub fn ch0(&self) -> Ch0R {
+                Ch0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Disable channel 1."]
+            #[inline(always)]
+            pub fn ch1(&self) -> Ch1R {
+                Ch1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Disable channel 4."]
+            #[inline(always)]
+            pub fn ch4(&self) -> Ch4R {
+                Ch4R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Disable channel 5."]
+            #[inline(always)]
+            pub fn ch5(&self) -> Ch5R {
+                Ch5R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Disable channel 6."]
+            #[inline(always)]
+            pub fn ch6(&self) -> Ch6R {
+                Ch6R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Disable channel 7."]
+            #[inline(always)]
+            pub fn ch7(&self) -> Ch7R {
+                Ch7R::new(((self.bits >> 7) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Disable channel 0."]
+            #[inline(always)]
+            pub fn ch0(&mut self) -> Ch0W<'_, ChannelEnableClearSpec> {
+                Ch0W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Disable channel 1."]
+            #[inline(always)]
+            pub fn ch1(&mut self) -> Ch1W<'_, ChannelEnableClearSpec> {
+                Ch1W::new(self, 1)
+            }
+            #[doc = "Bit 4 - Disable channel 4."]
+            #[inline(always)]
+            pub fn ch4(&mut self) -> Ch4W<'_, ChannelEnableClearSpec> {
+                Ch4W::new(self, 4)
+            }
+            #[doc = "Bit 5 - Disable channel 5."]
+            #[inline(always)]
+            pub fn ch5(&mut self) -> Ch5W<'_, ChannelEnableClearSpec> {
+                Ch5W::new(self, 5)
+            }
+            #[doc = "Bit 6 - Disable channel 6."]
+            #[inline(always)]
+            pub fn ch6(&mut self) -> Ch6W<'_, ChannelEnableClearSpec> {
+                Ch6W::new(self, 6)
+            }
+            #[doc = "Bit 7 - Disable channel 7."]
+            #[inline(always)]
+            pub fn ch7(&mut self) -> Ch7W<'_, ChannelEnableClearSpec> {
+                Ch7W::new(self, 7)
+            }
+        }
+        #[doc = "Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChannelEnableClearSpec;
+        impl crate::RegisterSpec for ChannelEnableClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`channel_enable_clear::R`](R) reader structure"]
+        impl crate::Readable for ChannelEnableClearSpec {}
+        #[doc = "`write(|w| ..)` method takes [`channel_enable_clear::W`](W) writer structure"]
+        impl crate::Writable for ChannelEnableClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CH_EVENT (rw) register accessor: Complete event identifier monitored by the selected channel.\n\nYou can [`read`](crate::Reg::read) this register and get [`ch_event::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ch_event::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ch_event`] module"]
+    #[doc(alias = "CH_EVENT")]
+    pub type ChEvent = crate::Reg<ch_event::ChEventSpec>;
+    #[doc = "Complete event identifier monitored by the selected channel."]
+    pub mod ch_event {
+        #[doc = "Register `CH%s_EVENT` reader"]
+        pub type R = crate::R<ChEventSpec>;
+        #[doc = "Register `CH%s_EVENT` writer"]
+        pub type W = crate::W<ChEventSpec>;
+        #[doc = "Event identifier written as a complete word."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Id {
+            #[doc = "79: `1001111`"]
+            Ieee802154Timer1Overflow = 79,
+            #[doc = "80: `1010000`"]
+            Ieee802154Timer0Overflow = 80,
+        }
+        impl From<Id> for u32 {
+            #[inline(always)]
+            fn from(variant: Id) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Id {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for Id {}
+        #[doc = "Field `ID` reader - Event identifier written as a complete word."]
+        pub type IdR = crate::FieldReader<Id>;
+        impl IdR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Id> {
+                match self.bits {
+                    79 => Some(Id::Ieee802154Timer1Overflow),
+                    80 => Some(Id::Ieee802154Timer0Overflow),
+                    _ => None,
+                }
+            }
+            #[doc = "`1001111`"]
+            #[inline(always)]
+            pub fn is_ieee802154_timer1_overflow(&self) -> bool {
+                *self == Id::Ieee802154Timer1Overflow
+            }
+            #[doc = "`1010000`"]
+            #[inline(always)]
+            pub fn is_ieee802154_timer0_overflow(&self) -> bool {
+                *self == Id::Ieee802154Timer0Overflow
+            }
+        }
+        #[doc = "Field `ID` writer - Event identifier written as a complete word."]
+        pub type IdW<'a, REG> = crate::FieldWriter<'a, REG, 32, Id>;
+        impl<'a, REG> IdW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "`1001111`"]
+            #[inline(always)]
+            pub fn ieee802154_timer1_overflow(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154Timer1Overflow)
+            }
+            #[doc = "`1010000`"]
+            #[inline(always)]
+            pub fn ieee802154_timer0_overflow(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154Timer0Overflow)
+            }
+        }
+        impl R {
+            #[doc = "Bits 0:31 - Event identifier written as a complete word."]
+            #[inline(always)]
+            pub fn id(&self) -> IdR {
+                IdR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Event identifier written as a complete word."]
+            #[inline(always)]
+            pub fn id(&mut self) -> IdW<'_, ChEventSpec> {
+                IdW::new(self, 0)
+            }
+        }
+        #[doc = "Complete event identifier monitored by the selected channel.\n\nYou can [`read`](crate::Reg::read) this register and get [`ch_event::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ch_event::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChEventSpec;
+        impl crate::RegisterSpec for ChEventSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ch_event::R`](R) reader structure"]
+        impl crate::Readable for ChEventSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ch_event::W`](W) writer structure"]
+        impl crate::Writable for ChEventSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CH_TASK (rw) register accessor: Complete task identifier triggered when the selected channel's event occurs.\n\nYou can [`read`](crate::Reg::read) this register and get [`ch_task::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ch_task::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ch_task`] module"]
+    #[doc(alias = "CH_TASK")]
+    pub type ChTask = crate::Reg<ch_task::ChTaskSpec>;
+    #[doc = "Complete task identifier triggered when the selected channel's event occurs."]
+    pub mod ch_task {
+        #[doc = "Register `CH%s_TASK` reader"]
+        pub type R = crate::R<ChTaskSpec>;
+        #[doc = "Register `CH%s_TASK` writer"]
+        pub type W = crate::W<ChTaskSpec>;
+        #[doc = "Task identifier written as a complete word."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Id {
+            #[doc = "84: `1010100`"]
+            Ieee802154EdTrigTx = 84,
+            #[doc = "85: `1010101`"]
+            Ieee802154RxStart = 85,
+            #[doc = "88: `1011000`"]
+            Ieee802154TxStart = 88,
+        }
+        impl From<Id> for u32 {
+            #[inline(always)]
+            fn from(variant: Id) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Id {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for Id {}
+        #[doc = "Field `ID` reader - Task identifier written as a complete word."]
+        pub type IdR = crate::FieldReader<Id>;
+        impl IdR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Id> {
+                match self.bits {
+                    84 => Some(Id::Ieee802154EdTrigTx),
+                    85 => Some(Id::Ieee802154RxStart),
+                    88 => Some(Id::Ieee802154TxStart),
+                    _ => None,
+                }
+            }
+            #[doc = "`1010100`"]
+            #[inline(always)]
+            pub fn is_ieee802154_ed_trig_tx(&self) -> bool {
+                *self == Id::Ieee802154EdTrigTx
+            }
+            #[doc = "`1010101`"]
+            #[inline(always)]
+            pub fn is_ieee802154_rx_start(&self) -> bool {
+                *self == Id::Ieee802154RxStart
+            }
+            #[doc = "`1011000`"]
+            #[inline(always)]
+            pub fn is_ieee802154_tx_start(&self) -> bool {
+                *self == Id::Ieee802154TxStart
+            }
+        }
+        #[doc = "Field `ID` writer - Task identifier written as a complete word."]
+        pub type IdW<'a, REG> = crate::FieldWriter<'a, REG, 32, Id>;
+        impl<'a, REG> IdW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "`1010100`"]
+            #[inline(always)]
+            pub fn ieee802154_ed_trig_tx(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154EdTrigTx)
+            }
+            #[doc = "`1010101`"]
+            #[inline(always)]
+            pub fn ieee802154_rx_start(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154RxStart)
+            }
+            #[doc = "`1011000`"]
+            #[inline(always)]
+            pub fn ieee802154_tx_start(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154TxStart)
+            }
+        }
+        impl R {
+            #[doc = "Bits 0:31 - Task identifier written as a complete word."]
+            #[inline(always)]
+            pub fn id(&self) -> IdR {
+                IdR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Task identifier written as a complete word."]
+            #[inline(always)]
+            pub fn id(&mut self) -> IdW<'_, ChTaskSpec> {
+                IdW::new(self, 0)
+            }
+        }
+        #[doc = "Complete task identifier triggered when the selected channel's event occurs.\n\nYou can [`read`](crate::Reg::read) this register and get [`ch_task::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ch_task::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChTaskSpec;
+        impl crate::RegisterSpec for ChTaskSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ch_task::R`](R) reader structure"]
+        impl crate::Readable for ChTaskSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ch_task::W`](W) writer structure"]
+        impl crate::Writable for ChTaskSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
@@ -57188,8 +57676,6 @@ pub struct Peripherals {
     pub shared_baseband_tx_timing: SharedBasebandTxTiming,
     #[doc = "BTDM_SCHEDULER_TABLE"]
     pub btdm_scheduler_table: BtdmSchedulerTable,
-    #[doc = "BTDM_LOW_POWER_CONFIG"]
-    pub btdm_low_power_config: BtdmLowPowerConfig,
     #[doc = "BTDM_RUNTIME_CONTROL"]
     pub btdm_runtime_control: BtdmRuntimeControl,
     #[doc = "BLE_HW_POSITIONAL_WORD_1FF0"]
@@ -57232,6 +57718,8 @@ pub struct Peripherals {
     pub ieee802154_mac: Ieee802154Mac,
     #[doc = "IEEE802154_INTERRUPT_ROUTE"]
     pub ieee802154_interrupt_route: Ieee802154InterruptRoute,
+    #[doc = "MODEM_ETM"]
+    pub modem_etm: ModemEtm,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -57344,7 +57832,6 @@ impl Peripherals {
             shared_baseband_reset_idle_status: unsafe { SharedBasebandResetIdleStatus::steal() },
             shared_baseband_tx_timing: unsafe { SharedBasebandTxTiming::steal() },
             btdm_scheduler_table: unsafe { BtdmSchedulerTable::steal() },
-            btdm_low_power_config: unsafe { BtdmLowPowerConfig::steal() },
             btdm_runtime_control: unsafe { BtdmRuntimeControl::steal() },
             ble_hw_positional_word_1ff0: unsafe { BleHwPositionalWord1ff0::steal() },
             ble_hw_positional_word_891c: unsafe { BleHwPositionalWord891c::steal() },
@@ -57366,6 +57853,7 @@ impl Peripherals {
             phy_brx_recovered_gaps: unsafe { PhyBrxRecoveredGaps::steal() },
             ieee802154_mac: unsafe { Ieee802154Mac::steal() },
             ieee802154_interrupt_route: unsafe { Ieee802154InterruptRoute::steal() },
+            modem_etm: unsafe { ModemEtm::steal() },
         }
     }
 }
@@ -57986,7 +58474,6 @@ pub mod peripheral_ownership {
         pub ble_sync_publication: crate::BleSyncPublication,
         pub bluetooth_controller_core: crate::BluetoothControllerCore,
         pub bluetooth_reset_idle_status_0: crate::BluetoothResetIdleStatus0,
-        pub btdm_low_power_config: crate::BtdmLowPowerConfig,
         pub btdm_scheduler_table: crate::BtdmSchedulerTable,
         pub btmac_ble_phy_init: crate::BtmacBlePhyInit,
         pub bt_v3_2_baseband: crate::BtV3_2Baseband,
@@ -58010,6 +58497,7 @@ pub mod peripheral_ownership {
         pub shared_baseband_reset_idle_status: crate::SharedBasebandResetIdleStatus,
         pub shared_baseband_tx_timing: crate::SharedBasebandTxTiming,
         pub zbbb_radio_control: crate::ZbbbRadioControl,
+        pub modem_etm: crate::ModemEtm,
     }
 
     /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
@@ -58132,7 +58620,6 @@ pub mod peripheral_ownership {
             shared_baseband_reset_idle_status,
             shared_baseband_tx_timing,
             btdm_scheduler_table,
-            btdm_low_power_config,
             btdm_runtime_control,
             ble_hw_positional_word_1ff0,
             ble_hw_positional_word_891c,
@@ -58154,6 +58641,7 @@ pub mod peripheral_ownership {
             phy_brx_recovered_gaps,
             ieee802154_mac,
             ieee802154_interrupt_route,
+            modem_etm,
         } = peripherals;
         PeripheralPartitions {
             wifi_mac: WifiMacPeripherals {
@@ -58261,7 +58749,6 @@ pub mod peripheral_ownership {
                 ble_sync_publication,
                 bluetooth_controller_core,
                 bluetooth_reset_idle_status_0,
-                btdm_low_power_config,
                 btdm_scheduler_table,
                 btmac_ble_phy_init,
                 bt_v3_2_baseband,
@@ -58279,6 +58766,7 @@ pub mod peripheral_ownership {
                 shared_baseband_reset_idle_status,
                 shared_baseband_tx_timing,
                 zbbb_radio_control,
+                modem_etm,
             },
             ieee802154: Ieee802154Peripherals {
                 ieee802154_mac,
@@ -60622,49 +61110,97 @@ pub mod fixed_register_image {
 /// Safe, SVD-declared ordered transactions of fixed complete-register images.
 pub mod fixed_register_sequence {
 
-    /// Execute the reviewed 12-step fixed-image transaction on `BTDM_LOW_POWER_CONFIG`.
+    /// Execute the reviewed 12-step fixed-image transaction on `MODEM_ETM`.
     #[inline]
-    pub fn initialize_bluetooth_low_power_config(registers: &crate::BtdmLowPowerConfig) {
+    pub fn initialize_bluetooth_low_power_config(registers: &crate::ModemEtm) {
         // SAFETY: generator validation proves every target is a writable
         // 32-bit ordinary or write-one-to-clear register, every array
         // index is in range, and provenance qualifies each exact image.
         unsafe {
             registers
-                .command_0008()
+                .channel_enable_clear()
                 .write_with_zero(|writer| writer.bits(0x00000020));
             registers
-                .config(2)
+                .ch_event(5)
                 .write_with_zero(|writer| writer.bits(0x00000043));
             registers
-                .config(3)
+                .ch_task(5)
                 .write_with_zero(|writer| writer.bits(0x00000012));
             registers
-                .command_0008()
+                .channel_enable_clear()
                 .write_with_zero(|writer| writer.bits(0x00000010));
             registers
-                .config(0)
+                .ch_event(4)
                 .write_with_zero(|writer| writer.bits(0x00000045));
             registers
-                .config(1)
+                .ch_task(4)
                 .write_with_zero(|writer| writer.bits(0x00000011));
             registers
-                .command_0008()
+                .channel_enable_clear()
                 .write_with_zero(|writer| writer.bits(0x00000040));
             registers
-                .config(4)
+                .ch_event(6)
                 .write_with_zero(|writer| writer.bits(0x00000046));
             registers
-                .config(5)
+                .ch_task(6)
                 .write_with_zero(|writer| writer.bits(0x00000011));
             registers
-                .command_0008()
+                .channel_enable_clear()
                 .write_with_zero(|writer| writer.bits(0x00000080));
             registers
-                .config(6)
+                .ch_event(7)
                 .write_with_zero(|writer| writer.bits(0x00000046));
             registers
-                .config(7)
+                .ch_task(7)
                 .write_with_zero(|writer| writer.bits(0x0000000f));
+        }
+    }
+
+    /// Execute the reviewed 2-step fixed-image transaction on `MODEM_ETM`.
+    #[inline]
+    pub fn route_ieee802154_etm_timer0_to_tx_start(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves every target is a writable
+        // 32-bit ordinary or write-one-to-clear register, every array
+        // index is in range, and provenance qualifies each exact image.
+        unsafe {
+            registers
+                .ch_event(0)
+                .write_with_zero(|writer| writer.bits(0x00000050));
+            registers
+                .ch_task(0)
+                .write_with_zero(|writer| writer.bits(0x00000058));
+        }
+    }
+
+    /// Execute the reviewed 2-step fixed-image transaction on `MODEM_ETM`.
+    #[inline]
+    pub fn route_ieee802154_etm_timer0_to_ed_trig_tx(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves every target is a writable
+        // 32-bit ordinary or write-one-to-clear register, every array
+        // index is in range, and provenance qualifies each exact image.
+        unsafe {
+            registers
+                .ch_event(0)
+                .write_with_zero(|writer| writer.bits(0x00000050));
+            registers
+                .ch_task(0)
+                .write_with_zero(|writer| writer.bits(0x00000054));
+        }
+    }
+
+    /// Execute the reviewed 2-step fixed-image transaction on `MODEM_ETM`.
+    #[inline]
+    pub fn route_ieee802154_etm_timer1_to_rx_start(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves every target is a writable
+        // 32-bit ordinary or write-one-to-clear register, every array
+        // index is in range, and provenance qualifies each exact image.
+        unsafe {
+            registers
+                .ch_event(1)
+                .write_with_zero(|writer| writer.bits(0x0000004f));
+            registers
+                .ch_task(1)
+                .write_with_zero(|writer| writer.bits(0x00000055));
         }
     }
 }

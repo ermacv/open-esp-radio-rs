@@ -380,7 +380,7 @@ struct HardwareModemLpTimerTransaction<'registers> {
 }
 
 struct HardwareModemLpTimerLowPowerInitTransaction<'registers> {
-    config: &'registers crate::svd::BtdmLowPowerConfig,
+    config: &'registers crate::svd::ModemEtm,
     runtime_control: &'registers crate::svd::BtdmRuntimeControl,
 }
 
@@ -548,20 +548,20 @@ impl BluetoothModemLpTimerRegisters {
     ///
     /// SOURCE: complete public ESP32-S31 `libbtdm_common.a` member `20.o`
     /// symbol `r_sym_bt_JHP69cMcA5vCzdaxdFgT` proves the generated twelve-write
-    /// configuration sequence. Its complete caller
+    /// sequence that disables and reprograms modem ETM channels four through
+    /// seven. Its complete caller
     /// `r_sym_bt_cgaCegmpqnbaoszyOy3c` then clears `CONTROL_0` and `CONTROL_4`,
     /// samples `CONTROL_2`, and conditionally publishes `CONTROL_1` from a
     /// fresh read. A device fence closes this restricted-PAC transaction.
     ///
-    /// The task register set supplies only `BTDM_LOW_POWER_CONFIG`; this
-    /// partition supplies only `BTDM_RUNTIME_CONTROL`. Neither register block
-    /// can alias.
+    /// The task register set supplies the shared `MODEM_ETM`; this partition
+    /// supplies only `BTDM_RUNTIME_CONTROL`. Neither register block can alias.
     pub fn initialize_low_power_hardware(
         &mut self,
         task: &BluetoothTaskRegisters,
     ) -> BluetoothLowPowerRuntimeControlObservation {
         let mut transaction = HardwareModemLpTimerLowPowerInitTransaction {
-            config: &task.bluetooth.btdm_low_power_config,
+            config: &task.shared_radio.modem_etm,
             runtime_control: &self.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_low_power_init(&mut transaction)

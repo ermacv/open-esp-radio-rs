@@ -1696,6 +1696,7 @@ impl Ieee802154StateSnapshot {
 pub struct Ieee802154RegisterLease<'registers> {
     registers: &'registers mut crate::ieee802154::ownership::TaskRegisters,
     interrupt_route: &'registers crate::svd::Ieee802154InterruptRoute,
+    etm: &'registers crate::svd::ModemEtm,
 }
 
 /// Exclusive task-side lease for the two reviewed MAC timers.
@@ -2721,11 +2722,15 @@ impl Ieee802154TaskRegisters {
         Ieee802154RegisterLease {
             registers: &mut self.peripherals.ieee802154_mac,
             interrupt_route: &self.peripherals.ieee802154_interrupt_route,
+            etm: &self.peripherals.btbb.shared_radio.modem_etm,
         }
     }
 }
 
+mod etm;
 mod single_field;
+
+pub use etm::{Ieee802154EtmChannel, Ieee802154EtmRoute};
 
 pub use single_field::{
     Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,

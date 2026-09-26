@@ -134,7 +134,6 @@ peripherals = [
     "BLE_SYNC_PUBLICATION",
     "BLUETOOTH_CONTROLLER_CORE",
     "BLUETOOTH_RESET_IDLE_STATUS_0",
-    "BTDM_LOW_POWER_CONFIG",
     "BTDM_SCHEDULER_TABLE",
     "BTMAC_BLE_PHY_INIT",
     "BT_V3_2_BASEBAND",
@@ -165,6 +164,7 @@ peripherals = [
     "SHARED_BASEBAND_RESET_IDLE_STATUS",
     "SHARED_BASEBAND_TX_TIMING",
     "ZBBB_RADIO_CONTROL",
+    "MODEM_ETM",
 ]
 
 [[ownership-partitions]]
@@ -1866,22 +1866,58 @@ sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[fixed-register-sequences]]
 name = "initialize_bluetooth_low_power_config"
-peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral = "MODEM_ETM"
 steps = [
-    { register = "COMMAND_0008", value = 0x00000020 },
-    { register = "CONFIG%s", index = 2, value = 0x00000043 },
-    { register = "CONFIG%s", index = 3, value = 0x00000012 },
-    { register = "COMMAND_0008", value = 0x00000010 },
-    { register = "CONFIG%s", index = 0, value = 0x00000045 },
-    { register = "CONFIG%s", index = 1, value = 0x00000011 },
-    { register = "COMMAND_0008", value = 0x00000040 },
-    { register = "CONFIG%s", index = 4, value = 0x00000046 },
-    { register = "CONFIG%s", index = 5, value = 0x00000011 },
-    { register = "COMMAND_0008", value = 0x00000080 },
-    { register = "CONFIG%s", index = 6, value = 0x00000046 },
-    { register = "CONFIG%s", index = 7, value = 0x0000000f },
+    { register = "CHANNEL_ENABLE_CLEAR", value = 0x00000020 },
+    { register = "CH%s_EVENT", index = 5, value = 0x00000043 },
+    { register = "CH%s_TASK", index = 5, value = 0x00000012 },
+    { register = "CHANNEL_ENABLE_CLEAR", value = 0x00000010 },
+    { register = "CH%s_EVENT", index = 4, value = 0x00000045 },
+    { register = "CH%s_TASK", index = 4, value = 0x00000011 },
+    { register = "CHANNEL_ENABLE_CLEAR", value = 0x00000040 },
+    { register = "CH%s_EVENT", index = 6, value = 0x00000046 },
+    { register = "CH%s_TASK", index = 6, value = 0x00000011 },
+    { register = "CHANNEL_ENABLE_CLEAR", value = 0x00000080 },
+    { register = "CH%s_EVENT", index = 7, value = 0x00000046 },
+    { register = "CH%s_TASK", index = 7, value = 0x0000000f },
 ]
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+
+[[fixed-register-sequences]]
+name = "route_ieee802154_etm_timer0_to_tx_start"
+peripheral = "MODEM_ETM"
+steps = [
+    { register = "CH%s_EVENT", index = 0, value = 80 },
+    { register = "CH%s_TASK", index = 0, value = 88 },
+]
+sources = [
+    "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
+    "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
+]
+
+[[fixed-register-sequences]]
+name = "route_ieee802154_etm_timer0_to_ed_trig_tx"
+peripheral = "MODEM_ETM"
+steps = [
+    { register = "CH%s_EVENT", index = 0, value = 80 },
+    { register = "CH%s_TASK", index = 0, value = 84 },
+]
+sources = [
+    "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
+    "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
+]
+
+[[fixed-register-sequences]]
+name = "route_ieee802154_etm_timer1_to_rx_start"
+peripheral = "MODEM_ETM"
+steps = [
+    { register = "CH%s_EVENT", index = 1, value = 79 },
+    { register = "CH%s_TASK", index = 1, value = 85 },
+]
+sources = [
+    "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
+    "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
+]
 
 [[fixed-register-images]]
 name = "publish_ble_positional_word_1ff0_image_1"

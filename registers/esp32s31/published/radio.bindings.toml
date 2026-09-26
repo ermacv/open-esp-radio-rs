@@ -38730,65 +38730,328 @@ access = "read-write"
 address = 537954304
 width = 32
 access = "read-only"
-identity = "BTDM_LOW_POWER_CONFIG.STATUS_0000"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CHANNEL_ENABLE"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "status_0000"
+register-method = "channel_enable"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "CH0"
+method = "ch0"
 bit-offset = 0
-bit-width = 32
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CH1"
+method = "ch1"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CH4"
+method = "ch4"
+bit-offset = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CH5"
+method = "ch5"
+bit-offset = 5
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CH6"
+method = "ch6"
+bit-offset = 6
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CH7"
+method = "ch7"
+bit-offset = 7
+bit-width = 1
 access = "read-only"
 
 [[registers]]
 address = 537954308
 width = 32
-access = "write-only"
-identity = "BTDM_LOW_POWER_CONFIG.COMMAND_0004"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+access = "read-write"
+identity = "MODEM_ETM.CHANNEL_ENABLE_SET"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "command_0004"
-fields = []
+register-method = "channel_enable_set"
+
+[[registers.fields]]
+svd-name = "CH0"
+method = "ch0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH1"
+method = "ch1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH4"
+method = "ch4"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH5"
+method = "ch5"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH6"
+method = "ch6"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH7"
+method = "ch7"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537954312
 width = 32
-access = "write-only"
-identity = "BTDM_LOW_POWER_CONFIG.COMMAND_0008"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+access = "read-write"
+identity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "command_0008"
+register-method = "channel_enable_clear"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "CH0"
+method = "ch0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH1"
+method = "ch1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH4"
+method = "ch4"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH5"
+method = "ch5"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH6"
+method = "ch6"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH7"
+method = "ch7"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537954316
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH0_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_event"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
-access = "write-only"
+access = "read-write"
+
+[[registers]]
+address = 537954320
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH0_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_task"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954324
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH1_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_event"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954328
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH1_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_task"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954332
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH2_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_event"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954336
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH2_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_task"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954340
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH3_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_event"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954344
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH3_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_task"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537954348
 width = 32
 access = "read-write"
-identity = "BTDM_LOW_POWER_CONFIG.CONFIG0"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CH4_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "config"
-register-index = 0
+register-method = "ch_event"
+register-index = 4
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -38797,17 +39060,17 @@ access = "read-write"
 address = 537954352
 width = 32
 access = "read-write"
-identity = "BTDM_LOW_POWER_CONFIG.CONFIG1"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CH4_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "config"
-register-index = 1
+register-method = "ch_task"
+register-index = 4
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -38816,17 +39079,17 @@ access = "read-write"
 address = 537954356
 width = 32
 access = "read-write"
-identity = "BTDM_LOW_POWER_CONFIG.CONFIG2"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CH5_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "config"
-register-index = 2
+register-method = "ch_event"
+register-index = 5
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -38835,17 +39098,17 @@ access = "read-write"
 address = 537954360
 width = 32
 access = "read-write"
-identity = "BTDM_LOW_POWER_CONFIG.CONFIG3"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CH5_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "config"
-register-index = 3
+register-method = "ch_task"
+register-index = 5
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -38854,17 +39117,17 @@ access = "read-write"
 address = 537954364
 width = 32
 access = "read-write"
-identity = "BTDM_LOW_POWER_CONFIG.CONFIG4"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CH6_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "config"
-register-index = 4
+register-method = "ch_event"
+register-index = 6
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -38873,17 +39136,17 @@ access = "read-write"
 address = 537954368
 width = 32
 access = "read-write"
-identity = "BTDM_LOW_POWER_CONFIG.CONFIG5"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CH6_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "config"
-register-index = 5
+register-method = "ch_task"
+register-index = 6
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -38892,17 +39155,17 @@ access = "read-write"
 address = 537954372
 width = 32
 access = "read-write"
-identity = "BTDM_LOW_POWER_CONFIG.CONFIG6"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CH7_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "config"
-register-index = 6
+register-method = "ch_event"
+register-index = 7
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -38911,17 +39174,17 @@ access = "read-write"
 address = 537954376
 width = 32
 access = "read-write"
-identity = "BTDM_LOW_POWER_CONFIG.CONFIG7"
-peripheral = "BTDM_LOW_POWER_CONFIG"
-peripheral-type = "BtdmLowPowerConfig"
-peripheral-module = "btdm_low_power_config"
+identity = "MODEM_ETM.CH7_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
 scope = []
-register-method = "config"
+register-method = "ch_task"
 register-index = 7
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "ID"
+method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"

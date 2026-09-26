@@ -7,9 +7,10 @@
 //! the HAL. Conflicts are resolved before submission; an overlapping window is
 //! rejected, not moved.
 //!
-//! This core implements insertion while the scheduler is idle and the
-//! completion walk. Insertion into a running list, cancellation and stop
-//! build on the same mirror and item access.
+//! This core implements insertion while the scheduler is idle, insertion into
+//! a running list through the vendor lock and modify transactions, and the
+//! completion walk. Cancellation and stop build on the same mirror and item
+//! access.
 
 #![forbid(unsafe_code)]
 
@@ -55,7 +56,15 @@ pub enum SchedulerSubmitError<I> {
     List(SchedulerListInsertError<I>),
     /// The scheduler is running; insertion needs a live-list transaction.
     SchedulerBusy,
+    /// The scheduler is idle; insertion does not need a live-list transaction.
+    SchedulerIdle,
+    /// A live-list insertion is in progress; the mirror is frozen until it ends.
+    InsertionActive,
 }
+
+/// The mirror is frozen by a live-list insertion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SchedulerInsertionActive;
 
 /// Hardware action after an insertion into an idle scheduler.
 ///
@@ -99,12 +108,14 @@ impl<I: Copy, const CAPACITY: usize> SchedulerCompletion<I, CAPACITY> {
 /// Executor core for hardware list zero.
 pub struct SchedulerExecutor<I, const CAPACITY: usize> {
     list: SchedulerList<I, CAPACITY>,
+    live: Option<live::LivePhase<I>>,
 }
 
 impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub const fn new() -> Self {
         Self {
             list: SchedulerList::new(),
+            live: None,
         }
     }
 
@@ -125,23 +136,14 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
         id: I,
         window: SchedulerRawWindow,
     ) -> Result<SchedulerIdleInsertion, SchedulerSubmitError<I>> {
+        if self.live.is_some() {
+            return Err(SchedulerSubmitError::InsertionActive);
+        }
         if scheduler.is_busy() {
             return Err(SchedulerSubmitError::SchedulerBusy);
         }
-        let placement = self
-            .list
-            .insert(id, window)
+        self.link_into_list(items, id, window)
             .map_err(SchedulerSubmitError::List)?;
-        let link = items.link(id);
-        let previous = placement.predecessor.map(|previous| items.link(previous));
-        let next = placement.successor.map(|next| items.link(next));
-        items.prepare_for_list(id, previous, next);
-        if let Some(predecessor) = placement.predecessor {
-            items.set_next(predecessor, Some(link));
-        }
-        if let Some(successor) = placement.successor {
-            items.set_previous(successor, Some(link));
-        }
         let (head, _) = self.list.head().expect("the list holds the inserted event");
         Ok(SchedulerIdleInsertion {
             head: items.link(head),
@@ -155,7 +157,10 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub fn take_completed(
         &mut self,
         items: &mut impl SchedulerItemAccess<I>,
-    ) -> SchedulerCompletion<I, CAPACITY> {
+    ) -> Result<SchedulerCompletion<I, CAPACITY>, SchedulerInsertionActive> {
+        if self.live.is_some() {
+            return Err(SchedulerInsertionActive);
+        }
         let scan = self
             .list
             .scan_completion(|id| items.completion_status(id).is_some());
@@ -178,7 +183,47 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
         {
             items.set_previous(head, None);
         }
-        completion
+        Ok(completion)
+    }
+
+    /// Hardware action that restarts an idle scheduler at the first listed
+    /// event that has not executed, as insertion end does.
+    pub fn restart_if_idle(
+        &self,
+        items: &impl SchedulerItemAccess<I>,
+        scheduler: BluetoothSchedulerWorkObservation,
+    ) -> Option<SchedulerIdleInsertion> {
+        if scheduler.is_busy() || self.live.is_some() {
+            return None;
+        }
+        self.list
+            .iter()
+            .map(|(id, _)| id)
+            .find(|id| items.completion_status(*id).is_none())
+            .map(|head| SchedulerIdleInsertion {
+                head: items.link(head),
+            })
+    }
+
+    /// Link `id` into the mirror and the item memory.
+    fn link_into_list(
+        &mut self,
+        items: &mut impl SchedulerItemAccess<I>,
+        id: I,
+        window: SchedulerRawWindow,
+    ) -> Result<(), SchedulerListInsertError<I>> {
+        let placement = self.list.insert(id, window)?;
+        let link = items.link(id);
+        let previous = placement.predecessor.map(|previous| items.link(previous));
+        let next = placement.successor.map(|next| items.link(next));
+        items.prepare_for_list(id, previous, next);
+        if let Some(predecessor) = placement.predecessor {
+            items.set_next(predecessor, Some(link));
+        }
+        if let Some(successor) = placement.successor {
+            items.set_previous(successor, Some(link));
+        }
+        Ok(())
     }
 }
 
@@ -187,6 +232,13 @@ impl<I: Copy + Eq, const CAPACITY: usize> Default for SchedulerExecutor<I, CAPAC
         Self::new()
     }
 }
+
+mod live;
+
+pub use live::{
+    SchedulerLiveAction, SchedulerLiveFault, SchedulerLiveNext, SchedulerLiveObservation,
+    SchedulerLiveStep, SchedulerLiveWait,
+};
 
 #[cfg(test)]
 mod tests;

@@ -81,8 +81,9 @@ pub use timeline::{
 };
 
 pub use executor::{
-    SchedulerCompletion, SchedulerExecutor, SchedulerIdleInsertion, SchedulerItemAccess,
-    SchedulerSubmitError,
+    SchedulerCompletion, SchedulerExecutor, SchedulerIdleInsertion, SchedulerInsertionActive,
+    SchedulerItemAccess, SchedulerLiveAction, SchedulerLiveFault, SchedulerLiveNext,
+    SchedulerLiveObservation, SchedulerLiveStep, SchedulerLiveWait, SchedulerSubmitError,
 };
 pub use list::{
     SchedulerList, SchedulerListCompletionScan, SchedulerListInsertError, SchedulerListPlacement,

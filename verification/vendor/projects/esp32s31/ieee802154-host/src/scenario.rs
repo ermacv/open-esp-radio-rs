@@ -42,8 +42,16 @@ pub enum Step {
     AddPendingAddress { address: Vec<u8>, short: bool },
     /// `esp_ieee802154_transmit` of `[length, psdu...]`.
     Transmit { frame: Vec<u8>, cca: bool },
+    /// `esp_ieee802154_transmit_at` of `[length, psdu...]` at `time`.
+    TransmitAt {
+        frame: Vec<u8>,
+        cca: bool,
+        time: u32,
+    },
     /// `esp_ieee802154_receive`.
     Receive,
+    /// `esp_ieee802154_receive_at`.
+    ReceiveAt { time: u32, duration: u32 },
     /// `esp_ieee802154_sleep`.
     Sleep,
     /// `esp_ieee802154_energy_detect` in 16-microsecond symbols.
@@ -87,7 +95,9 @@ unsafe extern "C" {
     fn esp_ieee802154_set_pending_mode(mode: u32) -> i32;
     fn esp_ieee802154_add_pending_addr(address: *const u8, short: bool) -> i32;
     fn esp_ieee802154_transmit(frame: *const u8, cca: bool) -> i32;
+    fn esp_ieee802154_transmit_at(frame: *const u8, cca: bool, time: u32) -> i32;
     fn esp_ieee802154_receive() -> i32;
+    fn esp_ieee802154_receive_at(time: u32, duration: u32) -> i32;
     fn esp_ieee802154_sleep() -> i32;
     fn esp_ieee802154_energy_detect(duration: u32) -> i32;
     fn esp_ieee802154_cca() -> i32;
@@ -168,7 +178,19 @@ fn run_step(step: Step, last_rx: &mut Option<usize>) {
                     esp_ieee802154_transmit(frame.as_ptr(), cca),
                 )
             }
+            Step::TransmitAt { frame, cca, time } => {
+                let frame: &'static [u8] = Vec::leak(frame);
+                record::register_transmit_frame(frame.as_ptr() as usize);
+                returned(
+                    "esp_ieee802154_transmit_at",
+                    esp_ieee802154_transmit_at(frame.as_ptr(), cca, time),
+                )
+            }
             Step::Receive => returned("esp_ieee802154_receive", esp_ieee802154_receive()),
+            Step::ReceiveAt { time, duration } => returned(
+                "esp_ieee802154_receive_at",
+                esp_ieee802154_receive_at(time, duration),
+            ),
             Step::Sleep => returned("esp_ieee802154_sleep", esp_ieee802154_sleep()),
             Step::EnergyDetect(duration) => returned(
                 "esp_ieee802154_energy_detect",

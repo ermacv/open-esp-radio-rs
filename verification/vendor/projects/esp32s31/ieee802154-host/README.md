@@ -54,6 +54,7 @@ export OER_ESP_IDF_DIR=$PWD/target/esp-idf
 cargo test --manifest-path verification/vendor/projects/esp32s31/ieee802154-host/Cargo.toml
 cargo run --manifest-path verification/vendor/projects/esp32s31/ieee802154-host/Cargo.toml -- list
 cargo run --manifest-path verification/vendor/projects/esp32s31/ieee802154-host/Cargo.toml -- run transmit-with-ack
+cargo run --manifest-path verification/vendor/projects/esp32s31/ieee802154-host/Cargo.toml -- compare transmit-with-ack
 ```
 
 The compiled driver keeps its state in C globals, so each process runs one
@@ -61,6 +62,20 @@ scenario. `run` prints the scenario's boundary trace, one record per line;
 buffer addresses appear as `tx#n` (the `n`th transmitted frame) and `buf#n`
 (the `n`th distinct driver buffer). The [tests](tests/catalog.rs) check the
 catalog against expectations read from the pinned source.
+
+## Comparing the production engine
+
+`compare` runs the same scenario through the production engine
+(`oer_esp32s31_ieee802154::engine`) and prints `MATCH`, `DIFF` with the first
+differing record, or `INCOMPLETE` with the reason. [`src/port.rs`](src/port.rs)
+renders each HAL low-level call as the vendor `ieee802154_ll_*` accessor and
+argument, and each modem ETM access as the vendor's direct register access;
+getters on both sides answer from one shared value model. Calls that leave
+the driver (clocks, PHY, BTBB, interrupt allocation, time, critical sections)
+are not compared. A vendor assertion, or a step the engine does not own yet
+(PAN identity, addresses and ACK timeout belong to the public API layer), is
+`INCOMPLETE`. The stand has no BTBB power table, so both sides resolve power
+to index zero. The tests require `MATCH` for every catalog scenario.
 
 ## Limits
 

@@ -123,15 +123,23 @@ pub struct Inputs {
     pub enhanced_ack: Option<Vec<u8>>,
 }
 
+/// The register-layer value model shared by the vendor recorder and the port
+/// runner: a scenario input answers a named getter, otherwise a getter
+/// returns the last value its setter wrote.
 #[derive(Default)]
-struct State {
-    records: Vec<Record>,
-    inputs: Inputs,
+pub(crate) struct LlModel {
+    pub(crate) inputs: Inputs,
     /// Last value written by each register-layer setter, keyed by the setter
     /// name and its leading (index) arguments.
     written: BTreeMap<(String, Vec<u64>), u64>,
     /// Extended addresses copied at write time, keyed by multi-PAN index.
     extended_addresses: BTreeMap<u64, [u8; 8]>,
+}
+
+#[derive(Default)]
+struct State {
+    records: Vec<Record>,
+    model: LlModel,
     registers: BTreeMap<u32, u32>,
     rx_address: Option<usize>,
     handler: Option<(usize, usize)>,
@@ -175,7 +183,7 @@ fn with_state<T>(action: impl FnOnce(&mut State) -> T) -> T {
 pub(crate) fn reset(inputs: Inputs) {
     with_state(|state| {
         *state = State {
-            inputs,
+            model: LlModel::new(inputs),
             ..State::default()
         }
     });
@@ -187,7 +195,7 @@ pub(crate) fn take_records() -> Vec<Record> {
 
 pub(crate) fn set_input(name: &str, value: u64) {
     with_state(|state| {
-        state.inputs.values.insert(name.to_owned(), value);
+        state.model.inputs.values.insert(name.to_owned(), value);
     });
 }
 
@@ -241,47 +249,53 @@ const LL: &str = "ieee802154_ll_";
 const EXTENDED_ADDRESS_SETTER: &str = "ieee802154_ll_set_multipan_ext_addr";
 const EXTENDED_ADDRESS_GETTER: &str = "ieee802154_ll_get_multipan_ext_addr";
 
-fn ll_call(state: &mut State, name: &str, arguments: &[u64]) -> u64 {
-    if name == "ieee802154_ll_set_rx_addr" {
-        state.rx_address = arguments.first().map(|&address| address as usize);
+impl LlModel {
+    /// A model answering from `inputs` with nothing written yet.
+    pub(crate) fn new(inputs: Inputs) -> Self {
+        Self {
+            inputs,
+            ..Self::default()
+        }
     }
-    if name == EXTENDED_ADDRESS_SETTER
-        && let [index, pointer] = *arguments
-    {
-        let mut address = [0; 8];
-        // SAFETY: the driver passes its eight-byte extended-address buffer.
-        unsafe { std::ptr::copy_nonoverlapping(pointer as *const u8, address.as_mut_ptr(), 8) };
-        state.extended_addresses.insert(index, address);
-        return 0;
-    }
-    if name == EXTENDED_ADDRESS_GETTER
-        && let [index, pointer] = *arguments
-    {
-        let address = state
-            .extended_addresses
-            .get(&index)
+
+    /// Answer one register-layer call.
+    pub(crate) fn call(&mut self, name: &str, arguments: &[u64]) -> u64 {
+        if name == EXTENDED_ADDRESS_SETTER
+            && let [index, pointer] = *arguments
+        {
+            let mut address = [0; 8];
+            // SAFETY: the driver passes its eight-byte extended-address buffer.
+            unsafe { std::ptr::copy_nonoverlapping(pointer as *const u8, address.as_mut_ptr(), 8) };
+            self.extended_addresses.insert(index, address);
+            return 0;
+        }
+        if name == EXTENDED_ADDRESS_GETTER
+            && let [index, pointer] = *arguments
+        {
+            let address = self
+                .extended_addresses
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
+            // SAFETY: the driver passes an eight-byte output buffer.
+            unsafe { std::ptr::copy_nonoverlapping(address.as_ptr(), pointer as *mut u8, 8) };
+            return 0;
+        }
+        if let Some(value) = self.inputs.values.get(name) {
+            return *value;
+        }
+        if let Some(suffix) = name.strip_prefix("ieee802154_ll_set_")
+            && let Some((value, index)) = arguments.split_last()
+        {
+            self.written
+                .insert((format!("{LL}get_{suffix}"), index.to_vec()), *value);
+            return 0;
+        }
+        self.written
+            .get(&(name.to_owned(), arguments.to_vec()))
             .copied()
-            .unwrap_or_default();
-        // SAFETY: the driver passes an eight-byte output buffer.
-        unsafe { std::ptr::copy_nonoverlapping(address.as_ptr(), pointer as *mut u8, 8) };
-        return 0;
+            .unwrap_or(0)
     }
-    if let Some(value) = state.inputs.values.get(name) {
-        return *value;
-    }
-    if let Some(suffix) = name.strip_prefix("ieee802154_ll_set_")
-        && let Some((value, index)) = arguments.split_last()
-    {
-        state
-            .written
-            .insert((format!("{LL}get_{suffix}"), index.to_vec()), *value);
-        return 0;
-    }
-    state
-        .written
-        .get(&(name.to_owned(), arguments.to_vec()))
-        .copied()
-        .unwrap_or(0)
 }
 
 /// Record one LL or external call and return the modelled value.
@@ -296,7 +310,10 @@ extern "C" fn oer_host_record(
     let arguments = arguments_of(arguments, count);
     with_state(|state| {
         if name.starts_with(LL) {
-            let value = ll_call(state, &name, &arguments);
+            if name == "ieee802154_ll_set_rx_addr" {
+                state.rx_address = arguments.first().map(|&address| address as usize);
+            }
+            let value = state.model.call(&name, &arguments);
             let arguments = arguments
                 .iter()
                 .enumerate()
@@ -311,7 +328,7 @@ extern "C" fn oer_host_record(
             state.records.push(Record::Ll { name, arguments });
             value
         } else {
-            let value = state.inputs.values.get(&name).copied().unwrap_or(0);
+            let value = state.model.inputs.values.get(&name).copied().unwrap_or(0);
             state.records.push(Record::External { name, arguments });
             value
         }
@@ -347,9 +364,9 @@ extern "C" fn oer_host_enh_ack(frame: *const u8, frame_len: u32, enhack_frame: *
             name: "enh_ack_generator".to_owned(),
             arguments: Vec::new(),
             first: frame,
-            second: state.inputs.enhanced_ack.clone().unwrap_or_default(),
+            second: state.model.inputs.enhanced_ack.clone().unwrap_or_default(),
         });
-        match &state.inputs.enhanced_ack {
+        match &state.model.inputs.enhanced_ack {
             Some(ack) => {
                 // SAFETY: the driver passes its 128-byte enhanced-ACK buffer,
                 // and scenarios supply at most 128 bytes.

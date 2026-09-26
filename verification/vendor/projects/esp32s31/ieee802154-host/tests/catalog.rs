@@ -48,6 +48,23 @@ fn every_scenario_runs_without_a_driver_assertion() {
     }
 }
 
+/// The production engine reproduces every catalog trace.
+#[test]
+fn every_scenario_matches_the_production_engine() {
+    let list = Command::new(env!("CARGO_BIN_EXE_oer-esp32s31-ieee802154-vendor-host"))
+        .arg("list")
+        .output()
+        .expect("the stand binary lists its scenarios");
+    for scenario in String::from_utf8(list.stdout).unwrap().lines() {
+        let output = Command::new(env!("CARGO_BIN_EXE_oer-esp32s31-ieee802154-vendor-host"))
+            .args(["compare", scenario])
+            .output()
+            .expect("the stand binary compares");
+        let verdict = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(verdict.trim(), "MATCH", "{scenario}: {verdict}");
+    }
+}
+
 /// `esp_ieee802154_enable` then `ieee802154_mac_init` (esp_ieee802154.c
 /// L35-L41, esp_ieee802154_dev.c L897-L956).
 #[test]

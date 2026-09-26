@@ -6,6 +6,8 @@
 //! application callbacks are replaced by recorders. A [`Scenario`] drives the
 //! public API and delivers interrupts through the handler the driver
 //! registered; [`scenario::run`] returns the resulting boundary trace.
+//! [`port::run`] drives the production engine through the same scenario and
+//! [`compare`] reports `MATCH`, `DIFF` or `INCOMPLETE`.
 //!
 //! The compiled driver keeps its state in C globals. One process therefore
 //! runs one scenario, which [`claim`] enforces; the
@@ -13,11 +15,14 @@
 //! per invocation.
 
 pub mod catalog;
+pub mod compare;
+pub mod port;
 pub mod record;
 pub mod scenario;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub use compare::{Verdict, compare};
 pub use record::{Argument, Inputs, Record};
 pub use scenario::{Scenario, Step};
 

@@ -20,15 +20,18 @@ pub mod event {
     pub const TX_ABORT: u16 = 1 << 5;
     pub const ED_DONE: u16 = 1 << 6;
     pub const TIMER0_OVERFLOW: u16 = 1 << 8;
+    pub const TIMER1_OVERFLOW: u16 = 1 << 9;
 }
 
 /// `IEEE802154_RX_ABORT_BY_*` codes used by the catalog.
 pub mod rx_abort {
     pub const CRC_ERROR: u8 = 3;
+    pub const ED_ABORT: u8 = 24;
 }
 
 /// `IEEE802154_TX_ABORT_BY_*` codes used by the catalog.
 pub mod tx_abort {
+    pub const RX_ACK_TIMEOUT: u8 = 16;
     pub const CCA_BUSY: u8 = 25;
 }
 
@@ -56,8 +59,192 @@ fn received_data_frame() -> Vec<u8> {
     frame
 }
 
+/// Received 2015 data frame requesting an ACK, RSSI -55 and LQI 180.
+fn received_2015_frame() -> Vec<u8> {
+    let mut frame = received_data_frame();
+    frame[2] = 0xa8;
+    frame
+}
+
 fn no_inputs() -> Inputs {
     Inputs::default()
+}
+
+/// Enhanced ACK returned by the application generator.
+fn enhanced_ack_inputs() -> Inputs {
+    Inputs {
+        enhanced_ack: Some(vec![5, 0x02, 0x20, 0x01, 0x00, 0x00]),
+        ..Inputs::default()
+    }
+}
+
+fn interrupt(events: u16) -> Step {
+    Step::Interrupt {
+        events,
+        rx_abort: 0,
+        tx_abort: 0,
+    }
+}
+
+fn transmit_ack_timer_expires() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::Input("esp_timer_get_time", 1_000),
+        Step::Transmit {
+            frame: data_frame(true),
+            cca: false,
+        },
+        interrupt(event::TX_DONE),
+        interrupt(event::TIMER0_OVERFLOW),
+    ]
+}
+
+fn transmit_ack_abort_timeout() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::Transmit {
+            frame: data_frame(true),
+            cca: false,
+        },
+        interrupt(event::TX_DONE),
+        Step::Interrupt {
+            events: event::TX_ABORT,
+            rx_abort: 0,
+            tx_abort: tx_abort::RX_ACK_TIMEOUT,
+        },
+    ]
+}
+
+fn receive_with_enhanced_ack() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::SetRxWhenIdle(true),
+        Step::Receive,
+        Step::DeliverFrame(received_2015_frame()),
+        interrupt(event::RX_DONE),
+        interrupt(event::ACK_TX_DONE),
+    ]
+}
+
+fn receive_2015_without_enhanced_ack() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::SetRxWhenIdle(true),
+        Step::Receive,
+        Step::DeliverFrame(received_2015_frame()),
+        interrupt(event::RX_DONE),
+    ]
+}
+
+fn transmit_during_ack_fails() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::Receive,
+        Step::DeliverFrame(received_data_frame()),
+        interrupt(event::RX_DONE),
+        Step::Transmit {
+            frame: data_frame(false),
+            cca: true,
+        },
+    ]
+}
+
+fn transmit_stops_receive() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::SetRxWhenIdle(true),
+        Step::Receive,
+        Step::Transmit {
+            frame: data_frame(false),
+            cca: false,
+        },
+        interrupt(event::TX_DONE),
+    ]
+}
+
+fn transmit_restarts_transmit() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::Transmit {
+            frame: data_frame(true),
+            cca: false,
+        },
+        Step::Transmit {
+            frame: data_frame(false),
+            cca: true,
+        },
+    ]
+}
+
+fn full_receive_ring_uses_the_stub() -> Vec<Step> {
+    let mut steps = vec![Step::Enable, Step::SetRxWhenIdle(true), Step::Receive];
+    for _ in 0..21 {
+        steps.push(Step::DeliverFrame(data_frame(false)));
+        steps.push(interrupt(event::RX_DONE));
+    }
+    steps.push(Step::DeliverFrame(data_frame(false)));
+    steps.push(interrupt(event::RX_DONE));
+    steps
+}
+
+fn energy_detect_abort() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::EnergyDetect(8),
+        Step::Input("ieee802154_ll_get_rx_status", 0x0018_0000),
+        Step::Interrupt {
+            events: event::RX_ABORT,
+            rx_abort: rx_abort::ED_ABORT,
+            tx_abort: 0,
+        },
+    ]
+}
+
+fn transmit_at() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::Input("esp_timer_get_time", 1_000),
+        Step::TransmitAt {
+            frame: data_frame(false),
+            cca: true,
+            time: 5_000,
+        },
+        interrupt(event::TX_DONE),
+    ]
+}
+
+fn receive_at_window_closes() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::Input("esp_timer_get_time", 1_000),
+        Step::ReceiveAt {
+            time: 5_000,
+            duration: 2_000,
+        },
+        Step::Input("esp_timer_get_time", 4_854),
+        interrupt(event::TIMER1_OVERFLOW),
+        Step::Input("esp_timer_get_time", 7_000),
+        interrupt(event::TIMER1_OVERFLOW),
+    ]
+}
+
+fn receive_at_window_closes_mid_frame() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::ReceiveAt {
+            time: 5_000,
+            duration: 2_000,
+        },
+        interrupt(event::TIMER1_OVERFLOW),
+        Step::Input("ieee802154_ll_is_current_rx_frame", 1),
+        interrupt(event::TIMER1_OVERFLOW),
+        Step::DeliverFrame(data_frame(false)),
+        interrupt(event::RX_DONE),
+    ]
+}
+
+fn sleep_after_receive() -> Vec<Step> {
+    vec![Step::Enable, Step::Receive, Step::Sleep, Step::Sleep]
 }
 
 fn enable() -> Vec<Step> {
@@ -216,5 +403,70 @@ pub const SCENARIOS: &[Scenario] = &[
         name: "cca-busy",
         inputs: no_inputs,
         steps: cca_busy,
+    },
+    Scenario {
+        name: "transmit-ack-timer-expires",
+        inputs: no_inputs,
+        steps: transmit_ack_timer_expires,
+    },
+    Scenario {
+        name: "transmit-ack-abort-timeout",
+        inputs: no_inputs,
+        steps: transmit_ack_abort_timeout,
+    },
+    Scenario {
+        name: "receive-with-enhanced-ack",
+        inputs: enhanced_ack_inputs,
+        steps: receive_with_enhanced_ack,
+    },
+    Scenario {
+        name: "receive-2015-without-enhanced-ack",
+        inputs: no_inputs,
+        steps: receive_2015_without_enhanced_ack,
+    },
+    Scenario {
+        name: "transmit-during-ack-fails",
+        inputs: no_inputs,
+        steps: transmit_during_ack_fails,
+    },
+    Scenario {
+        name: "transmit-stops-receive",
+        inputs: no_inputs,
+        steps: transmit_stops_receive,
+    },
+    Scenario {
+        name: "transmit-restarts-transmit",
+        inputs: no_inputs,
+        steps: transmit_restarts_transmit,
+    },
+    Scenario {
+        name: "full-receive-ring-uses-the-stub",
+        inputs: no_inputs,
+        steps: full_receive_ring_uses_the_stub,
+    },
+    Scenario {
+        name: "energy-detect-abort",
+        inputs: no_inputs,
+        steps: energy_detect_abort,
+    },
+    Scenario {
+        name: "transmit-at",
+        inputs: no_inputs,
+        steps: transmit_at,
+    },
+    Scenario {
+        name: "receive-at-window-closes",
+        inputs: no_inputs,
+        steps: receive_at_window_closes,
+    },
+    Scenario {
+        name: "receive-at-window-closes-mid-frame",
+        inputs: no_inputs,
+        steps: receive_at_window_closes_mid_frame,
+    },
+    Scenario {
+        name: "sleep-after-receive",
+        inputs: no_inputs,
+        steps: sleep_after_receive,
     },
 ];

@@ -104,23 +104,23 @@ frame semantics belong to the protocol crate.
 | ESP-IDF unit | Owner | Coverage |
 | --- | --- | --- |
 | `ieee802154_common_ll.h`: command, event, abort, address, policy, ED, timer, security, pending, status, enhanced-ACK and diagnostic-counter accessors | PAC `ieee802154` | implemented: one typed transaction per accessor on the task register lease, alongside the composite configuration transactions built from the same steps. The diagnostic counters read the sixteen-bit field of `ieee802154_reg.h`; the public struct reads the complete word of the single-counter registers |
-| `ieee802154_ll.h` (S31): `IEEE802154_RSSI_COMPENSATION_VALUE` 0, receive sensitivity -104 | driver | absent |
-| `ieee802154_mac_init` / `deinit`, `ieee802154_enable` / `disable` | HAL IEEE 802.15.4 lifecycle, HAL `ll` | partial: clocks, reset and masked foundation; `ll::mac_init_registers` ports the event, abort, ED-sample and coexistence-PTI steps; `ieee802154_txon_delay_set` and interrupt allocation are not composed. `deinit` writes no MAC register |
-| `ieee802154_pib_*`, `ieee802154_pib_update` | HAL `pib` | implemented: mutable PIB with pending mark, per-channel power resolved through the external level provider, pending mode and `rx_when_idle`; the driver still uses the fixed HAL policy |
-| `start_ed`, `tx_init`, `rx_init`, `ieee802154_transmit`, `receive`, `energy_detect`, `cca` | HAL operation starts, driver entry points | partial: single operations without `stop_current_operation` |
+| `ieee802154_ll.h` (S31): `IEEE802154_RSSI_COMPENSATION_VALUE` 0, receive sensitivity -104 | driver engine | partial: RSSI compensation 0; receive sensitivity absent |
+| `ieee802154_mac_init` / `deinit`, `ieee802154_enable` / `disable` | HAL IEEE 802.15.4 lifecycle, HAL `ll`, driver engine | partial: clocks, reset and masked foundation; the engine's `mac_init` reinitializes the PIB, applies `ll::mac_init_registers` and clears the receive ring; `ieee802154_txon_delay_set` and interrupt allocation are not composed. `deinit` writes no MAC register |
+| `ieee802154_pib_*`, `ieee802154_pib_update` | HAL `pib` | implemented: mutable PIB with pending mark, per-channel power resolved through the external level provider, pending mode and `rx_when_idle`; the engine publishes it before each operation |
+| `start_ed`, `tx_init`, `rx_init`, `ieee802154_transmit`, `receive`, `energy_detect`, `cca`, `sleep` | driver engine | implemented; the runtime still drives the per-operation command executor |
 | `event_end_process` register steps | HAL `ll` | implemented |
-| `stop_rx` ... `stop_ed`, `stop_current_operation` | driver MAC engine over HAL `ll` | absent |
-| `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver MAC engine | partial: a per-operation actor handles RX without auto-ACK, TX with and without ACK, ED and CCA; no auto-ACK, enhanced ACK, `rx_when_idle` or stop |
-| RX buffer ring, `set_next_rx_buffer`, frame info | driver DMA ownership | partial: pinned RX pool and TX buffer |
-| `esp_ieee802154_timer.c` | HAL `ll` timers, driver callbacks | partial: HAL start, stop, threshold and `fire_at` for both timers; callbacks absent |
-| `ieee802154_transmit_at`, `receive_at` (timer and ETM) | driver over HAL `ll` | partial: HAL ETM channel clear and event/task routes on the shared `MODEM_ETM`; driver entry points absent |
-| `esp_ieee802154_ack.c` pending table and `ack_config_pending_bit` | protocol pending table, driver selection | absent |
-| `esp_ieee802154_frame.c` | protocol frame parsing | partial: frame control and ACK request only |
+| `stop_rx` ... `stop_ed`, `stop_current_operation` | driver engine over HAL `ll` | implemented |
+| `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver engine | implemented without test mode, multi-PAN and software coexistence |
+| RX buffer ring, `set_next_rx_buffer`, frame info | driver engine | implemented: twenty engine-owned receive buffers, the stub buffer, a copied transmit frame and the enhanced-ACK frame; DMA-capable placement is the composition's obligation |
+| `esp_ieee802154_timer.c` | HAL `ll` timers, driver engine callbacks | implemented |
+| `ieee802154_transmit_at`, `receive_at` (timer and ETM) | driver engine over HAL `ll` | implemented on the shared `MODEM_ETM` |
+| `esp_ieee802154_ack.c` pending table and `ack_config_pending_bit` | protocol pending table, driver engine | implemented for interface zero |
+| `esp_ieee802154_frame.c` | protocol `mac::header` | implemented over `[PHR, PSDU...]` images; malformed headers report absent fields where the vendor reads outside the frame |
 | `esp_ieee802154_sec.c` | driver over PAC security | partial: PAC transactions and HAL `ll::sec_clear` |
 | `esp_ieee802154_multipan.c` | HAL policy, driver | partial: PAC multi-PAN fields |
-| `esp_ieee802154_event.c` callbacks | runtime event handoff | partial: acknowledged-interrupt queue |
+| `esp_ieee802154_event.c` callbacks | driver engine environment, runtime event handoff | partial: engine notifications; the runtime still uses the acknowledged-interrupt queue |
 | `esp_ieee802154_util.c` coexistence scenes, channel conversion | coexistence driver, HAL | partial: channel conversion only |
-| `ieee802154_sleep`, `rf_enable` / `rf_disable`, sleep retention | HAL and PHY | absent |
+| `ieee802154_sleep`, `rf_enable` / `rf_disable`, sleep retention | driver engine, HAL and PHY | partial: engine sleep state; RF gating (off in the default build) and retention absent |
 | `esp_ieee802154_debug.c` | not ported: optional statistics | absent |
 | `esp_ieee802154.c` public API | role over the portable radio contract | absent |
 

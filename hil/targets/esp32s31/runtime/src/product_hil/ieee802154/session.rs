@@ -15,13 +15,13 @@ use embassy_futures::{
     select::{Either, select},
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-use embassy_time::{Duration, Timer, with_timeout};
+use embassy_time::{Duration, with_timeout};
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154_runtime::{
     Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
 };
 use oer_esp32s31_ieee802154_system::{
-    Ieee802154PhyMaintenance, Ieee802154System, Ieee802154SystemRuntime, MAINTENANCE_PERIOD_MICROS,
+    Ieee802154PhyMaintenance, Ieee802154System, Ieee802154SystemRuntime,
 };
 use oer_esp32s31_phy::ConcurrentTrackingTick;
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
@@ -340,27 +340,17 @@ const fn count(
     counts
 }
 
-/// The radio's periodic tracking, as `RadioSystem::run_tracking` runs it,
-/// until `stop` resolves; each tick is counted. Stop is taken only while the
-/// loop waits between ticks, so a running tick always completes. Returns
-/// whether every tick succeeded.
+/// The radio's periodic tracking (`RadioSystem::run_tracking_until`) until
+/// `stop` resolves, with each tick counted. A running tick always
+/// completes. Returns whether every tick succeeded; the session's client
+/// keeps the domain registered and open, so an unavailable domain fails.
 async fn track_until(
     radio: &Radio,
     stop: impl Future<Output = ()>,
     counts: &Cell<Ieee802154SessionMaintenanceCounts>,
 ) -> bool {
-    let mut stop = core::pin::pin!(stop);
-    loop {
-        match select(
-            Timer::after_micros(MAINTENANCE_PERIOD_MICROS),
-            stop.as_mut(),
-        )
-        .await
-        {
-            Either::First(()) => {}
-            Either::Second(()) => return true,
-        }
-        let tick = core::pin::pin!(radio.track()).await;
+    let unavailable = Cell::new(false);
+    let tracking = core::pin::pin!(radio.run_tracking_until(stop, |tick| {
         let mut tick_counts = counts.get();
         match tick {
             Ok(ConcurrentTrackingTick::NotDue) => {
@@ -373,11 +363,11 @@ async fn track_until(
                 tick_counts.awaiting_other_clients =
                     tick_counts.awaiting_other_clients.saturating_add(1);
             }
-            // The session's client keeps the domain registered and open.
-            Ok(ConcurrentTrackingTick::Unavailable(_)) | Err(_) => return false,
+            Ok(ConcurrentTrackingTick::Unavailable(_)) | Err(_) => unavailable.set(true),
         }
         counts.set(tick_counts);
-    }
+    }));
+    tracking.await.is_ok() && !unavailable.get()
 }
 
 /// Run one peer session until the host stops it. The image is terminal.

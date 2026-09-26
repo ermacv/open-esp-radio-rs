@@ -174,6 +174,66 @@ pub const DECISIONS: &[Decision] = &[
         }],
     },
     Decision {
+        reason: "diagnostic print of the generated RX gain table, selected by bit 8 of \
+            `phy_param[0x10]`; production emits no vendor console output",
+        places: &[
+            Place::Range {
+                function: "phy_gen_rx_gain_table",
+                start: 0xc4,
+                end: 0xf0,
+            },
+            Place::Range {
+                function: "phy_gen_rx_gain_table",
+                start: 0xf4,
+                end: 0x106,
+            },
+        ],
+    },
+    Decision {
+        reason: "RX gain table generation over the fixed tables `phy_set_rx_gain_table` \
+            builds: the generation always stops at its limit within the table, and the \
+            last indices it stores (75 and 71) never reach the 0x4f and 0x4c clamps, which \
+            only foreign `phy_param` contents could; production derives the same indices \
+            from its generated tables",
+        places: &[
+            Place::Range {
+                function: "phy_gen_rx_gain_table",
+                start: 0x72,
+                end: 0x73,
+            },
+            Place::Range {
+                function: "phy_gen_rx_gain_table",
+                start: 0x86,
+                end: 0x87,
+            },
+            Place::Range {
+                function: "phy_gen_rx_gain_table",
+                start: 0x12e,
+                end: 0x136,
+            },
+            Place::Range {
+                function: "phy_set_rx_gain_table",
+                start: 0x184,
+                end: 0x185,
+            },
+            Place::Range {
+                function: "phy_set_rx_gain_table",
+                start: 0x1c4,
+                end: 0x1c5,
+            },
+            Place::Range {
+                function: "phy_set_rx_gain_table",
+                start: 0x22a,
+                end: 0x232,
+            },
+            Place::Range {
+                function: "phy_set_rx_gain_table",
+                start: 0x27e,
+                end: 0x286,
+            },
+        ],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

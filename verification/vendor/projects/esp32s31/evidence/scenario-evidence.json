@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "d0460c633acad33d4363eb7cef70e8b0074e0357f061f7f371aa09317f1cc877"
+      "sha256": "d18b8f7f14fcb3d169cc64a3bb6e3979863a94ee1be5bf0863e67426eb1c35ef"
     },
     {
       "path": "verification/vendor/schema",
@@ -772,8 +772,8 @@
           "reached": 189,
           "total": 702
         },
-        "excluded": 917,
-        "untriaged": 51
+        "excluded": 931,
+        "untriaged": 37
       },
       "observation": {
         "executed": 452,
@@ -832,8 +832,8 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 942,
-        "untriaged": 197
+        "excluded": 956,
+        "untriaged": 183
       },
       "observation": {
         "executed": 1388,
@@ -862,8 +862,8 @@
           "reached": 351,
           "total": 982
         },
-        "excluded": 942,
-        "untriaged": 214
+        "excluded": 956,
+        "untriaged": 200
       },
       "observation": {
         "executed": 1815,
@@ -952,46 +952,6 @@
     {
       "function": "phy_code_to_temp",
       "offset": 68,
-      "kind": "block"
-    },
-    {
-      "function": "phy_gen_rx_gain_table",
-      "offset": 114,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_gen_rx_gain_table",
-      "offset": 134,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_gen_rx_gain_table",
-      "offset": 196,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_gen_rx_gain_table",
-      "offset": 200,
-      "kind": "block"
-    },
-    {
-      "function": "phy_gen_rx_gain_table",
-      "offset": 244,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_gen_rx_gain_table",
-      "offset": 248,
-      "kind": "block"
-    },
-    {
-      "function": "phy_gen_rx_gain_table",
-      "offset": 302,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_gen_rx_gain_table",
-      "offset": 306,
       "kind": "block"
     },
     {
@@ -1172,36 +1132,6 @@
     {
       "function": "phy_set_most_tpw",
       "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_set_rx_gain_table",
-      "offset": 388,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_set_rx_gain_table",
-      "offset": 452,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_set_rx_gain_table",
-      "offset": 554,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_set_rx_gain_table",
-      "offset": 558,
-      "kind": "block"
-    },
-    {
-      "function": "phy_set_rx_gain_table",
-      "offset": 638,
-      "kind": "block"
-    },
-    {
-      "function": "phy_set_rx_gain_table",
-      "offset": 644,
       "kind": "block"
     },
     {

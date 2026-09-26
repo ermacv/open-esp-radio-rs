@@ -227,7 +227,12 @@ fn an_ack_after_an_a_mpdu_answers_another_exchange() {
     let mut frames = exchange(0, true, AirPhy::Ofdm, 24_000, 600);
     let block_ack = frames.pop().unwrap();
     frames.push(control(
-        at(block_ack.mac_time_micros.unwrap() + 800, FrameKind::ACK, None, TARGET),
+        at(
+            block_ack.mac_time_micros.unwrap() + 800,
+            FrameKind::ACK,
+            None,
+            TARGET,
+        ),
         AirPhy::Ofdm,
         24_000,
     ));

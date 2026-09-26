@@ -407,16 +407,22 @@ const PPDU_CANONICAL_MCS: usize = 2;
 const PPDU_CANONICAL_GUARD_INTERVAL: usize = 3;
 const PPDU_CANONICAL_WIDTH: usize = 4;
 /// Every HT rate of the comparison, packed as MCS, short guard interval
-/// (bit 8) and 40 MHz (bit 16).
-const PPDU_RATES: [u32; 32] = {
-    let mut rates = [0; 32];
+/// (bit 8), 40 MHz (bit 16) and a single MPDU (bit 24).
+const PPDU_RATES: [u32; 64] = {
+    let mut rates = [0; 64];
     let mut i = 0;
     while i < rates.len() {
-        rates[i] = (i as u32 & 7) | ((i as u32 >> 3) & 1) << 8 | ((i as u32 >> 4) & 1) << 16;
+        let i32 = i as u32;
+        rates[i] = (i32 & 7) | (i32 >> 3 & 1) << 8 | (i32 >> 4 & 1) << 16 | (i32 >> 5 & 1) << 24;
         i += 1;
     }
     rates
 };
+/// Canonical word index of the HT format: zero for a single MPDU, one for
+/// an A-MPDU.
+const PPDU_CANONICAL_FORMAT: usize = 5;
+/// Canonical word index of the descriptor count; a single MPDU has one.
+const PPDU_CANONICAL_DESCRIPTORS: usize = 7;
 /// Canonical legacy parameters: rate and group receiver come from the case
 /// state; the signal is the fixture length, with the HT fixture's
 /// priorities and the station interface.
@@ -459,6 +465,14 @@ const PPDU_HT_OBJECT: u32 = 0x3fff_1300;
 const PPDU_HT_RATE_WORD: usize = 3;
 const PPDU_HT_WIDTH_WORD: usize = 2;
 const PPDU_HT_40MHZ: u32 = 0x8000;
+/// HT object words whose byte 2 (bytes 0x2a and 0x2e) `mac_tx_set_htsig`
+/// publishes as the DMA descriptor counts, and their value for a single
+/// MPDU, which has one descriptor.
+const PPDU_HT_DESCRIPTOR_COUNT_WORDS: [usize; 2] = [10, 11];
+const PPDU_SINGLE_DESCRIPTOR_COUNT: u32 = 0x0001_0000;
+/// Offset of the `pTxRx` row word whose bytes 0 and 1 are the entry classes
+/// `mac_tx_set_len` and `mac_tx_set_htsig` publish.
+const PPDU_AUXILIARY_CLASS_OFFSET: u32 = 0x40;
 /// First HT rate-control code of each guard interval.
 const PPDU_HT_LONG_GI_CODE: u32 = 0x10;
 const PPDU_HT_SHORT_GI_CODE: u32 = 0x1a;
@@ -527,7 +541,10 @@ const PPDU_VENDOR: &[(u32, &[u32])] = &[
     // The selected pTxRx rate row contributes entry class one to both packed
     // length words at byte offsets 0x40 and 0x41.
     (PPDU_AUXILIARY, &[0; 16]),
-    (PPDU_AUXILIARY + 0x40, &[0x0000_0101, 0x0000_0c2e, 0]),
+    (
+        PPDU_AUXILIARY + PPDU_AUXILIARY_CLASS_OFFSET,
+        &[0x0000_0101, 0x0000_0c2e, 0],
+    ),
 ];
 /// ROM `s_phy_get_max_pwr` rows the fixture seeds: every rate's power pair
 /// differs from its neighbours', so a lookup at a wrong rate differs.
@@ -553,7 +570,8 @@ fn ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
     let [_, _, _, rate] = words_in else {
         unreachable!("PPDU words: program, auxiliary, power table, rate")
     };
-    let (mcs, short_gi, wide) = (rate & 0xff, rate >> 8 & 1, rate >> 16 & 1);
+    let (mcs, short_gi, wide, single) =
+        (rate & 0xff, rate >> 8 & 1, rate >> 16 & 1, rate >> 24 & 1);
     let code = if short_gi == 1 {
         PPDU_HT_SHORT_GI_CODE
     } else {
@@ -563,7 +581,16 @@ fn ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
     canonical[PPDU_CANONICAL_MCS] = mcs;
     canonical[PPDU_CANONICAL_GUARD_INTERVAL] = short_gi;
     canonical[PPDU_CANONICAL_WIDTH] = wide;
-    ppdu_objects(vendor_side, code, wide, None, words(&canonical))
+    canonical[PPDU_CANONICAL_FORMAT] = 1 - single;
+    if single == 1 {
+        canonical[PPDU_CANONICAL_DESCRIPTORS] = 1;
+    }
+    let frame = if single == 1 {
+        Frame::HtSingle
+    } else {
+        Frame::HtAggregate
+    };
+    ppdu_objects(vendor_side, code, wide, frame, words(&canonical))
 }
 
 /// The legacy fixture: the HT fixture's objects with a legacy rate code.
@@ -575,7 +602,24 @@ fn legacy_ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects
     let mut canonical = PPDU_LEGACY_CANONICAL;
     canonical[PPDU_LEGACY_CANONICAL_RATE] = code;
     canonical[PPDU_LEGACY_CANONICAL_GROUP] = group;
-    ppdu_objects(vendor_side, code, 0, Some(group == 1), words(&canonical))
+    ppdu_objects(
+        vendor_side,
+        code,
+        0,
+        Frame::Legacy { group: group == 1 },
+        words(&canonical),
+    )
+}
+
+/// The PPDU a fixture describes.
+#[derive(Clone, Copy)]
+enum Frame {
+    HtAggregate,
+    /// A single MPDU, whose length the vendor reads from the frame buffer.
+    HtSingle,
+    Legacy {
+        group: bool,
+    },
 }
 
 /// Vendor PP objects of the fixture with rate-control code `code` and the
@@ -584,9 +628,11 @@ fn ppdu_objects(
     vendor_side: &Vendor<'_>,
     code: u32,
     wide: u32,
-    legacy: Option<bool>,
+    frame: Frame,
     canonical: Vec<u8>,
 ) -> Result<Objects> {
+    let single = !matches!(frame, Frame::HtAggregate);
+    let legacy = matches!(frame, Frame::Legacy { .. });
     let rom = |name: &str| vendor_side.symbol(name);
     let mut vendor: Vec<(u32, Vec<u8>)> = PPDU_VENDOR
         .iter()
@@ -596,17 +642,25 @@ fn ppdu_objects(
                 values[PPDU_HT_RATE_WORD] = code;
                 values[PPDU_HT_WIDTH_WORD] &= !PPDU_HT_40MHZ;
                 values[PPDU_HT_WIDTH_WORD] |= wide * PPDU_HT_40MHZ;
-                if let Some(group) = legacy {
+                if single {
                     values[0] &= !PPDU_AGGREGATE_BITS;
-                    if group {
-                        values[0] |= PPDU_GROUP_RECEIVER;
+                    for word in PPDU_HT_DESCRIPTOR_COUNT_WORDS {
+                        values[word] = PPDU_SINGLE_DESCRIPTOR_COUNT;
                     }
                 }
+                if let Frame::Legacy { group: true } = frame {
+                    values[0] |= PPDU_GROUP_RECEIVER;
+                }
             }
-            if legacy.is_some() && *address == PPDU_DESCRIPTOR {
+            // A single MPDU has no aggregation state: its `pTxRx` row
+            // contributes entry class zero to both packed length words.
+            if single && *address == PPDU_AUXILIARY + PPDU_AUXILIARY_CLASS_OFFSET {
+                values[0] = 0;
+            }
+            if single && *address == PPDU_DESCRIPTOR {
                 values[1] = PPDU_LEGACY_BUFFER;
             }
-            if legacy.is_some() && *address == PPDU_PROGRAM {
+            if legacy && *address == PPDU_PROGRAM {
                 values.resize(PPDU_PROGRAM_WORDS, 0);
                 values[PPDU_PROGRAM_WORDS - 1] = PPDU_NO_TXOP_SLOT;
             }
@@ -615,7 +669,7 @@ fn ppdu_objects(
         .collect();
     let mut table = vec![0u8; PPDU_OSI_BYTES];
     table[PPDU_COEX_PTI_CLAMP_SLOT..].copy_from_slice(&PPDU_COEX_PTI_CLAMP.to_le_bytes());
-    if legacy.is_some() {
+    if single {
         vendor.push((
             PPDU_LEGACY_BUFFER,
             words(&[PPDU_LEGACY_CANONICAL[PPDU_LEGACY_CANONICAL_SIGNAL]]),

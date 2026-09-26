@@ -155,7 +155,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "f58d26a879592eaf01a9484d794f00388096de6fcc10acf681523d7eb9b60f0f"
+      "sha256": "5b494eecbddb323092789767f2471b480960a832ee9b09858976d61c21dc83ba"
     },
     {
       "path": "verification/vendor/schema",
@@ -2051,20 +2051,20 @@
       "symbol": "hal_mac_tx_set_ppdu",
       "production": "open_libpp_tx_trace_hal_mac_tx_set_ppdu",
       "verdict": "match",
-      "cases": 128,
+      "cases": 256,
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 82,
+          "reached": 84,
           "total": 281
         },
         "directions": {
-          "reached": 57,
+          "reached": 60,
           "total": 282
         },
         "open": 21,
         "excluded": 20,
-        "untriaged": 425
+        "untriaged": 420
       },
       "observation": {
         "executed": 84,
@@ -7662,16 +7662,6 @@
     },
     {
       "function": "mac_tx_set_htsig",
-      "offset": 198,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_htsig",
-      "offset": 294,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_htsig",
       "offset": 318,
       "kind": "taken"
     },
@@ -7686,11 +7676,6 @@
       "kind": "block"
     },
     {
-      "function": "mac_tx_set_htsig",
-      "offset": 564,
-      "kind": "block"
-    },
-    {
       "function": "mac_tx_set_len",
       "offset": 160,
       "kind": "taken"
@@ -7699,16 +7684,6 @@
       "function": "mac_tx_set_len",
       "offset": 170,
       "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_len",
-      "offset": 196,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_len",
-      "offset": 282,
-      "kind": "block"
     },
     {
       "function": "mac_tx_set_mplen",

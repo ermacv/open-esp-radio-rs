@@ -25,7 +25,8 @@ protocol compositions are clients of the system:
   Every tracking period it runs one tick (`RadioSystem::track`) under the
   domain's admission policy. The default vendor admission tracks with
   protocols running; the tracking graph brackets its RF-sensitive regions
-  with the grant-protect request. Run it for the lifetime of the radio.
+  with the grant-protect request. Run it for the lifetime of the radio;
+  `RadioSystem::run_tracking_observed` also reports every tick's result.
 
 The IEEE 802.15.4 composition is the first client. Wi-Fi and Bluetooth still
 own the radio through their exclusive routes.

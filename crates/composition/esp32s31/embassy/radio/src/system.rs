@@ -137,9 +137,28 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
     /// Cancel it only while it waits between ticks; cancelling a running
     /// tracking transaction requires reset.
     pub async fn run_tracking(&self) -> ConcurrentPhyTrackingError {
+        self.run_tracking_observed(|_| {}).await
+    }
+
+    /// [`Self::run_tracking`] reporting every tick's result to `observe`
+    /// before the loop decides whether to continue.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::run_tracking`].
+    ///
+    /// # Cancellation
+    ///
+    /// As [`Self::run_tracking`].
+    pub async fn run_tracking_observed(
+        &self,
+        mut observe: impl FnMut(&Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError>),
+    ) -> ConcurrentPhyTrackingError {
         loop {
             Timer::after_micros(DEFAULT_PLL_TRACK_PERIOD_MICROS).await;
-            match self.track().await {
+            let tick = self.track().await;
+            observe(&tick);
+            match tick {
                 Ok(ConcurrentTrackingTick::Unavailable(ConcurrentPhyError::Poisoned)) => {
                     return ConcurrentPhyTrackingError::Rejected(ConcurrentPhyError::Poisoned);
                 }

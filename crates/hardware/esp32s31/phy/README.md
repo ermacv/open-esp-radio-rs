@@ -235,8 +235,7 @@ serialized by one mechanism:
   vendor periodic timer that calls it belongs to the composition that owns
   the arbiter, as it belongs to ESP-IDF's `esp_phy` component:
   [`oer-esp32s31-radio-system`](../../../composition/esp32s31/embassy/radio/README.md)
-  runs it for the shared radio. `run_concurrent_phy_tracking` is the same
-  timer for a caller that owns the platform token itself.
+  runs it for the shared radio.
 
 IEEE 802.15.4 composes these steps in [its client module](src/ieee802154_client.rs).
 `join_ieee802154` runs on the HAL `Ieee802154Clocked` owner: it checks that the

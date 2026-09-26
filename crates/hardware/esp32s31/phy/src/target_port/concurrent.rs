@@ -8,11 +8,10 @@ use crate::{
         evaluate_periodic_tracking,
     },
     registered_route::PhyDomain,
-    state::client::{DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyPllTrackClock},
+    state::client::PhyPllTrackClock,
 };
 use oer_esp32s31_hal::shared_radio::{
-    ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadio,
-    SharedRadioLease,
+    ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadioLease,
 };
 
 /// Outputs of the shared domain's registration.
@@ -491,63 +490,4 @@ where
     maintain_concurrent_phy::<P, D, O>(lease, platform, &[], observer)
         .await
         .map(ConcurrentTrackingTick::Tracked)
-}
-
-/// Retry interval while another holder owns the arbiter lease.
-const LEASE_RETRY_MICROS: u64 = 1_000;
-
-/// ESP-IDF's periodic `phy_track_pll` timer for a caller that owns the
-/// platform token for the lifetime of the domain. A composition that shares
-/// the token with its clients runs the timer itself, as
-/// `oer-esp32s31-radio-system` does.
-///
-/// Every [`DEFAULT_PLL_TRACK_PERIOD_MICROS`] it takes the arbiter lease,
-/// waiting while another holder owns it as the vendor callback waits for its
-/// PHY lock, runs one [`track_concurrent_phy`] tick and drops the lease. A
-/// domain that is not registered or has RF closed is skipped until the next
-/// period. The composition that owns the arbiter runs this future for the
-/// lifetime of the shared domain.
-///
-/// # Errors
-///
-/// Returns only when a tick fails, or when the domain is poisoned; the domain
-/// then requires reset.
-///
-/// # Cancellation
-///
-/// Cancel it only between ticks, that is while it waits; cancelling a running
-/// tracking transaction requires reset.
-pub async fn run_concurrent_phy_tracking<P, D, O>(
-    radio: &SharedRadio<ConcurrentPhy>,
-    platform: &mut P,
-    clock: &mut impl PhyPllTrackClock,
-    mut observer: impl FnMut() -> O,
-) -> ConcurrentPhyTrackingError
-where
-    D: PhyAsyncDelay,
-    O: PhyTargetObserver,
-{
-    loop {
-        D::after_micros(
-            crate::executor::wait::Kind::Completion,
-            DEFAULT_PLL_TRACK_PERIOD_MICROS,
-        )
-        .await;
-        let mut lease = loop {
-            match radio.try_acquire() {
-                Ok(lease) => break lease,
-                Err(_) => {
-                    D::after_micros(crate::executor::wait::Kind::Completion, LEASE_RETRY_MICROS)
-                        .await
-                }
-            }
-        };
-        match track_concurrent_phy::<P, D, O>(&mut lease, platform, clock, observer()).await {
-            Ok(ConcurrentTrackingTick::Unavailable(ConcurrentPhyError::Poisoned)) => {
-                return ConcurrentPhyTrackingError::Rejected(ConcurrentPhyError::Poisoned);
-            }
-            Ok(_) => {}
-            Err(error) => return error,
-        }
-    }
 }

@@ -262,3 +262,37 @@ pub async fn track<D: PhyAsyncDelay>(
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
     }
 }
+
+/// Program the synthesizer directly (`RfpllFrequencyTransition::new`, the
+/// `phy_set_rfpll_freq` path of crystal-duty, IQ and Bluetooth calibration)
+/// through the production target executor. The outer error is an executor
+/// failure; the inner one is the transition's own fail-closed outcome.
+#[cfg(any(test, feature = "validation-probes"))]
+pub async fn program<D: PhyAsyncDelay>(
+    registers: &mut impl SharedPhyAccess,
+    request: crate::analog::rfpll::RfpllFrequencyRequest,
+) -> Result<
+    Result<
+        crate::analog::rfpll::RfpllFrequencyOutcome,
+        crate::analog::rfpll::RfpllFrequencyFailure,
+    >,
+    PhyTargetPortError,
+> {
+    use crate::analog::rfpll::{RfpllFrequencyExternalBinding, RfpllFrequencyTransition};
+    let mut transition = RfpllFrequencyTransition::new(request);
+    loop {
+        let action = transition.action();
+        match action {
+            I2cAction::Complete(outcome) => return Ok(Ok(outcome)),
+            I2cAction::Failed(failure) => return Ok(Err(failure)),
+            _ => {}
+        }
+        let binding = RfpllFrequencyExternalBinding::lower(action)
+            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        let completion =
+            super::TargetCompleter::<D>::complete_rfpll(binding, &mut (), registers).await?;
+        transition
+            .advance(completion)
+            .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+    }
+}

@@ -416,14 +416,10 @@ impl PhyTxDcPwdetSearchTransition {
         if self.component == COMPONENT_COUNT {
             self.step = SearchStep::CommitDco { transaction: 0 };
         } else {
+            // Scan state is reset by `begin_scan` before its first use.
             self.precheck = 0;
             self.positive_step = 10;
             self.negative_step = 10;
-            self.direction = 0;
-            self.scan_offset = 0;
-            self.boundary = 0;
-            self.minimum = u16::MAX;
-            self.sample_count = 0;
             self.set_component_delta(10);
             self.program(MeasurementKind::PrecheckPositive);
         }

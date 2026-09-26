@@ -66,33 +66,27 @@ fn release_rechecks_hardware_instead_of_reusing_admission_observation() {
     assert_eq!((hardware.mac_reads, hardware.walker_reads), (4, 3));
 }
 
+fn setup() -> super::MacInterruptSetup {
+    super::MacInterruptSetup {
+        inner: oer_esp32s31_pac::validation::mac_interrupt_setup(),
+    }
+}
+
 fn registers() -> super::RadioRuntimeOwner {
     super::RadioRuntimeOwner::claim_for_validation()
 }
 
-fn checkpoint() -> super::MacInterruptCheckpoint {
-    use crate::owner::{MacInterruptRegisters, MacPowerInterruptRegisters};
-    MacInterruptRegisters {
-        inner: oer_esp32s31_pac::validation::mac_interrupt_registers(),
-    }
-    .checkpoint(MacPowerInterruptRegisters {
-        inner: oer_esp32s31_pac::validation::mac_power_interrupt_registers(),
-    })
-}
-
 #[test]
 fn shutdown_confirmation_returns_the_same_frontier_only_after_a_stopped_check() {
-    let rejected = super::confirm_stopped(registers(), checkpoint(), |_| {
+    let rejected = super::confirm_stopped(registers(), setup(), |_| {
         Err(Error::MacActive { state: 2 })
     })
     .err()
     .expect("active MAC must reject final-client shutdown");
     assert_eq!(rejected.error, Error::MacActive { state: 2 });
 
-    let (_registers, checkpoint): (_, super::MacInterruptCheckpoint) =
+    let (_registers, _setup) =
         super::confirm_stopped(rejected.registers, rejected.interrupts, |_| Ok(()))
             .ok()
             .expect("stopped hardware must return the unchanged ownership frontier");
-    let (mac, power) = checkpoint.into_registers();
-    let _same_epoch = mac.checkpoint(power);
 }

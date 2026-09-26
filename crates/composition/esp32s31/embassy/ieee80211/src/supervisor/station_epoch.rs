@@ -3,6 +3,7 @@
 use super::*;
 
 pub(super) struct ProductionStationEnginePort<O> {
+    radio: &'static SharedRadio,
     mode: ProductionStationMode,
     power_mode: StationPowerMode,
     access_point: ProductionAccessPointResources,
@@ -18,11 +19,13 @@ pub(super) enum ProductionStationMode {
 
 impl<O> ProductionStationEnginePort<O> {
     fn new(
+        radio: &'static SharedRadio,
         power_mode: StationPowerMode,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
     ) -> Self {
         Self {
+            radio,
             mode: ProductionStationMode::Service,
             power_mode,
             access_point,
@@ -32,11 +35,13 @@ impl<O> ProductionStationEnginePort<O> {
     }
 
     fn paired_cutover(
+        radio: &'static SharedRadio,
         power_mode: StationPowerMode,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
     ) -> Self {
         Self {
+            radio,
             mode: ProductionStationMode::PairedCutover,
             power_mode,
             access_point,
@@ -53,7 +58,7 @@ impl<O> ProductionStationEnginePort<O> {
 }
 
 pub(super) fn production_station_runtime<'state>(
-    role: WifiRoleOwner<EspHalRadioPeripheral>,
+    role: WifiRoleOwner<EspHalWifiPlatform>,
     interrupt_epoch: MacInterruptEpoch,
     dma: StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     tx_storage: &'static mut TxStorage,
@@ -92,8 +97,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         ProductionStationFault<'state, 'security>,
     > {
         let (mut runtime, hardware, receive, network, identity, mut security) = phase.into_parts();
-        let (radio_resources, storage_resources, _) = runtime.split_mut();
-        let (phy, platform, _interrupt_epoch) = radio_resources.parts_mut();
+        let (_, storage_resources, _) = runtime.split_mut();
         let (_, tx_storage, scan_table, frame, _) = storage_resources.parts_mut();
         let control = tx_storage
             .take_control()
@@ -102,8 +106,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let scan_request = scan_plan.request(identity.station_address);
         let scan = run_esp32s31_station_scan(
             StationScanResources {
-                phy,
-                platform,
+                radio: self.radio,
                 phy_observer: NoopPhyTargetObserver,
                 phy_delay: EmbassyPhyTime,
                 hardware,
@@ -269,8 +272,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         ProductionStationFault<'state, 'security>,
     > {
         let (mut runtime, disconnected, station, mut security) = phase.into_parts();
-        let (radio_resources, storage_resources, _) = runtime.split_mut();
-        let (phy, platform, _interrupt_epoch) = radio_resources.parts_mut();
+        let (_, storage_resources, _) = runtime.split_mut();
         let (_, tx_storage, scan_table, frame, _) = storage_resources.parts_mut();
         let RunningScanEpochParts {
             retained,
@@ -284,8 +286,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let scan_request = scan_plan.request(station.station_address);
         let scan = run_esp32s31_station_scan(
             StationScanResources {
-                phy,
-                platform,
+                radio: self.radio,
                 phy_observer: NoopPhyTargetObserver,
                 phy_delay: EmbassyPhyTime,
                 hardware,
@@ -403,10 +404,10 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             context.attempt
         );
         let (mut runtime, mut hardware, receive, network, station, security) = phase.into_parts();
-        let (radio_resources, storage_resources, _) = runtime.split_mut();
-        let (phy, platform, _) = radio_resources.parts_mut();
+        let (_, storage_resources, _) = runtime.split_mut();
         let (dma, tx_storage, _, frame, _) = storage_resources.parts_mut();
         let join = run_esp32s31_station_join::<
+            _,
             _,
             _,
             _,
@@ -420,8 +421,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             RX_BUFFER_STORAGE_SIZE,
         >(StationJoinResources {
             hardware: &mut hardware,
-            phy,
-            platform,
+            radio: self.radio,
             phy_observer: NoopPhyTargetObserver,
             receive,
             rx_storage: dma.storage(),
@@ -546,10 +546,10 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 });
             }
         };
-        let (radio_resources, storage_resources, _) = runtime.split_mut();
-        let (phy, platform, _) = radio_resources.parts_mut();
+        let (_, storage_resources, _) = runtime.split_mut();
         let (dma, tx_storage, _, frame, _) = storage_resources.parts_mut();
         let join = run_esp32s31_station_join::<
+            _,
             _,
             _,
             _,
@@ -563,8 +563,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             RX_BUFFER_STORAGE_SIZE,
         >(StationJoinResources {
             hardware,
-            phy,
-            platform,
+            radio: self.radio,
             phy_observer: NoopPhyTargetObserver,
             receive,
             rx_storage: dma.storage(),
@@ -926,7 +925,7 @@ impl ProductionWifiEpochRunner {
         let requested_security = security.mode();
         let owner = match station_resources {
             ProductionWifiStoppedResources::Fresh(fresh) => {
-                let mut materialized = materialize_production_wifi(wifi, fresh);
+                let materialized = materialize_production_wifi(wifi, fresh);
                 let ProductionWifiFreshResources {
                     dma,
                     rx_ring,
@@ -939,9 +938,8 @@ impl ProductionWifiEpochRunner {
                     station_address,
                 } = materialized.resources;
                 let mut registers = materialized.registers;
-                let (phy, _) = materialized.owner.radio_mut();
                 let tx_storage =
-                    self.initialize_tx_epoch(tx, phy.state().tx_target_power_profile());
+                    self.initialize_tx_epoch(tx, materialized.owner.start_report().wifi.tx_power);
                 let scan_rx = match rx_ring {
                     Some(ring) => ring.into_scan(dma.storage()),
                     None => match ScanRx::prepare_initial(
@@ -1067,11 +1065,13 @@ impl ProductionWifiEpochRunner {
         };
         let port = match mode {
             ProductionStationMode::Service => ProductionStationEnginePort::new(
+                self.radio,
                 power_mode,
                 access_point_resources,
                 monitor_resources,
             ),
             ProductionStationMode::PairedCutover => ProductionStationEnginePort::paired_cutover(
+                self.radio,
                 power_mode,
                 access_point_resources,
                 monitor_resources,

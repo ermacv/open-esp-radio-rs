@@ -55,6 +55,7 @@ oer-embassy-net-owned = { path = "../../../../adapters/embassy-net/owned", optio
 oer-embassy-net-upstream = { path = "../../../../adapters/embassy-net/upstream", optional = true }
 oer-esp32s31-ieee80211-runtime = { path = "../../../../runtime/esp32s31/ieee80211", default-features = false }
 oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
+oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }
 oer-esp32s31-ieee80211-embassy-net-upstream = { path = "../../../../adapters/embassy-net/esp32s31/ieee80211-upstream", optional = true }
 oer-ieee80211-runtime = { path = "../../../../runtime/ieee80211" }
 oer-ieee80211-mac = { path = "../../../../protocols/ieee80211/mac" }
@@ -71,12 +72,12 @@ static_cell = "2.1.1"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 oer-esp32s31-soc-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 oer-esp32s31-ieee80211-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
+oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 
 [target.'cfg(not(target_arch = "riscv32"))'.dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
 
 [features]
-lifecycle-fault-injection = ["oer-esp32s31-phy/lifecycle-fault-injection"]
 rx-ownership-observation = ["oer-esp32s31-ieee80211-dma/rx-ownership-observation"]
 # Experimental direct RX-gain transaction SRAM placement for the RXCAL A/B profile.
 phy-rx-hot-sram = ["oer-esp32s31-ieee80211-runtime/phy-rx-hot-sram"]

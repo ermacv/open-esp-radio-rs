@@ -1,10 +1,8 @@
 //! ESP32-S31 target bindings for concrete scan RX/TX owners.
 //!
 //! The executor-neutral scan module owns transaction order and RX-ring
-//! authority. This target-only owner keeps the persistent PHY state, platform
-//! controls, delay and observer together so initial and reconnect scan ports do not
-//! reconstruct the five-argument channel-switch boundary in application or
-//! HIL code.
+//! authority. Channel switches lease the shared radio through
+//! [`RadioChannel`] once per channel.
 
 use crate::{
     datapath::rx::frontier::RxFrontierError,
@@ -14,21 +12,22 @@ use crate::{
     },
 };
 
-use oer_esp32s31_hal::owner::RadioRuntimeOwner;
+use oer_esp32s31_hal::{owner::RadioRuntimeOwner, shared_radio::PlatformClockProvider};
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
 
 use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 
-use oer_esp32s31_ieee80211_sta::hardware::channel::ScanPhy;
+use crate::roles::radio_channel::RadioChannel;
 
-impl<'state, 'arena, P, O, D> ScanPhyPort<CooperativeRadioHardware<'arena>>
-    for ScanPhy<'state, P, O, D>
+impl<'arena, P, C, O, D> ScanPhyPort<CooperativeRadioHardware<'arena>>
+    for RadioChannel<'_, P, C, O, D>
 where
+    C: PlatformClockProvider,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
-    type Error = PhyTargetPortError;
+    type Error = ConcurrentWifiChannelError;
 
     async fn switch_channel<'a>(
         &'a mut self,
@@ -41,19 +40,20 @@ where
     }
 }
 
-impl<P, O, D> ScanPhyPort<RadioRuntimeOwner> for ScanPhy<'_, P, O, D>
+impl<P, C, O, D> ScanPhyPort<RadioRuntimeOwner> for RadioChannel<'_, P, C, O, D>
 where
+    C: PlatformClockProvider,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
-    type Error = PhyTargetPortError;
+    type Error = ConcurrentWifiChannelError;
 
     async fn switch_channel<'a>(
         &'a mut self,
         hardware: &'a mut RadioRuntimeOwner,
         channel: u8,
     ) -> Result<(), Self::Error> {
-        self.switch_channel(u16::from(channel), 0, hardware).await
+        RadioChannel::switch_channel(self, u16::from(channel), 0, hardware).await
     }
 }
 

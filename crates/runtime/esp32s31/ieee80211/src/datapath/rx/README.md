@@ -68,42 +68,6 @@ hardware quiescence. Same-Core0 queue endpoint constraints remain part of the
 composition; admission and observation hooks do not grant cross-thread MMIO
 or additional physical ownership.
 
-## Same-epoch walker pause
-
-`StagedRxProducer::try_pause` consumes the live producer and retains it with
-`RxRingPaused`. It preserves the descriptor frontier, admission policy,
-work counters, queue sender and all outstanding leases. The paused
-specialization cannot service RX. Network consumers can finish and release
-frames, but release only records returned storage; no descriptor is rearmed
-until the original producer resumes.
-
-An outstanding software append or hardware reload returns `Busy` before
-walker disable. The caller must finish ordinary RX service before retrying.
-Pause performs a finite disable/readback and records the ordered cursor.
-Resume requires the walker still disabled, no reload activity and an unchanged
-cursor. It enables that same ring without BASE publication or a cold rebuild.
-`RxResumeError` distinguishes unexpected walker activity, reload activity,
-cursor changes and an unconfirmed enable. Failure retains the entire producer
-with `RxRingResumeFailure`; only terminal stop remains available, and the DMA
-arena stays poisoned even after that stop succeeds. Dropping a paused owner
-also poisons the arena. Terminal stop in either state still requires all
-consumer and queue leases to return.
-
-`ConnectedStaRxService::map_dma`, `SingleRoleServices::map_rx` and
-`DatapathRunner::map_services` carry a changed DMA/service type through the
-existing owners. They preserve protocol state, TX/control owners, cumulative
-progress, prepared TX identity and scheduler deadlines. Reconstructing those
-objects with `new` would start fresh accounting. These mapping operations
-transfer ownership; they do not themselves establish a hardware stop.
-
-This API establishes a descriptor-walker boundary only. It does not stop the
-MAC, quiesce IRQ ownership, grant shared RF access or execute calibration.
-The connected supervisor invokes it only through an explicit pause round-trip
-request, after its worker returns the TX-idle boundary. `RxBusy` resumes ordinary
-service without claiming a successful physical pause; other failed checkpoints
-retain all owners in quarantine. The dedicated HIL scenario exercises this path.
-Source and host tests do not authorize automatic active-role recalibration.
-
 ## Start cancellation limitation
 
 [`StagedRxEpoch::start`](dma/epoch.rs) replaces its stored state with

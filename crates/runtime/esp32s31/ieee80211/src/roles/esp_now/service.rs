@@ -524,7 +524,7 @@ where
     >
     where
         F: Future<Output = ()>,
-        C: StandaloneEspNowChannelControl<H, R::Platform>,
+        C: StandaloneEspNowChannelControl<H>,
     {
         let home = self.binding.channel;
         let actual = channel.current_channel();
@@ -746,7 +746,7 @@ where
     >
     where
         F: Future<Output = ()>,
-        C: StandaloneEspNowChannelControl<H, R::Platform>,
+        C: StandaloneEspNowChannelControl<H>,
     {
         self.enter_quarantine();
 
@@ -970,17 +970,13 @@ where
         target: WifiChannel,
     ) -> Result<(), C::Error>
     where
-        C: StandaloneEspNowChannelControl<H, R::Platform>,
+        C: StandaloneEspNowChannelControl<H>,
     {
         let hardware = self
             .hardware
             .as_mut()
             .expect("ESP-NOW hardware owner exists");
-        let platform = self
-            .platform
-            .as_mut()
-            .expect("ESP-NOW platform owner exists");
-        channel.switch_channel(hardware, platform, target).await
+        channel.switch_channel(hardware, target).await
     }
 
     async fn restore_home<C>(
@@ -989,7 +985,7 @@ where
         from: WifiChannel,
     ) -> Result<(), StandaloneEspNowOffChannelRunError<R::Error, RX::Error, C::Error>>
     where
-        C: StandaloneEspNowChannelControl<H, R::Platform>,
+        C: StandaloneEspNowChannelControl<H>,
     {
         let home = self.binding.channel;
         if let Err(error) = self.switch_channel(channel, home).await {

@@ -1,4 +1,4 @@
-//! Bounded physical MAC stop before RX ownership is withdrawn.
+//! Bounded physical MAC stop before RX ownership is withdrawn at shutdown.
 use oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware;
 use oer_esp32s31_phy::state::client::PhyTrackingTimer;
 

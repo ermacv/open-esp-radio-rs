@@ -22,7 +22,7 @@ oer-esp32s31-ieee80211.workspace = true
 oer-esp32s31-ieee80211-dma.workspace = true
 oer-esp32s31-ieee80211-runtime.workspace = true
 oer-ieee80211-softmac.workspace = true
-oer-esp32s31-ieee80211-esp-hal = { path = "../../../../../../../crates/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
+oer-esp32s31-radio-esp-hal.workspace = true
 
 [lib]
 crate-type = ["rlib", "staticlib"]

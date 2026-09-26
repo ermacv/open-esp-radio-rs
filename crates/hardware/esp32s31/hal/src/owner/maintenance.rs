@@ -5,27 +5,8 @@
 //! and walker readbacks check that the caller drained active TX and stopped
 //! its RX descriptor epoch; they do not retire software DMA leases.
 
-use super::{MacInterruptCheckpoint, MacInterruptSetup, RadioRuntimeOwner};
+use super::{MacInterruptSetup, RadioRuntimeOwner};
 use crate::ieee80211::mac::WifiMacHal;
-
-mod sealed {
-    pub trait InterruptAuthority {}
-    impl InterruptAuthority for super::MacInterruptSetup {}
-    impl InterruptAuthority for super::MacInterruptCheckpoint {}
-}
-
-/// Closed set of complete Wi-Fi interrupt owners. A cold setup and a paused
-/// checkpoint retain distinct types across execution and checked restoration.
-///
-/// ```compile_fail
-/// use oer_esp32s31_hal::owner::maintenance::InterruptAuthority;
-/// struct TimerRequest;
-/// impl InterruptAuthority for TimerRequest {}
-/// ```
-pub trait InterruptAuthority: sealed::InterruptAuthority {}
-
-impl InterruptAuthority for MacInterruptSetup {}
-impl InterruptAuthority for MacInterruptCheckpoint {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -34,30 +15,30 @@ pub enum Error {
 }
 
 /// Original resources retained when admission has made no hardware changes.
-pub struct AdmissionFailure<I: InterruptAuthority = MacInterruptSetup> {
+pub struct AdmissionFailure {
     pub error: Error,
     pub registers: RadioRuntimeOwner,
-    pub interrupts: I,
+    pub interrupts: MacInterruptSetup,
 }
 
 impl RadioRuntimeOwner {
     /// Verify the stopped physical boundary without acquiring maintenance or
     /// changing hardware. This is the final-client shutdown admission check.
-    pub fn try_confirm_phy_stopped<I: InterruptAuthority>(
+    pub fn try_confirm_phy_stopped(
         self,
-        interrupts: I,
-    ) -> Result<(Self, I), AdmissionFailure<I>> {
+        interrupts: MacInterruptSetup,
+    ) -> Result<(Self, MacInterruptSetup), AdmissionFailure> {
         confirm_stopped(self, interrupts, |registers| {
             check_stopped(&mut registers.wifi_mac_hal())
         })
     }
 }
 
-fn confirm_stopped<I: InterruptAuthority>(
+fn confirm_stopped(
     mut registers: RadioRuntimeOwner,
-    interrupts: I,
+    interrupts: MacInterruptSetup,
     check: impl FnOnce(&mut RadioRuntimeOwner) -> Result<(), Error>,
-) -> Result<(RadioRuntimeOwner, I), AdmissionFailure<I>> {
+) -> Result<(RadioRuntimeOwner, MacInterruptSetup), AdmissionFailure> {
     if let Err(error) = check(&mut registers) {
         return Err(AdmissionFailure {
             error,

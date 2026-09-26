@@ -2027,7 +2027,6 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
 }
 
 mod credit_policy;
-mod pause;
 mod transaction;
 
 #[cfg(feature = "owned-network")]

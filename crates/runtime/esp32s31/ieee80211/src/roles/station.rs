@@ -22,7 +22,6 @@ mod join_port;
 #[cfg(target_arch = "riscv32")]
 mod join_time;
 mod lifecycle;
-pub mod maintenance;
 pub mod network;
 #[cfg(target_arch = "riscv32")]
 mod reclaim;
@@ -85,7 +84,7 @@ pub use reclaim::{
 };
 
 pub use resources::{
-    StationDmaResources, StationRadioOwner, StationRadioResources, StationRuntimeParts,
+    StationDmaResources, StationRadioResources, StationRuntimeParts,
     StationRuntimeResources, StationStorageResources,
 };
 
@@ -96,19 +95,6 @@ pub use runtime::{
     park_sta_ap_station_role, prepare_sta_ap_station,
 };
 
-#[cfg(target_arch = "riscv32")]
-impl<P> StationRadioOwner for WifiRoleOwner<P> {
-    type Platform = P;
-
-    fn radio_mut(
-        &mut self,
-    ) -> (
-        &mut oer_esp32s31_phy::RegisteredWifiPhy,
-        &mut Self::Platform,
-    ) {
-        WifiRoleOwner::radio_mut(self)
-    }
-}
 #[cfg(target_arch = "riscv32")]
 pub use scan::{
     ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY, ESP32S31_STATION_PROBE_RATES,

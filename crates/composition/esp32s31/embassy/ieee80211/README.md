@@ -8,17 +8,27 @@ explains the external crates, reasons for patches and complete build commands.
 
 ## Start here
 
-Applications call the crate's `new` entry point once and receive a
-`RadioInstance` plus the sole `SystemRunner`. Splitting `RadioInstance` yields
-the hardware-free `WifiControl`, network devices, monitor stream and status
-observers. The runner, not `WifiControl`, retains the stopped PHY/MAC owner,
-DMA arenas and IRQ route while it is spawned. Internal crates do not depend on
-the `oer` facade; the facade reexports their application-facing contracts.
-This crate also reexports every input of `new`, `RadioConfig` and
-`WatchdogConfig`: `EspHalRadioPeripheral`, `PhyCalibrationIdentity`, `RtsLengthThreshold`,
-`phy_get_rf_cal_version`, `DeadlineWatchdog`, `DeadlineBudget` and the
-`await_stack_boundary!` poll boundary. Applications therefore need no direct
-PHY, SoC or esp-hal adapter dependency; board startup and the executor remain
+Applications split the radio once: `RadioHardware::take()` and
+`SharedRadio::new(hardware, EspHalRadioPlatform, EspHalRadioClocks, identity)`
+return the shared radio and its `ConcurrentPartitions`. The application
+retains the shared radio in static storage and runs its periodic PHY tracking
+(`run_tracking`) on its own task, as every radio client does. It then calls
+the crate's `new` entry point once with the shared radio, the Wi-Fi partition
+and the `EspHalWifiPlatform` (the `WIFI` singleton), and receives
+`WifiStarted`: the Wi-Fi application capabilities, the bring-up evidence and
+the sole `SystemRunner`. Splitting the `WifiSystem` yields the hardware-free
+`WifiControl`, network devices, monitor stream and status observers. The
+runner, not `WifiControl`, retains the stopped MAC owner, DMA arenas and IRQ
+route while it is spawned. Internal crates do not depend on the `oer` facade;
+the facade reexports their application-facing contracts.
+
+This crate reexports every input of `new`, `RadioConfig` and `WatchdogConfig`
+and of the shared radio they join: `RadioHardware`, `ConcurrentPartitions`,
+`WifiPartition`, `SharedRadio`, `EspHalRadioPlatform`, `EspHalRadioClocks`,
+`EspHalWifiPlatform`, `RtsLengthThreshold`, `DeadlineWatchdog`,
+`DeadlineBudget` and the `await_stack_boundary!` poll boundary. The PHY
+calibration identity and an optional retained calibration cache are inputs of
+the shared radio, not of Wi-Fi. Board startup and the executor remain
 application-owned.
 
 Use the buildable [station](../../../../../examples/esp32s31/station/),
@@ -33,17 +43,24 @@ The normal station path crosses these distinct ownership boundaries:
 
 | Boundary | Owner and meaning |
 | --- | --- |
-| Cold acquisition and PHY registration | Composition claims the PAC/platform roots, selects or produces calibration state, initializes the MAC, and constructs the driver's `WifiStopped`. No application role is active. |
+| Bring-up on the shared radio | Under one arbiter lease, the first client registers the shared PHY domain (or wakes closed RF), then Wi-Fi joins it, initializes the MAC and constructs the driver's `WifiStopped`. `WifiInitialization::phy` reports what the PHY preparation did. No application role is active. |
 | Request planning | `oer-radio` validates the station request while the actor still holds `WifiStopped`. A rejected request is returned with `WifiControl`; no PAC, DMA or IRQ owner moved. |
 | Role materialization | The concrete runner consumes `WifiStopped`. The station epoch takes the register owner and inactive IRQ token, installs its DMA/task graph, and acknowledges start only after that graph is owned. |
 | Connected data | Network adapters lend packet storage; the chip datapath owns DMA publication and terminal return. A control response does not release a frame or descriptor. |
-| Maintenance | The runner pauses role activity, detaches/admit-checks IRQ access and consumes the logical PHY owner across tracking. It restores MAC state and releases checked maintenance access before resuming publication. |
+| Channel changes | Scan, join, AP start, monitor hopping and ESP-NOW off-channel work take the arbiter lease for each channel transaction, so another radio client may use the shared domain between them. |
+| PHY maintenance | The shared radio's periodic tracking is the only maintenance; Wi-Fi roles never pause for it. |
 | Stop and restart | Stop must recover the exact DMA/task owner and IRQ setup token. Only their reunion with the logical owner reconstructs `WifiStopped`; the next role may then be planned. |
 
 AP uses the same single physical owner but different role policy and queues.
 Same-channel STA+AP is one combined role epoch, not two independently
-restartable radios. A station maintenance path or qualification result does
-not automatically establish the corresponding AP or combined-role property.
+restartable radios.
+
+`WifiIdle::restart_radio` takes Wi-Fi off the shared radio and brings it up
+again while no role is active: it stops the MAC, halts RX and withdraws the
+IRQ route, releases the Wi-Fi client (`esp_phy_disable`), closes RF when Wi-Fi
+was the last PHY client, and rejoins. The domain stays registered, so the
+rejoin wakes closed RF without calibration. `WifiRadioRestartReport::rf`
+reports whether RF was closed and woken or kept open by another client.
 
 ### Failure and cancellation
 
@@ -55,45 +72,26 @@ not automatically establish the corresponding AP or combined-role property.
   request and idle control capability. Errors after owner movement retain the
   physical frontier, either in `Faulted` or through terminal system escalation;
   neither returns a restartable role.
-- Maintenance failure after the role is paused does not promise restoration.
-  Admission failure, PHY failure and checked-access release failure retain
-  different owner frontiers; failure or cancellation after the hardware edge
-  requires reset rather than reuse.
-- Connected and stopped-role maintenance request system reset for an invalid
-  PHY, unconfirmed MAC/RX stop or failed hardware restoration. The composition
-  borrows the retained failure until the SoC adapter's diverging reset request;
-  it does not await an application response or release DMA/IRQ owners first.
-  Admission rejection, peer-notification errors and ownership failures at an
-  already-stopped MAC/paused RX boundary keep their rejection/quarantine paths.
-  Explicit release/cycling and restart also escalate ambiguous RF close/wake,
-  registration without completed cleanup, and failed initial tracking/channel
-  execution. Preparation failures, completed registration cleanup, closed-RF
-  reunion failures, remaining shared clients and unexecuted pending tracking
-  retain their exact non-runnable lifecycle owners without reset.
-  Initial cold start uses the same classification; even a non-escalated start
-  failure is retained in the lifecycle fault slot rather than dropped when
-  reporting `NewError::RadioStart`.
-  Radio drivers do not own watchdog/reset peripherals. `RadioConfig` requires
+- Lifecycle failures request system reset for an unconfirmed MAC/RX stop, an
+  ambiguous RF close or wake, a started PHY registration that failed, a
+  partially completed Wi-Fi release and failed initial tracking or channel
+  execution. The composition borrows the retained failure until the SoC
+  adapter's diverging reset request; it does not await an application response
+  or release DMA/IRQ owners first. A rejected quiesce, a rejected PHY
+  preparation, an active MAC at release and a recoverable RF close retain their
+  exact non-runnable lifecycle owners without reset. A failed bring-up is
+  retained in the lifecycle fault slot rather than dropped when reporting
+  `NewError`.
+- Radio drivers do not own watchdog/reset peripherals. `RadioConfig` requires
   caller-owned static `WatchdogConfig` storage binding the SoC TIMG1 service
-  and explicit startup, maintenance and shutdown budgets. A lease covers the
-  full physical operation (including quiescence and restoration); cancellation
-  cannot disable it. The shutdown budget also covers a retained close/wake
-  cycle. No qualified defaults or measured RF-stop time bound are supplied.
-  Cold start arms before the physical driver entry and completes at its ready
-  owner. Connected maintenance arms before requesting TX drain; it completes
-  only after checked RX/MAC/IRQ restoration and worker handoff, or a retained
-  safe rejection. Radio restart uses a shutdown lease through cold release and
-  a separate startup lease through owner reconstruction. Retained close/wake
-  uses one uninterrupted shutdown lease. Waiting for an automatic maintenance
-  demand does not arm a physical lease.
-- Releasing a stopped Wi-Fi PHY client while Bluetooth or IEEE 802.15.4 still
-  has a client returns a physically powered shared radio. A final client may
-  run RF close and cold reunion. Once that async close is polled, it must reach
-  a terminal result; dropping it can strand a partially closed RF epoch.
-- A retained close/wake cycle is admitted only for the final client and returns
-  a new `WifiStopped` only after wake, client reacquisition, tracking and MAC
-  receive-policy restoration. It is not connected modem sleep or peer-facing
-  Wi-Fi power save.
+  and explicit startup and shutdown budgets. A lease covers the full physical
+  operation; cancellation cannot disable it. No qualified defaults or measured
+  RF-stop time bound are supplied. Bring-up arms before the arbiter lease is
+  taken and completes at its ready owner. Radio restart uses a shutdown lease
+  through quiescence, release and RF close and a separate startup lease
+  through the rejoin.
+- Once polled, bring-up, release and RF close must reach a terminal result;
+  dropping them can strand a partially changed shared radio.
 
 The item-level contracts are in `oer-radio-embassy`,
 `oer-esp32s31-ieee80211::runtime`, and the concrete role modules in this crate's

@@ -25,12 +25,12 @@ pub use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
 use oer_network_interface::{LinkState, NetworkInterfaceId};
 
 pub mod irq;
-pub mod maintenance;
 pub mod network;
 #[cfg(feature = "owned-network")]
 pub mod owned;
 pub mod rx;
 pub mod services;
+pub mod stop;
 pub(crate) mod software_tx_queue;
 mod sram_tx;
 pub mod tx;
@@ -193,15 +193,6 @@ pub enum DatapathRunnerExit<E> {
     /// and returned the same owners as a disconnect without claiming peer
     /// reachability had failed.
     Stopped,
-}
-
-/// Outcome of a resumable scheduler run. RX DMA and IRQ may still be active.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DatapathPauseExit<E> {
-    /// TX hardware ownership ended; all other owners and link state are retained.
-    Paused,
-    /// Role policy terminated normally; this is not a resumable pause.
-    Role(E),
 }
 
 /// Logical interfaces scheduled by one physical DATAPATH owner.

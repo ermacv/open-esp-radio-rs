@@ -57,6 +57,9 @@ pub struct WifiColdStartReport {
     pub initial_channel: WifiChannel,
     /// None when joining the domain did not require tracking.
     pub initial_tracking: Option<PhyParamTrackingOutcome>,
+    /// The calibrated TX target-power profile under the configured ceiling;
+    /// every Wi-Fi TX vector takes its power from it.
+    pub tx_power: PhyTxTargetPowerProfile,
 }
 
 /// Complete owner set returned at the cold-MAC boundary.
@@ -64,17 +67,12 @@ pub struct WifiColdStart<W> {
     pub(crate) clocked: WifiClocked,
     pub(crate) membership: WifiPhyMembership,
     pub(crate) platform: W,
-    pub(crate) tx_power: PhyTxTargetPowerProfile,
     pub(crate) report: WifiColdStartReport,
 }
 
 impl<W> WifiColdStart<W> {
     pub const fn report(&self) -> WifiColdStartReport {
         self.report
-    }
-
-    pub const fn tx_power(&self) -> PhyTxTargetPowerProfile {
-        self.tx_power
     }
 }
 
@@ -282,10 +280,10 @@ where
         clocked,
         membership,
         platform: wifi_platform,
-        tx_power,
         report: WifiColdStartReport {
             initial_channel: config.initial_channel,
             initial_tracking,
+            tx_power,
         },
     })
 }

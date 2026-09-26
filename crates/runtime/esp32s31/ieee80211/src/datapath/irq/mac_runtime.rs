@@ -214,22 +214,6 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         }
     }
 
-    /// Merge same-epoch work retained across a route pause with newer arrivals.
-    /// This is executor replay, so it must not count as another hardware IRQ.
-    pub(super) fn restore_pending(&self, drained: EmbassyMacIrqDrain) {
-        if drained.rx {
-            self.notify_rx_handoff();
-        }
-        if drained.rx_capacity {
-            self.notify_rx_capacity();
-        }
-        if drained.tx_events != 0 {
-            self.tx_pending
-                .fetch_or(drained.tx_events, Ordering::Release);
-            self.tx.signal(());
-        }
-    }
-
     /// Number of RX-success work publications, with wrapping semantics.
     #[cfg(any(feature = "diagnostics", test))]
     #[inline]

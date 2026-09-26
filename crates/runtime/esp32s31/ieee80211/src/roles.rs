@@ -8,5 +8,7 @@ pub mod access_point;
 pub mod concurrent;
 pub mod esp_now;
 pub mod monitor;
+#[cfg(target_arch = "riscv32")]
+pub mod radio_channel;
 pub mod scan;
 pub mod station;

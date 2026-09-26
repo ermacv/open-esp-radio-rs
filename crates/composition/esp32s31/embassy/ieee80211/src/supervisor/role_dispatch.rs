@@ -41,8 +41,8 @@ impl ProductionWifiEpochRunner {
         let (wifi, physical, mut station, access_point, monitor) = stopped.into_parts();
         let mut materialized = materialize_production_wifi(wifi, physical);
         let (dma, rx_ring, tx, aggregate_tx) = materialized.resources.into_parts();
-        let (phy, platform) = materialized.owner.radio_mut();
-        let tx_epoch = self.initialize_tx_epoch(tx, phy.state().tx_target_power_profile());
+        let tx_epoch =
+            self.initialize_tx_epoch(tx, materialized.owner.start_report().wifi.tx_power);
         activate_promiscuous_receive(&mut materialized.registers);
         let receive = match rx_ring {
             Some(ring) => ring.into_scan(dma.storage()),
@@ -106,8 +106,7 @@ impl ProductionWifiEpochRunner {
         let (scan_table, scan_frame) = station.scan_storage();
         let scan = run_esp32s31_station_scan(
             StationScanResources {
-                phy,
-                platform,
+                radio: self.radio,
                 phy_observer: NoopPhyTargetObserver,
                 phy_delay: EmbassyPhyTime,
                 hardware: materialized.registers,
@@ -327,19 +326,6 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
         generation: oer_radio::wifi::RadioSubsystemGeneration,
     ) -> impl Future<Output = EmbassyWifiRoleEpochOutcome<Self::Stopped, Self::Faulted>> + 'a {
         async move {
-            let protection = self.watchdog.maintenance(None);
-            let stopped = match await_stack_boundary!(maintenance::maintain(stopped)) {
-                Ok(stopped) => stopped,
-                Err(failure) => {
-                    diagnostics_event!("open-radio: PHY maintenance failed: {}", failure.reason());
-                    failure.enforce_disposition();
-                    crate::WatchdogConfig::complete(protection);
-                    return EmbassyWifiRoleEpochOutcome::Faulted(
-                        ProductionWifiFault::PhyMaintenance { _failure: failure },
-                    );
-                }
-            };
-            crate::WatchdogConfig::complete(protection);
             match service {
                 WifiServiceRequest::StandaloneScan { request, .. } => {
                     await_stack_boundary!(
@@ -403,7 +389,11 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     };
                     let mut observer = NoopPhyTargetObserver;
                     if let Err(error) = await_stack_boundary!(
-                        task.switch_channel::<EmbassyPhyTime, _>(channel, &mut observer),
+                        task.switch_channel::<EmbassyPhyTime, _, _, _>(
+                            self.radio,
+                            channel,
+                            &mut observer
+                        ),
                     ) {
                         let faulted = ProductionWifiFault::MonitorChannel {
                             _error: error,
@@ -423,12 +413,26 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                             WifiStartReport::new(generation),
                         )))
                         .await;
-                    let exit = await_stack_boundary!(drive_esp32s31_monitor_role(
+                    let exit = await_stack_boundary!(drive_esp32s31_monitor_role::<
+                        _,
+                        _,
+                        _,
+                        _,
+                        _,
+                        _,
+                        EmbassyPhyTime,
+                        _,
+                        _,
+                        _,
+                        RX_DESCRIPTOR_COUNT,
+                        RX_BUFFER_SIZE,
+                        RX_BUFFER_STORAGE_SIZE,
+                    >(
                         endpoint,
                         &mut controller,
+                        self.radio,
                         task,
                         channel_policy,
-                        EmbassyPhyTime,
                         &mut observer,
                         RadioError::RoleActive,
                     ));
@@ -500,17 +504,16 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
     fn restart_radio<'a>(
         &'a mut self,
         slot: &'a mut Option<Self::Stopped>,
-    ) -> impl Future<
-        Output = Result<oer_radio::wifi::WifiRadioCalibrationPath, Self::LifecycleFaulted>,
-    > + 'a {
+    ) -> impl Future<Output = Result<WifiRadioRestartRf, Self::LifecycleFaulted>> + 'a {
         async move {
             let protection = self.watchdog.shutdown();
             let stopped = slot
                 .take()
                 .expect("supervisor retains stopped owner between role epochs");
-            let frontier = match await_stack_boundary!(maintenance::quiesce_for_shutdown(stopped)) {
+            let frontier = match await_stack_boundary!(shutdown::quiesce_for_shutdown(stopped)) {
                 Ok(frontier) => frontier,
                 Err(failure) => {
+                    diagnostics_event!("open-radio: Wi-Fi shutdown failed: {}", failure.reason());
                     failure.enforce_disposition();
                     crate::WatchdogConfig::complete(protection);
                     return Err(RADIO_LIFECYCLE_FAULT.init(
@@ -519,64 +522,68 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 }
             };
             let (wifi, resources) = frontier.into_parts();
-            let released = match await_stack_boundary!(wifi.release_radio::<EmbassyPhyTime>()) {
-                Ok(released) => released,
-                Err(failure) => {
-                    enforce_lifecycle(&failure, failure.phy_hardware_ambiguous());
-                    crate::WatchdogConfig::complete(protection);
-                    return Err(RADIO_LIFECYCLE_FAULT.init(
-                        ProductionRadioLifecycleFault::Release {
-                            _failure: failure,
+            let (released, rf) = {
+                let mut guard = self.radio.lock().await;
+                let (lease, _, clocks) = guard.parts();
+                let released = match wifi.release(lease, clocks) {
+                    Ok(released) => released,
+                    Err(failure) => {
+                        let ambiguous = !matches!(
+                            failure.error(),
+                            WifiReleaseError::Hardware(_) | WifiReleaseError::Phy(_)
+                        );
+                        enforce_lifecycle(&failure, ambiguous);
+                        crate::WatchdogConfig::complete(protection);
+                        return Err(RADIO_LIFECYCLE_FAULT.init(
+                            ProductionRadioLifecycleFault::Release {
+                                _failure: failure,
+                                _resources: resources,
+                            },
+                        ));
+                    }
+                };
+                // The last client's `esp_phy_disable` closes RF; another client
+                // keeps it open.
+                let rf = match await_stack_boundary!(guard.close_phy_if_idle()) {
+                    Ok(true) => WifiRadioRestartRf::ClosedAndWoken,
+                    Ok(false) => WifiRadioRestartRf::KeptOpen,
+                    Err(error) => {
+                        let fault = ProductionRadioLifecycleFault::RfClose {
+                            _error: error,
+                            _partition: released.partition,
+                            _platform: released.platform,
                             _resources: resources,
-                        },
-                    ));
-                }
+                        };
+                        enforce_lifecycle(
+                            &fault,
+                            !matches!(error, ConcurrentRfError::Recoverable(_)),
+                        );
+                        crate::WatchdogConfig::complete(protection);
+                        return Err(RADIO_LIFECYCLE_FAULT.init(fault));
+                    }
+                };
+                (released, rf)
             };
             crate::WatchdogConfig::complete(protection);
-            let cold = match released {
-                WifiRadioReleaseDisposition::Cold(cold) => cold,
-                WifiRadioReleaseDisposition::Shared(radio) => {
-                    return Err(RADIO_LIFECYCLE_FAULT.init(
-                        ProductionRadioLifecycleFault::Shared {
-                            _radio: radio,
-                            _resources: resources,
-                        },
-                    ));
-                }
-            };
             let protection = self.watchdog.startup();
-            let mut clock = EmbassyPhyTime;
-            let ready = match await_stack_boundary!(restart_esp32s31_radio::<_, EmbassyPhyTime, _>(
-                cold,
+            let wifi = match await_stack_boundary!(join_shared_radio(
+                self.radio,
+                released.partition,
+                released.platform,
                 self.radio_start,
-                NoopPhyTargetObserver,
-                &mut clock,
             )) {
-                Ok(ready) => ready,
+                Ok((_phy, wifi)) => wifi,
                 Err(failure) => {
-                    enforce_lifecycle(&failure, failure.phy_hardware_ambiguous());
                     crate::WatchdogConfig::complete(protection);
-                    return Err(RADIO_LIFECYCLE_FAULT.init(
-                        ProductionRadioLifecycleFault::Restart {
+                    return Err(
+                        RADIO_LIFECYCLE_FAULT.init(ProductionRadioLifecycleFault::Join {
                             _failure: failure,
-                            _resources: resources,
-                        },
-                    ));
+                            _resources: Some(resources),
+                        }),
+                    );
                 }
             };
-            let calibration_path = match ready.registration().calibration_path {
-                oer_esp32s31_phy::PhyCalibrationPath::PartialFromCache => {
-                    oer_radio::wifi::WifiRadioCalibrationPath::RestoredCache
-                }
-                oer_esp32s31_phy::PhyCalibrationPath::FullAfterRejectedCache => {
-                    oer_radio::wifi::WifiRadioCalibrationPath::RejectedCache
-                }
-                oer_esp32s31_phy::PhyCalibrationPath::FullForCache
-                | oer_esp32s31_phy::PhyCalibrationPath::FullUncached => {
-                    oer_radio::wifi::WifiRadioCalibrationPath::Full
-                }
-            };
-            let (wifi, _calibration_cache) = ready.into_parts();
+            crate::WatchdogConfig::complete(protection);
             let (physical, station, access_point, monitor) = resources;
             *slot = Some(WifiSupervisorStopped::new(
                 ProductionWifiOwner::Cold(wifi),
@@ -585,64 +592,14 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 access_point,
                 monitor,
             ));
-            crate::WatchdogConfig::complete(protection);
-            Ok(calibration_path)
-        }
-    }
-
-    fn cycle_retained_radio<'a>(
-        &'a mut self,
-        slot: &'a mut Option<Self::Stopped>,
-    ) -> impl Future<Output = Result<(), Self::LifecycleFaulted>> + 'a {
-        async move {
-            let protection = self.watchdog.shutdown();
-            let stopped = slot
-                .take()
-                .expect("supervisor retains stopped owner between role epochs");
-            let frontier = match await_stack_boundary!(maintenance::quiesce_for_shutdown(stopped)) {
-                Ok(frontier) => frontier,
-                Err(failure) => {
-                    failure.enforce_disposition();
-                    crate::WatchdogConfig::complete(protection);
-                    return Err(RADIO_LIFECYCLE_FAULT.init(
-                        ProductionRadioLifecycleFault::ShutdownQuiesce { _failure: failure },
-                    ));
-                }
-            };
-            let (wifi, resources) = frontier.into_parts();
-            let mut clock = EmbassyPhyTime;
-            let wifi = match await_stack_boundary!(
-                wifi.cycle_retained_rf::<EmbassyPhyTime, _>(&mut clock)
-            ) {
-                Ok(wifi) => wifi,
-                Err(failure) => {
-                    enforce_lifecycle(&failure, failure.phy_hardware_ambiguous());
-                    crate::WatchdogConfig::complete(protection);
-                    return Err(RADIO_LIFECYCLE_FAULT.init(
-                        ProductionRadioLifecycleFault::RetainedCycle {
-                            _failure: failure,
-                            _resources: resources,
-                        },
-                    ));
-                }
-            };
-            let (physical, station, access_point, monitor) = resources;
-            *slot = Some(WifiSupervisorStopped::new(
-                ProductionWifiOwner::Cold(wifi),
-                physical,
-                station,
-                access_point,
-                monitor,
-            ));
-            crate::WatchdogConfig::complete(protection);
-            Ok(())
+            Ok(rf)
         }
     }
 }
 
 fn enforce_lifecycle<E: ?Sized>(failure: &E, hardware_ambiguous: bool) {
     use oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop;
-    crate::maintenance_policy::enforce(
+    crate::lifecycle_policy::enforce(
         failure,
         SharedPhyFailStop::from_ambiguous_lifecycle(hardware_ambiguous),
     );

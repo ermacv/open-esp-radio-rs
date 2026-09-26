@@ -16,7 +16,11 @@ use crate::{
     },
 };
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, RegisteredWifiPhy};
+use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
+use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_radio_runtime::RadioSystem;
+
+use crate::roles::radio_channel::RadioChannel;
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::CcmpKeyHardware,
@@ -33,7 +37,6 @@ use oer_esp32s31_ieee80211_sta::{
         StaAttemptReport, StaAttemptSecurity, StaAttemptStage, StaAttemptStation,
         StaInstalledSecurity,
     },
-    hardware::channel::ScanPhy,
     join::{StaJoinObserver, StaJoinTransmit},
     peer::{ConnectedStaPeer, StaPeerTransmit},
     wpa2::HandshakeTransmit,
@@ -103,6 +106,7 @@ pub struct StationJoinResources<
     'security,
     H,
     P,
+    C,
     PO,
     D,
     T,
@@ -112,8 +116,8 @@ pub struct StationJoinResources<
     const DMA_STORAGE_SIZE: usize,
 > {
     pub hardware: &'hardware mut H,
-    pub phy: &'state mut RegisteredWifiPhy,
-    pub platform: &'state mut P,
+    /// The shared radio; each channel switch leases it for one transaction.
+    pub radio: &'state RadioSystem<P, C>,
     pub phy_observer: PO,
     pub receive: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
     pub rx_storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -138,6 +142,7 @@ pub async fn run_esp32s31_station_join<
     'security,
     H,
     P,
+    C,
     PO,
     PD,
     D,
@@ -157,6 +162,7 @@ pub async fn run_esp32s31_station_join<
         'security,
         H,
         P,
+        C,
         PO,
         D,
         T,
@@ -182,12 +188,12 @@ where
     T: StaJoinTransmit<H> + HandshakeTransmit<H> + StaPeerTransmit + 'transmit,
     J: StaJoinObserver + Default,
     AO: StaAttemptObserver,
-    ScanPhy<'state, P, PO, PD>: StaAttemptChannel<H>,
+    C: PlatformClockProvider,
+    RadioChannel<'state, P, C, PO, PD>: StaAttemptChannel<H>,
 {
     let StationJoinResources {
         hardware,
-        phy,
-        platform,
+        radio,
         phy_observer,
         receive,
         rx_storage,
@@ -198,7 +204,7 @@ where
         security,
         attempt_observer,
     } = resources;
-    type Channel<'a, P, O, D> = ScanPhy<'a, P, O, D>;
+    type Channel<'a, P, C, O, D> = RadioChannel<'a, P, C, O, D>;
     let owner = StaAttemptTargetOwner::<
         '_,
         '_,
@@ -206,7 +212,7 @@ where
         '_,
         '_,
         H,
-        Channel<'_, P, PO, PD>,
+        Channel<'_, P, C, PO, PD>,
         D,
         T,
         J,
@@ -216,7 +222,7 @@ where
     >::new(
         StaAttemptRadio::new(
             hardware,
-            ScanPhy::<P, PO, PD>::new(phy, platform, phy_observer),
+            RadioChannel::<P, C, PO, PD>::new(radio, phy_observer),
             receive,
             rx_storage,
             transmit,
@@ -235,7 +241,7 @@ where
             let StaAttemptRadio {
                 channel, receive, ..
             } = radio;
-            let _ = channel.into_parts();
+            let _ = channel.into_observer();
             StationJoinOutcome::Failed {
                 returned: StationJoinReturned {
                     receive,
@@ -265,7 +271,7 @@ where
             let StaAttemptRadio {
                 channel, receive, ..
             } = radio;
-            let _ = channel.into_parts();
+            let _ = channel.into_observer();
             StationJoinOutcome::Connected {
                 returned: StationJoinReturned {
                     receive,

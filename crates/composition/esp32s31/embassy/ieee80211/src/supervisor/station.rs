@@ -79,7 +79,7 @@ use oer_esp32s31_ieee80211_runtime::{
 };
 
 use oer_esp32s31_ieee80211_esp_hal::{
-    EspHalRadioPeripheral,
+    EspHalWifiPlatform,
     mac_interrupt_epoch::{
         prepare_active_connected_sta_without_power_save,
         prepare_active_connected_sta_without_power_save_with_access,
@@ -106,13 +106,6 @@ use oer_ieee80211_runtime::{await_stack_boundary, station_network::RunningStatio
 use static_cell::{ConstStaticCell, StaticCell};
 
 mod execution;
-mod pause;
-mod pause_request;
-pub use pause_request::{
-    PauseError, PauseOperation, PauseReport, PauseTimeline, TrackingConfig, TrackingReport,
-    TrackingStatus, configure_station_tracking, request_station_temperature_observation,
-    station_pause_round_trip, station_tracking_report, station_tracking_status,
-};
 
 pub(crate) use execution::ConnectedDatapathMailbox;
 
@@ -1017,7 +1010,7 @@ pub struct ConnectedStationReturn<'state, 'security> {
 }
 
 pub(crate) struct ConnectedDriverAssemblyFault {
-    _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>,
+    _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalWifiPlatform>,
     _interrupt: MacInterruptEpoch,
     _dma: oer_esp32s31_ieee80211_runtime::roles::station::StationDmaResources<
         'static,
@@ -1054,24 +1047,6 @@ pub(crate) enum ConnectedStationReplaySetupFailure {
 /// Non-reusable connected owner retained at the exact failed transition.
 /// No variant exposes the ordinary disconnected owner required for retry.
 pub enum ConnectedStationFault<'state, 'security> {
-    Pause {
-        _failure: &'static pause::Failure,
-        _role: Option<oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>>,
-        _dma: oer_esp32s31_ieee80211_runtime::roles::station::StationDmaResources<
-            'static,
-            RxStorage,
-            RX_DESCRIPTOR_COUNT,
-        >,
-        _tx_storage: &'state mut TxStorage,
-        _scan_table: &'state mut oer_ieee80211_mac::scan::ScanTable,
-        _interface: oer_ieee80211_softmac::interface::BoundVirtualInterface,
-        _sta_ap_rx_batch: &'static mut [u8],
-        _initial_connected: Option<InitialConnectedStaticResources>,
-        _access_point_airtime: Option<&'static mut super::AccessPointAirtimeResources>,
-        #[cfg(feature = "diagnostics")]
-        _diagnostics: Option<crate::DiagnosticObservers>,
-        _material: StaAttemptSecurityMaterial,
-    },
     InvalidConnectedPolicy {
         _resources: ConnectedStationResources<'state, 'security>,
         _error: ConnectedStaConfigError,
@@ -1139,7 +1114,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _security: StaAttemptSecurity<'security>,
     },
     DriverTeardown {
-        _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>,
+        _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalWifiPlatform>,
         _interrupt: MacInterruptEpoch,
         _dma: oer_esp32s31_ieee80211_runtime::roles::station::StationDmaResources<
             'static,
@@ -1325,7 +1300,8 @@ pub(crate) async fn run_connected<'state, 'security>(
     let activation = {
         let (runtime, epoch) = started.runtime_and_epoch_mut();
         let (radio, _storage, _board) = runtime.split_mut();
-        let (_phy, platform, interrupt) = radio.parts_mut();
+        let (owner, interrupt) = radio.parts_mut();
+        let platform = owner.platform_mut();
         let prepared = if interrupt.is_active() {
             match epoch {
                 ConnectedEpochResources::Initial { hardware, .. } => {
@@ -1500,7 +1476,6 @@ pub(crate) async fn run_connected<'state, 'security>(
         rx_protocol_runtime,
         sta_ap_rx_batch,
         initial_connected,
-        station_tracking,
         #[cfg(feature = "diagnostics")]
         diagnostics,
     } = board;
@@ -1552,7 +1527,6 @@ pub(crate) async fn run_connected<'state, 'security>(
                                 rx_protocol_runtime,
                                 sta_ap_rx_batch,
                                 initial_connected,
-                                station_tracking,
                                 #[cfg(feature = "diagnostics")]
                                 diagnostics,
                             },
@@ -1602,7 +1576,6 @@ pub(crate) async fn run_connected<'state, 'security>(
                             rx_protocol_runtime,
                             sta_ap_rx_batch,
                             initial_connected,
-                            station_tracking,
                             #[cfg(feature = "diagnostics")]
                             diagnostics,
                         },
@@ -1647,7 +1620,6 @@ pub(crate) async fn run_connected<'state, 'security>(
                             rx_protocol_runtime,
                             sta_ap_rx_batch,
                             initial_connected,
-                            station_tracking,
                             #[cfg(feature = "diagnostics")]
                             diagnostics,
                         },
@@ -1863,35 +1835,13 @@ pub(crate) async fn run_connected<'state, 'security>(
     }
 
     let mut radio_runner = Some(radio_runner);
-    let mut role = Some(role);
-    let (interrupt_epoch, result, requested_command) = match await_stack_boundary!(execution::run(
+    let (result, requested_command) = await_stack_boundary!(execution::run(
         connected_datapath,
         station_control,
-        interrupt_epoch,
-        station_tracking,
-        &mut role,
         &mut radio_runner,
-    )) {
-        Ok(returned) => returned,
-        Err(failure) => {
-            return ConnectedStationRunExit::Faulted(ConnectedStationFault::Pause {
-                _failure: failure,
-                _role: role,
-                _dma: dma,
-                _tx_storage: tx_storage,
-                _scan_table: scan_table,
-                _interface: interface,
-                _sta_ap_rx_batch: sta_ap_rx_batch,
-                _initial_connected: initial_connected,
-                _access_point_airtime: access_point_airtime,
-                #[cfg(feature = "diagnostics")]
-                _diagnostics: diagnostics,
-                _material: material,
-            });
-        }
-    };
-    let mut role = role.expect("successful execution retains logical PHY owner");
-    let (_, platform) = role.radio_mut();
+    ));
+    let mut role = role;
+    let platform = role.platform_mut();
     let radio_runner = radio_runner.expect("terminal execution returns its live owner");
     let raw_exit =
         complete_esp32s31_connected_datapath_exit(station_control, result, requested_command);
@@ -2083,7 +2033,6 @@ pub(crate) async fn run_connected<'state, 'security>(
                     rx_protocol_runtime,
                     sta_ap_rx_batch,
                     initial_connected,
-                    station_tracking,
                     #[cfg(feature = "diagnostics")]
                     diagnostics,
                 },
@@ -2121,7 +2070,6 @@ pub(crate) async fn run_connected<'state, 'security>(
                     rx_protocol_runtime,
                     sta_ap_rx_batch,
                     initial_connected,
-                    station_tracking,
                     #[cfg(feature = "diagnostics")]
                     diagnostics,
                 },
@@ -2165,7 +2113,6 @@ pub(crate) async fn run_connected<'state, 'security>(
                 rx_protocol_runtime,
                 sta_ap_rx_batch,
                 initial_connected,
-                station_tracking,
                 #[cfg(feature = "diagnostics")]
                 diagnostics,
             },

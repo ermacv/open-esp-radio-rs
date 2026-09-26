@@ -2,7 +2,7 @@
 
 use oer_radio::wifi::{
     AccessPointRequest, MonitorRequest, StationAccessPointRequest, StationRequest,
-    WifiRadioRestartReport, WifiRadioRetainedCycleReport, WifiScanFailure, WifiScanReport,
+    WifiRadioRestartReport, WifiScanFailure, WifiScanReport,
     WifiScanRequest, WifiStartResult, WifiStopReport,
 };
 
@@ -15,7 +15,6 @@ pub enum EmbassyWifiSupervisorCommand {
     StartMonitor(MonitorRequest),
     Stop,
     RestartRadio,
-    CycleRetainedRadio,
 }
 
 /// Role requested while another Wi-Fi role graph is already active.
@@ -27,7 +26,6 @@ pub enum EmbassyWifiStartKind {
     StationAccessPoint,
     StandaloneMonitor,
     WholeRadioRestart,
-    WholeRadioRetainedCycle,
 }
 
 /// Typed completion transported back to the application controller.
@@ -43,7 +41,6 @@ pub enum EmbassyWifiSupervisorResponse<E> {
     Monitor(WifiStartResult<MonitorRequest, E>),
     Stop(Result<WifiStopReport, E>),
     RestartRadio(Result<WifiRadioRestartReport, E>),
-    CycleRetainedRadio(Result<WifiRadioRetainedCycleReport, E>),
     SupervisorUnavailable,
 }
 

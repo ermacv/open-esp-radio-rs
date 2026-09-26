@@ -62,14 +62,6 @@ where
     R: MacInterruptRoute,
     M: RawMutex,
 {
-    pub(super) fn restore_pause_work(&self, pending: MacInterruptEpochDrain) {
-        self.mac_runtime.restore_pending(pending.mac);
-        if pending.power_events != MacPowerInterruptObservation::default() {
-            self.power_runtime.publish(pending.power_events);
-        }
-        self.mac_runtime.notify_rx_handoff();
-    }
-
     pub const fn new(
         route: R,
         setup: R::Setup,

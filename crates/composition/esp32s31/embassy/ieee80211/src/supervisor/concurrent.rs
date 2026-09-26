@@ -317,7 +317,8 @@ impl ProductionWifiEpochRunner {
         let activation = {
             let (runtime, epoch) = started.runtime_and_epoch_mut();
             let (radio, _storage, _board) = runtime.split_mut();
-            let (_phy, platform, interrupt) = radio.parts_mut();
+            let (owner, interrupt) = radio.parts_mut();
+            let platform = owner.platform_mut();
             let prepared = if interrupt.is_active() {
                 match epoch {
                     ConnectedEpochResources::Initial { hardware, .. } => {
@@ -644,7 +645,6 @@ impl ProductionWifiEpochRunner {
             rx_protocol_runtime,
             sta_ap_rx_batch,
             initial_connected,
-            station_tracking,
             #[cfg(feature = "diagnostics")]
             diagnostics,
         } = board;
@@ -1134,7 +1134,6 @@ impl ProductionWifiEpochRunner {
                     rx_protocol_runtime,
                     sta_ap_rx_batch,
                     initial_connected,
-                    station_tracking,
                     #[cfg(feature = "diagnostics")]
                     diagnostics,
                 },

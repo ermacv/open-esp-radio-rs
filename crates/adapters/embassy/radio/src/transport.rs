@@ -9,7 +9,7 @@ use embassy_sync::{
 
 use oer_radio::wifi::{
     AccessPointRequest, MonitorRequest, RadioController, StationAccessPointRequest, StationRequest,
-    WifiIdle, WifiRadioRestartReport, WifiRadioRetainedCycleReport, WifiScanFailure,
+    WifiIdle, WifiRadioRestartReport, WifiScanFailure,
     WifiScanReport, WifiScanRequest, WifiStartFailure, WifiStartResult, WifiStopReport,
     WifiSupervisorPort,
 };
@@ -339,28 +339,6 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
         }
         match self.completion().await {
             EmbassyWifiSupervisorResponse::RestartRadio(result) => {
-                result.map_err(EmbassyWifiSupervisorError::Service)
-            }
-            EmbassyWifiSupervisorResponse::SupervisorUnavailable => {
-                Err(EmbassyWifiSupervisorError::SupervisorUnavailable)
-            }
-            _ => Err(EmbassyWifiSupervisorError::ResponseMismatch),
-        }
-    }
-
-    async fn cycle_retained_radio(&mut self) -> Result<WifiRadioRetainedCycleReport, Self::Error> {
-        if !self.supervisor_available() {
-            return Err(EmbassyWifiSupervisorError::SupervisorUnavailable);
-        }
-        if self
-            .publish(EmbassyWifiSupervisorCommand::CycleRetainedRadio)
-            .await
-            .is_err()
-        {
-            return Err(EmbassyWifiSupervisorError::SupervisorUnavailable);
-        }
-        match self.completion().await {
-            EmbassyWifiSupervisorResponse::CycleRetainedRadio(result) => {
                 result.map_err(EmbassyWifiSupervisorError::Service)
             }
             EmbassyWifiSupervisorResponse::SupervisorUnavailable => {

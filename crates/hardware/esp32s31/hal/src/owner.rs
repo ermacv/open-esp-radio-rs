@@ -14,11 +14,9 @@ use super::*;
 use crate::phy::restore::PhyRouteState;
 use oer_esp32s31_pac::WifiRadioRegisters;
 
-mod interrupt_checkpoint;
 pub mod maintenance;
 
 pub use crate::phy::registration::PhyRegistrationEpoch;
-pub use interrupt_checkpoint::MacInterruptCheckpoint;
 
 /// One PAC-observed image of the Wi-Fi baseband enable condition.
 ///

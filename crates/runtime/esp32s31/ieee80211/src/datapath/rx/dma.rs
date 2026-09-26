@@ -342,7 +342,6 @@ pub struct PreparedRx<
 
 mod epoch;
 mod lifecycle;
-mod pause;
 mod service;
 
 pub use epoch::StagedRxEpoch;

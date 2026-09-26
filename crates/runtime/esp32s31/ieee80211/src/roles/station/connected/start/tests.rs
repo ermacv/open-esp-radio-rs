@@ -2,7 +2,7 @@ use crate::roles::station::epoch::{DisconnectedStaEpoch, StoppedStaRx};
 
 use embassy_futures::block_on;
 
-use oer_esp32s31_hal::owner::Radio;
+use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
 use super::*;
 
@@ -10,8 +10,6 @@ struct TestRxResources {
     value: u8,
     fail: bool,
 }
-
-struct TestRadioPeripheral;
 
 impl<'arena> ConnectedRxMaterializer<CooperativeRadioHardware<'arena>, u8> for TestRxResources {
     type Connected = (u8, u8);
@@ -60,10 +58,7 @@ impl StoppedStaRx for TestRxFrontier {
 
 #[test]
 fn connected_start_unifies_initial_and_reconnected_owner_frontiers() {
-    let radio = Radio::claim(TestRadioPeripheral)
-        .unwrap_or_else(|_| panic!("radio singleton must be free for connected-start test"));
-    let radio = radio.assume_powered_for_validation().into_running();
-    let (_platform, registers, _interrupt_setup) = radio.into_runtime_parts();
+    let registers = RadioRuntimeOwner::claim_for_validation();
     let arena = RadioOwnerArena::new();
 
     let started = block_on(start_esp32s31_initial_connected_epoch(

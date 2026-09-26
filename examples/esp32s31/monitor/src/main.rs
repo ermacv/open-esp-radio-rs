@@ -17,14 +17,16 @@ use oer::wifi::{MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig};
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 
 use oer::systems::esp32s31::embassy::wifi::{
-    self as integration, DeadlineBudget, DeadlineWatchdog, EspHalRadioPeripheral,
-    PhyCalibrationIdentity, RadioConfig, RadioParts, RadioRunners, RadioSystem, WatchdogConfig,
-    WifiParts, phy_get_rf_cal_version,
+    self as integration, ConcurrentPartitions, DeadlineBudget, DeadlineWatchdog, EspHalRadioClocks,
+    EspHalRadioPlatform, EspHalWifiPlatform, RadioConfig, RadioHardware, SharedRadio,
+    WatchdogConfig, WifiParts, WifiStarted,
 };
 
 use static_cell::StaticCell;
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
+// The shared radio outlives every client and its periodic PHY tracking task.
+static RADIO: StaticCell<SharedRadio> = StaticCell::new();
 // The entropy source owns RNG hardware for the entire process. It must not be
 // dropped while the radio keeps the nested `Trng` owner across await points.
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
@@ -43,8 +45,8 @@ extern "C" fn runtime_main() -> ! {
     platform_executor::init(OneShotTimer::new(timer_group.timer0));
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
     let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
-    let radio = EspHalRadioPeripheral::new(
-        peripherals.WIFI,
+    let wifi_platform = EspHalWifiPlatform::new(peripherals.WIFI);
+    let radio_platform = EspHalRadioPlatform::new(
         peripherals.MODEM_SYSCON,
         peripherals.MODEM_LPCON,
         peripherals.HP_SYS_CLKRST,
@@ -54,6 +56,12 @@ extern "C" fn runtime_main() -> ! {
         peripherals.LP_TSENS,
         peripherals.I2C_ANA_MST,
     );
+    let identity = radio_platform.phy_calibration_identity();
+    let hardware =
+        RadioHardware::take().expect("ESP32-S31 radio hardware must have a unique owner");
+    let (radio, partitions) =
+        SharedRadio::new(hardware, radio_platform, EspHalRadioClocks::new(), identity);
+    let radio = RADIO.init(radio);
     let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
         peripherals.FROM_CPU_INTR0,
     )));
@@ -62,7 +70,7 @@ extern "C" fn runtime_main() -> ! {
     unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
     executor.run(|spawner| {
         spawner.spawn(
-            monitor_task(spawner, radio, trng, watchdog)
+            monitor_task(spawner, radio, partitions, wifi_platform, trng, watchdog)
                 .expect("monitor task storage must be available once"),
         );
     })
@@ -71,7 +79,9 @@ extern "C" fn runtime_main() -> ! {
 #[embassy_executor::task]
 async fn monitor_task(
     spawner: embassy_executor::Spawner,
-    platform: EspHalRadioPeripheral,
+    radio: &'static SharedRadio,
+    partitions: ConcurrentPartitions,
+    wifi_platform: EspHalWifiPlatform,
     trng: Trng,
     watchdog: &'static DeadlineWatchdog,
 ) {
@@ -80,8 +90,6 @@ async fn monitor_task(
     let mut access_point = [0; 6];
     access_point
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
-    let mut calibration_base_mac_address = [0; 6];
-    calibration_base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
     // Board-selected engineering limits, not qualified timing bounds.
     use core::num::NonZeroU32;
     static WATCHDOG_CONFIG: StaticCell<WatchdogConfig> = StaticCell::new();
@@ -89,30 +97,30 @@ async fn monitor_task(
         watchdog,
         DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap()),
         DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
-        DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
     ));
     let config = RadioConfig::new(
         watchdog,
         WifiMacAddress::new(station).expect("station MAC must be unicast"),
         WifiMacAddress::new(access_point).expect("AP MAC must be unicast"),
-        PhyCalibrationIdentity {
-            rf_cal_version: phy_get_rf_cal_version(),
-            base_mac_address: calibration_base_mac_address,
-            mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
-        },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
-    let RadioSystem { radio, runners } =
-        integration::await_stack_boundary!(integration::new(platform, trng, config))
-            .expect("radio initialization must succeed once");
-    let RadioRunners {
-        hardware: radio_runner,
-    } = runners;
-    spawner.spawn(radio_task(spawner, radio_runner).expect("radio task storage is available once"));
-    let RadioParts {
+    spawner.spawn(tracking_task(radio).expect("PHY tracking task storage is available once"));
+    let ConcurrentPartitions {
+        wifi: partition, ..
+    } = partitions;
+    let WifiStarted {
         wifi,
         initialization: _,
-    } = radio.into_parts();
+        runner: radio_runner,
+    } = integration::await_stack_boundary!(integration::new(
+        radio,
+        partition,
+        wifi_platform,
+        trng,
+        config
+    ))
+    .expect("Wi-Fi initialization must succeed once");
+    spawner.spawn(radio_task(spawner, radio_runner).expect("radio task storage is available once"));
     let WifiParts {
         control: wifi,
         station_device: _,
@@ -157,4 +165,11 @@ async fn monitor_task(
 )]
 async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::SystemRunner) {
     runner.run(spawner).await;
+}
+
+/// ESP-IDF's periodic `phy_track_pll` timer for the shared radio.
+#[embassy_executor::task]
+async fn tracking_task(radio: &'static SharedRadio) {
+    let error = radio.run_tracking().await;
+    panic!("shared PHY tracking failed: {error:?}");
 }

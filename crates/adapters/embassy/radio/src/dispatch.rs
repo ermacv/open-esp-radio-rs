@@ -24,7 +24,6 @@ pub enum EmbassyWifiStoppedDispatch {
     Handled,
     Start(WifiServiceRequest),
     RestartRadio,
-    CycleRetainedRadio,
 }
 
 /// Validate and dispatch one command while the concrete actor owns a reusable
@@ -131,8 +130,5 @@ where
             EmbassyWifiStoppedDispatch::Handled
         }
         EmbassyWifiSupervisorCommand::RestartRadio => EmbassyWifiStoppedDispatch::RestartRadio,
-        EmbassyWifiSupervisorCommand::CycleRetainedRadio => {
-            EmbassyWifiStoppedDispatch::CycleRetainedRadio
-        }
     }
 }

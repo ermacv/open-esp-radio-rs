@@ -26,7 +26,9 @@ use embassy_time::Timer;
 
 use oer_esp32s31_hal::{owner::RadioRuntimeOwner, types::MacInterruptEnableState};
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
+use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_radio_runtime::RadioSystem;
 
 use oer_esp32s31_ieee80211::{
     mac_start::WifiMacStartReport,
@@ -206,7 +208,7 @@ pub struct MonitorBuildReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MonitorChannelSwitchError {
     Active(MonitorStoppedAccessError),
-    Phy(PhyTargetPortError),
+    Phy(ConcurrentWifiChannelError),
     Receive(RxFrontierError),
     Quarantined,
     PolicyMismatch {
@@ -354,15 +356,18 @@ where
         result
     }
 
-    /// Retune only while the monitor's IRQ route and RX walker are stopped.
-    pub async fn switch_channel<D, O>(
+    /// Retune only while the monitor's IRQ route and RX walker are stopped,
+    /// leasing the shared radio for this one transaction.
+    pub async fn switch_channel<D, O, RP, RC>(
         &mut self,
+        radio: &RadioSystem<RP, RC>,
         channel: WifiChannel,
         observer: &mut O,
     ) -> Result<(), MonitorChannelSwitchError>
     where
         D: PhyAsyncDelay,
         O: PhyTargetObserver,
+        RC: PlatformClockProvider,
     {
         if self.quarantined {
             return Err(MonitorChannelSwitchError::Quarantined);
@@ -371,18 +376,16 @@ where
             .begin_stopped_transition()
             .map_err(MonitorChannelSwitchError::Active)?;
         self.quarantined = true;
-        let (registers, platform) = self
+        let registers = self
             .service
-            .stopped_radio_mut()
+            .stopped_hardware_mut()
             .map_err(MonitorChannelSwitchError::Active)?;
-        let switched = switch_esp32s31_wifi_channel::<D, _, _>(
-            self.context.phy_mut(),
-            channel,
-            platform,
-            registers,
-            observer,
-        )
-        .await;
+        let mut guard = radio.lock().await;
+        let (lease, platform, _) = guard.parts();
+        let switched =
+            switch_esp32s31_wifi_channel::<D, _, _>(lease, platform, registers, channel, observer)
+                .await;
+        drop(guard);
         if let Err(error) = switched {
             self.quarantined = true;
             return Err(MonitorChannelSwitchError::Phy(error));
@@ -735,14 +738,16 @@ where
         }
     }
 
-    async fn run_hopping<D, O>(
+    async fn run_hopping<D, O, RP, RC>(
         &mut self,
+        radio: &RadioSystem<RP, RC>,
         sequence: MonitorChannelSequence,
         observer: &mut O,
     ) -> Result<MonitorRunReport, MonitorRunFailure<R::Error>>
     where
         D: PhyAsyncDelay,
         O: PhyTargetObserver,
+        RC: PlatformClockProvider,
     {
         if self.owner.current_channel() != sequence.first()
             || self.owner.capture_channel() != sequence.first()
@@ -809,7 +814,7 @@ where
             let next_channel = channels[channel_index];
             if let Err(error) = self
                 .owner
-                .switch_channel::<D, O>(next_channel, observer)
+                .switch_channel::<D, O, RP, RC>(radio, next_channel, observer)
                 .await
             {
                 self.owner.quarantined = true;
@@ -893,8 +898,9 @@ where
     /// Run either the compatible fixed-channel epoch or one bounded hopping
     /// cycle until the paired controller requests stop.
     #[allow(clippy::type_complexity)]
-    pub async fn run_channel_policy_to_exit<D, O>(
+    pub async fn run_channel_policy_to_exit<D, O, RP, RC>(
         mut self,
+        radio: &RadioSystem<RP, RC>,
         policy: MonitorChannelPolicy,
         observer: &mut O,
     ) -> MonitorTaskExit<
@@ -905,6 +911,7 @@ where
     where
         D: PhyAsyncDelay,
         O: PhyTargetObserver,
+        RC: PlatformClockProvider,
     {
         let result = match policy {
             MonitorChannelPolicy::Fixed(channel)
@@ -915,7 +922,8 @@ where
             }
             MonitorChannelPolicy::Fixed(_) => self.run().await,
             MonitorChannelPolicy::Hopping(sequence) => {
-                self.run_hopping::<D, O>(sequence, observer).await
+                self.run_hopping::<D, O, RP, RC>(radio, sequence, observer)
+                    .await
             }
         };
         match self.try_into_stopped() {
@@ -950,16 +958,20 @@ where
     }
 
     /// Retune only while the contained IRQ/DMA service is stopped.
-    pub async fn switch_channel<D, O>(
+    pub async fn switch_channel<D, O, RP, RC>(
         &mut self,
+        radio: &RadioSystem<RP, RC>,
         channel: WifiChannel,
         observer: &mut O,
     ) -> Result<(), MonitorChannelSwitchError>
     where
         D: PhyAsyncDelay,
         O: PhyTargetObserver,
+        RC: PlatformClockProvider,
     {
-        self.owner.switch_channel::<D, O>(channel, observer).await
+        self.owner
+            .switch_channel::<D, O, RP, RC>(radio, channel, observer)
+            .await
     }
 }
 

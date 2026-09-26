@@ -234,8 +234,7 @@ fn trace_channel(
     // SAFETY: the verifier executes this entry in an isolated image and never
     // creates a second peripheral owner during the same execution.
     let peripherals = unsafe { esp_hal::peripherals::Peripherals::steal() };
-    let platform = oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral::new(
-        peripherals.WIFI,
+    let platform = oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
         peripherals.MODEM_SYSCON,
         peripherals.MODEM_LPCON,
         peripherals.HP_SYS_CLKRST,

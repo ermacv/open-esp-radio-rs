@@ -2,8 +2,6 @@
 
 use core::marker::PhantomData;
 
-use oer_esp32s31_phy::RegisteredWifiPhy;
-
 use oer_esp32s31_ieee80211_mac::rx::RxDmaBufferAddresses;
 
 use oer_ieee80211_mac::scan::ScanTable;
@@ -49,13 +47,6 @@ impl<'storage, S, const COUNT: usize> StationDmaResources<'storage, S, COUNT> {
     }
 }
 
-/// Owned role-neutral radio state exposed only through finite STA phases.
-pub trait StationRadioOwner {
-    type Platform;
-
-    fn radio_mut(&mut self) -> (&mut RegisteredWifiPhy, &mut Self::Platform);
-}
-
 /// Persistent physical-radio and interrupt authority owned by one station
 /// service.
 ///
@@ -87,15 +78,12 @@ impl<'role, O, I> StationRadioResources<'role, O, I> {
         &self.owner
     }
 
+    pub fn parts_mut(&mut self) -> (&mut O, &mut I) {
+        (&mut self.owner, &mut self.interrupt)
+    }
+
     pub fn into_parts(self) -> (O, I) {
         (self.owner, self.interrupt)
-    }
-}
-
-impl<O: StationRadioOwner, I> StationRadioResources<'_, O, I> {
-    pub fn parts_mut(&mut self) -> (&mut RegisteredWifiPhy, &mut O::Platform, &mut I) {
-        let (phy, platform) = self.owner.radio_mut();
-        (phy, platform, &mut self.interrupt)
     }
 }
 

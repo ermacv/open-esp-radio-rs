@@ -1,11 +1,6 @@
 use super::*;
 use oer_ieee80211_runtime::await_stack_boundary;
 
-enum BoundaryExit<E> {
-    Boundary,
-    Role(E),
-}
-
 use crate::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
 };
@@ -53,28 +48,14 @@ where
         }
     }
 
-    /// Run with independent, coalesced pause and sticky stop requests.
+    /// Run until role policy exits or `control` requests the sticky stop.
     /// Active TX drains through its ordinary IRQ/deadline path before the
-    /// highest-priority request is acted on. Stop received while paused stays
-    /// latched and prevents new TX admission on the next invocation.
+    /// stop is acted on.
     pub async fn run_controlled<C: RawMutex>(
         &mut self,
         control: &execution::Control<C>,
-    ) -> Result<execution::Exit<B::Exit>, B::Error> {
-        match await_stack_boundary!(self.run_until_pause(control.wait_boundary()))? {
-            DatapathPauseExit::Role(exit) => Ok(execution::Exit::Role(exit)),
-            DatapathPauseExit::Paused => {
-                control.acknowledge_pause();
-                if control.stop_requested() {
-                    match await_stack_boundary!(self.run_until(ready(())))? {
-                        DatapathRunnerExit::Stopped => Ok(execution::Exit::Stopped),
-                        DatapathRunnerExit::Role(exit) => Ok(execution::Exit::Role(exit)),
-                    }
-                } else {
-                    Ok(execution::Exit::Paused)
-                }
-            }
-        }
+    ) -> Result<DatapathRunnerExit<B::Exit>, B::Error> {
+        self.run_until(control.wait_stop()).await
     }
 
     /// Run the production radio event loop until role policy reaches its
@@ -99,40 +80,13 @@ where
     where
         S: Future<Output = ()>,
     {
-        match await_stack_boundary!(self.run_until_boundary::<true, _>(stop))? {
-            BoundaryExit::Boundary => Ok(DatapathRunnerExit::Stopped),
-            BoundaryExit::Role(exit) => Ok(DatapathRunnerExit::Role(exit)),
-        }
+        await_stack_boundary!(self.run_until_boundary(stop))
     }
 
-    /// Yield at a TX-idle boundary without disconnecting the role.
-    ///
-    /// A pending TX finishes through its normal IRQ/deadline path. Prepared
-    /// software frames, protocol state, RX owners and link state remain in
-    /// this runner; call a run method again to resume. No shutdown service is
-    /// invoked. Errors retain the same transaction owners for recovery.
-    ///
-    /// This is only a scheduler boundary, not a hardware-quiescence proof.
-    /// The caller must separately stop RX DMA and quiesce interrupts before
-    /// accessing shared PHY hardware. Dropping the future does not prove even
-    /// TX idle: only the `Paused` result does.
-    pub async fn run_until_pause<S>(
-        &mut self,
-        pause: S,
-    ) -> Result<DatapathPauseExit<B::Exit>, B::Error>
-    where
-        S: Future<Output = ()>,
-    {
-        match await_stack_boundary!(self.run_until_boundary::<false, _>(pause))? {
-            BoundaryExit::Boundary => Ok(DatapathPauseExit::Paused),
-            BoundaryExit::Role(exit) => Ok(DatapathPauseExit::Role(exit)),
-        }
-    }
-
-    async fn run_until_boundary<const STOP: bool, S>(
+    async fn run_until_boundary<S>(
         &mut self,
         stop: S,
-    ) -> Result<BoundaryExit<B::Exit>, B::Error>
+    ) -> Result<DatapathRunnerExit<B::Exit>, B::Error>
     where
         S: Future<Output = ()>,
     {
@@ -155,8 +109,7 @@ where
                 stopping = true;
                 #[cfg(feature = "diagnostics")]
                 log::info!(
-                    "open-radio: DATAPATH {} observed active_tx={} prepared_tx={}",
-                    if STOP { "stop" } else { "pause" },
+                    "open-radio: DATAPATH stop observed active_tx={} prepared_tx={}",
                     self.active_tx_interface.is_some(),
                     self.prepared_tx_interface.is_some(),
                 );
@@ -190,9 +143,6 @@ where
                     self.drain_active_tx().await?;
                     continue;
                 }
-                if !STOP {
-                    return Ok(BoundaryExit::Boundary);
-                }
                 self.cancel_prepared_network_tx()?;
                 self.prepared_tx_interface = None;
                 if self.services.control_required_before_stop() {
@@ -212,7 +162,7 @@ where
                         }
                         DatapathControlProgress::Exit(exit) => {
                             self.set_scope_link_state(oer_network_interface::LinkState::Down);
-                            return Ok(BoundaryExit::Role(exit));
+                            return Ok(DatapathRunnerExit::Role(exit));
                         }
                         DatapathControlProgress::Idle => {}
                     }
@@ -229,7 +179,7 @@ where
                     }
                     DatapathStopProgress::Stopped => {
                         self.set_scope_link_state(oer_network_interface::LinkState::Down);
-                        return Ok(BoundaryExit::Boundary);
+                        return Ok(DatapathRunnerExit::Stopped);
                     }
                 }
             }
@@ -295,7 +245,7 @@ where
                         self.cancel_prepared_network_tx()?;
                         self.prepared_tx_interface = None;
                         self.set_scope_link_state(oer_network_interface::LinkState::Down);
-                        return Ok(BoundaryExit::Role(exit));
+                        return Ok(DatapathRunnerExit::Role(exit));
                     }
                     DatapathControlProgress::Idle => {}
                 }

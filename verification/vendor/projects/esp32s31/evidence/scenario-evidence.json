@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "bbd0f5886eaf99ca0251a26b34745524590a1b473541d5f46e44ae5686d227f6"
+      "sha256": "c48588d519ce50960f8b76ba9181c3b92cfd8d22821641550800169973181144"
     },
     {
       "path": "verification/vendor/schema",
@@ -772,8 +772,8 @@
           "reached": 189,
           "total": 702
         },
-        "excluded": 934,
-        "untriaged": 34
+        "excluded": 941,
+        "untriaged": 27
       },
       "observation": {
         "executed": 452,
@@ -802,8 +802,8 @@
           "reached": 78,
           "total": 88
         },
-        "excluded": 8,
-        "untriaged": 9
+        "excluded": 13,
+        "untriaged": 4
       },
       "observation": {
         "executed": 170,
@@ -832,8 +832,8 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 977,
-        "untriaged": 162
+        "excluded": 984,
+        "untriaged": 155
       },
       "observation": {
         "executed": 1388,
@@ -862,8 +862,8 @@
           "reached": 351,
           "total": 982
         },
-        "excluded": 982,
-        "untriaged": 174
+        "excluded": 989,
+        "untriaged": 167
       },
       "observation": {
         "executed": 1815,
@@ -910,16 +910,6 @@
       "kind": "block"
     },
     {
-      "function": "phy_linear_to_db",
-      "offset": 30,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_linear_to_db",
-      "offset": 104,
-      "kind": "block"
-    },
-    {
       "function": "phy_param_track_tot",
       "offset": 50,
       "kind": "taken"
@@ -928,31 +918,6 @@
       "function": "phy_param_track_tot",
       "offset": 120,
       "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rd_addr",
-      "offset": 2,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rd_addr",
-      "offset": 64,
-      "kind": "block"
-    },
-    {
-      "function": "phy_pbus_rd_addr",
-      "offset": 70,
-      "kind": "block"
-    },
-    {
-      "function": "phy_pbus_rd_shift",
-      "offset": 2,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rd_shift",
-      "offset": 54,
-      "kind": "block"
     },
     {
       "function": "phy_restart_cal",

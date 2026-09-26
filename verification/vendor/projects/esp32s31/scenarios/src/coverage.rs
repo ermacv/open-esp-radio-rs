@@ -360,6 +360,45 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "constant arguments only callers outside the claimed closures pass: the \
+            linear-to-dB scale 3 of `phy_get_power_db` and PBus read selectors above 4 \
+            (`phy_pbus_print`, `phy_set_rx_gain_cal_iq`, `phy_bt_txdc_cal*`); a claimed \
+            caller passing them would either reach these paths or leave its call \
+            uncovered",
+        places: &[
+            Place::Range {
+                function: "phy_linear_to_db",
+                start: 0x1e,
+                end: 0x1f,
+            },
+            Place::Range {
+                function: "phy_linear_to_db",
+                start: 0x68,
+                end: 0x6e,
+            },
+            Place::Range {
+                function: "phy_pbus_rd_addr",
+                start: 0x2,
+                end: 0x3,
+            },
+            Place::Range {
+                function: "phy_pbus_rd_addr",
+                start: 0x40,
+                end: 0x4c,
+            },
+            Place::Range {
+                function: "phy_pbus_rd_shift",
+                start: 0x2,
+                end: 0x3,
+            },
+            Place::Range {
+                function: "phy_pbus_rd_shift",
+                start: 0x36,
+                end: 0x3a,
+            },
+        ],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

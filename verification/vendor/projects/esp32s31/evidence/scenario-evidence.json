@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "418dee25900a7215ee491b26fc7a1be9ad6c0b9565dca48dfa886a1bf6771d78"
+      "sha256": "b2b90035a2af173437ba24356ccec24ce2bdf2721990df3d4e47a08d787afacf"
     },
     {
       "path": "verification/vendor/schema",
@@ -653,8 +653,8 @@
           "reached": 39,
           "total": 54
         },
-        "excluded": 6,
-        "untriaged": 18
+        "excluded": 10,
+        "untriaged": 14
       },
       "observation": {
         "executed": 199,
@@ -682,8 +682,8 @@
           "reached": 24,
           "total": 54
         },
-        "excluded": 9,
-        "untriaged": 50
+        "excluded": 13,
+        "untriaged": 46
       },
       "observation": {
         "executed": 149,
@@ -862,8 +862,8 @@
           "reached": 356,
           "total": 982
         },
-        "excluded": 991,
-        "untriaged": 159
+        "excluded": 995,
+        "untriaged": 155
       },
       "observation": {
         "executed": 1816,
@@ -925,29 +925,9 @@
       "kind": "block"
     },
     {
-      "function": "phy_rfpll_cap_correct_new",
-      "offset": 30,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_correct_new",
-      "offset": 32,
-      "kind": "block"
-    },
-    {
       "function": "phy_rfpll_cap_track_new",
       "offset": 66,
       "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_track_new",
-      "offset": 104,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_track_new",
-      "offset": 108,
-      "kind": "block"
     },
     {
       "function": "phy_rfrx_gain_index_new",

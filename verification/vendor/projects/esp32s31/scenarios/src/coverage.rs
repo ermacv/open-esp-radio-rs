@@ -408,6 +408,22 @@ pub const DECISIONS: &[Decision] = &[
         }],
     },
     Decision {
+        reason: "diagnostic prints of the RFPLL capacitance tracking and correction, \
+            selected by their first argument; production emits no vendor console output",
+        places: &[
+            Place::Range {
+                function: "phy_rfpll_cap_correct_new",
+                start: 0x1e,
+                end: 0x32,
+            },
+            Place::Range {
+                function: "phy_rfpll_cap_track_new",
+                start: 0x68,
+                end: 0x84,
+            },
+        ],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

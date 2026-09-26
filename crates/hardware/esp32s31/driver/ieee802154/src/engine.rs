@@ -310,6 +310,23 @@ impl<'storage> Ieee802154Engine<'storage> {
         }
     }
 
+    /// The receive slot whose buffer is published at `address`, for host
+    /// models that release the frame they delivered.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub fn model_rx_slot(&self, address: u32) -> Option<Ieee802154RxSlot> {
+        self.buffers.rx[..RX_BUFFER_COUNT]
+            .iter()
+            .position(|frame| frame.address() == address)
+            .map(|index| Ieee802154RxSlot(index as u8))
+    }
+
+    /// The address the engine publishes for its transmit buffer, for host
+    /// models that label DMA addresses.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub fn model_transmit_address(&self) -> u32 {
+        self.buffers.tx.address()
+    }
+
     /// `ieee802154_enable` after the modem clock is enabled.
     pub fn enable(&mut self) {
         self.state = Ieee802154State::Idle;

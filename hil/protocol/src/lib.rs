@@ -57,7 +57,7 @@ pub use udp_probe::UdpProbe;
 
 pub use framing::{
     DecodeCounters, DecodeError, EncodeError, FrameDecoder, FrameEncoder, MAX_POSTCARD_BYTES,
-    MAX_WIRE_FRAME_BYTES, evidence_crc32c, startup_artifact_crc32c,
+    MAX_WIRE_FRAME_BYTES, evidence_crc32c, ieee802154_frame_crc32c, startup_artifact_crc32c,
 };
 pub use memory_benchmark::{
     MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest, MemoryBenchmarkSource,
@@ -69,6 +69,11 @@ pub use message::{
     IEEE802154_AIR_CHECK_MAX_CYCLES, Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence,
     Ieee802154AirCheckRequest, Ieee802154AirCheckStop, Ieee802154AirCycle,
     Ieee802154AirEnergyOutcome, Ieee802154AirTransmit, Ieee802154AirTxOutcome,
+    IEEE802154_SESSION_FRAME_CAPACITY, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154SessionAck,
+    Ieee802154SessionConfig, Ieee802154SessionFrame, Ieee802154SessionPendingMode,
+    Ieee802154SessionPendingRequest, Ieee802154SessionReceiveEvidence,
+    Ieee802154SessionReceivedFrame, Ieee802154SessionResult, Ieee802154SessionTransmitEvidence,
+    Ieee802154SessionTransmitRequest,
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
     Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
     Ieee802154EventStatusProbeStop, Ieee802154ObservedEventState, Ieee802154PolledEdMaskState,

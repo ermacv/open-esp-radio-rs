@@ -26,8 +26,10 @@ pub enum PreInitializationRequest {
     Ieee802154EventStatus(Ieee802154EventStatusProbe),
     #[cfg(feature = "ieee802154-ed-event-probe")]
     Ieee802154EdEvent(Ieee802154EdEventProbe),
-    #[cfg(feature = "ieee802154-air-check")]
+    #[cfg(feature = "ieee802154-radio")]
     Ieee802154AirCheck(Ieee802154AirCheck),
+    #[cfg(feature = "ieee802154-radio")]
+    Ieee802154Session(Ieee802154SessionStart),
 }
 
 /// Queues one best-effort diagnostic line on the runtime USB transport.
@@ -94,16 +96,18 @@ pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
             Either::Second(probe) => PreInitializationRequest::Ieee802154EdEvent(probe),
         }
     }
-    #[cfg(feature = "ieee802154-air-check")]
+    #[cfg(feature = "ieee802154-radio")]
     {
-        match select(
+        match select3(
             STARTUP_CONFIGURATIONS.receive(),
             IEEE802154_AIR_CHECKS.receive(),
+            IEEE802154_SESSION_STARTS.receive(),
         )
         .await
         {
-            Either::First(configuration) => PreInitializationRequest::Startup(configuration),
-            Either::Second(check) => PreInitializationRequest::Ieee802154AirCheck(check),
+            Either3::First(configuration) => PreInitializationRequest::Startup(configuration),
+            Either3::Second(check) => PreInitializationRequest::Ieee802154AirCheck(check),
+            Either3::Third(start) => PreInitializationRequest::Ieee802154Session(start),
         }
     }
     #[cfg(not(feature = "ieee802154-diagnostic"))]

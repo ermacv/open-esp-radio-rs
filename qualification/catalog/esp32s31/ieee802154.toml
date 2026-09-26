@@ -208,12 +208,12 @@ vendor-anchors = [
 ]
 hil-requirements = [
   { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
+  { scenario = "ieee802154-peer-exchange", minimum-repetitions = 1 },
 ]
 gaps = [
   { axis = "implementation", id = "periodic-phy-tracking-while-running-missing" },
   { axis = "implementation", id = "public-operational-mac-service-missing" },
   { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
-  { axis = "hil", id = "on-air-rx-tx-ack-and-filtering-cells-missing" },
   { axis = "async", id = "bounded-async-evidence-missing" },
 ]
 source-fact-refs = [

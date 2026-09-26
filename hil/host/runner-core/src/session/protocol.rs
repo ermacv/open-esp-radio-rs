@@ -1228,6 +1228,89 @@ impl SerialCapture {
         }
     }
 
+    pub fn start_ieee802154_session(
+        &self,
+        config: Ieee802154SessionConfig,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionResult> {
+        match self
+            .send_command(0, Command::StartIeee802154Session(config), timeout)?
+            .body
+        {
+            Event::Ieee802154SessionStarted(result) => Ok(result),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 session start: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 session start response".into()),
+        }
+    }
+
+    pub fn transmit_ieee802154_session(
+        &self,
+        request: Ieee802154SessionTransmitRequest,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionTransmitEvidence> {
+        match self
+            .send_command(0, Command::TransmitIeee802154Session(request), timeout)?
+            .body
+        {
+            Event::Ieee802154SessionTransmitted(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 session transmit: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 session transmit response".into()),
+        }
+    }
+
+    fn ieee802154_session_accepted(&self, command: Command, what: &str) -> Result<()> {
+        match self.send_command(0, command, Duration::from_secs(5))?.body {
+            Event::Accepted => Ok(()),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 session {what}: {reason:?}").into())
+            }
+            _ => Err(
+                format!("device returned an invalid IEEE 802.15.4 session {what} response").into(),
+            ),
+        }
+    }
+
+    pub fn receive_ieee802154_session(&self) -> Result<()> {
+        self.ieee802154_session_accepted(Command::ReceiveIeee802154Session, "receive")
+    }
+
+    pub fn set_ieee802154_session_pending(
+        &self,
+        request: Ieee802154SessionPendingRequest,
+    ) -> Result<()> {
+        self.ieee802154_session_accepted(Command::SetIeee802154SessionPending(request), "pending")
+    }
+
+    pub fn collect_ieee802154_session(&self) -> Result<Ieee802154SessionReceiveEvidence> {
+        match self
+            .send_command(0, Command::CollectIeee802154Session, Duration::from_secs(5))?
+            .body
+        {
+            Event::Ieee802154SessionReceived(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 session collect: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 session collect response".into()),
+        }
+    }
+
+    pub fn stop_ieee802154_session(&self, timeout: Duration) -> Result<Ieee802154SessionResult> {
+        match self
+            .send_command(0, Command::StopIeee802154Session, timeout)?
+            .body
+        {
+            Event::Ieee802154SessionStopped(result) => Ok(result),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 session stop: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 session stop response".into()),
+        }
+    }
+
     pub fn request_station_start(&self, target: Target<'_>) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
             Command::StartStation(target.lab.station.protocol_credentials()?),

@@ -421,3 +421,113 @@ pub struct Ieee802154AirCheckEvidence {
     pub completed_cycles: u8,
     pub cycles: [Ieee802154AirCycle; IEEE802154_AIR_CHECK_MAX_CYCLES],
 }
+
+/// Largest MAC frame a session carries: a 127-byte PSDU without its FCS.
+pub const IEEE802154_SESSION_FRAME_CAPACITY: usize = 125;
+/// Received frames one collection reports individually.
+pub const IEEE802154_SESSION_RECORDED_FRAMES: usize = 16;
+
+/// MAC bytes of one frame, without PHR and FCS.
+pub type Ieee802154SessionFrame = heapless::Vec<u8, IEEE802154_SESSION_FRAME_CAPACITY>;
+
+/// Identity and filtering of the device under test in a peer session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionConfig {
+    /// IEEE 802.15.4 channel, 11 through 26.
+    pub channel: u8,
+    pub pan_id: u16,
+    pub short_address: u16,
+    /// Extended address in over-the-air byte order.
+    pub extended_address: [u8; 8],
+    pub promiscuous: bool,
+}
+
+impl Ieee802154SessionConfig {
+    /// Returns whether the configuration is inside the wire contract.
+    pub const fn validate(self) -> bool {
+        self.channel >= 11 && self.channel <= 26
+    }
+}
+
+/// One session transmission.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionTransmitRequest {
+    /// MAC bytes; the frame's acknowledgement-request bit selects whether an
+    /// acknowledgement is awaited.
+    pub frame: Ieee802154SessionFrame,
+    /// Assess the channel before transmitting.
+    pub cca: bool,
+}
+
+impl Ieee802154SessionTransmitRequest {
+    /// Returns whether the frame holds at least a frame control field.
+    pub fn validate(&self) -> bool {
+        self.frame.len() >= 3
+    }
+}
+
+/// Automatic frame-pending decision of the device under test.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154SessionPendingMode {
+    Disabled,
+    Enabled,
+    Enhanced,
+    Zigbee,
+}
+
+/// Change the pending mode and optionally add one short address.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionPendingRequest {
+    pub mode: Ieee802154SessionPendingMode,
+    pub short_address: Option<u16>,
+}
+
+/// Outcome of one session step.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154SessionResult {
+    Done,
+    /// The image could not claim the radio.
+    #[default]
+    UnsupportedSetup,
+    StartFailed,
+    StopFailed,
+    CommandRejected,
+    EventTimeout,
+    EventsLost,
+    UnexpectedEvent,
+}
+
+/// The acknowledgement a session transmission received.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionAck {
+    pub frame: Ieee802154SessionFrame,
+    pub rssi_dbm: i8,
+    pub lqi: u8,
+}
+
+/// Terminal observation of one session transmission.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionTransmitEvidence {
+    pub result: Ieee802154SessionResult,
+    pub outcome: Ieee802154AirTxOutcome,
+    pub acknowledgement: Option<Ieee802154SessionAck>,
+}
+
+/// One received frame, identified by the digest of its MAC bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionReceivedFrame {
+    pub length: u8,
+    /// `ieee802154_frame_crc32c` of the MAC bytes.
+    pub crc32c: u32,
+    pub rssi_dbm: i8,
+    pub lqi: u8,
+}
+
+/// Frames received since the previous collection.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionReceiveEvidence {
+    pub result: Ieee802154SessionResult,
+    /// Every frame received, including those not recorded individually.
+    pub total: u16,
+    pub frames: heapless::Vec<Ieee802154SessionReceivedFrame, IEEE802154_SESSION_RECORDED_FRAMES>,
+}

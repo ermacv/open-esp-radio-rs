@@ -179,7 +179,8 @@ fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
 #[test]
 fn the_ieee802154_peer_is_optional_and_needs_an_identity() {
     use std::io::Write;
-    let raw: toml::Value = toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    let raw: toml::Value =
+        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
     let load = |value: &toml::Value| {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(value).unwrap().as_bytes())

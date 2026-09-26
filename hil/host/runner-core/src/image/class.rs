@@ -27,7 +27,7 @@ pub enum ImageClass {
     DiagnosticRxDeliveryPhyHotSram,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
-    DiagnosticIeee802154AirCheck,
+    DiagnosticIeee802154Radio,
     DiagnosticMemoryBenchmark,
 }
 
@@ -72,7 +72,7 @@ impl ImageClass {
         Self::DiagnosticRxDeliveryPhyHotSram,
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
-        Self::DiagnosticIeee802154AirCheck,
+        Self::DiagnosticIeee802154Radio,
         Self::DiagnosticMemoryBenchmark,
     ];
 
@@ -100,7 +100,7 @@ impl ImageClass {
             Self::DiagnosticRxDeliveryPhyHotSram => "diagnostic-rx-delivery-phy-hot-sram",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
-            Self::DiagnosticIeee802154AirCheck => "diagnostic-ieee802154-air-check",
+            Self::DiagnosticIeee802154Radio => "diagnostic-ieee802154-radio",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
         }
     }
@@ -170,8 +170,8 @@ impl ImageClass {
             Self::DiagnosticIeee802154EdEvent => {
                 "open-radio-hil,ieee802154-ed-event-probe,psram-task-stack,code-psram,profile-psram-data"
             }
-            Self::DiagnosticIeee802154AirCheck => {
-                "open-radio-hil,ieee802154-air-check,psram-task-stack,code-psram,profile-psram-data"
+            Self::DiagnosticIeee802154Radio => {
+                "open-radio-hil,ieee802154-radio,psram-task-stack,code-psram,profile-psram-data"
             }
         }
     }
@@ -201,7 +201,7 @@ impl ImageClass {
             | Self::DiagnosticIeee802154EventStatus
             | Self::DiagnosticMemoryBenchmark
             | Self::DiagnosticIeee802154EdEvent
-            | Self::DiagnosticIeee802154AirCheck => "psram-code-psram-data-psram-stack",
+            | Self::DiagnosticIeee802154Radio => "psram-code-psram-data-psram-stack",
         }
     }
 

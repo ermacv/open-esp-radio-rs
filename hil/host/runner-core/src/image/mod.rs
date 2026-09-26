@@ -118,11 +118,14 @@ pub fn classify_flashed_capabilities(
         return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
             .then_some(ImageClass::DiagnosticRxOwnership);
     }
-    if features.ieee802154_air_check {
+    if features.ieee802154_air_check || features.ieee802154_session {
         let mut control = *features;
         control.ieee802154_air_check = false;
-        return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
-            .then_some(ImageClass::DiagnosticIeee802154AirCheck);
+        control.ieee802154_session = false;
+        return (features.ieee802154_air_check
+            && features.ieee802154_session
+            && classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
+        .then_some(ImageClass::DiagnosticIeee802154Radio);
     }
     if features.phy_rx_hot_sram {
         let mut control = *features;

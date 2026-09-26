@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 170;
+pub const PROTOCOL_VERSION: u16 = 171;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -191,6 +191,8 @@ pub struct FeatureCapabilities {
     pub ieee802154_ed_event_probe: bool,
     /// This image can run the single-device IEEE 802.15.4 on-air check.
     pub ieee802154_air_check: bool,
+    /// This image can run an IEEE 802.15.4 peer session.
+    pub ieee802154_session: bool,
 }
 
 /// Bounded alarm/clock agreement probe. It is intentionally independent of
@@ -517,6 +519,18 @@ pub enum Command {
     ProbeIeee802154EdEvent(Ieee802154EdEventProbeRequest),
     /// Run the single-device IEEE 802.15.4 on-air check.
     RunIeee802154AirCheck(Ieee802154AirCheckRequest),
+    /// Start an IEEE 802.15.4 peer session with this identity and filter.
+    StartIeee802154Session(Ieee802154SessionConfig),
+    /// Transmit one frame in the running session.
+    TransmitIeee802154Session(Ieee802154SessionTransmitRequest),
+    /// Enter receive mode; frames accumulate until collected.
+    ReceiveIeee802154Session,
+    /// Return and forget the frames received since the last collection.
+    CollectIeee802154Session,
+    /// Change the automatic frame-pending decision.
+    SetIeee802154SessionPending(Ieee802154SessionPendingRequest),
+    /// Stop the running session.
+    StopIeee802154Session,
     UploadStartupArtifact(StartupArtifactChunk),
     /// Initialize calibration and the network stack without materializing a
     /// Wi-Fi role. This command is accepted exactly once per boot.
@@ -1163,6 +1177,14 @@ pub enum Event {
     /// It records single-device outcomes only; it does not attest to a peer
     /// receiving the transmitted frames or to calibrated output power.
     Ieee802154AirCheckCompleted(Ieee802154AirCheckEvidence),
+    /// Correlated result of [`Command::StartIeee802154Session`].
+    Ieee802154SessionStarted(Ieee802154SessionResult),
+    /// Correlated result of [`Command::TransmitIeee802154Session`].
+    Ieee802154SessionTransmitted(Ieee802154SessionTransmitEvidence),
+    /// Correlated result of [`Command::CollectIeee802154Session`].
+    Ieee802154SessionReceived(Ieee802154SessionReceiveEvidence),
+    /// Correlated result of [`Command::StopIeee802154Session`].
+    Ieee802154SessionStopped(Ieee802154SessionResult),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),

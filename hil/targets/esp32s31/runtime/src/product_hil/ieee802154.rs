@@ -1,10 +1,16 @@
 //! Reset-isolated IEEE 802.15.4 validation probes, the single-device air
-//! check and HIL evidence mapping.
+//! check, host-driven peer sessions and HIL evidence mapping.
 
-#[cfg(feature = "ieee802154-air-check")]
+#[cfg(feature = "ieee802154-radio")]
 mod air_check;
-#[cfg(feature = "ieee802154-air-check")]
+#[cfg(feature = "ieee802154-radio")]
+mod client;
+#[cfg(feature = "ieee802154-radio")]
+mod session;
+#[cfg(feature = "ieee802154-radio")]
 pub(super) use air_check::run_air_check;
+#[cfg(feature = "ieee802154-radio")]
+pub(super) use session::run_session;
 
 #[cfg(any(
     feature = "ieee802154-event-status-probe",

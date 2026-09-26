@@ -8,29 +8,19 @@
 //! outcomes and target-monotonic times; the host judges them.
 
 use embassy_time::{Duration, Timer, with_timeout};
-use esp_hal::{efuse, time::Instant};
-use oer_esp32s31_hal::root::RadioHardware;
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
-use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
 use oer_esp32s31_ieee802154_runtime::Ieee802154RadioEvent;
-use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
-use oer_esp32s31_phy::{
-    PhyCalibrationIdentity, PhyRegisterConfig, concurrent::ConcurrentPhy, phy_get_rf_cal_version,
-};
-use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
+use oer_esp32s31_ieee802154_system::Ieee802154System;
 use oer_hil_protocol::{
     Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence, Ieee802154AirCheckRequest,
     Ieee802154AirCheckStop, Ieee802154AirCycle, Ieee802154AirEnergyOutcome, Ieee802154AirTransmit,
-    Ieee802154AirTxOutcome,
 };
 use oer_ieee802154::{
     Channel, Configuration, EnergyScanRequest, FrameView, RadioCommand, RadioTimestamp, RequestId,
-    TxMode, TxRequest, TxStatus,
+    TxMode, TxRequest,
 };
-use static_cell::ConstStaticCell;
 
-static BUFFERS: ConstStaticCell<Ieee802154EngineBuffers> =
-    ConstStaticCell::new(Ieee802154EngineBuffers::new());
+use super::client::{Client, now_micros, tx_outcome};
 
 /// Bound on one terminal event after its command started.
 const EVENT_TIMEOUT: Duration = Duration::from_millis(500);
@@ -42,74 +32,40 @@ const FRAME: [u8; 16] = [
     0x41, 0x88, 0x00, 0x45, 0x4f, 0xff, 0xff, 0x54, 0x01, b'O', b'E', b'R', b'-', b'1', b'5', b'4',
 ];
 
-fn now_micros() -> u64 {
-    Instant::now().duration_since_epoch().as_micros()
-}
-
-fn calibration_identity() -> PhyCalibrationIdentity {
-    let mut base_mac_address = [0; 6];
-    base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
-    PhyCalibrationIdentity {
-        rf_cal_version: phy_get_rf_cal_version(),
-        base_mac_address,
-        mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
-    }
-}
-
 /// Why one cycle stopped early.
 struct Stop(Ieee802154AirCheckStop);
 
 /// Run the air check. The image is terminal: the radio stays split.
 pub(in crate::product_hil) async fn run_air_check(
-    mut platform: EspHalRadioPeripheral,
+    platform: EspHalRadioPeripheral,
     request: Ieee802154AirCheckRequest,
 ) -> Ieee802154AirCheckEvidence {
     let mut evidence = Ieee802154AirCheckEvidence::default();
     let Ok(channel) = Channel::new(request.channel) else {
         return evidence;
     };
-    let Some(hardware) = RadioHardware::take() else {
+    let Some((mut client, mut parked)) = Client::claim(platform) else {
         return evidence;
     };
-    let Some(buffers) = BUFFERS.try_take() else {
-        return evidence;
-    };
-    let (radio, partitions) = hardware.into_concurrent(ConcurrentPhy::new());
-    let mut clocks = EspHalRadioClocks::new();
-    let defaults = Ieee802154PibDefaults::default();
-    let mut parked = Ieee802154Parked::new(partitions.ieee802154, buffers, defaults);
-
     for index in 0..usize::from(request.cycles) {
-        // Bring-up and teardown hold the PHY registration and RF close
-        // futures; each is pinned in place for its own scope.
-        let system = {
-            let started = core::pin::pin!(start(
-                &radio,
-                parked,
-                &mut platform,
-                &mut clocks,
-                PhyRegisterConfig::new(calibration_identity()),
-                defaults,
-            ));
-            match started.await {
-                Ok(system) => system,
-                Err(_failure) => {
-                    evidence.stop = Ieee802154AirCheckStop::StartFailed;
-                    return evidence;
-                }
-            }
+        let started = {
+            let started = core::pin::pin!(client.start(parked));
+            started.await
+        };
+        let Some(system) = started else {
+            evidence.stop = Ieee802154AirCheckStop::StartFailed;
+            return evidence;
         };
         let outcome = run_cycle(&system, channel, request, &mut evidence.cycles[index]).await;
-        parked = {
-            let stopped = core::pin::pin!(system.stop(&radio, &mut platform, &mut clocks));
-            match stopped.await {
-                Ok(parked) => parked,
-                Err(_failure) => {
-                    evidence.stop = Ieee802154AirCheckStop::StopFailed;
-                    return evidence;
-                }
-            }
+        let stopped = {
+            let stopped = core::pin::pin!(client.stop(system));
+            stopped.await
         };
+        let Some(stopped) = stopped else {
+            evidence.stop = Ieee802154AirCheckStop::StopFailed;
+            return evidence;
+        };
+        parked = stopped;
         if let Err(Stop(stop)) = outcome {
             evidence.stop = stop;
             return evidence;
@@ -245,18 +201,4 @@ async fn transmitted(
         requested_at_micros,
         done_at_micros: now_micros(),
     })
-}
-
-const fn tx_outcome(status: TxStatus) -> Ieee802154AirTxOutcome {
-    match status {
-        TxStatus::Success => Ieee802154AirTxOutcome::Success,
-        TxStatus::ChannelBusy => Ieee802154AirTxOutcome::ChannelBusy,
-        TxStatus::NoAcknowledgement => Ieee802154AirTxOutcome::NoAcknowledgement,
-        TxStatus::Aborted => Ieee802154AirTxOutcome::Aborted,
-        TxStatus::InvalidFrame => Ieee802154AirTxOutcome::InvalidFrame,
-        TxStatus::HardwareFailure => Ieee802154AirTxOutcome::HardwareFailure,
-        TxStatus::CoexistenceRejected => Ieee802154AirTxOutcome::CoexistenceRejected,
-        TxStatus::SecurityFailure => Ieee802154AirTxOutcome::SecurityFailure,
-        TxStatus::InvalidAcknowledgement => Ieee802154AirTxOutcome::InvalidAcknowledgement,
-    }
 }

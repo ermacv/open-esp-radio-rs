@@ -24,8 +24,6 @@ use esp_hal::{
     peripherals::USB_DEVICE,
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
-#[cfg(feature = "ieee802154-air-check")]
-use oer_hil_protocol::Ieee802154AirCheckRequest;
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use oer_hil_protocol::Ieee802154EdEventProbeRequest;
 #[cfg(feature = "ieee802154-event-status-probe")]
@@ -38,6 +36,11 @@ use oer_hil_protocol::{
     TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
     WifiAccessPointRequest, WifiMonitorCaptureRequest, WifiMonitorRequest, WifiRole,
     WifiScanRequest, WifiStationAccessPointRequest, evidence_crc32c, startup_artifact_crc32c,
+};
+#[cfg(feature = "ieee802154-radio")]
+use oer_hil_protocol::{
+    Ieee802154AirCheckRequest, Ieee802154SessionConfig, Ieee802154SessionPendingRequest,
+    Ieee802154SessionTransmitRequest,
 };
 
 #[cfg(not(feature = "memory-benchmark"))]
@@ -130,9 +133,17 @@ static IEEE802154_EVENT_STATUS_PROBES: Channel<
 #[unsafe(link_section = ".critical.data.logging")]
 static IEEE802154_ED_EVENT_PROBES: Channel<CriticalSectionRawMutex, Ieee802154EdEventProbe, 1> =
     Channel::new();
-#[cfg(feature = "ieee802154-air-check")]
+#[cfg(feature = "ieee802154-radio")]
 #[unsafe(link_section = ".critical.data.logging")]
 static IEEE802154_AIR_CHECKS: Channel<CriticalSectionRawMutex, Ieee802154AirCheck, 1> =
+    Channel::new();
+#[cfg(feature = "ieee802154-radio")]
+#[unsafe(link_section = ".critical.data.logging")]
+static IEEE802154_SESSION_STARTS: Channel<CriticalSectionRawMutex, Ieee802154SessionStart, 1> =
+    Channel::new();
+#[cfg(feature = "ieee802154-radio")]
+#[unsafe(link_section = ".critical.data.logging")]
+static IEEE802154_SESSION_COMMANDS: Channel<CriticalSectionRawMutex, Ieee802154SessionCommand, 1> =
     Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Channel::new();
@@ -233,10 +244,69 @@ pub struct Ieee802154EdEventProbe {
     pub request: Ieee802154EdEventProbeRequest,
 }
 
-#[cfg(feature = "ieee802154-air-check")]
+#[cfg(feature = "ieee802154-radio")]
 pub struct Ieee802154AirCheck {
     pub request_id: u32,
     pub request: Ieee802154AirCheckRequest,
+}
+
+#[cfg(feature = "ieee802154-radio")]
+pub struct Ieee802154SessionStart {
+    pub request_id: u32,
+    pub config: Ieee802154SessionConfig,
+}
+
+/// One command of a running IEEE 802.15.4 peer session.
+#[cfg(feature = "ieee802154-radio")]
+pub enum Ieee802154SessionCommand {
+    Transmit {
+        request_id: u32,
+        request: Ieee802154SessionTransmitRequest,
+    },
+    Receive {
+        request_id: u32,
+    },
+    Collect {
+        request_id: u32,
+    },
+    Pending {
+        request_id: u32,
+        request: Ieee802154SessionPendingRequest,
+    },
+    Stop {
+        request_id: u32,
+    },
+}
+
+/// The next command of the running IEEE 802.15.4 session.
+#[cfg(feature = "ieee802154-radio")]
+pub async fn receive_ieee802154_session_command() -> Ieee802154SessionCommand {
+    IEEE802154_SESSION_COMMANDS.receive().await
+}
+
+/// Admit one command of a running session: the image must support sessions
+/// and one must be open; a queued command makes the next one wait.
+#[cfg(feature = "ieee802154-radio")]
+async fn admit_ieee802154_session_command(
+    session_open: bool,
+    session_id: u64,
+    request_id: u32,
+    command: Ieee802154SessionCommand,
+) -> bool {
+    if !session_open {
+        publish_event_reliably(
+            session_id,
+            request_id,
+            Event::Rejected(RejectReason::InvalidState),
+        )
+        .await;
+        return false;
+    }
+    if IEEE802154_SESSION_COMMANDS.try_send(command).is_err() {
+        publish_event_reliably(session_id, request_id, Event::Rejected(RejectReason::Busy)).await;
+        return false;
+    }
+    true
 }
 
 #[derive(Clone, Copy)]
@@ -907,6 +977,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
     // publishes its completion before the product task returns.
     #[cfg(feature = "ieee802154-diagnostic")]
     let mut ieee802154_diagnostic_requested = false;
+    // An admitted session start opens the session; an admitted stop closes it.
+    #[cfg(feature = "ieee802154-radio")]
+    let mut ieee802154_session_open = false;
     #[cfg(not(feature = "ieee802154-diagnostic"))]
     let ieee802154_diagnostic_requested = false;
     // One slot per physical STA+AP network endpoint. A slot is keyed by its
@@ -1145,7 +1218,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 .await;
                             }
                             Ieee802154EventStatusProbeAdmission::Admit => {
-                                #[cfg(feature = "ieee802154-air-check")]
+                                #[cfg(feature = "ieee802154-radio")]
                                 {
                                     if IEEE802154_AIR_CHECKS
                                         .try_send(Ieee802154AirCheck {
@@ -1164,7 +1237,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                         ieee802154_diagnostic_requested = true;
                                     }
                                 }
-                                #[cfg(not(feature = "ieee802154-air-check"))]
+                                #[cfg(not(feature = "ieee802154-radio"))]
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
@@ -1173,6 +1246,161 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 .await;
                             }
                         }
+                    }
+                    Command::StartIeee802154Session(config) => {
+                        let admission = ieee802154_event_status_probe_admission(
+                            capabilities.features.ieee802154_session,
+                            initialized,
+                            state == SessionState::WaitingForInitialization,
+                            session_id,
+                            ieee802154_diagnostic_requested,
+                            config.validate(),
+                        );
+                        match admission {
+                            Ieee802154EventStatusProbeAdmission::Reject(reason) => {
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(reason),
+                                )
+                                .await;
+                            }
+                            Ieee802154EventStatusProbeAdmission::Admit => {
+                                #[cfg(feature = "ieee802154-radio")]
+                                {
+                                    if IEEE802154_SESSION_STARTS
+                                        .try_send(Ieee802154SessionStart { request_id, config })
+                                        .is_err()
+                                    {
+                                        publish_event_reliably(
+                                            session_id,
+                                            request_id,
+                                            Event::Rejected(RejectReason::Busy),
+                                        )
+                                        .await;
+                                    } else {
+                                        ieee802154_diagnostic_requested = true;
+                                        ieee802154_session_open = true;
+                                    }
+                                }
+                                #[cfg(not(feature = "ieee802154-radio"))]
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(RejectReason::Unsupported),
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    Command::TransmitIeee802154Session(request) => {
+                        #[cfg(feature = "ieee802154-radio")]
+                        if request.validate() {
+                            admit_ieee802154_session_command(
+                                ieee802154_session_open,
+                                session_id,
+                                request_id,
+                                Ieee802154SessionCommand::Transmit {
+                                    request_id,
+                                    request,
+                                },
+                            )
+                            .await;
+                        } else {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidConfiguration),
+                            )
+                            .await;
+                        }
+                        #[cfg(not(feature = "ieee802154-radio"))]
+                        {
+                            let _ = request;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::Unsupported),
+                            )
+                            .await;
+                        }
+                    }
+                    Command::ReceiveIeee802154Session => {
+                        #[cfg(feature = "ieee802154-radio")]
+                        admit_ieee802154_session_command(
+                            ieee802154_session_open,
+                            session_id,
+                            request_id,
+                            Ieee802154SessionCommand::Receive { request_id },
+                        )
+                        .await;
+                        #[cfg(not(feature = "ieee802154-radio"))]
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
+                    Command::CollectIeee802154Session => {
+                        #[cfg(feature = "ieee802154-radio")]
+                        admit_ieee802154_session_command(
+                            ieee802154_session_open,
+                            session_id,
+                            request_id,
+                            Ieee802154SessionCommand::Collect { request_id },
+                        )
+                        .await;
+                        #[cfg(not(feature = "ieee802154-radio"))]
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
+                    Command::SetIeee802154SessionPending(request) => {
+                        #[cfg(feature = "ieee802154-radio")]
+                        admit_ieee802154_session_command(
+                            ieee802154_session_open,
+                            session_id,
+                            request_id,
+                            Ieee802154SessionCommand::Pending {
+                                request_id,
+                                request,
+                            },
+                        )
+                        .await;
+                        #[cfg(not(feature = "ieee802154-radio"))]
+                        {
+                            let _ = request;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::Unsupported),
+                            )
+                            .await;
+                        }
+                    }
+                    Command::StopIeee802154Session => {
+                        #[cfg(feature = "ieee802154-radio")]
+                        if admit_ieee802154_session_command(
+                            ieee802154_session_open,
+                            session_id,
+                            request_id,
+                            Ieee802154SessionCommand::Stop { request_id },
+                        )
+                        .await
+                        {
+                            ieee802154_session_open = false;
+                        }
+                        #[cfg(not(feature = "ieee802154-radio"))]
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
                     }
                     Command::UploadStartupArtifact(chunk) => {
                         let response = if !capabilities.features.startup_artifact {

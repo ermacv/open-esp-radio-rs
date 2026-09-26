@@ -41,6 +41,12 @@ pub fn startup_artifact_crc32c(bytes: &[u8]) -> u32 {
     CRC32C.checksum(bytes)
 }
 
+/// Digest of one IEEE 802.15.4 MAC frame reported by a session, so both the
+/// target and the host identify frame bytes without carrying them.
+pub fn ieee802154_frame_crc32c(bytes: &[u8]) -> u32 {
+    CRC32C.checksum(bytes)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EncodeError {
     Serialize,

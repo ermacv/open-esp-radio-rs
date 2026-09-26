@@ -1532,7 +1532,7 @@ pub async fn run(
             .await;
             return;
         }
-        #[cfg(feature = "ieee802154-air-check")]
+        #[cfg(feature = "ieee802154-radio")]
         PreInitializationRequest::Ieee802154AirCheck(check) => {
             // The check holds the composition's bring-up future; pin it in place.
             let air_check = core::pin::pin!(ieee802154::run_air_check(platform, check.request));
@@ -1543,6 +1543,17 @@ pub async fn run(
                 HilEvent::Ieee802154AirCheckCompleted(evidence),
             )
             .await;
+            return;
+        }
+        #[cfg(feature = "ieee802154-radio")]
+        PreInitializationRequest::Ieee802154Session(start) => {
+            // The session holds the composition's bring-up future; pin it.
+            let session = core::pin::pin!(ieee802154::run_session(
+                platform,
+                start.request_id,
+                start.config
+            ));
+            session.await;
             return;
         }
     };

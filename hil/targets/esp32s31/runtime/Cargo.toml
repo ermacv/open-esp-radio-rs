@@ -152,10 +152,9 @@ ieee802154-ed-event-probe = [
     "dep:oer-esp32s31-radio-esp-hal",
     "oer-esp32s31-hal/validation-probes",
 ]
-# Single-device on-air check of the composed IEEE 802.15.4 client on the
-# shared radio arbiter: start, ED, CCA, direct and scheduled transmits, a
-# receive window and stop.
-ieee802154-air-check = [
+# The composed IEEE 802.15.4 client on the shared radio arbiter: the
+# single-device on-air check and host-driven peer sessions.
+ieee802154-radio = [
     "ieee802154-diagnostic",
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-phy",

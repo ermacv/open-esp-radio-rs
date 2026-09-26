@@ -18,6 +18,17 @@ pub enum Ieee802154Scenario {
     EventStatus(Diagnostic),
     EdEvent(Diagnostic),
     AirCheck(AirCheck),
+    PeerExchange(PeerExchange),
+}
+
+/// An exchange with the IEEE 802.15.4 reference peer.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PeerExchange {
+    pub boots: u8,
+    pub channel: u8,
+    /// Frames per direction.
+    pub frames: u8,
 }
 
 /// The single-device on-air check.
@@ -60,6 +71,16 @@ impl Ieee802154Scenario {
                 bounded(diagnostic.poll_limit, 1, 1_000_000, "poll_limit")?;
                 bounded(diagnostic.timer_threshold, 1, 1_000, "timer_threshold")
             }
+            Self::PeerExchange(exchange) => {
+                bounded(exchange.boots, 1, 20, "boots")?;
+                bounded(exchange.channel, 11, 26, "channel")?;
+                bounded(
+                    exchange.frames,
+                    1,
+                    oer_hil_protocol::IEEE802154_SESSION_RECORDED_FRAMES as u8,
+                    "frames",
+                )
+            }
             Self::AirCheck(check) => {
                 bounded(check.boots, 1, 20, "boots")?;
                 if check.request().validate() {
@@ -72,11 +93,13 @@ impl Ieee802154Scenario {
     }
 
     pub fn plan(&self) -> Plan {
-        Plan::target_only(match self {
+        let mut plan = Plan::target_only(match self {
             Self::EventStatus(_) => ImageClass::DiagnosticIeee802154EventStatus,
             Self::EdEvent(_) => ImageClass::DiagnosticIeee802154EdEvent,
-            Self::AirCheck(_) => ImageClass::DiagnosticIeee802154AirCheck,
-        })
+            Self::AirCheck(_) | Self::PeerExchange(_) => ImageClass::DiagnosticIeee802154Radio,
+        });
+        plan.requirements.ieee802154_peer = matches!(self, Self::PeerExchange(_));
+        plan
     }
 
     pub fn run(&self, output: &Path, context: &Context<'_>) -> Result<()> {
@@ -103,6 +126,15 @@ impl Ieee802154Scenario {
                     boots,
                     poll_limit,
                     timer_threshold,
+                },
+                output,
+                context,
+            ),
+            Self::PeerExchange(exchange) => ieee802154::peer_exchange::run(
+                ieee802154::peer_exchange::Config {
+                    boots: exchange.boots,
+                    channel: exchange.channel,
+                    frames: exchange.frames,
                 },
                 output,
                 context,
@@ -144,13 +176,28 @@ mod tests {
     }
 
     #[test]
+    fn the_peer_exchange_needs_the_peer_and_bounds_its_frames() {
+        let table = "kind = 'peer-exchange'\nboots = 1\nchannel = 15\nframes = 4";
+        let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
+        scenario.validate().unwrap();
+        let plan = scenario.plan();
+        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
+        assert!(plan.requirements.ieee802154_peer);
+        for invalid in ["frames = 0", "frames = 17"] {
+            let scenario: Ieee802154Scenario =
+                toml::from_str(&table.replace("frames = 4", invalid)).unwrap();
+            assert!(scenario.validate().is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn the_air_check_implies_its_image_and_bounds_its_request() {
         let table = "kind = 'air-check'\nboots = 1\nchannel = 15\ncycles = 2\nenergy_scan_micros = 5000\nreceive_window_millis = 200\nscheduled_lead_micros = 20000";
         let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
         scenario.validate().unwrap();
         assert_eq!(
             scenario.plan(),
-            Plan::target_only(ImageClass::DiagnosticIeee802154AirCheck)
+            Plan::target_only(ImageClass::DiagnosticIeee802154Radio)
         );
         let invalid: Ieee802154Scenario =
             toml::from_str(&table.replace("channel = 15", "channel = 27")).unwrap();

@@ -1947,3 +1947,84 @@ where
     decoder.feed(frame, |result| observed = Some(result.unwrap()));
     assert_eq!(observed, Some(message));
 }
+
+#[test]
+fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
+    use crate::{
+        IEEE802154_SESSION_FRAME_CAPACITY, IEEE802154_SESSION_RECORDED_FRAMES,
+        Ieee802154AirTxOutcome, Ieee802154SessionAck, Ieee802154SessionConfig,
+        Ieee802154SessionFrame, Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest,
+        Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
+        Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest,
+    };
+    let full = || {
+        let mut frame = Ieee802154SessionFrame::new();
+        frame
+            .extend_from_slice(&[0xa5; IEEE802154_SESSION_FRAME_CAPACITY])
+            .unwrap();
+        frame
+    };
+    let config = Ieee802154SessionConfig {
+        channel: 26,
+        pan_id: u16::MAX,
+        short_address: u16::MAX,
+        extended_address: [u8::MAX; 8],
+        promiscuous: true,
+    };
+    assert!(config.validate());
+    assert!(!Ieee802154SessionConfig { channel: 10, ..config }.validate());
+    assert!(
+        !Ieee802154SessionTransmitRequest {
+            frame: Ieee802154SessionFrame::from_slice(&[1, 2]).unwrap(),
+            cca: false
+        }
+        .validate()
+    );
+    for command in [
+        Command::StartIeee802154Session(config),
+        Command::TransmitIeee802154Session(Ieee802154SessionTransmitRequest {
+            frame: full(),
+            cca: true,
+        }),
+        Command::ReceiveIeee802154Session,
+        Command::CollectIeee802154Session,
+        Command::SetIeee802154SessionPending(Ieee802154SessionPendingRequest {
+            mode: Ieee802154SessionPendingMode::Zigbee,
+            short_address: Some(u16::MAX),
+        }),
+        Command::StopIeee802154Session,
+    ] {
+        round_trip(Envelope::new(7, 3, 9, 2, command));
+    }
+    let mut frames = heapless::Vec::new();
+    for _ in 0..IEEE802154_SESSION_RECORDED_FRAMES {
+        frames
+            .push(Ieee802154SessionReceivedFrame {
+                length: u8::MAX,
+                crc32c: u32::MAX,
+                rssi_dbm: i8::MIN,
+                lqi: u8::MAX,
+            })
+            .unwrap();
+    }
+    for event in [
+        Event::Ieee802154SessionStarted(Ieee802154SessionResult::StartFailed),
+        Event::Ieee802154SessionTransmitted(Ieee802154SessionTransmitEvidence {
+            result: Ieee802154SessionResult::Done,
+            outcome: Ieee802154AirTxOutcome::Success,
+            acknowledgement: Some(Ieee802154SessionAck {
+                frame: full(),
+                rssi_dbm: i8::MIN,
+                lqi: u8::MAX,
+            }),
+        }),
+        Event::Ieee802154SessionReceived(Ieee802154SessionReceiveEvidence {
+            result: Ieee802154SessionResult::Done,
+            total: u16::MAX,
+            frames,
+        }),
+        Event::Ieee802154SessionStopped(Ieee802154SessionResult::Done),
+    ] {
+        round_trip(Envelope::new(7, 3, 9, 2, event));
+    }
+}

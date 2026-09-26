@@ -120,9 +120,11 @@ STA policy can request a channel visit without knowing the register or RF table.
 ## 5. Connect the operation to the scan caller
 
 The chip's [ScanPhy](../crates/roles/esp32s31/ieee80211/sta/src/hardware/channel.rs)
-borrows persistent `RegisteredWifiPhy` state. Initial selection requires a cold,
-stopped MAC. A later switch performs stop, retune and restore. The cooperative
-path obtains serialized channel-only authority through `RadioAccess`.
+retunes the shared PHY domain under the radio arbiter lease, taken for each
+channel transaction as the vendor `phy_lock` scope is. Initial selection
+requires a cold, stopped MAC. A later switch performs stop, retune and restore.
+The cooperative path obtains serialized channel-only authority through
+`RadioAccess`.
 
 The [runtime target binding](../crates/runtime/esp32s31/ieee80211/src/roles/scan/target.rs)
 implements `ScanPhyPort` for this chip owner. Runtime scan services combine

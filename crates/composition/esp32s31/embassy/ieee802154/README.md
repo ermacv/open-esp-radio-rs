@@ -1,7 +1,7 @@
 # ESP32-S31 IEEE 802.15.4 system
 
 `oer-esp32s31-ieee802154-system` brings IEEE 802.15.4 up as a client of the
-[shared radio](../radio/README.md) (`RadioSystem`) and tears it down again.
+[shared radio](../../../../runtime/esp32s31/radio/README.md) (`RadioSystem`) and tears it down again.
 It is the chip composition of the [HAL lifecycle](../../../../hardware/esp32s31/hal/src/ieee802154/role.rs),
 the [PHY client](../../../../hardware/esp32s31/phy/src/ieee802154_client.rs),
 the [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) and the

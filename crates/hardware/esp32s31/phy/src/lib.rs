@@ -102,7 +102,9 @@ pub use analog::rfpll::phy_get_rf_cal_version;
 // Value results of registration children that protocol reports and HIL
 // evidence carry. The transitions that produce them stay crate-private.
 #[cfg(feature = "registration-diagnostics")]
-pub use calibration::registration::RfCalibrationDiagnostics;
+pub use calibration::registration::{
+    FrequencyCalibrationDiagnostics, RfCalibrationDiagnostics, RfpllCalibrationPoint,
+};
 pub use calibration::registration::{
     PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterBindingError, PhyRegisterFailure,
     PhyRegisterOutcome, PhyRegisterStage, RegisteredPhyState,

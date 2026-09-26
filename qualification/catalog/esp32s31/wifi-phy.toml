@@ -244,23 +244,24 @@ source-paths = [
 [[capabilities.source-contracts]]
 id = "phy-cache-cold-replay"
 composition = "production"
-scope = "Validate retained semantic calibration, restore it into a cold state owner, regenerate frequency memory, republish gain state and skip the completed full-calibration prefix"
+scope = "The radio system hands a retained cache to the shared domain's first registration, which validates the retained semantic calibration, restores it into a cold state owner, regenerates frequency memory, republishes gain state and skips the completed full-calibration prefix"
 limits = "Invalid or incomplete caches fall back to full calibration; the partial path still performs RXIQ and the common cold tail, and does not claim retained wake or broad RF qualification"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
   "crates/hardware/esp32s31/phy/src/state.rs",
+  "crates/hardware/esp32s31/phy/src/target_port/concurrent.rs",
+  "crates/runtime/esp32s31/radio/src/system.rs",
 ]
 
 [[capabilities.source-contracts]]
 id = "phy-final-state-cache-handoff"
 composition = "production"
-scope = "Consume the cold-release owner with the platform-derived physical identity, capture the final post-tracking cache and feed both directly into the ordinary validated cold-restart graph"
-limits = "The production supervisor invokes this cold release/restart chain only from its idle control frontier; retained RF wake is a separate lifecycle and broad RF behavior remains outside this source contract"
+scope = "Capture the registered shared domain's final post-tracking calibration state, with RF open or closed, as the cache for the next cold registration under the radio system's platform-derived identity"
+limits = "The domain stays registered across RF close and wake, so a radio restart wakes RF without registering; the captured cache feeds the first registration of a later radio system. Broad RF behavior remains outside this source contract"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
-  "crates/hardware/esp32s31/phy/src/registered_radio.rs",
-  "crates/hardware/esp32s31/driver/ieee80211/src/runtime.rs",
-  "crates/hardware/esp32s31/driver/ieee80211/src/startup.rs",
+  "crates/hardware/esp32s31/phy/src/concurrent.rs",
+  "crates/runtime/esp32s31/radio/src/system.rs",
 ]
 
 
@@ -558,7 +559,7 @@ gaps = [
 
 [capabilities.development]
 knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md"]
-host-tests = [{ manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::maintenance::tests", source = "crates/runtime/esp32s31/ieee80211/src/datapath/maintenance/tests.rs" }]
+host-tests = [{ manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::stop::tests", source = "crates/runtime/esp32s31/ieee80211/src/datapath/stop/tests.rs" }]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -574,7 +575,7 @@ limitations = "Vendor proof covers readiness register polling, physical settle r
 id = "runtime-phy-calibration"
 source-fact-refs = ["connected-calibration-owners"]
 title = "Connected runtime PHY calibration"
-scope = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute under exclusive physical admission, publish one coherent semantic outcome and restore the connected station epoch"
+scope = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute in the radio system's periodic tracking under the vendor admission, bracketed by the grant-protect request, and publish one coherent semantic outcome while the station keeps running"
 implementation = "complete"
 host = "covered"
 async = "bounded"
@@ -678,7 +679,7 @@ limitations = "Configured HT40 WPA2 peer is absent. This confirms finite candida
 [[capabilities]]
 id = "runtime-rfpll-tracking"
 title = "Connected runtime RFPLL tracking"
-scope = "Fresh temperature demand selects a finite nonzero RFPLL correction, updates frequency memory, restores the current channel and resumes the same station epoch"
+scope = "The periodic tracking's thermal predicate selects a finite nonzero RFPLL correction, updates frequency memory and restores the current channel under the grant-protect request while the station keeps running"
 implementation = "complete"
 host = "covered"
 async = "bounded"
@@ -923,7 +924,7 @@ id = "phy-protocol-consumer-composition"
 domain = "phy"
 title = "Protocol consumer composition"
 source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
-overview = "Statuses here apply to protocol composition, independently of primitive status.\n`PARTIAL` can mean an available target entry point without a public operational\ncaller. Shared registration does not prove that every calibration branch is\nselected, every channel is usable or all radio clients can run concurrently.\n\n\nThe relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),\n[Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),\n[registered shared radio](src/registered_radio.rs),\n[the Bluetooth PHY client](src/bluetooth_client.rs) and\n[the IEEE 802.15.4 PHY client](src/ieee802154_client.rs).\nBluetooth and IEEE 802.15.4 join the shared PHY domain and BTBB baseband as\narbiter clients; membership alone is not RF readiness."
+overview = "Statuses here apply to protocol composition, independently of primitive status.\n`PARTIAL` can mean an available target entry point without a public operational\ncaller. Shared registration does not prove that every calibration branch is\nselected, every channel is usable or all radio clients can run concurrently.\n\n\nThe relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),\n[Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),\n[the shared PHY domain](src/concurrent.rs),\n[the Wi-Fi PHY client](src/wifi_client.rs),\n[the Bluetooth PHY client](src/bluetooth_client.rs) and\n[the IEEE 802.15.4 PHY client](src/ieee802154_client.rs).\nBluetooth and IEEE 802.15.4 join the shared PHY domain and BTBB baseband as\narbiter clients; membership alone is not RF readiness."
 packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-ieee80211", "oer-esp32s31-phy"]
 
 [[sections]]
@@ -1785,7 +1786,7 @@ section = "phy-calibration-state-and-tracking"
 title = "Registered-policy inspection"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "`RegisteredPhyRadio::inspect_tracking`, `RegisteredWifiPhy::inspect_tracking` and `RegisteredBluetoothPhyClient::inspect_tracking` borrow the existing owner and reuse source predicates. Evaluation deadline and retained thermal conditions are separate; temperature age, independent job admission and RF safety are not inferred."
+scope-and-limitations = "`PhyDomain::inspect_tracking` borrows the registered domain and reuses source predicates. Evaluation deadline and retained thermal conditions are separate; temperature age, independent job admission and RF safety are not inferred."
 
 [[items]]
 id = "phy-calibration-state-and-tracking-periodic-tracking-service"
@@ -1793,7 +1794,7 @@ section = "phy-calibration-state-and-tracking"
 title = "Periodic tracking service"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[Client state](src/state/client.rs) evaluates tracking deadlines and target runners can execute requests. Wi-Fi exposes due-only `WifiStopped::maintain_phy` with an owned HAL `WifiAccess` retaining registers and inactive IRQ setup across execution; admission and release check stopped MAC and RX walker; the supervisor invokes it at elapsed deadlines between logical roles after bounded MAC stop, RX-ring halt and IRQ quiescence. Maintenance restores the prior live RX/IRQ handoff without resuming MAC; the following role applies its policy and resumes MAC. The connected-station service starts from `RadioConfig` on every connected epoch and restores the live MAC/RX/IRQ boundary after each operation. Complete scheduling and teardown are not composed for every protocol."
+scope-and-limitations = "[Client state](src/state/client.rs) evaluates tracking deadlines, and the radio system's periodic timer runs one `track_concurrent_phy` tick every tracking period under the shared domain's admission policy: by default the vendor admission, which tracks with every protocol running and brackets the RF-sensitive regions with the grant-protect request. There is no protocol-selected maintenance of individual operations. Tracking under concurrent traffic is not HIL-qualified."
 packages = ["oer-esp32s31-phy"]
 
 [[items]]
@@ -1802,7 +1803,7 @@ section = "phy-protocol-consumer-composition"
 title = "Cold registration/calibration entry — Wi-Fi"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "production cold start invokes the target runner"
+scope-and-limitations = "the radio system registers the shared domain once, before Wi-Fi joins it"
 
 [[items]]
 id = "phy-protocol-consumer-cold-registration-calibration-entry-bluetooth"
@@ -1826,7 +1827,7 @@ section = "phy-protocol-consumer-composition"
 title = "Protocol-client ownership — Wi-Fi"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "cold start acquires Wi-Fi and retains the registered radio through MAC startup; runtime retains `RegisteredWifiPhy` and the acquired client scheduler"
+scope-and-limitations = "Wi-Fi bring-up joins the shared domain as a client (`join_wifi`) before MAC startup; the runtime retains the `WifiPhyMembership` and leaves through `leave_wifi` at release"
 
 [[items]]
 id = "phy-protocol-consumer-protocol-client-ownership-bluetooth"

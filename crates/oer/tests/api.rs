@@ -33,7 +33,7 @@ fn association_policy_and_wire_codec_share_the_same_types() {
 fn chip_namespace_preserves_hal_type_identity() {
     use oer::chips::esp32s31::hal;
 
-    let _: fn(chip_hal::owner::Radio<()>) -> hal::owner::Radio<()> = |owner| owner;
+    let _: fn(chip_hal::root::RadioHardware) -> hal::root::RadioHardware = |owner| owner;
 }
 
 #[cfg(feature = "esp32s31-wifi")]

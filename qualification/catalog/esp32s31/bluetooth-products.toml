@@ -55,7 +55,7 @@ source-fact-refs = [
 ]
 
 [capabilities.development]
-knowledge = ["verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md", "crates/hardware/esp32s31/phy/src/tracking/service/README.md"]
+knowledge = ["verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md", "crates/hardware/esp32s31/phy/src/tracking/README.md"]
 host-tests = [
   { manifest = "crates/protocols/bluetooth/le/ll/Cargo.toml", filter = "connection::maintenance::tests", source = "crates/protocols/bluetooth/le/ll/src/connection/maintenance/tests.rs" },
 ]

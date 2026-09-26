@@ -5,6 +5,21 @@ relocation interpretation. It receives bytes and structural facts, never a
 project, archive path or publication capability. Unsupported encodings remain
 explicit gaps.
 
+ESP-IDF builds the ESP32-S31 for `rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt`. The
+`extensions` module decodes the Zba, Zbb and Zbs integer forms, the Zcb loads,
+stores and arithmetic, and the Zcmp `cm.push`, `cm.pop`, `cm.popret`,
+`cm.popretz`, `cm.mvsa01` and `cm.mva01s`, which rv-asm 0.2.1 lacks. It
+classifies the Zcmp and Zcb encoding spaces before rv-asm, which would read the
+Zcmp space as the D-extension C.FSDSP the chip does not have. Integer and Zcb
+memory forms lift to single operations; `IntegerOp::evaluate` in the domain is
+the one concrete definition that analysis and execution share. The Zcmp forms
+move several registers and lift to `Unsupported`, so abstract analysis keeps a
+gap for them while concrete execution runs them: pushes store the listed
+registers from `s11` down to `ra` below `sp`, pops load them back, and the
+returning forms return through `ra`, as the decoded flow states. Zcmt table
+jumps need the `jvt` CSR and remain unsupported. Decoder `policy-3`, `values-7`
+and `execution-13` identify this behavior.
+
 Lifting returns bounded typed operations over RV32 registers. Loads, stores and
 atomics describe effects without reading memory. Compressed instructions use the
 shared normalized operands. The backend corrects rv-asm 0.2.1's unsigned
@@ -15,7 +30,7 @@ defines this sign extension. The backend declares relocation roles;
 analysis validates the flowing address relationship and owns abstract states.
 
 
-`RiscvExecutor` owns concrete RV32IMAC register state and the iterative instruction
+`RiscvExecutor` owns concrete RV32 register state and the iterative instruction
 loop. It receives an `ExecutionStart` with entry, stack, optional register words
 and a resolved goal, an `ExecutionMemory` port and
 shared run control. It uses the same decoder and integer lift descriptions, with

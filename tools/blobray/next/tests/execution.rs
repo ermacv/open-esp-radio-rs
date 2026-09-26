@@ -493,6 +493,72 @@ fn rv32_arithmetic_edges_and_machine_calls_execute_instructions() {
     assert_eq!(facts["records"][0]["value"]["stop"]["low"], 7);
 }
 #[test]
+fn bit_manipulation_and_code_size_extensions_execute() {
+    // Encodings from LLVM's assembler; results from the Zba/Zbb/Zbs
+    // definitions, with a0 and a1 as the operands.
+    for (instruction, a, b, expected) in [
+        (0x20b54533, 3u32, 5u32, 17u32),                  // sh2add
+        (0x40b57533, 0xff00ff00, 0x0ff00000, 0xf000ff00), // andn
+        (0x0ab56533, u32::MAX, 1, 1),                     // max (signed)
+        (0x0ab55533, u32::MAX, 1, 1),                     // minu
+        (0x60b51533, 0x80000001, 36, 0x18),               // rol, masked amount
+        (0x60051513, 0x00010000, 0, 15),                  // clz
+        (0x60251513, 0xf0f0f0f0, 0, 16),                  // cpop
+        (0x69855513, 0x11223344, 0, 0x44332211),          // rev8
+        (0x28755513, 0x00120300, 0, 0x00ffff00),          // orc.b
+        (0x48555513, 0x20, 0, 1),                         // bexti 5
+        (0x68b51533, 0x80000000, 63, 0),                  // binv, masked index
+    ] {
+        let f = Fixture::new(&[instruction, 0x00008067]);
+        let mut r = f.request();
+        r.replacement = None;
+        r.binding = None;
+        r.cases[0].replacement = None;
+        r.cases[0].relation = None;
+        r.cases[0].vendor.arguments[0] = Some(a);
+        r.cases[0].vendor.arguments[1] = Some(b);
+        let run = f.run(r, budget());
+        let facts = f.read(&run.execution.unwrap());
+        assert_eq!(
+            facts["records"][0]["value"]["stop"]["low"], expected,
+            "{instruction:#010x}"
+        );
+    }
+    // cm.push {ra, s0-s1}, -16; cm.mvsa01 s1, s0; sh2add a0, s0, s1;
+    // cm.popret {ra, s0-s1}, 16; c.nop. The frame round-trips ra, and the
+    // saved registers carry a0 and a1 into the result.
+    let f = Fixture::new(&[0xaca2b862, 0x20944533, 0x0001be62]);
+    let mut r = f.request();
+    r.replacement = None;
+    r.binding = None;
+    r.cases[0].replacement = None;
+    r.cases[0].relation = None;
+    r.cases[0].vendor.arguments[0] = Some(3);
+    r.cases[0].vendor.arguments[1] = Some(5);
+    let run = f.run(r, budget());
+    let facts = f.read(&run.execution.unwrap());
+    assert_eq!(facts["records"][0]["value"]["stop"]["kind"], "returned");
+    assert_eq!(facts["records"][0]["value"]["stop"]["low"], 23);
+    // c.lbu a0, 3(a0); c.sext.b a0; c.mul a0, a1; c.jr ra.
+    let f = Fixture::new(&[0x9d658168, 0x80829d4d]);
+    let mut r = f.request();
+    r.replacement = None;
+    r.binding = None;
+    r.cases[0].replacement = None;
+    r.cases[0].relation = None;
+    r.cases[0].vendor.arguments[0] = Some(0x3000);
+    r.cases[0].vendor.arguments[1] = Some(3);
+    r.cases[0].vendor.memory.push(ram(MemorySeed {
+        address: 0x3000,
+        length: 4,
+        fill: Some(0x80),
+        bytes: vec![],
+    }));
+    let run = f.run(r, budget());
+    let facts = f.read(&run.execution.unwrap());
+    assert_eq!(facts["records"][0]["value"]["stop"]["low"], 0xfffffe80u32);
+}
+#[test]
 fn signed_loads_and_phase_stack_reset_are_explicit() {
     let f = Fixture::new(&[0x00050503, 0x00008067]);
     let mut r = f.request();

@@ -2,7 +2,9 @@
 use super::*;
 impl FunctionSemantics for RiscvDecoder {
     fn branch(&self, bytes: &[u8]) -> Option<(BranchTest, Operand, Operand)> {
-        let (inst, _) = decode_instruction(bytes)?;
+        let (Instruction::Base(inst), _) = decode_instruction(bytes)? else {
+            return None;
+        };
         let (test, a, b) = match inst {
             Inst::Beq { src1, src2, .. } => (BranchTest::Eq, src1, src2),
             Inst::Bne { src1, src2, .. } => (BranchTest::Ne, src1, src2),
@@ -16,11 +18,13 @@ impl FunctionSemantics for RiscvDecoder {
     }
 
     fn semantic_identity(&self) -> &'static str {
-        "rv32imac/values-6/rv-asm-0.2.1"
+        "rv32imac-zba-zbb-zbs-zcb-zcmp/values-7/rv-asm-0.2.1"
     }
     fn lift(&self, bytes: &[u8]) -> SemanticOp {
-        let Some((inst, _)) = decode_instruction(bytes) else {
-            return SemanticOp::Unsupported;
+        let inst = match decode_instruction(bytes) {
+            Some((Instruction::Base(inst), _)) => inst,
+            Some((Instruction::Extension(extension), _)) => return lift_extension(extension),
+            None => return SemanticOp::Unsupported,
         };
         use Operand::{Immediate as Imm, Register as Reg};
         match inst {
@@ -371,6 +375,49 @@ impl FunctionSemantics for RiscvDecoder {
             R_RISCV_PCREL_LO12_I | R_RISCV_PCREL_LO12_S => ValueRelocation::LowerPcRelative,
             _ => ValueRelocation::Unsupported,
         }
+    }
+}
+
+/// Integer and Zcb memory forms lift to single operations. The Zcmp stack
+/// forms move several registers at once and have no single-operation lift.
+fn lift_extension(extension: Extension) -> SemanticOp {
+    match extension {
+        Extension::Integer {
+            op,
+            dest,
+            left,
+            right,
+        } => SemanticOp::Integer {
+            op,
+            dest,
+            left: Operand::Register(left),
+            right,
+        },
+        Extension::Memory {
+            load,
+            register,
+            base,
+            offset,
+            width,
+            signed,
+        } => SemanticOp::Memory {
+            kind: if load {
+                MemoryKind::Load
+            } else {
+                MemoryKind::Store
+            },
+            base,
+            displacement: i32::from(offset),
+            width,
+            dest: load.then_some(register),
+            source: (!load).then_some(register),
+            swap: false,
+            signed,
+        },
+        Extension::Push { .. }
+        | Extension::Pop { .. }
+        | Extension::MoveToSaved { .. }
+        | Extension::MoveFromSaved { .. } => SemanticOp::Unsupported,
     }
 }
 

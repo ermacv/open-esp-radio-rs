@@ -1,5 +1,6 @@
 //! Concrete RV32IMAC execution. Instruction fetch, data, and events use explicit ports.
 use super::*;
+use crate::extensions::{self, Extension};
 pub struct RiscvExecutor;
 
 /// Slots of one execution's direct-mapped decode cache. Decoding depends only
@@ -39,7 +40,7 @@ impl DecodeCache {
 /// One decoded instruction word with its lifted semantics.
 #[derive(Clone, Copy)]
 struct Decoded {
-    inst: Inst,
+    inst: Instruction,
     lifted: SemanticOp,
     branch: Option<(BranchTest, Operand, Operand)>,
 }
@@ -54,7 +55,7 @@ fn decode(bytes: &[u8]) -> Option<Decoded> {
 }
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-12/rv-asm-0.2.1"
+        "rv32imac-zba-zbb-zbs-zcb-zcmp/execution-13/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -167,196 +168,232 @@ impl Executor for RiscvExecutor {
             steps += 1;
             let mut next = pc.wrapping_add(width as u32);
             let mut transfer = None;
+            // The lifted integer and memory semantics, shared by base and
+            // extension instructions.
+            macro_rules! lifted {
+                () => {
+                    match decoded.lifted {
+                        SemanticOp::Integer {
+                            op,
+                            dest,
+                            left,
+                            right,
+                        } => {
+                            let operand = |o: Operand| -> Option<u32> {
+                                match o {
+                                    Operand::Immediate(v) => Some(v),
+                                    Operand::Register(r) => regs[r as usize],
+                                }
+                            };
+                            // An unknown operand yields an unknown result; only a
+                            // decision, an address or an observed value stops.
+                            regs[dest as usize] = match (operand(left), operand(right)) {
+                                (Some(a), Some(b)) => Some(op.evaluate(a, b)),
+                                _ => None,
+                            };
+                        }
+                        SemanticOp::Upper {
+                            dest,
+                            value,
+                            pc_relative,
+                        } => {
+                            regs[dest as usize] = Some(if pc_relative {
+                                pc.wrapping_add(value)
+                            } else {
+                                value
+                            })
+                        }
+                        SemanticOp::Memory {
+                            kind,
+                            base,
+                            displacement,
+                            width,
+                            dest,
+                            source,
+                            signed,
+                            ..
+                        } => {
+                            if !matches!(kind, MemoryKind::Load | MemoryKind::Store) {
+                                stop!(ExecutionGap::UnsupportedInstruction);
+                            }
+                            let address = reg!(base).wrapping_add_signed(displacement);
+                            if kind == MemoryKind::Load {
+                                let loaded = match memory.load(address, width, control)? {
+                                    MemoryReadValue::Known { value } => {
+                                        Some(match (signed, width) {
+                                            (true, 1) => value as i8 as i32 as u32,
+                                            (true, 2) => value as i16 as i32 as u32,
+                                            _ => value,
+                                        })
+                                    }
+                                    // Unknown bytes load an unknown value.
+                                    MemoryReadValue::Unknown => None,
+                                    MemoryReadValue::Unavailable => stop!(ExecutionGap::Memory {
+                                        address,
+                                        access: MemoryAccess::Read
+                                    }),
+                                };
+                                regs[dest.unwrap() as usize] = loaded;
+                            } else {
+                                let source = source.unwrap();
+                                let written = match regs[source as usize] {
+                                    Some(value) => memory.write(address, width, value, control)?,
+                                    // An unknown value stored to memory stays
+                                    // unknown there; only a device refuses it.
+                                    None => {
+                                        if !memory.write_unknown(address, width, control)? {
+                                            stop!(ExecutionGap::UnknownRegister {
+                                                register: source
+                                            });
+                                        }
+                                        true
+                                    }
+                                };
+                                if !written {
+                                    stop!(ExecutionGap::Memory {
+                                        address,
+                                        access: MemoryAccess::Write
+                                    });
+                                }
+                            }
+                        }
+                        _ => stop!(ExecutionGap::UnsupportedInstruction),
+                    }
+                };
+            }
             match inst {
-                Inst::LrW { order, dest, addr } => {
-                    let address = reg!(addr.0);
-                    let Some(value) = memory.load_reserved(address, ordering(order), control)?
-                    else {
-                        stop!(ExecutionGap::Memory {
-                            address,
-                            access: MemoryAccess::Atomic
-                        });
-                    };
-                    regs[dest.0 as usize] = Some(value);
-                }
-                Inst::ScW {
-                    order,
-                    dest,
-                    addr,
-                    src,
-                } => {
-                    let (address, value) = (reg!(addr.0), reg!(src.0));
-                    let Some(stored) =
-                        memory.store_conditional(address, value, ordering(order), control)?
-                    else {
-                        stop!(ExecutionGap::Memory {
-                            address,
-                            access: MemoryAccess::Atomic
-                        });
-                    };
-                    regs[dest.0 as usize] = Some(u32::from(!stored));
-                }
-                Inst::AmoW {
-                    order,
-                    op,
-                    dest,
-                    addr,
-                    src,
-                } => {
-                    let (address, value) = (reg!(addr.0), reg!(src.0));
-                    let Some(old) = memory.modify_word(
-                        address,
-                        ordering(order),
-                        &mut |old| atomic(op, old, value),
-                        control,
-                    )?
-                    else {
-                        stop!(ExecutionGap::Memory {
-                            address,
-                            access: MemoryAccess::Atomic
-                        });
-                    };
-                    regs[dest.0 as usize] = Some(old);
-                }
-                Inst::Jal { dest, offset } => {
-                    regs[dest.0 as usize] = Some(next);
-                    next = pc.wrapping_add_signed(offset.as_i32());
-                    if matches!(dest.0, 0 | 1 | 5) {
-                        transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32), false));
+                Instruction::Base(inst) => match inst {
+                    Inst::LrW { order, dest, addr } => {
+                        let address = reg!(addr.0);
+                        let Some(value) =
+                            memory.load_reserved(address, ordering(order), control)?
+                        else {
+                            stop!(ExecutionGap::Memory {
+                                address,
+                                access: MemoryAccess::Atomic
+                            });
+                        };
+                        regs[dest.0 as usize] = Some(value);
                     }
-                }
-                Inst::Jalr { dest, base, offset } => {
-                    let target = reg!(base.0).wrapping_add_signed(offset.as_i32()) & !1;
-                    regs[dest.0 as usize] = Some(next);
-                    next = target;
-                    let is_return = dest.0 == 0 && matches!(base.0, 1 | 5) && offset.as_i32() == 0;
-                    if !is_return && matches!(dest.0, 0 | 1 | 5) {
-                        transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32), true));
+                    Inst::ScW {
+                        order,
+                        dest,
+                        addr,
+                        src,
+                    } => {
+                        let (address, value) = (reg!(addr.0), reg!(src.0));
+                        let Some(stored) =
+                            memory.store_conditional(address, value, ordering(order), control)?
+                        else {
+                            stop!(ExecutionGap::Memory {
+                                address,
+                                access: MemoryAccess::Atomic
+                            });
+                        };
+                        regs[dest.0 as usize] = Some(u32::from(!stored));
                     }
-                }
-                Inst::Beq { offset, .. }
-                | Inst::Bne { offset, .. }
-                | Inst::Blt { offset, .. }
-                | Inst::Bge { offset, .. }
-                | Inst::Bltu { offset, .. }
-                | Inst::Bgeu { offset, .. } => {
-                    let Some((test, Operand::Register(a), Operand::Register(b))) = decoded.branch
-                    else {
-                        stop!(ExecutionGap::UnsupportedInstruction);
-                    };
-                    let (a, b) = (reg!(a), reg!(b));
-                    let taken = match test {
-                        BranchTest::Eq => a == b,
-                        BranchTest::Ne => a != b,
-                        BranchTest::Lt => (a as i32) < b as i32,
-                        BranchTest::Ge => (a as i32) >= b as i32,
-                        BranchTest::Ltu => a < b,
-                        BranchTest::Geu => a >= b,
-                    };
-                    let target = pc.wrapping_add_signed(offset.as_i32());
-                    memory.event(
-                        ExecutionEvent::Branch {
-                            site: pc,
-                            target,
-                            fallthrough: next,
-                            taken,
-                        },
-                        control,
-                    )?;
-                    if taken {
-                        next = target;
-                    }
-                }
-                Inst::Fence { fence } => {
-                    if fence.fm != 0 {
-                        stop!(ExecutionGap::UnsupportedInstruction);
-                    }
-                    let bits = |s: rv_asm::FenceSet| {
-                        u8::from(s.device_input) * 8
-                            + u8::from(s.device_output) * 4
-                            + u8::from(s.memory_read) * 2
-                            + u8::from(s.memory_write)
-                    };
-                    memory.event(
-                        ExecutionEvent::Fence {
-                            predecessor: bits(fence.pred),
-                            successor: bits(fence.succ),
-                        },
-                        control,
-                    )?;
-                }
-                _ => match decoded.lifted {
-                    SemanticOp::Integer {
+                    Inst::AmoW {
+                        order,
                         op,
                         dest,
-                        left,
-                        right,
+                        addr,
+                        src,
                     } => {
-                        let operand = |o: Operand| -> Option<u32> {
-                            match o {
-                                Operand::Immediate(v) => Some(v),
-                                Operand::Register(r) => regs[r as usize],
-                            }
+                        let (address, value) = (reg!(addr.0), reg!(src.0));
+                        let Some(old) = memory.modify_word(
+                            address,
+                            ordering(order),
+                            &mut |old| atomic(op, old, value),
+                            control,
+                        )?
+                        else {
+                            stop!(ExecutionGap::Memory {
+                                address,
+                                access: MemoryAccess::Atomic
+                            });
                         };
-                        // An unknown operand yields an unknown result; only a
-                        // decision, an address or an observed value stops.
-                        regs[dest as usize] = match (operand(left), operand(right)) {
-                            (Some(a), Some(b)) => Some(integer(op, a, b)),
-                            _ => None,
+                        regs[dest.0 as usize] = Some(old);
+                    }
+                    Inst::Jal { dest, offset } => {
+                        regs[dest.0 as usize] = Some(next);
+                        next = pc.wrapping_add_signed(offset.as_i32());
+                        if matches!(dest.0, 0 | 1 | 5) {
+                            transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32), false));
+                        }
+                    }
+                    Inst::Jalr { dest, base, offset } => {
+                        let target = reg!(base.0).wrapping_add_signed(offset.as_i32()) & !1;
+                        regs[dest.0 as usize] = Some(next);
+                        next = target;
+                        let is_return =
+                            dest.0 == 0 && matches!(base.0, 1 | 5) && offset.as_i32() == 0;
+                        if !is_return && matches!(dest.0, 0 | 1 | 5) {
+                            transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32), true));
+                        }
+                    }
+                    Inst::Beq { offset, .. }
+                    | Inst::Bne { offset, .. }
+                    | Inst::Blt { offset, .. }
+                    | Inst::Bge { offset, .. }
+                    | Inst::Bltu { offset, .. }
+                    | Inst::Bgeu { offset, .. } => {
+                        let Some((test, Operand::Register(a), Operand::Register(b))) =
+                            decoded.branch
+                        else {
+                            stop!(ExecutionGap::UnsupportedInstruction);
                         };
+                        let (a, b) = (reg!(a), reg!(b));
+                        let taken = match test {
+                            BranchTest::Eq => a == b,
+                            BranchTest::Ne => a != b,
+                            BranchTest::Lt => (a as i32) < b as i32,
+                            BranchTest::Ge => (a as i32) >= b as i32,
+                            BranchTest::Ltu => a < b,
+                            BranchTest::Geu => a >= b,
+                        };
+                        let target = pc.wrapping_add_signed(offset.as_i32());
+                        memory.event(
+                            ExecutionEvent::Branch {
+                                site: pc,
+                                target,
+                                fallthrough: next,
+                                taken,
+                            },
+                            control,
+                        )?;
+                        if taken {
+                            next = target;
+                        }
                     }
-                    SemanticOp::Upper {
-                        dest,
-                        value,
-                        pc_relative,
-                    } => {
-                        regs[dest as usize] = Some(if pc_relative {
-                            pc.wrapping_add(value)
-                        } else {
-                            value
-                        })
-                    }
-                    SemanticOp::Memory {
-                        kind,
-                        base,
-                        displacement,
-                        width,
-                        dest,
-                        source,
-                        signed,
-                        ..
-                    } => {
-                        if !matches!(kind, MemoryKind::Load | MemoryKind::Store) {
+                    Inst::Fence { fence } => {
+                        if fence.fm != 0 {
                             stop!(ExecutionGap::UnsupportedInstruction);
                         }
-                        let address = reg!(base).wrapping_add_signed(displacement);
-                        if kind == MemoryKind::Load {
-                            let loaded = match memory.load(address, width, control)? {
-                                MemoryReadValue::Known { value } => Some(match (signed, width) {
-                                    (true, 1) => value as i8 as i32 as u32,
-                                    (true, 2) => value as i16 as i32 as u32,
-                                    _ => value,
-                                }),
-                                // Unknown bytes load an unknown value.
-                                MemoryReadValue::Unknown => None,
-                                MemoryReadValue::Unavailable => stop!(ExecutionGap::Memory {
-                                    address,
-                                    access: MemoryAccess::Read
-                                }),
-                            };
-                            regs[dest.unwrap() as usize] = loaded;
-                        } else {
-                            let source = source.unwrap();
-                            let written = match regs[source as usize] {
-                                Some(value) => memory.write(address, width, value, control)?,
-                                // An unknown value stored to memory stays
-                                // unknown there; only a device refuses it.
-                                None => {
-                                    if !memory.write_unknown(address, width, control)? {
-                                        stop!(ExecutionGap::UnknownRegister { register: source });
-                                    }
-                                    true
-                                }
+                        let bits = |s: rv_asm::FenceSet| {
+                            u8::from(s.device_input) * 8
+                                + u8::from(s.device_output) * 4
+                                + u8::from(s.memory_read) * 2
+                                + u8::from(s.memory_write)
+                        };
+                        memory.event(
+                            ExecutionEvent::Fence {
+                                predecessor: bits(fence.pred),
+                                successor: bits(fence.succ),
+                            },
+                            control,
+                        )?;
+                    }
+                    _ => lifted!(),
+                },
+                Instruction::Extension(extension) => match extension {
+                    Extension::Push { list, adjustment } => {
+                        let sp = reg!(2);
+                        let mut address = sp;
+                        for register in extensions::list_registers(list) {
+                            address = address.wrapping_sub(4);
+                            let written = match regs[register as usize] {
+                                Some(value) => memory.write(address, 4, value, control)?,
+                                None => memory.write_unknown(address, 4, control)?,
                             };
                             if !written {
                                 stop!(ExecutionGap::Memory {
@@ -365,8 +402,46 @@ impl Executor for RiscvExecutor {
                                 });
                             }
                         }
+                        regs[2] = Some(sp.wrapping_sub(adjustment));
                     }
-                    _ => stop!(ExecutionGap::UnsupportedInstruction),
+                    Extension::Pop {
+                        list,
+                        adjustment,
+                        ret,
+                    } => {
+                        let top = reg!(2).wrapping_add(adjustment);
+                        let mut address = top;
+                        for register in extensions::list_registers(list) {
+                            address = address.wrapping_sub(4);
+                            regs[register as usize] = match memory.load(address, 4, control)? {
+                                MemoryReadValue::Known { value } => Some(value),
+                                MemoryReadValue::Unknown => None,
+                                MemoryReadValue::Unavailable => stop!(ExecutionGap::Memory {
+                                    address,
+                                    access: MemoryAccess::Read
+                                }),
+                            };
+                        }
+                        if ret == Some(true) {
+                            regs[extensions::A0 as usize] = Some(0);
+                        }
+                        regs[2] = Some(top);
+                        if ret.is_some() {
+                            next = reg!(extensions::RA);
+                        }
+                    }
+                    Extension::MoveToSaved { first, second } => {
+                        let (a0, a1) =
+                            (regs[extensions::A0 as usize], regs[extensions::A1 as usize]);
+                        regs[first as usize] = a0;
+                        regs[second as usize] = a1;
+                    }
+                    Extension::MoveFromSaved { first, second } => {
+                        let (s0, s1) = (regs[first as usize], regs[second as usize]);
+                        regs[extensions::A0 as usize] = s0;
+                        regs[extensions::A1 as usize] = s1;
+                    }
+                    Extension::Integer { .. } | Extension::Memory { .. } => lifted!(),
                 },
             }
             if let Some((tail, return_pc, indirect)) = transfer
@@ -424,48 +499,6 @@ impl Executor for RiscvExecutor {
         }
     }
 }
-fn integer(op: IntegerOp, a: u32, b: u32) -> u32 {
-    use IntegerOp::*;
-    match op {
-        Add => a.wrapping_add(b),
-        Sub => a.wrapping_sub(b),
-        And => a & b,
-        Or => a | b,
-        Xor => a ^ b,
-        Shl => a.wrapping_shl(b & 31),
-        Shr => a.wrapping_shr(b & 31),
-        Sar => ((a as i32) >> (b & 31)) as u32,
-        Lt => u32::from((a as i32) < b as i32),
-        Ltu => u32::from(a < b),
-        Mul => a.wrapping_mul(b),
-        Mulh => (((a as i32 as i64) * (b as i32 as i64)) >> 32) as u32,
-        Mulhsu => (((a as i32 as i64) * i64::from(b)) >> 32) as u32,
-        Mulhu => ((u64::from(a) * u64::from(b)) >> 32) as u32,
-        Div => {
-            if b == 0 {
-                u32::MAX
-            } else {
-                (a as i32).wrapping_div(b as i32) as u32
-            }
-        }
-        Divu => a.checked_div(b).unwrap_or(u32::MAX),
-        Rem => {
-            if b == 0 {
-                a
-            } else {
-                (a as i32).wrapping_rem(b as i32) as u32
-            }
-        }
-        Remu => {
-            if b == 0 {
-                a
-            } else {
-                a % b
-            }
-        }
-    }
-}
-
 fn ordering(order: rv_asm::AmoOrdering) -> ExecutionOrdering {
     let (acquire, release) = order.aq_rl();
     ExecutionOrdering { acquire, release }

@@ -28,6 +28,105 @@ pub enum IntegerOp {
     Divu,
     Rem,
     Remu,
+    /// Zba `shNadd`: the left operand shifted by N, plus the right.
+    ShiftAdd1,
+    ShiftAdd2,
+    ShiftAdd3,
+    /// Zbb logic with an inverted right operand.
+    AndNot,
+    OrNot,
+    XorNot,
+    Min,
+    Minu,
+    Max,
+    Maxu,
+    RotateLeft,
+    RotateRight,
+    /// Zbb unary operations; the right operand is ignored.
+    CountLeadingZeros,
+    CountTrailingZeros,
+    PopCount,
+    SignExtendByte,
+    SignExtendHalf,
+    OrCombineBytes,
+    ByteReverse,
+    /// Zbs single-bit operations on the bit the right operand indexes.
+    BitSet,
+    BitClear,
+    BitInvert,
+    BitExtract,
+}
+
+impl IntegerOp {
+    /// The RV32 result of this operation on two concrete words.
+    pub fn evaluate(self, a: u32, b: u32) -> u32 {
+        use IntegerOp::*;
+        let (sa, sb) = (a as i32, b as i32);
+        let bit = 1u32.wrapping_shl(b & 31);
+        match self {
+            Add => a.wrapping_add(b),
+            Sub => a.wrapping_sub(b),
+            And => a & b,
+            Or => a | b,
+            Xor => a ^ b,
+            Shl => a.wrapping_shl(b & 31),
+            Shr => a.wrapping_shr(b & 31),
+            Sar => (sa >> (b & 31)) as u32,
+            Lt => u32::from(sa < sb),
+            Ltu => u32::from(a < b),
+            Mul => a.wrapping_mul(b),
+            Mulh => ((i64::from(sa) * i64::from(sb)) >> 32) as u32,
+            Mulhsu => ((i64::from(sa) * i64::from(b)) >> 32) as u32,
+            Mulhu => ((u64::from(a) * u64::from(b)) >> 32) as u32,
+            Div => {
+                if b == 0 {
+                    u32::MAX
+                } else {
+                    sa.wrapping_div(sb) as u32
+                }
+            }
+            Divu => a.checked_div(b).unwrap_or(u32::MAX),
+            Rem => {
+                if b == 0 {
+                    a
+                } else {
+                    sa.wrapping_rem(sb) as u32
+                }
+            }
+            Remu => {
+                if b == 0 {
+                    a
+                } else {
+                    a % b
+                }
+            }
+            ShiftAdd1 => (a << 1).wrapping_add(b),
+            ShiftAdd2 => (a << 2).wrapping_add(b),
+            ShiftAdd3 => (a << 3).wrapping_add(b),
+            AndNot => a & !b,
+            OrNot => a | !b,
+            XorNot => !(a ^ b),
+            Min => sa.min(sb) as u32,
+            Minu => a.min(b),
+            Max => sa.max(sb) as u32,
+            Maxu => a.max(b),
+            RotateLeft => a.rotate_left(b & 31),
+            RotateRight => a.rotate_right(b & 31),
+            CountLeadingZeros => a.leading_zeros(),
+            CountTrailingZeros => a.trailing_zeros(),
+            PopCount => a.count_ones(),
+            SignExtendByte => a as i8 as i32 as u32,
+            SignExtendHalf => a as i16 as i32 as u32,
+            OrCombineBytes => {
+                u32::from_le_bytes(a.to_le_bytes().map(|b| if b == 0 { 0 } else { 0xff }))
+            }
+            ByteReverse => a.swap_bytes(),
+            BitSet => a | bit,
+            BitClear => a & !bit,
+            BitInvert => a ^ bit,
+            BitExtract => (a >> (b & 31)) & 1,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

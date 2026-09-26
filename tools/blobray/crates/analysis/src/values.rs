@@ -227,45 +227,7 @@ fn offset(v: Value, delta: i64) -> Value {
 fn integer(op: IntegerOp, a: Value, b: Value) -> Value {
     use IntegerOp::*;
     if let (Value::Constant(a), Value::Constant(b)) = (a, b) {
-        let (sa, sb) = (a as i32, b as i32);
-        return Value::Constant(match op {
-            Add => a.wrapping_add(b),
-            Sub => a.wrapping_sub(b),
-            And => a & b,
-            Or => a | b,
-            Xor => a ^ b,
-            Shl => a.wrapping_shl(b & 31),
-            Shr => a >> (b & 31),
-            Sar => (sa >> (b & 31)) as u32,
-            Lt => u32::from(sa < sb),
-            Ltu => u32::from(a < b),
-            Mul => a.wrapping_mul(b),
-            Mulh => ((i64::from(sa) * i64::from(sb)) >> 32) as u32,
-            Mulhsu => ((i64::from(sa) * i64::from(b)) >> 32) as u32,
-            Mulhu => ((u64::from(a) * u64::from(b)) >> 32) as u32,
-            Div => {
-                if b == 0 {
-                    u32::MAX
-                } else {
-                    sa.wrapping_div(sb) as u32
-                }
-            }
-            Divu => a.checked_div(b).unwrap_or(u32::MAX),
-            Rem => {
-                if b == 0 {
-                    a
-                } else {
-                    sa.wrapping_rem(sb) as u32
-                }
-            }
-            Remu => {
-                if b == 0 {
-                    a
-                } else {
-                    a % b
-                }
-            }
-        });
+        return Value::Constant(op.evaluate(a, b));
     }
     match (op, a, b) {
         (Add, v, Value::Constant(n)) | (Add, Value::Constant(n), v) => {

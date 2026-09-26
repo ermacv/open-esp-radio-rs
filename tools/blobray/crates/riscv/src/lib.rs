@@ -1,7 +1,9 @@
 //! ISA-only function decoder and relocation interpretation; no I/O authority.
 mod execution;
+mod extensions;
 use blobray_domain::*;
 pub use execution::RiscvExecutor;
+use extensions::{Classified, Extension};
 use object::elf::*;
 use rv_asm::{Inst, IsCompressed, Xlen};
 pub struct RiscvDecoder;
@@ -20,7 +22,7 @@ impl PointerDecoder for RiscvDecoder {
 }
 impl FunctionDecoder for RiscvDecoder {
     fn identity(&self) -> &'static str {
-        "rv32imac/rv-asm-0.2.1/policy-2"
+        "rv32imac-zba-zbb-zbs-zcb-zcmp/rv-asm-0.2.1/policy-3"
     }
     fn unsupported_flow(&self, bytes: &[u8]) -> UnsupportedFlow {
         // ISA structure only, not CSR/privileged execution support. Zicsr:
@@ -64,7 +66,24 @@ impl FunctionDecoder for RiscvDecoder {
         UnsupportedFlow::Unknown
     }
     fn decode(&self, bytes: &[u8]) -> Option<DecodedOp> {
-        let (inst, width) = decode_instruction(bytes)?;
+        let (inst, width) = match decode_instruction(bytes)? {
+            (Instruction::Base(inst), width) => (inst, width),
+            (Instruction::Extension(extension), width) => {
+                let flow = match extension {
+                    Extension::Pop { ret: Some(_), .. } => InstructionFlow::Indirect {
+                        base: extensions::RA,
+                        offset: 0,
+                        link: false,
+                    },
+                    _ => InstructionFlow::Next,
+                };
+                return Some(DecodedOp {
+                    length: width as u8,
+                    text: extension.to_string(),
+                    flow,
+                });
+            }
+        };
         let flow = match inst {
             Inst::Jal { offset, dest } => InstructionFlow::Jump {
                 displacement: offset.as_i32(),
@@ -258,7 +277,22 @@ mod tests {
     }
 }
 
-fn decode_instruction(bytes: &[u8]) -> Option<(Inst, usize)> {
+/// One decoded instruction: a base RV32IMAC form from rv-asm, or an
+/// extension form it lacks.
+#[derive(Clone, Copy)]
+enum Instruction {
+    Base(Inst),
+    Extension(Extension),
+}
+
+fn decode_instruction(bytes: &[u8]) -> Option<(Instruction, usize)> {
+    match extensions::classify(bytes) {
+        Classified::Extension(extension, width) => {
+            return (bytes.len() >= width).then_some((Instruction::Extension(extension), width));
+        }
+        Classified::Reserved => return None,
+        Classified::Base => {}
+    }
     if bytes.len() < 2 {
         return None;
     }
@@ -290,7 +324,7 @@ fn decode_instruction(bytes: &[u8]) -> Option<(Inst, usize)> {
         },
         (_, inst) => inst,
     };
-    Some((inst, width))
+    Some((Instruction::Base(inst), width))
 }
 
 mod semantics;

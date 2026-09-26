@@ -309,6 +309,28 @@ fn access_point_clients_select_fixture_services() {
 }
 
 #[test]
+fn laptop_clients_carry_their_advertised_phy() {
+    use super::access_point::{AccessPointClients, LaptopPhy};
+    let clients = |text: &str| toml::from_str::<AccessPointClients>(text).unwrap();
+    assert_eq!(clients("kind = 'laptop'").laptop_phy(), Some(LaptopPhy::Ht));
+    assert_eq!(
+        clients("kind = 'laptop'\nlaptop_phy = 'non-ht'").laptop_phy(),
+        Some(LaptopPhy::NonHt)
+    );
+    assert_eq!(
+        clients("kind = 'laptop-and-openwrt'\nlaptop_phy = 'non-ht'").laptop_phy(),
+        Some(LaptopPhy::NonHt)
+    );
+    assert_eq!(clients("kind = 'openwrt'").laptop_phy(), None);
+    let non_ht = valid(&ap(
+        "clients = { kind = 'laptop', laptop_phy = 'non-ht' }\n",
+        AP_UDP_RX,
+    ))
+    .plan();
+    assert!(non_ht.requirements.laptop_client && !non_ht.requirements.openwrt_client);
+}
+
+#[test]
 fn access_point_mutations_and_observers_require_their_evidence() {
     invalid(&ap("security = 'open'\n", "kind = 'none'\n"));
     invalid(&ap("clients = { kind = 'openwrt' }\n", "kind = 'none'\n"));

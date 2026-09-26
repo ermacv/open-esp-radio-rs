@@ -88,7 +88,7 @@ pub(super) fn connect_clients(
         AccessPointClients::OpenWrt { fixed_ht_mcs, .. } => {
             (fixed_ht_mcs, HtGuardIntervalExpectation::Any)
         }
-        AccessPointClients::Laptop {} | AccessPointClients::LaptopAndOpenWrt { .. } => {
+        AccessPointClients::Laptop { .. } | AccessPointClients::LaptopAndOpenWrt { .. } => {
             (None, HtGuardIntervalExpectation::Any)
         }
     };
@@ -109,7 +109,7 @@ pub(super) fn connect_clients(
                 openwrt_client_fixed_guard_interval,
             )?,
         }),
-        AccessPointClients::Laptop {} | AccessPointClients::LaptopAndOpenWrt { .. } => {
+        AccessPointClients::Laptop { .. } | AccessPointClients::LaptopAndOpenWrt { .. } => {
             // Associate the observable OpenWrt peer first in two-client runs.
             // This gives debugfs evidence for the first BA bank and exercises
             // the laptop on the next independently allocated peer slot.
@@ -141,10 +141,10 @@ pub(super) fn connect_clients(
                 let result = ControlledClient::connect(
                     &ClientNetwork::target_access_point(
                         &context.lab.access_point,
-                        match config.clients {
-                            AccessPointClients::LaptopAndOpenWrt {
-                                laptop_phy: crate::scenario::access_point::LaptopPhy::NonHt,
-                            } => ClientPhy::NonHt,
+                        match config.clients.laptop_phy() {
+                            Some(crate::scenario::access_point::LaptopPhy::NonHt) => {
+                                ClientPhy::NonHt
+                            }
                             _ => ClientPhy::Ht,
                         },
                     ),

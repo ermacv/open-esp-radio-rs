@@ -73,6 +73,7 @@
           "clients": {
             "kind": "laptop",
             "$kind": {
+              "laptop": { "laptop_phy": "ht" },
               "openwrt": { "fixed_guard_interval": false },
               "laptop-and-openwrt": { "laptop_phy": "ht" }
             }

@@ -109,7 +109,7 @@ mod tests {
             "traffic": {"kind": "none"}}}}));
         assert_eq!(
             laptop["wifi"]["workload"]["clients"],
-            json!({"kind": "laptop"})
+            json!({"kind": "laptop", "laptop_phy": "ht"})
         );
     }
 }

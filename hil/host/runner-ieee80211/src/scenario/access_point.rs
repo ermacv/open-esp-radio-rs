@@ -58,7 +58,10 @@ pub struct AccessPointProtection {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum AccessPointClients {
-    Laptop {},
+    Laptop {
+        #[serde(default)]
+        laptop_phy: LaptopPhy,
+    },
     /// The controlled OpenWrt client, with optional diagnostic transmit
     /// mutations owned by its scoped client interface. Deleting that
     /// interface restores automatic rate control.
@@ -91,13 +94,23 @@ pub enum LaptopPhy {
 
 impl Default for AccessPointClients {
     fn default() -> Self {
-        Self::Laptop {}
+        Self::Laptop {
+            laptop_phy: LaptopPhy::Ht,
+        }
     }
 }
 
 impl AccessPointClients {
     pub const fn laptop(self) -> bool {
-        matches!(self, Self::Laptop {} | Self::LaptopAndOpenWrt { .. })
+        self.laptop_phy().is_some()
+    }
+
+    /// The capabilities the laptop advertises, when it is a client.
+    pub const fn laptop_phy(self) -> Option<LaptopPhy> {
+        match self {
+            Self::Laptop { laptop_phy } | Self::LaptopAndOpenWrt { laptop_phy } => Some(laptop_phy),
+            Self::OpenWrt { .. } => None,
+        }
     }
 
     pub const fn openwrt(self) -> bool {
@@ -106,7 +119,7 @@ impl AccessPointClients {
 
     pub const fn count(self) -> u8 {
         match self {
-            Self::Laptop {} | Self::OpenWrt { .. } => 1,
+            Self::Laptop { .. } | Self::OpenWrt { .. } => 1,
             Self::LaptopAndOpenWrt { .. } => 2,
         }
     }
@@ -464,7 +477,7 @@ impl AccessPoint {
                     );
                 }
             }
-            AccessPointClients::Laptop {} | AccessPointClients::LaptopAndOpenWrt { .. } => {}
+            AccessPointClients::Laptop { .. } | AccessPointClients::LaptopAndOpenWrt { .. } => {}
         }
         if matches!(self.traffic, AccessPointTraffic::UdpMultiClient(_))
             && !matches!(self.clients, AccessPointClients::LaptopAndOpenWrt { .. })

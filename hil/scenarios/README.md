@@ -145,6 +145,11 @@ target is the station that sends data to the laptop, and the protected flow
 is its individually addressed data to the other station. The same three
 checks are published.
 
+`laptop_phy` also selects the capabilities of a laptop-only client,
+`clients = { kind = "laptop", laptop_phy = "non-ht" }`. Such a client has no
+Block Ack agreement, so the AP sends it single ERP-OFDM MPDUs;
+`access-point-non-ht-client-ceiling-tx` gates that transmit path.
+
 ### AP availability
 
 `station-ap-loss` waits for connection, stops the controlled AP, requires beacon

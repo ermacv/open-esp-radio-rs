@@ -6,7 +6,7 @@
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
     "libpp": "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "4f8147cd651a77f41420e50504ad56eb2b9fd6bb0606ce7f178031d50f84ac90",
+    "production": "a597bc545b830901c9003baf7c9073c85e2a55bb8bcd6bcb855e4af5be137034",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
     "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -18,7 +18,7 @@
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/ieee80211",
-      "sha256": "0f8c5ae17f7048c35d17ddf807962ee5036cf003fd709580ecd850c57e6aeaea"
+      "sha256": "bc24f311dde9c662c3c7537e27a03f43acbf22e0cbc19416dd93c5db20c71804"
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
@@ -38,19 +38,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "0c8cec855ac2d81498e8e155d78e708f8aa526f7fdb514fb7c0e92f8cc6c8c58"
+      "sha256": "1a9e4153b3c2cc3618f187dd6581f0403a5771bc9d24bf05dd41d504bb624b98"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "374418615a9dd57be8fce4f8c33092264c7fe723cf524e4ae358eec443e5d457"
+      "sha256": "40c5346dfb3cb0ecfca7c4ed2916eb467bcd933a74d540701a333861479011e5"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "5c540cc987953fb5df6e949f2e17768da6804e60654921275b3e9dcb2da5713a"
+      "sha256": "a9d5027c84a287db83f78417f721eda5f8140c9026f95a168608920140b1d8ed"
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "bf5c6f5914b1771d69f3a08b9227b0dedd3c7a3b2b400540a11a477bb6e488ce"
+      "sha256": "34371b2fd69dfc1d4af77de4d6ee897a99458e3321d88859b6304afb8d55b3c8"
     },
     {
       "path": "crates/memory",
@@ -83,10 +83,6 @@
     {
       "path": "crates/protocols/ieee80211/sta",
       "sha256": "2846f68c2d87f4ca33b56b3262b60cabf9b74d0dd101bb3246ec7ce3c52e82e5"
-    },
-    {
-      "path": "crates/protocols/ieee802154",
-      "sha256": "bf490f13d463d9f34fb45a6ff027f687406983a9b584d525509aa533bc845d1c"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/ap",
@@ -154,7 +150,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "8028acfa0ed04e30dee17171bdd6f26fc55dcc1f40cbe1b1dfe309f4d56cae5f"
+      "sha256": "149e746ac82ddd21da4b6e19a3ed2595f5a4ea17529739ac4621a5d0310b0778"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
@@ -339,7 +335,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "182ee3396f2820a08328c0ce57ac52095ae854ab452935be1717e273de775e06"
+        "3104d4ca822681c94601c4e61a318568b0517ed60cddb5995f23f1f2cedfb53b"
       ],
       "coverage": {
         "blocks": {
@@ -374,7 +370,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "14d308f21e2fa1fdfdd52303caffe21d821c7e85096f8dae5341449566b5b31b"
+        "90f66f78693d24c6be64b52c19d8311682bb1186f03cdf968b67496bc39b9c05"
       ],
       "coverage": {
         "blocks": {
@@ -409,7 +405,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "d0081bedff5c999224f166f20b7be4dbd388fd99e4b0f0e72a1d3216d4130f41"
+        "8afcd87592583fb6cce676fa8c0190026ad4d003cde3e177e81e4b975b68c162"
       ],
       "coverage": {
         "blocks": {
@@ -444,7 +440,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "ad656fa28f8f57729b46ecfdc0a83d203107cf5987f35e2f6025c0493c472cba"
+        "125d34e1925a0113b60278ff828974d20dfe5060581a5b68953626f3be684d59"
       ],
       "coverage": {
         "blocks": {
@@ -479,7 +475,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "acf67675d27fc8307d30b34fb25cb9192c40a99921c55197578543547655fd6e"
+        "ada6a343f9b2ab052415dacbd0e44ffba8afad7d6a60738e19a458210c737430"
       ],
       "coverage": {
         "blocks": {
@@ -514,7 +510,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "aaaeff31f27d65025edda7577343d3f87701e5d780cd67715aa247f7575544c7"
+        "b509396f2559ef5525f96c4cb6fa5b5cbaa601cd67e7a70d4f585a2bff9518c1"
       ],
       "coverage": {
         "blocks": {
@@ -714,7 +710,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "dfffe64f5602a683a4881e49fbefac2adc74a673a8ba38e3198f26dfd63eb3c1"
+        "a83f175e98c8689687a43e5157ed6fad5bac0b12cd037392a6106d387bfa90eb"
       ],
       "coverage": {
         "blocks": {
@@ -749,7 +745,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "a4e6d688d78ec19d5950d8dee0ee87a61b67c3b1432bf96286fe6ef0919335e9"
+        "b256756748c0971c5c61698885abee86fedc9f0b0c66580cb75fd8f958b08a3d"
       ],
       "coverage": {
         "blocks": {
@@ -784,8 +780,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "3af39456d7c62e9c611cccc891778b956a5a56c727c802b422ab337a9891c56f",
-        "ae72121b3cd392b5daa83e6d0f1aced6e4d584dc34791d207b1ff79a0974e46a"
+        "63ed1c295a689a81792eb3e234f7251ed4f13da697eca22b5122437d70fdf8ff",
+        "db157d9bac76cdb8ebd11b043c667c806c8e5a260ae0b8fb7dbc74a3f1a13df1"
       ],
       "coverage": {
         "blocks": {
@@ -820,7 +816,7 @@
       "verdict": "match",
       "cases": 100,
       "reviews": [
-        "a502074e6560128254ef2df03b832cca8991a984491d392bc4f6fb0c2fa886ce"
+        "df40210fc777c67126d60dfc7ad3cd0564161a3e8b7e1d7abeecd94c27f2340a"
       ],
       "coverage": {
         "blocks": {
@@ -855,8 +851,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "139b8ccde3a94dce5598f840cf67eb8380db1a09d7b8d7caec78974638557e1c",
-        "69890546f8aba9ac6cc8ec81ed4e097c850540e1f343292f863fc8c2043bc315"
+        "9c99251623d4048d295be3f75d087a61cb3e65d6c175835d7246bad73b8d42d8",
+        "a580547e86b4d2e46dd9963f965535505b37fed37f02c6e736dea25fbdd39638"
       ],
       "coverage": {
         "blocks": {
@@ -891,8 +887,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "d718301c192ecca3864975604904c0be8995942d1089b3c3f190c2bd4af206bc",
-        "dbb586e344ef49b5295294aba8fc451d2b4a186ae2b19ed166836dc9cde2dc11"
+        "47e8bce4bf65c69526d2bca928fc79fa5a2d2a048d19ae00c3ab48e299eabe4d",
+        "7e88e1bea6d88c58041c48d03c5d739eb0121b4807bacee8ffd04f35555760d9"
       ],
       "coverage": {
         "blocks": {
@@ -927,9 +923,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "598a89f77b145865868371ea2f82270845a7a4ec2bfb65991040659d444c983e",
-        "5beb542fcbd24be20d55b662af79ce4764b56b9255d787cce564740ecf866687",
-        "e59ce29e6f4a30c540a943e7b2bc28acbeed50e4773253c110970e8af206d03d"
+        "39f362c636c27c75800bd64410659e94e472a4d651bfd089fb686dead2833374",
+        "56e9c5eba47eaec49aa9f5080751fddf666e58257cb648eed6ed973f9a348a2b",
+        "c2cc298fa63593225541a4f9935e7ca7b41a9b6fc19a00cb7298bf1cf496afc4"
       ],
       "coverage": {
         "blocks": {
@@ -964,8 +960,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "b049984ecf0371632f573a56162f17f8c3b8b6dd399231f2e2874004ee949855",
-        "fe725de2081a6c12587075e91f83c108cffd7b7cd02af40a9d02070d5b83a278"
+        "4a60452485e8d0c42b03be59c4db5fc3a86d732438c3ac27d5c019c2e2e1683c",
+        "ce694904f250ea96ecea5a5e9352b2d684c5d363e49ca9f25d358da8cdf39b3b"
       ],
       "coverage": {
         "blocks": {
@@ -1000,8 +996,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "994a4a034e38e3d96c347f241c6d98325ff37ce9445395342e6f325fc5902a4d",
-        "f66c33823c673cfc848bf393fcde1357db70feaeb746f6dc7690c0114181db0d"
+        "24e837ecd1f65b9f9f834e6f32d3ff2f96f1fd1360cc4ee942288dcae89bb34f",
+        "fc805a0107303f263f4b11bf03d73848e62d47cf13644372746609fd76c3b15f"
       ],
       "coverage": {
         "blocks": {
@@ -1036,8 +1032,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "1410cf01aca8dba351af5152a51863fdc79ed53b831619ec17dd7565a913ad11",
-        "4bc3707e1b1da9f30f44730537b38401d0f499c0987fcb5e3f661d76467137d1"
+        "1f55eb0a0c0563303f7483da4af926a2fd96eb0b0fa0c1446ca07f05b9f5f56f",
+        "419bfc3595c0582a054d266c9add3155a0325e6b264b535a75697c57ace55aaa"
       ],
       "coverage": {
         "blocks": {
@@ -1171,7 +1167,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "f9c0262dbc14cfa185adf78bf7fa5cea82a3c3827a9a184b14fd315ddd0ff02d"
+        "8bba561d26184dcef072711e8e9ca6677ac3c25ec41a96b93461cb03b08b81c7"
       ],
       "coverage": {
         "blocks": {
@@ -1239,7 +1235,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "87382ec54d88a38773dc95e9d1672a69f99edb5a7603f9d22c3978579c51c5c7"
+        "9b9f36529509f7a2790101ee979cf5df084e3d2c9699ce3c83a7a0bae55fbf73"
       ],
       "coverage": {
         "blocks": {
@@ -1868,7 +1864,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "784d42135e6fced79ff04dcfaa83512bad78dff6c267092b494477b3ee9c58db"
+        "034daa0b2dd8a00a93f74e734bd3432a513b885626634eb6f0a9f77c62e6d6e2"
       ],
       "coverage": {
         "blocks": {

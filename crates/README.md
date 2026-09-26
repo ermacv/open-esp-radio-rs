@@ -27,18 +27,20 @@ Cargo package identities are independent of this directory hierarchy.
 | `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Frame/protocol code, MAC contracts, role policy and security |
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |
 | `protocols/bluetooth/le/ll/` | Portable LE PDU codecs and protocol-role state |
+| `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values |
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` retains bootstrap, command/response authority and `le` policies |
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
 | `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
 | `roles/esp32s31/ieee802154/radio/` | Executor-free IEEE 802.15.4 radio role: the portable radio contract over the ported MAC engine |
+| `roles/esp32s31/bluetooth/radio/` | Executor-free Bluetooth LE radio role: the portable LE radio contract over the scheduler executor and the role instance pools |
 | `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; the IEEE 802.15.4 root is the MAC engine ported from the public ESP-IDF driver |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/embassy/esp32s31/` | Executor/time platform ABI and coexistence mailbox |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
-| `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners, Bluetooth controller/session owners and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
+| `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
 | `adapters/embassy-net/{owned,upstream}/`, `adapters/embassy-net/esp32s31/ieee80211-upstream/` | Owned-packet and released-interface network adapters; the chip bridge binds the released interface to Wi-Fi execution |
 | `adapters/xarxa/upstream/`, `adapters/xarxa/esp32s31/ieee80211-upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure; the chip bridge binds it to Wi-Fi execution |
 | `../experiments/network-engine/` | Experimental synchronous network engine; no production package depends on it, and its host tests drive the STA TX owner |

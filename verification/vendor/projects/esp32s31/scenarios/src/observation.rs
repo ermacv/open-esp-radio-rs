@@ -223,6 +223,16 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "initial fields of freshly built tracking children that are written before \
+            any read: the calibration child reads each `None` outcome field only after the \
+            branch that sets it, and the recalibrated RX-gain child overwrites its initial \
+            table results before reading them",
+        places: &[
+            ("target_port.rs", "transition"),
+            ("target_port.rs", "let mut child = pending"),
+        ],
+    },
+    Decision {
         reason: "temperature acquisition provenance, a production scheduling record with no \
             vendor counterpart; the temperature and sensor index are compared",
         places: &[("tracking/temperature.rs", "Acquisition::Undated => Self {")],

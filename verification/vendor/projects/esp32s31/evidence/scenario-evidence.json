@@ -157,7 +157,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "d46a3f9c0c5ba4286ee22d8eda24a82cf2da4e8b771fbc6714c96455a048b98c"
+      "sha256": "1d58d3844aed5e508711488a8bc3380a104cb09d2565559edfd071e4eca97ff3"
     },
     {
       "path": "verification/vendor/schema",
@@ -842,8 +842,8 @@
       "observation": {
         "executed": 1388,
         "observed": 1340,
-        "reviewed": 31,
-        "untriaged": 17
+        "reviewed": 32,
+        "untriaged": 16
       }
     },
     {
@@ -872,20 +872,11 @@
       "observation": {
         "executed": 1823,
         "observed": 1744,
-        "reviewed": 59,
-        "untriaged": 20
+        "reviewed": 61,
+        "untriaged": 18
       }
     }
   ],
   "untriaged": [],
-  "unobserved": [
-    {
-      "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
-      "line": 2280
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
-      "line": 2418
-    }
-  ]
+  "unobserved": []
 }

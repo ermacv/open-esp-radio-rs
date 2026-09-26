@@ -13,7 +13,7 @@
 
 #![deny(unsafe_code)]
 
-use crate::{SharedRadioRegisters, device_fence, svd};
+use crate::{device_fence, svd};
 
 /// Disjoint register owner for the Bluetooth modem low-power timer.
 ///
@@ -24,13 +24,17 @@ use crate::{SharedRadioRegisters, device_fence, svd};
 #[must_use = "the modem LP-timer owner must remain paired with the Bluetooth lifecycle"]
 pub struct BluetoothModemLpTimerRegisters {
     peripherals: svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
+    /// Modem ETM channels four through seven, programmed by the low-power
+    /// component.
+    etm: crate::modem::etm::BluetoothEtmChannels,
 }
 
 impl BluetoothModemLpTimerRegisters {
     pub(crate) const fn new(
         peripherals: svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
+        etm: crate::modem::etm::BluetoothEtmChannels,
     ) -> Self {
-        Self { peripherals }
+        Self { peripherals, etm }
     }
 }
 
@@ -554,14 +558,11 @@ impl BluetoothModemLpTimerRegisters {
     /// samples `CONTROL_2`, and conditionally publishes `CONTROL_1` from a
     /// fresh read. A device fence closes this restricted-PAC transaction.
     ///
-    /// The shared radio owner supplies `MODEM_ETM`; this partition supplies
-    /// only `BTDM_RUNTIME_CONTROL`. Neither register block can alias.
-    pub fn initialize_low_power_hardware(
-        &mut self,
-        shared: &SharedRadioRegisters,
-    ) -> BluetoothLowPowerRuntimeControlObservation {
+    /// This partition supplies `BTDM_RUNTIME_CONTROL` and the Bluetooth
+    /// channels four through seven of `MODEM_ETM`.
+    pub fn initialize_low_power_hardware(&mut self) -> BluetoothLowPowerRuntimeControlObservation {
         let mut transaction = HardwareModemLpTimerLowPowerInitTransaction {
-            config: &shared.shared_radio.modem_etm,
+            config: &self.etm.registers,
             runtime_control: &self.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_low_power_init(&mut transaction)

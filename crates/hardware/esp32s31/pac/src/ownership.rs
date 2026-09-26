@@ -24,6 +24,7 @@ pub(crate) struct WifiRadioPeripheralOwners {
 pub(crate) struct Ieee802154TaskPeripheralOwners {
     pub(crate) ieee802154_mac: crate::ieee802154::ownership::TaskRegisters,
     pub(crate) ieee802154_interrupt_route: svd::Ieee802154InterruptRoute,
+    pub(crate) etm: crate::modem::etm::Ieee802154EtmChannels,
     pub(crate) radio_phy: RadioPhyRegisters,
     pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     pub(crate) btbb: Ieee802154BtbbPeripheralOwners,
@@ -129,7 +130,10 @@ pub struct SharedRadioPartition(svd::peripheral_ownership::SharedRadioPeripheral
 
 /// Opaque IEEE 802.15.4 MAC and interrupt-route register partition.
 #[must_use = "dropping a radio partition permanently loses its register authority"]
-pub struct Ieee802154Partition(svd::peripheral_ownership::Ieee802154Peripherals);
+pub struct Ieee802154Partition {
+    peripherals: svd::peripheral_ownership::Ieee802154Peripherals,
+    etm: crate::modem::etm::Ieee802154EtmChannels,
+}
 
 /// Every reviewed ESP32-S31 radio register partition.
 ///
@@ -175,7 +179,9 @@ impl RadioPartitions {
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
+            modem_etm,
         } = svd::peripheral_ownership::partition(peripherals);
+        let (ieee802154_etm, bluetooth_etm) = crate::modem::etm::split(modem_etm);
         Self {
             wifi_mac: WifiMacPartition(wifi_mac),
             wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
@@ -184,12 +190,18 @@ impl RadioPartitions {
             },
             coexistence: CoexistencePartition(coexistence),
             bluetooth: BluetoothControllerPartition(bluetooth),
-            bluetooth_modem_lp_timer: BluetoothModemLpTimerRegisters::new(bluetooth_modem_lp_timer),
+            bluetooth_modem_lp_timer: BluetoothModemLpTimerRegisters::new(
+                bluetooth_modem_lp_timer,
+                bluetooth_etm,
+            ),
             bluetooth_interrupts: BluetoothInterruptSetup {
                 peripherals: bluetooth_interrupts,
             },
             shared_radio: SharedRadioPartition(shared_radio),
-            ieee802154: Ieee802154Partition(ieee802154),
+            ieee802154: Ieee802154Partition {
+                peripherals: ieee802154,
+                etm: ieee802154_etm,
+            },
         }
     }
 
@@ -555,7 +567,11 @@ impl Ieee802154TaskRegisters {
     /// disjoint task and interrupt owners. This performs no MMIO.
     pub fn new(parts: Ieee802154TaskParts) -> (Self, Ieee802154InterruptSetup) {
         let Ieee802154TaskParts {
-            ieee802154: Ieee802154Partition(ieee802154),
+            ieee802154:
+                Ieee802154Partition {
+                    peripherals: ieee802154,
+                    etm,
+                },
             shared:
                 SharedRadioRegisters {
                     radio_phy,
@@ -574,6 +590,7 @@ impl Ieee802154TaskRegisters {
                 peripherals: Ieee802154TaskPeripheralOwners {
                     ieee802154_mac: task_mac,
                     ieee802154_interrupt_route,
+                    etm,
                     radio_phy,
                     coexistence,
                     btbb: Ieee802154BtbbPeripheralOwners {
@@ -594,6 +611,7 @@ impl Ieee802154TaskRegisters {
         let Ieee802154TaskPeripheralOwners {
             ieee802154_mac: task_mac,
             ieee802154_interrupt_route,
+            etm,
             radio_phy,
             coexistence,
             btbb:
@@ -604,10 +622,13 @@ impl Ieee802154TaskRegisters {
         } = self.peripherals;
         let ieee802154_mac = crate::ieee802154::ownership::reunite(task_mac, interrupts.registers);
         Ieee802154TaskParts {
-            ieee802154: Ieee802154Partition(svd::peripheral_ownership::Ieee802154Peripherals {
-                ieee802154_mac,
-                ieee802154_interrupt_route,
-            }),
+            ieee802154: Ieee802154Partition {
+                peripherals: svd::peripheral_ownership::Ieee802154Peripherals {
+                    ieee802154_mac,
+                    ieee802154_interrupt_route,
+                },
+                etm,
+            },
             shared: SharedRadioRegisters {
                 radio_phy,
                 coexistence,

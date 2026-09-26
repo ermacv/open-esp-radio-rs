@@ -2,6 +2,8 @@
 
 pub(crate) mod coex;
 
+pub(crate) mod etm;
+
 pub(crate) mod low_power_phy;
 
 pub(crate) mod platform;

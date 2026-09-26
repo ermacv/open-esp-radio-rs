@@ -24066,44 +24066,44 @@ claimed.</description>
         </register>
         <register>
           <name>CHANNEL_ENABLE_SET</name>
-          <description>Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images.</description>
+          <description>Channel-enable set word. Its fields are write-trigger: writing 1 enables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete channel images.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
-          <access>read-write</access>
+          <access>write-only</access>
           <fields>
             <field>
               <name>CH0</name>
-              <description>Enable channel 0.</description>
+              <description>Writing 1 enables channel 0.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH1</name>
-              <description>Enable channel 1.</description>
+              <description>Writing 1 enables channel 1.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH4</name>
-              <description>Enable channel 4.</description>
+              <description>Writing 1 enables channel 4.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH5</name>
-              <description>Enable channel 5.</description>
+              <description>Writing 1 enables channel 5.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH6</name>
-              <description>Enable channel 6.</description>
+              <description>Writing 1 enables channel 6.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH7</name>
-              <description>Enable channel 7.</description>
+              <description>Writing 1 enables channel 7.</description>
               <bitOffset>7</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -24111,44 +24111,44 @@ claimed.</description>
         </register>
         <register>
           <name>CHANNEL_ENABLE_CLEAR</name>
-          <description>Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images.</description>
+          <description>Channel-enable clear word. Its fields are write-trigger: writing 1 disables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete single-channel images.</description>
           <addressOffset>0x8</addressOffset>
           <size>0x20</size>
-          <access>read-write</access>
+          <access>write-only</access>
           <fields>
             <field>
               <name>CH0</name>
-              <description>Disable channel 0.</description>
+              <description>Writing 1 disables channel 0.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH1</name>
-              <description>Disable channel 1.</description>
+              <description>Writing 1 disables channel 1.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH4</name>
-              <description>Disable channel 4.</description>
+              <description>Writing 1 disables channel 4.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH5</name>
-              <description>Disable channel 5.</description>
+              <description>Writing 1 disables channel 5.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH6</name>
-              <description>Disable channel 6.</description>
+              <description>Writing 1 disables channel 6.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CH7</name>
-              <description>Disable channel 7.</description>
+              <description>Writing 1 disables channel 7.</description>
               <bitOffset>7</bitOffset>
               <bitWidth>1</bitWidth>
             </field>

@@ -164,6 +164,13 @@ peripherals = [
     "SHARED_BASEBAND_RESET_IDLE_STATUS",
     "SHARED_BASEBAND_TX_TIMING",
     "ZBBB_RADIO_CONTROL",
+]
+
+[[ownership-partitions]]
+name = "ModemEtmPeripherals"
+member = "modem_etm"
+description = "Modem event-task matrix. The restricted PAC splits its channels into disjoint capabilities: channels zero and one for IEEE 802.15.4 and channels four through seven for Bluetooth, each writing only its own bits of the write-trigger set and clear words."
+peripherals = [
     "MODEM_ETM",
 ]
 
@@ -1882,6 +1889,46 @@ steps = [
     { register = "CH%s_TASK", index = 7, value = 0x0000000f },
 ]
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+
+[[fixed-register-images]]
+name = "enable_ieee802154_etm_channel0"
+peripheral = "MODEM_ETM"
+register = "CHANNEL_ENABLE_SET"
+value = 0x00000001
+sources = [
+    "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
+]
+
+[[fixed-register-images]]
+name = "enable_ieee802154_etm_channel1"
+peripheral = "MODEM_ETM"
+register = "CHANNEL_ENABLE_SET"
+value = 0x00000002
+sources = [
+    "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
+]
+
+[[fixed-register-images]]
+name = "disable_ieee802154_etm_channel0"
+peripheral = "MODEM_ETM"
+register = "CHANNEL_ENABLE_CLEAR"
+value = 0x00000001
+sources = [
+    "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
+]
+
+[[fixed-register-images]]
+name = "disable_ieee802154_etm_channel1"
+peripheral = "MODEM_ETM"
+register = "CHANNEL_ENABLE_CLEAR"
+value = 0x00000002
+sources = [
+    "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
+]
 
 [[fixed-register-sequences]]
 name = "route_ieee802154_etm_timer0_to_tx_start"

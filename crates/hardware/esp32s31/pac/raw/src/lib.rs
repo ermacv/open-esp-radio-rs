@@ -56906,12 +56906,12 @@ pub mod modem_etm {
         pub const fn channel_enable(&self) -> &ChannelEnable {
             &self.channel_enable
         }
-        #[doc = "0x04 - Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images."]
+        #[doc = "0x04 - Channel-enable set word. Its fields are write-trigger: writing 1 enables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete channel images."]
         #[inline(always)]
         pub const fn channel_enable_set(&self) -> &ChannelEnableSet {
             &self.channel_enable_set
         }
-        #[doc = "0x08 - Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images."]
+        #[doc = "0x08 - Channel-enable clear word. Its fields are write-trigger: writing 1 disables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete single-channel images."]
         #[inline(always)]
         pub const fn channel_enable_clear(&self) -> &ChannelEnableClear {
             &self.channel_enable_clear
@@ -57106,219 +57106,123 @@ pub mod modem_etm {
         #[doc = "`read()` method returns [`channel_enable::R`](R) reader structure"]
         impl crate::Readable for ChannelEnableSpec {}
     }
-    #[doc = "CHANNEL_ENABLE_SET (rw) register accessor: Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_set::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_set::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable_set`] module"]
+    #[doc = "CHANNEL_ENABLE_SET (w) register accessor: Channel-enable set word. Its fields are write-trigger: writing 1 enables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete channel images.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_set::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable_set`] module"]
     #[doc(alias = "CHANNEL_ENABLE_SET")]
     pub type ChannelEnableSet = crate::Reg<channel_enable_set::ChannelEnableSetSpec>;
-    #[doc = "Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images."]
+    #[doc = "Channel-enable set word. Its fields are write-trigger: writing 1 enables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete channel images."]
     pub mod channel_enable_set {
-        #[doc = "Register `CHANNEL_ENABLE_SET` reader"]
-        pub type R = crate::R<ChannelEnableSetSpec>;
         #[doc = "Register `CHANNEL_ENABLE_SET` writer"]
         pub type W = crate::W<ChannelEnableSetSpec>;
-        #[doc = "Field `CH0` reader - Enable channel 0."]
-        pub type Ch0R = crate::BitReader;
-        #[doc = "Field `CH0` writer - Enable channel 0."]
+        #[doc = "Field `CH0` writer - Writing 1 enables channel 0."]
         pub type Ch0W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH1` reader - Enable channel 1."]
-        pub type Ch1R = crate::BitReader;
-        #[doc = "Field `CH1` writer - Enable channel 1."]
+        #[doc = "Field `CH1` writer - Writing 1 enables channel 1."]
         pub type Ch1W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH4` reader - Enable channel 4."]
-        pub type Ch4R = crate::BitReader;
-        #[doc = "Field `CH4` writer - Enable channel 4."]
+        #[doc = "Field `CH4` writer - Writing 1 enables channel 4."]
         pub type Ch4W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH5` reader - Enable channel 5."]
-        pub type Ch5R = crate::BitReader;
-        #[doc = "Field `CH5` writer - Enable channel 5."]
+        #[doc = "Field `CH5` writer - Writing 1 enables channel 5."]
         pub type Ch5W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH6` reader - Enable channel 6."]
-        pub type Ch6R = crate::BitReader;
-        #[doc = "Field `CH6` writer - Enable channel 6."]
+        #[doc = "Field `CH6` writer - Writing 1 enables channel 6."]
         pub type Ch6W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH7` reader - Enable channel 7."]
-        pub type Ch7R = crate::BitReader;
-        #[doc = "Field `CH7` writer - Enable channel 7."]
+        #[doc = "Field `CH7` writer - Writing 1 enables channel 7."]
         pub type Ch7W<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bit 0 - Enable channel 0."]
-            #[inline(always)]
-            pub fn ch0(&self) -> Ch0R {
-                Ch0R::new((self.bits & 1) != 0)
-            }
-            #[doc = "Bit 1 - Enable channel 1."]
-            #[inline(always)]
-            pub fn ch1(&self) -> Ch1R {
-                Ch1R::new(((self.bits >> 1) & 1) != 0)
-            }
-            #[doc = "Bit 4 - Enable channel 4."]
-            #[inline(always)]
-            pub fn ch4(&self) -> Ch4R {
-                Ch4R::new(((self.bits >> 4) & 1) != 0)
-            }
-            #[doc = "Bit 5 - Enable channel 5."]
-            #[inline(always)]
-            pub fn ch5(&self) -> Ch5R {
-                Ch5R::new(((self.bits >> 5) & 1) != 0)
-            }
-            #[doc = "Bit 6 - Enable channel 6."]
-            #[inline(always)]
-            pub fn ch6(&self) -> Ch6R {
-                Ch6R::new(((self.bits >> 6) & 1) != 0)
-            }
-            #[doc = "Bit 7 - Enable channel 7."]
-            #[inline(always)]
-            pub fn ch7(&self) -> Ch7R {
-                Ch7R::new(((self.bits >> 7) & 1) != 0)
-            }
-        }
         impl W {
-            #[doc = "Bit 0 - Enable channel 0."]
+            #[doc = "Bit 0 - Writing 1 enables channel 0."]
             #[inline(always)]
             pub fn ch0(&mut self) -> Ch0W<'_, ChannelEnableSetSpec> {
                 Ch0W::new(self, 0)
             }
-            #[doc = "Bit 1 - Enable channel 1."]
+            #[doc = "Bit 1 - Writing 1 enables channel 1."]
             #[inline(always)]
             pub fn ch1(&mut self) -> Ch1W<'_, ChannelEnableSetSpec> {
                 Ch1W::new(self, 1)
             }
-            #[doc = "Bit 4 - Enable channel 4."]
+            #[doc = "Bit 4 - Writing 1 enables channel 4."]
             #[inline(always)]
             pub fn ch4(&mut self) -> Ch4W<'_, ChannelEnableSetSpec> {
                 Ch4W::new(self, 4)
             }
-            #[doc = "Bit 5 - Enable channel 5."]
+            #[doc = "Bit 5 - Writing 1 enables channel 5."]
             #[inline(always)]
             pub fn ch5(&mut self) -> Ch5W<'_, ChannelEnableSetSpec> {
                 Ch5W::new(self, 5)
             }
-            #[doc = "Bit 6 - Enable channel 6."]
+            #[doc = "Bit 6 - Writing 1 enables channel 6."]
             #[inline(always)]
             pub fn ch6(&mut self) -> Ch6W<'_, ChannelEnableSetSpec> {
                 Ch6W::new(self, 6)
             }
-            #[doc = "Bit 7 - Enable channel 7."]
+            #[doc = "Bit 7 - Writing 1 enables channel 7."]
             #[inline(always)]
             pub fn ch7(&mut self) -> Ch7W<'_, ChannelEnableSetSpec> {
                 Ch7W::new(self, 7)
             }
         }
-        #[doc = "Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_set::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_set::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Channel-enable set word. Its fields are write-trigger: writing 1 enables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete channel images.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_set::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ChannelEnableSetSpec;
         impl crate::RegisterSpec for ChannelEnableSetSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`channel_enable_set::R`](R) reader structure"]
-        impl crate::Readable for ChannelEnableSetSpec {}
         #[doc = "`write(|w| ..)` method takes [`channel_enable_set::W`](W) writer structure"]
         impl crate::Writable for ChannelEnableSetSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CHANNEL_ENABLE_CLEAR (rw) register accessor: Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable_clear`] module"]
+    #[doc = "CHANNEL_ENABLE_CLEAR (w) register accessor: Channel-enable clear word. Its fields are write-trigger: writing 1 disables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete single-channel images.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_clear::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable_clear`] module"]
     #[doc(alias = "CHANNEL_ENABLE_CLEAR")]
     pub type ChannelEnableClear = crate::Reg<channel_enable_clear::ChannelEnableClearSpec>;
-    #[doc = "Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images."]
+    #[doc = "Channel-enable clear word. Its fields are write-trigger: writing 1 disables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete single-channel images."]
     pub mod channel_enable_clear {
-        #[doc = "Register `CHANNEL_ENABLE_CLEAR` reader"]
-        pub type R = crate::R<ChannelEnableClearSpec>;
         #[doc = "Register `CHANNEL_ENABLE_CLEAR` writer"]
         pub type W = crate::W<ChannelEnableClearSpec>;
-        #[doc = "Field `CH0` reader - Disable channel 0."]
-        pub type Ch0R = crate::BitReader;
-        #[doc = "Field `CH0` writer - Disable channel 0."]
+        #[doc = "Field `CH0` writer - Writing 1 disables channel 0."]
         pub type Ch0W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH1` reader - Disable channel 1."]
-        pub type Ch1R = crate::BitReader;
-        #[doc = "Field `CH1` writer - Disable channel 1."]
+        #[doc = "Field `CH1` writer - Writing 1 disables channel 1."]
         pub type Ch1W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH4` reader - Disable channel 4."]
-        pub type Ch4R = crate::BitReader;
-        #[doc = "Field `CH4` writer - Disable channel 4."]
+        #[doc = "Field `CH4` writer - Writing 1 disables channel 4."]
         pub type Ch4W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH5` reader - Disable channel 5."]
-        pub type Ch5R = crate::BitReader;
-        #[doc = "Field `CH5` writer - Disable channel 5."]
+        #[doc = "Field `CH5` writer - Writing 1 disables channel 5."]
         pub type Ch5W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH6` reader - Disable channel 6."]
-        pub type Ch6R = crate::BitReader;
-        #[doc = "Field `CH6` writer - Disable channel 6."]
+        #[doc = "Field `CH6` writer - Writing 1 disables channel 6."]
         pub type Ch6W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CH7` reader - Disable channel 7."]
-        pub type Ch7R = crate::BitReader;
-        #[doc = "Field `CH7` writer - Disable channel 7."]
+        #[doc = "Field `CH7` writer - Writing 1 disables channel 7."]
         pub type Ch7W<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bit 0 - Disable channel 0."]
-            #[inline(always)]
-            pub fn ch0(&self) -> Ch0R {
-                Ch0R::new((self.bits & 1) != 0)
-            }
-            #[doc = "Bit 1 - Disable channel 1."]
-            #[inline(always)]
-            pub fn ch1(&self) -> Ch1R {
-                Ch1R::new(((self.bits >> 1) & 1) != 0)
-            }
-            #[doc = "Bit 4 - Disable channel 4."]
-            #[inline(always)]
-            pub fn ch4(&self) -> Ch4R {
-                Ch4R::new(((self.bits >> 4) & 1) != 0)
-            }
-            #[doc = "Bit 5 - Disable channel 5."]
-            #[inline(always)]
-            pub fn ch5(&self) -> Ch5R {
-                Ch5R::new(((self.bits >> 5) & 1) != 0)
-            }
-            #[doc = "Bit 6 - Disable channel 6."]
-            #[inline(always)]
-            pub fn ch6(&self) -> Ch6R {
-                Ch6R::new(((self.bits >> 6) & 1) != 0)
-            }
-            #[doc = "Bit 7 - Disable channel 7."]
-            #[inline(always)]
-            pub fn ch7(&self) -> Ch7R {
-                Ch7R::new(((self.bits >> 7) & 1) != 0)
-            }
-        }
         impl W {
-            #[doc = "Bit 0 - Disable channel 0."]
+            #[doc = "Bit 0 - Writing 1 disables channel 0."]
             #[inline(always)]
             pub fn ch0(&mut self) -> Ch0W<'_, ChannelEnableClearSpec> {
                 Ch0W::new(self, 0)
             }
-            #[doc = "Bit 1 - Disable channel 1."]
+            #[doc = "Bit 1 - Writing 1 disables channel 1."]
             #[inline(always)]
             pub fn ch1(&mut self) -> Ch1W<'_, ChannelEnableClearSpec> {
                 Ch1W::new(self, 1)
             }
-            #[doc = "Bit 4 - Disable channel 4."]
+            #[doc = "Bit 4 - Writing 1 disables channel 4."]
             #[inline(always)]
             pub fn ch4(&mut self) -> Ch4W<'_, ChannelEnableClearSpec> {
                 Ch4W::new(self, 4)
             }
-            #[doc = "Bit 5 - Disable channel 5."]
+            #[doc = "Bit 5 - Writing 1 disables channel 5."]
             #[inline(always)]
             pub fn ch5(&mut self) -> Ch5W<'_, ChannelEnableClearSpec> {
                 Ch5W::new(self, 5)
             }
-            #[doc = "Bit 6 - Disable channel 6."]
+            #[doc = "Bit 6 - Writing 1 disables channel 6."]
             #[inline(always)]
             pub fn ch6(&mut self) -> Ch6W<'_, ChannelEnableClearSpec> {
                 Ch6W::new(self, 6)
             }
-            #[doc = "Bit 7 - Disable channel 7."]
+            #[doc = "Bit 7 - Writing 1 disables channel 7."]
             #[inline(always)]
             pub fn ch7(&mut self) -> Ch7W<'_, ChannelEnableClearSpec> {
                 Ch7W::new(self, 7)
             }
         }
-        #[doc = "Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Channel-enable clear word. Its fields are write-trigger: writing 1 disables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete single-channel images.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ChannelEnableClearSpec;
         impl crate::RegisterSpec for ChannelEnableClearSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`channel_enable_clear::R`](R) reader structure"]
-        impl crate::Readable for ChannelEnableClearSpec {}
         #[doc = "`write(|w| ..)` method takes [`channel_enable_clear::W`](W) writer structure"]
         impl crate::Writable for ChannelEnableClearSpec {
             type Safety = crate::Unsafe;
@@ -58530,6 +58434,10 @@ pub mod peripheral_ownership {
         pub shared_baseband_reset_idle_status: crate::SharedBasebandResetIdleStatus,
         pub shared_baseband_tx_timing: crate::SharedBasebandTxTiming,
         pub zbbb_radio_control: crate::ZbbbRadioControl,
+    }
+
+    /// Modem event-task matrix. The restricted PAC splits its channels into disjoint capabilities: channels zero and one for IEEE 802.15.4 and channels four through seven for Bluetooth, each writing only its own bits of the write-trigger set and clear words.
+    pub struct ModemEtmPeripherals {
         pub modem_etm: crate::ModemEtm,
     }
 
@@ -58557,6 +58465,8 @@ pub mod peripheral_ownership {
         pub bluetooth_interrupts: BluetoothInterruptPeripherals,
         /// Protocol-neutral physical register words touched by more than one radio lifecycle and serialized before either protocol receives a narrow capability.
         pub shared_radio: SharedRadioPeripherals,
+        /// Modem event-task matrix. The restricted PAC splits its channels into disjoint capabilities: channels zero and one for IEEE 802.15.4 and channels four through seven for Bluetooth, each writing only its own bits of the write-trigger set and clear words.
+        pub modem_etm: ModemEtmPeripherals,
         /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
         pub ieee802154: Ieee802154Peripherals,
     }
@@ -58799,8 +58709,8 @@ pub mod peripheral_ownership {
                 shared_baseband_reset_idle_status,
                 shared_baseband_tx_timing,
                 zbbb_radio_control,
-                modem_etm,
             },
+            modem_etm: ModemEtmPeripherals { modem_etm },
             ieee802154: Ieee802154Peripherals {
                 ieee802154_mac,
                 ieee802154_interrupt_route,
@@ -60376,6 +60286,58 @@ pub mod fixed_register_image {
             registers
                 .command_0010()
                 .write_with_zero(|writer| writer.bits(0x00040000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `MODEM_ETM`.`CHANNEL_ENABLE_SET`.
+    #[inline]
+    pub fn enable_ieee802154_etm_channel0(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .channel_enable_set()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000002` to `MODEM_ETM`.`CHANNEL_ENABLE_SET`.
+    #[inline]
+    pub fn enable_ieee802154_etm_channel1(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .channel_enable_set()
+                .write_with_zero(|writer| writer.bits(0x00000002));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `MODEM_ETM`.`CHANNEL_ENABLE_CLEAR`.
+    #[inline]
+    pub fn disable_ieee802154_etm_channel0(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .channel_enable_clear()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000002` to `MODEM_ETM`.`CHANNEL_ENABLE_CLEAR`.
+    #[inline]
+    pub fn disable_ieee802154_etm_channel1(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .channel_enable_clear()
+                .write_with_zero(|writer| writer.bits(0x00000002));
         }
     }
 

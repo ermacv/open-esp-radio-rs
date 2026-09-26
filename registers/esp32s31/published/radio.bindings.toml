@@ -38803,7 +38803,7 @@ access = "read-only"
 [[registers]]
 address = 537954308
 width = 32
-access = "read-write"
+access = "write-only"
 identity = "MODEM_ETM.CHANNEL_ENABLE_SET"
 peripheral = "MODEM_ETM"
 peripheral-type = "ModemEtm"
@@ -38816,47 +38816,47 @@ svd-name = "CH0"
 method = "ch0"
 bit-offset = 0
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH1"
 method = "ch1"
 bit-offset = 1
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH4"
 method = "ch4"
 bit-offset = 4
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH5"
 method = "ch5"
 bit-offset = 5
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH6"
 method = "ch6"
 bit-offset = 6
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH7"
 method = "ch7"
 bit-offset = 7
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers]]
 address = 537954312
 width = 32
-access = "read-write"
+access = "write-only"
 identity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR"
 peripheral = "MODEM_ETM"
 peripheral-type = "ModemEtm"
@@ -38869,42 +38869,42 @@ svd-name = "CH0"
 method = "ch0"
 bit-offset = 0
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH1"
 method = "ch1"
 bit-offset = 1
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH4"
 method = "ch4"
 bit-offset = 4
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH5"
 method = "ch5"
 bit-offset = 5
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH6"
 method = "ch6"
 bit-offset = 6
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers.fields]]
 svd-name = "CH7"
 method = "ch7"
 bit-offset = 7
 bit-width = 1
-access = "read-write"
+access = "write-only"
 
 [[registers]]
 address = 537954316

@@ -633,7 +633,7 @@ impl ModemLpTimerRegistersPreparedOwner {
     ) -> ModemLpTimerLowPowerHardwareInitializedOwner {
         task.reunitable = false;
         let mut timer = self.timer;
-        let runtime_control = timer.initialize_low_power_hardware(task.registers.shared());
+        let runtime_control = timer.initialize_low_power_hardware();
         ModemLpTimerLowPowerHardwareInitializedOwner {
             timer,
             runtime_control,

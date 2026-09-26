@@ -61,44 +61,44 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "CHANNEL_ENABLE_SET"
-description = "Channel-enable set word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete channel images."
+description = "Channel-enable set word. Its fields are write-trigger: writing 1 enables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete channel images."
 addressOffset = 0x004
 size = 32
-access = "read-write"
+access = "write-only"
 
 [[peripherals.registers.register.fields]]
 name = "CH0"
-description = "Enable channel 0."
+description = "Writing 1 enables channel 0."
 bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH1"
-description = "Enable channel 1."
+description = "Writing 1 enables channel 1."
 bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH4"
-description = "Enable channel 4."
+description = "Writing 1 enables channel 4."
 bitOffset = 4
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH5"
-description = "Enable channel 5."
+description = "Writing 1 enables channel 5."
 bitOffset = 5
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH6"
-description = "Enable channel 6."
+description = "Writing 1 enables channel 6."
 bitOffset = 6
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH7"
-description = "Enable channel 7."
+description = "Writing 1 enables channel 7."
 bitOffset = 7
 bitWidth = 1
 
@@ -106,44 +106,44 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "CHANNEL_ENABLE_CLEAR"
-description = "Channel-enable clear word. The IEEE 802.15.4 driver writes it back with the selected channel bit added; the BTDM runtime writes complete single-channel images."
+description = "Channel-enable clear word. Its fields are write-trigger: writing 1 disables that channel and writing 0 has no effect, as in the ESP32-S31 SoC ETM of identical layout. This semantics is not yet verified on the modem ETM hardware. The IEEE 802.15.4 driver writes the word back after reading it with the selected channel bit added; the BTDM runtime writes complete single-channel images."
 addressOffset = 0x008
 size = 32
-access = "read-write"
+access = "write-only"
 
 [[peripherals.registers.register.fields]]
 name = "CH0"
-description = "Disable channel 0."
+description = "Writing 1 disables channel 0."
 bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH1"
-description = "Disable channel 1."
+description = "Writing 1 disables channel 1."
 bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH4"
-description = "Disable channel 4."
+description = "Writing 1 disables channel 4."
 bitOffset = 4
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH5"
-description = "Disable channel 5."
+description = "Writing 1 disables channel 5."
 bitOffset = 5
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH6"
-description = "Disable channel 6."
+description = "Writing 1 disables channel 6."
 bitOffset = 6
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CH7"
-description = "Disable channel 7."
+description = "Writing 1 disables channel 7."
 bitOffset = 7
 bitWidth = 1
 
@@ -301,39 +301,43 @@ completeness = "complete"
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
     "BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS",
     "BLOB_LIBBTDM_RUNTIME_OPERATIONAL_GAPS",
 ]
-provenance = "imported"
+provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH0"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
 ]
-provenance = "imported"
+provenance = "derived"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH1"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
 ]
-provenance = "imported"
+provenance = "derived"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH4"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -347,6 +351,7 @@ completeness = "complete"
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH5"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -360,6 +365,7 @@ completeness = "complete"
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH6"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -373,6 +379,7 @@ completeness = "complete"
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH7"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -386,37 +393,41 @@ completeness = "complete"
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
 ]
-provenance = "imported"
+provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH0"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
 ]
-provenance = "imported"
+provenance = "derived"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH1"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
 ]
-provenance = "imported"
+provenance = "derived"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH4"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -428,6 +439,7 @@ completeness = "complete"
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH5"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -439,6 +451,7 @@ completeness = "complete"
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH6"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -450,6 +463,7 @@ completeness = "complete"
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH7"
 sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
     "BLOB_LIBBTDM_RUNTIME_CONTROL",

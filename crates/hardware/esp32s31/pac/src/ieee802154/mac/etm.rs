@@ -3,11 +3,12 @@
 //!
 //! The pinned ESP-IDF driver (`esp_ieee802154_util.c`) programs channel zero
 //! from a TIMER0 overflow to a transmit start and channel one from a TIMER1
-//! overflow to a receive start. The same matrix words also carry the Bluetooth
-//! runtime's channels four through seven, so this surface names only the two
-//! IEEE 802.15.4 channels and the three routes the driver programs. Each method
-//! is one register transaction; the HAL composes the driver's channel-clear
-//! and event/task sequences from them.
+//! overflow to a receive start. The Bluetooth runtime owns channels four
+//! through seven of the same matrix, so this surface holds only the
+//! [`Ieee802154EtmChannels`](crate::modem::etm::Ieee802154EtmChannels)
+//! capability and names the two IEEE 802.15.4 channels and the three routes
+//! the driver programs. Each method is one register transaction; the HAL
+//! composes the driver's channel-clear and event/task sequences from them.
 
 use super::Ieee802154RegisterLease;
 
@@ -45,53 +46,54 @@ impl Ieee802154EtmRoute {
 impl Ieee802154RegisterLease<'_> {
     /// Read the channel-enable word and report whether `channel` is enabled.
     pub fn etm_channel_enabled(&self, channel: Ieee802154EtmChannel) -> bool {
-        let status = self.etm.channel_enable().read();
+        let status = self.etm.registers.channel_enable().read();
         match channel {
             Ieee802154EtmChannel::Channel0 => status.ch0().bit(),
             Ieee802154EtmChannel::Channel1 => status.ch1().bit(),
         }
     }
 
-    /// Write the channel-enable clear word back with `channel` added, as the
-    /// public driver does.
+    /// Write only `channel`'s bit to the write-trigger clear word. The
+    /// vendor reads the word first; a trigger word reads as zero, so the
+    /// written image is the same.
     pub fn disable_etm_channel(&mut self, channel: Ieee802154EtmChannel) {
-        self.etm
-            .channel_enable_clear()
-            .modify(|_, writer| match channel {
-                Ieee802154EtmChannel::Channel0 => writer.ch0().set_bit(),
-                Ieee802154EtmChannel::Channel1 => writer.ch1().set_bit(),
-            });
+        let etm = &self.etm.registers;
+        match channel {
+            Ieee802154EtmChannel::Channel0 => {
+                crate::svd::fixed_register_image::disable_ieee802154_etm_channel0(etm);
+            }
+            Ieee802154EtmChannel::Channel1 => {
+                crate::svd::fixed_register_image::disable_ieee802154_etm_channel1(etm);
+            }
+        }
     }
 
-    /// Write the channel-enable set word back with `channel` added, as the
-    /// public driver does.
+    /// Write only `channel`'s bit to the write-trigger set word.
     pub fn enable_etm_channel(&mut self, channel: Ieee802154EtmChannel) {
-        self.etm
-            .channel_enable_set()
-            .modify(|_, writer| match channel {
-                Ieee802154EtmChannel::Channel0 => writer.ch0().set_bit(),
-                Ieee802154EtmChannel::Channel1 => writer.ch1().set_bit(),
-            });
+        let etm = &self.etm.registers;
+        match channel {
+            Ieee802154EtmChannel::Channel0 => {
+                crate::svd::fixed_register_image::enable_ieee802154_etm_channel0(etm);
+            }
+            Ieee802154EtmChannel::Channel1 => {
+                crate::svd::fixed_register_image::enable_ieee802154_etm_channel1(etm);
+            }
+        }
     }
 
     /// Write the complete event word, then the complete task word, of the
     /// route's channel.
     pub fn set_etm_route(&mut self, route: Ieee802154EtmRoute) {
+        let etm = &self.etm.registers;
         match route {
             Ieee802154EtmRoute::Timer0ToTxStart => {
-                crate::svd::fixed_register_sequence::route_ieee802154_etm_timer0_to_tx_start(
-                    self.etm,
-                );
+                crate::svd::fixed_register_sequence::route_ieee802154_etm_timer0_to_tx_start(etm);
             }
             Ieee802154EtmRoute::Timer0ToCcaTx => {
-                crate::svd::fixed_register_sequence::route_ieee802154_etm_timer0_to_ed_trig_tx(
-                    self.etm,
-                );
+                crate::svd::fixed_register_sequence::route_ieee802154_etm_timer0_to_ed_trig_tx(etm);
             }
             Ieee802154EtmRoute::Timer1ToRxStart => {
-                crate::svd::fixed_register_sequence::route_ieee802154_etm_timer1_to_rx_start(
-                    self.etm,
-                );
+                crate::svd::fixed_register_sequence::route_ieee802154_etm_timer1_to_rx_start(etm);
             }
         }
     }

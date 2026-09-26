@@ -194,9 +194,11 @@ pub trait Ieee802154LowLevel {
     fn stop_timer(&mut self, timer: Ieee802154Timer);
     /// `REG_READ(ETM_CHEN_AD0_REG)` tested for the channel bit.
     fn etm_channel_enabled(&mut self, channel: Ieee802154EtmChannel) -> bool;
-    /// `ETM_CHENCLR_AD0_REG` written back with the channel bit added.
+    /// `ETM_CHENCLR_AD0_REG` written back with the channel bit added. The
+    /// word is write-trigger, so hardware writes only the channel bit.
     fn disable_etm_channel(&mut self, channel: Ieee802154EtmChannel);
-    /// `ETM_CHENSET_AD0_REG` written back with the channel bit added.
+    /// `ETM_CHENSET_AD0_REG` written back with the channel bit added. The
+    /// word is write-trigger, so hardware writes only the channel bit.
     fn enable_etm_channel(&mut self, channel: Ieee802154EtmChannel);
     /// The channel's complete event word, then its complete task word.
     fn set_etm_route(&mut self, route: Ieee802154EtmRoute);

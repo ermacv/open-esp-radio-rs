@@ -2608,6 +2608,13 @@ fields = ["TXRX_QUEUE_ANTENNA_ENABLE", "RTS_RATE", "HT20_EOF_COUNT"]
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[zero-based-field-writes]]
+name = "publish_mac_tx_he_descriptor_counts"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HT_DESCRIPTOR_COUNTS%s"
+fields = ["DESCRIPTOR_COUNT_A", "DESCRIPTOR_COUNT_B", "DESCRIPTOR_COUNT_A_COPY"]
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[zero-based-field-writes]]
 name = "ersu_ack_rate_baseline"
 peripheral = "WIFI_MAC_HE_INIT_SUFFIX"
 register = "ERSU_ACK_RATE"

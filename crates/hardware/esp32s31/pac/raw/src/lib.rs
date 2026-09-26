@@ -61974,6 +61974,33 @@ pub mod zero_based_field_write {
         }
     }
 
+    /// Write `DESCRIPTOR_COUNT_A`, `DESCRIPTOR_COUNT_B`, `DESCRIPTOR_COUNT_A_COPY` in `WIFI_MAC_TX_QUEUE_VECTOR`.`HT_DESCRIPTOR_COUNTS%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_mac_tx_he_descriptor_counts(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        descriptor_count_a_value: u8,
+        descriptor_count_b_value: u8,
+        descriptor_count_a_copy_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .ht_descriptor_counts(index)
+                .write_with_zero(|writer| {
+                    writer
+                        .descriptor_count_a()
+                        .set(descriptor_count_a_value)
+                        .descriptor_count_b()
+                        .set(descriptor_count_b_value)
+                        .descriptor_count_a_copy()
+                        .set(descriptor_count_a_copy_value)
+                });
+        }
+    }
+
     /// Write `RATE_0`, `RATE_1`, `RATE_2`, `RATE_3` in `WIFI_MAC_HE_INIT_SUFFIX`.`ERSU_ACK_RATE` while publishing zero to every other register bit.
     #[inline]
     pub fn ersu_ack_rate_baseline(

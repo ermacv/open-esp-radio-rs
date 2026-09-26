@@ -1241,6 +1241,34 @@ impl WifiRadioRegisters {
         control_bank
             .config(bank)
             .modify(|_, w| w.timeout().set(parameters.timeout));
+        self.program_he_mac_tx_ppdu(queue, program);
+
+        queue::configure_edca(
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
+            u32::from(queue),
+            parameters.aifsn,
+            parameters.contention_window,
+            parameters.interface,
+        );
+        true
+    }
+
+    /// Publish the complete HE SU responsibility of vendor
+    /// `hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
+    ///
+    /// Queue readiness, timeout, EDCA and the final ENABLE|VALID ownership
+    /// edge belong to the surrounding production transaction, as for
+    /// [`Self::program_ht_mac_tx_ppdu`].
+    pub(crate) fn program_he_mac_tx_ppdu(&mut self, queue: u8, program: MacHeTxProgram) {
+        let parameters = program.parameters;
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        assert!(parameters.descriptor_count <= 32);
+        assert!(parameters.protection_spacing <= 0x03ff);
+        assert!(parameters.scheduler_priority <= 0x0f);
+        assert!(parameters.packet_priority <= 0x0f);
+        assert!(parameters.priority_count <= 0x0fff);
+        let bank = physical_bank(queue);
+        let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         crate::svd::zero_based_field_write::publish_mac_tx_prepared_control(
             control_bank,
             bank,
@@ -1251,6 +1279,15 @@ impl WifiRadioRegisters {
                 MacHeTxFormat::Smpdu => 1,
                 MacHeTxFormat::Ampdu => 5,
             },
+        );
+        // `mac_tx_set_plcp0` publishes the control image and immediately
+        // clears software RTS through one fresh-read protection update.
+        queue::configure_rts(
+            control_bank,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+            u32::from(queue),
+            false,
+            None,
         );
         let vectors = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
         crate::svd::zero_based_field_write::publish_mac_tx_plcp1_fields(
@@ -1268,33 +1305,13 @@ impl WifiRadioRegisters {
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
-
-        // SOURCE: complete mac_tx_set_plcp0/hal_he_set_tx_protection followed
-        // by mac_tx_set_hesig. The bounded SU profile clears software RTS,
-        // then replaces the three finite channel-width minimum-MPDU lanes.
-        let protection = control_bank.protection(bank);
-        queue::configure_rts(
-            control_bank,
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
-            u32::from(queue),
-            false,
-            None,
-        );
-        protection.modify(|_, w| {
-            w.minimum_mpdu_length_cbw20()
-                .set(parameters.protection_spacing)
-        });
-        protection.modify(|_, w| {
-            w.minimum_mpdu_length_cbw40()
-                .set(parameters.protection_spacing)
-        });
-        protection.modify(|_, w| {
-            w.minimum_mpdu_length_cbw80()
-                .set(parameters.protection_spacing)
-        });
+        // The parent's independent PTI-low edge; this SU profile holds no
+        // TXOP.
+        let pti = vectors.pti(bank);
+        pti.modify(|_, writer| writer.txop().clear_bit());
 
         // SOURCE: complete mac_tx_set_hesig stores A1 then A2/length before
-        // publishing the same three descriptor-count edges used by HT.
+        // publishing the descriptor counts.
         crate::svd::zero_based_field_write::publish_mac_tx_he_signal_a1_fields(
             vectors,
             bank,
@@ -1322,11 +1339,28 @@ impl WifiRadioRegisters {
             parameters.apep_length,
             matches!(parameters.format, MacHeTxFormat::Ampdu),
         );
-        let descriptor_counts = vectors.ht_descriptor_counts(bank);
-        descriptor_counts.modify(|_, w| w.descriptor_count_a().set(parameters.descriptor_count));
-        descriptor_counts.modify(|_, w| w.descriptor_count_b().set(parameters.descriptor_count));
-        descriptor_counts
-            .modify(|_, w| w.descriptor_count_a_copy().set(parameters.descriptor_count));
+        // Unlike HT's three fresh-read edges, the HE leaf writes all three
+        // descriptor counts as one register image.
+        crate::svd::zero_based_field_write::publish_mac_tx_he_descriptor_counts(
+            vectors,
+            bank,
+            parameters.descriptor_count,
+            parameters.descriptor_count,
+            parameters.descriptor_count,
+        );
+        // SOURCE: complete mac_tx_set_hesig then replaces the three finite
+        // channel-width minimum-MPDU lanes and clears software CTS in one
+        // fresh-read update that keeps only software RTS.
+        control_bank.protection(bank).modify(|_, w| {
+            w.minimum_mpdu_length_cbw20()
+                .set(parameters.protection_spacing)
+                .minimum_mpdu_length_cbw40()
+                .set(parameters.protection_spacing)
+                .minimum_mpdu_length_cbw80()
+                .set(parameters.protection_spacing)
+                .software_cts()
+                .clear_bit()
+        });
 
         // HE reaches mac_tx_set_len for LENGTH_CONTROL, but its flag-bit-31
         // branch intentionally skips the non-HE DATA_LENGTH register.
@@ -1368,21 +1402,11 @@ impl WifiRadioRegisters {
         control_bank
             .config(bank)
             .modify(|_, w| w.scheduler_priority().set(parameters.scheduler_priority));
-        let pti = vectors.pti(bank);
         pti.modify(|_, w| w.pti_2().set(parameters.packet_priority));
         pti.modify(|_, w| w.pti_1().set(parameters.packet_priority));
         pti.modify(|_, w| w.pti_0().set(parameters.packet_priority));
         pti.modify(|_, w| w.pti_3().set(parameters.packet_priority));
         pti.modify(|_, w| w.count().set(parameters.priority_count));
-
-        queue::configure_edca(
-            control_bank,
-            u32::from(queue),
-            parameters.aifsn,
-            parameters.contention_window,
-            parameters.interface,
-        );
-        true
     }
 
     pub(crate) fn start_prepared_mac_tx(&mut self, queue: u8) {

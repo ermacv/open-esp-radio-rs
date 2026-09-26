@@ -78,11 +78,10 @@ fn registers() -> super::RadioRuntimeOwner {
 
 #[test]
 fn shutdown_confirmation_returns_the_same_frontier_only_after_a_stopped_check() {
-    let rejected = super::confirm_stopped(registers(), setup(), |_| {
-        Err(Error::MacActive { state: 2 })
-    })
-    .err()
-    .expect("active MAC must reject final-client shutdown");
+    let rejected =
+        super::confirm_stopped(registers(), setup(), |_| Err(Error::MacActive { state: 2 }))
+            .err()
+            .expect("active MAC must reject final-client shutdown");
     assert_eq!(rejected.error, Error::MacActive { state: 2 });
 
     let (_registers, _setup) =

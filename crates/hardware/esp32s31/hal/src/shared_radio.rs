@@ -294,6 +294,18 @@ impl<T> SharedRadio<T> {
             .map_err(|_| SharedRadioBusy)
     }
 
+    /// Take the lease of an arbiter this caller borrows uniquely, for a
+    /// validation image whose memory model admits no atomic access to it.
+    ///
+    /// The unique borrow proves that no lease is alive, so the flag is set
+    /// without an atomic exchange; dropping the lease releases it normally.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn lease_for_validation(&mut self) -> SharedRadioLease<'_, T> {
+        *self.held.get_mut() = true;
+        SharedRadioLease { radio: self }
+    }
+
     /// Whether a lease is currently held.
     pub fn is_held(&self) -> bool {
         self.held.load(Ordering::Relaxed)

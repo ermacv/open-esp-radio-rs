@@ -36,6 +36,21 @@ fn only_one_lease_exists_at_a_time() {
 }
 
 #[test]
+fn a_validation_lease_holds_and_releases_the_arbiter() {
+    let mut radio = arbiter();
+    core::mem::forget(radio.lease_for_validation());
+    assert!(radio.is_held());
+    assert_eq!(radio.try_acquire().err(), Some(SharedRadioBusy));
+
+    let mut radio = arbiter();
+    drop(radio.lease_for_validation());
+    assert!(!radio.is_held());
+    let _again = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a dropped validation lease frees the arbiter"));
+}
+
+#[test]
 fn a_forgotten_lease_keeps_the_arbiter_busy() {
     let radio = arbiter();
     core::mem::forget(

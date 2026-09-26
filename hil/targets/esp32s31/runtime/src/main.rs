@@ -20,9 +20,14 @@ compile_error!("select one network contract: upstream-network, embassy-network o
     feature = "boot-smoke",
     feature = "open-radio-hil",
     feature = "bluetooth-hil",
+    feature = "bluetooth-gatt",
     feature = "system-watchdog"
 )))]
-compile_error!("select boot-smoke, open-radio-hil, bluetooth-hil or system-watchdog");
+compile_error!(
+    "select boot-smoke, open-radio-hil, bluetooth-hil, bluetooth-gatt or system-watchdog"
+);
+#[cfg(all(feature = "bluetooth-hil", feature = "bluetooth-gatt"))]
+compile_error!("select one Bluetooth image: bluetooth-hil or bluetooth-gatt");
 #[cfg(all(
     feature = "system-watchdog",
     any(
@@ -61,10 +66,7 @@ compile_error!("psram-task-stack requires code-psram and profile-psram-data");
         feature = "ieee802154-event-status-probe",
         feature = "ieee802154-radio"
     ),
-    all(
-        feature = "ieee802154-ed-event-probe",
-        feature = "ieee802154-radio"
-    )
+    all(feature = "ieee802154-ed-event-probe", feature = "ieee802154-radio")
 ))]
 compile_error!("IEEE 802.15.4 diagnostic images are mutually exclusive");
 
@@ -85,7 +87,7 @@ use esp_hal::{
 use oer_esp32s31_executor_embassy::Executor;
 use static_cell::StaticCell;
 
-#[cfg(feature = "bluetooth-hil")]
+#[cfg(feature = "bluetooth-radio")]
 mod bluetooth;
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
@@ -128,11 +130,11 @@ const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
 const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
 #[cfg(not(feature = "psram-task-stack"))]
 const INTERNAL_STACK_END: u32 = INTERNAL_SRAM_END;
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 const STACK_PAINT_WORD: u32 = 0xa55a_a55a;
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 const STACK_PAINT_MARGIN_BYTES: u32 = 256;
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
 // CPU1 runs the Embassy network executor in split images. Its nested async call
@@ -371,7 +373,7 @@ extern "C" fn runtime_main() -> ! {
     // software wake interrupt ownership is complete at this point.
     unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
 
-    #[cfg(feature = "bluetooth-hil")]
+    #[cfg(feature = "bluetooth-radio")]
     bluetooth::start(
         executor,
         oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
@@ -675,7 +677,7 @@ pub(crate) fn cpu1_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     )
 }
 
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
     let cpu0_top = symbol(ptr::addr_of!(_stack_start));
@@ -691,7 +693,7 @@ pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     )
 }
 
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 fn measure_stack(
     bottom: u32,
     paint_start: u32,
@@ -720,7 +722,7 @@ fn measure_stack(
     }
 }
 
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 fn stack_minimum_free_bytes(cpu: u8) -> u32 {
     let value = match cpu {
         0 => option_env!("OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES"),

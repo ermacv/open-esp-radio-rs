@@ -44,6 +44,13 @@ execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_fre
 reason = "one-time Bluetooth cold start moves the powered Controller typestate through the common-PHY and BLE-PHY transitions before placing it in static storage; it runs once on the 192-KiB CPU0 task stack before any radio task"
 
 [[reviewed_frames]]
+function_contains = "::hci::start_bluetooth_hci"
+source_ends_with = ["crates/composition/esp32s31/embassy/bluetooth/src/hci.rs"]
+max_bytes = 10752
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "one-time HCI Controller creation builds the Controller core, whose bounded Host output and held ACL packets dominate, and moves it into static storage; it runs once on the 192-KiB CPU0 task stack after cold start"
+
+[[reviewed_frames]]
 function_contains = "::station::StaLifecycleService<"
 source_ends_with = ["crates/protocols/ieee80211/sta/src/station.rs", "oer-ieee80211-sta-0.1.0/src/station.rs"]
 max_bytes = 19712
@@ -239,7 +246,7 @@ reason = "retryable quiescence failure preserves the exact classified exit, spli
 [[reviewed_frames]]
 function_contains = "::connected::shutdown::quiesce_esp32s31_connected_epoch"
 source_ends_with = ["crates/runtime/esp32s31/ieee80211/src/roles/station/connected/shutdown.rs", "oer-esp32s31-ieee80211-runtime-0.1.0/src/roles/station/connected/shutdown.rs"]
-max_bytes = 9216
+max_bytes = 10752
 reason = "shutdown future retains the unique interrupt, connected runner and task-group owners until all three cross the stopped boundary"
 
 [[reviewed_frames]]

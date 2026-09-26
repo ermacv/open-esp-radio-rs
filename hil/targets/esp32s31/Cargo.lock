@@ -144,6 +144,9 @@ name = "btuuid"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5f48f1e9b0aad0a4f05d17bdeae0fa20ff798e272a03a6940ca27ad9c5a6ae7"
+dependencies = [
+ "uuid",
+]
 
 [[package]]
 name = "bytemuck"
@@ -1014,6 +1017,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a31d2a3fbaaeb2af2368bbdd904aa8e812d3c04a1ee10d3171f52d556e5d0a3"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-channel"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1028,6 +1055,12 @@ dependencies = [
  "futures-core",
  "lock_api",
 ]
+
+[[package]]
+name = "futures-io"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53c0fa8157de1303bfffdaa1cc2a673bfffb60102f76b0ef4441659124373fed"
 
 [[package]]
 name = "futures-sink"
@@ -1048,6 +1081,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
  "futures-core",
+ "futures-sink",
  "futures-task",
  "pin-project-lite",
 ]
@@ -1412,6 +1446,9 @@ dependencies = [
  "critical-section",
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-controller",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-runtime",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-radio",
@@ -1420,6 +1457,7 @@ dependencies = [
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
  "oer-esp32s31-radio-esp-hal",
+ "oer-esp32s31-soc-esp-hal",
  "static_cell",
 ]
 
@@ -1759,6 +1797,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-example-bluetooth-gatt"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trouble-host",
+]
+
+[[package]]
 name = "oer-hil-esp32s31-runtime"
 version = "0.1.0"
 dependencies = [
@@ -1769,12 +1816,13 @@ dependencies = [
  "embassy-net 0.9.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "esp-hal",
  "heapless 0.9.3",
  "log",
- "oer-bluetooth-ll",
- "oer-bluetooth-radio",
+ "oer-bluetooth-controller",
+ "oer-bluetooth-hci",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-system",
  "oer-esp32s31-executor-embassy",
@@ -1794,6 +1842,7 @@ dependencies = [
  "oer-esp32s31-radio-esp-hal",
  "oer-esp32s31-radio-system",
  "oer-esp32s31-soc-esp-hal",
+ "oer-example-bluetooth-gatt",
  "oer-hil-esp32s31-telemetry",
  "oer-hil-protocol",
  "oer-hil-target-core",
@@ -1805,6 +1854,7 @@ dependencies = [
  "postcard",
  "serde",
  "static_cell",
+ "trouble-host",
  "xarxa 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=0d41d8e80cb617d355cf6981b6ff76635c44cadc)",
  "xarxa 0.1.0 (git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555)",
 ]
@@ -2497,6 +2547,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "trouble-host"
+version = "0.8.0"
+source = "git+https://github.com/ermacv/trouble?rev=a6af435ba1539cead0afce04718ad8a089bcc4b9#a6af435ba1539cead0afce04718ad8a089bcc4b9"
+dependencies = [
+ "bt-hci",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-io 0.7.1",
+ "futures",
+ "heapless 0.9.3",
+ "static_cell",
+ "zerocopy",
+]
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2519,6 +2585,12 @@ name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
+name = "uuid"
+version = "1.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
 
 [[package]]
 name = "valuable"
@@ -2651,6 +2723,26 @@ dependencies = [
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
 source = "git+https://github.com/ermacv/esp-hal?rev=a228e85823b40e79c3a4e93fe006bed6c99dd2b8#a228e85823b40e79c3a4e93fe006bed6c99dd2b8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.8.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d35102a9f36d089ccae9e4c6802bc118be4487b80aaffc0ab4e0cf5ce92d2873"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.8.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "146c01f5ab44258da43cf276c74a2763db2ff3969c9c652c3f2de07041d0b2bc"
 dependencies = [
  "proc-macro2",
  "quote",

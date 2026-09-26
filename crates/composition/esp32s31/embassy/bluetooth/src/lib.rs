@@ -28,11 +28,12 @@
 //! ready for the next [`start`]. Periodic PHY tracking belongs to the radio
 //! system (`RadioSystem::run_tracking`).
 //!
-//! [`start_bluetooth_hci`] then creates the HCI Controller over that runtime:
-//! the in-process transport, whose Host end goes to the Host stack, and the
-//! service that runs the portable Controller core with the runtime as its
-//! radio. [`BluetoothEntropy`] binds the SoC entropy service as its random
-//! source.
+//! [`start_bluetooth_hci`] then creates the HCI Controller over that runtime
+//! once per boot: the in-process transport, whose Host end goes to the Host
+//! stack, and the service that runs the portable Controller core with the
+//! runtime as its radio. Between Controller epochs the service retires the
+//! drained Host end and restarts it with a fresh core.
+//! [`BluetoothEntropy`] binds the SoC entropy service as its random source.
 //!
 //! Power and clock failures roll back to the parked client; any failure
 //! after the first Controller write keeps its owners fail-stop.
@@ -44,8 +45,9 @@ mod system;
 
 #[cfg(target_arch = "riscv32")]
 pub use hci::{
-    BluetoothEntropy, BluetoothHci, BluetoothHciService, BluetoothHostTransport,
-    CONTROLLER_TO_HOST, HOST_TO_CONTROLLER, OUTPUT, PACKET, start_bluetooth_hci,
+    BluetoothEntropy, BluetoothHci, BluetoothHciRestartError, BluetoothHciService,
+    BluetoothHostTransport, CONTROLLER_TO_HOST, HOST_TO_CONTROLLER, OUTPUT, PACKET,
+    start_bluetooth_hci,
 };
 #[cfg(target_arch = "riscv32")]
 pub use system::{

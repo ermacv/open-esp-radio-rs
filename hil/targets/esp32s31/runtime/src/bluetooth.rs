@@ -2,24 +2,27 @@
 //! Controller.
 //!
 //! Every image splits the radio for concurrent clients, starts the Bluetooth
-//! client on the shared radio system, runs the radio runner, the HCI service
-//! and the radio system's periodic PHY tracking on their own tasks and serves
-//! the typed HIL console. The
-//! `bluetooth-hil` image drives Direct Test Mode with HCI commands; the
-//! `bluetooth-gatt` image runs the Trouble Host and the GATT application.
-//! Both reach the radio only through the HCI transport.
+//! client on the shared radio system, runs the radio system's periodic PHY
+//! tracking on its own task and serves the typed HIL console. The
+//! `bluetooth-hil` image drives Direct Test Mode with HCI commands and the
+//! `bluetooth-gatt` image runs the Trouble Host and the GATT application; both
+//! run the radio runner and the HCI service on their own tasks. The
+//! `bluetooth-secure-gatt` image runs them beside its Host and restarts the
+//! Controller epoch on request. All reach the radio only through the HCI
+//! transport.
 
 mod console;
 #[cfg(feature = "bluetooth-hil")]
 mod dtm;
 #[cfg(feature = "bluetooth-gatt")]
 mod gatt;
+#[cfg(feature = "bluetooth-secure-gatt")]
+mod secure;
 
 use oer_bluetooth_controller::LeVersionInformation;
-use oer_esp32s31_bluetooth_system::{
-    BluetoothEntropy, BluetoothHciService, BluetoothHostTransport, BluetoothParked,
-    BluetoothSystem, start_bluetooth_hci,
-};
+use oer_esp32s31_bluetooth_system::{BluetoothEntropy, BluetoothParked, start_bluetooth_hci};
+#[cfg(not(feature = "bluetooth-secure-gatt"))]
+use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothHostTransport, BluetoothSystem};
 use oer_esp32s31_hal::root::{ConcurrentPartitions, RadioHardware};
 use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
 use oer_esp32s31_radio_system::RadioSystem;
@@ -30,9 +33,10 @@ use static_cell::StaticCell;
 /// 5.4, the unassigned company value and subversion 1.
 const VERSION: LeVersionInformation = LeVersionInformation::new(0x0d, 0xffff, 1);
 
-type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+pub(super) type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
 
 static RADIO: StaticCell<Radio> = StaticCell::new();
+#[cfg(not(feature = "bluetooth-secure-gatt"))]
 static SYSTEM: StaticCell<BluetoothSystem> = StaticCell::new();
 static ENTROPY: StaticCell<BluetoothEntropy<'static>> = StaticCell::new();
 
@@ -90,14 +94,19 @@ async fn main(
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
     let system = match oer_esp32s31_bluetooth_system::start(radio, parked, public_address).await {
-        Ok(system) => SYSTEM.init(system),
+        Ok(system) => system,
         Err(_) => super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-start\r\n"),
     };
     let hci = start_bluetooth_hci(system.runtime(), public_address, Some(VERSION), entropy);
     spawner.spawn(tracking(radio).expect("PHY tracking task"));
-    spawner.spawn(runner(system).expect("Bluetooth runner task"));
-    spawner.spawn(service(hci.service).expect("Bluetooth HCI task"));
-    image(spawner, hci.host, usb, boot).await;
+    #[cfg(feature = "bluetooth-secure-gatt")]
+    secure::run(radio, system, hci, public_address, usb, boot).await;
+    #[cfg(not(feature = "bluetooth-secure-gatt"))]
+    {
+        spawner.spawn(runner(SYSTEM.init(system)).expect("Bluetooth runner task"));
+        spawner.spawn(service(hci.service).expect("Bluetooth HCI task"));
+        image(spawner, hci.host, usb, boot).await;
+    }
 }
 
 #[cfg(feature = "bluetooth-hil")]
@@ -126,14 +135,16 @@ async fn tracking(radio: &'static Radio) {
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=phy-tracking\r\n");
 }
 
+#[cfg(not(feature = "bluetooth-secure-gatt"))]
 #[embassy_executor::task]
 async fn runner(system: &'static mut BluetoothSystem) {
     let _fault = system.run().await;
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n");
 }
 
+#[cfg(not(feature = "bluetooth-secure-gatt"))]
 #[embassy_executor::task]
-async fn service(service: BluetoothHciService) {
+async fn service(mut service: BluetoothHciService) {
     let _exit = service.run().await;
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n");
 }

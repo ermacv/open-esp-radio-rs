@@ -25,8 +25,15 @@ packet count. The `bluetooth-gatt` image serves `bluetooth-trouble-gatt`:
 `bluetooth/gatt.rs` runs the Trouble Host and the plaintext GATT application
 over the Host end of the transport. Both images use the development Controller
 identity Core 5.4, company `0xffff`, subversion 1, and a 500-ppm sleep-clock
-bound. No image serves `bluetooth-secure-gatt` yet: the composition stops and
-restarts the Controller, but its HCI Controller is still created once per boot.
+bound. The `bluetooth-secure-gatt` image serves the `bluetooth-trouble-secure-gatt*`
+scenarios: `bluetooth/secure.rs` keeps one RAM bond store across Host epochs.
+Each epoch runs the Trouble Host and the secure application beside the radio
+runner and the HCI service. A requested restart resets the Host through HCI,
+retires the drained Host end of the transport, stops the Controller on the
+radio system, checks that the old Host end reports the transport closed and
+starts the next Controller epoch with a fresh Controller core. An application
+failure closes the Controller without restarting; an unconfirmed Reset keeps
+every owner.
 
 `runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
 API bindings and diagnostic wrappers. All implementations use the same traffic

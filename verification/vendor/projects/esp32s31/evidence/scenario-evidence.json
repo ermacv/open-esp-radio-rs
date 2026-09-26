@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "342f14ae7afde59dc99beafdcc13e3eea134c782ea752d00f679c8e616cd65e0"
+      "sha256": "e6c922833c2851e93e046f57a06154e449d20aa94c63256791e52f02182d0ac6"
     },
     {
       "path": "verification/vendor/schema",
@@ -698,26 +698,26 @@
       "symbol": "phy_chip_set_chan",
       "production": "open_phy_channel_trace_state",
       "verdict": "match",
-      "cases": 60,
+      "cases": 68,
       "reviews": [
         "311a16d9faa9db83b14a174b65ed230b48e1de35e1afb5a2aed0a81dda7b6e1d",
         "eebe4bbac525eceae5a2ad224c6ed988ffa13b3064b719f36edf49de0806c70b"
       ],
       "coverage": {
         "blocks": {
-          "reached": 148,
+          "reached": 153,
           "total": 609
         },
         "directions": {
-          "reached": 87,
+          "reached": 90,
           "total": 606
         },
-        "excluded": 874,
-        "untriaged": 106
+        "excluded": 931,
+        "untriaged": 41
       },
       "observation": {
-        "executed": 364,
-        "observed": 354,
+        "executed": 368,
+        "observed": 358,
         "reviewed": 7,
         "untriaged": 3
       }
@@ -771,8 +771,8 @@
           "reached": 172,
           "total": 702
         },
-        "excluded": 857,
-        "untriaged": 134
+        "excluded": 910,
+        "untriaged": 81
       },
       "observation": {
         "executed": 447,
@@ -831,8 +831,8 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 872,
-        "untriaged": 267
+        "excluded": 931,
+        "untriaged": 208
       },
       "observation": {
         "executed": 1387,
@@ -861,8 +861,8 @@
           "reached": 351,
           "total": 982
         },
-        "excluded": 872,
-        "untriaged": 284
+        "excluded": 931,
+        "untriaged": 225
       },
       "observation": {
         "executed": 1814,
@@ -932,16 +932,6 @@
       "function": "phy_chip_i2c_writeReg",
       "offset": 58,
       "kind": "taken"
-    },
-    {
-      "function": "phy_chip_set_chan",
-      "offset": 60,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_chip_set_chan",
-      "offset": 64,
-      "kind": "block"
     },
     {
       "function": "phy_code_to_temp",
@@ -1139,56 +1129,6 @@
       "kind": "block"
     },
     {
-      "function": "phy_mhz2ieee",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 6,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 6,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 10,
-      "kind": "block"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 14,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 14,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 18,
-      "kind": "block"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 32,
-      "kind": "block"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 38,
-      "kind": "block"
-    },
-    {
-      "function": "phy_mhz2ieee",
-      "offset": 56,
-      "kind": "block"
-    },
-    {
       "function": "phy_param_track_tot",
       "offset": 50,
       "kind": "taken"
@@ -1314,136 +1254,6 @@
       "kind": "block"
     },
     {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 56,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 58,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 62,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 62,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 66,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 70,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 106,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 106,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 108,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 122,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 124,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 124,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 128,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 130,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 130,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 130,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 132,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 132,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 132,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 136,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 140,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 142,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 142,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 144,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal",
-      "offset": 148,
-      "kind": "block"
-    },
-    {
       "function": "phy_rfpll_cap_track_new",
       "offset": 66,
       "kind": "taken"
@@ -1456,56 +1266,6 @@
     {
       "function": "phy_rfpll_cap_track_new",
       "offset": 108,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 40,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 40,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 44,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 58,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 64,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 64,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 68,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 80,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_set_freq",
-      "offset": 148,
       "kind": "block"
     },
     {
@@ -1559,27 +1319,7 @@
       "kind": "taken"
     },
     {
-      "function": "phy_set_channel_rfpll_freq",
-      "offset": 36,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_set_channel_rfpll_freq",
-      "offset": 40,
-      "kind": "block"
-    },
-    {
       "function": "phy_set_most_tpw",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_set_rf_freq_offset",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_set_rfpll_freq",
       "offset": 0,
       "kind": "block"
     },
@@ -1704,66 +1444,6 @@
       "kind": "block"
     },
     {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 26,
-      "kind": "block"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 48,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 48,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 50,
-      "kind": "block"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 50,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 50,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 54,
-      "kind": "block"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 62,
-      "kind": "block"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 68,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 68,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_wait_rfpll_cal_end",
-      "offset": 72,
-      "kind": "block"
-    },
-    {
       "function": "phy_wifi_get_tx_gain",
       "offset": 178,
       "kind": "fallthrough"
@@ -1777,11 +1457,6 @@
       "function": "phy_wifi_set_tx_gain_new",
       "offset": 74,
       "kind": "taken"
-    },
-    {
-      "function": "phy_write_rfpll_sdm",
-      "offset": 0,
-      "kind": "block"
     }
   ],
   "unobserved": [

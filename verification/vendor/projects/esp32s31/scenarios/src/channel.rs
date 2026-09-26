@@ -100,16 +100,37 @@ impl Transition {
     }
 }
 
+/// Lowest request value both sides read as a 2.4-GHz frequency in MHz rather
+/// than a channel number.
+const FIRST_FREQUENCY_MHZ: u32 = 2412;
+/// Frequency of 2.4-GHz channel zero and the channel spacing, in MHz.
+const CHANNEL_ZERO_MHZ: u32 = 2407;
+const CHANNEL_SPACING_MHZ: u32 = 5;
+
+impl Transition {
+    /// Channel number the transition commits: a MHz request selects the
+    /// 2.4-GHz channel at or below it.
+    fn committed_channel(&self) -> u32 {
+        if self.channel >= FIRST_FREQUENCY_MHZ {
+            (self.channel - CHANNEL_ZERO_MHZ) / CHANNEL_SPACING_MHZ
+        } else {
+            self.channel
+        }
+    }
+}
+
 /// Enabled 802.11p with a configuration byte distinct from every fill.
 const DOT11P: [u8; 2] = [1, 0x3c];
 
-/// Full-root matrix: every tracked channel class at both bandwidths, and one
-/// channel at both bandwidths with 802.11p enabled.
+/// Full-root matrix: every tracked channel class at both bandwidths, MHz
+/// requests including one between channel centers, and one channel at both
+/// bandwidths with 802.11p enabled.
 pub fn full_transitions() -> Vec<Transition> {
     let mut result = transitions(
         [1, 6, 11, 13]
             .into_iter()
-            .flat_map(|channel| [0, 1].map(|cbw| (channel, cbw, 5, 100))),
+            .flat_map(|channel| [0, 1].map(|cbw| (channel, cbw, 5, 100)))
+            .chain([2412, 2437, 2472, 2474].map(|mhz| (mhz, 0, 5, 100))),
     );
     result.extend(
         transitions([0, 1].into_iter().map(|cbw| (6, cbw, 5, 100)))
@@ -476,7 +497,7 @@ fn check_transition(
     let committed = vendor_semantic(&output(records, root, false));
     let (temperature, _) = sensor_expectation(t.dac)(t.code);
     let mut expected = [0u8; SEMANTIC_BYTES as usize];
-    expected[..2].copy_from_slice(&(t.channel as u16).to_le_bytes());
+    expected[..2].copy_from_slice(&(t.committed_channel() as u16).to_le_bytes());
     expected[2..4].copy_from_slice(&(temperature as i16).to_le_bytes());
     expected[4] = t.cbw as u8;
     expected[6..].copy_from_slice(&t.dot11p);
@@ -696,7 +717,9 @@ mod tests {
     #[test]
     fn matrices_cover_channels_windows_and_fills() {
         let full = full_transitions();
-        assert_eq!(full.len(), (4 + 1) * 2 * FILLS.len());
+        assert_eq!(full.len(), (4 * 2 + 4 + 2) * FILLS.len());
+        let committed: Vec<_> = full.iter().map(Transition::committed_channel).collect();
+        assert!(committed.iter().all(|c| (1..=13).contains(c)));
         assert!(full.iter().any(|t| t.dot11p == DOT11P));
         let sensor = sensor_transitions();
         assert_eq!(sensor.len(), SENSOR_WINDOWS.len() * 256);

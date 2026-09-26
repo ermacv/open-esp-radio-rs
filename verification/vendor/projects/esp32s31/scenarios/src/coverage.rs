@@ -86,6 +86,48 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "direct RFPLL programming for a frequency outside the 2400-2484 MHz channel \
+            table: production rejects such a channel request fail-closed, and inside the \
+            claimed closures only that branch of `phy_set_channel_rfpll_freq` reaches the chain",
+        places: &[
+            // The frequency-table bound check's out-of-table path.
+            Place::Range {
+                function: "phy_set_channel_rfpll_freq",
+                start: 0x24,
+                end: 0x44,
+            },
+            Place::Function("phy_set_rf_freq_offset"),
+            Place::Function("phy_set_rfpll_freq"),
+            Place::Function("phy_rfpll_set_freq"),
+            Place::Function("phy_rfpll_cap_init_cal"),
+            Place::Function("phy_wait_rfpll_cal_end"),
+            Place::Function("phy_write_rfpll_sdm"),
+        ],
+    },
+    Decision {
+        reason: "2484-MHz (channel 14) and 5-GHz MHz requests: production accepts only \
+            channels 1 to 13 and rejects the others fail-closed",
+        places: &[
+            // The 2484-MHz equality and the above-2483-MHz directions ...
+            Place::Range {
+                function: "phy_mhz2ieee",
+                start: 0x6,
+                end: 0x7,
+            },
+            Place::Range {
+                function: "phy_mhz2ieee",
+                start: 0xe,
+                end: 0xf,
+            },
+            // ... and their 5-GHz and channel-14 blocks.
+            Place::Range {
+                function: "phy_mhz2ieee",
+                start: 0x26,
+                end: 0x3a,
+            },
+        ],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

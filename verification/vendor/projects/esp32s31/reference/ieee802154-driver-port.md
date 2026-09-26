@@ -105,17 +105,18 @@ frame semantics belong to the protocol crate.
 | --- | --- | --- |
 | `ieee802154_common_ll.h`: command, event, abort, address, policy, ED, timer, security, pending, status, enhanced-ACK and diagnostic-counter accessors | PAC `ieee802154` | implemented: one typed transaction per accessor on the task register lease, alongside the composite configuration transactions built from the same steps. The diagnostic counters read the sixteen-bit field of `ieee802154_reg.h`; the public struct reads the complete word of the single-counter registers |
 | `ieee802154_ll.h` (S31): `IEEE802154_RSSI_COMPENSATION_VALUE` 0, receive sensitivity -104 | driver | absent |
-| `ieee802154_mac_init` / `deinit`, `ieee802154_enable` / `disable` | HAL IEEE 802.15.4 lifecycle | partial: clocks, reset and masked foundation; the driver instead enables its event set and interrupt at init |
-| `ieee802154_pib_*`, `ieee802154_pib_update` | HAL policy | partial: fixed channel, CCA, ACK timeout, control flags and primary PAN identity; no mutable PIB, TX power, pending mode or `rx_when_idle` |
+| `ieee802154_mac_init` / `deinit`, `ieee802154_enable` / `disable` | HAL IEEE 802.15.4 lifecycle, HAL `ll` | partial: clocks, reset and masked foundation; `ll::mac_init_registers` ports the event, abort, ED-sample and coexistence-PTI steps; `ieee802154_txon_delay_set` and interrupt allocation are not composed. `deinit` writes no MAC register |
+| `ieee802154_pib_*`, `ieee802154_pib_update` | HAL `pib` | implemented: mutable PIB with pending mark, per-channel power resolved through the external level provider, pending mode and `rx_when_idle`; the driver still uses the fixed HAL policy |
 | `start_ed`, `tx_init`, `rx_init`, `ieee802154_transmit`, `receive`, `energy_detect`, `cca` | HAL operation starts, driver entry points | partial: single operations without `stop_current_operation` |
-| `stop_rx` ... `stop_ed`, `stop_current_operation` | HAL | absent |
+| `event_end_process` register steps | HAL `ll` | implemented |
+| `stop_rx` ... `stop_ed`, `stop_current_operation` | driver MAC engine over HAL `ll` | absent |
 | `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver MAC engine | partial: a per-operation actor handles RX without auto-ACK, TX with and without ACK, ED and CCA; no auto-ACK, enhanced ACK, `rx_when_idle` or stop |
 | RX buffer ring, `set_next_rx_buffer`, frame info | driver DMA ownership | partial: pinned RX pool and TX buffer |
-| `esp_ieee802154_timer.c` | HAL timers, driver callbacks | partial: ACK watchdog on timer zero |
-| `ieee802154_transmit_at`, `receive_at` (timer and ETM) | driver | absent |
+| `esp_ieee802154_timer.c` | HAL `ll` timers, driver callbacks | partial: HAL start, stop, threshold and `fire_at` for both timers; callbacks absent |
+| `ieee802154_transmit_at`, `receive_at` (timer and ETM) | driver over HAL `ll` | partial: HAL ETM channel clear and event/task routes on the shared `MODEM_ETM`; driver entry points absent |
 | `esp_ieee802154_ack.c` pending table and `ack_config_pending_bit` | protocol pending table, driver selection | absent |
 | `esp_ieee802154_frame.c` | protocol frame parsing | partial: frame control and ACK request only |
-| `esp_ieee802154_sec.c` | driver over PAC security | partial: PAC transaction only |
+| `esp_ieee802154_sec.c` | driver over PAC security | partial: PAC transactions and HAL `ll::sec_clear` |
 | `esp_ieee802154_multipan.c` | HAL policy, driver | partial: PAC multi-PAN fields |
 | `esp_ieee802154_event.c` callbacks | runtime event handoff | partial: acknowledged-interrupt queue |
 | `esp_ieee802154_util.c` coexistence scenes, channel conversion | coexistence driver, HAL | partial: channel conversion only |

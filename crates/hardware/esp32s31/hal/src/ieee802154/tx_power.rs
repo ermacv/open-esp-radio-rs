@@ -89,6 +89,11 @@ impl<'levels> Ieee802154TxPowerLevels<'levels> {
         self.levels_dbm.len()
     }
 
+    /// Return the final, highest provider level (`IEEE802154_TXPOWER_VALUE_MAX`).
+    pub const fn highest_dbm(self) -> i8 {
+        self.levels_dbm[self.levels_dbm.len() - 1]
+    }
+
     /// A validated provider level set is never empty.
     pub const fn is_empty(self) -> bool {
         false
@@ -140,7 +145,7 @@ impl<'levels> Ieee802154TxPowerLevels<'levels> {
 pub(crate) struct Ieee802154TxPowerCode(u8);
 
 impl Ieee802154TxPowerCode {
-    const fn value(&self) -> u8 {
+    pub(crate) const fn value(&self) -> u8 {
         self.0
     }
 }

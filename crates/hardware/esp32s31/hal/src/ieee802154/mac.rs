@@ -14,7 +14,7 @@
 use oer_esp32s31_pac::{
     Ieee802154InterruptRegisters as PacInterruptRegisters,
     Ieee802154InterruptSetup as PacInterruptSetup, Ieee802154MacCommand as PacMacCommand,
-    Ieee802154TaskRegisters as PacTaskRegisters,
+    Ieee802154RegisterLease as PacRegisterLease, Ieee802154TaskRegisters as PacTaskRegisters,
     Ieee802154Timer0ThresholdWord as PacTimer0ThresholdWord,
 };
 
@@ -82,6 +82,11 @@ impl Ieee802154TaskOwner {
 
     pub(crate) fn into_parts(self) -> (PacTaskRegisters, PhyRouteState) {
         (self.registers, self.phy_state)
+    }
+
+    /// Borrow the PAC task lease for one low-level accessor.
+    pub(crate) fn lease(&mut self) -> PacRegisterLease<'_> {
+        self.registers.ieee802154_register_lease()
     }
 
     /// Republish the complete static policy, fence it and prove the sampled

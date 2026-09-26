@@ -170,3 +170,23 @@ fn classification_stops_at_the_retention_bound() {
         );
     });
 }
+
+#[test]
+fn a_staged_successor_leaves_the_fifo_backlog_at_the_source() {
+    let (source, mut publish) = source::<8>();
+    let source = &source;
+    let mut ap = access_point!();
+    with_authorized_ap(|engine| {
+        let fifo = Fifo::<_>(source);
+        publish(AGGREGATING, 0);
+        publish(SINGLE, 1);
+        // Model the successor staged during the active exchange.
+        ap.prepared_first_key = Some(super::super::ApTxFlowKey::unbound_from_ethernet(
+            &[AGGREGATING; 6],
+        ));
+        ap.classify_network_backlog(engine, &fifo).unwrap();
+        assert_eq!(fifo.queue_len(), 2);
+        assert_eq!(ap.active_frames.len(), 0);
+        ap.prepared_first_key = None;
+    });
+}

@@ -404,12 +404,15 @@ where
     /// Each owner leaves the source only after its retention credit is known
     /// to exist, so a full arena leaves the remaining backlog in place. A
     /// source with destination queues is already classified and stays intact.
+    /// A staged successor already fixes the next destination, so its demand
+    /// does not depend on the backlog; the saturated chain then keeps owners
+    /// at the source for the successor's own matching claims.
     pub(in super::super) fn classify_network_backlog(
         &mut self,
         engine: &mut ApEngine<'_>,
         network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<(), AccessPointDatapathError> {
-        if network.destination_queues().is_some() {
+        if network.destination_queues().is_some() || self.prepared_destination().is_some() {
             return Ok(());
         }
         for _ in 0..network.queue_len() {

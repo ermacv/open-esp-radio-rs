@@ -5,7 +5,6 @@ use hil_core::{
     lab::link::{HtGuardIntervalExpectation, PhyExpectation},
     scenario::bounded,
 };
-use oer_hil_protocol::StationPauseOperation;
 use serde::{Deserialize, Serialize};
 
 use super::{CORE0_RX_CYCLE_MAX_DURATION_SECONDS, Direction, LinkExpectation, Offer, RateFloors};
@@ -18,9 +17,6 @@ pub struct StationUdp {
     pub duration_seconds: u16,
     pub payload_bytes: u16,
     pub offer: Offer,
-    /// A PHY maintenance operation during traffic.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub maintenance: Option<StationMaintenance>,
     /// Fix the OpenWrt AP's transmit guard interval to the link's strict
     /// expectation. A diagnostic fixture mutation, not an expectation.
     #[serde(default)]
@@ -57,39 +53,6 @@ pub enum ProtectionPeer {
     /// The laptop hosts an 802.11b BSS on the AP's channel: the AP observes
     /// an overlapping legacy BSS and sets ERP Use_Protection.
     OverlappingLegacyBss,
-}
-
-/// A PHY maintenance transaction requested while station UDP flows.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct StationMaintenance {
-    pub operation: StationPauseOperation,
-    /// Delay after both traffic endpoints report progress and before the
-    /// request, keeping thermal preconditioning explicit instead of relying
-    /// on an unrecorded host sleep.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub after_millis: Option<u32>,
-    /// Repeated fresh-temperature/RFPLL transactions used to observe the
-    /// first nonzero thermal correction.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub attempts: Option<MaintenanceAttempts>,
-    /// Require the observed RFPLL operation to cross its thermal threshold
-    /// and commit a nonzero capacitor correction with frequency-memory
-    /// restore.
-    #[serde(default)]
-    pub require_nonzero_rfpll_correction: bool,
-    /// Require a fresh ICMP exchange after completed maintenance in the same
-    /// link epoch.
-    #[serde(default)]
-    pub require_post_maintenance_echo: bool,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct MaintenanceAttempts {
-    pub count: u8,
-    /// Host-side delay between bounded observation attempts.
-    pub interval_millis: u32,
 }
 
 /// Independent air observers of the station link.
@@ -149,9 +112,6 @@ impl StationUdp {
             .into());
         }
         let direction = self.offer.direction();
-        if let Some(maintenance) = &self.maintenance {
-            maintenance.validate(self.duration_seconds, direction)?;
-        }
         let criteria = self.criteria;
         criteria.floors().validate(self.offer)?;
         driver_observed_criteria(
@@ -183,7 +143,6 @@ impl StationUdp {
                         | ImageClass::DiagnosticTaskResidence
                         | ImageClass::DiagnosticTaskPoll
                         | ImageClass::DiagnosticRxDelivery
-                        | ImageClass::DiagnosticRxDeliveryPhyHotSram
                         | ImageClass::DiagnosticCore0RxCoarse
                         | ImageClass::DiagnosticCore0RxCycles
                 ))
@@ -245,15 +204,6 @@ impl StationUdp {
         if self.criteria.maximum_rx_silence_ms.is_some() {
             checks.push("udp.rx.maximum-silence");
         }
-        if let Some(maintenance) = &self.maintenance {
-            checks.extend([
-                "wifi.maintenance.transaction-valid",
-                "wifi.maintenance.same-link",
-            ]);
-            if maintenance.require_post_maintenance_echo {
-                checks.push("wifi.maintenance.ip-exchange-resumed");
-            }
-        }
     }
 }
 
@@ -263,56 +213,6 @@ pub const PROTECTION_CHECKS: [&str; 3] = [
     "wifi.protection.control-rate",
     "wifi.protection.nav-covers-exchange",
 ];
-
-impl StationMaintenance {
-    fn validate(&self, duration_seconds: u16, direction: Direction) -> Result<()> {
-        if let StationPauseOperation::Synthetic {
-            duration_micros, ..
-        } = self.operation
-        {
-            bounded(duration_micros, 1, 200_000, "synthetic duration_micros")?;
-        }
-        if duration_seconds < 12 {
-            return Err("maintenance requires at least 12 seconds of station UDP".into());
-        }
-        if self.require_nonzero_rfpll_correction
-            && self.operation != StationPauseOperation::RfpllObserved
-        {
-            return Err(
-                "require_nonzero_rfpll_correction requires the RFPLL-observed operation".into(),
-            );
-        }
-        if self.require_post_maintenance_echo && direction != Direction::Rx {
-            return Err("post-maintenance echo requires station UDP RX".into());
-        }
-        let mut repeated_wait_millis = 0;
-        if let Some(attempts) = self.attempts {
-            bounded(attempts.count, 2, 60, "maintenance.attempts.count")?;
-            bounded(
-                attempts.interval_millis,
-                100,
-                5_000,
-                "maintenance.attempts.interval_millis",
-            )?;
-            if !self.require_nonzero_rfpll_correction || self.after_millis.is_none() {
-                return Err("repeated maintenance attempts require strict RFPLL-observed qualification after an explicit cold traffic interval".into());
-            }
-            repeated_wait_millis = attempts
-                .interval_millis
-                .saturating_mul(u32::from(attempts.count - 1));
-        }
-        if let Some(delay_millis) = self.after_millis
-            && (delay_millis == 0
-                || delay_millis
-                    .saturating_add(repeated_wait_millis)
-                    .saturating_add(2_000)
-                    > u32::from(duration_seconds).saturating_mul(1_000))
-        {
-            return Err("maintenance.after_millis must be nonzero and leave at least two seconds for maintenance and restored traffic".into());
-        }
-        Ok(())
-    }
-}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -431,14 +331,6 @@ pub enum RoleOperation {
         #[serde(default = "one_cycle")]
         cycles: u8,
     },
-    MaintenanceRestart {
-        #[serde(default = "one_cycle")]
-        cycles: u8,
-    },
-    Retained {
-        #[serde(default = "one_cycle")]
-        cycles: u8,
-    },
     Scan {},
     Monitor {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -478,9 +370,7 @@ const fn default_snapshot_length() -> u16 {
 impl RoleOperation {
     pub(super) fn validate(self) -> Result<()> {
         match self {
-            Self::Restart { cycles }
-            | Self::MaintenanceRestart { cycles }
-            | Self::Retained { cycles } => bounded(cycles, 1, 10, "cycles"),
+            Self::Restart { cycles } => bounded(cycles, 1, 10, "cycles"),
             Self::Monitor {
                 channel,
                 dwell_seconds,

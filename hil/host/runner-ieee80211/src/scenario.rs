@@ -33,7 +33,7 @@ pub mod station;
 pub use access_point::{AccessPoint, AccessPointClients, AccessPointTraffic};
 pub use station::{
     AirObservation, InducedProtection, ProtectionPeer, RoleOperation, StationIcmp,
-    StationMaintenance, StationReconnect, StationTcp, StationUdp,
+    StationReconnect, StationTcp, StationUdp,
 };
 
 // Diagnostic phase totals use u32 cycle accumulators. At 320 MHz, 12 seconds
@@ -196,10 +196,6 @@ pub enum WifiWorkload {
         timeout_seconds: u16,
         operation: RoleOperation,
     },
-    /// PHY fault injection on its diagnostic image.
-    PhyWatchdog {
-        link: LinkExpectation,
-    },
     MonitorCapture {
         link: LinkExpectation,
         timeout_seconds: u16,
@@ -233,7 +229,6 @@ impl WifiWorkload {
             Self::StationApLoss { link, .. }
             | Self::StationApAbsence { link, .. }
             | Self::Role { link, .. }
-            | Self::PhyWatchdog { link }
             | Self::MonitorCapture { link, .. }
             | Self::StationAccessPointReconnect { link, .. } => Some(*link),
         }
@@ -282,16 +277,6 @@ impl WifiScenario {
                 bounded(*timeout_seconds, 10, 180, "timeout_seconds")?;
                 operation.validate()?;
             }
-            WifiWorkload::PhyWatchdog { .. } => {
-                if image != ImageClass::DiagnosticPhyFault
-                    || self.datapath.placement != WifiDataPlanePlacement::SplitRadioNetwork
-                {
-                    return Err(
-                        "PHY watchdog requires its diagnostic image and the split data plane"
-                            .into(),
-                    );
-                }
-            }
             WifiWorkload::MonitorCapture {
                 timeout_seconds,
                 duration_seconds,
@@ -319,11 +304,6 @@ impl WifiScenario {
                 "RX ownership observation requires a TCP workload with a bounded measurement window"
                     .into(),
             );
-        }
-        if image == ImageClass::DiagnosticPhyFault
-            && !matches!(self.workload, WifiWorkload::PhyWatchdog { .. })
-        {
-            return Err("the PHY fault image runs only the PHY watchdog workload".into());
         }
         if image == ImageClass::Performance
             && !matches!(
@@ -522,7 +502,6 @@ impl WifiScenario {
             | WifiWorkload::StationIcmp(_)
             | WifiWorkload::StationReconnect(_)
             | WifiWorkload::Role { .. }
-            | WifiWorkload::PhyWatchdog { .. }
             | WifiWorkload::MonitorCapture { .. } => {}
         }
         checks.sort_unstable();
@@ -545,40 +524,6 @@ impl WifiScenario {
                 access_point: matches!(self.workload, WifiWorkload::AccessPoint(_)),
             },
         }
-    }
-
-    /// The single supported controlled experiment: station UDP RX with a
-    /// PHY maintenance operation against the same workload without it. The
-    /// firmware, link, traffic, observation and absolute acceptance policy
-    /// must be equal.
-    pub fn validate_control(&self, control: &Self) -> Result<()> {
-        let (WifiWorkload::StationUdp(experiment), WifiWorkload::StationUdp(baseline)) =
-            (&self.workload, &control.workload)
-        else {
-            return Err("a controlled comparison requires two station UDP workloads".into());
-        };
-        if experiment.maintenance.is_none()
-            || baseline.maintenance.is_some()
-            || !experiment.offer.receive_only()
-        {
-            return Err(
-                "PHY comparison requires station UDP RX with maintenance and a control without it"
-                    .into(),
-            );
-        }
-        let mut normalized = self.clone();
-        if let WifiWorkload::StationUdp(workload) = &mut normalized.workload {
-            workload.maintenance = None;
-        }
-        if normalized != *control {
-            return Err("control differs beyond the PHY maintenance intervention".into());
-        }
-        Ok(())
-    }
-
-    /// Host tools this workload needs beyond its laboratory requirements.
-    pub fn requires_packet_decoder(&self) -> bool {
-        matches!(&self.workload, WifiWorkload::StationUdp(workload) if workload.maintenance.is_some())
     }
 
     pub fn run(&self, output: &Path, context: &Context<'_>, fixture: &Prepared) -> Result<()> {

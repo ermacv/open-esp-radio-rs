@@ -50,12 +50,9 @@ static ANOMALIES: Mutex<
     oer_hil_esp32s31_telemetry::rx_anomaly::Records::new(),
 ));
 #[cfg(feature = "driver-observation")]
-pub(crate) static MAINTENANCE_PHASE: AtomicU32 = AtomicU32::new(0);
-#[cfg(feature = "driver-observation")]
 pub(crate) fn begin_anomalies(session: u64) {
     ANOMALIES.lock(|r| r.borrow_mut().begin(session));
     ARP.lock(|r| r.borrow_mut().begin(session));
-    MAINTENANCE_PHASE.store(0, Ordering::Relaxed);
 }
 #[cfg(feature = "driver-observation")]
 pub(crate) fn end_anomalies(session: u64) -> (Option<u32>, Option<u32>) {
@@ -278,7 +275,6 @@ impl ConnectedRxObserver for HilConnectedRxObserver {
                         RX_PHY.observe_other();
                         let sample = oer_hil_esp32s31_telemetry::rx_anomaly::Sample {
                             observed_us: embassy_time::Instant::now().as_micros(),
-                            phase: MAINTENANCE_PHASE.load(Ordering::Relaxed),
                             udp_sequence: ipv4_udp_sequence(frame, self.udp_port),
                             ip_bytes: frame.payload.len(),
                             qos: qos_sequence.map(|q| (q.tid, q.sequence)),

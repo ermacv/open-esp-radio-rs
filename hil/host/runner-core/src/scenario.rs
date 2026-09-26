@@ -51,25 +51,19 @@ pub struct Header {
     pub transfer: TransferPolicy,
     #[serde(default)]
     pub tags: Vec<String>,
-    /// The contemporaneous control of a controlled experiment. A control is
-    /// an execution input, never a qualification prerequisite, and its result
-    /// never applies to another firmware image.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub control: Option<String>,
 }
 
 const fn one_repetition() -> u8 {
     1
 }
 
-const HEADER_FIELDS: [&str; 7] = [
+const HEADER_FIELDS: [&str; 6] = [
     "schema",
     "id",
     "description",
     "repetitions",
     "transfer",
     "tags",
-    "control",
 ];
 
 impl Header {
@@ -103,13 +97,7 @@ impl Header {
         if self.description.trim().is_empty() {
             return Err("scenario description is empty".into());
         }
-        bounded(self.repetitions, 1, 20, "repetitions")?;
-        if let Some(control) = &self.control
-            && (!valid_id(control) || *control == self.id)
-        {
-            return Err(format!("invalid control `{control}`").into());
-        }
-        Ok(())
+        bounded(self.repetitions, 1, 20, "repetitions")
     }
 }
 
@@ -155,10 +143,6 @@ pub trait ScenarioFamily: Clone + Debug + Eq + Serialize + DeserializeOwned {
     fn validate(&self) -> Result<()>;
 
     fn plan(&self) -> Plan;
-
-    /// Accept `control` as this experiment's contemporaneous control: the
-    /// two must differ only by the family's supported intervention.
-    fn validate_control(&self, control: &Self) -> Result<()>;
 }
 
 /// One validated scenario document.
@@ -219,10 +203,6 @@ impl<F: ScenarioFamily> Scenario<F> {
 
     pub fn repetitions(&self) -> u8 {
         self.header.repetitions
-    }
-
-    pub fn control(&self) -> Option<&str> {
-        self.header.control.as_deref()
     }
 
     pub fn plan(&self) -> Plan {

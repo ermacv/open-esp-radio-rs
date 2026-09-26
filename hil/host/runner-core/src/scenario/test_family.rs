@@ -25,13 +25,13 @@ pub(crate) struct OpaqueWifi {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum TestWorkload {
     BootSmoke,
-    /// A network workload with one optional intervention, for requirement,
-    /// check and controlled-comparison tests.
+    /// A network workload with one optional check, for requirement and
+    /// named-check tests.
     Network {
         #[serde(default)]
         station_network: bool,
         #[serde(default)]
-        maintenance: bool,
+        silence: bool,
         #[serde(default)]
         load: u32,
     },
@@ -55,35 +55,17 @@ impl ScenarioFamily for TestFamily {
             TestWorkload::BootSmoke => Plan::target_only(ImageClass::BootSmoke),
             TestWorkload::Network {
                 station_network,
-                maintenance,
+                silence,
                 load: _,
             } => {
                 let mut plan = Plan::target_only(ImageClass::Correctness);
                 plan.requirements.station_network = *station_network;
                 plan.checks.push("udp.rx.target-rate");
-                if *maintenance {
-                    plan.checks.push("wifi.maintenance.same-link");
+                if *silence {
+                    plan.checks.push("udp.rx.maximum-silence");
                 }
                 plan
             }
-        }
-    }
-
-    fn validate_control(&self, control: &Self) -> Result<()> {
-        match (self, control) {
-            (
-                Self::System(TestWorkload::Network {
-                    station_network,
-                    maintenance: true,
-                    load,
-                }),
-                Self::System(TestWorkload::Network {
-                    station_network: control_network,
-                    maintenance: false,
-                    load: control_load,
-                }),
-            ) if station_network == control_network && load == control_load => Ok(()),
-            _ => Err("control differs beyond the maintenance intervention".into()),
         }
     }
 }
@@ -93,17 +75,17 @@ pub(crate) fn scenario(text: &str) -> super::Scenario<TestFamily> {
     super::Scenario::from_toml(text, std::path::Path::new("test.toml")).unwrap()
 }
 
-/// A catalog with a boot scenario and one experiment/control pair.
+/// A catalog with a boot scenario and two network scenarios, one of which
+/// publishes an additional check.
 pub(crate) fn catalog() -> super::Catalog<TestFamily> {
     super::Catalog::new(
         [
-            "schema = 5\nid = \"baseline\"\ndescription = \"control\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\n",
+            "schema = 5\nid = \"throughput\"\ndescription = \"rate only\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\n",
             "schema = 5\nid = \"boot-smoke\"\ndescription = \"boot\"\n[system]\nkind = \"boot-smoke\"\n",
-            "schema = 5\nid = \"experiment\"\ndescription = \"intervention\"\ncontrol = \"baseline\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\nmaintenance = true\n",
+            "schema = 5\nid = \"silence\"\ndescription = \"rate and silence\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\nsilence = true\n",
         ]
         .into_iter()
         .map(scenario)
         .collect(),
     )
-    .unwrap()
 }

@@ -520,7 +520,10 @@ fn a_scheduler_detour_is_not_charged_to_return_latency() {
     assert_eq!(timing.additional_passes.micros, 600);
     assert_eq!(timing.stop_poll.micros, 1);
     let delta = counters.snapshot().wrapping_delta_since(before);
-    assert_eq!(delta.completion_to_publication_histogram, [0, 0, 0, 0, 1, 0]);
+    assert_eq!(
+        delta.completion_to_publication_histogram,
+        [0, 0, 0, 0, 1, 0]
+    );
     assert_eq!(delta.unprepared_publication_samples, 0);
 }
 
@@ -542,7 +545,10 @@ fn publication_latency_is_bucketed_and_unprepared_successors_are_counted() {
         program_micros: 4,
     });
     let delta = counters.snapshot().wrapping_delta_since(before);
-    assert_eq!(delta.completion_to_publication_histogram, [0, 0, 0, 0, 0, 1]);
+    assert_eq!(
+        delta.completion_to_publication_histogram,
+        [0, 0, 0, 0, 0, 1]
+    );
     assert_eq!(delta.unprepared_publication_samples, 1);
     assert_eq!(delta.unprepared_publication_micros, 2_500);
     assert_eq!(delta.prepared_scheduler_timing.samples, 0);
@@ -552,8 +558,8 @@ fn publication_latency_is_bucketed_and_unprepared_successors_are_counted() {
 fn partial_block_acks_are_attributed_to_original_positions() {
     let counters = AggregateTxCounters::new();
     let before = counters.snapshot();
-    let block_ack = |subframes, missing_original_indices| {
-        AggregateTxObservation::BlockAckProcessed {
+    let block_ack =
+        |subframes, missing_original_indices| AggregateTxObservation::BlockAckProcessed {
             tx_status: 0,
             block_ack_received: true,
             control: 0,
@@ -561,8 +567,7 @@ fn partial_block_acks_are_attributed_to_original_positions() {
             starting_sequence: SequenceNumber::new(0).unwrap(),
             subframes,
             missing_original_indices,
-        }
-    };
+        };
     // First publication loses positions 3 and 31; its compacted retry then
     // loses original position 31 again.
     counters.observe(block_ack(32, 1 << 3 | 1 << 31));

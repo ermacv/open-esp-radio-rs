@@ -720,7 +720,7 @@ fn validate_capability_declaration_inner(
 ) -> Result<ValidatedDeclaration> {
     let id = slug(&document.id, "capability id")?;
     source_contract::validate(&document.source_contracts, context.root)?;
-    crate::hil::review::validate(context.root, document, context.scenario_catalog)?;
+    crate::hil::review::validate(context.root, document)?;
     document
         .development
         .validate(&document.gaps, context.root)?;

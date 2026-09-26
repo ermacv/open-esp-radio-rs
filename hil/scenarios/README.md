@@ -17,7 +17,6 @@ description = "..."
 repetitions = 3                 # default 1
 transfer = "identical-image"    # default unchanged-functional-contract
 tags = ["he20"]
-control = "udp-rx-he20-ceiling" # controlled experiments only
 
 [wifi]                          # or [bluetooth], [system], [ieee802154]
 image = "correctness"
@@ -28,9 +27,6 @@ link = { phy = "he20" }
 duration_seconds = 16
 payload_bytes = 1472
 offer = { rx_bps = 50000000 }
-
-[wifi.workload.maintenance]
-operation = "calibration"
 
 [wifi.workload.criteria]
 minimum_rx_bps = 45000000
@@ -58,34 +54,15 @@ traffic phases, counting `repetitions` times workload `cycles`, and no
 itself, tagged `soak` or `thermal`, are exempt. A catalog test enforces this
 budget.
 
-## Controlled experiments
-
-An optional top-level `control` names the control scenario. The experiment is
-station UDP RX with a `[wifi.workload.maintenance]` operation; its control has
-none. Link, traffic, image, data path, observers, fixture mutations,
-repetitions and absolute criteria must match. Only identity, description, tags
-and the maintenance table may differ. Controls cannot
-themselves name controls. Both catalog consumers validate this relation.
-
-`cargo hil plan` includes the control, without adding qualification prerequisite
-suites. A control is an execution relation, not inherited evidence that all
-Wi-Fi behavior is correct. Qualification requires the experiment and control
-to pass in the same eligible sealed run with equal repetition counts. This is
-not a relative non-regression criterion, and HT40 evidence does not establish
-the corresponding HE20 integration.
-
 ## Named checks
 
 Named checks are derived from implemented workload behavior and explicit
 criteria, not tags. Station UDP RX exposes `udp.rx.target-rate` and
 `udp.rx.host-offer-rate` when an RX rate floor is configured;
-`udp.rx.maximum-silence` requires an explicit silence limit. With maintenance,
-the workload also records `wifi.maintenance.transaction-valid` and
-`wifi.maintenance.same-link`. The latter checks the station lifecycle through
-the observed session; it is not a standalone proof of RF quality or throughput.
-Qualification can require these observations by name without duplicating their
-thresholds. `cargo hil plan --proof NAME` filters candidates before expanding
-control relations. It never fills in missing observations from a suite PASS.
+`udp.rx.maximum-silence` requires an explicit silence limit. Qualification can
+require these observations by name without duplicating their thresholds.
+`cargo hil plan --proof NAME` filters candidates. It never fills in missing
+observations from a suite PASS.
 
 Both the runner and the independent qualification evaluator discover regular
 TOML files recursively. The filename stem must equal the document ID. IDs are
@@ -104,16 +81,6 @@ workload criteria and repetition count.
 
 Synthetic serialized compatibility inputs live in `hil/tests/fixtures/catalog`.
 They are used by both independent readers and are not part of this catalog.
-
-`maintenance.require_post_maintenance_echo = true` is supported only by station
-UDP RX. It adds
-`wifi.maintenance.ip-exchange-resumed`: three fresh ICMP exchanges after a
-successful maintenance result and completion of the original UDP session, within
-the same captured station epoch. Missing or partial exchange fails the scenario;
-`same-link` alone cannot substitute for it. The bounded reply timeout detects
-failure and is not an RF execution-time claim. The
-[HT20 continuity scenario](ieee80211/station/station-phy-maintenance-continuity.toml)
-keeps this functional property separate from existing throughput/latency gates.
 
 ### BSS protection
 

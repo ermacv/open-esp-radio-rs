@@ -127,9 +127,6 @@ pub(super) fn assess(
     if !observer_matches(source, &review.scenario) {
         return Ok("source-observer-identity-not-established");
     }
-    if !original_control_passed(source, requirement, index, catalog, &observer_matches) {
-        return Ok("source-control-not-passed");
-    }
     let sensitive = binding.image_sensitive;
     if (review.kind == Kind::IdenticalImage || sensitive)
         && review.source.application_sha256 != review.destination.application_sha256
@@ -182,13 +179,6 @@ pub(super) fn assess(
                 || !passed(resolved, requirement, catalog)
                 || !image_matches(resolved, &review.destination)
                 || !observer_matches(resolved, &review.scenario)
-                || !original_control_passed(
-                    resolved,
-                    requirement,
-                    index,
-                    catalog,
-                    &observer_matches,
-                )
             {
                 return Ok("failure-resolution-not-established");
             }
@@ -272,29 +262,4 @@ pub(super) fn failed(
                         .any(|m| checks::assess(name, c, m) == checks::Assessment::Failed)
                 })
         })
-}
-
-fn original_control_passed(
-    observation: &ScenarioEvidence,
-    requirement: &HilRequirement,
-    index: &HilEvidenceIndex,
-    catalog: &ScenarioCatalog,
-    observer_matches: &impl Fn(&ScenarioEvidence, &str) -> bool,
-) -> bool {
-    catalog.control_for(&requirement.scenario).is_none_or(|id| {
-        let control = HilRequirement {
-            scenario: id.into(),
-            checks: Vec::new(),
-            minimum_repetitions: requirement.minimum_repetitions,
-        };
-        index.scenarios.get(id).is_some_and(|records| {
-            records.iter().any(|r| {
-                r.run_id == observation.run_id
-                    && r.repetitions == observation.repetitions
-                    && observer_matches(r, id)
-                    && procedure::matches(r, &control, catalog).unwrap_or(false)
-                    && passed(r, &control, catalog)
-            })
-        })
-    })
 }

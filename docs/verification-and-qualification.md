@@ -207,8 +207,7 @@ evidence only when:
    property-scoped applicability review binds that observation to the destination
    build and the current reviewed owner inputs;
 7. no applicable failure of that scenario or its repetitions remains unresolved;
-8. selected named checks satisfy their current criteria and any required control
-   is satisfied with a matching repetition set in that same run.
+8. selected named checks satisfy their current criteria.
 
 The evaluator checks recorded measurement verdicts against their original
 thresholds independently of the requested criteria. Sufficient numeric

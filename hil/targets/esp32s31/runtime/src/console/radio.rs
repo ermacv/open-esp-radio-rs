@@ -194,15 +194,6 @@ pub async fn complete_wifi_radio_restart(
     wait_until_serialized(sequence).await;
 }
 
-pub async fn complete_wifi_radio_retained_cycle(
-    request_id: u32,
-    evidence: oer_hil_protocol::WifiRadioRetainedCycleEvidence,
-) {
-    let sequence =
-        queue_event_reliably(0, request_id, Event::WifiRadioRetainedCycled(evidence)).await;
-    wait_until_serialized(sequence).await;
-}
-
 pub async fn complete_wifi_scan(request_id: u32, evidence: WifiScanEvidence) {
     let sequence = queue_event_reliably(0, request_id, Event::WifiScanCompleted(evidence)).await;
     wait_until_serialized(sequence).await;
@@ -295,37 +286,4 @@ pub async fn complete_session(
             passed,
         })
         .await;
-}
-
-/// Correlated result of the same-connection physical pause request.
-pub async fn complete_station_pause(
-    request_id: u32,
-    evidence: oer_hil_protocol::StationPauseEvidence,
-    tx_waits: Option<oer_hil_protocol::PhyTxWaitEvidence>,
-    timer: Option<oer_hil_protocol::TimerWindowEvidence>,
-    service: Option<oer_hil_protocol::StationTrackingServiceEvidence>,
-    temperature: Option<oer_hil_protocol::TemperatureEvidence>,
-    rfpll: Option<oer_hil_protocol::RfpllEvidence>,
-) {
-    if let Some(temperature) = temperature {
-        publish_event_reliably(
-            0,
-            request_id,
-            Event::StationTemperatureObserved(temperature),
-        )
-        .await;
-    }
-    if let Some(rfpll) = rfpll {
-        publish_event_reliably(0, request_id, Event::StationRfpllObserved(rfpll)).await;
-    }
-    if let Some(waits) = tx_waits {
-        publish_event_reliably(0, request_id, Event::StationPhyTxWaits(waits)).await;
-    }
-    if let Some(timer) = timer {
-        publish_event_reliably(0, request_id, Event::StationTimerObserved(timer)).await;
-    }
-    if let Some(service) = service {
-        publish_event_reliably(0, request_id, Event::StationTrackingService(service)).await;
-    }
-    publish_event_reliably(0, request_id, Event::StationPauseCompleted(evidence)).await;
 }

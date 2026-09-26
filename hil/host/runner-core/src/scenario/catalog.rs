@@ -87,34 +87,12 @@ impl<F: ScenarioFamily> Catalog<F> {
         }
         // Order by identity, independent of domain-folder placement.
         scenarios.sort_by(|left, right| left.id().cmp(right.id()));
-        Self::new(scenarios)
+        Ok(Self::new(scenarios))
     }
 
-    /// Build a catalog from validated scenarios and check every
-    /// experiment/control relation.
-    pub fn new(scenarios: Vec<Scenario<F>>) -> Result<Self> {
-        let catalog = Self { scenarios };
-        for experiment in catalog.all() {
-            let Some(control) = experiment.control() else {
-                continue;
-            };
-            let control = catalog.get(control)?;
-            if control.control().is_some() {
-                return Err(format!(
-                    "{}: control {} must be an independent scenario",
-                    experiment.id(),
-                    control.id()
-                )
-                .into());
-            }
-            experiment
-                .family
-                .validate_control(&control.family)
-                .map_err(|error| {
-                    format!("{}: control {}: {error}", experiment.id(), control.id())
-                })?;
-        }
-        Ok(catalog)
+    /// Build a catalog from validated scenarios.
+    pub fn new(scenarios: Vec<Scenario<F>>) -> Self {
+        Self { scenarios }
     }
 
     pub fn all(&self) -> &[Scenario<F>] {

@@ -16,7 +16,6 @@ use embassy_futures::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, with_timeout};
-use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154_runtime::{
     Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
 };
@@ -25,6 +24,7 @@ use oer_esp32s31_ieee802154_system::{
 };
 use oer_esp32s31_phy::ConcurrentTrackingTick;
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
+use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{
     Event as HilEvent, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirTxOutcome,
@@ -46,7 +46,7 @@ use crate::console::{
     Ieee802154SessionCommand, publish_event_reliably, receive_ieee802154_session_command,
 };
 
-type Radio = RadioSystem<EspHalRadioPeripheral, EspHalRadioClocks>;
+type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
 
 /// Bound on one transmission's terminal event, over its retries.
 const TRANSMIT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -374,7 +374,7 @@ async fn track_until(
 
 /// Run one peer session until the host stops it. The image is terminal.
 pub(in crate::product_hil) async fn run_session(
-    platform: EspHalRadioPeripheral,
+    platform: EspHalRadioPlatform,
     request_id: u32,
     config: Ieee802154SessionConfig,
 ) {

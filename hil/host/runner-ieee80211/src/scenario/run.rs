@@ -67,9 +67,6 @@ pub(super) fn execute(
             let (operation, config) = role(*operation, seconds(*timeout_seconds));
             ieee80211::control::run(operation, config, output, context, link.phy)
         }
-        WifiWorkload::PhyWatchdog { link } => {
-            ieee80211::phy_watchdog::run(output, context, link.phy)
-        }
         WifiWorkload::MonitorCapture {
             link,
             timeout_seconds,
@@ -101,10 +98,7 @@ pub(super) fn execute(
                 link: workload.link,
                 capture_independent_laptop_air_monitor: workload.independent_air_monitor,
                 require_driver_observation: image.requires_driver_observation(),
-                require_rx_delivery_evidence: matches!(
-                    image,
-                    ImageClass::DiagnosticRxDelivery | ImageClass::DiagnosticRxDeliveryPhyHotSram
-                ),
+                require_rx_delivery_evidence: matches!(image, ImageClass::DiagnosticRxDelivery),
             },
             output,
             context,
@@ -268,15 +262,6 @@ fn station_udp_traffic(
     let payload = usize::from(workload.payload_bytes);
     let link = workload.link;
     let criteria = workload.criteria;
-    let millis = |value: Option<u32>| Duration::from_millis(u64::from(value.unwrap_or(0)));
-    let maintenance = workload.maintenance;
-    let station_pause = maintenance.map(|maintenance| maintenance.operation);
-    let station_pause_after = millis(maintenance.and_then(|maintenance| maintenance.after_millis));
-    let attempts = maintenance.and_then(|maintenance| maintenance.attempts);
-    let station_pause_attempts = attempts.map_or(1, |attempts| attempts.count);
-    let station_pause_interval = millis(attempts.map(|attempts| attempts.interval_millis));
-    let require_nonzero_rfpll_correction =
-        maintenance.is_some_and(|maintenance| maintenance.require_nonzero_rfpll_correction);
     let fixture_guard_interval = if workload.fixed_fixture_guard_interval {
         link.guard_interval
     } else {
@@ -285,14 +270,7 @@ fn station_udp_traffic(
     match workload.offer.direction() {
         Direction::Rx => traffic::rx_traffic::run(
             traffic::rx_traffic::Config {
-                require_post_maintenance_echo: maintenance
-                    .is_some_and(|maintenance| maintenance.require_post_maintenance_echo),
                 maximum_rx_silence_ms: criteria.maximum_rx_silence_ms,
-                require_nonzero_rfpll_correction,
-                station_pause,
-                station_pause_after,
-                station_pause_attempts,
-                station_pause_interval,
                 duration,
                 payload,
                 phy: link.phy,
@@ -325,11 +303,6 @@ fn station_udp_traffic(
             };
             traffic::tx_traffic::run(
                 traffic::tx_traffic::Config {
-                    require_nonzero_rfpll_correction,
-                    station_pause,
-                    station_pause_after,
-                    station_pause_attempts,
-                    station_pause_interval,
                     duration,
                     payload,
                     bandwidth_mhz,
@@ -350,11 +323,6 @@ fn station_udp_traffic(
         Direction::Bidirectional => traffic::bidirectional::run(
             traffic::bidirectional::Config {
                 maximum_rx_silence_ms: criteria.maximum_rx_silence_ms,
-                require_nonzero_rfpll_correction,
-                station_pause,
-                station_pause_after,
-                station_pause_attempts,
-                station_pause_interval,
                 duration,
                 payload,
                 phy: if link.phy == PhyExpectation::He20 {
@@ -462,14 +430,6 @@ fn role(operation: RoleOperation, timeout: Duration) -> (Operation, ieee80211::c
         RoleOperation::Restart { cycles } => {
             config.restart_cycles = cycles;
             Operation::Restart
-        }
-        RoleOperation::MaintenanceRestart { cycles } => {
-            config.restart_cycles = cycles;
-            Operation::MaintenanceRestart
-        }
-        RoleOperation::Retained { cycles } => {
-            config.restart_cycles = cycles;
-            Operation::Retained
         }
         RoleOperation::Scan {} => Operation::Scan,
         RoleOperation::Monitor {

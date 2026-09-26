@@ -100,8 +100,6 @@ mod exception;
 mod gdma_mem2mem_probe;
 #[cfg(feature = "memory-benchmark")]
 mod memory_benchmark;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-mod phy_evidence;
 #[cfg(feature = "open-radio-hil")]
 mod phy_fault;
 #[cfg(feature = "open-radio-hil")]
@@ -419,17 +417,19 @@ extern "C" fn runtime_main() -> ! {
         let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
         console::init_protocol(boot_id);
         #[cfg(not(feature = "memory-benchmark"))]
-        let radio = oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral::new(
-            peripherals.WIFI,
-            peripherals.MODEM_SYSCON,
-            peripherals.MODEM_LPCON,
-            peripherals.HP_SYS_CLKRST,
-            peripherals.PMU,
-            peripherals.LP_AON_CLK_RST,
-            peripherals.LP_PERI,
-            peripherals.LP_TSENS,
-            peripherals.I2C_ANA_MST,
-        );
+        let radio = product_hil::RadioPlatforms {
+            radio: oer_esp32s31_ieee80211_system::EspHalRadioPlatform::new(
+                peripherals.MODEM_SYSCON,
+                peripherals.MODEM_LPCON,
+                peripherals.HP_SYS_CLKRST,
+                peripherals.PMU,
+                peripherals.LP_AON_CLK_RST,
+                peripherals.LP_PERI,
+                peripherals.LP_TSENS,
+                peripherals.I2C_ANA_MST,
+            ),
+            wifi: oer_esp32s31_ieee80211_system::EspHalWifiPlatform::new(peripherals.WIFI),
+        };
         let usb = peripherals.USB_DEVICE;
         executor.run(|spawner| {
             let Ok(logger) = console::logger_task(usb) else {
@@ -523,7 +523,7 @@ async fn boot_smoke(mut console: boot_smoke_console::BootSmokeConsole) {
 async fn open_radio_hil_task(
     spawner: embassy_executor::Spawner,
     protocol_spawner: SendSpawner,
-    radio: oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral,
+    radio: product_hil::RadioPlatforms,
     trng: esp_hal::rng::Trng,
     l1_cache: &'static oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters,
     watchdog: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,

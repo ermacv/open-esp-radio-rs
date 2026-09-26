@@ -91,18 +91,17 @@ named check. Repeated `--proof` arguments require all named checks, and `--tag`
 can restrict the profile. For example:
 
 ```console
-cargo hil plan --tag he20 --proof wifi.maintenance.same-link
+cargo hil plan --tag he20 --proof udp.rx.maximum-silence
 ```
 
-This selects the HE20 calibration integration and adds its HE20 control. A
-control need not provide the experiment's named check. The plan lists provided
-checks and selection reasons; it does not infer success from tags, select by
-changed files, or claim minimum coverage of an arbitrary product program.
-Saved executable plans use schema 6; older plan schemas are rejected. Scenario
+The plan lists provided checks and selection reasons; it does not infer success
+from tags, select by changed files, or claim minimum coverage of an arbitrary
+product program. Selection never expands beyond the requested scenarios.
+Saved executable plans use schema 7; older plan schemas are rejected. Scenario
 digests drop null values, fill schema-5 defaults from
 `hil/schema/scenario-v5-defaults.json` and exclude top-level `description`,
 `tags` and `transfer`; all execution fields remain bound, including
-repetitions, the control relation and the complete family table. Regenerating
+repetitions and the complete family table. Regenerating
 an offline plan neither executes hardware nor invalidates sealed observations.
 
 A program-backed plan reads the independent evaluator's existing evidence:
@@ -129,27 +128,6 @@ class. It records the plan as `campaign.json` inside the sealed run. The plan
 selects current builds; it does not pin or reuse a historical firmware image.
 Changed scenario settings require a new plan. Hardware-dependent preflight and
 cleanup remain mandatory for every execution.
-
-A scenario with a controlled comparison adds its declared control to the plan,
-once, before its experiment. Qualification dependencies never expand this
-execution selection. The HT40 high-load combined-calibration comparison checks
-that control and experiment differ only in the maintenance operation. This
-relation does not claim relative performance non-regression: the existing
-absolute criteria still apply. `run <scenario>` remains a standalone execution;
-it cannot supply the control evidence required for a controlled comparison.
-`comparisons.json` records raw repetition samples and differences of arithmetic
-means for RX throughput, host offered throughput and maximum RX silence. Its
-relative percentage is undefined when the control mean is zero. Missing,
-ambiguous or failed observations produce `unavailable`, never a synthetic delta.
-Every comparison explicitly retains `non_regression = "not-evaluated"`.
-Sequential series describe observed differences, not statistical significance
-or elimination of RF-environment drift. The report is sealed with the run;
-qualification does not treat its deltas as a relative PASS.
-
-The two initial controlled experiments are
-`diagnostic-station-phy-combined-high-load-delivery-rx` (HT40) and
-`udp-rx-he20-calibration` (HE20). Each selects its own baseline; their source
-declarations do not establish hardware qualification or cross-PHY equivalence.
 
 `cargo hil run <scenario>` builds and flashes the required image before the
 scenario. Select `--network upstream-xarxa` (default), `patched-xarxa`,
@@ -649,23 +627,8 @@ are retained and checked independently from radio and application drops.
 Station UDP RX and bidirectional scenarios can require
 `criteria.maximum_rx_silence_ms`. The gate consumes complete-window typed
 transport evidence, including the trailing silence; missing observation fails
-rather than falling back to average throughput. The no-maintenance PHY
-bidirectional control uses 250 ms to reject long delivery stalls independently
-of its throughput floor. This is a delivery-continuity limit, not an RF airtime
-measurement. Multi-client receive windows do not publish one ambiguous maximum.
-
-The `diagnostic-station-absence-{unannounced,pm}-rx` pair holds the same physical
-maintenance access for 10 ms without running a PHY algorithm. `station_pause =
-{ synthetic = { duration_micros = 10000, notify_ap = true } }` selects confirmed
-PM=1 before local stop and confirmed PM=0 after RX/MAC restoration. Durations
-are bounded to 1..=200000 us; this is an experimental hold, not a listen/DTIM
-schedule or a promise about AP buffer capacity. The ordinary idle power-save
-planner cannot concurrently own this exchange; conflicting control ownership
-returns Busy. A failed PM=1 requires acknowledged PM=0 recovery before normal
-traffic resumes. An ambiguous return retains the runner in quarantine.
-The reported round trip includes both PM exchanges when selected, while the
-requested hold starts only after physical admission. These scenarios do not
-enable PM notification for automatic calibration or qualify long absences.
+rather than falling back to average throughput. This is a delivery-continuity
+limit, not an RF airtime measurement. Multi-client receive windows do not publish one ambiguous maximum.
 
 Managed OpenWrt RX runs retain `openwrt-wifi-egress.pcap` in the repetition
 artifacts. This is plaintext packet-socket evidence on the AP wireless

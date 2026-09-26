@@ -3,8 +3,6 @@
 //! This module is deliberately an application of the public driver API. PAC,
 //! DMA, ISR and station internals stay in `oer-esp32s31-ieee80211-system`.
 
-mod phy;
-
 use core::{
     num::NonZeroU16,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
@@ -46,16 +44,14 @@ use oer_esp32s31_ieee80211_system::{
 };
 use oer_esp32s31_ieee80211_system::{
     AccessPointStatus, ConnectedDisconnectReason, Esp32s31MonitorBasebandFormat,
-    Esp32s31MonitorPhyInfo, MonitorFrames, RadioConfig, RadioParts, RadioRunners, RadioSystem,
-    ReceivedMonitorFrame, StationLinkState, StationStatus, SystemRunner, WifiControl, WifiDevice,
-    WifiParts,
+    Esp32s31MonitorPhyInfo, MonitorFrames, RadioConfig, ReceivedMonitorFrame, StationLinkState,
+    StationStatus, SystemRunner, WifiControl, WifiDevice, WifiParts, WifiStarted,
 };
 #[cfg(feature = "connected-datapath-poll-telemetry")]
 use oer_esp32s31_ieee80211_system::{ConnectedDatapathPollBatch, ConnectedDatapathPollObserver};
 
-use oer_esp32s31_phy::{PhyCalibrationIdentity, PhyCalibrationPath, phy_get_rf_cal_version};
+use oer_esp32s31_phy::PhyCalibrationPath;
 
-use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 #[cfg(all(
     feature = "driver-observation",
     not(any(
@@ -77,9 +73,9 @@ use oer_hil_protocol::{
     WifiAccessPointEvidence, WifiAccessPointSecurity as HilWifiAccessPointSecurity,
     WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
-    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRadioCalibrationPath,
-    WifiRadioRestartEvidence, WifiRadioRetainedCycleEvidence, WifiRole, WifiRoleFailureEvidence,
-    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRadioRestartEvidence,
+    WifiRadioRestartRf, WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason,
+    WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
     WifiStationAccessPointStopEvidence,
 };
 #[cfg(feature = "driver-observation")]
@@ -89,10 +85,10 @@ use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
     complete_access_point_stop, complete_initialization, complete_monitor_capture,
     complete_monitor_start, complete_monitor_stop, complete_station_access_point_stop,
-    complete_station_epoch_cycle, complete_wifi_radio_restart, complete_wifi_radio_retained_cycle,
-    complete_wifi_role_failure, complete_wifi_role_transition, complete_wifi_scan,
-    publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
-    publish_station_lifecycle, receive_wifi_control_request, runtime_log, set_wifi_role,
+    complete_station_epoch_cycle, complete_wifi_radio_restart, complete_wifi_role_failure,
+    complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably,
+    publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
+    receive_wifi_control_request, runtime_log, set_wifi_role,
 };
 
 use oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters;
@@ -1032,6 +1028,13 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
     (DIAGNOSTIC_STAGE.load(Ordering::Acquire), 0)
 }
 
+/// ESP-IDF's periodic `phy_track_pll` timer for the shared radio.
+#[embassy_executor::task]
+async fn phy_tracking_task(radio: &'static SharedRadio) {
+    let error = radio.run_tracking().await;
+    panic!("shared PHY tracking failed: {error:?}");
+}
+
 #[embassy_executor::task]
 #[allow(
     large_assignments,
@@ -1495,10 +1498,20 @@ async fn report_network(iface: Iface<'static>, network_interface: WifiNetworkInt
     }
 }
 
+/// The platform owners of the shared radio and of its Wi-Fi client.
+pub(crate) struct RadioPlatforms {
+    pub(crate) radio: oer_esp32s31_ieee80211_system::EspHalRadioPlatform,
+    pub(crate) wifi: oer_esp32s31_ieee80211_system::EspHalWifiPlatform,
+}
+
+type SharedRadio = oer_esp32s31_ieee80211_system::SharedRadio;
+
+static SHARED_RADIO: StaticCell<SharedRadio> = StaticCell::new();
+
 pub async fn run(
     spawner: Spawner,
     _secondary_core_spawner: SendSpawner,
-    platform: EspHalRadioPeripheral,
+    platforms: RadioPlatforms,
     trng: Trng,
     l1_cache: &'static L1CachePerformanceCounters,
     watchdog: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
@@ -1512,7 +1525,7 @@ pub async fn run(
         PreInitializationRequest::Startup(configuration) => configuration,
         #[cfg(feature = "ieee802154-event-status-probe")]
         PreInitializationRequest::Ieee802154EventStatus(probe) => {
-            let evidence = ieee802154::run_event_status_probe(platform, probe.request);
+            let evidence = ieee802154::run_event_status_probe(platforms.radio, probe.request);
             publish_event_reliably(
                 0,
                 probe.request_id,
@@ -1523,7 +1536,7 @@ pub async fn run(
         }
         #[cfg(feature = "ieee802154-ed-event-probe")]
         PreInitializationRequest::Ieee802154EdEvent(probe) => {
-            let evidence = ieee802154::run_ed_event_probe(platform, probe.request);
+            let evidence = ieee802154::run_ed_event_probe(platforms.radio, probe.request);
             publish_event_reliably(
                 0,
                 probe.request_id,
@@ -1535,7 +1548,8 @@ pub async fn run(
         #[cfg(feature = "ieee802154-radio")]
         PreInitializationRequest::Ieee802154AirCheck(check) => {
             // The check holds the composition's bring-up future; pin it in place.
-            let air_check = core::pin::pin!(ieee802154::run_air_check(platform, check.request));
+            let air_check =
+                core::pin::pin!(ieee802154::run_air_check(platforms.radio, check.request));
             let evidence = air_check.await;
             publish_event_reliably(
                 0,
@@ -1549,7 +1563,7 @@ pub async fn run(
         PreInitializationRequest::Ieee802154Session(start) => {
             // The session holds the composition's bring-up future; pin it.
             let session = core::pin::pin!(ieee802154::run_session(
-                platform,
+                platforms.radio,
                 start.request_id,
                 start.config
             ));
@@ -1620,19 +1634,12 @@ pub async fn run(
         .expect("ESP32-S31 station eFuse address must be unicast");
     let access_point_mac = WifiMacAddress::new(access_point_address)
         .expect("ESP32-S31 AP eFuse address must be unicast");
-    let mut calibration_base_mac_address = [0; 6];
-    calibration_base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
     #[cfg(feature = "driver-observation")]
     let connected_rx_observer = CONNECTED_RX_OBSERVER.take();
     let config = RadioConfig::new(
         crate::watchdog::wifi(watchdog),
         station_mac,
         access_point_mac,
-        PhyCalibrationIdentity {
-            rf_cal_version: phy_get_rf_cal_version(),
-            base_mac_address: calibration_base_mac_address,
-            mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
-        },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     )
     .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM);
@@ -1699,20 +1706,39 @@ pub async fn run(
     let calibration_cache = phy_calibration_artifact
         .as_ref()
         .and_then(|artifact| crate::phy_calibration_artifact::decode(artifact.bytes()));
-    let config = match calibration_cache {
-        Some(cache) => config.with_calibration_cache(cache),
-        None => config,
+    let RadioPlatforms {
+        radio: radio_platform,
+        wifi: wifi_platform,
+    } = platforms;
+    let identity = radio_platform.phy_calibration_identity();
+    let hardware = oer_esp32s31_ieee80211_system::RadioHardware::take()
+        .expect("ESP32-S31 radio hardware must have a unique owner");
+    let (radio, partitions) = SharedRadio::new(
+        hardware,
+        radio_platform,
+        oer_esp32s31_ieee80211_system::EspHalRadioClocks::new(),
+        identity,
+    );
+    let radio = match calibration_cache {
+        Some(cache) => radio.with_calibration_cache(cache),
+        None => radio,
     };
+    let radio = SHARED_RADIO.init(radio);
+    spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
 
     let started_at = Instant::now();
-    let RadioSystem { radio, runners } =
-        await_stack_boundary!(oer_esp32s31_ieee80211_system::new(platform, trng, config))
-            .unwrap_or_else(|error| panic!("production radio initialization failed: {error:?}"));
-    let RadioRunners { hardware: runner } = runners;
-    let RadioParts {
+    let WifiStarted {
         wifi,
         initialization,
-    } = radio.into_parts();
+        runner,
+    } = await_stack_boundary!(oer_esp32s31_ieee80211_system::new(
+        radio,
+        partitions.wifi,
+        wifi_platform,
+        trng,
+        config
+    ))
+    .unwrap_or_else(|error| panic!("production Wi-Fi initialization failed: {error:?}"));
     // The runner is an idle supervisor until a role command arrives. Spawn it
     // before the asynchronous artifact publication so its large unique owner
     // graph is moved into the task arena instead of retained in this future.
@@ -1742,10 +1768,18 @@ pub async fn run(
             .is_some_and(|outcome| outcome.tracking_inhibited),
     ))
     .await;
+    // Wi-Fi is this image's only radio client, so its bring-up registers the
+    // shared PHY domain and carries the registration's fresh cache.
+    let oer_esp32s31_ieee80211_system::RadioPhyPrepared::Registered(registration) =
+        initialization.phy
+    else {
+        panic!("Wi-Fi must register the shared PHY as this image's first radio client");
+    };
+    let outcome = registration.outcome();
     #[cfg(feature = "driver-observation")]
-    phy_diagnostics::log(initialization.registration.rf_calibration).await;
-    if let Some(cache) = initialization.calibration_cache {
-        let disposition = match initialization.registration.calibration_path {
+    phy_diagnostics::log(outcome.rf_calibration).await;
+    if let Some(cache) = registration.into_calibration_cache() {
+        let disposition = match outcome.calibration_path {
             PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,
             PhyCalibrationPath::PartialFromCache => StartupArtifactDisposition::Restored,
             PhyCalibrationPath::FullForCache if artifact_was_supplied => {
@@ -2105,13 +2139,6 @@ async fn wifi_role_task(
                 }
             }
             ProductWifiRole::Station(station) => match receive_wifi_control_request().await {
-                WifiControlRequest::Pause {
-                    request_id,
-                    operation,
-                } => {
-                    await_stack_boundary!(phy::run_station_pause(request_id, operation));
-                    ProductWifiRole::Station(station)
-                }
                 WifiControlRequest::Cycle { request_id } => {
                     let idle = await_stack_boundary!(station.stop()).unwrap_or_else(|error| {
                         panic!("production station stop failed: {error:?}")
@@ -2166,33 +2193,21 @@ async fn wifi_role_task(
                     match await_stack_boundary!(idle.restart_radio()) {
                         Ok((idle, report)) => {
                             let generation = report.generation().value();
-                            let calibration_path = match report.calibration_path() {
-                                oer::wifi::WifiRadioCalibrationPath::Full => {
-                                    WifiRadioCalibrationPath::Full
+                            let rf = match report.rf() {
+                                oer::wifi::WifiRadioRestartRf::ClosedAndWoken => {
+                                    WifiRadioRestartRf::ClosedAndWoken
                                 }
-                                oer::wifi::WifiRadioCalibrationPath::RejectedCache => {
-                                    WifiRadioCalibrationPath::RejectedCache
-                                }
-                                oer::wifi::WifiRadioCalibrationPath::RestoredCache => {
-                                    WifiRadioCalibrationPath::RestoredCache
+                                oer::wifi::WifiRadioRestartRf::KeptOpen => {
+                                    WifiRadioRestartRf::KeptOpen
                                 }
                             };
                             complete_wifi_radio_restart(
                                 request_id,
-                                WifiRadioRestartEvidence {
-                                    generation,
-                                    previous_phy_registration_generation: report
-                                        .previous_phy_registration_generation()
-                                        .value(),
-                                    phy_registration_generation: report
-                                        .phy_registration_generation()
-                                        .value(),
-                                    calibration_path,
-                                },
+                                WifiRadioRestartEvidence { generation, rf },
                             )
                             .await;
                             runtime_log(format_args!(
-                                "OPEN_RADIO_HIL radio restart generation={generation} calibration_path={calibration_path:?}",
+                                "OPEN_RADIO_HIL radio restart generation={generation} rf={rf:?}",
                             ));
                             ProductWifiRole::Idle(idle)
                         }
@@ -2202,42 +2217,6 @@ async fn wifi_role_task(
                                 WifiRoleFailureEvidence {
                                     role: WifiRole::Idle,
                                     operation: WifiRoleOperation::Restart,
-                                    reason: WifiRoleFailureReason::HardwareFault,
-                                },
-                            )
-                            .await;
-                            core::future::pending().await
-                        }
-                    }
-                }
-                WifiControlRequest::CycleRetainedRadio { request_id } => {
-                    match await_stack_boundary!(idle.cycle_retained_radio()) {
-                        Ok((idle, report)) => {
-                            let generation = report.generation().value();
-                            complete_wifi_radio_retained_cycle(
-                                request_id,
-                                WifiRadioRetainedCycleEvidence {
-                                    generation,
-                                    previous_phy_registration_generation: report
-                                        .previous_phy_registration_generation()
-                                        .value(),
-                                    phy_registration_generation: report
-                                        .phy_registration_generation()
-                                        .value(),
-                                },
-                            )
-                            .await;
-                            runtime_log(format_args!(
-                                "OPEN_RADIO_HIL retained radio cycle generation={generation}",
-                            ));
-                            ProductWifiRole::Idle(idle)
-                        }
-                        Err(_) => {
-                            complete_wifi_role_failure(
-                                request_id,
-                                WifiRoleFailureEvidence {
-                                    role: WifiRole::Idle,
-                                    operation: WifiRoleOperation::RetainedCycle,
                                     reason: WifiRoleFailureReason::HardwareFault,
                                 },
                             )

@@ -193,7 +193,6 @@ pub fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
                 udp_multi_flow: false,
                 startup_artifact: true,
                 station_epoch_control: true,
-                station_pause: true,
                 wifi_role_control: true,
                 wifi_access_point: true,
                 simultaneous_station_access_point: true,

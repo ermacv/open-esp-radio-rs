@@ -16,12 +16,12 @@ pub(super) use session::run_session;
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
+use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
+use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 
 #[cfg(feature = "ieee802154-event-status-probe")]
 use oer_esp32s31_hal::ieee802154::{
@@ -92,7 +92,7 @@ use oer_hil_protocol::{Ieee802154ObservedEventState, Ieee802154ValidationEventEn
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-fn ieee802154_foundation(_radio: EspHalRadioPeripheral) -> Option<Ieee802154FoundationConfigured> {
+fn ieee802154_foundation(_radio: EspHalRadioPlatform) -> Option<Ieee802154FoundationConfigured> {
     let (shared, partitions) = RadioHardware::take()?.into_concurrent(());
     let mut lease = shared.try_acquire().ok()?;
     let powered = Ieee802154Cold::from_partition(partitions.ieee802154)
@@ -340,7 +340,7 @@ const fn map_ieee802154_event_status_probe(
 /// exposing the validation-only acknowledge capability to production code.
 #[cfg(feature = "ieee802154-event-status-probe")]
 pub(super) fn run_event_status_probe(
-    platform: EspHalRadioPeripheral,
+    platform: EspHalRadioPlatform,
     request: Ieee802154EventStatusProbeRequest,
 ) -> Ieee802154EventStatusProbeEvidence {
     let Some(config) =
@@ -603,7 +603,7 @@ const fn map_ieee802154_ed_event_probe(
 /// route or exposing validation-only status writes to production code.
 #[cfg(feature = "ieee802154-ed-event-probe")]
 pub(super) fn run_ed_event_probe(
-    platform: EspHalRadioPeripheral,
+    platform: EspHalRadioPlatform,
     request: Ieee802154EdEventProbeRequest,
 ) -> Ieee802154EdEventProbeEvidence {
     let Some(config) =

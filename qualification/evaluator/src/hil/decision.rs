@@ -45,7 +45,6 @@ enum ObligationGap {
     InsufficientRepetitions,
     RequiredChecksUnavailable,
     CurrentCriteriaNotMet,
-    ControlNotSatisfied,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -77,7 +76,6 @@ pub(crate) struct EvidenceDecision {
     pub(crate) status: EvidenceStatus,
     pub(crate) evidence: Option<String>,
     observations: Vec<ObservationDecision>,
-    control: Option<Box<EvidenceDecision>>,
     pub(crate) reviews: Vec<review::ReviewDecision>,
     pub(crate) property: Option<review::PropertyBinding>,
 }
@@ -104,15 +102,9 @@ impl EvidenceDecision {
         )?);
         self.reviews = reviews
             .iter()
-            .filter(|r| {
-                r.scenario == self.scenario
-                    || catalog.control_for(&self.scenario) == Some(&r.scenario)
-            })
+            .filter(|r| r.scenario == self.scenario)
             .cloned()
             .collect();
-        if let Some(control) = &mut self.control {
-            control.attach_reviews(root, document, declarations, catalog, reviews)?;
-        }
         Ok(())
     }
 
@@ -145,16 +137,6 @@ impl EvidenceDecision {
                 "An explicit applicability review no longer binds this property/build; inspect its review status before editing it or choosing a rerun.",
             ));
         }
-        if self
-            .control
-            .as_ref()
-            .is_some_and(|control| control.status == EvidenceStatus::UnresolvedFailure)
-        {
-            return Some((
-                WorkKind::InvestigateFailure,
-                "The required control has an unresolved applicable failure; inspect that decision before repeating the experiment.",
-            ));
-        }
         match self.status {
             EvidenceStatus::Satisfied => None,
             EvidenceStatus::UnresolvedFailure => Some((
@@ -171,7 +153,7 @@ impl EvidenceDecision {
             }
             EvidenceStatus::Missing if !self.observations.is_empty() => Some((
                 WorkKind::Recheck,
-                "Recorded attempts do not complete this obligation; inspect missing checks, repetitions and controls.",
+                "Recorded attempts do not complete this obligation; inspect missing checks and repetitions.",
             )),
             EvidenceStatus::Missing => Some((
                 WorkKind::Experiment,
@@ -195,22 +177,6 @@ impl HilEvidenceIndex {
         requirement: &HilRequirement,
         catalog: &ScenarioCatalog,
     ) -> EvidenceDecision {
-        let control = catalog.control_for(&requirement.scenario);
-        // Catalog validation forbids control chains. A failed current control
-        // cannot be hidden by a passing pair in another invocation.
-        let control_decision = control.map(|id| {
-            Box::new(self.decision_for(
-                &HilRequirement {
-                    scenario: id.to_owned(),
-                    checks: Vec::new(),
-                    minimum_repetitions: requirement.minimum_repetitions,
-                },
-                catalog,
-            ))
-        });
-        let control_satisfied = control_decision
-            .as_ref()
-            .is_none_or(|decision| decision.status == EvidenceStatus::Satisfied);
         let contracts = requirement
             .checks
             .iter()
@@ -225,7 +191,6 @@ impl HilEvidenceIndex {
             status: EvidenceStatus::Missing,
             evidence: None,
             observations: Vec::new(),
-            control: control_decision,
             reviews: Vec::new(),
             property: None,
         };
@@ -274,30 +239,6 @@ impl HilEvidenceIndex {
             if criteria_failed {
                 gaps.push(ObligationGap::CurrentCriteriaNotMet);
             }
-            if !control_satisfied
-                || !control.is_none_or(|id| {
-                    self.scenarios.get(id).is_some_and(|controls| {
-                        controls.iter().any(|candidate| {
-                            candidate.run_id == observation.run_id
-                                && candidate.applicable()
-                                && procedure::matches(
-                                    candidate,
-                                    &HilRequirement {
-                                        scenario: id.into(),
-                                        checks: Vec::new(),
-                                        minimum_repetitions: requirement.minimum_repetitions,
-                                    },
-                                    catalog,
-                                )
-                                .unwrap_or(false)
-                                && candidate.outcome == Outcome::Passed
-                                && candidate.repetitions == observation.repetitions
-                        })
-                    })
-                })
-            {
-                gaps.push(ObligationGap::ControlNotSatisfied);
-            }
             if applicable {
                 if (observation.outcome == Outcome::Failed
                     || observation.repetition_outcomes.contains(&Outcome::Failed)
@@ -338,9 +279,6 @@ impl HilEvidenceIndex {
                 "hil:{}/{}:repetitions={}",
                 observation.run_id, requirement.scenario, observation.repetitions
             );
-            if let Some(control) = control {
-                reference.push_str(&format!(":control={control}"));
-            }
             if let Some(seal) = &observation.completion_seal
                 && seal.path.starts_with("attempts")
             {

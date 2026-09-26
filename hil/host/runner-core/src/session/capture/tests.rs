@@ -850,7 +850,7 @@ fn monitor_failure_is_correlated_and_terminal() {
 }
 
 #[test]
-fn retained_radio_failure_is_correlated_and_terminal() {
+fn radio_restart_failure_is_correlated_and_terminal() {
     use oer_hil_protocol::{
         WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
     };
@@ -865,7 +865,7 @@ fn retained_radio_failure_is_correlated_and_terminal() {
             23,
             Event::WifiRoleFailed(WifiRoleFailureEvidence {
                 role: WifiRole::Idle,
-                operation: WifiRoleOperation::RetainedCycle,
+                operation: WifiRoleOperation::Restart,
                 reason: WifiRoleFailureReason::HardwareFault,
             }),
         ))))
@@ -876,9 +876,9 @@ fn retained_radio_failure_is_correlated_and_terminal() {
         first_event: 1,
     };
     let error = capture
-        .wait_wifi_radio_retained_cycle(handle, Duration::from_secs(3))
+        .wait_wifi_radio_restart(handle, Duration::from_secs(3))
         .unwrap_err();
-    assert!(error.to_string().contains("RetainedCycle"));
+    assert!(error.to_string().contains("Restart"));
     assert!(error.to_string().contains("HardwareFault"));
 }
 

@@ -1,5 +1,3 @@
-mod pause;
-
 use super::*;
 
 #[derive(serde::Serialize)]
@@ -688,63 +686,6 @@ impl SerialCapture {
         )
     }
 
-    pub fn station_pause_round_trip(
-        &self,
-        operation: oer_hil_protocol::StationPauseOperation,
-        timeout: Duration,
-    ) -> Result<pause::Report> {
-        let handle =
-            self.request_wifi_command(Command::PauseStation { operation }, "station pause")?;
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                matches!(message.body, Event::StationPauseCompleted(_))
-            })?
-            .ok_or("station pause completion deadline expired")?;
-        let Event::StationPauseCompleted(evidence) = event.body else {
-            unreachable!()
-        };
-        // All detail is already retained when completion arrives. Inspect only
-        // this request's prefix; never add a second wait or execution delay.
-        let state = self
-            .protocol
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let waits = pause::tx_waits(
-            state.messages.get(handle.first_event..).unwrap_or_default(),
-            &event,
-        )?;
-        let timer = pause::timer(
-            state.messages.get(handle.first_event..).unwrap_or_default(),
-            &event,
-        )?;
-        let service = pause::service(
-            state.messages.get(handle.first_event..).unwrap_or_default(),
-            &event,
-        )?;
-        let rfpll = pause::rfpll(
-            state.messages.get(handle.first_event..).unwrap_or_default(),
-            &event,
-        )?;
-        let temperature = pause::temperature(
-            state.messages.get(handle.first_event..).unwrap_or_default(),
-            &event,
-        )?;
-        let rx_gain = pause::rx_gain(
-            state.messages.get(handle.first_event..).unwrap_or_default(),
-            &event,
-        )?;
-        Ok(pause::Report {
-            rx_gain,
-            rfpll,
-            temperature,
-            evidence,
-            tx_waits: waits,
-            timer,
-            service,
-        })
-    }
-
     pub fn request_station_epoch_cycle(&self) -> Result<StationEpochHandle> {
         let first_event = self.protocol_event_count();
         let response = self.send_command(0, Command::CycleStationEpoch, PROTOCOL_READY_TIMEOUT)?;
@@ -823,10 +764,6 @@ impl SerialCapture {
 
     pub fn request_radio_restart(&self) -> Result<WifiCommandHandle> {
         self.request_wifi_command(Command::RestartRadio, "idle radio restart")
-    }
-
-    pub fn request_retained_radio_cycle(&self) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::CycleRetainedRadio, "idle retained radio cycle")
     }
 
     pub fn query_stack_usage(&self, timeout: Duration) -> Result<StackUsage> {
@@ -1080,40 +1017,6 @@ impl SerialCapture {
         {
             Event::PhyFault(evidence) => Ok(evidence),
             response => Err(format!("PHY fault control {command:?} rejected: {response:?}").into()),
-        }
-    }
-
-    pub fn start_fault_calibration(&self) -> Result<()> {
-        self.request_wifi_command(
-            Command::PauseStation {
-                operation: oer_hil_protocol::StationPauseOperation::Calibration,
-            },
-            "fault calibration",
-        )
-        .map(|_| ())
-    }
-
-    /// Negative admission control: zero-duration absence must reject before
-    /// taking any physical owner and remain on this boot.
-    pub fn require_invalid_pause_rejected(&self) -> Result<()> {
-        let report = self.station_pause_round_trip(
-            oer_hil_protocol::StationPauseOperation::Synthetic {
-                duration_micros: 0,
-                notify_ap: false,
-            },
-            Duration::from_secs(2),
-        )?;
-        if report.evidence.result == oer_hil_protocol::StationPauseResult::InvalidDuration
-            && report.evidence.tracking.is_none()
-            && report.evidence.elapsed_micros == 0
-        {
-            Ok(())
-        } else {
-            Err(format!(
-                "invalid pause was not rejected before PHY: {:?}",
-                report.evidence
-            )
-            .into())
         }
     }
 
@@ -1459,29 +1362,6 @@ impl SerialCapture {
                 Err(format!("idle radio restart failed: {failure:?}").into())
             }
             _ => unreachable!("radio-restart predicate accepted only terminal restart events"),
-        }
-    }
-
-    pub fn wait_wifi_radio_retained_cycle(
-        &self,
-        handle: WifiCommandHandle,
-        timeout: Duration,
-    ) -> Result<WifiRadioRetainedCycleEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(
-                        message.body,
-                        Event::WifiRadioRetainedCycled(_) | Event::WifiRoleFailed(_)
-                    )
-            })?
-            .ok_or("device did not complete the idle retained radio cycle")?;
-        match event.body {
-            Event::WifiRadioRetainedCycled(evidence) => Ok(evidence),
-            Event::WifiRoleFailed(failure) => {
-                Err(format!("idle retained radio cycle failed: {failure:?}").into())
-            }
-            _ => unreachable!("retained-cycle predicate accepted only terminal cycle events"),
         }
     }
 

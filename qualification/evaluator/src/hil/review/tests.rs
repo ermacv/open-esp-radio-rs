@@ -230,7 +230,7 @@ fn explicit_review_promotes_only_bound_property_and_keeps_original_exclusions() 
         EvidenceStatus::Missing
     );
     save(&fixture, &record(&fixture, &index, &catalog));
-    validate(&fixture.0, &declaration(), &catalog).unwrap();
+    validate(&fixture.0, &declaration()).unwrap();
     let mut model_catalog = catalog.clone();
     model_catalog.repetitions.insert("exchange".into(), 1);
     crate::model::tests::assert_reviewed_hil(&fixture.0, declaration(), &index, &model_catalog);
@@ -384,32 +384,6 @@ fn identical_image_policy_requires_the_actual_application_bytes() {
         "identical-image-required"
     );
 }
-
-#[test]
-fn missing_control_cannot_be_spliced_from_another_invocation() {
-    let fixture = setup();
-    let index = fixture.load().unwrap();
-    let mut catalog = ScenarioCatalog::default();
-    catalog.controls.insert("exchange".into(), "control".into());
-    let mut decision = index.decision_for(&requirement(), &catalog);
-    decision
-        .attach_reviews(&fixture.0, &declaration(), &BTreeMap::new(), &catalog, &[])
-        .unwrap();
-    let json = serde_json::to_value(decision).unwrap();
-    assert!(json["control"]["property"]["sha256"].is_string());
-    assert_ne!(
-        json["control"]["property"]["sha256"],
-        json["property"]["sha256"]
-    );
-
-    save(&fixture, &record(&fixture, &index, &catalog));
-    assert_eq!(
-        evaluated(&fixture, &index, &catalog).1[0].status,
-        "source-control-not-passed"
-    );
-}
-
-mod guards;
 
 #[test]
 fn identical_snapshot_is_direct_evidence_regardless_of_commit_or_dirty_state() {

@@ -8,7 +8,7 @@ qualification are separate contracts.
 - [Wire contract](wire.md): framing, version checks, discovery and boot identity.
 - [Wi-Fi](wifi.md): role ownership, traffic sessions and retained results.
 - [Bluetooth](bluetooth.md): peripheral, encrypted ACL and secure GATT lifecycle.
-- [PHY](phy.md): maintenance, fault injection and nested timing evidence.
+- [PHY](phy.md): fault injection, Bluetooth maintenance timing and delivery continuity.
 - [Platform and memory diagnostics](diagnostics.md): watchdog and stack/copy measurements.
 
 Source types define the accepted wire layout; these references explain its

@@ -136,36 +136,6 @@ fn successful_group_prepares_once_and_preserves_scenario_order() {
 }
 
 #[test]
-fn campaign_executes_only_the_control_and_experiment_with_one_preparation() {
-    let catalog = catalog();
-    let experiment = catalog
-        .get("diagnostic-station-phy-combined-high-load-delivery-rx")
-        .unwrap();
-    let plan =
-        hil_core::campaign::Plan::create(&catalog, &[experiment], Integration::UpstreamXarxa)
-            .unwrap();
-    let (selected, _) = plan.resolve(&catalog).unwrap();
-    let root = tempfile::tempdir().unwrap();
-    let mut session = session(root.path());
-    let mut fake = FakeSuite::default();
-    execute_selected(&mut session, &mut fake, &selected).unwrap();
-    assert_eq!(
-        fake.log
-            .iter()
-            .filter(|entry| entry.starts_with("prepare:"))
-            .count(),
-        1
-    );
-    assert_eq!(
-        fake.log
-            .iter()
-            .filter_map(|entry| entry.strip_prefix("execute:"))
-            .collect::<Vec<_>>(),
-        [experiment.control().unwrap(), experiment.id()]
-    );
-}
-
-#[test]
 fn image_build_and_flash_failures_block_the_group_but_continue_later_classes() {
     let catalog = catalog();
     let first = catalog

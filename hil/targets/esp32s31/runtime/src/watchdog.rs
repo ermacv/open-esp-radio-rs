@@ -5,15 +5,7 @@ use static_cell::StaticCell;
 
 static SERVICE: StaticCell<DeadlineWatchdog> = StaticCell::new();
 const STARTUP: DeadlineBudget = DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap());
-#[cfg(not(feature = "phy-fault-injection"))]
-const MAINTENANCE: DeadlineBudget =
-    DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap());
-// Diagnostic checkpoint/host acknowledgement fits inside this original lease;
-// release never feeds or rearms it.
-#[cfg(feature = "phy-fault-injection")]
-const MAINTENANCE: DeadlineBudget =
-    DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap());
-// Includes quiescence and, for retained Wi-Fi cycles, close plus wake.
+// MAC/RX/IRQ quiescence, Wi-Fi release and RF close.
 const SHUTDOWN: DeadlineBudget = DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap());
 
 pub(super) fn init(timg: esp_hal::peripherals::TIMG1<'static>) -> &'static DeadlineWatchdog {
@@ -26,9 +18,6 @@ pub(super) fn wifi(
 ) -> &'static oer_esp32s31_ieee80211_system::WatchdogConfig {
     static CONFIG: StaticCell<oer_esp32s31_ieee80211_system::WatchdogConfig> = StaticCell::new();
     CONFIG.init(oer_esp32s31_ieee80211_system::WatchdogConfig::new(
-        service,
-        STARTUP,
-        MAINTENANCE,
-        SHUTDOWN,
+        service, STARTUP, SHUTDOWN,
     ))
 }

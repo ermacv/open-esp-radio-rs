@@ -1,5 +1,4 @@
 pub mod build;
-pub mod comparison;
 pub mod measurements;
 pub mod reporting;
 pub mod run;

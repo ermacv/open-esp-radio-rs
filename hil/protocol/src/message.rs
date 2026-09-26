@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 176;
+pub const PROTOCOL_VERSION: u16 = 177;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -129,8 +129,6 @@ pub struct FeatureCapabilities {
     /// This image can stop one healthy connected STA epoch at a safe runner
     /// boundary and use the returned owners to exercise reassociation.
     pub station_epoch_control: bool,
-    /// Explicit same-connection MAC/RX/IRQ pause without recalibration.
-    pub station_pause: bool,
     /// This image exposes explicit role-neutral Wi-Fi lifecycle commands.
     pub wifi_role_control: bool,
     /// This image can materialize and stop the bounded WPA2-Personal access
@@ -576,83 +574,9 @@ pub enum Command {
     /// Explicitly discard a terminal result and return to idle ownership.
     Recover,
     AcknowledgeResult,
-    /// Pause/resume the connected station, including during an active session.
-    PauseStation {
-        operation: StationPauseOperation,
-    },
-    /// Release the final Wi-Fi PHY client from role-neutral ownership, close
-    /// the RF epoch, and start a fresh cold radio epoch.
+    /// Take Wi-Fi off the shared radio and bring it up again from
+    /// role-neutral ownership.
     RestartRadio,
-    /// Close and restore RF from role-neutral ownership while retaining the
-    /// registered PHY calibration epoch.
-    CycleRetainedRadio,
-}
-
-/// Work performed while the connected station retains its paused epoch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum StationPauseOperation {
-    Access,
-    /// Matched pause control, bounded to 1..=200000 us by host and target.
-    Synthetic {
-        duration_micros: u32,
-        notify_ap: bool,
-    },
-    Tracking,
-    Calibration,
-    Temperature,
-    WifiPower,
-    WifiI2c,
-    CommonCalibration,
-    TxCalibration,
-    TrackingService,
-    Rfpll,
-    RfpllCheck,
-    /// RFPLL evaluation requiring a recent completed sensor acquisition.
-    RfpllObserved,
-}
-
-/// Outcome of a correlated physical pause round trip. Busy is not success.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum StationPauseResult {
-    Resumed,
-    PeerNotification,
-    InvalidDuration,
-    Unavailable,
-    Busy,
-    Interrupted,
-    MacStop,
-    RxBusy,
-    RxPause,
-    IrqPause,
-    RxResume,
-    IrqResume,
-    RegisterReclaim,
-    PhyAdmission,
-    PhyRelease,
-    RegisterRepublish,
-    PhyTracking,
-    MacRestoration,
-    ReceivePolicyChanged,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct StationPhyTrackingEvidence {
-    pub inhibited: bool,
-    pub common_calibrated: bool,
-    pub wifi_calibrated: bool,
-    pub bluetooth_ieee802154_calibrated: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct StationPauseEvidence {
-    /// Full owner-handoff timeline; absent in compact images or aggregate reports.
-    pub timeline: Option<crate::StationPauseTimeline>,
-    /// None when timing observers are unavailable or no physical report returned.
-    pub timings: Option<crate::PhyTimingEvidence>,
-    pub tracking: Option<StationPhyTrackingEvidence>,
-    pub result: StationPauseResult,
-    pub elapsed_micros: u64,
 }
 
 impl WireBody for Command {
@@ -1235,17 +1159,8 @@ pub enum Event {
     Failed(FailureCode),
     StartupArtifactReady(StartupArtifactStatus),
     StartupArtifact(StartupArtifactChunk),
-    StationPauseCompleted(StationPauseEvidence),
-    StationPhyTxWaits(crate::PhyTxWaitEvidence),
-    StationPhyRxGain(crate::PhyRxGainEvidence),
-    StationTemperatureObserved(crate::TemperatureEvidence),
-    StationRfpllObserved(crate::RfpllEvidence),
-    StationTrackingService(crate::StationTrackingServiceEvidence),
-    StationTimerObserved(crate::TimerWindowEvidence),
-    /// Reliable completion of an idle whole-radio cold restart.
+    /// Reliable completion of an idle Wi-Fi restart on the shared radio.
     WifiRadioRestarted(WifiRadioRestartEvidence),
-    /// Reliable completion of an idle retained RF close/wake cycle.
-    WifiRadioRetainedCycled(WifiRadioRetainedCycleEvidence),
 }
 
 impl WireBody for Event {

@@ -17,14 +17,13 @@ use crate::{
     scenario::{Catalog, Scenario, ScenarioFamily},
 };
 
-const CAMPAIGN_SCHEMA: u16 = 6;
+const CAMPAIGN_SCHEMA: u16 = 7;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 enum Reason {
     Requested,
     ProvidesChecks { checks: Vec<String> },
-    ControlFor { experiment: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -101,24 +100,13 @@ impl Plan {
         if ids.len() != requested.len() {
             return Err("campaign repeats a requested scenario".into());
         }
-        let mut ordered = Vec::<&Scenario<F>>::new();
-        let mut seen = BTreeSet::new();
-        // Only execution controls expand selection. Product prerequisites do
-        // not belong to this graph, and never trigger a baseline suite here.
-        for id in &ids {
-            let scenario = catalog.get(id)?;
-            if let Some(control) = scenario.control() {
-                let control = catalog.get(control)?;
-                if seen.insert(control.id().to_owned()) {
-                    ordered.push(control);
-                }
-            }
-            if seen.insert(id.clone()) {
-                ordered.push(scenario);
-            }
-        }
-        // Match the executor's single-flash-per-image grouping. Controls share
-        // their experiment's image and retain their before-experiment order.
+        // Selection never expands: product prerequisites do not belong to a
+        // campaign and never trigger a baseline suite here.
+        let ordered = ids
+            .iter()
+            .map(|id| catalog.get(id))
+            .collect::<Result<Vec<_>>>()?;
+        // Match the executor's single-flash-per-image grouping.
         let ordered = ImageClass::ALL
             .into_iter()
             .flat_map(|image| ordered.iter().copied().filter(move |s| s.image() == image))
@@ -126,23 +114,12 @@ impl Plan {
         let scenarios = ordered
             .iter()
             .map(|scenario| {
-                let mut reasons = Vec::new();
+                let mut reasons = vec![Reason::Requested];
                 let plan = scenario.plan();
-                if ids.contains(scenario.id()) {
-                    reasons.push(Reason::Requested);
-                    if !checks.is_empty() {
-                        reasons.push(Reason::ProvidesChecks {
-                            checks: checks.clone(),
-                        });
-                    }
-                }
-                for id in &ids {
-                    let experiment = catalog.get(id)?;
-                    if experiment.control() == Some(scenario.id()) {
-                        reasons.push(Reason::ControlFor {
-                            experiment: id.clone(),
-                        });
-                    }
+                if !checks.is_empty() {
+                    reasons.push(Reason::ProvidesChecks {
+                        checks: checks.clone(),
+                    });
                 }
                 Ok(Entry {
                     scenario: scenario.id().to_owned(),

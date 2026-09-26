@@ -43,7 +43,6 @@ pub enum WifiRoleOperation {
     Start,
     Stop,
     Restart,
-    RetainedCycle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -317,32 +316,20 @@ pub struct WifiRoleTransitionEvidence {
     pub generation: u32,
 }
 
+/// What the shared radio did while Wi-Fi left and rejoined it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum WifiRadioCalibrationPath {
-    Full,
-    RejectedCache,
-    RestoredCache,
+pub enum WifiRadioRestartRf {
+    /// Wi-Fi was the last PHY client: RF was closed and woken again.
+    ClosedAndWoken,
+    /// Another PHY client kept RF open; Wi-Fi only left and rejoined.
+    KeptOpen,
 }
 
-/// Completion of an idle whole-radio restart, including the registration path
-/// selected from the final-state cache produced by the preceding RF epoch.
+/// Completion of an idle Wi-Fi restart on the shared radio.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiRadioRestartEvidence {
     pub generation: u32,
-    /// Actor-owned registered PHY epoch immediately before the accepted cold
-    /// operation moved the stopped radio owner.
-    pub previous_phy_registration_generation: u32,
-    pub phy_registration_generation: u32,
-    pub calibration_path: WifiRadioCalibrationPath,
-}
-
-/// Completion of one idle retained RF close/wake cycle.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct WifiRadioRetainedCycleEvidence {
-    pub generation: u32,
-    /// Actor-owned registered PHY epoch immediately before retained close/wake.
-    pub previous_phy_registration_generation: u32,
-    pub phy_registration_generation: u32,
+    pub rf: WifiRadioRestartRf,
 }
 
 /// Bounded scan evidence. The complete BSS table stays in the driver API and

@@ -29,23 +29,15 @@ pub use bluetooth::{
     BluetoothDtmOperation, BluetoothDtmResult, BluetoothDtmRxDiagnostics,
     BluetoothEncryptionEvidence, BluetoothPeripheralEvidence, BluetoothPeripheralOperation,
     BluetoothPeripheralResult, BluetoothPeripheralTermination, BluetoothPhyMaintenanceEvidence,
-    BluetoothPhyOperation, BluetoothSecurityFailure, bluetooth_backpressure_packet,
-    bluetooth_calibration_notification, bluetooth_peripheral_acl_payload,
-    bluetooth_peripheral_acl_payload_for_sequence,
+    BluetoothPhyOperation, BluetoothSecurityFailure, PhyRxGainQualityEvidence,
+    bluetooth_backpressure_packet, bluetooth_calibration_notification,
+    bluetooth_peripheral_acl_payload, bluetooth_peripheral_acl_payload_for_sequence,
 };
 #[cfg(feature = "async-io")]
 pub use io::write_frame;
-mod phy;
-pub use phy::{
-    PhyBusWaitEvidence, PhyDcodeWaitEvidence, PhyOperationTiming, PhyPollTiming, PhyRxGainEvidence,
-    PhyRxGainExecutionEvidence, PhyRxGainQualityEvidence, PhyTimingEvidence, PhyTxWaitEvidence,
-    PhyWaitTiming, RfpllCorrectionEvidence, RfpllEvidence, TemperatureEvidence,
-};
 mod memory_benchmark;
 mod message;
 mod wifi_airtime;
-mod wifi_maintenance;
-pub use wifi_maintenance::{StationPauseIntervals, StationPauseTimeline};
 mod wifi_rx;
 mod wifi_tx;
 pub use wifi_airtime::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};
@@ -91,7 +83,6 @@ pub use message::{
     StartupArtifactChunk, StartupArtifactChunkError, StartupArtifactDisposition,
     StartupArtifactStatus, StateChange, StationAttemptFailureReason, StationDisconnectReason,
     StationEpochEvidence, StationFailureStage, StationLifecycleEvent, StationLinkSecurity,
-    StationPauseEvidence, StationPauseOperation, StationPauseResult, StationPhyTrackingEvidence,
     TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
     TxAggregateTimingEvidence, TxRadioEvidence, UdpSessionPayloadIdentity,
     WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN,
@@ -100,21 +91,12 @@ pub use message::{
     WifiDataPlanePlacement, WifiMacRxHardwareEvidence, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
     WifiMonitorFrameChunkError, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
-    WifiMonitorRequest, WifiNetworkInterface, WifiRadioCalibrationPath, WifiRadioRestartEvidence,
-    WifiRadioRetainedCycleEvidence, WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason,
-    WifiRoleOperation, WifiRoleTransitionEvidence, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
-    WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
-    WifiStationAccessPointStopEvidence, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy, WireBody,
-    WireKind,
+    WifiMonitorRequest, WifiNetworkInterface, WifiRadioRestartEvidence, WifiRadioRestartRf,
+    WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
+    WifiRoleTransitionEvidence, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiScanEvidence,
+    WifiScanRequest, WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence,
+    WifiTxBufferPolicy, WifiTxUdpChecksumPolicy, WireBody, WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};
 
 pub use message::StationTxTerminalEvidence;
-
-mod timer;
-pub use timer::{TimerPhaseTiming, TimerWindowEvidence};
-
-pub use phy::{
-    STATION_RFPLL_SAMPLE_MAX_AGE_MICROS, STATION_TRACKING_SERVICE_WINDOW_MICROS,
-    StationTrackingServiceEvidence,
-};

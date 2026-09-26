@@ -1,11 +1,7 @@
 //! Strict review declarations and the current property/input fingerprint.
 use super::*;
 
-pub(crate) fn validate(
-    root: &Path,
-    document: &CapabilityDocument,
-    catalog: &ScenarioCatalog,
-) -> Result<()> {
+pub(crate) fn validate(root: &Path, document: &CapabilityDocument) -> Result<()> {
     let mut paths = BTreeSet::new();
     let mut ids = BTreeSet::new();
     let mut scenarios = BTreeSet::new();
@@ -17,15 +13,12 @@ pub(crate) fn validate(
         if review.capability != document.id
             || !ids.insert(review.id.clone())
             || !scenarios.insert(review.scenario.clone())
-            || !document.hil_requirements.iter().any(|r| {
-                r.scenario == review.scenario
-                    || catalog.control_for(&r.scenario) == Some(&review.scenario)
-            })
+            || !document
+                .hil_requirements
+                .iter()
+                .any(|r| r.scenario == review.scenario)
         {
-            return Err(
-                "HIL review must uniquely bind a declared capability scenario or its control"
-                    .into(),
-            );
+            return Err("HIL review must uniquely bind a declared capability scenario".into());
         }
     }
     Ok(())

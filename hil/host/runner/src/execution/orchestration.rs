@@ -72,7 +72,7 @@ pub(crate) fn run_all(
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
-    finish_run(session, results, selected)
+    finish_run(session, results)
 }
 
 pub(crate) fn run_one(
@@ -101,7 +101,7 @@ pub(crate) fn run_one(
         };
         execute_one(&mut session, &mut operations, selected)?
     };
-    finish_run(session, results, &selected_entries)
+    finish_run(session, results)
 }
 
 enum FirmwarePreparation<'a> {
@@ -332,15 +332,8 @@ fn start_run(
     Ok(session)
 }
 
-fn finish_run(
-    session: RunSession,
-    results: Vec<ScenarioResult>,
-    selected: &[&Scenario],
-) -> Result<()> {
+fn finish_run(session: RunSession, results: Vec<ScenarioResult>) -> Result<()> {
     oer_process::check_cancelled()?;
-    if let Some(comparisons) = hil_core::evidence::comparison::collect(selected, &results) {
-        session.write_comparisons(&comparisons)?;
-    }
     let (suite, completion) = session.finish(results)?;
     emit_json(&completion, false)?;
     // Cancellation of a derived history update occurs after the run was

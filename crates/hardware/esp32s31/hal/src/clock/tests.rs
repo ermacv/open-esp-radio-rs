@@ -8,8 +8,9 @@ use oer_esp32s31_pac::{
 };
 
 use super::{
-    BluetoothClocks, BluetoothSysconClocks, ClockPort, CommonPhyPowerError, PowerEpoch,
-    SharedClockLeases, WifiClocks, WifiPowerRestoreCheckpoint,
+    BluetoothClocks, BluetoothSysconClocks, ClockPort, CommonPhyPowerError, CommonRadioPower,
+    CommonRadioPowerError, PowerEpoch, RadioClient, SharedClockLeases, WifiClocks,
+    WifiPowerRestoreCheckpoint,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,6 +24,7 @@ enum Operation {
     PrepareMap,
     EnableGroup(ModemSysconBluetoothClock),
     RestoreGroup(ModemSysconBluetoothClock),
+    PowerSequence,
 }
 
 struct Port {
@@ -30,6 +32,7 @@ struct Port {
     groups: [BluetoothClockBaseline; BLUETOOTH_CLOCK_COUNT],
     power: WifiPowerBaseline,
     power_readback: Result<(), WifiPowerRestoreReadback>,
+    power_sequence_failure: Option<crate::power::PowerError>,
     operations: Vec<Operation>,
 }
 
@@ -40,6 +43,7 @@ impl Port {
             groups: [BluetoothClockBaseline::default(); BLUETOOTH_CLOCK_COUNT],
             power: WifiPowerBaseline::for_validation(false),
             power_readback: Ok(()),
+            power_sequence_failure: None,
             operations: Vec::new(),
         }
     }
@@ -109,6 +113,17 @@ impl ClockPort for Port {
         _baseline: BluetoothClockBaseline,
     ) {
         self.operations.push(Operation::RestoreGroup(clock));
+    }
+    fn run_common_power_sequence(
+        &mut self,
+        leases: &mut SharedClockLeases,
+    ) -> Result<(), crate::power::PowerError> {
+        self.operations.push(Operation::PowerSequence);
+        if let Some(error) = self.power_sequence_failure {
+            return Err(error);
+        }
+        leases.retain_phy_i2c(self);
+        Ok(())
     }
 }
 
@@ -357,4 +372,86 @@ fn unpowered_routes_cannot_hand_over_common_phy_power() {
     };
     assert_eq!(error, CommonPhyPowerError::NotPowered);
     assert!(port.operations.is_empty());
+}
+
+#[test]
+fn only_the_first_client_runs_the_power_sequence() {
+    let cold = WifiPowerBaseline::for_validation(false);
+    let mut port = Port::new();
+    port.power = cold;
+    let mut power = CommonRadioPower::default();
+
+    assert_eq!(power.enter(&mut port, RadioClient::Wifi), Ok(()));
+    // A later protocol must not pulse the Wi-Fi resets again.
+    port.power = WifiPowerBaseline::for_validation(true);
+    assert_eq!(power.enter(&mut port, RadioClient::Bluetooth), Ok(()));
+    assert_eq!(
+        port.operations,
+        [
+            Operation::PowerSequence,
+            Operation::SetGate(SharedModemClockGate::PhyI2cMaster, true),
+        ]
+    );
+    assert_eq!(
+        power.enter(&mut port, RadioClient::Bluetooth),
+        Err(CommonRadioPowerError::AlreadyEntered)
+    );
+
+    port.operations.clear();
+    assert_eq!(power.exit(&mut port, RadioClient::Wifi), Ok(()));
+    assert!(port.operations.is_empty());
+    assert_eq!(power.exit(&mut port, RadioClient::Bluetooth), Ok(()));
+    // The last client restores the baseline captured before the first edge.
+    assert_eq!(
+        port.operations,
+        [
+            Operation::SetGate(SharedModemClockGate::PhyI2cMaster, false),
+            Operation::RestorePower(cold),
+        ]
+    );
+    assert_eq!(
+        power.exit(&mut port, RadioClient::Bluetooth),
+        Err(CommonRadioPowerError::NotEntered)
+    );
+}
+
+#[test]
+fn a_failed_power_sequence_admits_no_client() {
+    let mut port = Port::new();
+    let error = crate::power::PowerError {
+        checkpoint: crate::power::PowerCheckpoint::I2cClock,
+        expected: true,
+        observed: false,
+    };
+    port.power_sequence_failure = Some(error);
+    let mut power = CommonRadioPower::default();
+    assert_eq!(
+        power.enter(&mut port, RadioClient::Ieee802154),
+        Err(CommonRadioPowerError::Power(error))
+    );
+    assert!(!power.holds(RadioClient::Ieee802154));
+    assert_eq!(
+        power.exit(&mut port, RadioClient::Ieee802154),
+        Err(CommonRadioPowerError::NotEntered)
+    );
+
+    port.power_sequence_failure = None;
+    assert_eq!(power.enter(&mut port, RadioClient::Ieee802154), Ok(()));
+}
+
+#[test]
+fn a_failed_restore_keeps_the_last_client_for_retry() {
+    let mut port = Port::new();
+    let mut power = CommonRadioPower::default();
+    assert_eq!(power.enter(&mut port, RadioClient::Wifi), Ok(()));
+    port.power_readback = Err(WifiPowerRestoreReadback::ModemSyscon);
+    assert_eq!(
+        power.exit(&mut port, RadioClient::Wifi),
+        Err(CommonRadioPowerError::Restore(
+            WifiPowerRestoreCheckpoint::ModemSyscon
+        ))
+    );
+    assert!(power.holds(RadioClient::Wifi));
+    port.power_readback = Ok(());
+    assert_eq!(power.exit(&mut port, RadioClient::Wifi), Ok(()));
 }

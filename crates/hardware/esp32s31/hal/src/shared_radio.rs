@@ -12,6 +12,12 @@
 //! an interrupt handler that tries to acquire cannot deadlock against a task
 //! holding the lease; it only observes `Busy`.
 //!
+//! The arbiter also owns common radio power. Each protocol enters and leaves
+//! it through the lease, proving its identity with its own register set; the
+//! first client runs the modem/PHY power sequence once and the last restores
+//! the cold-power baseline. Refcounted modem clock dependencies are the shared
+//! modem clock planner's, and are not part of this membership.
+//!
 //! A lease is not a coexistence grant: it serializes register access, not
 //! air time. Forgetting a lease with `mem::forget` leaks it: the arbiter
 //! stays busy and no later route can reach the shared registers, which is a
@@ -22,17 +28,47 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use oer_esp32s31_pac::SharedRadioRegisters;
+use oer_esp32s31_pac::{
+    BluetoothTaskRegisters, Ieee802154TaskRegisters, SharedRadioRegisters, WifiRadioRegisters,
+};
 
+pub use crate::clock::{CommonRadioPowerError, RadioClient};
 use crate::{
+    clock::CommonRadioPower,
     owner::{PhyRegistrationEpoch, SharedPhyHal, route},
     phy::restore::PhyRouteState,
 };
 
-/// Shared registers and the PHY state that must stay with them.
+mod sealed {
+    pub trait RadioClientOwner {}
+}
+
+/// Protocol register owner that proves which client calls the arbiter.
+///
+/// Only the protocol register sets implement it, so a caller cannot enter or
+/// leave common power on behalf of a protocol whose registers it lacks.
+pub trait RadioClientOwner: sealed::RadioClientOwner {
+    const CLIENT: RadioClient;
+}
+
+impl sealed::RadioClientOwner for WifiRadioRegisters {}
+impl RadioClientOwner for WifiRadioRegisters {
+    const CLIENT: RadioClient = RadioClient::Wifi;
+}
+impl sealed::RadioClientOwner for BluetoothTaskRegisters {}
+impl RadioClientOwner for BluetoothTaskRegisters {
+    const CLIENT: RadioClient = RadioClient::Bluetooth;
+}
+impl sealed::RadioClientOwner for Ieee802154TaskRegisters {}
+impl RadioClientOwner for Ieee802154TaskRegisters {
+    const CLIENT: RadioClient = RadioClient::Ieee802154;
+}
+
+/// Shared registers and the PHY and power state that must stay with them.
 struct SharedRadioState {
     registers: SharedRadioRegisters,
     phy: PhyRouteState,
+    power: CommonRadioPower,
 }
 
 /// Unique arbiter of the shared radio partitions.
@@ -66,10 +102,14 @@ impl SharedRadio {
             reason = "the concurrent radio root split is the production constructor"
         )
     )]
-    pub(crate) const fn new(registers: SharedRadioRegisters, phy: PhyRouteState) -> Self {
+    pub(crate) fn new(registers: SharedRadioRegisters, phy: PhyRouteState) -> Self {
         Self {
             held: AtomicBool::new(false),
-            state: UnsafeCell::new(SharedRadioState { registers, phy }),
+            state: UnsafeCell::new(SharedRadioState {
+                registers,
+                phy,
+                power: CommonRadioPower::default(),
+            }),
         }
     }
 
@@ -99,7 +139,7 @@ impl SharedRadio {
         )
     )]
     pub(crate) fn into_parts(self) -> (SharedRadioRegisters, PhyRouteState) {
-        let SharedRadioState { registers, phy } = self.state.into_inner();
+        let SharedRadioState { registers, phy, .. } = self.state.into_inner();
         (registers, phy)
     }
 }
@@ -136,6 +176,48 @@ impl SharedRadioLease<'_> {
     /// The registration that currently describes the shared PHY.
     pub fn registration_epoch(&self) -> Option<PhyRegistrationEpoch> {
         self.state().phy.registration_epoch()
+    }
+
+    /// Whether `client` currently holds common radio power.
+    pub fn holds_common_power(&self, client: RadioClient) -> bool {
+        self.state().power.holds(client)
+    }
+
+    /// Enter common radio power as the protocol that owns `owner`.
+    ///
+    /// Only the first client runs the modem/PHY power sequence; it pulses the
+    /// Wi-Fi baseband and MAC resets, so it never runs while another client
+    /// holds power.
+    ///
+    /// # Errors
+    ///
+    /// The client already holds power, or the first client's sequence failed
+    /// a read-back checkpoint and admitted no client.
+    pub fn enter_common_power<O: RadioClientOwner>(
+        &mut self,
+        _owner: &O,
+    ) -> Result<(), CommonRadioPowerError> {
+        let state = self.state_mut();
+        state
+            .power
+            .enter(state.registers.radio_phy_mut(), O::CLIENT)
+    }
+
+    /// Leave common radio power as the protocol that owns `owner`.
+    ///
+    /// The last client releases the PHY-I2C gate and restores the cold-power
+    /// baseline captured before the first power edge.
+    ///
+    /// # Errors
+    ///
+    /// The client does not hold power, or the baseline did not read back; the
+    /// client then stays entered so the exit can be retried.
+    pub fn exit_common_power<O: RadioClientOwner>(
+        &mut self,
+        _owner: &O,
+    ) -> Result<(), CommonRadioPowerError> {
+        let state = self.state_mut();
+        state.power.exit(state.registers.radio_phy_mut(), O::CLIENT)
     }
 
     /// Borrow the shared PHY for one PHY-layer operation.

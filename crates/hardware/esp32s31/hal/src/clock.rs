@@ -44,6 +44,12 @@ pub(crate) trait ClockPort {
         clock: ModemSysconBluetoothClock,
         baseline: BluetoothClockBaseline,
     );
+    /// Run the common modem/PHY power sequence, retaining the PHY-I2C gate
+    /// in `leases` at its exact late edge.
+    fn run_common_power_sequence(
+        &mut self,
+        leases: &mut SharedClockLeases,
+    ) -> Result<(), crate::power::PowerError>;
 }
 
 impl ClockPort for RadioPhyRegisters {
@@ -99,6 +105,12 @@ impl ClockPort for RadioPhyRegisters {
         baseline: BluetoothClockBaseline,
     ) {
         RadioPhyRegisters::restore_bluetooth_clock(self, clock, baseline);
+    }
+    fn run_common_power_sequence(
+        &mut self,
+        leases: &mut SharedClockLeases,
+    ) -> Result<(), crate::power::PowerError> {
+        crate::power::execute_owned(&mut crate::power::RoutePower { phy: self, leases })
     }
 }
 
@@ -242,6 +254,101 @@ impl SharedClockLeases {
             },
             common.power,
         )
+    }
+}
+
+/// Protocol clients that can share the powered radio.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RadioClient {
+    Wifi,
+    Bluetooth,
+    Ieee802154,
+}
+
+impl RadioClient {
+    const fn bit(self) -> u8 {
+        match self {
+            Self::Wifi => 1,
+            Self::Bluetooth => 1 << 1,
+            Self::Ieee802154 => 1 << 2,
+        }
+    }
+}
+
+/// Why a client cannot enter or leave the common radio power.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommonRadioPowerError {
+    /// The client already holds common power.
+    AlreadyEntered,
+    /// The client does not hold common power.
+    NotEntered,
+    /// The first client's power sequence failed a read-back checkpoint.
+    Power(crate::power::PowerError),
+    /// The last client's cold-power baseline did not read back.
+    Restore(WifiPowerRestoreCheckpoint),
+}
+
+/// Common modem/PHY power shared by concurrently running clients.
+///
+/// The power sequence pulses the Wi-Fi baseband and MAC resets, so it runs
+/// once, for the first client; a later client must not repeat it while
+/// another protocol runs. The cold-power baseline is captured before that
+/// first edge and restored after the last client leaves. Refcounted modem
+/// clock dependencies such as coexistence belong to the shared modem clock
+/// planner, not to this membership.
+#[derive(Default)]
+pub(crate) struct CommonRadioPower {
+    clients: u8,
+    leases: SharedClockLeases,
+    power: PowerEpoch,
+}
+
+impl CommonRadioPower {
+    /// Whether `client` currently holds common power.
+    pub(crate) const fn holds(&self, client: RadioClient) -> bool {
+        self.clients & client.bit() != 0
+    }
+
+    /// Enter common power; only the first client runs the power sequence.
+    ///
+    /// A failed sequence admits no client. It keeps the original baseline
+    /// and any retained gate, so a retry restarts from the same cold state.
+    pub(crate) fn enter(
+        &mut self,
+        port: &mut impl ClockPort,
+        client: RadioClient,
+    ) -> Result<(), CommonRadioPowerError> {
+        if self.holds(client) {
+            return Err(CommonRadioPowerError::AlreadyEntered);
+        }
+        if self.clients == 0 {
+            self.power.prepare(port);
+            port.run_common_power_sequence(&mut self.leases)
+                .map_err(CommonRadioPowerError::Power)?;
+        }
+        self.clients |= client.bit();
+        Ok(())
+    }
+
+    /// Leave common power; the last client restores the cold baseline.
+    ///
+    /// A failed restore keeps `client` entered so the exit can be retried.
+    pub(crate) fn exit(
+        &mut self,
+        port: &mut impl ClockPort,
+        client: RadioClient,
+    ) -> Result<(), CommonRadioPowerError> {
+        if !self.holds(client) {
+            return Err(CommonRadioPowerError::NotEntered);
+        }
+        if self.clients == client.bit() {
+            self.leases.release_all(port);
+            self.power
+                .restore(port, false)
+                .map_err(CommonRadioPowerError::Restore)?;
+        }
+        self.clients &= !client.bit();
+        Ok(())
     }
 }
 

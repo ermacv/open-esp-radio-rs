@@ -36,9 +36,9 @@ Cargo package identities are independent of this directory hierarchy.
 | `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio actors; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler), its `memory/` and IEEE 802.15.4 `{dma,irq,mac}/` hold their lower ownership boundaries; the IEEE 802.15.4 root owns one affine MAC operation |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
-| `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox and acknowledged IEEE 802.15.4 IRQ handoff |
+| `adapters/embassy/esp32s31/` | Executor/time platform ABI and coexistence mailbox |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
-| `runtime/esp32s31/{ieee80211,bluetooth}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners and Bluetooth controller/session owners |
+| `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners, Bluetooth controller/session owners and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
 | `adapters/embassy-net/{owned,upstream}/`, `adapters/embassy-net/esp32s31/ieee80211-upstream/` | Owned-packet and released-interface network adapters; the chip bridge binds the released interface to Wi-Fi execution |
 | `adapters/xarxa/upstream/`, `adapters/xarxa/esp32s31/ieee80211-upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure; the chip bridge binds it to Wi-Fi execution |
 | `../experiments/network-engine/` | Experimental synchronous network engine; no production package depends on it, and its host tests drive the STA TX owner |

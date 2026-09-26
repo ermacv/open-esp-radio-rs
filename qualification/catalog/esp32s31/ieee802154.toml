@@ -33,7 +33,7 @@ limits = "Lower operation ownership does not compose the RF-ready public service
 source-paths = [
   "crates/hardware/esp32s31/driver/ieee802154/mac/src/actor.rs",
   "crates/hardware/esp32s31/driver/ieee802154/src/command_executor.rs",
-  "crates/adapters/embassy/esp32s31/ieee802154/src/owner.rs",
+  "crates/runtime/esp32s31/ieee802154/src/owner.rs",
 ]
 
 [[capabilities]]
@@ -249,10 +249,10 @@ id = "ieee802154-capability-sources-and-publication-scope"
 domain = "ieee802154"
 title = "Capability sources and publication scope"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary, not the S31 backend's supported-feature image. In particular,\n`CSMA_CA`, `SCHEDULED_TRANSMIT`, `AUTOMATIC_ACKNOWLEDGEMENT`, `SECURITY_OFFLOAD`\nand `SOURCE_MATCH` constants do not compose their corresponding operations.\nThe same applies to portable commands, configuration and software sleep states.\n\nThe [Embassy MAC owner](../../../../adapters/embassy/esp32s31/ieee802154/src/owner.rs)\nprovides `receive_without_auto_ack()`, `transmit_without_ack()`,\n`transmit_with_ack()`, `clear_channel_assessment()` and `energy_detection()`.\nThese are lower runtime entry points, not a complete public RF-ready service.\nThe [MAC actor](mac/src/actor.rs) admits only Direct or\nClearChannelAssessment TX access; neither is a CSMA/CA scheduler."
+overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary, not the S31 backend's supported-feature image. In particular,\n`CSMA_CA`, `SCHEDULED_TRANSMIT`, `AUTOMATIC_ACKNOWLEDGEMENT`, `SECURITY_OFFLOAD`\nand `SOURCE_MATCH` constants do not compose their corresponding operations.\nThe same applies to portable commands, configuration and software sleep states.\n\nThe [runtime MAC owner](../../../../runtime/esp32s31/ieee802154/src/owner.rs)\nprovides `receive_without_auto_ack()`, `transmit_without_ack()`,\n`transmit_with_ack()`, `clear_channel_assessment()` and `energy_detection()`.\nThese are lower runtime entry points, not a complete public RF-ready service.\nThe [MAC actor](mac/src/actor.rs) admits only Direct or\nClearChannelAssessment TX access; neither is a CSMA/CA scheduler."
 packages = [
     "oer-ieee802154",
-    "oer-esp32s31-ieee802154-embassy",
+    "oer-esp32s31-ieee802154-runtime",
     "oer-esp32s31-ieee802154-mac",
 ]
 
@@ -764,10 +764,10 @@ packages = ["oer-esp32s31-ieee802154"]
 [[references]]
 id = "ieee802154-ownership-and-readiness-embassy-owner"
 section = "ieee802154-ownership-and-readiness"
-title = "[Embassy owner](../../../../adapters/embassy/esp32s31/ieee802154/src/owner.rs)"
+title = "[Runtime owner](../../../../runtime/esp32s31/ieee802154/src/owner.rs)"
 kind = "source-reference"
 details = "Authority: Async waits and retained lower MAC/DMA owners"
-packages = ["oer-esp32s31-ieee802154-embassy"]
+packages = ["oer-esp32s31-ieee802154-runtime"]
 
 [[references]]
 id = "ieee802154-source-esp32-s31-datasheet"
@@ -794,10 +794,10 @@ packages = ["oer-ieee802154"]
 [[references]]
 id = "ieee802154-source-lower-runtime-entry-points"
 section = "ieee802154-capability-sources-and-publication-scope"
-title = "Lower Embassy owner and MAC actor entry points"
+title = "Lower runtime owner and MAC actor entry points"
 kind = "source-reference"
 details = "The lower operations do not establish a complete public RF-ready service, and Direct or ClearChannelAssessment access is not a CSMA/CA scheduler."
 packages = [
-    "oer-esp32s31-ieee802154-embassy",
+    "oer-esp32s31-ieee802154-runtime",
     "oer-esp32s31-ieee802154-mac",
 ]

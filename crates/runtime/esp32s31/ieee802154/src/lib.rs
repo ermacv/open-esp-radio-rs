@@ -2,13 +2,16 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-//! Embassy wake and bottom-half composition for the ESP32-S31 IEEE 802.15.4
-//! MAC.
+//! Executor-independent IRQ bottom half and operation owners for the
+//! ESP32-S31 IEEE 802.15.4 MAC.
 //!
 //! The hard interrupt samples all event sidebands and acknowledges the exact
-//! hardware snapshot before publishing a value here. The Embassy task owns
-//! command execution and affine DMA resources; neither PAC handles nor raw
-//! addresses cross the async handoff.
+//! hardware snapshot before publishing a value here. The task that polls
+//! these futures owns command execution and affine DMA resources; neither
+//! register handles nor raw addresses cross the async handoff. This crate
+//! names no executor: the handoff uses `embassy-sync` primitives over a
+//! caller-chosen raw mutex, and any executor may poll the futures. The
+//! platform CPU route that feeds the queue is bound by an adapter.
 
 #[cfg(test)]
 extern crate std;
@@ -31,8 +34,8 @@ use oer_esp32s31_ieee802154_irq::{
 mod owner;
 
 pub use owner::{
-    EmbassyIeee802154Active, EmbassyIeee802154DmaResolved, EmbassyIeee802154DmaRunToReadyError,
-    EmbassyIeee802154NoDmaResolved, EmbassyIeee802154Ready,
+    Ieee802154Active, Ieee802154DmaResolved, Ieee802154DmaRunToReadyError, Ieee802154NoDmaResolved,
+    Ieee802154Ready,
 };
 
 /// The hard IRQ acknowledged more snapshots than the bounded queue retained.
@@ -49,19 +52,19 @@ pub struct Ieee802154IrqDrain {
     pub overflowed: bool,
 }
 
-/// Bounded ISR-to-Embassy handoff for one IEEE 802.15.4 interrupt epoch.
+/// Bounded ISR-to-task handoff for one IEEE 802.15.4 interrupt epoch.
 ///
 /// Unlike the Wi-Fi wake signal, this queue preserves every acknowledged MAC
 /// value: IEEE 802.15.4 event status is no longer durable after the hard ISR
 /// clears it. Queue overflow returns the exact rejected token to the hard IRQ
 /// and marks the async operation failed; it is never treated as a coalesced
 /// wake.
-pub struct EmbassyIeee802154IrqRuntime<M: RawMutex, const DEPTH: usize> {
+pub struct Ieee802154IrqRuntime<M: RawMutex, const DEPTH: usize> {
     acknowledged: Channel<M, Ieee802154AcknowledgedInterrupt, DEPTH>,
     overflowed: AtomicBool,
 }
 
-impl<M: RawMutex, const DEPTH: usize> EmbassyIeee802154IrqRuntime<M, DEPTH> {
+impl<M: RawMutex, const DEPTH: usize> Ieee802154IrqRuntime<M, DEPTH> {
     /// Construct empty static IRQ handoff state.
     pub const fn new() -> Self {
         Self {
@@ -109,7 +112,7 @@ impl<M: RawMutex, const DEPTH: usize> EmbassyIeee802154IrqRuntime<M, DEPTH> {
 }
 
 impl<M: RawMutex, const DEPTH: usize> Ieee802154AcknowledgedInterruptSink
-    for EmbassyIeee802154IrqRuntime<M, DEPTH>
+    for Ieee802154IrqRuntime<M, DEPTH>
 {
     fn post(
         &self,
@@ -125,7 +128,7 @@ impl<M: RawMutex, const DEPTH: usize> Ieee802154AcknowledgedInterruptSink
     }
 }
 
-impl<M: RawMutex, const DEPTH: usize> Default for EmbassyIeee802154IrqRuntime<M, DEPTH> {
+impl<M: RawMutex, const DEPTH: usize> Default for Ieee802154IrqRuntime<M, DEPTH> {
     fn default() -> Self {
         Self::new()
     }
@@ -133,7 +136,7 @@ impl<M: RawMutex, const DEPTH: usize> Default for EmbassyIeee802154IrqRuntime<M,
 
 /// Fail-closed reason returned by one async MAC operation step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EmbassyIeee802154OperationError {
+pub enum Ieee802154OperationError {
     /// The bounded ISR handoff lost at least one acknowledged snapshot.
     IrqOverflow,
     /// An acknowledged snapshot could not form a valid event batch.
@@ -146,7 +149,7 @@ pub enum EmbassyIeee802154OperationError {
 }
 
 /// Result of one cancellation-safe async bottom-half step.
-pub enum EmbassyIeee802154OperationProgress<R, E: MacCommandExecutor> {
+pub enum Ieee802154OperationProgress<R, E: MacCommandExecutor> {
     /// The operation remains active and is retained by its owner.
     Pending,
     /// A terminal MAC event completed the operation.
@@ -159,22 +162,22 @@ pub enum EmbassyIeee802154OperationProgress<R, E: MacCommandExecutor> {
 /// awaits an IRQ. Cancelling that future therefore drops only a borrow, not
 /// command-register or DMA ownership. After the await, decoding and actor
 /// advancement are synchronous and contain no cancellation point.
-pub struct EmbassyIeee802154Operation<R, E: MacCommandExecutor> {
+pub struct Ieee802154Operation<R, E: MacCommandExecutor> {
     active: Option<MacOperationActive<R, E>>,
-    quarantine: Option<EmbassyIeee802154OperationQuarantine<R, E>>,
+    quarantine: Option<Ieee802154OperationQuarantine<R, E>>,
 }
 
 #[allow(
     dead_code,
     reason = "quarantined affine owners are deliberately retained without a recovery API"
 )]
-enum EmbassyIeee802154OperationQuarantine<R, E: MacCommandExecutor> {
+enum Ieee802154OperationQuarantine<R, E: MacCommandExecutor> {
     LostOrUndecodable(MacOperationQuarantined<R, E>),
     Rejected(MacOperationBatchRejected<R, E>),
 }
 
-impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
-    /// Bind an already started task-side MAC operation to the Embassy bottom half.
+impl<R, E: MacCommandExecutor> Ieee802154Operation<R, E> {
+    /// Bind an already started task-side MAC operation to the async bottom half.
     pub const fn new(active: MacOperationActive<R, E>) -> Self {
         Self {
             active: Some(active),
@@ -205,8 +208,8 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
     /// Wait for and apply exactly one acknowledged interrupt value.
     pub async fn advance<M: RawMutex, const DEPTH: usize>(
         &mut self,
-        irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
-    ) -> Result<EmbassyIeee802154OperationProgress<R, E>, EmbassyIeee802154OperationError> {
+        irq: &Ieee802154IrqRuntime<M, DEPTH>,
+    ) -> Result<Ieee802154OperationProgress<R, E>, Ieee802154OperationError> {
         assert!(
             self.active.is_some(),
             "a completed or quarantined operation cannot consume another IRQ"
@@ -222,34 +225,34 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
         let interrupt = match interrupt {
             Ok(interrupt) => interrupt,
             Err(_) => {
-                self.quarantine = Some(EmbassyIeee802154OperationQuarantine::LostOrUndecodable(
+                self.quarantine = Some(Ieee802154OperationQuarantine::LostOrUndecodable(
                     active.quarantine_after_handoff_failure(),
                 ));
-                return Err(EmbassyIeee802154OperationError::IrqOverflow);
+                return Err(Ieee802154OperationError::IrqOverflow);
             }
         };
         let phase = active.phase();
         let batch = match AcknowledgedMacEventBatch::from_interrupt(interrupt, phase) {
             Ok(batch) => batch,
             Err(error) => {
-                self.quarantine = Some(EmbassyIeee802154OperationQuarantine::LostOrUndecodable(
+                self.quarantine = Some(Ieee802154OperationQuarantine::LostOrUndecodable(
                     active.quarantine_after_handoff_failure(),
                 ));
-                return Err(EmbassyIeee802154OperationError::Interrupt(error));
+                return Err(Ieee802154OperationError::Interrupt(error));
             }
         };
         match active.process_batch(batch) {
             Ok(MacOperationBatchOutcome::Pending(active)) => {
                 self.active = Some(active);
-                Ok(EmbassyIeee802154OperationProgress::Pending)
+                Ok(Ieee802154OperationProgress::Pending)
             }
             Ok(MacOperationBatchOutcome::Completed(completed)) => {
-                Ok(EmbassyIeee802154OperationProgress::Completed(completed))
+                Ok(Ieee802154OperationProgress::Completed(completed))
             }
             Err(rejected) => {
                 let reason = rejected.reason();
-                self.quarantine = Some(EmbassyIeee802154OperationQuarantine::Rejected(rejected));
-                Err(EmbassyIeee802154OperationError::Rejected(reason))
+                self.quarantine = Some(Ieee802154OperationQuarantine::Rejected(rejected));
+                Err(Ieee802154OperationError::Rejected(reason))
             }
         }
     }
@@ -259,12 +262,12 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
     /// Cancelling this borrowed future preserves the active owner in `self`.
     pub async fn run<M: RawMutex, const DEPTH: usize>(
         &mut self,
-        irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
-    ) -> Result<MacOperationCompletion<R, E>, EmbassyIeee802154OperationError> {
+        irq: &Ieee802154IrqRuntime<M, DEPTH>,
+    ) -> Result<MacOperationCompletion<R, E>, Ieee802154OperationError> {
         loop {
             match self.advance(irq).await? {
-                EmbassyIeee802154OperationProgress::Pending => {}
-                EmbassyIeee802154OperationProgress::Completed(completed) => {
+                Ieee802154OperationProgress::Pending => {}
+                Ieee802154OperationProgress::Completed(completed) => {
                     return Ok(completed);
                 }
             }

@@ -7,13 +7,10 @@ Bluetooth execution lives in the [radio runtime domain](../../runtime/README.md)
 | --- | --- |
 | `esp32s31/executor/src/{executor,time_driver}.rs` | Platform executor wake ABI and Embassy timer queue; applications supply interrupt and timer capabilities |
 | `radio/src/` | Mailbox and role-epoch actor binding the portable radio service port |
-| `esp32s31/ieee802154/src/` | Acknowledged IRQ token queue and cancellation-safe operation/DMA owners |
 | `esp32s31/coex/src/` | Request/reply mailbox and the sole task-side coexistence owner |
 
-An adapter can retain state required by its external contract. IEEE 802.15.4
-queues already-acknowledged events, whereas Wi-Fi can coalesce notifications
-of durable work. Their overflow and cancellation contracts remain distinct.
-The coexistence mailbox serializes requests to one task-side owner; its async
+An adapter can retain state required by its external contract. The
+coexistence mailbox serializes requests to one task-side owner; its async
 loop is part of that binding and does not imply another radio lifecycle.
 
 `esp32s31/executor` is the Embassy platform binding: executor wake-up and

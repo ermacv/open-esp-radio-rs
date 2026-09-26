@@ -15,7 +15,7 @@ use oer_esp32s31_ieee802154_mac::{MacNoDmaResources, MacReady};
 use super::*;
 
 fn publish<M: RawMutex, const DEPTH: usize>(
-    irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
+    irq: &Ieee802154IrqRuntime<M, DEPTH>,
     events: Ieee802154EventMask,
     ed_rss: i8,
 ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
@@ -29,7 +29,7 @@ fn publish<M: RawMutex, const DEPTH: usize>(
 }
 
 fn publish_unclassified<M: RawMutex, const DEPTH: usize>(
-    irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
+    irq: &Ieee802154IrqRuntime<M, DEPTH>,
 ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
     irq.post(acknowledged_interrupt_for_validation(
         Err(Ieee802154EventObservationError),
@@ -48,7 +48,7 @@ fn active_cca() -> MacOperationActive<MacNoDmaResources, ValidationMacCommandExe
 
 #[test]
 fn acknowledged_values_cross_the_async_handoff_in_order() {
-    let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 2>::new();
+    let irq = Ieee802154IrqRuntime::<NoopRawMutex, 2>::new();
     publish(&irq, Ieee802154Event::TxSfdDone.mask(), -20).unwrap();
     publish(&irq, Ieee802154Event::TxDone.mask(), -21).unwrap();
 
@@ -68,7 +68,7 @@ fn acknowledged_values_cross_the_async_handoff_in_order() {
 
 #[test]
 fn overflow_is_a_fail_closed_operation_error() {
-    let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
+    let irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
     publish(&irq, Ieee802154Event::TxSfdDone.mask(), 0).unwrap();
     let rejected = publish(&irq, Ieee802154Event::TxDone.mask(), 0)
         .expect_err("the full handoff returns the exact rejected token");
@@ -83,8 +83,8 @@ fn overflow_is_a_fail_closed_operation_error() {
 
 #[test]
 fn cancellation_before_an_irq_keeps_the_exact_active_owner_recoverable() {
-    let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-    let mut operation = EmbassyIeee802154Operation::new(active_cca());
+    let irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
+    let mut operation = Ieee802154Operation::new(active_cca());
     let mut future = std::boxed::Box::pin(operation.advance(&irq));
     let mut context = Context::from_waker(Waker::noop());
     assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
@@ -97,7 +97,7 @@ fn cancellation_before_an_irq_keeps_the_exact_active_owner_recoverable() {
 
 #[test]
 fn consumed_overflow_decode_and_rejection_errors_quarantine_the_owner() {
-    let overflow_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
+    let overflow_irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
     publish(&overflow_irq, Ieee802154Event::TxSfdDone.mask(), 0).unwrap();
     let rejected = publish(&overflow_irq, Ieee802154Event::TxDone.mask(), 0)
         .expect_err("the full handoff returns the exact rejected token");
@@ -105,21 +105,21 @@ fn consumed_overflow_decode_and_rejection_errors_quarantine_the_owner() {
         rejected.event_classification(),
         Ok(Ieee802154Event::TxDone.mask())
     );
-    let mut overflow = EmbassyIeee802154Operation::new(active_cca());
+    let mut overflow = Ieee802154Operation::new(active_cca());
     assert!(matches!(
         block_on(overflow.advance(&overflow_irq)),
-        Err(EmbassyIeee802154OperationError::IrqOverflow)
+        Err(Ieee802154OperationError::IrqOverflow)
     ));
     assert!(!overflow.is_active());
     assert!(overflow.is_quarantined());
     assert!(overflow.into_active().is_none());
 
-    let decode_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
+    let decode_irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
     publish_unclassified(&decode_irq).unwrap();
-    let mut decode = EmbassyIeee802154Operation::new(active_cca());
+    let mut decode = Ieee802154Operation::new(active_cca());
     assert!(matches!(
         block_on(decode.advance(&decode_irq)),
-        Err(EmbassyIeee802154OperationError::Interrupt(
+        Err(Ieee802154OperationError::Interrupt(
             MacInterruptBatchError::UnclassifiedEvents(_)
         ))
     ));
@@ -127,12 +127,12 @@ fn consumed_overflow_decode_and_rejection_errors_quarantine_the_owner() {
     assert!(decode.is_quarantined());
     assert!(decode.into_active().is_none());
 
-    let rejected_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
+    let rejected_irq = Ieee802154IrqRuntime::<NoopRawMutex, 1>::new();
     publish(&rejected_irq, Ieee802154Event::TxDone.mask(), 0).unwrap();
-    let mut rejected = EmbassyIeee802154Operation::new(active_cca());
+    let mut rejected = Ieee802154Operation::new(active_cca());
     assert!(matches!(
         block_on(rejected.advance(&rejected_irq)),
-        Err(EmbassyIeee802154OperationError::Rejected(_))
+        Err(Ieee802154OperationError::Rejected(_))
     ));
     assert!(!rejected.is_active());
     assert!(rejected.is_quarantined());
@@ -141,7 +141,7 @@ fn consumed_overflow_decode_and_rejection_errors_quarantine_the_owner() {
 
 #[test]
 fn quiesced_epoch_drain_reports_every_stale_value() {
-    let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 2>::new();
+    let irq = Ieee802154IrqRuntime::<NoopRawMutex, 2>::new();
     publish(&irq, Ieee802154Event::RxSfdDone.mask(), 0).unwrap();
     publish(&irq, Ieee802154Event::RxDone.mask(), 0).unwrap();
 

@@ -51,7 +51,7 @@ impl ControllerTimeSample {
     ///
     /// This does not expose an integer image or duplicate scheduler-time
     /// authority. The returned PAC value can only enter a lower typed codec.
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
     pub const fn latched_time(&self) -> BluetoothControllerLatchedTime {
         self.latched_time
     }
@@ -686,6 +686,13 @@ impl ControllerSchedulerEpoch {
         time: oer_esp32s31_bluetooth_memory::PeripheralConnectionReceiveTime,
     ) -> u32 {
         self.project_raw_ticks(time.wrapping_controller_ticks())
+    }
+
+    /// Project a raw controller-tick value that hardware captured, such as a
+    /// packet or anchor capture. A capture is not a fresh time sample and
+    /// cannot re-anchor the epoch.
+    pub const fn project_capture(self, raw_ticks: u32) -> u32 {
+        self.project_raw_ticks(raw_ticks)
     }
 
     /// Advance the raw anchor while preserving this sample's scheduler image.

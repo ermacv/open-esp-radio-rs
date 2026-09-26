@@ -156,7 +156,7 @@ mod tests {
         let (registers, platform) = stopped.into_parts();
         let mut scheduler = ClockedResources::for_validation(registers, platform)
             .initialize_controller_hal_with(|_, _| {})
-            .initialize_scheduler_for_validation(ControllerRuntimeResources::<1, 1>::new());
+            .initialize_scheduler_for_validation(ControllerRuntimeResources::<1>::new());
         let retired_platform = {
             let (_, _, _, lease) = scheduler.split_runtime().unwrap();
             let platform = lease.bind(original.controller.epoch_identity());

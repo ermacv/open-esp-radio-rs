@@ -1,35 +1,24 @@
-use crate::scheduler::{SchedulerSoftwareConfig, SchedulerTimingPolicy};
-
 use oer_esp32s31_hal::bluetooth::BluetoothModemLpTimerInstant;
-
-use oer_esp32s31_hal::bluetooth::BluetoothControllerHalInitConfig;
 
 use super::ControllerRuntimeResources;
 
 #[test]
 fn one_aggregate_starts_as_one_pristine_bounded_epoch() {
-    let resources = ControllerRuntimeResources::<4, 3>::new();
+    let resources = ControllerRuntimeResources::<4>::new();
 
     assert_eq!(resources.modem_timer_capacity(), 4);
-    assert_eq!(resources.scheduler_capacity(), 3);
     assert!(resources.is_pristine());
 }
 
 #[test]
 #[should_panic(expected = "at least one modem timer slot")]
 fn zero_modem_timer_capacity_profile_is_rejected() {
-    let _resources = ControllerRuntimeResources::<0, 1>::new();
-}
-
-#[test]
-#[should_panic(expected = "at least one scheduler slot")]
-fn zero_scheduler_capacity_profile_is_rejected() {
-    let _resources = ControllerRuntimeResources::<1, 0>::new();
+    let _resources = ControllerRuntimeResources::<0>::new();
 }
 
 #[test]
 fn split_borrows_one_matching_interrupt_and_task_epoch() {
-    let mut resources = ControllerRuntimeResources::<4, 3>::new();
+    let mut resources = ControllerRuntimeResources::<4>::new();
     let (interrupt, mut task, modem_timer) = resources.split();
 
     assert!(core::ptr::eq(
@@ -37,16 +26,10 @@ fn split_borrows_one_matching_interrupt_and_task_epoch() {
         task.scheduler_wake()
     ));
     assert!(core::ptr::eq(
-        interrupt.scheduler_lock_modify_events(),
-        task.scheduler_lock_modify_events()
-    ));
-    assert!(core::ptr::eq(
         interrupt.modem_lp_timer_worker_wake(),
         modem_timer.worker_wake()
     ));
-    assert!(task.scheduler_lock_modify_worker().is_idle());
     assert!(!task.scheduler_finished_lists().is_active());
-    assert!(task.scheduler_timeline_mut().is_empty());
     assert!(modem_timer.queue_is_empty());
     drop((interrupt, task, modem_timer));
     assert!(resources.is_pristine());
@@ -54,7 +37,7 @@ fn split_borrows_one_matching_interrupt_and_task_epoch() {
 
 #[test]
 fn split_assigns_mutable_timer_queue_only_to_the_modem_task_endpoint() {
-    let mut resources = ControllerRuntimeResources::<2, 1>::new();
+    let mut resources = ControllerRuntimeResources::<2>::new();
     let (interrupt, task, modem_timer) = resources.split();
 
     assert!(core::ptr::eq(
@@ -77,29 +60,8 @@ fn split_assigns_mutable_timer_queue_only_to_the_modem_task_endpoint() {
 }
 
 #[test]
-fn controller_reservation_remains_in_the_runtime_epoch_until_explicit_release() {
-    let mut resources = ControllerRuntimeResources::<4, 2>::new();
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
-    let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
-        SchedulerSoftwareConfig::reviewed_standalone(),
-        scale,
-    );
-
-    let (interrupt, mut task, modem_timer) = resources.split();
-    let reservation = task
-        .scheduler_timeline_mut()
-        .reserve_recurring_window(45, 100, timing_policy)
-        .expect("one runtime-owned scheduler slot is free");
-    assert!(!task.scheduler_timeline_mut().is_empty());
-
-    assert!(task.scheduler_timeline_mut().release(reservation).is_ok());
-    drop((interrupt, task, modem_timer));
-    assert!(resources.is_pristine());
-}
-
-#[test]
 fn stale_readiness_does_not_impersonate_work_and_is_cleared_only_after_cold_release() {
-    let mut resources = ControllerRuntimeResources::<2, 2>::new();
+    let mut resources = ControllerRuntimeResources::<2>::new();
     let (interrupt, task, _timer) = resources.split();
     assert_eq!(task.retirement_ready(), Ok(()));
     interrupt

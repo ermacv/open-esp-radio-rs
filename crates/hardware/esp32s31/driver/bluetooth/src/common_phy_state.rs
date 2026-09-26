@@ -45,21 +45,14 @@ pub enum ControllerPhyEntry {
 /// last-owner common-PHY shutdown is not yet recovered. Dropping this value is
 /// fail-stop and does not run an unverified implicit teardown.
 #[must_use = "registered common PHY state retains every Bluetooth hardware owner"]
-pub struct ControllerPhyRegistered<
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    pub(crate) controller:
-        ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
+pub struct ControllerPhyRegistered<P, const MODEM_TIMER_CAPACITY: usize> {
+    pub(crate) controller: ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY>,
     pub(crate) phy: RegisteredBluetoothPhy,
     pub(crate) calibration_cache: Option<PhyCalibrationCache>,
     pub(crate) report: ControllerPhyEntry,
 }
 
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerPhyRegistered<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
+impl<P, const MODEM_TIMER_CAPACITY: usize> ControllerPhyRegistered<P, MODEM_TIMER_CAPACITY> {
     /// Inspect how the registered PHY was obtained, without hardware authority.
     pub const fn phy_entry(&self) -> ControllerPhyEntry {
         self.report
@@ -84,21 +77,14 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 /// ownership. Complete Bluetooth-client, BTBB and common-PHY teardown is not
 /// yet recovered, so dropping this value remains fail-stop.
 #[must_use = "settled Bluetooth PHY client retains every powered Controller owner"]
-pub struct ControllerPhyInitialized<
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    pub(crate) controller:
-        ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
+pub struct ControllerPhyInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
+    pub(crate) controller: ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY>,
     pub(crate) phy: RegisteredBluetoothPhyClient,
     pub(crate) calibration_cache: Option<PhyCalibrationCache>,
     pub(crate) report: ControllerPhyEntry,
 }
 
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerPhyInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
+impl<P, const MODEM_TIMER_CAPACITY: usize> ControllerPhyInitialized<P, MODEM_TIMER_CAPACITY> {
     /// Inspect how the registered PHY was obtained.
     pub const fn phy_entry(&self) -> ControllerPhyEntry {
         self.report

@@ -21,28 +21,20 @@ use oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale;
 /// ISR storage, no CPU route is enabled, and this state therefore exposes no
 /// live timer interrupt or operational Link-Layer capability.
 #[must_use = "the initialized low-power hardware retains every powered Bluetooth owner"]
-pub struct ControllerLowPowerHardwareInitialized<
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    scheduler: SchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
+pub struct ControllerLowPowerHardwareInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
+    scheduler: SchedulerInitialized<P, MODEM_TIMER_CAPACITY>,
     timer_hardware: Option<ModemLpTimerLowPowerHardwareInitializedOwner>,
 }
 
 /// Lossless failure to initialize the disjoint modem low-power timer owner.
 #[must_use = "the powered scheduler remains owned after a rejected transition"]
-pub struct ControllerLowPowerHardwareInitializationFailure<
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    scheduler: SchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
+pub struct ControllerLowPowerHardwareInitializationFailure<P, const MODEM_TIMER_CAPACITY: usize> {
+    scheduler: SchedulerInitialized<P, MODEM_TIMER_CAPACITY>,
     error: BluetoothModemLpTimerOwnerError,
 }
 
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerLowPowerHardwareInitializationFailure<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+impl<P, const MODEM_TIMER_CAPACITY: usize>
+    ControllerLowPowerHardwareInitializationFailure<P, MODEM_TIMER_CAPACITY>
 {
     /// Exact lower ownership error.
     pub const fn error(&self) -> BluetoothModemLpTimerOwnerError {
@@ -50,9 +42,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     }
 
     /// Recover the complete powered Controller owner.
-    pub fn into_scheduler(
-        self,
-    ) -> SchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
+    pub fn into_scheduler(self) -> SchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
         self.scheduler
     }
 }
@@ -63,25 +53,18 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 /// part of this hardware-only split and is joined only after stable interrupt
 /// publication.
 #[must_use = "all runtime endpoints belong to one powered Controller epoch"]
-pub struct ControllerRuntimeEndpoints<
-    'runtime,
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
+pub struct ControllerRuntimeEndpoints<'runtime, P, const MODEM_TIMER_CAPACITY: usize> {
     /// Interrupt-side scheduler publications.
     pub interrupt: ControllerInterruptRuntime<'runtime>,
     /// Exclusive task-side HAL lease and borrowed scheduler workers.
-    pub task: ControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+    pub task: ControllerPoweredTaskRuntime<'runtime>,
     /// Unique mutable source-127 queue and epoch runtime.
     pub modem_timer: ControllerModemTimerRuntime<'runtime, MODEM_TIMER_CAPACITY>,
     /// Exclusive powered platform reservation; independent of command states.
     pub platform: crate::resources::platform_retirement::ControllerPlatformLease<'runtime, P>,
 }
 
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    SchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
+impl<P, const MODEM_TIMER_CAPACITY: usize> SchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
     #[expect(
         clippy::result_large_err,
         reason = "the no-alloc test seam returns the complete affine powered owner"
@@ -115,12 +98,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     pub fn initialize_modem_lp_timer_hardware(
         self,
     ) -> Result<
-        ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
-        ControllerLowPowerHardwareInitializationFailure<
-            P,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-        >,
+        ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY>,
+        ControllerLowPowerHardwareInitializationFailure<P, MODEM_TIMER_CAPACITY>,
     > {
         match self.try_initialize_low_power_hardware_with(|task| {
             // SAFETY: this consuming state owns the powered scheduler
@@ -138,17 +117,12 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     }
 }
 
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+impl<P, const MODEM_TIMER_CAPACITY: usize>
+    ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY>
 {
     /// Number of scheduler modem-timer slots retained by this exact epoch.
     pub const fn modem_timer_capacity(&self) -> usize {
         self.scheduler.modem_timer_capacity()
-    }
-
-    /// Number of source-owned scheduler reservations retained by this epoch.
-    pub const fn scheduler_capacity(&self) -> usize {
-        self.scheduler.scheduler_capacity()
     }
 
     /// Scheduler time scale retained by this exact powered epoch.
@@ -171,7 +145,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     /// already claimed; no second runtime is created.
     pub fn split_runtime(
         &mut self,
-    ) -> Option<ControllerRuntimeEndpoints<'_, P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>> {
+    ) -> Option<ControllerRuntimeEndpoints<'_, P, MODEM_TIMER_CAPACITY>> {
         let (interrupt, task, modem_timer, platform) = self.scheduler.split_runtime()?;
         Some(ControllerRuntimeEndpoints {
             interrupt,
@@ -219,10 +193,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 mod tests;
 
 #[cfg(target_arch = "riscv32")]
-impl<P, const MT: usize, const SC: usize> ControllerLowPowerHardwareInitialized<P, MT, SC> {
-    pub(crate) fn into_restart_parts(
-        self,
-    ) -> crate::scheduler::core::SchedulerRestartParts<P, MT, SC> {
+impl<P, const MT: usize> ControllerLowPowerHardwareInitialized<P, MT> {
+    pub(crate) fn into_restart_parts(self) -> crate::scheduler::core::SchedulerRestartParts<P, MT> {
         assert!(
             self.timer_hardware.is_none(),
             "timer partition already staged"

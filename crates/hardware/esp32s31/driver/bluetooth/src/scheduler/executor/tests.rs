@@ -109,17 +109,17 @@ fn idle_insertion_links_the_chain_in_start_order() {
     let mut items = Items::new();
 
     let first = executor
-        .submit_idle(&mut items, idle(), 1, window(100))
+        .submit_idle(&mut items, &idle(), 1, window(100))
         .unwrap();
     assert_eq!(first.head, link(1));
     let _ = executor
-        .submit_idle(&mut items, idle(), 2, window(300))
+        .submit_idle(&mut items, &idle(), 2, window(300))
         .unwrap();
     let _ = executor
-        .submit_idle(&mut items, idle(), 3, window(200))
+        .submit_idle(&mut items, &idle(), 3, window(200))
         .unwrap();
     let head = executor
-        .submit_idle(&mut items, idle(), 4, window(0))
+        .submit_idle(&mut items, &idle(), 4, window(0))
         .unwrap();
 
     assert_eq!(head.head, link(4));
@@ -137,16 +137,16 @@ fn rejected_submissions_change_no_item() {
     let mut executor = SchedulerExecutor::<u8, 4>::new();
     let mut items = Items::new();
     let _ = executor
-        .submit_idle(&mut items, idle(), 1, window(100))
+        .submit_idle(&mut items, &idle(), 1, window(100))
         .unwrap();
     let before = items.0;
 
     assert_eq!(
-        executor.submit_idle(&mut items, busy(), 2, window(300)),
+        executor.submit_idle(&mut items, &busy(), 2, window(300)),
         Err(SchedulerSubmitError::SchedulerBusy)
     );
     assert_eq!(
-        executor.submit_idle(&mut items, idle(), 2, window(120)),
+        executor.submit_idle(&mut items, &idle(), 2, window(120)),
         Err(SchedulerSubmitError::List(
             SchedulerListInsertError::Overlap { with: 1 }
         ))
@@ -161,7 +161,7 @@ fn completion_takes_executed_events_from_the_head() {
     let mut items = Items::new();
     for (id, start) in [(1, 0), (2, 100), (3, 200)] {
         let _ = executor
-            .submit_idle(&mut items, idle(), id, window(start))
+            .submit_idle(&mut items, &idle(), id, window(start))
             .unwrap();
     }
 
@@ -193,7 +193,7 @@ fn out_of_order_completion_leaves_the_later_event_listed() {
     let mut items = Items::new();
     for (id, start) in [(1, 0), (2, 100), (3, 200)] {
         let _ = executor
-            .submit_idle(&mut items, idle(), id, window(start))
+            .submit_idle(&mut items, &idle(), id, window(start))
             .unwrap();
     }
     items.execute(1, 0);
@@ -236,10 +236,10 @@ mod live {
         let mut executor = SchedulerExecutor::new();
         let mut items = Items::new();
         let _ = executor
-            .submit_idle(&mut items, idle(), 1, window(0))
+            .submit_idle(&mut items, &idle(), 1, window(0))
             .unwrap();
         let _ = executor
-            .submit_idle(&mut items, idle(), 2, window(200))
+            .submit_idle(&mut items, &idle(), 2, window(200))
             .unwrap();
         (executor, items)
     }
@@ -249,7 +249,7 @@ mod live {
         let (mut executor, mut items) = running_list();
 
         let step = executor
-            .begin_live_insertion(&items, busy(), 3, window(100))
+            .begin_live_insertion(&items, &busy(), 3, window(100))
             .unwrap();
         assert_eq!(actions(&step), [Action::PublishExecutionLock(link(1))]);
         assert_eq!(step.next(), Next::Await(Wait::ExecutionLock));
@@ -273,7 +273,7 @@ mod live {
         // The mirror is frozen until the insertion ends.
         assert!(executor.take_completed(&mut items).is_err());
         assert_eq!(
-            executor.submit_idle(&mut items, idle(), 4, window(400)),
+            executor.submit_idle(&mut items, &idle(), 4, window(400)),
             Err(SchedulerSubmitError::TransactionActive)
         );
 
@@ -293,7 +293,7 @@ mod live {
     fn a_lock_that_is_not_retained_falls_back_to_modify_and_publishes_the_new_head() {
         let (mut executor, mut items) = running_list();
         let _ = executor
-            .begin_live_insertion(&items, busy(), 3, window(100))
+            .begin_live_insertion(&items, &busy(), 3, window(100))
             .unwrap();
 
         let step = executor
@@ -326,7 +326,7 @@ mod live {
     fn a_new_first_event_uses_modify() {
         let (mut executor, mut items) = running_list();
         let step = executor
-            .begin_live_insertion(&items, busy(), 3, window(0xffff_ff00))
+            .begin_live_insertion(&items, &busy(), 3, window(0xffff_ff00))
             .unwrap();
         assert_eq!(actions(&step), [Action::PublishExecutionModify]);
         let step = executor
@@ -346,7 +346,7 @@ mod live {
     fn faults_end_the_insertion_without_linking() {
         let (mut executor, mut items) = running_list();
         let _ = executor
-            .begin_live_insertion(&items, busy(), 3, window(100))
+            .begin_live_insertion(&items, &busy(), 3, window(100))
             .unwrap();
         assert_eq!(
             executor.advance(&mut items, Observation::ExecutionModify(Modify::Ready)),
@@ -363,7 +363,7 @@ mod live {
         assert!(!executor.list().contains(3));
 
         let _ = executor
-            .begin_live_insertion(&items, busy(), 3, window(0xffff_ff00))
+            .begin_live_insertion(&items, &busy(), 3, window(0xffff_ff00))
             .unwrap();
         assert_eq!(
             executor.advance(
@@ -383,13 +383,13 @@ mod live {
     fn live_insertion_needs_a_running_scheduler_and_restart_follows_an_idle_one() {
         let (mut executor, mut items) = running_list();
         assert_eq!(
-            executor.begin_live_insertion(&items, idle(), 3, window(100)),
+            executor.begin_live_insertion(&items, &idle(), 3, window(100)),
             Err(SchedulerSubmitError::SchedulerIdle)
         );
         items.execute(1, 0);
-        let restart = executor.restart_if_idle(&items, idle()).unwrap();
+        let restart = executor.restart_if_idle(&items, &idle()).unwrap();
         assert_eq!(restart.head, link(2));
-        assert!(executor.restart_if_idle(&items, busy()).is_none());
+        assert!(executor.restart_if_idle(&items, &busy()).is_none());
     }
 }
 
@@ -440,7 +440,7 @@ mod cancel {
         let mut items = Items::new();
         for id in 1..=4 {
             let _ = executor
-                .submit_idle(&mut items, idle(), id, window((u32::from(id) - 1) * 100))
+                .submit_idle(&mut items, &idle(), id, window((u32::from(id) - 1) * 100))
                 .unwrap();
         }
         (executor, items)
@@ -454,7 +454,7 @@ mod cancel {
         head: Option<ControllerSramLinkAddress>,
         ids: &[u8],
     ) -> Step {
-        let step = executor.begin_cancel(items, scheduler, head, ids).unwrap();
+        let step = executor.begin_cancel(items, &scheduler, head, ids).unwrap();
         assert_eq!(actions(&step), []);
         assert_eq!(step.next(), Next::Await(Wait::LockModify));
         let step = executor.advance(items, lock_modify(true)).unwrap();
@@ -483,7 +483,7 @@ mod cancel {
         let (mut executor, mut items) = four_events();
 
         let step = executor
-            .begin_cancel(&mut items, idle(), None, &[3, 2])
+            .begin_cancel(&mut items, &idle(), None, &[3, 2])
             .unwrap();
         assert_eq!(actions(&step), [Action::PublishHead(Some(link(1)))]);
         assert_eq!(step.next(), Next::Finished);
@@ -495,12 +495,12 @@ mod cancel {
         assert_eq!(items.0[3].next, Some(link(4)));
 
         let step = executor
-            .begin_cancel(&mut items, idle(), None, &[1])
+            .begin_cancel(&mut items, &idle(), None, &[1])
             .unwrap();
         assert_eq!(actions(&step), [Action::PublishHead(Some(link(4)))]);
         assert_eq!(items.0[4].previous, None);
         let step = executor
-            .begin_cancel(&mut items, idle(), None, &[4])
+            .begin_cancel(&mut items, &idle(), None, &[4])
             .unwrap();
         assert_eq!(actions(&step), [Action::PublishHead(None)]);
         assert!(executor.list().is_empty());
@@ -511,15 +511,15 @@ mod cancel {
         let (mut executor, mut items) = four_events();
         let before = items.0;
         assert_eq!(
-            executor.begin_cancel(&mut items, idle(), None, &[9]),
+            executor.begin_cancel(&mut items, &idle(), None, &[9]),
             Err(SchedulerCancelError::NotListed(9))
         );
         assert_eq!(
-            executor.begin_cancel(&mut items, idle(), None, &[2, 2]),
+            executor.begin_cancel(&mut items, &idle(), None, &[2, 2]),
             Err(SchedulerCancelError::NotListed(2))
         );
         assert_eq!(
-            executor.begin_cancel(&mut items, busy(), Some(link(7)), &[2]),
+            executor.begin_cancel(&mut items, &busy(), Some(link(7)), &[2]),
             Err(SchedulerCancelError::ForeignHardwareHead)
         );
         assert_eq!(items.0, before);
@@ -528,10 +528,10 @@ mod cancel {
         items.execute(1, 0);
         let _ = executor.take_completed(&mut items).unwrap();
         let _ = executor
-            .begin_live_insertion(&items, busy(), 5, window(400))
+            .begin_live_insertion(&items, &busy(), 5, window(400))
             .unwrap();
         assert_eq!(
-            executor.begin_cancel(&mut items, busy(), None, &[2]),
+            executor.begin_cancel(&mut items, &busy(), None, &[2]),
             Err(SchedulerCancelError::TransactionActive)
         );
     }
@@ -551,7 +551,7 @@ mod cancel {
             Some(SchedulerTransactionActive)
         );
         assert_eq!(
-            executor.begin_flush(&items, busy()).err(),
+            executor.begin_flush(&items, &busy()).err(),
             Some(SchedulerTransactionActive)
         );
 
@@ -657,14 +657,14 @@ mod cancel {
     #[test]
     fn list_deletion_releases_every_event() {
         let (mut executor, items) = four_events();
-        let step = executor.begin_flush(&items, idle()).unwrap();
+        let step = executor.begin_flush(&items, &idle()).unwrap();
         assert_eq!(actions(&step), [Action::PublishHead(None)]);
         assert_eq!(step.released().len(), 4);
         assert!(executor.list().is_empty());
 
         let (mut executor, mut items) = four_events();
         items.execute(1, 0);
-        let step = executor.begin_flush(&items, busy()).unwrap();
+        let step = executor.begin_flush(&items, &busy()).unwrap();
         assert_eq!(actions(&step), [Action::PublishExecutionModifyListDeletion]);
         assert_eq!(step.next(), Next::Await(Wait::ExecutionModify));
         let step = executor
@@ -690,7 +690,7 @@ mod cancel {
         assert!(executor.list().is_empty());
 
         let (mut executor, mut items) = four_events();
-        let _ = executor.begin_flush(&items, busy()).unwrap();
+        let _ = executor.begin_flush(&items, &busy()).unwrap();
         assert_eq!(
             executor.advance(
                 &mut items,
@@ -713,14 +713,14 @@ mod cancel {
             Err(SchedulerStopRejected::AlreadyStopped(_))
         ));
         assert_eq!(
-            executor.submit_idle(&mut items, idle(), 5, window(400)),
+            executor.submit_idle(&mut items, &idle(), 5, window(400)),
             Err(SchedulerSubmitError::Stopped)
         );
-        assert!(executor.restart_if_idle(&items, idle()).is_none());
+        assert!(executor.restart_if_idle(&items, &idle()).is_none());
 
         // Stale events are cancelled on the idle path before resuming.
         let step = executor
-            .begin_cancel(&mut items, idle(), None, &[1])
+            .begin_cancel(&mut items, &idle(), None, &[1])
             .unwrap();
         assert_eq!(actions(&step), [Action::PublishHead(Some(link(2)))]);
         items.execute(2, 0);
@@ -734,7 +734,7 @@ mod cancel {
     #[test]
     fn the_scheduler_cannot_stop_inside_a_transaction() {
         let (mut executor, items) = four_events();
-        let _ = executor.begin_flush(&items, busy()).unwrap();
+        let _ = executor.begin_flush(&items, &busy()).unwrap();
         assert!(matches!(
             executor.enter_stopped(BluetoothSchedulerStopped::for_validation()),
             Err(SchedulerStopRejected::TransactionActive(_))
@@ -800,7 +800,7 @@ mod pools {
         for (id, window) in items.iter().rev() {
             head = Some(
                 executor
-                    .submit_idle(&mut space, idle(), *id, *window)
+                    .submit_idle(&mut space, &idle(), *id, *window)
                     .unwrap()
                     .head,
             );

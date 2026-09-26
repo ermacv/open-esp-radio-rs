@@ -48,13 +48,4 @@ impl SchedulerRawWindow {
         (other.end.wrapping_sub(self.start) as i32) > 0
             && (self.end.wrapping_sub(other.start) as i32) > 0
     }
-
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-    pub(crate) const fn delayed_after(self, occupied: Self) -> Self {
-        let start = occupied.end;
-        Self {
-            start,
-            end: start.wrapping_add(self.duration()),
-        }
-    }
 }

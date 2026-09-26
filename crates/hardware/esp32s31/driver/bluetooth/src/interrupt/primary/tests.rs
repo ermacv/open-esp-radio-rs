@@ -93,7 +93,7 @@ fn ordinary_dynamic_epoch_produces_one_paired_scheduler_event() {
 
     assert_eq!(event.wake().class(), SchedulerWorkerWakeClass::Ordinary);
     assert_eq!(event.wake().deferred_work_publication(), Some(true));
-    assert!(event.lock_modify_observation().is_busy());
+    assert!(event.scheduler_busy());
     assert_eq!(event.current_hardware_list().get(), 7);
     assert_eq!(
         backend.operations,
@@ -110,7 +110,7 @@ fn idle_reference_gate_clears_before_fresh_work_read() {
         panic!("idle reference gate must continue after the ordered clear");
     };
 
-    assert!(event.lock_modify_observation().is_busy());
+    assert!(event.scheduler_busy());
     assert_eq!(
         backend.operations,
         [
@@ -132,7 +132,7 @@ fn busy_reference_gate_preserves_reference_then_uses_a_fresh_work_read() {
     };
 
     assert_eq!(event.wake().class(), SchedulerWorkerWakeClass::Ordinary);
-    assert!(!event.lock_modify_observation().is_busy());
+    assert!(!event.scheduler_busy());
     assert_eq!(
         backend.operations,
         [
@@ -173,19 +173,16 @@ fn unclassified_status_fails_closed_without_reading_scheduler_state() {
 }
 
 #[test]
-fn one_primary_scheduler_event_updates_both_durable_cells_from_one_observation() {
+fn one_primary_scheduler_event_updates_the_durable_handoff() {
     let mut backend = Backend::dynamic(false, true, true, true, true, true);
     let scheduler_wake = SchedulerWakeCell::new();
-    let lock_modify_events = SchedulerLockModifyEventCell::new();
 
-    let published =
-        execute_primary_interrupt_step(&mut backend).publish(&scheduler_wake, &lock_modify_events);
+    let published = execute_primary_interrupt_step(&mut backend).publish(&scheduler_wake);
 
     assert!(matches!(
         published,
         PrimaryPublishedInterruptStep::Scheduler {
             scheduler: SchedulerWakePublication::WakeWorker,
-            lock_modify: SchedulerLockModifyEventPublication::WakeWorker,
             ..
         }
     ));
@@ -195,21 +192,14 @@ fn one_primary_scheduler_event_updates_both_durable_cells_from_one_observation()
             .expect("scheduler work must be durable")
             .is_marked()
     );
-    assert!(
-        lock_modify_events
-            .take()
-            .expect("the matching BUSY observation must be durable")
-            .is_busy()
-    );
 
     let empty = execute_primary_interrupt_step(&mut Backend::dynamic(
         false, false, false, false, false, false,
     ))
-    .publish(&scheduler_wake, &lock_modify_events);
+    .publish(&scheduler_wake);
     assert!(matches!(
         empty,
         PrimaryPublishedInterruptStep::NoSchedulerWork(_)
     ));
     assert!(!scheduler_wake.is_pending());
-    assert!(!lock_modify_events.is_pending());
 }

@@ -5,7 +5,7 @@ use crate::{
     scheduler::SchedulerInitialized,
 };
 
-fn scheduler() -> SchedulerInitialized<(), 4, 3> {
+fn scheduler() -> SchedulerInitialized<(), 4> {
     let stopped = BluetoothStopped::from_hardware((), BluetoothRadioHardware::for_validation());
     let (registers, platform) = stopped.into_parts();
     ClockedResources::for_validation(registers, platform)
@@ -64,7 +64,6 @@ fn low_power_hardware_failure_returns_the_complete_scheduler_epoch() {
     assert_eq!(error, "timer-owner-separated");
     assert!(controller.runtime_is_pristine());
     assert_eq!(controller.modem_timer_capacity(), 4);
-    assert_eq!(controller.scheduler_capacity(), 3);
 }
 
 #[test]

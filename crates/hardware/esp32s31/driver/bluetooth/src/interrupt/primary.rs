@@ -7,20 +7,14 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(target_arch = "riscv32")]
-use oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalInterruptStep;
-
-use crate::{
-    interrupt::{
-        PrimaryControllerFault, PrimaryInterruptClassification, SchedulerReferenceAction,
-        SchedulerWakeCell, SchedulerWakePublication, SchedulerWorkerWake,
-    },
-    scheduler::{SchedulerLockModifyEventCell, SchedulerLockModifyEventPublication},
+use crate::interrupt::{
+    PrimaryControllerFault, PrimaryInterruptClassification, SchedulerReferenceAction,
+    SchedulerWakeCell, SchedulerWakePublication, SchedulerWorkerWake,
 };
 
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerReferenceGateObservation,
-    BluetoothSchedulerWorkObservation, InterruptRegistersOwner,
+    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
+    InterruptRegistersOwner,
 };
 
 use oer_esp32s31_hal::bluetooth::{
@@ -46,11 +40,6 @@ pub struct PrimaryNoSchedulerWork {
 }
 
 /// One classified scheduler publication derived from a single later state read.
-///
-/// The ordinary scheduler wake and lock/modify BUSY value are intentionally
-/// paired here. Both are derived at the same temporal point, so the async
-/// adapter cannot accidentally combine a wake from one IRQ with a BUSY sample
-/// from another.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PrimarySchedulerEvent {
     classification: PrimaryInterruptClassification,
@@ -66,40 +55,26 @@ pub enum PrimaryPublishedInterruptStep {
     Fault(PrimaryControllerFault),
     /// The epoch contained no reviewed dynamic scheduler work.
     NoSchedulerWork(PrimaryNoSchedulerWork),
-    /// Both durable scheduler cells accepted the same temporal event.
+    /// The scheduler handoff accepted the event.
     Scheduler {
         /// Exact classified primary event.
         event: PrimarySchedulerEvent,
-        /// Coalescing disposition of the general scheduler handoff.
+        /// Coalescing disposition of the scheduler handoff.
         scheduler: SchedulerWakePublication,
-        /// Latest-value disposition of the lock/modify handoff.
-        lock_modify: SchedulerLockModifyEventPublication,
     },
 }
 
 impl PrimaryInterruptStep {
-    /// Publish one classified primary result into its matching Controller cells.
+    /// Publish one classified primary result into the scheduler handoff.
     ///
-    /// Fault and empty outcomes never publish ordinary scheduler work. A
-    /// scheduler outcome updates both cells from the same later hardware
-    /// observation before returning their wake dispositions.
-    pub fn publish(
-        self,
-        scheduler_wake: &SchedulerWakeCell,
-        lock_modify_events: &SchedulerLockModifyEventCell,
-    ) -> PrimaryPublishedInterruptStep {
+    /// Fault and empty outcomes never publish ordinary scheduler work.
+    pub fn publish(self, scheduler_wake: &SchedulerWakeCell) -> PrimaryPublishedInterruptStep {
         match self {
             Self::Fault(fault) => PrimaryPublishedInterruptStep::Fault(fault),
             Self::NoSchedulerWork(epoch) => PrimaryPublishedInterruptStep::NoSchedulerWork(epoch),
             Self::Scheduler(event) => {
                 let scheduler = scheduler_wake.publish_from_interrupt(event.wake().class());
-                let lock_modify =
-                    lock_modify_events.publish_from_interrupt(event.lock_modify_observation());
-                PrimaryPublishedInterruptStep::Scheduler {
-                    event,
-                    scheduler,
-                    lock_modify,
-                }
+                PrimaryPublishedInterruptStep::Scheduler { event, scheduler }
             }
         }
     }
@@ -111,25 +86,14 @@ impl PrimarySchedulerEvent {
         self.wake
     }
 
-    /// Return the lock/modify BUSY value captured at the same work point.
-    pub const fn lock_modify_observation(
-        &self,
-    ) -> BluetoothSchedulerLockModifyInterruptObservation {
-        BluetoothSchedulerLockModifyInterruptObservation::from_busy(self.work.is_busy())
+    /// Whether the same scheduler-state read found the scheduler busy.
+    pub const fn scheduler_busy(&self) -> bool {
+        self.work.is_busy()
     }
 
     /// Hardware-list index captured by the same scheduler-state read.
     pub const fn current_hardware_list(&self) -> BluetoothSchedulerHardwareListIndex {
         self.work.current_hardware_list()
-    }
-
-    /// Consume this exact primary-event scheduler sample at the interrupt-side
-    /// software-list removal gate.
-    #[cfg(target_arch = "riscv32")]
-    pub fn into_software_list_removal_gate(
-        self,
-    ) -> BluetoothSchedulerSoftwareListRemovalInterruptStep {
-        self.work.into_software_list_removal_gate()
     }
 }
 

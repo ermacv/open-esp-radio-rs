@@ -23,8 +23,7 @@ use oer_esp32s31_phy::{
     tracking::PhyParamTrackRequest,
 };
 
-type Controller<P, const MT: usize, const SC: usize> =
-    ControllerLowPowerHardwareInitialized<P, MT, SC>;
+type Controller<P, const MT: usize> = ControllerLowPowerHardwareInitialized<P, MT>;
 
 /// Caller-owned inputs for one full common-PHY registration.
 pub struct PhyInitializationConfig {
@@ -74,8 +73,8 @@ impl PhyInitializationReport {
 
 /// Failed target registration retaining the complete outer Controller.
 #[must_use = "failed common PHY registration still owns Bluetooth hardware"]
-pub struct ControllerPhyInitializationFailure<P, const MT: usize, const SC: usize> {
-    _controller: Controller<P, MT, SC>,
+pub struct ControllerPhyInitializationFailure<P, const MT: usize> {
+    _controller: Controller<P, MT>,
     failure: PhyInitializationFailure,
 }
 
@@ -95,7 +94,7 @@ pub enum PhyInitializationError {
     Registration(TargetPhyRegisterError),
 }
 
-impl<P, const MT: usize, const SC: usize> ControllerPhyInitializationFailure<P, MT, SC> {
+impl<P, const MT: usize> ControllerPhyInitializationFailure<P, MT> {
     /// Whether registration lacks a completed target failure cleanup.
     /// A power prerequisite rejection occurs before registration starts.
     pub fn phy_hardware_ambiguous(&self) -> bool {
@@ -127,14 +126,14 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyInitializationFailure<P, 
 
 /// Successful client acquisition before its tracking continuation is settled.
 #[must_use = "Bluetooth client acquisition must advance or retain pending tracking"]
-pub struct ControllerPhyClientAcquire<P, const MT: usize, const SC: usize> {
-    controller: Controller<P, MT, SC>,
+pub struct ControllerPhyClientAcquire<P, const MT: usize> {
+    controller: Controller<P, MT>,
     acquisition: RegisteredBluetoothPhyClientAcquire,
     calibration_cache: Option<PhyCalibrationCache>,
     report: ControllerPhyEntry,
 }
 
-impl<P, const MT: usize, const SC: usize> ControllerPhyClientAcquire<P, MT, SC> {
+impl<P, const MT: usize> ControllerPhyClientAcquire<P, MT> {
     /// Return the source-reviewed first-client acquisition ordering.
     pub const fn ordering(&self) -> PhyClientAcquireOrdering {
         self.acquisition.ordering()
@@ -152,7 +151,7 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyClientAcquire<P, MT, SC> 
     )]
     pub fn into_owner(
         self,
-    ) -> Result<ControllerPhyInitialized<P, MT, SC>, ControllerPhyPendingTrack<P, MT, SC>> {
+    ) -> Result<ControllerPhyInitialized<P, MT>, ControllerPhyPendingTrack<P, MT>> {
         let Self {
             controller,
             acquisition,
@@ -180,14 +179,14 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyClientAcquire<P, MT, SC> 
 ///
 /// This is fail-stop and exposes no lower recovery edge.
 #[must_use = "failed Bluetooth client acquisition retains the powered Controller"]
-pub struct ControllerPhyClientAcquireFailure<P, const MT: usize, const SC: usize> {
-    _controller: Controller<P, MT, SC>,
+pub struct ControllerPhyClientAcquireFailure<P, const MT: usize> {
+    _controller: Controller<P, MT>,
     failure: RegisteredBluetoothPhyClientAcquireFailure,
     _calibration_cache: Option<PhyCalibrationCache>,
     _report: ControllerPhyEntry,
 }
 
-impl<P, const MT: usize, const SC: usize> ControllerPhyClientAcquireFailure<P, MT, SC> {
+impl<P, const MT: usize> ControllerPhyClientAcquireFailure<P, MT> {
     /// Inspect the exact source-owned acquisition rejection.
     pub const fn error(&self) -> PhyClientAcquireError {
         self.failure.error()
@@ -196,21 +195,21 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyClientAcquireFailure<P, M
 
 /// Pending immediate tracking retaining the complete Controller epoch.
 #[must_use = "pending Bluetooth PHY tracking must begin"]
-pub struct ControllerPhyPendingTrack<P, const MT: usize, const SC: usize> {
-    controller: Controller<P, MT, SC>,
+pub struct ControllerPhyPendingTrack<P, const MT: usize> {
+    controller: Controller<P, MT>,
     pending: RegisteredBluetoothPhyPendingTrack,
     calibration_cache: Option<PhyCalibrationCache>,
     report: ControllerPhyEntry,
 }
 
-impl<P, const MT: usize, const SC: usize> ControllerPhyPendingTrack<P, MT, SC> {
+impl<P, const MT: usize> ControllerPhyPendingTrack<P, MT> {
     /// Borrow the exact immediate tracking request.
     pub const fn request(&self) -> &PhyParamTrackRequest {
         self.pending.request()
     }
 
     /// Enter tracking with policy owned by the registered common-PHY epoch.
-    pub fn begin_tracking(self) -> ControllerPhyPendingTracking<P, MT, SC> {
+    pub fn begin_tracking(self) -> ControllerPhyPendingTracking<P, MT> {
         ControllerPhyPendingTracking {
             controller: self.controller,
             tracking: self.pending.begin_tracking(),
@@ -222,8 +221,8 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyPendingTrack<P, MT, SC> {
 
 /// In-flight immediate tracking retaining the complete Controller epoch.
 #[must_use = "Bluetooth PHY tracking must be driven to a terminal result"]
-pub struct ControllerPhyPendingTracking<P, const MT: usize, const SC: usize> {
-    controller: Controller<P, MT, SC>,
+pub struct ControllerPhyPendingTracking<P, const MT: usize> {
+    controller: Controller<P, MT>,
     tracking: RegisteredBluetoothPhyPendingTracking,
     calibration_cache: Option<PhyCalibrationCache>,
     report: ControllerPhyEntry,
@@ -231,14 +230,14 @@ pub struct ControllerPhyPendingTracking<P, const MT: usize, const SC: usize> {
 
 /// Failed tracking retaining the outer Controller and poisoned lower owner.
 #[must_use = "failed Bluetooth PHY tracking retains the poisoned powered epoch"]
-pub struct ControllerPhyTrackingFailure<P, const MT: usize, const SC: usize> {
-    _controller: Controller<P, MT, SC>,
+pub struct ControllerPhyTrackingFailure<P, const MT: usize> {
+    _controller: Controller<P, MT>,
     failure: PhyTrackingFailure<BluetoothRoute>,
     _calibration_cache: Option<PhyCalibrationCache>,
     _report: ControllerPhyEntry,
 }
 
-impl<P, const MT: usize, const SC: usize> ControllerPhyTrackingFailure<P, MT, SC> {
+impl<P, const MT: usize> ControllerPhyTrackingFailure<P, MT> {
     /// Inspect the exact target tracking failure.
     pub const fn error(&self) -> TargetPhyParamTrackingError {
         self.failure.error()
@@ -250,7 +249,7 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyTrackingFailure<P, MT, SC
     }
 }
 
-impl<P, const MT: usize, const SC: usize> ControllerPhyPendingTracking<P, MT, SC> {
+impl<P, const MT: usize> ControllerPhyPendingTracking<P, MT> {
     /// Complete due tracking through the borrowed concrete target port.
     ///
     /// Once polled, cancellation releases no reusable Controller state; an
@@ -262,7 +261,7 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyPendingTracking<P, MT, SC
     pub async fn complete_tracking<D, O>(
         self,
         observer: O,
-    ) -> Result<ControllerPhyInitialized<P, MT, SC>, ControllerPhyTrackingFailure<P, MT, SC>>
+    ) -> Result<ControllerPhyInitialized<P, MT>, ControllerPhyTrackingFailure<P, MT>>
     where
         D: PhyAsyncDelay,
         O: PhyTargetObserver,
@@ -315,7 +314,7 @@ fn poll_tracking<F: core::future::Future>(
     tracking.poll(cx)
 }
 
-impl<P, const MT: usize, const SC: usize> ControllerPhyRegistered<P, MT, SC> {
+impl<P, const MT: usize> ControllerPhyRegistered<P, MT> {
     /// Acquire the source-owned Bluetooth PHY client without skipping tracking.
     #[allow(
         clippy::result_large_err,
@@ -324,8 +323,7 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyRegistered<P, MT, SC> {
     pub fn acquire_phy_client(
         self,
         clock: &mut impl PhyPllTrackClock,
-    ) -> Result<ControllerPhyClientAcquire<P, MT, SC>, ControllerPhyClientAcquireFailure<P, MT, SC>>
-    {
+    ) -> Result<ControllerPhyClientAcquire<P, MT>, ControllerPhyClientAcquireFailure<P, MT>> {
         let ControllerPhyRegistered {
             controller,
             phy,
@@ -349,7 +347,7 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyRegistered<P, MT, SC> {
     }
 }
 
-impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
+impl<P, const MT: usize> Controller<P, MT> {
     /// Prepare common PHY power/clocks and run target registration.
     /// Bluetooth-client acquisition remains a separate transition.
     #[allow(
@@ -361,7 +359,7 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
         mut self,
         config: PhyInitializationConfig,
         observer: O,
-    ) -> Result<ControllerPhyRegistered<P, MT, SC>, ControllerPhyInitializationFailure<P, MT, SC>>
+    ) -> Result<ControllerPhyRegistered<P, MT>, ControllerPhyInitializationFailure<P, MT>>
     where
         D: PhyAsyncDelay,
         O: PhyTargetObserver,
@@ -389,8 +387,8 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
 
 /// Rejected or failed retained-PHY resume retaining the outer Controller.
 #[must_use = "failed retained PHY resume still owns Bluetooth hardware"]
-pub struct ControllerPhyResumeFailure<P, const MT: usize, const SC: usize> {
-    _controller: Controller<P, MT, SC>,
+pub struct ControllerPhyResumeFailure<P, const MT: usize> {
+    _controller: Controller<P, MT>,
     failure: PhyResumeFailure,
 }
 
@@ -418,7 +416,7 @@ pub enum PhyResumeError {
     Wake(oer_esp32s31_phy::PhyTargetPortError),
 }
 
-impl<P, const MT: usize, const SC: usize> ControllerPhyResumeFailure<P, MT, SC> {
+impl<P, const MT: usize> ControllerPhyResumeFailure<P, MT> {
     /// Whether the retained RF wake started and left the RF domain ambiguous.
     pub const fn phy_hardware_ambiguous(&self) -> bool {
         matches!(
@@ -442,7 +440,7 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyResumeFailure<P, MT, SC> 
     }
 }
 
-impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
+impl<P, const MT: usize> Controller<P, MT> {
     /// Resume the registered common PHY another protocol route handed over,
     /// instead of powering and registering it.
     ///
@@ -464,7 +462,7 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
         mut self,
         closed: oer_esp32s31_phy::RegisteredBluetoothPhyRfClosed,
         calibration_cache: Option<PhyCalibrationCache>,
-    ) -> Result<ControllerPhyRegistered<P, MT, SC>, ControllerPhyResumeFailure<P, MT, SC>> {
+    ) -> Result<ControllerPhyRegistered<P, MT>, ControllerPhyResumeFailure<P, MT>> {
         let task = self.common_phy_parts_mut().0;
         if !task.common_phy_inherited() {
             return Err(ControllerPhyResumeFailure {
@@ -507,10 +505,10 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
     clippy::result_large_err,
     reason = "registration failure retains the actual Controller"
 )]
-fn finish_registration<P, const MT: usize, const SC: usize>(
-    controller: Controller<P, MT, SC>,
+fn finish_registration<P, const MT: usize>(
+    controller: Controller<P, MT>,
     result: Result<oer_esp32s31_phy::PhyDomainRegistered, PhyDomainRegisterFailure>,
-) -> Result<ControllerPhyRegistered<P, MT, SC>, ControllerPhyInitializationFailure<P, MT, SC>> {
+) -> Result<ControllerPhyRegistered<P, MT>, ControllerPhyInitializationFailure<P, MT>> {
     match result {
         Ok(success) => {
             let (phy, calibration_cache, registration, counters) =

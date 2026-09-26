@@ -141,16 +141,8 @@ impl BlePhyTimingAuthority {
 /// connection, or HCI dataplane is operational.
 #[must_use = "initialized BLE PHY retains every hardware and storage owner"]
 #[cfg(target_arch = "riscv32")]
-pub struct ControllerBlePhyEngineInitialized<
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    controller: crate::low_power::ControllerLowPowerHardwareInitialized<
-        P,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-    >,
+pub struct ControllerBlePhyEngineInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
+    controller: crate::low_power::ControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY>,
     physical: RuntimeOwnerSlot<BlePhyRetainedOwners>,
     phy_entry: crate::common_phy_state::ControllerPhyEntry,
     baseband_report: crate::baseband::BasebandInitializationReport,
@@ -214,16 +206,16 @@ impl BlePhyRetainedOwners {
 
 /// Disjoint software endpoints and an exclusive lease on this exact PHY graph.
 #[cfg(target_arch = "riscv32")]
-pub struct BlePhyRuntime<'runtime, P, const MT: usize, const SC: usize> {
-    pub endpoints: crate::low_power::ControllerRuntimeEndpoints<'runtime, P, MT, SC>,
+pub struct BlePhyRuntime<'runtime, P, const MT: usize> {
+    pub endpoints: crate::low_power::ControllerRuntimeEndpoints<'runtime, P, MT>,
     pub timing: BlePhyTimingAuthority,
     pub physical: RuntimeOwnerLease<'runtime, BlePhyRetainedOwners>,
     pub direction_finding: DirectionFindingWorkspaceLink,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+impl<P, const MODEM_TIMER_CAPACITY: usize>
+    ControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY>
 {
     /// Observe completion of the source-owned normal BLE PHY transaction.
     pub const fn report(&self) -> BlePhyInitializationReport {
@@ -270,9 +262,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 
     /// Split the already initialized hardware runtime after this
     /// complete BLE-PHY owner has reached stable final placement.
-    pub fn split_runtime(
-        &mut self,
-    ) -> Option<BlePhyRuntime<'_, P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>> {
+    pub fn split_runtime(&mut self) -> Option<BlePhyRuntime<'_, P, MODEM_TIMER_CAPACITY>> {
         // Read before claiming either lease: repeated splitting must reject
         // without accessing an owner already moved into retirement.
         let physical = self.physical.as_mut()?;
@@ -290,9 +280,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
+impl<P, const MODEM_TIMER_CAPACITY: usize> ControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY> {
     /// Publish the recovered BLE PHY register transaction while consuming and
     /// retaining the complete address-bound allocation graph.
     ///
@@ -311,7 +299,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         storage: BlePhyEngineCpuOwned,
         direction_finding: DirectionFindingWorkspaceCpuOwned,
         public_address: BluetoothPublicDeviceAddress,
-    ) -> ControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
+    ) -> ControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY> {
         let controller = &mut self.initialized.controller;
         let report = apply_register_init_then_public_address(
             &storage,
@@ -404,16 +392,16 @@ fn apply_register_init(
 mod tests;
 
 #[cfg(target_arch = "riscv32")]
-pub struct BlePhyRestartParts<P, const MT: usize, const SC: usize> {
-    pub scheduler: crate::scheduler::core::SchedulerRestartParts<P, MT, SC>,
+pub struct BlePhyRestartParts<P, const MT: usize> {
+    pub scheduler: crate::scheduler::core::SchedulerRestartParts<P, MT>,
     pub physical: BlePhyRetainedOwners,
     pub timing: BlePhyTimingAuthority,
     pub direction_finding: DirectionFindingWorkspaceLink,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<P, const MT: usize, const SC: usize> ControllerBlePhyEngineInitialized<P, MT, SC> {
-    pub fn into_restart_parts(self) -> BlePhyRestartParts<P, MT, SC> {
+impl<P, const MT: usize> ControllerBlePhyEngineInitialized<P, MT> {
+    pub fn into_restart_parts(self) -> BlePhyRestartParts<P, MT> {
         let physical = self.physical.into_unclaimed();
         let timing = BlePhyTimingAuthority::new(physical.storage.le_1m_packet_start_calibration());
         let direction_finding = physical.direction_finding.link();

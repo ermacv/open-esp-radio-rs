@@ -28,19 +28,13 @@ pub struct BasebandInitializationReport {
 /// fail-stop and does not gate clocks behind initialized radio state.
 #[must_use = "initialized Bluetooth baseband retains every hardware owner"]
 #[cfg(target_arch = "riscv32")]
-pub struct ControllerBasebandInitialized<
-    P,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    pub(crate) initialized: ControllerPhyInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
+pub struct ControllerBasebandInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
+    pub(crate) initialized: ControllerPhyInitialized<P, MODEM_TIMER_CAPACITY>,
     pub(crate) baseband_report: BasebandInitializationReport,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
+impl<P, const MODEM_TIMER_CAPACITY: usize> ControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY> {
     /// Inspect the completed common-PHY transition without hardware access.
     pub const fn phy_entry(&self) -> ControllerPhyEntry {
         self.initialized.phy_entry()
@@ -58,9 +52,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
-    ControllerPhyInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-{
+impl<P, const MODEM_TIMER_CAPACITY: usize> ControllerPhyInitialized<P, MODEM_TIMER_CAPACITY> {
     /// Execute the exact finite MMIO effects of `bt_bb_v2_init_cmplx(1)`.
     ///
     /// The gain byte is projected from this completed common-PHY owner rather
@@ -73,9 +65,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         unsafe_code,
         reason = "the consuming Controller-PHY state proves every prerequisite of the narrow HAL bridge"
     )]
-    pub fn initialize_baseband(
-        self,
-    ) -> ControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
+    pub fn initialize_baseband(self) -> ControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY> {
         let ControllerPhyInitialized {
             mut controller,
             phy,

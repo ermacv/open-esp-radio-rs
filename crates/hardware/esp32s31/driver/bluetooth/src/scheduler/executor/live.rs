@@ -42,7 +42,7 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub fn begin_live_insertion(
         &mut self,
         items: &impl SchedulerItemAccess<I>,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: &BluetoothSchedulerWorkObservation,
         id: I,
         window: SchedulerRawWindow,
     ) -> Result<SchedulerStep<I, CAPACITY>, SchedulerSubmitError<I>> {

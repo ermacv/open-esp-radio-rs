@@ -9,7 +9,8 @@
 use crate::interrupt::SchedulerWakeBatch;
 
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop, ControllerHal,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+    BluetoothSchedulerStopped, ControllerHal,
 };
 
 pub use oer_esp32s31_hal::bluetooth::{
@@ -73,10 +74,27 @@ impl SchedulerFinishedListWorker {
         self.capture_with(controller, wake)
     }
 
+    /// Capture the finished lists of a stopped scheduler, which raises no
+    /// further wake.
+    pub fn capture_stopped(
+        &mut self,
+        controller: &mut ControllerHal<'_>,
+        _stopped: &BluetoothSchedulerStopped,
+    ) -> Result<(), SchedulerFinishedListCaptureError> {
+        self.transfer(controller)
+    }
+
     fn capture_with(
         &mut self,
         backend: &mut impl SchedulerFinishedListBackend,
         _wake: SchedulerWakeBatch,
+    ) -> Result<(), SchedulerFinishedListCaptureError> {
+        self.transfer(backend)
+    }
+
+    fn transfer(
+        &mut self,
+        backend: &mut impl SchedulerFinishedListBackend,
     ) -> Result<(), SchedulerFinishedListCaptureError> {
         if self.observation.is_some() {
             return Err(SchedulerFinishedListCaptureError::DrainAlreadyActive);

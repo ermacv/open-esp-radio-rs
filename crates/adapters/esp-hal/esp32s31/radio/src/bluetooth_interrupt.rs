@@ -43,8 +43,7 @@ use oer_esp32s31_bluetooth::{
 };
 
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerRunInterruptsPrepared,
-    BluetoothSchedulerSoftwareListRemovalJoin, ControllerHal, InterruptRegistersOwner,
+    BluetoothSchedulerRunInterruptsPrepared, InterruptRegistersOwner,
     ModemLpTimerHandlerRegisterStep, ModemLpTimerInterruptReadyOwner, ModemLpTimerInterruptStep,
     ModemLpTimerSoftwarePendingOwner,
 };
@@ -297,25 +296,6 @@ impl PublishedEspHalBluetoothInterruptOwners {
         })
     }
 
-    /// Execute one direct post-unlink recheck while retaining the stable
-    /// interrupt owner in process-wide storage.
-    pub fn recheck_scheduler_software_list_removal(
-        &self,
-        controller: &mut ControllerHal<'_>,
-        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    ) -> Result<
-        BluetoothSchedulerSoftwareListRemovalJoin,
-        BluetoothSchedulerHardwareListHeadEmptyObserved,
-    > {
-        critical_section::with(|critical_section| {
-            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
-            let Some(interrupts) = slot.as_mut() else {
-                return Err(head);
-            };
-            Ok(controller.recheck_scheduler_software_list_removal(interrupts, head))
-        })
-    }
-
     /// Capture, acknowledge and classify one primary source-124 epoch.
     ///
     /// The unique shared register owner remains in its process-wide slot for
@@ -494,29 +474,6 @@ fn service_bound_bluetooth_modem_lp_timer_interrupt() -> EspHalBluetoothModemLpT
 }
 
 impl SchedulerRunInterruptStorage for PublishedEspHalBluetoothInterruptOwners {
-    fn monotonic_micros() -> u64 {
-        esp_hal::time::Instant::now()
-            .duration_since_epoch()
-            .as_micros()
-    }
-
-    fn step_scheduler_stop(
-        &self,
-        controller: &mut ControllerHal<'_>,
-        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    ) -> Result<
-        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
-        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    > {
-        critical_section::with(|cs| {
-            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(cs);
-            match slot.as_mut() {
-                Some(interrupts) => Ok(controller.step_scheduler_stop(interrupts, stop)),
-                None => Err(stop),
-            }
-        })
-    }
-
     type Error = EspHalBluetoothSchedulerRunInterruptError;
 
     fn prepare_scheduler_run_interrupts(
@@ -525,17 +482,18 @@ impl SchedulerRunInterruptStorage for PublishedEspHalBluetoothInterruptOwners {
         PublishedEspHalBluetoothInterruptOwners::prepare_scheduler_run_interrupts(self)
     }
 
-    fn recheck_scheduler_software_list_removal(
+    fn with_interrupt_registers<T, R>(
         &self,
-        controller: &mut ControllerHal<'_>,
-        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    ) -> Result<
-        BluetoothSchedulerSoftwareListRemovalJoin,
-        BluetoothSchedulerHardwareListHeadEmptyObserved,
-    > {
-        PublishedEspHalBluetoothInterruptOwners::recheck_scheduler_software_list_removal(
-            self, controller, head,
-        )
+        value: T,
+        operation: impl FnOnce(&mut InterruptRegistersOwner, T) -> R,
+    ) -> Result<R, T> {
+        critical_section::with(|cs| {
+            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(cs);
+            match slot.as_mut() {
+                Some(interrupts) => Ok(operation(interrupts, value)),
+                None => Err(value),
+            }
+        })
     }
 }
 
@@ -756,19 +714,6 @@ impl<'published> BoundEspHalBluetoothInterruptEpoch<'published> {
         self.published.prepare_scheduler_run_interrupts()
     }
 
-    /// Execute one direct post-unlink recheck through the published owner.
-    pub fn recheck_scheduler_software_list_removal(
-        &self,
-        controller: &mut ControllerHal<'_>,
-        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    ) -> Result<
-        BluetoothSchedulerSoftwareListRemovalJoin,
-        BluetoothSchedulerHardwareListHeadEmptyObserved,
-    > {
-        self.published
-            .recheck_scheduler_software_list_removal(controller, head)
-    }
-
     /// Move source-127 software-pending ownership into task context.
     pub fn take_modem_lp_timer_software_pending(
         &self,
@@ -819,29 +764,6 @@ impl<'published> BoundEspHalBluetoothInterruptEpoch<'published> {
 }
 
 impl SchedulerRunInterruptStorage for BoundEspHalBluetoothInterruptEpoch<'_> {
-    fn monotonic_micros() -> u64 {
-        esp_hal::time::Instant::now()
-            .duration_since_epoch()
-            .as_micros()
-    }
-
-    fn step_scheduler_stop(
-        &self,
-        controller: &mut ControllerHal<'_>,
-        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    ) -> Result<
-        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
-        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    > {
-        critical_section::with(|cs| {
-            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(cs);
-            match slot.as_mut() {
-                Some(interrupts) => Ok(controller.step_scheduler_stop(interrupts, stop)),
-                None => Err(stop),
-            }
-        })
-    }
-
     type Error = EspHalBluetoothSchedulerRunInterruptError;
 
     fn prepare_scheduler_run_interrupts(
@@ -850,17 +772,12 @@ impl SchedulerRunInterruptStorage for BoundEspHalBluetoothInterruptEpoch<'_> {
         BoundEspHalBluetoothInterruptEpoch::prepare_scheduler_run_interrupts(self)
     }
 
-    fn recheck_scheduler_software_list_removal(
+    fn with_interrupt_registers<T, R>(
         &self,
-        controller: &mut ControllerHal<'_>,
-        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    ) -> Result<
-        BluetoothSchedulerSoftwareListRemovalJoin,
-        BluetoothSchedulerHardwareListHeadEmptyObserved,
-    > {
-        BoundEspHalBluetoothInterruptEpoch::recheck_scheduler_software_list_removal(
-            self, controller, head,
-        )
+        value: T,
+        operation: impl FnOnce(&mut InterruptRegistersOwner, T) -> R,
+    ) -> Result<R, T> {
+        self.published.with_interrupt_registers(value, operation)
     }
 }
 

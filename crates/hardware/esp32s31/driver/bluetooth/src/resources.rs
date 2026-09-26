@@ -33,15 +33,6 @@ use oer_esp32s31_hal::owner::{SharedPhyBorrow, SharedPhyHal, route};
 #[cfg(target_arch = "riscv32")]
 use {
     oer_esp32s31_hal::bluetooth::BluetoothModemLpTimerOwnerError,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHead,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadPublished,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListIndex,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerRunEventPublished,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerRunInterruptsPrepared,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalIdle,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalJoin,
     oer_esp32s31_hal::bluetooth::ControllerPublicAddress,
     oer_esp32s31_hal::bluetooth::ControllerRandomAddress,
     oer_esp32s31_hal::bluetooth::DirectionFindingDisabledBaselineOwner,
@@ -388,54 +379,10 @@ impl TaskResources {
             .clear_scheduler_hardware_list_heads()
     }
 
-    /// Publish one already initialized scheduler graph through the sole task
-    /// register owner retained by this powered epoch.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the matching exclusive scheduler-list epoch and
-    /// the complete pinned graph, must have finished every descriptor write,
-    /// and must prove that no interrupt-side scheduler access can race this
-    /// operation. The lower PAC orders descriptor visibility before MMIO.
+    /// The task-side HAL for one finite operation.
     #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "the scheduler lifecycle discharges graph lifetime and inactive-route prerequisites"
-    )]
-    pub(crate) unsafe fn publish_scheduler_hardware_list_head(
-        &mut self,
-        index: BluetoothSchedulerHardwareListIndex,
-        head: BluetoothSchedulerHardwareListHead,
-    ) -> BluetoothSchedulerHardwareListHeadPublished {
-        let mut controller = self.registers.borrow_bluetooth_controller();
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the lower transaction's prerequisites.
-        unsafe { controller.publish_scheduler_hardware_list_head(index, head) }
-    }
-
-    /// Publish the synchronous BTMAC scheduler event after the exact head and
-    /// interrupt preparation have completed.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn publish_scheduler_run_event(
-        &mut self,
-        head: BluetoothSchedulerHardwareListHeadPublished,
-        interrupts: BluetoothSchedulerRunInterruptsPrepared,
-    ) -> BluetoothSchedulerRunEventPublished {
-        self.registers
-            .borrow_bluetooth_controller()
-            .publish_scheduler_run_event(head, interrupts)
-    }
-
-    /// Consume the complete run-event proof into the final hardware RUN
-    /// publication.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn publish_scheduler_hardware_run_command(
-        &mut self,
-        event: BluetoothSchedulerRunEventPublished,
-    ) -> BluetoothSchedulerHardwareRunCommandPublished {
-        self.registers
-            .borrow_bluetooth_controller()
-            .publish_scheduler_hardware_run_command(event)
+    pub(crate) fn controller(&mut self) -> oer_esp32s31_hal::bluetooth::ControllerHal<'_> {
+        self.registers.borrow_bluetooth_controller()
     }
 
     /// Durable logical phase paired with this unique task owner.
@@ -497,101 +444,6 @@ impl TaskResources {
         } = self;
         let mut controller = registers.borrow_bluetooth_controller();
         controller_time.drain_orphan(&mut controller)
-    }
-
-    /// Advance one scheduler lock/modify worker with this exact task-side HAL
-    /// owner and no exported register capability.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn step_scheduler_lock_modify(
-        &mut self,
-        worker: &mut crate::scheduler::SchedulerLockModifyWorker,
-        event: crate::scheduler::SchedulerLockModifyEvent,
-    ) -> crate::scheduler::SchedulerLockModifyWorkerStep {
-        let mut controller = self.registers.borrow_bluetooth_controller();
-        worker.step(event, &mut controller)
-    }
-
-    /// Capture one fenced finished-list transfer into the sole bounded worker.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn capture_scheduler_finished_lists(
-        &mut self,
-        worker: &mut crate::scheduler::SchedulerFinishedListWorker,
-        wake: crate::interrupt::SchedulerWakeBatch,
-    ) -> Result<(), crate::scheduler::SchedulerFinishedListCaptureError> {
-        let mut controller = self.registers.borrow_bluetooth_controller();
-        worker.capture(&mut controller, wake)
-    }
-
-    /// Perform one fresh fenced hardware-head retirement observation.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_scheduler_hardware_list_head_retirement(
-        &mut self,
-        run: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
-    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadRetirementObservation {
-        self.registers
-            .borrow_bluetooth_controller()
-            .observe_scheduler_hardware_list_head_retirement(run)
-    }
-
-    /// Finish one post-idle software-list removal observation through the sole
-    /// task-side register owner.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn finish_scheduler_software_list_removal(
-        &mut self,
-        idle: BluetoothSchedulerSoftwareListRemovalIdle,
-        head: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
-    ) -> BluetoothSchedulerSoftwareListRemovalJoin {
-        self.registers
-            .borrow_bluetooth_controller()
-            .finish_scheduler_software_list_removal(idle, head)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn step_scheduler_stop(
-        &mut self,
-        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
-        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    ) -> Result<
-        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
-        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    > {
-        storage.step_scheduler_stop(&mut self.registers.borrow_bluetooth_controller(), stop)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn transfer_stopped_scheduler_finished_lists(
-        &mut self,
-        _stopped: &oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
-    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerFinishedListObservation {
-        self.registers
-            .borrow_bluetooth_controller()
-            .transfer_scheduler_finished_lists()
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn retire_stopped_scheduler_head(
-        &mut self,
-        stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
-        run: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
-    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement {
-        self.registers
-            .borrow_bluetooth_controller()
-            .retire_stopped_scheduler_head(stopped, run)
-    }
-
-    /// Recheck the complete post-unlink predicate through the task and stable
-    /// interrupt register owners without exporting either owner.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_scheduler_software_list_removal(
-        &mut self,
-        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
-        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    ) -> Result<
-        BluetoothSchedulerSoftwareListRemovalJoin,
-        BluetoothSchedulerHardwareListHeadEmptyObserved,
-    > {
-        let mut controller = self.registers.borrow_bluetooth_controller();
-        storage.recheck_scheduler_software_list_removal(&mut controller, head)
     }
 
     /// Execute the complete reviewed controller HAL-init component.

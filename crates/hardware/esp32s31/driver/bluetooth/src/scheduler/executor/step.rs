@@ -144,7 +144,7 @@ impl<I: Copy, const CAPACITY: usize> SchedulerStep<I, CAPACITY> {
     }
 
     /// Actions to perform, in order.
-    pub fn actions(&self) -> impl Iterator<Item = SchedulerAction> + '_ {
+    pub fn actions(&self) -> impl Iterator<Item = SchedulerAction> + Clone + '_ {
         self.actions.iter().flatten().copied()
     }
 

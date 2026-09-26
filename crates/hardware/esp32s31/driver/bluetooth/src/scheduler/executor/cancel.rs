@@ -80,7 +80,7 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub fn begin_cancel(
         &mut self,
         items: &mut impl SchedulerItemAccess<I>,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: &BluetoothSchedulerWorkObservation,
         hardware_head: Option<ControllerSramLinkAddress>,
         ids: &[I],
     ) -> Result<SchedulerStep<I, CAPACITY>, SchedulerCancelError<I>> {
@@ -139,7 +139,7 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub fn begin_flush(
         &mut self,
         items: &impl SchedulerItemAccess<I>,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: &BluetoothSchedulerWorkObservation,
     ) -> Result<SchedulerStep<I, CAPACITY>, SchedulerTransactionActive> {
         if self.transaction.is_some() {
             return Err(SchedulerTransactionActive);

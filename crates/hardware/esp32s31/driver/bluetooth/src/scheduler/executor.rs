@@ -133,6 +133,16 @@ pub struct SchedulerIdleInsertion {
     pub head: ControllerSramLinkAddress,
 }
 
+/// Scheduler state sampled before the executor decides how to insert or
+/// cancel.
+#[derive(Debug)]
+pub struct SchedulerHardwareView {
+    /// Scheduler work state.
+    pub work: BluetoothSchedulerWorkObservation,
+    /// The head of list zero, sampled after `work`.
+    pub hardware_head: Option<ControllerSramLinkAddress>,
+}
+
 /// Events that hardware executed, taken from the head of the list.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SchedulerCompletion<I, const CAPACITY: usize> {
@@ -199,7 +209,7 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub fn submit_idle(
         &mut self,
         items: &mut impl SchedulerItemAccess<I>,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: &BluetoothSchedulerWorkObservation,
         id: I,
         window: SchedulerRawWindow,
     ) -> Result<SchedulerIdleInsertion, SchedulerSubmitError<I>> {
@@ -259,7 +269,7 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub fn restart_if_idle(
         &self,
         items: &impl SchedulerItemAccess<I>,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: &BluetoothSchedulerWorkObservation,
     ) -> Option<SchedulerIdleInsertion> {
         if scheduler.is_busy() || self.transaction.is_some() || self.stopped.is_some() {
             return None;

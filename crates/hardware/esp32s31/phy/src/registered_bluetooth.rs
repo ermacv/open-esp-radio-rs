@@ -13,8 +13,6 @@
 //! None of these states claims RF qualification or operational Link Layer
 //! readiness.
 
-#[cfg(target_arch = "riscv32")]
-use crate::state::client::PhyPendingTracking;
 use crate::{
     PhyState,
     registered_route::{
@@ -41,15 +39,21 @@ impl RegisteredBluetoothPhy {
         &self.domain
     }
 
-    /// Mint the Bluetooth owner after one concrete target registration run.
+    /// Take a freshly registered domain onto the Bluetooth route.
+    ///
+    /// Returns the owner together with the registration's calibration cache,
+    /// outcome and target counters. No client is acquired.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn from_target_completion(
-        state: PhyState,
-        witness: crate::target_port::TargetRegistrationWitness,
-    ) -> Self {
-        Self {
-            domain: PhyDomain::from_target_completion(state, witness),
-        }
+    pub fn from_registration(
+        registered: crate::PhyDomainRegistered,
+    ) -> (
+        Self,
+        Option<crate::PhyCalibrationCache>,
+        crate::PhyRegisterOutcome,
+        crate::PhyTargetPortCounters,
+    ) {
+        let (domain, calibration_cache, outcome, counters) = registered.into_parts();
+        (Self { domain }, calibration_cache, outcome, counters)
     }
 
     /// Borrow the target-registered PHY state without mutable authority.
@@ -349,7 +353,7 @@ pub enum BluetoothPhyMaintenanceFailure {
     /// The tracking clock was rejected before any hardware access.
     Evaluation(RegisteredBluetoothPhyTrackEvaluationFailure),
     /// The admitted tracking transaction failed.
-    Tracking(crate::TargetBluetoothPhyParamTrackingFailure),
+    Tracking(crate::PhyTrackingFailure<BluetoothRoute>),
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -394,27 +398,9 @@ impl RegisteredBluetoothPhyClient {
             Err(pending) => pending.begin_tracking(),
         };
         let mut registers = access.phy_hal();
-        let result = match deadline {
-            Some(deadline) => {
-                crate::run_target_bluetooth_phy_param_tracking_until::<P, D, O>(
-                    platform,
-                    &mut registers,
-                    pending,
-                    observer,
-                    deadline,
-                )
-                .await
-            }
-            None => {
-                crate::run_target_bluetooth_phy_param_tracking::<P, D, O>(
-                    platform,
-                    &mut registers,
-                    pending,
-                    observer,
-                )
-                .await
-            }
-        };
+        let result = pending
+            .track::<P, _, D, O>(platform, &mut registers, observer, deadline)
+            .await;
         match result {
             Ok(success) => {
                 let (client, outcome) = success.into_parts();
@@ -536,13 +522,6 @@ pub type RegisteredBluetoothPhyPendingTrack = PhyPendingTrackOwner<BluetoothRout
 
 /// In-flight Bluetooth tracking retaining the target registration proof.
 pub type RegisteredBluetoothPhyPendingTracking = PhyPendingTrackingOwner<BluetoothRoute>;
-
-impl RegisteredBluetoothPhyPendingTracking {
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn target_tracking_parts(&mut self) -> (&mut PhyState, &mut PhyPendingTracking) {
-        (self.registered.target_state_mut(), &mut self.pending)
-    }
-}
 
 /// Fail-stop Bluetooth PHY epoch after ambiguous tracking hardware work.
 pub type RegisteredBluetoothPhyTrackPoisoned = PhyTrackPoisonedOwner<BluetoothRoute>;

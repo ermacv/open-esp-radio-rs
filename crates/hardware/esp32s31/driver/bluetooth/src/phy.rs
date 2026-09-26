@@ -13,13 +13,12 @@ use crate::{
 };
 
 use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyTargetObserver,
-    PhyTargetPortCounters, RegisteredBluetoothPhyClientAcquire,
+    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyDomainRegisterFailure,
+    PhyRegisterConfig, PhyTargetObserver, PhyTargetPortCounters, PhyTrackingFailure,
+    RegisteredBluetoothPhy, RegisteredBluetoothPhyClientAcquire,
     RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyPendingTrack,
-    RegisteredBluetoothPhyPendingTracking, TargetBluetoothPhyParamTrackingFailure,
-    TargetBluetoothPhyRegisterConfig, TargetBluetoothPhyRegisterError,
-    TargetBluetoothPhyRegisterFailure, TargetPhyParamTrackingError,
-    run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_register,
+    RegisteredBluetoothPhyPendingTracking, TargetPhyParamTrackingError, TargetPhyRegisterError,
+    registered_route::{BluetoothRoute, PhyDomain},
     state::client::{PhyClientAcquireError, PhyClientAcquireOrdering, PhyPllTrackClock},
     tracking::PhyParamTrackRequest,
 };
@@ -48,8 +47,8 @@ impl PhyInitializationConfig {
         self
     }
 
-    fn into_target(self) -> TargetBluetoothPhyRegisterConfig {
-        let target = TargetBluetoothPhyRegisterConfig::new(self.calibration_identity);
+    fn into_target(self) -> PhyRegisterConfig {
+        let target = PhyRegisterConfig::new(self.calibration_identity);
         match self.calibration_cache {
             Some(cache) => target.with_calibration_cache(cache),
             None => target,
@@ -86,14 +85,14 @@ pub struct ControllerPhyInitializationFailure<P, const MT: usize, const SC: usiz
 )]
 enum PhyInitializationFailure {
     Power(oer_esp32s31_hal::power::PowerError),
-    Registration(TargetBluetoothPhyRegisterFailure),
+    Registration(PhyDomainRegisterFailure),
 }
 
 /// Exact failed boundary before a registered Bluetooth PHY can be issued.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyInitializationError {
     Power(oer_esp32s31_hal::power::PowerError),
-    Registration(TargetBluetoothPhyRegisterError),
+    Registration(TargetPhyRegisterError),
 }
 
 impl<P, const MT: usize, const SC: usize> ControllerPhyInitializationFailure<P, MT, SC> {
@@ -234,7 +233,7 @@ pub struct ControllerPhyPendingTracking<P, const MT: usize, const SC: usize> {
 #[must_use = "failed Bluetooth PHY tracking retains the poisoned powered epoch"]
 pub struct ControllerPhyTrackingFailure<P, const MT: usize, const SC: usize> {
     _controller: Controller<P, MT, SC>,
-    failure: TargetBluetoothPhyParamTrackingFailure,
+    failure: PhyTrackingFailure<BluetoothRoute>,
     _calibration_cache: Option<PhyCalibrationCache>,
     _report: ControllerPhyEntry,
 }
@@ -246,7 +245,7 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyTrackingFailure<P, MT, SC
     }
 
     /// Borrow the poisoned lower owner without obtaining recovery authority.
-    pub const fn lower_failure(&self) -> &TargetBluetoothPhyParamTrackingFailure {
+    pub const fn lower_failure(&self) -> &PhyTrackingFailure<BluetoothRoute> {
         &self.failure
     }
 }
@@ -277,11 +276,11 @@ impl<P, const MT: usize, const SC: usize> ControllerPhyPendingTracking<P, MT, SC
         let result = {
             let (task, platform) = controller.common_phy_parts_mut();
             let mut shared_phy = task.shared_phy_hal();
-            let mut tracking = core::pin::pin!(run_target_bluetooth_phy_param_tracking::<P, D, O>(
+            let mut tracking = core::pin::pin!(tracking.track::<P, _, D, O>(
                 platform,
                 &mut shared_phy,
-                tracking,
                 observer,
+                None,
             ));
             core::future::poll_fn(|cx| poll_tracking(tracking.as_mut(), cx)).await
         };
@@ -376,7 +375,7 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
         let result = {
             let (task, platform) = self.common_phy_parts_mut();
             let mut shared_phy = task.shared_phy_hal();
-            let mut registration = core::pin::pin!(run_target_bluetooth_phy_register::<P, D, O>(
+            let mut registration = core::pin::pin!(PhyDomain::register::<P, _, D, O>(
                 platform,
                 &mut shared_phy,
                 config.into_target(),
@@ -510,14 +509,12 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
 )]
 fn finish_registration<P, const MT: usize, const SC: usize>(
     controller: Controller<P, MT, SC>,
-    result: Result<
-        oer_esp32s31_phy::TargetBluetoothPhyRegisterSuccess,
-        TargetBluetoothPhyRegisterFailure,
-    >,
+    result: Result<oer_esp32s31_phy::PhyDomainRegistered, PhyDomainRegisterFailure>,
 ) -> Result<ControllerPhyRegistered<P, MT, SC>, ControllerPhyInitializationFailure<P, MT, SC>> {
     match result {
         Ok(success) => {
-            let (phy, calibration_cache, registration, counters) = success.into_parts();
+            let (phy, calibration_cache, registration, counters) =
+                RegisteredBluetoothPhy::from_registration(success);
             Ok(ControllerPhyRegistered {
                 controller,
                 phy,

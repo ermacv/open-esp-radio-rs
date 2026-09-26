@@ -571,6 +571,17 @@ impl<R: PhyRoute> PhyPendingTrackingOwner<R> {
     }
 }
 
+impl<R> PhyPendingTrackingOwner<R>
+where
+    R: PhyRoute + sealed::PhyRoute<Hardware = ()>,
+{
+    /// Borrow the state and request of a route whose hardware is lent.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn target_tracking_parts(&mut self) -> (&mut PhyState, &mut PhyPendingTracking) {
+        (self.registered.target_state_mut(), &mut self.pending)
+    }
+}
+
 /// Fail-stop registered epoch after ambiguous tracking hardware work.
 #[must_use = "failed tracking poisons the registered PHY epoch"]
 pub struct PhyTrackPoisonedOwner<R: PhyRoute> {

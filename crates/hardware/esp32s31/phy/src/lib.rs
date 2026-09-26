@@ -192,20 +192,17 @@ pub use oer_esp32s31_hal::phy::delay::RomShortDelay;
 pub use target_executor::{PhyAsyncDelay, PhyShortDelay, PhyTargetPortError};
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
-    NoopPhyTargetObserver, PhyRfBoundary, PhyTargetObserver, PhyTargetPortCounters,
-    TargetBluetoothPhyParamTrackingFailure, TargetBluetoothPhyParamTrackingSuccess,
-    TargetBluetoothPhyRegisterConfig, TargetBluetoothPhyRegisterError,
-    TargetBluetoothPhyRegisterFailure, TargetBluetoothPhyRegisterSuccess,
-    TargetIeee802154PhyParamTrackingFailure, TargetIeee802154PhyParamTrackingSuccess,
-    TargetIeee802154PhyRegisterConfig, TargetIeee802154PhyRegisterError,
-    TargetIeee802154PhyRegisterFailure, TargetIeee802154PhyRegisterSuccess,
-    TargetPhyParamTrackingError, TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess,
-    TargetPhyRegisterAttempt, TargetPhyRegisterError, TargetPhyRegisterFailure,
-    TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts,
-    run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_param_tracking_until,
-    run_target_bluetooth_phy_register, run_target_ieee802154_phy_param_tracking,
-    run_target_ieee802154_phy_register, run_target_phy_param_tracking, run_target_phy_register,
-    select_registered_wifi_channel, switch_registered_wifi_channel,
+    NoopPhyTargetObserver, PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig,
+    PhyRfBoundary, PhyTargetObserver, PhyTargetPortCounters, PhyTrackingFailure,
+    PhyTrackingSuccess, TargetIeee802154PhyParamTrackingFailure,
+    TargetIeee802154PhyParamTrackingSuccess, TargetIeee802154PhyRegisterConfig,
+    TargetIeee802154PhyRegisterError, TargetIeee802154PhyRegisterFailure,
+    TargetIeee802154PhyRegisterSuccess, TargetPhyParamTrackingError, TargetPhyParamTrackingFailure,
+    TargetPhyParamTrackingSuccess, TargetPhyRegisterAttempt, TargetPhyRegisterError,
+    TargetPhyRegisterFailure, TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts,
+    run_target_ieee802154_phy_param_tracking, run_target_ieee802154_phy_register,
+    run_target_phy_param_tracking, run_target_phy_register, select_registered_wifi_channel,
+    switch_registered_wifi_channel,
 };
 #[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub use target_port::{

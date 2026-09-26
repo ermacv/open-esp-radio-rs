@@ -46,12 +46,12 @@ leaves the physical owner intact; a later client release remains possible.
 Cancellation after starting the consuming target operation is a different
 boundary and still requires the documented failure/reset handling.
 
-`run_target_bluetooth_phy_param_tracking_until` accepts a
-[`TrackingDeadline`](deadline.rs) in the executor's monotonic clock domain.
-It checks time before and after polling the actual tracking graph, and arms an
-independent wake for a suspended child. Expiry, clock loss/reversal, or an
-inconsistent timer consumes the retained Bluetooth client into a poisoned
-owner. Even a completed calibration cannot return an operational owner at or
+`PhyPendingTrackingOwner::track`, for a route that lends its shared-PHY
+registers, optionally accepts a [`TrackingDeadline`](deadline.rs) in the
+executor's monotonic clock domain. It checks time before and after polling the
+actual tracking graph, and arms an independent wake for a suspended child.
+Expiry, clock loss/reversal, or an inconsistent timer consumes the retained
+client into a poisoned owner. Even a completed calibration cannot return an operational owner at or
 after the deadline. The absolute window starts at the caller's admission
 sample; delayed polling does not renew it.
 

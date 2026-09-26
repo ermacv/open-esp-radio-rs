@@ -438,6 +438,12 @@ impl<'registers> WifiMacHal<'registers> {
         self.configure_role_receive_policy(MacRoleReceivePolicy::StationDisabled);
     }
 
+    /// Disable both receive contexts in the order of the role-neutral suffix
+    /// of vendor `wifi_set_rx_policy(0)`.
+    pub fn disable_all_role_receive_policies(&mut self) {
+        self.pac_mut().disable_all_role_receive_policies();
+    }
+
     /// Program both reviewed receive contexts as one register composition.
     ///
     /// This does not claim simultaneous runtime ownership or select a channel.

@@ -437,6 +437,25 @@ impl WifiRadioRegisters {
     /// management=0)` followed by `ic_set_rx_policy_ubssid_check(0, false)`
     /// and therefore preserves interface-one state.
     pub fn disable_sta_receive_policy(&mut self) {
+        self.clear_sta_receive_context();
+        self.clear_sta_unicast_bssid_check();
+    }
+
+    /// Disable both receive contexts: the role-neutral suffix of policy zero.
+    ///
+    /// SOURCE: complete `libnet80211.a::wifi_set_rx_policy`, case zero, after
+    /// its two `ic_set_mac` address republications. It calls
+    /// `ic_set_rx_policy(0, 0, 0, 0)`, `ic_set_rx_policy(1, 0, 0, 0)` and
+    /// only then `ic_set_rx_policy_ubssid_check(0, false)`, so the station
+    /// BSSID-check edges follow the access-point edges.
+    pub fn disable_all_role_receive_policies(&mut self) {
+        self.clear_sta_receive_context();
+        self.disable_ap_receive_policy();
+        self.clear_sta_unicast_bssid_check();
+    }
+
+    /// `ic_set_rx_policy(interface=0, mode=0, control=0, management=0)`.
+    fn clear_sta_receive_context(&mut self) {
         let filter = self.peripherals.wifi_mac.wifi_mac_rx_filter.policy(0);
         let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let bssid = bssids.bssid_high(0);
@@ -456,6 +475,11 @@ impl WifiRadioRegisters {
         filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
         bssid.modify(|_, w| w.address_check_enable().clear_bit());
         interface.modify(|_, w| w.rx_policy_enable().clear_bit());
+    }
+
+    /// `ic_set_rx_policy_ubssid_check(0, false)`.
+    fn clear_sta_unicast_bssid_check(&mut self) {
+        let filter = self.peripherals.wifi_mac.wifi_mac_rx_filter.policy(0);
         filter.modify(|_, w| w.receive_unicast_check_bssid().clear_bit());
         filter.modify(|_, w| w.dump_unicast_check_bssid().clear_bit());
     }

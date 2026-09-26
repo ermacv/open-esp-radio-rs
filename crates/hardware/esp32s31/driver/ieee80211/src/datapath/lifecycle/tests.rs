@@ -23,6 +23,11 @@ impl StaApRegisterHardware for RegisterHardware {
         self.disabled
             .push(oer_esp32s31_ieee80211_mac::MacInterface::AccessPoint);
     }
+
+    fn disable_all_role_receive_registers(&mut self) {
+        self.disable_station_receive_registers();
+        self.disable_access_point_receive_registers();
+    }
 }
 
 const IDENTITIES: StaApReceiveIdentities = StaApReceiveIdentities {

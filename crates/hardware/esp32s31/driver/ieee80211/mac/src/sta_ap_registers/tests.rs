@@ -4,6 +4,7 @@ use super::*;
 struct Hardware {
     plans: std::vec::Vec<MacStaApReceivePlan>,
     disabled: std::vec::Vec<crate::MacInterface>,
+    disabled_all: usize,
 }
 
 impl StaApRegisterHardware for Hardware {
@@ -17,6 +18,10 @@ impl StaApRegisterHardware for Hardware {
 
     fn disable_access_point_receive_registers(&mut self) {
         self.disabled.push(crate::MacInterface::AccessPoint);
+    }
+
+    fn disable_all_role_receive_registers(&mut self) {
+        self.disabled_all += 1;
     }
 }
 
@@ -60,17 +65,12 @@ fn each_role_can_leave_without_reconfiguring_the_surviving_bank() {
 }
 
 #[test]
-fn role_neutral_policy_disables_station_then_access_point() {
+fn role_neutral_policy_is_one_register_operation() {
     let mut hardware = Hardware::default();
 
     disable_all_role_receive_registers(&mut hardware);
 
     assert!(hardware.plans.is_empty());
-    assert_eq!(
-        hardware.disabled,
-        [
-            crate::MacInterface::Station,
-            crate::MacInterface::AccessPoint
-        ]
-    );
+    assert!(hardware.disabled.is_empty());
+    assert_eq!(hardware.disabled_all, 1);
 }

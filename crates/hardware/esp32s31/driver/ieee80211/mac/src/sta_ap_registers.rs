@@ -12,6 +12,7 @@ pub trait StaApRegisterHardware {
     fn apply_sta_ap_receive_registers(&mut self, plan: MacStaApReceivePlan);
     fn disable_station_receive_registers(&mut self);
     fn disable_access_point_receive_registers(&mut self);
+    fn disable_all_role_receive_registers(&mut self);
 }
 
 impl StaApRegisterHardware for WifiMacHal<'_> {
@@ -25,6 +26,10 @@ impl StaApRegisterHardware for WifiMacHal<'_> {
 
     fn disable_access_point_receive_registers(&mut self) {
         self.disable_access_point_receive_policy();
+    }
+
+    fn disable_all_role_receive_registers(&mut self) {
+        self.disable_all_role_receive_policies();
     }
 }
 
@@ -41,13 +46,13 @@ pub fn disable_access_point_receive_registers<H: StaApRegisterHardware>(hardware
 /// Enter the role-neutral suffix of vendor `wifi_set_rx_policy(0)` after the
 /// cold transaction has already published both interface addresses.
 ///
-/// The interface-zero disable includes the final unicast-BSSID-check edge;
-/// interface one follows in vendor order. Keeping the pair as one operation
-/// prevents a stopped runtime from accidentally retaining admission for the
-/// role which was not active in the preceding epoch.
+/// The vendor disables interface zero, then interface one, and only then
+/// clears the interface-zero unicast-BSSID checks, so the suffix is one
+/// hardware operation rather than the two single-role disables. Keeping it
+/// one operation also prevents a stopped runtime from accidentally retaining
+/// admission for the role which was not active in the preceding epoch.
 pub fn disable_all_role_receive_registers<H: StaApRegisterHardware>(hardware: &mut H) {
-    disable_station_receive_registers(hardware);
-    disable_access_point_receive_registers(hardware);
+    hardware.disable_all_role_receive_registers();
 }
 
 /// Apply both reviewed MAC receive contexts as one LMAC operation.

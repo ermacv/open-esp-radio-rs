@@ -240,6 +240,10 @@ impl StaApRegisterHardware for CooperativeRadioHardware<'_> {
     fn disable_access_point_receive_registers(&mut self) {
         self.wifi_mac_hal().disable_access_point_receive_policy();
     }
+
+    fn disable_all_role_receive_registers(&mut self) {
+        self.wifi_mac_hal().disable_all_role_receive_policies();
+    }
 }
 
 impl He20PeerHardware for CooperativeRadioHardware<'_> {

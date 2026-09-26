@@ -211,7 +211,7 @@ hil-requirements = [
   { scenario = "ieee802154-peer-exchange", minimum-repetitions = 1 },
 ]
 gaps = [
-  { axis = "implementation", id = "periodic-phy-tracking-while-running-missing" },
+  { axis = "implementation", id = "joint-phy-maintenance-with-other-clients-missing" },
   { axis = "implementation", id = "public-operational-mac-service-missing" },
   { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
   { axis = "async", id = "bounded-async-evidence-missing" },

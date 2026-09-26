@@ -25,6 +25,16 @@ owners out of the runtime, prove the foundation again, leave the domain and
 BTBB (closing RF after the last PHY client), release the clocks and leave
 common power. It returns the partition and the engine for a later start.
 
+`Ieee802154System::maintain_phy` runs shared PHY tracking while the client
+is running, as ESP-IDF's periodic `phy_track_pll` does; call it once per
+tracking period. The radio arbiter admits tracking only while every active
+client proves quiescence, which is stricter than the vendor: when IEEE
+802.15.4 is the only active client, the call pauses the runtime (leaving
+receive mode), closes the CPU route, issues the client's quiescence proof,
+tracks within that window, then resumes receive mode and binds the route
+again. With another client active it reports `AwaitingOtherClients`; a
+running transmission, scan or CCA reports `Busy`.
+
 A step that fails before starting shared hardware work rolls the earlier
 steps back and returns the parked partition. A started PHY, clock or power
 transaction that fails keeps its owner as fail-stop; the chip must be reset.
@@ -38,5 +48,6 @@ The enhanced-ACK generator is not composed; enhanced ACKs are refused.
 
 ## Limits
 
-Periodic PHY tracking while the MAC runs is not scheduled, sleep and RF
-gating are not composed, and on-air behaviour is qualified only by HIL runs.
+Tracking that must collect the proofs of several active clients needs a
+joint radio supervisor, which is not composed. Sleep and RF gating are not
+composed, and on-air behaviour is qualified only by HIL runs.

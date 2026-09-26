@@ -23,7 +23,7 @@ mod system;
 
 #[cfg(target_arch = "riscv32")]
 pub use system::{
-    IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154Parked, Ieee802154StartError,
-    Ieee802154StartFailure, Ieee802154StopError, Ieee802154StopFailure, Ieee802154System,
-    Ieee802154SystemRuntime, start,
+    IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154MaintenanceError, Ieee802154Parked,
+    Ieee802154PhyMaintenance, Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError,
+    Ieee802154StopFailure, Ieee802154System, Ieee802154SystemRuntime, start,
 };

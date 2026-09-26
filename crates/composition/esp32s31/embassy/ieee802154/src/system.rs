@@ -28,12 +28,16 @@ use oer_esp32s31_ieee802154_runtime::{
 use oer_esp32s31_phy::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyTrackingError, ConcurrentRfError,
     NoopPhyTargetObserver, PhyRegisterConfig, close_concurrent_rf,
-    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
+    concurrent::{
+        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, evaluate_periodic_tracking,
+    },
     ieee802154_client::{
         Ieee802154PhyClientError, Ieee802154PhyMembership, RegisteredIeee802154Operational,
         RegisteredIeee802154OperationalRoute, join_ieee802154, leave_ieee802154,
     },
-    maintain_concurrent_phy, register_concurrent_phy, wake_concurrent_rf,
+    maintain_concurrent_phy, register_concurrent_phy,
+    state::client::PhyModemClient,
+    wake_concurrent_rf,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 
@@ -177,7 +181,36 @@ pub struct Ieee802154StopFailure {
 #[must_use = "the running IEEE 802.15.4 client must be stopped"]
 pub struct Ieee802154System {
     route: RegisteredIeee802154OperationalRoute,
-    bound: BoundEspHalIeee802154InterruptRoute,
+    /// Bound except while PHY maintenance holds the MAC paused, or after a
+    /// failed rebind.
+    bound: Option<BoundEspHalIeee802154InterruptRoute>,
+}
+
+/// Outcome of one PHY maintenance attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154PhyMaintenance {
+    /// No tracking was due.
+    NotDue,
+    /// Tracking ran inside IEEE 802.15.4's quiescence window.
+    Tracked,
+    /// Tracking is due, but another client is active: the maintenance must
+    /// collect every active client's quiescence proof, which one client
+    /// cannot. IEEE 802.15.4 keeps running.
+    AwaitingOtherClients,
+    /// A transmission, energy scan or CCA is running; retry after it ends.
+    Busy,
+}
+
+/// Why PHY maintenance failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154MaintenanceError {
+    /// The PHY domain rejected the evaluation or the maintenance before it
+    /// started.
+    Phy(ConcurrentPhyError),
+    /// Tracking failed after it started; the domain is poisoned.
+    TrackingFailed,
+    /// The CPU route could not be bound again; the MAC receives no interrupt.
+    Route(EspHalIeee802154InterruptRouteError),
 }
 
 async fn lease(radio: &SharedRadio<ConcurrentPhy>) -> SharedRadioLease<'_, ConcurrentPhy> {
@@ -444,7 +477,10 @@ pub async fn start<P>(
         ieee802154_interrupt,
         Priority::Priority1,
     )) {
-        Ok(bound) => Ok(Ieee802154System { route, bound }),
+        Ok(bound) => Ok(Ieee802154System {
+            route,
+            bound: Some(bound),
+        }),
         Err(error) => {
             let parts = RUNTIME
                 .uninstall()
@@ -486,6 +522,93 @@ impl Ieee802154System {
         &RUNTIME
     }
 
+    /// Run shared PHY tracking when it is due, as ESP-IDF's periodic
+    /// `phy_track_pll` does for IEEE 802.15.4.
+    ///
+    /// The radio arbiter admits tracking only while every active client
+    /// proves quiescence. When IEEE 802.15.4 is the only active client, this
+    /// pauses the runtime (leaving receive mode), closes the CPU route,
+    /// issues the proof, runs the tracking transaction within it, and then
+    /// resumes the runtime and binds the route again. Call it periodically,
+    /// for example once per tracking period, on the core that started the
+    /// client.
+    ///
+    /// # Errors
+    ///
+    /// The domain rejected the evaluation or the maintenance, tracking failed
+    /// after it started, or the route could not be bound again.
+    pub async fn maintain_phy<P>(
+        &mut self,
+        radio: &SharedRadio<ConcurrentPhy>,
+        platform: &mut P,
+    ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
+        let mut lease = lease(radio).await;
+        let due = lease.attachment().tracking_pending()
+            || evaluate_periodic_tracking(&mut lease, &mut EmbassyPhyTime)
+                .map_err(Ieee802154MaintenanceError::Phy)?;
+        if !due {
+            return Ok(Ieee802154PhyMaintenance::NotDue);
+        }
+        let others = lease.attachment().client_snapshot().is_some_and(|clients| {
+            clients.contains(PhyModemClient::Wifi) || clients.contains(PhyModemClient::Bluetooth)
+        });
+        if others {
+            return Ok(Ieee802154PhyMaintenance::AwaitingOtherClients);
+        }
+        let mut paused = match RUNTIME.pause() {
+            Ok(paused) => paused,
+            Err(_) => return Ok(Ieee802154PhyMaintenance::Busy),
+        };
+        if let Some(bound) = self.bound.take()
+            && let Err((error, bound)) = bound.quiesce()
+        {
+            self.bound = Some(bound);
+            let _ = RUNTIME.resume(paused);
+            return Err(Ieee802154MaintenanceError::Route(error));
+        }
+
+        let issued_at = Instant::now().as_micros();
+        let tracked = match paused
+            .hardware_mut()
+            .task_mut()
+            .quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS)
+        {
+            Ok(proof) => {
+                maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
+                    &mut lease,
+                    platform,
+                    &[proof],
+                    NoopPhyTargetObserver,
+                )
+                .await
+            }
+            Err(_) => Err(ConcurrentPhyTrackingError::Rejected(
+                ConcurrentPhyError::WindowClosed,
+            )),
+        };
+        drop(lease);
+
+        if RUNTIME.resume(paused).is_err() {
+            unreachable!("the paused runtime has no other radio");
+        }
+        match bind(InterruptHandler::new(
+            ieee802154_interrupt,
+            Priority::Priority1,
+        )) {
+            Ok(bound) => self.bound = Some(bound),
+            Err(error) => return Err(Ieee802154MaintenanceError::Route(error)),
+        }
+        match tracked {
+            Ok(_outcome) => Ok(Ieee802154PhyMaintenance::Tracked),
+            Err(ConcurrentPhyTrackingError::Rejected(error)) => {
+                Err(Ieee802154MaintenanceError::Phy(error))
+            }
+            Err(ConcurrentPhyTrackingError::Failed(_)) => {
+                Err(Ieee802154MaintenanceError::TrackingFailed)
+            }
+        }
+    }
+
     /// `esp_ieee802154_disable`: quiesce the CPU route, take the MAC owners
     /// out of the runtime, prove the foundation again, leave the shared PHY
     /// and BTBB (closing RF after the last PHY client), release the module
@@ -507,10 +630,15 @@ impl Ieee802154System {
         clocks: &mut impl PlatformClockProvider,
     ) -> Result<Ieee802154Parked, Ieee802154StopFailure> {
         let Self { route, bound } = self;
-        if let Err((error, bound)) = bound.quiesce() {
+        if let Some(bound) = bound
+            && let Err((error, bound)) = bound.quiesce()
+        {
             return Err(Ieee802154StopFailure {
                 error: Ieee802154StopError::Route(error),
-                owner: Ok(Self { route, bound }),
+                owner: Ok(Self {
+                    route,
+                    bound: Some(bound),
+                }),
             });
         }
         let parts = RUNTIME

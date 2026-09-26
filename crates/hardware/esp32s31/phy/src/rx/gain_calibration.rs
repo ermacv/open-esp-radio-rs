@@ -185,7 +185,6 @@ pub const fn rx_dc_calibration_correction(delta: i32, low: i32, threshold: i32, 
 pub struct PhyRxDcCalibrationTransition {
     request: PhyRxDcCalibrationRequest,
     step: Step,
-    initial: [u16; 2],
     current: [u16; 2],
     population: u8,
     threshold: i32,
@@ -508,13 +507,6 @@ impl PhyRxDcCalibrationTransition {
         oer_esp32s31_hal::phy::rx_dco::restore_control(registers)
             .map_err(|_| PhyTargetPortError::HardwareInvariant)?;
 
-        self.initial = initial;
-        self.current = policy.current;
-        self.population = population;
-        self.threshold = threshold;
-        self.iteration = policy.iteration;
-        self.low = policy.low;
-        self.readiness_activity_edges = policy.readiness_activity_edges;
         self.step = match terminal {
             Terminal::Complete(outcome) => Step::Complete(outcome),
             Terminal::Failed(failure) => Step::Failed(failure),
@@ -578,7 +570,6 @@ impl PhyRxDcCalibrationTransition {
         Self {
             request,
             step: Step::PrepareControlRestore,
-            initial: request.initial,
             current: request.initial,
             population: 0,
             threshold: 0,
@@ -632,7 +623,7 @@ impl PhyRxDcCalibrationTransition {
     const fn cleanup_configuration(&self, terminal: Terminal) -> [u16; 2] {
         match terminal {
             Terminal::Complete(outcome) => outcome.configuration,
-            Terminal::Failed(_) => self.initial,
+            Terminal::Failed(_) => self.request.initial,
         }
     }
 

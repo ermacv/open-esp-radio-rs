@@ -577,7 +577,7 @@ section = "ieee802154-timing"
 title = "Timed TX (`transmit_at`)"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine programs TIMER0 and modem ETM channel zero to start TX or CCA-then-TX at the requested time. RF readiness and on-air timing are not qualified."
+scope-and-limitations = "The engine programs TIMER0 and modem ETM channel zero to start TX or CCA-then-TX at the requested time; the portable scheduled transmit mode carries the CCA choice (OpenThread's mCsmaCaEnabled) and the role and runtime expose the radio clock scheduled times use (otPlatRadioGetNow). The single-device air check bounds scheduled transmits against their start; on-air timing seen by a peer is not qualified."
 
 [[items]]
 id = "ieee802154-timing-timed-rx-receive-at"
@@ -585,7 +585,7 @@ section = "ieee802154-timing"
 title = "Timed RX (`receive_at`)"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine programs TIMER1 and modem ETM channel one to open a receive window and closes it at its end unless a frame is in flight. RF readiness and on-air timing are not qualified."
+scope-and-limitations = "The engine programs TIMER1 and modem ETM channel one to open a receive window and closes it at its end unless a frame is in flight. The portable scheduled receive command (otPlatRadioReceiveAt) runs it through the role and runtime: the radio sleeps outside the window, the first received frame ends it as the vendor receive path does, and an already elapsed window ends at once. The single-device air check bounds the window's end and its first frame against the requested window; reception of a peer's frame inside a window is not qualified."
 
 [[items]]
 id = "ieee802154-timing-coordinated-sampled-listening-csl"
@@ -642,7 +642,7 @@ section = "ieee802154-product-stacks"
 title = "Thread"
 status = "host-only"
 level = "composed-product"
-scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) implements the Radio trait of the repository's fork of the openthread crate over the runtime: OpenThread's SubMac runs CSMA/CA and retries and the radio secures frames and enhanced ACKs with OpenThread's keys, as ESP-IDF's OpenThread port does. The [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an OpenThread end device; timed transmission and reception, CSL and on-air qualification are absent, and this matrix does not claim a production Thread integration."
+scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) implements the Radio trait of the repository's fork of the openthread crate over the runtime: OpenThread's SubMac runs CSMA/CA and retries and the radio secures frames and enhanced ACKs with OpenThread's keys, as ESP-IDF's OpenThread port does. The [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an OpenThread end device; OpenThread's timed transmission and reception (built without CSL), CSL and on-air qualification are absent, and this matrix does not claim a production Thread integration."
 
 [[items]]
 id = "ieee802154-product-stacks-zigbee"

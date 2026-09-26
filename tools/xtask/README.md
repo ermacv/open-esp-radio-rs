@@ -27,6 +27,9 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check phy` | Build the PHY library for the chip target and audit its artifact and dependency graph |
 | `cargo xtask check images` | Build both final performance/correctness HIL application images and run their target audits |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment, then build and test every Blobray crate |
+| `cargo xtask check provenance` | Fail when a vendor function a production `SOURCE:` block or register-model evidence source cites changed in, or vanished from, the pinned artifacts since its reviewed fingerprint in `verification/vendor/projects/<chip>/provenance.toml`, or is not registered; requires `cargo xtask vendor-fetch` |
+| `cargo xtask vendor-diff --old A --new B` | Classify every function of two archive revisions by relocation-normalized code: unchanged, references renamed, renamed, changed (with similarity), removed (with the closest candidate) or added; `--baseline DIR` compares every pinned artifact with its namesake in `DIR` |
+| `cargo xtask vendor-provenance --accept NAME[,NAME]` | Record the pinned fingerprint of cited functions after reviewing their facts; `--rebuild --baseline DIR` recomputes the registry from the current citations with fingerprints of the revision in `DIR` |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
 | `cargo xtask build vendor-probes --chip esp32s31` | Build the three Rust probe images of the ESP32-S31 vendor comparison |
 | `cargo xtask build vendor-probes --chip esp32s31 --list-roles` | List declared artifact roles without building or authenticating an artifact |

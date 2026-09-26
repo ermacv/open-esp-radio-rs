@@ -223,6 +223,52 @@ fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
     Ok(destination)
 }
 
+/// One pinned artifact at its cache or local-build path.
+#[derive(Debug)]
+pub struct Pinned {
+    pub id: String,
+    pub path: PathBuf,
+    /// Built locally rather than fetched from a vendor source.
+    pub local: bool,
+}
+
+/// Every pinned artifact of `chip` at its verified path; fails when one is
+/// missing or differs, naming `cargo xtask vendor-fetch` for fetched ones.
+/// Local builds are skipped when absent: they are not vendor sources.
+pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
+    let manifest = manifest_path(chip)?;
+    let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
+    let mut pinned = vec![];
+    for artifact in artifacts {
+        let source = sources
+            .iter()
+            .find(|s| s.id == artifact.source)
+            .expect("parsed sources");
+        let local = source.kind == Kind::Local;
+        let path = if local {
+            ctx.root.join(&artifact.path)
+        } else {
+            cache_directory(&ctx.root, source)?.join(&artifact.path)
+        };
+        if !verified(&path, &artifact.sha256)? {
+            if local {
+                continue;
+            }
+            return Err(format!(
+                "{} is not fetched as pinned; run `cargo xtask vendor-fetch {chip}`",
+                artifact.id
+            )
+            .into());
+        }
+        pinned.push(Pinned {
+            id: artifact.id,
+            path,
+            local,
+        });
+    }
+    Ok(pinned)
+}
+
 /// Fetch and verify every artifact of `chip`; report local builds that are
 /// missing or differ. Fails when any artifact is not available as pinned.
 pub fn run(ctx: &Context, chip: &str) -> Result<()> {

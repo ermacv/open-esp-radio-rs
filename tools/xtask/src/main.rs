@@ -37,6 +37,36 @@ enum Task {
         #[arg(default_value = "esp32s31")]
         chip: String,
     },
+    /// Compare two revisions of a vendor archive function by function, or
+    /// every pinned artifact with its namesake in `--baseline`.
+    VendorDiff {
+        #[arg(long, default_value = "esp32s31")]
+        chip: String,
+        #[arg(long, requires = "new", conflicts_with = "baseline")]
+        old: Option<PathBuf>,
+        #[arg(long, requires = "old")]
+        new: Option<PathBuf>,
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+        /// Also list unchanged functions.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Record reviewed code fingerprints of cited vendor functions.
+    VendorProvenance {
+        #[arg(long, default_value = "esp32s31")]
+        chip: String,
+        /// Functions whose pinned code was reviewed.
+        #[arg(long, value_delimiter = ',')]
+        accept: Vec<String>,
+        /// Recompute the registry from the current citations.
+        #[arg(long)]
+        rebuild: bool,
+        /// Directory of the revision the facts were observed in, for
+        /// `--rebuild`.
+        #[arg(long, requires = "rebuild")]
+        baseline: Option<PathBuf>,
+    },
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
@@ -65,6 +95,12 @@ enum Check {
     /// Build both final HIL application images and run their target audits.
     Images,
     BlobrayStandalone,
+    /// Check that every vendor function production and the register model
+    /// cite is registered with its reviewed, still pinned code.
+    Provenance {
+        #[arg(long, default_value = "esp32s31")]
+        chip: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -116,6 +152,19 @@ fn run() -> Result<std::process::ExitCode> {
             return oer_xtask::vendor_scenario::run(&ctx, &chip, &args);
         }
         Task::VendorFetch { chip } => oer_xtask::vendor_fetch::run(&ctx, &chip),
+        Task::VendorDiff {
+            chip,
+            old,
+            new,
+            baseline,
+            all,
+        } => oer_xtask::vendor_diff::run(&ctx, &chip, old, new, baseline, all),
+        Task::VendorProvenance {
+            chip,
+            accept,
+            rebuild,
+            baseline,
+        } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline),
         Task::Doc => oer_xtask::doc::run(&ctx),
         Task::Check { check } => match check {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
@@ -126,6 +175,7 @@ fn run() -> Result<std::process::ExitCode> {
             Check::Phy => checks::phy::run(&ctx),
             Check::Images => checks::images::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
+            Check::Provenance { chip } => oer_xtask::vendor_provenance::check(&ctx, &chip),
         },
         Task::Build {
             build:

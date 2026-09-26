@@ -22,4 +22,7 @@
 mod system;
 
 #[cfg(target_arch = "riscv32")]
-pub use system::{RadioGuard, RadioPhyError, RadioResources, RadioSystem};
+pub use system::{
+    Ieee802154Asleep, Ieee802154WakeError, Ieee802154WakeFailure, RadioGuard, RadioPhyError,
+    RadioResources, RadioSystem,
+};

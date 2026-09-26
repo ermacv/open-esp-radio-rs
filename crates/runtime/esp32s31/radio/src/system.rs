@@ -15,7 +15,11 @@ use oer_esp32s31_phy::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyTrackingError, ConcurrentRfError,
     ConcurrentTrackingTick, NoopPhyTargetObserver, PhyCalibrationIdentity, PhyRegisterConfig,
     close_concurrent_rf,
-    concurrent::{ConcurrentPhy, ConcurrentPhyError},
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
+    ieee802154_client::{
+        Ieee802154PhyClientError, RegisteredIeee802154OperationalRoute,
+        RegisteredIeee802154RouteFailure, RegisteredIeee802154SuspendedRoute,
+    },
     register_concurrent_phy,
     state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS,
     track_concurrent_phy, wake_concurrent_rf,
@@ -72,6 +76,35 @@ impl RadioPhyError {
             Self::Wake(error) => !matches!(error, ConcurrentRfError::Rejected(_)),
         }
     }
+}
+
+/// IEEE 802.15.4 asleep after [`RadioGuard::suspend_ieee802154`].
+#[must_use = "the sleeping route must wake or reunite with its MAC owners"]
+pub struct Ieee802154Asleep {
+    /// The operational MAC route without a PHY client bit.
+    pub route: RegisteredIeee802154SuspendedRoute,
+    /// Whether RF closed because IEEE 802.15.4 was the last client, or why
+    /// closing it failed; a [`ConcurrentRfError::Recoverable`] failure keeps
+    /// RF open, any other started failure requires reset.
+    pub rf_closed: Result<bool, ConcurrentRfError>,
+}
+
+/// Why a sleeping IEEE 802.15.4 route could not wake.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154WakeError {
+    /// The shared PHY could not be prepared ([`RadioPhyError::started`]).
+    Phy(RadioPhyError),
+    /// The PHY domain rejected the client; nothing changed.
+    Client(Ieee802154PhyClientError),
+}
+
+/// Failed wake retaining the sleeping route.
+#[must_use = "a failed wake still owns the sleeping route"]
+pub struct Ieee802154WakeFailure {
+    /// Why the route did not wake.
+    pub error: Ieee802154WakeError,
+    /// The unchanged sleeping route.
+    pub route: RegisteredIeee802154SuspendedRoute,
 }
 
 impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
@@ -296,6 +329,69 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         close_concurrent_rf::<P, EmbassyPhyTime>(lease, platform, clocks)
             .await
             .map(|()| true)
+    }
+
+    /// Put IEEE 802.15.4 to sleep, as the vendor `ieee802154_sleep` does
+    /// through `ieee802154_rf_disable`: leave the PHY client set while
+    /// keeping the BTBB reference, then close RF when no client remains.
+    ///
+    /// The caller must have stopped the current MAC operation first.
+    ///
+    /// # Errors
+    ///
+    /// The domain rejected the release; nothing changed and the operational
+    /// route is returned. An RF close failure after the release is reported
+    /// in [`Ieee802154Asleep::rf_closed`].
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, drive this future to a terminal result.
+    pub async fn suspend_ieee802154(
+        &mut self,
+        route: RegisteredIeee802154OperationalRoute,
+    ) -> Result<
+        Ieee802154Asleep,
+        RegisteredIeee802154RouteFailure<RegisteredIeee802154OperationalRoute>,
+    > {
+        let (route, last) = route.suspend_rf(self.lease())?;
+        let rf_closed = if last {
+            self.close_phy_if_idle().await
+        } else {
+            Ok(false)
+        };
+        Ok(Ieee802154Asleep { route, rf_closed })
+    }
+
+    /// Wake IEEE 802.15.4 before its next MAC command, as the vendor
+    /// `ieee802154_rf_enable` does: wake closed RF, then re-enter the PHY
+    /// client set. A returned [`ConcurrentAcquire::TrackingDue`] means the
+    /// domain must run its tracking before the MAC uses RF.
+    ///
+    /// # Errors
+    ///
+    /// Preparing the shared PHY failed, or the domain rejected the client;
+    /// the sleeping route is returned.
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, drive this future to a terminal result.
+    pub async fn resume_ieee802154(
+        &mut self,
+        route: RegisteredIeee802154SuspendedRoute,
+    ) -> Result<(RegisteredIeee802154OperationalRoute, ConcurrentAcquire), Ieee802154WakeFailure>
+    {
+        if let Err(error) = self.prepare_phy().await {
+            return Err(Ieee802154WakeFailure {
+                error: Ieee802154WakeError::Phy(error),
+                route,
+            });
+        }
+        route
+            .resume_rf(self.lease(), &mut EmbassyPhyTime)
+            .map_err(|failure| Ieee802154WakeFailure {
+                error: Ieee802154WakeError::Client(failure.error()),
+                route: failure.into_route(),
+            })
     }
 
     /// One tick of the vendor `phy_track_pll` under this guard: evaluate

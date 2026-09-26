@@ -2,12 +2,13 @@
 //! compiled production executor.
 //!
 //! The real search, PBus and SAR children execute for Wi-Fi and Bluetooth with
-//! constant and alternating synthetic SAR samples, both tone-clear and settle
-//! paths. Both sides compare ordered effects and the measured DC rows; the
-//! vendor must keep the independent Wi-Fi gain adjustment. Production-only
-//! PBus and SAR faults must not publish calibration, and the SAR observation
-//! limit is a failure distinct from time or work limits. Synthetic
-//! measurements establish software effects, not RF accuracy.
+//! constant, alternating and precheck-cycling synthetic SAR samples, both
+//! tone-clear and settle paths. Both sides compare ordered effects and the
+//! measured DC rows; the vendor must keep the independent Wi-Fi gain
+//! adjustment. Production-only PBus and SAR faults must not publish
+//! calibration, and the SAR observation limit is a failure distinct from time
+//! or work limits. Synthetic measurements establish software effects, not RF
+//! accuracy.
 use crate::contracts::{OutputField, omitted_read, output_projection, phy_contract, plumbing};
 use crate::evidence::{events, output, stop};
 use crate::harness::{Buffer, Result, case, known, selection, with_stack_fill};
@@ -85,6 +86,11 @@ const COMMITTED: [OutputField; 2] = [
 ];
 /// Alternating SAR sample period.
 const ALTERNATING: [u32; 8] = [100, 100, 130, 130, 90, 90, 80, 80];
+/// SAR samples whose three-sample period is odd against the precheck
+/// measurement pair: the positive and negative prechecks keep differing, so a
+/// component ends with repeated prechecks and the next component restarts
+/// its precheck count.
+const PRECHECK_CYCLE: &[u32] = &[100, 100, 140];
 /// Event capacity of one TX-DC root side: a complete root records about
 /// 41,000 events, and the bounded fault polls stay within the same capacity.
 const TXDC_EVENTS: u32 = 1 << 17;
@@ -97,6 +103,8 @@ const ROOT: u32 = 2;
 pub enum Samples {
     Constant(u32),
     Alternating,
+    /// Samples returned in turn with this period.
+    Cycle(&'static [u32]),
 }
 
 /// One TX-DC/PWDET root profile.
@@ -112,10 +120,20 @@ pub struct Profile {
 
 impl Profile {
     fn label(&self) -> String {
+        let samples = match self.samples {
+            Samples::Cycle(values) => format!(
+                "cycle{}",
+                values
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join("_")
+            ),
+            samples => format!("{samples:?}"),
+        };
         format!(
-            "txdc-bt{}-{:?}-clear{}-fill{:x}-settle{}",
+            "txdc-bt{}-{samples}-clear{}-fill{:x}-settle{}",
             u8::from(self.bluetooth),
-            self.samples,
             u8::from(self.clear),
             self.fill,
             u8::from(self.settle)
@@ -140,7 +158,7 @@ impl Profile {
     }
 }
 
-/// Wi-Fi and Bluetooth, four sample streams, both clear paths, both fills and
+/// Wi-Fi and Bluetooth, five sample streams, both clear paths, both fills and
 /// both settle branches.
 pub fn profiles() -> Vec<Profile> {
     let mut result = vec![];
@@ -150,6 +168,7 @@ pub fn profiles() -> Vec<Profile> {
             Samples::Constant(123),
             Samples::Constant(8191),
             Samples::Alternating,
+            Samples::Cycle(PRECHECK_CYCLE),
         ] {
             for clear in [false, true] {
                 for fill in FILLS {
@@ -167,6 +186,19 @@ pub fn profiles() -> Vec<Profile> {
         }
     }
     result
+}
+
+fn cyclic_sar(values: &[u32]) -> DeviceDeclaration {
+    DeviceDeclaration {
+        id: "sar-samples".into(),
+        applicability: "periodic synthetic SAR measurement stream".into(),
+        lifetime: RegionLifetime::Phase,
+        behavior: DeviceBehavior::CyclicRead {
+            address: SAR_RESULT,
+            width: 4,
+            values: values.iter().map(|v| v << SAR_SAMPLE_SHIFT).collect(),
+        },
+    }
 }
 
 /// Seeded DC rows: flat for the first fill, ramped for the second.
@@ -203,16 +235,8 @@ pub fn tx_models(profile: &Profile, status: u32, detector: u32) -> Vec<DeviceDec
         Samples::Constant(value) => {
             constant_read("sar-samples", SAR_RESULT, value << SAR_SAMPLE_SHIFT)
         }
-        Samples::Alternating => DeviceDeclaration {
-            id: "sar-samples".into(),
-            applicability: "periodic synthetic SAR measurement stream".into(),
-            lifetime: RegionLifetime::Phase,
-            behavior: DeviceBehavior::CyclicRead {
-                address: SAR_RESULT,
-                width: 4,
-                values: ALTERNATING.map(|v| v << SAR_SAMPLE_SHIFT).to_vec(),
-            },
-        },
+        Samples::Alternating => cyclic_sar(&ALTERNATING),
+        Samples::Cycle(values) => cyclic_sar(values),
     };
     let mut models = vec![
         register_bank(
@@ -600,10 +624,14 @@ mod tests {
     #[test]
     fn matrix_covers_both_protocols_samples_clear_fills_and_settle() {
         let all = profiles();
-        assert_eq!(all.len(), 2 * 4 * 2 * FILLS.len() * 2);
+        assert_eq!(all.len(), 2 * 5 * 2 * FILLS.len() * 2);
         assert!(
             all.iter()
                 .any(|p| matches!(p.samples, Samples::Alternating))
+        );
+        assert!(
+            all.iter()
+                .any(|p| matches!(p.samples, Samples::Cycle(PRECHECK_CYCLE)))
         );
         let labels: std::collections::BTreeSet<_> = all.iter().map(Profile::label).collect();
         assert_eq!(labels.len(), all.len());

@@ -5,7 +5,7 @@
   "inputs": {
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "03c6873f93842ba2a9485949b24838123136a7b1fd42aa04d0e41ab046a1bfcd",
+    "production": "4c628d25c901d2fb02ab02de0a97db9ec5f7d662f149419465d7c1fa8193b52a",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
     "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -49,7 +49,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "5739fb6dbf90df2ae9f740656bf397086df2f0a5cb8fe365ffd95af7abe26cf8"
+      "sha256": "6f966037759a2e7f5d08dc463c3e8e0b7a250c470b93f5f09c2617a25cfd0dea"
     },
     {
       "path": "crates/memory",
@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "a1c8b1899d8e3f1ac8b3f2a74433082109a2680f6e5ceac1a12c65f1fb83ddf9"
+      "sha256": "21e74257066dde10382397503c8475ef4d04a0348795c0498a1e225d2bc9900a"
     },
     {
       "path": "verification/vendor/schema",
@@ -304,7 +304,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "7a3c3c3acf169c40c57776e1baf84a00450c285d6304dd4ef5b8d094121f3ccf"
+        "df486d48bcaeeadcc32af28b8eda2988099a6ee818ed9d4ed45eda9632ffaca5"
       ],
       "coverage": {
         "blocks": {
@@ -333,7 +333,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "5ef1f9bc10bc6ebf614a57958e9893fb4cf52f961189d79dfcc50d685594cf01"
+        "e0741c5820b0fbf07de01f3c0bb7e7114e356d5b0334fe743858dc1bd797650f"
       ],
       "coverage": {
         "blocks": {
@@ -362,7 +362,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "025539edc9592ec13b9ca1cb6782227f64d3b3cb157314fcfe251c544272c194"
+        "1b86fc7d19667395eee502471bf16780d0525dc56bce095a426938f37175c037"
       ],
       "coverage": {
         "blocks": {
@@ -391,7 +391,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "38b06f8c885f4b63f959a84d6bd22590de076df4f98f9c3710dc586045c2dc59"
+        "cf83bd9452002d1c399284db758f8650e022e8ac1fc159894ee6f990f2918d35"
       ],
       "coverage": {
         "blocks": {
@@ -420,7 +420,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "5ffaa39e114dc92a4657e111d73b62d3dc9e8e65696c8fcc879a21e03eaf4182"
+        "3c130e8f612f9eda80bfdbe33d75740253b57514d9ac56b1fbfe1715ecfa558a"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +449,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "afb53e7bd56888d2a6ee1607a821f7d2ef92e8d3f60ba70b644b4b381e32eeeb"
+        "e61cda1f1113daa7931c936b1e1e361eb14b0b7d97f7f124b50f59ec6308e6d2"
       ],
       "coverage": {
         "blocks": {
@@ -613,7 +613,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "f3a5447c34a24f78707404cdbb8de2f1f1551969176db053a5dedc6814e5be8a"
+        "058edc4a5e188f1a45d86a3db458aca17d6f5d7e243855b4cb6c47cac056ee6f"
       ],
       "coverage": {
         "blocks": {
@@ -642,7 +642,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "c9d26d0a6b1cde701d9728256526398213021f2f9eadc71c7b7ff03b04297618"
+        "88fed7972ffcf68cf6ce670df4259d43f0c241a293ae578b3cb201fb6e17fb5d"
       ],
       "coverage": {
         "blocks": {
@@ -671,7 +671,7 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "e8cfbcec31feac0ffcd65e24128946d853768a57919f52f9ab907a7b70fb3541"
+        "d718ee02a87b5a40bbb7b87cf19a691f0580402fe6a45e15d2c2cc9096ebbae3"
       ],
       "coverage": {
         "blocks": {
@@ -700,8 +700,8 @@
       "verdict": "match",
       "cases": 60,
       "reviews": [
-        "08b84a01f395e1b0439c8c970c8e3d1dde70ebf8b726dd59918de2805aa535d8",
-        "2af5c06c0caaaac7291cca61951b30db7bb384ff0ec56adbaa9ed5ebae7b6bed"
+        "35ddf533d3ada654a7e526be8a43911da227580645ca9e7f3d619bc7847648db",
+        "736dcf85faf0ec3caf6c51198601fe6e269eea0a2a876ea2658903d3d1b97ec2"
       ],
       "coverage": {
         "blocks": {
@@ -730,7 +730,7 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "483862d71446886d00c07120ea72699e5a2644a89bb3e44df04ef2883bc61fd1"
+        "9bdfd3409539fcf0870fc81d49940159f41b86be817fde823c20a8f911c8574a"
       ],
       "coverage": {
         "blocks": {
@@ -759,8 +759,8 @@
       "verdict": "match",
       "cases": 64,
       "reviews": [
-        "7ff54a1aeaad677687ac352a0f92400866d5d60fb81fa431b6d62bda25e679f2",
-        "a507d8e211554b4ec30bf1dac8c47ccce88d82e1012bfd393f3fce24cec3a51d"
+        "1d728f44c9bcd8be11a0ee8ba45f9365971f7e2db923fac81b6a112adfe90f68",
+        "5a22293caf61a5af205ea03adcacff59fd208214d48b1d5966f927deae5717e4"
       ],
       "coverage": {
         "blocks": {
@@ -787,28 +787,28 @@
       "symbol": "phy_txdc_cal_pwdet_init",
       "production": "open_phy_calibration_trace_tx_dc_pwdet",
       "verdict": "match",
-      "cases": 64,
+      "cases": 80,
       "reviews": [
-        "7c9867bbec2c7d74c99e2ec20f965b3861aa9eca177d6412531dcbb93a8249fd",
-        "bb32b9998d816afb9d6e79fccc9ef67f967a45cea1b43e4ec7c7bde31e3fedaf"
+        "4f750bdd5073ddebb1ae7eadeb12f48ddd704c9750f277909f11c654b5c23288",
+        "e9896accba2b04446b79ad414cc4545ffa0418f4eea114f62d003019dad900ac"
       ],
       "coverage": {
         "blocks": {
-          "reached": 111,
+          "reached": 112,
           "total": 119
         },
         "directions": {
-          "reached": 76,
+          "reached": 78,
           "total": 88
         },
         "excluded": 0,
-        "untriaged": 20
+        "untriaged": 17
       },
       "observation": {
         "executed": 170,
-        "observed": 160,
+        "observed": 163,
         "reviewed": 5,
-        "untriaged": 5
+        "untriaged": 2
       }
     },
     {
@@ -819,8 +819,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "5fb48019aa523c8405560d3e68fb9984d09a2b3720ef3bebd46530dd96462623",
-        "6d23d601b05640df224c3ae424135047512c4592c34051b2fdbae28b1452f535"
+        "d6082b7b7412dae2ae75a5e2e5b9a9f2b2605e4475775a6be9fe585e93487b11",
+        "d642a3a3e5562e42a36d60d5914a5f1c6ebf9ce3931a8a48d62c3c15f2425022"
       ],
       "coverage": {
         "blocks": {
@@ -835,10 +835,10 @@
         "untriaged": 267
       },
       "observation": {
-        "executed": 1389,
+        "executed": 1387,
         "observed": 1343,
         "reviewed": 18,
-        "untriaged": 28
+        "untriaged": 26
       }
     },
     {
@@ -849,8 +849,8 @@
       "verdict": "match",
       "cases": 320,
       "reviews": [
-        "683a2f9e5e5570388d84670e14e6a7392332cc4611944365755ac67b89e80de0",
-        "df9beed0b83eb6812cb979388d6ffcebb5a5f6400668c8d6da013ac8e4ee1a5b"
+        "12fa1f1330bd1b08d1e0acddb115c4b26f5b46d9721d819c0db05d153ac424d8",
+        "491a170f6bbb87a8401f4f422d119157b1d91cda4b30f34503c288f147c8ddea"
       ],
       "coverage": {
         "blocks": {
@@ -865,10 +865,10 @@
         "untriaged": 284
       },
       "observation": {
-        "executed": 1816,
+        "executed": 1814,
         "observed": 1743,
         "reviewed": 33,
-        "untriaged": 40
+        "untriaged": 38
       }
     }
   ],
@@ -1660,21 +1660,6 @@
     },
     {
       "function": "phy_txdc_cal_pwdet_new",
-      "offset": 230,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
-      "offset": 234,
-      "kind": "block"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
-      "offset": 240,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
       "offset": 372,
       "kind": "fallthrough"
     },
@@ -1911,18 +1896,6 @@
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/temperature.rs",
       "line": 88
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/tx/dc_power_detector.rs",
-      "line": 419
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/tx/dc_power_detector.rs",
-      "line": 424
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/tx/dc_power_detector.rs",
-      "line": 425
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/validation.rs",

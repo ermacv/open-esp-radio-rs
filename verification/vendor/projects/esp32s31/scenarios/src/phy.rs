@@ -6,7 +6,6 @@ use crate::harness::{Budget, Input, with_stack_fill};
 use crate::harness::{Result, invalid, known, region, selection, symbol, words};
 use crate::layout::*;
 use crate::session::{Session, image_symbol, request};
-use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
     ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceDeclaration, EntrySelection,
     ExecutionCase, ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop,
@@ -85,12 +84,12 @@ pub fn start_session(options: &PhyOptions, extra: &[Input<'_>], purpose: &str) -
         Input {
             role: "phy",
             path: &options.library,
-            sha256: Some(I2C_LIBRARY_SHA),
+            sha256: Some(crate::artifacts::sha256("libphy")),
         },
         Input {
             role: "rom",
             path: &options.rom,
-            sha256: Some(ROM_SHA),
+            sha256: Some(crate::artifacts::sha256("rom")),
         },
         Input {
             role: "production",
@@ -142,7 +141,7 @@ pub fn phy_sdk_input(path: &Path) -> Input<'_> {
     Input {
         role: "phy-sdk",
         path,
-        sha256: Some(crate::i2c::PHY_SDK_SHA),
+        sha256: Some(crate::artifacts::sha256("phy-sdk")),
     }
 }
 
@@ -185,7 +184,7 @@ impl PhyImage {
         )?;
         if size != u64::from(PHY_PARAM_BYTES) {
             return Err(invalid(
-                "phy_param does not have the expected 516-byte extent",
+                "phy_param does not have the expected 492-byte extent",
             ));
         }
         let (vendor, production) = session.targets(&linked.image)?;
@@ -259,7 +258,7 @@ impl PhyImage {
         )
     }
 
-    /// Copy 516 parameter bytes into the captured `phy_param` or a production buffer.
+    /// Copy 492 parameter bytes into the captured `phy_param` or a production buffer.
     pub fn setup(&self, data: &[u8], production: bool) -> Invocation {
         let memcpy = self.sym(1, "memcpy");
         if production {
@@ -355,7 +354,43 @@ impl PhyImage {
         let stops = outcomes(&records);
         assert_eq!(stops.len(), count, "{label}");
         if matches!(verdict, ComparisonVerdict::Match | ComparisonVerdict::Diff) {
-            assert!(complete, "{label}");
+            let unfinished: Vec<_> = records
+                .iter()
+                .filter_map(|r| match r {
+                    blobray_domain::ExecutionEvidence::Model {
+                        case, observation, ..
+                    } if observation.status != observation.expected_status()
+                        || observation.status == blobray_domain::ModelStatus::Incomplete =>
+                    {
+                        Some(format!("{case} {} {:?}", observation.id, observation.issue))
+                    }
+                    blobray_domain::ExecutionEvidence::CallModel {
+                        case, observation, ..
+                    } if observation.status != observation.expected_status() => {
+                        Some(format!("{case} call {observation:?}"))
+                    }
+                    blobray_domain::ExecutionEvidence::RuntimeTable {
+                        case, observation, ..
+                    } if observation.status != observation.expected_status() => {
+                        Some(format!("{case} table {observation:?}"))
+                    }
+                    blobray_domain::ExecutionEvidence::FifoService {
+                        case, observation, ..
+                    } if observation.status != observation.expected_status() => {
+                        Some(format!("{case} fifo {observation:?}"))
+                    }
+                    _ => None,
+                })
+                .collect();
+            let unreturned: Vec<_> = stops
+                .iter()
+                .enumerate()
+                .filter(|(_, stop)| !matches!(stop, ExecutionStop::Returned { .. }))
+                .collect();
+            assert!(
+                complete,
+                "{label}: unfinished models {unfinished:?}; unreturned {unreturned:?}"
+            );
             assert!(
                 stops
                     .iter()

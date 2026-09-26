@@ -129,9 +129,18 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         reason: "direct RFPLL programming for a frequency outside the 2400-2484 MHz channel \
             table: production rejects such a channel request fail-closed, and inside the \
-            claimed closures only that branch of `phy_set_channel_rfpll_freq` reaches the chain",
+            claimed closures only that branch of `phy_set_channel_rfpll_freq_new` (and of \
+            its rev0 ROM predecessor) reaches the direct-programming chain",
         places: &[
             // The frequency-table bound check's out-of-table path.
+            Place::Range {
+                function: "phy_set_channel_rfpll_freq_new",
+                start: 0x28,
+                end: 0x3a,
+            },
+            Place::Function("phy_set_rf_freq_offset_new"),
+            // The same bound check and chain of rev0 ROM, which keeps its own
+            // capacitor search.
             Place::Range {
                 function: "phy_set_channel_rfpll_freq",
                 start: 0x24,
@@ -139,8 +148,8 @@ pub const DECISIONS: &[Decision] = &[
             },
             Place::Function("phy_set_rf_freq_offset"),
             Place::Function("phy_set_rfpll_freq"),
-            Place::Function("phy_rfpll_set_freq"),
             Place::Function("phy_rfpll_cap_init_cal"),
+            Place::Function("phy_rfpll_set_freq"),
             Place::Function("phy_wait_rfpll_cal_end"),
             Place::Function("phy_write_rfpll_sdm"),
             Place::Function("phy_restart_cal"),
@@ -170,22 +179,6 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
-        reason: "estimator mode argument: every `phy_dc_iq_est` caller in the claimed \
-            closures passes zero",
-        places: &[
-            Place::Range {
-                function: "phy_dc_iq_est",
-                start: 0x10,
-                end: 0x14,
-            },
-            Place::Range {
-                function: "phy_dc_iq_est",
-                start: 0x5c,
-                end: 0x60,
-            },
-        ],
-    },
-    Decision {
         reason: "RX-DC minimum search that admits no estimate: readiness activity without a \
             detected RX saturation, whose first radio search returns the ROM's \
             never-initialized output slot; characterized as a DIFF, not claimed \
@@ -211,8 +204,8 @@ pub const DECISIONS: &[Decision] = &[
             `phy_param[0x10]`; production emits no vendor console output",
         places: &[Place::Range {
             function: "phy_pbus_rx_dco_cal_1step_new",
-            start: 0x206,
-            end: 0x2aa,
+            start: 0x1c6,
+            end: 0x26c,
         }],
     },
     Decision {
@@ -461,7 +454,7 @@ pub const DECISIONS: &[Decision] = &[
             selected by their first argument; production emits no vendor console output",
         places: &[
             Place::Range {
-                function: "phy_rfpll_cap_correct_new",
+                function: "phy_rfpll_cap_correct_track",
                 start: 0x1e,
                 end: 0x32,
             },
@@ -588,8 +581,8 @@ pub const DECISIONS: &[Decision] = &[
             // The `phy_param[0x26]` guard's enabled path up to the 802.11p guard.
             Place::Range {
                 function: "phy_chip_set_chan",
-                start: 0xac,
-                end: 0xc0,
+                start: 0xb6,
+                end: 0xca,
             },
         ],
     },

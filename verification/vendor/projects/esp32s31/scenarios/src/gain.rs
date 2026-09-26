@@ -3,7 +3,9 @@
 //! Explicit finite software inputs only; no RF, protocol or whole-TXCAL
 //! qualification. Private inputs and retained requests/evidence belong in the
 //! selected ignored output.
-use crate::evidence::{Access, Effect, calls, effects, events, has_events, output, stop};
+use crate::evidence::{
+    Access, Effect, PhyEffect, calls, effects, events, has_events, output, phy_effects, stop,
+};
 use crate::harness::{
     Budget, Buffer, Input, Result, case, data_request, filled, invalid, known, named_object,
     named_section, region, selection, sha256, symbol, words,
@@ -11,7 +13,6 @@ use crate::harness::{
 use crate::layout::*;
 use crate::phy::{PhyImage, Right, image_layout};
 use crate::session::Session;
-use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
     CallCapture, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
     EntrySelection, ExecutionEvent, ExecutionRequest, ExecutionStop, FunctionSource, Invocation,
@@ -19,9 +20,7 @@ use blobray_domain::{
 };
 use std::{fs, path::PathBuf};
 
-/// Pinned `librftest.a` from the same PHY source revision as the archive.
-pub const RFTEST_SHA: &str = "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e";
-pub const OBJECT_SHA: &str = "88ee26018604100c9ba7839214024d54b48adf982c482dfb1e90d2a11f29f7d3";
+pub const OBJECT_SHA: &str = "86f09f42ad559b84e36906060b7e2b82f739d68873f8c780df96acda1d195e5a";
 /// Independently extracted with llvm-ar/llvm-objcopy from the pinned archive;
 /// the native export must match before these data may support a comparison.
 pub const COEFFICIENT_SHA: &str =
@@ -100,6 +99,46 @@ pub fn arithmetic(
     result.extend(indexes.iter().flat_map(|i| mid[*i].to_le_bytes()));
     result.extend(indexes.iter().flat_map(|i| low[*i].to_le_bytes()));
     result
+}
+
+/// Force and release sequences of an outermost `phy_force_txrx_off_new`
+/// pair over a cleared mode word: bits 11:8 become 8, then 10, then 2, then
+/// 0, each write followed by a one-microsecond settle.
+pub fn force_txrx_pair() -> Vec<PhyEffect> {
+    let mut effects = vec![];
+    let mut value = 0;
+    for mode in [0x800, 0xa00, 0x200, 0] {
+        effects.extend([
+            PhyEffect::Read(PBUS_STATUS, value),
+            PhyEffect::Write(PBUS_STATUS, mode),
+            PhyEffect::Delay(1),
+        ]);
+        value = mode;
+    }
+    effects
+}
+
+pub fn phy_effect((access, address, value): Effect) -> PhyEffect {
+    match access {
+        Access::Read => PhyEffect::Read(address, value),
+        Access::Write => PhyEffect::Write(address, value),
+    }
+}
+
+/// Retained force-TX/RX mode word of `phy_force_txrx_off_new`, cleared.
+pub fn force_txrx_model() -> DeviceDeclaration {
+    DeviceDeclaration {
+        id: "force-txrx-mode".into(),
+        applicability: "explicit retained force-TX/RX mode word".into(),
+        lifetime: RegionLifetime::Phase,
+        behavior: DeviceBehavior::RegisterBank {
+            cells: vec![RegisterCell {
+                address: PBUS_STATUS,
+                width: 4,
+                value: 0,
+            }],
+        },
+    }
 }
 
 pub fn gain_models(base: u32, fill: u8) -> Vec<DeviceDeclaration> {
@@ -236,12 +275,12 @@ impl Gain {
             Input {
                 role: "phy",
                 path: &options.library,
-                sha256: Some(I2C_LIBRARY_SHA),
+                sha256: Some(crate::artifacts::sha256("libphy")),
             },
             Input {
                 role: "rom",
                 path: &options.rom,
-                sha256: Some(ROM_SHA),
+                sha256: Some(crate::artifacts::sha256("rom")),
             },
             Input {
                 role: "production",
@@ -253,7 +292,7 @@ impl Gain {
             inputs.push(Input {
                 role: "rftest",
                 path: rftest,
-                sha256: Some(RFTEST_SHA),
+                sha256: Some(crate::artifacts::sha256("librftest")),
             });
         }
         let session = Session::start(
@@ -852,13 +891,19 @@ impl Gain {
                         SessionReset::Warm,
                         true,
                     ));
+                    // The standalone gain child brackets its publication with
+                    // an outermost force-TX/RX pair.
+                    let mut child_models = gain_models(bank, fill);
+                    child_models.push(force_txrx_model());
+                    let delay = self.sym(1, "ets_delay_us");
                     let mut left = self.enter(
                         self.root("phy_bt_set_tx_gain_new"),
                         &[0],
                         vec![],
                         vec![selection(OUTPUT, 80)],
-                        gain_models(bank, fill),
+                        child_models.clone(),
                     );
+                    left.calls = crate::phy::delay_calls("force-txrx-delay", delay);
                     left.observe_calls = Some(CallCapture {
                         include_tail: true,
                         argument_words: 0,
@@ -870,13 +915,15 @@ impl Gain {
                             ("input", Buffer::new(INPUT, words(&packed)).into()),
                             ("output", i64::from(OUTPUT).into()),
                         ],
-                        gain_models(bank, fill),
+                        child_models,
                         vec![selection(OUTPUT, 80)],
                     )?;
+                    let mut right = self.enter_probe(right);
+                    right.calls = crate::phy::delay_calls("force-txrx-delay", delay);
                     rows.push(case(
                         "bt-complete-publication",
                         left,
-                        Some(self.enter_probe(right)),
+                        Some(right),
                         SessionReset::Warm,
                         true,
                     ));
@@ -908,9 +955,16 @@ impl Gain {
                         assert!(events(records, 4 * i + 2, side).is_empty());
                         assert_eq!(&output(records, 4 * i + 2, side), calculated);
                         assert_eq!(&output(records, 4 * i + 3, side), calculated);
-                        let observed = effects(&events(records, 4 * i + 3, side), true);
-                        assert_eq!(observed.len(), 81);
-                        assert_eq!(&observed, writes, "{i} {side}");
+                        let forced = force_txrx_pair();
+                        let (enter, leave) = forced.split_at(forced.len() / 2);
+                        let expected: Vec<PhyEffect> = enter
+                            .iter()
+                            .copied()
+                            .chain(writes.iter().copied().map(phy_effect))
+                            .chain(leave.iter().copied())
+                            .collect();
+                        let observed = phy_effects(&events(records, 4 * i + 3, side));
+                        assert_eq!(observed, expected, "{i} {side}");
                     }
                 }
             }

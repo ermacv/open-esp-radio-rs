@@ -52,6 +52,7 @@ const RX_GAIN: Claim = (
     "open_phy_calibration_trace_rx_gain",
 );
 const CHANNEL: Claim = ("phy_chip_set_chan", "open_phy_channel_trace_state");
+const BLUETOOTH_GAIN: Claim = ("phy_bt_set_tx_gain_new", "open_phy_bluetooth_trace_tx_gain");
 const RFPLL_MAINTAIN: Claim = ("phy_rfpll_cap_track_new", "open_phy_rfpll_trace_maintain");
 const RFPLL_THERMAL: Claim = ("phy_rfpll_cap_track_new", "open_phy_rfpll_trace_track");
 const AP_TSF_START: Claim = (
@@ -73,7 +74,19 @@ pub const DECISIONS: &[Decision] = &[
             reference and the progress word, all compared as `phy_param` fields of the parent \
             claim; only the exported `phy_debug_get_track_result` reads it, and no vendor \
             library or ROM function calls that",
-        places: &[place(PARENT, "0x20000204", 0, 14)],
+        places: &[place(PARENT, "0x200001ec", 0, 14)],
+    },
+    Decision {
+        reason: "`phy_force_txrx_off_new` nesting count: every force/release pair of the \
+            parent returns it to its entry value. Production encodes the count each pair \
+            observes as its static `PhyForceTxRxDepth`, whose selected force and release \
+            sequences are compared as register effects",
+        places: &[
+            place(PARENT, "phy_param", 0x1ea, 0x1ec),
+            place(COMBINED, "phy_param", 0x1ea, 0x1ec),
+            place(CHANNEL, "phy_param", 0x1ea, 0x1ec),
+            place(BLUETOOTH_GAIN, "phy_param", 0x1ea, 0x1ec),
+        ],
     },
     Decision {
         reason: "readiness activity edge count of one DC estimate: `phy_iq_est_enable` clears \
@@ -124,7 +137,7 @@ pub const DECISIONS: &[Decision] = &[
             effects, and the thermal claim of the same root compares both commits",
         places: &[
             place(RFPLL_MAINTAIN, "phy_param", 0x130, 0x132),
-            place(RFPLL_MAINTAIN, "phy_param", 0x1fe, 0x200),
+            place(RFPLL_MAINTAIN, "phy_param", 0x1e6, 0x1e8),
         ],
     },
     Decision {

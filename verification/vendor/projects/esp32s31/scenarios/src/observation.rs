@@ -91,9 +91,68 @@ pub const DECISIONS: &[Decision] = &[
         places: &[("hal/src/owner.rs", "Self {")],
     },
     Decision {
+        reason: "previous estimate carried into a radio-stage minimum search: it replaces \
+            only an estimate the search does not admit, and every compared radio search \
+            admits one",
+        places: &[("phy/src/rx/gain_calibration.rs", "policy.measurement,")],
+    },
+    Decision {
+        reason: "terminal inspection of the one-step RX-DC child: the arm selects the \
+            completed variant, while the compared DC codes depend on the policy lines that \
+            compute its configuration",
+        places: &[(
+            "phy/src/rx/gain_calibration.rs",
+            "Step::Complete(outcome) => Some(Ok(outcome)),",
+        )],
+    },
+    Decision {
+        reason: "per-search convergence quality of an RX DC product: production retains it \
+            for its own diagnostics and HIL evidence, the vendor keeps no counterpart, and \
+            the compared DC codes carry the calibration result",
+        places: &[
+            (
+                "phy/src/rx/gain_calibration/quality.rs",
+                "let mask = 1 << index;",
+            ),
+            (
+                "phy/src/rx/gain_calibration/quality.rs",
+                "self.converged = (self.converged & !mask) | if converged { mask } else { 0 };",
+            ),
+            (
+                "phy/src/rx/gain_calibration/quality.rs",
+                "self.record(index, converged);",
+            ),
+            (
+                "phy/src/rx/gain_calibration/quality.rs",
+                "self.record(11 + index, converged);",
+            ),
+            (
+                "phy/src/rx/gain_calibration/quality.rs",
+                "self.record(19 + index, converged);",
+            ),
+            (
+                "phy/src/target_port/calibration.rs",
+                "outcome.quality.record_shared(index, calibrated.converged);",
+            ),
+            (
+                "phy/src/target_port/calibration.rs",
+                ".record_wifi_baseband(index, calibrated.converged);",
+            ),
+            (
+                "phy/src/target_port/calibration.rs",
+                "outcome.quality.record_wifi_fine(fine, calibrated.converged);",
+            ),
+        ],
+    },
+    Decision {
         reason: "execution statistics of the RX-gain and TX-DC executors; they \
             report effort to production diagnostics and have no vendor counterpart",
         places: &[
+            (
+                "phy/src/rx/gain_calibration.rs",
+                "stats.minimum_searches += 1;",
+            ),
+            ("phy/src/rx/gain_calibration.rs", "stats.settle_10us += 1;"),
             (
                 "phy/src/rx/gain_calibration.rs",
                 "stats.minimum_operations += completion.operations();",
@@ -101,10 +160,6 @@ pub const DECISIONS: &[Decision] = &[
             (
                 "phy/src/rx/gain_calibration.rs",
                 "stats.settle_1us += 2 * u32::from(completion.estimators());",
-            ),
-            (
-                "phy/src/target_port/calibration.rs",
-                "execution.minimum_searches += 1;",
             ),
             (
                 "phy/src/target_port/calibration.rs",
@@ -122,24 +177,12 @@ pub const DECISIONS: &[Decision] = &[
                 "phy/src/target_port/calibration.rs",
                 "execution.settle_1us += stats.settle_1us;",
             ),
-            (
-                "phy/src/target_port/calibration.rs",
-                "execution.settle_10us += 1;",
-            ),
         ],
     },
     Decision {
         reason: "failure payload: the measurement, observation count or force-test \
             transaction a timed-out step reports; every compared case completes",
         places: &[
-            (
-                "phy/src/target_port/calibration.rs",
-                "measurement: measurement_base + 1,",
-            ),
-            (
-                "phy/src/target_port/calibration.rs",
-                "PhyPbusForceTest::new(1, 1, shared_control),",
-            ),
             ("phy/src/tx/dc_power_detector.rs", "let measurement = self"),
             (
                 "phy/src/tx/dc_power_detector.rs",
@@ -203,35 +246,10 @@ pub const DECISIONS: &[Decision] = &[
             executor and target port call the out-of-line `action()` only for its variant, \
             `begin_*` lowers the action again and `commit` builds its own inlined outcome, \
             whose instructions are observed",
-        places: &[
-            (
-                "phy/src/tracking/calibration.rs",
-                "channel: self.parameters.current_channel,",
-            ),
-            (
-                "phy/src/tracking/calibration.rs",
-                "cbw: self.parameters.channel_bandwidth,",
-            ),
-            (
-                "phy/src/tracking/calibration.rs",
-                "class: self.active_class,",
-            ),
-            (
-                "phy/src/tracking/calibration.rs",
-                "let current = self.parameters.current_temperature;",
-            ),
-            (
-                "phy/src/tracking/calibration.rs",
-                "clients: self.request.clients,",
-            ),
-            (
-                "phy/src/tracking/calibration.rs",
-                "threshold: self.threshold,",
-            ),
-            ("phy/src/tracking/calibration.rs", "self.dcode"),
-            ("phy/src/tracking/calibration.rs", "self.channel"),
-            ("phy/src/tracking/calibration.rs", "self.tx_dc_pwdet[0]"),
-        ],
+        places: &[(
+            "phy/src/tracking/calibration.rs",
+            "threshold: self.threshold,",
+        )],
     },
     Decision {
         reason: "async future bookkeeping attributed to signatures and closing braces: \
@@ -258,34 +276,16 @@ pub const DECISIONS: &[Decision] = &[
         )],
     },
     Decision {
-        reason: "diagnostic-print selectors retained with the TX-power child's parent action: \
-            commit reads only its variant and `enabled`, and the vendor diagnostics select \
-            only console output, which production does not emit",
-        places: &[("phy/src/tracking/parameters.rs", "Ok(Self {")],
-    },
-    Decision {
         reason: "measurement identity of the event-driven RX-DC host model: the ROM search \
             has no corresponding field and the direct target transaction never reads it",
-        places: &[
-            (
-                "phy/src/rx/gain_calibration.rs",
-                "measurement: iteration.wrapping_mul(2).wrapping_add(high as u8),",
-            ),
-            ("phy/src/rx/gain_calibration.rs", "policy.iteration,"),
-        ],
+        places: &[("phy/src/rx/gain_calibration.rs", "policy.iteration,")],
     },
     Decision {
         reason: "state stores the parent probe seeds and the optimized probe forwards in a \
             register to the tracking policy it builds next; each flag's decision (the \
             Bluetooth/802.15.4 TX-power update, the relaxed Wi-Fi TX-power threshold) is \
             observed under both flag values",
-        places: &[
-            ("phy/src/state.rs", "self.bluetooth.power_tracking = value;"),
-            (
-                "phy/src/state.rs",
-                "state.wifi.tx_power_tracking_slow = relaxed_threshold.into();",
-            ),
-        ],
+        places: &[("phy/src/state.rs", "self.bluetooth.power_tracking = value;")],
     },
     Decision {
         reason: "client ownership bits of the validation-only pending parent fixture; the \

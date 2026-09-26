@@ -19,8 +19,6 @@ use blobray_domain::{
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-/// SHA-256 of the pinned `libpp.a`.
-pub const LIBPP_SHA: &str = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e";
 /// Names no pinned input defines: newlib `putchar`, which only the
 /// `libpp.a` diagnostic dumps reachable from the transmit leaves call. They
 /// resolve to an unmapped address, so reaching one stops the case.
@@ -882,12 +880,12 @@ impl Mac {
             Input {
                 role: "libpp",
                 path: &options.libpp,
-                sha256: Some(LIBPP_SHA),
+                sha256: Some(crate::artifacts::sha256("libpp")),
             },
             Input {
                 role: "rom",
                 path: &options.rom,
-                sha256: Some(crate::ROM_SHA),
+                sha256: Some(crate::artifacts::sha256("rom")),
             },
             Input {
                 role: "production",

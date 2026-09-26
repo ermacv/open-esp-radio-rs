@@ -5,8 +5,12 @@
 //! warm phases. Storage needs only the pinned PHY archive and ROM. Without the
 //! authenticated RF-test archive the producer is reported as an unmet
 //! obligation, never omitted.
-use crate::evidence::{Access, Effect, calls, effects, events, has_events, output, stop};
-use crate::gain::{Gain, arithmetic, gain_models, publication, signed8};
+use crate::evidence::{
+    Access, Effect, PhyEffect, calls, effects, events, has_events, output, phy_effects, stop,
+};
+use crate::gain::{
+    Gain, arithmetic, force_txrx_pair, gain_models, phy_effect, publication, signed8,
+};
 use crate::harness::{Result, case, filled, known, region, selection, words};
 use crate::layout::*;
 use crate::phy::Right;
@@ -17,6 +21,9 @@ use blobray_domain::{
 use serde::Serialize;
 
 pub const CACHE: u32 = 0x3fff_5000;
+/// Calibration cache bytes the archive reports through `phy_get_rfdata_num`:
+/// a 12-byte header, the parameter object and a 4-byte trailer.
+const CACHE_BYTES: u32 = 508;
 pub const INIT: u32 = 0x3fff_6000;
 const MAC_POWER: u32 = 0x2010_5500;
 
@@ -109,12 +116,12 @@ fn storage(g: &mut Gain) -> Result<Baseline> {
                             &[CACHE],
                             vec![region(
                                 CACHE,
-                                532,
+                                CACHE_BYTES,
                                 &[],
                                 Some(fill),
                                 RegionLifetime::Session,
                             )?],
-                            vec![selection(CACHE, 532)],
+                            vec![selection(CACHE, CACHE_BYTES)],
                             vec![],
                         ),
                     ),
@@ -293,7 +300,13 @@ fn storage_negative(g: &mut Gain, baseline: &Baseline) -> Result<()> {
     let recovery = g.enter(
         g.root("phy_rf_cal_data_recovery_new"),
         &[CACHE],
-        vec![region(CACHE, 532, &[], None, RegionLifetime::Phase)?],
+        vec![region(
+            CACHE,
+            CACHE_BYTES,
+            &[],
+            None,
+            RegionLifetime::Phase,
+        )?],
         state_selection(g),
         vec![],
     );
@@ -403,6 +416,9 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                         }],
                     },
                 });
+                // The gain child brackets its publication with the outermost
+                // `phy_force_txrx_off_new` pair.
+                models.push(crate::gain::force_txrx_model());
                 let mut phase = g.enter(
                     g.root("set_rate_power_index"),
                     &[0],
@@ -410,6 +426,8 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                     vec![selection(g.parameter + 434, 1)],
                     models,
                 );
+                // The force-TX/RX pair settles one microsecond after each write.
+                phase.calls = crate::phy::delay_calls("force-txrx-delay", g.sym(1, "ets_delay_us"));
                 phase.observe_calls = Some(CallCapture {
                     include_tail: true,
                     argument_words: 0,
@@ -453,6 +471,7 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                 assert_eq!(calls(&observed, set_gain), expected_gain);
                 assert_eq!(calls(&observed, mac), [[index as u32]]);
                 let mut expected = vec![];
+                let mut forced = vec![];
                 if publish {
                     let calculated = arithmetic(
                         &g.coefficients[108..],
@@ -463,10 +482,19 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                     );
                     expected = publication(&[0; 6], 0, &calculated, 32, 0, 0, false);
                     expected[0] = (Access::Read, GAIN_BASE, 0);
+                    forced = force_txrx_pair();
                 }
-                expected.extend(mac_power(index, 0xa5a5_a5a5));
+                // The outermost force pair brackets the gain publication.
+                let (enter, leave) = forced.split_at(forced.len() / 2);
+                let expected: Vec<PhyEffect> = enter
+                    .iter()
+                    .copied()
+                    .chain(expected.into_iter().map(phy_effect))
+                    .chain(leave.iter().copied())
+                    .chain(mac_power(index, 0xa5a5_a5a5).into_iter().map(phy_effect))
+                    .collect();
                 assert_eq!(
-                    effects(&observed, true),
+                    phy_effects(&observed),
                     expected,
                     "{target} {attenuation} {fill}"
                 );

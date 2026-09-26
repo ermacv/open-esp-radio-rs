@@ -9,7 +9,6 @@ use crate::harness::{
 use crate::i2c::{OBJECT_SHA, TABLE_SHA};
 use crate::layout::{COMMAND_RAM, PHY_PARAM_BYTES, ROM_INPUT, ROM_INTERFACE_POINTER};
 use crate::session::{path_arg, start_run};
-use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_application::QuerySummary;
 use blobray_domain::{
     AbstractValue, AccessRoot, AccessStep, ArtifactId, AssertionState, CallAbi, CallDirection,
@@ -244,12 +243,12 @@ pub fn exercise(options: &Options) -> Result<PathBuf> {
         Input {
             role: "phy",
             path: &library,
-            sha256: Some(I2C_LIBRARY_SHA),
+            sha256: Some(crate::artifacts::sha256("libphy")),
         },
         Input {
             role: "rom",
             path: &rom,
-            sha256: Some(ROM_SHA),
+            sha256: Some(crate::artifacts::sha256("rom")),
         },
     ])?;
     let inventory = runner.inventory()?;

@@ -13,7 +13,6 @@ use crate::harness::{
 use crate::layout::*;
 use crate::phy::image_layout;
 use crate::session::{Artifact, Session, image_symbol, request};
-use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
     CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
     EffectContractRef, EffectRule, EntrySelection, ExecutionCase, ExecutionEvent,
@@ -32,10 +31,6 @@ const COMMAND_EVENTS: u32 = 512;
 
 pub const OBJECT_SHA: &str = "7e6ebb1353d1bd2c53b4b5b1176bbf795c57d899c3f07a26ce56e74b5803e9d9";
 pub const TABLE_SHA: &str = "927b3305a35468bb52f3de4e3305f4b4d0674831014376a094ceb00022bab183";
-/// Linked SDK firmware supplying the bootloader crystal-clock symbol.
-pub const SDK_SHA: &str = "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195";
-/// SDK firmware supplying the RFPLL diagnostics symbol address.
-pub const PHY_SDK_SHA: &str = "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9";
 
 /// Independent instruction reading of the authenticated `phy_i2c.o` root and ROM
 /// encode/fill leaves. Low words specify block/register in call order; these are
@@ -182,12 +177,12 @@ impl I2c {
             Input {
                 role: "phy",
                 path: &options.library,
-                sha256: Some(I2C_LIBRARY_SHA),
+                sha256: Some(crate::artifacts::sha256("libphy")),
             },
             Input {
                 role: "rom",
                 path: &options.rom,
-                sha256: Some(ROM_SHA),
+                sha256: Some(crate::artifacts::sha256("rom")),
             },
             Input {
                 role: "production",
@@ -199,14 +194,14 @@ impl I2c {
             inputs.push(Input {
                 role: "sdk",
                 path: sdk,
-                sha256: Some(SDK_SHA),
+                sha256: Some(crate::artifacts::sha256("sdk")),
             });
         }
         if let Some(phy_sdk) = &options.phy_sdk {
             inputs.push(Input {
                 role: "phy-sdk",
                 path: phy_sdk,
-                sha256: Some(PHY_SDK_SHA),
+                sha256: Some(crate::artifacts::sha256("phy-sdk")),
             });
         }
         let session = Session::start(
@@ -249,7 +244,11 @@ impl I2c {
             ]);
         }
         if rfpll {
-            roots.extend(["phy_rfpll_cap_init_cal_new", "phy_rfpll_cap_track_new"]);
+            roots.extend([
+                "phy_rfpll_cap_init_cal_track",
+                "phy_rfpll_cap_track_new",
+                "phy_set_rfpll_freq_new",
+            ]);
         }
         let select = |input: usize, name: &str| -> Result<EntrySelection> {
             Ok(EntrySelection {

@@ -19,14 +19,14 @@ pub const INPUT: u32 = 0x3fff_0000;
 pub const OUTPUT: u32 = 0x3fff_1000;
 /// Explicit callback table referenced through the ROM interface pointer.
 pub const CALLBACK_TABLE: u32 = 0x3fff_3000;
-/// Source of a 516-byte parameter image copied by captured `memcpy`.
+/// Source of a 492-byte parameter image copied by captured `memcpy`.
 pub const PARAMETER_SOURCE: u32 = 0x3fff_5000;
 /// Production-side destination of a copied parameter image.
 pub const PARAMETER_DESTINATION: u32 = 0x3fff_6000;
 /// Production-side copy of a parameter image in scratch input RAM.
 pub const PARAMETER_COPY: u32 = INPUT + 0x800;
 /// Size of the captured `phy_param` object.
-pub const PHY_PARAM_BYTES: u32 = 516;
+pub const PHY_PARAM_BYTES: u32 = 492;
 
 /// ROM storage used in `match` patterns, so it is not resolved at run time.
 /// Each constant names its pinned-ROM symbol; every session that captures

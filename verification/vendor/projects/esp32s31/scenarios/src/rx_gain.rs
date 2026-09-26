@@ -4,7 +4,7 @@
 //! Publication cases take the table/DC guards; calibration cases execute the
 //! complete DC estimator path with signed samples, delayed analog I2C and both
 //! work-mode settle branches. Both compare ordered effects, the projected
-//! per-gain/base/fine DC coefficients and the two bank limits. Production-only
+//! per-gain and fine DC coefficients and the two bank limits. Production-only
 //! cases require a failed channel, a failed minimum search and an exhausted
 //! shared budget to leave coefficients and gain memory unpublished. Software
 //! comparison under explicit peripheral inputs, never hardware qualification.
@@ -32,20 +32,24 @@ const ROOT_FREQUENCY: u32 = 2437;
 const ROOT_BANDWIDTH: u32 = 0;
 /// PBus RX path value selected by both sides.
 const RX_PATH: u8 = 0xbf;
-/// Semantic parameter words: 16 Wi-Fi per-gain DC, 2 Wi-Fi base, 22 shared
-/// per-gain DC, 12 RXBB adjustments and one Wi-Fi auxiliary word.
-const PARAMETER_WORDS: usize = 53;
-/// Production output: the 52 coefficient words, then the Wi-Fi and shared
-/// last gain indices.
-const OUTPUT_WORDS: usize = 54;
+/// Coefficient words: Wi-Fi per-gain DC, the five Wi-Fi fine DC pairs of
+/// `phy_rxdc_fine_cal`, then shared per-gain DC.
+const WIFI_INDEX_WORDS: usize = 16;
+const WIFI_FINE_WORDS: usize = 10;
+const SHARED_INDEX_WORDS: usize = 22;
+const COEFFICIENT_WORDS: usize = WIFI_INDEX_WORDS + WIFI_FINE_WORDS + SHARED_INDEX_WORDS;
+/// Semantic parameter words: the coefficients and one Wi-Fi auxiliary word.
+const PARAMETER_WORDS: usize = COEFFICIENT_WORDS + 1;
+/// Production output: the coefficient words, then the Wi-Fi and shared last
+/// gain indices.
+const OUTPUT_WORDS: usize = COEFFICIENT_WORDS + 2;
 const OUTPUT_BYTES: u32 = (OUTPUT_WORDS * 2) as u32;
 /// Untouched production output bytes beyond the seeded coefficients.
 const OUTPUT_FILL: u8 = 0xa5;
 /// `phy_param` offsets of the semantic RX state.
 const WIFI_INDEX_DC: usize = 334;
-const WIFI_DC_BASE: usize = 366;
+const WIFI_FINE_DC: usize = 366;
 const SHARED_INDEX_DC: usize = 436;
-const RXBB_ADJUSTMENTS: usize = 480;
 const WIFI_AUXILIARY: usize = 212;
 const GUARD_FLAGS: usize = 164;
 const TABLE_MODE: usize = 16;
@@ -386,12 +390,10 @@ fn estimator_models(estimator: Estimator) -> Vec<DeviceDeclaration> {
     }
 }
 
-/// Deterministic 9-bit per-gain DC words, signed RXBB adjustments and the
-/// auxiliary word, derived from `seed`.
+/// Deterministic 9-bit DC words and the auxiliary word, derived from `seed`.
 pub fn parameters(seed: u16) -> [u16; PARAMETER_WORDS] {
     core::array::from_fn(|i| match i {
-        0..40 => seed.wrapping_add(i as u16 * 7) & 0x1ff,
-        40..52 => (i as i16 - 46).wrapping_mul(seed as i16) as u16,
+        0..COEFFICIENT_WORDS => seed.wrapping_add(i as u16 * 7) & 0x1ff,
         _ => 0x125,
     })
 }
@@ -411,11 +413,15 @@ pub fn parameter_image(profile: &Profile) -> Vec<u8> {
     image[GUARD_FLAGS..GUARD_FLAGS + 4].copy_from_slice(&guards.to_le_bytes());
     // The qualified normal gain table; the alternate vendor table mode is excluded.
     image[TABLE_MODE..TABLE_MODE + 2].copy_from_slice(&0u16.to_le_bytes());
-    put_words(&mut image, WIFI_INDEX_DC, &values[..16]);
-    put_words(&mut image, WIFI_DC_BASE, &values[16..18]);
-    put_words(&mut image, SHARED_INDEX_DC, &values[18..40]);
-    put_words(&mut image, RXBB_ADJUSTMENTS, &values[40..52]);
-    put_words(&mut image, WIFI_AUXILIARY, &values[52..]);
+    let fine = WIFI_INDEX_WORDS + WIFI_FINE_WORDS;
+    put_words(&mut image, WIFI_INDEX_DC, &values[..WIFI_INDEX_WORDS]);
+    put_words(&mut image, WIFI_FINE_DC, &values[WIFI_INDEX_WORDS..fine]);
+    put_words(
+        &mut image,
+        SHARED_INDEX_DC,
+        &values[fine..COEFFICIENT_WORDS],
+    );
+    put_words(&mut image, WIFI_AUXILIARY, &values[COEFFICIENT_WORDS..]);
     image[PARAMETER_RX_PATH] = RX_PATH;
     image[SHARED_LAST_INDEX] = INITIAL_SHARED_LAST;
     image[WIFI_LAST_INDEX] = INITIAL_WIFI_LAST;
@@ -426,49 +432,42 @@ pub fn parameter_image(profile: &Profile) -> Vec<u8> {
     image
 }
 
-/// Committed RX `phy_param` fields in production output order: the 52
+/// Committed RX `phy_param` fields in production output order: the
 /// coefficient words, then the Wi-Fi and shared last gain indices, each in
 /// the low byte of an output word.
-pub const COMMITTED: [OutputField; 6] = [
+pub const COMMITTED: [OutputField; 5] = [
     OutputField {
         name: "wifi-index-dc",
         parameter: WIFI_INDEX_DC as u32,
         output: 0,
         width: 2,
-        count: 16,
+        count: WIFI_INDEX_WORDS as u32,
     },
     OutputField {
-        name: "wifi-dc-base",
-        parameter: WIFI_DC_BASE as u32,
-        output: 32,
+        name: "wifi-fine-dc",
+        parameter: WIFI_FINE_DC as u32,
+        output: 2 * WIFI_INDEX_WORDS as u32,
         width: 2,
-        count: 2,
+        count: WIFI_FINE_WORDS as u32,
     },
     OutputField {
         name: "shared-index-dc",
         parameter: SHARED_INDEX_DC as u32,
-        output: 36,
+        output: 2 * (WIFI_INDEX_WORDS + WIFI_FINE_WORDS) as u32,
         width: 2,
-        count: 22,
-    },
-    OutputField {
-        name: "rxbb-adjustments",
-        parameter: RXBB_ADJUSTMENTS as u32,
-        output: 80,
-        width: 2,
-        count: 12,
+        count: SHARED_INDEX_WORDS as u32,
     },
     OutputField {
         name: "wifi-last-index",
         parameter: WIFI_LAST_INDEX as u32,
-        output: 104,
+        output: 2 * COEFFICIENT_WORDS as u32,
         width: 1,
         count: 1,
     },
     OutputField {
         name: "shared-last-index",
         parameter: SHARED_LAST_INDEX as u32,
-        output: 106,
+        output: 2 * COEFFICIENT_WORDS as u32 + 2,
         width: 1,
         count: 1,
     },
@@ -476,7 +475,7 @@ pub const COMMITTED: [OutputField; 6] = [
 
 /// Production output seeded with the input coefficients and untouched indices.
 fn seeded_output(profile: &Profile) -> Vec<u8> {
-    let mut bytes: Vec<u8> = parameters(profile.seed)[..52]
+    let mut bytes: Vec<u8> = parameters(profile.seed)[..COEFFICIENT_WORDS]
         .iter()
         .flat_map(|v| v.to_le_bytes())
         .collect();
@@ -1049,9 +1048,8 @@ mod tests {
         let values = parameters(17);
         let word = |offset: usize| u16::from_le_bytes([image[offset], image[offset + 1]]);
         assert_eq!(word(WIFI_INDEX_DC), values[0]);
-        assert_eq!(word(WIFI_DC_BASE + 2), values[17]);
-        assert_eq!(word(SHARED_INDEX_DC + 42), values[39]);
-        assert_eq!(word(RXBB_ADJUSTMENTS + 22), values[51]);
+        assert_eq!(word(WIFI_FINE_DC + 18), values[25]);
+        assert_eq!(word(SHARED_INDEX_DC + 42), values[47]);
         assert_eq!(word(WIFI_AUXILIARY), 0x125);
         assert_eq!(
             u32::from_le_bytes(image[GUARD_FLAGS..GUARD_FLAGS + 4].try_into().unwrap()),
@@ -1076,7 +1074,8 @@ mod tests {
             }
         }
         let padding: Vec<_> = (0..covered.len()).filter(|i| !covered[*i]).collect();
-        assert_eq!(padding, [105, 107]);
+        let index_high = 2 * COEFFICIENT_WORDS + 1;
+        assert_eq!(padding, [index_high, index_high + 2]);
     }
 
     #[test]

@@ -31,10 +31,10 @@ const TRACKING_EVENTS: u32 = 1 << 20;
 /// Production probe input and output words of the combined root and parent.
 const COMBINED_INPUT_WORDS: usize = 8;
 const PARENT_INPUT_WORDS: usize = 15;
-const COMBINED_OUTPUT_BYTES: u32 = 178;
-const PARENT_OUTPUT_BYTES: u32 = 192;
+const COMBINED_OUTPUT_BYTES: u32 = 170;
+const PARENT_OUTPUT_BYTES: u32 = 184;
 /// Calibration snapshot bytes both roots start with.
-const SNAPSHOT_BYTES: usize = 162;
+const SNAPSHOT_BYTES: usize = 154;
 /// Committed-state bytes every root ends with: DCODE codes, status bytes, the
 /// shared and Wi-Fi RX-gain table last indices and the tracking progress word.
 const COMMITTED_BYTES: u32 = 16;
@@ -69,7 +69,7 @@ const DCODE: usize = 0x1a1;
 const CALIBRATION_STATUS: usize = 0xa4;
 /// `phy_param` offset of the tracking progress word the tracking children
 /// set and `phy_param_track_tot` clears and returns.
-const TRACKING_PROGRESS: usize = 0x1fe;
+const TRACKING_PROGRESS: usize = 0x1e6;
 /// `phy_param` byte of the temperature-sensor index ROM
 /// `phy_tsens_temp_read_local` stores with each sample.
 const SENSOR_INDEX: usize = 0x16;
@@ -108,8 +108,9 @@ const COMBINED: [OutputField; 9] = [
     field("bandwidth", PARAMETER_BANDWIDTH, 8, 1, 1),
     field("wifi-dc-rows", 168, 10, 2, 12),
     field("bluetooth-dc-rows", 260, 34, 2, 12),
-    field("wifi-rx-dc", 334, 58, 2, 18),
-    field("shared-rx-dc", 436, 94, 2, 34),
+    // Wi-Fi per-gain DC, then the five `phy_rxdc_fine_cal` pairs.
+    field("wifi-rx-dc", 334, 58, 2, 26),
+    field("shared-rx-dc", 436, 110, 2, 22),
 ];
 /// Additional committed parent fields: power temperature, shared cache,
 /// `phy_param` guard bytes of the parent: a nonzero inhibit byte skips every
@@ -125,13 +126,13 @@ const I2C_BAND: usize = 77;
 /// Wi-Fi and BT gain bases, retained adjustment, I2C band code and the RFPLL
 /// reference. Signed bytes occupy the low byte of an output word.
 const PARENT: [OutputField; 7] = [
-    field("power-temperature", 4, 162, 2, 1),
-    field("shared-cache", 290, 164, 1, 1),
-    field("wifi-gain-base", 291, 166, 1, 1),
-    field("bluetooth-gain-base", 292, 168, 1, 1),
-    field("gain-adjustment", GAIN_ADJUSTMENT, 170, 1, 1),
-    field("i2c-band", I2C_BAND, 172, 1, 1),
-    field("rfpll-reference", 304, 174, 2, 1),
+    field("power-temperature", 4, 154, 2, 1),
+    field("shared-cache", 290, 156, 1, 1),
+    field("wifi-gain-base", 291, 158, 1, 1),
+    field("bluetooth-gain-base", 292, 160, 1, 1),
+    field("gain-adjustment", GAIN_ADJUSTMENT, 162, 1, 1),
+    field("i2c-band", I2C_BAND, 164, 1, 1),
+    field("rfpll-reference", 304, 166, 2, 1),
 ];
 
 const fn field(
@@ -359,9 +360,9 @@ pub fn tracking_models(case: &Case, search: bool, detector: u32) -> Vec<DeviceDe
     }
     if let Some(delta) = correction {
         let statuses: Vec<u32> = match delta {
-            0 => vec![0xaf; 20],
-            5 => [vec![0xa7; 2], vec![0xa3; 10]].concat(),
-            -5 => [vec![0xa3; 10], vec![0xab; 2]].concat(),
+            0 => vec![0xaf; 2 * crate::rfpll::SEARCH_SAMPLES as usize],
+            5 => [vec![0xa7; 2], vec![0xa3; 10], vec![0xab; 2]].concat(),
+            -5 => [vec![0xa3; 10], vec![0xa7; 2], vec![0xab; 2]].concat(),
             _ => panic!("unsupported fixture correction"),
         };
         cells.push(CommandCell {
@@ -972,11 +973,24 @@ fn check(root: Root, case: &Case, records: &[ExecutionEvidence]) {
             "{label}: runtime parent changed the gain adjustment"
         );
         let output = crate::evidence::output(records, 2, true);
-        for low in [164usize, 166, 168, 170] {
+        let word = |name: &str| {
+            PARENT
+                .iter()
+                .find(|field| field.name == name)
+                .map(|field| field.output as usize)
+                .unwrap()
+        };
+        for name in [
+            "shared-cache",
+            "wifi-gain-base",
+            "bluetooth-gain-base",
+            "gain-adjustment",
+        ] {
+            let low = word(name);
             let sign = if output[low] & 0x80 != 0 { 0xff } else { 0 };
-            assert_eq!(output[low + 1], sign, "{label}: signed word at {low}");
+            assert_eq!(output[low + 1], sign, "{label}: signed word {name}");
         }
-        assert_eq!(output[173], 0, "{label}: I2C band word");
+        assert_eq!(output[word("i2c-band") + 1], 0, "{label}: I2C band word");
     }
 }
 
@@ -991,8 +1005,8 @@ mod tests {
             assert_eq!(case.inputs(root).len(), root.input_words());
         }
         for (root, padding) in [
-            (Root::Combined, vec![9, 177]),
-            (Root::Parent, vec![9, 165, 167, 169, 171, 173, 191]),
+            (Root::Combined, vec![9, 169]),
+            (Root::Parent, vec![9, 157, 159, 161, 163, 165, 183]),
         ] {
             let mut covered = vec![false; root.output_bytes() as usize];
             for field in root.fields() {

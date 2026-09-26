@@ -41,7 +41,7 @@ const GUARD_FLAGS: usize = 164;
 const CHANNEL: usize = 284;
 const BANDWIDTH: usize = 287;
 const OVERRIDE: usize = 432;
-const FLAGS: usize = 510;
+const FLAGS: usize = 0x1e6;
 const CALIBRATION_TEMPERATURE: i16 = 50;
 const STALE_REFERENCE: i16 = 21;
 const DUE_REFERENCE: i16 = 20;
@@ -83,18 +83,20 @@ fn parent_expected(
 }
 
 /// Direct calls of the combined calibration: RX and TX brackets, each with
-/// its own grant, and the restore callback.
+/// its own grant and force-TX/RX pair, and the restore callback.
 fn calibration_expected(wifi: bool, shared: bool, rx: bool, tx: bool) -> Expected {
     let restore = "phy_txgain_comp_pacfg_";
     let mut expected: Expected = vec![("phy_abs_temp", vec![])];
     if rx {
         expected.extend([
             ("phy_acquire_grant_protect", vec![]),
+            ("phy_force_txrx_off_new", vec![1]),
             ("phy_pbus_clear_reg", vec![]),
             ("phy_dcode_cal_init", vec![]),
             ("phy_set_rx_gain_table", vec![2437, 0]),
             ("phy_chip_set_chan", vec![13, 1]),
             ("phy_mac_enable_bb", vec![]),
+            ("phy_force_txrx_off_new", vec![0]),
             (restore, vec![1]),
             ("phy_release_grant_protect", vec![]),
         ]);
@@ -104,7 +106,7 @@ fn calibration_expected(wifi: bool, shared: bool, rx: bool, tx: bool) -> Expecte
         expected.extend([
             ("phy_acquire_grant_protect", vec![]),
             ("phy_dis_hw_set_freq_new", vec![]),
-            ("phy_force_txrx_off", vec![1]),
+            ("phy_force_txrx_off_new", vec![1]),
             ("phy_force_dig_gain", vec![1, FORCED_GAIN, FORCED_GAIN]),
             ("phy_pbus_clear_reg", vec![]),
             ("phy_bb_cbw_chan_cfg", vec![0]),
@@ -125,7 +127,7 @@ fn calibration_expected(wifi: bool, shared: bool, rx: bool, tx: bool) -> Expecte
             ("phy_bb_cbw_chan_cfg", vec![1]),
             ("phy_mac_enable_bb", vec![]),
             ("phy_force_dig_gain", vec![0, FORCED_GAIN, FORCED_GAIN]),
-            ("phy_force_txrx_off", vec![0]),
+            ("phy_force_txrx_off_new", vec![0]),
             ("phy_en_hw_set_freq_new", vec![]),
             (restore, vec![1]),
             ("phy_release_grant_protect", vec![]),

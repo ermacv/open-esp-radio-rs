@@ -45,7 +45,7 @@ enum Scenario {
         #[command(flatten)]
         common: Common,
         /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
     },
     /// Complete TX-DC/PWDET root: Wi-Fi/BT DC rows over constant and
@@ -54,7 +54,7 @@ enum Scenario {
         #[command(flatten)]
         common: Common,
         /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
     },
     /// Every PHY comparison scenario concurrently under one budget, each in its
@@ -63,16 +63,16 @@ enum Scenario {
         #[command(flatten)]
         common: Common,
         /// Authenticated bootloader SDK firmware (calibration leaves and prefix).
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("sdk"))]
         sdk: PathBuf,
         /// Authenticated PHY SDK firmware (RFPLL and diagnostics symbols).
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
         /// Authenticated `librftest.a` (RF-test power producer).
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("librftest"))]
         rftest: PathBuf,
         /// Authenticated `libpp.a` (Wi-Fi MAC HAL leaves).
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libpp"))]
         libpp: PathBuf,
         /// Write the native evidence index qualification reads.
         #[arg(long)]
@@ -83,10 +83,10 @@ enum Scenario {
         #[command(flatten)]
         common: Common,
         /// Authenticated `libpp.a`.
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libpp"))]
         libpp: PathBuf,
         /// Authenticated vendor Wi-Fi firmware supplying network-stack symbols.
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
     },
     /// Combined calibration and parameter tracking parents with their real
@@ -95,7 +95,7 @@ enum Scenario {
         #[command(flatten)]
         common: Common,
         /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
     },
     /// Captured PHY research, navigation, register/data review and
@@ -105,10 +105,10 @@ enum Scenario {
         #[arg(long)]
         binary: PathBuf,
         /// Pinned `libphy.a`.
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libphy"))]
         library: PathBuf,
         /// Pinned ROM ELF.
-        #[arg(long)]
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("rom"))]
         rom: PathBuf,
         /// External linker selected for image preparation.
         #[arg(long)]
@@ -140,10 +140,10 @@ struct Common {
     #[arg(long)]
     binary: PathBuf,
     /// Pinned `libphy.a`.
-    #[arg(long)]
+    #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libphy"))]
     library: PathBuf,
     /// Pinned ROM ELF.
-    #[arg(long)]
+    #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("rom"))]
     rom: PathBuf,
     /// Freshly built production probe ELF.
     #[arg(long)]
@@ -298,7 +298,7 @@ const I2C_SDK_CLAIMS: [(&str, &str, &str); 5] = [
 const I2C_RFPLL_CLAIMS: [(&str, &str, &str); 4] = [
     (
         "archive",
-        "phy_rfpll_cap_init_cal_new",
+        "phy_rfpll_cap_init_cal_track",
         "open_phy_rfpll_trace_search",
     ),
     (
@@ -311,7 +311,11 @@ const I2C_RFPLL_CLAIMS: [(&str, &str, &str); 4] = [
         "phy_rfpll_cap_track_new",
         "open_phy_rfpll_trace_track",
     ),
-    ("rom", "phy_set_rfpll_freq", "open_phy_rfpll_trace_program"),
+    (
+        "archive",
+        "phy_set_rfpll_freq_new",
+        "open_phy_rfpll_trace_program",
+    ),
 ];
 const CHANNEL_CLAIMS: [(&str, &str, &str); 2] = [
     (

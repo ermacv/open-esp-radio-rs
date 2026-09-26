@@ -323,12 +323,24 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     /// Actual Bluetooth gain calculation and publication with caller-owned inputs.
     /// ABI conversion only: `seed[6]`, config, packed curve/correction, base/attenuation.
-    pub fn open_phy_bluetooth_trace_tx_gain(input: &[u32; 9], output: &mut [u8; 80]) {
-        use oer_esp32s31_phy::calibration::bluetooth::PhyBluetoothTxGainPublication;
+    pub fn open_phy_bluetooth_trace_tx_gain(input: &[u32; 9], output: &mut [u8; 80]) -> u32 {
+        use oer_esp32s31_phy::{
+            analog::pbus::PhyForceTxRxDepth,
+            calibration::bluetooth::{PhyBluetoothTxGainChild, PhyBluetoothTxGainPublication},
+        };
         let image = bluetooth_gain_projection(input, output);
         let mut radio =
             oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
-        PhyBluetoothTxGainPublication::new(image).execute_target(radio.phy_hal_mut());
+        // A standalone gain child holds no caller's force-TX/RX level.
+        match PhyBluetoothTxGainChild::new(
+            PhyBluetoothTxGainPublication::new(image),
+            PhyForceTxRxDepth::OUTERMOST,
+        )
+        .execute_target::<oer_esp32s31_phy::RomShortDelay>(radio.phy_hal_mut())
+        {
+            Ok(()) => 0,
+            Err(_) => 1,
+        }
     }
 }
 
@@ -409,6 +421,10 @@ oer_probe_macros::probe! {
                 crystal_selector: 0,
             },
         );
+        let mut parent = parent;
+        if enter_common_force_level(&mut parent).is_none() {
+            return 1;
+        }
         let Ok(child) = parent.begin_pbus_clear() else {
             return 1;
         };
@@ -461,6 +477,7 @@ oer_probe_macros::probe! {
         );
         let mut observer = NoopPhyTargetObserver;
         let result = (|| {
+            enter_common_force_level(&mut parent).ok_or(1u32)?;
             let child = parent.begin_pbus_clear().map_err(|_| 1u32)?;
             let completion = calibration::clear_pbus::<
                 <ProductionTraceDelay as oer_esp32s31_phy::target_executor::PhyAsyncDelay>::ShortDelay,
@@ -499,11 +516,11 @@ oer_probe_macros::probe! {
     /// Complete RX-gain root with explicit semantic calibration inputs. Flags
     /// select the existing DC/table guards; no child completion is synthesized.
     pub fn open_phy_calibration_trace_rx_gain(
-        input: &[u16; 53],
+        input: &[u16; 49],
         flags: u8,
         crystal_selector: u8,
         pbus_rx_path: u8,
-        output: &mut [u16; 54],
+        output: &mut [u16; 50],
     ) -> u32 {
         use oer_esp32s31_phy::{
             calibration::baseband::PhyRxGainMemoryParameters,
@@ -525,12 +542,9 @@ oer_probe_macros::probe! {
                 memory: PhyRxGainMemoryParameters {
                     parameter_002: pbus_rx_path,
                     wifi_index_dc: core::array::from_fn(|i| [input[2 * i], input[2 * i + 1]]),
-                    wifi_dc_base: [input[16], input[17]],
-                    shared_index_dc: core::array::from_fn(|i| [input[18 + 2 * i], input[19 + 2 * i]]),
-                    rxbb_dc_adjustments: core::array::from_fn(|i| {
-                        [input[40 + 2 * i], input[41 + 2 * i]]
-                    }),
-                    wifi_auxiliary: input[52],
+                    wifi_fine_dc: core::array::from_fn(|i| [input[16 + 2 * i], input[17 + 2 * i]]),
+                    shared_index_dc: core::array::from_fn(|i| [input[26 + 2 * i], input[27 + 2 * i]]),
+                    wifi_auxiliary: input[48],
                 },
             })
         };
@@ -551,19 +565,15 @@ oer_probe_macros::probe! {
             for (destination, source) in output[..16].chunks_exact_mut(2).zip(dc.wifi_index_dc) {
                 destination.copy_from_slice(&source);
             }
-            output[16..18].copy_from_slice(&dc.wifi_dc_base);
-            for (destination, source) in output[18..40].chunks_exact_mut(2).zip(dc.shared_index_dc) {
+            for (destination, source) in output[16..26].chunks_exact_mut(2).zip(dc.wifi_fine_dc) {
                 destination.copy_from_slice(&source);
             }
-            for (destination, source) in output[40..52]
-                .chunks_exact_mut(2)
-                .zip(dc.rxbb_dc_adjustments)
-            {
+            for (destination, source) in output[26..48].chunks_exact_mut(2).zip(dc.shared_index_dc) {
                 destination.copy_from_slice(&source);
             }
         }
-        output[52] = u16::from(result.wifi_last_index);
-        output[53] = u16::from(result.shared_last_index);
+        output[48] = u16::from(result.wifi_last_index);
+        output[49] = u16::from(result.shared_last_index);
         0
     }
 }
@@ -576,7 +586,7 @@ oer_probe_macros::probe! {
         input: &[u16; 8],
         wifi: bool,
         bluetooth: bool,
-        output: &mut [u16; 89],
+        output: &mut [u16; 85],
     ) -> u32 {
         use oer_esp32s31_phy::{
             tracking::{calibration::*, parameters::*},
@@ -628,8 +638,12 @@ oer_probe_macros::probe! {
                 }
             }
         };
-        snapshot_calibration(&state, (&mut output[..81]).try_into().unwrap());
-        snapshot_committed(&state, progress, (&mut output[81..]).try_into().unwrap());
+        snapshot_calibration(&state, (&mut output[..CALIBRATION_WORDS]).try_into().unwrap());
+        snapshot_committed(
+            &state,
+            progress,
+            (&mut output[CALIBRATION_WORDS..]).try_into().unwrap(),
+        );
 
         status
     }
@@ -680,7 +694,11 @@ fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, progress: u16, output:
     output[7] = u16::from(snapshot.common.sensor_index);
 }
 
-fn snapshot_calibration(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; 81]) {
+/// Words of [`snapshot_calibration`]: references, channel, TX DC rows, then
+/// the RX DC banks.
+const CALIBRATION_WORDS: usize = 77;
+
+fn snapshot_calibration(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; CALIBRATION_WORDS]) {
     let parameters = state.calibration_tracking_parameters(None);
     output[..5].copy_from_slice(&[
         parameters.current_temperature as u16,
@@ -702,9 +720,8 @@ fn snapshot_calibration(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; 8
         rx.wifi_index_dc
             .iter()
             .flatten()
-            .chain(rx.wifi_dc_base.iter())
-            .chain(rx.shared_index_dc.iter().flatten())
-            .chain(rx.rxbb_dc_adjustments.iter().flatten()),
+            .chain(rx.wifi_fine_dc.iter().flatten())
+            .chain(rx.shared_index_dc.iter().flatten()),
     ) {
         *destination = *source;
     }
@@ -717,7 +734,7 @@ oer_probe_macros::probe! {
     /// Inputs extend the combined probe with signed gain adjustment, relaxed
     /// power threshold, RFPLL enable, the retained Wi-Fi I2C band code, the
     /// Bluetooth/802.15.4 TX-power tracking enable, the tracking inhibit and the
-    /// calibration tracking enable. Outputs extend its 81 words with power
+    /// calibration tracking enable. Outputs extend its 77 words with power
     /// temperature/cache, Wi-Fi and BT gain bases, retained adjustment, the vendor
     /// I2C-band code and RFPLL reference temperature.
     /// Status: 0 terminal owner, 1 contained hardware failure, 2 incomplete success,
@@ -726,7 +743,7 @@ oer_probe_macros::probe! {
         input: &[u16; 15],
         wifi: bool,
         bluetooth: bool,
-        output: &mut [u16; 96],
+        output: &mut [u16; 92],
     ) -> u32 {
         use oer_esp32s31_phy::{
             tracking::{calibration::*, parameters::*},
@@ -813,24 +830,54 @@ oer_probe_macros::probe! {
                 }
             }
         };
-        snapshot_calibration(&state, (&mut output[..81]).try_into().unwrap());
+        snapshot_calibration(&state, (&mut output[..CALIBRATION_WORDS]).try_into().unwrap());
         let power = state.tx_power_tracking_parameters(true);
-        output[81..85].copy_from_slice(&[
+        let parent = &mut output[CALIBRATION_WORDS..];
+        parent[..4].copy_from_slice(&[
             power.previous_tracking_temperature as u16,
             power.previous_tracking_gain_base as i16 as u16,
             power.wifi_gain_base as i16 as u16,
             power.bluetooth_ieee802154_gain_base as i16 as u16,
         ]);
-        output[85] = state.channel_parameters().tx_gain_adjustment as i16 as u16;
+        parent[4] = state.channel_parameters().tx_gain_adjustment as i16 as u16;
         use oer_esp32s31_phy::tracking::i2c::PhyWifiI2cTrackingBand;
-        output[86] = match state.wifi_i2c_tracking_parameters().previous_band {
+        parent[5] = match state.wifi_i2c_tracking_parameters().previous_band {
             PhyWifiI2cTrackingBand::Nominal => 0,
             PhyWifiI2cTrackingBand::Cold => 1,
             PhyWifiI2cTrackingBand::Elevated => 2,
             PhyWifiI2cTrackingBand::Hot => 3,
         };
-        output[87] = validation::rfpll_reference_temperature(&state) as u16;
-        snapshot_committed(&state, progress, (&mut output[88..]).try_into().unwrap());
+        parent[6] = validation::rfpll_reference_temperature(&state) as u16;
+        snapshot_committed(&state, progress, (&mut parent[7..]).try_into().unwrap());
         status
     }
+}
+
+/// The common calibration branch first enters its force-TX/RX level. Probes
+/// that compare only a later common child supply that child's completions as
+/// state, without hardware.
+fn enter_common_force_level(
+    parent: &mut oer_esp32s31_phy::tracking::calibration::PhyCalibrationTrackingTransition,
+) -> Option<()> {
+    use oer_esp32s31_phy::analog::pbus::{PhyForceTxRxAction, PhyForceTxRxCompletion};
+    let mut force = parent.begin_force_txrx().ok()?;
+    let completion = loop {
+        let completion = match force.action() {
+            PhyForceTxRxAction::Configure { enabled, phase } => {
+                PhyForceTxRxCompletion::Configured { enabled, phase }
+            }
+            PhyForceTxRxAction::DelayMicros {
+                enabled,
+                completed_phase,
+                micros,
+            } => PhyForceTxRxCompletion::DelayElapsed {
+                enabled,
+                completed_phase,
+                micros,
+            },
+            PhyForceTxRxAction::Complete { .. } => break force.commit().ok()?,
+        };
+        force.advance(completion).ok()?;
+    };
+    parent.advance(completion).ok()
 }

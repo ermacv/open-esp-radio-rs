@@ -3,12 +3,12 @@
   "command": "vendor-scenario all",
   "target": "esp32s31",
   "inputs": {
-    "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
-    "libpp": "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e",
+    "archive": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
+    "libpp": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "a597bc545b830901c9003baf7c9073c85e2a55bb8bcd6bcb855e4af5be137034",
-    "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
-    "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
+    "production": "c9a75a0d434af466c6e8a4a700251e7004dc8a04ed5f71e85d6a14b65b24315d",
+    "rftest": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a",
+    "rom": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
   },
   "sources": [
@@ -38,7 +38,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "1a9e4153b3c2cc3618f187dd6581f0403a5771bc9d24bf05dd41d504bb624b98"
+      "sha256": "25ca3238ee9da889bfd11c7706f2640491aa4c64399ae3bafa72b9dfebfa1590"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -50,7 +50,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "34371b2fd69dfc1d4af77de4d6ee897a99458e3321d88859b6304afb8d55b3c8"
+      "sha256": "e90eba56f96e1b7c760f83f293cba645ad5ce0c4c7444ecd0ddc63a636645a34"
     },
     {
       "path": "crates/memory",
@@ -150,11 +150,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "149e746ac82ddd21da4b6e19a3ed2595f5a4ea17529739ac4621a5d0310b0778"
+      "sha256": "661a1f4b747a01a892501396c11eac1491025b48988894e99e62f78e8d051c74"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "68098ac8013d2a978676153958e5ccf1d20b32e7f65e36cc376639268b15316d"
+      "sha256": "fe3c4dc2644d0f9fcb59abb4b63cbdf463ba132d19c9df754f0fee5671aa0e47"
     },
     {
       "path": "verification/vendor/schema",
@@ -249,10 +249,10 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 78,
-        "observed": 73,
+        "executed": 113,
+        "observed": 113,
         "reviewed": 0,
-        "untriaged": 5
+        "untriaged": 0
       },
       "state": {
         "written": 80,
@@ -271,26 +271,26 @@
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 54,
-          "total": 381
+          "reached": 64,
+          "total": 391
         },
         "directions": {
-          "reached": 42,
-          "total": 418
+          "reached": 48,
+          "total": 424
         },
         "excluded": 702,
         "untriaged": 1
       },
       "observation": {
-        "executed": 78,
-        "observed": 73,
+        "executed": 113,
+        "observed": 113,
         "reviewed": 0,
-        "untriaged": 5
+        "untriaged": 0
       },
       "state": {
-        "written": 0,
+        "written": 2,
         "compared": 0,
-        "reviewed": 0,
+        "reviewed": 2,
         "untriaged": 0
       }
     },
@@ -335,7 +335,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "94fd1d6282eb8bb1f3a11e718ee31cdd600c3d3c06f7bacbd5959311a8bb216a"
+        "c7dfea1018f091c835415dea52171c13a2f78a24928ab6973e4da84388d00976"
       ],
       "coverage": {
         "blocks": {
@@ -370,7 +370,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "248c1e5e9b75f4e1a73e9f8c4f1bde4e504cdf8b03238d5492342ae4e57cecd2"
+        "97068b9115801fa3f42e90c60a9f22e23af0d4984bf59718d2711643dabca800"
       ],
       "coverage": {
         "blocks": {
@@ -405,7 +405,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "fdf7f1a3824a695af9af9af9f35b9f6986a3e6be8916a746489aab765f6c5efc"
+        "a4395de1114dc5899de6673171ecac40e99271bf27af4c52fd6390c813bf70f4"
       ],
       "coverage": {
         "blocks": {
@@ -440,7 +440,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "438968cd2646c86449bc6c719e85a0f80acf32c9e2b17e490ab7daf4d9e52b83"
+        "85aa311a342c3250f393f04b5dd1742fef1f5948947acb821b1b4acc1afabcd3"
       ],
       "coverage": {
         "blocks": {
@@ -475,7 +475,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "a9dbfe2ad1190cc81df703cdf9da69e5510ff5fc45442d8f779c15f86e6651b4"
+        "e7e678af3c32e27e900bf5d11088ef5b62c44d9be831145108e19621c4b3a0ba"
       ],
       "coverage": {
         "blocks": {
@@ -510,7 +510,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "b6b41787dc68e305ed453963771521d983ebfbc49e7fb8a59ba2a3505992f3ae"
+        "f15fb96e4bfe23efa4f475cec3ba287ff17cdafdf1f81813750a21cb6b5e99eb"
       ],
       "coverage": {
         "blocks": {
@@ -558,8 +558,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 105,
-        "observed": 105,
+        "executed": 106,
+        "observed": 106,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -705,12 +705,12 @@
     {
       "suite": "i2c",
       "source": "archive",
-      "symbol": "phy_rfpll_cap_init_cal_new",
+      "symbol": "phy_rfpll_cap_init_cal_track",
       "production": "open_phy_rfpll_trace_search",
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "34c1b2feb167a8e198fc4fdefd8635e4ae240ba031434140e2ec963e98bc0cc1"
+        "84bbfa3fb0dbe989bdd9ee51fe89bc5f8a37f4cf0775cf4b39dd69350d714aac"
       ],
       "coverage": {
         "blocks": {
@@ -745,7 +745,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "289f1698461847bf743ae15ff9aa997842650412dff18d3af36890c954391d54"
+        "1e4a89f921509307df09cfd84b4ab9f1977a6e8d9bc4d06ef048d4d43b3cc9cd"
       ],
       "coverage": {
         "blocks": {
@@ -780,8 +780,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "44d1421c789ec40818f698e6bea9d888b8143567fd2a16d3fafdbad8460497ed",
-        "75e27c2726de63ee5eabbf5d53bd675d980dd6074ccced7141be37888424d3b1"
+        "1be3df7b9a80f4bf9818fc6b7f0c1673ccf5950bce115d22ae6d3f88545a1b35",
+        "c656637a165af54b24d08494a273f09a87369c5c710a08aaebd93f2f5f97765b"
       ],
       "coverage": {
         "blocks": {
@@ -810,29 +810,29 @@
     },
     {
       "suite": "i2c",
-      "source": "rom",
-      "symbol": "phy_set_rfpll_freq",
+      "source": "archive",
+      "symbol": "phy_set_rfpll_freq_new",
       "production": "open_phy_rfpll_trace_program",
       "verdict": "match",
-      "cases": 100,
+      "cases": 101,
       "reviews": [
-        "4524f6c86c6b1b9ba01c91d15473e4c4c6ec56b24a89339698f9dc52a22aa6d3"
+        "4cc098f7d0546f6b9b8834cbbe6a084063f9cb9dafba7208a9566ef1138e66fc"
       ],
       "coverage": {
         "blocks": {
-          "reached": 71,
-          "total": 446
+          "reached": 76,
+          "total": 451
         },
         "directions": {
-          "reached": 42,
-          "total": 486
+          "reached": 50,
+          "total": 494
         },
         "excluded": 817,
         "untriaged": 2
       },
       "observation": {
-        "executed": 226,
-        "observed": 207,
+        "executed": 220,
+        "observed": 201,
         "reviewed": 1,
         "untriaged": 18
       },
@@ -851,31 +851,31 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "a999444e7a424725cac3b27988695ce0f31285c3fff4ec2a37c1fbec42cbaa9f",
-        "c15f1772d796b762b12ad53f258e6d34765ae6247dff91b9f5179bdeaa57d733"
+        "57a70a296d4437ff30bab0da2e6be60efa89103cc97cfe77cfa4cab366850458",
+        "8b09996817cdb9faf93f74e0196521040293b1bfa0b2af6928959c254be385bf"
       ],
       "coverage": {
         "blocks": {
-          "reached": 156,
-          "total": 609
+          "reached": 167,
+          "total": 625
         },
         "directions": {
-          "reached": 94,
-          "total": 606
+          "reached": 100,
+          "total": 620
         },
-        "excluded": 948,
-        "untriaged": 17
+        "excluded": 921,
+        "untriaged": 57
       },
       "observation": {
-        "executed": 598,
-        "observed": 583,
+        "executed": 631,
+        "observed": 616,
         "reviewed": 7,
         "untriaged": 8
       },
       "state": {
-        "written": 9,
+        "written": 11,
         "compared": 8,
-        "reviewed": 1,
+        "reviewed": 3,
         "untriaged": 0
       }
     },
@@ -887,8 +887,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "af39484e7403dcb24280db2a42bd5943f30a9a6831639953fe33b0d9ebff4392",
-        "c95253dd476162dee4b92511252bb165f58868d03e1948db67df8642c68fe3f7"
+        "633471bedeca6ff7ca70a1c4bedd1a10e6aedabe39e9b61ce76ba71eeafc0d5d",
+        "e3f79207c4af499a1c3830e730ea45e73635abdb980e762e4f92c84101a0f7d3"
       ],
       "coverage": {
         "blocks": {
@@ -923,31 +923,31 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "5d2446a4f9aed82e98236f5f3701d60bfb2be3484a00a5b851ac4181fd020ccd",
-        "6e9596bdc9e8a4bc2b981f76a80f885e84ff53c7a63683b2e94a1ea63ee2198b",
-        "e13768997838734ac8168b74b9ad590cf8d2703add2aa12098fdc0871bfcf7e1"
+        "39c6b7b11b66029e97c4fd2932ae0643c79bb35a4bcf391de8e9815a06b03be2",
+        "434a5f219f05dc827fbb22808979b0fd6d32d177d254868d0c88f2a30e231759",
+        "fb5e950f0d8aa9d689e4fa5543ac09f12542b35630bb49db3c097994791e19ed"
       ],
       "coverage": {
         "blocks": {
-          "reached": 248,
-          "total": 703
+          "reached": 230,
+          "total": 688
         },
         "directions": {
-          "reached": 189,
-          "total": 702
+          "reached": 174,
+          "total": 692
         },
-        "excluded": 948,
-        "untriaged": 20
+        "excluded": 917,
+        "untriaged": 59
       },
       "observation": {
-        "executed": 690,
-        "observed": 663,
-        "reviewed": 13,
-        "untriaged": 14
+        "executed": 637,
+        "observed": 607,
+        "reviewed": 22,
+        "untriaged": 8
       },
       "state": {
-        "written": 114,
-        "compared": 106,
+        "written": 106,
+        "compared": 98,
         "reviewed": 8,
         "untriaged": 0
       }
@@ -960,8 +960,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "4cb443d4488f62c0cb5a762bac97dd77211c87f572792939d03cdc0adb7afacd",
-        "a223d1f8d2a4e7e42cfd614605df5457fff8c9c66501044f81c95214a8f0d639"
+        "7b4ff86848e84c026314f8cb2e8a35a3faae500e764f34e1fdafd4f83cbf06ce",
+        "e92f7efb0c30707952e42f86b6915aaffcb9c4cbf540398f78fa5b03e9e4f707"
       ],
       "coverage": {
         "blocks": {
@@ -996,31 +996,31 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "83bb554592e623dd0484f936324e9dbd8c23d27fa802f61943d1c7cf6bd72e90",
-        "af543a8348cdebce523fecb247e1b392393630f80a6e7dcd1d11d5307d93369d"
+        "46fa92bdf44bf2ed4e451b10ed6f35002e78ebf9bb568dc98dd23486d3ab6039",
+        "6ed329f55ef7780a0e11ed9553bd2db2f6ce4645aa707e563fb56aa266dc7c5a"
       ],
       "coverage": {
         "blocks": {
-          "reached": 438,
-          "total": 960
+          "reached": 430,
+          "total": 969
         },
         "directions": {
-          "reached": 277,
-          "total": 894
+          "reached": 275,
+          "total": 902
         },
-        "excluded": 1002,
-        "untriaged": 137
+        "excluded": 1001,
+        "untriaged": 165
       },
       "observation": {
-        "executed": 1941,
-        "observed": 1890,
-        "reviewed": 34,
-        "untriaged": 17
+        "executed": 1903,
+        "observed": 1857,
+        "reviewed": 33,
+        "untriaged": 13
       },
       "state": {
-        "written": 157,
-        "compared": 152,
-        "reviewed": 5,
+        "written": 151,
+        "compared": 144,
+        "reviewed": 7,
         "untriaged": 0
       }
     },
@@ -1032,31 +1032,31 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "713031d232ad02ad980fb60de2c1a7484812099f8f8205f46c85cf87669f72f5",
-        "e64a69dab7d6a3a567295f387ee88491d169f18c2128ba1b42e9b9513a8a1d03"
+        "1b181cb8db30ec0c0e18aeacf47f721e42de8f636dca3be1a6ce1f87b525cd04",
+        "3d4798808d8b6c8e80abcd213eb3f919d06cc2bf69a8dfc58708339ed94fd832"
       ],
       "coverage": {
         "blocks": {
-          "reached": 535,
-          "total": 1059
+          "reached": 527,
+          "total": 1068
         },
         "directions": {
-          "reached": 358,
-          "total": 982
+          "reached": 356,
+          "total": 990
         },
-        "excluded": 1014,
-        "untriaged": 134
+        "excluded": 1013,
+        "untriaged": 162
       },
       "observation": {
-        "executed": 2418,
-        "observed": 2329,
-        "reviewed": 64,
-        "untriaged": 25
+        "executed": 2399,
+        "observed": 2317,
+        "reviewed": 61,
+        "untriaged": 21
       },
       "state": {
-        "written": 180,
-        "compared": 160,
-        "reviewed": 20,
+        "written": 174,
+        "compared": 152,
+        "reviewed": 22,
         "untriaged": 0
       }
     },
@@ -1167,7 +1167,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "81565df726bbd5a487723f94a755506e4504121ebfe7d03e2edb2a088219ac6f"
+        "817238d7a15c1f3cff71402a28147d64a502c8ff1d2663b50f16bd99ccf807b8"
       ],
       "coverage": {
         "blocks": {
@@ -1235,7 +1235,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "a4da3584a89ff56fb78e3571914961e8ae45a40730c7faaf6c722ee85361e21a"
+        "070087ac9352b8b9a189df39bcb70df617465065f89ac92d71ca96d749f29d94"
       ],
       "coverage": {
         "blocks": {
@@ -1864,7 +1864,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "529f2c0c72ffe474d8e0f170c1d50a7309df2b5365584c0023f4e49c08cde4b3"
+        "175d0f7279393aee481783ea66dbb2a619711c0a88a2ee933de894ce897d4012"
       ],
       "coverage": {
         "blocks": {
@@ -2034,14 +2034,14 @@
       "coverage": {
         "blocks": {
           "reached": 8,
-          "total": 17
+          "total": 20
         },
         "directions": {
           "reached": 7,
-          "total": 18
+          "total": 24
         },
         "excluded": 0,
-        "untriaged": 20
+        "untriaged": 29
       },
       "observation": {
         "executed": 18,
@@ -2067,14 +2067,14 @@
       "coverage": {
         "blocks": {
           "reached": 11,
-          "total": 1889
+          "total": 1894
         },
         "directions": {
           "reached": 11,
-          "total": 1940
+          "total": 1946
         },
         "excluded": 109,
-        "untriaged": 3698
+        "untriaged": 3709
       },
       "observation": {
         "executed": 2,
@@ -16618,62 +16618,42 @@
     },
     {
       "function": "rcAmpduLowerRate",
-      "offset": 20,
+      "offset": 18,
       "kind": "taken"
     },
     {
       "function": "rcAmpduLowerRate",
-      "offset": 20,
+      "offset": 18,
       "kind": "fallthrough"
     },
     {
       "function": "rcAmpduLowerRate",
-      "offset": 24,
+      "offset": 22,
       "kind": "block"
     },
     {
       "function": "rcAmpduLowerRate",
-      "offset": 40,
+      "offset": 38,
       "kind": "taken"
     },
     {
       "function": "rcAmpduLowerRate",
-      "offset": 40,
+      "offset": 38,
       "kind": "fallthrough"
     },
     {
       "function": "rcAmpduLowerRate",
-      "offset": 44,
+      "offset": 42,
       "kind": "block"
     },
     {
       "function": "rcAmpduLowerRate",
-      "offset": 100,
-      "kind": "taken"
-    },
-    {
-      "function": "rcAmpduLowerRate",
-      "offset": 100,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "rcAmpduLowerRate",
-      "offset": 102,
+      "offset": 58,
       "kind": "block"
     },
     {
       "function": "rcAmpduLowerRate",
-      "offset": 126,
-      "kind": "block"
-    },
-    {
-      "function": "rcAmpduLowerRate",
-      "offset": 184,
-      "kind": "block"
-    },
-    {
-      "function": "rcAmpduLowerRate",
-      "offset": 204,
+      "offset": 118,
       "kind": "block"
     },
     {
@@ -16863,18 +16843,13 @@
     },
     {
       "function": "rcGetRate",
-      "offset": 48,
+      "offset": 52,
       "kind": "taken"
     },
     {
       "function": "rcGetRate",
-      "offset": 48,
+      "offset": 52,
       "kind": "fallthrough"
-    },
-    {
-      "function": "rcGetRate",
-      "offset": 50,
-      "kind": "block"
     },
     {
       "function": "rcGetRate",
@@ -16883,62 +16858,112 @@
     },
     {
       "function": "rcGetRate",
+      "offset": 56,
+      "kind": "taken"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 56,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
       "offset": 58,
       "kind": "block"
     },
     {
       "function": "rcGetRate",
-      "offset": 70,
+      "offset": 62,
       "kind": "block"
     },
     {
       "function": "rcGetRate",
-      "offset": 78,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "rcGetRate",
-      "offset": 82,
-      "kind": "block"
-    },
-    {
-      "function": "rcGetRate",
-      "offset": 176,
+      "offset": 72,
       "kind": "taken"
     },
     {
       "function": "rcGetRate",
-      "offset": 176,
+      "offset": 72,
       "kind": "fallthrough"
     },
     {
       "function": "rcGetRate",
-      "offset": 178,
+      "offset": 74,
       "kind": "block"
     },
     {
       "function": "rcGetRate",
-      "offset": 190,
+      "offset": 76,
       "kind": "taken"
     },
     {
       "function": "rcGetRate",
-      "offset": 190,
+      "offset": 76,
       "kind": "fallthrough"
     },
     {
       "function": "rcGetRate",
-      "offset": 194,
+      "offset": 80,
       "kind": "block"
     },
     {
       "function": "rcGetRate",
-      "offset": 202,
+      "offset": 92,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 104,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 112,
       "kind": "fallthrough"
     },
     {
       "function": "rcGetRate",
-      "offset": 206,
+      "offset": 116,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 210,
+      "kind": "taken"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 210,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 212,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 224,
+      "kind": "taken"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 224,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 228,
+      "kind": "block"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 240,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "rcGetRate",
+      "offset": 244,
       "kind": "block"
     },
     {
@@ -19197,6 +19222,76 @@
       "kind": "block"
     },
     {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 74,
+      "kind": "block"
+    },
+    {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 88,
+      "kind": "taken"
+    },
+    {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 88,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 90,
+      "kind": "block"
+    },
+    {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 102,
+      "kind": "block"
+    },
+    {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 104,
+      "kind": "taken"
+    },
+    {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 104,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "trcResumeAmpdu.constprop.0",
+      "offset": 108,
+      "kind": "block"
+    },
+    {
+      "function": "trcStopAmpdu",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "trcStopAmpdu",
+      "offset": 76,
+      "kind": "taken"
+    },
+    {
+      "function": "trcStopAmpdu",
+      "offset": 76,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "trcStopAmpdu",
+      "offset": 78,
+      "kind": "block"
+    },
+    {
+      "function": "trcStopAmpdu",
+      "offset": 98,
+      "kind": "block"
+    },
+    {
       "function": "trc_calc_duration",
       "offset": 0,
       "kind": "block"
@@ -19408,107 +19503,67 @@
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 22,
+      "offset": 10,
       "kind": "taken"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 22,
+      "offset": 10,
       "kind": "fallthrough"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 24,
+      "offset": 12,
       "kind": "block"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 28,
+      "offset": 16,
       "kind": "taken"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 28,
+      "offset": 16,
       "kind": "fallthrough"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 32,
+      "offset": 20,
       "kind": "block"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 46,
+      "offset": 34,
       "kind": "taken"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 46,
+      "offset": 34,
       "kind": "fallthrough"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 50,
+      "offset": 38,
       "kind": "block"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 68,
+      "offset": 54,
       "kind": "taken"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 68,
+      "offset": 54,
       "kind": "fallthrough"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 72,
+      "offset": 58,
       "kind": "block"
     },
     {
       "function": "trc_onPPTxDone",
-      "offset": 126,
-      "kind": "block"
-    },
-    {
-      "function": "trc_onPPTxDone",
-      "offset": 140,
-      "kind": "taken"
-    },
-    {
-      "function": "trc_onPPTxDone",
-      "offset": 140,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "trc_onPPTxDone",
-      "offset": 142,
-      "kind": "block"
-    },
-    {
-      "function": "trc_onPPTxDone",
-      "offset": 154,
-      "kind": "block"
-    },
-    {
-      "function": "trc_onPPTxDone",
-      "offset": 156,
-      "kind": "taken"
-    },
-    {
-      "function": "trc_onPPTxDone",
-      "offset": 156,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "trc_onPPTxDone",
-      "offset": 160,
-      "kind": "block"
-    },
-    {
-      "function": "trc_onPPTxDone",
-      "offset": 172,
+      "offset": 66,
       "kind": "block"
     },
     {

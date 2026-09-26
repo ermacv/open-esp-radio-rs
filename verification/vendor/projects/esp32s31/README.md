@@ -1,5 +1,24 @@
 # ESP32-S31 vendor-analysis project
 
+## Pinned vendor artifacts
+
+[`artifacts.toml`](artifacts.toml) is the single pin of every vendor archive,
+the ROM ELF and the locally built SDK firmware this project compares against:
+upstream repository, revision, path and SHA-256 of each. Fetch the pinned
+artifacts into `target/vendor/<source>/<revision>/` with
+
+```console
+cargo xtask vendor-fetch esp32s31
+```
+
+which verifies every file and reports missing local builds. Every scenario
+authenticates its inputs against the manifest, and its `--library`, `--rom`,
+`--libpp`, `--sdk`, `--phy-sdk` and `--rftest` arguments default to those
+pinned locations; an explicit path must still match the pin. Changing a pin
+means changing the manifest; production follows the pinned behaviour.
+Hashes in reviewed register evidence and reference notes record the artifact
+a fact was observed in; they are not pins.
+
 ## Captured PHY research with Next
 
 The `research` scenario ([`research.rs`](scenarios/src/research.rs)) exercises the current Next application using
@@ -17,8 +36,7 @@ callback has no reviewed binding; its unknown target cannot acquire callee effec
 Outputs must stay in ignored storage.
 
 ```console
-cargo xtask vendor-scenario research --library /private/libphy.a \
-  --rom /private/esp32s31_rev0_rom.elf --linker /usr/bin/ld.lld --limit-mode watchdog \
+cargo xtask vendor-scenario research --linker /usr/bin/ld.lld --limit-mode watchdog \
   --output target/blobray-phy-research
 ```
 
@@ -42,11 +60,8 @@ Blobray change; until then qualification treats the index as stale. See
 [vendor verification](../../../../docs/verification-and-qualification.md#vendor-verification-path).
 
 ```console
-cargo xtask vendor-scenario all --library /private/libphy.a \
-  --rom /private/esp32s31_rev0_rom.elf \
+cargo xtask vendor-scenario all \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
-  --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
-  --rftest /private/librftest.a \
   --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog \
   --index verification/vendor/projects/esp32s31/evidence/scenario-evidence.json
 ```
@@ -64,11 +79,11 @@ packed-command responses; neither model claims physical timing or RF behavior.
 
 ```console
 cargo xtask build vendor-probes --chip esp32s31
-cargo xtask vendor-scenario i2c --library /private/libphy.a \
-  --rom /private/esp32s31_rev0_rom.elf \
+cargo xtask vendor-scenario i2c \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld --limit-mode watchdog \
-  --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
+  --sdk target/architecture-research/phy-vendor-tracking/vendor-wifi/build/bootloader/bootloader.elf \
+  --phy-sdk target/architecture-research/phy-vendor-tracking/vendor-wifi/build/phy_tracking_reference.elf \
   --output target/blobray-phy-i2c
 ```
 
@@ -139,7 +154,7 @@ relation under declared peripheral responses, not analog-bus or RF qualification
 
 ### Current calibration leaves
 
-`--sdk /private/bootloader.elf` includes the native
+`--sdk` with the pinned bootloader firmware includes the native
 [four-leaf matrix](scenarios/src/calibration_leaves.rs). Its eleven independent cold cases
 exercise TX-gain restore, forced signed digital gains, temperature-to-power and
 post-init AGC with complementary retained register inputs. All MMIO reads/writes
@@ -264,10 +279,10 @@ repository root; `xtask` builds `blobray` and the scenarios and supplies
 `--binary`:
 
 ```console
-cargo xtask vendor-scenario gain --library /private/libphy.a \
-  --rom /private/esp32s31_rev0_rom.elf \
+cargo xtask vendor-scenario gain \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
-  --linker /usr/bin/ld.lld --rftest /private/librftest.a \
+  --linker /usr/bin/ld.lld \
+  --rftest target/vendor/esp-phy-lib/20f1db053a0e6cb9f1c09d255c43bf42483041d0/esp32s31/librftest.a \
   --output target/blobray-research/gain --limit-mode watchdog
 ```
 
@@ -369,9 +384,7 @@ value to the base. Independent expectations check the 532-byte backup image,
 the exact registration writes and every 160-byte gain output against the
 coefficient oracle. No hardware event occurs.
 
-`--rftest` supplies `librftest.a` (SHA-256
-`547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e`, same
-`b88e4b76` revision). Its `set_rate_power_index` and `mac_power_set` are linked
+`--rftest` supplies `librftest.a`, the `librftest` pin of `artifacts.toml`. Its `set_rate_power_index` and `mac_power_set` are linked
 as additional roots; no power or gain callee is substituted. The real callback
 installer runs, then fifteen policy rows per fill check rounding, saturation,
 signed-byte wrap, the adjustment byte, conditional `phy_wifi_set_tx_gain_new`

@@ -22,31 +22,36 @@ use blobray_domain::{
 /// Name, initial capacitor, lock statuses, candidates and selected capacitor.
 pub type Search = (&'static str, i32, Vec<u32>, Vec<i32>, i32);
 
+/// Status samples one direction of the archived `phy_rfpll_cap_init_cal_track`
+/// search permits, read independently from its loop bound.
+pub const SEARCH_SAMPLES: i32 = 30;
+/// Status samples of a search that exhausts both directions.
+const SEARCH_STATUSES: usize = 2 * SEARCH_SAMPLES as usize;
+
 pub fn search_cases() -> Vec<Search> {
-    let around = |c: i32| {
-        (0..10)
-            .map(|i| c - i)
-            .chain((1..=10).map(|i| c + i))
-            .collect::<Vec<_>>()
-    };
+    let n = SEARCH_SAMPLES as usize;
+    let down = |c: i32| (0..SEARCH_SAMPLES).map(move |i| c - i);
+    let up = |c: i32| (1..=SEARCH_SAMPLES).map(move |i| c + i);
+    let around = |c: i32| down(c).chain(up(c)).collect::<Vec<_>>();
+    let mean = |v: Vec<i32>| v.iter().sum::<i32>() / v.len() as i32;
     vec![
-        ("all-accepted", 100, vec![0; 20], around(100), 100),
-        ("lowest-initial-cap", 0, vec![0; 20], around(0), 0),
-        ("highest-initial-cap", 511, vec![0; 20], around(511), 511),
-        ("no-accepted", 100, vec![3; 20], around(100), 100),
+        ("all-accepted", 100, vec![0; 2 * n], around(100), 100),
+        ("lowest-initial-cap", 0, vec![0; 2 * n], around(0), 0),
+        ("highest-initial-cap", 511, vec![0; 2 * n], around(511), 511),
+        ("no-accepted", 100, vec![3; 2 * n], around(100), 100),
         (
             "positive",
             100,
-            [vec![1; 2], vec![0; 10]].concat(),
-            [vec![100, 99], (101..111).collect()].concat(),
-            105,
+            [vec![1; 2], vec![0; n]].concat(),
+            [vec![100, 99], up(100).collect()].concat(),
+            mean(up(100).collect()),
         ),
         (
             "negative",
             300,
-            [vec![0; 10], vec![2; 2]].concat(),
-            [(291..=300).rev().collect(), vec![301, 302]].concat(),
-            295,
+            [vec![0; n], vec![2; 2]].concat(),
+            [down(300).collect(), vec![301, 302]].concat(),
+            mean(down(300).collect()),
         ),
         (
             "nonconsecutive",
@@ -65,7 +70,7 @@ pub fn search_cases() -> Vec<Search> {
         (
             "opposite-boundaries",
             100,
-            [vec![2; 10], vec![1; 10]].concat(),
+            [vec![2; n], vec![1; n]].concat(),
             around(100),
             100,
         ),
@@ -208,15 +213,15 @@ struct Rfpll {
     search_entry: u32,
     maintain_entry: u32,
     program_entry: u32,
-    rom_program: u32,
-    rom_search: u32,
-    rom_track: u32,
+    vendor_program: u32,
+    vendor_search: u32,
+    vendor_track: u32,
     callbacks: Vec<u32>,
 }
 
 /// One direct-programming profile: request, initial capacitor, lock samples
 /// before lock (`None`: never), capacitor-status samples, and the selected
-/// capacitor read independently from the pinned ROM `phy_rfpll_cap_init_cal`.
+/// capacitor read independently from the pinned archive `phy_rfpll_cap_init_cal_new`.
 struct Program {
     name: String,
     frequency: u32,
@@ -241,17 +246,27 @@ fn program_cases() -> Vec<Program> {
         busy,
         selected,
     };
+    let all = || vec![0; SEARCH_STATUSES];
     let mut cases = vec![
-        profile("all-accepted", 100, Some(0), vec![0; 20], 0, 100),
-        profile("all-accepted-busy", 100, Some(0), vec![0; 20], 1, 100),
-        profile("late-lock", 100, Some(3), vec![0; 20], 0, 100),
-        profile("no-lock", 100, None, vec![0; 20], 0, 100),
-        profile("no-accepted", 100, Some(0), vec![2; 20], 0, 100),
+        profile("all-accepted", 100, Some(0), all(), 0, 100),
+        profile("all-accepted-busy", 100, Some(0), all(), 1, 100),
+        profile("late-lock", 100, Some(3), all(), 0, 100),
+        profile("no-lock", 100, None, all(), 0, 100),
+        // Decrease is a boundary only upward: the downward direction runs
+        // to its bound, the upward one ends after two samples.
+        profile(
+            "no-accepted",
+            100,
+            Some(0),
+            vec![2; SEARCH_SAMPLES as usize + 2],
+            0,
+            100,
+        ),
         profile(
             "up-only",
             100,
             Some(0),
-            [vec![1; 10], vec![0; 10]].concat(),
+            [vec![1; 2], vec![0; 10], vec![2; 2]].concat(),
             0,
             105,
         ),
@@ -259,13 +274,30 @@ fn program_cases() -> Vec<Program> {
             "down-only",
             100,
             Some(0),
-            [vec![0; 10], vec![3]].concat(),
+            [vec![0; 10], vec![1; 2], vec![2; 2]].concat(),
             0,
             95,
         ),
-        profile("late-down", 100, Some(0), vec![1, 1, 0, 0, 1, 0, 1], 0, 98),
-        profile("signed-wrap", 1, Some(0), vec![0, 0, 0, 1, 1], 0, 0),
-        profile("high-byte", 511, Some(0), vec![0; 20], 0, 511),
+        profile(
+            "nonconsecutive-boundaries",
+            100,
+            Some(0),
+            vec![1, 0, 1, 0, 2, 0, 2],
+            0,
+            101,
+        ),
+        profile("signed-wrap", 1, Some(0), vec![0, 0, 0, 1, 1, 2, 2], 0, 0),
+        // Other statuses and the opposite direction's boundary status are
+        // neither accepted nor counted: downward 3, then upward 1.
+        profile(
+            "non-boundary-statuses",
+            100,
+            Some(0),
+            vec![3, 0, 1, 1, 1, 0, 2, 2],
+            0,
+            100,
+        ),
+        profile("high-byte", 511, Some(0), all(), 0, 511),
     ];
     for frequency in PROGRAM_FREQUENCIES {
         for crystal in PROGRAM_CRYSTALS {
@@ -275,7 +307,7 @@ fn program_cases() -> Vec<Program> {
                     frequency,
                     crystal,
                     offset,
-                    ..profile("", 100, Some(0), vec![0; 20], 0, 100)
+                    ..profile("", 100, Some(0), all(), 0, 100)
                 });
             }
         }
@@ -409,7 +441,7 @@ impl Rfpll {
             if side {
                 self.search_entry
             } else {
-                self.rom_search
+                self.vendor_search
             },
             &[],
             bank(cap, statuses, busy),
@@ -419,7 +451,7 @@ impl Rfpll {
         Ok(phase)
     }
 
-    /// Direct synthesizer programming: vendor ROM `phy_set_rfpll_freq`
+    /// Direct synthesizer programming: archive `phy_set_rfpll_freq_new`
     /// writing its SDM image through a scratch buffer, or the production
     /// probe.
     fn program(&self, side: bool, program: &Program) -> Result<Invocation> {
@@ -463,7 +495,7 @@ impl Rfpll {
             )?
         } else {
             self.enter(
-                self.rom_program,
+                self.vendor_program,
                 &[crystal, frequency, offset, SDM_BUFFER],
                 models,
                 vec![region(SDM_BUFFER, 8, &[0; 8], None, RegionLifetime::Phase)?],
@@ -524,7 +556,7 @@ impl Rfpll {
         let (target, arguments) = if side {
             (self.maintain_entry, [channel])
         } else {
-            (self.rom_track, [diagnostics])
+            (self.vendor_track, [diagnostics])
         };
         let mut phase = self.enter(
             target,
@@ -576,9 +608,9 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         search_entry: ctx.probe("open_phy_rfpll_trace_search"),
         maintain_entry: ctx.probe("open_phy_rfpll_trace_maintain"),
         program_entry: ctx.probe("open_phy_rfpll_trace_program"),
-        rom_program: ctx.captured(1, "phy_set_rfpll_freq"),
-        rom_search: ctx.root("phy_rfpll_cap_init_cal_new"),
-        rom_track: ctx.root("phy_rfpll_cap_track_new"),
+        vendor_program: ctx.root("phy_set_rfpll_freq_new"),
+        vendor_search: ctx.root("phy_rfpll_cap_init_cal_track"),
+        vendor_track: ctx.root("phy_rfpll_cap_track_new"),
         callbacks: [
             "phy_i2c_enter_critical",
             "phy_i2c_exit_critical",
@@ -591,7 +623,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let (vendor, replacement) = (ctx.vendor.clone(), ctx.replacement.clone());
     let search_effects = ctx.review_pair(
         "rfpll-search",
-        ctx.root_endpoint("phy_rfpll_cap_init_cal_new")?,
+        ctx.root_endpoint("phy_rfpll_cap_init_cal_track")?,
         ctx.input_endpoint(2, "open_phy_rfpll_trace_search")?,
         port_polling(MAX_EVENTS),
         "RFPLL capacitor search under explicit capacitor, status and busy inputs",
@@ -661,7 +693,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     }
     let program_effects = ctx.review_pair(
         "rfpll-program",
-        ctx.input_endpoint(1, "phy_set_rfpll_freq")?,
+        ctx.root_endpoint("phy_set_rfpll_freq_new")?,
         ctx.input_endpoint(2, "open_phy_rfpll_trace_program")?,
         plumbing(&[], MAX_EVENTS),
         "direct RFPLL programming under explicit capacitor, lock and status inputs",
@@ -708,7 +740,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         for initial in [0x2582_4e58u32, 0xa5a5_5a5b] {
             maintenance.push((
                 format!("zero-{status}-{initial:x}"),
-                vec![status; 20],
+                vec![status; 2 * SEARCH_SAMPLES as usize],
                 0,
                 initial,
                 None,
@@ -716,21 +748,14 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             ));
         }
     }
+    // Ten accepted samples bounded by two boundary statuses in each direction.
+    let positive = [vec![1; 2], vec![0; 10], vec![2; 2]].concat();
+    let negative = [vec![0; 10], vec![1; 2], vec![2; 2]].concat();
     for (name, statuses, delta, boundary) in [
-        ("positive", [vec![1; 2], vec![0; 10]].concat(), 5, None),
-        ("negative", [vec![0; 10], vec![2; 2]].concat(), -5, None),
-        (
-            "underflow",
-            [vec![0; 10], vec![2; 2]].concat(),
-            -5,
-            Some(0x00aa_bf00u32),
-        ),
-        (
-            "overflow",
-            [vec![1; 2], vec![0; 10]].concat(),
-            5,
-            Some(0x00aa_ffff),
-        ),
+        ("positive", positive.clone(), 5, None),
+        ("negative", negative.clone(), -5, None),
+        ("underflow", negative, -5, Some(0x00aa_bf00u32)),
+        ("overflow", positive, 5, Some(0x00aa_ffff)),
     ] {
         let contents: Vec<u32> = (0..85u32)
             .map(|i| boundary.unwrap_or(0x0055_0000 | (i << 8) | (100 + i)))
@@ -912,8 +937,8 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let original: Vec<ExecutionCase> = {
         let mut row = case(
             "rfpll-search",
-            rfpll.search(false, 100, &[0; 20], 0)?,
-            Some(rfpll.search(true, 100, &[0; 20], 0)?),
+            rfpll.search(false, 100, &[0; SEARCH_STATUSES], 0)?,
+            Some(rfpll.search(true, 100, &[0; SEARCH_STATUSES], 0)?),
             SessionReset::Cold,
             false,
         );
@@ -979,8 +1004,8 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         ),
         case(
             "diagnostics-unmapped",
-            rfpll.maintain(false, &[0; 20], 0x2582_4e58, None, 13, 0, 1)?,
-            Some(rfpll.maintain(true, &[0; 20], 0x2582_4e58, None, 13, 0, 0)?),
+            rfpll.maintain(false, &[0; SEARCH_STATUSES], 0x2582_4e58, None, 13, 0, 1)?,
+            Some(rfpll.maintain(true, &[0; SEARCH_STATUSES], 0x2582_4e58, None, 13, 0, 0)?),
             SessionReset::Warm,
             false,
         ),
@@ -1028,14 +1053,14 @@ const RFPLL_ENABLED: usize = 9;
 const REFERENCE_TEMPERATURE: u32 = 304;
 const TRACKING_BUSY: u32 = 404;
 const OVERRIDE: usize = 432;
-const TRACKING_FLAGS: u32 = 510;
+const TRACKING_FLAGS: u32 = 0x1e6;
 /// Result flags before tracking and after an executed correction.
 const FLAGS_IDLE: u16 = 0xa004;
 const FLAGS_PERFORMED: u16 = 0xa005;
 /// Stack and retained-register fill of the thermal cases.
 const THERMAL_FILL: u8 = FILLS[1];
 /// Lock statuses of an executed thermal correction.
-const THERMAL_STATUSES: [u32; 20] = [3; 20];
+const THERMAL_STATUSES: [u32; SEARCH_STATUSES] = [3; SEARCH_STATUSES];
 /// Channel the production child receives; the vendor reads no channel table
 /// without frequency-memory contents.
 const THERMAL_CHANNEL: u32 = 13;
@@ -1183,7 +1208,7 @@ fn thermal(ctx: &mut I2c, rfpll: &Rfpll) -> Result<()> {
     let vendor_phase = |case: &Thermal| -> Result<Invocation> {
         let mut memory = vec![];
         table(&mut memory)?;
-        let mut phase = rfpll.enter(rfpll.rom_track, &[0], case.models(), memory)?;
+        let mut phase = rfpll.enter(rfpll.vendor_track, &[0], case.models(), memory)?;
         phase.observe_memory = vec![selection(rfpll.parameter, PHY_PARAM_BYTES)];
         phase.observe_timeline.writes = true;
         phase.calls = delay_calls("requested-delay", rfpll.delay(false));
@@ -1373,10 +1398,9 @@ mod tests {
         assert_eq!(expected_commands(&[-2], 0)[4], (I2C_PORT_1, 0x0500_0162));
         let cases = search_cases();
         assert_eq!(cases.len(), 9);
-        assert_eq!(
-            cases[5].3,
-            [300, 299, 298, 297, 296, 295, 294, 293, 292, 291, 301, 302]
-        );
+        assert_eq!(cases[5].3.len(), SEARCH_SAMPLES as usize + 2);
+        assert_eq!(&cases[5].3[..2], &[300, 299]);
+        assert_eq!(cases[5].4, 285);
     }
 
     #[test]

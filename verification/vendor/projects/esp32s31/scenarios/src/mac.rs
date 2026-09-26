@@ -136,9 +136,73 @@ pub struct Objects {
 }
 
 /// Builds a case's objects from the semantic probe words, followed by the
-/// object state when the leaf has states; `resolve` gives the address of a
-/// linked-image or ROM symbol.
-pub type VendorAbi = fn(&[u32], &dyn Fn(&str) -> Result<u32>) -> Result<Objects>;
+/// object state when the leaf has states.
+pub type VendorAbi = fn(&[u32], &Vendor<'_>) -> Result<Objects>;
+
+/// What a builder may read from the vendor side: linked-image or ROM symbol
+/// addresses and data sections of the captured archive.
+pub struct Vendor<'a> {
+    pub resolve: &'a dyn Fn(&str) -> Result<u32>,
+    pub rates: &'a RateTables,
+}
+
+impl Vendor<'_> {
+    fn symbol(&self, name: &str) -> Result<u32> {
+        (self.resolve)(name)
+    }
+}
+
+/// `libpp.a[trc.o]` 802.11g retry data: the rate-code-to-record index table
+/// `rc11GRate2SchedIdx` reads, and the schedule arena `rc11GSchedTbl`.
+pub struct RateTables {
+    pub index: Vec<u8>,
+    pub arena: Vec<u8>,
+}
+
+impl RateTables {
+    /// Object and data sections of the tables.
+    const OBJECT: &'static str = "trc.o";
+    const INDEX_SECTION: &'static str = ".rodata.CSWTCH.73";
+    const ARENA_SECTION: &'static str = ".data.rc11GSchedTbl";
+    /// Bytes of one schedule record.
+    const RECORD: usize = 12;
+    /// Index-table entry of a rate with no 802.11g record.
+    const UNMAPPED: u8 = 0xff;
+
+    /// The vendor schedule record of legacy rate `code`.
+    fn record(&self, code: u32) -> Result<Vec<u8>> {
+        let index = *self
+            .index
+            .get(code as usize)
+            .ok_or_else(|| invalid(format!("rate {code:#x} outside the vendor index table")))?;
+        if index == Self::UNMAPPED {
+            return Err(invalid(format!(
+                "rate {code:#x} has no vendor 802.11g record"
+            )));
+        }
+        let start = usize::from(index) * Self::RECORD;
+        self.arena
+            .get(start..start + Self::RECORD)
+            .map(<[u8]>::to_vec)
+            .ok_or_else(|| invalid(format!("vendor record {index} outside the arena")))
+    }
+
+    /// Whether the attempt counts of `code`'s record reach its publication
+    /// limit at byte 0x08, so the retry-limit owner ends the MPDU before the
+    /// record is exhausted.
+    fn covers_publication_limit(&self, code: u32) -> Result<bool> {
+        let record = self.record(code)?;
+        let attempts: u32 = (0..4).map(|pair| u32::from(record[2 * pair + 1])).sum();
+        Ok(attempts >= u32::from(record[8]))
+    }
+
+    /// The rate codes the vendor maps to an 802.11g record.
+    fn mapped(&self) -> Vec<u32> {
+        (0..self.index.len() as u32)
+            .filter(|code| self.index[*code as usize] != Self::UNMAPPED)
+            .collect()
+    }
+}
 
 const fn leaf(
     vendor: &'static str,
@@ -208,7 +272,7 @@ const fn objects(leaf: Leaf, abi: VendorAbi) -> Leaf {
 /// context holds at 0x34 a pointer to the interface record, whose word at
 /// 0x10 carries the interface in bits 18 and 19. The probe's first word is
 /// the object address itself.
-fn edca_abi(words: &[u32], _rom: &dyn Fn(&str) -> Result<u32>) -> Result<Objects> {
+fn edca_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
     const CONTEXT: u32 = INPUT + 0x100;
     const INTERFACE_RECORD: u32 = INPUT + 0x200;
     let [_, queue, aifsn, window, interface] = words else {
@@ -362,7 +426,8 @@ fn words(values: &[u32]) -> Vec<u8> {
 /// The reviewed ordinary-queue-zero HT40 MCS7 A-MPDU fixture of
 /// `hal_mac_tx_set_ppdu`: vendor PP objects, the ROM rate-table pointer,
 /// power rows and OSI table, and the canonical production parameters.
-fn ppdu_abi(_words: &[u32], rom: &dyn Fn(&str) -> Result<u32>) -> Result<Objects> {
+fn ppdu_abi(_words: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
+    let rom = |name: &str| vendor_side.symbol(name);
     let mut vendor: Vec<(u32, Vec<u8>)> = PPDU_VENDOR
         .iter()
         .map(|(address, values)| (*address, words(values)))
@@ -410,26 +475,33 @@ fn ppdu_abi(_words: &[u32], rom: &dyn Fn(&str) -> Result<u32>) -> Result<Objects
     })
 }
 
-/// `rcGetRate` fixture of the normal 802.11g 54M schedule: the rate context
+/// `rcGetRate` fixture of the normal 802.11g schedules: the rate context
 /// at `RATE_CONTEXT`, whose schedule flags at 0x0c select no fixed rate, and
 /// the transmit descriptor at `RATE_DESCRIPTOR`, whose word 1 carries the
 /// MPDU, short and long retry counters in bytes 1..3, whose byte 0x0c
-/// receives the selected rate and whose word at 0x1c points to the rate
-/// schedule record.
+/// receives the selected rate and whose word at 0x1c points to the vendor
+/// schedule record of the initial rate, taken from the captured arena.
 const RATE_CONTEXT: u32 = 0x3fff_1100;
 const RATE_DESCRIPTOR: u32 = 0x3fff_1000;
 const RATE_SCHEDULE: u32 = 0x3fff_1200;
-/// The 54M schedule record: primary and fallback rate codes.
-const RATE_SCHEDULE_WORDS: [u32; 2] = [0x0208_020c, 0x1906_030b];
+/// Legacy initial rates: every code the vendor maps to an 802.11g record,
+/// checked against the captured index table when the scenario starts.
+const RATE_CODES: &[u32] = &[0, 1, 2, 5, 6, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf];
+/// Long-range codes the vendor also maps to 802.11g records. Production
+/// publishes no long-range frame, so its ordinary retry selector admits no
+/// long-range initial rate.
+const UNADMITTED_RATE_CODES: &[u32] = &[0x29, 0x2a];
 /// Retry-counter words: initial publication, second publication, first-rate
-/// fallback and a short counter dominating the MPDU counter.
-const RATE_COUNTERS: &[u32] = &[0, 0x0001_0100, 0x0002_0200, 0x0004_0200];
+/// fallback, a short counter dominating the MPDU counter and a count past
+/// the third pair of every record.
+const RATE_COUNTERS: &[u32] = &[0, 0x0001_0100, 0x0002_0200, 0x0004_0200, 0x0000_0700];
 /// Descriptor byte that receives the selected rate.
 const RATE_SELECTED: u32 = RATE_DESCRIPTOR + 0x0c;
 
-fn rate_abi(words: &[u32], resolve: &dyn Fn(&str) -> Result<u32>) -> Result<Objects> {
-    let [_, _, counters] = words else {
-        unreachable!("rate words: context, descriptor, counter state")
+fn rate_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let resolve = |name: &str| vendor.symbol(name);
+    let [_, _, rate, counters] = words else {
+        unreachable!("rate words: context, descriptor, initial rate, counter state")
     };
     let mut descriptor = [0u32; 8];
     descriptor[1] = *counters;
@@ -439,7 +511,7 @@ fn rate_abi(words: &[u32], resolve: &dyn Fn(&str) -> Result<u32>) -> Result<Obje
     let objects = vec![
         (RATE_DESCRIPTOR, self::words(&descriptor)),
         (RATE_CONTEXT, vec![0; 16]),
-        (RATE_SCHEDULE, self::words(&RATE_SCHEDULE_WORDS)),
+        (RATE_SCHEDULE, vendor.rates.record(*rate)?),
     ];
     let assert = CallDeclaration {
         id: "wifi-assert".into(),
@@ -519,7 +591,8 @@ fn tx_error_leaf(words: &[u32]) -> (&'static str, &'static str) {
 
 /// `lmacProcessTxError` loads ROM `our_instances_ptr` before dispatching;
 /// only the key-error detail `0xc0`, outside these cases, dereferences it.
-fn tx_error_abi(words: &[u32], resolve: &dyn Fn(&str) -> Result<u32>) -> Result<Objects> {
+fn tx_error_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let resolve = |name: &str| vendor.symbol(name);
     Ok(Objects {
         vendor_words: words.to_vec(),
         vendor: vec![(resolve("our_instances_ptr")?, vec![0; 4])],
@@ -823,6 +896,7 @@ pub const LEAVES: &[Leaf] = &[
                     &[
                         ("_rate_context", Domain::Words(&[RATE_CONTEXT])),
                         ("descriptor_address", Domain::Words(&[RATE_DESCRIPTOR])),
+                        ("initial_rate", Domain::Words(RATE_CODES)),
                     ],
                     false,
                 ),
@@ -853,9 +927,28 @@ pub const LEAVES: &[Leaf] = &[
     ),
 ];
 
+/// Every byte of data section `section` of `object` in the captured archive.
+fn vendor_section(session: &Session, object: &str, section: &str) -> Result<Vec<u8>> {
+    let object = crate::harness::named_object(&session.inventory, 0, object)?;
+    let record = crate::harness::named_section(object, section)?;
+    let request = crate::harness::data_request(
+        &session.revision,
+        blobray_domain::FunctionSource::Input { input: 0 },
+        object,
+        blobray_domain::DataSelector::Section {
+            section: record.index,
+            offset: 0,
+            length: record.size,
+        },
+    );
+    let name = format!("section{}", section.replace('.', "-"));
+    session.data(&name, &request, &session.run.join(&name))
+}
+
 /// Linked `libpp.a` image with its captured roots and both execution targets.
 pub struct Mac {
     pub session: Session,
+    pub rates: RateTables,
     pub roots: BTreeMap<String, u32>,
     pub image_object: ObjectId,
     pub vendor: ExecutionTarget,
@@ -931,7 +1024,30 @@ impl Mac {
             &[crate::layout::ROM_INPUT, PHY_SDK_INPUT],
         )?;
         let (vendor, production) = session.targets(&linked.image)?;
+        let rates = RateTables {
+            index: vendor_section(&session, RateTables::OBJECT, RateTables::INDEX_SECTION)?,
+            arena: vendor_section(&session, RateTables::OBJECT, RateTables::ARENA_SECTION)?,
+        };
+        let admitted: Vec<u32> = rates
+            .mapped()
+            .into_iter()
+            .filter(|code| !UNADMITTED_RATE_CODES.contains(code))
+            .collect();
+        for code in RATE_CODES {
+            if !rates.covers_publication_limit(*code)? {
+                return Err(invalid(format!(
+                    "vendor 802.11g record of rate {code:#x} ends before its publication limit"
+                )));
+            }
+        }
+        if admitted != RATE_CODES {
+            return Err(invalid(format!(
+                "rcGetRate rate domain differs from the vendor index table: {:x?}",
+                rates.mapped()
+            )));
+        }
         Ok(Self {
+            rates,
             image_object: ObjectId {
                 artifact: linked.manifest.elf.clone(),
                 location: ObjectLocation::Standalone,
@@ -1113,7 +1229,13 @@ impl Mac {
                     Some(abi) => {
                         let mut semantic = words.clone();
                         semantic.extend(state);
-                        let objects = abi(&semantic, &rom)?;
+                        let objects = abi(
+                            &semantic,
+                            &Vendor {
+                                resolve: &rom,
+                                rates: &self.rates,
+                            },
+                        )?;
                         let initial = compared_bytes(&objects.vendor, &objects.compared)?;
                         (
                             objects.vendor_words,

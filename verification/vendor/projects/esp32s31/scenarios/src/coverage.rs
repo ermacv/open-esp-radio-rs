@@ -58,6 +58,40 @@ pub struct Decision {
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "`rcGetRate` modes the production ordinary retry owner does not have: the \
+            descriptor rate bypass, a missing rate context and a context-fixed rate; \
+            production always selects from its owned initial rate",
+        places: &[
+            // Descriptor bypass and null-context returns.
+            Place::Range {
+                function: "rcGetRate",
+                start: 0x20,
+                end: 0x26,
+            },
+            // The context-fixed rate and its descriptor adjustment.
+            Place::Range {
+                function: "rcGetRate",
+                start: 0x26,
+                end: 0x5c,
+            },
+            Place::Range {
+                function: "rcGetRate",
+                start: 0x68,
+                end: 0x6e,
+            },
+        ],
+    },
+    Decision {
+        reason: "an exhausted `rcGetRate` record: every admitted 802.11g record's attempt \
+            counts reach its publication limit (checked on the captured arena), and \
+            production ends the MPDU at that limit before another rate is selected",
+        places: &[Place::Range {
+            function: "rcGetRate",
+            start: 0xf0,
+            end: 0xf6,
+        }],
+    },
+    Decision {
         reason: "the body of `hal_mac_txq_enable` after its publication edge: `GetAccess` \
             access bookkeeping, HE and MU-EDCA queue state and test statistics; the ordinary \
             transmit claim compares the prefix before that call, and production's transmit \

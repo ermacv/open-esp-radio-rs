@@ -703,7 +703,11 @@ oer_probe_macros::probe! {
     /// The vendor entry receives a pointer-rich descriptor and stores the chosen
     /// rate at byte `0x0c`. The wrapper performs only that ABI projection; rate
     /// selection is owned by the compiled production function.
-    pub fn open_libpp_tx_retry_trace_rc_get_rate(_rate_context: u32, descriptor_address: u32) {
+    pub fn open_libpp_tx_retry_trace_rc_get_rate(
+        _rate_context: u32,
+        descriptor_address: u32,
+        initial_rate: u32,
+    ) {
         use oer_esp32s31_ieee80211_mac::tx::{
             LegacyRate, TxPhyRate,
             runtime::{OrdinaryRetryCounters, select_ordinary_retry_rate},
@@ -719,8 +723,10 @@ oer_probe_macros::probe! {
                 long: descriptor.add(7).read(),
             }
         };
-        let selected = select_ordinary_retry_rate(TxPhyRate::Legacy(LegacyRate::Ofdm54M), counters)
-            .expect("reviewed rcGetRate cases remain inside the 54M schedule");
+        let initial = LegacyRate::from_code(initial_rate as u8)
+            .expect("reviewed rcGetRate cases start from a legacy rate");
+        let selected = select_ordinary_retry_rate(TxPhyRate::Legacy(initial), counters)
+            .expect("reviewed rcGetRate cases remain inside their schedule");
         // SAFETY: the same case-owned descriptor covers byte 0x0c.
         unsafe { descriptor.add(0x0c).write(selected.code()) };
     }

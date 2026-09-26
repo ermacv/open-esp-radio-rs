@@ -36,6 +36,7 @@ pub const TIMELINE: TimelineCapture = TimelineCapture {
     writes: false,
     atomics: false,
     branches: false,
+    written: false,
 };
 
 /// Explicit Blobray containment; there is no automatic fallback.

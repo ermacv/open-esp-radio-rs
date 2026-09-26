@@ -1818,6 +1818,15 @@ RMW records old/new words. Atomic ordering bits are explicit program-order input
 not a multi-hart timing guarantee. Invalid/unowned accesses stop with a gap rather
 than inventing a normal-memory owner or using an implicit device fallback.
 
+`observe_timeline.written` is not an event channel: it reports the persistent
+bytes a phase stores into writable image segments, session RAM and session
+allocations as ascending, coalesced `WrittenRange` records after the phase's
+final memory, without values or order. Stack, phase-lifetime memory and runtime
+tables are excluded. A phase holds at most `MAX_WRITTEN_RANGES` ranges; a store
+that would add one more stops the run as resource-limited. Store validation
+requires the capture flag, record order and ascending coalesced ranges. Clients
+use the ranges to find written state that no relation compares.
+
 The executor's `instruction` port identifies memory sites independently of shared
 progress. A phase clears this identity and capture flags. Conditional branch
 records include site, target, fallthrough and taken decision for both ordinary and

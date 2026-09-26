@@ -54,6 +54,9 @@ pub(super) struct Session<'a> {
     pc: Option<u32>,
     final_memory: Vec<FinalMemoryChunk>,
     final_memory_capacity: Option<MemoryReservation<'a>>,
+    /// Coalesced persistent writes of the phase, when the timeline selects them.
+    written: Vec<WrittenRange>,
+    written_capacity: Option<MemoryReservation<'a>>,
     table_observations: Vec<RuntimeTableObservation>,
     call_observations: Vec<CallObservation>,
     model_observations: Vec<ModelObservation>,
@@ -144,6 +147,8 @@ impl<'a> Session<'a> {
             pc: None,
             final_memory: Vec::new(),
             final_memory_capacity: None,
+            written: Vec::new(),
+            written_capacity: None,
             call_observations,
             model_observations,
             events: Vec::new(),
@@ -441,6 +446,16 @@ impl<'a> Session<'a> {
         self.log(crate::execution_steps::StepEntry::Phase, c)?;
         self.events.clear();
         self.timeline = input.observe_timeline;
+        if self.timeline.written {
+            let reservation = self.memory.reserve(
+                (MAX_WRITTEN_RANGES * std::mem::size_of::<WrittenRange>()) as u64,
+                c.position(),
+            )?;
+            self.written.try_reserve_exact(MAX_WRITTEN_RANGES).map_err(|_| {
+                Error::new(ErrorCode::ResourceLimited, "written-range allocation refused")
+            })?;
+            self.written_capacity = Some(reservation);
+        }
         if let Some(profile) = &input.observe_calls {
             profile.validate()?;
             let capacity = self.memory.reserve(profile.payload_bytes(), c.position())?;
@@ -621,6 +636,7 @@ impl<'a> Session<'a> {
             tables: std::mem::take(&mut self.table_observations),
             services: std::mem::take(&mut self.service_observations),
             final_memory: std::mem::take(&mut self.final_memory),
+            written: std::mem::take(&mut self.written),
         })
     }
     pub fn recycle(&mut self, mut observation: ExecutionObservation) {
@@ -636,10 +652,13 @@ impl<'a> Session<'a> {
         self.service_observations = observation.services;
         drop(observation.final_memory);
         self.final_memory_capacity = None;
+        drop(observation.written);
         self.finish_phase();
     }
     fn finish_phase(&mut self) {
         self.capture = None;
+        self.written = Vec::new();
+        self.written_capacity = None;
         self.timeline = TimelineCapture::default();
         self.pc = None;
         self.reservation = None;
@@ -668,6 +687,50 @@ impl<'a> Session<'a> {
             .find_map(|(i, r)| Some((i, contains(r)?)))?;
         self.last_region.set(i);
         Some((i, offset))
+    }
+    /// Merge a store into region `i` into the phase's written ranges when the
+    /// timeline selects them and the region outlives the phase.
+    fn note_written(
+        &mut self,
+        i: usize,
+        address: u32,
+        width: u8,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        let persistent = match self.regions[i].kind {
+            RegionKind::Image => true,
+            RegionKind::Ram(lifetime) | RegionKind::Allocation { lifetime, .. } => {
+                lifetime == RegionLifetime::Session
+            }
+            RegionKind::Stack | RegionKind::Table(_) => false,
+        };
+        if !self.timeline.written || !persistent {
+            return Ok(());
+        }
+        c.checkpoint(self.written.len().max(1).ilog2() as u64 + 1)?;
+        let (mut start, mut end) = (u64::from(address), u64::from(address) + u64::from(width));
+        let first = self.written.partition_point(|r| r.end() < start);
+        let mut last = first;
+        while let Some(r) = self.written.get(last).filter(|r| u64::from(r.address) <= end) {
+            start = start.min(u64::from(r.address));
+            end = end.max(r.end());
+            last += 1;
+        }
+        if first == last && self.written.len() == MAX_WRITTEN_RANGES {
+            return Err(Error::new(
+                ErrorCode::ResourceLimited,
+                "written-range capacity exhausted",
+            ));
+        }
+        c.checkpoint((self.written.len() - last) as u64 / 64 + 1)?;
+        self.written.splice(
+            first..last,
+            [WrittenRange {
+                address: start as u32,
+                length: (end - start) as u32,
+            }],
+        );
+        Ok(())
     }
     fn invalidate_reservation(&mut self, address: u32, width: u8) {
         if self.reservation.is_some_and(|reserved| {
@@ -819,6 +882,7 @@ impl ExecutionMemory for Session<'_> {
         r.bytes[offset..offset + width as usize]
             .copy_from_slice(&value.to_le_bytes()[..width as usize]);
         r.known[offset..offset + width as usize].fill(1);
+        self.note_written(i, address, width, c)?;
         self.log(
             crate::execution_steps::StepEntry::Write {
                 address,
@@ -855,6 +919,7 @@ impl ExecutionMemory for Session<'_> {
         }
         self.invalidate_reservation(address, width);
         self.regions[i].known[offset..offset + width as usize].fill(0);
+        self.note_written(i, address, width, c)?;
         self.log(
             crate::execution_steps::StepEntry::Write {
                 address,
@@ -927,6 +992,7 @@ impl ExecutionMemory for Session<'_> {
         let r = &mut self.regions[i];
         r.bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
         r.known[offset..offset + 4].fill(1);
+        self.note_written(i, address, 4, c)?;
         self.log(
             crate::execution_steps::StepEntry::Write {
                 address,
@@ -966,6 +1032,7 @@ impl ExecutionMemory for Session<'_> {
         let value = update(old);
         self.invalidate_reservation(address, 4);
         self.regions[i].bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        self.note_written(i, address, 4, c)?;
         for entry in [
             crate::execution_steps::StepEntry::Read {
                 address,

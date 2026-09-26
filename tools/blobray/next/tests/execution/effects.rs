@@ -554,6 +554,7 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         writes: true,
         branches: true,
         atomics: false,
+        written: false,
     };
     for side in [false, true] {
         let input = if side {

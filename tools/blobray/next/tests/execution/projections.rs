@@ -86,6 +86,7 @@ fn setup_code(left: &[u32], right: &[u32]) -> (Fixture, ExecutionRequest, Layout
             writes: true,
             atomics: false,
             branches: true,
+            written: false,
         };
     }
     let capture = r.cases[0].vendor.observe_timeline;

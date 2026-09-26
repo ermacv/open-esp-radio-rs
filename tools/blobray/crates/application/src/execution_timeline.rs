@@ -105,4 +105,54 @@ mod tests {
         assert!(s.pc.is_none());
         assert!(!s.timeline.any());
     }
+
+    #[test]
+    fn written_ranges_coalesce_persistent_stores_only_and_stay_bounded() {
+        let memory = WorkingMemory::new(8 * 1024 * 1024).unwrap();
+        let mut c = || Ok(());
+        let mut s = Session::new(&memory, 1, Default::default(), &mut c).unwrap();
+        let persistent = MAX_WRITTEN_RANGES * 2 + 2;
+        for (address, length, lifetime) in [
+            (0x3000, persistent, RegionLifetime::Session),
+            (0x9000, 4, RegionLifetime::Phase),
+        ] {
+            s.region(
+                Mapping {
+                    address,
+                    length,
+                    flags: 6,
+                    kind: RegionKind::Ram(lifetime),
+                },
+                Some(0),
+                &[],
+                &mut c,
+            )
+            .unwrap();
+        }
+        s.instruction(0x1000);
+        assert!(s.write(0x3000, 4, 1, &mut c).unwrap());
+        assert!(s.written.is_empty());
+        s.timeline.written = true;
+        for (address, width) in [(0x3004, 4), (0x3000, 1), (0x3001, 2), (0x9000, 4)] {
+            assert!(s.write(address, width, 1, &mut c).unwrap());
+        }
+        let range = |address, length| WrittenRange { address, length };
+        assert_eq!(s.written, [range(0x3000, 3), range(0x3004, 4)]);
+        assert!(s.write(0x3003, 1, 1, &mut c).unwrap());
+        assert_eq!(s.written, [range(0x3000, 8)]);
+        s.written.clear();
+        for i in 0..MAX_WRITTEN_RANGES as u32 {
+            assert!(s.write(0x3000 + 2 * i, 1, 1, &mut c).unwrap());
+        }
+        assert_eq!(
+            s.write(0x3000 + persistent as u32 - 1, 1, 1, &mut c)
+                .unwrap_err()
+                .code,
+            ErrorCode::ResourceLimited
+        );
+        // A store joining two ranges stays within capacity.
+        assert!(s.write(0x3001, 1, 1, &mut c).unwrap());
+        assert_eq!(s.written[0], range(0x3000, 3));
+        assert_eq!(s.written.len(), MAX_WRITTEN_RANGES - 1);
+    }
 }

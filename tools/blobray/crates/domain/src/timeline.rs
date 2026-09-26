@@ -7,7 +7,28 @@ pub struct TimelineCapture {
     pub writes: bool,
     pub atomics: bool,
     pub branches: bool,
+    /// Report the persistent bytes the phase writes as coalesced
+    /// [`WrittenRange`]s: writable image segments, session RAM and session
+    /// allocations, without values or order. Not an event channel.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    pub written: bool,
 }
+/// Persistent guest bytes one phase wrote, `address..address + length`.
+/// A phase reports ascending ranges separated by at least one unwritten byte.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WrittenRange {
+    pub address: u32,
+    pub length: u32,
+}
+impl WrittenRange {
+    /// One past the last byte.
+    pub fn end(self) -> u64 {
+        u64::from(self.address) + u64::from(self.length)
+    }
+}
+/// Written ranges one phase may report.
+pub const MAX_WRITTEN_RANGES: usize = 4096;
 impl TimelineCapture {
     pub fn any(self) -> bool {
         self.reads || self.writes || self.atomics || self.branches

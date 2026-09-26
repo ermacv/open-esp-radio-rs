@@ -227,6 +227,7 @@ fn record_case(record: &ExecutionEvidence) -> Option<u32> {
         | ExecutionEvidence::CallModel { case, .. }
         | ExecutionEvidence::Model { case, .. }
         | ExecutionEvidence::Event { case, .. }
+        | ExecutionEvidence::Written { case, .. }
         | ExecutionEvidence::Outcome { case, .. }
         | ExecutionEvidence::Comparison { case, .. } => Some(*case),
         ExecutionEvidence::Coverage { .. } => None,
@@ -279,6 +280,7 @@ pub fn split_cases(records: &[ExecutionEvidence], counts: &[u32]) -> Vec<Vec<Exe
             | ExecutionEvidence::CallModel { case, .. }
             | ExecutionEvidence::Model { case, .. }
             | ExecutionEvidence::Event { case, .. }
+            | ExecutionEvidence::Written { case, .. }
             | ExecutionEvidence::Outcome { case, .. }
             | ExecutionEvidence::Comparison { case, .. } => case,
             // Whole-execution coverage belongs to no single part.

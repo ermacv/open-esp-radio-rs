@@ -349,6 +349,8 @@ pub fn validate_execution_records_with(
     let mut pending_effect: Option<(ExecutionEvent, u32)> = None;
     let mut prepared = None;
     let mut part = EvidencePart::Events;
+    // End of the previous written range of the current side.
+    let mut written_end: Option<u64> = None;
     let mut memory_state = [MemoryState::new(), MemoryState::new()];
     let mut capture = [
         crate::execution_capture::CaptureState::new(),
@@ -492,6 +494,34 @@ pub fn validate_execution_records_with(
                     &phase.vendor
                 };
                 memory_state[usize::from(side)].chunk(input, &chunk, c)?;
+            }
+            ExecutionEvidence::Written {
+                case: i,
+                replacement,
+                range,
+            } => {
+                let input = if side {
+                    phase.replacement.as_ref().unwrap()
+                } else {
+                    &phase.vendor
+                };
+                if i != case
+                    || replacement != side
+                    || outcome
+                    || part == EvidencePart::Environment
+                    || must_block
+                    || !input.observe_timeline.written
+                {
+                    return Err(integrity("written-range evidence order differs"));
+                }
+                if range.length == 0
+                    || range.end() > u64::from(u32::MAX)
+                    || written_end.is_some_and(|end| u64::from(range.address) <= end)
+                {
+                    return Err(integrity("written ranges are not ascending and coalesced"));
+                }
+                written_end = Some(range.end());
+                part = EvidencePart::Memory;
             }
             ExecutionEvidence::FifoService {
                 case: i,
@@ -710,6 +740,7 @@ pub fn validate_execution_records_with(
                 complete &= stop.completed() && environment_complete;
                 phase_complete &= stop.completed() && environment_complete;
                 part = EvidencePart::Events;
+                written_end = None;
                 environment_complete = true;
                 if request.replacement.is_none() {
                     blocked = !phase_complete;

@@ -53,6 +53,7 @@ mod tests {
                 writes: true,
                 atomics: true,
                 branches: true,
+                written: false,
             },
         }
     }

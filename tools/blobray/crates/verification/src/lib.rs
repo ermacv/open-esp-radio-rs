@@ -573,6 +573,7 @@ mod tests {
             tables: vec![],
             services: vec![],
             final_memory: vec![],
+            written: vec![],
         }
     }
     #[test]
@@ -665,6 +666,7 @@ mod physical_calls {
             steps: 1,
             events,
             final_memory: vec![],
+            written: vec![],
             models: vec![],
             calls: vec![],
             tables: vec![],
@@ -823,6 +825,7 @@ mod reviewed_calls {
             tables: vec![],
             services: vec![],
             final_memory: vec![],
+            written: vec![],
         };
         let left = observation(&[0x2000, 0x3000]);
         let right = observation(&[0x5000, 0x6000]);
@@ -950,6 +953,7 @@ mod timeline_order {
                 tables: vec![],
                 services: vec![],
                 final_memory: vec![],
+                written: vec![],
             };
             let a = observation(vec![memory.clone(), effect.clone()]);
             let b = observation(vec![effect, memory.clone()]);

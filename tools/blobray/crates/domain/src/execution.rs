@@ -345,6 +345,10 @@ pub struct ExecutionObservation {
     pub tables: Vec<RuntimeTableObservation>,
     pub services: Vec<FifoObservation>,
     pub final_memory: Vec<FinalMemoryChunk>,
+    /// Persistent bytes written, when the invocation selects
+    /// [`TimelineCapture::written`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub written: Vec<WrittenRange>,
 }
 impl ExecutionObservation {
     /// Goal reached with all environment obligations due at this boundary satisfied.
@@ -736,6 +740,12 @@ pub enum ExecutionEvidence {
         case: u32,
         replacement: bool,
         event: ExecutionEvent,
+    },
+    /// One persistent byte range the phase wrote, after its final memory.
+    Written {
+        case: u32,
+        replacement: bool,
+        range: WrittenRange,
     },
     Outcome {
         case: u32,

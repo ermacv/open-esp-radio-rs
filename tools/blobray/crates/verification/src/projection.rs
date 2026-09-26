@@ -211,6 +211,7 @@ mod tests {
                 writes: true,
                 atomics: true,
                 branches: true,
+                written: false,
             },
         };
         let relation = ComparisonRelation {
@@ -260,6 +261,7 @@ mod tests {
             tables: vec![],
             services: vec![],
             final_memory: vec![],
+            written: vec![],
         };
         let left = observation(vec![
             memory(

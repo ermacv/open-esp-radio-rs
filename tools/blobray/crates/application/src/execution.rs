@@ -237,6 +237,17 @@ fn evidence(
             c,
         )?;
     }
+    for range in &observation.written {
+        c.checkpoint(1)?;
+        emit(
+            ExecutionEvidence::Written {
+                case,
+                replacement,
+                range: *range,
+            },
+            c,
+        )?;
+    }
     for model in &observation.models {
         c.checkpoint(1)?;
         emit(

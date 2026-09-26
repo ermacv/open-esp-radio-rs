@@ -165,6 +165,7 @@ mod tests {
             tables: vec![],
             services: vec![],
             final_memory: vec![],
+            written: vec![],
         }
     }
     fn compare(

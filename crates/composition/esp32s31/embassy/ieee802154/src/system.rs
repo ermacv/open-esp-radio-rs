@@ -12,8 +12,7 @@ use oer_esp32s31_hal::{
     },
     root::Ieee802154RadioPartition,
     shared_radio::{
-        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadio,
-        SharedRadioLease,
+        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
     },
 };
 use oer_esp32s31_ieee802154::{
@@ -27,8 +26,7 @@ use oer_esp32s31_ieee802154_runtime::{
     Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeParts,
 };
 use oer_esp32s31_phy::{
-    ConcurrentPhyRegisterFailure, ConcurrentPhyTrackingError, ConcurrentRfError,
-    ConcurrentTrackingTick, NoopPhyTargetObserver, PhyRegisterConfig, close_concurrent_rf,
+    ConcurrentPhyTrackingError, ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver,
     concurrent::{
         ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, MaintenancePolicy,
         evaluate_periodic_tracking,
@@ -37,11 +35,11 @@ use oer_esp32s31_phy::{
         Ieee802154PhyClientError, Ieee802154PhyMembership, RegisteredIeee802154Operational,
         RegisteredIeee802154OperationalRoute, join_ieee802154, leave_ieee802154,
     },
-    maintain_concurrent_phy, register_concurrent_phy,
+    maintain_concurrent_phy,
     state::client::PhyModemClient,
-    track_concurrent_phy, wake_concurrent_rf,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
+use oer_esp32s31_radio_system::{RadioPhyError, RadioSystem};
 
 use crate::maintenance::{
     Ieee802154PhyMaintenance, MAINTENANCE_PERIOD_MICROS, next_attempt_micros,
@@ -64,9 +62,6 @@ static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new();
 /// clocked owner starts no MAC operation while the proof lives, so the bound
 /// only limits how long tracking may hold the shared PHY.
 const TRACKING_WINDOW_MICROS: u64 = 1_000_000;
-
-/// Retry period while another client holds the arbiter lease.
-const LEASE_RETRY_MICROS: u64 = 100;
 
 extern "C" fn ieee802154_interrupt() {
     RUNTIME.on_interrupt();
@@ -102,12 +97,8 @@ pub enum Ieee802154StartError {
     Power(CommonRadioPowerError),
     /// The module clocks could not be enabled.
     Clocks(ModemClockError),
-    /// The shared PHY domain could not be registered.
-    PhyRegistration(ConcurrentPhyError),
-    /// Registering the shared PHY failed after it started.
-    PhyRegistrationFailed,
-    /// Closed shared RF could not be woken.
-    PhyWake(ConcurrentRfError),
+    /// The shared PHY domain could not be registered or woken.
+    Phy(RadioPhyError),
     /// IEEE 802.15.4 could not join the shared PHY domain or BTBB.
     PhyClient(Ieee802154PhyClientError),
     /// Tracking due at the join was rejected before it started.
@@ -204,15 +195,6 @@ pub enum Ieee802154MaintenanceError {
     Route(EspHalIeee802154InterruptRouteError),
 }
 
-async fn lease(radio: &SharedRadio<ConcurrentPhy>) -> SharedRadioLease<'_, ConcurrentPhy> {
-    loop {
-        if let Ok(lease) = radio.try_acquire() {
-            return lease;
-        }
-        Timer::after_micros(LEASE_RETRY_MICROS).await;
-    }
-}
-
 fn fail_stop(error: Ieee802154StartError, owner: FailStopOwner) -> Ieee802154StartFailure {
     Ieee802154StartFailure {
         error,
@@ -253,52 +235,10 @@ fn unwind_powered(
     }
 }
 
-/// Make the shared PHY domain ready for a new client: register it once,
-/// or wake its closed RF.
-async fn prepare_phy<P>(
-    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    platform: &mut P,
-    clocks: &mut impl PlatformClockProvider,
-    config: PhyRegisterConfig,
-) -> Result<(), (Ieee802154StartError, bool)> {
-    if lease.attachment().rf_closed() {
-        return match wake_concurrent_rf::<EmbassyPhyTime>(lease, clocks).await {
-            Ok(()) => Ok(()),
-            Err(ConcurrentRfError::Rejected(error)) => Err((
-                Ieee802154StartError::PhyWake(ConcurrentRfError::Rejected(error)),
-                false,
-            )),
-            Err(error) => Err((Ieee802154StartError::PhyWake(error), true)),
-        };
-    }
-    if lease.attachment().client_snapshot().is_some() {
-        return Ok(());
-    }
-    match register_concurrent_phy::<P, EmbassyPhyTime, _>(
-        lease,
-        platform,
-        clocks,
-        config,
-        NoopPhyTargetObserver,
-    )
-    .await
-    {
-        Ok(_registration) => Ok(()),
-        Err(ConcurrentPhyRegisterFailure::Rejected(ConcurrentPhyError::AlreadyRegistered)) => {
-            Ok(())
-        }
-        Err(ConcurrentPhyRegisterFailure::Rejected(error)) => {
-            Err((Ieee802154StartError::PhyRegistration(error), false))
-        }
-        Err(_) => Err((Ieee802154StartError::PhyRegistrationFailed, true)),
-    }
-}
-
 /// `esp_ieee802154_enable` on the shared radio.
 ///
-/// `platform` is the integration token the PHY target port borrows;
-/// `clocks` supplies the platform sources of the modem clocks; `config`
-/// registers the shared PHY domain when no client registered it yet.
+/// `radio` supplies the arbiter with the platform token and clock sources,
+/// and registers or wakes the shared PHY domain for this client.
 ///
 /// # Errors
 ///
@@ -309,18 +249,16 @@ async fn prepare_phy<P>(
     clippy::result_large_err,
     reason = "the allocation-free failure returns the parked partition and engine"
 )]
-pub async fn start<P>(
-    radio: &SharedRadio<ConcurrentPhy>,
+pub async fn start<P, C: PlatformClockProvider>(
+    radio: &RadioSystem<P, C>,
     parked: Ieee802154Parked,
-    platform: &mut P,
-    clocks: &mut impl PlatformClockProvider,
-    config: PhyRegisterConfig,
     defaults: Ieee802154PibDefaults,
 ) -> Result<Ieee802154System, Ieee802154StartFailure> {
     let Ieee802154Parked { partition, engine } = parked;
-    let mut lease = lease(radio).await;
+    let mut guard = radio.lock().await;
+    let (lease, _, clocks) = guard.parts();
 
-    let powered = match Ieee802154Cold::from_partition(partition).power_up(&mut lease) {
+    let powered = match Ieee802154Cold::from_partition(partition).power_up(lease) {
         Ok(powered) => powered,
         Err(failure) => {
             return Err(Ieee802154StartFailure {
@@ -332,7 +270,7 @@ pub async fn start<P>(
             });
         }
     };
-    let mut clocked = match powered.enable_clocks(&mut lease, clocks) {
+    let mut clocked = match powered.enable_clocks(lease, clocks) {
         Ok(clocked) => clocked,
         Err(failure) => {
             let error = Ieee802154StartError::Clocks(failure.error());
@@ -342,27 +280,33 @@ pub async fn start<P>(
                     FailStopOwner::Powered(failure.into_owner()),
                 ));
             }
-            return Err(unwind_powered(
-                &mut lease,
-                failure.into_owner(),
-                engine,
-                error,
-            ));
+            return Err(unwind_powered(lease, failure.into_owner(), engine, error));
         }
     };
 
-    if let Err((error, started)) = prepare_phy(&mut lease, platform, clocks, config).await {
-        if started {
-            return Err(fail_stop(error, FailStopOwner::Clocked(clocked)));
+    if let Err(error) = guard.prepare_phy().await {
+        if error.started() {
+            return Err(fail_stop(
+                Ieee802154StartError::Phy(error),
+                FailStopOwner::Clocked(clocked),
+            ));
         }
-        return Err(unwind_clocked(&mut lease, clocks, clocked, engine, error));
+        let (lease, _, clocks) = guard.parts();
+        return Err(unwind_clocked(
+            lease,
+            clocks,
+            clocked,
+            engine,
+            Ieee802154StartError::Phy(error),
+        ));
     }
+    let (lease, platform, clocks) = guard.parts();
 
-    let (membership, acquired) = match join_ieee802154(&mut lease, &clocked, &mut EmbassyPhyTime) {
+    let (membership, acquired) = match join_ieee802154(lease, &clocked, &mut EmbassyPhyTime) {
         Ok(joined) => joined,
         Err(error) => {
             return Err(unwind_clocked(
-                &mut lease,
+                lease,
                 clocks,
                 clocked,
                 engine,
@@ -375,7 +319,7 @@ pub async fn start<P>(
         let tracked = match clocked.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
             Ok(proof) => {
                 maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
-                    &mut lease,
+                    lease,
                     platform,
                     &[proof],
                     NoopPhyTargetObserver,
@@ -405,12 +349,12 @@ pub async fn start<P>(
         }
     }
 
-    let reset = match clocked.reset_mac(&mut lease) {
+    let reset = match clocked.reset_mac(lease) {
         Ok(reset) => reset,
         Err(failure) => {
             let error = Ieee802154StartError::Reset(failure.error());
             return Err(leave_and_unwind(
-                &mut lease,
+                lease,
                 clocks,
                 failure.into_clocked(),
                 membership,
@@ -424,7 +368,7 @@ pub async fn start<P>(
         Err(failure) => {
             let error = Ieee802154StartError::Foundation(failure.error());
             return Err(leave_and_unwind(
-                &mut lease,
+                lease,
                 clocks,
                 failure.into_reset().into_clocked(),
                 membership,
@@ -433,7 +377,7 @@ pub async fn start<P>(
             ));
         }
     };
-    drop(lease);
+    drop(guard);
 
     let RegisteredIeee802154Operational {
         mut task,
@@ -516,44 +460,36 @@ impl Ieee802154System {
     /// Run one shared PHY tracking tick under the domain's maintenance
     /// policy, as one tick of ESP-IDF's periodic `phy_track_pll`.
     ///
-    /// Under [`MaintenancePolicy::Vendor`] the tick runs with IEEE 802.15.4
-    /// running, as the vendor does under its PHY lock; the arbiter owner's
-    /// [`run_concurrent_phy_tracking`](oer_esp32s31_phy::run_concurrent_phy_tracking)
-    /// is the periodic loop of this policy. Under
+    /// Under the default [`MaintenancePolicy::Vendor`] this is one tick of
+    /// the radio's periodic tracking: it runs with IEEE 802.15.4 receiving,
+    /// as the vendor timer does, and needs no pause. Under
     /// [`MaintenancePolicy::Quiesced`] every active client must prove
-    /// quiescence first: when IEEE 802.15.4 is the only active client this
-    /// pauses the runtime (leaving receive mode), closes the CPU route,
-    /// issues the proof, runs the tracking transaction within it, and then
-    /// resumes the runtime and binds the route again; with another client
-    /// active it reports `AwaitingOtherClients`. Run it on the core that
-    /// started the client.
+    /// quiescence; when IEEE 802.15.4 is the only active client this pauses
+    /// the runtime (leaving receive mode), closes the CPU route, issues the
+    /// proof, runs the tracking transaction within it, and then resumes the
+    /// runtime and binds the route again. Call it on the core that started
+    /// the client.
     ///
     /// # Errors
     ///
     /// The domain rejected the evaluation or the maintenance, tracking failed
     /// after it started, or the route could not be bound again.
-    pub async fn maintain_phy<P>(
+    pub async fn maintain_phy<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &SharedRadio<ConcurrentPhy>,
-        platform: &mut P,
+        radio: &RadioSystem<P, C>,
     ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
-        let mut lease = lease(radio).await;
-        if lease.attachment().maintenance_policy() == MaintenancePolicy::Vendor {
-            let mut clock = EmbassyPhyTime;
-            let tick = core::pin::pin!(track_concurrent_phy::<P, EmbassyPhyTime, _>(
-                &mut lease,
-                platform,
-                &mut clock,
-                NoopPhyTargetObserver,
-            ));
-            return match tick.await {
+        let mut guard = radio.lock().await;
+        if guard.lease().attachment().maintenance_policy() == MaintenancePolicy::Vendor {
+            return match guard.track().await {
                 Ok(ConcurrentTrackingTick::NotDue) => Ok(Ieee802154PhyMaintenance::NotDue),
-                Ok(ConcurrentTrackingTick::Tracked(_)) => Ok(Ieee802154PhyMaintenance::Tracked),
+                Ok(ConcurrentTrackingTick::Tracked(_outcome)) => {
+                    Ok(Ieee802154PhyMaintenance::Tracked)
+                }
                 Ok(ConcurrentTrackingTick::Unavailable(error)) => {
                     Err(Ieee802154MaintenanceError::Phy(error))
                 }
-                // The policy was read under this lease.
                 Ok(ConcurrentTrackingTick::AwaitingQuiescence) => {
+                    // The policy was read under this guard.
                     Ok(Ieee802154PhyMaintenance::AwaitingOtherClients)
                 }
                 Err(ConcurrentPhyTrackingError::Rejected(error)) => {
@@ -564,8 +500,9 @@ impl Ieee802154System {
                 }
             };
         }
+        let (lease, platform, _) = guard.parts();
         let due = lease.attachment().tracking_pending()
-            || evaluate_periodic_tracking(&mut lease, &mut EmbassyPhyTime)
+            || evaluate_periodic_tracking(lease, &mut EmbassyPhyTime)
                 .map_err(Ieee802154MaintenanceError::Phy)?;
         if !due {
             return Ok(Ieee802154PhyMaintenance::NotDue);
@@ -596,7 +533,7 @@ impl Ieee802154System {
         {
             Ok(proof) => {
                 maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
-                    &mut lease,
+                    lease,
                     platform,
                     &[proof],
                     NoopPhyTargetObserver,
@@ -607,7 +544,7 @@ impl Ieee802154System {
                 ConcurrentPhyError::WindowClosed,
             )),
         };
-        drop(lease);
+        drop(guard);
 
         if RUNTIME.resume(paused).is_err() {
             unreachable!("the paused runtime has no other radio");
@@ -634,18 +571,17 @@ impl Ieee802154System {
     /// [`Self::maintain_phy`] tick per tracking period, retried promptly
     /// while the MAC is busy. This is the periodic loop of the
     /// [`MaintenancePolicy::Quiesced`] policy while IEEE 802.15.4 is the only
-    /// client; under the default vendor policy the arbiter owner runs
-    /// `run_concurrent_phy_tracking` instead. `observe` receives each tick's
+    /// client; under the default vendor policy the radio's
+    /// [`RadioSystem::run_tracking`] is the periodic loop. `observe` receives each tick's
     /// outcome. Run it on the core that started the client and call
     /// [`Self::stop`] after it returns.
     ///
     /// # Errors
     ///
     /// A maintenance attempt failed; tracking stops being attempted.
-    pub async fn maintain_phy_until<P>(
+    pub async fn maintain_phy_until<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &SharedRadio<ConcurrentPhy>,
-        platform: &mut P,
+        radio: &RadioSystem<P, C>,
         stop: impl Future<Output = ()>,
         mut observe: impl FnMut(Ieee802154PhyMaintenance),
     ) -> Result<(), Ieee802154MaintenanceError> {
@@ -657,7 +593,7 @@ impl Ieee802154System {
                 Either::Second(()) => return Ok(()),
             }
             let outcome = {
-                let maintained = core::pin::pin!(self.maintain_phy(radio, platform));
+                let maintained = core::pin::pin!(self.maintain_phy(radio));
                 maintained.await?
             };
             observe(outcome);
@@ -679,11 +615,9 @@ impl Ieee802154System {
         clippy::result_large_err,
         reason = "the allocation-free failure returns the running system"
     )]
-    pub async fn stop<P>(
+    pub async fn stop<P, C: PlatformClockProvider>(
         self,
-        radio: &SharedRadio<ConcurrentPhy>,
-        platform: &mut P,
-        clocks: &mut impl PlatformClockProvider,
+        radio: &RadioSystem<P, C>,
     ) -> Result<Ieee802154Parked, Ieee802154StopFailure> {
         let Self { route, bound } = self;
         if let Some(bound) = bound
@@ -716,8 +650,8 @@ impl Ieee802154System {
         };
         let clocked = foundation.into_clocked();
 
-        let mut lease = lease(radio).await;
-        let last = match leave_ieee802154(&mut lease, &clocked, membership) {
+        let mut guard = radio.lock().await;
+        let last = match leave_ieee802154(guard.lease(), &clocked, membership) {
             Ok(last) => last,
             Err(failure) => {
                 let error = Ieee802154StopError::PhyClient(failure.error());
@@ -727,16 +661,14 @@ impl Ieee802154System {
                 ));
             }
         };
-        if last
-            && let Err(error) =
-                close_concurrent_rf::<P, EmbassyPhyTime>(&mut lease, platform, clocks).await
-        {
+        if last && let Err(error) = guard.close_phy_if_idle().await {
             return Err(stop_fail_stop(
                 Ieee802154StopError::PhyClose(error),
                 FailStopOwner::Clocked(clocked),
             ));
         }
-        let powered = match clocked.disable_clocks(&mut lease, clocks) {
+        let (lease, _, clocks) = guard.parts();
+        let powered = match clocked.disable_clocks(lease, clocks) {
             Ok(powered) => powered,
             Err(failure) => {
                 return Err(stop_fail_stop(
@@ -745,7 +677,7 @@ impl Ieee802154System {
                 ));
             }
         };
-        match powered.power_down(&mut lease) {
+        match powered.power_down(lease) {
             Ok(cold) => Ok(Ieee802154Parked {
                 partition: cold.into_partition(),
                 engine,

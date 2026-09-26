@@ -1,7 +1,7 @@
 # ESP32-S31 IEEE 802.15.4 system
 
 `oer-esp32s31-ieee802154-system` brings IEEE 802.15.4 up as a client of the
-shared radio arbiter (`SharedRadio<ConcurrentPhy>`) and tears it down again.
+[shared radio](../radio/README.md) (`RadioSystem`) and tears it down again.
 It is the chip composition of the [HAL lifecycle](../../../../hardware/esp32s31/hal/src/ieee802154/role.rs),
 the [PHY client](../../../../hardware/esp32s31/phy/src/ieee802154_client.rs),
 the [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) and the
@@ -12,7 +12,8 @@ the [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) and the
 `start` follows ESP-IDF's `esp_ieee802154_enable` on the concurrent split:
 
 1. enter common radio power and enable the IEEE 802.15.4 module clocks;
-2. register the shared PHY domain when no client did, or wake its closed RF;
+2. prepare the shared PHY through the radio system: register the domain when
+   no client did, or wake its closed RF;
 3. join the domain and the shared BTBB baseband and apply the transmit-on
    delay; run PHY tracking inside the client's quiescence window when the
    join makes it due;
@@ -22,25 +23,21 @@ the [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) and the
 
 `Ieee802154System::stop` reverses the steps: quiesce the route, take the MAC
 owners out of the runtime, prove the foundation again, leave the domain and
-BTBB (closing RF after the last PHY client), release the clocks and leave
+BTBB (the radio system closes RF after the last PHY client), release the
+clocks and leave
 common power. It returns the partition and the engine for a later start.
 
-Shared PHY tracking follows the domain's maintenance policy. Under the
-default `Vendor` policy the arbiter owner runs the PHY's
-`run_concurrent_phy_tracking` for the lifetime of the shared domain, as
-ESP-IDF's periodic `phy_track_pll` timer does: tracking runs under the arbiter
-lease with IEEE 802.15.4 running, and the tracking graph raises the PHY's
-coexistence grant around its RF-sensitive regions. `Ieee802154System::maintain_phy`
-runs one such tick on demand.
-
-Under the stricter `Quiesced` policy every active client proves quiescence
-before tracking starts. When IEEE 802.15.4 is the only active client,
-`maintain_phy` pauses the runtime (leaving receive mode), closes the CPU
-route, issues the client's quiescence proof, tracks within that window, then
-resumes receive mode and binds the route again; `maintain_phy_until` repeats
-it once per tracking period. With another client active it reports
-`AwaitingOtherClients`, and a running transmission, scan or CCA reports
-`Busy`.
+Periodic shared PHY tracking belongs to the radio system
+(`RadioSystem::run_tracking`), as ESP-IDF's `phy_track_pll` timer belongs to
+`esp_phy`. `Ieee802154System::maintain_phy` runs one tracking attempt on
+demand. Under the default vendor admission it is one tracking tick with IEEE
+802.15.4 receiving. Under the stricter quiesced admission, when IEEE
+802.15.4 is the only active client, the call pauses the runtime (leaving
+receive mode), closes the CPU route, issues the client's quiescence proof,
+tracks within that window, then resumes receive mode and binds the route
+again; `maintain_phy_until` repeats it once per tracking period. With
+another client active it reports `AwaitingOtherClients`; a running
+transmission, scan or CCA reports `Busy`.
 
 A step that fails before starting shared hardware work rolls the earlier
 steps back and returns the parked partition. A started PHY, clock or power
@@ -55,6 +52,6 @@ The enhanced-ACK generator is not composed; enhanced ACKs are refused.
 
 ## Limits
 
-Under the quiesced policy, tracking that must collect the proofs of several
-active clients needs a joint radio supervisor, which is not composed. Sleep and RF gating are not
+Under the quiesced admission, tracking that must collect the proofs of
+several active clients needs a joint radio supervisor, which is not composed. Sleep and RF gating are not
 composed, and on-air behaviour is qualified only by HIL runs.

@@ -101,9 +101,9 @@ const SLOW_MINIMA: u32 = 20;
 const SLOW_MINIMUM_POLLS: u32 = 9_000;
 /// Event capacity of the shared-budget case: every slow poll is a recorded read.
 const BUDGET_EVENTS: u32 = SLOW_MINIMA * (SLOW_MINIMUM_POLLS + 1) + MAX_EVENTS;
-/// Event capacity of an activity root: every minimum search makes all its
-/// attempts, each with a not-ready poll and an activity read.
-const ACTIVITY_EVENTS: u32 = 1 << 18;
+/// Event capacity of a long root: its minimum searches may make every
+/// attempt, and activity roots poll readiness twice per estimate.
+const LONG_EVENTS: u32 = 1 << 18;
 /// Cases of one profile: parameter setup, callback installation and the root.
 const PROFILE_CASES: u32 = 3;
 /// Case index of the root within its profile.
@@ -117,6 +117,12 @@ pub enum Estimator {
     /// Successive estimates read these samples in turn with a zero power
     /// accumulator, so estimates differ as corrections take effect.
     Cycle(&'static [i32]),
+    /// Independent periodic I, Q and power accumulator streams.
+    Streams {
+        i: &'static [i32],
+        q: &'static [i32],
+        power: &'static [u32],
+    },
 }
 
 /// One RX root profile.
@@ -139,6 +145,10 @@ impl Profile {
     fn calibrates(&self) -> bool {
         self.flags == 0
     }
+    /// Whether the root needs the long event capacity.
+    fn long(&self) -> bool {
+        self.activity || matches!(self.estimator, Estimator::Streams { .. })
+    }
     fn label(&self) -> String {
         let estimator = match self.estimator {
             Estimator::Constant(sample) => format!("sample{sample}"),
@@ -150,6 +160,15 @@ impl Profile {
                     .collect::<Vec<_>>()
                     .join("_")
             ),
+            Estimator::Streams { i, q, power } => {
+                let join = |values: Vec<String>| values.join("_");
+                format!(
+                    "streams-i{}-q{}-p{}",
+                    join(i.iter().map(i32::to_string).collect()),
+                    join(q.iter().map(i32::to_string).collect()),
+                    join(power.iter().map(u32::to_string).collect())
+                )
+            }
         };
         format!(
             "rx-flags{}-{estimator}{}{}-seed{}-fill{:x}-settle{}",
@@ -221,6 +240,78 @@ pub fn activity_profiles() -> Vec<Profile> {
         .collect()
 }
 
+/// Complete calibration under independent I, Q and power streams in whole
+/// estimate units.
+pub fn stream_profiles() -> Vec<Profile> {
+    profiles(&[0], ESTIMATOR_STREAMS)
+}
+
+/// Independent estimator streams: one channel below and the other above the
+/// correction threshold in both orders, including small positive residuals
+/// that take the unit correction; alternating residuals; a seven-unit
+/// residual over a small low estimate that takes the unit correction; power
+/// that keeps every search from converging, always or on alternate reads;
+/// and power that completes a low search only after three attempts while the
+/// following high search completes at once, so the low power is the larger.
+const ESTIMATOR_STREAMS: &[Estimator] = &[
+    Estimator::Streams {
+        i: &[0],
+        q: &[30 * ESTIMATE_UNIT],
+        power: &[0],
+    },
+    Estimator::Streams {
+        i: &[ESTIMATE_UNIT],
+        q: &[30 * ESTIMATE_UNIT],
+        power: &[0],
+    },
+    Estimator::Streams {
+        i: &[30 * ESTIMATE_UNIT],
+        q: &[ESTIMATE_UNIT],
+        power: &[0],
+    },
+    Estimator::Streams {
+        i: &[3 * ESTIMATE_UNIT, 60 * ESTIMATE_UNIT],
+        q: &[60 * ESTIMATE_UNIT, 3 * ESTIMATE_UNIT, 0],
+        power: &[0],
+    },
+    Estimator::Streams {
+        i: &[55 * ESTIMATE_UNIT, 0, -55 * ESTIMATE_UNIT],
+        q: &[-55 * ESTIMATE_UNIT, 0, 55 * ESTIMATE_UNIT, 0],
+        power: &[HIGH_POWER, 0, 0],
+    },
+    Estimator::Streams {
+        i: &[0],
+        q: &[0],
+        power: &[HIGH_POWER],
+    },
+    Estimator::Streams {
+        i: &[0],
+        q: &[0],
+        power: &[0, HIGH_POWER],
+    },
+    Estimator::Streams {
+        i: &[0],
+        q: &[0],
+        power: &[HIGH_POWER, 0],
+    },
+    Estimator::Streams {
+        i: &[10 * ESTIMATE_UNIT, 10 * ESTIMATE_UNIT, 17 * ESTIMATE_UNIT],
+        q: &[10 * ESTIMATE_UNIT, 10 * ESTIMATE_UNIT, 17 * ESTIMATE_UNIT],
+        power: &[0],
+    },
+    Estimator::Streams {
+        i: &[0],
+        q: &[0],
+        power: &[MID_POWER, MID_POWER, MID_POWER, 0],
+    },
+];
+
+/// Power accumulator whose estimate exceeds every RX-DC power threshold.
+const HIGH_POWER: u32 = 1 << 28;
+/// Power accumulator whose estimate completes a minimum search only after
+/// three attempts (between the 36 and 48 thresholds).
+const MID_POWER: u32 = 3 << 20;
+
 /// Accumulator value of one RX-DC estimate: the calibration requests
 /// estimator control `0x800`, and the estimator shifts the accumulator right
 /// by six and divides it by the control plus one.
@@ -267,6 +358,31 @@ fn estimator_models(estimator: Estimator) -> Vec<DeviceDeclaration> {
                 }
             })
             .collect(),
+        Estimator::Streams { i, q, power } => [
+            (
+                "estimator-sample",
+                ESTIMATOR_SAMPLE,
+                i.iter().map(|&v| v as u32).collect::<Vec<_>>(),
+            ),
+            (
+                "estimator-negated",
+                ESTIMATOR_NEGATED,
+                q.iter().map(|&v| v as u32).collect(),
+            ),
+            ("estimator-magnitude", ESTIMATOR_MAGNITUDE, power.to_vec()),
+        ]
+        .into_iter()
+        .map(|(id, address, values)| DeviceDeclaration {
+            id: id.into(),
+            applicability: "independent periodic synthetic I, Q and power streams".into(),
+            lifetime: blobray_domain::RegionLifetime::Phase,
+            behavior: blobray_domain::DeviceBehavior::CyclicRead {
+                address,
+                width: 4,
+                values,
+            },
+        })
+        .collect(),
     }
 }
 
@@ -465,7 +581,7 @@ pub struct RxGain {
     production_delay: u32,
     effects: EffectContractRef,
     /// The same rules for activity roots, within their event capacity.
-    activity_effects: EffectContractRef,
+    long_effects: EffectContractRef,
     committed: ProjectionRef,
 }
 
@@ -531,10 +647,10 @@ impl RxGain {
             contract,
             review,
         )?;
-        let contract = phy_contract(vendor, production, rx_rules(ACTIVITY_EVENTS), applicability);
-        let activity_effects = image.review_effects(
-            "rx-activity-effects",
-            "esp32s31.phy.rx-gain.activity-effects",
+        let contract = phy_contract(vendor, production, rx_rules(LONG_EVENTS), applicability);
+        let long_effects = image.review_effects(
+            "rx-long-effects",
+            "esp32s31.phy.rx-gain.long-effects",
             contract,
             review,
         )?;
@@ -549,7 +665,7 @@ impl RxGain {
             production_delay: image.sym(2, "ets_delay_us"),
             image,
             effects,
-            activity_effects,
+            long_effects,
             committed,
         })
     }
@@ -608,8 +724,8 @@ impl RxGain {
         // Blobray compares every effect and the committed state under the
         // reviewed contract and projection.
         let relation = root.relation.as_mut().unwrap();
-        relation.effects = Some(if profile.activity {
-            self.activity_effects.clone()
+        relation.effects = Some(if profile.long() {
+            self.long_effects.clone()
         } else {
             self.effects.clone()
         });
@@ -655,7 +771,8 @@ pub fn exercise(ctx: &mut RxGain) -> Result<()> {
     for (name, matrix, capacity) in [
         ("publication", publication_profiles(), MAX_EVENTS),
         ("calibration", calibration_profiles(), MAX_EVENTS),
-        ("activity", activity_profiles(), ACTIVITY_EVENTS),
+        ("activity", activity_profiles(), LONG_EVENTS),
+        ("streams", stream_profiles(), LONG_EVENTS),
     ] {
         let mut rows = vec![];
         for profile in &matrix {
@@ -824,7 +941,7 @@ fn unadmitted_activity(ctx: &mut RxGain) -> Result<()> {
         profile.fill,
         Right::Production,
         ComparisonVerdict::Diff,
-        ACTIVITY_EVENTS,
+        LONG_EVENTS,
     )?;
     Ok(())
 }
@@ -895,6 +1012,9 @@ mod tests {
         assert!(publication.iter().all(|p| !p.calibrates()));
         let calibration = calibration_profiles();
         assert_eq!(calibration.len(), 6 * 2 * FILLS.len() * 2);
+        let streams = stream_profiles();
+        assert_eq!(streams.len(), ESTIMATOR_STREAMS.len() * 2 * FILLS.len() * 2);
+        assert!(streams.iter().all(Profile::long));
         let activity = activity_profiles();
         assert_eq!(activity.len(), 2 * FILLS.len() * 2);
         assert!(

@@ -159,15 +159,19 @@ pub const DECISIONS: &[Decision] = &[
             // exhausted search's power sentinel.
             Place::Range {
                 function: "phy_rxdc_est_min",
-                start: 0x62,
-                end: 0x63,
-            },
-            Place::Range {
-                function: "phy_rxdc_est_min",
                 start: 0x76,
                 end: 0x7e,
             },
         ],
+    },
+    Decision {
+        reason: "diagnostic print of the RX-DC PBus results, selected by bit 3 of \
+            `phy_param[0x10]`; production emits no vendor console output",
+        places: &[Place::Range {
+            function: "phy_pbus_rx_dco_cal_1step_new",
+            start: 0x206,
+            end: 0x2aa,
+        }],
     },
     Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
@@ -194,6 +198,16 @@ pub struct Observed {
 }
 
 impl Observed {
+    /// Functions and uncovered locations over `closures`.
+    pub fn of(closures: &[Closure]) -> Self {
+        let mut observed = Self::default();
+        for closure in closures {
+            observed.functions.extend(closure.functions.iter().cloned());
+            observed.uncovered.extend(closure.uncovered.iter().cloned());
+        }
+        observed
+    }
+
     /// Split `locations` into (excluded, untriaged) under `decisions`.
     pub fn classify(
         decisions: &[Decision],

@@ -766,6 +766,9 @@ fn all(
     for (name, seconds) in &elapsed {
         println!("{name} {seconds:.1}s");
     }
+    // Decisions are shared by every scenario, so one is stale only when no
+    // scenario's closures leave a location it excludes uncovered.
+    coverage::Observed::of(&closures).check("all", coverage::DECISIONS)?;
     if let Some(path) = index {
         let index = evidence::index(
             &common,

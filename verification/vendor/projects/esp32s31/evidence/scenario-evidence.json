@@ -5,7 +5,7 @@
   "inputs": {
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "957e5378e615f7f195a1a0a58eecd366790cf0610cfa42a62ce40e4e8ea894d9",
+    "production": "89fb607738ae874a4a33de15bd2e2885e6141bc3d51358b14e6e4ce9ddf26594",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
     "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -49,7 +49,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "cacb47a4ce4cef35790bacfac0866ba8c4df79c4f95973573f9be404b9bd32b6"
+      "sha256": "53065eaacfaa943e39d698b289f73c6ff3979235e88d73bb1190ddf16b3495a2"
     },
     {
       "path": "crates/memory",
@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "91962bd742e046727510f57fb8840d434389e1a55a8c40ed8564931887ed65bc"
+      "sha256": "d0460c633acad33d4363eb7cef70e8b0074e0357f061f7f371aa09317f1cc877"
     },
     {
       "path": "verification/vendor/schema",
@@ -304,7 +304,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "ff9a77408c79f8dc37e1bf59e018958a2ce75ffe03723c94d213132f6aeba08f"
+        "f3d57bf8e3372fd70212c35ed26496a30fb0e203bb4b362f60975cab87be6234"
       ],
       "coverage": {
         "blocks": {
@@ -333,7 +333,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "83918edd06da9f2b0081567c08f4cd4f30d3341f26c86b94ab4c387cbcbe38e2"
+        "83fd406e1090aa3afa95348022a56e0bce06e8d090416662bd7428dc3a9818ad"
       ],
       "coverage": {
         "blocks": {
@@ -362,7 +362,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "7c294ecf5324dda221f6076e51f3660ef1d19a623d2653e489415d1d815fae34"
+        "5a6b23aab6613d0879e81d2ce8a20fc93d8e7ce4d21a5c7997e75d06f88ca907"
       ],
       "coverage": {
         "blocks": {
@@ -391,7 +391,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "5094f7e0789b9144dc2af128c78028a4e400a26d76fcb0d6bbfda994ee06b028"
+        "20a34e5ce66949eafaa2090b87c3c85d0b6cd9eb4f9f0a4980303840b877f4db"
       ],
       "coverage": {
         "blocks": {
@@ -420,7 +420,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "df8e988b50576ee413a40bac4ee5bd0d1d243225e015fd11b091b4cc255fbd89"
+        "e3094fbba0a349c23db23ccd22a5e1d29cb9c3b7e206870fd387f6588ce44049"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +449,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "9c3ab776b9a4a3a981da10a4a999d50934501b793e0758ccd0a9adcc98b3eeb9"
+        "1006fa3ad0d4fba4afcee61e8185d1ad9359ed43f2fe45efd4470b32cc90cb1f"
       ],
       "coverage": {
         "blocks": {
@@ -613,7 +613,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "bf0acdff2ceba2ae05ae444520917d129fedaf72b05f80a0a6b4ba6527eaa2e5"
+        "7973b067e176436cc56fdf9bae16b23fc424be1edda625221ef46a8eb696a1eb"
       ],
       "coverage": {
         "blocks": {
@@ -642,7 +642,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "c3f89b5a553596f17b3372ae17efb2a35c8a44386c12a4f9ba3009545bdd93e7"
+        "b06737fc882ccabfe8d1585a3eea1970ded4745b5501e737edfa7410dc07e01f"
       ],
       "coverage": {
         "blocks": {
@@ -671,7 +671,7 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "3286f5529c0f2f31563251ed27f65c39435c154797cae71a311fb5f5db138c3c"
+        "e5c0df5021ce01f372a18647fb75c07b924d7089aecfc6b5de7e34b3b9bfd3b5"
       ],
       "coverage": {
         "blocks": {
@@ -700,8 +700,8 @@
       "verdict": "match",
       "cases": 68,
       "reviews": [
-        "13cc2d69c5a692859b41fb31a858adc55e8252cfe5769eeac8746cfc66a81389",
-        "195969d3b3b0da4e16b1401c0569d6510df5e618ba5140133a970065c43c5349"
+        "5d76c3c4e976fc79d12e689cb1a31a7dc66aa38be5c69e6e398d3ed263a40d19",
+        "84ae1ab1c3d686d0180fe915099c7c9302898749da0a2af9d32e95fd55c30b1a"
       ],
       "coverage": {
         "blocks": {
@@ -730,7 +730,7 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "d2f1030bf202d3c2f77c6ef3883b2e988fac5fead46fc492230ba02861ae3c89"
+        "8b3bb91052603ac295d2400682708d1481661f268b1c53ec00ea35ce40504dca"
       ],
       "coverage": {
         "blocks": {
@@ -757,28 +757,28 @@
       "symbol": "phy_set_rx_gain_table",
       "production": "open_phy_calibration_trace_rx_gain",
       "verdict": "match",
-      "cases": 72,
+      "cases": 152,
       "reviews": [
-        "16b40695c75cd701df38aa2567957bbc6cef9e542ebdea28618b027d04eb0773",
-        "3d3729a55e0f269aef6320487c12d268c090c80d930d6d642209599cc796a9a5",
-        "484e3c03f217fe2a44e87949087b349ac9d3f1d4ef0a8bd579972a7b8df19c13"
+        "81b59578d3191ba19492b3c3b02ac9d0d607282c50b01c8e833e2273c8737395",
+        "c2873832a13c19a3d0e4fd125fa3749d043a03656e0b16dba07005c700805081",
+        "ea94e4fe7e0d2043f3dbf28655b956e3296bd3af219621389c4d478af7d20217"
       ],
       "coverage": {
         "blocks": {
-          "reached": 245,
+          "reached": 248,
           "total": 703
         },
         "directions": {
-          "reached": 177,
+          "reached": 189,
           "total": 702
         },
-        "excluded": 918,
-        "untriaged": 65
+        "excluded": 917,
+        "untriaged": 51
       },
       "observation": {
-        "executed": 449,
-        "observed": 428,
-        "reviewed": 14,
+        "executed": 452,
+        "observed": 432,
+        "reviewed": 13,
         "untriaged": 7
       }
     },
@@ -790,8 +790,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "2fc78d88bffa4968e9f6c2c1f77782e609ddef5da2017fc70edb8eb7cb974045",
-        "eddda6d9c19916971b8d4061d9203a92dfab249ccf9895a9453785fa68d0e055"
+        "6bc790ce89b97079aa5a0402380f2d5229287f2cd2910f286bacf24cba2db09e",
+        "c6c5ee4e76a3ad6548cc1960584d5a087bbbdcb2016586a85892aeef0cf3fa02"
       ],
       "coverage": {
         "blocks": {
@@ -820,8 +820,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "a0078ad6c2fca16459d1ac5b949da286aaeb8c43d4b89e989f1aac09de869ef1",
-        "ab2114572547d69ec5a64611ac3edffcd702d7c410dbfdfd7761cb440cbf8bf4"
+        "aba52f2e28b0f20998923fdb079da154ed7f9b39e60a75f89aec510fcd3bd783",
+        "c1c74149c1e660eff07c47bc192436f6c82603018e38845785822c70c86e24ae"
       ],
       "coverage": {
         "blocks": {
@@ -832,14 +832,14 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 941,
-        "untriaged": 198
+        "excluded": 942,
+        "untriaged": 197
       },
       "observation": {
-        "executed": 1385,
+        "executed": 1388,
         "observed": 1340,
         "reviewed": 31,
-        "untriaged": 14
+        "untriaged": 17
       }
     },
     {
@@ -850,8 +850,8 @@
       "verdict": "match",
       "cases": 320,
       "reviews": [
-        "388d57ff01ceb29b78e84f9b11522bc0cb36f9865592fb88a1519028f4dc4343",
-        "677388d69545e80295cfef9358d5ba97aa1c00e7d57cb57e475bc7c4be4c3531"
+        "5d1ddc924906516fc3cc3996087475da9fae1da9a920284a4a2bed15ee0ce929",
+        "a53eabaa5ac0046067a2a99e79040ae37937a97120afc0d70414092695e5686d"
       ],
       "coverage": {
         "blocks": {
@@ -862,14 +862,14 @@
           "reached": 351,
           "total": 982
         },
-        "excluded": 941,
-        "untriaged": 215
+        "excluded": 942,
+        "untriaged": 214
       },
       "observation": {
-        "executed": 1812,
+        "executed": 1815,
         "observed": 1740,
         "reviewed": 55,
-        "untriaged": 17
+        "untriaged": 20
       }
     }
   ],
@@ -1118,76 +1118,6 @@
       "function": "phy_pbus_rd_shift",
       "offset": 54,
       "kind": "block"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 346,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 370,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 410,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 518,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 520,
-      "kind": "block"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 706,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 714,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 778,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 782,
-      "kind": "block"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 1014,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 1018,
-      "kind": "block"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 1054,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 1082,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_pbus_rx_dco_cal_1step_new",
-      "offset": 1178,
-      "kind": "taken"
     },
     {
       "function": "phy_pwdet_tone_start",

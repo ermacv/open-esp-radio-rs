@@ -787,7 +787,8 @@ impl Session {
     /// Evidence entries of `list` (vendor source, root symbol, production
     /// probe): archive roots resolve in `roots`, ROM roots in the ROM input.
     /// Coverage of every claimed root closure is classified under
-    /// `decisions`, each of which must still exclude something.
+    /// `decisions`; the complete run checks that each still excludes
+    /// something in some scenario.
     pub fn claims(
         &self,
         suite: &str,
@@ -836,7 +837,6 @@ impl Session {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
-        observed.check(suite, decisions)?;
         let (steps, seconds) = self.executed.get();
         println!(
             "{suite} interpreter {steps} guest instructions in {seconds:.2} s ({:.1} M/s)",

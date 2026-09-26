@@ -48,11 +48,7 @@ pub use bluetooth::{
             BluetoothHalInitScale, BluetoothMicrosecondDeltaProjection,
             BluetoothRawTickDeltaProjection,
         },
-        time::{
-            BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,
-            BluetoothControllerTimeLatchRequest, BluetoothControllerTimeLatchStep,
-            BluetoothControllerTimeLatchStepError,
-        },
+        time::BluetoothControllerLatchedTime,
     },
     direction_finding::BluetoothDirectionFindingDisabledBaselinePrepared,
     interrupt::{
@@ -102,8 +98,8 @@ pub use bluetooth::{
             BluetoothSchedulerWorkObservation,
         },
         stop::{
-            BluetoothSchedulerStop, BluetoothSchedulerStopStep, BluetoothSchedulerStopped,
-            BluetoothSchedulerStoppedHeadRetirement, BluetoothSchedulerStoppedItem,
+            BluetoothSchedulerStopped, BluetoothSchedulerStoppedHeadRetirement,
+            BluetoothSchedulerStoppedItem,
         },
     },
 };

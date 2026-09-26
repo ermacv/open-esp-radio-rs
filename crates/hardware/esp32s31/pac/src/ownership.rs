@@ -875,8 +875,6 @@ pub struct BluetoothTaskRegisters {
     pub(crate) radio_phy: RadioPhyRegisters,
     pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
-    pub(crate) controller_time_latch:
-        crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership,
 }
 
 /// Partitions consumed by one Bluetooth task register set.
@@ -901,8 +899,6 @@ impl BluetoothTaskRegisters {
             radio_phy,
             coexistence,
             shared_radio,
-            controller_time_latch:
-                crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership::new(),
         }
     }
 

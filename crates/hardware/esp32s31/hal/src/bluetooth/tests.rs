@@ -153,3 +153,24 @@ fn non_pristine_interrupt_history_blocks_neutral_reunion() {
     );
     let _retained_owners = failure.into_parts();
 }
+
+#[test]
+fn unfinished_controller_time_latch_blocks_neutral_reunion() {
+    let cold = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
+    let (mut task, interrupts) = cold.separate_interrupt_owner();
+
+    // The HAL latch state is the only record of a published request; a
+    // cancelled async step must not let the route be reunited or released.
+    task.time_latch.begin_for_test();
+    assert!(task.time_latch.in_flight());
+
+    let failure = match task.into_cold(interrupts) {
+        Ok(_) => panic!("an unfinished latch request requires draining"),
+        Err(failure) => failure,
+    };
+    assert_eq!(
+        failure.error(),
+        TaskOwnerReuniteError::ControllerTimeLatchInFlight
+    );
+    let _retained_owners = failure.into_parts();
+}

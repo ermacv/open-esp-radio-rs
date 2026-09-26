@@ -46,7 +46,6 @@ fn bluetooth_register_set_returns_every_consumed_partition() {
         coexistence,
         shared_radio,
     });
-    assert!(!registers.controller_time_latch_in_flight());
     let _parts = registers.into_parts();
 }
 

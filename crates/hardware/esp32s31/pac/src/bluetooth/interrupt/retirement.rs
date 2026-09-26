@@ -11,7 +11,8 @@ use crate::{BluetoothSchedulerHardwareListIndex, BluetoothTaskRegisters};
 /// Hardware obligation preventing terminal Controller interrupt-output release.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothControllerOutputReleaseError {
-    /// The task-side controller-time latch is still owned.
+    /// The task-side controller-time latch is still owned. The HAL, which
+    /// owns the latch request, reports this before any register access.
     ControllerTimePending,
     /// The scheduler still reports hardware execution.
     SchedulerBusy,
@@ -139,9 +140,6 @@ impl BluetoothInterruptOutputPrepared {
         &self,
         task: &mut BluetoothTaskRegisters,
     ) -> Result<(), BluetoothControllerOutputReleaseError> {
-        if task.controller_time_latch.in_flight() {
-            return Err(BluetoothControllerOutputReleaseError::ControllerTimePending);
-        }
         validate_idle(&mut Hardware { task, output: self })
     }
 
@@ -155,12 +153,6 @@ impl BluetoothInterruptOutputPrepared {
         self,
         task: &mut BluetoothTaskRegisters,
     ) -> Result<BluetoothInterruptSetup, (BluetoothControllerOutputReleaseError, Self)> {
-        if task.controller_time_latch.in_flight() {
-            return Err((
-                BluetoothControllerOutputReleaseError::ControllerTimePending,
-                self,
-            ));
-        }
         if let Err(error) = release(&mut Hardware {
             task,
             output: &self,

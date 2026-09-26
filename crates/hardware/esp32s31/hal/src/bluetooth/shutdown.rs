@@ -73,7 +73,7 @@ struct Hardware<'a> {
 
 impl Control for Hardware<'_> {
     fn time_pending(&self) -> bool {
-        self.task.registers.controller_time_latch_in_flight()
+        self.task.time_latch.in_flight()
     }
     fn timer_separated(&self) -> bool {
         self.task.modem_lp_timer.is_none()
@@ -121,6 +121,7 @@ pub(super) fn release_after_phy_close(
         retained,
         clocks,
         phy_restore,
+        time_latch: _,
         reunitable: _,
     } = task;
     let cold = ColdOwner {

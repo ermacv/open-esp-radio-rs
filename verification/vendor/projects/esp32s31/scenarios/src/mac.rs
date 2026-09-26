@@ -503,7 +503,9 @@ fn rate_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
     let [_, _, rate, counters] = words else {
         unreachable!("rate words: context, descriptor, initial rate, counter state")
     };
-    let mut descriptor = [0u32; 8];
+    // Through word 0x30, whose format flags the tail after `rcGetSMPDURate`
+    // reads; clear flags select the legacy path.
+    let mut descriptor = [0u32; 13];
     descriptor[1] = *counters;
     // The selected-rate byte starts all set, so both sides must write it.
     descriptor[3] = u32::MAX;
@@ -887,24 +889,21 @@ pub const LEAVES: &[Leaf] = &[
         ),
         ppdu_abi,
     ),
-    prefix(
-        stated(
-            objects(
-                leaf(
-                    "rcGetRate",
-                    "open_libpp_tx_retry_trace_rc_get_rate",
-                    &[
-                        ("_rate_context", Domain::Words(&[RATE_CONTEXT])),
-                        ("descriptor_address", Domain::Words(&[RATE_DESCRIPTOR])),
-                        ("initial_rate", Domain::Words(RATE_CODES)),
-                    ],
-                    false,
-                ),
-                rate_abi,
+    stated(
+        objects(
+            leaf(
+                "rcGetRate",
+                "open_libpp_tx_retry_trace_rc_get_rate",
+                &[
+                    ("_rate_context", Domain::Words(&[RATE_CONTEXT])),
+                    ("descriptor_address", Domain::Words(&[RATE_DESCRIPTOR])),
+                    ("initial_rate", Domain::Words(RATE_CODES)),
+                ],
+                false,
             ),
-            RATE_COUNTERS,
+            rate_abi,
         ),
-        "rcGetSMPDURate",
+        RATE_COUNTERS,
     ),
     quiet(
         dispatching(

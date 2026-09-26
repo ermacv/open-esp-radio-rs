@@ -21,6 +21,8 @@ pub use oer_esp32s31_pac::{
     Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
 };
 
+use crate::shared_radio::{ClientQuiescence, EmptyQuiescentWindow};
+
 use crate::ieee802154::{
     lifecycle::Ieee802154Channel,
     policy::{
@@ -45,6 +47,24 @@ impl Ieee802154TaskOwner {
 
     pub(crate) fn into_registers(self) -> PacTaskRegisters {
         self.registers
+    }
+
+    /// Prove that IEEE 802.15.4 performs no RF and leaves the shared PHY
+    /// alone until `release_by_micros`, for shared PHY maintenance.
+    ///
+    /// The issuer must have stopped every MAC operation and must keep the
+    /// interrupt route closed while the proof lives; the proof borrows this
+    /// owner mutably, so no MAC command can be issued meanwhile.
+    ///
+    /// # Errors
+    ///
+    /// The window is empty.
+    pub fn quiescence(
+        &mut self,
+        issued_at_micros: u64,
+        release_by_micros: u64,
+    ) -> Result<ClientQuiescence<'_>, EmptyQuiescentWindow> {
+        ClientQuiescence::until(&mut self.registers, issued_at_micros, release_by_micros)
     }
 
     /// Borrow the PAC task lease for one low-level accessor.

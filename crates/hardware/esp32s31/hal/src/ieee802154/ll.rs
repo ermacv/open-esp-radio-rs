@@ -309,6 +309,12 @@ impl Ieee802154MacOwners {
     pub fn into_parts(self) -> (Ieee802154TaskOwner, Ieee802154InterruptOwner) {
         (self.task, self.interrupts)
     }
+
+    /// Borrow the task owner, for example to prove quiescence while the MAC
+    /// is stopped and its interrupt route closed.
+    pub fn task_mut(&mut self) -> &mut Ieee802154TaskOwner {
+        &mut self.task
+    }
 }
 
 impl Ieee802154LowLevel for Ieee802154MacOwners {

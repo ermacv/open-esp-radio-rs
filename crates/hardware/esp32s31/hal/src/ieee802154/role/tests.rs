@@ -130,3 +130,27 @@ fn a_clocked_owner_proves_its_own_quiescence_window() {
     );
     assert_eq!(clocked.quiescence(20, 20).err(), Some(EmptyQuiescentWindow));
 }
+
+#[test]
+fn the_operational_task_owner_proves_its_quiescence_window() {
+    use crate::{
+        ieee802154::mac::Ieee802154TaskOwner,
+        shared_radio::{EmptyQuiescentWindow, QuiescentSpan},
+    };
+    let RadioPartitions { ieee802154, .. } = RadioPartitions::for_validation();
+    let (task, _interrupts) = oer_esp32s31_pac::Ieee802154TaskRegisters::new(ieee802154);
+    let mut task = Ieee802154TaskOwner::new(task);
+
+    let proof = task
+        .quiescence(5, 9)
+        .unwrap_or_else(|_| panic!("a nonempty window is accepted"));
+    assert_eq!(proof.client(), RadioClient::Ieee802154);
+    assert_eq!(
+        proof.span(),
+        QuiescentSpan::Until {
+            issued_at_micros: 5,
+            release_by_micros: 9
+        }
+    );
+    assert_eq!(task.quiescence(9, 5).err(), Some(EmptyQuiescentWindow));
+}

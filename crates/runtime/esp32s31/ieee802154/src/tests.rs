@@ -163,6 +163,7 @@ fn a_transmission_completes_through_the_event_queue() {
             channel: channel(20),
             mode: TxMode::Direct,
             transmit_power_dbm: None,
+            max_frame_retries: 0,
         }))
         .unwrap();
     runtime.interrupt(None, &[Ieee802154Event::TxDone]);
@@ -357,6 +358,7 @@ fn a_running_operation_or_a_missing_radio_refuses_the_pause() {
             channel: channel(20),
             mode: TxMode::Direct,
             transmit_power_dbm: None,
+            max_frame_retries: 0,
         }))
         .unwrap();
     assert_eq!(runtime.pause().err(), Some(Ieee802154PauseError::Busy));
@@ -422,6 +424,7 @@ fn next_event_runs_csma_ca_backoffs() {
             channel: channel(20),
             mode: TxMode::CsmaCa { max_backoffs: 3 },
             transmit_power_dbm: None,
+            max_frame_retries: 0,
         }))
         .unwrap();
     let command = || {
@@ -455,6 +458,63 @@ fn next_event_runs_csma_ca_backoffs() {
         Ok(Ieee802154RadioEvent::TransmitDone {
             id: RequestId::new(5),
             status: TxStatus::Success,
+            acknowledgement: None,
+        })
+    );
+}
+
+/// `next_event` runs the delay before a retry after a missing
+/// acknowledgement, then the retry goes out.
+#[test]
+fn next_event_runs_retry_delays() {
+    let runtime = enabled::<4>();
+    let mut acknowledged = MAC;
+    acknowledged[0] |= 0x20;
+    runtime
+        .submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(5),
+            frame: FrameView::new(&acknowledged).unwrap(),
+            channel: channel(20),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+            max_frame_retries: 1,
+        }))
+        .unwrap();
+    // The last MAC command, cleared once read.
+    let take_command = || {
+        runtime.installed.lock(|installed| {
+            installed
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .hardware
+                .command
+                .take()
+        })
+    };
+    let no_ack = || {
+        runtime.interrupt(None, &[Ieee802154Event::TxDone]);
+        runtime.installed.lock(|installed| {
+            installed.borrow_mut().as_mut().unwrap().hardware.tx_abort =
+                Ieee802154TxAbortReasonObservation::Named(Ieee802154TxAbortReason::RxAckTimeout);
+        });
+        runtime.interrupt(None, &[Ieee802154Event::TxAbort]);
+    };
+    assert_eq!(take_command(), Some(Ieee802154LlCommand::TxStart));
+    no_ack();
+    assert_ne!(take_command(), Some(Ieee802154LlCommand::TxStart));
+    let waited = block_on(select(
+        runtime.next_event(),
+        Timer::after(Duration::from_millis(50)),
+    ));
+    assert!(matches!(waited, Either::Second(())));
+    assert_eq!(take_command(), Some(Ieee802154LlCommand::TxStart));
+    no_ack();
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::TransmitDone {
+            id: RequestId::new(5),
+            status: TxStatus::NoAcknowledgement,
             acknowledgement: None,
         })
     );

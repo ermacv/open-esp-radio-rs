@@ -149,6 +149,7 @@ impl Bench {
             channel: channel(on),
             mode,
             transmit_power_dbm: None,
+            max_frame_retries: 0,
         }))
     }
 
@@ -524,22 +525,18 @@ fn a_csma_ca_transmission_backs_off_before_each_cca_attempt() {
     assert_eq!(bench.hw.channel().unwrap().number(), 20);
     assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::RxStart));
     // 21 % 2^3 unit periods of 320 us.
-    assert_eq!(bench.radio.take_csma_backoff(), Some(5 * 320));
-    assert_eq!(
-        bench.radio.take_csma_backoff(),
-        None,
-        "one timer per backoff"
-    );
+    assert_eq!(bench.radio.take_delay(), Some(5 * 320));
+    assert_eq!(bench.radio.take_delay(), None, "one timer per backoff");
 
-    bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
     assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
     bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
     assert!(bench.seen().is_empty(), "a busy channel backs off again");
     assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::RxStart));
     // 21 % 2^4.
-    assert_eq!(bench.radio.take_csma_backoff(), Some(5 * 320));
+    assert_eq!(bench.radio.take_delay(), Some(5 * 320));
 
-    bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
     bench.interrupt(&[Ieee802154Event::TxDone]);
     assert_eq!(
         bench.seen(),
@@ -550,7 +547,7 @@ fn a_csma_ca_transmission_backs_off_before_each_cca_attempt() {
         }]
     );
     assert_eq!(bench.hw.channel().unwrap().number(), 15);
-    assert_eq!(bench.radio.take_csma_backoff(), None);
+    assert_eq!(bench.radio.take_delay(), None);
 }
 
 /// A busy channel, an abort and a coexistence rejection are channel-access
@@ -567,13 +564,13 @@ fn channel_access_failures_end_with_a_busy_channel() {
         Ieee802154TxAbortReason::CcaFailed,
         Ieee802154TxAbortReason::TxCoexistenceBreak,
     ] {
-        assert!(bench.radio.take_csma_backoff().is_some());
-        bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+        assert!(bench.radio.take_delay().is_some());
+        bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
         bench.tx_abort(reason);
         assert!(bench.seen().is_empty());
     }
-    assert!(bench.radio.take_csma_backoff().is_some());
-    bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+    assert!(bench.radio.take_delay().is_some());
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
     bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
     assert_eq!(
         bench.seen(),
@@ -583,7 +580,7 @@ fn channel_access_failures_end_with_a_busy_channel() {
             ack_pending: None
         }]
     );
-    assert_eq!(bench.radio.take_csma_backoff(), None);
+    assert_eq!(bench.radio.take_delay(), None);
 }
 
 /// Other transmit failures end the transmission at once.
@@ -593,8 +590,8 @@ fn a_security_failure_ends_a_csma_ca_transmission() {
     bench
         .transmit(3, &DATA, 11, TxMode::CsmaCa { max_backoffs: 4 })
         .unwrap();
-    assert!(bench.radio.take_csma_backoff().is_some());
-    bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+    assert!(bench.radio.take_delay().is_some());
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
     bench.tx_abort(Ieee802154TxAbortReason::TxSecurityError);
     assert_eq!(
         bench.seen(),
@@ -614,7 +611,7 @@ fn no_backoffs_transmit_at_once_with_one_cca() {
         .transmit(3, &DATA, 11, TxMode::CsmaCa { max_backoffs: 0 })
         .unwrap();
     assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
-    assert_eq!(bench.radio.take_csma_backoff(), None);
+    assert_eq!(bench.radio.take_delay(), None);
     bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
     assert_eq!(
         bench.seen(),
@@ -648,4 +645,121 @@ fn a_frame_received_during_a_backoff_is_delivered() {
             channel: 15
         }]
     );
+}
+
+impl Bench {
+    fn transmit_retried(&mut self, mac: &[u8], mode: TxMode, retries: u8) {
+        self.submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(3),
+            frame: FrameView::new(mac).unwrap(),
+            channel: channel(11),
+            mode,
+            transmit_power_dbm: None,
+            max_frame_retries: retries,
+        }))
+        .unwrap();
+    }
+
+    /// The frame went out, and no acknowledgement arrived.
+    fn no_ack(&mut self) {
+        self.interrupt(&[Ieee802154Event::TxDone]);
+        self.tx_abort(Ieee802154TxAbortReason::RxAckTimeout);
+    }
+}
+
+/// `SubMac` retries a frame without acknowledgement after a random delay
+/// whose exponent grows from 0, and reports no acknowledgement once its
+/// retries are spent.
+#[test]
+fn a_frame_without_acknowledgement_is_retried_after_a_growing_delay() {
+    let mut bench = Bench::enabled();
+    bench.transmit_retried(&DATA_ACK, TxMode::Direct, 2);
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::TxStart));
+    // 21 % 2^0, then 21 % 2^1 unit periods.
+    for delay in [0, 320] {
+        bench.no_ack();
+        assert!(bench.seen().is_empty(), "the frame is retried");
+        assert_eq!(bench.radio.take_delay(), Some(delay));
+        bench.hw.command = None;
+        bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
+        assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::TxStart));
+    }
+    bench.no_ack();
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(3),
+            status: TxStatus::NoAcknowledgement,
+            ack_pending: None
+        }]
+    );
+    assert_eq!(bench.radio.take_delay(), None);
+}
+
+/// A CSMA-CA frame that finds no channel is retried with fresh backoffs.
+#[test]
+fn a_csma_ca_frame_without_channel_access_is_retried() {
+    let mut bench = Bench::enabled();
+    bench.transmit_retried(&DATA, TxMode::CsmaCa { max_backoffs: 1 }, 1);
+    // Two CCA attempts per channel acquisition, two acquisitions.
+    for _ in 0..4 {
+        assert!(bench.seen().is_empty());
+        assert!(bench.radio.take_delay().is_some());
+        bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
+        assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
+        bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
+    }
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(3),
+            status: TxStatus::ChannelBusy,
+            ack_pending: None
+        }]
+    );
+}
+
+/// A success after a retry ends the transmission as usual.
+#[test]
+fn a_retried_frame_can_succeed() {
+    let mut bench = Bench::enabled();
+    bench.transmit_retried(&DATA_ACK, TxMode::ClearChannelAssessment, 3);
+    bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
+    assert!(bench.seen().is_empty());
+    // A channel-access retry starts at once, with no delay.
+    assert_eq!(bench.radio.take_delay(), None);
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    bench.deliver(&[0x02, 0x00, 0x01]);
+    bench.interrupt(&[Ieee802154Event::AckRxDone]);
+    assert!(matches!(
+        bench.seen().as_slice(),
+        [Seen::TransmitDone {
+            status: TxStatus::Success,
+            ..
+        }]
+    ));
+}
+
+/// Security armed for the transmission is armed again before each later
+/// attempt, since the engine clears it when an attempt ends.
+#[test]
+fn transmit_security_is_armed_again_for_each_retry() {
+    // 2006 data frame requesting an ACK, secured at ENC-MIC-32 key mode 0.
+    let secured = [
+        0x69, 0x98, 0x01, 0x34, 0x12, 0xff, 0xff, 0x78, 0x56, 0x05, 1, 2, 3, 4, 0xaa, 0, 0, 0, 0,
+    ];
+    let mut bench = Bench::enabled();
+    let mut image = vec![secured.len() as u8 + 2];
+    image.extend_from_slice(&secured);
+    bench
+        .radio
+        .set_transmit_security(&mut bench.hw, &image, &[7; 16], &[9; 8]);
+    bench.transmit_retried(&secured, TxMode::Direct, 1);
+    assert!(bench.hw.transmit_security);
+    bench.no_ack();
+    assert!(!bench.hw.transmit_security, "the failed attempt cleared it");
+    assert!(bench.radio.take_delay().is_some());
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
+    assert!(bench.hw.transmit_security, "the retry armed it again");
 }

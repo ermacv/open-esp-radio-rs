@@ -59,9 +59,16 @@ takes the frame counters of its own secured transmissions from the same
 CSMA-CA transmissions follow OpenThread `SubMac` over the one-CCA radio: a
 random backoff before each CCA attempt, receiving on the transmit channel
 when the radio was receiving, and another backoff while the channel is busy.
-The backoff timers run inside `Ieee802154SystemRuntime::next_event`, so the
-consumer must await events while a transmission waits for the channel; the
-random words come from the hardware generator.
+A transmission with `max_frame_retries` is retried as `SubMac` retries it
+with ESP-IDF's OpenThread defaults: after an attempt without channel access
+at once, after one without acknowledgement following a random delay whose
+exponent grows from 0 to 5. Each attempt after the first arms the transmit
+security the upper layer set again, as the port arms it per transmit; a
+retransmitted secured frame keeps its frame counter, while `SubMac`
+re-secures one that carries header IEs with a new counter. The backoff and
+retry timers run inside `Ieee802154SystemRuntime::next_event`, so the
+consumer must await events while a transmission waits; the random words
+come from the hardware generator.
 
 The shared radio is a software-coexistence build, so the MAC takes part in
 coexistence as the vendor driver does with `CONFIG_ESP_COEX_SW_COEXIST_ENABLE`:

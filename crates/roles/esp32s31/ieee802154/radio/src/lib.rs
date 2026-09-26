@@ -29,10 +29,10 @@ use oer_esp32s31_ieee802154::engine::{
     Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,
 };
 use oer_ieee802154::{
-    AcceptedCommand, Channel, CommandError, Configuration, CsmaCa, FcsStatus, FramePending,
-    FrameView, MacKeys, RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState,
-    RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId, RestingState, RxMetadata,
-    SecurityStatus, TxMode, TxStatus, generate_enhanced_ack,
+    AcceptedCommand, AttemptFailure, Channel, CommandError, Configuration, CsmaCa, FcsStatus,
+    FramePending, FrameRetries, FrameView, MacKeys, RadioCapabilities, RadioCommand, RadioEvent,
+    RadioFault, RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId,
+    RestingState, RetryStart, RxMetadata, SecurityStatus, TxMode, TxStatus, generate_enhanced_ack,
 };
 
 /// The portable capabilities the role implements.
@@ -42,6 +42,7 @@ use oer_ieee802154::{
 pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::NONE
     .union(RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT)
     .union(RadioCapabilities::CSMA_CA)
+    .union(RadioCapabilities::TRANSMIT_RETRIES)
     .union(RadioCapabilities::ENERGY_SCAN)
     .union(RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SCHEDULED_TRANSMIT)
@@ -164,29 +165,120 @@ pub struct Ieee802154Platform {
     pub random: fn() -> u32,
 }
 
-/// Where a CSMA-CA transmission stands.
+/// Why a transmission waits before its next attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CsmaPhase {
-    /// A backoff must start: [`Ieee802154Radio::take_csma_backoff`].
-    BackoffDue,
-    /// The backoff runs; [`Ieee802154Radio::csma_attempt`] ends it.
-    BackingOff,
-    /// A CCA attempt is on the air.
+enum Delay {
+    /// A CSMA-CA backoff (`kStateCsmaBackoff`).
+    CsmaBackoff,
+    /// The random delay before a retry after a missing acknowledgement
+    /// (`kStateDelayBeforeRetx`).
+    Retransmission(RetryStart),
+}
+
+/// Where a transmission stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Phase {
+    /// A delay must start: [`Ieee802154Radio::take_delay`].
+    DelayDue(Delay),
+    /// The delay runs; [`Ieee802154Radio::delay_elapsed`] ends it.
+    Delaying(Delay),
+    /// An attempt is on the air.
     Attempting,
 }
 
-/// A CSMA-CA transmission, as OpenThread `SubMac` runs one over a radio
-/// that performs a single CCA per transmission.
-struct CsmaTransmission {
-    /// The `[PHR, MAC..., FCS]` image each attempt transmits.
-    image: [u8; FRAME_SIZE],
-    csma: CsmaCa,
-    phase: CsmaPhase,
+/// The transmit security the upper layer armed for the next transmission.
+#[derive(Clone, Copy)]
+struct TransmitSecurity {
+    key: [u8; 16],
+    address: [u8; 8],
 }
 
-impl CsmaTransmission {
+/// One transmission as OpenThread `SubMac` runs it over ESP-IDF's radio,
+/// which makes one attempt per transmit: CSMA-CA backoffs, retries and the
+/// delays before them. Every attempt after the first arms the transmission's
+/// security again, as ESP-IDF's OpenThread port arms it in each
+/// `otPlatRadioTransmit`; the engine clears it when an attempt ends.
+struct Transmission {
+    /// The `[PHR, MAC..., FCS]` image each attempt transmits.
+    image: [u8; FRAME_SIZE],
+    mode: TxMode,
+    csma: CsmaCa,
+    retries: FrameRetries,
+    security: Option<TransmitSecurity>,
+    /// Whether the engine still holds `security`.
+    armed: bool,
+    phase: Phase,
+}
+
+impl Transmission {
     fn image(&self) -> &[u8] {
         &self.image[..=usize::from(self.image[0])]
+    }
+
+    const fn max_backoffs(&self) -> u8 {
+        match self.mode {
+            TxMode::CsmaCa { max_backoffs } => max_backoffs,
+            _ => 0,
+        }
+    }
+
+    /// `SubMac::StartCsmaBackoff`: back off before a CSMA-CA attempt, or
+    /// attempt at once.
+    fn start_access<L, E>(&mut self, engine: &mut Ieee802154Engine<'_>, ll: &mut L, env: &mut E)
+    where
+        L: Ieee802154LowLevel + ?Sized,
+        E: Ieee802154Environment + ?Sized,
+    {
+        if matches!(self.mode, TxMode::CsmaCa { .. }) && self.csma.backoff_micros(0).is_some() {
+            self.start_delay(Delay::CsmaBackoff, engine, ll, env);
+        } else {
+            self.attempt(engine, ll, env);
+        }
+    }
+
+    /// `SubMac::StartTimerForBackoff`: wait receiving on the transmit
+    /// channel when the radio receives when idle, otherwise asleep.
+    fn start_delay<L, E>(
+        &mut self,
+        delay: Delay,
+        engine: &mut Ieee802154Engine<'_>,
+        ll: &mut L,
+        env: &mut E,
+    ) where
+        L: Ieee802154LowLevel + ?Sized,
+        E: Ieee802154Environment + ?Sized,
+    {
+        self.phase = Phase::DelayDue(delay);
+        self.armed = false;
+        if engine.pib().rx_when_idle() {
+            engine.receive(ll, env);
+        } else {
+            engine.sleep(ll, env);
+        }
+    }
+
+    /// `SubMac::BeginTransmit`: one attempt in the request's channel access.
+    fn attempt<L, E>(&mut self, engine: &mut Ieee802154Engine<'_>, ll: &mut L, env: &mut E)
+    where
+        L: Ieee802154LowLevel + ?Sized,
+        E: Ieee802154Environment + ?Sized,
+    {
+        if let Some(security) = self.security.filter(|_| !self.armed) {
+            engine.set_transmit_security(ll, self.image(), &security.key, &security.address);
+        }
+        self.armed = false;
+        self.phase = Phase::Attempting;
+        let image = self.image();
+        let started = match self.mode {
+            TxMode::Direct => engine.transmit(ll, env, image, false),
+            TxMode::ClearChannelAssessment | TxMode::CsmaCa { .. } => {
+                engine.transmit(ll, env, image, true)
+            }
+            TxMode::Scheduled { at } => {
+                engine.transmit_at(ll, env, image, false, at.as_micros() as u32)
+            }
+        };
+        started.expect("a validated MAC frame fits one DMA frame");
     }
 }
 
@@ -196,8 +288,10 @@ enum Follow {
     Nothing,
     /// Resume receive on the resting channel an operation left.
     Restore(Ieee802154Channel),
-    /// A busy channel backs a CSMA-CA transmission off again.
-    Backoff,
+    /// Acquire the channel for the transmission's next attempt.
+    Access,
+    /// Wait before the transmission's next attempt.
+    Delay(Delay),
 }
 
 /// Receives the correlated portable events of one entry. Frames are lent
@@ -306,17 +400,45 @@ impl Ieee802154Environment for Collector<'_> {
     }
 }
 
-/// Receive on the transmission's channel during a CSMA-CA backoff when the
-/// radio receives when idle, otherwise sleep (`SubMac::StartTimerForBackoff`).
-fn idle_for_backoff<L, E>(engine: &mut Ieee802154Engine<'_>, ll: &mut L, env: &mut E)
-where
-    L: Ieee802154LowLevel + ?Sized,
-    E: Ieee802154Environment + ?Sized,
-{
-    if engine.pib().rx_when_idle() {
-        engine.receive(ll, env);
-    } else {
-        engine.sleep(ll, env);
+/// How ESP-IDF's OpenThread port reports a failed attempt to `SubMac`: a
+/// busy channel, an abort and a coexistence rejection as a channel-access
+/// failure, a missing or invalid acknowledgement as no acknowledgement. A
+/// security failure is not an attempt outcome it reports.
+const fn attempt_failure(error: Ieee802154TxError) -> Option<AttemptFailure> {
+    match error {
+        Ieee802154TxError::CcaBusy | Ieee802154TxError::Abort | Ieee802154TxError::Coexist => {
+            Some(AttemptFailure::ChannelAccess)
+        }
+        Ieee802154TxError::NoAck | Ieee802154TxError::InvalidAck => {
+            Some(AttemptFailure::NoAcknowledgement)
+        }
+        Ieee802154TxError::Security => None,
+    }
+}
+
+impl Transmission {
+    /// `SubMac::HandleTransmitDone` after a failed attempt: back off again
+    /// while CSMA-CA backoffs remain, otherwise retry while retries remain.
+    /// `Err` ends the transmission, with the status a CSMA-CA transmission
+    /// reports for a channel it could not acquire.
+    fn retry(&mut self, failure: AttemptFailure) -> Result<Follow, Option<TxStatus>> {
+        if failure == AttemptFailure::ChannelAccess
+            && matches!(self.mode, TxMode::CsmaCa { .. })
+            && self.csma.channel_busy()
+        {
+            return Ok(Follow::Access);
+        }
+        self.csma = CsmaCa::new(self.max_backoffs());
+        match self.retries.retry(failure) {
+            Some(RetryStart::Now) => Ok(Follow::Access),
+            Some(start) => Ok(Follow::Delay(Delay::Retransmission(start))),
+            None if failure == AttemptFailure::ChannelAccess
+                && matches!(self.mode, TxMode::CsmaCa { .. }) =>
+            {
+                Err(Some(TxStatus::ChannelBusy))
+            }
+            None => Err(None),
+        }
     }
 }
 
@@ -383,7 +505,8 @@ pub struct Ieee802154Radio<'storage> {
     machine: RadioStateMachine,
     platform: Ieee802154Platform,
     enhanced_ack: Option<Ieee802154EnhancedAckGenerator>,
-    csma: Option<CsmaTransmission>,
+    transmission: Option<Transmission>,
+    next_security: Option<TransmitSecurity>,
 }
 
 impl<'storage> Ieee802154Radio<'storage> {
@@ -395,7 +518,8 @@ impl<'storage> Ieee802154Radio<'storage> {
             machine: RadioStateMachine::new(IEEE802154_RADIO_CAPABILITIES),
             platform,
             enhanced_ack: None,
-            csma: None,
+            transmission: None,
+            next_security: None,
         }
     }
 
@@ -473,39 +597,22 @@ impl<'storage> Ieee802154Radio<'storage> {
                 // The PHR counts the two FCS bytes the hardware appends.
                 image[0] = (bytes.len() + 2) as u8;
                 image[1..=bytes.len()].copy_from_slice(bytes);
-                let stored = image;
-                let image = &image[..bytes.len() + 3];
-                let started = match request.mode {
-                    TxMode::Direct => engine.transmit(ll, &mut collector, image, false),
-                    TxMode::ClearChannelAssessment => {
-                        engine.transmit(ll, &mut collector, image, true)
-                    }
-                    TxMode::Scheduled { at } => {
-                        engine.transmit_at(ll, &mut collector, image, false, at.as_micros() as u32)
-                    }
-                    // `SubMac::StartCsmaBackoff`: back off first, or transmit
-                    // with one CCA when no backoff is allowed.
-                    TxMode::CsmaCa { max_backoffs } => {
-                        let csma = CsmaCa::new(max_backoffs);
-                        let backs_off = csma.backoff_micros(0).is_some();
-                        self.csma = Some(CsmaTransmission {
-                            image: stored,
-                            csma,
-                            phase: if backs_off {
-                                CsmaPhase::BackoffDue
-                            } else {
-                                CsmaPhase::Attempting
-                            },
-                        });
-                        if backs_off {
-                            idle_for_backoff(engine, ll, &mut collector);
-                            Ok(())
-                        } else {
-                            engine.transmit(ll, &mut collector, image, true)
-                        }
-                    }
+                let security = self.next_security.take();
+                let mode = request.mode;
+                let mut transmission = Transmission {
+                    image,
+                    mode,
+                    csma: CsmaCa::new(match mode {
+                        TxMode::CsmaCa { max_backoffs } => max_backoffs,
+                        _ => 0,
+                    }),
+                    retries: FrameRetries::new(request.max_frame_retries),
+                    security,
+                    armed: security.is_some(),
+                    phase: Phase::Attempting,
                 };
-                started.expect("a validated MAC frame fits one DMA frame");
+                transmission.start_access(engine, ll, &mut collector);
+                self.transmission = Some(transmission);
             }
             RadioCommand::EnergyScan(request) => {
                 engine.pib().set_channel(hal_channel(request.channel));
@@ -526,39 +633,62 @@ impl<'storage> Ieee802154Radio<'storage> {
         Ok(accepted)
     }
 
-    /// The backoff a CSMA-CA transmission must wait now, in microseconds
-    /// (`SubMac::StartTimerForBackoff`); the caller runs the timer and then
-    /// calls [`Self::csma_attempt`]. `None` when no backoff is due.
-    pub fn take_csma_backoff(&mut self) -> Option<u32> {
-        let transmission = self.csma.as_mut()?;
-        if transmission.phase != CsmaPhase::BackoffDue {
-            return None;
-        }
-        transmission.phase = CsmaPhase::BackingOff;
-        transmission.csma.backoff_micros((self.platform.random)())
+    /// `esp_ieee802154_set_transmit_security` for the secured `[PHR, PSDU...]`
+    /// image the next transmission sends. The transmission arms it again
+    /// before each later attempt.
+    pub fn set_transmit_security<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        frame: &[u8],
+        key: &[u8; 16],
+        address: &[u8; 8],
+    ) {
+        self.engine.set_transmit_security(ll, frame, key, address);
+        self.next_security = Some(TransmitSecurity {
+            key: *key,
+            address: *address,
+        });
     }
 
-    /// End the running CSMA-CA backoff: transmit with one CCA
-    /// (`SubMac::BeginTransmit`), and deliver the events the start produced.
-    pub fn csma_attempt<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    /// The delay a transmission must wait now before its next attempt, in
+    /// microseconds: a CSMA-CA backoff or the delay before a retry
+    /// (`SubMac::StartTimerForBackoff`). The caller runs the timer and then
+    /// calls [`Self::delay_elapsed`]. `None` when no delay is due.
+    pub fn take_delay(&mut self) -> Option<u32> {
+        let transmission = self.transmission.as_mut()?;
+        let Phase::DelayDue(delay) = transmission.phase else {
+            return None;
+        };
+        transmission.phase = Phase::Delaying(delay);
+        let random = (self.platform.random)();
+        Some(match delay {
+            Delay::CsmaBackoff => transmission.csma.backoff_micros(random).unwrap_or(0),
+            Delay::Retransmission(start) => start.delay_micros(random),
+        })
+    }
+
+    /// End the running delay (`SubMac::HandleTimer`): after a CSMA-CA
+    /// backoff attempt with one CCA, after a retry delay acquire the channel
+    /// again; deliver the events the step produced.
+    pub fn delay_elapsed<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
         &mut self,
         ll: &mut L,
         sink: &mut S,
     ) {
-        let Some(transmission) = self
-            .csma
-            .as_mut()
-            .filter(|transmission| transmission.phase == CsmaPhase::BackingOff)
-        else {
+        let receiving = self.backoff_receive_channel();
+        let Some(transmission) = self.transmission.as_mut() else {
             return;
         };
-        transmission.phase = CsmaPhase::Attempting;
-        let receiving = self.backoff_receive_channel();
+        let Phase::Delaying(delay) = transmission.phase else {
+            return;
+        };
         let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
-        let transmission = self.csma.as_ref().expect("the attempt's transmission");
-        self.engine
-            .transmit(ll, &mut collector, transmission.image(), true)
-            .expect("a validated MAC frame fits one DMA frame");
+        match delay {
+            Delay::CsmaBackoff => transmission.attempt(&mut self.engine, ll, &mut collector),
+            Delay::Retransmission(_) => {
+                transmission.start_access(&mut self.engine, ll, &mut collector);
+            }
+        }
         let notifications = collector.notifications;
         self.deliver(ll, notifications, Some(receiving), sink);
     }
@@ -617,10 +747,18 @@ impl<'storage> Ieee802154Radio<'storage> {
                     pending = collector.notifications;
                     flushed = Channel::new(previous.number()).ok().map(Some);
                 }
-                Follow::Backoff => {
+                Follow::Access | Follow::Delay(_) => {
                     let receiving = self.backoff_receive_channel();
+                    let Some(transmission) = self.transmission.as_mut() else {
+                        return;
+                    };
                     let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
-                    idle_for_backoff(&mut self.engine, ll, &mut collector);
+                    match follow {
+                        Follow::Delay(delay) => {
+                            transmission.start_delay(delay, &mut self.engine, ll, &mut collector);
+                        }
+                        _ => transmission.start_access(&mut self.engine, ll, &mut collector),
+                    }
                     pending = collector.notifications;
                     flushed = Some(receiving);
                 }
@@ -683,25 +821,16 @@ impl<'storage> Ieee802154Radio<'storage> {
                     self.fault(sink);
                     return Follow::Nothing;
                 };
-                // ESP-IDF's OpenThread port reports a busy channel, an abort
-                // and a coexistence rejection as a channel-access failure,
-                // which `SubMac` backs off from while backoffs remain.
-                let channel_access = matches!(
-                    error,
-                    Ieee802154TxError::CcaBusy
-                        | Ieee802154TxError::Abort
-                        | Ieee802154TxError::Coexist
-                );
-                let status = match self.csma.as_mut() {
-                    Some(transmission) if channel_access => {
-                        if transmission.csma.channel_busy() {
-                            transmission.phase = CsmaPhase::BackoffDue;
-                            return Follow::Backoff;
-                        }
-                        TxStatus::ChannelBusy
+                let mut status = tx_status(error);
+                if let Some(transmission) = self.transmission.as_mut()
+                    && let Some(failure) = attempt_failure(error)
+                {
+                    match transmission.retry(failure) {
+                        Ok(follow) => return follow,
+                        Err(Some(ended)) => status = ended,
+                        Err(None) => {}
                     }
-                    _ => tx_status(error),
-                };
+                }
                 self.finish(
                     RadioEvent::TransmitDone {
                         id,
@@ -756,7 +885,7 @@ impl<'storage> Ieee802154Radio<'storage> {
         event: RadioEvent<'_>,
         sink: &mut S,
     ) -> Follow {
-        self.csma = None;
+        self.transmission = None;
         let operation_channel = self.engine.pib().channel();
         if self.machine.observe(event).is_err() {
             self.fault(sink);
@@ -774,7 +903,7 @@ impl<'storage> Ieee802154Radio<'storage> {
     }
 
     fn fault<S: Ieee802154RadioSink + ?Sized>(&mut self, sink: &mut S) {
-        self.csma = None;
+        self.transmission = None;
         let id: Option<RequestId> = match self.machine.state() {
             RadioState::Transmitting { id, .. }
             | RadioState::EnergyScanning { id, .. }

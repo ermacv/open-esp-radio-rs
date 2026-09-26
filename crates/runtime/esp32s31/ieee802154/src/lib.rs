@@ -12,9 +12,9 @@
 //! lock as owned values through a bounded queue that any executor may await
 //! with [`Ieee802154Runtime::next_event`].
 //!
-//! CSMA-CA backoffs run on `embassy-time` inside
-//! [`Ieee802154Runtime::next_event`], as ESP-IDF's OpenThread `SubMac` runs
-//! them on its tasklet timer: a transmission waiting for the channel
+//! CSMA-CA backoffs and the delays before retries run on `embassy-time`
+//! inside [`Ieee802154Runtime::next_event`], as ESP-IDF's OpenThread
+//! `SubMac` runs them on its tasklet timer: a waiting transmission
 //! progresses while its consumer awaits events, which it must do to learn
 //! the outcome.
 
@@ -276,9 +276,9 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, const EVENTS: usize> {
     installed: Mutex<M, RefCell<Option<Installed<'storage, H>>>>,
     events: Channel<M, Ieee802154RadioEvent, EVENTS>,
     lost: AtomicBool,
-    /// When the running CSMA-CA backoff ends.
+    /// When the running backoff or retry delay ends.
     backoff_until: Mutex<M, Cell<Option<Instant>>>,
-    /// Raised when a backoff starts, so an awaiting consumer rearms.
+    /// Raised when a delay starts, so an awaiting consumer rearms.
     backoff_started: Signal<M, ()>,
 }
 
@@ -304,7 +304,8 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         }
     }
 
-    /// Start the backoff timer of a CSMA-CA transmission, if one is due.
+    /// Start the timer of a transmission's backoff or retry delay, if one is
+    /// due.
     fn start_backoff(&self, backoff_micros: Option<u32>) {
         if let Some(micros) = backoff_micros {
             let until = Instant::now() + Duration::from_micros(u64::from(micros));
@@ -497,7 +498,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     pub fn on_interrupt(&self) {
         if let Ok(backoff) = self.with_radio(|radio, port, sink| {
             radio.isr(port, sink);
-            radio.take_csma_backoff()
+            radio.take_delay()
         }) {
             self.start_backoff(backoff);
         }
@@ -515,7 +516,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     ) -> Result<AcceptedCommand, Ieee802154RuntimeError> {
         let (accepted, backoff) = self.with_radio(|radio, port, sink| {
             let accepted = radio.submit(port, command, sink);
-            (accepted, radio.take_csma_backoff())
+            (accepted, radio.take_delay())
         })?;
         self.start_backoff(backoff);
         accepted.map_err(Ieee802154RuntimeError::Rejected)
@@ -530,10 +531,9 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         self.with_radio(|radio, _, _| radio.state())
     }
 
-    /// Wait for the next event, running the backoff of a CSMA-CA
-    /// transmission meanwhile: when it ends, the transmission's next CCA
-    /// attempt starts. Cancelling the wait keeps the backoff for the next
-    /// call.
+    /// Wait for the next event, running a transmission's CSMA-CA backoff or
+    /// retry delay meanwhile: when it ends, the transmission goes on.
+    /// Cancelling the wait keeps the delay for the next call.
     ///
     /// # Errors
     ///
@@ -555,8 +555,8 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
                 Either3::Second(()) => {
                     self.backoff_until.lock(|backoff| backoff.set(None));
                     if let Ok(backoff) = self.with_radio(|radio, port, sink| {
-                        radio.csma_attempt(port, sink);
-                        radio.take_csma_backoff()
+                        radio.delay_elapsed(port, sink);
+                        radio.take_delay()
                     }) {
                         self.start_backoff(backoff);
                     }
@@ -623,7 +623,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     }
 
     /// `esp_ieee802154_set_transmit_security` for the secured `[PHR, PSDU...]`
-    /// image the next transmission sends.
+    /// image the next transmission sends; its later attempts arm it again.
     ///
     /// # Errors
     ///
@@ -635,9 +635,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         address: &[u8; 8],
     ) -> Result<(), Ieee802154RuntimeError> {
         self.with_radio(|radio, port, _| {
-            radio
-                .engine()
-                .set_transmit_security(port, frame, key, address);
+            radio.set_transmit_security(port, frame, key, address);
         })
     }
 }

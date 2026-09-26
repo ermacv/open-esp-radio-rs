@@ -23,6 +23,8 @@ extern crate std;
 
 /// Bounded IEEE 802.15.4 MAC byte representations.
 pub mod mac {
+    /// Unslotted CSMA-CA backoff.
+    pub mod csma;
     /// Enhanced acknowledgement of IEEE 802.15.4-2015 frames.
     pub mod enhanced_ack;
     /// Owned and borrowed MAC frames without platform DMA framing.
@@ -36,6 +38,7 @@ pub mod mac {
 /// Hardware-independent radio command/event and state contracts.
 pub mod radio;
 
+pub use mac::csma::CsmaCa;
 pub use mac::enhanced_ack::{
     EnhancedAck, EnhancedAckError, EnhancedAckSecurity, KeyIdMode, MacKeys, generate_enhanced_ack,
 };

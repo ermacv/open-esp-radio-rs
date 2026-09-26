@@ -295,3 +295,51 @@ fn measurement_failures_end_their_own_operation() {
         .unwrap();
     assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
 }
+
+/// A transmission started from receive mode accepts frames received on its
+/// own channel while it waits for the channel; from sleep, or on another
+/// channel, reception is a broken sequence.
+#[test]
+fn a_transmission_from_receive_mode_accepts_frames_on_its_channel() {
+    let bytes = [0x02];
+    let received = |on: u8| {
+        RadioEvent::Received(ReceivedFrame {
+            frame: FrameView::new(&bytes).unwrap(),
+            metadata: metadata(channel(on)),
+        })
+    };
+    let transmit = |machine: &mut RadioStateMachine| {
+        machine
+            .admit(RadioCommand::Transmit(TxRequest {
+                id: ID,
+                frame: FrameView::new(&[0x41, 0x88, 0x01]).unwrap(),
+                channel: channel(15),
+                mode: TxMode::CsmaCa { max_backoffs: 4 },
+                transmit_power_dbm: None,
+            }))
+            .unwrap();
+    };
+
+    let mut machine = enabled(RadioCapabilities::CSMA_CA);
+    machine
+        .admit(RadioCommand::Receive {
+            id: ID,
+            channel: channel(11),
+        })
+        .unwrap();
+    transmit(&mut machine);
+    let transmitting = machine.state();
+    assert_eq!(machine.observe(received(15)), Ok(()));
+    assert_eq!(machine.state(), transmitting);
+    assert_eq!(
+        machine.observe(received(11)),
+        Err(EventError::ChannelMismatch {
+            expected: channel(15),
+            actual: channel(11),
+        })
+    );
+
+    let mut machine = enabled(RadioCapabilities::CSMA_CA);
+    transmit(&mut machine);
+    assert!(machine.observe(received(15)).is_err());
+}

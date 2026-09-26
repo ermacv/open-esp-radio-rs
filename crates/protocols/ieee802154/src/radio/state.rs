@@ -283,6 +283,20 @@ impl RadioStateMachine {
                 require_channel(channel, rx.metadata.channel)?;
                 self.state
             }
+            // A transmission from receive mode keeps receiving on its own
+            // channel while it waits for the channel, as a CSMA-CA backoff
+            // with receive-on-when-idle does.
+            (
+                RadioState::Transmitting {
+                    channel,
+                    resume: RestingState::Receiving { .. },
+                    ..
+                },
+                RadioEvent::Received(rx),
+            ) => {
+                require_channel(channel, rx.metadata.channel)?;
+                self.state
+            }
             (
                 RadioState::Transmitting {
                     id: expected,

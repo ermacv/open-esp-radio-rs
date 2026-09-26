@@ -7,6 +7,7 @@ fn request() -> Ieee802154AirCheckRequest {
         energy_scan_micros: 5_000,
         receive_window_millis: 200,
         scheduled_lead_micros: 20_000,
+        scheduled_window_micros: 50_000,
     }
 }
 
@@ -26,7 +27,62 @@ fn cycle() -> Ieee802154AirCycle {
         scheduled: [transmit(30_000, 31_100), transmit(60_000, 61_050)],
         received_frames: 0,
         strongest_rssi_dbm: None,
+        scheduled_window: quiet_window(),
     }
+}
+
+fn quiet_window() -> Ieee802154AirWindow {
+    Ieee802154AirWindow {
+        ended: true,
+        start_micros: 300_000,
+        end_micros: 350_000,
+        done_at_micros: 350_400,
+        received_frames: 0,
+        first_frame_at_micros: None,
+    }
+}
+
+/// A quiet window ends at its end; a frame ends it early; frames before it
+/// opens, an end outside its bounds or no end fail.
+#[test]
+fn scheduled_windows_end_at_their_end_or_first_frame() {
+    validate_window(&quiet_window()).unwrap();
+    let with_frame = Ieee802154AirWindow {
+        received_frames: 1,
+        first_frame_at_micros: Some(310_000),
+        done_at_micros: 311_000,
+        ..quiet_window()
+    };
+    validate_window(&with_frame).unwrap();
+
+    for broken in [
+        Ieee802154AirWindow {
+            ended: false,
+            ..quiet_window()
+        },
+        Ieee802154AirWindow {
+            done_at_micros: 349_000,
+            ..quiet_window()
+        },
+        Ieee802154AirWindow {
+            done_at_micros: 350_000 + SCHEDULED_COMPLETION_BOUND_MICROS + 1,
+            ..quiet_window()
+        },
+        Ieee802154AirWindow {
+            first_frame_at_micros: Some(299_000),
+            done_at_micros: 300_000,
+            ..with_frame
+        },
+        Ieee802154AirWindow {
+            received_frames: 0,
+            ..with_frame
+        },
+    ] {
+        assert!(validate_window(&broken).is_err(), "{broken:?}");
+    }
+    let mut late = nominal();
+    late.cycles[1].scheduled_window.ended = false;
+    assert!(validate(late, request()).is_err());
 }
 
 fn nominal() -> Ieee802154AirCheckEvidence {

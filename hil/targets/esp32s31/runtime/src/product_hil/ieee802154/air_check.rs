@@ -4,8 +4,9 @@
 //! `oer-esp32s31-ieee802154-system`: start on the shared radio arbiter, one
 //! energy scan, one clear-channel assessment, one direct transmit without an
 //! acknowledgement request, two transmits scheduled through the MAC timer and
-//! ETM route, one promiscuous receive window, then stop. The evidence records
-//! outcomes and target-monotonic times; the host judges them.
+//! ETM route, one promiscuous receive window, one receive window scheduled
+//! through the MAC timer, then stop. The evidence records outcomes and
+//! target-monotonic times; the host judges them.
 
 use embassy_time::{Duration, Timer, with_timeout};
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
@@ -14,10 +15,11 @@ use oer_esp32s31_ieee802154_system::Ieee802154System;
 use oer_hil_protocol::{
     Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence, Ieee802154AirCheckRequest,
     Ieee802154AirCheckStop, Ieee802154AirCycle, Ieee802154AirEnergyOutcome, Ieee802154AirTransmit,
+    Ieee802154AirWindow,
 };
 use oer_ieee802154::{
     Channel, Configuration, EnergyScanRequest, FrameView, RadioCommand, RadioTimestamp, RequestId,
-    TxMode, TxRequest, TxSecurity,
+    ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, now_micros, tx_outcome};
@@ -145,6 +147,7 @@ async fn run_cycle(
             channel,
             mode: TxMode::Scheduled {
                 at: RadioTimestamp::from_micros(at),
+                cca: false,
             },
             transmit_power_dbm: None,
             max_frame_retries: 0,
@@ -181,7 +184,63 @@ async fn run_cycle(
             }
         }
     }
+    // Leave the receive window; frames it flushed are not the scheduled
+    // window's.
     submit(RadioCommand::Sleep { id: id() })?;
+    loop {
+        match with_timeout(Duration::from_millis(1), runtime.next_event()).await {
+            Ok(Ok(Ieee802154RadioEvent::Received(_))) => {}
+            Ok(Ok(_)) => return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
+            Ok(Err(_)) => return Err(Stop(Ieee802154AirCheckStop::EventsLost)),
+            Err(_) => break,
+        }
+    }
+
+    let start_micros = now_micros() + u64::from(request.scheduled_lead_micros);
+    let window = &mut cycle.scheduled_window;
+    *window = Ieee802154AirWindow {
+        start_micros,
+        end_micros: start_micros + u64::from(request.scheduled_window_micros),
+        ..Ieee802154AirWindow::default()
+    };
+    submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
+        id: id(),
+        channel,
+        start: RadioTimestamp::from_micros(start_micros),
+        duration_us: request.scheduled_window_micros,
+    }))?;
+    let bound = Duration::from_micros(
+        u64::from(request.scheduled_lead_micros) + u64::from(request.scheduled_window_micros),
+    ) + EVENT_TIMEOUT;
+    let window_end = Timer::after(bound);
+    let mut window_end = core::pin::pin!(window_end);
+    loop {
+        match embassy_futures::select::select(window_end.as_mut(), runtime.next_event()).await {
+            embassy_futures::select::Either::First(()) => {
+                return Err(Stop(Ieee802154AirCheckStop::EventTimeout));
+            }
+            embassy_futures::select::Either::Second(Ok(Ieee802154RadioEvent::Received(frame))) => {
+                window.received_frames = window.received_frames.saturating_add(1);
+                if window.first_frame_at_micros.is_none() {
+                    window.first_frame_at_micros =
+                        frame.metadata.timestamp.map(RadioTimestamp::as_micros);
+                }
+            }
+            embassy_futures::select::Either::Second(Ok(
+                Ieee802154RadioEvent::ScheduledReceiveDone { .. },
+            )) => {
+                window.done_at_micros = now_micros();
+                window.ended = true;
+                break;
+            }
+            embassy_futures::select::Either::Second(Ok(_)) => {
+                return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent));
+            }
+            embassy_futures::select::Either::Second(Err(_)) => {
+                return Err(Stop(Ieee802154AirCheckStop::EventsLost));
+            }
+        }
+    }
     submit(RadioCommand::Disable { id: id() })
 }
 

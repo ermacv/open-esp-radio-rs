@@ -69,7 +69,7 @@ pub use message::{
     IEEE802154_AIR_CHECK_MAX_CYCLES, IEEE802154_SESSION_FRAME_CAPACITY,
     IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence,
     Ieee802154AirCheckRequest, Ieee802154AirCheckStop, Ieee802154AirCycle,
-    Ieee802154AirEnergyOutcome, Ieee802154AirTransmit, Ieee802154AirTxOutcome,
+    Ieee802154AirEnergyOutcome, Ieee802154AirTransmit, Ieee802154AirTxOutcome, Ieee802154AirWindow,
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
     Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
     Ieee802154EventStatusProbeStop, Ieee802154ObservedEventState, Ieee802154PolledEdMaskState,

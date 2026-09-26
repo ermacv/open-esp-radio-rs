@@ -3,10 +3,13 @@
 //! Each cycle starts IEEE 802.15.4 as a client of the shared radio arbiter,
 //! runs an energy scan, a clear-channel assessment, a direct transmit without
 //! an acknowledgement request, two transmits scheduled through the MAC timer
-//! and ETM route, and a receive window, then stops the client. The accepted
-//! result proves that the composed client starts, completes each operation
-//! with a terminal event and stops again, and that scheduled transmits neither
-//! start early nor miss their window. No peer observes the air.
+//! and ETM route, a receive window and a receive window scheduled through
+//! the MAC timer, then stops the client. The accepted result proves that the
+//! composed client starts, completes each operation with a terminal event
+//! and stops again, that scheduled transmits neither start early nor miss
+//! their window, and that the scheduled receive window receives nothing
+//! before it opens and ends at its end or with its first frame. No peer
+//! observes the air.
 
 use hil_core::{context::Context, session::SerialCapture};
 use std::{fs, path::Path, time::Duration};
@@ -14,7 +17,7 @@ use std::{fs, path::Path, time::Duration};
 use oer_hil_protocol::{
     Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence, Ieee802154AirCheckRequest,
     Ieee802154AirCheckStop, Ieee802154AirCycle, Ieee802154AirEnergyOutcome, Ieee802154AirTransmit,
-    Ieee802154AirTxOutcome,
+    Ieee802154AirTxOutcome, Ieee802154AirWindow,
 };
 use serde::Serialize;
 
@@ -80,7 +83,8 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
 fn command_timeout(request: Ieee802154AirCheckRequest) -> Duration {
     let per_cycle = Duration::from_secs(5)
         + Duration::from_millis(u64::from(request.receive_window_millis))
-        + Duration::from_micros(2 * u64::from(request.scheduled_lead_micros));
+        + Duration::from_micros(3 * u64::from(request.scheduled_lead_micros))
+        + Duration::from_micros(u64::from(request.scheduled_window_micros));
     Duration::from_secs(20) + per_cycle * u32::from(request.cycles)
 }
 
@@ -108,6 +112,7 @@ fn write_report(output: &Path, reports: &[BootReport], failure: Option<&str>) ->
                 "calibrated-output-power",
                 "calibrated-energy-or-rssi",
                 "receive-filtering-with-traffic",
+                "scheduled-receive-of-a-peer-frame",
                 "periodic-phy-tracking-while-running",
             ],
             "boots": reports,
@@ -182,6 +187,44 @@ fn validate_cycle(cycle_number: usize, cycle: &Ieee802154AirCycle) -> Result<()>
     }
     if cycle.scheduled[1].requested_at_micros <= cycle.scheduled[0].done_at_micros {
         return fail("scheduled transmits overlap".into());
+    }
+    validate_window(&cycle.scheduled_window)
+        .or_else(|what| fail(format!("scheduled receive window {what}")))
+}
+
+/// A scheduled window receives nothing before it opens. Without frames it
+/// ends at its end; its first frame ends it, as the vendor driver's receive
+/// path does. Either end is observed within the completion bound.
+pub(crate) fn validate_window(window: &Ieee802154AirWindow) -> core::result::Result<(), String> {
+    if !window.ended {
+        return Err("did not end".into());
+    }
+    if let Some(first) = window.first_frame_at_micros
+        && first < window.start_micros
+    {
+        return Err(format!(
+            "received a frame at {first}, before it opened at {}",
+            window.start_micros
+        ));
+    }
+    let (earliest, latest) = match window.first_frame_at_micros {
+        None => (
+            window.end_micros,
+            window.end_micros + SCHEDULED_COMPLETION_BOUND_MICROS,
+        ),
+        Some(first) => (first, first + SCHEDULED_COMPLETION_BOUND_MICROS),
+    };
+    if window.done_at_micros < earliest || window.done_at_micros > latest {
+        return Err(format!(
+            "ended at {}, outside {earliest}..={latest}",
+            window.done_at_micros
+        ));
+    }
+    if (window.received_frames == 0) != window.first_frame_at_micros.is_none() {
+        return Err(format!(
+            "counted {} frames against a first-frame time {:?}",
+            window.received_frames, window.first_frame_at_micros
+        ));
     }
     Ok(())
 }

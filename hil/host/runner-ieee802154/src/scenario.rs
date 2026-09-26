@@ -81,6 +81,7 @@ pub struct AirCheck {
     pub energy_scan_micros: u32,
     pub receive_window_millis: u32,
     pub scheduled_lead_micros: u32,
+    pub scheduled_window_micros: u32,
 }
 
 impl AirCheck {
@@ -91,6 +92,7 @@ impl AirCheck {
             energy_scan_micros: self.energy_scan_micros,
             receive_window_millis: self.receive_window_millis,
             scheduled_lead_micros: self.scheduled_lead_micros,
+            scheduled_window_micros: self.scheduled_window_micros,
         }
     }
 }
@@ -280,7 +282,7 @@ mod tests {
 
     #[test]
     fn the_air_check_implies_its_image_and_bounds_its_request() {
-        let table = "kind = 'air-check'\nboots = 1\nchannel = 15\ncycles = 2\nenergy_scan_micros = 5000\nreceive_window_millis = 200\nscheduled_lead_micros = 20000";
+        let table = "kind = 'air-check'\nboots = 1\nchannel = 15\ncycles = 2\nenergy_scan_micros = 5000\nreceive_window_millis = 200\nscheduled_lead_micros = 20000\nscheduled_window_micros = 50000";
         let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
         scenario.validate().unwrap();
         assert_eq!(

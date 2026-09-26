@@ -1846,6 +1846,7 @@ fn ieee802154_air_check_validation_accepts_only_contract_bounds() {
         energy_scan_micros: 128,
         receive_window_millis: 1,
         scheduled_lead_micros: 1_000,
+        scheduled_window_micros: 1_000,
     };
     assert!(valid.validate());
     assert!(
@@ -1855,6 +1856,7 @@ fn ieee802154_air_check_validation_accepts_only_contract_bounds() {
             energy_scan_micros: 1_000_000,
             receive_window_millis: 10_000,
             scheduled_lead_micros: 1_000_000,
+            scheduled_window_micros: 1_000_000,
         }
         .validate()
     );
@@ -1884,6 +1886,14 @@ fn ieee802154_air_check_validation_accepts_only_contract_bounds() {
             scheduled_lead_micros: 999,
             ..valid
         },
+        Ieee802154AirCheckRequest {
+            scheduled_window_micros: 999,
+            ..valid
+        },
+        Ieee802154AirCheckRequest {
+            scheduled_window_micros: 1_000_001,
+            ..valid
+        },
     ] {
         assert!(!request.validate());
     }
@@ -1895,6 +1905,7 @@ fn ieee802154_air_check_command_and_evidence_fit_and_round_trip() {
         IEEE802154_AIR_CHECK_MAX_CYCLES, Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence,
         Ieee802154AirCheckRequest, Ieee802154AirCheckStop, Ieee802154AirCycle,
         Ieee802154AirEnergyOutcome, Ieee802154AirTransmit, Ieee802154AirTxOutcome,
+        Ieee802154AirWindow,
     };
     let transmit = Ieee802154AirTransmit {
         outcome: Ieee802154AirTxOutcome::InvalidAcknowledgement,
@@ -1908,6 +1919,14 @@ fn ieee802154_air_check_command_and_evidence_fit_and_round_trip() {
         scheduled: [transmit; 2],
         received_frames: u16::MAX,
         strongest_rssi_dbm: Some(i8::MIN),
+        scheduled_window: Ieee802154AirWindow {
+            ended: true,
+            start_micros: u64::MAX,
+            end_micros: u64::MAX,
+            done_at_micros: u64::MAX,
+            received_frames: u16::MAX,
+            first_frame_at_micros: Some(u64::MAX),
+        },
     };
     round_trip(Envelope::new(
         7,
@@ -1920,6 +1939,7 @@ fn ieee802154_air_check_command_and_evidence_fit_and_round_trip() {
             energy_scan_micros: u32::MAX,
             receive_window_millis: u32::MAX,
             scheduled_lead_micros: u32::MAX,
+            scheduled_window_micros: u32::MAX,
         }),
     ));
     round_trip(Envelope::new(

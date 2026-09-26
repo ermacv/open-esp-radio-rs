@@ -298,8 +298,9 @@ pub const IEEE802154_AIR_CHECK_MAX_CYCLES: usize = 4;
 ///
 /// Each cycle starts the IEEE 802.15.4 client on the shared radio arbiter,
 /// runs one energy scan, one clear-channel assessment, one direct transmit
-/// without an acknowledgement request, two scheduled transmits and one receive
-/// window on `channel`, then stops the client again.
+/// without an acknowledgement request, two scheduled transmits, one receive
+/// window and one scheduled receive window on `channel`, then stops the
+/// client again.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Ieee802154AirCheckRequest {
     /// IEEE 802.15.4 channel, 11 through 26.
@@ -310,8 +311,11 @@ pub struct Ieee802154AirCheckRequest {
     pub energy_scan_micros: u32,
     /// Receive-window length in milliseconds.
     pub receive_window_millis: u32,
-    /// Lead from the request to each scheduled transmit start, in microseconds.
+    /// Lead from the request to each scheduled transmit start and to the
+    /// scheduled receive window, in microseconds.
     pub scheduled_lead_micros: u32,
+    /// Scheduled receive window length in microseconds.
+    pub scheduled_window_micros: u32,
 }
 
 impl Ieee802154AirCheckRequest {
@@ -327,6 +331,8 @@ impl Ieee802154AirCheckRequest {
             && self.receive_window_millis <= 10_000
             && self.scheduled_lead_micros >= 1_000
             && self.scheduled_lead_micros <= 1_000_000
+            && self.scheduled_window_micros >= 1_000
+            && self.scheduled_window_micros <= 1_000_000
     }
 }
 
@@ -400,6 +406,24 @@ pub struct Ieee802154AirTransmit {
     pub done_at_micros: u64,
 }
 
+/// One scheduled receive window and its end.
+///
+/// Times are target-monotonic microseconds; `start_micros` and `end_micros`
+/// are the requested window.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154AirWindow {
+    /// The window's end was reported.
+    pub ended: bool,
+    pub start_micros: u64,
+    pub end_micros: u64,
+    /// When the target observed the window's end.
+    pub done_at_micros: u64,
+    /// Frames received in the window.
+    pub received_frames: u16,
+    /// Start-of-frame time of the first frame received in the window.
+    pub first_frame_at_micros: Option<u64>,
+}
+
 /// Observations of one start/stop cycle.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Ieee802154AirCycle {
@@ -411,6 +435,8 @@ pub struct Ieee802154AirCycle {
     pub received_frames: u16,
     /// Strongest receive RSSI in dBm, when any frame arrived.
     pub strongest_rssi_dbm: Option<i8>,
+    /// The scheduled receive window.
+    pub scheduled_window: Ieee802154AirWindow,
 }
 
 /// Terminal observation of one air check.

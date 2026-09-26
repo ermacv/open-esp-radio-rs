@@ -377,11 +377,12 @@ fn edca_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
 
 /// Canonical HT transmit parameters of the reviewed `hal_mac_tx_set_ppdu`
 /// fixture, in `CanonicalHtTxParameters` order: queue 0, descriptor head,
-/// MCS 7, short guard interval, 40 MHz, A-MPDU, length 0xc2e, two
-/// descriptors, data powers 1/1, RTS powers 2/2, spacing density 5, no
-/// timeout, scheduler and packet priority 1, one priority, zero AIFSN and
-/// window, the station interface, no hardware key and no TXOP.
-const PPDU_CANONICAL: [u32; 22] = [
+/// The rate fields MCS, guard interval and width come from the case state;
+/// the rest is an A-MPDU of length 0xc2e over two descriptors, spacing
+/// density 5, no timeout, scheduler and packet priority 1, one priority,
+/// zero AIFSN and window, the station interface, no hardware key and no
+/// TXOP. The probe takes the data and RTS powers from the power table.
+const PPDU_CANONICAL: [u32; 18] = [
     0,
     PPDU_DESCRIPTOR,
     7,
@@ -389,10 +390,6 @@ const PPDU_CANONICAL: [u32; 22] = [
     1,
     1,
     0xc2e,
-    2,
-    1,
-    1,
-    2,
     2,
     1,
     0,
@@ -405,6 +402,32 @@ const PPDU_CANONICAL: [u32; 22] = [
     0,
     0,
 ];
+/// Canonical word indices of the rate fields.
+const PPDU_CANONICAL_MCS: usize = 2;
+const PPDU_CANONICAL_GUARD_INTERVAL: usize = 3;
+const PPDU_CANONICAL_WIDTH: usize = 4;
+/// Every HT rate of the comparison, packed as MCS, short guard interval
+/// (bit 8) and 40 MHz (bit 16).
+const PPDU_RATES: [u32; 32] = {
+    let mut rates = [0; 32];
+    let mut i = 0;
+    while i < rates.len() {
+        rates[i] = (i as u32 & 7) | ((i as u32 >> 3) & 1) << 8 | ((i as u32 >> 4) & 1) << 16;
+        i += 1;
+    }
+    rates
+};
+/// Where production receives its copy of the power table.
+const PPDU_POWER_COPY: u32 = INPUT + 0x100;
+/// The vendor HT descriptor object, its rate byte (word 3) and its width
+/// word (word 2), whose bit 15 selects 40 MHz.
+const PPDU_HT_OBJECT: u32 = 0x3fff_1300;
+const PPDU_HT_RATE_WORD: usize = 3;
+const PPDU_HT_WIDTH_WORD: usize = 2;
+const PPDU_HT_40MHZ: u32 = 0x8000;
+/// First HT rate-control code of each guard interval.
+const PPDU_HT_LONG_GI_CODE: u32 = 0x10;
+const PPDU_HT_SHORT_GI_CODE: u32 = 0x1a;
 /// Vendor PP object addresses of that fixture: the transmit context, the
 /// first descriptor, the `pTxRx` rate table and the OSI function table.
 const PPDU_PROGRAM: u32 = 0x3fff_1000;
@@ -472,31 +495,18 @@ const PPDU_VENDOR: &[(u32, &[u32])] = &[
     (PPDU_AUXILIARY, &[0; 16]),
     (PPDU_AUXILIARY + 0x40, &[0x0000_0101, 0x0000_0c2e, 0]),
 ];
-/// ROM `s_phy_get_max_pwr` rows the fixture seeds.
-const PPDU_MAX_POWER: [u32; 22] = [
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0202_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0101_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0201_0201,
-    0x0000_0201,
-];
+/// ROM `s_phy_get_max_pwr` rows the fixture seeds: every rate's power pair
+/// differs from its neighbours', so a lookup at a wrong rate differs.
+const PPDU_MAX_POWER: [u32; 22] = {
+    let mut rows = [0; 22];
+    let mut pair = 0;
+    while pair < 2 * rows.len() {
+        let value = ((pair as u32 % 13) + 1) | ((((pair as u32 + 5) % 13) + 1) << 8);
+        rows[pair / 2] |= value << (16 * (pair % 2));
+        pair += 1;
+    }
+    rows
+};
 
 fn words(values: &[u32]) -> Vec<u8> {
     values.iter().flat_map(|w| w.to_le_bytes()).collect()
@@ -505,12 +515,33 @@ fn words(values: &[u32]) -> Vec<u8> {
 /// The reviewed ordinary-queue-zero HT40 MCS7 A-MPDU fixture of
 /// `hal_mac_tx_set_ppdu`: vendor PP objects, the ROM rate-table pointer,
 /// power rows and OSI table, and the canonical production parameters.
-fn ppdu_abi(_words: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
+fn ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
+    let [_, _, _, rate] = words_in else {
+        unreachable!("PPDU words: program, auxiliary, power table, rate")
+    };
+    let (mcs, short_gi, wide) = (rate & 0xff, rate >> 8 & 1, rate >> 16 & 1);
     let rom = |name: &str| vendor_side.symbol(name);
     let mut vendor: Vec<(u32, Vec<u8>)> = PPDU_VENDOR
         .iter()
-        .map(|(address, values)| (*address, words(values)))
+        .map(|(address, values)| {
+            let mut values = values.to_vec();
+            if *address == PPDU_HT_OBJECT {
+                let first = if short_gi == 1 {
+                    PPDU_HT_SHORT_GI_CODE
+                } else {
+                    PPDU_HT_LONG_GI_CODE
+                };
+                values[PPDU_HT_RATE_WORD] = first + mcs;
+                values[PPDU_HT_WIDTH_WORD] &= !PPDU_HT_40MHZ;
+                values[PPDU_HT_WIDTH_WORD] |= wide * PPDU_HT_40MHZ;
+            }
+            (*address, words(&values))
+        })
         .collect();
+    let mut canonical = PPDU_CANONICAL;
+    canonical[PPDU_CANONICAL_MCS] = mcs;
+    canonical[PPDU_CANONICAL_GUARD_INTERVAL] = short_gi;
+    canonical[PPDU_CANONICAL_WIDTH] = wide;
     let mut table = vec![0u8; PPDU_OSI_BYTES];
     table[PPDU_COEX_PTI_CLAMP_SLOT..].copy_from_slice(&PPDU_COEX_PTI_CLAMP.to_le_bytes());
     vendor.extend([
@@ -548,7 +579,10 @@ fn ppdu_abi(_words: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
     Ok(Objects {
         vendor_words: vec![PPDU_PROGRAM, PPDU_AUXILIARY],
         vendor,
-        production: vec![(INPUT, words(&PPDU_CANONICAL))],
+        production: vec![
+            (INPUT, words(&canonical)),
+            (PPDU_POWER_COPY, words(&PPDU_MAX_POWER)),
+        ],
         calls: vec![clamp],
         compared: vec![],
         ..Default::default()
@@ -1004,17 +1038,21 @@ pub const LEAVES: &[Leaf] = &[
         &[("low", TSF_LOW), ("high", TSF_HIGH)],
         false,
     )),
-    objects(
-        leaf(
-            "hal_mac_tx_set_ppdu",
-            "open_libpp_tx_trace_hal_mac_tx_set_ppdu",
-            &[
-                ("program_address", Domain::Words(&[INPUT])),
-                ("_vendor_auxiliary", Domain::Words(&[PPDU_AUXILIARY])),
-            ],
-            false,
+    stated(
+        objects(
+            leaf(
+                "hal_mac_tx_set_ppdu",
+                "open_libpp_tx_trace_hal_mac_tx_set_ppdu",
+                &[
+                    ("program_address", Domain::Words(&[INPUT])),
+                    ("_vendor_auxiliary", Domain::Words(&[PPDU_AUXILIARY])),
+                    ("power_table", Domain::Words(&[PPDU_POWER_COPY])),
+                ],
+                false,
+            ),
+            ppdu_abi,
         ),
-        ppdu_abi,
+        &PPDU_RATES,
     ),
     stated(
         objects(

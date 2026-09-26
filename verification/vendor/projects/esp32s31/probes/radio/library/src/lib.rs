@@ -528,10 +528,6 @@ struct CanonicalHtTxParameters {
     format: u32,
     length: u32,
     descriptor_count: u32,
-    data_power_primary: u32,
-    data_power_alternate: u32,
-    rts_power_primary: u32,
-    rts_power_alternate: u32,
     protection_spacing: u32,
     timeout: u32,
     scheduler_priority: u32,
@@ -563,6 +559,7 @@ oer_probe_macros::probe! {
     pub fn open_libpp_tx_trace_hal_mac_tx_set_ppdu(
         program_address: u32,
         _vendor_auxiliary: u32,
+        power_table: u32,
     ) -> u32 {
         use oer_esp32s31_hal::types::{
             MacHtChannelWidth, MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate,
@@ -616,7 +613,7 @@ oer_probe_macros::probe! {
         };
         // Production publishes the vendor `mac_tx_get_rts_rate` image for an
         // unprotected PPDU; take it from the compiled driver mapping.
-        let control_rate = oer_esp32s31_ieee80211_mac::tx::HtRate::new(
+        let ht = oer_esp32s31_ieee80211_mac::tx::HtRate::new(
             oer_esp32s31_ieee80211_mac::tx::HtMcs::from_index(parameters.mcs as u8)
                 .expect("verification HT MCS is in range"),
             match guard_interval {
@@ -631,9 +628,18 @@ oer_probe_macros::probe! {
                 MacHtChannelWidth::Mhz20 => oer_esp32s31_ieee80211_mac::tx::HtChannelWidth::Mhz20,
                 MacHtChannelWidth::Mhz40 => oer_esp32s31_ieee80211_mac::tx::HtChannelWidth::Mhz40,
             },
-        )
-        .vendor_control_rate()
-        .pac_rate();
+        );
+        let control = ht.vendor_control_rate();
+        let control_rate = control.pac_rate();
+        // The power table holds one (primary, alternate) byte pair per rate
+        // code; production selects the codes.
+        let power = |code: u8| {
+            let pair = (power_table + 2 * u32::from(code)) as *const [u8; 2];
+            // SAFETY: the verification profile supplies the whole table.
+            unsafe { pair.read() }
+        };
+        let [data_power_primary, data_power_alternate] = power(ht.power_lookup_code());
+        let [rts_power_primary, rts_power_alternate] = power(control.code());
         let dma = ValidationPreparedTxDma(parameters.descriptor_head);
         let program = MacHtTxProgram::new(
             &dma,
@@ -641,8 +647,8 @@ oer_probe_macros::probe! {
                 control: MacTxControlFrame {
                     protection: MacTxProtection::None,
                     rate: control_rate,
-                    power_primary: parameters.rts_power_primary as u8,
-                    power_alternate: parameters.rts_power_alternate as u8,
+                    power_primary: rts_power_primary,
+                    power_alternate: rts_power_alternate,
                 },
                 rate: MacHtRate {
                     mcs,
@@ -652,8 +658,8 @@ oer_probe_macros::probe! {
                 format,
                 length: parameters.length as u16,
                 descriptor_count: parameters.descriptor_count as u8,
-                data_power_primary: parameters.data_power_primary as u8,
-                data_power_alternate: parameters.data_power_alternate as u8,
+                data_power_primary,
+                data_power_alternate,
                 protection_spacing,
                 timeout: parameters.timeout as u16,
                 scheduler_priority: parameters.scheduler_priority as u8,

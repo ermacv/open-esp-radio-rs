@@ -742,3 +742,71 @@ mod cancel {
         assert!(executor.stopped().is_none());
     }
 }
+
+mod pools {
+    use std::{boxed::Box, vec::Vec};
+
+    use oer_esp32s31_bluetooth_memory::{
+        LegacyAdvertisingPool, LegacyAdvertisingPrimaryChannelPlan, LegacyAdvertisingStorage,
+        SchedulerAllocationConfig, SchedulerItemId, SchedulerItemSpace, SchedulerPoolModelAddress,
+        SchedulerRolePoolStorage,
+    };
+
+    use super::idle;
+    use crate::scheduler::{executor::SchedulerExecutor, window::SchedulerRawWindow};
+
+    #[test]
+    fn the_executor_links_the_items_of_a_role_pool() {
+        let storage = Box::leak(Box::new(SchedulerRolePoolStorage::<
+            LegacyAdvertisingStorage,
+            1,
+        >::new()));
+        let numbers = SchedulerAllocationConfig::new(1, 0, 0)
+            .unwrap()
+            .advertising(0, 1)
+            .unwrap();
+        let mut pool = LegacyAdvertisingPool::bind_model(
+            storage,
+            SchedulerPoolModelAddress::new(0x2f00_0100).unwrap(),
+            numbers,
+        )
+        .unwrap();
+        let instance = pool.acquire().unwrap();
+        pool.prepare_packet(&instance, &[0x02, 6, 1, 2, 3, 4, 5, 6])
+            .unwrap();
+        pool.reset_link_state(&instance, 0).unwrap();
+        let event = pool
+            .prepare_event(
+                &instance,
+                LegacyAdvertisingPrimaryChannelPlan::new(true, true, true).unwrap(),
+                1_000,
+                100,
+            )
+            .unwrap();
+        let items: Vec<(SchedulerItemId, SchedulerRawWindow)> = event
+            .items()
+            .map(|(item, start, end)| {
+                (
+                    pool.submit(&instance, item).unwrap(),
+                    SchedulerRawWindow::new(start, end).unwrap(),
+                )
+            })
+            .collect();
+
+        let mut executor = SchedulerExecutor::<SchedulerItemId, 4>::new();
+        let mut space = SchedulerItemSpace::new().with(&pool);
+        // Submit out of order; the executor links them by start.
+        let mut head = None;
+        for (id, window) in items.iter().rev() {
+            head = Some(
+                executor
+                    .submit_idle(&mut space, idle(), *id, *window)
+                    .unwrap()
+                    .head,
+            );
+        }
+        let order: Vec<SchedulerItemId> = executor.list().iter().map(|(id, _)| id).collect();
+        assert_eq!(order, items.iter().map(|(id, _)| *id).collect::<Vec<_>>());
+        assert_eq!(head, Some(space.link(items[0].0)));
+    }
+}

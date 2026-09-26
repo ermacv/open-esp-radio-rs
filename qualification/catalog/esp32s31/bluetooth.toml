@@ -3605,7 +3605,7 @@ id = "bluetooth-peripheral-timing-limits"
 domain = "bluetooth"
 title = "Peripheral timing limits"
 source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
-overview = "No LE Controller composition currently implements peripheral timing. A\ncomposition must supply a local clock accuracy bound for window widening;\nsoftware widening does not establish arbitrary missed-event anchor recovery or\naccumulated timing uncertainty. The\n[memory codec](memory/src/peripheral_connection_memory/codec.rs) stores\nlink-state event span and scheduler captured anchor in distinct objects;\nequal offsets within those objects do not make them the same field. A raw\ncaptured anchor is not a normalized packet-start timestamp. Hardware timing\nqualification must cover that interpretation independently of the ownership\nand layout types."
+overview = "No LE Controller composition currently implements peripheral timing. A\ncomposition must supply a local clock accuracy bound for window widening;\nsoftware widening does not establish arbitrary missed-event anchor recovery or\naccumulated timing uncertainty. The\n[memory codec](memory/src/peripheral_connection.rs) stores\nlink-state event span and scheduler captured anchor in distinct objects;\nequal offsets within those objects do not make them the same field. A raw\ncaptured anchor is not a normalized packet-start timestamp. Hardware timing\nqualification must cover that interpretation independently of the ownership\nand layout types."
 
 [[items]]
 id = "bluetooth-idle-phy-maintenance"

@@ -15,7 +15,9 @@
 
 #![forbid(unsafe_code)]
 
-use oer_esp32s31_bluetooth_memory::{ControllerSramLinkAddress, SchedulerItemCompletionStatus};
+use oer_esp32s31_bluetooth_memory::{
+    ControllerSramLinkAddress, SchedulerItemCompletionStatus, SchedulerItemId, SchedulerItemSpace,
+};
 use oer_esp32s31_hal::bluetooth::{BluetoothSchedulerStopped, BluetoothSchedulerWorkObservation};
 
 use crate::scheduler::{
@@ -54,6 +56,38 @@ pub trait SchedulerItemAccess<I> {
     /// the deleted flag. Its own hardware next link is kept, so hardware that
     /// already holds the item can still follow the chain.
     fn mark_deleted(&mut self, id: I);
+}
+
+/// The item memory of the role instance pools.
+impl SchedulerItemAccess<SchedulerItemId> for SchedulerItemSpace<'_> {
+    fn link(&self, id: SchedulerItemId) -> ControllerSramLinkAddress {
+        SchedulerItemSpace::link(self, id)
+    }
+
+    fn prepare_for_list(
+        &mut self,
+        id: SchedulerItemId,
+        previous: Option<ControllerSramLinkAddress>,
+        next: Option<ControllerSramLinkAddress>,
+    ) {
+        SchedulerItemSpace::prepare_for_list(self, id, previous, next);
+    }
+
+    fn set_next(&mut self, id: SchedulerItemId, next: Option<ControllerSramLinkAddress>) {
+        SchedulerItemSpace::set_next(self, id, next);
+    }
+
+    fn set_previous(&mut self, id: SchedulerItemId, previous: Option<ControllerSramLinkAddress>) {
+        SchedulerItemSpace::set_previous(self, id, previous);
+    }
+
+    fn completion_status(&self, id: SchedulerItemId) -> Option<SchedulerItemCompletionStatus> {
+        SchedulerItemSpace::completion_status(self, id)
+    }
+
+    fn mark_deleted(&mut self, id: SchedulerItemId) {
+        SchedulerItemSpace::mark_deleted(self, id);
+    }
 }
 
 /// Why an event was not submitted.

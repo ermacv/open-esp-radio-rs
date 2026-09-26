@@ -29,10 +29,7 @@ use oer_esp32s31_hal::bluetooth::{
     InterruptSetupOwner as HalBluetoothInterruptSetupOwner, TaskOwner as HalBluetoothTaskOwner,
 };
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-use oer_esp32s31_hal::{
-    bluetooth::RxMemoryListPublished,
-    owner::{SharedPhyBorrow, SharedPhyHal, route},
-};
+use oer_esp32s31_hal::owner::{SharedPhyBorrow, SharedPhyHal, route};
 #[cfg(target_arch = "riscv32")]
 use {
     oer_esp32s31_hal::bluetooth::BluetoothModemLpTimerOwnerError,
@@ -65,19 +62,6 @@ use crate::controller_time::{
     ControllerTimeEventError, ControllerTimeEventStep, ControllerTimeRequest,
     ControllerTimeRequestError,
 };
-#[cfg(target_arch = "riscv32")]
-use oer_esp32s31_bluetooth_memory::{
-    LegacyConnectableAdvertisingMemoryGraphPublicationMismatch,
-    LegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
-    LegacyConnectableAdvertisingMemoryGraphRxPublished, PassiveScanMemoryGraphCommandPublished,
-};
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-use oer_esp32s31_bluetooth_memory::{
-    PassiveScanMemoryGraphPublicationMismatch, PassiveScanMemoryGraphPublicationPrepared,
-    PassiveScanMemoryGraphPublished, PeripheralConnectionMemoryGraphPublicationMismatch,
-    PeripheralConnectionMemoryGraphPublicationPrepared, PeripheralConnectionMemoryGraphRxPublished,
-};
-
 /// Opaque singleton root for one standalone Bluetooth lifecycle.
 ///
 /// The protocol-neutral PAC owner is captured inside the chip crate. Product
@@ -350,29 +334,6 @@ impl TaskResources {
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-fn join_passive_scan_rx_publication(
-    prepared: PassiveScanMemoryGraphPublicationPrepared,
-    publication: RxMemoryListPublished,
-) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
-    prepared.into_published(publication)
-}
-
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-#[allow(
-    clippy::result_large_err,
-    reason = "the mismatch must return both affine publication owners without allocation"
-)]
-fn join_peripheral_connection_rx_publication(
-    prepared: PeripheralConnectionMemoryGraphPublicationPrepared,
-    publication: RxMemoryListPublished,
-) -> Result<
-    PeripheralConnectionMemoryGraphRxPublished,
-    PeripheralConnectionMemoryGraphPublicationMismatch,
-> {
-    prepared.into_rx_published(publication)
-}
-
 #[cfg(any(
     target_arch = "riscv32",
     test,
@@ -390,125 +351,6 @@ impl TaskResources {
         self.registers
             .borrow_bluetooth_controller()
             .program_random_device_address(address);
-    }
-
-    /// Publish selector-two RX memory for one response-capable advertising graph.
-    ///
-    /// The memory owner fixes the positional selector and validated head. A
-    /// proof-join mismatch returns both affine owners inside the error; this
-    /// boundary never guesses, panics, or discards them.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the pinned response-capable graph, its loaned
-    /// non-scanning RX pool, and the sole powered task epoch across this
-    /// transaction. No task or interrupt access to selector two may race it.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "the upper connectable lifecycle retains graph, RX-pool and exclusive task MMIO ownership"
-    )]
-    pub(crate) unsafe fn publish_legacy_connectable_advertising_rx_memory(
-        &mut self,
-        prepared: LegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
-    ) -> Result<
-        LegacyConnectableAdvertisingMemoryGraphRxPublished,
-        LegacyConnectableAdvertisingMemoryGraphPublicationMismatch,
-    > {
-        let selector = prepared.selector();
-        let head = prepared.receive_head();
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the lower transaction's prerequisites.
-        let publication = unsafe {
-            self.registers
-                .borrow_bluetooth_controller()
-                .publish_rx_memory_list_initial_head(selector, head)
-        };
-        prepared.into_rx_published(publication)
-    }
-
-    /// Publish selector-one RX memory for the exact prepared scanner graph.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the pinned graph and the sole powered task
-    /// epoch, and must guarantee that scanner MMIO is not visible through an
-    /// interrupt owner during this transaction.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "the upper scanner lifecycle retains graph lifetime and exclusive task MMIO"
-    )]
-    pub(crate) unsafe fn publish_passive_scan_rx_memory(
-        &mut self,
-        prepared: PassiveScanMemoryGraphPublicationPrepared,
-    ) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
-        let selector = prepared.selector();
-        let head = prepared.head();
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the lower transaction's prerequisites.
-        let publication = unsafe {
-            self.registers
-                .borrow_bluetooth_controller()
-                .publish_rx_memory_list_initial_head(selector, head)
-        };
-        join_passive_scan_rx_publication(prepared, publication)
-    }
-
-    /// Publish selector-two RX memory for one exact connection graph.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the pinned connection graph, its detached
-    /// scheduler item and the sole powered task epoch across this transaction.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        clippy::result_large_err,
-        reason = "the upper connection lifecycle retains graph lifetime and exclusive task MMIO"
-    )]
-    pub(crate) unsafe fn publish_peripheral_connection_rx_memory(
-        &mut self,
-        prepared: PeripheralConnectionMemoryGraphPublicationPrepared,
-    ) -> Result<
-        PeripheralConnectionMemoryGraphRxPublished,
-        PeripheralConnectionMemoryGraphPublicationMismatch,
-    > {
-        let selector = prepared.selector();
-        let head = prepared.receive_head();
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the lower transaction's prerequisites.
-        let publication = unsafe {
-            self.registers
-                .borrow_bluetooth_controller()
-                .publish_software_connection_rx_memory_list_initial_head(selector, head)
-        };
-        join_peripheral_connection_rx_publication(prepared, publication)
-    }
-
-    /// Publish the restricted standard-backoff scanner command after RX memory.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the exact RX-published graph and the sole
-    /// powered scanner epoch through the returned state.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "the upper scanner lifecycle retains RX graph and powered command prerequisites"
-    )]
-    pub(crate) unsafe fn publish_passive_scan_command(
-        &mut self,
-        published: PassiveScanMemoryGraphPublished,
-    ) -> PassiveScanMemoryGraphCommandPublished {
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the lower transaction's prerequisites.
-        let command = unsafe {
-            self.registers
-                .borrow_bluetooth_controller()
-                .publish_scan_start()
-        };
-        published.into_scan_command_published(command)
     }
 
     /// Execute the source-127 register prefix and following complete low-power
@@ -931,85 +773,6 @@ impl InterruptBankOwner {
         // SAFETY: the caller retains the complete matching Controller epoch
         // and the only route installers are still inaccessible.
         unsafe { self._registers.prepare_controller_output() }
-    }
-}
-
-/// Memory-graph publication with the powered task epoch as its proof.
-///
-/// [`crate::runtime_resources::ControllerPoweredTaskRuntime`] is the sole
-/// powered task epoch, and each prepared graph is an owned value that moves
-/// into the returned published or mismatch owner, which retains it pinned.
-/// Together they discharge the lower `unsafe` publication contracts, so roles
-/// publish graphs without `unsafe`.
-#[cfg(target_arch = "riscv32")]
-impl<const SCHEDULER_CAPACITY: usize>
-    crate::runtime_resources::ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
-{
-    /// Publish the response-capable advertising graph's RX memory.
-    #[allow(
-        unsafe_code,
-        clippy::result_large_err,
-        reason = "the powered task epoch and the owned graph discharge the publication contract"
-    )]
-    pub fn publish_legacy_connectable_advertising_rx_memory(
-        &mut self,
-        prepared: LegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
-    ) -> Result<
-        LegacyConnectableAdvertisingMemoryGraphRxPublished,
-        LegacyConnectableAdvertisingMemoryGraphPublicationMismatch,
-    > {
-        // SAFETY: `self` is the sole powered task epoch, and `prepared` (with
-        // its loaned RX pool) moves into the returned owner, which retains it.
-        unsafe {
-            self.task
-                .publish_legacy_connectable_advertising_rx_memory(prepared)
-        }
-    }
-
-    /// Publish the passive scanner graph's RX memory.
-    #[allow(
-        unsafe_code,
-        reason = "the powered task epoch and the owned graph discharge the publication contract"
-    )]
-    pub fn publish_passive_scan_rx_memory(
-        &mut self,
-        prepared: PassiveScanMemoryGraphPublicationPrepared,
-    ) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
-        // SAFETY: `self` is the sole powered task epoch, and `prepared` moves
-        // into the returned owner, which retains it.
-        unsafe { self.task.publish_passive_scan_rx_memory(prepared) }
-    }
-
-    /// Publish one peripheral connection graph's RX memory.
-    #[allow(
-        unsafe_code,
-        clippy::result_large_err,
-        reason = "the powered task epoch and the owned graph discharge the publication contract"
-    )]
-    pub fn publish_peripheral_connection_rx_memory(
-        &mut self,
-        prepared: PeripheralConnectionMemoryGraphPublicationPrepared,
-    ) -> Result<
-        PeripheralConnectionMemoryGraphRxPublished,
-        PeripheralConnectionMemoryGraphPublicationMismatch,
-    > {
-        // SAFETY: `self` is the sole powered task epoch, and `prepared` with
-        // its detached scheduler item moves into the returned owner.
-        unsafe { self.task.publish_peripheral_connection_rx_memory(prepared) }
-    }
-
-    /// Publish the scan-start command for an RX-published scanner graph.
-    #[allow(
-        unsafe_code,
-        reason = "the powered task epoch and the owned graph discharge the publication contract"
-    )]
-    pub fn publish_passive_scan_command(
-        &mut self,
-        published: PassiveScanMemoryGraphPublished,
-    ) -> PassiveScanMemoryGraphCommandPublished {
-        // SAFETY: `self` is the sole powered scanner epoch, and the exact
-        // RX-published graph moves into the returned command-published state.
-        unsafe { self.task.publish_passive_scan_command(published) }
     }
 }
 

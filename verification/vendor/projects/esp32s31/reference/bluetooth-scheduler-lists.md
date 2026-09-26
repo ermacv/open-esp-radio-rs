@@ -312,6 +312,35 @@ dynamic interrupts, publishes broker event 3, waits for idle lock and modify
 engines, writes 1 to `0x2010_1004` and asserts if BUSY is still set after
 65536 polls.
 
+## Receive routing
+
+The named `ble_lll_mmgmt.c.o` and `ble_lll.c.o` of the role-name archive
+route receptions per role:
+
+- `r_ble_lll_mmgmt_update_global_rxlink(item)` enables the link state's
+  receive object (link-state `+0x7c`), selects class one for scanner kind
+  two and class two otherwise, writes the class to link-state `+0x20` bits
+  30:28 and records item `+0x20` bits 11:0 in the object's `+0x18` halfword;
+- the item numbers come from the role allocators: advertising instance `k`
+  uses `k`, connection `c` uses the extended-advertising limit plus one plus
+  `c`, the scanner's items follow the connections, and DTM follows five
+  private and four further numbers plus the periodic-synchronization limit;
+- `r_ble_lll_get_rxed_buffer(link_state)` walks the chain from the software
+  head (link-state `+0x68`), stops at the first incomplete header, skips a
+  completed packet whose `+0x18` halfword differs from the recorded number,
+  moves a left-behind packetless header into the spare slot (`+0x78`) and
+  marks the last completed header as the one hardware may still hold;
+- `r_ble_lll_append_rx_buffer` returns a node after the tail (`+0x70`),
+  copying a held header's packet into the spare header so that the held
+  header stays in the chain without a packet;
+- when the object is enabled for a global class, both functions first load
+  and afterwards store the class's shared head, tail and spare, so every role
+  of a class walks one chain;
+- `r_ble_lll_conn_use_rxbuf_from_link_state` clears the class bits, keeps the
+  object enabled with class zero and points the private consumer in
+  link-state `+0x08` at the software head: a connection receives through its
+  own chain.
+
 ## Open contracts
 
 The bodies above do not establish:
@@ -328,5 +357,8 @@ The bodies above do not establish:
 - the effect of the skip request, the hold at `0x2010_1204` and the meaning
   of the skip results 1 to 3;
 - whether hardware reads item `+0x00` bit 25 as a skip marker;
+- whether hardware records item `+0x20` bits 11:0 in received packet
+  `+0x18`, and whether a class-zero link state receives only through its
+  `+0x08` consumer;
 - the sleep-path functions called by insertion and deletion, and the
   background list.

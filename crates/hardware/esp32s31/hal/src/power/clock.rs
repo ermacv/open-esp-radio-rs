@@ -1,15 +1,39 @@
 //! Pure shared-modem-clock ownership planner for ESP32-S31.
 //!
-//! The reviewed IEEE 802.15.4 dependency set has seven logical dependencies.
-//! Both acquisition and release visit them from the lowest vendor dependency
-//! bit to the highest. A physical acquire edge is emitted only for a software
-//! refcount transition from zero to one; a physical release edge is emitted
-//! only for a transition from one to zero.
+//! Every radio module (Wi-Fi, Bluetooth, IEEE 802.15.4, PHY, coexistence,
+//! ...) requests a fixed set of modem clock dependencies. Each dependency has
+//! one software refcount. Both acquisition and release visit a module's
+//! dependencies from the lowest vendor dependency bit to the highest. A
+//! physical acquire edge is emitted only for a refcount transition from zero
+//! to one; a physical release edge only for a transition from one to zero.
+//! Two vendor exceptions are reproduced exactly:
+//!
+//! - the analog-I2C master clock carries no refcount here: every module
+//!   acquire and release emits its edge, because the vendor keeps that
+//!   refcount in the platform analog-I2C owner;
+//! - while Wi-Fi is initialized, the Wi-Fi clock dependencies keep their
+//!   hardware enabled: their one-to-zero transitions emit no physical edge,
+//!   and a later zero-to-one transition re-enables them (for the Wi-Fi
+//!   baseband clock this includes its reset pulse).
+//!
+//! Source: ESP-IDF revision `aeab6dcfbeb44aba4b1f8ed102e3086172833153`
+//! (Apache-2.0), `components/esp_hw_support/modem/port/esp32s31/`
+//! `modem_clock_impl.c` (`*_CLOCK_DEPS`, `modem_clock_get_module_deps`, the
+//! per-device `modem_clock_*_configure` actions and the I2C-master refcount
+//! exception in `modem_clock_device_context`), `modem/modem_clock.c`
+//! (`config_wrapper`, `modem_clock_device_control`,
+//! `modem_clock_configure_wifi_status`), the device order of
+//! `modem/include/modem/modem_clock_impl.h` and the S31 `soc_caps.h`
+//! selections (`SOC_MODEM_CLOCK_SOC_PLL_SOURCE_CG_SUPPORTED`,
+//! `SOC_PHY_CALIBRATION_CLOCK_IS_INDEPENDENT`,
+//! `SOC_MODEM_CLOCK_WIFI_BB_80X1_AS_APB`). The vendor `DATADUMP` device has no
+//! module dependency and is omitted. Applies to ESP32-S31 only.
 //!
 //! This module deliberately performs no MMIO and issues no PLL, clock, PHY, or
 //! radio-readiness proof. In particular, recording a physical edge as complete
 //! is only transaction bookkeeping for a future sealed target executor. It is
-//! not hardware evidence by itself.
+//! not hardware evidence by itself. The monotonic modem ICG map that the vendor
+//! ORs in on every module enable belongs to platform initialization.
 //!
 //! The current production baseline is externally retained and unknown: ESP-HAL
 //! owns the upstream 160 MHz clock policy and existing Wi-Fi initialization may
@@ -25,79 +49,194 @@
 
 use core::{fmt, ptr};
 
-const DEPENDENCY_COUNT: usize = 7;
+const DEPENDENCY_COUNT: usize = 16;
 /// Maximum count representable by the reviewed vendor `int16_t` contract.
 const MAX_REFCOUNT: u16 = i16::MAX as u16;
 
 /// Internal allocation-free capacity, not a vendor hardware or ABI limit.
 const MAX_ACTIVE_LEASES: usize = 16;
 
-/// Exact private low-bit-first dependency identities.
-///
-/// Discriminants are internal planner indices, not public register masks.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-enum Dependency {
-    Pll160AndModemSource = 0,
-    Coexistence = 1,
-    WifiBb80x1 = 2,
-    Etm = 3,
-    BtApbAndSecurity = 4,
-    BtIeee802154CommonBaseband = 5,
-    Ieee802154ApbAndMac = 6,
+macro_rules! dependencies {
+    ($($name:ident),+ $(,)?) => {
+        /// Exact private low-bit-first dependency identities, in the vendor
+        /// device order.
+        ///
+        /// Discriminants are internal planner indices, not public register masks.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[repr(u8)]
+        enum Dependency {
+            $($name),+
+        }
+
+        impl Dependency {
+            const LOW_BIT_FIRST: [Self; DEPENDENCY_COUNT] = [$(Self::$name),+];
+
+            const fn acquire_edge(self) -> ModemClockAcquireEdge {
+                match self {
+                    $(Self::$name => ModemClockAcquireEdge::$name),+
+                }
+            }
+
+            const fn release_edge(self) -> ModemClockReleaseEdge {
+                match self {
+                    $(Self::$name => ModemClockReleaseEdge::$name),+
+                }
+            }
+        }
+
+        /// One source-backed physical enable operation.
+        ///
+        /// The variants are semantic operations rather than register images.
+        /// `Pll160AndModemSource` first acquires the upstream 160 MHz source,
+        /// then opens the modem PLL-source gate; `WifiBb` pulses the Wi-Fi
+        /// baseband reset before enabling its clock; `AnalogI2cMaster`
+        /// acquires the platform analog-I2C clock reference. This planner
+        /// performs none of them.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub(crate) enum ModemClockAcquireEdge {
+            $($name),+
+        }
+
+        /// One source-backed physical disable operation.
+        ///
+        /// Release deliberately uses the same low-bit-first order as
+        /// acquisition. `Pll160AndModemSource` closes the modem PLL-source
+        /// gate before releasing the upstream 160 MHz source.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub(crate) enum ModemClockReleaseEdge {
+            $($name),+
+        }
+    };
 }
 
-impl Dependency {
-    const LOW_BIT_FIRST: [Self; DEPENDENCY_COUNT] = [
-        Self::Pll160AndModemSource,
-        Self::Coexistence,
-        Self::WifiBb80x1,
-        Self::Etm,
-        Self::BtApbAndSecurity,
-        Self::BtIeee802154CommonBaseband,
-        Self::Ieee802154ApbAndMac,
-    ];
+dependencies!(
+    ModemAdcCommonFe,
+    ModemPrivateFe,
+    Pll160AndModemSource,
+    Coexistence,
+    AnalogI2cMaster,
+    WifiApb,
+    WifiBb44m,
+    WifiMac,
+    WifiBb,
+    WifiBb80x1,
+    Etm,
+    BtMac,
+    BtPeripheral,
+    BtApbAndSecurity,
+    BtIeee802154CommonBaseband,
+    Ieee802154ApbAndMac,
+);
 
+impl Dependency {
     const fn index(self) -> usize {
         self as usize
     }
 
-    const fn bit(self) -> u8 {
+    const fn bit(self) -> u32 {
         1 << self.index()
     }
 
-    const fn acquire_edge(self) -> ModemClockAcquireEdge {
-        match self {
-            Self::Pll160AndModemSource => ModemClockAcquireEdge::Pll160AndModemSource,
-            Self::Coexistence => ModemClockAcquireEdge::Coexistence,
-            Self::WifiBb80x1 => ModemClockAcquireEdge::WifiBb80x1,
-            Self::Etm => ModemClockAcquireEdge::Etm,
-            Self::BtApbAndSecurity => ModemClockAcquireEdge::BtApbAndSecurity,
-            Self::BtIeee802154CommonBaseband => ModemClockAcquireEdge::BtIeee802154CommonBaseband,
-            Self::Ieee802154ApbAndMac => ModemClockAcquireEdge::Ieee802154ApbAndMac,
-        }
+    /// The vendor keeps this refcount in the platform analog-I2C owner.
+    const fn refcounted(self) -> bool {
+        !matches!(self, Self::AnalogI2cMaster)
     }
 
-    const fn release_edge(self) -> ModemClockReleaseEdge {
+    /// Hardware stays enabled while Wi-Fi is initialized.
+    const fn retained_while_wifi_initialized(self) -> bool {
+        matches!(
+            self,
+            Self::WifiApb | Self::WifiBb44m | Self::WifiMac | Self::WifiBb | Self::WifiBb80x1
+        )
+    }
+}
+
+/// Radio modules that request modem clocks, with their vendor dependency sets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ModemClockModule {
+    AnalogI2cMaster,
+    Phy,
+    ModemAdcCommonFe,
+    Coexistence,
+    Wifi,
+    Bluetooth,
+    PhyCalibration,
+    Ieee802154,
+    ModemEtm,
+    BluetoothApb,
+}
+
+impl ModemClockModule {
+    const fn dependencies(self) -> DependencySet {
+        use Dependency::*;
+        const fn set(dependencies: &[Dependency]) -> DependencySet {
+            let mut mask = 0;
+            let mut index = 0;
+            while index < dependencies.len() {
+                mask |= dependencies[index].bit();
+                index += 1;
+            }
+            DependencySet(mask)
+        }
         match self {
-            Self::Pll160AndModemSource => ModemClockReleaseEdge::Pll160AndModemSource,
-            Self::Coexistence => ModemClockReleaseEdge::Coexistence,
-            Self::WifiBb80x1 => ModemClockReleaseEdge::WifiBb80x1,
-            Self::Etm => ModemClockReleaseEdge::Etm,
-            Self::BtApbAndSecurity => ModemClockReleaseEdge::BtApbAndSecurity,
-            Self::BtIeee802154CommonBaseband => ModemClockReleaseEdge::BtIeee802154CommonBaseband,
-            Self::Ieee802154ApbAndMac => ModemClockReleaseEdge::Ieee802154ApbAndMac,
+            Self::AnalogI2cMaster => set(&[AnalogI2cMaster]),
+            Self::Phy => set(&[
+                ModemAdcCommonFe,
+                ModemPrivateFe,
+                Pll160AndModemSource,
+                WifiBb80x1,
+                AnalogI2cMaster,
+            ]),
+            Self::ModemAdcCommonFe => set(&[ModemAdcCommonFe, Pll160AndModemSource]),
+            Self::Coexistence => set(&[Coexistence, Pll160AndModemSource]),
+            Self::Wifi => set(&[
+                WifiMac,
+                WifiApb,
+                WifiBb,
+                WifiBb44m,
+                Coexistence,
+                WifiBb80x1,
+                Pll160AndModemSource,
+            ]),
+            Self::Bluetooth => set(&[
+                BtMac,
+                BtIeee802154CommonBaseband,
+                Etm,
+                Coexistence,
+                WifiBb80x1,
+                Pll160AndModemSource,
+                BtApbAndSecurity,
+                BtPeripheral,
+            ]),
+            Self::PhyCalibration => set(&[
+                WifiApb,
+                WifiBb,
+                WifiBb44m,
+                WifiBb80x1,
+                Pll160AndModemSource,
+                BtIeee802154CommonBaseband,
+                BtApbAndSecurity,
+            ]),
+            Self::Ieee802154 => set(&[
+                Ieee802154ApbAndMac,
+                BtIeee802154CommonBaseband,
+                Etm,
+                Coexistence,
+                WifiBb80x1,
+                Pll160AndModemSource,
+                BtApbAndSecurity,
+            ]),
+            Self::ModemEtm => set(&[Etm]),
+            Self::BluetoothApb => set(&[BtApbAndSecurity, Etm, Pll160AndModemSource, BtMac]),
         }
     }
 }
 
 /// Private dependency membership. No raw mask crosses the module boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct DependencySet(u8);
+struct DependencySet(u32);
 
 impl DependencySet {
-    const IEEE802154: Self = Self((1 << DEPENDENCY_COUNT) - 1);
-
     const fn contains(self, dependency: Dependency) -> bool {
         self.0 & dependency.bit() != 0
     }
@@ -110,36 +249,6 @@ impl DependencySet {
         }
         Self(mask)
     }
-}
-
-/// One source-backed physical enable operation.
-///
-/// The variants are semantic operations rather than register images. The first
-/// variant includes acquiring the upstream 160 MHz source and publishing the
-/// reviewed modem-source configuration; this planner does not perform either.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ModemClockAcquireEdge {
-    Pll160AndModemSource,
-    Coexistence,
-    WifiBb80x1,
-    Etm,
-    BtApbAndSecurity,
-    BtIeee802154CommonBaseband,
-    Ieee802154ApbAndMac,
-}
-
-/// One source-backed physical disable operation.
-///
-/// Release deliberately uses the same low-bit-first order as acquisition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ModemClockReleaseEdge {
-    Pll160AndModemSource,
-    Coexistence,
-    WifiBb80x1,
-    Etm,
-    BtApbAndSecurity,
-    BtIeee802154CommonBaseband,
-    Ieee802154ApbAndMac,
 }
 
 /// Stable, non-zero-sized identity borrowed by one planner epoch.
@@ -188,6 +297,7 @@ impl LeaseSlot {
 pub(crate) struct ModemClockPlanner<'identity> {
     identity: &'identity ModemClockPlannerIdentity,
     baseline: Baseline,
+    wifi_initialized: bool,
     counts: [u16; DEPENDENCY_COUNT],
     slots: [LeaseSlot; MAX_ACTIVE_LEASES],
 }
@@ -200,6 +310,7 @@ impl<'identity> ModemClockPlanner<'identity> {
         Self {
             identity,
             baseline: Baseline::ExternallyRetained,
+            wifi_initialized: false,
             counts: [0; DEPENDENCY_COUNT],
             slots: [LeaseSlot::EMPTY; MAX_ACTIVE_LEASES],
         }
@@ -214,15 +325,35 @@ impl<'identity> ModemClockPlanner<'identity> {
         Self {
             identity,
             baseline: Baseline::Managed,
+            wifi_initialized: false,
             counts: [0; DEPENDENCY_COUNT],
             slots: [LeaseSlot::EMPTY; MAX_ACTIVE_LEASES],
         }
     }
 
-    /// Prepare acquisition of the exact reviewed IEEE 802.15.4 dependency set.
+    /// Record whether Wi-Fi is initialized; while it is, Wi-Fi clock
+    /// dependencies keep their hardware enabled at a one-to-zero transition.
+    pub(crate) fn set_wifi_initialized(&mut self, initialized: bool) {
+        self.wifi_initialized = initialized;
+    }
+
+    /// Prepare acquisition of one module's exact vendor dependency set.
     ///
     /// Preparation is transactional: counts and lease slots remain unchanged
     /// until all emitted physical edges are acknowledged and commit is called.
+    #[allow(
+        clippy::result_large_err,
+        reason = "allocation-free failure retains the exact planner owner"
+    )]
+    pub(crate) fn prepare_module_acquire(
+        self,
+        module: ModemClockModule,
+    ) -> Result<PreparedModemClockAcquire<'identity>, ModemClockAcquirePreparationFailure<'identity>>
+    {
+        self.prepare_acquire(module.dependencies())
+    }
+
+    /// Prepare acquisition of the exact reviewed IEEE 802.15.4 dependency set.
     #[allow(
         clippy::result_large_err,
         reason = "allocation-free failure retains the exact planner owner"
@@ -231,7 +362,7 @@ impl<'identity> ModemClockPlanner<'identity> {
         self,
     ) -> Result<PreparedModemClockAcquire<'identity>, ModemClockAcquirePreparationFailure<'identity>>
     {
-        self.prepare_acquire(DependencySet::IEEE802154)
+        self.prepare_module_acquire(ModemClockModule::Ieee802154)
     }
 
     #[allow(
@@ -419,7 +550,7 @@ impl<'identity> PreparedModemClockAcquire<'identity> {
             let dependency = Dependency::LOW_BIT_FIRST[usize::from(self.next_dependency)];
             self.next_dependency += 1;
             if self.dependencies.contains(dependency)
-                && self.planner.counts[dependency.index()] == 0
+                && (!dependency.refcounted() || self.planner.counts[dependency.index()] == 0)
             {
                 return ModemClockAcquireStep::Physical(PendingModemClockAcquireEdge {
                     transaction: self,
@@ -596,9 +727,10 @@ impl<'planner, 'lease> PreparedModemClockRelease<'planner, 'lease> {
         while usize::from(self.next_dependency) < DEPENDENCY_COUNT {
             let dependency = Dependency::LOW_BIT_FIRST[usize::from(self.next_dependency)];
             self.next_dependency += 1;
-            if self.lease.dependencies.contains(dependency)
-                && self.planner.counts[dependency.index()] == 1
-            {
+            let last = !dependency.refcounted() || self.planner.counts[dependency.index()] == 1;
+            let retained =
+                self.planner.wifi_initialized && dependency.retained_while_wifi_initialized();
+            if self.lease.dependencies.contains(dependency) && last && !retained {
                 return ModemClockReleaseStep::Physical(PendingModemClockReleaseEdge {
                     transaction: self,
                     edge: dependency.release_edge(),

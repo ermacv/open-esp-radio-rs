@@ -5,7 +5,7 @@ use std::{path::Path, time::Duration};
 use hil_core::{context::Context, image::ImageClass, lab::link::PhyExpectation};
 
 use super::{
-    Direction, InducedProtection, ProtectionPeer, RoleOperation, StationIcmp, StationReconnect,
+    AccessPoint, Direction, ProtectionPeer, RoleOperation, StationIcmp, StationReconnect,
     StationTcp, StationUdp, WifiScenario, WifiWorkload, station::PROTECTION_CHECKS,
 };
 use crate::{
@@ -88,7 +88,8 @@ pub(super) fn execute(
             context,
             link.phy,
         ),
-        WifiWorkload::AccessPoint(workload) => ieee80211::access_point::run(
+        WifiWorkload::AccessPoint(workload) => access_point(
+            workload,
             ieee80211::access_point::Config {
                 probe_load: workload.probe_load,
                 cycles: workload.cycles,
@@ -149,34 +150,69 @@ fn station_udp(
     };
     // The bound only stops a capture whose workload never finishes it.
     let bound = Duration::from_secs(u64::from(workload.duration_seconds) + 180);
-    let capture = ProtectionCapture::start(context.lab, bound, output)?;
+    // The non-HT member is the laptop: its own data to the AP is not the
+    // target's. An overlapping legacy BSS never joins the AP.
+    let peer = match induced.peer {
+        ProtectionPeer::NonHtMember => Some(laptop_address()?),
+        ProtectionPeer::OverlappingLegacyBss => None,
+    };
+    let expectation = Expectation {
+        erp: induced.peer == ProtectionPeer::OverlappingLegacyBss,
+    };
+    let capture = ProtectionCapture::start(context.lab, true, bound, output)?;
     let traffic = station_udp_traffic(workload, image, output, context);
-    let protection = assess_protection(capture, induced, context);
+    let protection = assess_protection(
+        capture,
+        induced.minimum_protected_ppdu_percent,
+        peer,
+        expectation,
+        context,
+    );
     traffic.and(protection)
+}
+
+/// Run an AP workload, observing how the target protects its HT data to the
+/// OpenWrt client while the laptop is a non-HT member.
+fn access_point(
+    workload: &AccessPoint,
+    config: ieee80211::access_point::Config,
+    output: &Path,
+    context: &Context<'_>,
+) -> Result<()> {
+    let Some(protection) = workload.protection else {
+        return ieee80211::access_point::run(config, output, context);
+    };
+    let peer = laptop_address()?;
+    let bound = config.timeout * u32::from(workload.boots) * u32::from(workload.cycles)
+        + Duration::from_secs(180);
+    let capture = ProtectionCapture::start(context.lab, false, bound, output)?;
+    let traffic = ieee80211::access_point::run(config, output, context);
+    let assessed = assess_protection(
+        capture,
+        protection.minimum_protected_ppdu_percent,
+        Some(peer),
+        Expectation { erp: false },
+        context,
+    );
+    traffic.and(assessed)
+}
+
+/// The laptop radio's station address.
+fn laptop_address() -> Result<MacAddress> {
+    Ok(std::fs::read_to_string("/sys/class/net/wlan0/address")?
+        .trim()
+        .parse()?)
 }
 
 fn assess_protection(
     capture: ProtectionCapture,
-    induced: InducedProtection,
+    minimum_protected_ppdu_percent: u8,
+    peer: Option<MacAddress>,
+    expectation: Expectation,
     context: &Context<'_>,
 ) -> Result<()> {
     use hil_core::evidence::run::{Comparison, Measurement, MeasurementUnit};
-    // The non-HT member is the laptop: its own data to the AP is not the
-    // target's. An overlapping legacy BSS never joins the AP.
-    let peer = match induced.peer {
-        ProtectionPeer::NonHtMember => Some(
-            std::fs::read_to_string("/sys/class/net/wlan0/address")?
-                .trim()
-                .parse::<MacAddress>()?,
-        ),
-        ProtectionPeer::OverlappingLegacyBss => None,
-    };
-    let evidence = capture.finish(
-        peer,
-        Expectation {
-            erp: induced.peer == ProtectionPeer::OverlappingLegacyBss,
-        },
-    )?;
+    let evidence = capture.finish(peer, expectation)?;
     if evidence.data_ppdus < MINIMUM_PROTECTION_PPDUS || evidence.nav_evaluated == 0 {
         return Err(format!(
             "protection observation is insufficient: {} data PPDUs, {} with an evaluable NAV",
@@ -192,7 +228,7 @@ fn assess_protection(
         )
         .evaluated(
             Comparison::AtLeast,
-            u64::from(induced.minimum_protected_ppdu_percent) * 100,
+            u64::from(minimum_protected_ppdu_percent) * 100,
         ),
         Measurement::observed(
             PROTECTION_CHECKS[1],

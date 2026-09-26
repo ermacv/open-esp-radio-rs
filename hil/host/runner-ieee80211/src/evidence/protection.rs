@@ -33,6 +33,7 @@ const BLOCK_ACK_BYTES: u32 = 32;
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct ProtectionEvidence {
     pub target: Option<String>,
+    pub receiver: Option<String>,
     pub data_ppdus: u32,
     /// Data PPDUs immediately preceded, within its NAV, by the target's RTS
     /// or by a CTS to the target.
@@ -60,18 +61,69 @@ impl ProtectionEvidence {
     }
 }
 
-/// Analyze frames captured on the AP's channel. The target is the single
-/// station, other than `peer`, that sends data to `bssid`.
+/// The protected data flow: the target transmits to one receiver.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Flow {
+    pub target: MacAddress,
+    pub receiver: MacAddress,
+}
+
+impl Flow {
+    /// A station target: the single sender, other than `peer`, of data to
+    /// the AP `bssid`.
+    pub fn station(
+        frames: &[AirFrame],
+        bssid: MacAddress,
+        peer: Option<MacAddress>,
+    ) -> Result<Self> {
+        let target = dominant(
+            frames,
+            |frame| frame.receiver == Some(bssid),
+            |frame| frame.transmitter,
+            peer,
+            "station sending data to the AP",
+        )?;
+        Ok(Self {
+            target,
+            receiver: bssid,
+        })
+    }
+
+    /// An access-point target serving `peer` and one other station: the AP
+    /// is the sender of data to `peer`, and the receiver is the station, other
+    /// than `peer`, that receives the AP's individually addressed data.
+    pub fn access_point(frames: &[AirFrame], peer: MacAddress) -> Result<Self> {
+        let target = dominant(
+            frames,
+            |frame| frame.receiver == Some(peer),
+            |frame| frame.transmitter,
+            None,
+            "access point sending data to the laptop",
+        )?;
+        let receiver = dominant(
+            frames,
+            |frame| {
+                frame.transmitter == Some(target) && frame.receiver != Some(MacAddress::BROADCAST)
+            },
+            |frame| frame.receiver,
+            Some(peer),
+            "station receiving the access point's data",
+        )?;
+        Ok(Self { target, receiver })
+    }
+}
+
+/// Analyze how `flow.target` protects its data PPDUs to `flow.receiver`.
 pub fn analyze(
     frames: &[AirFrame],
-    bssid: MacAddress,
-    peer: Option<MacAddress>,
+    flow: Flow,
     expectation: Expectation,
 ) -> Result<ProtectionEvidence> {
-    let target = identify_target(frames, bssid, peer)?;
-    let timeline = timeline(frames, target, bssid)?;
+    let Flow { target, receiver } = flow;
+    let timeline = timeline(frames, target, receiver)?;
     let mut evidence = ProtectionEvidence {
         target: Some(target.to_string()),
+        receiver: Some(receiver.to_string()),
         ..ProtectionEvidence::default()
     };
     for (index, &(time, event)) in timeline.iter().enumerate() {
@@ -183,12 +235,15 @@ enum Event<'a> {
 fn timeline<'a>(
     frames: &'a [AirFrame],
     target: MacAddress,
-    bssid: MacAddress,
+    receiver: MacAddress,
 ) -> Result<Vec<(u64, Event<'a>)>> {
     let mut timeline = Vec::new();
     let mut aggregates = BTreeMap::<u32, Option<u64>>::new();
     let mut untimed = 0;
-    for frame in frames.iter().filter(|frame| relevant(frame, target, bssid)) {
+    for frame in frames
+        .iter()
+        .filter(|frame| relevant(frame, target, receiver))
+    {
         let event = match frame.kind {
             FrameKind::RTS => Event::Rts(frame),
             FrameKind::CTS => Event::Cts(frame),
@@ -239,44 +294,47 @@ fn timed(frame: &AirFrame) -> Result<u64> {
     })
 }
 
-fn relevant(frame: &AirFrame, target: MacAddress, bssid: MacAddress) -> bool {
+fn relevant(frame: &AirFrame, target: MacAddress, receiver: MacAddress) -> bool {
     let to_target = frame.receiver == Some(target);
+    let flow = frame.transmitter == Some(target) && frame.receiver == Some(receiver);
     match frame.kind {
-        FrameKind::RTS => frame.transmitter == Some(target) && frame.receiver == Some(bssid),
-        FrameKind::CTS | FrameKind::ACK | FrameKind::BLOCK_ACK => to_target,
-        kind => {
-            kind.is_data() && frame.transmitter == Some(target) && frame.receiver == Some(bssid)
-        }
+        FrameKind::RTS => flow,
+        FrameKind::CTS | FrameKind::ACK => to_target,
+        // The target also receives BlockAcks for other flows; keep the
+        // flow's receiver so another station's response is not attributed.
+        FrameKind::BLOCK_ACK => to_target && frame.transmitter == Some(receiver),
+        kind => kind.is_data() && flow,
     }
 }
 
-fn identify_target(
+/// The address that `address` yields most often among data frames matching
+/// `selected`, excluding `excluded`; it must carry nine tenths of them.
+fn dominant(
     frames: &[AirFrame],
-    bssid: MacAddress,
-    peer: Option<MacAddress>,
+    selected: impl Fn(&AirFrame) -> bool,
+    address: impl Fn(&AirFrame) -> Option<MacAddress>,
+    excluded: Option<MacAddress>,
+    role: &str,
 ) -> Result<MacAddress> {
-    let mut senders = BTreeMap::<MacAddress, u32>::new();
+    let mut counts = BTreeMap::<MacAddress, u32>::new();
     for frame in frames {
-        if let Some(transmitter) = frame.transmitter
+        if let Some(candidate) = address(frame)
             && frame.kind.is_data()
-            && frame.receiver == Some(bssid)
-            && Some(transmitter) != peer
+            && selected(frame)
+            && Some(candidate) != excluded
         {
-            *senders.entry(transmitter).or_default() += 1;
+            *counts.entry(candidate).or_default() += 1;
         }
     }
-    let total = senders.values().sum::<u32>();
-    let (target, count) = senders
+    let total = counts.values().sum::<u32>();
+    let (winner, count) = counts
         .into_iter()
         .max_by_key(|(_, count)| *count)
-        .ok_or("the air capture holds no station data sent to the AP")?;
+        .ok_or_else(|| format!("the air capture shows no {role}"))?;
     if u64::from(count) * 10 < u64::from(total) * 9 {
-        return Err(format!(
-            "no single station dominates the data sent to the AP ({count} of {total} frames)"
-        )
-        .into());
+        return Err(format!("no single {role} dominates ({count} of {total} frames)").into());
     }
-    Ok(target)
+    Ok(winner)
 }
 
 /// Airtime of a control frame of `bytes` at the captured rate, including the

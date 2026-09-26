@@ -160,16 +160,31 @@ pub fn observe_beacons(
     .collect())
 }
 
-/// Control frames and data sent to the station fixture AP, captured by the
+/// Control and data frames on the laboratory channel, captured by the
 /// independent observer for the protection analysis.
 pub struct ProtectionCapture {
     remote: RemoteCapture,
-    bssid: MacAddress,
+    scope: ProtectionScope,
+}
+
+/// Which data the observer retains besides control frames.
+#[derive(Clone, Copy, Debug)]
+pub enum ProtectionScope {
+    /// Data sent to the station fixture AP: the target is its station.
+    StationFixture(MacAddress),
+    /// All data: the target is the access point on the channel.
+    Channel,
 }
 
 impl ProtectionCapture {
-    /// `bound` limits the capture if the workload never finishes it.
-    pub fn start(lab: &LabConfig, bound: Duration, output: &Path) -> Result<Self> {
+    /// Capture on the station fixture's channel. `bound` limits the capture
+    /// if the workload never finishes it.
+    pub fn start(
+        lab: &LabConfig,
+        station_target: bool,
+        bound: Duration,
+        output: &Path,
+    ) -> Result<Self> {
         let observer = lab
             .air_observer
             .as_ref()
@@ -177,25 +192,38 @@ impl ProtectionCapture {
         let StationFixtureConfig::OpenWrt(ap) = &lab.station_fixture else {
             return Err("protection evidence requires the OpenWrt station fixture".into());
         };
-        let bssid = fixture_bssid(ap)?;
+        let scope = if station_target {
+            ProtectionScope::StationFixture(fixture_bssid(ap)?)
+        } else {
+            ProtectionScope::Channel
+        };
+        let filter = match scope {
+            ProtectionScope::StationFixture(bssid) => {
+                format!("type ctl or (type data and wlan addr1 {bssid})")
+            }
+            ProtectionScope::Channel => "type ctl or type data".to_owned(),
+        };
         let geometry = local::air_monitor::resolve_observer_action(ap)?;
         fs::create_dir_all(output)?;
         let remote = RemoteCapture::start_independent(
             observer,
             geometry,
-            &format!("type ctl or (type data and wlan addr1 {bssid})"),
+            &filter,
             SnapshotLength::Headers,
             output.join("protection-air.pcap"),
             bound,
         )?;
-        Ok(Self { remote, bssid })
+        Ok(Self { remote, scope })
     }
 
+    /// Stop the capture and analyze the target flow. `peer` is the laptop:
+    /// a station target's co-member, or an access point target's other client.
     pub fn finish(
         mut self,
         peer: Option<MacAddress>,
         expectation: crate::evidence::protection::Expectation,
     ) -> Result<crate::evidence::protection::ProtectionEvidence> {
+        use crate::evidence::protection::{Flow, analyze};
         let (captured, dropped) = self.remote.finish_capture()?;
         if dropped != 0 {
             return Err(
@@ -207,12 +235,18 @@ impl ProtectionCapture {
             "wlan.fc.type == 1 || wlan.fc.type == 2",
             air::Payload::Omit,
         )?;
-        let evidence =
-            crate::evidence::protection::analyze(&frames, self.bssid, peer, expectation)?;
+        let flow = match self.scope {
+            ProtectionScope::StationFixture(bssid) => Flow::station(&frames, bssid, peer)?,
+            ProtectionScope::Channel => Flow::access_point(
+                &frames,
+                peer.ok_or("an access point flow needs the laptop client")?,
+            )?,
+        };
+        let evidence = analyze(&frames, flow, expectation)?;
         fs::write(
             self.remote.output_path().with_extension("json"),
             serde_json::to_vec_pretty(&serde_json::json!({
-                "schema": 1, "captured_frames": captured, "bssid": self.bssid.to_string(),
+                "schema": 1, "captured_frames": captured,
                 "erp_protection": expectation.erp, "evidence": evidence,
             }))?,
         )?;

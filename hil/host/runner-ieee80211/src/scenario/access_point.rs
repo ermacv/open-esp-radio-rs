@@ -35,11 +35,23 @@ pub struct AccessPoint {
     /// Capture the channel through the laptop's independent adapter.
     #[serde(default)]
     pub independent_air_monitor: bool,
+    /// Observe, with the independent observer, how the AP protects its HT
+    /// data to the OpenWrt client while the laptop is a non-HT member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protection: Option<AccessPointProtection>,
     pub traffic: AccessPointTraffic,
 }
 
 const fn default_security() -> WifiAccessPointSecurity {
     WifiAccessPointSecurity::Wpa2Personal
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccessPointProtection {
+    /// Minimum share of the AP's observed HT data PPDUs to the OpenWrt
+    /// client that an RTS/CTS exchange precedes.
+    pub minimum_protected_ppdu_percent: u8,
 }
 
 /// The physical clients that associate with the target AP.
@@ -61,7 +73,20 @@ pub enum AccessPointClients {
     },
     /// The laptop as primary client and the OpenWrt client concurrently.
     #[serde(rename = "laptop-and-openwrt")]
-    LaptopAndOpenWrt {},
+    LaptopAndOpenWrt {
+        #[serde(default)]
+        laptop_phy: LaptopPhy,
+    },
+}
+
+/// The capabilities the laptop client advertises.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaptopPhy {
+    #[default]
+    Ht,
+    /// A Clause 18 ERP-OFDM station: the AP must protect HT PPDUs.
+    NonHt,
 }
 
 impl Default for AccessPointClients {
@@ -72,17 +97,17 @@ impl Default for AccessPointClients {
 
 impl AccessPointClients {
     pub const fn laptop(self) -> bool {
-        matches!(self, Self::Laptop {} | Self::LaptopAndOpenWrt {})
+        matches!(self, Self::Laptop {} | Self::LaptopAndOpenWrt { .. })
     }
 
     pub const fn openwrt(self) -> bool {
-        matches!(self, Self::OpenWrt { .. } | Self::LaptopAndOpenWrt {})
+        matches!(self, Self::OpenWrt { .. } | Self::LaptopAndOpenWrt { .. })
     }
 
     pub const fn count(self) -> u8 {
         match self {
             Self::Laptop {} | Self::OpenWrt { .. } => 1,
-            Self::LaptopAndOpenWrt {} => 2,
+            Self::LaptopAndOpenWrt { .. } => 2,
         }
     }
 }
@@ -439,10 +464,10 @@ impl AccessPoint {
                     );
                 }
             }
-            AccessPointClients::Laptop {} | AccessPointClients::LaptopAndOpenWrt {} => {}
+            AccessPointClients::Laptop {} | AccessPointClients::LaptopAndOpenWrt { .. } => {}
         }
         if matches!(self.traffic, AccessPointTraffic::UdpMultiClient(_))
-            && !matches!(self.clients, AccessPointClients::LaptopAndOpenWrt {})
+            && !matches!(self.clients, AccessPointClients::LaptopAndOpenWrt { .. })
         {
             return Err("multi-client AP UDP requires the laptop and OpenWrt clients".into());
         }
@@ -462,6 +487,27 @@ impl AccessPoint {
             return Err(
                 "probe load requires diagnostic-task-poll and 12-second multi-client UDP TX".into(),
             );
+        }
+        if let Some(protection) = self.protection {
+            bounded(
+                protection.minimum_protected_ppdu_percent,
+                1,
+                100,
+                "protection.minimum_protected_ppdu_percent",
+            )?;
+            if self.clients
+                != (AccessPointClients::LaptopAndOpenWrt {
+                    laptop_phy: LaptopPhy::NonHt,
+                })
+                || self
+                    .link
+                    .is_none_or(|link| link.phy == PhyExpectation::He20)
+                || self.independent_air_monitor
+                || !matches!(&self.traffic, AccessPointTraffic::UdpMultiClient(traffic)
+                    if traffic.offer.direction().transmits())
+            {
+                return Err("AP protection needs a non-HT laptop, the OpenWrt client, an HT link and multi-client UDP TX".into());
+            }
         }
         if self.scheduler != WifiApScheduler::Disabled && self.link.is_none() {
             return Err(

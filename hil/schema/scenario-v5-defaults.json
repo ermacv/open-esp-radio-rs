@@ -72,7 +72,10 @@
           "scheduler": "disabled",
           "clients": {
             "kind": "laptop",
-            "$kind": { "openwrt": { "fixed_guard_interval": false } }
+            "$kind": {
+              "openwrt": { "fixed_guard_interval": false },
+              "laptop-and-openwrt": { "laptop_phy": "ht" }
+            }
           },
           "probe_load": false,
           "independent_air_monitor": false,

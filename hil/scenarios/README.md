@@ -135,6 +135,15 @@ station other than the laptop peer that sends that data. It publishes:
 Fewer than 50 observed PPDUs, or none with an evaluable NAV, is an
 insufficient observation rather than a pass.
 
+An access-point workload may declare `[wifi.workload.protection]` with the
+same floor. It requires `clients = { kind = "laptop-and-openwrt", laptop_phy =
+"non-ht" }`, an HT link and multi-client UDP TX: the laptop joins without HT
+capability, so the target AP must advertise HT protection and protect its HT
+PPDUs to the OpenWrt client. The observer captures the whole channel; the
+target is the station that sends data to the laptop, and the protected flow
+is its individually addressed data to the other station. The same three
+checks are published.
+
 ### AP availability
 
 `station-ap-loss` waits for connection, stops the controlled AP, requires beacon

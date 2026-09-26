@@ -57,7 +57,12 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
         );
     };
     let kind = field("kind").and_then(Value::as_str);
-    if let Some(induced) = field("induced_protection").filter(|v| !v.is_null()) {
+    // A station workload induces the protection; an access-point workload
+    // observes its own protection toward the OpenWrt client.
+    let protection = field("induced_protection")
+        .or_else(|| field("protection"))
+        .filter(|v| !v.is_null());
+    if let Some(induced) = protection {
         let percent = induced
             .get("minimum_protected_ppdu_percent")
             .and_then(Value::as_u64)
@@ -243,6 +248,13 @@ mod tests {
             contracts(&json!({"wifi":{"workload":{"kind":"station-udp",
                 "induced_protection":{"peer":"non-ht-member"}}}}))
             .is_err()
+        );
+        let access_point = contracts(&json!({"wifi":{"workload":{"kind":"access-point",
+            "protection":{"minimum_protected_ppdu_percent":90}}}}))
+        .unwrap();
+        assert_eq!(
+            access_point["wifi.protection.rts-cts-before-data"].threshold,
+            9_000
         );
     }
 

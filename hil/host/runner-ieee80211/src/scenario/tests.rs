@@ -461,3 +461,32 @@ fn induced_protection_needs_ht_transmission_and_publishes_air_checks() {
         induced("non-ht-member", 95)
     ));
 }
+
+#[test]
+fn access_point_protection_needs_a_non_ht_laptop_and_ht_transmission() {
+    let protected = |clients: &str, traffic: &str| {
+        ap(
+            &format!(
+                "link = {{ phy = 'ht40' }}\nclients = {clients}\n[workload.protection]\nminimum_protected_ppdu_percent = 95\n"
+            ),
+            traffic,
+        )
+    };
+    let non_ht = "{ kind = 'laptop-and-openwrt', laptop_phy = 'non-ht' }";
+    let plan = valid(&protected(non_ht, MULTI_TX)).plan();
+    assert!(plan.requirements.air_observer && plan.requirements.laptop_client);
+    assert!(plan.requirements.openwrt_client);
+    assert_eq!(
+        plan.checks,
+        [
+            "wifi.protection.control-rate",
+            "wifi.protection.nav-covers-exchange",
+            "wifi.protection.rts-cts-before-data",
+        ]
+    );
+    invalid(&protected("{ kind = 'laptop-and-openwrt' }", MULTI_TX));
+    invalid(&protected(non_ht, &MULTI_TX.replace("tx_bps", "rx_bps")));
+    invalid(&protected(non_ht, MULTI_TX).replace("'ht40'", "'he20'"));
+    // A non-HT laptop without an observed protection contract is ordinary.
+    valid(&ap(&format!("clients = {non_ht}\n"), MULTI_TX));
+}

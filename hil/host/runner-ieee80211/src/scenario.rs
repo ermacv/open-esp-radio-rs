@@ -480,6 +480,10 @@ impl WifiScenario {
                 requirements.openwrt_client = workload.clients.openwrt();
                 requirements.openwrt_tx_monitor = workload.probe_load;
                 requirements.laptop_air_monitor = workload.independent_air_monitor;
+                requirements.air_observer = workload.protection.is_some();
+                if workload.protection.is_some() {
+                    checks.extend(station::PROTECTION_CHECKS);
+                }
                 ap_scheduler = workload.scheduler;
             }
             WifiWorkload::StationAccessPoint(workload) => {

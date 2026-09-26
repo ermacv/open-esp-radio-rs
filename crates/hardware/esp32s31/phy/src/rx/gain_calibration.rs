@@ -210,7 +210,7 @@ struct PhyRxDcCalibrationPolicyState {
 }
 
 impl PhyRxDcCalibrationPolicyState {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", test))]
     const fn new(initial: [u16; 2]) -> Self {
         Self {
             current: initial,
@@ -290,7 +290,12 @@ impl PhyRxDcCalibrationPolicyState {
         let converged = delta_i.wrapping_abs() <= threshold
             && delta_q.wrapping_abs() <= threshold
             && power < 46;
-        if !converged {
+        // ROM `phy_pbus_rx_dco_cal_1step_new` stores the codes it forces at
+        // the start of each iteration into its caller's output and returns
+        // that output, so the correction of the final unconverged iteration
+        // is computed but never published.
+        let last = self.iteration + 1 >= maximum_iterations(request.stage);
+        if !converged && !last {
             if delta_i.wrapping_abs() > threshold {
                 self.current[0] =
                     saturate_9bit(i32::from(self.current[0]).wrapping_sub(correction_i));

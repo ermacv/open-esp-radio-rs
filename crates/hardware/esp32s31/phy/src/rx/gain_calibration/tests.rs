@@ -716,3 +716,26 @@ fn minimum_searches_start_from_the_previous_estimate_of_their_slot() {
         }
     );
 }
+
+#[test]
+fn exhausted_calibration_publishes_the_codes_forced_by_its_last_iteration() {
+    let mut policy = PhyRxDcCalibrationPolicyState::new(RADIO.initial);
+    let residual = PhyDcIqEstimate {
+        i: 0,
+        q: 30,
+        power: 0,
+    };
+    let mut outcome = None;
+    for _ in 0..maximum_iterations(PhyRxDcCalibrationStage::Radio) {
+        assert!(outcome.is_none());
+        outcome = policy.accept(RADIO, 0, 0, false, residual, 0);
+    }
+    let outcome = outcome.expect("the radio stage stops at its iteration limit");
+    assert!(!outcome.converged);
+    // Every iteration but the last one publishes its Q correction.
+    let applied = u16::from(maximum_iterations(PhyRxDcCalibrationStage::Radio) - 1);
+    assert_eq!(
+        outcome.configuration,
+        [RADIO.initial[0], RADIO.initial[1] - applied * 30]
+    );
+}

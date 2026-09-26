@@ -44,8 +44,11 @@ impl RadioCapabilities {
     pub const SECURITY_OFFLOAD: Self = Self(1 << 9);
     /// Hardware source matching and frame-pending selection.
     pub const SOURCE_MATCH: Self = Self(1 << 10);
+    /// Retransmission after a transmission without acknowledgement or
+    /// channel access.
+    pub const TRANSMIT_RETRIES: Self = Self(1 << 11);
 
-    const KNOWN: u16 = (1 << 11) - 1;
+    const KNOWN: u16 = (1 << 12) - 1;
 
     /// Validate a serialized capability image.
     pub const fn from_bits(bits: u16) -> Result<Self, CapabilityBitsError> {

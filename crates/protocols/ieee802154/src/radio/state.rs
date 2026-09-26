@@ -220,6 +220,16 @@ impl RadioStateMachine {
                         required: RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT,
                     });
                 }
+                if request.max_frame_retries > 0
+                    && !self
+                        .capabilities
+                        .contains(RadioCapabilities::TRANSMIT_RETRIES)
+                {
+                    return Err(CommandError::Unsupported {
+                        command: kind,
+                        required: RadioCapabilities::TRANSMIT_RETRIES,
+                    });
+                }
                 if request.transmit_power_dbm.is_some()
                     && !self
                         .capabilities

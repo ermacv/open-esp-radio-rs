@@ -33,6 +33,8 @@ pub mod mac {
     pub mod header;
     /// Frame-pending table and ACK pending-bit decision.
     pub mod pending;
+    /// Frame retransmission after a failed attempt.
+    pub mod retransmission;
 }
 
 /// Hardware-independent radio command/event and state contracts.
@@ -45,6 +47,7 @@ pub use mac::enhanced_ack::{
 pub use mac::frame::{Frame, FrameError, FrameView, MAX_MAC_FRAME_LEN, MIN_MAC_FRAME_LEN};
 pub use mac::header::{AddressMode, FrameAddress, FrameType, FrameVersion, PhrFrame};
 pub use mac::pending::{AckPending, AutoPendingMode, PendingTable, PendingTableFull, ack_pending};
+pub use mac::retransmission::{AttemptFailure, FrameRetries, RetryStart};
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
 pub use radio::command::{

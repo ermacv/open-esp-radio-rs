@@ -133,6 +133,9 @@ pub struct TxRequest<'frame> {
     pub mode: TxMode,
     /// Optional requested power in dBm; `None` retains backend configuration.
     pub transmit_power_dbm: Option<i8>,
+    /// Retransmissions after an attempt without acknowledgement or channel
+    /// access (`macMaxFrameRetries`); zero sends the frame once.
+    pub max_frame_retries: u8,
 }
 
 /// One bounded energy-detection scan request.

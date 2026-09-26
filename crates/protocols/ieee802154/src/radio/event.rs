@@ -21,8 +21,14 @@ pub enum RadioEvent<'frame> {
     EnergyScanDone {
         /// Correlation identifier from the accepted request.
         id: RequestId,
-        /// Maximum observed RSSI normalized to dBm.
-        maximum_rssi_dbm: i8,
+        /// Measured channel energy in dBm, reduced over the scan as the
+        /// backend's detector does (the ESP32-S31 averages its samples).
+        energy_dbm: i8,
+    },
+    /// Terminal energy scan failure: the backend aborted the measurement.
+    EnergyScanFailed {
+        /// Correlation identifier from the accepted request.
+        id: RequestId,
     },
     /// Terminal standalone CCA completion.
     ClearChannelAssessmentDone {
@@ -30,6 +36,11 @@ pub enum RadioEvent<'frame> {
         id: RequestId,
         /// Whether the assessment found the channel idle.
         idle: bool,
+    },
+    /// Terminal standalone CCA failure: the backend aborted the assessment.
+    ClearChannelAssessmentFailed {
+        /// Correlation identifier from the accepted request.
+        id: RequestId,
     },
     /// Fail-closed backend fault. A valid fault disables the state machine.
     Fault {
@@ -118,6 +129,12 @@ pub enum TxStatus {
     InvalidFrame,
     /// Hardware could not complete the operation.
     HardwareFailure,
+    /// Radio coexistence refused the transmission.
+    CoexistenceRejected,
+    /// The transmit security configuration was invalid for the frame.
+    SecurityFailure,
+    /// An acknowledgement arrived but was not a valid ACK for the frame.
+    InvalidAcknowledgement,
 }
 
 /// Portable fail-closed controller fault category.

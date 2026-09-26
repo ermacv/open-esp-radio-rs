@@ -310,7 +310,7 @@ impl RadioStateMachine {
                     resume,
                     ..
                 },
-                RadioEvent::EnergyScanDone { id, .. },
+                RadioEvent::EnergyScanDone { id, .. } | RadioEvent::EnergyScanFailed { id },
             ) => {
                 require_id(expected, id)?;
                 RadioState::Resting(resume)
@@ -321,7 +321,8 @@ impl RadioStateMachine {
                     resume,
                     ..
                 },
-                RadioEvent::ClearChannelAssessmentDone { id, .. },
+                RadioEvent::ClearChannelAssessmentDone { id, .. }
+                | RadioEvent::ClearChannelAssessmentFailed { id },
             ) => {
                 require_id(expected, id)?;
                 RadioState::Resting(resume)

@@ -62,6 +62,11 @@ impl RadioCapabilities {
         self.0
     }
 
+    /// Return the union of two capability sets.
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
     /// Whether every bit in `required` is present.
     pub const fn contains(self, required: Self) -> bool {
         self.0 & required.0 == required.0

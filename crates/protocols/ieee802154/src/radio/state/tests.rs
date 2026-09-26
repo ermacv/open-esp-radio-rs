@@ -255,3 +255,43 @@ fn failed_transmit_cannot_publish_an_acknowledgement() {
         Err(EventError::AcknowledgementOnFailedTransmit)
     );
 }
+
+/// A backend abort ends an energy scan or a standalone CCA and resumes the
+/// resting state; the failure of one operation is not accepted for the other.
+#[test]
+fn measurement_failures_end_their_own_operation() {
+    let capabilities = RadioCapabilities::ENERGY_SCAN | RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT;
+    let mut machine = enabled(capabilities);
+    machine
+        .admit(RadioCommand::EnergyScan(EnergyScanRequest {
+            id: RequestId::new(8),
+            channel: channel(20),
+            duration_us: 128,
+        }))
+        .unwrap();
+    assert!(matches!(
+        machine.observe(RadioEvent::ClearChannelAssessmentFailed {
+            id: RequestId::new(8)
+        }),
+        Err(EventError::Unexpected { .. })
+    ));
+    machine
+        .observe(RadioEvent::EnergyScanFailed {
+            id: RequestId::new(8),
+        })
+        .unwrap();
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+
+    machine
+        .admit(RadioCommand::ClearChannelAssessment {
+            id: RequestId::new(9),
+            channel: channel(20),
+        })
+        .unwrap();
+    machine
+        .observe(RadioEvent::ClearChannelAssessmentFailed {
+            id: RequestId::new(9),
+        })
+        .unwrap();
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+}

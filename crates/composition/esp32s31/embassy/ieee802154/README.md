@@ -25,15 +25,22 @@ owners out of the runtime, prove the foundation again, leave the domain and
 BTBB (closing RF after the last PHY client), release the clocks and leave
 common power. It returns the partition and the engine for a later start.
 
-`Ieee802154System::maintain_phy` runs shared PHY tracking while the client
-is running, as ESP-IDF's periodic `phy_track_pll` does; call it once per
-tracking period. The radio arbiter admits tracking only while every active
-client proves quiescence, which is stricter than the vendor: when IEEE
-802.15.4 is the only active client, the call pauses the runtime (leaving
-receive mode), closes the CPU route, issues the client's quiescence proof,
-tracks within that window, then resumes receive mode and binds the route
-again. With another client active it reports `AwaitingOtherClients`; a
-running transmission, scan or CCA reports `Busy`.
+Shared PHY tracking follows the domain's maintenance policy. Under the
+default `Vendor` policy the arbiter owner runs the PHY's
+`run_concurrent_phy_tracking` for the lifetime of the shared domain, as
+ESP-IDF's periodic `phy_track_pll` timer does: tracking runs under the arbiter
+lease with IEEE 802.15.4 running, and the tracking graph raises the PHY's
+coexistence grant around its RF-sensitive regions. `Ieee802154System::maintain_phy`
+runs one such tick on demand.
+
+Under the stricter `Quiesced` policy every active client proves quiescence
+before tracking starts. When IEEE 802.15.4 is the only active client,
+`maintain_phy` pauses the runtime (leaving receive mode), closes the CPU
+route, issues the client's quiescence proof, tracks within that window, then
+resumes receive mode and binds the route again; `maintain_phy_until` repeats
+it once per tracking period. With another client active it reports
+`AwaitingOtherClients`, and a running transmission, scan or CCA reports
+`Busy`.
 
 A step that fails before starting shared hardware work rolls the earlier
 steps back and returns the parked partition. A started PHY, clock or power
@@ -48,6 +55,6 @@ The enhanced-ACK generator is not composed; enhanced ACKs are refused.
 
 ## Limits
 
-Tracking that must collect the proofs of several active clients needs a
-joint radio supervisor, which is not composed. Sleep and RF gating are not
+Under the quiesced policy, tracking that must collect the proofs of several
+active clients needs a joint radio supervisor, which is not composed. Sleep and RF gating are not
 composed, and on-air behaviour is qualified only by HIL runs.

@@ -1,5 +1,6 @@
 //! Bring-up and teardown of the IEEE 802.15.4 client on the chip.
 
+use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Instant, Timer};
 use esp_hal::interrupt::{InterruptHandler, Priority};
@@ -27,9 +28,10 @@ use oer_esp32s31_ieee802154_runtime::{
 };
 use oer_esp32s31_phy::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyTrackingError, ConcurrentRfError,
-    NoopPhyTargetObserver, PhyRegisterConfig, close_concurrent_rf,
+    ConcurrentTrackingTick, NoopPhyTargetObserver, PhyRegisterConfig, close_concurrent_rf,
     concurrent::{
-        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, evaluate_periodic_tracking,
+        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, MaintenancePolicy,
+        evaluate_periodic_tracking,
     },
     ieee802154_client::{
         Ieee802154PhyClientError, Ieee802154PhyMembership, RegisteredIeee802154Operational,
@@ -37,9 +39,13 @@ use oer_esp32s31_phy::{
     },
     maintain_concurrent_phy, register_concurrent_phy,
     state::client::PhyModemClient,
-    wake_concurrent_rf,
+    track_concurrent_phy, wake_concurrent_rf,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
+
+use crate::maintenance::{
+    Ieee802154PhyMaintenance, MAINTENANCE_PERIOD_MICROS, next_attempt_micros,
+};
 
 /// Events the runtime queues before the consumer takes them.
 pub const IEEE802154_EVENT_CAPACITY: usize = 16;
@@ -184,21 +190,6 @@ pub struct Ieee802154System {
     /// Bound except while PHY maintenance holds the MAC paused, or after a
     /// failed rebind.
     bound: Option<BoundEspHalIeee802154InterruptRoute>,
-}
-
-/// Outcome of one PHY maintenance attempt.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154PhyMaintenance {
-    /// No tracking was due.
-    NotDue,
-    /// Tracking ran inside IEEE 802.15.4's quiescence window.
-    Tracked,
-    /// Tracking is due, but another client is active: the maintenance must
-    /// collect every active client's quiescence proof, which one client
-    /// cannot. IEEE 802.15.4 keeps running.
-    AwaitingOtherClients,
-    /// A transmission, energy scan or CCA is running; retry after it ends.
-    Busy,
 }
 
 /// Why PHY maintenance failed.
@@ -522,16 +513,20 @@ impl Ieee802154System {
         &RUNTIME
     }
 
-    /// Run shared PHY tracking when it is due, as ESP-IDF's periodic
-    /// `phy_track_pll` does for IEEE 802.15.4.
+    /// Run one shared PHY tracking tick under the domain's maintenance
+    /// policy, as one tick of ESP-IDF's periodic `phy_track_pll`.
     ///
-    /// The radio arbiter admits tracking only while every active client
-    /// proves quiescence. When IEEE 802.15.4 is the only active client, this
+    /// Under [`MaintenancePolicy::Vendor`] the tick runs with IEEE 802.15.4
+    /// running, as the vendor does under its PHY lock; the arbiter owner's
+    /// [`run_concurrent_phy_tracking`](oer_esp32s31_phy::run_concurrent_phy_tracking)
+    /// is the periodic loop of this policy. Under
+    /// [`MaintenancePolicy::Quiesced`] every active client must prove
+    /// quiescence first: when IEEE 802.15.4 is the only active client this
     /// pauses the runtime (leaving receive mode), closes the CPU route,
     /// issues the proof, runs the tracking transaction within it, and then
-    /// resumes the runtime and binds the route again. Call it periodically,
-    /// for example once per tracking period, on the core that started the
-    /// client.
+    /// resumes the runtime and binds the route again; with another client
+    /// active it reports `AwaitingOtherClients`. Run it on the core that
+    /// started the client.
     ///
     /// # Errors
     ///
@@ -543,6 +538,32 @@ impl Ieee802154System {
         platform: &mut P,
     ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
         let mut lease = lease(radio).await;
+        if lease.attachment().maintenance_policy() == MaintenancePolicy::Vendor {
+            let mut clock = EmbassyPhyTime;
+            let tick = core::pin::pin!(track_concurrent_phy::<P, EmbassyPhyTime, _>(
+                &mut lease,
+                platform,
+                &mut clock,
+                NoopPhyTargetObserver,
+            ));
+            return match tick.await {
+                Ok(ConcurrentTrackingTick::NotDue) => Ok(Ieee802154PhyMaintenance::NotDue),
+                Ok(ConcurrentTrackingTick::Tracked(_)) => Ok(Ieee802154PhyMaintenance::Tracked),
+                Ok(ConcurrentTrackingTick::Unavailable(error)) => {
+                    Err(Ieee802154MaintenanceError::Phy(error))
+                }
+                // The policy was read under this lease.
+                Ok(ConcurrentTrackingTick::AwaitingQuiescence) => {
+                    Ok(Ieee802154PhyMaintenance::AwaitingOtherClients)
+                }
+                Err(ConcurrentPhyTrackingError::Rejected(error)) => {
+                    Err(Ieee802154MaintenanceError::Phy(error))
+                }
+                Err(ConcurrentPhyTrackingError::Failed(_)) => {
+                    Err(Ieee802154MaintenanceError::TrackingFailed)
+                }
+            };
+        }
         let due = lease.attachment().tracking_pending()
             || evaluate_periodic_tracking(&mut lease, &mut EmbassyPhyTime)
                 .map_err(Ieee802154MaintenanceError::Phy)?;
@@ -606,6 +627,41 @@ impl Ieee802154System {
             Err(ConcurrentPhyTrackingError::Failed(_)) => {
                 Err(Ieee802154MaintenanceError::TrackingFailed)
             }
+        }
+    }
+
+    /// Keep the shared PHY tracked until `stop` completes: one
+    /// [`Self::maintain_phy`] tick per tracking period, retried promptly
+    /// while the MAC is busy. This is the periodic loop of the
+    /// [`MaintenancePolicy::Quiesced`] policy while IEEE 802.15.4 is the only
+    /// client; under the default vendor policy the arbiter owner runs
+    /// `run_concurrent_phy_tracking` instead. `observe` receives each tick's
+    /// outcome. Run it on the core that started the client and call
+    /// [`Self::stop`] after it returns.
+    ///
+    /// # Errors
+    ///
+    /// A maintenance attempt failed; tracking stops being attempted.
+    pub async fn maintain_phy_until<P>(
+        &mut self,
+        radio: &SharedRadio<ConcurrentPhy>,
+        platform: &mut P,
+        stop: impl Future<Output = ()>,
+        mut observe: impl FnMut(Ieee802154PhyMaintenance),
+    ) -> Result<(), Ieee802154MaintenanceError> {
+        let mut stop = core::pin::pin!(stop);
+        let mut delay = MAINTENANCE_PERIOD_MICROS;
+        loop {
+            match select(Timer::after_micros(delay), stop.as_mut()).await {
+                Either::First(()) => {}
+                Either::Second(()) => return Ok(()),
+            }
+            let outcome = {
+                let maintained = core::pin::pin!(self.maintain_phy(radio, platform));
+                maintained.await?
+            };
+            observe(outcome);
+            delay = next_attempt_micros(outcome);
         }
     }
 

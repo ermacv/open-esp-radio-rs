@@ -18,12 +18,17 @@
 //! the MAC has one set of owners. Commands and events go through
 //! [`Ieee802154System::runtime`].
 
+mod maintenance;
 #[cfg(target_arch = "riscv32")]
 mod system;
+
+pub use maintenance::{
+    BUSY_RETRY_MICROS, Ieee802154PhyMaintenance, MAINTENANCE_PERIOD_MICROS, next_attempt_micros,
+};
 
 #[cfg(target_arch = "riscv32")]
 pub use system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154MaintenanceError, Ieee802154Parked,
-    Ieee802154PhyMaintenance, Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError,
-    Ieee802154StopFailure, Ieee802154System, Ieee802154SystemRuntime, start,
+    Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError, Ieee802154StopFailure,
+    Ieee802154System, Ieee802154SystemRuntime, start,
 };

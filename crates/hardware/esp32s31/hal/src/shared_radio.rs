@@ -367,6 +367,14 @@ impl<T> SharedRadio<T> {
         self.state.get_mut().btbb_clients |= client_bit(client);
     }
 
+    /// Record a BTBB reference of `client` without register access, for
+    /// ownership tests of upper layers over an isolated validation root.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn hold_btbb_for_validation(&mut self, client: RadioClient) {
+        self.state.get_mut().btbb_clients |= client_bit(client);
+    }
+
     #[cfg(test)]
     pub(crate) fn hold_common_power_for_test(&mut self, client: RadioClient) {
         self.state.get_mut().power.hold_for_test(client);

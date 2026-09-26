@@ -181,6 +181,30 @@ impl<'a> LegacyScanResponseData<'a> {
     pub const fn is_empty(self) -> bool {
         self.0.is_empty()
     }
+
+    /// Encode the complete `SCAN_RSP` of `advertiser` into bounded caller
+    /// storage.
+    pub fn encode(
+        self,
+        advertiser: LeDeviceAddress,
+        destination: &mut [u8],
+    ) -> Result<usize, LegacyAdvertisingEncodeError> {
+        let (bytes, length) = encode_prepared_pdu(
+            advertiser,
+            self.as_bytes(),
+            SCAN_RSP_TYPE,
+            LeChannelSelectionAlgorithmTwoSupport::Unsupported,
+        );
+        let length = usize::from(length);
+        if destination.len() < length {
+            return Err(LegacyAdvertisingEncodeError::DestinationTooSmall {
+                required: length,
+                available: destination.len(),
+            });
+        }
+        destination[..length].copy_from_slice(&bytes[..length]);
+        Ok(length)
+    }
 }
 
 impl LegacyScanResponseData<'static> {

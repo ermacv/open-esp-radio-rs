@@ -254,3 +254,14 @@ fn legacy_channel_selection_uses_both_advertising_and_initiating_bits() {
         assert_eq!(first.cancel().channel_selection(), expected);
     }
 }
+
+#[test]
+fn a_scan_response_carries_the_advertiser_and_its_data() {
+    let data = LegacyScanResponseData::new(&[3, 9, 8, 7]).unwrap();
+    let advertiser =
+        LeDeviceAddress::from_wire_bytes(ADVERTISER_BYTES, LeDeviceAddressKind::Random);
+    let mut pdu = [0; LEGACY_ADVERTISING_PDU_CAPACITY];
+    let length = data.encode(advertiser, &mut pdu).unwrap();
+    assert_eq!(&pdu[..length], [0x44, 10, 7, 8, 9, 10, 11, 12, 3, 9, 8, 7]);
+    assert!(data.encode(advertiser, &mut [0; 11]).is_err());
+}

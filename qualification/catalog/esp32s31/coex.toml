@@ -184,42 +184,42 @@ scope-and-limitations = "Mapped timer disable and local active-state bookkeeping
 id = "coex-coexistence-policy-and-scheduler-scheduler-state"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Scheduler state"
-status = "partial"
+status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "[Scheduler](src/scheduler.rs) retains interval, current schedule, period, phase index and phase slice. Activating this software state does not schedule RF."
+scope-and-limitations = "[Schedule](src/schedule.rs) holds the `coex_schm_env` state of esp-coex-lib `c758e7b5`: the five status words, the selected scheme, the phase index, the interval and the flexible period. It is executor-neutral state; no runtime owner arms its phase timer yet."
 packages = ["oer-esp32s31-coex"]
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-phase-representation"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Phase representation"
-status = "partial"
+status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "`CoexPhase` retains an opaque four-byte image. Individual byte semantics are not recovered and the image has no MMIO publication operation."
+scope-and-limitations = "`CoexPhase` decodes the recovered four-byte phase: its share of the period, the Wi-Fi flags and the two Bluetooth flag bytes, and which radios a phase notifies. The receivers interpret their flag bits; the Bluetooth bytes' meaning belongs to the Bluetooth controller and is not decoded here."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-executable-phase-transitions"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Executable phase transitions"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No semantic phase decoder, expiry-driven transition or slice publication owner exists."
+scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. No runtime timer delivers these steps yet."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-scheme-selection"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Scheme selection"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No Wi-Fi/BT/BLE state-to-schedule policy exists."
+scope-and-limitations = "`CoexStatusWords::select` reproduces `coex_schm_status_change` and matches the vendor selection over every combination of the status bits it tests. No radio publishes its status to a running schedule yet."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-wifi-idle-connected-scan-connecting-schemes"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Wi-Fi IDLE / CONNECTED / SCAN / CONNECTING schemes"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No production state hooks select coexistence periods or allocations."
+scope-and-limitations = "All 107 schemes of `coexist_scheme.o` are recovered, including the Wi-Fi scan, connecting and connected schemes beside BLE, classic Bluetooth, IEEE 802.15.4 and external coexistence. No Wi-Fi state hook publishes the status that selects them."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-tbtt-anchored-periods"
@@ -233,9 +233,9 @@ scope-and-limitations = "No owner binds Wi-Fi TBTT to a coexistence period."
 id = "coex-coexistence-policy-and-scheduler-wifi-bt-ble-time-slices"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Wi-Fi / BT / BLE time slices"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No executable slice scheduler exists."
+scope-and-limitations = "The schedule model computes each phase's slice as period times interval times share. No executable slice scheduler runs it, and no radio reacts to its notifications yet."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ble-advertising-dynamic-priority"

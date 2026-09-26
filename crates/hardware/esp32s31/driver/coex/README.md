@@ -9,6 +9,26 @@ request, so event 48 has no policy timer. It does not implement RF grant
 notification or a joint Wi-Fi/Bluetooth/IEEE 802.15.4 runtime. See
 [source capabilities](FEATURES.md) for those boundaries.
 
+## Time-slice schedule
+
+`CoexSchedule` is the recovered `coex_schm_env` of esp-coex-lib `c758e7b5`.
+Each radio publishes status bits (`set_status_bits`, `clear_status_bits`);
+the status words select one of the 107 recovered schemes of
+`coexist_scheme.o`, exactly as `coex_schm_status_change` does. A scheme
+divides a period into phases; a phase lasts period × interval × share
+microseconds and notifies Wi-Fi, Bluetooth or both. The schedule programs no
+priority itself: a notified radio requests its own events through
+`CoexCore`, and the hardware arbitrates by priority.
+
+The phases loop only while at least two radio groups publish status. With
+Wi-Fi scanning, connecting or keeping only a connectionless window, they loop
+on the schedule's own timer; a connected Wi-Fi stops them at the last phase
+and restarts them itself (`restart`) at its beacons. Each `CoexPhaseStep`
+tells the runtime owner how long to arm the phase timer and whom to notify.
+No runtime owner runs this schedule yet, and no radio publishes status to it.
+
+## Event requests
+
 `CoexCore::request_wifi` and `request_bluetooth` return a programmed timer
 identity. Latency and duration are source parameters converted into timer
 targets; they are not guaranteed RF start/end times. `CoexStatus::active_timers`

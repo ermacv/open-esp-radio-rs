@@ -615,9 +615,9 @@ scope-and-limitations = "The engine rearms receive after each operation when the
 id = "ieee802154-security-power-and-coexistence-radio-sleep-wake"
 section = "ieee802154-security-power-and-coexistence"
 title = "Radio sleep / wake"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No RF/PHY/baseband stop/wake, retention and restoration owner is composed. A portable sleep state or stopped MAC is not hardware radio sleep."
+scope-and-limitations = "Under the composition's close-when-asleep RF policy the client leaves the shared PHY's RF clients while its radio sleeps, RF closes after the last client and wakes with its calibration before the next operation, as ESP-IDF's IEEE802154_RF_DISABLE and IEEE802154_RF_ENABLE do; RF stays open by default. Modem retention, light sleep and MAC or baseband power-down are absent, and RF sleep is not qualified on air."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-powered-lifecycle"

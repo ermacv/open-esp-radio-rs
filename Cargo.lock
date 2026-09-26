@@ -2615,6 +2615,7 @@ dependencies = [
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
  "oer-esp32s31-radio-system",
+ "oer-ieee802154",
 ]
 
 [[package]]

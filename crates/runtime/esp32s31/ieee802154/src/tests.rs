@@ -26,7 +26,7 @@ use oer_ieee802154::{
 
 use super::{
     Ieee802154EnhancedAckGenerator, Ieee802154EventsLost, Ieee802154Platform, Ieee802154RadioEvent,
-    Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
+    Ieee802154RfCloseError, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
 };
 
 static LEVELS: [i8; 1] = [0];
@@ -518,4 +518,69 @@ fn next_event_runs_retry_delays() {
             acknowledgement: None,
         })
     );
+}
+
+/// RF admission closes only while the radio sleeps; while closed, commands
+/// that need RF are refused and the others still run.
+#[test]
+fn closed_rf_admission_refuses_commands_that_need_rf() {
+    let runtime = enabled::<4>();
+    runtime
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(11),
+        })
+        .unwrap();
+    assert_eq!(
+        runtime.close_rf_admission(),
+        Err(Ieee802154RfCloseError::Awake)
+    );
+    runtime
+        .submit(RadioCommand::Sleep {
+            id: RequestId::new(3),
+        })
+        .unwrap();
+    runtime.close_rf_admission().unwrap();
+    assert_eq!(runtime.rf_closed(), Ok(true));
+    for command in [
+        RadioCommand::Receive {
+            id: RequestId::new(4),
+            channel: channel(11),
+        },
+        RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(5),
+            frame: FrameView::new(&MAC).unwrap(),
+            channel: channel(11),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+            max_frame_retries: 0,
+        }),
+        RadioCommand::ClearChannelAssessment {
+            id: RequestId::new(6),
+            channel: channel(11),
+        },
+    ] {
+        assert_eq!(
+            runtime.submit(command),
+            Err(Ieee802154RuntimeError::RfClosed)
+        );
+    }
+    assert_eq!(
+        runtime.state(),
+        Ok(RadioState::Resting(RestingState::Sleeping))
+    );
+    runtime
+        .submit(RadioCommand::Configure {
+            id: RequestId::new(7),
+            configuration: oer_ieee802154::Configuration::PanId(0x1234),
+        })
+        .unwrap();
+    runtime.open_rf_admission();
+    assert_eq!(runtime.rf_closed(), Ok(false));
+    runtime
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(8),
+            channel: channel(11),
+        })
+        .unwrap();
 }

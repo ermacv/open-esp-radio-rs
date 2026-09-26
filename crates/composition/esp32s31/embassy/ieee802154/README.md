@@ -80,8 +80,23 @@ other scene levels (`esp_ieee802154_set_coex_config`); a changed table does
 not reach the MAC until it is called. Stopping the client returns both
 priorities to the disabled image the foundation proves.
 
+RF stays open for the client's lifetime by default
+(`Ieee802154RfPolicy::AlwaysOn`), as in ESP-IDF builds without tickless idle
+and modem retention. Under `Ieee802154RfPolicy::CloseWhenAsleep` the client
+closes RF whenever its radio rests asleep and opens it before the next
+receive, transmission, energy scan or CCA, as ESP-IDF's `ieee802154_sleep`
+and operation starts do with `esp_phy_disable` and `esp_phy_enable`: it
+leaves the shared PHY's RF clients while BTBB stays taken, RF closes after
+the last client, and waking restores the calibration without running it
+again. Commands then go through `Ieee802154System::submit`, which opens RF
+first, and events through `Ieee802154System::next_event`, which closes RF
+before waiting when an event left the radio asleep; the runtime refuses
+commands that need RF while it is closed. Tracking due at the wake runs
+within the client's quiescence, as at start.
+
 ## Limits
 
 Under the quiesced admission, tracking that must collect the proofs of
-several active clients needs a joint radio supervisor, which is not composed. Sleep and RF gating are not
-composed, and on-air behaviour is qualified only by HIL runs.
+several active clients needs a joint radio supervisor, which is not composed.
+Modem retention and light sleep are not composed: closing RF keeps the MAC
+and baseband powered. On-air behaviour is qualified only by HIL runs.

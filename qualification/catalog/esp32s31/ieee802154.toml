@@ -633,7 +633,7 @@ section = "ieee802154-security-power-and-coexistence"
 title = "Wi-Fi/Bluetooth coexistence"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[Coexistence infrastructure](../coex/src/lib.rs) and MAC PTI access exist. Static IEEE 802.15.4 policy requires TX/RX and ACK PTI disabled; complete multi-radio request/grant/release operation is not composed."
+scope-and-limitations = "[Coexistence infrastructure](../coex/src/lib.rs) and MAC PTI access exist. The composed client publishes the software-coexistence PTIs of the pinned driver: the ACK and TX/RX scene priorities read from the arbiter's shared table ([scene priorities](../../hal/src/ieee802154/coex.rs)). The static foundation and MAC policy still prove both PTIs disabled before operation. Complete multi-radio request/grant/release operation is not composed, and PTI arbitration is not qualified on air."
 packages = ["oer-esp32s31-coex"]
 
 [[items]]

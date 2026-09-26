@@ -30,9 +30,11 @@ pub use oer_esp32s31_pac::{
     Ieee802154RxStatus, Ieee802154TxAbortEnableSet,
 };
 
+use crate::coex::CoexPti;
 use crate::ieee802154::{
     Ieee802154MultipanIndex,
     backend::ed_duration_units,
+    coex::{Ieee802154CoexScene, Ieee802154Coexistence},
     lifecycle::{COEX_DISABLED_PTI, Ieee802154Channel},
     mac::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154InterruptOwner,
@@ -167,6 +169,10 @@ pub trait Ieee802154LowLevel {
     fn set_ed_sample_mode(&mut self, mode: Ieee802154EdSampleMode);
     /// `ieee802154_ll_disable_coex`.
     fn disable_coex(&mut self);
+    /// libcoexist `hal_set_IEEE802154_TXRX_pti`.
+    fn set_txrx_pti(&mut self, pti: CoexPti);
+    /// libcoexist `hal_set_IEEE802154_ACK_pti`.
+    fn set_ack_pti(&mut self, pti: CoexPti);
     /// `ieee802154_ll_set_freq` of the channel's frequency code.
     fn set_channel(&mut self, channel: Ieee802154Channel);
     /// `ieee802154_ll_set_power` of the resolved power index.
@@ -270,21 +276,49 @@ pub fn sec_clear<Ll: Ieee802154LowLevel + ?Sized>(ll: &mut Ll) {
     ll.set_transmit_security(false);
 }
 
-/// Register steps of `ieee802154_mac_init` for a build without software
-/// coexistence, between the MAC reset and `ieee802154_txon_delay_set`.
+/// Register steps of `ieee802154_mac_init` between the MAC reset and
+/// `ieee802154_txon_delay_set`.
 ///
 /// All events are enabled except TIMER0, which the ACK watchdog enables per
 /// transmission; the runtime abort baselines are enabled; ED reports the
-/// average sample; both coexistence PTIs are fixed. The caller owns the
-/// preceding MAC reset and PIB initialization and the following TX-on delay,
-/// interrupt allocation and modem initialization.
-pub fn mac_init_registers<Ll: Ieee802154LowLevel + ?Sized>(ll: &mut Ll) {
+/// average sample. With software coexistence the ACK PTI takes its level and
+/// the TX/RX PTI the idle scene; without it both PTIs are disabled. The
+/// caller owns the preceding MAC reset and PIB initialization and the
+/// following TX-on delay, interrupt allocation and modem initialization.
+pub fn mac_init_registers<Ll: Ieee802154LowLevel + ?Sized>(
+    ll: &mut Ll,
+    coexistence: &Ieee802154Coexistence,
+) {
     ll.enable_all_events();
     ll.disable_event(Ieee802154Event::Timer0Overflow);
     ll.enable_tx_aborts(Ieee802154TxAbortEnableSet::RuntimeBaseline);
     ll.enable_rx_aborts(Ieee802154RxAbortEnableSet::RuntimeBaseline);
     ll.set_ed_sample_mode(Ieee802154EdSampleMode::Average);
-    ll.disable_coex();
+    match coexistence {
+        Ieee802154Coexistence::Software(priorities) => {
+            ll.set_ack_pti(priorities.ack());
+            ll.set_txrx_pti(priorities.scene(Ieee802154CoexScene::Idle));
+        }
+        Ieee802154Coexistence::Disabled => ll.disable_coex(),
+    }
+}
+
+/// `IEEE802154_SET_TXRX_PTI`: publish the TX/RX PTI of `scene`. A build
+/// without software coexistence compiles it to nothing.
+pub fn set_txrx_pti<Ll: Ieee802154LowLevel + ?Sized>(
+    ll: &mut Ll,
+    coexistence: &Ieee802154Coexistence,
+    scene: Ieee802154CoexScene,
+) {
+    if let Ieee802154Coexistence::Software(priorities) = coexistence {
+        ll.set_txrx_pti(priorities.scene(scene));
+    }
+}
+
+/// A four-bit shared-table priority in the MAC's five-bit PTI field, written
+/// unchanged as libcoexist writes it.
+fn mac_pti(pti: CoexPti) -> PacPti {
+    PacPti::new(pti.value()).expect("a four-bit priority fits the five-bit field")
 }
 
 /// The task owner and its active interrupt owner, held together for the
@@ -487,6 +521,14 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
         let mut lease = self.task.lease();
         lease.set_txrx_pti(pti);
         lease.set_ack_pti(pti);
+    }
+
+    fn set_txrx_pti(&mut self, pti: CoexPti) {
+        self.task.lease().set_txrx_pti(mac_pti(pti));
+    }
+
+    fn set_ack_pti(&mut self, pti: CoexPti) {
+        self.task.lease().set_ack_pti(mac_pti(pti));
     }
 
     fn set_channel(&mut self, channel: Ieee802154Channel) {

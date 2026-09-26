@@ -9,9 +9,10 @@ use super::{
     Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154MultipanEnableState,
     Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
 };
+use crate::coex::CoexPti;
 use crate::ieee802154::{
     Ieee802154MultipanIndex,
-    lifecycle::Ieee802154Channel,
+    lifecycle::{COEX_DISABLED_PTI, Ieee802154Channel},
     mac::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReasonObservation,
         Ieee802154TxAbortReasonObservation,
@@ -70,6 +71,10 @@ pub struct Ieee802154LlModel {
     pub etm_enabled: [bool; 2],
     /// Multi-PAN context enables.
     pub multipan_enable: Ieee802154MultipanEnableState,
+    /// TX/RX PTI field value.
+    pub txrx_pti: u8,
+    /// ACK PTI field value.
+    pub ack_pti: u8,
 }
 
 impl Default for Ieee802154LlModel {
@@ -98,6 +103,8 @@ impl Default for Ieee802154LlModel {
             ack_timeout: 0,
             etm_enabled: [false; 2],
             multipan_enable: Ieee802154MultipanEnableState::NONE,
+            txrx_pti: 0,
+            ack_pti: 0,
         }
     }
 }
@@ -227,7 +234,16 @@ impl Ieee802154LowLevel for Ieee802154LlModel {
     fn enable_tx_aborts(&mut self, _set: Ieee802154TxAbortEnableSet) {}
     fn enable_rx_aborts(&mut self, _set: Ieee802154RxAbortEnableSet) {}
     fn set_ed_sample_mode(&mut self, _mode: Ieee802154EdSampleMode) {}
-    fn disable_coex(&mut self) {}
+    fn disable_coex(&mut self) {
+        self.txrx_pti = COEX_DISABLED_PTI;
+        self.ack_pti = COEX_DISABLED_PTI;
+    }
+    fn set_txrx_pti(&mut self, pti: CoexPti) {
+        self.txrx_pti = pti.value();
+    }
+    fn set_ack_pti(&mut self, pti: CoexPti) {
+        self.ack_pti = pti.value();
+    }
     fn set_channel(&mut self, channel: Ieee802154Channel) {
         self.frequency_code = channel.frequency_code().value();
     }

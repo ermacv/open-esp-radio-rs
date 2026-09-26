@@ -6,8 +6,12 @@ use std::boxed::Box;
 
 use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use oer_esp32s31_hal::coex::{CoexEventId, CoexPti, CoexPtiTable};
 use oer_esp32s31_hal::ieee802154::{
-    Ieee802154TxPowerLevels, ll::model::Ieee802154LlModel, mac::Ieee802154Event,
+    Ieee802154TxPowerLevels,
+    coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
+    ll::model::Ieee802154LlModel,
+    mac::Ieee802154Event,
 };
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
@@ -205,6 +209,54 @@ fn uninstall_returns_the_parts_and_discards_events() {
     assert!(runtime.uninstall().is_some());
     assert!(runtime.events.try_receive().is_err());
     assert_eq!(runtime.state(), Err(Ieee802154RuntimeError::NotInstalled));
+}
+
+/// The engine's software-coexistence PTIs are published while installed
+/// and return to the disabled foundation image when the parts leave.
+#[test]
+fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
+    let mut parts = parts();
+    parts
+        .engine
+        .set_coexistence(Ieee802154Coexistence::Software(
+            Ieee802154CoexPriorities::resolve(Ieee802154CoexConfig::VENDOR, &CoexPtiTable::VENDOR),
+        ));
+    let runtime = Runtime::<4>::new();
+    assert!(
+        runtime
+            .install(parts, PLATFORM, Ieee802154PibDefaults::default())
+            .is_ok()
+    );
+    runtime.installed.lock(|installed| {
+        let installed = installed.borrow();
+        let hardware = &installed.as_ref().unwrap().hardware;
+        assert_eq!((hardware.txrx_pti, hardware.ack_pti), (1, 8));
+    });
+    // A new table snapshot reaches the next scene switch.
+    let mut table = CoexPtiTable::VENDOR;
+    table.set(CoexEventId::new(43).unwrap(), CoexPti::new(6).unwrap());
+    runtime
+        .set_coexistence(Ieee802154Coexistence::Software(
+            Ieee802154CoexPriorities::resolve(Ieee802154CoexConfig::VENDOR, &table),
+        ))
+        .unwrap();
+    runtime
+        .submit(RadioCommand::Enable {
+            id: RequestId::new(1),
+        })
+        .unwrap();
+    runtime
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(11),
+        })
+        .unwrap();
+    runtime.installed.lock(|installed| {
+        let installed = installed.borrow();
+        assert_eq!(installed.as_ref().unwrap().hardware.txrx_pti, 6);
+    });
+    let parts = runtime.uninstall().unwrap();
+    assert_eq!((parts.hardware.txrx_pti, parts.hardware.ack_pti), (3, 3));
 }
 
 #[test]

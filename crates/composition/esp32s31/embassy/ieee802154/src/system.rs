@@ -8,6 +8,7 @@ use oer_esp32s31_hal::{
     ieee802154::{
         Ieee802154Clocked, Ieee802154Cold, Ieee802154FoundationCheckpoint, Ieee802154Powered,
         Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154TxPowerLevels,
+        coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
         ll::Ieee802154MacOwners,
     },
     root::Ieee802154RadioPartition,
@@ -23,7 +24,7 @@ use oer_esp32s31_ieee802154_esp_hal::{
     BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError, bind, now_micros,
 };
 use oer_esp32s31_ieee802154_runtime::{
-    Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeParts,
+    Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
 };
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver,
@@ -254,7 +255,10 @@ pub async fn start<P, C: PlatformClockProvider>(
     parked: Ieee802154Parked,
     defaults: Ieee802154PibDefaults,
 ) -> Result<Ieee802154System, Ieee802154StartFailure> {
-    let Ieee802154Parked { partition, engine } = parked;
+    let Ieee802154Parked {
+        partition,
+        mut engine,
+    } = parked;
     let mut guard = radio.lock().await;
     let (lease, _, clocks) = guard.parts();
 
@@ -377,6 +381,7 @@ pub async fn start<P, C: PlatformClockProvider>(
             ));
         }
     };
+    engine.set_coexistence(coexistence(guard.lease(), Ieee802154CoexConfig::VENDOR));
     drop(guard);
 
     let RegisteredIeee802154Operational {
@@ -451,10 +456,40 @@ fn leave_and_unwind(
     unwind_clocked(lease, clocks, clocked, engine, error)
 }
 
+/// The shared radio is a software-coexistence build: the MAC publishes the
+/// priorities of `config` read from the arbiter's current table.
+fn coexistence(
+    lease: &SharedRadioLease<'_, ConcurrentPhy>,
+    config: Ieee802154CoexConfig,
+) -> Ieee802154Coexistence {
+    Ieee802154Coexistence::Software(Ieee802154CoexPriorities::resolve(
+        config,
+        &lease.coex_pti_table(),
+    ))
+}
+
 impl Ieee802154System {
     /// The runtime that accepts commands and yields events.
     pub fn runtime(&self) -> &'static Ieee802154SystemRuntime {
         &RUNTIME
+    }
+
+    /// Read the arbiter's coexistence table again and publish the scene
+    /// levels of `config` (`esp_ieee802154_set_coex_config`). Call it after
+    /// the table or the levels change; the TX/RX priority applies from the
+    /// next operation start, the ACK priority from the next start of the
+    /// client, as in the vendor driver.
+    ///
+    /// # Errors
+    ///
+    /// The runtime holds no radio.
+    pub async fn update_coexistence<P, C: PlatformClockProvider>(
+        &self,
+        radio: &RadioSystem<P, C>,
+        config: Ieee802154CoexConfig,
+    ) -> Result<(), Ieee802154RuntimeError> {
+        let mut guard = radio.lock().await;
+        RUNTIME.set_coexistence(coexistence(guard.lease(), config))
     }
 
     /// Run one shared PHY tracking tick under the domain's maintenance

@@ -11,12 +11,16 @@
 //!
 //! The caller serializes every entry point in one critical section, as the
 //! vendor does with `ieee802154_enter_critical`. The build matches the
-//! vendor defaults: no software coexistence, no RF power gating, no
-//! multi-PAN, no test mode and no statistics.
+//! vendor defaults: no RF power gating, no multi-PAN, no test mode and no
+//! statistics. Software coexistence follows the engine's
+//! [`Ieee802154Coexistence`]: disabled by default, as in a build without it,
+//! or publishing the scene priorities where the vendor's
+//! `IEEE802154_SET_TXRX_PTI` does.
 
 use crate::pib::{Ieee802154MultipanIndex, Ieee802154Pib, Ieee802154PibDefaults};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154Channel, Ieee802154TxPowerLevels,
+    coex::{Ieee802154CoexScene, Ieee802154Coexistence},
     ll::{
         self, Ieee802154EtmRoute, Ieee802154LlCommand, Ieee802154LowLevel,
         Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,
@@ -291,6 +295,7 @@ pub struct Ieee802154Engine<'storage> {
     pending_rx_stop: bool,
     timer0: Option<TimerAction>,
     timer1: Option<TimerAction>,
+    coexistence: Ieee802154Coexistence,
 }
 
 impl<'storage> Ieee802154Engine<'storage> {
@@ -319,6 +324,7 @@ impl<'storage> Ieee802154Engine<'storage> {
             pending_rx_stop: false,
             timer0: None,
             timer1: None,
+            coexistence: Ieee802154Coexistence::Disabled,
         }
     }
 
@@ -332,6 +338,20 @@ impl<'storage> Ieee802154Engine<'storage> {
         let mut engine = Self::new(buffers, levels, defaults);
         engine.multipan = Some(interfaces);
         engine
+    }
+
+    /// Take part in software coexistence with `coexistence`, or leave it.
+    ///
+    /// The priorities apply from the next scene switch, as the vendor reads
+    /// the shared table at each `IEEE802154_SET_TXRX_PTI`; the ACK priority
+    /// applies from the next [`Self::mac_init`], where the vendor sets it.
+    pub fn set_coexistence(&mut self, coexistence: Ieee802154Coexistence) {
+        self.coexistence = coexistence;
+    }
+
+    /// The coexistence the engine publishes.
+    pub const fn coexistence(&self) -> Ieee802154Coexistence {
+        self.coexistence
     }
 
     /// The multi-PAN interfaces, `None` without multi-PAN.
@@ -643,9 +663,19 @@ impl<'storage> Ieee802154Engine<'storage> {
         defaults: Ieee802154PibDefaults,
     ) {
         self.pib = Ieee802154Pib::new(defaults, self.levels);
-        ll::mac_init_registers(ll);
+        ll::mac_init_registers(ll, &self.coexistence);
         self.rx_buffer_clear();
         self.state = Ieee802154State::Idle;
+    }
+
+    /// Return the MAC's PTIs to the disabled foundation image before the
+    /// owners leave the operational epoch, as interrupt teardown returns the
+    /// event enables. The vendor leaves them published; the MAC stops
+    /// requesting the radio once its clocks are released either way.
+    pub fn mac_deinit<L: Ieee802154LowLevel + ?Sized>(&mut self, ll: &mut L) {
+        if matches!(self.coexistence, Ieee802154Coexistence::Software(_)) {
+            ll.disable_coex();
+        }
     }
 
     fn rx_buffer_clear(&mut self) {
@@ -705,6 +735,7 @@ impl<'storage> Ieee802154Engine<'storage> {
             return Ok(());
         }
         self.tx_init(&mut cx, frame);
+        ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::Tx);
         if cca {
             cx.ll.set_ed_duration(CCA_DETECTION_TIME);
             cx.ll.set_command(Ieee802154LlCommand::CcaTxStart);
@@ -735,6 +766,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         }
         let mut cx = Cx { ll, env };
         self.tx_init(&mut cx, frame);
+        ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::TxAt);
         if cca {
             cx.ll.set_ed_duration(CCA_DETECTION_TIME);
         }
@@ -787,6 +819,7 @@ impl<'storage> Ieee802154Engine<'storage> {
             }
         }
         self.rx_init(&mut cx);
+        ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::RxAt);
         self.set_next_rx_buffer(&mut cx);
         self.state = Ieee802154State::Rx;
         ll::etm_set_event_task(cx.ll, Ieee802154EtmRoute::Timer1ToRxStart);
@@ -821,6 +854,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         let mut cx = Cx { ll, env };
         self.stop_current_operation(&mut cx);
         self.pib.update(cx.ll, self.levels);
+        ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::Rx);
         Self::start_ed(&mut cx, duration);
         self.state = Ieee802154State::Ed;
     }
@@ -834,6 +868,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         let mut cx = Cx { ll, env };
         self.stop_current_operation(&mut cx);
         self.pib.update(cx.ll, self.levels);
+        ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::Rx);
         Self::start_ed(&mut cx, CCA_DETECTION_TIME);
         self.state = Ieee802154State::Cca;
     }
@@ -1239,6 +1274,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         E: Ieee802154Environment + ?Sized,
     {
         self.set_next_rx_buffer(cx);
+        ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::Rx);
         cx.ll.set_command(Ieee802154LlCommand::RxStart);
         self.state = Ieee802154State::Rx;
     }

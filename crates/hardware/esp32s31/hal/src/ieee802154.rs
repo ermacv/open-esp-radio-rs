@@ -2,6 +2,8 @@
 
 pub(crate) mod backend;
 
+pub mod coex;
+
 pub mod lifecycle;
 
 pub mod ll;

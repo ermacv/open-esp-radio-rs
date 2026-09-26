@@ -8,10 +8,14 @@ use super::{
     Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154MultipanEnableState,
     Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
     etm_channel_clear, etm_set_event_task, event_end_process, mac_init_registers, sec_clear,
-    target_time_expired, timer_fire_at, timer_threshold,
+    set_txrx_pti, target_time_expired, timer_fire_at, timer_threshold,
 };
+use crate::coex::{CoexPti, CoexPtiTable};
 use crate::ieee802154::{
     Ieee802154MultipanIndex,
+    coex::{
+        Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154CoexScene, Ieee802154Coexistence,
+    },
     lifecycle::Ieee802154Channel,
     mac::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReasonObservation,
@@ -31,6 +35,8 @@ pub(crate) enum Call {
     EnableRxAborts(Ieee802154RxAbortEnableSet),
     SetEdSampleMode(Ieee802154EdSampleMode),
     DisableCoex,
+    SetTxrxPti(u8),
+    SetAckPti(u8),
     SetChannel(u8),
     SetTxPower { channel: u8, index: u8 },
     SetCcaMode(Ieee802154CcaMode),
@@ -132,6 +138,12 @@ impl Ieee802154LowLevel for Recorder {
     fn disable_coex(&mut self) {
         self.calls.push(Call::DisableCoex);
     }
+    fn set_txrx_pti(&mut self, pti: CoexPti) {
+        self.calls.push(Call::SetTxrxPti(pti.value()));
+    }
+    fn set_ack_pti(&mut self, pti: CoexPti) {
+        self.calls.push(Call::SetAckPti(pti.value()));
+    }
     fn set_channel(&mut self, channel: Ieee802154Channel) {
         self.calls.push(Call::SetChannel(channel.number()));
     }
@@ -200,7 +212,7 @@ impl Ieee802154LowLevel for Recorder {
 #[test]
 fn mac_init_enables_the_runtime_baseline_in_vendor_order() {
     let mut ll = Recorder::default();
-    mac_init_registers(&mut ll);
+    mac_init_registers(&mut ll, &Ieee802154Coexistence::Disabled);
     assert_eq!(
         ll.calls,
         [
@@ -212,6 +224,29 @@ fn mac_init_enables_the_runtime_baseline_in_vendor_order() {
             Call::DisableCoex,
         ]
     );
+}
+
+/// `ieee802154_mac_init` with software coexistence publishes the middle
+/// ACK level, then the idle scene (esp_ieee802154_dev.c L924-L926), and
+/// each scene switch publishes only the TX/RX PTI.
+#[test]
+fn software_coexistence_publishes_the_vendor_priorities() {
+    let coexistence = Ieee802154Coexistence::Software(Ieee802154CoexPriorities::resolve(
+        Ieee802154CoexConfig::VENDOR,
+        &CoexPtiTable::VENDOR,
+    ));
+    let mut ll = Recorder::default();
+    mac_init_registers(&mut ll, &coexistence);
+    assert_eq!(ll.calls[5..], [Call::SetAckPti(8), Call::SetTxrxPti(1)]);
+
+    let mut ll = Recorder::default();
+    set_txrx_pti(&mut ll, &coexistence, Ieee802154CoexScene::RxAt);
+    set_txrx_pti(
+        &mut ll,
+        &Ieee802154Coexistence::Disabled,
+        Ieee802154CoexScene::Tx,
+    );
+    assert_eq!(ll.calls, [Call::SetTxrxPti(8)]);
 }
 
 /// `ieee802154_etm_channel_clear` writes the clear word only for an enabled

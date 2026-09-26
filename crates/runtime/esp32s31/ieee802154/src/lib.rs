@@ -24,7 +24,9 @@ use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
     channel::Channel,
 };
-use oer_esp32s31_hal::ieee802154::{Ieee802154MultipanIndex, ll::Ieee802154LowLevel};
+use oer_esp32s31_hal::ieee802154::{
+    Ieee802154MultipanIndex, coex::Ieee802154Coexistence, ll::Ieee802154LowLevel,
+};
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
@@ -325,17 +327,20 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     }
 
     /// `esp_ieee802154_disable` after the platform CPU route is disabled:
+    /// return the MAC's coexistence PTIs to the disabled foundation image,
     /// disable and return the engine and hardware, and discard queued
     /// events.
     pub fn uninstall(&self) -> Option<Ieee802154RuntimeParts<'storage, H>> {
         let parts = self.installed.lock(|installed| {
             installed.borrow_mut().take().map(|installed| {
-                let mut engine = installed.radio.into_engine();
+                let Installed {
+                    radio,
+                    mut hardware,
+                } = installed;
+                let mut engine = radio.into_engine();
+                engine.mac_deinit(&mut hardware);
                 engine.disable();
-                Ieee802154RuntimeParts {
-                    engine,
-                    hardware: installed.hardware,
-                }
+                Ieee802154RuntimeParts { engine, hardware }
             })
         });
         while self.events.try_receive().is_ok() {}
@@ -527,6 +532,19 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
                 .pib()
                 .set_pending_mode(Ieee802154MultipanIndex::CONTEXT0, mode);
         })
+    }
+
+    /// Replace the engine's software-coexistence priorities
+    /// ([`Ieee802154Engine::set_coexistence`]).
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn set_coexistence(
+        &self,
+        coexistence: Ieee802154Coexistence,
+    ) -> Result<(), Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.engine().set_coexistence(coexistence))
     }
 
     /// `esp_ieee802154_set_transmit_security` for the secured `[PHR, PSDU...]`

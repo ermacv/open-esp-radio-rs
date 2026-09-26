@@ -50,6 +50,16 @@ accepts portable `RadioCommand`s and yields `Ieee802154RadioEvent`s. The
 engine resolves transmit power through the recovered ESP32-S31 BTBB level set.
 The enhanced-ACK generator is not composed; enhanced ACKs are refused.
 
+The shared radio is a software-coexistence build, so the MAC takes part in
+coexistence as the vendor driver does with `CONFIG_ESP_COEX_SW_COEXIST_ENABLE`:
+`start` reads the arbiter's coexistence table once and the engine publishes
+the ACK priority at the middle level and the TX/RX priority of each scene
+(idle, low for transmission and reception, middle for timed operations).
+`Ieee802154System::update_coexistence` reads the table again, optionally with
+other scene levels (`esp_ieee802154_set_coex_config`); a changed table does
+not reach the MAC until it is called. Stopping the client returns both
+priorities to the disabled image the foundation proves.
+
 ## Limits
 
 Under the quiesced admission, tracking that must collect the proofs of

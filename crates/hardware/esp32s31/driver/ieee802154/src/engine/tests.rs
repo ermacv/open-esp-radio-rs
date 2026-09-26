@@ -4,8 +4,10 @@
 use std::{boxed::Box, vec, vec::Vec};
 
 use crate::pib::{Ieee802154MultipanIndex, Ieee802154PibDefaults};
+use oer_esp32s31_hal::coex::{CoexPti, CoexPtiTable};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154CcaMode, Ieee802154Channel, Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels,
+    coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
     ll::{
         Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
         Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
@@ -56,6 +58,8 @@ pub(crate) enum Call {
     EnableRxAborts(Ieee802154RxAbortEnableSet),
     EdSampleMode(Ieee802154EdSampleMode),
     DisableCoex,
+    SetTxrxPti(u8),
+    SetAckPti(u8),
     SetChannel(u8),
     SetTxPower(u8),
     SetCcaMode(Ieee802154CcaMode),
@@ -239,6 +243,12 @@ impl Ieee802154LowLevel for Hw {
     }
     fn disable_coex(&mut self) {
         self.calls.push(Call::DisableCoex);
+    }
+    fn set_txrx_pti(&mut self, pti: CoexPti) {
+        self.calls.push(Call::SetTxrxPti(pti.value()));
+    }
+    fn set_ack_pti(&mut self, pti: CoexPti) {
+        self.calls.push(Call::SetAckPti(pti.value()));
     }
     fn set_channel(&mut self, channel: Ieee802154Channel) {
         self.calls.push(Call::SetChannel(channel.number()));
@@ -542,6 +552,106 @@ fn mac_init_publishes_the_register_baseline_and_idles() {
         ]
     );
     assert_eq!(engine.state(), Ieee802154State::Idle);
+}
+
+/// The TX/RX PTI written by each operation start, in call order.
+fn txrx_ptis(calls: &[Call]) -> Vec<u8> {
+    calls
+        .iter()
+        .filter_map(|call| match call {
+            Call::SetTxrxPti(pti) => Some(*pti),
+            _ => None,
+        })
+        .collect()
+}
+
+/// With software coexistence `ieee802154_mac_init` publishes the middle ACK
+/// level and the idle scene (L924-L926), and every operation start publishes
+/// its scene's TX/RX priority before the command: receive and TX at the low
+/// level (L481, L1014), timed TX and RX at the middle level (L1054, L1121),
+/// ED and CCA as receive (L1229, L1246). Teardown restores the disabled PTIs.
+#[test]
+fn software_coexistence_publishes_each_scene_priority() {
+    let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
+    let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+    let mut engine = Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default());
+    engine.set_coexistence(Ieee802154Coexistence::Software(
+        Ieee802154CoexPriorities::resolve(Ieee802154CoexConfig::VENDOR, &CoexPtiTable::VENDOR),
+    ));
+    let mut hw = Hw::default();
+    engine.enable();
+    engine.mac_init(&mut hw, Ieee802154PibDefaults::default());
+    assert_eq!(
+        hw.calls[5..],
+        [Call::SetAckPti(8), Call::SetTxrxPti(1)],
+        "{:#?}",
+        hw.calls
+    );
+    let mut bench = Bench {
+        engine,
+        hw,
+        env: Env::default(),
+    };
+
+    bench.hw.calls.clear();
+    bench.receive();
+    assert_eq!(txrx_ptis(&bench.hw.calls), [3]);
+    assert_subsequence(
+        &bench.hw.calls,
+        &[
+            Call::SetTxrxPti(3),
+            Call::Command(Ieee802154LlCommand::RxStart),
+        ],
+    );
+
+    bench.hw.calls.clear();
+    bench.transmit(&DATA_WITH_ACK, false);
+    assert_subsequence(
+        &bench.hw.calls,
+        &[
+            Call::SetTxrxPti(3),
+            Call::Command(Ieee802154LlCommand::TxStart),
+        ],
+    );
+
+    for start in [
+        |bench: &mut Bench| {
+            bench
+                .engine
+                .transmit_at(&mut bench.hw, &mut bench.env, &DATA_WITH_ACK, false, 5_000)
+                .unwrap();
+        },
+        |bench: &mut Bench| {
+            bench
+                .engine
+                .receive_at(&mut bench.hw, &mut bench.env, 5_000, 0);
+        },
+    ] {
+        bench.hw.calls.clear();
+        start(&mut bench);
+        assert_eq!(txrx_ptis(&bench.hw.calls), [8]);
+    }
+
+    bench.hw.calls.clear();
+    bench.engine.energy_detect(&mut bench.hw, &mut bench.env, 8);
+    bench.engine.cca(&mut bench.hw, &mut bench.env);
+    assert_eq!(txrx_ptis(&bench.hw.calls), [3, 3]);
+
+    bench.hw.calls.clear();
+    bench.engine.mac_deinit(&mut bench.hw);
+    assert_eq!(bench.hw.calls, [Call::DisableCoex]);
+}
+
+/// Without software coexistence no operation start writes a PTI, and
+/// teardown leaves the disabled PTIs as they are.
+#[test]
+fn disabled_coexistence_writes_no_scene_priority() {
+    let mut bench = Bench::enabled();
+    bench.receive();
+    bench.transmit(&DATA_WITH_ACK, true);
+    bench.engine.mac_deinit(&mut bench.hw);
+    assert!(txrx_ptis(&bench.hw.calls).is_empty());
+    assert!(!bench.hw.calls.contains(&Call::DisableCoex));
 }
 
 /// `tx_init` stops the idle MAC, publishes the PIB, the frame and the ACK

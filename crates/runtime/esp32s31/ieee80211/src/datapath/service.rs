@@ -162,10 +162,8 @@ where
     /// Return a complete software-owned successor only after every higher
     /// priority RX edge has been excluded at this transaction boundary.
     ///
-    /// Both the ordinary outer loop and the saturated single-owner chain use
-    /// this exact admission check. Keeping it here prevents the fast chain
-    /// from bypassing a due recycle-only continuation merely because no fresh
-    /// MAC IRQ was posted for it.
+    /// A due recycle-only continuation also excludes the successor, although
+    /// no fresh MAC IRQ was posted for it.
     pub(super) fn prepared_network_tx_candidate(
         &mut self,
     ) -> Result<Option<(NetworkInterfaceId, usize)>, B::Error> {

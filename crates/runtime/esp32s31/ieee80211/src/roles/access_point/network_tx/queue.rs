@@ -405,7 +405,7 @@ where
     /// to exist, so a full arena leaves the remaining backlog in place. A
     /// source with destination queues is already classified and stays intact.
     /// A staged successor already fixes the next destination, so its demand
-    /// does not depend on the backlog; the saturated chain then keeps owners
+    /// does not depend on the backlog; saturated transmission then keeps owners
     /// at the source for the successor's own matching claims.
     pub(in super::super) fn classify_network_backlog(
         &mut self,

@@ -341,3 +341,162 @@ fn control_exchange_waits_for_each_terminal_event_without_admitting_prepared_dat
     assert!(runner.active_tx_interface.is_none());
     let _ = device;
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChainEvent {
+    StartNetwork,
+    StartPrepared(u8),
+    Completed,
+    Control,
+}
+
+/// A saturated role: every completion leaves a complete successor until the
+/// configured count is exhausted.
+struct ChainServices<'a> {
+    completion: &'a Signal<NoopRawMutex, ()>,
+    log: std::vec::Vec<ChainEvent>,
+    successors: u8,
+    prepared: Option<u8>,
+    control_after_successor: u8,
+    control_pending: bool,
+}
+
+impl<S: SoftwareTxFrame + 'static, P: MaterializedTxFrame + 'static> DatapathServices<S, P>
+    for ChainServices<'_>
+{
+    type Error = ();
+    type Exit = ();
+
+    async fn service_rx(
+        &mut self,
+        _: &mut dyn DatapathNetworkRxSet,
+        _: DatapathRxServiceContext,
+    ) -> Result<DatapathRxProgress, ()> {
+        Ok(DatapathRxProgress::Drained)
+    }
+
+    async fn start_tx<'a, I>(&'a mut self, _: S, _: &'a I) -> Result<WifiTxProgress, ()>
+    where
+        S: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P> + 'a,
+    {
+        self.log.push(ChainEvent::StartNetwork);
+        Ok(WifiTxProgress::Pending)
+    }
+
+    async fn wait_tx_deadline(&mut self) {
+        self.completion.wait().await;
+    }
+
+    async fn service_tx(&mut self, _: WifiTxWake) -> Result<WifiTxProgress, ()> {
+        self.log.push(ChainEvent::Completed);
+        let published = self
+            .log
+            .iter()
+            .filter(|event| matches!(event, ChainEvent::StartPrepared(_)))
+            .count() as u8;
+        if published < self.successors {
+            self.prepared = Some(published + 1);
+        }
+        if published == self.control_after_successor {
+            self.control_pending = true;
+        }
+        Ok(WifiTxProgress::Complete)
+    }
+
+    fn control_ready(&self, _: u64) -> bool {
+        self.control_pending
+    }
+
+    async fn service_control(
+        &mut self,
+        _: DatapathControlContext,
+    ) -> Result<DatapathControlProgress<()>, ()> {
+        self.control_pending = false;
+        self.log.push(ChainEvent::Control);
+        Ok(DatapathControlProgress::Idle)
+    }
+
+    fn has_prepared_tx(&self) -> bool {
+        self.prepared.is_some()
+    }
+
+    fn prepared_tx_frame_count(&self) -> usize {
+        usize::from(self.prepared.is_some())
+    }
+
+    fn start_prepared_tx<I>(&mut self, _: &I) -> Result<WifiTxProgress, ()>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P>,
+    {
+        let successor = self.prepared.take().expect("a complete successor");
+        self.log.push(ChainEvent::StartPrepared(successor));
+        Ok(WifiTxProgress::Pending)
+    }
+}
+
+#[test]
+fn complete_successors_chain_after_each_completion_but_yield_to_ready_control() {
+    let storage = Box::leak(Box::new(PacketPoolStorage::<2>::new()));
+    let allocator = Box::leak(Box::new(PacketPool::new(storage))).allocator();
+    let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));
+    let interface = NetworkInterfaceId::new(0);
+    let (mut device, owned) = endpoint.split(interface, [2, 0, 0, 0, 0, 1], allocator);
+    let resources = Box::leak(Box::new(
+        PinnedTxResources::<NoopRawMutex, 64, 16, 8, 1>::new(),
+    ));
+    let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
+    let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
+    network.set_link_state(interface, LinkState::Up);
+    let mut frame = allocator.try_alloc().unwrap();
+    frame.set_len(15);
+    frame.fill(0);
+    frame[..6].fill(4);
+    device.transmit(frame).unwrap();
+    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let completion = Signal::new();
+    let finished = Signal::<NoopRawMutex, ()>::new();
+    let mut runner = DatapathRunner::new(
+        &irq,
+        network,
+        interface,
+        ChainServices {
+            completion: &completion,
+            log: std::vec::Vec::new(),
+            successors: 3,
+            prepared: None,
+            control_after_successor: 1,
+            control_pending: false,
+        },
+    );
+    let mut cx = Context::from_waker(Waker::noop());
+    {
+        let mut run = core::pin::pin!(runner.run_until(finished.wait()));
+        // Four exchanges: the network frame and three successors.
+        for _ in 0..4 {
+            assert!(run.as_mut().poll(&mut cx).is_pending());
+            completion.signal(());
+        }
+        finished.signal(());
+        assert_eq!(
+            run.as_mut().poll(&mut cx),
+            Poll::Ready(Ok(DatapathRunnerExit::Stopped))
+        );
+    }
+    assert_eq!(
+        runner.services.log,
+        [
+            // A fresh runner services control once before admitting data.
+            ChainEvent::Control,
+            ChainEvent::StartNetwork,
+            ChainEvent::Completed,
+            ChainEvent::StartPrepared(1),
+            ChainEvent::Completed,
+            ChainEvent::Control,
+            ChainEvent::StartPrepared(2),
+            ChainEvent::Completed,
+            ChainEvent::StartPrepared(3),
+            ChainEvent::Completed,
+        ]
+    );
+}

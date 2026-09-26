@@ -7,7 +7,7 @@
     "libnet80211": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "libpp": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "1d0eac81c742006761865f15b92d4d89c9224266ae089034b1c437b054030e79",
+    "production": "abd143382d7ac2cbede897434d68215b7bc7a3fd17ae13ae8485aae732ebdb9d",
     "rftest": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a",
     "rom": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -39,11 +39,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "7b52e628766ed92e238bca98d9fcd179d134d9c9b1777dcd112542acfd052232"
+      "sha256": "833a338c84f6859e5614a6794cad95a17cd3c9dc5b967166316e48d532ae1753"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "4051c922874698fa5353b8a3f72c13da023bbf7ffea373258446f34a30f5086c"
+      "sha256": "be0d8c9b5eb6924d4082a04e6c7e4b8b8c1ca88438b430f03fd3baf82b256480"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
@@ -151,11 +151,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "0a932045be7a34b18aab67b3a7f226dbb6249e2c2d8cb936ca91abdeb3558dd4"
+      "sha256": "c80a356357d549918070ae86b9e7f4cc32db519b4b8b9f6eadbd7af56a492f18"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "832894ef2413a2dc3b3f14f627a44564fd85dc94baa3e0b08df133fde650f41f"
+      "sha256": "f58d26a879592eaf01a9484d794f00388096de6fcc10acf681523d7eb9b60f0f"
     },
     {
       "path": "verification/vendor/schema",
@@ -341,7 +341,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "8735def87b99a815b8725a0f1a0bc59f420c68fe8879cba47f0981e54f8d8e85"
+        "0153cf14d231a7de0f8a6aaa24a9fd4c8a685c6af2417d694aa74d97b0dce85e"
       ],
       "coverage": {
         "blocks": {
@@ -377,7 +377,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "4eaaf8db1658b8b3f2655ce59ee3f576d7a0eaa14e31fba370af59651b462ddc"
+        "02ae04622a3e7d844aa22c850079d6599f604f6e0b7fccec5ea5239b36904d7a"
       ],
       "coverage": {
         "blocks": {
@@ -413,7 +413,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "06cdf4431b224787a9d829cdd29a23b30b4c51357c67bf7193f2675d570bbcb9"
+        "2824aad3afe20816fd57dfea5d53c6ae8100b917f5b093856dca015403d58278"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +449,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "93d34081e6e63f1301e85762e8a1713d049657cbbfe58fa3a7a4e3304653e7b0"
+        "a6591c0fc790e7796b053e9ff6c875b4378b963f553756828d17b4a971e37e4d"
       ],
       "coverage": {
         "blocks": {
@@ -485,7 +485,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "fd592aee70bb964a3829e384d2c3c60cab5656c4c3423a4e8d83de2e522a5109"
+        "7bbf02eb5860392a6ab44bc304fceba8e17ef03730278678241ba66fefe12803"
       ],
       "coverage": {
         "blocks": {
@@ -521,7 +521,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "57cf38a5a080a6353d0f49a140a90b07c7be95a6bfc5792a0645995c2737d1de"
+        "9a5bb1720f1a3ec537113d3020ecc84d899c5f77ddb4f71a674dc81f3ee23a6e"
       ],
       "coverage": {
         "blocks": {
@@ -727,7 +727,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "4f05104b85959c44f05097a6abfc3408cd19f9001894dd478c58fb7bb8252849"
+        "8d3d7f2f6fba3476d2e8163acc6bf002802f1d709752eb6f955c45e753ad542c"
       ],
       "coverage": {
         "blocks": {
@@ -763,7 +763,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "fa871ee7b808f5db972761ca8a61940f1b6a74fd77bdbe654753bcac646ad345"
+        "407347b929390226430469174a5525e67ea7a911b26ab61b88ce86692afca5a7"
       ],
       "coverage": {
         "blocks": {
@@ -799,8 +799,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "3857a8bacd5f70169eae4832f561e86dd9fdf0dd7a971c58ed4dcdaf8c8d620d",
-        "b840cb10b8e10e2b18a35d43f06a5215b19c1e6c06c2a06bd35b6997d17e6bff"
+        "26377366f94210f18ef48d7c042153151a482149be2346333e3c561780a7a54a",
+        "f55c7657e9927dbda6bf57102fad71a4c4f05292f211bdd22e718a34f35437d0"
       ],
       "coverage": {
         "blocks": {
@@ -836,7 +836,7 @@
       "verdict": "match",
       "cases": 101,
       "reviews": [
-        "b1168e151a830a5a58ee8ae4396e9bdfdf5098a3bc0654479e308b15ba747552"
+        "71cdf0a5882c115f513d130961ac47c1481f2b3ccc0052ee0463cb32cbf7e83b"
       ],
       "coverage": {
         "blocks": {
@@ -872,8 +872,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "a18cce0b1124d9f14760614b705def7a246ebafd4085b99fa12b9aee4da72b64",
-        "dcc4bb89703504d66651c5a075e8f5d0c99885ec89e2ec870bd4a9836783cbd7"
+        "a0c65f661de739306e72a5bec75712a258fbcaf8fda001e0a809e217646590f7",
+        "eaa75387cd643effc7d68b8717e7c72caa4c04df3671935f747fb6cb0e99992e"
       ],
       "coverage": {
         "blocks": {
@@ -909,8 +909,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "2fe492e92b8cf43059a74c677689ff9567fafb15772561b884f160ed17e6e3ad",
-        "fb0a521c267c0ad05d9e0b273d6c311e4292928a6340e29bbd62da739ab98e39"
+        "a535a9146636cd2c7085ece53cc58ee50a8d5646e7cab032e41b6c99e28bc024",
+        "e55cf804da7301b4a8736cf7a4bb43273466a42e26d5aa559bdb938e7334faa4"
       ],
       "coverage": {
         "blocks": {
@@ -946,9 +946,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "518e8ef32949542e187de3939fae5353da4e9835e19d0db0e7b5ab16759e4be2",
-        "745b2092b04bc07eff98226e02a66d7383108d7778927e32f3612ab4dd32488c",
-        "a444a2c268078a34e94c1ee03e45a07ba686dd9ef88bea704c82eaea9df646b7"
+        "832c51eb422e3c99eb6d166896bc4341deaec60fe9b2b3558fb4159bbdb9d4b9",
+        "e571117fd7262b7ac57c66f9192172f10ffc5c999330d7efabaa1f73c6e873f3",
+        "e574310b82458ba8b602dda6db3ce1a92fbb3dce11e6bf5fc1914ceeb9fcc087"
       ],
       "coverage": {
         "blocks": {
@@ -984,8 +984,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "22b9c9912ea923255ad2d03de8dcc86c3853b974b7919c4e135e2cf9004494da",
-        "9d8bba234079637ef3e4a7e4416fe2e763cce0275ef6629bf3b9b1158f6ce085"
+        "be164e2a155279474d395dc788bcea5daf46dc87e32996fbc4336ddc1aa1d778",
+        "f824f27d015dc295903b1fe2136991adc8ec6fd08d3d1a3df51895da5918da66"
       ],
       "coverage": {
         "blocks": {
@@ -1021,8 +1021,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "f3013d0c0b41c1fc59ce3bb99b1180001b21dae84d84988359c1c50b3275e910",
-        "f42b77829e120e2cac6197fe5a5f49bc9493206fb7049dcf6424436026e0ab1e"
+        "c84a8e230a6ce88f06709e384edf8f16a5d662ffb598b1f17ef495281c58ad82",
+        "cce1bea3a927e69d30edc808957443197314ad765ae44307f996885ab689c72d"
       ],
       "coverage": {
         "blocks": {
@@ -1058,8 +1058,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "a43c7a73b2411d127a7d722670d423e4dbb8e8e45f58478d720913955645aa16",
-        "a4587aafb4ba21364328b464022e9409001ed1b0d614ead19130bb732bdb333b"
+        "673132f5b2d5c52726767f8753be9de456bcb77128399dfe0e79360c45ba669e",
+        "8df467aeaf0331e81df2c0fa6acd6013b070c2878787b90f280d6f7bdaed9cc6"
       ],
       "coverage": {
         "blocks": {
@@ -1197,7 +1197,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "f86b17f31b702a8f1edd1f20eb6d8102cd4032a0df0bf3c187ef60de0b193b62"
+        "c6fee6f41587955804a2c23b2fb97e30d0f81d3ea5342eb3de12e9614a9f3f40"
       ],
       "coverage": {
         "blocks": {
@@ -1267,7 +1267,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "6ac353753503946dfb3476c6c45787da2ff95fe6b03b8017b21949dba590888f"
+        "c23aab2b3f1376b7d5fd01002c23d7f86ad570ed9f7927ee4d74213b8d8fad18"
       ],
       "coverage": {
         "blocks": {
@@ -1915,7 +1915,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "7acaa0c53784a1c051b6537d3613816890104250a4816a6c52080cbd89e22b82"
+        "cf15d1a0640cd43896563b037ccb350d2855fafb29306cd97095b88844c09d47"
       ],
       "coverage": {
         "blocks": {
@@ -2069,6 +2069,40 @@
       "observation": {
         "executed": 84,
         "observed": 77,
+        "reviewed": 1,
+        "untriaged": 6
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "hal_mac_tx_set_ppdu",
+      "production": "open_libpp_tx_trace_hal_mac_tx_set_legacy_ppdu",
+      "verdict": "match",
+      "cases": 120,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 54,
+          "total": 281
+        },
+        "directions": {
+          "reached": 40,
+          "total": 282
+        },
+        "open": 21,
+        "excluded": 20,
+        "untriaged": 470
+      },
+      "observation": {
+        "executed": 73,
+        "observed": 66,
         "reviewed": 1,
         "untriaged": 6
       },
@@ -4634,16 +4668,6 @@
     {
       "function": "hal_mac_tx_set_ppdu",
       "offset": 236,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 266,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 270,
       "kind": "block"
     },
     {
@@ -7388,82 +7412,12 @@
     },
     {
       "function": "mac_tx_get_rts_rate",
-      "offset": 6,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
       "offset": 60,
       "kind": "taken"
     },
     {
       "function": "mac_tx_get_rts_rate",
-      "offset": 76,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 78,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 78,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 82,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
       "offset": 86,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 86,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 90,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 100,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 100,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 102,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 106,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 106,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 108,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 112,
       "kind": "taken"
     },
     {
@@ -7473,63 +7427,8 @@
     },
     {
       "function": "mac_tx_get_rts_rate",
-      "offset": 114,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 120,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 120,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 124,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
       "offset": 130,
       "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 130,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 134,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 138,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 138,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 138,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 140,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 146,
-      "kind": "block"
     },
     {
       "function": "mac_tx_set_hesig",
@@ -7793,22 +7692,12 @@
     },
     {
       "function": "mac_tx_set_len",
-      "offset": 90,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_len",
       "offset": 160,
       "kind": "taken"
     },
     {
       "function": "mac_tx_set_len",
       "offset": 170,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_len",
-      "offset": 186,
       "kind": "taken"
     },
     {
@@ -8033,11 +7922,6 @@
     },
     {
       "function": "mac_tx_set_plcp0",
-      "offset": 54,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_plcp0",
       "offset": 66,
       "kind": "taken"
     },
@@ -8238,11 +8122,6 @@
     },
     {
       "function": "mac_tx_set_plcp1",
-      "offset": 28,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_plcp1",
       "offset": 36,
       "kind": "taken"
     },
@@ -8264,16 +8143,6 @@
     {
       "function": "mac_tx_set_plcp1",
       "offset": 86,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_plcp1",
-      "offset": 106,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_plcp1",
-      "offset": 110,
       "kind": "block"
     },
     {
@@ -8363,16 +8232,6 @@
     },
     {
       "function": "mac_tx_set_txop_q",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 48,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
       "offset": 48,
       "kind": "fallthrough"
     },
@@ -8438,11 +8297,6 @@
     },
     {
       "function": "mac_tx_set_txop_q",
-      "offset": 182,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
       "offset": 198,
       "kind": "block"
     },
@@ -8469,11 +8323,6 @@
     {
       "function": "mac_tx_set_txop_q",
       "offset": 240,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 252,
       "kind": "block"
     },
     {

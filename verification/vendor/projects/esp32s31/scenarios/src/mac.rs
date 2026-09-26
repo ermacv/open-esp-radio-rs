@@ -417,6 +417,40 @@ const PPDU_RATES: [u32; 32] = {
     }
     rates
 };
+/// Canonical legacy parameters: rate and group receiver come from the case
+/// state; the signal is the fixture length, with the HT fixture's
+/// priorities and the station interface.
+const PPDU_LEGACY_CANONICAL: [u32; 13] = [0, PPDU_DESCRIPTOR, 0, 0xc2e, 0, 1, 1, 1, 0, 0, 0, 0, 0];
+const PPDU_LEGACY_CANONICAL_RATE: usize = 2;
+const PPDU_LEGACY_CANONICAL_SIGNAL: usize = 3;
+const PPDU_LEGACY_CANONICAL_GROUP: usize = 11;
+/// Frame buffer the legacy descriptor points to; its first word carries
+/// the hardware frame length `mac_tx_set_plcp1` publishes.
+const PPDU_LEGACY_BUFFER: u32 = 0x3fff_1700;
+/// Descriptor word-0 bits of the HT fixture a legacy frame clears: A-MPDU
+/// (bit 22) and the acknowledgement-class bit 19 `mac_tx_set_plcp0` adds.
+const PPDU_AGGREGATE_BITS: u32 = 1 << 22 | 1 << 19;
+/// Descriptor word-0 bit that makes `mac_tx_set_plcp0` publish no
+/// acknowledgement: a group receiver.
+const PPDU_GROUP_RECEIVER: u32 = 1 << 1;
+/// Transmit-context words through the TXOP bytes at 0x1c and 0x1d, which
+/// `lmacInitAc` initializes to count zero and slot three, no TXOP queue;
+/// only `lmacRequestTxopQueue` grants a slot, for QoS frames of a queue
+/// with a TXOP limit.
+const PPDU_PROGRAM_WORDS: usize = 8;
+const PPDU_NO_TXOP_SLOT: u32 = 0x0000_0300;
+/// Every legacy rate code production transmits, each for a single and a
+/// group receiver (bit 8).
+const PPDU_LEGACY_STATES: [u32; 30] = {
+    const RATES: [u32; 15] = [0, 1, 2, 3, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf];
+    let mut states = [0; 30];
+    let mut i = 0;
+    while i < states.len() {
+        states[i] = RATES[i % RATES.len()] | ((i / RATES.len()) as u32) << 8;
+        i += 1;
+    }
+    states
+};
 /// Where production receives its copy of the power table.
 const PPDU_POWER_COPY: u32 = INPUT + 0x100;
 /// The vendor HT descriptor object, its rate byte (word 3) and its width
@@ -520,30 +554,73 @@ fn ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
         unreachable!("PPDU words: program, auxiliary, power table, rate")
     };
     let (mcs, short_gi, wide) = (rate & 0xff, rate >> 8 & 1, rate >> 16 & 1);
+    let code = if short_gi == 1 {
+        PPDU_HT_SHORT_GI_CODE
+    } else {
+        PPDU_HT_LONG_GI_CODE
+    } + mcs;
+    let mut canonical = PPDU_CANONICAL;
+    canonical[PPDU_CANONICAL_MCS] = mcs;
+    canonical[PPDU_CANONICAL_GUARD_INTERVAL] = short_gi;
+    canonical[PPDU_CANONICAL_WIDTH] = wide;
+    ppdu_objects(vendor_side, code, wide, None, words(&canonical))
+}
+
+/// The legacy fixture: the HT fixture's objects with a legacy rate code.
+fn legacy_ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
+    let [_, _, _, rate] = words_in else {
+        unreachable!("PPDU words: program, auxiliary, power table, rate")
+    };
+    let (code, group) = (rate & 0xff, rate >> 8 & 1);
+    let mut canonical = PPDU_LEGACY_CANONICAL;
+    canonical[PPDU_LEGACY_CANONICAL_RATE] = code;
+    canonical[PPDU_LEGACY_CANONICAL_GROUP] = group;
+    ppdu_objects(vendor_side, code, 0, Some(group == 1), words(&canonical))
+}
+
+/// Vendor PP objects of the fixture with rate-control code `code` and the
+/// 40-MHz bit `wide`, and the production canonical parameters.
+fn ppdu_objects(
+    vendor_side: &Vendor<'_>,
+    code: u32,
+    wide: u32,
+    legacy: Option<bool>,
+    canonical: Vec<u8>,
+) -> Result<Objects> {
     let rom = |name: &str| vendor_side.symbol(name);
     let mut vendor: Vec<(u32, Vec<u8>)> = PPDU_VENDOR
         .iter()
         .map(|(address, values)| {
             let mut values = values.to_vec();
             if *address == PPDU_HT_OBJECT {
-                let first = if short_gi == 1 {
-                    PPDU_HT_SHORT_GI_CODE
-                } else {
-                    PPDU_HT_LONG_GI_CODE
-                };
-                values[PPDU_HT_RATE_WORD] = first + mcs;
+                values[PPDU_HT_RATE_WORD] = code;
                 values[PPDU_HT_WIDTH_WORD] &= !PPDU_HT_40MHZ;
                 values[PPDU_HT_WIDTH_WORD] |= wide * PPDU_HT_40MHZ;
+                if let Some(group) = legacy {
+                    values[0] &= !PPDU_AGGREGATE_BITS;
+                    if group {
+                        values[0] |= PPDU_GROUP_RECEIVER;
+                    }
+                }
+            }
+            if legacy.is_some() && *address == PPDU_DESCRIPTOR {
+                values[1] = PPDU_LEGACY_BUFFER;
+            }
+            if legacy.is_some() && *address == PPDU_PROGRAM {
+                values.resize(PPDU_PROGRAM_WORDS, 0);
+                values[PPDU_PROGRAM_WORDS - 1] = PPDU_NO_TXOP_SLOT;
             }
             (*address, words(&values))
         })
         .collect();
-    let mut canonical = PPDU_CANONICAL;
-    canonical[PPDU_CANONICAL_MCS] = mcs;
-    canonical[PPDU_CANONICAL_GUARD_INTERVAL] = short_gi;
-    canonical[PPDU_CANONICAL_WIDTH] = wide;
     let mut table = vec![0u8; PPDU_OSI_BYTES];
     table[PPDU_COEX_PTI_CLAMP_SLOT..].copy_from_slice(&PPDU_COEX_PTI_CLAMP.to_le_bytes());
+    if legacy.is_some() {
+        vendor.push((
+            PPDU_LEGACY_BUFFER,
+            words(&[PPDU_LEGACY_CANONICAL[PPDU_LEGACY_CANONICAL_SIGNAL]]),
+        ));
+    }
     vendor.extend([
         (PPDU_OSI_TABLE, table),
         (rom("pTxRx")?, PPDU_AUXILIARY.to_le_bytes().to_vec()),
@@ -580,7 +657,7 @@ fn ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
         vendor_words: vec![PPDU_PROGRAM, PPDU_AUXILIARY],
         vendor,
         production: vec![
-            (INPUT, words(&canonical)),
+            (INPUT, canonical),
             (PPDU_POWER_COPY, words(&PPDU_MAX_POWER)),
         ],
         calls: vec![clamp],
@@ -1053,6 +1130,22 @@ pub const LEAVES: &[Leaf] = &[
             ppdu_abi,
         ),
         &PPDU_RATES,
+    ),
+    stated(
+        objects(
+            leaf(
+                "hal_mac_tx_set_ppdu",
+                "open_libpp_tx_trace_hal_mac_tx_set_legacy_ppdu",
+                &[
+                    ("program_address", Domain::Words(&[INPUT])),
+                    ("_vendor_auxiliary", Domain::Words(&[PPDU_AUXILIARY])),
+                    ("power_table", Domain::Words(&[PPDU_POWER_COPY])),
+                ],
+                false,
+            ),
+            legacy_ppdu_abi,
+        ),
+        &PPDU_LEGACY_STATES,
     ),
     stated(
         objects(

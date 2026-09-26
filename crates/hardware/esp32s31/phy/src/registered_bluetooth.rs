@@ -384,6 +384,93 @@ impl BluetoothPhyRfCloseFailure {
     }
 }
 
+/// Failed Bluetooth maintenance retaining the exact failed PHY frontier.
+///
+/// Evaluation fails before any hardware access and retains the settled
+/// owner; tracking failure retains the poisoned epoch. Neither variant exposes
+/// a runnable client.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "failed Bluetooth PHY maintenance retains the failed PHY frontier"]
+pub enum BluetoothPhyMaintenanceFailure {
+    /// The tracking clock was rejected before any hardware access.
+    Evaluation(RegisteredBluetoothPhyTrackEvaluationFailure),
+    /// The admitted tracking transaction failed.
+    Tracking(crate::TargetBluetoothPhyParamTrackingFailure),
+}
+
+#[cfg(target_arch = "riscv32")]
+impl RegisteredBluetoothPhyClient {
+    /// Service due tracking under checked Bluetooth maintenance access.
+    ///
+    /// This is the Bluetooth counterpart of the Wi-Fi maintenance entry: the
+    /// access proves Controller quiescence and lends the shared PHY only under
+    /// the Bluetooth route. An early wake returns the unchanged client and no
+    /// outcome without touching hardware. `deadline` guards execution in
+    /// `D`'s clock domain; `None` runs without a transaction deadline.
+    ///
+    /// # Cancellation
+    /// Once polled, drive this future to a terminal result. Cancellation or
+    /// failure requires out-of-band reset; neither returns a runnable client.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the allocation-free Bluetooth PHY frontier"
+    )]
+    pub async fn maintain<P, D, O>(
+        self,
+        platform: &mut P,
+        access: &mut impl oer_esp32s31_hal::owner::maintenance::PhyMaintenanceAccess<
+            Route = oer_esp32s31_hal::owner::route::Bluetooth,
+        >,
+        clock: &mut impl PhyPllTrackClock,
+        observer: O,
+        deadline: Option<crate::tracking::deadline::TrackingDeadline>,
+    ) -> Result<
+        (Self, Option<crate::tracking::PhyParamTrackingOutcome>),
+        BluetoothPhyMaintenanceFailure,
+    >
+    where
+        D: crate::PhyAsyncDelay,
+        O: crate::PhyTargetObserver,
+    {
+        let evaluation = self
+            .evaluate_due_tracking(clock)
+            .map_err(BluetoothPhyMaintenanceFailure::Evaluation)?;
+        let pending = match evaluation.into_owner() {
+            Ok(client) => return Ok((client, None)),
+            Err(pending) => pending.begin_tracking(),
+        };
+        let mut registers = access.phy_hal();
+        let result = match deadline {
+            Some(deadline) => {
+                crate::run_target_bluetooth_phy_param_tracking_until::<P, D, O>(
+                    platform,
+                    &mut registers,
+                    pending,
+                    observer,
+                    deadline,
+                )
+                .await
+            }
+            None => {
+                crate::run_target_bluetooth_phy_param_tracking::<P, D, O>(
+                    platform,
+                    &mut registers,
+                    pending,
+                    observer,
+                )
+                .await
+            }
+        };
+        match result {
+            Ok(success) => {
+                let (client, outcome) = success.into_parts();
+                Ok((client, Some(outcome)))
+            }
+            Err(failure) => Err(BluetoothPhyMaintenanceFailure::Tracking(failure)),
+        }
+    }
+}
+
 #[cfg(target_arch = "riscv32")]
 impl RegisteredBluetoothPhyClientRelease {
     /// Close the last client's physical RF through the outer stopped Controller.

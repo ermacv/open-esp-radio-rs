@@ -10,6 +10,7 @@ use super::{MacInterruptCheckpoint, MacInterruptSetup, RadioRuntimeOwner, Shared
 use crate::ieee80211::mac::WifiMacHal;
 
 mod sealed {
+    pub trait PhyMaintenanceAccess {}
     pub trait InterruptAuthority {}
     impl InterruptAuthority for super::MacInterruptSetup {}
     impl InterruptAuthority for super::MacInterruptCheckpoint {}
@@ -24,6 +25,54 @@ mod sealed {
 /// impl InterruptAuthority for TimerRequest {}
 /// ```
 pub trait InterruptAuthority: sealed::InterruptAuthority {}
+
+/// Checked physical admission to shared-PHY maintenance for one protocol.
+///
+/// Each protocol mints its access only after its own hardware quiescence
+/// check: Wi-Fi through [`RadioRuntimeOwner::try_into_phy_maintenance`], and
+/// Bluetooth through
+/// [`InterruptOutputAfterRoutesOwner::try_phy_maintenance`](crate::bluetooth::InterruptOutputAfterRoutesOwner::try_phy_maintenance).
+/// The access lends the shared PHY only under its own route, so a PHY
+/// operation can require the matching protocol. It is not a coexistence
+/// grant: no other protocol may use RF while it is held.
+///
+/// ```compile_fail
+/// use oer_esp32s31_hal::owner::{SharedPhyHal, maintenance::PhyMaintenanceAccess, route};
+/// struct Forged;
+/// impl PhyMaintenanceAccess for Forged {
+///     type Route = route::Bluetooth;
+///     fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
+///         unimplemented!()
+///     }
+/// }
+/// ```
+pub trait PhyMaintenanceAccess: sealed::PhyMaintenanceAccess {
+    /// Protocol route whose quiescence admitted this access.
+    type Route: route::Route;
+
+    /// Borrow the shared PHY for one step of the admitted operation.
+    fn phy_hal(&mut self) -> SharedPhyHal<'_, Self::Route>;
+}
+
+impl<I: InterruptAuthority> sealed::PhyMaintenanceAccess for WifiAccess<I> {}
+
+impl<I: InterruptAuthority> PhyMaintenanceAccess for WifiAccess<I> {
+    type Route = route::Wifi;
+
+    fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Wifi> {
+        WifiAccess::phy_hal(self)
+    }
+}
+
+impl sealed::PhyMaintenanceAccess for crate::bluetooth::BluetoothMaintenanceAccess<'_> {}
+
+impl PhyMaintenanceAccess for crate::bluetooth::BluetoothMaintenanceAccess<'_> {
+    type Route = route::Bluetooth;
+
+    fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
+        crate::owner::SharedPhyBorrow::borrow_shared_phy(self.task)
+    }
+}
 impl InterruptAuthority for MacInterruptSetup {}
 impl InterruptAuthority for MacInterruptCheckpoint {}
 

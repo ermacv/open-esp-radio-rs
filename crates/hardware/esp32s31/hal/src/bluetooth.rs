@@ -911,7 +911,31 @@ pub struct InterruptOutputAfterRoutesOwner {
     _registers: oer_esp32s31_pac::BluetoothInterruptOutputPrepared,
 }
 
+/// Shared-PHY maintenance access while the Bluetooth Controller is idle.
+///
+/// It borrows the task owner and the prepared, unrouted interrupt output for
+/// its whole lifetime, so the output cannot be reactivated or released while
+/// PHY maintenance holds the radio.
+#[must_use = "Bluetooth PHY maintenance access admits one shared-PHY operation"]
+pub struct BluetoothMaintenanceAccess<'owner> {
+    pub(crate) task: &'owner mut TaskOwner,
+    _output: &'owner InterruptOutputAfterRoutesOwner,
+}
+
 impl InterruptOutputAfterRoutesOwner {
+    /// Admit shared-PHY maintenance after the same idle-Controller check as
+    /// [`Self::validate_idle_controller`].
+    pub fn try_phy_maintenance<'owner>(
+        &'owner self,
+        task: &'owner mut TaskOwner,
+    ) -> Result<BluetoothMaintenanceAccess<'owner>, BluetoothControllerOutputReleaseError> {
+        self.validate_idle_controller(task)?;
+        Ok(BluetoothMaintenanceAccess {
+            task,
+            _output: self,
+        })
+    }
+
     /// Observe quiescence while retaining the prepared, unrouted output bank.
     pub fn validate_idle_controller(
         &self,

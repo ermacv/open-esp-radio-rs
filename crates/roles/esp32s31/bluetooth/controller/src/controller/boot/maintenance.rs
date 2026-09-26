@@ -7,8 +7,9 @@ use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerOutputReleaseError, InterruptOutputAfterRoutesOwner,
 };
 use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, RegisteredBluetoothPhyTrackEvaluationFailure,
-    TargetBluetoothPhyParamTrackingFailure, TargetPhyParamTrackingError,
+    BluetoothPhyMaintenanceFailure, PhyAsyncDelay, PhyTargetObserver,
+    RegisteredBluetoothPhyTrackEvaluationFailure, TargetBluetoothPhyParamTrackingFailure,
+    TargetPhyParamTrackingError,
     state::client::{PhyPllTrackClock, PhyTrackTimeError},
     tracking::PhyParamTrackingOutcome,
     tracking::deadline::{TrackingDeadline, TrackingDeadlineError},
@@ -249,16 +250,7 @@ pub(crate) async fn maintain<
         } else if let Err(error) = admission {
             Some(ControllerPhyMaintenanceError::Task(error))
         } else {
-            interrupt
-                .validate_idle_controller(
-                    authority
-                        .task_mut()
-                        .runtime
-                        .task_owner()
-                        .maintenance_registers(),
-                )
-                .err()
-                .map(ControllerPhyMaintenanceError::Hardware)
+            None
         };
     if let Some(error) = error {
         return Err(ControllerPhyMaintenanceFailure {
@@ -269,6 +261,22 @@ pub(crate) async fn maintain<
             _phy: PhyStage::InSlot,
         });
     }
+    // The access keeps the task owner and the unrouted output bank borrowed
+    // until the PHY operation ends, so no route can be reactivated meanwhile.
+    let task = authority.task_mut();
+    let mut access =
+        match interrupt.try_phy_maintenance(task.runtime.task_owner().maintenance_registers()) {
+            Ok(access) => access,
+            Err(error) => {
+                return Err(ControllerPhyMaintenanceFailure {
+                    error: ControllerPhyMaintenanceError::Hardware(error),
+                    _task: authority,
+                    _timer: timer,
+                    _interrupt: interrupt,
+                    _phy: PhyStage::InSlot,
+                });
+            }
+        };
     let Some(platform) = platform.platform_mut_for_epoch(controller.epoch_identity()) else {
         return Err(ControllerPhyMaintenanceFailure {
             error: ControllerPhyMaintenanceError::EpochMismatch,
@@ -289,15 +297,22 @@ pub(crate) async fn maintain<
             _phy: PhyStage::InSlot,
         });
     }
-    let (phy, ()) = authority
-        .task_mut()
+    let (phy, ()) = task
         .ble_phy_owners
         .try_retire(|| Ok::<_, core::convert::Infallible>(()))
         .unwrap();
     let (phy, memory) = phy.into_shutdown_parts();
-    let evaluation = match phy.evaluate_due_tracking(clock) {
-        Ok(evaluation) => evaluation,
-        Err(failure) => {
+    let result = {
+        let maintenance =
+            phy.maintain::<P, D, O>(platform, &mut access, clock, observer, tracking_deadline);
+        #[cfg(feature = "lifecycle-fault-injection")]
+        let maintenance = oer_esp32s31_phy::fault_injection::drive(maintenance);
+        let mut maintenance = core::pin::pin!(maintenance);
+        core::future::poll_fn(|cx| poll_tracking(maintenance.as_mut(), cx)).await
+    };
+    let (phy, outcome) = match result {
+        Ok(maintained) => maintained,
+        Err(BluetoothPhyMaintenanceFailure::Evaluation(failure)) => {
             return Err(ControllerPhyMaintenanceFailure {
                 error: ControllerPhyMaintenanceError::Clock(failure.error()),
                 _task: authority,
@@ -309,61 +324,17 @@ pub(crate) async fn maintain<
                 },
             });
         }
-    };
-    let (phy, outcome) = match evaluation.into_owner() {
-        Ok(phy) => (phy, None),
-        Err(pending) => {
-            let result = {
-                let mut registers = authority.task_mut().runtime.task_owner().shared_phy_hal();
-                let tracking = async {
-                    match tracking_deadline {
-                            Some(deadline) => {
-                                oer_esp32s31_phy::run_target_bluetooth_phy_param_tracking_until::<
-                                    P,
-                                    D,
-                                    O,
-                                >(
-                                    platform,
-                                    &mut registers,
-                                    pending.begin_tracking(),
-                                    observer,
-                                    deadline,
-                                )
-                                .await
-                            }
-                            None => oer_esp32s31_phy::run_target_bluetooth_phy_param_tracking::<
-                                P,
-                                D,
-                                O,
-                            >(
-                                platform, &mut registers, pending.begin_tracking(), observer
-                            )
-                            .await,
-                        }
-                };
-                #[cfg(feature = "lifecycle-fault-injection")]
-                let tracking = oer_esp32s31_phy::fault_injection::drive(tracking);
-                let mut tracking = core::pin::pin!(tracking);
-                core::future::poll_fn(|cx| poll_tracking(tracking.as_mut(), cx)).await
-            };
-            match result {
-                Ok(success) => {
-                    let (phy, outcome) = success.into_parts();
-                    (phy, Some(outcome))
-                }
-                Err(failure) => {
-                    return Err(ControllerPhyMaintenanceFailure {
-                        error: ControllerPhyMaintenanceError::Tracking(failure.error()),
-                        _task: authority,
-                        _timer: timer,
-                        _interrupt: interrupt,
-                        _phy: PhyStage::Tracking {
-                            _memory: memory,
-                            _failure: failure,
-                        },
-                    });
-                }
-            }
+        Err(BluetoothPhyMaintenanceFailure::Tracking(failure)) => {
+            return Err(ControllerPhyMaintenanceFailure {
+                error: ControllerPhyMaintenanceError::Tracking(failure.error()),
+                _task: authority,
+                _timer: timer,
+                _interrupt: interrupt,
+                _phy: PhyStage::Tracking {
+                    _memory: memory,
+                    _failure: failure,
+                },
+            });
         }
     };
     let phy = memory.with_client(phy);

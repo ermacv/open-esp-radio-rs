@@ -129,7 +129,7 @@ pub use lifecycle::{
     PhyRfWakeTransition, PhyRfWakeTransitionError,
 };
 #[cfg(target_arch = "riscv32")]
-pub use registered_bluetooth::BluetoothPhyRfCloseFailure;
+pub use registered_bluetooth::{BluetoothPhyMaintenanceFailure, BluetoothPhyRfCloseFailure};
 pub use registered_bluetooth::{
     RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
     RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyClientRelease,

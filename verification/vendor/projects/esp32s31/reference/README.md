@@ -10,6 +10,7 @@ results, work plans or product readiness declarations.
 | [Bluetooth controller](bluetooth-controller-boundary.md) | Platform lifecycle versus Controller software |
 | [Bluetooth interrupts](bluetooth-interrupt-runtime.md) | Primary/NRT acknowledgement and deferred work |
 | [Direct Test Mode](bluetooth-direct-test-mode.md) | Descriptor, timing, scheduler and recycle contracts |
+| [Scheduler lists](bluetooth-scheduler-lists.md) | Multi-item lists, insertion into a live list and completion |
 | [Legacy advertising](bluetooth-legacy-advertising.md) | PDU memory, event publication and recurrence |
 | [Passive scanning](bluetooth-passive-scanning.md) | RX graph, completion and report fields |
 | [Peripheral connection](bluetooth-peripheral-connection.md) | Connection memory, anchor timing and ownership |

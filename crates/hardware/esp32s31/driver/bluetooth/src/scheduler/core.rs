@@ -11,7 +11,7 @@ use crate::scheduler::SchedulerSoftwareConfig;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use crate::scheduler::timeline::SchedulerWindowReservation;
 
-use oer_esp32s31_pac::BluetoothControllerTimeScale;
+use oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale;
 
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_hal::bluetooth::{

@@ -1,4 +1,4 @@
-use oer_esp32s31_pac::{
+use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
 };
 

@@ -72,12 +72,9 @@ smallest operation; a safe state machine in an audited crate remains safe.
 ## PAC dependency authority
 
 Direct dependencies on the semantic radio PAC are restricted independently
-of unsafe syntax. The current allowed paths are `pac/raw`, `pac` and `hal`
-under `hardware/esp32s31/`; `bluetooth`, `ieee802154/irq` and
-`ieee802154` under `hardware/esp32s31/driver/`; and
-`adapters/esp-hal/esp32s31/{soc,ieee802154}/`.
-In particular, the IEEE 802.15.4 IRQ crate's dependency permission does not
-permit unsafe code. Check the executable lists when changing these boundaries.
+of unsafe syntax. The only allowed paths are `pac/raw`, `pac` and `hal`
+under `hardware/esp32s31/`: drivers and adapters reach registers through HAL
+owners. Check the executable list when changing this boundary.
 
 Upper layers use opaque, finite capabilities rather than raw pointers,
 unchecked lifetimes, generic PAC callbacks or independently reusable interrupt

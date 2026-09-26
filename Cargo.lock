@@ -2240,7 +2240,6 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-hal",
- "oer-esp32s31-pac",
  "oer-esp32s31-phy",
 ]
 
@@ -2543,10 +2542,10 @@ dependencies = [
 name = "oer-esp32s31-ieee802154"
 version = "0.1.0"
 dependencies = [
+ "oer-esp32s31-hal",
  "oer-esp32s31-ieee802154-dma",
  "oer-esp32s31-ieee802154-irq",
  "oer-esp32s31-ieee802154-mac",
- "oer-esp32s31-pac",
 ]
 
 [[package]]
@@ -2571,16 +2570,16 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
+ "oer-esp32s31-hal",
  "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-irq",
- "oer-esp32s31-pac",
 ]
 
 [[package]]
 name = "oer-esp32s31-ieee802154-irq"
 version = "0.1.0"
 dependencies = [
- "oer-esp32s31-pac",
+ "oer-esp32s31-hal",
 ]
 
 [[package]]

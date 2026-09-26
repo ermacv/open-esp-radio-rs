@@ -14,9 +14,9 @@
 
 #![forbid(unsafe_code)]
 
-use oer_esp32s31_pac::{BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch};
+use oer_esp32s31_hal::bluetooth::{BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch};
 
-pub use oer_esp32s31_pac::{
+pub use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
 };
 

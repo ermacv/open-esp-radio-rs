@@ -1320,7 +1320,6 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-hal",
- "oer-esp32s31-pac",
  "oer-esp32s31-phy",
 ]
 

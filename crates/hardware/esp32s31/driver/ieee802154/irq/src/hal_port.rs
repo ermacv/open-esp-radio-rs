@@ -1,15 +1,14 @@
-//! Production interrupt-port glue for the restricted ESP32-S31 PAC owner.
+//! Production interrupt-port glue for the ESP32-S31 HAL interrupt owner.
 
-use oer_esp32s31_pac::{
-    Ieee802154EventMask, Ieee802154EventObservationError,
-    Ieee802154InterruptRegisters as PacInterruptRegisters,
-    Ieee802154InterruptSnapshot as PacInterruptSnapshot, Ieee802154RxAbortReasonObservation,
+use oer_esp32s31_hal::ieee802154::mac::{
+    Ieee802154EventMask, Ieee802154EventObservationError, Ieee802154InterruptOwner,
+    Ieee802154InterruptSnapshot, Ieee802154RxAbortReasonObservation,
     Ieee802154TxAbortReasonObservation,
 };
 
 use crate::{InterruptPort, InterruptSnapshot};
 
-impl InterruptSnapshot for PacInterruptSnapshot {
+impl InterruptSnapshot for Ieee802154InterruptSnapshot {
     #[inline]
     fn event_classification(&self) -> Result<Ieee802154EventMask, Ieee802154EventObservationError> {
         self.event_classification()
@@ -36,8 +35,8 @@ impl InterruptSnapshot for PacInterruptSnapshot {
     }
 }
 
-impl InterruptPort for PacInterruptRegisters {
-    type Snapshot = PacInterruptSnapshot;
+impl InterruptPort for Ieee802154InterruptOwner {
+    type Snapshot = Ieee802154InterruptSnapshot;
 
     #[inline]
     fn status(&mut self) -> Self::Snapshot {

@@ -32,7 +32,7 @@ scope = "The lower MAC actor and executor own RX without automatic ACK direct or
 limits = "Lower operation ownership does not compose the RF-ready public service; automatic ACK generation CSMA/CA source matching timed operations and security are not implied"
 source-paths = [
   "crates/hardware/esp32s31/driver/ieee802154/mac/src/actor.rs",
-  "crates/hardware/esp32s31/driver/ieee802154/src/pac_command_executor.rs",
+  "crates/hardware/esp32s31/driver/ieee802154/src/command_executor.rs",
   "crates/adapters/embassy/esp32s31/ieee802154/src/owner.rs",
 ]
 
@@ -455,7 +455,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Hardware Auto ACK generation"
 status = "fail-closed"
 level = "lower-primitive"
-scope-and-limitations = "The [command executor](src/pac_command_executor.rs) rejects Receive when `tx_auto_ack` or `enhanced_ack_tx` is enabled. The exposed RX operation is explicitly `receive_without_auto_ack()`."
+scope-and-limitations = "The [command executor](src/command_executor.rs) rejects Receive when `tx_auto_ack` or `enhanced_ack_tx` is enabled. The exposed RX operation is explicitly `receive_without_auto_ack()`."
 packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]

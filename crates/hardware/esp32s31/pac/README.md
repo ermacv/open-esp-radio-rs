@@ -8,6 +8,13 @@ holds no protocol route: the HAL owns the neutral radio root, decides which
 partitions each exclusive route consumes, retains the others and supplies
 multi-register sequencing, polling, delay, recovery and lifecycle policy.
 
+Every handwritten PAC operation is a single transaction: it keeps no state
+between calls, has no phases, never polls and never routes. A straight-line
+multi-register sequence and the affine receipt it returns (for example a
+stopped-scheduler or rollback token) are allowed; pending/step machines,
+in-flight flags and retry loops belong to the HAL. The HAL is the only
+production crate that depends on this package.
+
 ## Sources and generated outputs
 
 The [source-only publication configuration](../../../../registers/esp32s31/publication/registers.toml)

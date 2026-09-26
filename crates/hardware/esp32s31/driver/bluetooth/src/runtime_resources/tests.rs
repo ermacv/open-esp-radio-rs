@@ -2,7 +2,7 @@ use crate::scheduler::{SchedulerSoftwareConfig, SchedulerTimingPolicy};
 
 use oer_esp32s31_hal::bluetooth::BluetoothModemLpTimerInstant;
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
+use oer_esp32s31_hal::bluetooth::BluetoothControllerHalInitConfig;
 
 use super::ControllerRuntimeResources;
 

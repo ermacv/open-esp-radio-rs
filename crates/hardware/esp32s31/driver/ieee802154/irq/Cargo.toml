@@ -11,7 +11,7 @@ description = "Quiesced ESP32-S31 IEEE 802.15.4 interrupt identities, masks, and
 validation-probes = []
 
 [dependencies]
-oer-esp32s31-pac = { path = "../../../pac" }
+oer-esp32s31-hal = { path = "../../../hal" }
 
 [lints]
 workspace = true

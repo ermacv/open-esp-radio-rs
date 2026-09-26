@@ -21,15 +21,12 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-bluetooth-system",
     "oer-esp32s31-ieee80211-system",
 ];
+/// The HAL is the only production consumer of the closed PAC; drivers and
+/// adapters reach hardware through HAL owners.
 const PAC_CONSUMERS: &[&str] = &[
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-pac",
-    "oer-esp32s31-soc-esp-hal",
     "oer-esp32s31-hal",
-    "oer-esp32s31-bluetooth",
-    "oer-esp32s31-ieee802154-irq",
-    "oer-esp32s31-ieee802154",
-    "oer-esp32s31-ieee802154-esp-hal",
 ];
 /// The crate-root attribute that states each production library's unsafe
 /// policy. Rustc and Clippy enforce it in every build; this check keeps the

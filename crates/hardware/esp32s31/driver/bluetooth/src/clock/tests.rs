@@ -1,7 +1,7 @@
-use oer_esp32s31_hal::root::RadioHardware;
-use oer_esp32s31_pac::{
+use oer_esp32s31_hal::bluetooth::{
     BluetoothLowPowerClockObservation, PlatformClockPowerObservation, SharedModemClockObservation,
 };
+use oer_esp32s31_hal::root::RadioHardware;
 
 use std::{cell::RefCell, rc::Rc, vec::Vec};
 

@@ -136,9 +136,12 @@ code. The [PAC provenance map](hardware/esp32s31/pac/README.md) identifies both
 generated outputs, the publisher and the separate upstream bindings.
 See [unsafe boundaries](UNSAFE.md) for the enforced exceptions.
 
-PAC operations describe register-local fields and access. HAL operations own
-the radio root, protocol routes, multi-register order, polling, delays,
-lifecycle and recovery. Handwritten
+PAC operations are stateless single transactions: register-local fields,
+straight-line multi-register sequences and the affine receipts they return.
+They keep no state between calls, have no phases, never poll and never route.
+The HAL owns the radio root, protocol routes, every owner hierarchy, phased
+sequences, polling, delays, lifecycle and recovery, and is the only
+production consumer of the PAC. Handwritten
 code outside the restricted PAC uses typed accessors; missing fields must be
 reviewed and published through the SVD/PAC. A Rust ownership proof does not
 establish the meaning of a recovered register.
@@ -147,8 +150,8 @@ PHY borrows an opaque `PhyHal`; role code uses finite HAL/MAC capabilities.
 Do not expose PAC callbacks, `Deref` escapes or owner re-exports above these
 boundaries. Shared task-side handles remain tied to the HAL arena's explicit
 serialization; a copyable handle grants no unsynchronized cross-thread MMIO
-access. Bluetooth/IEEE 802.15.4 PAC dependencies are explicit policy
-exceptions, not a general route around HAL.
+access. Drivers and adapters depend on the HAL only; register-level value
+types they need are re-exported by the owning HAL module.
 
 The current Wi-Fi execution domain has one Core0 supervisor and controlled
 child execution. A station task may receive the exact affine owner through a

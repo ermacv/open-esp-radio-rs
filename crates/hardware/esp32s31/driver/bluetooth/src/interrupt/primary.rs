@@ -23,7 +23,9 @@ use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerWorkObservation, InterruptRegistersOwner,
 };
 
-use oer_esp32s31_pac::{BluetoothPrimaryInterruptEpoch, BluetoothSchedulerHardwareListIndex};
+use oer_esp32s31_hal::bluetooth::{
+    BluetoothPrimaryInterruptEpoch, BluetoothSchedulerHardwareListIndex,
+};
 
 /// Terminal result of one bounded primary source-124 handler step.
 #[derive(Debug, Eq, PartialEq)]

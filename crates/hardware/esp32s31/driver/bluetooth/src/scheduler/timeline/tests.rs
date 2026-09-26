@@ -1,6 +1,6 @@
 use crate::{ControllerTimeSample, scheduler::SchedulerSoftwareConfig};
 
-use oer_esp32s31_pac::{BluetoothControllerHalInitConfig, BluetoothControllerTimeScale};
+use oer_esp32s31_hal::bluetooth::{BluetoothControllerHalInitConfig, BluetoothControllerTimeScale};
 
 use super::{
     SchedulerInitialAdmissionResolved, SchedulerRawWindow, SchedulerRecurringReserved,

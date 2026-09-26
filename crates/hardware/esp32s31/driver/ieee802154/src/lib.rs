@@ -5,7 +5,7 @@
 //! closed command executor and retains both that command capability and the
 //! active DMA resources until an ISR-sampled event batch is accepted.
 //!
-//! The production executor owns the dedicated PAC task capability and exposes
+//! The production executor owns the dedicated HAL task capability and exposes
 //! only the public-LL command sequence. Interrupt status remains in a disjoint
 //! hard-IRQ owner; PHY acquisition and the platform CPU route are composed by
 //! higher layers before they mint their ready state.
@@ -37,9 +37,9 @@ use oer_esp32s31_ieee802154_mac::{
     MacStartPlan, MacTxWithAckResolutionFailure, MacTxWithAckResources,
 };
 
-mod pac_command_executor;
+mod command_executor;
 
-pub use pac_command_executor::{
+pub use command_executor::{
     IEEE802154_ACK_WATCHDOG_MICROSECONDS, Ieee802154CommandError, Ieee802154CommandExecutor,
     Ieee802154MonotonicMicrosecondClock, ieee802154_ack_watchdog_threshold,
 };
@@ -117,7 +117,7 @@ pub enum MacOperationPolicyError {
 /// Explicit authority to execute one MAC operation chain.
 ///
 /// The type has no public constructor. Merely implementing a similarly shaped
-/// trait or possessing a PAC peripheral cannot mint this capability.
+/// trait or possessing a register peripheral cannot mint this capability.
 pub struct MacCommandCapability<E: MacCommandExecutor> {
     executor: E,
 }
@@ -374,7 +374,7 @@ pub struct AcknowledgedMacEventBatch {
 /// An acknowledged hard-IRQ value could not become a valid MAC event batch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacInterruptBatchError {
-    /// The PAC could not classify every sampled event.
+    /// The register-level classifier could not classify every sampled event.
     UnclassifiedEvents(Ieee802154EventObservationError),
     /// `RX_ABORT` was asserted without a source-confirmed reason.
     UnknownRxAbortReason,

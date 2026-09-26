@@ -1,6 +1,6 @@
 use crate::interrupt::SchedulerWorkerWakeClass;
 
-use oer_esp32s31_pac::BluetoothPrimaryInterruptEpoch;
+use oer_esp32s31_hal::bluetooth::BluetoothPrimaryInterruptEpoch;
 
 use std::vec::Vec;
 

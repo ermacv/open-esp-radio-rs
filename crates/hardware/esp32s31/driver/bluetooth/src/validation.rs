@@ -1,13 +1,13 @@
 //! Isolated-image bridge for compiled Bluetooth hardware probes.
 //!
-//! This module is absent from ordinary builds. It constructs the finite PAC
-//! interrupt owner inside one isolated image and immediately executes the
+//! This module is absent from ordinary builds. It constructs the finite HAL
+//! owners inside one isolated image and immediately executes the
 //! same restricted transaction used by production; no writable owner escapes
 //! the Bluetooth hardware boundary.
 
 #![deny(unsafe_code)]
 
-pub use oer_esp32s31_pac::{
+pub use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerHalInitConfig, BluetoothControllerSramAddress,
     BluetoothControllerSramAddressError, BluetoothHalInitPeriod, BluetoothHalInitScale,
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
@@ -16,8 +16,7 @@ pub use oer_esp32s31_pac::{
 /// Execute the exact production NRT acknowledgement transaction.
 #[inline(always)]
 pub fn capture_and_acknowledge_interrupts() {
-    let mut registers = oer_esp32s31_pac::validation::bluetooth_interrupt_registers();
-    let _acknowledged = registers.capture_nrt_and_acknowledge();
+    oer_esp32s31_hal::bluetooth::validation::capture_and_acknowledge_interrupts();
 }
 
 /// Execute the exact production scheduler hardware-list head clear transaction.
@@ -78,7 +77,7 @@ pub unsafe fn initialize_baseband_v2(gain_parameter: u8) {
     // SAFETY: forwarded unchanged from this function's `# Safety` contract,
     // which states the lower transaction's prerequisites.
     unsafe {
-        oer_esp32s31_pac::validation::initialize_bluetooth_baseband_v2(gain_parameter);
+        oer_esp32s31_hal::bluetooth::validation::initialize_baseband_v2(gain_parameter);
     }
 }
 
@@ -158,7 +157,7 @@ pub unsafe fn program_memory_list_pointer(
     // SAFETY: forwarded unchanged from this function's `# Safety` contract,
     // which states the lower transaction's prerequisites.
     unsafe {
-        oer_esp32s31_pac::validation::program_bluetooth_memory_list_pointer(selector, slot, image);
+        oer_esp32s31_hal::bluetooth::validation::program_memory_list_pointer(selector, slot, image);
     }
 }
 
@@ -191,7 +190,7 @@ pub unsafe fn initialize_phy_registers(
     // SAFETY: forwarded unchanged from this function's `# Safety` contract,
     // which states the lower transaction's prerequisites.
     unsafe {
-        oer_esp32s31_pac::validation::initialize_bluetooth_phy_registers(
+        oer_esp32s31_hal::bluetooth::validation::initialize_phy_registers(
             private_timing_source_byte,
             environment_address,
             resolving_list,

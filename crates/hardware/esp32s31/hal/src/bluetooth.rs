@@ -7,12 +7,9 @@
 #![deny(unsafe_code)]
 
 use oer_esp32s31_pac::{
-    BluetoothControllerSramAddress, BluetoothDirectionFindingDisabledBaselinePrepared,
-    BluetoothInterruptRegisters, BluetoothInterruptSetup as PacBluetoothInterruptSetup,
-    BluetoothLowPowerClockObservation, BluetoothMemoryListPointerImage,
-    BluetoothMemoryListSelector, BluetoothMemoryListSlot, BluetoothModemLpTimerRegisters,
-    BluetoothPrimaryInterruptEpoch, BluetoothTaskRegisters as PacBluetoothTaskRegisters,
-    ModemSysconBluetoothObservation, PlatformClockPowerObservation, SharedModemClockObservation,
+    BluetoothDirectionFindingDisabledBaselinePrepared, BluetoothInterruptRegisters,
+    BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
+    BluetoothTaskRegisters as PacBluetoothTaskRegisters,
 };
 
 use crate::{
@@ -24,6 +21,8 @@ use crate::{
 mod controller_time;
 mod scheduler_stop;
 mod shutdown;
+#[cfg(feature = "validation-probes")]
+pub mod validation;
 
 use controller_time::ControllerTimeLatch;
 pub use controller_time::{
@@ -35,12 +34,16 @@ pub use shutdown::{BluetoothPhysicalReleaseError, BluetoothPhysicalReleaseFailur
 
 pub use oer_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
-    BluetoothControllerOutputReleaseError, BluetoothLowPowerRuntimeControlObservation,
-    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
-    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
-    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
-    BluetoothNrtInterruptAcknowledged, BluetoothPhyEnvironmentAddress,
-    BluetoothPhyEnvironmentAddressError, BluetoothPhyRegisterInitInputs,
+    BluetoothControllerOutputReleaseError, BluetoothControllerSramAddress,
+    BluetoothControllerSramAddressError, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
+    BluetoothHalInitScale, BluetoothLowPowerClockObservation,
+    BluetoothLowPowerRuntimeControlObservation, BluetoothMemoryListPointerImage,
+    BluetoothMemoryListSelector, BluetoothMemoryListSlot, BluetoothModemLpTimerCompareDisposition,
+    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
+    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
+    BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptAcknowledged,
+    BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
+    BluetoothPhyRegisterInitInputs, BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,
     BluetoothScanStartPublished, BluetoothSchedulerExecutionLockDisposition,
     BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
     BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
@@ -59,7 +62,8 @@ pub use oer_esp32s31_pac::{
     BluetoothSchedulerSoftwareListRemovalInterruptStep, BluetoothSchedulerSoftwareListRemovalJoin,
     BluetoothSchedulerSoftwareListRemovalReady, BluetoothSchedulerStopped,
     BluetoothSchedulerStoppedHeadRetirement, BluetoothSchedulerStoppedItem,
-    BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerWorkObservation, ModemSysconBluetoothObservation,
+    PlatformClockPowerObservation, SharedModemClockObservation,
 };
 
 /// Opaque HAL owner for the exclusive Bluetooth route before task/IRQ split.

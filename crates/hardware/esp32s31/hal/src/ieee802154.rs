@@ -4,6 +4,8 @@ pub(crate) mod backend;
 
 pub mod lifecycle;
 
+pub mod mac;
+
 pub(crate) mod operation;
 
 pub(crate) mod policy;

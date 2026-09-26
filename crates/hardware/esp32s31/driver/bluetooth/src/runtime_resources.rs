@@ -178,7 +178,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerTaskRuntime<'_, SCHEDULER_CAPACI
 pub struct ControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
     pub(crate) runtime: ControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     pub(crate) task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
-    pub(crate) time_scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
+    pub(crate) time_scale: oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale,
     pub(crate) _standalone_dtm_profile:
         &'runtime crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
     pub(crate) config: crate::scheduler::SchedulerSoftwareConfig,
@@ -202,7 +202,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     pub(crate) const fn new<'runtime>(
         runtime: ControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
         task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
-        time_scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
+        time_scale: oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale,
         standalone_dtm_profile: &'runtime crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
         config: crate::scheduler::SchedulerSoftwareConfig,
         scheduler_list: &'runtime mut SchedulerExclusiveListEpoch,
@@ -244,7 +244,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     /// restart of this powered Controller epoch.
     pub fn restore_scheduler_epoch(
         &mut self,
-        time_scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
+        time_scale: oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale,
         config: crate::scheduler::SchedulerSoftwareConfig,
         scheduler_list: SchedulerExclusiveListEpoch,
     ) {
@@ -254,7 +254,9 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// Scheduler time scale retained by this exact powered Controller epoch.
-    pub const fn controller_time_scale(&self) -> oer_esp32s31_pac::BluetoothControllerTimeScale {
+    pub const fn controller_time_scale(
+        &self,
+    ) -> oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale {
         self.time_scale
     }
 

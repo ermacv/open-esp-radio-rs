@@ -1078,13 +1078,12 @@ impl TaskRegisters {
         promiscuous: bool,
         pending_enhanced: bool,
     ) {
-        let register = self.registers.control();
-        register.modify(|_, writer| writer.auto_ack_tx().bit(auto_ack_tx));
-        register.modify(|_, writer| writer.auto_ack_rx().bit(auto_ack_rx));
-        register.modify(|_, writer| writer.enhanced_ack_tx().bit(enhanced_ack_tx));
-        register.modify(|_, writer| writer.coordinator().bit(coordinator));
-        register.modify(|_, writer| writer.promiscuous().bit(promiscuous));
-        register.modify(|_, writer| writer.pending_enhanced().bit(pending_enhanced));
+        self.set_auto_ack_tx(auto_ack_tx);
+        self.set_auto_ack_rx(auto_ack_rx);
+        self.set_enhanced_ack_tx(enhanced_ack_tx);
+        self.set_coordinator(coordinator);
+        self.set_promiscuous(promiscuous);
+        self.set_pending_enhanced(pending_enhanced);
     }
 
     /// Replace all four named multipan enable fields.
@@ -1610,6 +1609,10 @@ pub fn reunite(task: TaskRegisters, interrupt: InterruptRegisters) -> crate::svd
     } = interrupt;
     registers
 }
+
+mod single_field;
+
+pub(crate) use single_field::{RawDebugCounter, RawEvent};
 
 #[cfg(test)]
 mod tests;

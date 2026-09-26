@@ -103,7 +103,7 @@ frame semantics belong to the protocol crate.
 
 | ESP-IDF unit | Owner | Coverage |
 | --- | --- | --- |
-| `ieee802154_common_ll.h`: command, event, abort, address, policy, ED, timer, security, pending-bit and enhanced-ACK accessors | PAC `ieee802154` | implemented, except pending mode, `is_current_rx_frame`, security-offset readback and the debug counters |
+| `ieee802154_common_ll.h`: command, event, abort, address, policy, ED, timer, security, pending, status, enhanced-ACK and diagnostic-counter accessors | PAC `ieee802154` | implemented: one typed transaction per accessor on the task register lease, alongside the composite configuration transactions built from the same steps. The diagnostic counters read the sixteen-bit field of `ieee802154_reg.h`; the public struct reads the complete word of the single-counter registers |
 | `ieee802154_ll.h` (S31): `IEEE802154_RSSI_COMPENSATION_VALUE` 0, receive sensitivity -104 | driver | absent |
 | `ieee802154_mac_init` / `deinit`, `ieee802154_enable` / `disable` | HAL IEEE 802.15.4 lifecycle | partial: clocks, reset and masked foundation; the driver instead enables its event set and interrupt at init |
 | `ieee802154_pib_*`, `ieee802154_pib_update` | HAL policy | partial: fixed channel, CCA, ACK timeout, control flags and primary PAN identity; no mutable PIB, TX power, pending mode or `rx_when_idle` |

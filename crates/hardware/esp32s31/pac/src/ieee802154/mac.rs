@@ -2725,5 +2725,13 @@ impl Ieee802154TaskRegisters {
     }
 }
 
+mod single_field;
+
+pub use single_field::{
+    Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,
+    Ieee802154TxAbortEnableSet, Ieee802154TxSecurityError, Ieee802154TxSecurityErrorObservation,
+    Ieee802154TxStatus,
+};
+
 #[cfg(test)]
 mod tests;

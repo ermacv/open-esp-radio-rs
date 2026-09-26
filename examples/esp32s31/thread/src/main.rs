@@ -1,0 +1,254 @@
+#![no_main]
+#![no_std]
+
+//! A Thread end device on the ESP32-S31 IEEE 802.15.4 radio.
+//!
+//! The IEEE 802.15.4 client starts on the shared radio system, the radio
+//! system runs the periodic PHY tracking, and OpenThread runs over the
+//! client's runtime through the OpenThread radio adapter. The device joins
+//! the network of the active dataset as a minimal end device and echoes UDP
+//! datagrams on port 1212.
+
+use core::net::{Ipv6Addr, SocketAddrV6};
+use core::pin::pin;
+
+use esp_backtrace as _;
+use esp_hal::{
+    clock::CpuClock,
+    efuse,
+    interrupt::software::SoftwareInterrupt,
+    rng::{Trng, TrngSource},
+    timer::{OneShotTimer, timg::TimerGroup},
+};
+use log::{error, info};
+use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
+use oer_esp32s31_hal::root::RadioHardware;
+use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
+use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
+use oer_esp32s31_ieee802154_openthread::{OpenThreadRadio, OpenThreadRadioDefaults};
+use oer_esp32s31_ieee802154_system::{
+    IEEE802154_EVENT_CAPACITY, Ieee802154Parked, Ieee802154System, start,
+};
+use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
+use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
+use oer_esp32s31_radio_system::RadioSystem;
+use openthread::{OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket};
+use static_cell::{ConstStaticCell, StaticCell};
+
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use oer_esp32s31_hal::ieee802154::ll::Ieee802154MacOwners;
+use tinyrlibc as _;
+
+type Radio = RadioSystem<EspHalRadioPeripheral, EspHalRadioClocks>;
+/// Frames OpenThread has not taken yet while it transmits or scans.
+const RX_QUEUE: usize = 8;
+type ThreadRadio = OpenThreadRadio<
+    'static,
+    'static,
+    CriticalSectionRawMutex,
+    Ieee802154MacOwners,
+    IEEE802154_EVENT_CAPACITY,
+    RX_QUEUE,
+>;
+
+const UDP_PORT: u16 = 1212;
+const UDP_BUFFER: usize = 1280;
+const UDP_SOCKETS: usize = 2;
+
+/// The active operational dataset as TLV hex, from the build environment.
+const THREAD_DATASET: &str = match option_env!("THREAD_DATASET") {
+    Some(dataset) => dataset,
+    None => "",
+};
+
+static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
+// The entropy source must outlive every `Trng` OpenThread draws from.
+static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
+static TRNG: StaticCell<Trng> = StaticCell::new();
+static RADIO: StaticCell<Radio> = StaticCell::new();
+static BUFFERS: ConstStaticCell<Ieee802154EngineBuffers> =
+    ConstStaticCell::new(Ieee802154EngineBuffers::new());
+static SYSTEM: StaticCell<Ieee802154System> = StaticCell::new();
+static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
+static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
+static OT_SETTINGS_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0; 1024]);
+static OT_SETTINGS: StaticCell<SimpleRamSettings> = StaticCell::new();
+static UDP_RECEIVE: ConstStaticCell<[u8; UDP_BUFFER]> = ConstStaticCell::new([0; UDP_BUFFER]);
+
+/// The IEEE 802.15.4 EUI-64 as ESP-IDF derives it
+/// (`esp_read_mac(ESP_MAC_IEEE802154)`): the base MAC's first three bytes,
+/// the eFuse MAC extension, then the base MAC's last three bytes.
+fn ieee_eui64() -> [u8; 8] {
+    let base = efuse::base_mac_address();
+    let base = base.as_bytes();
+    let extension = efuse::read_field_le::<u16>(efuse::MAC_EXT).to_le_bytes();
+    [
+        base[0],
+        base[1],
+        base[2],
+        extension[0],
+        extension[1],
+        base[3],
+        base[4],
+        base[5],
+    ]
+}
+
+fn calibration_identity() -> PhyCalibrationIdentity {
+    let mut base_mac_address = [0; 6];
+    base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
+    PhyCalibrationIdentity {
+        rf_cal_version: phy_get_rf_cal_version(),
+        base_mac_address,
+        mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn runtime_main() -> ! {
+    esp_println::logger::init_logger_from_env();
+    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
+    // SAFETY: the common stage-two entry runs after the board bootstrap,
+    // with global interrupts disabled and the PSRAM mapping intact.
+    let _psram = unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM) };
+
+    let timer_group = TimerGroup::new(peripherals.TIMG0);
+    platform_executor::init(OneShotTimer::new(timer_group.timer0));
+    TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
+    let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
+    let platform = EspHalRadioPeripheral::new(
+        peripherals.WIFI,
+        peripherals.MODEM_SYSCON,
+        peripherals.MODEM_LPCON,
+        peripherals.HP_SYS_CLKRST,
+        peripherals.PMU,
+        peripherals.LP_AON_CLK_RST,
+        peripherals.LP_PERI,
+        peripherals.LP_TSENS,
+        peripherals.I2C_ANA_MST,
+    );
+    let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
+        peripherals.FROM_CPU_INTR0,
+    )));
+    // SAFETY: timer and executor handlers are now bound on CPU0, and the staged
+    // handoff has kept MIE clear since `adopt_psram`.
+    unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
+    executor.run(|spawner| {
+        spawner.spawn(
+            thread_task(spawner, platform, trng)
+                .expect("thread task storage must be available once"),
+        );
+    })
+}
+
+#[embassy_executor::task]
+async fn thread_task(
+    spawner: embassy_executor::Spawner,
+    platform: EspHalRadioPeripheral,
+    trng: Trng,
+) {
+    let hardware = RadioHardware::take().expect("the radio hardware is taken once");
+    let (radio, partitions) = RadioSystem::new(
+        hardware,
+        platform,
+        EspHalRadioClocks::new(),
+        calibration_identity(),
+    );
+    let radio: &'static Radio = RADIO.init(radio);
+    let defaults = Ieee802154PibDefaults::default();
+    let parked = Ieee802154Parked::new(partitions.ieee802154, BUFFERS.take(), defaults);
+    // Bring-up registers and calibrates the shared PHY; pin its future.
+    let started = {
+        let started = pin!(start(radio, parked, defaults));
+        started.await
+    };
+    let Ok(system) = started else {
+        error!("the IEEE 802.15.4 client did not start");
+        return;
+    };
+    let system = SYSTEM.init(system);
+    spawner.spawn(tracking_task(radio).expect("tracking task storage must be available once"));
+
+    let ot_settings = OT_SETTINGS.init(SimpleRamSettings::new(OT_SETTINGS_BUFFER.take()));
+    let ot = OpenThread::new_with_udp(
+        ieee_eui64(),
+        TRNG.init(trng),
+        ot_settings,
+        OT_RESOURCES.init(OtResources::new()),
+        OT_UDP.init(OtUdpResources::new()),
+    )
+    .expect("OpenThread must initialize once");
+    let thread_radio = OpenThreadRadio::new(
+        system.runtime(),
+        OpenThreadRadioDefaults {
+            tx_power_dbm: 20,
+            cca_threshold_dbm: -75,
+            receive_sensitivity_dbm: -100,
+        },
+    );
+    spawner.spawn(openthread_task(ot.clone(), thread_radio).expect("OpenThread task storage"));
+    spawner.spawn(role_task(ot.clone()).expect("role task storage"));
+
+    if THREAD_DATASET.is_empty() {
+        error!("build with THREAD_DATASET set to the active operational dataset TLV hex");
+        return;
+    }
+    ot.set_active_dataset_tlv_hexstr(THREAD_DATASET)
+        .expect("THREAD_DATASET must be a valid dataset");
+    // A minimal end device: receiver on when idle, no router role, stable
+    // network data only.
+    ot.set_link_mode(true, false, false)
+        .expect("the MTD link mode must be accepted");
+    ot.enable_ipv6(true).expect("IPv6 must come up");
+    ot.enable_thread(true).expect("Thread must start");
+
+    let socket = UdpSocket::bind(
+        ot,
+        &SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, UDP_PORT, 0, 0),
+    )
+    .expect("the UDP port must be free");
+    info!("echoing UDP on port {UDP_PORT}");
+    let buffer = UDP_RECEIVE.take();
+    loop {
+        let Ok((length, local, remote)) = socket.recv(buffer).await else {
+            continue;
+        };
+        info!("{length} bytes from {remote}");
+        if socket
+            .send(&buffer[..length], Some(&local), &remote)
+            .await
+            .is_err()
+        {
+            error!("the echo to {remote} failed");
+        }
+    }
+}
+
+/// The periodic PHY tracking of the shared radio, as ESP-IDF's
+/// `phy_track_pll` timer runs it.
+#[embassy_executor::task]
+async fn tracking_task(radio: &'static Radio) {
+    let failure = radio.run_tracking().await;
+    error!("PHY tracking stopped: {failure:?}; the radio needs a reset");
+}
+
+#[embassy_executor::task]
+async fn openthread_task(ot: OpenThread<'static>, radio: ThreadRadio) -> ! {
+    // The stack's radio, alarm and tasklet loops share one large future.
+    pin!(ot.run(radio)).await
+}
+
+/// Log the device's role and addresses when OpenThread's state changes.
+#[embassy_executor::task]
+async fn role_task(ot: OpenThread<'static>) -> ! {
+    loop {
+        ot.wait_changed().await;
+        info!("role {:?}, rloc16 {:#06x}", ot.device_role(), ot.rloc16());
+        let _ = ot.ipv6_addrs(|address| {
+            if let Some((address, prefix)) = address {
+                info!("address {address}/{prefix}");
+            }
+            Ok(())
+        });
+    }
+}

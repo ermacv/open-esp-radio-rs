@@ -44,6 +44,13 @@ execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_fre
 reason = "Bluetooth registration retains the actual calibration transition and registered-owner result while borrowing the stopped outer Controller. The same production operation is reviewed in the Bluetooth HIL policy; this local CPU0 frame bound does not imply standalone aggregate-stack or RF qualification"
 
 [[reviewed_frames]]
+function_contains = "::target_port::concurrent::register_concurrent_phy::<"
+source_ends_with = ["crates/hardware/esp32s31/phy/src/target_port/concurrent.rs"]
+max_bytes = 9728
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "first-client shared PHY registration under the radio arbiter's lease retains the calibration transition and registered-domain result across bounded hardware awaits, once per registration epoch inside the IEEE 802.15.4 client's start. The same production operation is reviewed in the IEEE 802.15.4 HIL policy; this local CPU0 frame bound does not imply standalone aggregate-stack or RF qualification"
+
+[[reviewed_frames]]
 function_contains = "::station::StaLifecycleService<"
 source_ends_with = ["crates/protocols/ieee80211/sta/src/station.rs", "oer-ieee80211-sta-0.1.0/src/station.rs"]
 max_bytes = 19712

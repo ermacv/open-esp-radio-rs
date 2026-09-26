@@ -49,5 +49,6 @@ workspace do not compile it.
 
 ## Limits
 
-The adapter is not qualified on air, and no composition runs an OpenThread
-instance yet.
+The adapter is not qualified on air. The
+[Thread example](../../../../../examples/esp32s31/thread/README.md) runs an
+OpenThread end device over it.

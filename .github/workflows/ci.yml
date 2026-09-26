@@ -187,6 +187,8 @@ jobs:
             profiles: default
           - example: esp32s31/station
             profiles: default embassy-network owned-network
+          - example: esp32s31/thread
+            profiles: default
     defaults:
       run:
         working-directory: examples/${{ matrix.example }}

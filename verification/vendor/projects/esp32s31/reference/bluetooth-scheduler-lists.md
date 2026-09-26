@@ -26,14 +26,19 @@ No open implementation of the contracts below exists yet.
   (members `sched_txn.c.o`, `sched_stack.c.o`).
 
 Every behavioral statement below comes from the current-revision instruction
-body. Names come from the initial archive and are accepted only where the
-current body matches its instruction sequence. All 55 current scheduler
-functions and 33 `sched_txn` functions have a unique counterpart. Forty-four
-scheduler and twenty-five `sched_txn` bodies are instruction-identical. The
-bodies that differ were read in their current form. The current
-`r_sched_txn_onSchedHwListDone` body differs only in its assertion helper. The
-only current scheduler function without an initial counterpart,
-`r_sym_bt_DPWY0umixzmXEaFuUyCI`, is described below.
+body. Names come from the initial archive and are carried through every
+intermediate archive revision by
+[`oer-symbol-lineage`](../../../../../tools/symbol-lineage/README.md): a name
+crosses revision `5e37d4d`, which introduced generated names, on its unchanged
+source name or on an identical relocation-normalized body, and later revisions
+keep generated names stable. The bodies that differ from the initial revision
+were read in their current form. The current `r_sched_txn_onSchedHwListDone`
+body differs only in its assertion helper.
+
+`r_sym_bt_DPWY0umixzmXEaFuUyCI` is `r_btdm_sched_run`: its revision-`5e37d4d`
+body is identical to the initial one. Revision `7729629` moved that body into
+the new function `r_sym_bt_PVKilXLQPu1BjRkm4C6O`, which has no recovered name,
+and made `r_btdm_sched_run` its caller.
 
 | Initial name | Current symbol | Current body |
 | --- | --- | --- |
@@ -54,7 +59,7 @@ only current scheduler function without an initial counterpart,
 | `r_btdm_sched_stop` | `r_sym_bt_74l62ZLsZuXg67pPHSd7` | changed |
 | `r_btdm_hal_link_skip_specified_tl` | `r_sym_bt_t4aeyhcVrKTNMSlq45XR` | identical |
 | `r_btdm_sched_pick_finished_items` | `r_sym_bt_M9nG353V0svWrv1l1zGw` | identical |
-| `r_btdm_sched_run` | `r_sym_bt_PVKilXLQPu1BjRkm4C6O` | changed |
+| `r_btdm_sched_run` | `r_sym_bt_DPWY0umixzmXEaFuUyCI` | changed |
 | `r_btdm_sched_get_hw_list_header` / `set_hw_list_header` | `r_sym_bt_6wSHUtNRioHeB7CKjVJA` / `r_sym_bt_8m3cRMNRZNfaJ7qVvayk` | identical |
 | `r_btdm_sched_mem_get_hw_start_time` | `r_sym_bt_sdf6bUMpe1CnARWl962a` | identical |
 | `r_btdm_sched_reset_new_item` | `r_sym_bt_RnJIqDW4oA0usCDLVZGy` | identical |
@@ -229,9 +234,9 @@ Insertion end then:
   modify START;
 - when BUSY is clear, publishes the software list head with sleep policy
   disabled or, for an unexecuted submitted item, publishes that item and calls
-  `r_sym_bt_DPWY0umixzmXEaFuUyCI`. That function runs `r_btdm_sched_run`
-  (acknowledge and enable the dynamic interrupts, broker event 2) and, when
-  it succeeds, writes 1 to `0x2010_1000` to start the scheduler.
+  `r_btdm_sched_run`. That calls `r_sym_bt_PVKilXLQPu1BjRkm4C6O` (acknowledge
+  and enable the dynamic interrupts, broker event 2) and, when it returns
+  zero, writes 1 to `0x2010_1000` to start the scheduler.
 
 ## Completion
 

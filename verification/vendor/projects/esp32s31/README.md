@@ -464,10 +464,13 @@ named addresses, not a campaign.
 | `probes/` | Compiled calls into production code for comparison |
 | `ieee802154-host/` | [Host stand](ieee802154-host/README.md) that compiles the public ESP-IDF IEEE 802.15.4 driver against recorded boundaries |
 | `reference/` | Human-readable pinned source/artifact contracts |
+| `names/` | Source names of generated vendor function names, with their evidence |
 
 The [technical references](reference/README.md) describe Bluetooth Controller,
 DTM, advertising, scanning, connection and IEEE 802.15.4 boundaries. They do not
 serve as run results or operational readiness declarations.
+The [name maps](names/README.md) give source names for generated function
+names of the pinned Controller archive.
 
 ## Register publication
 

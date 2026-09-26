@@ -1,6 +1,8 @@
 //! Captured RFPLL search and frequency maintenance against compiled production.
 use crate::calibration_prefix::delays_of;
-use crate::contracts::{omitted_read_before, plumbing, port_polling};
+use crate::contracts::{
+    OutputField, omitted_read_before, output_projection, plumbing, port_polling,
+};
 use crate::evidence::{events, stop};
 use crate::harness::direct;
 use crate::harness::{Result, case, known, region, selection, with_stack_fill, words};
@@ -1037,6 +1039,28 @@ const THERMAL_STATUSES: [u32; 20] = [3; 20];
 /// Channel the production child receives; the vendor reads no channel table
 /// without frequency-memory contents.
 const THERMAL_CHANNEL: u32 = 13;
+/// The reference temperature and result flags the thermal child commits, in
+/// production output order.
+const THERMAL_COMMITTED: [OutputField; 2] = [
+    OutputField {
+        name: "reference-temperature",
+        parameter: REFERENCE_TEMPERATURE,
+        output: 0,
+        width: 2,
+        count: 1,
+    },
+    OutputField {
+        name: "tracking-flags",
+        parameter: TRACKING_FLAGS,
+        output: 2,
+        width: 2,
+        count: 1,
+    },
+];
+/// Production thermal output bytes.
+const THERMAL_OUTPUT_BYTES: u32 = 4;
+/// Untouched production output bytes.
+const THERMAL_OUTPUT_FILL: u8 = 0xa5;
 
 /// One thermal child case: current and reference temperature, override flags
 /// and threshold, busy flag, and whether the hardware correction executes.
@@ -1122,12 +1146,31 @@ impl Thermal {
 /// vendor characterization. Each side's commit is checked against the
 /// explicit case; effects compare under the reviewed maintenance contract.
 fn thermal(ctx: &mut I2c, rfpll: &Rfpll) -> Result<()> {
-    let effects = ctx.review_pair(
-        "rfpll-thermal",
+    let applicability =
+        "RFPLL thermal tracking under explicit temperatures, overrides and lock statuses";
+    let (vendor_entry, production_entry) = (
         ctx.root_endpoint("phy_rfpll_cap_track_new")?,
         ctx.input_endpoint(2, "open_phy_rfpll_trace_track")?,
+    );
+    let committed = ctx.review_projection(
+        "rfpll-thermal-committed",
+        "esp32s31.phy.rfpll-thermal.committed",
+        output_projection(
+            vendor_entry.clone(),
+            rfpll.parameter,
+            production_entry.clone(),
+            THERMAL_OUTPUT_BYTES,
+            &THERMAL_COMMITTED,
+            applicability,
+        ),
+        "production publishes the reference temperature and progress the child commits",
+    )?;
+    let effects = ctx.review_pair(
+        "rfpll-thermal",
+        vendor_entry,
+        production_entry,
         maintain_rules(),
-        "RFPLL thermal tracking under explicit temperatures, overrides and lock statuses",
+        applicability,
     )?;
     let track = ctx.probe("open_phy_rfpll_trace_track");
     let table = |memory: &mut Vec<ExecutionRegion>| -> Result<()> {
@@ -1164,14 +1207,24 @@ fn thermal(ctx: &mut I2c, rfpll: &Rfpll) -> Result<()> {
                     case.reference as i32 as u32,
                     override_word,
                     THERMAL_CHANNEL,
+                    u32::from(FLAGS_IDLE),
+                    OUTPUT,
                 ],
-                vec![],
+                vec![region(
+                    OUTPUT,
+                    THERMAL_OUTPUT_BYTES,
+                    &[THERMAL_OUTPUT_FILL; THERMAL_OUTPUT_BYTES as usize],
+                    None,
+                    RegionLifetime::Phase,
+                )?],
                 case.models(),
-                vec![],
+                vec![selection(OUTPUT, THERMAL_OUTPUT_BYTES)],
             );
             production.calls = delay_calls("requested-delay", rfpll.delay(true));
             let mut row = case_row(case.name, vendor_phase(case)?, Some(production));
-            row.relation.as_mut().unwrap().effects = Some(effects.clone());
+            let relation = row.relation.as_mut().unwrap();
+            relation.effects = Some(effects.clone());
+            relation.projection = Some(committed.clone());
             compared.extend([
                 crate::harness::case(
                     "initialize-parameters",

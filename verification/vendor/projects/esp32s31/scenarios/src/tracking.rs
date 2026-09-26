@@ -31,13 +31,13 @@ const TRACKING_EVENTS: u32 = 1 << 20;
 /// Production probe input and output words of the combined root and parent.
 const COMBINED_INPUT_WORDS: usize = 8;
 const PARENT_INPUT_WORDS: usize = 15;
-const COMBINED_OUTPUT_BYTES: u32 = 176;
-const PARENT_OUTPUT_BYTES: u32 = 190;
+const COMBINED_OUTPUT_BYTES: u32 = 178;
+const PARENT_OUTPUT_BYTES: u32 = 192;
 /// Calibration snapshot bytes both roots start with.
 const SNAPSHOT_BYTES: usize = 162;
 /// Committed-state bytes every root ends with: DCODE codes, status bytes, the
 /// shared and Wi-Fi RX-gain table last indices and the tracking progress word.
-const COMMITTED_BYTES: u32 = 14;
+const COMMITTED_BYTES: u32 = 16;
 /// Untouched production output bytes.
 const OUTPUT_FILL: u8 = 0xa5;
 /// Channel, bandwidth and crystal selector of every case.
@@ -70,6 +70,11 @@ const CALIBRATION_STATUS: usize = 0xa4;
 /// `phy_param` offset of the tracking progress word the tracking children
 /// set and `phy_param_track_tot` clears and returns.
 const TRACKING_PROGRESS: usize = 0x1fe;
+/// `phy_param` byte of the temperature-sensor index ROM
+/// `phy_tsens_temp_read_local` stores with each sample.
+const SENSOR_INDEX: usize = 0x16;
+/// Sensor index of a fresh production state: DAC 15, the third sensor window.
+const INITIAL_SENSOR_INDEX: u8 = 2;
 /// Initial retained values the children consume.
 const RX_PATH: u8 = 0xbf;
 const TX_PATH: u8 = 1;
@@ -200,6 +205,7 @@ impl Root {
                 2,
             ),
             field("tracking-progress", TRACKING_PROGRESS, committed + 12, 2, 1),
+            field("sensor-index", SENSOR_INDEX, committed + 14, 1, 1),
         ]);
         fields
     }
@@ -284,6 +290,7 @@ impl Case {
             (PARAMETER_BANDWIDTH, BANDWIDTH as u8),
             (SHARED_LAST_INDEX, INITIAL_SHARED_LAST),
             (WIFI_LAST_INDEX, INITIAL_WIFI_LAST),
+            (SENSOR_INDEX, INITIAL_SENSOR_INDEX),
         ] {
             data[offset] = value;
         }
@@ -903,8 +910,11 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
                 ]);
                 expected.extend(words.iter().flat_map(|w| w.to_le_bytes()));
             }
-            expected.extend([0; COMMITTED_BYTES as usize - 4]);
+            // Cleared DCODE codes and status bytes, the initial last indices,
+            // no progress and the initial sensor index.
+            expected.extend([0; COMMITTED_BYTES as usize - 6]);
             expected.extend([INITIAL_SHARED_LAST, INITIAL_WIFI_LAST, 0, 0]);
+            expected.extend([INITIAL_SENSOR_INDEX, 0]);
             expectations.push((profile.label(root), expected));
         }
     }
@@ -980,8 +990,8 @@ mod tests {
             assert_eq!(case.inputs(root).len(), root.input_words());
         }
         for (root, padding) in [
-            (Root::Combined, vec![9]),
-            (Root::Parent, vec![9, 165, 167, 169, 171, 173]),
+            (Root::Combined, vec![9, 177]),
+            (Root::Parent, vec![9, 165, 167, 169, 171, 173, 191]),
         ] {
             let mut covered = vec![false; root.output_bytes() as usize];
             for field in root.fields() {

@@ -13,15 +13,121 @@ use object::{Object, ObjectSymbol, SymbolKind};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A reviewed decision on vendor state the scenarios write without comparing
-/// it: bytes `start..end` of a vendor data symbol.
+/// it.
 #[derive(Clone, Copy, Debug)]
 pub struct Decision {
     pub reason: &'static str,
-    pub places: &'static [(&'static str, u32, u32)],
+    pub places: &'static [Place],
 }
 
+/// Bytes `start..end` of vendor data `symbol` that the cases of the claim
+/// comparing vendor `root` with production `production` write without
+/// comparing them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Place {
+    pub root: &'static str,
+    pub production: &'static str,
+    pub symbol: &'static str,
+    pub start: u32,
+    pub end: u32,
+}
+
+/// The claim a place belongs to: vendor root and production entry.
+type Claim = (&'static str, &'static str);
+
+const fn place(claim: Claim, symbol: &'static str, start: u32, end: u32) -> Place {
+    Place {
+        root: claim.0,
+        production: claim.1,
+        symbol,
+        start,
+        end,
+    }
+}
+
+const PARENT: Claim = ("phy_param_track_tot", "open_phy_tracking_trace_parent");
+const COMBINED: Claim = ("phy_cal_param_track", "open_phy_calibration_trace_combined");
+const RX_GAIN: Claim = (
+    "phy_set_rx_gain_table",
+    "open_phy_calibration_trace_rx_gain",
+);
+const CHANNEL: Claim = ("phy_chip_set_chan", "open_phy_channel_trace_state");
+const RFPLL_MAINTAIN: Claim = ("phy_rfpll_cap_track_new", "open_phy_rfpll_trace_maintain");
+const RFPLL_THERMAL: Claim = ("phy_rfpll_cap_track_new", "open_phy_rfpll_trace_track");
+
 /// Reviewed unprojected vendor state.
-pub const DECISIONS: &[Decision] = &[];
+pub const DECISIONS: &[Decision] = &[
+    Decision {
+        reason: "`phy_track.o` static `s_track_result`, named by its section anchor: a debug \
+            copy of the current, power, common and transmit reference temperatures, the RFPLL \
+            reference and the progress word, all compared as `phy_param` fields of the parent \
+            claim; only the exported `phy_debug_get_track_result` reads it, and no vendor \
+            library or ROM function calls that",
+        places: &[place(PARENT, "0x20000204", 0, 14)],
+    },
+    Decision {
+        reason: "readiness activity edge count of one DC estimate: `phy_iq_est_enable` clears \
+            it unconditionally before counting and only `phy_rxdc_est_min` of the same estimate \
+            reads it, so no later estimate or caller observes the stored count; the admission \
+            it decides is compared through the published DC codes",
+        places: &[
+            place(RX_GAIN, "phy_param", 0x1ac, 0x1ae),
+            place(COMBINED, "phy_param", 0x1ac, 0x1ae),
+            place(PARENT, "phy_param", 0x1ac, 0x1ae),
+        ],
+    },
+    Decision {
+        reason: "upper halfword of the calibration status word, rewritten unchanged: every \
+            vendor status update is a word read-modify-write whose flag bits (0x8, 0x20, 0x80, \
+            0x200 and the 0x221 clear) lie in the compared lower halfword",
+        places: &[
+            place(RX_GAIN, "phy_param", 0xa6, 0xa8),
+            place(COMBINED, "phy_param", 0xa6, 0xa8),
+            place(PARENT, "phy_param", 0xa6, 0xa8),
+        ],
+    },
+    Decision {
+        reason: "RX-gain completion flags (0x80 and 0x200 of the status word) and the common \
+            reference temperature `phy_set_rx_gain_table` copies from the current temperature \
+            after generating tables: production commits them in its state owner \
+            (`apply_rx_gain_init_outcome` and the calibration-tracking commit), which the \
+            RX-gain child probe does not run; the combined and parent claims compare both after \
+            the same child",
+        places: &[
+            place(RX_GAIN, "phy_param", 0xa4, 0xa6),
+            place(RX_GAIN, "phy_param", 0x190, 0x192),
+        ],
+    },
+    Decision {
+        reason: "wide-bandwidth flag `phy_chip_set_chan` derives as `bandwidth != 0` from the \
+            compared bandwidth byte; its only reader is ROM `phy_get_pwr_index`, which only \
+            `librftest.a` calls, and production has no RF-test power-index path",
+        places: &[
+            place(CHANNEL, "phy_param", 0x11e, 0x11f),
+            place(COMBINED, "phy_param", 0x11e, 0x11f),
+            place(PARENT, "phy_param", 0x11e, 0x11f),
+        ],
+    },
+    Decision {
+        reason: "reference temperature and RFPLL progress bit the thermal child commits after \
+            the correction; the maintenance claim compares the correction's frequency-control \
+            effects, and the thermal claim of the same root compares both commits",
+        places: &[
+            place(RFPLL_MAINTAIN, "phy_param", 0x130, 0x132),
+            place(RFPLL_MAINTAIN, "phy_param", 0x1fe, 0x200),
+        ],
+    },
+    Decision {
+        reason: "RFPLL tracking reentrancy guard: `phy_rfpll_cap_track_new` sets it after \
+            admission and clears it before returning, so the stored byte is unchanged by every \
+            completed call; production serializes the child by ownership instead",
+        places: &[
+            place(RFPLL_MAINTAIN, "phy_param", 0x194, 0x195),
+            place(RFPLL_THERMAL, "phy_param", 0x194, 0x195),
+            place(PARENT, "phy_param", 0x194, 0x195),
+        ],
+    },
+];
 
 /// One vendor byte, by data symbol and offset; a byte outside every sized
 /// data symbol is named by the address of the nearest symbol below it, such
@@ -172,40 +278,44 @@ pub fn written(
     Ok((written, unprojected))
 }
 
-/// Split `unprojected` into (reviewed, untriaged) under `decisions`.
+/// Split the bytes the claim (vendor root, production entry) writes without
+/// comparing them into (reviewed, untriaged) under `decisions`.
 pub fn classify(
     decisions: &[Decision],
+    claim: (&str, &str),
     unprojected: &BTreeSet<Byte>,
 ) -> (BTreeSet<Byte>, BTreeSet<Byte>) {
     unprojected
         .iter()
         .cloned()
-        .partition(|byte| reviewed(decisions, byte).is_some())
+        .partition(|byte| reviewed(decisions, claim, byte).is_some())
 }
 
-fn reviewed<'d>(decisions: &'d [Decision], byte: &Byte) -> Option<&'d (&'static str, u32, u32)> {
-    decisions
-        .iter()
-        .flat_map(|d| d.places)
-        .find(|(symbol, start, end)| {
-            byte.symbol == *symbol && (*start..*end).contains(&byte.offset)
-        })
+fn reviewed<'d>(decisions: &'d [Decision], claim: (&str, &str), byte: &Byte) -> Option<&'d Place> {
+    decisions.iter().flat_map(|d| d.places).find(|place| {
+        (place.root, place.production) == claim
+            && byte.symbol == place.symbol
+            && (place.start..place.end).contains(&byte.offset)
+    })
 }
 
-/// Every place of every decision must still review an unprojected byte.
-pub fn check(decisions: &[Decision], unprojected: &BTreeSet<Byte>) -> Result<()> {
+/// Every place of every decision must still review a byte its claim writes
+/// without comparing it; `unprojected` holds (root, production, byte) over
+/// every claim.
+pub fn check(decisions: &[Decision], unprojected: &BTreeSet<(String, String, Byte)>) -> Result<()> {
     let matched: BTreeSet<_> = unprojected
         .iter()
-        .filter_map(|byte| reviewed(decisions, byte))
+        .filter_map(|(root, production, byte)| reviewed(decisions, (root, production), byte))
         .collect();
     match decisions
         .iter()
         .flat_map(|d| d.places)
         .find(|place| !matched.contains(place))
     {
-        Some((symbol, start, end)) => Err(invalid(format!(
-            "state decision for {symbol}[{start:#x}..{end:#x}] matches no unprojected byte; \
-             the state is compared or no longer written"
+        Some(place) => Err(invalid(format!(
+            "state decision for {}[{:#x}..{:#x}] under {}/{} matches no unprojected byte; \
+             the state is compared or no longer written",
+            place.symbol, place.start, place.end, place.root, place.production
         ))),
         None => Ok(()),
     }
@@ -240,7 +350,13 @@ mod tests {
 
     const DECIDED: &[Decision] = &[Decision {
         reason: "test",
-        places: &[("state", 2, 4)],
+        places: &[Place {
+            root: "root",
+            production: "entry",
+            symbol: "state",
+            start: 2,
+            end: 4,
+        }],
     }];
 
     #[test]
@@ -258,11 +374,30 @@ mod tests {
     #[test]
     fn decisions_review_their_offsets_and_fail_when_stale() {
         let unprojected = BTreeSet::from([byte("state", 1), byte("state", 3), byte("other", 3)]);
-        let (reviewed, untriaged) = classify(DECIDED, &unprojected);
+        let (reviewed, untriaged) = classify(DECIDED, ("root", "entry"), &unprojected);
         assert_eq!(reviewed, BTreeSet::from([byte("state", 3)]));
         assert_eq!(untriaged.len(), 2);
-        check(DECIDED, &unprojected).unwrap();
-        assert!(check(DECIDED, &BTreeSet::from([byte("state", 1)])).is_err());
+        // Another claim's byte is not reviewed.
+        assert!(
+            classify(DECIDED, ("root", "other"), &unprojected)
+                .0
+                .is_empty()
+        );
+        let owned = |entry: &str, bytes: &BTreeSet<Byte>| -> BTreeSet<(String, String, Byte)> {
+            bytes
+                .iter()
+                .map(|b| ("root".to_owned(), entry.to_owned(), b.clone()))
+                .collect()
+        };
+        check(DECIDED, &owned("entry", &unprojected)).unwrap();
+        assert!(check(DECIDED, &owned("other", &unprojected)).is_err());
+        assert!(
+            check(
+                DECIDED,
+                &owned("entry", &BTreeSet::from([byte("state", 1)]))
+            )
+            .is_err()
+        );
     }
 
     #[test]

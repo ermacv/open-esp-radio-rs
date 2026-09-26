@@ -55,8 +55,9 @@ pub struct Claims {
     pub closures: Vec<crate::coverage::Closure>,
     /// Production PHY lines the claims' executions executed and observed.
     pub lines: crate::observation::Lines,
-    /// Vendor bytes a claim's cases write without comparing them.
-    pub unprojected: std::collections::BTreeSet<crate::state::Byte>,
+    /// Vendor bytes a claim's cases write without comparing them, with the
+    /// claim's vendor root and production entry.
+    pub unprojected: std::collections::BTreeSet<(String, String, crate::state::Byte)>,
 }
 
 /// Production PHY lines of the claims of one scenario.
@@ -66,8 +67,9 @@ struct ClaimLines {
     sources: crate::observation::Sources,
     /// Lines of every claim so far.
     lines: crate::observation::Lines,
-    /// Unprojected vendor bytes of every claim so far.
-    unprojected: std::collections::BTreeSet<crate::state::Byte>,
+    /// Unprojected vendor bytes of every claim so far, with its root and
+    /// production entry.
+    unprojected: std::collections::BTreeSet<(String, String, crate::state::Byte)>,
 }
 
 /// One compared case of a retained execution.
@@ -800,14 +802,18 @@ impl Session {
         }
         let compared = written.len() - unprojected.len();
         let (reviewed_state, untriaged_state) =
-            crate::state::classify(crate::state::DECISIONS, &unprojected);
+            crate::state::classify(crate::state::DECISIONS, (symbol, entry), &unprojected);
         let state = evidence_index::State {
             written: written.len() as u64,
             compared: compared as u64,
             reviewed: reviewed_state.len() as u64,
             untriaged: untriaged_state.len() as u64,
         };
-        lines.unprojected.extend(unprojected);
+        lines.unprojected.extend(
+            unprojected
+                .into_iter()
+                .map(|b| (symbol.to_owned(), entry.to_owned(), b)),
+        );
         let claim_lines = lines.map.lines(&instructions);
         let (reviewed, untriaged) = lines.sources.classify(
             &lines.root,

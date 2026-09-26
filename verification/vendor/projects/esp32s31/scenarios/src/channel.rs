@@ -22,16 +22,18 @@ use blobray_domain::{
     SessionReset,
 };
 
-/// Offsets of the committed channel, temperature, bandwidth and 802.11p
-/// enable/configuration bytes in `phy_param`.
+/// Offsets of the committed channel, temperature, bandwidth, 802.11p
+/// enable/configuration and temperature-sensor index bytes in `phy_param`.
 const PARAMETER_CHANNEL: usize = 284;
 const PARAMETER_TEMPERATURE: usize = 0;
 const PARAMETER_BANDWIDTH: usize = 287;
 const PARAMETER_DOT11P: usize = 0x28;
-/// Production output: channel, temperature, bandwidth and 802.11p halfwords.
-const SEMANTIC_BYTES: u32 = 8;
+const PARAMETER_SENSOR_INDEX: usize = 0x16;
+/// Production output: channel, temperature, bandwidth, 802.11p and sensor
+/// index halfwords.
+const SEMANTIC_BYTES: u32 = 10;
 /// Committed `phy_param` fields in production output order.
-const COMMITTED: [OutputField; 4] = [
+const COMMITTED: [OutputField; 5] = [
     OutputField {
         name: "channel",
         parameter: PARAMETER_CHANNEL as u32,
@@ -60,7 +62,24 @@ const COMMITTED: [OutputField; 4] = [
         width: 1,
         count: 2,
     },
+    OutputField {
+        name: "sensor-index",
+        parameter: PARAMETER_SENSOR_INDEX as u32,
+        output: 8,
+        width: 1,
+        count: 1,
+    },
 ];
+/// The sensor index the temperature transition commits, in production output order.
+const SENSOR_COMMITTED: [OutputField; 1] = [OutputField {
+    name: "sensor-index",
+    parameter: PARAMETER_SENSOR_INDEX as u32,
+    output: 0,
+    width: 1,
+    count: 1,
+}];
+/// Production temperature output: the sensor index halfword.
+const SENSOR_BYTES: u32 = 2;
 /// Untouched production output bytes.
 const OUTPUT_FILL: u8 = 0xa5;
 /// Cases of one transition: parameter setup, callback installation and the
@@ -247,6 +266,7 @@ pub struct Channel {
     effects: EffectContractRef,
     committed: ProjectionRef,
     sensor_effects: EffectContractRef,
+    sensor_committed: ProjectionRef,
 }
 
 impl std::ops::Deref for Channel {
@@ -326,11 +346,25 @@ impl Channel {
             projection,
             "production publishes the committed channel, temperature and bandwidth",
         )?;
-        let sensor_contract = phy_contract(
+        let sensor_applicability =
+            "one temperature-sensor transition under an explicit DAC and code";
+        let (sensor_vendor, sensor_production) = (
             image.session.input_endpoint(ROM_INPUT, SENSOR_ROOT)?,
             image.production_endpoint(SENSOR_ENTRY)?,
+        );
+        let sensor_projection = output_projection(
+            sensor_vendor.clone(),
+            image.parameter,
+            sensor_production.clone(),
+            SENSOR_BYTES,
+            &SENSOR_COMMITTED,
+            sensor_applicability,
+        );
+        let sensor_contract = phy_contract(
+            sensor_vendor,
+            sensor_production,
             plumbing(&[], MAX_EVENTS),
-            "one temperature-sensor transition under an explicit DAC and code",
+            sensor_applicability,
         );
         let sensor_effects = image.review_effects(
             "temperature-effects",
@@ -338,8 +372,15 @@ impl Channel {
             sensor_contract,
             "every sensor register effect compares exactly except analog I2C polling",
         )?;
+        let sensor_committed = image.review_projection(
+            "temperature-committed",
+            "esp32s31.phy.temperature-transition.committed",
+            sensor_projection,
+            "production publishes the sensor index the transition commits",
+        )?;
         Ok(Self {
             sensor_effects,
+            sensor_committed,
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
             image,
@@ -388,13 +429,19 @@ impl Channel {
             self.sym(ROM_INPUT as usize, SENSOR_ROOT),
             &[],
             vec![],
-            vec![],
+            vec![selection(self.parameter, PHY_PARAM_BYTES)],
             channel_models(t, true),
         );
         vendor.calls = delay_calls("sensor-delay", self.rom_delay);
-        let probe = self
-            .probes
-            .invoke(SENSOR_ENTRY, vec![], channel_models(t, true), vec![])?;
+        let probe = self.probes.invoke(
+            SENSOR_ENTRY,
+            vec![(
+                "output",
+                Buffer::new(OUTPUT, [OUTPUT_FILL; SENSOR_BYTES as usize]).into(),
+            )],
+            channel_models(t, true),
+            vec![selection(OUTPUT, SENSOR_BYTES)],
+        )?;
         let mut production = self.enter_probe(probe);
         production.calls = delay_calls("sensor-delay", self.production_delay);
         let mut sample = case(
@@ -406,6 +453,7 @@ impl Channel {
         );
         let relation = sample.relation.as_mut().unwrap();
         relation.effects = Some(self.sensor_effects.clone());
+        relation.projection = Some(self.sensor_committed.clone());
         relation.returns.low = true;
         let zero = vec![0u8; PHY_PARAM_BYTES as usize];
         Ok(with_stack_fill(
@@ -473,7 +521,8 @@ impl Channel {
     }
 }
 
-/// Committed vendor channel, temperature and bandwidth as production output bytes.
+/// Committed vendor channel, temperature, bandwidth, 802.11p and sensor index
+/// as production output bytes.
 pub fn vendor_semantic(parameters: &[u8]) -> [u8; SEMANTIC_BYTES as usize] {
     [
         parameters[PARAMETER_CHANNEL],
@@ -484,6 +533,8 @@ pub fn vendor_semantic(parameters: &[u8]) -> [u8; SEMANTIC_BYTES as usize] {
         0,
         parameters[PARAMETER_DOT11P],
         parameters[PARAMETER_DOT11P + 1],
+        parameters[PARAMETER_SENSOR_INDEX],
+        0,
     ]
 }
 
@@ -505,7 +556,8 @@ fn check_transition(
     expected[..2].copy_from_slice(&(t.committed_channel() as u16).to_le_bytes());
     expected[2..4].copy_from_slice(&(temperature as i16).to_le_bytes());
     expected[4] = t.cbw as u8;
-    expected[6..].copy_from_slice(&t.dot11p);
+    expected[6..8].copy_from_slice(&t.dot11p);
+    expected[8] = sensor_index(t.dac);
     assert_eq!(committed, expected, "{label}: vendor commit");
     events(records, root, false)
 }
@@ -570,6 +622,12 @@ fn sensor(ctx: &mut Channel) -> Result<()> {
             returned_low(records, sample, false),
             Some(temperature as u32),
             "{}: vendor temperature",
+            t.label()
+        );
+        assert_eq!(
+            output(records, sample, false)[PARAMETER_SENSOR_INDEX],
+            sensor_index(t.dac),
+            "{}: vendor sensor index",
             t.label()
         );
     }
@@ -694,6 +752,14 @@ pub fn temperature(code: u32, calibration: i32) -> i32 {
 }
 
 /// Expected temperature and whether the sample leaves the current DAC window.
+/// ROM `phy_tsens_dac_to_index`: the DAC's position in the sensor windows.
+pub fn sensor_index(dac: u32) -> u8 {
+    SENSOR_WINDOWS
+        .iter()
+        .position(|w| w.0 == dac & 0xf)
+        .expect("tracked sensor DAC") as u8
+}
+
 pub fn sensor_expectation(dac: u32) -> impl Fn(u32) -> (i32, bool) {
     let (_, calibration, low, high) = *SENSOR_WINDOWS
         .iter()
@@ -752,15 +818,21 @@ mod tests {
     }
 
     #[test]
-    fn semantic_bytes_select_channel_temperature_bandwidth_and_dot11p() {
+    fn semantic_bytes_select_channel_temperature_bandwidth_dot11p_and_sensor_index() {
         let mut parameters = vec![0u8; PHY_PARAM_BYTES as usize];
         parameters[PARAMETER_CHANNEL..PARAMETER_CHANNEL + 2].copy_from_slice(&[13, 0]);
         parameters[..2].copy_from_slice(&(-48i16).to_le_bytes());
         parameters[PARAMETER_BANDWIDTH] = 1;
         parameters[PARAMETER_DOT11P..PARAMETER_DOT11P + 2].copy_from_slice(&DOT11P);
+        parameters[PARAMETER_SENSOR_INDEX] = 4;
         assert_eq!(
             vendor_semantic(&parameters),
-            [13, 0, 0xd0, 0xff, 1, 0, DOT11P[0], DOT11P[1]]
+            [13, 0, 0xd0, 0xff, 1, 0, DOT11P[0], DOT11P[1], 4, 0]
         );
+    }
+
+    #[test]
+    fn sensor_index_follows_the_rom_dac_order() {
+        assert_eq!([5, 7, 15, 11, 0xa0 | 10].map(sensor_index), [0, 1, 2, 3, 4]);
     }
 }

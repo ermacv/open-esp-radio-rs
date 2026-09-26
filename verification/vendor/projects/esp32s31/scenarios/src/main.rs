@@ -777,10 +777,19 @@ fn all(
     // A state decision is stale when no claim writes a byte it reviews
     // without comparing it.
     state::check(state::DECISIONS, &unprojected)?;
-    let (reviewed_state, unprojected) = state::classify(state::DECISIONS, &unprojected);
+    let (mut reviewed_state, mut untriaged_state) = (0, std::collections::BTreeSet::new());
+    for (root, production, byte) in &unprojected {
+        let (reviewed, untriaged) = state::classify(
+            state::DECISIONS,
+            (root, production),
+            &std::collections::BTreeSet::from([byte.clone()]),
+        );
+        reviewed_state += reviewed.len();
+        untriaged_state.extend(untriaged);
+    }
+    let unprojected = untriaged_state;
     println!(
-        "{} unprojected vendor state bytes reviewed, {} untriaged",
-        reviewed_state.len(),
+        "{reviewed_state} unprojected vendor state bytes reviewed, {} untriaged",
         unprojected.len()
     );
     if let Some(path) = index {

@@ -102,13 +102,17 @@ oer_probe_macros::probe! {
 
 oer_probe_macros::probe! {
     /// Current compiled thermal child, including its conditional hardware path.
-    /// Returns the result reference in the low half and performed bit in bit 16.
+    /// Returns the result reference in the low half and performed bit in bit 16,
+    /// and writes the reference and `progress` with the RFPLL progress bit of a
+    /// performed correction to `output`.
     pub fn open_phy_rfpll_trace_track(
         registers: &mut oer_esp32s31_pac::RadioPhyRegisters,
         current_temperature: i16,
         reference_temperature: i16,
         threshold_override: i32,
         current_channel: u16,
+        progress: u16,
+        output: &mut [u16; 2],
     ) -> i32 {
         let threshold_override = match threshold_override {
             -1 => None,
@@ -125,8 +129,12 @@ oer_probe_macros::probe! {
             RfpllTraceDelay,
         >(&mut crate::shared_phy(registers), request))
         .map_or(i32::MIN, |outcome| {
-            i32::from(outcome.reference_temperature as u16)
-                | (i32::from(outcome.correction.is_some()) << 16)
+            let performed = outcome.correction.is_some();
+            *output = [
+                outcome.reference_temperature as u16,
+                progress | u16::from(performed) * RFPLL_PROGRESS,
+            ];
+            i32::from(outcome.reference_temperature as u16) | (i32::from(performed) << 16)
         })
     }
 }
@@ -134,16 +142,20 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     /// Complete production temperature transition: DAC read, optional default
     /// prime, one code sample and the conditional range write. Returns the
-    /// temperature, or `i32::MIN` when the transition fails closed or its
-    /// executor fails. Publishes no temperature observation.
-    pub fn open_phy_trace_temperature_sample() -> i32 {
+    /// temperature and writes the sensor index to `output`, or returns
+    /// `i32::MIN` when the transition fails closed or its executor fails.
+    /// Publishes no temperature observation.
+    pub fn open_phy_trace_temperature_sample(output: &mut [u16; 1]) -> i32 {
         let mut radio =
             oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
         match embassy_futures::block_on(oer_esp32s31_phy::target_port::temperature::sample::<
             ProductionTraceDelay,
         >(radio.phy_hal_mut()))
         {
-            Ok(Ok(outcome)) => i32::from(outcome.temperature),
+            Ok(Ok(outcome)) => {
+                output[0] = u16::from(outcome.sensor_index);
+                i32::from(outcome.temperature)
+            }
             _ => i32::MIN,
         }
     }
@@ -183,25 +195,28 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    /// Channel, temperature, bandwidth and 802.11p configuration committed by
+    /// Channel, temperature, bandwidth, 802.11p configuration and temperature-sensor
+    /// index committed by
     /// the real production transition from the given 802.11p enable and
     /// configuration bytes. Output is left untouched on failure.
     pub fn open_phy_channel_trace_state(
         channel_or_frequency: u32,
         cbw: u32,
         dot11p: &[u8; 2],
-        output: &mut [u16; 4],
+        output: &mut [u16; 5],
     ) -> u32 {
         let Ok(state) = trace_channel(channel_or_frequency, cbw, *dot11p) else {
             return 1;
         };
         let parameters = state.calibration_tracking_parameters(None);
         let dot11p = state.dot11p_configuration();
+        let snapshot = oer_esp32s31_phy::validation::calibration_snapshot(&state);
         *output = [
             state.current_wifi_channel(),
             state.temperature_observation().value as u16,
             u16::from(parameters.channel_bandwidth),
             u16::from_le_bytes([dot11p.enabled, dot11p.configuration]),
+            u16::from(snapshot.common.sensor_index),
         ];
         0
     }
@@ -561,7 +576,7 @@ oer_probe_macros::probe! {
         input: &[u16; 8],
         wifi: bool,
         bluetooth: bool,
-        output: &mut [u16; 88],
+        output: &mut [u16; 89],
     ) -> u32 {
         use oer_esp32s31_phy::{
             tracking::{calibration::*, parameters::*},
@@ -637,8 +652,9 @@ const fn calibration_progress(common: bool, transmit: bool) -> u16 {
 /// Committed calibration state in the vendor `phy_param` byte order: the eight
 /// DCODE codes, the two status bytes holding the RX-gain DC (0x80 of the
 /// first) and RX-gain table (0x02 of the second) completion flags, the
-/// shared and Wi-Fi RX-gain table last indices, then the tracking progress.
-fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, progress: u16, output: &mut [u16; 7]) {
+/// shared and Wi-Fi RX-gain table last indices, the tracking progress, then the
+/// temperature-sensor index.
+fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, progress: u16, output: &mut [u16; 8]) {
     let snapshot = oer_esp32s31_phy::validation::calibration_snapshot(state);
     let dcode = snapshot.common.dcode;
     for (destination, pair) in output[..4].iter_mut().zip(dcode.chunks_exact(2)) {
@@ -661,6 +677,7 @@ fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, progress: u16, output:
         snapshot.wifi.wifi_rx_table_last_index,
     ]);
     output[6] = progress;
+    output[7] = u16::from(snapshot.common.sensor_index);
 }
 
 fn snapshot_calibration(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; 81]) {
@@ -709,7 +726,7 @@ oer_probe_macros::probe! {
         input: &[u16; 15],
         wifi: bool,
         bluetooth: bool,
-        output: &mut [u16; 95],
+        output: &mut [u16; 96],
     ) -> u32 {
         use oer_esp32s31_phy::{
             tracking::{calibration::*, parameters::*},

@@ -20,9 +20,9 @@ use oer_esp32s31_ieee80211_mac::{
         MacColdHandshakeHardware, MacColdHeHardware, MacColdLastRxBufferHardware,
         MacColdRxBufferHardware, MacColdRxPolicyHardware, MacColdStartConfig, MacColdStartError,
         MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
-        MacInterfaceAddressHardware, MacLowRateHardware, MacSharedClockHardware,
-        MacSlowClockCalibration, MacSlowClockCalibrationSource, MacSnifferHardware, MacTxPowerPair,
-        MacTxPowerSource, MacTxPowerTable, StaLinkRxPolicyHardware, activate_promiscuous_receive,
+        MacInterfaceAddressHardware, MacLowRateHardware, MacResetHardware, MacSlowClockCalibration,
+        MacSlowClockCalibrationSource, MacSnifferHardware, MacTxPowerPair, MacTxPowerSource,
+        MacTxPowerTable, StaLinkRxPolicyHardware, activate_promiscuous_receive,
         configure_sta_link_receive_policy, initialize_wifi_mac,
     },
     irq::{

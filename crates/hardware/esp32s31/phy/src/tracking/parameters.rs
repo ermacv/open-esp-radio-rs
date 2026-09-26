@@ -308,7 +308,6 @@ enum PhyParamTrackingStep {
 /// Finite exact-order outer transition for one scheduler request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyParamTrackingTransition {
-    operation: Option<super::maintenance::Operation>,
     request: PhyParamTrackRequest,
     policy: PhyParamTrackingPolicy,
     step: PhyParamTrackingStep,
@@ -320,7 +319,6 @@ pub struct PhyParamTrackingTransition {
 impl PhyParamTrackingTransition {
     pub(crate) const fn new(request: PhyParamTrackRequest, policy: PhyParamTrackingPolicy) -> Self {
         Self {
-            operation: None,
             request,
             policy,
             step: PhyParamTrackingStep::EnterCritical,
@@ -335,18 +333,6 @@ impl PhyParamTrackingTransition {
                 wifi: false,
                 bluetooth_ieee802154: false,
             },
-        }
-    }
-
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn selected(
-        request: PhyParamTrackRequest,
-        policy: PhyParamTrackingPolicy,
-        operation: super::maintenance::Operation,
-    ) -> Self {
-        Self {
-            operation: Some(operation),
-            ..Self::new(request, policy)
         }
     }
 
@@ -393,17 +379,6 @@ impl PhyParamTrackingTransition {
             (PhyParamTrackingStep::EnterCritical, PhyParamTrackingCompletion::EnteredCritical) => {
                 if self.policy.tracking_inhibited {
                     PhyParamTrackingStep::ExitCritical
-                } else if let Some(operation) = self.operation {
-                    use super::maintenance::Operation;
-                    match operation {
-                        Operation::Temperature => PhyParamTrackingStep::TemperatureRead,
-                        Operation::Rfpll => PhyParamTrackingStep::RfpllCapTrack,
-                        Operation::WifiPower => PhyParamTrackingStep::WifiTxPowerTrack,
-                        Operation::WifiI2c => PhyParamTrackingStep::WifiI2cTrack,
-                        Operation::CommonCalibration | Operation::WifiTxCalibration => {
-                            PhyParamTrackingStep::CalibrationTrack
-                        }
-                    }
                 } else if self.policy.rfpll_cap_tracking_enabled {
                     PhyParamTrackingStep::RfpllCapTrack
                 } else {
@@ -463,15 +438,7 @@ impl PhyParamTrackingTransition {
             }
             _ => return Err(PhyParamTrackingTransitionError::WrongCompletion),
         };
-        self.step = if self.operation.is_some()
-            && !matches!(
-                self.step,
-                PhyParamTrackingStep::EnterCritical | PhyParamTrackingStep::ExitCritical
-            ) {
-            PhyParamTrackingStep::ExitCritical
-        } else {
-            next
-        };
+        self.step = next;
         Ok(())
     }
 
@@ -490,15 +457,7 @@ impl PhyParamTrackingTransition {
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingCalibrationTransition<'state>, PhyParamTrackingChildError> {
-        PhyParamTrackingCalibrationTransition::lower(
-            self.action(),
-            self.policy,
-            self.operation.map_or(
-                super::calibration::Scope::Both,
-                super::maintenance::Operation::calibration,
-            ),
-            state,
-        )
+        PhyParamTrackingCalibrationTransition::lower(self.action(), self.policy, state)
     }
 
     /// Lower only the currently selected TX-power child, using the immutable
@@ -665,7 +624,6 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
     pub(crate) fn lower(
         parent_action: PhyParamTrackingAction,
         policy: PhyParamTrackingPolicy,
-        scope: super::calibration::Scope,
         state: &'state mut crate::state::PhyState,
     ) -> Result<Self, PhyParamTrackingChildError> {
         let PhyParamTrackingAction::CalibrationTrack { clients, .. } = parent_action else {
@@ -673,10 +631,9 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         };
         Ok(Self {
             parent_action,
-            child: crate::tracking::calibration::PhyCalibrationTrackingTransition::selected(
+            child: crate::tracking::calibration::PhyCalibrationTrackingTransition::start(
                 crate::tracking::calibration::PhyCalibrationTrackingRequest { clients },
                 state.calibration_tracking_parameters(policy.calibration_tracking_threshold),
-                scope,
             ),
             state,
         })

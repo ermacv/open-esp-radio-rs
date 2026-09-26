@@ -76,7 +76,6 @@ pub fn calibration_tracking(
             diagnostics: PhyTrackingDiagnostics::Disabled,
         },
         PhyParamTrackingPolicy::for_registered_state(state),
-        crate::tracking::calibration::Scope::Both,
         state,
     )
     .expect("calibration action selects the combined child")

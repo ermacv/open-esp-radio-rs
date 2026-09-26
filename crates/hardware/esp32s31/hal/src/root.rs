@@ -1,35 +1,29 @@
-//! Protocol-neutral radio root, the exclusive Wi-Fi route and the concurrent
-//! split.
+//! Protocol-neutral radio root and its concurrent split.
 //!
 //! The restricted PAC supplies opaque register partitions and register sets
-//! without any route policy. This module owns the complete neutral root,
-//! decides which partitions each exclusive protocol route consumes, retains
-//! the remaining partitions privately and reconstructs the root only after
-//! the route's restore obligations are complete. For concurrently running
-//! protocols, [`RadioHardware::into_concurrent`] instead hands every protocol
-//! partition out at once and places the shared partitions under the
-//! [`SharedRadio`] arbiter; [`RadioHardware::from_concurrent`] reunites them.
+//! without any route policy. This module owns the complete neutral root.
+//! [`RadioHardware::into_concurrent`] hands every protocol partition out at
+//! once and places the shared partitions under the [`SharedRadio`] arbiter;
+//! [`RadioHardware::from_concurrent`] reunites them only after the shared
+//! restore obligations are complete.
 
 use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
     Ieee802154Partition, MacInterruptSetup, RadioPartitions, SharedRadioParts,
-    SharedRadioRegisters, WifiMacPartition, WifiRadioRegisters,
+    SharedRadioRegisters, WifiMacPartition,
 };
 
-pub use crate::clock::CommonPhyPowerError;
 use crate::{
-    clock::CommonPhyPower,
     phy::{registration::PhyRegistration, restore::PhyRouteState},
-    route_registers::WifiRegisters,
     shared_radio::{SharedRadio, SharedRadioReleaseError},
 };
 
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
 ///
 /// This is the sole production acquisition root. It can be consumed by
-/// exactly one exclusive protocol route or one concurrent split; neither can
-/// manufacture a second owner. Every route returns the complete root after its task and interrupt
-/// capabilities have been reunited. Protocol-specific cached state is
+/// exactly one concurrent split, which cannot manufacture a second owner. The
+/// split returns the complete root after every partition and the arbiter
+/// have been reunited. Protocol-specific cached state is
 /// deliberately not retained in this neutral owner.
 ///
 /// ```compile_fail
@@ -74,83 +68,6 @@ impl RadioHardware {
             partitions: RadioPartitions::for_validation(),
             phy_registration: PhyRegistration::new(),
         }
-    }
-
-    /// Consume the root into the exclusive Wi-Fi route. This performs no MMIO.
-    pub(crate) fn into_wifi(self) -> WifiRoute {
-        wifi_route(self.partitions, PhyRouteState::new(self.phy_registration))
-    }
-
-    /// Reconstruct the root from a Wi-Fi route whose leases were released.
-    pub(crate) fn from_wifi(
-        registers: WifiRegisters,
-        interrupts: MacInterruptSetup,
-        phy: PhyRouteState,
-        retained: RetainedBluetooth,
-    ) -> Self {
-        Self::returned(wifi_partitions(registers, interrupts, retained), phy)
-    }
-}
-
-fn wifi_route(partitions: RadioPartitions, phy: PhyRouteState) -> WifiRoute {
-    let RadioPartitions {
-        wifi_mac,
-        wifi_interrupts,
-        radio_phy,
-        coexistence,
-        bluetooth,
-        bluetooth_modem_lp_timer,
-        bluetooth_interrupts,
-        shared_radio,
-        ieee802154,
-    } = partitions;
-    WifiRoute {
-        registers: WifiRegisters::new(
-            WifiRadioRegisters::new(wifi_mac),
-            SharedRadioRegisters::new(SharedRadioParts {
-                radio_phy,
-                coexistence,
-                shared_radio,
-            }),
-        ),
-        interrupts: wifi_interrupts,
-        phy,
-        retained: RetainedBluetooth {
-            bluetooth,
-            modem_lp_timer: bluetooth_modem_lp_timer,
-            interrupts: bluetooth_interrupts,
-            ieee802154,
-        },
-    }
-}
-
-fn wifi_partitions(
-    registers: WifiRegisters,
-    interrupts: MacInterruptSetup,
-    retained: RetainedBluetooth,
-) -> RadioPartitions {
-    let (registers, shared) = registers.into_parts();
-    let SharedRadioParts {
-        radio_phy,
-        coexistence,
-        shared_radio,
-    } = shared.into_parts();
-    let RetainedBluetooth {
-        bluetooth,
-        modem_lp_timer,
-        interrupts: bluetooth_interrupts,
-        ieee802154,
-    } = retained;
-    RadioPartitions {
-        wifi_mac: registers.into_partition(),
-        wifi_interrupts: interrupts,
-        radio_phy,
-        coexistence,
-        bluetooth,
-        bluetooth_modem_lp_timer: modem_lp_timer,
-        bluetooth_interrupts,
-        shared_radio,
-        ieee802154,
     }
 }
 
@@ -360,52 +277,6 @@ impl RadioHardware {
     }
 }
 
-/// Neutral radio root whose shared PHY stays powered and registered between
-/// two protocol routes.
-///
-/// A route that closed RF over its registered PHY returns this owner instead
-/// of the cold [`RadioHardware`]: its protocol-specific leases are released,
-/// but the common PHY power sequence, the PHY-I2C lease, the cold-power
-/// baseline and the current registration epoch stay in effect. The next
-/// route enters from it without repeating the power sequence, so a PHY layer
-/// can wake the retained RF state instead of registering and calibrating
-/// again. Only the route that finally returns the cold root restores the
-/// baseline.
-///
-/// No other protocol may use RF while this owner exists; it is not a
-/// coexistence grant.
-#[must_use = "dropping the retained radio root permanently loses the powered radio"]
-pub struct RetainedRadioHardware {
-    partitions: RadioPartitions,
-    phy: PhyRouteState,
-    common: CommonPhyPower,
-}
-
-impl RetainedRadioHardware {
-    /// The registration that still describes the retained PHY.
-    pub const fn registration_epoch(&self) -> Option<crate::owner::PhyRegistrationEpoch> {
-        self.phy.registration_epoch()
-    }
-
-    pub(crate) fn from_wifi(
-        registers: WifiRegisters,
-        interrupts: MacInterruptSetup,
-        phy: PhyRouteState,
-        retained: RetainedBluetooth,
-        common: CommonPhyPower,
-    ) -> Self {
-        Self {
-            partitions: wifi_partitions(registers, interrupts, retained),
-            phy,
-            common,
-        }
-    }
-
-    pub(crate) fn into_wifi(self) -> (WifiRoute, CommonPhyPower) {
-        (wifi_route(self.partitions, self.phy), self.common)
-    }
-}
-
 /// Why a cold protocol route cannot release the neutral radio root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RadioPhyReleaseError {
@@ -419,15 +290,6 @@ pub enum RadioPhyReleaseError {
     BluetoothTxPowerControlRestorePending,
     /// A route-owned cold-power field did not return to its captured baseline.
     WifiPowerRestore(WifiPowerRestoreCheckpoint),
-}
-
-/// Why a route cannot hand its registered PHY to the retained root.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RetainedRadioReleaseError {
-    /// A PHY calibration still owns a restore obligation in this route.
-    Restore(RadioPhyReleaseError),
-    /// The route never established the common PHY power it would hand over.
-    CommonPhyPower(CommonPhyPowerError),
 }
 
 /// Exact stage whose route-owned cold-power baseline could not be restored.
@@ -458,23 +320,6 @@ pub(crate) fn check_phy_restore_complete(
         return Err(RadioPhyReleaseError::BluetoothTxPowerControlRestorePending);
     }
     Ok(())
-}
-
-/// Registers and interrupt setup of one exclusive Wi-Fi route.
-pub(crate) struct WifiRoute {
-    pub(crate) registers: WifiRegisters,
-    pub(crate) interrupts: MacInterruptSetup,
-    pub(crate) phy: PhyRouteState,
-    pub(crate) retained: RetainedBluetooth,
-}
-
-/// Bluetooth and IEEE 802.15.4 partitions retained, but not exposed, while
-/// Wi-Fi is exclusive.
-pub(crate) struct RetainedBluetooth {
-    bluetooth: BluetoothControllerPartition,
-    modem_lp_timer: BluetoothModemLpTimerRegisters,
-    interrupts: BluetoothInterruptSetup,
-    ieee802154: Ieee802154Partition,
 }
 
 #[cfg(test)]

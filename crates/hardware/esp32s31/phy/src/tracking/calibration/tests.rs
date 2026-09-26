@@ -1225,8 +1225,6 @@ fn zero_threshold_runs_both_branches_without_changing_temperature() {
     assert!(outcome.wifi_tx_dc_pwdet.is_some());
 }
 
-mod selection;
-
 #[test]
 fn the_longest_path_fills_the_driver_action_bound() {
     let actions = run(

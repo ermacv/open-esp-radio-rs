@@ -81,23 +81,6 @@ fn checkpoint() -> super::MacInterruptCheckpoint {
 }
 
 #[test]
-fn paused_irq_authority_survives_rejection_and_checked_release_without_cold_setup() {
-    let rejected = super::admit(registers(), checkpoint(), |_| Err(Error::RxWalkerEnabled))
-        .err()
-        .expect("live walker must reject maintenance");
-    assert_eq!(rejected.error, Error::RxWalkerEnabled);
-    let access = super::admit(rejected.registers, rejected.interrupts, |_| Ok(()))
-        .ok()
-        .expect("quiescent frontier admits the retained owners");
-    let (_registers, checkpoint): (_, super::MacInterruptCheckpoint) =
-        access.release_with(|_| Ok(())).ok().expect("restored");
-    // This ownership-only operation must not clear peripheral state, perform
-    // cold activation, or access hardware on host.
-    let (mac, power) = checkpoint.into_registers();
-    let _same_epoch = mac.checkpoint(power);
-}
-
-#[test]
 fn shutdown_confirmation_returns_the_same_frontier_only_after_a_stopped_check() {
     let rejected = super::confirm_stopped(registers(), checkpoint(), |_| {
         Err(Error::MacActive { state: 2 })
@@ -112,29 +95,4 @@ fn shutdown_confirmation_returns_the_same_frontier_only_after_a_stopped_check() 
             .expect("stopped hardware must return the unchanged ownership frontier");
     let (mac, power) = checkpoint.into_registers();
     let _same_epoch = mac.checkpoint(power);
-}
-
-#[test]
-fn restoration_failure_retains_interrupt_authority_until_fault_is_retired() {
-    use std::{cell::Cell, rc::Rc};
-    struct InterruptOwner(Rc<Cell<usize>>);
-    impl super::sealed::InterruptAuthority for InterruptOwner {}
-    impl super::InterruptAuthority for InterruptOwner {}
-    impl Drop for InterruptOwner {
-        fn drop(&mut self) {
-            self.0.set(self.0.get() + 1);
-        }
-    }
-    let drops = Rc::new(Cell::new(0));
-    let access = super::admit(registers(), InterruptOwner(drops.clone()), |_| Ok(()))
-        .ok()
-        .expect("admitted");
-    let fault = access
-        .release_with(|_| Err(Error::MacActive { state: 1 }))
-        .err()
-        .expect("restoration failed");
-    assert_eq!(fault.error, Error::MacActive { state: 1 });
-    assert_eq!(drops.get(), 0, "failed release must retain IRQ authority");
-    drop(fault);
-    assert_eq!(drops.get(), 1);
 }

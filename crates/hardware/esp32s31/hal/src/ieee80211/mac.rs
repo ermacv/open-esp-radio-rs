@@ -4,8 +4,9 @@
 //! physical registers belong to the 802.11 MAC and are not reusable by
 //! Bluetooth, BLE or IEEE 802.15.4 PHY paths.
 
-use crate::route_registers::WifiRegisters;
 use core::cell::RefMut;
+
+use crate::ieee80211::MacBorrow;
 
 pub use crate::types::{
     ExtraSoftApRxBlockAckEntrySnapshot, MacApReceivePolicySnapshot, MacCoexPrioritySnapshot,
@@ -33,8 +34,6 @@ use oer_esp32s31_pac::{
     CoexistenceLowPowerClockObservation, MacInterruptSetup as PacMacInterruptSetup,
     SharedRadioRegisters, WifiRadioRegisters,
 };
-
-use crate::owner::WifiColdRegisters;
 
 /// Complete identity of one hardware MAC interface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -128,16 +127,13 @@ fn begin_cold_mac_handshake(
     execute_cold_mac_handshake(registers, sample_limit)
 }
 
-/// The owners one cold MAC transaction borrows: the exclusive route's cold
-/// registers, or a concurrent client's MAC and interrupt setup with the
-/// shared radio owner borrowed from the arbiter lease.
-enum ColdRegisters<'registers> {
-    Exclusive(&'registers mut WifiColdRegisters),
-    Leased {
-        mac: &'registers mut WifiRadioRegisters,
-        interrupts: &'registers mut PacMacInterruptSetup,
-        shared: &'registers mut SharedRadioRegisters,
-    },
+/// The owners one cold MAC transaction borrows: a clocked Wi-Fi client's MAC
+/// and interrupt setup, with the shared radio owner borrowed from the arbiter
+/// lease.
+struct ColdRegisters<'registers> {
+    mac: &'registers mut WifiRadioRegisters,
+    interrupts: &'registers mut PacMacInterruptSetup,
+    shared: &'registers mut SharedRadioRegisters,
 }
 
 impl ColdRegisters<'_> {
@@ -148,41 +144,27 @@ impl ColdRegisters<'_> {
         &mut SharedRadioRegisters,
         &mut PacMacInterruptSetup,
     ) {
-        match self {
-            Self::Exclusive(registers) => registers.cold_parts_mut(),
-            Self::Leased {
-                mac,
-                interrupts,
-                shared,
-            } => (mac, shared, interrupts),
-        }
+        (self.mac, self.shared, self.interrupts)
     }
 }
 
 /// Closed HAL authority for the one-way cold Wi-Fi MAC transition.
 ///
-/// The capability is borrowed from the exclusive `Radio<_, Powered>` or
-/// from a clocked concurrent Wi-Fi client with the arbiter lease, and cannot
-/// be stored beyond that owner. It exposes reviewed cold transactions only;
+/// The capability is borrowed from a clocked Wi-Fi client with the arbiter
+/// lease, and cannot be stored beyond them. It exposes reviewed cold transactions only;
 /// neither the PAC owner nor arbitrary register access is available.
 pub struct WifiMacColdHal<'registers> {
     registers: ColdRegisters<'registers>,
 }
 
 impl<'registers> WifiMacColdHal<'registers> {
-    pub(crate) fn from_owned(registers: &'registers mut WifiColdRegisters) -> Self {
-        Self {
-            registers: ColdRegisters::Exclusive(registers),
-        }
-    }
-
     pub(crate) fn from_leased(
         mac: &'registers mut WifiRadioRegisters,
         interrupts: &'registers mut PacMacInterruptSetup,
         shared: &'registers mut SharedRadioRegisters,
     ) -> Self {
         Self {
-            registers: ColdRegisters::Leased {
+            registers: ColdRegisters {
                 mac,
                 interrupts,
                 shared,
@@ -192,30 +174,6 @@ impl<'registers> WifiMacColdHal<'registers> {
 
     fn mac(&mut self) -> &mut WifiRadioRegisters {
         self.registers.parts().0
-    }
-
-    /// Retain the coexistence clock for the exclusive route's MAC epoch. A
-    /// concurrent client holds it through the Wi-Fi module clocks already.
-    pub fn retain_coexistence_clock(&mut self) {
-        if let ColdRegisters::Exclusive(registers) = &mut self.registers {
-            registers.retain_coexistence_clock();
-        }
-    }
-
-    /// Configure the modem source clocks for the exclusive route. A
-    /// concurrent client's module clocks were configured by the arbiter.
-    pub fn configure_modem_source_clocks(&mut self) {
-        if let ColdRegisters::Exclusive(registers) = &mut self.registers {
-            registers.configure_modem_source_clocks();
-        }
-    }
-
-    /// Enable the Wi-Fi MAC clocks for the exclusive route. A concurrent
-    /// client's MAC clocks are part of its Wi-Fi module clocks.
-    pub fn enable_wifi_mac_clocks(&mut self) {
-        if let ColdRegisters::Exclusive(registers) = &mut self.registers {
-            registers.enable_wifi_mac_clocks();
-        }
     }
 
     pub fn set_wifi_mac_reset(&mut self, asserted: bool) {
@@ -340,71 +298,32 @@ impl WifiMacColdHal<'_> {
 
 /// Closed HAL authority for reviewed runtime Wi-Fi MAC transactions.
 ///
-/// This type intentionally exposes neither the contained [`WifiRegisters`]
-/// nor `Deref`. LMAC code can request only the finite operations defined here.
-enum WifiMacRegisters<'registers> {
-    Owned(&'registers mut WifiRegisters),
-    Published(RefMut<'registers, WifiRegisters>),
-    /// The MAC alone, borrowed from a concurrent Wi-Fi client; the shared
-    /// radio owner stays with the arbiter.
-    Mac(&'registers mut WifiRadioRegisters),
-}
-
-impl WifiMacRegisters<'_> {
-    fn pac(&self) -> &WifiRadioRegisters {
-        match self {
-            Self::Owned(registers) => registers,
-            Self::Published(registers) => registers,
-            Self::Mac(registers) => registers,
-        }
-    }
-
-    fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
-        match self {
-            Self::Owned(registers) => registers,
-            Self::Published(registers) => registers,
-            Self::Mac(registers) => registers,
-        }
-    }
-
-    fn shared(&self) -> Option<&SharedRadioRegisters> {
-        match self {
-            Self::Owned(registers) => Some(registers.shared()),
-            Self::Published(registers) => Some(registers.shared()),
-            Self::Mac(_) => None,
-        }
-    }
-}
-
+/// It borrows the Wi-Fi MAC registers alone and exposes neither them nor
+/// `Deref`. LMAC code can request only the finite operations defined here;
+/// shared radio registers are reached through the arbiter lease instead.
 pub struct WifiMacHal<'registers> {
-    registers: WifiMacRegisters<'registers>,
+    registers: MacBorrow<'registers>,
 }
 
 impl<'registers> WifiMacHal<'registers> {
-    pub(crate) fn from_owned(registers: &'registers mut WifiRegisters) -> Self {
-        Self {
-            registers: WifiMacRegisters::Owned(registers),
-        }
-    }
-
     pub(crate) fn from_mac(registers: &'registers mut WifiRadioRegisters) -> Self {
         Self {
-            registers: WifiMacRegisters::Mac(registers),
+            registers: MacBorrow::Owned(registers),
         }
     }
 
-    pub(crate) fn from_published(registers: RefMut<'registers, WifiRegisters>) -> Self {
+    pub(crate) fn from_published(registers: RefMut<'registers, WifiRadioRegisters>) -> Self {
         Self {
-            registers: WifiMacRegisters::Published(registers),
+            registers: MacBorrow::Published(registers),
         }
     }
 
     fn pac(&self) -> &WifiRadioRegisters {
-        self.registers.pac()
+        &self.registers
     }
 
     fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
-        self.registers.pac_mut()
+        &mut self.registers
     }
 
     pub fn configure_open_promiscuous_receive(&mut self) {
@@ -437,9 +356,7 @@ impl<'registers> WifiMacHal<'registers> {
     /// retuning. Sequencing belongs to the HAL; the PAC method is only the
     /// register-local RMW transaction.
     pub fn request_channel_stop(&mut self) {
-        self.registers
-            .pac_mut()
-            .request_mac_channel_stop_without_power_save();
+        self.pac_mut().request_mac_channel_stop_without_power_save();
     }
 
     /// Sample the hardware activity field used by the bounded HAL poll.
@@ -454,12 +371,8 @@ impl<'registers> WifiMacHal<'registers> {
         // pwr_hal_select_wifimac_regdma_link` in
         // `BLOB_LIBPP_MAC_CHANNEL_SWITCH`. This is intentionally a HAL
         // sequence: the PAC exposes only the two register-local operations.
-        self.registers
-            .pac_mut()
-            .resume_mac_channel_without_power_save();
-        self.registers
-            .pac_mut()
-            .select_wifi_no_power_save_regdma_link();
+        self.pac_mut().resume_mac_channel_without_power_save();
+        self.pac_mut().select_wifi_no_power_save_regdma_link();
         self.pac_mut().wifi_mac_regdma_link()
     }
 
@@ -467,16 +380,13 @@ impl<'registers> WifiMacHal<'registers> {
     /// transaction. The typed interface selector prevents accidental bank
     /// aliasing while keeping register encoding private to the PAC.
     pub fn program_interface_address(&mut self, interface: MacInterface, address: [u8; 6]) {
-        self.registers
-            .pac_mut()
+        self.pac_mut()
             .program_receive_interface_address(interface, address);
     }
 
     /// Publish one interface BSSID through the complete register transaction.
     pub fn program_interface_bssid(&mut self, interface: MacInterface, bssid: [u8; 6]) {
-        self.registers
-            .pac_mut()
-            .program_interface_bssid(interface, bssid);
+        self.pac_mut().program_interface_bssid(interface, bssid);
     }
 
     /// Publish the receive address and BSSID using two complete vendor leaves.
@@ -491,9 +401,7 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     pub fn configure_station_receive_policy(&mut self, bssid: [u8; 6]) {
-        self.registers
-            .pac_mut()
-            .apply_sta_link_receive_policy(bssid);
+        self.pac_mut().apply_sta_link_receive_policy(bssid);
     }
 
     /// Apply only the exact vendor policy-six register transaction.
@@ -565,8 +473,7 @@ impl<'registers> WifiMacHal<'registers> {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
         };
-        self.registers
-            .pac_mut()
+        self.pac_mut()
             .install_sta_ccmp_key_entry(index, identity, temporal_key)
     }
 
@@ -581,8 +488,7 @@ impl<'registers> WifiMacHal<'registers> {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
         };
-        self.registers
-            .pac_mut()
+        self.pac_mut()
             .install_ap_ccmp_key_entry(index, identity, temporal_key)
     }
 
@@ -622,9 +528,7 @@ impl<'registers> WifiMacHal<'registers> {
 
     /// Publish the complete two-edge individual-TWT PTI transaction.
     pub fn set_itwt_pti(&mut self, argument_is_zero: bool, shared: MacPti) {
-        self.registers
-            .pac_mut()
-            .set_itwt_pti(argument_is_zero, shared);
+        self.pac_mut().set_itwt_pti(argument_is_zero, shared);
     }
 
     /// Publish one bounded individual-TWT clear request.
@@ -643,9 +547,7 @@ impl<'registers> WifiMacHal<'registers> {
         config: MacHe20PeerConfig,
         rts_threshold: Option<u16>,
     ) -> Result<(), MacHe20PeerError> {
-        self.registers
-            .pac_mut()
-            .program_he20_peer(config, rts_threshold)
+        self.pac_mut().program_he20_peer(config, rts_threshold)
     }
 
     /// Program the reviewed HE20 association fields.
@@ -664,23 +566,17 @@ impl<'registers> WifiMacHal<'registers> {
 
     /// Initialize the reviewed HE buffer-status-report register state.
     pub fn initialize_he_buffer_status_report(&mut self) {
-        self.registers
-            .pac_mut()
-            .initialize_he_buffer_status_report();
+        self.pac_mut().initialize_he_buffer_status_report();
     }
 
     /// Publish the reviewed HE beamforming report-rate register image.
     pub fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
-        self.registers
-            .pac_mut()
-            .set_he_beamforming_report_profile(profile);
+        self.pac_mut().set_he_beamforming_report_profile(profile);
     }
 
     /// Publish the matching reviewed ER-SU ACK-rate register image.
     pub fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
-        self.registers
-            .pac_mut()
-            .set_he_ersu_ack_rate_profile(profile);
+        self.pac_mut().set_he_ersu_ack_rate_profile(profile);
     }
 
     pub fn prepare_bound_legacy_tx(
@@ -689,8 +585,7 @@ impl<'registers> WifiMacHal<'registers> {
         queue: u8,
         program: MacLegacyTxProgram,
     ) -> bool {
-        self.registers
-            .pac_mut()
+        self.pac_mut()
             .prepare_bound_legacy_mac_tx(dma, queue, program)
     }
 
@@ -704,9 +599,7 @@ impl<'registers> WifiMacHal<'registers> {
         queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
-        self.registers
-            .pac_mut()
-            .prepare_bound_ht_mac_tx(dma, queue, program)
+        self.pac_mut().prepare_bound_ht_mac_tx(dma, queue, program)
     }
 
     pub fn prepare_bound_he_tx(
@@ -715,9 +608,7 @@ impl<'registers> WifiMacHal<'registers> {
         queue: u8,
         program: MacHeTxProgram,
     ) -> bool {
-        self.registers
-            .pac_mut()
-            .prepare_bound_he_mac_tx(dma, queue, program)
+        self.pac_mut().prepare_bound_he_mac_tx(dma, queue, program)
     }
 
     pub fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
@@ -725,7 +616,7 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     pub fn ordinary_tx_queue_snapshot(&self, queue: u8) -> MacOrdinaryTxQueueSnapshot {
-        self.registers.pac().ordinary_tx_queue_snapshot(queue)
+        self.pac().ordinary_tx_queue_snapshot(queue)
     }
 
     pub fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
@@ -738,9 +629,7 @@ impl<'registers> WifiMacHal<'registers> {
         reason: MacTxDetachReason,
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
-        self.registers
-            .pac_mut()
-            .with_detached_mac_tx(queue, reason, detached)
+        self.pac_mut().with_detached_mac_tx(queue, reason, detached)
     }
 
     pub fn take_ht_ampdu_completion(
@@ -768,18 +657,14 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     pub fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
-        self.registers
-            .pac_mut()
-            .clear_he_trigger_based_queue(reservation);
+        self.pac_mut().clear_he_trigger_based_queue(reservation);
     }
 
     pub fn he_trigger_based_queue_snapshot(
         &self,
         reservation: MacHeTbLinkReservation,
     ) -> MacHeTriggerTxQueueSnapshot {
-        self.registers
-            .pac()
-            .he_trigger_based_queue_snapshot(reservation)
+        self.pac().he_trigger_based_queue_snapshot(reservation)
     }
 
     /// Observe the non-latched RX diagnostic word decoded by the reviewed PAC.
@@ -812,15 +697,11 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     pub fn configure_rx_descriptor_window(&mut self, range: &StableDmaRange<'_>) {
-        self.registers
-            .pac_mut()
-            .configure_mac_rx_descriptor_window(range);
+        self.pac_mut().configure_mac_rx_descriptor_window(range);
     }
 
     pub fn write_rx_descriptor_base(&mut self, range: &StableDmaRange<'_>, address: u32) {
-        self.registers
-            .pac_mut()
-            .write_mac_rx_descriptor_base(range, address);
+        self.pac_mut().write_mac_rx_descriptor_base(range, address);
     }
 
     pub fn publish_rx_walker_enable(&mut self, range: &StableDmaRange<'_>) {
@@ -828,9 +709,7 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     pub fn request_rx_descriptor_reload(&mut self, range: &StableDmaRange<'_>) {
-        self.registers
-            .pac_mut()
-            .request_mac_rx_descriptor_reload(range);
+        self.pac_mut().request_mac_rx_descriptor_reload(range);
     }
 
     pub fn try_enable_rx_walker(&mut self, range: &StableDmaRange<'_>) -> bool {
@@ -935,25 +814,8 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     pub fn set_he_trigger_based_tid_enabled(&mut self, tid: MacHeTid, enabled: bool) {
-        self.registers
-            .pac_mut()
+        self.pac_mut()
             .set_he_trigger_based_tid_enabled(tid, enabled);
-    }
-}
-
-impl WifiMacHal<'_> {
-    /// Sample the shared coexistence low-power clock selection once.
-    ///
-    /// Each call performs fresh reads; `None` reports an unreviewed encoding.
-    ///
-    /// A MAC-only borrow of a concurrent client has no shared radio owner and
-    /// reports `None`; the arbiter lease samples the clock instead.
-    pub fn sample_coexistence_low_power_clock(
-        &mut self,
-    ) -> Option<CoexistenceLowPowerClockObservation> {
-        self.registers
-            .shared()
-            .and_then(SharedRadioRegisters::sample_coexistence_low_power_clock)
     }
 }
 
@@ -972,13 +834,13 @@ pub fn validation_configure_role_receive_policy(policy: MacRoleReceivePolicy) {
 
 /// Apply complete rev0 ROM `phy_enable_cca` or `phy_disable_cca`.
 #[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
-fn set_cca_enabled(registers: &mut WifiRegisters, enabled: bool) {
+fn set_cca_enabled(registers: &mut WifiRadioRegisters, enabled: bool) {
     registers.set_phy_wifi_cca_enabled(enabled);
 }
 
 /// Apply complete rev0 ROM `phy_sifs_reg_init`.
 #[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
-fn initialize_sifs(registers: &mut WifiRegisters) {
+fn initialize_sifs(registers: &mut WifiRadioRegisters) {
     registers.initialize_phy_wifi_sifs();
 }
 

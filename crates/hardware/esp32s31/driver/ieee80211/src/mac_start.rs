@@ -1,8 +1,9 @@
-//! Executor-neutral transition from calibrated PHY ownership to cold MAC ownership.
+//! Executor-neutral transition from the joined Wi-Fi client to cold MAC ownership.
 
 use crate::cold_start::{WifiColdStart, WifiColdStartReport};
 
-use oer_esp32s31_phy::{PhyCalibrationCache, PhyTxTargetPowerProfile, RegisteredPhyRadio};
+use oer_esp32s31_hal::{ieee80211::client::WifiClocked, shared_radio::SharedRadioLease};
+use oer_esp32s31_phy::{PhyTxTargetPowerProfile, wifi_client::WifiPhyMembership};
 
 use oer_esp32s31_ieee80211_mac::init::{
     MacCoexPtiSource, MacColdStartError, MacColdStartOutcome, MacDelayEntropy,
@@ -63,85 +64,70 @@ pub struct WifiMacStartReport {
     pub mac: MacColdStartOutcome,
 }
 
-/// Powered radio after common MAC initialization but before role-specific RX,
-/// DMA and interrupt policy is activated.
-pub struct WifiMacReady<P> {
-    radio: RegisteredPhyRadio<P>,
-    calibration_cache: Option<PhyCalibrationCache>,
+/// Clocked Wi-Fi client after common MAC initialization but before
+/// role-specific RX, DMA and interrupt policy is activated.
+pub struct WifiMacReady<W> {
+    pub(crate) clocked: WifiClocked,
+    pub(crate) membership: WifiPhyMembership,
+    pub(crate) platform: W,
     report: WifiMacStartReport,
 }
 
-impl<P> WifiMacReady<P> {
+impl<W> WifiMacReady<W> {
     pub const fn report(&self) -> WifiMacStartReport {
         self.report
     }
-
-    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
-        self.calibration_cache.as_ref()
-    }
-
-    pub fn radio_mut(&mut self) -> &mut RegisteredPhyRadio<P> {
-        &mut self.radio
-    }
-
-    pub fn into_parts(
-        self,
-    ) -> (
-        RegisteredPhyRadio<P>,
-        Option<PhyCalibrationCache>,
-        WifiMacStartReport,
-    ) {
-        (self.radio, self.calibration_cache, self.report)
-    }
 }
 
-/// Failed MAC transition retaining the powered radio and calibrated PHY.
-pub struct WifiMacStartFailure<P> {
+/// Failed MAC transition retaining the joined Wi-Fi client.
+#[must_use = "a failed MAC start still owns the joined Wi-Fi client"]
+pub struct WifiMacStartFailure<W> {
     pub error: MacColdStartError,
-    radio: RegisteredPhyRadio<P>,
-    calibration_cache: Option<PhyCalibrationCache>,
-    wifi_report: WifiColdStartReport,
+    cold: WifiColdStart<W>,
 }
 
-impl<P> WifiMacStartFailure<P> {
+impl<W> WifiMacStartFailure<W> {
+    /// Recover the joined Wi-Fi client and its PHY report.
     pub fn into_parts(
         self,
     ) -> (
-        RegisteredPhyRadio<P>,
-        Option<PhyCalibrationCache>,
+        WifiClocked,
+        WifiPhyMembership,
+        W,
         WifiColdStartReport,
         MacColdStartError,
     ) {
-        (
-            self.radio,
-            self.calibration_cache,
-            self.wifi_report,
-            self.error,
-        )
+        let WifiColdStart {
+            clocked,
+            membership,
+            platform,
+            report,
+            ..
+        } = self.cold;
+        (clocked, membership, platform, report, self.error)
     }
 }
 
-/// Perform the common MAC transition exactly once after PHY calibration.
-///
-/// Failure returns the powered radio, calibrated PHY and optional calibration
-/// cache together. These affine owners remain inline in both outcomes so the
-/// caller can recover the exact initialization frontier without an allocator.
-#[expect(
-    clippy::result_large_err,
-    reason = "MAC failure returns the unique powered radio, calibrated PHY and calibration cache inline; boxing requires an allocator and dropping them loses the recovery frontier"
-)]
-pub fn start_esp32s31_wifi_mac<P>(
-    cold: WifiColdStart<P>,
+/// Perform the common MAC transition exactly once after the Wi-Fi client
+/// joined the shared PHY domain. The shared registers of the cold MAC
+/// transaction are borrowed from the arbiter lease.
+pub fn start_esp32s31_wifi_mac<W, T>(
+    mut cold: WifiColdStart<W>,
+    lease: &mut SharedRadioLease<'_, T>,
     config: WifiMacStartConfig,
-) -> Result<WifiMacReady<P>, WifiMacStartFailure<P>>
+) -> Result<WifiMacReady<W>, WifiMacStartFailure<W>>
 where
-    P: WifiMacPlatform,
+    W: WifiMacPlatform,
 {
-    let wifi_report = cold.report();
-    let (mut radio, tx_power, calibration_cache, _) = cold.into_parts();
     let mac = {
-        let (platform, mut mac) = radio.cold_mac_parts();
-        platform.install_phy_tx_power_profile(tx_power);
+        let WifiColdStart {
+            clocked,
+            platform,
+            tx_power,
+            ..
+        } = &mut cold;
+        platform.install_phy_tx_power_profile(*tx_power);
+        let mut mac = clocked.cold_mac_hal(lease);
         initialize_wifi_mac(
             platform,
             &mut mac,
@@ -154,21 +140,19 @@ where
     };
     let mac = match mac {
         Ok(mac) => mac,
-        Err(error) => {
-            return Err(WifiMacStartFailure {
-                error,
-                radio,
-                calibration_cache,
-                wifi_report,
-            });
-        }
+        Err(error) => return Err(WifiMacStartFailure { error, cold }),
     };
+    let WifiColdStart {
+        clocked,
+        membership,
+        platform,
+        report,
+        ..
+    } = cold;
     Ok(WifiMacReady {
-        radio,
-        calibration_cache,
-        report: WifiMacStartReport {
-            wifi: wifi_report,
-            mac,
-        },
+        clocked,
+        membership,
+        platform,
+        report: WifiMacStartReport { wifi: report, mac },
     })
 }

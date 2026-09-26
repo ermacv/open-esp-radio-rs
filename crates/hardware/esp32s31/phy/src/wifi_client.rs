@@ -4,8 +4,10 @@
 //! under the arbiter as [`ConcurrentPhy`]. After its module clocks, ESP-IDF's
 //! Wi-Fi start runs `esp_phy_enable(PHY_MODEM_WIFI)`. [`join_wifi`] records
 //! that on the [`WifiClocked`] owner and issues the affine
-//! [`WifiPhyMembership`]; [`leave_wifi`] consumes it again. Wi-Fi uses no
-//! BTBB baseband.
+//! [`WifiPhyMembership`]; [`leave_wifi`] consumes it again. While it holds
+//! the membership, Wi-Fi switches its baseband receive path with
+//! [`set_wifi_rx`], the vendor `phy_wifi_enable_set`. Wi-Fi uses no BTBB
+//! baseband.
 
 use core::fmt;
 
@@ -54,6 +56,20 @@ pub fn join_wifi(
     let _ = clocked;
     let acquired = acquire_client(lease, PhyModemClient::Wifi, clock)?;
     Ok((WifiPhyMembership { _private: () }, acquired))
+}
+
+/// Enable (`true`) or disable (`false`) the Wi-Fi baseband receive path of
+/// the shared PHY: the vendor `phy_wifi_enable_set`, which ESP-IDF's
+/// `enable_phy_with_wifi_rx` runs after the PHY is enabled and which the
+/// Wi-Fi client clears before it leaves.
+#[cfg(target_arch = "riscv32")]
+pub fn set_wifi_rx(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    membership: &WifiPhyMembership,
+    enabled: bool,
+) {
+    let _ = membership;
+    oer_esp32s31_hal::phy::frequency::set_wifi_enabled(&mut lease.phy_hal(), enabled);
 }
 
 /// Failed leave retaining the membership.

@@ -179,16 +179,6 @@ impl PhyClientState {
         Self::empty(period_micros, Some(epoch))
     }
 
-    /// Mint an empty scheduler for the registration currently describing a
-    /// coupled hardware owner.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn for_registration_of(
-        period_micros: u64,
-        hardware: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
-    ) -> Self {
-        Self::empty(period_micros, hardware.registration_epoch())
-    }
-
     /// Mint an empty model with no registration identity.
     ///
     /// Host models and validation fixtures use this constructor. The result
@@ -345,22 +335,6 @@ impl PhyClientState {
             client,
             is_last,
         })
-    }
-
-    /// Selected Wi-Fi work retains client ownership but does not acknowledge
-    /// unrelated periodic work or advance its timestamps.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn begin_wifi_operation(
-        self,
-        policy: PhyParamTrackingPolicy,
-        operation: crate::tracking::maintenance::Operation,
-    ) -> PhyPendingTracking {
-        let request = PhyParamTrackRequest::new(true, false);
-        PhyPendingTracking {
-            owner: self,
-            request,
-            transition: PhyParamTrackingTransition::selected(request, policy, operation),
-        }
     }
 
     /// Apply the reviewed immediate-on-enable due check without performing PLL

@@ -32,8 +32,8 @@ use oer_esp32s31_hal::shared_radio::{
 };
 
 use crate::{
-    RegisteredPhyState,
-    registered_route::PhyDomain,
+    PhyState, RegisteredPhyState,
+    domain::PhyDomain,
     state::client::{
         PhyClientAcquireError, PhyClientReleaseError, PhyClientSnapshot, PhyModemClient,
         PhyPendingTrack, PhyPllTrackClock, PhyTrackTimeError,
@@ -237,6 +237,17 @@ impl ConcurrentPhy {
             Slot::Pending { pending, .. } => Some(pending.snapshot()),
             Slot::Empty | Slot::Poisoned => None,
         }
+    }
+
+    /// The registered calibration state, when every active client is
+    /// settled.
+    ///
+    /// # Errors
+    ///
+    /// The domain is not registered, has RF closed, awaits tracking or is
+    /// poisoned.
+    pub fn phy_state(&self) -> Result<&PhyState, ConcurrentPhyError> {
+        self.settled().map(PhyDomain::phy_state)
     }
 
     /// Whether the domain is registered with RF closed.

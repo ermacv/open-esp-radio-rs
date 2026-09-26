@@ -291,7 +291,12 @@ impl<Ordinary, Aggregate> DatapathPairedPhysicalTx<Ordinary, Aggregate> {
 #[cfg(test)]
 mod physical_tx_tests;
 
-fn unique_prepared_role(first: bool, second: bool) -> Option<DatapathPairRole> {
+/// The role retaining software-owned TX, always derived from the roles
+/// themselves: a role may retain owners inside its own start or
+/// classification, so no cached copy could stay exact. At most one role
+/// retains, because the runner serves a retaining VIF before any other
+/// network work.
+fn retained_role(first: bool, second: bool) -> Option<DatapathPairRole> {
     match (first, second) {
         (false, false) => None,
         (true, false) => Some(DatapathPairRole::First),
@@ -564,7 +569,6 @@ pub struct ConcurrentRoleServices<H, PhysicalTx, R, FirstTx, SecondTx, C> {
     second_tx: SecondTx,
     control: C,
     active: Option<DatapathPairRole>,
-    prepared: Option<DatapathPairRole>,
     last_started_frames: usize,
 }
 
@@ -595,7 +599,6 @@ impl<H, PhysicalTx, R, FirstTx, SecondTx, C>
             second_tx,
             control,
             active: None,
-            prepared: None,
             last_started_frames: 1,
         }
     }
@@ -678,9 +681,8 @@ where
             let (first, second) = network_rx
                 .pair_mut(self.first_interface, self.second_interface)
                 .expect("paired DATAPATH runner must retain both addressed RX endpoints");
-            let retained_tx = self.prepared.or_else(|| {
-                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-            });
+            let retained_tx =
+                retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
             if retained_tx.is_some() {
                 // A software standby is not an idle physical boundary.  The
                 // DMA producer may continue reclaiming descriptors, but a
@@ -749,9 +751,8 @@ where
     }
 
     fn has_rx_work(&self) -> bool {
-        let retained_tx = self.prepared.or_else(|| {
-            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-        });
+        let retained_tx =
+            retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
         retained_tx.is_none() && self.rx.has_work(&self.first_tx, &self.second_tx)
     }
 
@@ -768,9 +769,8 @@ where
         context: DatapathControlContext,
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a {
         async move {
-            let retained_tx = self.prepared.or_else(|| {
-                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-            });
+            let retained_tx =
+                retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
             let progress = self
                 .control
                 .service(
@@ -805,10 +805,7 @@ where
     }
 
     fn prepared_tx_interface(&self) -> Option<NetworkInterfaceId> {
-        self.prepared
-            .or_else(|| {
-                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-            })
+        retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
             .map(|role| self.interface_for(role))
     }
 
@@ -873,8 +870,6 @@ where
             }
             .max(1);
             self.active = (progress == WifiTxProgress::Pending).then_some(role);
-            self.prepared =
-                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
             Ok(progress)
         }
     }
@@ -918,14 +913,12 @@ where
             if progress == WifiTxProgress::Complete {
                 self.active = None;
             }
-            self.prepared =
-                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
             Ok(progress)
         }
     }
 
     fn has_prepared_tx(&self) -> bool {
-        unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared()).is_some()
+        retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared()).is_some()
     }
 
     fn classify_network_tx<I>(
@@ -959,9 +952,7 @@ where
     }
 
     fn prepared_tx_frame_count(&self) -> usize {
-        match self.prepared.or_else(|| {
-            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-        }) {
+        match retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared()) {
             Some(DatapathPairRole::First) => self.first_tx.prepared_frame_count(),
             Some(DatapathPairRole::Second) => self.second_tx.prepared_frame_count(),
             None => 0,
@@ -969,9 +960,7 @@ where
     }
 
     fn prepared_tx_start_ready(&self) -> bool {
-        match self.prepared.or_else(|| {
-            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-        }) {
+        match retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared()) {
             Some(DatapathPairRole::First) => self.first_tx.prepared_start_ready(),
             Some(DatapathPairRole::Second) => self.second_tx.prepared_start_ready(),
             None => false,
@@ -982,11 +971,7 @@ where
     where
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
     {
-        let role = self
-            .prepared
-            .or_else(|| {
-                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-            })
+        let role = retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
             .expect("prepared TX advancement requires one retained role");
         assert_eq!(self.interface_for(role), network.interface());
         match role {
@@ -1007,9 +992,7 @@ where
         phase: PreparedTxSchedulerPhase,
         at_micros: u64,
     ) {
-        match self.prepared.or_else(|| {
-            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-        }) {
+        match retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared()) {
             Some(DatapathPairRole::First) => {
                 self.first_tx
                     .mark_prepared_scheduler_phase(phase, at_micros);
@@ -1026,11 +1009,7 @@ where
     where
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
     {
-        let role = self
-            .prepared
-            .or_else(|| {
-                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-            })
+        let role = retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
             .expect("prepared TX requires one retained role");
         assert_eq!(self.interface_for(role), network.interface());
         let progress = match role {
@@ -1043,10 +1022,7 @@ where
                 .start_prepared(&mut self.hardware, &mut self.physical_tx, network)
                 .map_err(DatapathPairedServiceError::SecondTx)?,
         };
-        self.prepared = None;
         self.active = (progress == WifiTxProgress::Pending).then_some(role);
-        self.prepared =
-            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
         Ok(progress)
     }
 
@@ -1054,9 +1030,7 @@ where
     where
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
     {
-        let prepared = self.prepared.take().or_else(|| {
-            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-        });
+        let prepared = retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
         match prepared {
             Some(DatapathPairRole::First) => self
                 .first_tx
@@ -1071,7 +1045,10 @@ where
     }
 
     fn can_prepare_tx(&self) -> bool {
-        match self.active.or(self.prepared) {
+        match self.active.or(retained_role(
+            self.first_tx.has_prepared(),
+            self.second_tx.has_prepared(),
+        )) {
             Some(DatapathPairRole::First) => self.first_tx.can_prepare(&self.physical_tx),
             Some(DatapathPairRole::Second) => self.second_tx.can_prepare(&self.physical_tx),
             None => {
@@ -1094,7 +1071,9 @@ where
         async move {
             let role = self.role_for(network.interface());
             assert_eq!(frame.interface(), network.interface());
-            if let Some(retained) = self.prepared {
+            if let Some(retained) =
+                retained_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
+            {
                 assert_eq!(retained, role, "prepared aggregate cannot cross VIFs");
             }
             match role {
@@ -1103,18 +1082,12 @@ where
                         .prepare(&mut self.physical_tx, frame, network)
                         .await
                         .map_err(DatapathPairedServiceError::FirstTx)?;
-                    if self.first_tx.has_prepared() {
-                        self.prepared = Some(role);
-                    }
                 }
                 DatapathPairRole::Second => {
                     self.second_tx
                         .prepare(&mut self.physical_tx, frame, network)
                         .await
                         .map_err(DatapathPairedServiceError::SecondTx)?;
-                    if self.second_tx.has_prepared() {
-                        self.prepared = Some(role);
-                    }
                 }
             }
             Ok(())

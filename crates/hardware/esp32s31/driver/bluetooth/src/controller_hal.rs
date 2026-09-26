@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-use oer_esp32s31_pac::{BluetoothControllerHalInitConfig, BluetoothControllerTimeScale};
+use oer_esp32s31_hal::bluetooth::{BluetoothControllerHalInitConfig, BluetoothControllerTimeScale};
 
 /// Controller time scale of the reviewed standalone HAL configuration.
 pub const fn reviewed_standalone_time_scale() -> BluetoothControllerTimeScale {

@@ -3,7 +3,7 @@ use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerTimeLatchStepError,
 };
 
-use oer_esp32s31_pac::{
+use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime, BluetoothHalInitPeriod,
     BluetoothHalInitScale,
 };

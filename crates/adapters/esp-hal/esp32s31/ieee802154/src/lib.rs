@@ -1,10 +1,10 @@
 //! ESP-HAL CPU-route ownership for the ESP32-S31 IEEE 802.15.4 MAC IRQ.
 //!
-//! The typed PAC interrupt identifies the IEEE 802.15.4 MAC route. This adapter
+//! The typed esp-hal interrupt identifies the IEEE 802.15.4 MAC route. This adapter
 //! keeps its priority, bound core, and process-wide claim behind one affine
-//! owner. It retains the unique PAC interrupt-register owner in stable ISR storage;
+//! owner. It retains the unique HAL interrupt-register owner in stable ISR storage;
 //! the chip IRQ layer handles its status semantics, and Embassy receives
-//! acknowledged event tokens without PAC handles.
+//! acknowledged event tokens without HAL handles.
 
 #![no_std]
 #![cfg(feature = "esp32s31")]
@@ -20,13 +20,13 @@ use esp_hal::{
     system::Cpu,
     time::Instant,
 };
+use oer_esp32s31_hal::ieee802154::mac::{
+    Ieee802154InterruptOwner, Ieee802154InterruptSetupOwner, Ieee802154TaskOwner,
+};
 use oer_esp32s31_ieee802154::Ieee802154MonotonicMicrosecondClock;
 use oer_esp32s31_ieee802154_irq::{
     Ieee802154AcknowledgedInterruptSink, Ieee802154InterruptDisposition,
     handle_ieee802154_interrupt,
-};
-use oer_esp32s31_pac::{
-    Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154TaskRegisters,
 };
 
 const SOURCE: Interrupt = Interrupt::IEEE802154;
@@ -46,7 +46,7 @@ fn sample_monotonic_microseconds() -> u32 {
 }
 
 static ROUTE_CLAIMED: Mutex<Cell<bool>> = Mutex::new(Cell::new(false));
-static INTERRUPT_REGISTERS: Mutex<RefCell<Option<Ieee802154InterruptRegisters>>> =
+static INTERRUPT_REGISTERS: Mutex<RefCell<Option<Ieee802154InterruptOwner>>> =
     Mutex::new(RefCell::new(None));
 
 /// Failure to create or quiesce the unique IEEE 802.15.4 CPU route.
@@ -61,14 +61,14 @@ pub enum EspHalIeee802154InterruptRouteError {
     },
     /// Teardown was attempted from a CPU other than the binding CPU.
     WrongCore,
-    /// The process-wide route claim and stable PAC storage disagree.
+    /// The process-wide route claim and stable HAL storage disagree.
     StorageInvariant,
 }
 
 /// Active ESP-HAL route for modem source 132.
 ///
 /// The owner is minted only after the handler has been bound and the CPU route
-/// enabled. It must be disabled on the same core before PAC interrupt storage
+/// enabled. It must be disabled on the same core before HAL interrupt storage
 /// is recovered or a later epoch can bind the source again.
 #[must_use = "source 132 must be disabled before interrupt storage is recovered"]
 pub struct BoundEspHalIeee802154InterruptRoute {
@@ -78,21 +78,21 @@ pub struct BoundEspHalIeee802154InterruptRoute {
 /// Activate the peripheral interrupt epoch and bind modem source 132.
 ///
 /// The consuming transition preserves the required order: install the closed
-/// PAC event/abort baseline, acknowledge one exact stale W1C snapshot, publish
+/// HAL event/abort baseline, acknowledge one exact stale W1C snapshot, publish
 /// the unique interrupt-register owner in stable ISR storage, and only then
 /// enable the CPU route. Priority is fixed to the public esp-radio handler's
 /// `Priority1`.
 ///
-/// On failure neither `setup` nor task-side PAC state is consumed.
+/// On failure neither `setup` nor task-side HAL state is consumed.
 pub fn activate(
-    task: &mut Ieee802154TaskRegisters,
-    setup: Ieee802154InterruptSetup,
+    task: &mut Ieee802154TaskOwner,
+    setup: Ieee802154InterruptSetupOwner,
     handler: InterruptHandler,
 ) -> Result<
     BoundEspHalIeee802154InterruptRoute,
     (
         EspHalIeee802154InterruptRouteError,
-        Ieee802154InterruptSetup,
+        Ieee802154InterruptSetupOwner,
     ),
 > {
     if let Err(error) = validate_priority(handler.priority()) {
@@ -123,7 +123,7 @@ pub fn activate(
     Ok(BoundEspHalIeee802154InterruptRoute { core })
 }
 
-/// Service one complete source-132 interrupt from the stable PAC owner.
+/// Service one complete source-132 interrupt from the stable HAL owner.
 ///
 /// The application handler bound through [`activate`] calls this function with
 /// its static Embassy handoff. `None` means the route is inactive; otherwise
@@ -142,17 +142,17 @@ pub fn service_interrupt<Sink: Ieee802154AcknowledgedInterruptSink + ?Sized>(
 }
 
 impl BoundEspHalIeee802154InterruptRoute {
-    /// Disable source 132 and return inactive PAC interrupt ownership.
+    /// Disable source 132 and return inactive HAL interrupt ownership.
     ///
-    /// The route is disabled before stable ISR storage is recovered. The PAC
+    /// The route is disabled before stable ISR storage is recovered. The HAL
     /// teardown then writes zero to event and abort enables and consumes one
     /// final exact W1C snapshot before the process-wide claim is released.
     /// On a core mismatch no state changes and the intact route owner is
     /// returned for teardown on the binding CPU.
     pub fn quiesce(
         self,
-        task: &mut Ieee802154TaskRegisters,
-    ) -> Result<Ieee802154InterruptSetup, (EspHalIeee802154InterruptRouteError, Self)> {
+        task: &mut Ieee802154TaskOwner,
+    ) -> Result<Ieee802154InterruptSetupOwner, (EspHalIeee802154InterruptRouteError, Self)> {
         if Cpu::current() != self.core {
             return Err((EspHalIeee802154InterruptRouteError::WrongCore, self));
         }
@@ -161,7 +161,7 @@ impl BoundEspHalIeee802154InterruptRoute {
         let registers = critical_section::with(|critical_section| {
             INTERRUPT_REGISTERS.borrow_ref_mut(critical_section).take()
         })
-        .expect("an active source-132 route must retain its PAC interrupt owner");
+        .expect("an active source-132 route must retain its HAL interrupt owner");
         let setup = registers.deactivate(task);
         critical_section::with(|critical_section| {
             ROUTE_CLAIMED.borrow(critical_section).set(false);

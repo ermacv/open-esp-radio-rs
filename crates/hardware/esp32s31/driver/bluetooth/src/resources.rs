@@ -11,13 +11,13 @@ use core::mem::ManuallyDrop;
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListsCleared;
 
+#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+use oer_esp32s31_hal::bluetooth::BluetoothControllerHalInitConfig;
 use oer_esp32s31_hal::bluetooth::ColdOwner as HalBluetoothColdOwner;
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use oer_esp32s31_hal::bluetooth::ControllerHalBorrow;
 #[cfg(test)]
 use oer_esp32s31_hal::bluetooth::TaskOwnerReuniteFailure;
-#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
 
 #[cfg(any(
     target_arch = "riscv32",

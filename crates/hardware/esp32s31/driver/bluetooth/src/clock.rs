@@ -9,7 +9,7 @@ use crate::resources::BluetoothStopped;
 
 use oer_esp32s31_hal::bluetooth::ColdOwner;
 
-use oer_esp32s31_pac::{
+use oer_esp32s31_hal::bluetooth::{
     BluetoothLowPowerClockObservation, ModemSysconBluetoothObservation,
     PlatformClockPowerObservation, SharedModemClockObservation,
 };

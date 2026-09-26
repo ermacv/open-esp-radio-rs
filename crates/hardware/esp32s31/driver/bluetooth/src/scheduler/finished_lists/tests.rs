@@ -1,6 +1,6 @@
 use crate::interrupt::{SchedulerWakeCell, SchedulerWorkerWakeClass};
 
-use oer_esp32s31_pac::BluetoothSchedulerFinishedListObservation;
+use oer_esp32s31_hal::bluetooth::BluetoothSchedulerFinishedListObservation;
 
 use super::{
     SchedulerFinishedListBackend, SchedulerFinishedListCaptureError, SchedulerFinishedListWorker,

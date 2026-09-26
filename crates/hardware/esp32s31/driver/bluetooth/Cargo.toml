@@ -12,7 +12,6 @@ description = "ESP32-S31 Bluetooth hardware engine: controller HAL and time, BLE
 test-support = ["oer-esp32s31-hal/validation-probes"]
 validation-probes = [
     "oer-esp32s31-hal/validation-probes",
-    "oer-esp32s31-pac/validation-probes",
     "oer-esp32s31-phy/validation-probes",
 ]
 
@@ -22,14 +21,12 @@ embassy-sync = "0.8.0"
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-esp32s31-hal = { path = "../../hal" }
 oer-esp32s31-bluetooth-memory = { path = "memory" }
-oer-esp32s31-pac = { path = "../../pac" }
 oer-esp32s31-phy = { path = "../../phy" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-futures = "0.1.2"
 oer-esp32s31-hal = { path = "../../hal", features = ["validation-probes"] }
-oer-esp32s31-pac = { path = "../../pac", features = ["validation-probes"] }
 
 [lints]
 workspace = true

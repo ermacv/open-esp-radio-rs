@@ -1,9 +1,9 @@
-//! ESP32-S31 PAC-backed task-side command execution.
+//! ESP32-S31 HAL-backed task-side command execution.
 //!
 //! The executor owns one narrow IEEE 802.15.4 register lease for the complete
 //! command epoch. Its constructor is crate-private until the whole-radio HAL
 //! can transfer a proved stopped owner together with IRQ-route ownership.
-//! Consequently this module adds no public escape hatch from a raw PAC owner.
+//! Consequently this module adds no public escape hatch from a raw register owner.
 //!
 //! The concrete leaves below are a direct typed port of the public ESP-IDF
 //! common LL: policy and DMA publication precede exactly one of `TX_START`,
@@ -11,7 +11,7 @@
 //! as a synchronous idle proof; terminal IRQ reconciliation owns that edge.
 
 #[cfg(test)]
-use oer_esp32s31_pac::Ieee802154MultipanEnableState;
+use oer_esp32s31_hal::ieee802154::mac::Ieee802154MultipanEnableState;
 
 use crate::{
     MacCommandCapability, MacCommandExecutor, MacOperation, MacOperationPolicyError, sealed,
@@ -21,10 +21,10 @@ use oer_esp32s31_ieee802154_dma::{RxDmaAddress, TxDmaAddress};
 
 use oer_esp32s31_ieee802154_mac::{MacActivePhase, MacCommandIntent, MacTransmitAcknowledgement};
 
-use oer_esp32s31_pac::{
+use oer_esp32s31_hal::ieee802154::mac::{
     Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdDurationUnits,
     Ieee802154FrequencyCode, Ieee802154MacCommand, Ieee802154MacControl,
-    Ieee802154MacPolicySnapshot, Ieee802154PanIdentity, Ieee802154TaskRegisters,
+    Ieee802154MacPolicySnapshot, Ieee802154PanIdentity, Ieee802154TaskOwner,
     Ieee802154Timer0ThresholdWord,
 };
 
@@ -89,7 +89,7 @@ pub enum Ieee802154CommandError {
     /// exact post-write readback.
     PolicyNotRefreshed,
     /// The requested ED duration could not be represented by the generated
-    /// PAC field type without truncation.
+    /// register field type without truncation.
     EnergyDetectionDurationOutOfRange {
         /// Complete rejected source-level duration.
         units: u16,
@@ -139,66 +139,50 @@ trait TaskCommandBackend {
     fn order_device_accesses(&mut self);
 }
 
-struct PacTaskCommandBackend {
-    task: Ieee802154TaskRegisters,
+struct HalTaskCommandBackend {
+    task: Ieee802154TaskOwner,
     clock: Ieee802154MonotonicMicrosecondClock,
 }
 
-impl TaskCommandBackend for PacTaskCommandBackend {
+impl TaskCommandBackend for HalTaskCommandBackend {
     fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
-        self.task
-            .ieee802154_register_lease()
-            .set_frequency_code(code);
+        self.task.set_frequency_code(code);
     }
 
     fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {
-        self.task.ieee802154_register_lease().set_cca_mode(mode);
+        self.task.set_cca_mode(mode);
     }
 
     fn set_cca_threshold_code(&mut self, threshold: i8) {
-        self.task
-            .ieee802154_register_lease()
-            .set_cca_threshold_code(threshold);
+        self.task.set_cca_threshold_code(threshold);
     }
 
     fn set_mac_control(&mut self, control: Ieee802154MacControl) {
-        self.task
-            .ieee802154_register_lease()
-            .set_mac_control(control);
+        self.task.set_mac_control(control);
     }
 
     fn set_ack_timeout(&mut self, timeout: Ieee802154AckTimeoutUnits) {
-        self.task
-            .ieee802154_register_lease()
-            .set_ack_timeout(timeout);
+        self.task.set_ack_timeout(timeout);
     }
 
     fn set_primary_pan_identity(&mut self, identity: Ieee802154PanIdentity) {
-        self.task
-            .ieee802154_register_lease()
-            .set_primary_pan_identity(identity);
+        self.task.set_primary_pan_identity(identity);
     }
 
     fn mac_policy_snapshot(&mut self) -> Ieee802154MacPolicySnapshot {
-        self.task.ieee802154_register_lease().mac_policy_snapshot()
+        self.task.mac_policy_snapshot()
     }
 
     fn publish_transmit_address(&mut self, address: u32) {
-        self.task
-            .ieee802154_register_lease()
-            .publish_transmit_dma_address(address);
+        self.task.publish_transmit_dma_address(address);
     }
 
     fn publish_receive_address(&mut self, address: u32) {
-        self.task
-            .ieee802154_register_lease()
-            .publish_receive_dma_address(address);
+        self.task.publish_receive_dma_address(address);
     }
 
     fn set_ed_duration(&mut self, duration: Ieee802154EdDurationUnits) {
-        self.task
-            .ieee802154_register_lease()
-            .set_ed_duration(duration);
+        self.task.set_ed_duration(duration);
     }
 
     fn request_command(&mut self, command: MacCommandIntent) {
@@ -211,16 +195,11 @@ impl TaskCommandBackend for PacTaskCommandBackend {
             MacCommandIntent::ClearChannelAssessment => Ieee802154MacCommand::EnergyDetection,
             MacCommandIntent::EnergyDetection => Ieee802154MacCommand::EnergyDetection,
         };
-        self.task
-            .ieee802154_register_lease()
-            .request_mac_command(command);
+        self.task.request_mac_command(command);
     }
 
     fn enable_acknowledgement_watchdog_event(&mut self) {
-        self.task
-            .ieee802154_register_lease()
-            .timer_lease()
-            .enable_acknowledgement_watchdog_event();
+        self.task.enable_acknowledgement_watchdog_event();
     }
 
     fn sample_monotonic_microseconds(&mut self) -> u32 {
@@ -229,16 +208,11 @@ impl TaskCommandBackend for PacTaskCommandBackend {
 
     fn start_acknowledgement_watchdog(&mut self, threshold: u32) {
         self.task
-            .ieee802154_register_lease()
-            .timer_lease()
             .start_acknowledgement_watchdog(Ieee802154Timer0ThresholdWord::new(threshold));
     }
 
     fn disarm_acknowledgement_watchdog(&mut self) {
-        self.task
-            .ieee802154_register_lease()
-            .timer_lease()
-            .disarm_acknowledgement_watchdog();
+        self.task.disarm_acknowledgement_watchdog();
     }
 
     fn order_device_accesses(&mut self) {
@@ -488,25 +462,25 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
     }
 }
 
-/// Concrete task-side executor owning the unique ESP32-S31 IEEE 802.15.4 PAC
+/// Concrete task-side executor owning the unique ESP32-S31 IEEE 802.15.4 HAL
 /// task capability.
 ///
 /// The hard-IRQ capability is disjoint and cannot be recovered through this
 /// value. The executor keeps task ownership across every await and returns it
 /// only from a quiescent [`MacOperation`].
 pub struct Ieee802154CommandExecutor {
-    core: TaskCommandExecutorCore<PacTaskCommandBackend>,
+    core: TaskCommandExecutorCore<HalTaskCommandBackend>,
 }
 
 impl Ieee802154CommandExecutor {
     const fn from_task_registers(
-        task: Ieee802154TaskRegisters,
+        task: Ieee802154TaskOwner,
         expected_policy: Ieee802154MacPolicySnapshot,
         clock: Ieee802154MonotonicMicrosecondClock,
     ) -> Self {
         Self {
             core: TaskCommandExecutorCore::new(
-                PacTaskCommandBackend { task, clock },
+                HalTaskCommandBackend { task, clock },
                 expected_policy,
             ),
         }
@@ -516,7 +490,7 @@ impl Ieee802154CommandExecutor {
         self.core.complete_active_operation()
     }
 
-    fn into_task_registers(self) -> Ieee802154TaskRegisters {
+    fn into_task_registers(self) -> Ieee802154TaskOwner {
         debug_assert_eq!(self.core.state, ExecutorState::Quiescent);
         self.core.backend.task
     }
@@ -572,14 +546,14 @@ impl MacCommandExecutor for Ieee802154CommandExecutor {
 }
 
 impl MacOperation<Ieee802154CommandExecutor> {
-    /// Bind one dedicated PAC task owner and its reviewed static-policy image
+    /// Bind one dedicated HAL task owner and its reviewed static-policy image
     /// to the production command owner without touching MMIO.
     ///
     /// PHY, BTBB, coexistence, event masks, and the CPU interrupt route remain
     /// prerequisites of the higher-level ready transition. This constructor
     /// only transfers the already-exclusive task capability.
     pub const fn from_esp32s31_task(
-        task: Ieee802154TaskRegisters,
+        task: Ieee802154TaskOwner,
         expected_policy: Ieee802154MacPolicySnapshot,
         clock: Ieee802154MonotonicMicrosecondClock,
     ) -> Self {
@@ -589,7 +563,7 @@ impl MacOperation<Ieee802154CommandExecutor> {
     }
 
     /// Recover the unique task owner from an idle production command owner.
-    pub fn into_esp32s31_task(self) -> Ieee802154TaskRegisters {
+    pub fn into_esp32s31_task(self) -> Ieee802154TaskOwner {
         self.hardware.executor.into_task_registers()
     }
 }

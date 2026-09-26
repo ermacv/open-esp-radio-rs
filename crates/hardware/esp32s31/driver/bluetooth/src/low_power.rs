@@ -12,7 +12,7 @@ use oer_esp32s31_hal::bluetooth::{
     ModemLpTimerLowPowerHardwareInitializedOwner,
 };
 
-use oer_esp32s31_pac::BluetoothControllerTimeScale;
+use oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale;
 
 /// Powered Controller ownership after the complete modem low-power hardware
 /// component and before source 127 is installed.

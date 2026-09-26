@@ -3,14 +3,14 @@
 //!
 //! This crate defines the finite hard-IRQ handoff: sample one opaque status
 //! snapshot and its sidebands, acknowledge that exact snapshot, then move a
-//! non-replayable value to the executor-side sink. Its restricted PAC adapter
+//! non-replayable value to the executor-side sink. Its HAL adapter
 //! supplies the production event/status MMIO port. CPU interrupt binding,
-//! route enable, and Embassy integration remain platform concerns. The PAC
+//! route enable, and Embassy integration remain platform concerns. The HAL
 //! classifies the complete event field before it crosses this boundary;
 //! unclassified observations remain opaque and fail closed without leaking
 //! register positions.
 //!
-//! The production port receives an affine PAC snapshot of the complete
+//! The production port receives an affine HAL snapshot of the complete
 //! fourteen-bit `EVENT_STATUS` field. Acknowledgement consumes that exact
 //! snapshot, so an ISR cannot manufacture, clone, or replay a W1C image.
 //!
@@ -29,7 +29,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-mod pac_port;
+mod hal_port;
 
 /// The only interrupt source identity represented by this crate.
 ///
@@ -53,7 +53,7 @@ impl Ieee802154InterruptSource {
 pub const IEEE802154_MAC_INTERRUPT_SOURCE: Ieee802154InterruptSource =
     Ieee802154InterruptSource::ModemZbMac;
 
-pub use oer_esp32s31_pac::{
+pub use oer_esp32s31_hal::ieee802154::mac::{
     Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservationError, Ieee802154RxAbortReason,
     Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReason,
     Ieee802154TxAbortReasonObservation,
@@ -118,7 +118,7 @@ impl Ieee802154AcknowledgedInterrupt {
         }
     }
 
-    /// Return the PAC classification of the complete sampled event field.
+    /// Return the register-level classification of the complete sampled event field.
     pub const fn event_classification(
         &self,
     ) -> Result<Ieee802154EventMask, Ieee802154EventObservationError> {
@@ -191,7 +191,7 @@ pub enum Ieee802154InterruptDisposition {
     Spurious,
 }
 
-/// Handle one status epoch from the restricted ESP32-S31 PAC owner.
+/// Handle one status epoch from the ESP32-S31 HAL interrupt owner.
 ///
 /// An empty classified event set is treated as spurious. For every nonempty or
 /// unclassified observation, all semantic sidebands are copied before the
@@ -225,7 +225,7 @@ pub enum Ieee802154InterruptDisposition {
 /// let _ = handle_ieee802154_interrupt(&mut FakePort, &Sink);
 /// ```
 pub fn handle_ieee802154_interrupt<Sink: Ieee802154AcknowledgedInterruptSink + ?Sized>(
-    port: &mut oer_esp32s31_pac::Ieee802154InterruptRegisters,
+    port: &mut oer_esp32s31_hal::ieee802154::mac::Ieee802154InterruptOwner,
     sink: &Sink,
 ) -> Ieee802154InterruptDisposition {
     handle_interrupt(port, sink)

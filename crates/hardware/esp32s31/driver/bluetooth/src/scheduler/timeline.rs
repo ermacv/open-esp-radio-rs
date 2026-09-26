@@ -12,7 +12,7 @@ use core::marker::PhantomData;
 
 use crate::{ControllerTimeSample, scheduler::SchedulerSoftwareConfig};
 
-use oer_esp32s31_pac::BluetoothControllerTimeScale;
+use oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale;
 
 const MAX_FORWARD_SPAN: u32 = i32::MAX as u32;
 

@@ -485,7 +485,7 @@ impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
         }
         let result = {
             let mut shared_phy = self.common_phy_parts_mut().0.shared_phy_hal();
-            closed.wake_rf::<D>(&mut shared_phy).await
+            closed.wake_rf::<_, D>(&mut shared_phy).await
         };
         match result {
             Ok(phy) => Ok(ControllerPhyRegistered {

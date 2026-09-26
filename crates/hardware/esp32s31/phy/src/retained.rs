@@ -9,7 +9,10 @@
 
 use oer_esp32s31_hal::root::RetainedRadioHardware;
 
-use crate::{PhyState, RegisteredBluetoothPhyRfClosed, registered_route::PhyDomain};
+use crate::{
+    PhyState,
+    registered_route::{PhyDomain, PhyRfClosed, PhyRoute},
+};
 
 /// Powered, registered PHY with RF closed, held between protocol routes.
 ///
@@ -43,7 +46,8 @@ impl RetainedPhy {
         &self.domain
     }
 
-    /// Couple a closed Bluetooth domain to the root its Controller released.
+    /// Couple the closed domain of a lent-hardware route to the root that
+    /// route released.
     ///
     /// # Errors
     ///
@@ -53,10 +57,10 @@ impl RetainedPhy {
         clippy::result_large_err,
         reason = "rejection returns both affine owners without allocation"
     )]
-    pub fn from_bluetooth(
+    pub fn from_rf_closed<R: PhyRoute>(
         hardware: RetainedRadioHardware,
-        closed: RegisteredBluetoothPhyRfClosed,
-    ) -> Result<Self, RetainedPhyMismatch> {
+        closed: PhyRfClosed<R>,
+    ) -> Result<Self, RetainedPhyMismatch<R>> {
         if closed
             .domain
             .clients
@@ -68,15 +72,10 @@ impl RetainedPhy {
         }
     }
 
-    /// Hand the retained root to a Bluetooth Controller boot together with
-    /// the closed domain it must wake on the Bluetooth route.
-    pub fn into_bluetooth(self) -> (RetainedRadioHardware, RegisteredBluetoothPhyRfClosed) {
-        (
-            self.hardware,
-            RegisteredBluetoothPhyRfClosed {
-                domain: self.domain,
-            },
-        )
+    /// Hand the retained root to a lent-hardware route together with the
+    /// closed domain it must wake on that route.
+    pub fn into_rf_closed<R: PhyRoute>(self) -> (RetainedRadioHardware, PhyRfClosed<R>) {
+        (self.hardware, PhyRfClosed::new(self.domain))
     }
 
     /// Enter the Wi-Fi route. The returned owner still has RF closed; wake it
@@ -89,16 +88,16 @@ impl RetainedPhy {
     }
 }
 
-/// A closed Bluetooth domain presented with a root of another registration.
+/// A closed domain presented with a root of another registration.
 #[must_use = "a rejected pairing still owns the radio root and the domain"]
-pub struct RetainedPhyMismatch {
+pub struct RetainedPhyMismatch<R: PhyRoute> {
     hardware: RetainedRadioHardware,
-    closed: RegisteredBluetoothPhyRfClosed,
+    closed: PhyRfClosed<R>,
 }
 
-impl RetainedPhyMismatch {
+impl<R: PhyRoute> RetainedPhyMismatch<R> {
     /// Recover both unchanged owners.
-    pub fn into_parts(self) -> (RetainedRadioHardware, RegisteredBluetoothPhyRfClosed) {
+    pub fn into_parts(self) -> (RetainedRadioHardware, PhyRfClosed<R>) {
         (self.hardware, self.closed)
     }
 }

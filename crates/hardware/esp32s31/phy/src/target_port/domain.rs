@@ -344,3 +344,179 @@ where
         }
     }
 }
+
+/// RF-close failure of a lent-hardware route retaining its client release.
+#[must_use = "failed RF close retains the physical shutdown obligation"]
+pub struct PhyRfCloseFailure<R: crate::registered_route::PhyRoute> {
+    _owner: crate::registered_route::PhyClientRelease<R>,
+    error: PhyTargetPortError,
+    retryable: bool,
+}
+
+impl<R: crate::registered_route::PhyRoute> PhyRfCloseFailure<R> {
+    /// Whether preparation or RF close left an ambiguous hardware epoch.
+    /// A false result retains the unchanged release; it does not prove RF off.
+    pub const fn hardware_ambiguous(&self) -> bool {
+        !self.retryable
+    }
+
+    /// The first failing preparation or hardware operation.
+    pub const fn error(&self) -> PhyTargetPortError {
+        self.error
+    }
+
+    /// Recover the exact release only when preparation completed without any
+    /// ambiguous hardware operation. A started close remains owned by failure.
+    #[allow(
+        clippy::result_large_err,
+        reason = "both branches retain the affine PHY registration"
+    )]
+    pub fn into_retry(self) -> Result<crate::registered_route::PhyClientRelease<R>, Self> {
+        if self.retryable {
+            Ok(self._owner)
+        } else {
+            Err(self)
+        }
+    }
+}
+
+/// Retained RF wake of a lent-hardware route that did not return a powered
+/// owner.
+#[must_use = "failed RF wake retains the registered PHY frontier"]
+pub enum PhyRfWakeFailure<R: crate::registered_route::PhyRoute> {
+    /// The shared-PHY borrow belongs to another registration; no MMIO ran.
+    EpochMismatch(crate::registered_route::PhyRfClosed<R>),
+    /// The wake graph started and failed; the RF domain is ambiguous.
+    Poisoned(PhyRfWakePoisoned),
+}
+
+/// Fail-stop domain after retained RF wake started but did not complete.
+#[must_use = "partially restored RF hardware requires reset"]
+pub struct PhyRfWakePoisoned {
+    _domain: PhyDomain,
+    error: PhyTargetPortError,
+}
+
+impl PhyRfWakePoisoned {
+    /// The first failing wake operation.
+    pub const fn error(&self) -> PhyTargetPortError {
+        self.error
+    }
+}
+
+impl<R> crate::registered_route::PhyClientRelease<R>
+where
+    R: crate::registered_route::PhyRoute + crate::registered_route::sealed::PhyRoute<Hardware = ()>,
+{
+    /// Close the physical RF domain after the last client of a lent-hardware
+    /// route released it.
+    ///
+    /// The route owner lends `platform` and `registers` and keeps its own
+    /// protocol hardware stopped; no other client may use RF meanwhile. A
+    /// non-final release and registers this registration no longer describes
+    /// are rejected before MMIO. The temperature preflight and close graph are
+    /// the vendor `phy_close_rf` ordering shared by every route.
+    ///
+    /// # Cancellation
+    /// Once polled, drive this future to completion. A completed preparation
+    /// failure may return the release for retry; cancellation or an ambiguous
+    /// hardware failure never authorizes reuse.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the complete registered PHY epoch without allocation"
+    )]
+    pub async fn close_rf<P, Regs, D>(
+        mut self,
+        platform: &mut P,
+        registers: &mut Regs,
+    ) -> Result<crate::registered_route::PhyRfClosed<R>, PhyRfCloseFailure<R>>
+    where
+        Regs: SharedPhyAccess,
+        D: PhyAsyncDelay,
+    {
+        if !self.is_last() {
+            return Err(PhyRfCloseFailure {
+                _owner: self,
+                error: PhyTargetPortError::HardwareInvariant,
+                retryable: true,
+            });
+        }
+        if !self.outcome.owner().describes(&*registers) {
+            return Err(PhyRfCloseFailure {
+                _owner: self,
+                error: PhyTargetPortError::RegistrationEpochMismatch,
+                retryable: false,
+            });
+        }
+        let closed = match radio_lifecycle::observe_temperature_with_hal::<P, D>(
+            platform,
+            registers,
+            self.registered.target_state_mut(),
+        )
+        .await
+        {
+            Ok(()) => radio_lifecycle::execute_rf_close_with_hal::<D>(registers)
+                .map_err(PhyRfCloseTemperatureFailure::HardwareAmbiguous),
+            Err(failure) => Err(failure),
+        };
+        if let Err(failure) = closed {
+            let (error, retryable) = match failure {
+                PhyRfCloseTemperatureFailure::Recoverable(error) => (error, true),
+                PhyRfCloseTemperatureFailure::HardwareAmbiguous(error) => (error, false),
+            };
+            return Err(PhyRfCloseFailure {
+                _owner: self,
+                error,
+                retryable,
+            });
+        }
+        Ok(crate::registered_route::PhyRfClosed::new(PhyDomain::new(
+            self.registered,
+            self.outcome.into_owner(),
+        )))
+    }
+}
+
+impl<R> crate::registered_route::PhyRfClosed<R>
+where
+    R: crate::registered_route::PhyRoute + crate::registered_route::sealed::PhyRoute<Hardware = ()>,
+{
+    /// Restore the closed RF domain on this route while retaining the exact
+    /// registered calibration epoch.
+    ///
+    /// No registration, calibration or common power sequence runs, and no
+    /// client is acquired. Registers this registration no longer describes
+    /// are rejected before MMIO and return the unchanged owner.
+    ///
+    /// # Cancellation
+    /// Once polled, drive this future to a terminal result. After the first
+    /// wake edge every failure is fail-stop and requires reset.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the allocation-free registered PHY domain"
+    )]
+    pub async fn wake_rf<Regs, D>(
+        self,
+        registers: &mut Regs,
+    ) -> Result<<R as crate::registered_route::sealed::PhyRoute>::Unclaimed, PhyRfWakeFailure<R>>
+    where
+        Regs: PhyInitializationAccess,
+        D: PhyAsyncDelay,
+    {
+        if !self.domain.clients.describes(&*registers) {
+            return Err(PhyRfWakeFailure::EpochMismatch(self));
+        }
+        if let Err(error) =
+            radio_lifecycle::execute_rf_wake_with_hal::<D>(registers, self.domain.phy_state()).await
+        {
+            return Err(PhyRfWakeFailure::Poisoned(PhyRfWakePoisoned {
+                _domain: self.domain,
+                error,
+            }));
+        }
+        Ok(<R as crate::registered_route::sealed::PhyRoute>::unclaimed(
+            (),
+            self.domain,
+        ))
+    }
+}

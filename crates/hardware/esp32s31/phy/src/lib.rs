@@ -134,7 +134,6 @@ pub use lifecycle::{
 #[cfg(target_arch = "riscv32")]
 pub use registered_bluetooth::{
     BluetoothPhyMaintenanceFailure, BluetoothPhyRfCloseFailure, BluetoothPhyRfWakeFailure,
-    RegisteredBluetoothPhyRfWakePoisoned,
 };
 pub use registered_bluetooth::{
     RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
@@ -193,13 +192,14 @@ pub use target_executor::{PhyAsyncDelay, PhyShortDelay, PhyTargetPortError};
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
     NoopPhyTargetObserver, PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig,
-    PhyRfBoundary, PhyTargetObserver, PhyTargetPortCounters, PhyTrackingFailure,
-    PhyTrackingSuccess, TargetIeee802154PhyParamTrackingFailure,
-    TargetIeee802154PhyParamTrackingSuccess, TargetIeee802154PhyRegisterConfig,
-    TargetIeee802154PhyRegisterError, TargetIeee802154PhyRegisterFailure,
-    TargetIeee802154PhyRegisterSuccess, TargetPhyParamTrackingError, TargetPhyParamTrackingFailure,
-    TargetPhyParamTrackingSuccess, TargetPhyRegisterAttempt, TargetPhyRegisterError,
-    TargetPhyRegisterFailure, TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts,
+    PhyRfBoundary, PhyRfCloseFailure, PhyRfWakeFailure, PhyRfWakePoisoned, PhyTargetObserver,
+    PhyTargetPortCounters, PhyTrackingFailure, PhyTrackingSuccess,
+    TargetIeee802154PhyParamTrackingFailure, TargetIeee802154PhyParamTrackingSuccess,
+    TargetIeee802154PhyRegisterConfig, TargetIeee802154PhyRegisterError,
+    TargetIeee802154PhyRegisterFailure, TargetIeee802154PhyRegisterSuccess,
+    TargetPhyParamTrackingError, TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess,
+    TargetPhyRegisterAttempt, TargetPhyRegisterError, TargetPhyRegisterFailure,
+    TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts,
     run_target_ieee802154_phy_param_tracking, run_target_ieee802154_phy_register,
     run_target_phy_param_tracking, run_target_phy_register, select_registered_wifi_channel,
     switch_registered_wifi_channel,

@@ -384,6 +384,47 @@ impl<R: PhyRoute> PhyClientRelease<R> {
     }
 }
 
+/// Registered domain of a lent-hardware route after the complete RF-close
+/// graph, with an empty client set.
+///
+/// The route's outer owner still holds its protocol hardware, temperature
+/// power and platform clocks. The domain can retire with the cold release,
+/// move with the retained radio root to another route through
+/// [`crate::RetainedPhy`], or wake RF again on its route without a new
+/// registration.
+#[must_use = "retain the closed registration until physical owner reunion"]
+pub struct PhyRfClosed<R: PhyRoute> {
+    pub(crate) domain: PhyDomain,
+    route: core::marker::PhantomData<fn() -> R>,
+}
+
+impl<R: PhyRoute> PhyRfClosed<R> {
+    pub(crate) fn new(domain: PhyDomain) -> Self {
+        debug_assert!(domain.client_snapshot().is_empty());
+        Self {
+            domain,
+            route: core::marker::PhantomData,
+        }
+    }
+
+    /// Read the final state while retaining its physical-close provenance.
+    pub const fn state(&self) -> &PhyState {
+        self.domain.phy_state()
+    }
+
+    /// Borrow the closed registered PHY domain.
+    pub const fn domain(&self) -> &PhyDomain {
+        &self.domain
+    }
+
+    /// Final calibrated state, including the pre-close temperature
+    /// observation. The registration proof is retired.
+    #[cfg(target_arch = "riscv32")]
+    pub fn into_retired_state(self) -> PhyState {
+        self.domain.registered.into_retired_state()
+    }
+}
+
 /// Rejected client release retaining the unchanged registered owner.
 #[must_use = "failed release retains the registered PHY owner"]
 pub struct PhyClientReleaseFailureOwner<R: PhyRoute> {

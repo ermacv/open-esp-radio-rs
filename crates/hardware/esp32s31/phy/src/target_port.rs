@@ -140,8 +140,8 @@ use crate::{
 
 mod domain;
 pub use domain::{
-    PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig, PhyTrackingFailure,
-    PhyTrackingSuccess,
+    PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig, PhyRfCloseFailure,
+    PhyRfWakeFailure, PhyRfWakePoisoned, PhyTrackingFailure, PhyTrackingSuccess,
 };
 
 mod radio_lifecycle;
@@ -152,32 +152,9 @@ pub(crate) use radio_lifecycle::{
     observe_temperature_before_rf_close,
 };
 
-pub(crate) async fn close_bluetooth_rf<P, D: PhyAsyncDelay>(
-    platform: &mut P,
-    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
-    state: &mut PhyState,
-) -> Result<(), PhyRfCloseTemperatureFailure> {
-    radio_lifecycle::observe_temperature_with_hal::<P, D>(platform, registers, state).await?;
-    radio_lifecycle::execute_rf_close_with_hal::<D>(registers)
-        .map_err(PhyRfCloseTemperatureFailure::HardwareAmbiguous)
-}
-
-/// Wake the retained RF domain through the Bluetooth route's shared-PHY
-/// borrow, using the same graph as the Wi-Fi radio lifecycle.
-#[cfg(target_arch = "riscv32")]
-pub(crate) async fn wake_bluetooth_rf<D: PhyAsyncDelay>(
-    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
-    state: &PhyState,
-) -> Result<(), PhyTargetPortError> {
-    radio_lifecycle::execute_rf_wake_with_hal::<D>(registers, state).await
-}
-
 use oer_esp32s31_hal::{
     ieee802154::Ieee802154Clocked,
-    owner::{
-        PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext, SharedPhyHal,
-        state::Powered,
-    },
+    owner::{PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext, state::Powered},
 };
 
 const CHANNEL_READY_SAMPLE_LIMIT: u32 = 10_000;

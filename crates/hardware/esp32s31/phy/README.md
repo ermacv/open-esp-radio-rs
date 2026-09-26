@@ -179,14 +179,16 @@ baseline and the registration epoch stay in effect. A rejected release returns
 the unchanged closed owner.
 
 `RetainedPhy::into_wifi` re-enters the Wi-Fi route as a `RegisteredPhyRfClosed`
-without repeating `Radio::power_up`. `RetainedPhy::into_bluetooth` returns the
-root for the Bluetooth Controller boot and a `RegisteredBluetoothPhyRfClosed`
-whose `wake_rf` runs the same wake graph through the Bluetooth route's shared-PHY
-borrow. It rejects, before MMIO, a borrow that this registration no longer
-describes. The Bluetooth close result keeps its domain, so
-`RetainedPhy::from_bluetooth` can pair it with the root its Controller released;
-a root of another registration is returned with the domain. The client set is
-empty throughout, and every wake failure after the first edge is reset-required.
+without repeating `Radio::power_up`. Routes that lend their shared-PHY
+registers (currently Bluetooth) share one domain-level lifecycle:
+`PhyClientRelease::close_rf` closes RF after the last client with any lent
+borrow and returns `PhyRfClosed`, whose `wake_rf` runs the same wake graph and
+returns the route's registered owner. Both reject, before MMIO, a borrow this
+registration no longer describes. `RetainedPhy::into_rf_closed` hands the root
+and a closed domain to such a route, and `RetainedPhy::from_rf_closed` pairs a
+closed domain with the root its route released; a root of another registration
+is returned with the domain. The client set is empty throughout, and every
+wake failure after the first edge is reset-required.
 Both routes' HIL recovery across a switch remains a separate gate.
 
 The Wi-Fi driver composes the handoff as `WifiStopped::release_retained` and

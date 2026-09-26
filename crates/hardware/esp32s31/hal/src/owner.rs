@@ -1132,6 +1132,17 @@ impl<P> Radio<P, state::Powered> {
         }
     }
 
+    /// Report, without MMIO, why
+    /// [`Self::release_retained_after_phy_close`] would reject this radio.
+    ///
+    /// # Errors
+    ///
+    /// A calibration restore obligation remains, or the route never
+    /// established common PHY power.
+    pub fn check_retained_release(&self) -> Result<(), crate::root::RetainedRadioReleaseError> {
+        self.state.registers.registers.check_retained_release()
+    }
+
     /// Hand a physically closed radio to the retained root.
     ///
     /// The PHY layer must complete RF close and temperature-sensor power-down

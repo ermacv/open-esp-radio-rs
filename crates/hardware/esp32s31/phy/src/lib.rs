@@ -93,12 +93,14 @@ mod registered_ieee802154;
 mod registered_radio;
 pub mod registered_route;
 mod registered_wifi;
+mod retained;
 pub use registered_wifi::{
     RegisteredWifiPhy, RegisteredWifiPhyClientReleaseError, RegisteredWifiPhyClientReleaseFailure,
     WifiPhyMaintenanceRequest,
 };
 #[cfg(target_arch = "riscv32")]
 pub use registered_wifi::{WifiPhyMaintenanceError, WifiPhyMaintenanceFailure};
+pub use retained::{RetainedPhy, RetainedPhyMismatch};
 mod size_limits;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
@@ -130,7 +132,10 @@ pub use lifecycle::{
     PhyRfWakeTransition, PhyRfWakeTransitionError,
 };
 #[cfg(target_arch = "riscv32")]
-pub use registered_bluetooth::{BluetoothPhyMaintenanceFailure, BluetoothPhyRfCloseFailure};
+pub use registered_bluetooth::{
+    BluetoothPhyMaintenanceFailure, BluetoothPhyRfCloseFailure, BluetoothPhyRfWakeFailure,
+    RegisteredBluetoothPhyRfWakePoisoned,
+};
 pub use registered_bluetooth::{
     RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
     RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyClientRelease,
@@ -155,8 +160,8 @@ pub use registered_radio::{
     RegisteredPhyClientAcquire, RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,
     RegisteredPhyClientReleaseDisposition, RegisteredPhyClientReleaseFailure,
     RegisteredPhyPendingTrack, RegisteredPhyPendingTracking, RegisteredPhyPoweredIdle,
-    RegisteredPhyRadio, RegisteredPhyRfClosed, RegisteredPhyTrackEvaluation,
-    RegisteredPhyTrackEvaluationFailure, RegisteredPhyTrackPoisoned,
+    RegisteredPhyRadio, RegisteredPhyRetainedReleaseFailure, RegisteredPhyRfClosed,
+    RegisteredPhyTrackEvaluation, RegisteredPhyTrackEvaluationFailure, RegisteredPhyTrackPoisoned,
 };
 #[cfg(target_arch = "riscv32")]
 pub use registered_radio::{

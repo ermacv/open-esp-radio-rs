@@ -118,6 +118,8 @@ stateDiagram-v2
     RfClosed --> PoweredOff: temperature off + release shared clocks
     PoweredOff --> [*]: cold owner / re-registration required
     RfClosed --> PoweredIdle: retained wake
+    RfClosed --> Retained: temperature off + release route leases
+    Retained --> RfClosed: enter Wi-Fi or Bluetooth route
 ```
 
 `RegisteredPhyRfClosed` is minted only after the current-vendor pre-close
@@ -163,6 +165,29 @@ register updates, CKGEN reset, then restoration of hardware frequency control,
 BBPLL, force-TX/RX and baseband mode. Only terminal success returns
 `RegisteredPhyPoweredIdle`; every started failure remains reset-required.
 Protocol composition and HIL recovery across this path remain separate gates.
+
+### Protocol switch without re-registration
+
+`RetainedPhy` carries a registered, RF-closed domain between protocol routes,
+matching the vendor `esp_phy_disable`/`esp_phy_enable` pair used when one
+protocol stops and another starts. `RegisteredPhyRfClosed::release_retained`
+checks, before any MMIO, that no calibration restore obligation remains and
+that the route established common PHY power; it then powers down the
+temperature sensor and hands the HAL's `RetainedRadioHardware` to the new
+owner. Wi-Fi releases its coexistence lease; the PHY-I2C lease, the cold-power
+baseline and the registration epoch stay in effect. A rejected release returns
+the unchanged closed owner.
+
+`RetainedPhy::into_wifi` re-enters the Wi-Fi route as a `RegisteredPhyRfClosed`
+without repeating `Radio::power_up`. `RetainedPhy::into_bluetooth` returns the
+root for the Bluetooth Controller boot and a `RegisteredBluetoothPhyRfClosed`
+whose `wake_rf` runs the same wake graph through the Bluetooth route's shared-PHY
+borrow. It rejects, before MMIO, a borrow that this registration no longer
+describes. The Bluetooth close result keeps its domain, so
+`RetainedPhy::from_bluetooth` can pair it with the root its Controller released;
+a root of another registration is returned with the domain. The client set is
+empty throughout, and every wake failure after the first edge is reset-required.
+Both routes' HIL recovery across a switch remains a separate gate.
 
 Protocol runtimes must first return their real TX, RX DMA, IRQ, MAC/LL and
 per-protocol receive-enable owners to the composition. Consequently neither

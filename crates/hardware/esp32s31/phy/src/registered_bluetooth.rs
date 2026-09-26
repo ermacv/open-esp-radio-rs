@@ -16,7 +16,7 @@
 #[cfg(target_arch = "riscv32")]
 use crate::state::client::PhyPendingTracking;
 use crate::{
-    PhyState, RegisteredPhyState,
+    PhyState,
     registered_route::{
         BluetoothRoute, PhyClientAcquire, PhyClientAcquireFailureOwner, PhyClientRelease,
         PhyClientReleaseFailureOwner, PhyDomain, PhyPendingTrackOwner, PhyPendingTrackingOwner,
@@ -201,23 +201,103 @@ impl RegisteredBluetoothPhyClient {
 /// only the source-owned client transition and cannot close RF by itself.
 pub type RegisteredBluetoothPhyClientRelease = PhyClientRelease<BluetoothRoute>;
 
-/// Last Bluetooth client after the complete target RF-close graph.
+/// Registered PHY domain after the complete target RF-close graph, with an
+/// empty client set.
+///
 /// Controller, timer, temperature power and platform clocks still belong to
-/// the outer lifecycle. Retiring registration cannot release those owners.
+/// the outer lifecycle. The domain can retire with the cold release, move
+/// with the retained radio root to another route through
+/// [`crate::RetainedPhy`], or wake RF again on the Bluetooth route without
+/// a new registration.
 #[must_use = "retain the closed registration until physical owner reunion"]
 pub struct RegisteredBluetoothPhyRfClosed {
-    registered: RegisteredPhyState,
+    pub(crate) domain: PhyDomain,
 }
 
 impl RegisteredBluetoothPhyRfClosed {
     /// Read the final state while retaining its physical-close provenance.
     pub const fn state(&self) -> &PhyState {
-        self.registered.state()
+        self.domain.phy_state()
     }
+
+    /// Borrow the closed registered PHY domain.
+    pub const fn domain(&self) -> &PhyDomain {
+        &self.domain
+    }
+
     /// Final calibrated state, including the pre-close temperature observation.
     #[cfg(target_arch = "riscv32")]
     pub fn into_retired_state(self) -> PhyState {
-        self.registered.into_retired_state()
+        self.domain.registered.into_retired_state()
+    }
+
+    /// Restore the closed RF domain on the Bluetooth route while retaining
+    /// the exact registered calibration epoch.
+    ///
+    /// This is the Bluetooth counterpart of the Wi-Fi retained wake: no
+    /// registration, calibration or common power sequence runs, and no client
+    /// is acquired. A shared-PHY borrow that this registration no longer
+    /// describes is rejected before MMIO and returns the unchanged owner.
+    ///
+    /// # Cancellation
+    /// Once polled, drive this future to a terminal result. After the first
+    /// wake edge every failure is fail-stop and requires reset.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the allocation-free registered PHY domain"
+    )]
+    pub async fn wake_rf<D: crate::PhyAsyncDelay>(
+        self,
+        registers: &mut oer_esp32s31_hal::owner::SharedPhyHal<
+            '_,
+            oer_esp32s31_hal::owner::route::Bluetooth,
+        >,
+    ) -> Result<RegisteredBluetoothPhy, BluetoothPhyRfWakeFailure> {
+        debug_assert!(self.domain.client_snapshot().is_empty());
+        if !self.domain.clients.describes(&*registers) {
+            return Err(BluetoothPhyRfWakeFailure::EpochMismatch(self));
+        }
+        if let Err(error) =
+            crate::target_port::wake_bluetooth_rf::<D>(registers, self.domain.phy_state()).await
+        {
+            return Err(BluetoothPhyRfWakeFailure::Poisoned(
+                RegisteredBluetoothPhyRfWakePoisoned {
+                    _domain: self.domain,
+                    error,
+                },
+            ));
+        }
+        Ok(RegisteredBluetoothPhy {
+            domain: self.domain,
+        })
+    }
+}
+
+/// Bluetooth retained RF wake that did not return a powered owner.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "failed RF wake retains the registered PHY frontier"]
+pub enum BluetoothPhyRfWakeFailure {
+    /// The shared-PHY borrow belongs to another registration; no MMIO ran.
+    EpochMismatch(RegisteredBluetoothPhyRfClosed),
+    /// The wake graph started and failed; the RF domain is ambiguous.
+    Poisoned(RegisteredBluetoothPhyRfWakePoisoned),
+}
+
+/// Fail-stop Bluetooth epoch after retained RF wake started but did not
+/// complete.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "partially restored RF hardware requires reset"]
+pub struct RegisteredBluetoothPhyRfWakePoisoned {
+    _domain: PhyDomain,
+    error: crate::PhyTargetPortError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl RegisteredBluetoothPhyRfWakePoisoned {
+    /// The first failing wake operation.
+    pub const fn error(&self) -> crate::PhyTargetPortError {
+        self.error
     }
 }
 
@@ -408,7 +488,7 @@ impl RegisteredBluetoothPhyClientRelease {
             });
         }
         Ok(RegisteredBluetoothPhyRfClosed {
-            registered: self.registered,
+            domain: PhyDomain::new(self.registered, self.outcome.into_owner()),
         })
     }
 }

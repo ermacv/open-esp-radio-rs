@@ -369,6 +369,15 @@ pub(crate) async fn execute_rf_wake<P, D: PhyAsyncDelay>(
     radio: &mut Radio<P, Powered>,
     state: &PhyState,
 ) -> Result<(), PhyTargetPortError> {
+    execute_rf_wake_with_hal::<D>(radio.phy_hal_mut(), state).await
+}
+
+/// Execute the retained RF-wake graph through any route's shared-PHY borrow.
+#[cfg(target_arch = "riscv32")]
+pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
+    registers: &mut impl PhyInitializationAccess,
+    state: &PhyState,
+) -> Result<(), PhyTargetPortError> {
     use crate::lifecycle::{PhyRfWakeAction, PhyRfWakeCompletion, PhyRfWakeOperation};
     use oer_esp32s31_hal::phy::i2c::{PhyAdcRate, PhyI2cConfigurationOperation};
 
@@ -388,7 +397,6 @@ pub(crate) async fn execute_rf_wake<P, D: PhyAsyncDelay>(
             return Ok(());
         };
         {
-            let registers = radio.phy_hal_mut();
             match operation {
                 PhyRfWakeOperation::SetBasebandMode { mode } => {
                     oer_esp32s31_hal::phy::frequency::set_baseband_mode(registers, mode);

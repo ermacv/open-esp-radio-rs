@@ -530,6 +530,11 @@ impl WifiClocks {
             .map_err(|(shared, power, error)| (Self { shared, power }, error))
     }
 
+    /// Whether [`Self::into_common`] would accept this route; no MMIO.
+    pub(crate) fn common_powered(&self) -> bool {
+        self.shared.powered(&self.power)
+    }
+
     /// Enter the Wi-Fi route with the common PHY power already in effect.
     pub(crate) fn from_common(common: CommonPhyPower) -> Self {
         let (shared, power) = SharedClockLeases::from_common(common);

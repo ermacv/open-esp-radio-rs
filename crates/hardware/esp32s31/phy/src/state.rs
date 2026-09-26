@@ -635,7 +635,6 @@ impl PhyState {
     }
 
     #[cfg(test)]
-
     pub(crate) const fn bluetooth_tx_dc_transition(&self) -> PhyBluetoothTxDcTransition {
         PhyBluetoothTxDcTransition::new(
             PhyTxDcParameters {
@@ -690,7 +689,6 @@ impl PhyState {
     }
 
     #[cfg(test)]
-
     pub(crate) fn bluetooth_tx_power_transition(&self) -> PhyBluetoothTxPowerTransition {
         PhyBluetoothTxPowerTransition::new(self.bluetooth_tx_power_parameters())
     }

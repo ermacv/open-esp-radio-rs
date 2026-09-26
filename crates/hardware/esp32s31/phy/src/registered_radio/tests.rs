@@ -336,3 +336,30 @@ fn wifi_route_releases_only_its_own_client() {
             .contains(PhyModemClient::Bluetooth)
     );
 }
+
+#[test]
+fn retained_release_without_common_power_returns_the_closed_owner() {
+    use oer_esp32s31_hal::owner::PhyInitializationAccess;
+    let mut radio = Radio::claim_for_validation(TestPlatform).assume_powered_for_validation();
+    let epoch = radio.phy_hal_mut().begin_registration_epoch();
+    let closed = RegisteredPhyRfClosed {
+        radio,
+        domain: PhyDomain::new(
+            RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production())),
+            PhyClientState::for_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS, epoch),
+        ),
+    };
+
+    let Err(failure) = closed.release_retained() else {
+        panic!("a route that never powered the PHY has no common power to hand over");
+    };
+
+    assert_eq!(
+        failure.error(),
+        oer_esp32s31_hal::root::RetainedRadioReleaseError::CommonPhyPower(
+            oer_esp32s31_hal::root::CommonPhyPowerError::NotPowered
+        )
+    );
+    let mut closed = failure.into_closed();
+    assert!(closed.domain.clients.describes(closed.radio.phy_hal_mut()));
+}

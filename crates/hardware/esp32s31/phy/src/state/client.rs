@@ -234,7 +234,18 @@ impl PhyClientState {
         &self,
         hardware: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
     ) -> bool {
-        self.epoch.is_some() && hardware.registration_epoch() == self.epoch
+        self.describes_epoch(hardware.registration_epoch())
+    }
+
+    /// Whether this client set was minted by exactly `epoch`.
+    ///
+    /// Detached hardware owners that are not borrowable shared-PHY partitions,
+    /// such as the retained radio root, report their epoch directly.
+    pub(crate) fn describes_epoch(
+        &self,
+        epoch: Option<oer_esp32s31_hal::owner::PhyRegistrationEpoch>,
+    ) -> bool {
+        self.epoch.is_some() && epoch == self.epoch
     }
 
     pub const fn snapshot(&self) -> PhyClientSnapshot {

@@ -461,6 +461,57 @@ impl<P> RegisteredPhyRfClosed<P> {
         })
     }
 
+    pub(crate) fn from_retained(radio: Radio<P, Powered>, domain: PhyDomain) -> Self {
+        debug_assert!(domain.client_snapshot().is_empty());
+        Self { radio, domain }
+    }
+
+    /// Power down the temperature sensor and hand the powered, registered
+    /// PHY to another protocol route.
+    ///
+    /// This is the retained counterpart of [`Self::release_to_cold`]: Wi-Fi
+    /// releases its own clock leases, while the common PHY power, the
+    /// calibration state and the registration epoch stay in effect. The next
+    /// route wakes RF without registering again.
+    ///
+    /// # Errors
+    ///
+    /// Returns this owner unchanged, before any MMIO, while a calibration
+    /// restore obligation remains or when the route never established common
+    /// PHY power.
+    #[allow(
+        clippy::result_large_err,
+        reason = "no-alloc failure retains the exact closed radio and registered domain"
+    )]
+    pub fn release_retained(
+        mut self,
+    ) -> Result<(P, crate::RetainedPhy), RegisteredPhyRetainedReleaseFailure<P>> {
+        debug_assert!(self.domain.client_snapshot().is_empty());
+        if let Err(error) = self.radio.check_retained_release() {
+            return Err(RegisteredPhyRetainedReleaseFailure {
+                closed: self,
+                error,
+            });
+        }
+        oer_esp32s31_hal::phy::temperature::power_down(self.radio.phy_hal_mut());
+        match self.radio.release_retained_after_phy_close() {
+            Ok((peripheral, hardware)) => Ok((
+                peripheral,
+                crate::RetainedPhy::from_parts(hardware, self.domain),
+            )),
+            Err(failure) => {
+                let error = failure.error();
+                Err(RegisteredPhyRetainedReleaseFailure {
+                    closed: Self {
+                        radio: failure.into_radio(),
+                        domain: self.domain,
+                    },
+                    error,
+                })
+            }
+        }
+    }
+
     /// Power down the temperature sensor, release retained route clocks and
     /// return the physical radio to its cold ownership state.
     ///
@@ -487,6 +538,24 @@ impl<P> RegisteredPhyRfClosed<P> {
                 domain: self.domain,
             }),
         }
+    }
+}
+
+/// Rejected retained release returning the unchanged closed owner.
+#[must_use = "failed retained release still owns the closed radio"]
+pub struct RegisteredPhyRetainedReleaseFailure<P> {
+    closed: RegisteredPhyRfClosed<P>,
+    error: oer_esp32s31_hal::root::RetainedRadioReleaseError,
+}
+
+impl<P> RegisteredPhyRetainedReleaseFailure<P> {
+    pub const fn error(&self) -> oer_esp32s31_hal::root::RetainedRadioReleaseError {
+        self.error
+    }
+
+    /// Recover the closed owner for retry, wake or cold release.
+    pub fn into_closed(self) -> RegisteredPhyRfClosed<P> {
+        self.closed
     }
 }
 

@@ -160,6 +160,16 @@ pub(crate) async fn close_bluetooth_rf<P, D: PhyAsyncDelay>(
         .map_err(PhyRfCloseTemperatureFailure::HardwareAmbiguous)
 }
 
+/// Wake the retained RF domain through the Bluetooth route's shared-PHY
+/// borrow, using the same graph as the Wi-Fi radio lifecycle.
+#[cfg(target_arch = "riscv32")]
+pub(crate) async fn wake_bluetooth_rf<D: PhyAsyncDelay>(
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
+    state: &PhyState,
+) -> Result<(), PhyTargetPortError> {
+    radio_lifecycle::execute_rf_wake_with_hal::<D>(registers, state).await
+}
+
 use oer_esp32s31_hal::{
     ieee802154::Ieee802154Clocked,
     owner::{

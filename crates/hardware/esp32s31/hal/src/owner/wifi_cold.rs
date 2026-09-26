@@ -135,8 +135,8 @@ impl WifiColdRegisters {
     pub(crate) fn release_retained(
         self,
     ) -> Result<RetainedRadioHardware, (Self, RetainedRadioReleaseError)> {
-        if let Err(error) = crate::root::check_phy_restore_complete(&self.route.phy_state) {
-            return Err((self, RetainedRadioReleaseError::Restore(error)));
+        if let Err(error) = self.check_retained_release() {
+            return Err((self, error));
         }
         let Self {
             mut registers,
@@ -167,6 +167,19 @@ impl WifiColdRegisters {
                 RetainedRadioReleaseError::CommonPhyPower(error),
             )),
         }
+    }
+
+    /// Report, without MMIO, why [`Self::release_retained`] would reject
+    /// this owner.
+    pub(crate) fn check_retained_release(&self) -> Result<(), RetainedRadioReleaseError> {
+        crate::root::check_phy_restore_complete(&self.route.phy_state)
+            .map_err(RetainedRadioReleaseError::Restore)?;
+        if !self.route.clocks.common_powered() {
+            return Err(RetainedRadioReleaseError::CommonPhyPower(
+                crate::root::CommonPhyPowerError::NotPowered,
+            ));
+        }
+        Ok(())
     }
 
     /// Enter the Wi-Fi route from a retained root. The common PHY power is

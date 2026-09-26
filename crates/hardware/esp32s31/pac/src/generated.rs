@@ -3182,6 +3182,22 @@ pub(crate) fn request_bluetooth_controller_time_latch(
     crate::svd::field_or_modify::request_bluetooth_controller_time_latch(registers);
 }
 
+/// Typed bridge for the reviewed `set_bluetooth_receive_saturation_gain_004c_bits` fixed field-OR transaction.
+#[inline]
+pub(crate) fn set_bluetooth_receive_saturation_gain_004c_bits(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_or_modify::set_bluetooth_receive_saturation_gain_004c_bits(registers);
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_receive_saturation_gain_0088_bit_30` fixed field-OR transaction.
+#[inline]
+pub(crate) fn set_bluetooth_receive_saturation_gain_0088_bit_30(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_or_modify::set_bluetooth_receive_saturation_gain_0088_bit_30(registers);
+}
+
 /// Typed bridge for the reviewed `preserve_bluetooth_memory_list_1_initial_control` fixed field-OR transaction.
 #[inline]
 pub(crate) fn preserve_bluetooth_memory_list_1_initial_control(
@@ -5097,6 +5113,24 @@ pub(crate) fn initialize_bluetooth_receive_setup_004c_bit_26(
     registers: &crate::svd::PhyBtagcRecovered,
 ) {
     crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_004c_bit_26(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_saturation_gain_004c_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_saturation_gain_004c_low(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_saturation_gain_004c_low(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_receive_saturation_gain_cte_bit_3` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_receive_saturation_gain_cte_bit_3(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_receive_saturation_gain_cte_bit_3(registers);
 }
 
 /// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_008c_bit_29_final` fixed field-replacement transaction.

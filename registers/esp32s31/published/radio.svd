@@ -15620,6 +15620,12 @@
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
+            <field>
+              <name>CONFIG_BIT_3</name>
+              <description>bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, clears this positional bit in one fresh-read RMW; its hardware meaning remains unknown.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
           </fields>
         </register>
         <register>
@@ -15710,14 +15716,51 @@
         </register>
         <register>
           <name>RX_CONFIG_004C</name>
-          <description>Bluetooth receive setup clears one independently observed control bit.</description>
+          <description>Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.</description>
           <addressOffset>0x4C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONFIG_FORCE_ZERO_26</name>
+              <name>SAT_GAIN_BITS_0_18</name>
+              <description>bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>19</bitWidth>
+            </field>
+            <field>
+              <name>CONFIG_BIT_19</name>
+              <description>bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONFIG_BIT_24</name>
+              <description>bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONFIG_BIT_26</name>
+              <description>Bluetooth receive setup clears this positional bit; bt_agc_sat_gain sets it again. Its hardware meaning remains unknown.</description>
               <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONFIG_BIT_28</name>
+              <description>bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONFIG_BIT_30</name>
+              <description>bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONFIG_BIT_31</name>
+              <description>bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown.</description>
+              <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
@@ -15874,7 +15917,7 @@
         </register>
         <register>
           <name>RX_CONFIG_0088</name>
-          <description>Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations.</description>
+          <description>Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.</description>
           <addressOffset>0x88</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -15890,7 +15933,7 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>CONFIG_FORCE_ZERO_30</name>
+              <name>CONFIG_BIT_30</name>
               <bitOffset>30</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -21231,7 +21274,7 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
             </field>
             <field>
               <name>GAUSSIAN_BITS_8_16</name>
-              <description>set_gauss_coeff_2m replaces this field with 0x69.</description>
+              <description>set_gauss_coeff_2m replaces this field with 0x67.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>9</bitWidth>
               <writeConstraint>
@@ -21276,7 +21319,7 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <fields>
             <field>
               <name>BITS_0_10</name>
-              <description>The leaf replaces this field with 0x78f.</description>
+              <description>The leaf replaces this field with 0x76d.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -21288,7 +21331,7 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
             </field>
             <field>
               <name>BITS_11_21</name>
-              <description>The leaf replaces this field with 0x5a7.</description>
+              <description>The leaf replaces this field with 0x58e.</description>
               <bitOffset>11</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -21300,7 +21343,7 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
             </field>
             <field>
               <name>BITS_22_31</name>
-              <description>The leaf replaces this field with 0x258.</description>
+              <description>The leaf replaces this field with 0x24d.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>10</bitWidth>
               <writeConstraint>
@@ -21518,7 +21561,7 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
             </field>
             <field>
               <name>CONFIG_VALUE</name>
-              <description>bt_bb_rx_dpo_set replaces this field with the finite value 2.</description>
+              <description>bt_bb_rx_dpo_set replaces this field with the finite value 6.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>6</bitWidth>
               <writeConstraint>

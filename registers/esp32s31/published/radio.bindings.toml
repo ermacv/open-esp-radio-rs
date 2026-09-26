@@ -8099,6 +8099,13 @@ bit-offset = 1
 bit-width = 1
 access = "read-write"
 
+[[registers.fields]]
+svd-name = "CONFIG_BIT_3"
+method = "config_bit_3"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
 [[registers]]
 address = 537929792
 width = 32
@@ -8221,9 +8228,51 @@ scope = []
 register-method = "rx_config_004c"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ZERO_26"
-method = "config_force_zero_26"
+svd-name = "SAT_GAIN_BITS_0_18"
+method = "sat_gain_bits_0_18"
+bit-offset = 0
+bit-width = 19
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_BIT_19"
+method = "config_bit_19"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_BIT_24"
+method = "config_bit_24"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_BIT_26"
+method = "config_bit_26"
 bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_BIT_28"
+method = "config_bit_28"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_BIT_30"
+method = "config_bit_30"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_BIT_31"
+method = "config_bit_31"
+bit-offset = 31
 bit-width = 1
 access = "read-write"
 
@@ -8421,8 +8470,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ZERO_30"
-method = "config_force_zero_30"
+svd-name = "CONFIG_BIT_30"
+method = "config_bit_30"
 bit-offset = 30
 bit-width = 1
 access = "read-write"

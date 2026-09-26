@@ -37050,7 +37050,7 @@ pub mod phy_btagc_recovered {
         pub const fn gain_offset_word_0_opaque(&self) -> &GainOffsetWord0Opaque {
             &self.gain_offset_word_0_opaque
         }
-        #[doc = "0x4c - Bluetooth receive setup clears one independently observed control bit."]
+        #[doc = "0x4c - Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations."]
         #[inline(always)]
         pub const fn rx_config_004c(&self) -> &RxConfig004c {
             &self.rx_config_004c
@@ -37095,7 +37095,7 @@ pub mod phy_btagc_recovered {
         pub const fn agc_restart_config_0084(&self) -> &AgcRestartConfig0084 {
             &self.agc_restart_config_0084
         }
-        #[doc = "0x88 - Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations."]
+        #[doc = "0x88 - Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again."]
         #[inline(always)]
         pub const fn rx_config_0088(&self) -> &RxConfig0088 {
             &self.rx_config_0088
@@ -37272,11 +37272,20 @@ pub mod phy_btagc_recovered {
         pub type ReGainEnableR = crate::BitReader;
         #[doc = "Field `RE_GAIN_ENABLE` writer - "]
         pub type ReGainEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONFIG_BIT_3` reader - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, clears this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit3R = crate::BitReader;
+        #[doc = "Field `CONFIG_BIT_3` writer - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, clears this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit3W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 1"]
             #[inline(always)]
             pub fn re_gain_enable(&self) -> ReGainEnableR {
                 ReGainEnableR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 3 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, clears this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_3(&self) -> ConfigBit3R {
+                ConfigBit3R::new(((self.bits >> 3) & 1) != 0)
             }
         }
         impl W {
@@ -37284,6 +37293,11 @@ pub mod phy_btagc_recovered {
             #[inline(always)]
             pub fn re_gain_enable(&mut self) -> ReGainEnableW<'_, CteReGainSpec> {
                 ReGainEnableW::new(self, 1)
+            }
+            #[doc = "Bit 3 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, clears this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_3(&mut self) -> ConfigBit3W<'_, CteReGainSpec> {
+                ConfigBit3W::new(self, 3)
             }
         }
         #[doc = "Bluetooth CTE receive-gain control; the setter unconditionally sets the exposed enable bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`cte_re_gain::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cte_re_gain::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -37441,34 +37455,118 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_CONFIG_004C (rw) register accessor: Bluetooth receive setup clears one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_004c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_004c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_config_004c`] module"]
+    #[doc = "RX_CONFIG_004C (rw) register accessor: Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_004c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_004c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_config_004c`] module"]
     #[doc(alias = "RX_CONFIG_004C")]
     pub type RxConfig004c = crate::Reg<rx_config_004c::RxConfig004cSpec>;
-    #[doc = "Bluetooth receive setup clears one independently observed control bit."]
+    #[doc = "Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations."]
     pub mod rx_config_004c {
         #[doc = "Register `RX_CONFIG_004C` reader"]
         pub type R = crate::R<RxConfig004cSpec>;
         #[doc = "Register `RX_CONFIG_004C` writer"]
         pub type W = crate::W<RxConfig004cSpec>;
-        #[doc = "Field `CONFIG_FORCE_ZERO_26` reader - "]
-        pub type ConfigForceZero26R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ZERO_26` writer - "]
-        pub type ConfigForceZero26W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SAT_GAIN_BITS_0_18` reader - bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown."]
+        pub type SatGainBits0_18R = crate::FieldReader<u32>;
+        #[doc = "Field `SAT_GAIN_BITS_0_18` writer - bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown."]
+        pub type SatGainBits0_18W<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
+        #[doc = "Field `CONFIG_BIT_19` reader - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit19R = crate::BitReader;
+        #[doc = "Field `CONFIG_BIT_19` writer - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit19W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONFIG_BIT_24` reader - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit24R = crate::BitReader;
+        #[doc = "Field `CONFIG_BIT_24` writer - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit24W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONFIG_BIT_26` reader - Bluetooth receive setup clears this positional bit; bt_agc_sat_gain sets it again. Its hardware meaning remains unknown."]
+        pub type ConfigBit26R = crate::BitReader;
+        #[doc = "Field `CONFIG_BIT_26` writer - Bluetooth receive setup clears this positional bit; bt_agc_sat_gain sets it again. Its hardware meaning remains unknown."]
+        pub type ConfigBit26W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONFIG_BIT_28` reader - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit28R = crate::BitReader;
+        #[doc = "Field `CONFIG_BIT_28` writer - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit28W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONFIG_BIT_30` reader - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit30R = crate::BitReader;
+        #[doc = "Field `CONFIG_BIT_30` writer - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit30W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONFIG_BIT_31` reader - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit31R = crate::BitReader;
+        #[doc = "Field `CONFIG_BIT_31` writer - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+        pub type ConfigBit31W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 26"]
+            #[doc = "Bits 0:18 - bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn config_force_zero_26(&self) -> ConfigForceZero26R {
-                ConfigForceZero26R::new(((self.bits >> 26) & 1) != 0)
+            pub fn sat_gain_bits_0_18(&self) -> SatGainBits0_18R {
+                SatGainBits0_18R::new(self.bits & 0x0007_ffff)
+            }
+            #[doc = "Bit 19 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_19(&self) -> ConfigBit19R {
+                ConfigBit19R::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 24 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_24(&self) -> ConfigBit24R {
+                ConfigBit24R::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Bluetooth receive setup clears this positional bit; bt_agc_sat_gain sets it again. Its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_26(&self) -> ConfigBit26R {
+                ConfigBit26R::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 28 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_28(&self) -> ConfigBit28R {
+                ConfigBit28R::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 30 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_30(&self) -> ConfigBit30R {
+                ConfigBit30R::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_31(&self) -> ConfigBit31R {
+                ConfigBit31R::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 26"]
+            #[doc = "Bits 0:18 - bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn config_force_zero_26(&mut self) -> ConfigForceZero26W<'_, RxConfig004cSpec> {
-                ConfigForceZero26W::new(self, 26)
+            pub fn sat_gain_bits_0_18(&mut self) -> SatGainBits0_18W<'_, RxConfig004cSpec> {
+                SatGainBits0_18W::new(self, 0)
+            }
+            #[doc = "Bit 19 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_19(&mut self) -> ConfigBit19W<'_, RxConfig004cSpec> {
+                ConfigBit19W::new(self, 19)
+            }
+            #[doc = "Bit 24 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_24(&mut self) -> ConfigBit24W<'_, RxConfig004cSpec> {
+                ConfigBit24W::new(self, 24)
+            }
+            #[doc = "Bit 26 - Bluetooth receive setup clears this positional bit; bt_agc_sat_gain sets it again. Its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_26(&mut self) -> ConfigBit26W<'_, RxConfig004cSpec> {
+                ConfigBit26W::new(self, 26)
+            }
+            #[doc = "Bit 28 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_28(&mut self) -> ConfigBit28W<'_, RxConfig004cSpec> {
+                ConfigBit28W::new(self, 28)
+            }
+            #[doc = "Bit 30 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_30(&mut self) -> ConfigBit30W<'_, RxConfig004cSpec> {
+                ConfigBit30W::new(self, 30)
+            }
+            #[doc = "Bit 31 - bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn config_bit_31(&mut self) -> ConfigBit31W<'_, RxConfig004cSpec> {
+                ConfigBit31W::new(self, 31)
             }
         }
-        #[doc = "Bluetooth receive setup clears one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_004c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_004c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_004c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_004c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxConfig004cSpec;
         impl crate::RegisterSpec for RxConfig004cSpec {
             type Ux = u32;
@@ -37750,10 +37848,10 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_CONFIG_0088 (rw) register accessor: Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_0088::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_0088::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_config_0088`] module"]
+    #[doc = "RX_CONFIG_0088 (rw) register accessor: Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_0088::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_0088::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_config_0088`] module"]
     #[doc(alias = "RX_CONFIG_0088")]
     pub type RxConfig0088 = crate::Reg<rx_config_0088::RxConfig0088Spec>;
-    #[doc = "Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations."]
+    #[doc = "Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again."]
     pub mod rx_config_0088 {
         #[doc = "Register `RX_CONFIG_0088` reader"]
         pub type R = crate::R<RxConfig0088Spec>;
@@ -37767,10 +37865,10 @@ pub mod phy_btagc_recovered {
         pub type ConfigForceZero29R = crate::BitReader;
         #[doc = "Field `CONFIG_FORCE_ZERO_29` writer - "]
         pub type ConfigForceZero29W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CONFIG_FORCE_ZERO_30` reader - "]
-        pub type ConfigForceZero30R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ZERO_30` writer - "]
-        pub type ConfigForceZero30W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONFIG_BIT_30` reader - "]
+        pub type ConfigBit30R = crate::BitReader;
+        #[doc = "Field `CONFIG_BIT_30` writer - "]
+        pub type ConfigBit30W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 18"]
             #[inline(always)]
@@ -37784,8 +37882,8 @@ pub mod phy_btagc_recovered {
             }
             #[doc = "Bit 30"]
             #[inline(always)]
-            pub fn config_force_zero_30(&self) -> ConfigForceZero30R {
-                ConfigForceZero30R::new(((self.bits >> 30) & 1) != 0)
+            pub fn config_bit_30(&self) -> ConfigBit30R {
+                ConfigBit30R::new(((self.bits >> 30) & 1) != 0)
             }
         }
         impl W {
@@ -37801,11 +37899,11 @@ pub mod phy_btagc_recovered {
             }
             #[doc = "Bit 30"]
             #[inline(always)]
-            pub fn config_force_zero_30(&mut self) -> ConfigForceZero30W<'_, RxConfig0088Spec> {
-                ConfigForceZero30W::new(self, 30)
+            pub fn config_bit_30(&mut self) -> ConfigBit30W<'_, RxConfig0088Spec> {
+                ConfigBit30W::new(self, 30)
             }
         }
-        #[doc = "Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_0088::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_0088::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_0088::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_0088::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxConfig0088Spec;
         impl crate::RegisterSpec for RxConfig0088Spec {
             type Ux = u32;
@@ -49917,9 +50015,9 @@ pub mod bt_v3_2_baseband {
         pub type TxSetLowByteR = crate::FieldReader;
         #[doc = "Field `TX_SET_LOW_BYTE` writer - bt_bb_v2_tx_set replaces this field with 0xf5."]
         pub type TxSetLowByteW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `GAUSSIAN_BITS_8_16` reader - set_gauss_coeff_2m replaces this field with 0x69."]
+        #[doc = "Field `GAUSSIAN_BITS_8_16` reader - set_gauss_coeff_2m replaces this field with 0x67."]
         pub type GaussianBits8_16R = crate::FieldReader<u16>;
-        #[doc = "Field `GAUSSIAN_BITS_8_16` writer - set_gauss_coeff_2m replaces this field with 0x69."]
+        #[doc = "Field `GAUSSIAN_BITS_8_16` writer - set_gauss_coeff_2m replaces this field with 0x67."]
         pub type GaussianBits8_16W<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
         #[doc = "Field `GAUSSIAN_BITS_17_24` reader - set_gauss_coeff_2m replaces this field with 7."]
         pub type GaussianBits17_24R = crate::FieldReader;
@@ -49935,7 +50033,7 @@ pub mod bt_v3_2_baseband {
             pub fn tx_set_low_byte(&self) -> TxSetLowByteR {
                 TxSetLowByteR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:16 - set_gauss_coeff_2m replaces this field with 0x69."]
+            #[doc = "Bits 8:16 - set_gauss_coeff_2m replaces this field with 0x67."]
             #[inline(always)]
             pub fn gaussian_bits_8_16(&self) -> GaussianBits8_16R {
                 GaussianBits8_16R::new(((self.bits >> 8) & 0x01ff) as u16)
@@ -49959,7 +50057,7 @@ pub mod bt_v3_2_baseband {
             ) -> TxSetLowByteW<'_, Gaussian2mCoefficientAndTxConfigSpec> {
                 TxSetLowByteW::new(self, 0)
             }
-            #[doc = "Bits 8:16 - set_gauss_coeff_2m replaces this field with 0x69."]
+            #[doc = "Bits 8:16 - set_gauss_coeff_2m replaces this field with 0x67."]
             #[inline(always)]
             pub fn gaussian_bits_8_16(
                 &mut self,
@@ -50003,47 +50101,47 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<Gaussian2mCoefficient1Spec>;
         #[doc = "Register `GAUSSIAN_2M_COEFFICIENT_1` writer"]
         pub type W = crate::W<Gaussian2mCoefficient1Spec>;
-        #[doc = "Field `BITS_0_10` reader - The leaf replaces this field with 0x78f."]
+        #[doc = "Field `BITS_0_10` reader - The leaf replaces this field with 0x76d."]
         pub type Bits0_10R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_0_10` writer - The leaf replaces this field with 0x78f."]
+        #[doc = "Field `BITS_0_10` writer - The leaf replaces this field with 0x76d."]
         pub type Bits0_10W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `BITS_11_21` reader - The leaf replaces this field with 0x5a7."]
+        #[doc = "Field `BITS_11_21` reader - The leaf replaces this field with 0x58e."]
         pub type Bits11_21R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_11_21` writer - The leaf replaces this field with 0x5a7."]
+        #[doc = "Field `BITS_11_21` writer - The leaf replaces this field with 0x58e."]
         pub type Bits11_21W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `BITS_22_31` reader - The leaf replaces this field with 0x258."]
+        #[doc = "Field `BITS_22_31` reader - The leaf replaces this field with 0x24d."]
         pub type Bits22_31R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_22_31` writer - The leaf replaces this field with 0x258."]
+        #[doc = "Field `BITS_22_31` writer - The leaf replaces this field with 0x24d."]
         pub type Bits22_31W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:10 - The leaf replaces this field with 0x78f."]
+            #[doc = "Bits 0:10 - The leaf replaces this field with 0x76d."]
             #[inline(always)]
             pub fn bits_0_10(&self) -> Bits0_10R {
                 Bits0_10R::new((self.bits & 0x07ff) as u16)
             }
-            #[doc = "Bits 11:21 - The leaf replaces this field with 0x5a7."]
+            #[doc = "Bits 11:21 - The leaf replaces this field with 0x58e."]
             #[inline(always)]
             pub fn bits_11_21(&self) -> Bits11_21R {
                 Bits11_21R::new(((self.bits >> 11) & 0x07ff) as u16)
             }
-            #[doc = "Bits 22:31 - The leaf replaces this field with 0x258."]
+            #[doc = "Bits 22:31 - The leaf replaces this field with 0x24d."]
             #[inline(always)]
             pub fn bits_22_31(&self) -> Bits22_31R {
                 Bits22_31R::new(((self.bits >> 22) & 0x03ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 0:10 - The leaf replaces this field with 0x78f."]
+            #[doc = "Bits 0:10 - The leaf replaces this field with 0x76d."]
             #[inline(always)]
             pub fn bits_0_10(&mut self) -> Bits0_10W<'_, Gaussian2mCoefficient1Spec> {
                 Bits0_10W::new(self, 0)
             }
-            #[doc = "Bits 11:21 - The leaf replaces this field with 0x5a7."]
+            #[doc = "Bits 11:21 - The leaf replaces this field with 0x58e."]
             #[inline(always)]
             pub fn bits_11_21(&mut self) -> Bits11_21W<'_, Gaussian2mCoefficient1Spec> {
                 Bits11_21W::new(self, 11)
             }
-            #[doc = "Bits 22:31 - The leaf replaces this field with 0x258."]
+            #[doc = "Bits 22:31 - The leaf replaces this field with 0x24d."]
             #[inline(always)]
             pub fn bits_22_31(&mut self) -> Bits22_31W<'_, Gaussian2mCoefficient1Spec> {
                 Bits22_31W::new(self, 22)
@@ -50514,9 +50612,9 @@ pub mod bt_v3_2_baseband {
         pub type ConfigForceZero19R = crate::BitReader;
         #[doc = "Field `CONFIG_FORCE_ZERO_19` writer - "]
         pub type ConfigForceZero19W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CONFIG_VALUE` reader - bt_bb_rx_dpo_set replaces this field with the finite value 2."]
+        #[doc = "Field `CONFIG_VALUE` reader - bt_bb_rx_dpo_set replaces this field with the finite value 6."]
         pub type ConfigValueR = crate::FieldReader;
-        #[doc = "Field `CONFIG_VALUE` writer - bt_bb_rx_dpo_set replaces this field with the finite value 2."]
+        #[doc = "Field `CONFIG_VALUE` writer - bt_bb_rx_dpo_set replaces this field with the finite value 6."]
         pub type ConfigValueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
             #[doc = "Bit 19"]
@@ -50524,7 +50622,7 @@ pub mod bt_v3_2_baseband {
             pub fn config_force_zero_19(&self) -> ConfigForceZero19R {
                 ConfigForceZero19R::new(((self.bits >> 19) & 1) != 0)
             }
-            #[doc = "Bits 20:25 - bt_bb_rx_dpo_set replaces this field with the finite value 2."]
+            #[doc = "Bits 20:25 - bt_bb_rx_dpo_set replaces this field with the finite value 6."]
             #[inline(always)]
             pub fn config_value(&self) -> ConfigValueR {
                 ConfigValueR::new(((self.bits >> 20) & 0x3f) as u8)
@@ -50536,7 +50634,7 @@ pub mod bt_v3_2_baseband {
             pub fn config_force_zero_19(&mut self) -> ConfigForceZero19W<'_, RxDpoControlSpec> {
                 ConfigForceZero19W::new(self, 19)
             }
-            #[doc = "Bits 20:25 - bt_bb_rx_dpo_set replaces this field with the finite value 2."]
+            #[doc = "Bits 20:25 - bt_bb_rx_dpo_set replaces this field with the finite value 6."]
             #[inline(always)]
             pub fn config_value(&mut self) -> ConfigValueW<'_, RxDpoControlSpec> {
                 ConfigValueW::new(self, 20)
@@ -61081,6 +61179,51 @@ pub mod fixed_register_image {
         }
     }
 
+    /// Publish the SVD-qualified image `0x00000404` to `PHY_BTAGC_RECOVERED`.`AGC_SAT_GAIN_CONFIG`.
+    #[inline]
+    pub fn initialize_bluetooth_receive_saturation_gain_config(
+        registers: &crate::PhyBtagcRecovered,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .agc_sat_gain_config()
+                .write_with_zero(|writer| writer.bits(0x00000404));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0a1b272e` to `PHY_BTAGC_RECOVERED`.`AGC_SAT_GAIN_IMAGE_0`.
+    #[inline]
+    pub fn initialize_bluetooth_receive_saturation_gain_image_0(
+        registers: &crate::PhyBtagcRecovered,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .agc_sat_gain_image_0()
+                .write_with_zero(|writer| writer.bits(0x0a1b272e));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0a1b272e` to `PHY_BTAGC_RECOVERED`.`AGC_SAT_GAIN_IMAGE_1`.
+    #[inline]
+    pub fn initialize_bluetooth_receive_saturation_gain_image_1(
+        registers: &crate::PhyBtagcRecovered,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .agc_sat_gain_image_1()
+                .write_with_zero(|writer| writer.bits(0x0a1b272e));
+        }
+    }
+
     /// Publish the SVD-qualified image `0x80000000` to `PMU_RADIO`.`HP_ACTIVE_ICG_MODEM`.
     #[inline]
     pub fn select_hp_active_modem_icg(registers: &crate::PmuRadio) {
@@ -63819,6 +63962,42 @@ pub mod field_or_modify {
         });
     }
 
+    /// OR one reviewed logical image into PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields `[CONFIG_BIT_19, CONFIG_BIT_24, CONFIG_BIT_26, CONFIG_BIT_28, CONFIG_BIT_30, CONFIG_BIT_31]` while preserving the fresh register observation.
+    #[inline]
+    pub fn set_bluetooth_receive_saturation_gain_004c_bits(registers: &crate::PhyBtagcRecovered) {
+        registers.rx_config_004c().modify(|reader, writer| {
+            let input = 0xd5080000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .config_bit_19()
+                .bit(reader.config_bit_19().bit() || ((input >> 19) & 0x00000001) != 0)
+                .config_bit_24()
+                .bit(reader.config_bit_24().bit() || ((input >> 24) & 0x00000001) != 0)
+                .config_bit_26()
+                .bit(reader.config_bit_26().bit() || ((input >> 26) & 0x00000001) != 0)
+                .config_bit_28()
+                .bit(reader.config_bit_28().bit() || ((input >> 28) & 0x00000001) != 0)
+                .config_bit_30()
+                .bit(reader.config_bit_30().bit() || ((input >> 30) & 0x00000001) != 0)
+                .config_bit_31()
+                .bit(reader.config_bit_31().bit() || ((input >> 31) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_BIT_30]` while preserving the fresh register observation.
+    #[inline]
+    pub fn set_bluetooth_receive_saturation_gain_0088_bit_30(registers: &crate::PhyBtagcRecovered) {
+        registers.rx_config_0088().modify(|reader, writer| {
+            let input = 0x40000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .config_bit_30()
+                .bit(reader.config_bit_30().bit() || ((input >> 30) & 0x00000001) != 0)
+        });
+    }
+
     /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[CONTROL_20]` while preserving the fresh register observation.
     #[inline]
     pub fn preserve_bluetooth_memory_list_1_initial_control(
@@ -65653,14 +65832,14 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_FORCE_ZERO_30]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_BIT_30]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_config_0088(registers: &crate::PhyBtagcRecovered) {
         registers.rx_config_0088().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_zero_30().bit((input & 0x00000001) != 0)
+            writer.config_bit_30().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -66714,7 +66893,7 @@ pub mod field_replace_modify {
         registers
             .gaussian_2m_coefficient_and_tx_config()
             .modify(|_, writer| {
-                let input = 0x00000069_u32;
+                let input = 0x00000067_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
                 unsafe {
@@ -66729,7 +66908,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_22_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
-            let input = 0x00000258_u32;
+            let input = 0x0000024d_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.bits_22_31().bits((input & 0x000003ff) as u16) }
@@ -66740,7 +66919,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_11_21(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
-            let input = 0x000005a7_u32;
+            let input = 0x0000058e_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.bits_11_21().bits((input & 0x000007ff) as u16) }
@@ -66751,7 +66930,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_0_10(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
-            let input = 0x0000078f_u32;
+            let input = 0x0000076d_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.bits_0_10().bits((input & 0x000007ff) as u16) }
@@ -66784,7 +66963,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn initialize_bluetooth_receive_dpo_value(registers: &crate::BtV3_2Baseband) {
         registers.rx_dpo_control().modify(|_, writer| {
-            let input = 0x00000002_u32;
+            let input = 0x00000006_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.config_value().bits((input & 0x0000003f) as u8) }
@@ -67041,14 +67220,38 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields `[CONFIG_FORCE_ZERO_26]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields `[CONFIG_BIT_26]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_004c_bit_26(registers: &crate::PhyBtagcRecovered) {
         registers.rx_config_004c().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_zero_26().bit((input & 0x00000001) != 0)
+            writer.config_bit_26().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields `[SAT_GAIN_BITS_0_18]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_saturation_gain_004c_low(
+        registers: &crate::PhyBtagcRecovered,
+    ) {
+        registers.rx_config_004c().modify(|_, writer| {
+            let input = 0x00001770_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sat_gain_bits_0_18().bits(input & 0x0007ffff) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.CTE_RE_GAIN fields `[CONFIG_BIT_3]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_receive_saturation_gain_cte_bit_3(registers: &crate::PhyBtagcRecovered) {
+        registers.cte_re_gain().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.config_bit_3().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -67130,7 +67333,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn initialize_bluetooth_le_tx_delay(registers: &crate::BtV3_2Baseband) {
         registers.le_tx_on_delay().modify(|_, writer| {
-            let input = 0x00000190_u32;
+            let input = 0x000000e8_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -67147,7 +67350,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn initialize_bluetooth_tx_cca_period_difference(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_0().modify(|_, writer| {
-            let input = 0x00000160_u32;
+            let input = 0x000000b8_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -67164,7 +67367,7 @@ pub mod field_replace_modify {
     #[inline]
     pub fn initialize_bluetooth_tx_cca_period_argument(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_0().modify(|_, writer| {
-            let input = 0x000001ff_u32;
+            let input = 0x00000157_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {

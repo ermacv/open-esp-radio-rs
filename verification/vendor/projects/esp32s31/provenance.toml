@@ -476,7 +476,7 @@ code = "d1a1ac62be8b71a3cf3b99df3416079f7c450ab8138ea609a86eb2de8a365025"
 artifact = "libbtbb"
 member = "bt_bb_v2.o"
 symbol = "bt_bb_rx_dpo_set"
-code = "e70a325ebf57559c37ae76780bdec77422f5978790c331a99f0917262551f514"
+code = "a3878fe62a55fb7c4a26f82e901e7ab87be9819c53d0095e1b1ef7f431b2cd6f"
 
 [[function]]
 artifact = "libbtbb"
@@ -560,13 +560,13 @@ code = "80b89700c0f2be4e2570dd16902d12066b012d42878b7d268a17bfbe1afafa41"
 artifact = "libbtbb"
 member = "bt_bb_v2.o"
 symbol = "bt_bb_v2_init_cmplx"
-code = "b2d48d670db00f6e2cc259751f5933e1d3b382b491e661404ede1394210385ba"
+code = "a3b1cb149283c8acd8115163476630bc6900f35ea02136303e882b3e3f7dccf2"
 
 [[function]]
 artifact = "libbtbb"
 member = "bt_bb_v2.o"
 symbol = "bt_bb_v2_rx_set"
-code = "7270776fac3278f9bfbf99287691e77b8edc40274ca33be8fefbc334772f8972"
+code = "3d41369c05eb799add3690a40d3095dc7f2ab07716b22b9f8216c2438bd96d7e"
 
 [[function]]
 artifact = "libbtbb"
@@ -620,7 +620,7 @@ code = "7d1bacc2c7b5de7402b67dd8556357c3a43a22be4fef96ff9f3f274e51f589f1"
 artifact = "libbtbb"
 member = "bt_bb_v2.o"
 symbol = "set_gauss_coeff_2m"
-code = "6974c3810890f7dded8ad90101cbb554320fce2a19bd7c6433917c42508d1e89"
+code = "e4477d0002220d74f899038b65fb79f817729fefbcd9ee80f24e5abd650d98e1"
 
 [[function]]
 artifact = "libbtbb"

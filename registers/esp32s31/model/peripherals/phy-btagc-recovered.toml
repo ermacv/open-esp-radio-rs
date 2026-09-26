@@ -47,6 +47,12 @@ name = "RE_GAIN_ENABLE"
 bitOffset = 1
 bitWidth = 1
 
+[[peripherals.registers.register.fields]]
+name = "CONFIG_BIT_3"
+description = "bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, clears this positional bit in one fresh-read RMW; its hardware meaning remains unknown."
+bitOffset = 3
+bitWidth = 1
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -125,14 +131,51 @@ maximum = 0xFF
 
 [peripherals.registers.register]
 name = "RX_CONFIG_004C"
-description = "Bluetooth receive setup clears one independently observed control bit."
+description = "Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations."
 addressOffset = 0x4C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ZERO_26"
+name = "SAT_GAIN_BITS_0_18"
+description = "bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown."
+bitOffset = 0
+bitWidth = 19
+
+[[peripherals.registers.register.fields]]
+name = "CONFIG_BIT_19"
+description = "bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."
+bitOffset = 19
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONFIG_BIT_24"
+description = "bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."
+bitOffset = 24
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONFIG_BIT_26"
+description = "Bluetooth receive setup clears this positional bit; bt_agc_sat_gain sets it again. Its hardware meaning remains unknown."
 bitOffset = 26
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONFIG_BIT_28"
+description = "bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."
+bitOffset = 28
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONFIG_BIT_30"
+description = "bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."
+bitOffset = 30
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONFIG_BIT_31"
+description = "bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."
+bitOffset = 31
 bitWidth = 1
 
 [[peripherals.registers]]
@@ -271,7 +314,7 @@ maximum = 0x1FF
 
 [peripherals.registers.register]
 name = "RX_CONFIG_0088"
-description = "Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations."
+description = "Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again."
 addressOffset = 0x88
 size = 32
 access = "read-write"
@@ -287,7 +330,7 @@ bitOffset = 29
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ZERO_30"
+name = "CONFIG_BIT_30"
 bitOffset = 30
 bitWidth = 1
 
@@ -1255,7 +1298,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.CTE_RE_GAIN"
-sources = ["BLOB_LIBBTBB_BT_CTE_ACCESSORS"]
+sources = ["BLOB_LIBBTBB_BT_CTE_ACCESSORS", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
@@ -1341,14 +1384,14 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C"
-sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_FORCE_ZERO_26"
-sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_26"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -2117,8 +2160,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_0088.CONFIG_FORCE_ZERO_30"
-sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_0088.CONFIG_BIT_30"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -2196,6 +2239,55 @@ completeness = "complete"
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8.POSITIONAL_BITS_12_19"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.SAT_GAIN_BITS_0_18"
+sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_19"
+sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_24"
+sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_28"
+sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_30"
+sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_31"
+sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.CTE_RE_GAIN.CONFIG_BIT_3"
+sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

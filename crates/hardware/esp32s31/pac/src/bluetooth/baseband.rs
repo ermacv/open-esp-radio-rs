@@ -104,6 +104,20 @@ impl BluetoothBasebandV2Transaction<'_> {
 
         self.initialize_shared_receive_prefix();
         crate::generated::initialize_bluetooth_receive_correlator_final(baseband);
+        self.initialize_receive_saturation_gain();
+    }
+
+    /// Vendor `bt_bb_v2_rx_set` ends by tail-calling `bt_agc_sat_gain` with
+    /// the finite image `0x0a1b272e`.
+    fn initialize_receive_saturation_gain(&self) {
+        let btagc = &self.radio_phy.phy_btagc_recovered;
+        svd::fixed_register_image::initialize_bluetooth_receive_saturation_gain_config(btagc);
+        crate::generated::initialize_bluetooth_receive_saturation_gain_004c_low(btagc);
+        svd::fixed_register_image::initialize_bluetooth_receive_saturation_gain_image_0(btagc);
+        svd::fixed_register_image::initialize_bluetooth_receive_saturation_gain_image_1(btagc);
+        crate::generated::set_bluetooth_receive_saturation_gain_004c_bits(btagc);
+        crate::generated::clear_bluetooth_receive_saturation_gain_cte_bit_3(btagc);
+        crate::generated::set_bluetooth_receive_saturation_gain_0088_bit_30(btagc);
     }
 
     fn initialize_baseband_rx_setup(&self) {

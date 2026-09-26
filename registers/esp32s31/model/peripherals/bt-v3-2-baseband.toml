@@ -660,7 +660,7 @@ maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
 name = "GAUSSIAN_BITS_8_16"
-description = "set_gauss_coeff_2m replaces this field with 0x69."
+description = "set_gauss_coeff_2m replaces this field with 0x67."
 bitOffset = 8
 bitWidth = 9
 
@@ -699,7 +699,7 @@ access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "BITS_0_10"
-description = "The leaf replaces this field with 0x78f."
+description = "The leaf replaces this field with 0x76d."
 bitOffset = 0
 bitWidth = 11
 
@@ -709,7 +709,7 @@ maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
 name = "BITS_11_21"
-description = "The leaf replaces this field with 0x5a7."
+description = "The leaf replaces this field with 0x58e."
 bitOffset = 11
 bitWidth = 11
 
@@ -719,7 +719,7 @@ maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
 name = "BITS_22_31"
-description = "The leaf replaces this field with 0x258."
+description = "The leaf replaces this field with 0x24d."
 bitOffset = 22
 bitWidth = 10
 
@@ -923,7 +923,7 @@ bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CONFIG_VALUE"
-description = "bt_bb_rx_dpo_set replaces this field with the finite value 2."
+description = "bt_bb_rx_dpo_set replaces this field with the finite value 6."
 bitOffset = 20
 bitWidth = 6
 

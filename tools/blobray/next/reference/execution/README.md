@@ -475,8 +475,11 @@ flow and unsupported instructions retain their ordinary gaps. Warm successors ma
 follow a completed early goal with a fresh entry/register/stack state and retained
 session RAM, never a suspended continuation.
 
-Comparison requires the same goal kind on both sides of each phase. Non-return goals
-require both relation return selectors disabled; the relation compares their observed event prefixes,
+Comparison requires the same goal kind on both sides of each phase, except that
+a vendor symbol goal may pair with a replacement return goal: a prefix claim that
+compares every vendor effect before the boundary with the complete replacement.
+Non-return goals, and every such pair, require both relation return selectors and
+call capture disabled; the relation compares their observed event prefixes,
 not unexecuted bodies. Equal prefixes with unmet goals remain `INCOMPLETE`; known
 prefix differences remain `DIFF`. Store checks that outcome kind and dependency
 blocking match the declared goals before publication.
@@ -584,8 +587,10 @@ outside Blobray: `effect_contract_ref` and `projection_ref` select them by the
 SHA-256 of their canonical JSON encoding, and `verify` rejects a selection whose
 content it was not given. Records, the aggregate verdict and completeness are
 returned in memory: no project, content store, journal, run record or knowledge
-review participates, and nothing is retained. Symbol goals, runtime tables and
-reviewed call pairs need a project and are rejected. The records equal those a
+review participates, and nothing is retained. A symbol goal resolves in the
+given executable whose content is its object, to a defined code symbol of its
+static symbol table. Runtime tables and reviewed call pairs need a project and
+are rejected. The records equal those a
 project execution of the same request retains. `in_process::coverage` reports the
 vendor coverage of such results, as `code-coverage` does for retained executions,
 under identities the caller assigns.

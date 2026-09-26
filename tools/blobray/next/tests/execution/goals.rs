@@ -267,7 +267,7 @@ fn invalid_physical_goals_and_relations_publish_nothing() {
         assert!(run.error.is_some(), "{run:?}");
         assert!(run.execution.is_none());
     }
-    for which in 0..3 {
+    for which in 0..4 {
         let mut r = request(
             &f,
             ExecutionGoal::ReachSymbol {
@@ -276,7 +276,17 @@ fn invalid_physical_goals_and_relations_publish_nothing() {
         );
         match which {
             0 => r.cases[0].relation.as_mut().unwrap().returns.low = true,
-            1 => r.cases[0].replacement.as_mut().unwrap().goal = ExecutionGoal::Return,
+            // A vendor prefix compares no return word.
+            1 => {
+                r.cases[0].replacement.as_mut().unwrap().goal = ExecutionGoal::Return;
+                r.cases[0].relation.as_mut().unwrap().returns.low = true;
+            }
+            // Only the vendor side may stop at a symbol boundary.
+            2 => {
+                let symbol = r.cases[0].vendor.goal.clone();
+                r.cases[0].vendor.goal = ExecutionGoal::Return;
+                r.cases[0].replacement.as_mut().unwrap().goal = symbol;
+            }
             _ => {
                 if let ExecutionGoal::ReachSymbol { target } = &mut r.cases[0].vendor.goal {
                     target.source = FunctionSource::Input { input: 1 };
@@ -413,4 +423,67 @@ fn symbol_goals_require_and_use_the_explicit_companion_mapping() {
     let result = f.read(&run.execution.unwrap());
     assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
     assert_eq!(result["records"][0]["value"]["stop"]["pc"], 0x2000);
+}
+#[test]
+fn in_process_symbol_goals_resolve_in_the_executables_and_compare_vendor_prefixes() {
+    // Save the return link, call a returning leaf, then return through it.
+    let code = [0x00008413, 0x008000ef, 0x00040067, 0x00008067];
+    let (bytes, point) = symbol_elf(&code, 0x1000, 0x100c);
+    let f = Fixture::from_inputs(vec![bytes.clone()]);
+    let sources: &[&[u8]] = &[&bytes];
+    let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
+    let verify = |request: &ExecutionRequest| {
+        app::in_process::verify(
+            &app::in_process::InProcessComparison {
+                request,
+                vendor: sources,
+                replacement: Some(sources),
+                effects: &[],
+                projections: &[],
+                vendor_results: None,
+                dependence: None,
+                patches: &[],
+            },
+            &blobray_backend_riscv::RiscvExecutor,
+            &memory,
+            &mut || Ok(()),
+        )
+    };
+    let observe = ExecutionGoal::ObserveCall {
+        target: point,
+        include_tail: false,
+    };
+    let mut request = f.request();
+    request.cases[0].relation = Some(fixture_relation(false));
+    request.cases[0].vendor.goal = observe.clone();
+    // Both sides stop before the call.
+    let mut both = request.clone();
+    both.cases[0].replacement = Some(both.cases[0].vendor.clone());
+    let result = verify(&both).unwrap();
+    assert_eq!(result.verdict, Some(ComparisonVerdict::Match));
+    assert!(result.records.iter().any(|r| matches!(
+        r,
+        ExecutionEvidence::Outcome {
+            replacement: false,
+            stop: ExecutionStop::ObservedCall { pc: 0x1004, .. },
+            ..
+        }
+    )));
+    // The vendor prefix before the call against the complete replacement,
+    // in process and through the project.
+    let result = verify(&request).unwrap();
+    assert_eq!(result.verdict, Some(ComparisonVerdict::Match));
+    let run = f.run(request.clone(), budget());
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    assert_eq!(
+        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
+        "MATCH"
+    );
+    // A prefix compares no return word.
+    let mut returns = request;
+    returns.cases[0].relation = Some(fixture_relation(true));
+    assert_eq!(
+        verify(&returns).err().unwrap().code,
+        ErrorCode::InvalidRequest
+    );
 }

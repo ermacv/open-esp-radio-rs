@@ -248,7 +248,7 @@ pub(crate) fn report(
 
 /// The vendor coverage of in-memory executions (caller identity, request and
 /// records), which share one vendor target whose sources are `vendor` (ELF
-/// bytes in source order). Goals must not need symbol resolution.
+/// bytes in source order). Symbol goals resolve in those executables.
 pub fn report_in_process(
     executions: &[(ArtifactId, &ExecutionRequest, &[ExecutionEvidence])],
     vendor: &[&[u8]],
@@ -265,17 +265,15 @@ pub fn report_in_process(
             .cases
             .iter()
             .map(|case| {
-                let resolve = |i: &Invocation| match i.goal {
-                    ExecutionGoal::Return => Ok(ResolvedExecutionGoal::Return),
-                    ExecutionGoal::ObserveDequeue { .. } => {
-                        Ok(ResolvedExecutionGoal::ObserveDequeue)
-                    }
-                    _ => Err(Error::new(
-                        ErrorCode::InvalidRequest,
-                        "in-process coverage does not support symbol goals",
-                    )),
-                };
-                Ok([Some(resolve(&case.vendor)?), None])
+                Ok([
+                    Some(crate::in_process::resolve_goal(
+                        &case.vendor.goal,
+                        vendor,
+                        memory,
+                        c,
+                    )?),
+                    None,
+                ])
             })
             .collect::<Result<_>>()?;
         reached.add(request, vendor_coverage(records.iter())?, &goals, c)?;

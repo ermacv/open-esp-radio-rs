@@ -567,8 +567,18 @@ impl ExecutionRequest {
                 (None, None) => {}
                 _ => return Err(bad()),
             }
+            // A vendor symbol goal may pair with a replacement return: a
+            // prefix comparison of every vendor effect before the boundary
+            // with the complete replacement, which compares no return or call.
             if let Some(other) = &case.replacement
                 && std::mem::discriminant(&case.vendor.goal) != std::mem::discriminant(&other.goal)
+                && !(matches!(
+                    case.vendor.goal,
+                    ExecutionGoal::ObserveCall { .. } | ExecutionGoal::ReachSymbol { .. }
+                ) && other.goal == ExecutionGoal::Return
+                    && case.relation.as_ref().is_some_and(|r| {
+                        !r.returns.low && !r.returns.high && !r.observes_calls()
+                    }))
             {
                 return Err(bad());
             }

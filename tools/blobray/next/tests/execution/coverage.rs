@@ -383,7 +383,8 @@ fn in_process_verification_emits_the_records_of_a_project_execution() {
     assert_eq!(result.records, rows);
     assert_eq!(result.verdict, manifest.verdict);
     assert_eq!(result.complete, manifest.complete);
-    // Symbol goals need a project; one executable per target source is required.
+    // A symbol goal names a code symbol of the side's executables; one
+    // executable per target source is required.
     let mut symbolic = request.clone();
     symbolic.cases[0].vendor.goal = ExecutionGoal::ReachSymbol {
         target: ExecutionSymbol {
@@ -400,6 +401,7 @@ fn in_process_verification_emits_the_records_of_a_project_execution() {
         },
     };
     symbolic.cases[0].replacement = Some(symbolic.cases[0].vendor.clone());
+    symbolic.cases[0].relation = Some(fixture_relation(false));
     for (request, vendor, reason) in [
         (&symbolic, sources, "symbol goals"),
         (

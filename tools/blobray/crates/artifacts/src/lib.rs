@@ -34,4 +34,4 @@ mod program;
 pub use function::{DataView, FunctionView, PreparedObject, with_function, with_prepared_object};
 
 pub use program::executable_sections;
-pub use program::{code_symbols, execution_segments};
+pub use program::{code_symbol_at, code_symbols, execution_segments};

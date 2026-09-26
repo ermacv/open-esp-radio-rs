@@ -293,7 +293,8 @@ pub fn compare(
         verdict: if known
             && left.completed()
             && right.completed()
-            && std::mem::discriminant(&left.stop) == std::mem::discriminant(&right.stop)
+            && (std::mem::discriminant(&left.stop) == std::mem::discriminant(&right.stop)
+                || prefix(left, right, relation))
         {
             ComparisonVerdict::Match
         } else {
@@ -302,6 +303,22 @@ pub fn compare(
         difference: None,
     })
 }
+/// A vendor prefix up to a symbol boundary compared with a complete
+/// replacement, when the relation compares no return or call.
+fn prefix(
+    left: &ExecutionObservation,
+    right: &ExecutionObservation,
+    relation: &ComparisonRelation,
+) -> bool {
+    matches!(
+        left.stop,
+        ExecutionStop::ObservedCall { .. } | ExecutionStop::ReachedSymbol { .. }
+    ) && matches!(right.stop, ExecutionStop::Returned { .. })
+        && !relation.returns.low
+        && !relation.returns.high
+        && !relation.observes_calls()
+}
+
 /// Replacement observations a comparison under `relation` examines.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ComparedObservations {

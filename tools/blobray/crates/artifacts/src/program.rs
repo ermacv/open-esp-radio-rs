@@ -301,6 +301,60 @@ pub fn execution_segments(
     Ok(())
 }
 
+/// Address of the defined code symbol at `index` of the static symbol table
+/// in section `table_section` of a static RV32 executable: a text or untyped
+/// symbol at an even address inside an executable section.
+pub fn code_symbol_at(
+    source: &dyn ByteSource,
+    table_section: u32,
+    index: u64,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<u32> {
+    use object::{Object, ObjectSection, ObjectSymbol, ObjectSymbolTable, SymbolKind};
+    let mut bytes = memory.bytes(
+        usize::try_from(source.len()).map_err(|_| invalid("ELF size overflow"))?,
+        control.position(),
+    )?;
+    source.read_at(0, &mut bytes, control)?;
+    let file = object::File::parse(&*bytes).map_err(|_| invalid("invalid executable ELF"))?;
+    if file.kind() != object::ObjectKind::Executable
+        || file.architecture() != object::Architecture::Riscv32
+    {
+        return Err(invalid("code symbols require a static RV32 executable"));
+    }
+    let object::File::Elf32(elf) = &file else {
+        return Err(invalid("code symbols require an ELF32 executable"));
+    };
+    let physical = elf.elf_symbol_table().section();
+    if physical.0 == 0 || physical.0 != table_section as usize {
+        return Err(invalid("symbol belongs to another physical table"));
+    }
+    let table = file
+        .symbol_table()
+        .ok_or_else(|| invalid("executable has no static symbol table"))?;
+    let symbol = table
+        .symbol_by_index(object::SymbolIndex(
+            usize::try_from(index).map_err(|_| invalid("symbol index overflow"))?,
+        ))
+        .map_err(|_| invalid("symbol index outside the table"))?;
+    let section = symbol
+        .section_index()
+        .and_then(|i| file.section_by_index(i).ok())
+        .ok_or_else(|| invalid("execution boundary is undefined/absolute"))?;
+    let address = symbol.address();
+    if symbol.is_undefined()
+        || !matches!(symbol.kind(), SymbolKind::Text | SymbolKind::Unknown)
+        || !matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & 4 != 0)
+        || address < section.address()
+        || address - section.address() >= section.size()
+        || address & 1 != 0
+    {
+        return Err(invalid("execution symbol is outside executable bytes"));
+    }
+    u32::try_from(address).map_err(|_| invalid("symbol address exceeds RV32"))
+}
+
 /// Defined, named code symbols of a static RV32 executable as (address, name),
 /// ascending by address and then name. Section and mapping symbols are omitted.
 pub fn code_symbols(

@@ -119,6 +119,55 @@ fn unsupported(what: &str) -> Error {
     )
 }
 
+/// The physical boundary of `goal`: a symbol goal names a code symbol of the
+/// standalone executable among `executables` whose content is its object.
+pub(crate) fn resolve_goal(
+    goal: &ExecutionGoal,
+    executables: &[&[u8]],
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<ResolvedExecutionGoal> {
+    let (point, include_tail) = match goal {
+        ExecutionGoal::Return => return Ok(ResolvedExecutionGoal::Return),
+        ExecutionGoal::ObserveDequeue { .. } => return Ok(ResolvedExecutionGoal::ObserveDequeue),
+        ExecutionGoal::ReachSymbol { target } => (target, None),
+        ExecutionGoal::ObserveCall {
+            target,
+            include_tail,
+        } => (target, Some(*include_tail)),
+    };
+    let symbol = &point.symbol;
+    if symbol.object.location != ObjectLocation::Standalone
+        || symbol.table != SymbolTableKind::Static
+    {
+        return Err(unsupported("symbol goals outside a standalone executable"));
+    }
+    let mut found = None;
+    for executable in executables {
+        control.checkpoint(executable.len() / 4096 + 1)?;
+        if ArtifactId::of_bytes(executable) == symbol.object.artifact {
+            found = Some(*executable);
+            break;
+        }
+    }
+    let executable =
+        found.ok_or_else(|| unsupported("symbol goals outside the side's executables"))?;
+    let address = blobray_artifacts::code_symbol_at(
+        &executable,
+        symbol.table_section,
+        symbol.index,
+        memory,
+        control,
+    )?;
+    Ok(match include_tail {
+        None => ResolvedExecutionGoal::ReachSymbol { address },
+        Some(include_tail) => ResolvedExecutionGoal::ObserveCall {
+            address,
+            include_tail,
+        },
+    })
+}
+
 /// Validate `input`, then run its request with the vendor side from `vendor`.
 fn run(
     input: &InProcessComparison<'_>,
@@ -131,12 +180,6 @@ fn run(
     // Capabilities this path does not have fail before anything else.
     for case in &request.cases {
         for invocation in std::iter::once(&case.vendor).chain(case.replacement.as_ref()) {
-            if !matches!(
-                invocation.goal,
-                ExecutionGoal::Return | ExecutionGoal::ObserveDequeue { .. }
-            ) {
-                return Err(unsupported("symbol goals"));
-            }
             if !invocation.tables.is_empty() {
                 return Err(unsupported("runtime tables"));
             }
@@ -179,6 +222,7 @@ fn run(
         })
         .collect::<Result<Vec<_>>>()?;
     let mut goals = Vec::with_capacity(request.cases.len());
+    let sides = [Some(input.vendor), input.replacement];
     for (phase, case) in request.cases.iter().enumerate() {
         control.checkpoint(1)?;
         let mut resolved = [None; 2];
@@ -186,10 +230,8 @@ fn run(
             .chain(case.replacement.as_ref())
             .enumerate()
         {
-            resolved[side] = Some(match &invocation.goal {
-                ExecutionGoal::ObserveDequeue { .. } => ResolvedExecutionGoal::ObserveDequeue,
-                _ => ResolvedExecutionGoal::Return,
-            });
+            let executables = sides[side].unwrap_or_default();
+            resolved[side] = Some(resolve_goal(&invocation.goal, executables, memory, control)?);
         }
         if let Some(relation) = &case.relation {
             if let Some(selected) = selected_effect_contract(Some(relation), &effects)? {

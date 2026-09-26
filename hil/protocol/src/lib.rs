@@ -66,6 +66,9 @@ pub use memory_benchmark::{
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
     FeatureCapabilities, Finished, FlowConfig, FlowTransportEvidence,
+    IEEE802154_AIR_CHECK_MAX_CYCLES, Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence,
+    Ieee802154AirCheckRequest, Ieee802154AirCheckStop, Ieee802154AirCycle,
+    Ieee802154AirEnergyOutcome, Ieee802154AirTransmit, Ieee802154AirTxOutcome,
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
     Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
     Ieee802154EventStatusProbeStop, Ieee802154ObservedEventState, Ieee802154PolledEdMaskState,

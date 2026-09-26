@@ -1836,3 +1836,114 @@ fn platform_boot_evidence_round_trips_without_a_radio_command() {
     });
     assert_eq!(observed, Some(expected));
 }
+
+#[test]
+fn ieee802154_air_check_validation_accepts_only_contract_bounds() {
+    use crate::{IEEE802154_AIR_CHECK_MAX_CYCLES, Ieee802154AirCheckRequest};
+    let valid = Ieee802154AirCheckRequest {
+        channel: 11,
+        cycles: 1,
+        energy_scan_micros: 128,
+        receive_window_millis: 1,
+        scheduled_lead_micros: 1_000,
+    };
+    assert!(valid.validate());
+    assert!(
+        Ieee802154AirCheckRequest {
+            channel: 26,
+            cycles: IEEE802154_AIR_CHECK_MAX_CYCLES as u8,
+            energy_scan_micros: 1_000_000,
+            receive_window_millis: 10_000,
+            scheduled_lead_micros: 1_000_000,
+        }
+        .validate()
+    );
+    for request in [
+        Ieee802154AirCheckRequest {
+            channel: 10,
+            ..valid
+        },
+        Ieee802154AirCheckRequest {
+            channel: 27,
+            ..valid
+        },
+        Ieee802154AirCheckRequest { cycles: 0, ..valid },
+        Ieee802154AirCheckRequest {
+            cycles: IEEE802154_AIR_CHECK_MAX_CYCLES as u8 + 1,
+            ..valid
+        },
+        Ieee802154AirCheckRequest {
+            energy_scan_micros: 127,
+            ..valid
+        },
+        Ieee802154AirCheckRequest {
+            receive_window_millis: 10_001,
+            ..valid
+        },
+        Ieee802154AirCheckRequest {
+            scheduled_lead_micros: 999,
+            ..valid
+        },
+    ] {
+        assert!(!request.validate());
+    }
+}
+
+#[test]
+fn ieee802154_air_check_command_and_evidence_fit_and_round_trip() {
+    use crate::{
+        IEEE802154_AIR_CHECK_MAX_CYCLES, Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence,
+        Ieee802154AirCheckRequest, Ieee802154AirCheckStop, Ieee802154AirCycle,
+        Ieee802154AirEnergyOutcome, Ieee802154AirTransmit, Ieee802154AirTxOutcome,
+    };
+    let transmit = Ieee802154AirTransmit {
+        outcome: Ieee802154AirTxOutcome::InvalidAcknowledgement,
+        requested_at_micros: u64::MAX,
+        done_at_micros: u64::MAX,
+    };
+    let cycle = Ieee802154AirCycle {
+        energy: Ieee802154AirEnergyOutcome::Energy(i8::MIN),
+        cca: Ieee802154AirCcaOutcome::Busy,
+        direct: transmit,
+        scheduled: [transmit; 2],
+        received_frames: u16::MAX,
+        strongest_rssi_dbm: Some(i8::MIN),
+    };
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        Command::RunIeee802154AirCheck(Ieee802154AirCheckRequest {
+            channel: 26,
+            cycles: 4,
+            energy_scan_micros: u32::MAX,
+            receive_window_millis: u32::MAX,
+            scheduled_lead_micros: u32::MAX,
+        }),
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        Event::Ieee802154AirCheckCompleted(Ieee802154AirCheckEvidence {
+            stop: Ieee802154AirCheckStop::Complete,
+            completed_cycles: u8::MAX,
+            cycles: [cycle; IEEE802154_AIR_CHECK_MAX_CYCLES],
+        }),
+    ));
+}
+
+fn round_trip<T>(message: Envelope<T>)
+where
+    T: WireBody + serde::Serialize + serde::de::DeserializeOwned + core::fmt::Debug + PartialEq,
+{
+    let mut encoder = FrameEncoder::new();
+    let frame = encoder.encode(&message).unwrap();
+    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(message));
+}

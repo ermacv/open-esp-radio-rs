@@ -58,6 +58,7 @@ pub const fn hil_capabilities() -> Capabilities {
             memory_benchmark: cfg!(feature = "memory-benchmark"),
             ieee802154_event_status_probe: cfg!(feature = "ieee802154-event-status-probe"),
             ieee802154_ed_event_probe: cfg!(feature = "ieee802154-ed-event-probe"),
+            ieee802154_air_check: cfg!(feature = "ieee802154-air-check"),
         },
         maximum_payload_bytes: if cfg!(feature = "memory-benchmark") {
             MEMORY_BENCHMARK_PAYLOAD_CAPACITY

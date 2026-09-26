@@ -1,0 +1,13 @@
+schema = 5
+id = "ieee802154-air-check"
+description = "Single-device IEEE 802.15.4 cycles on the shared radio arbiter: start, energy scan, CCA, direct transmit, two ETM-scheduled transmits, promiscuous receive window and stop"
+tags = ["ieee802154", "arbiter-client", "on-air", "energy-scan", "cca", "transmit", "scheduled-transmit", "etm", "receive", "lifecycle"]
+
+[ieee802154]
+kind = "air-check"
+boots = 2
+channel = 15
+cycles = 2
+energy_scan_micros = 5000
+receive_window_millis = 500
+scheduled_lead_micros = 20000

@@ -47,6 +47,10 @@ oer-network-interface = { path = "../../../crates/network/interface" }
 oer-esp32s31-ieee80211-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/ieee80211" }
 oer-esp32s31-hal = { path = "../../../crates/hardware/esp32s31/hal" }
 oer-esp32s31-radio-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/radio" }
+oer-esp32s31-ieee802154 = { path = "../../../crates/hardware/esp32s31/driver/ieee802154" }
+oer-esp32s31-ieee802154-runtime = { path = "../../../crates/runtime/esp32s31/ieee802154" }
+oer-esp32s31-ieee802154-system = { path = "../../../crates/composition/esp32s31/embassy/ieee802154" }
+oer-ieee802154 = { path = "../../../crates/protocols/ieee802154" }
 oer-esp32s31-executor-embassy = { path = "../../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }
 oer-esp32s31-ieee80211-system = { path = "../../../crates/composition/esp32s31/embassy/ieee80211", default-features = false }
 oer-esp32s31-pac = { path = "../../../crates/hardware/esp32s31/pac", features = ["validation-probes"] }

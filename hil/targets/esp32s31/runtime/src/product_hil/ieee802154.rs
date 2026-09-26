@@ -1,4 +1,10 @@
-//! Reset-isolated IEEE 802.15.4 validation probes and HIL evidence mapping.
+//! Reset-isolated IEEE 802.15.4 validation probes, the single-device air
+//! check and HIL evidence mapping.
+
+#[cfg(feature = "ieee802154-air-check")]
+mod air_check;
+#[cfg(feature = "ieee802154-air-check")]
+pub(super) use air_check::run_air_check;
 
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
@@ -80,9 +86,7 @@ use oer_hil_protocol::{Ieee802154ObservedEventState, Ieee802154ValidationEventEn
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-fn ieee802154_foundation(
-    _radio: EspHalRadioPeripheral,
-) -> Option<Ieee802154FoundationConfigured> {
+fn ieee802154_foundation(_radio: EspHalRadioPeripheral) -> Option<Ieee802154FoundationConfigured> {
     let (shared, partitions) = RadioHardware::take()?.into_concurrent(());
     let mut lease = shared.try_acquire().ok()?;
     let powered = Ieee802154Cold::from_partition(partitions.ieee802154)

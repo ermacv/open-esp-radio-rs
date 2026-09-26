@@ -29,10 +29,11 @@ level = "lower-primitive"
 id = "ieee802154-mac-operation-subset"
 composition = "production"
 scope = "The MAC engine ported from the public ESP-IDF driver owns RX with hardware and enhanced ACK, direct and CCA-gated TX with ACK reception, ED/CCA, timed TX/RX, the receive ring and the pending decision; the runtime serializes it with the MAC owners and queues its notifications"
-limits = "Host differential comparison with the compiled vendor driver covers the software sequence only; RF readiness, whole-radio composition, CSMA/CA and on-air behavior are not implied"
+limits = "Host differential comparison with the compiled vendor driver covers the software sequence only; the arbiter-client composition is qualified on hardware only by HIL runs, and CSMA/CA, peer exchange and calibrated RF behavior are not implied"
 source-paths = [
   "crates/hardware/esp32s31/driver/ieee802154/src/engine.rs",
   "crates/runtime/esp32s31/ieee802154/src/lib.rs",
+  "crates/composition/esp32s31/embassy/ieee802154/src/system.rs",
 ]
 
 [[capabilities]]
@@ -163,7 +164,7 @@ limitations = "Only the exact declared source scope is represented; source cover
 id = "active-interrupt-runtime"
 title = "Active source-132 interrupt runtime"
 scope = "Affine CPU route event acknowledgement bounded ISR classification task wake and route teardown"
-implementation = "incomplete"
+implementation = "complete"
 host = "covered"
 async = "incomplete"
 depends-on = [
@@ -172,8 +173,10 @@ depends-on = [
 vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/ieee802154-control.md",
 ]
+hil-requirements = [
+  { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
+]
 gaps = [
-  { axis = "implementation", id = "whole-radio-route-runtime-composition-missing" },
   { axis = "vendor", id = "active-route-and-concurrent-acknowledgement-proof-missing" },
   { axis = "hil", id = "level-triggered-route-and-same-bit-arrival-cell-missing" },
   { axis = "async", id = "bounded-async-evidence-missing" },
@@ -203,8 +206,11 @@ depends-on = [
 vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/ieee802154-dataplane.md",
 ]
+hil-requirements = [
+  { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
+]
 gaps = [
-  { axis = "implementation", id = "phy-ready-whole-radio-mac-composition-missing" },
+  { axis = "implementation", id = "periodic-phy-tracking-while-running-missing" },
   { axis = "implementation", id = "public-operational-mac-service-missing" },
   { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
   { axis = "hil", id = "on-air-rx-tx-ack-and-filtering-cells-missing" },

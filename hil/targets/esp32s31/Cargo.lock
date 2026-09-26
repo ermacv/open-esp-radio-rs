@@ -1544,6 +1544,57 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-ieee802154"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-ieee802154",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-radio"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee802154",
+ "oer-ieee802154",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee802154",
+ "oer-esp32s31-ieee802154-radio",
+ "oer-ieee802154",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee802154-system"
+version = "0.1.0"
+dependencies = [
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "esp-hal",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee802154",
+ "oer-esp32s31-ieee802154-esp-hal",
+ "oer-esp32s31-ieee802154-runtime",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-phy-runtime",
+]
+
+[[package]]
 name = "oer-esp32s31-pac"
 version = "0.1.0"
 dependencies = [
@@ -1639,6 +1690,9 @@ dependencies = [
  "oer-esp32s31-ieee80211-mac",
  "oer-esp32s31-ieee80211-runtime",
  "oer-esp32s31-ieee80211-system",
+ "oer-esp32s31-ieee802154",
+ "oer-esp32s31-ieee802154-runtime",
+ "oer-esp32s31-ieee802154-system",
  "oer-esp32s31-phy",
  "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
@@ -1650,6 +1704,7 @@ dependencies = [
  "oer-hil-target-core",
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
+ "oer-ieee802154",
  "oer-network-interface",
  "open-esp-radio",
  "postcard",
@@ -1753,6 +1808,10 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
 ]
+
+[[package]]
+name = "oer-ieee802154"
+version = "0.1.0"
 
 [[package]]
 name = "oer-memory"

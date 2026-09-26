@@ -26,6 +26,8 @@ pub enum PreInitializationRequest {
     Ieee802154EventStatus(Ieee802154EventStatusProbe),
     #[cfg(feature = "ieee802154-ed-event-probe")]
     Ieee802154EdEvent(Ieee802154EdEventProbe),
+    #[cfg(feature = "ieee802154-air-check")]
+    Ieee802154AirCheck(Ieee802154AirCheck),
 }
 
 /// Queues one best-effort diagnostic line on the runtime USB transport.
@@ -66,27 +68,9 @@ pub fn set_wifi_role(role: WifiRole) {
 
 /// Waits without polling until the host chooses the boot's unique radio owner.
 pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
-    #[cfg(all(
-        feature = "ieee802154-event-status-probe",
-        feature = "ieee802154-ed-event-probe"
-    ))]
-    {
-        match select3(
-            STARTUP_CONFIGURATIONS.receive(),
-            IEEE802154_EVENT_STATUS_PROBES.receive(),
-            IEEE802154_ED_EVENT_PROBES.receive(),
-        )
-        .await
-        {
-            Either3::First(configuration) => PreInitializationRequest::Startup(configuration),
-            Either3::Second(probe) => PreInitializationRequest::Ieee802154EventStatus(probe),
-            Either3::Third(probe) => PreInitializationRequest::Ieee802154EdEvent(probe),
-        }
-    }
-    #[cfg(all(
-        feature = "ieee802154-event-status-probe",
-        not(feature = "ieee802154-ed-event-probe")
-    ))]
+    // The IEEE 802.15.4 diagnostic images are mutually exclusive, so at most
+    // one diagnostic channel competes with startup.
+    #[cfg(feature = "ieee802154-event-status-probe")]
     {
         match select(
             STARTUP_CONFIGURATIONS.receive(),
@@ -98,10 +82,7 @@ pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
             Either::Second(probe) => PreInitializationRequest::Ieee802154EventStatus(probe),
         }
     }
-    #[cfg(all(
-        feature = "ieee802154-ed-event-probe",
-        not(feature = "ieee802154-event-status-probe")
-    ))]
+    #[cfg(feature = "ieee802154-ed-event-probe")]
     {
         match select(
             STARTUP_CONFIGURATIONS.receive(),
@@ -113,10 +94,19 @@ pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
             Either::Second(probe) => PreInitializationRequest::Ieee802154EdEvent(probe),
         }
     }
-    #[cfg(not(any(
-        feature = "ieee802154-event-status-probe",
-        feature = "ieee802154-ed-event-probe"
-    )))]
+    #[cfg(feature = "ieee802154-air-check")]
+    {
+        match select(
+            STARTUP_CONFIGURATIONS.receive(),
+            IEEE802154_AIR_CHECKS.receive(),
+        )
+        .await
+        {
+            Either::First(configuration) => PreInitializationRequest::Startup(configuration),
+            Either::Second(check) => PreInitializationRequest::Ieee802154AirCheck(check),
+        }
+    }
+    #[cfg(not(feature = "ieee802154-diagnostic"))]
     {
         PreInitializationRequest::Startup(STARTUP_CONFIGURATIONS.receive().await)
     }

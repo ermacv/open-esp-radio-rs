@@ -60,7 +60,8 @@
     "system/memory-benchmark": true,
     "system/timebase": true,
     "ieee802154/event-status": false,
-    "ieee802154/ed-event": true
+    "ieee802154/ed-event": true,
+    "ieee802154/air-check": true
   },
   "build": {
     "profile": "debug"

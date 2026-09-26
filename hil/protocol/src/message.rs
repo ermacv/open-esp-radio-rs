@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 169;
+pub const PROTOCOL_VERSION: u16 = 170;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -189,6 +189,8 @@ pub struct FeatureCapabilities {
     /// This image can run the bounded ED-DONE/TIMER0 selective-write
     /// discriminator and retain RX-ABORT diagnostics.
     pub ieee802154_ed_event_probe: bool,
+    /// This image can run the single-device IEEE 802.15.4 on-air check.
+    pub ieee802154_air_check: bool,
 }
 
 /// Bounded alarm/clock agreement probe. It is intentionally independent of
@@ -513,6 +515,8 @@ pub enum Command {
     ProbeIeee802154EventStatus(Ieee802154EventStatusProbeRequest),
     /// Run the bounded ED-DONE/TIMER0 selective-write discriminator.
     ProbeIeee802154EdEvent(Ieee802154EdEventProbeRequest),
+    /// Run the single-device IEEE 802.15.4 on-air check.
+    RunIeee802154AirCheck(Ieee802154AirCheckRequest),
     UploadStartupArtifact(StartupArtifactChunk),
     /// Initialize calibration and the network stack without materializing a
     /// Wi-Fi role. This command is accepted exactly once per boot.
@@ -1154,6 +1158,11 @@ pub enum Event {
     Ieee802154EventStatusProbeCompleted(Ieee802154EventStatusProbeEvidence),
     /// Correlated observation from [`Command::ProbeIeee802154EdEvent`].
     Ieee802154EdEventProbeCompleted(Ieee802154EdEventProbeEvidence),
+    /// Correlated observation from [`Command::RunIeee802154AirCheck`].
+    ///
+    /// It records single-device outcomes only; it does not attest to a peer
+    /// receiving the transmitted frames or to calibrated output power.
+    Ieee802154AirCheckCompleted(Ieee802154AirCheckEvidence),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),

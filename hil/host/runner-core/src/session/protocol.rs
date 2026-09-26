@@ -1213,6 +1213,21 @@ impl SerialCapture {
         }
     }
 
+    pub fn run_ieee802154_air_check(
+        &self,
+        request: Ieee802154AirCheckRequest,
+        timeout: Duration,
+    ) -> Result<Ieee802154AirCheckEvidence> {
+        let response = self.send_command(0, Command::RunIeee802154AirCheck(request), timeout)?;
+        match response.body {
+            Event::Ieee802154AirCheckCompleted(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 air check: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 air check response".into()),
+        }
+    }
+
     pub fn request_station_start(&self, target: Target<'_>) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
             Command::StartStation(target.lab.station.protocol_credentials()?),

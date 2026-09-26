@@ -117,6 +117,12 @@ pub fn classify_flashed_capabilities(
         return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
             .then_some(ImageClass::DiagnosticRxOwnership);
     }
+    if features.ieee802154_air_check {
+        let mut control = *features;
+        control.ieee802154_air_check = false;
+        return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
+            .then_some(ImageClass::DiagnosticIeee802154AirCheck);
+    }
     if features.phy_rx_hot_sram {
         let mut control = *features;
         control.phy_rx_hot_sram = false;

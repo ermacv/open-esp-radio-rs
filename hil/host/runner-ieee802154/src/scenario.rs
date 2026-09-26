@@ -17,6 +17,31 @@ use crate::{Result, workload::ieee802154};
 pub enum Ieee802154Scenario {
     EventStatus(Diagnostic),
     EdEvent(Diagnostic),
+    AirCheck(AirCheck),
+}
+
+/// The single-device on-air check.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AirCheck {
+    pub boots: u8,
+    pub channel: u8,
+    pub cycles: u8,
+    pub energy_scan_micros: u32,
+    pub receive_window_millis: u32,
+    pub scheduled_lead_micros: u32,
+}
+
+impl AirCheck {
+    fn request(self) -> oer_hil_protocol::Ieee802154AirCheckRequest {
+        oer_hil_protocol::Ieee802154AirCheckRequest {
+            channel: self.channel,
+            cycles: self.cycles,
+            energy_scan_micros: self.energy_scan_micros,
+            receive_window_millis: self.receive_window_millis,
+            scheduled_lead_micros: self.scheduled_lead_micros,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -28,34 +53,39 @@ pub struct Diagnostic {
 }
 
 impl Ieee802154Scenario {
-    fn diagnostic(&self) -> Diagnostic {
-        match self {
-            Self::EventStatus(diagnostic) | Self::EdEvent(diagnostic) => *diagnostic,
-        }
-    }
-
     pub fn validate(&self) -> Result<()> {
-        let diagnostic = self.diagnostic();
-        bounded(diagnostic.boots, 1, 20, "boots")?;
-        bounded(diagnostic.poll_limit, 1, 1_000_000, "poll_limit")?;
-        bounded(diagnostic.timer_threshold, 1, 1_000, "timer_threshold")
+        match self {
+            Self::EventStatus(diagnostic) | Self::EdEvent(diagnostic) => {
+                bounded(diagnostic.boots, 1, 20, "boots")?;
+                bounded(diagnostic.poll_limit, 1, 1_000_000, "poll_limit")?;
+                bounded(diagnostic.timer_threshold, 1, 1_000, "timer_threshold")
+            }
+            Self::AirCheck(check) => {
+                bounded(check.boots, 1, 20, "boots")?;
+                if check.request().validate() {
+                    Ok(())
+                } else {
+                    Err("IEEE 802.15.4 air check bounds are outside the wire contract".into())
+                }
+            }
+        }
     }
 
     pub fn plan(&self) -> Plan {
         Plan::target_only(match self {
             Self::EventStatus(_) => ImageClass::DiagnosticIeee802154EventStatus,
             Self::EdEvent(_) => ImageClass::DiagnosticIeee802154EdEvent,
+            Self::AirCheck(_) => ImageClass::DiagnosticIeee802154AirCheck,
         })
     }
 
     pub fn run(&self, output: &Path, context: &Context<'_>) -> Result<()> {
-        let Diagnostic {
-            boots,
-            poll_limit,
-            timer_threshold,
-        } = self.diagnostic();
-        match self {
-            Self::EventStatus(_) => ieee802154::event_status::run(
+        match *self {
+            Self::EventStatus(Diagnostic {
+                boots,
+                poll_limit,
+                timer_threshold,
+            }) => ieee802154::event_status::run(
                 ieee802154::event_status::Config {
                     boots,
                     poll_limit,
@@ -64,11 +94,23 @@ impl Ieee802154Scenario {
                 output,
                 context,
             ),
-            Self::EdEvent(_) => ieee802154::ed_event::run(
+            Self::EdEvent(Diagnostic {
+                boots,
+                poll_limit,
+                timer_threshold,
+            }) => ieee802154::ed_event::run(
                 ieee802154::ed_event::Config {
                     boots,
                     poll_limit,
                     timer_threshold,
+                },
+                output,
+                context,
+            ),
+            Self::AirCheck(check) => ieee802154::air_check::run(
+                ieee802154::air_check::Config {
+                    boots: check.boots,
+                    request: check.request(),
                 },
                 output,
                 context,
@@ -99,5 +141,19 @@ mod tests {
             .unwrap();
             assert!(excessive.validate().is_err());
         }
+    }
+
+    #[test]
+    fn the_air_check_implies_its_image_and_bounds_its_request() {
+        let table = "kind = 'air-check'\nboots = 1\nchannel = 15\ncycles = 2\nenergy_scan_micros = 5000\nreceive_window_millis = 200\nscheduled_lead_micros = 20000";
+        let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
+        scenario.validate().unwrap();
+        assert_eq!(
+            scenario.plan(),
+            Plan::target_only(ImageClass::DiagnosticIeee802154AirCheck)
+        );
+        let invalid: Ieee802154Scenario =
+            toml::from_str(&table.replace("channel = 15", "channel = 27")).unwrap();
+        assert!(invalid.validate().is_err());
     }
 }

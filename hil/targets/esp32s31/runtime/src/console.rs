@@ -24,6 +24,8 @@ use esp_hal::{
     peripherals::USB_DEVICE,
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
+#[cfg(feature = "ieee802154-air-check")]
+use oer_hil_protocol::Ieee802154AirCheckRequest;
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use oer_hil_protocol::Ieee802154EdEventProbeRequest;
 #[cfg(feature = "ieee802154-event-status-probe")]
@@ -128,6 +130,10 @@ static IEEE802154_EVENT_STATUS_PROBES: Channel<
 #[unsafe(link_section = ".critical.data.logging")]
 static IEEE802154_ED_EVENT_PROBES: Channel<CriticalSectionRawMutex, Ieee802154EdEventProbe, 1> =
     Channel::new();
+#[cfg(feature = "ieee802154-air-check")]
+#[unsafe(link_section = ".critical.data.logging")]
+static IEEE802154_AIR_CHECKS: Channel<CriticalSectionRawMutex, Ieee802154AirCheck, 1> =
+    Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
@@ -225,6 +231,12 @@ pub struct Ieee802154EventStatusProbe {
 pub struct Ieee802154EdEventProbe {
     pub request_id: u32,
     pub request: Ieee802154EdEventProbeRequest,
+}
+
+#[cfg(feature = "ieee802154-air-check")]
+pub struct Ieee802154AirCheck {
+    pub request_id: u32,
+    pub request: Ieee802154AirCheckRequest,
 }
 
 #[derive(Clone, Copy)]
@@ -893,15 +905,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
     // Once this owner-consuming diagnostic has been queued, normal radio
     // initialization must not race it. The diagnostic image is one-shot and
     // publishes its completion before the product task returns.
-    #[cfg(any(
-        feature = "ieee802154-event-status-probe",
-        feature = "ieee802154-ed-event-probe"
-    ))]
+    #[cfg(feature = "ieee802154-diagnostic")]
     let mut ieee802154_diagnostic_requested = false;
-    #[cfg(not(any(
-        feature = "ieee802154-event-status-probe",
-        feature = "ieee802154-ed-event-probe"
-    )))]
+    #[cfg(not(feature = "ieee802154-diagnostic"))]
     let ieee802154_diagnostic_requested = false;
     // One slot per physical STA+AP network endpoint. A slot is keyed by its
     // opaque session ID and no two live slots may target the same interface.
@@ -1111,6 +1117,54 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                     }
                                 }
                                 #[cfg(not(feature = "ieee802154-ed-event-probe"))]
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(RejectReason::Unsupported),
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    Command::RunIeee802154AirCheck(request) => {
+                        let admission = ieee802154_event_status_probe_admission(
+                            capabilities.features.ieee802154_air_check,
+                            initialized,
+                            state == SessionState::WaitingForInitialization,
+                            session_id,
+                            ieee802154_diagnostic_requested,
+                            request.validate(),
+                        );
+                        match admission {
+                            Ieee802154EventStatusProbeAdmission::Reject(reason) => {
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(reason),
+                                )
+                                .await;
+                            }
+                            Ieee802154EventStatusProbeAdmission::Admit => {
+                                #[cfg(feature = "ieee802154-air-check")]
+                                {
+                                    if IEEE802154_AIR_CHECKS
+                                        .try_send(Ieee802154AirCheck {
+                                            request_id,
+                                            request,
+                                        })
+                                        .is_err()
+                                    {
+                                        publish_event_reliably(
+                                            session_id,
+                                            request_id,
+                                            Event::Rejected(RejectReason::Busy),
+                                        )
+                                        .await;
+                                    } else {
+                                        ieee802154_diagnostic_requested = true;
+                                    }
+                                }
+                                #[cfg(not(feature = "ieee802154-air-check"))]
                                 publish_event_reliably(
                                     session_id,
                                     request_id,

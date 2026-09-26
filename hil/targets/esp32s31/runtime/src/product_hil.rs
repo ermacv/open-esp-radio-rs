@@ -1504,16 +1504,10 @@ pub async fn run(
     watchdog: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
 ) {
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
-    #[cfg(not(any(
-        feature = "ieee802154-event-status-probe",
-        feature = "ieee802154-ed-event-probe"
-    )))]
+    #[cfg(not(feature = "ieee802154-diagnostic"))]
     let PreInitializationRequest::Startup(startup) =
         crate::console::receive_pre_initialization_request().await;
-    #[cfg(any(
-        feature = "ieee802154-event-status-probe",
-        feature = "ieee802154-ed-event-probe"
-    ))]
+    #[cfg(feature = "ieee802154-diagnostic")]
     let startup = match crate::console::receive_pre_initialization_request().await {
         PreInitializationRequest::Startup(configuration) => configuration,
         #[cfg(feature = "ieee802154-event-status-probe")]
@@ -1534,6 +1528,19 @@ pub async fn run(
                 0,
                 probe.request_id,
                 HilEvent::Ieee802154EdEventProbeCompleted(evidence),
+            )
+            .await;
+            return;
+        }
+        #[cfg(feature = "ieee802154-air-check")]
+        PreInitializationRequest::Ieee802154AirCheck(check) => {
+            // The check holds the composition's bring-up future; pin it in place.
+            let air_check = core::pin::pin!(ieee802154::run_air_check(platform, check.request));
+            let evidence = air_check.await;
+            publish_event_reliably(
+                0,
+                check.request_id,
+                HilEvent::Ieee802154AirCheckCompleted(evidence),
             )
             .await;
             return;

@@ -144,6 +144,15 @@ pub(super) fn observations(
                     );
                 }
             }
+            Event::Ieee802154AirCheckCompleted(value) => {
+                add(
+                    &mut records,
+                    &request,
+                    "ieee802154.air-check.completed-cycles",
+                    value.completed_cycles.into(),
+                    Unit::Count,
+                );
+            }
             Event::Ieee802154EventStatusProbeCompleted(_) => {
                 add(
                     &mut records,

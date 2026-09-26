@@ -189,7 +189,7 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 23);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 24);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -237,6 +237,38 @@ fn image_classes_are_stable_and_do_not_use_workload_environment() {
         crate::image::ImageClass::DiagnosticIeee802154EdEvent.runtime_features(),
         "open-radio-hil,ieee802154-ed-event-probe,psram-task-stack,code-psram,profile-psram-data"
     );
+    assert_eq!(
+        crate::image::ImageClass::DiagnosticIeee802154AirCheck.runtime_features(),
+        "open-radio-hil,ieee802154-air-check,psram-task-stack,code-psram,profile-psram-data"
+    );
+}
+
+#[test]
+fn the_air_check_image_is_the_performance_image_with_its_check() {
+    use crate::image::ImageClass;
+    use oer_hil_protocol::FeatureCapabilities;
+
+    let performance = FeatureCapabilities {
+        psram_task_stack: true,
+        ..FeatureCapabilities::default()
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&performance),
+        Some(ImageClass::Performance)
+    );
+    let air_check = FeatureCapabilities {
+        ieee802154_air_check: true,
+        ..performance
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&air_check),
+        Some(ImageClass::DiagnosticIeee802154AirCheck)
+    );
+    let mixed = FeatureCapabilities {
+        ieee802154_ed_event_probe: true,
+        ..air_check
+    };
+    assert_eq!(classify_flashed_capabilities(&mixed), None);
 }
 
 #[test]

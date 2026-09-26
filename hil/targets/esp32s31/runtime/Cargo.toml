@@ -117,10 +117,14 @@ rx-ownership-telemetry = [
     "oer-hil-esp32s31-telemetry/rx-ownership-observation",
     "dep:oer-esp32s31-ieee80211-dma",
 ]
+# Internal marker of every IEEE 802.15.4 image that consumes the radio before
+# initialization; the images are mutually exclusive.
+ieee802154-diagnostic = []
 # Diagnostic-only, bounded discriminator for the IEEE 802.15.4 EVENT_STATUS
 # timer bits. It reads both source-132 route controls but never writes a route
 # or attests that the production IRQ path is ready.
 ieee802154-event-status-probe = [
+    "ieee802154-diagnostic",
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-radio-esp-hal",
     "oer-esp32s31-hal/validation-probes",
@@ -128,9 +132,23 @@ ieee802154-event-status-probe = [
 # Diagnostic-only ED-DONE/TIMER0 selective-write discriminator.
 # RX-ABORT is retained explicitly when PHY/RF/BTBB readiness is absent.
 ieee802154-ed-event-probe = [
+    "ieee802154-diagnostic",
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-radio-esp-hal",
     "oer-esp32s31-hal/validation-probes",
+]
+# Single-device on-air check of the composed IEEE 802.15.4 client on the
+# shared radio arbiter: start, ED, CCA, direct and scheduled transmits, a
+# receive window and stop.
+ieee802154-air-check = [
+    "ieee802154-diagnostic",
+    "dep:oer-esp32s31-hal",
+    "dep:oer-esp32s31-phy",
+    "dep:oer-esp32s31-radio-esp-hal",
+    "dep:oer-esp32s31-ieee802154",
+    "dep:oer-esp32s31-ieee802154-runtime",
+    "dep:oer-esp32s31-ieee802154-system",
+    "dep:oer-ieee802154",
 ]
 
 [dependencies]
@@ -157,6 +175,10 @@ oer-esp32s31-ieee80211-system = { workspace = true, optional = true }
 oer-esp32s31-hal = { workspace = true, optional = true }
 oer-esp32s31-phy = { workspace = true, optional = true }
 oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
+oer-esp32s31-ieee802154 = { workspace = true, optional = true }
+oer-esp32s31-ieee802154-runtime = { workspace = true, optional = true }
+oer-esp32s31-ieee802154-system = { workspace = true, optional = true }
+oer-ieee802154 = { workspace = true, optional = true }
 oer-esp32s31-soc-esp-hal.workspace = true
 oer-esp32s31-executor-embassy.workspace = true
 oer-esp32s31-ieee80211-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }

@@ -16,6 +16,7 @@ results, work plans or product readiness declarations.
 | [IEEE 802.15.4 lifecycle](ieee802154-lifecycle.md) | Clock/reset, MAC foundation and reviewed register semantics |
 | [IEEE 802.15.4 dataplane](ieee802154-dataplane.md) | Static policy, frame storage and IRQ ownership |
 | [IEEE 802.15.4 control](ieee802154-control.md) | Ordered state transitions, STOP and timers |
+| [IEEE 802.15.4 driver port](ieee802154-driver-port.md) | Complete open driver ledger, closed dependencies and ownership map |
 
 The [project](../README.md) owns input selection, scopes and comparison policy.
 [Registers](../../../../../registers/README.md) owns reviewed hardware models

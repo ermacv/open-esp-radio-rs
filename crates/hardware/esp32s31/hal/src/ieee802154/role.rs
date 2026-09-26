@@ -102,11 +102,11 @@ impl<P> OwnedIeee802154Backend<P> {
 impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
     fn configure_modem_clock_maps(&mut self) {
         self.task.configure_modem_syscon_clock_maps();
-        self.task.prepare_shared_modem_clock_map();
+        self.task.radio_phy_mut().prepare_shared_modem_clock_map();
     }
 
     fn configure_modem_source_clock(&mut self) {
-        self.task.configure_modem_source_clocks();
+        self.task.radio_phy_mut().configure_modem_source_clocks();
     }
 
     fn enable_wifi_bb_80x1_clock(&mut self) {
@@ -149,8 +149,8 @@ impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
     }
 
     fn ieee802154_clock_readback(&self) -> Ieee802154ClockReadback {
-        let platform = self.task.platform_clock_power_observation();
-        let shared = self.task.shared_modem_clock_observation();
+        let platform = self.task.radio_phy().platform_clock_power_observation();
+        let shared = self.task.radio_phy().shared_modem_clock_observation();
         let modem = self.task.modem_syscon_ieee802154_clock_observation();
         Ieee802154ClockReadback {
             modem_clock_maps_configured: modem.active_clock_map_configured

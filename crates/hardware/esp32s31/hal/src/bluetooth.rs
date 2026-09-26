@@ -165,7 +165,7 @@ impl ColdOwner {
 
     #[doc(hidden)]
     pub fn prepare_shared_modem_clock_map(&mut self) {
-        self.task.prepare_shared_modem_clock_map();
+        self.task.radio_phy_mut().prepare_shared_modem_clock_map();
     }
 
     #[doc(hidden)]
@@ -214,7 +214,7 @@ impl ColdOwner {
 
     #[doc(hidden)]
     pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.task.platform_clock_power_observation()
+        self.task.radio_phy().platform_clock_power_observation()
     }
 
     #[doc(hidden)]

@@ -38,7 +38,7 @@ use oer_hil_protocol::{
 };
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, RadioCommand, RequestId,
-    TxMode, TxRequest,
+    TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, tx_outcome};
@@ -168,6 +168,7 @@ impl Session {
             mode,
             transmit_power_dbm: None,
             max_frame_retries: request.max_frame_retries,
+            security: TxSecurity::Radio,
         })) {
             evidence.result = result;
             return evidence;
@@ -183,6 +184,7 @@ impl Session {
                     id: done,
                     status,
                     acknowledgement,
+                    ..
                 }) if done == id => {
                     evidence.result = Ieee802154SessionResult::Done;
                     evidence.outcome = tx_outcome(status);

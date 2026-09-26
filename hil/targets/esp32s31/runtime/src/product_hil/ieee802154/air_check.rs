@@ -17,7 +17,7 @@ use oer_hil_protocol::{
 };
 use oer_ieee802154::{
     Channel, Configuration, EnergyScanRequest, FrameView, RadioCommand, RadioTimestamp, RequestId,
-    TxMode, TxRequest,
+    TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, now_micros, tx_outcome};
@@ -133,6 +133,7 @@ async fn run_cycle(
         mode: TxMode::Direct,
         transmit_power_dbm: None,
         max_frame_retries: 0,
+        security: TxSecurity::Radio,
     }))?;
     cycle.direct = transmitted(system, requested_at_micros).await?;
 
@@ -147,6 +148,7 @@ async fn run_cycle(
             },
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: TxSecurity::Radio,
         }))?;
         *scheduled = transmitted(system, at).await?;
     }

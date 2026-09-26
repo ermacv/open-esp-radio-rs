@@ -219,6 +219,11 @@ serialized by one mechanism:
   `wifi_client::join_wifi` and `leave_wifi` do this for Wi-Fi on the HAL's
   clocked Wi-Fi owner (`esp_phy_enable`/`esp_phy_disable(PHY_MODEM_WIFI)`),
   as `ieee802154_client` does for IEEE 802.15.4 with its BTBB reference;
+- `select_concurrent_wifi_channel` and `switch_concurrent_wifi_channel` tune
+  the shared domain for Wi-Fi through the HAL Wi-Fi client's channel HAL,
+  which it lends together with the arbiter attachment; the switch stops and
+  restarts the Wi-Fi MAC around the retune, as the registered Wi-Fi route
+  does;
 - `evaluate_periodic_tracking` and an acquisition that needs initial tracking
   leave the domain pending, and no client operation proceeds until it settles;
 - `admit_maintenance` checks, without register access, whether pending

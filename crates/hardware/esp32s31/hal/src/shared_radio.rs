@@ -638,6 +638,32 @@ impl<T> SharedRadioLease<'_, T> {
         Ok(())
     }
 
+    /// Borrow the shared PHY registers with the route restore state, for a
+    /// protocol capability that also borrows its own registers.
+    pub(crate) fn phy_parts_mut(
+        &mut self,
+    ) -> (&mut oer_esp32s31_pac::RadioPhyRegisters, &mut PhyRouteState) {
+        let state = self.state_mut();
+        (state.registers.radio_phy_mut(), &mut state.phy)
+    }
+
+    /// Borrow the shared PHY registers, the route restore state and the
+    /// attachment together.
+    pub(crate) fn phy_parts_with_attachment(
+        &mut self,
+    ) -> (
+        &mut oer_esp32s31_pac::RadioPhyRegisters,
+        &mut PhyRouteState,
+        &mut T,
+    ) {
+        let state = self.state_mut();
+        (
+            state.registers.radio_phy_mut(),
+            &mut state.phy,
+            &mut state.attachment,
+        )
+    }
+
     /// Borrow the shared PHY for one PHY-layer operation.
     pub fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Shared> {
         let state = self.state_mut();

@@ -110,6 +110,8 @@ pub enum ConcurrentPhyError {
     Time(PhyTrackTimeError),
     /// An active client presented no quiescence proof.
     MissingQuiescence(PhyModemClient),
+    /// The client this operation serves is not in the domain's client set.
+    ClientAbsent(PhyModemClient),
     /// The PHY clock is behind a proof's paired sample.
     ClockBehindProof,
     /// A proof's window has already closed.
@@ -269,6 +271,18 @@ impl ConcurrentPhy {
     /// Borrow the registered domain when every active client is settled.
     pub(crate) fn settled(&self) -> Result<&PhyDomain, ConcurrentPhyError> {
         match &self.slot {
+            Slot::Registered(domain) => Ok(domain),
+            Slot::Empty => Err(ConcurrentPhyError::NotRegistered),
+            Slot::RfClosed(_) => Err(ConcurrentPhyError::RfClosed),
+            Slot::Pending { .. } => Err(ConcurrentPhyError::TrackingPending),
+            Slot::Poisoned => Err(ConcurrentPhyError::Poisoned),
+        }
+    }
+
+    /// Mutably borrow the registered domain when every active client is
+    /// settled.
+    pub(crate) fn settled_mut(&mut self) -> Result<&mut PhyDomain, ConcurrentPhyError> {
+        match &mut self.slot {
             Slot::Registered(domain) => Ok(domain),
             Slot::Empty => Err(ConcurrentPhyError::NotRegistered),
             Slot::RfClosed(_) => Err(ConcurrentPhyError::RfClosed),

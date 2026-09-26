@@ -11,8 +11,7 @@
 use core::ops::{Deref, DerefMut};
 
 use oer_esp32s31_pac::{
-    BluetoothTaskRegisters, CoexistenceLowPowerClockObservation, RadioPhyRegisters,
-    SharedRadioRegisters, WifiRadioRegisters,
+    BluetoothTaskRegisters, RadioPhyRegisters, SharedRadioRegisters, WifiRadioRegisters,
 };
 
 /// Wi-Fi MAC register set and the shared radio owner of one exclusive route.
@@ -40,18 +39,16 @@ impl WifiRegisters {
         &mut self.shared
     }
 
+    pub(crate) const fn shared(&self) -> &SharedRadioRegisters {
+        &self.shared
+    }
+
     pub(crate) const fn radio_phy(&self) -> &RadioPhyRegisters {
         self.shared.radio_phy()
     }
 
     pub(crate) fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
         self.shared.radio_phy_mut()
-    }
-
-    pub(crate) fn sample_coexistence_low_power_clock(
-        &self,
-    ) -> Option<CoexistenceLowPowerClockObservation> {
-        self.shared.sample_coexistence_low_power_clock()
     }
 }
 

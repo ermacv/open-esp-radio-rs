@@ -5,7 +5,7 @@ use core::cell::RefMut;
 
 use crate::{owner::SharedPhyAccess, phy::restore::PhyRouteState};
 
-use oer_esp32s31_pac::RadioPhyRegisters;
+use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
 
 /// Temporary channel-programming borrow from the unique [`crate::owner::Radio`] owner.
 ///
@@ -15,21 +15,30 @@ use oer_esp32s31_pac::RadioPhyRegisters;
 enum ChannelRegisters<'radio> {
     Owned(&'radio mut WifiRegisters, &'radio mut PhyRouteState),
     Published(RefMut<'radio, WifiRegisters>, RefMut<'radio, PhyRouteState>),
+    /// A concurrent client's MAC with the shared PHY and route restore state
+    /// borrowed from the arbiter lease.
+    Leased {
+        mac: &'radio mut WifiRadioRegisters,
+        phy: &'radio mut RadioPhyRegisters,
+        restore: &'radio mut PhyRouteState,
+    },
 }
 
 #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
 impl ChannelRegisters<'_> {
-    fn get(&self) -> &WifiRegisters {
+    fn mac_mut(&mut self) -> &mut WifiRadioRegisters {
         match self {
             Self::Owned(registers, _) => registers,
             Self::Published(registers, _) => registers,
+            Self::Leased { mac, .. } => mac,
         }
     }
 
-    fn get_mut(&mut self) -> &mut WifiRegisters {
+    fn radio_phy(&self) -> &RadioPhyRegisters {
         match self {
-            Self::Owned(registers, _) => registers,
-            Self::Published(registers, _) => registers,
+            Self::Owned(registers, _) => registers.radio_phy(),
+            Self::Published(registers, _) => registers.radio_phy(),
+            Self::Leased { phy, .. } => phy,
         }
     }
 
@@ -37,6 +46,7 @@ impl ChannelRegisters<'_> {
         match self {
             Self::Owned(_, state) => state,
             Self::Published(_, state) => state,
+            Self::Leased { restore, .. } => restore,
         }
     }
 
@@ -44,6 +54,7 @@ impl ChannelRegisters<'_> {
         match self {
             Self::Owned(registers, restore) => (registers.radio_phy_mut(), restore),
             Self::Published(registers, restore) => (registers.radio_phy_mut(), restore),
+            Self::Leased { phy, restore, .. } => (phy, restore),
         }
     }
 }
@@ -67,6 +78,18 @@ impl<'radio, P> RadioChannelHal<'radio, P> {
         }
     }
 
+    pub(crate) fn from_leased(
+        platform: &'radio mut P,
+        mac: &'radio mut WifiRadioRegisters,
+        phy: &'radio mut RadioPhyRegisters,
+        restore: &'radio mut PhyRouteState,
+    ) -> Self {
+        Self {
+            platform,
+            registers: ChannelRegisters::Leased { mac, phy, restore },
+        }
+    }
+
     pub(crate) fn from_published(
         platform: &'radio mut P,
         registers: RefMut<'radio, WifiRegisters>,
@@ -81,7 +104,7 @@ impl<'radio, P> RadioChannelHal<'radio, P> {
 
 impl<P> crate::sealed::SharedPhyAccess for RadioChannelHal<'_, P> {
     fn pac(&self) -> &oer_esp32s31_pac::RadioPhyRegisters {
-        self.registers.get().radio_phy()
+        self.registers.radio_phy()
     }
 
     fn route_state(&self) -> &PhyRouteState {
@@ -151,17 +174,16 @@ impl<P> RadioChannelHal<'_, P> {
     }
 
     pub fn request_mac_stop(&mut self) {
-        crate::ieee80211::mac::WifiMacHal::from_owned(self.registers.get_mut())
+        crate::ieee80211::mac::WifiMacHal::from_mac(self.registers.mac_mut())
             .request_channel_stop();
     }
 
     pub fn mac_active_state(&mut self) -> u8 {
-        crate::ieee80211::mac::WifiMacHal::from_owned(self.registers.get_mut())
-            .channel_active_state()
+        crate::ieee80211::mac::WifiMacHal::from_mac(self.registers.mac_mut()).channel_active_state()
     }
 
     pub fn restart_mac(&mut self) -> u8 {
-        crate::ieee80211::mac::WifiMacHal::from_owned(self.registers.get_mut())
+        crate::ieee80211::mac::WifiMacHal::from_mac(self.registers.mac_mut())
             .restart_after_channel_switch()
     }
 }

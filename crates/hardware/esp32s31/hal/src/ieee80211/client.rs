@@ -7,12 +7,22 @@
 //! initialized status that keeps the Wi-Fi clocks enabled while Wi-Fi is
 //! initialized. Each stage proves only its own step; MAC, PHY and RF
 //! readiness are later stages.
+//!
+//! A clocked client borrows its capabilities with the arbiter lease: the
+//! cold MAC HAL and the channel HAL take the shared registers from the lease
+//! for one transaction, the MAC reset pulses through it, and the runtime MAC
+//! HAL needs no lease because the Wi-Fi hot path touches Wi-Fi registers
+//! only.
 
 use core::fmt;
 
 use oer_esp32s31_pac::{MacInterruptSetup, WifiRadioRegisters};
 
 use crate::{
+    ieee80211::{
+        channel::RadioChannelHal,
+        mac::{WifiMacColdHal, WifiMacHal},
+    },
     root::WifiPartition,
     shared_radio::{
         CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
@@ -185,6 +195,58 @@ impl WifiClocked {
     /// Whether Wi-Fi is marked initialized.
     pub const fn initialized(&self) -> bool {
         self.initialized
+    }
+
+    /// Pulse the Wi-Fi MAC reset, as
+    /// `modem_clock_module_mac_reset(PERIPH_WIFI_MODULE)` does through
+    /// `modem_syscon_ll_reset_wifimac`.
+    pub fn reset_mac<T>(&mut self, lease: &mut SharedRadioLease<'_, T>) {
+        let phy = lease.registers_mut().radio_phy_mut();
+        phy.set_wifi_mac_reset(true);
+        phy.set_wifi_mac_reset(false);
+    }
+
+    /// Borrow the cold MAC HAL for one transaction, with the shared radio
+    /// owner borrowed from the arbiter lease.
+    ///
+    /// Clock and modem-source configuration of the exclusive route are
+    /// no-ops here: the arbiter enabled the Wi-Fi module clocks already.
+    pub fn cold_mac_hal<'hal, T>(
+        &'hal mut self,
+        lease: &'hal mut SharedRadioLease<'_, T>,
+    ) -> WifiMacColdHal<'hal> {
+        let WifiClientRegisters { mac, interrupts } = &mut self.registers;
+        WifiMacColdHal::from_leased(mac, interrupts, lease.registers_mut())
+    }
+
+    /// Borrow the runtime MAC HAL over the MAC alone.
+    pub fn wifi_mac_hal(&mut self) -> WifiMacHal<'_> {
+        WifiMacHal::from_mac(&mut self.registers.mac)
+    }
+
+    /// Borrow the channel HAL for one channel transaction, with the shared
+    /// PHY borrowed from the arbiter lease.
+    pub fn channel_hal<'hal, P, T>(
+        &'hal mut self,
+        platform: &'hal mut P,
+        lease: &'hal mut SharedRadioLease<'_, T>,
+    ) -> RadioChannelHal<'hal, P> {
+        let (phy, restore) = lease.phy_parts_mut();
+        RadioChannelHal::from_leased(platform, &mut self.registers.mac, phy, restore)
+    }
+
+    /// Borrow the channel HAL together with the arbiter's attachment, for a
+    /// PHY channel operation that updates the shared domain's state.
+    pub fn channel_hal_with_attachment<'hal, P, T>(
+        &'hal mut self,
+        platform: &'hal mut P,
+        lease: &'hal mut SharedRadioLease<'_, T>,
+    ) -> (RadioChannelHal<'hal, P>, &'hal mut T) {
+        let (phy, restore, attachment) = lease.phy_parts_with_attachment();
+        (
+            RadioChannelHal::from_leased(platform, &mut self.registers.mac, phy, restore),
+            attachment,
+        )
     }
 
     /// Disable the Wi-Fi module clocks. While Wi-Fi is marked initialized

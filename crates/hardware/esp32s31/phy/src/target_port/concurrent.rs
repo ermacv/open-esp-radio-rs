@@ -8,6 +8,7 @@ use crate::{
         evaluate_periodic_tracking,
     },
     registered_route::PhyDomain,
+    state::client::PhyModemClient,
     state::client::PhyPllTrackClock,
 };
 use oer_esp32s31_hal::shared_radio::{
@@ -490,4 +491,90 @@ where
     maintain_concurrent_phy::<P, D, O>(lease, platform, &[], observer)
         .await
         .map(ConcurrentTrackingTick::Tracked)
+}
+
+/// Wi-Fi channel operation on the shared domain that did not complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConcurrentWifiChannelError {
+    /// Rejected before any register access: the domain is not settled, the
+    /// borrow describes another registration, or Wi-Fi is not a client.
+    Rejected(ConcurrentPhyError),
+    /// The channel transaction failed after it started.
+    Failed(PhyTargetPortError),
+}
+
+fn wifi_channel_state<'domain>(
+    phy: &'domain mut ConcurrentPhy,
+    channel: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
+) -> Result<&'domain mut PhyState, ConcurrentWifiChannelError> {
+    let domain = phy
+        .settled_mut()
+        .map_err(ConcurrentWifiChannelError::Rejected)?;
+    if !domain.clients.describes(channel) {
+        return Err(ConcurrentWifiChannelError::Rejected(
+            ConcurrentPhyError::EpochMismatch,
+        ));
+    }
+    if !domain.client_snapshot().contains(PhyModemClient::Wifi) {
+        return Err(ConcurrentWifiChannelError::Rejected(
+            ConcurrentPhyError::ClientAbsent(PhyModemClient::Wifi),
+        ));
+    }
+    Ok(domain.registered.target_state_mut())
+}
+
+/// Select a Wi-Fi channel on the shared domain before the MAC runs, as the
+/// registered Wi-Fi route's channel selection does.
+///
+/// `phy` and `channel` come from one lease: the HAL Wi-Fi client lends the
+/// channel HAL together with the arbiter attachment.
+///
+/// # Errors
+///
+/// Rejected before any register access, or failed after the channel
+/// transaction started.
+///
+/// # Cancellation
+///
+/// Once polled, drive this future to a terminal result.
+pub async fn select_concurrent_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
+    phy: &mut ConcurrentPhy,
+    channel_or_frequency: u16,
+    cbw: u8,
+    channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
+    observer: &mut O,
+) -> Result<(), ConcurrentWifiChannelError> {
+    let state = wifi_channel_state(phy, channel)?;
+    select_phy_channel_with_hal::<D, _, _>(state, channel_or_frequency, cbw, channel, observer)
+        .await
+        .map_err(ConcurrentWifiChannelError::Failed)
+}
+
+/// Stop the Wi-Fi MAC, retune the shared domain and restart the MAC, as the
+/// registered Wi-Fi route's channel switch does.
+///
+/// # Errors
+///
+/// As [`select_concurrent_wifi_channel`].
+///
+/// # Cancellation
+///
+/// Once polled, drive this future to a terminal result.
+pub async fn switch_concurrent_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
+    phy: &mut ConcurrentPhy,
+    channel_or_frequency: u16,
+    cbw: u8,
+    channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
+    observer: &mut O,
+) -> Result<(), ConcurrentWifiChannelError> {
+    let state = wifi_channel_state(phy, channel)?;
+    switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
+        state,
+        channel_or_frequency,
+        cbw,
+        channel,
+        observer,
+    )
+    .await
+    .map_err(ConcurrentWifiChannelError::Failed)
 }

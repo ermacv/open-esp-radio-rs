@@ -1,10 +1,7 @@
 //! Cold Wi-Fi route before the task/ISR split.
 
 use crate::route_registers::WifiRegisters;
-use oer_esp32s31_pac::{
-    CoexistenceLowPowerClockObservation, MacInterruptSetup as PacMacInterruptSetup,
-    RadioPhyRegisters,
-};
+use oer_esp32s31_pac::{MacInterruptSetup as PacMacInterruptSetup, RadioPhyRegisters};
 
 use crate::{
     clock::WifiClocks,
@@ -15,7 +12,7 @@ use crate::{
         RadioHardware, RadioPhyReleaseError, RetainedBluetooth, RetainedRadioHardware,
         RetainedRadioReleaseError, WifiRoute,
     },
-    types::{MacInterruptEnableState, MacInterruptMask},
+    types::MacInterruptEnableState,
 };
 
 /// Route-scoped Wi-Fi state that travels between the cold and runtime owners.
@@ -273,10 +270,6 @@ impl WifiColdRegisters {
         &self.registers
     }
 
-    pub(crate) fn radio_mut(&mut self) -> &mut WifiRegisters {
-        &mut self.registers
-    }
-
     /// Read the cold initializer's currently published interrupt mask.
     pub(crate) fn mac_interrupt_enable(&self) -> MacInterruptEnableState {
         self.interrupts.mac_interrupt_enable()
@@ -287,56 +280,26 @@ impl WifiColdRegisters {
         self.interrupts.mask_and_clear_all_mac_interrupts();
     }
 
-    pub(crate) fn request_mac_cold_start(&mut self) {
-        self.registers.request_mac_cold_start();
-    }
-
-    pub(crate) fn sample_mac_cold_start_ready(&self) -> bool {
-        self.registers.sample_mac_cold_start_ready()
-    }
-
-    pub(crate) fn mask_all_mac_interrupts(&mut self) {
-        self.interrupts.mask_all_mac_interrupts();
-    }
-
-    pub(crate) fn clear_all_mac_interrupts(&mut self) {
-        self.interrupts.clear_all_mac_interrupts();
-    }
-
-    pub(crate) fn enable_mac_with_interrupt_mask(&mut self, event_mask: MacInterruptMask) {
-        self.registers
-            .enable_mac_with_interrupt_mask(&mut self.interrupts, event_mask);
-    }
-
-    pub(crate) fn initialize_mac_hal_tail(
+    /// Borrow the MAC, the shared radio owner and the cold interrupt setup
+    /// together for one cold MAC transaction.
+    pub(crate) fn cold_parts_mut(
         &mut self,
-        event_mask: MacInterruptMask,
-        slow_clock_calibration: u32,
-    ) -> bool {
-        self.registers.initialize_mac_hal_tail(
-            &mut self.interrupts,
-            event_mask,
-            slow_clock_calibration,
-        )
+    ) -> (
+        &mut oer_esp32s31_pac::WifiRadioRegisters,
+        &mut oer_esp32s31_pac::SharedRadioRegisters,
+        &mut PacMacInterruptSetup,
+    ) {
+        let (mac, shared) = self.registers.parts_mut();
+        (mac, shared, &mut self.interrupts)
     }
 
     pub(crate) fn enable_wifi_mac_clocks(&mut self) {
         self.registers.radio_phy_mut().enable_wifi_mac_clocks();
     }
 
-    pub(crate) fn set_wifi_mac_reset(&mut self, asserted: bool) {
-        self.registers.radio_phy_mut().set_wifi_mac_reset(asserted);
-    }
-
     pub(crate) fn configure_modem_source_clocks(&mut self) {
         self.registers
             .radio_phy_mut()
             .configure_modem_source_clocks();
-    }
-
-    pub(crate) fn sample_coexistence_low_power_clock(
-        &self,
-    ) -> Option<CoexistenceLowPowerClockObservation> {
-        self.registers.sample_coexistence_low_power_clock()
     }
 }

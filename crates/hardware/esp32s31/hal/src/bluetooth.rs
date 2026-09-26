@@ -21,26 +21,33 @@ use crate::{
     root::{BluetoothRoute, RadioHardware, RadioPhyReleaseError, RetainedWifi},
 };
 
+mod controller_time;
+mod scheduler_stop;
 mod shutdown;
 
+use controller_time::ControllerTimeLatch;
+pub use controller_time::{
+    BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchRequest,
+    BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
+};
+pub use scheduler_stop::{BluetoothSchedulerStop, BluetoothSchedulerStopStep};
 pub use shutdown::{BluetoothPhysicalReleaseError, BluetoothPhysicalReleaseFailure};
 
 pub use oer_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
-    BluetoothControllerOutputReleaseError, BluetoothControllerTimeLatchBeginError,
-    BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
-    BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCompareDisposition,
-    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
-    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptAcknowledged,
-    BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
-    BluetoothPhyRegisterInitInputs, BluetoothScanStartPublished,
-    BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
-    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
-    BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
-    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothControllerOutputReleaseError, BluetoothLowPowerRuntimeControlObservation,
+    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
+    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
+    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
+    BluetoothNrtInterruptAcknowledged, BluetoothPhyEnvironmentAddress,
+    BluetoothPhyEnvironmentAddressError, BluetoothPhyRegisterInitInputs,
+    BluetoothScanStartPublished, BluetoothSchedulerExecutionLockDisposition,
+    BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
+    BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadError,
+    BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListHeadRetirementObservation, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
@@ -50,9 +57,9 @@ pub use oer_esp32s31_pac::{
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunEventPublished,
     BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalIdle,
     BluetoothSchedulerSoftwareListRemovalInterruptStep, BluetoothSchedulerSoftwareListRemovalJoin,
-    BluetoothSchedulerSoftwareListRemovalReady, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
-    BluetoothSchedulerStopped, BluetoothSchedulerStoppedHeadRetirement,
-    BluetoothSchedulerStoppedItem, BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerSoftwareListRemovalReady, BluetoothSchedulerStopped,
+    BluetoothSchedulerStoppedHeadRetirement, BluetoothSchedulerStoppedItem,
+    BluetoothSchedulerWorkObservation,
 };
 
 /// Opaque HAL owner for the exclusive Bluetooth route before task/IRQ split.
@@ -259,6 +266,7 @@ impl ColdOwner {
                 retained: self.retained,
                 clocks: self.clocks,
                 phy_restore: self.phy_restore,
+                time_latch: ControllerTimeLatch::new(),
                 reunitable: true,
             },
             InterruptSetupOwner {
@@ -277,6 +285,7 @@ pub struct TaskOwner {
     retained: RetainedWifi,
     clocks: BluetoothClocks,
     phy_restore: PhyRestoreSlot,
+    time_latch: ControllerTimeLatch,
     reunitable: bool,
 }
 
@@ -329,7 +338,7 @@ impl TaskOwner {
                 error: TaskOwnerReuniteError::InterruptLifecycleNotRestored,
             });
         }
-        let error = if self.registers.controller_time_latch_in_flight() {
+        let error = if self.time_latch.in_flight() {
             Some(TaskOwnerReuniteError::ControllerTimeLatchInFlight)
         } else if self.modem_lp_timer.is_none() {
             Some(TaskOwnerReuniteError::ModemLpTimerOwnerSeparated)
@@ -352,6 +361,7 @@ impl TaskOwner {
             retained,
             clocks,
             phy_restore,
+            time_latch: _,
             reunitable: _,
         } = self;
         Ok(ColdOwner {
@@ -904,6 +914,9 @@ impl InterruptOutputAfterRoutesOwner {
         &self,
         task: &mut TaskOwner,
     ) -> Result<(), BluetoothControllerOutputReleaseError> {
+        if task.time_latch.in_flight() {
+            return Err(BluetoothControllerOutputReleaseError::ControllerTimePending);
+        }
         self._registers
             .validate_idle_controller(&mut task.registers)
     }
@@ -930,6 +943,12 @@ impl InterruptOutputAfterRoutesOwner {
         self,
         task: &mut TaskOwner,
     ) -> Result<InterruptOutputReleasedOwner, (BluetoothControllerOutputReleaseError, Self)> {
+        if task.time_latch.in_flight() {
+            return Err((
+                BluetoothControllerOutputReleaseError::ControllerTimePending,
+                self,
+            ));
+        }
         match self
             ._registers
             .try_release_idle_controller_output(&mut task.registers)
@@ -959,6 +978,7 @@ pub struct InterruptOutputReleasedOwner {
 /// and lifecycle prerequisites are independently bounded.
 pub struct ControllerHal<'registers> {
     registers: &'registers mut PacBluetoothTaskRegisters,
+    time_latch: &'registers mut ControllerTimeLatch,
 }
 
 /// Public Bluetooth Controller identity in canonical display order.
@@ -1469,8 +1489,7 @@ impl ControllerHal<'_> {
         interrupts: &mut InterruptRegistersOwner,
         stop: BluetoothSchedulerStop,
     ) -> BluetoothSchedulerStopStep {
-        self.registers
-            .step_scheduler_stop(&mut interrupts.registers, stop)
+        scheduler_stop::step_hardware(self.registers, &mut interrupts.registers, stop)
     }
 
     /// Retire the exact stopped RUN head without clearing a foreign item.
@@ -1543,14 +1562,14 @@ impl ControllerHal<'_> {
     /// and deliberately does not treat an arbitrary hardware bit image as a
     /// fresh request owned by this driver.
     ///
-    /// The unique PAC owner remembers the request across HAL borrows. If an
+    /// The unique task owner remembers the request across HAL borrows. If an
     /// async operation is cancelled before `Ready`, another begin fails closed
     /// and the durable task owner must drain that same request with
     /// [`Self::step_controller_time_latch`] before admitting new work.
     pub fn begin_controller_time_latch(
         &mut self,
     ) -> Result<(), BluetoothControllerTimeLatchBeginError> {
-        self.registers.begin_controller_time_latch()
+        controller_time::begin(self.time_latch, self.registers)
     }
 
     /// Perform exactly one observation of the controller-time latch.
@@ -1561,7 +1580,7 @@ impl ControllerHal<'_> {
     pub fn step_controller_time_latch(
         &mut self,
     ) -> Result<BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError> {
-        self.registers.step_controller_time_latch()
+        controller_time::step(self.time_latch, self.registers)
     }
 
     /// Whether this task owner retains an unfinished latch request.
@@ -1570,7 +1589,7 @@ impl ControllerHal<'_> {
     /// cancelled logical operation must be drained before a fresh request is
     /// begun; its sample must not be relabelled as that fresh request.
     pub fn controller_time_latch_in_flight(&self) -> bool {
-        self.registers.controller_time_latch_in_flight()
+        self.time_latch.in_flight()
     }
 }
 
@@ -1616,6 +1635,7 @@ pub trait ControllerHalBorrow: sealed::ControllerHalBorrow {
         owner.reunitable = false;
         ControllerHal {
             registers: &mut owner.registers,
+            time_latch: &mut owner.time_latch,
         }
     }
 }

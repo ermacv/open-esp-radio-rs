@@ -1,12 +1,10 @@
-extern crate std;
-
 use std::vec::Vec;
 
 use super::{
     BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,
-    BluetoothControllerTimeLatchControl, BluetoothControllerTimeLatchOwnership,
-    BluetoothControllerTimeLatchRequest, BluetoothControllerTimeLatchStep,
-    BluetoothControllerTimeLatchStepError, execute_latch_publication, execute_latch_step,
+    BluetoothControllerTimeLatchControl, BluetoothControllerTimeLatchRequest,
+    BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError, ControllerTimeLatch,
+    execute_latch_publication, execute_latch_step,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,7 +48,7 @@ impl BluetoothControllerTimeLatchControl for Recorder {
 
 #[test]
 fn publication_is_one_accessor_write_followed_by_one_fence() {
-    let mut ownership = BluetoothControllerTimeLatchOwnership::new();
+    let mut ownership = ControllerTimeLatch::new();
     let mut recorder = Recorder {
         latch_request_pending: false,
         latched_time_0: 0,
@@ -83,7 +81,7 @@ fn publication_is_one_accessor_write_followed_by_one_fence() {
 
 #[test]
 fn pending_step_reads_control_once_and_never_reads_latched_time() {
-    let mut ownership = BluetoothControllerTimeLatchOwnership::new();
+    let mut ownership = ControllerTimeLatch::new();
     assert_eq!(ownership.begin(), Ok(()));
     let mut recorder = Recorder {
         latch_request_pending: true,
@@ -101,7 +99,7 @@ fn pending_step_reads_control_once_and_never_reads_latched_time() {
 
 #[test]
 fn ready_step_reads_control_then_latched_time_exactly_once() {
-    let mut ownership = BluetoothControllerTimeLatchOwnership::new();
+    let mut ownership = ControllerTimeLatch::new();
     assert_eq!(ownership.begin(), Ok(()));
     let mut recorder = Recorder {
         latch_request_pending: false,
@@ -135,7 +133,7 @@ fn ready_step_reads_control_then_latched_time_exactly_once() {
 
 #[test]
 fn cancelled_worker_resumes_the_same_request_and_drains_it_once() {
-    let mut ownership = BluetoothControllerTimeLatchOwnership::new();
+    let mut ownership = ControllerTimeLatch::new();
     let mut publication = Recorder {
         latch_request_pending: false,
         latched_time_0: 0,
@@ -200,7 +198,7 @@ fn cancelled_worker_resumes_the_same_request_and_drains_it_once() {
 
 #[test]
 fn idle_step_fails_without_any_register_access() {
-    let mut ownership = BluetoothControllerTimeLatchOwnership::new();
+    let mut ownership = ControllerTimeLatch::new();
     let mut recorder = Recorder {
         latch_request_pending: false,
         latched_time_0: 0,
@@ -212,12 +210,4 @@ fn idle_step_fails_without_any_register_access() {
         Err(BluetoothControllerTimeLatchStepError::NotInFlight)
     );
     assert!(recorder.operations.is_empty());
-}
-
-#[test]
-fn unfinished_latch_is_reported_without_mmio() {
-    let (mut task, _interrupts) = crate::ownership::test_support::bluetooth_task();
-    assert!(!task.controller_time_latch_in_flight());
-    assert_eq!(task.controller_time_latch.begin(), Ok(()));
-    assert!(task.controller_time_latch_in_flight());
 }

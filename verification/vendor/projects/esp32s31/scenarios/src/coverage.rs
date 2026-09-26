@@ -234,6 +234,45 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "diagnostic print of the TX-DC search, selected by bit 4 of \
+            `phy_param[0x10]`; production emits no vendor console output",
+        places: &[
+            Place::Range {
+                function: "phy_txdc_cal_pwdet_new",
+                start: 0x174,
+                end: 0x1a6,
+            },
+            Place::Range {
+                function: "phy_txdc_cal_pwdet_new",
+                start: 0x258,
+                end: 0x280,
+            },
+            Place::Range {
+                function: "phy_txdc_cal_pwdet_new",
+                start: 0x310,
+                end: 0x34a,
+            },
+        ],
+    },
+    Decision {
+        reason: "TX-DC teardown skipped for a nonzero second argument, which every \
+            `phy_txdc_cal_pwdet_init` caller in the claimed closures leaves zero",
+        places: &[Place::Range {
+            function: "phy_txdc_cal_pwdet_init",
+            start: 0x166,
+            end: 0x167,
+        }],
+    },
+    Decision {
+        reason: "repeated power-detector status polls before it reports ready: the ready \
+            read is compared and the poll count is hardware timing",
+        places: &[Place::Range {
+            function: "phy_pwdet_tone_start",
+            start: 0x4a,
+            end: 0x4b,
+        }],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

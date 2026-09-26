@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "d18b8f7f14fcb3d169cc64a3bb6e3979863a94ee1be5bf0863e67426eb1c35ef"
+      "sha256": "a91bbff86f543c2539c1b56eac3c40e30eb1c39781334f41c03c1328a35ff6a1"
     },
     {
       "path": "verification/vendor/schema",
@@ -802,8 +802,8 @@
           "reached": 78,
           "total": 88
         },
-        "excluded": 0,
-        "untriaged": 17
+        "excluded": 8,
+        "untriaged": 9
       },
       "observation": {
         "executed": 170,
@@ -832,8 +832,8 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 956,
-        "untriaged": 183
+        "excluded": 964,
+        "untriaged": 175
       },
       "observation": {
         "executed": 1388,
@@ -862,8 +862,8 @@
           "reached": 351,
           "total": 982
         },
-        "excluded": 956,
-        "untriaged": 200
+        "excluded": 964,
+        "untriaged": 192
       },
       "observation": {
         "executed": 1815,
@@ -1080,11 +1080,6 @@
       "kind": "block"
     },
     {
-      "function": "phy_pwdet_tone_start",
-      "offset": 74,
-      "kind": "taken"
-    },
-    {
       "function": "phy_restart_cal",
       "offset": 0,
       "kind": "block"
@@ -1173,41 +1168,6 @@
       "function": "phy_txbbgain_to_index",
       "offset": 34,
       "kind": "taken"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_init",
-      "offset": 358,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
-      "offset": 372,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
-      "offset": 376,
-      "kind": "block"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
-      "offset": 600,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
-      "offset": 604,
-      "kind": "block"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
-      "offset": 784,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_txdc_cal_pwdet_new",
-      "offset": 788,
-      "kind": "block"
     },
     {
       "function": "phy_txpwr_cal_track_new",

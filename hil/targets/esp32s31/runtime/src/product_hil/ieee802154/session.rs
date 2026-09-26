@@ -11,11 +11,11 @@ use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, with_timeout};
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 use oer_esp32s31_ieee802154_runtime::{Ieee802154OwnedFrame, Ieee802154RadioEvent};
-use oer_esp32s31_ieee802154_system::Ieee802154System;
+use oer_esp32s31_ieee802154_system::{Ieee802154PhyMaintenance, Ieee802154SystemRuntime};
 use oer_hil_protocol::{
     Event as HilEvent, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirTxOutcome,
     Ieee802154SessionAck, Ieee802154SessionConfig, Ieee802154SessionFrame,
-    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest,
+    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
     Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, RejectReason,
     ieee802154_frame_crc32c,
@@ -62,23 +62,22 @@ impl Received {
     }
 }
 
-struct Session<'a> {
-    system: &'a Ieee802154System,
+struct Session {
+    runtime: &'static Ieee802154SystemRuntime,
     channel: Channel,
     next_id: u32,
     received: Received,
     lost: bool,
 }
 
-impl Session<'_> {
+impl Session {
     fn id(&mut self) -> RequestId {
         self.next_id = self.next_id.wrapping_add(1);
         RequestId::new(self.next_id)
     }
 
     fn submit(&mut self, command: RadioCommand<'_>) -> Result<(), Ieee802154SessionResult> {
-        self.system
-            .runtime()
+        self.runtime
             .submit(command)
             .map(|_| ())
             .map_err(|_| Ieee802154SessionResult::CommandRejected)
@@ -147,9 +146,7 @@ impl Session<'_> {
             return evidence;
         }
         loop {
-            let Ok(event) =
-                with_timeout(TRANSMIT_TIMEOUT, self.system.runtime().next_event()).await
-            else {
+            let Ok(event) = with_timeout(TRANSMIT_TIMEOUT, self.runtime.next_event()).await else {
                 evidence.result = Ieee802154SessionResult::EventTimeout;
                 return evidence;
             };
@@ -186,7 +183,7 @@ impl Session<'_> {
             Ieee802154SessionPendingMode::Enhanced => AutoPendingMode::Enhanced,
             Ieee802154SessionPendingMode::Zigbee => AutoPendingMode::Zigbee,
         };
-        let runtime = self.system.runtime();
+        let runtime = self.runtime;
         if runtime.set_pending_mode(mode).is_err() {
             return false;
         }
@@ -229,7 +226,7 @@ pub(in crate::product_hil) async fn run_session(
         let started = core::pin::pin!(client.start(parked));
         started.await
     };
-    let Some(system) = started else {
+    let Some(mut system) = started else {
         publish_event_reliably(
             0,
             request_id,
@@ -239,7 +236,7 @@ pub(in crate::product_hil) async fn run_session(
         return;
     };
     let mut session = Session {
-        system: &system,
+        runtime: system.runtime(),
         channel,
         next_id: 0,
         received: Received::default(),
@@ -254,7 +251,7 @@ pub(in crate::product_hil) async fn run_session(
     let stop_request = loop {
         let command = match select(
             receive_ieee802154_session_command(),
-            system.runtime().next_event(),
+            session.runtime.next_event(),
         )
         .await
         {
@@ -309,6 +306,28 @@ pub(in crate::product_hil) async fn run_session(
                     HilEvent::Rejected(RejectReason::InvalidConfiguration)
                 };
                 publish_event_reliably(0, request_id, response).await;
+            }
+            Ieee802154SessionCommand::MaintainPhy { request_id } => {
+                // Maintenance holds the tracking future; pin it in place.
+                let maintained =
+                    core::pin::pin!(system.maintain_phy(&client.radio, &mut client.platform));
+                let outcome = match maintained.await {
+                    Ok(Ieee802154PhyMaintenance::NotDue) => Ieee802154SessionPhyMaintenance::NotDue,
+                    Ok(Ieee802154PhyMaintenance::Tracked) => {
+                        Ieee802154SessionPhyMaintenance::Tracked
+                    }
+                    Ok(Ieee802154PhyMaintenance::AwaitingOtherClients) => {
+                        Ieee802154SessionPhyMaintenance::AwaitingOtherClients
+                    }
+                    Ok(Ieee802154PhyMaintenance::Busy) => Ieee802154SessionPhyMaintenance::Busy,
+                    Err(_) => Ieee802154SessionPhyMaintenance::Failed,
+                };
+                publish_event_reliably(
+                    0,
+                    request_id,
+                    HilEvent::Ieee802154SessionPhyMaintained(outcome),
+                )
+                .await;
             }
             Ieee802154SessionCommand::Stop { request_id } => break request_id,
         }

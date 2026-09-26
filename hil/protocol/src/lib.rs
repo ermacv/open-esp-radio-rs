@@ -75,7 +75,7 @@ pub use message::{
     Ieee802154EventStatusProbeStop, Ieee802154ObservedEventState, Ieee802154PolledEdMaskState,
     Ieee802154PolledEdOutcome, Ieee802154PolledEdStage, Ieee802154RxAbortObservation,
     Ieee802154RxAbortReason, Ieee802154SessionAck, Ieee802154SessionConfig, Ieee802154SessionFrame,
-    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest,
+    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
     Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest,
     Ieee802154ValidationEdDurationState, Ieee802154ValidationEventEnableState,

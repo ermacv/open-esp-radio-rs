@@ -13,14 +13,17 @@
 //!    acknowledges nor reports it;
 //! 4. with the peer's short address in the device's pending table, the
 //!    device's acknowledgement of the peer's data request carries frame
-//!    pending.
+//!    pending;
+//! 5. after one tracking period, the device runs shared PHY tracking inside
+//!    its own quiescence window and then exchanges one acknowledged frame in
+//!    each direction again.
 
 use std::{fs, path::Path, time::Duration};
 
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
     Ieee802154AirTxOutcome, Ieee802154SessionConfig, Ieee802154SessionFrame,
-    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest,
+    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionTransmitEvidence,
     Ieee802154SessionTransmitRequest, ieee802154_frame_crc32c,
 };
@@ -38,6 +41,10 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 /// Bound on one peer report after its trigger.
 const PEER_EVENT_TIMEOUT: Duration = Duration::from_secs(1);
 const REPORT_NAME: &str = "ieee802154-peer-exchange.json";
+/// Longer than the shared PHY domain's one-second tracking period.
+const TRACKING_DUE_AFTER: Duration = Duration::from_millis(1_200);
+/// Maintenance runs the tracking transaction.
+const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub const PAN_ID: u16 = 0x4f45;
 pub const DEVICE_SHORT: u16 = 0x0001;
@@ -98,6 +105,7 @@ struct BootReport {
     peer_to_device: Vec<String>,
     filtered: String,
     pending: String,
+    maintenance: String,
 }
 
 pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
@@ -239,6 +247,28 @@ fn exchange<L: PeerLink>(
     check_peer_acknowledged(peer.next_event(PEER_EVENT_TIMEOUT)?, 0x71, true)?;
     let _ = capture.collect_ieee802154_session()?;
 
+    std::thread::sleep(TRACKING_DUE_AFTER);
+    let maintained = capture.maintain_ieee802154_session_phy(MAINTENANCE_TIMEOUT)?;
+    if maintained != Ieee802154SessionPhyMaintenance::Tracked {
+        return Err(format!("due PHY maintenance ended {maintained:?}").into());
+    }
+    let frame = data_frame(true, 0x60, PEER_SHORT, DEVICE_SHORT);
+    check_device_transmit(
+        &capture.transmit_ieee802154_session(
+            Ieee802154SessionTransmitRequest {
+                frame: session_frame(&frame)?,
+                cca: false,
+            },
+            COMMAND_TIMEOUT,
+        )?,
+        0x60,
+    )?;
+    check_peer_received(peer.next_event(PEER_EVENT_TIMEOUT)?, &frame)?;
+    let frame = data_frame(true, 0x61, DEVICE_SHORT, PEER_SHORT);
+    peer.transmit(false, &frame)?;
+    check_peer_acknowledged(peer.next_event(PEER_EVENT_TIMEOUT)?, 0x61, false)?;
+    check_device_received(&capture.collect_ieee802154_session()?, &[frame])?;
+
     expect_session("stop", capture.stop_ieee802154_session(COMMAND_TIMEOUT)?)?;
     peer.sleep()?;
     Ok(BootReport {
@@ -247,6 +277,7 @@ fn exchange<L: PeerLink>(
         peer_to_device,
         filtered: String::from("foreign destination unacknowledged and unreported"),
         pending: String::from("data request acknowledged with frame pending"),
+        maintenance: String::from("tracked, then exchanged in both directions"),
     })
 }
 

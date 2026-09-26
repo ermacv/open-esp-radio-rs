@@ -1298,6 +1298,22 @@ impl SerialCapture {
         }
     }
 
+    pub fn maintain_ieee802154_session_phy(
+        &self,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionPhyMaintenance> {
+        match self
+            .send_command(0, Command::MaintainIeee802154SessionPhy, timeout)?
+            .body
+        {
+            Event::Ieee802154SessionPhyMaintained(outcome) => Ok(outcome),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 PHY maintenance: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 PHY maintenance response".into()),
+        }
+    }
+
     pub fn stop_ieee802154_session(&self, timeout: Duration) -> Result<Ieee802154SessionResult> {
         match self
             .send_command(0, Command::StopIeee802154Session, timeout)?

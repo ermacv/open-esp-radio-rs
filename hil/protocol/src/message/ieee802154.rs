@@ -531,3 +531,19 @@ pub struct Ieee802154SessionReceiveEvidence {
     pub total: u16,
     pub frames: heapless::Vec<Ieee802154SessionReceivedFrame, IEEE802154_SESSION_RECORDED_FRAMES>,
 }
+
+/// Outcome of one PHY maintenance request in a session.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154SessionPhyMaintenance {
+    /// No tracking was due.
+    NotDue,
+    /// Tracking ran inside the device's quiescence window.
+    Tracked,
+    /// Tracking is due, but another radio client is active.
+    AwaitingOtherClients,
+    /// An operation was running.
+    Busy,
+    /// The domain rejected the maintenance or tracking failed.
+    #[default]
+    Failed,
+}

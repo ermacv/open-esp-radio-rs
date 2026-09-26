@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 171;
+pub const PROTOCOL_VERSION: u16 = 172;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -531,6 +531,8 @@ pub enum Command {
     SetIeee802154SessionPending(Ieee802154SessionPendingRequest),
     /// Stop the running session.
     StopIeee802154Session,
+    /// Run shared PHY tracking now if it is due.
+    MaintainIeee802154SessionPhy,
     UploadStartupArtifact(StartupArtifactChunk),
     /// Initialize calibration and the network stack without materializing a
     /// Wi-Fi role. This command is accepted exactly once per boot.
@@ -1185,6 +1187,8 @@ pub enum Event {
     Ieee802154SessionReceived(Ieee802154SessionReceiveEvidence),
     /// Correlated result of [`Command::StopIeee802154Session`].
     Ieee802154SessionStopped(Ieee802154SessionResult),
+    /// Correlated result of [`Command::MaintainIeee802154SessionPhy`].
+    Ieee802154SessionPhyMaintained(Ieee802154SessionPhyMaintenance),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),

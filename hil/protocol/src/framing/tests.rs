@@ -1999,6 +1999,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
             short_address: Some(u16::MAX),
         }),
         Command::StopIeee802154Session,
+        Command::MaintainIeee802154SessionPhy,
     ] {
         round_trip(Envelope::new(7, 3, 9, 2, command));
     }
@@ -2030,6 +2031,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
             frames,
         }),
         Event::Ieee802154SessionStopped(Ieee802154SessionResult::Done),
+        Event::Ieee802154SessionPhyMaintained(crate::Ieee802154SessionPhyMaintenance::Tracked),
     ] {
         round_trip(Envelope::new(7, 3, 9, 2, event));
     }

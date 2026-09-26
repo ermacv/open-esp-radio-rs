@@ -4,7 +4,7 @@ This reference describes the pinned primary and NRT interrupt paths, their
 MMIO ordering and deferred-work semantics. Vendor callback/RTOS topology is
 comparison evidence; the Rust runtime owns its typed dispatch and lifecycle.
 Source-124 command-ready causality is not established by callback topology.
-The DTM runtime uses a bounded direct recheck for post-unlink progress.
+The radio runtime rechecks pending scheduler waits after a bounded delay.
 
 ## Pinned inputs
 
@@ -124,41 +124,13 @@ The two reads cannot be folded into one observation: the reference clear and
 selector-6 software path occur between their positions. The Rust classifier
 therefore uses distinct reference-gate and work-observation types.
 
-The post-unlink DTM removal gate does not authorize a second primary
-capture/acknowledgement. The Controller atomically consumes the empty-head
-proof into `SoftwareListUnlinked` and arms a capacity-one mailbox under the same
-critical section. On its first arm, that mailbox obtains a checked globally
-unique opaque identity; every arm also carries a checked generation. Identity
-or generation exhaustion rejects before unlink. Every public primary service then
-serializes capture/acknowledgement, both ordinary durable cell publications and
-the mailbox transition under that same boundary. An idle mailbox returns the
-event to the general route; an armed mailbox stores exactly its first later
-`PrimaryPublishedInterruptStep`; and a full mailbox returns, but does
-not overwrite with, the newer event. Ordinary scheduler and lock/modify wake
-dispositions are returned immediately even when the affine event payload is
-stored for DTM. Those ISR notification dispositions are not repeated by the
-later DTM consumer; it retains only the event observation needed by the return
-gate. There is no public standalone unlink, primary-service bypass or
-constructor for the internal graph/event pair, so a pre-arm event cannot enter
-the removal consumer through safe public code.
-
-The affine awaiting owner consumes only its matching mailbox identity and
-generation, so equal generation numbers from two Controller instances cannot
-cross-wire an event, cancellation or re-arm. Its later consumer may project
-BUSY from the stored scheduler event and, only when idle,
-perform the separate task-owned command-zero then conditional command-one
-reads. `NoSchedulerWork` and command-pending outcomes re-arm the same owner
-before leaving the serialization boundary. If a later command-ready edge
-arrives while the slot is full, the later event is returned to the general
-route, but progress does not depend on retaining it: after consuming the older
-event the session races the mailbox wake against a caller-owned finite absolute
-deadline, then the Controller performs the same direct read-only removal
-recheck. A pending direct result re-arms the same identity and generation.
-This closes temporal pairing, lost-owner holes and bounded retry liveness.
-Complete vendor removal bodies directly re-read BUSY and the command fields,
-so they still prove neither command-ready-to-source-124 causality nor a
-hardware retry wake; those remain vendor-qualification gaps rather than open
-runtime dependencies.
+Each primary service publishes one classified scheduler wake into a single
+coalescing cell. The wake carries no observed value: every executor wait takes
+its own fresh joint observation, so a stored BUSY sample from an earlier
+interrupt never decides a later transaction step. The runtime rechecks a
+pending wait after a bounded delay even without a wake, because the vendor
+bodies directly re-read BUSY and the command fields and prove neither
+command-ready-to-source-124 causality nor a hardware retry wake.
 
 ## Event multiplicity and RTOS-free replacement
 
@@ -175,9 +147,9 @@ runs. Consequently the required deferred contract is:
 5. a racing publication after dequeue opens a new epoch and emits a new wake.
 
 `SchedulerWakeCell` implements this contract with one `AtomicU8`.
-It is not an async primitive by itself: the platform must still install a
-lost-wake-safe waker registration and the Controller worker must drain the
-real scheduler list before considering the epoch complete.
+It is not an async primitive by itself: the platform forwards each
+`WakeWorker` publication to the radio runtime's signal, and the runtime drains
+the real scheduler list before considering the epoch complete.
 
 The drained list is not a hidden hardware FIFO. Complete producer review shows
 that task-side scheduler item removal/reordering inserts items into a
@@ -197,14 +169,14 @@ delivery complete until subscriber lifetime is joined to the publisher epoch
 and every preceding listener is proven to continue for this selector, or the
 exact broker epoch is replayed.
 
-An open Controller must therefore define its own typed scheduler item
-lifecycle and bounded completion queue, with an explicit hardware-finished to
-CPU-readable fence. Reproducing the vendor list nodes or OSAL event object is
-neither required nor desirable. The restricted PAC names and transfers
-the exact 16-bit `SCHEDULER_FINISHED_LIST_STATUS` mask while keeping the
-destination word positional as `SCHEDULER_FINISHED_LIST_REPORT`. The Bluetooth
-core can drain one list bit per bounded event step; it does not yet map a bit
-to an affine item or callback. The separately retained current hardware-list
+The open scheduler therefore defines its own typed item lifecycle, with an
+explicit hardware-finished to CPU-readable fence. Reproducing the vendor list
+nodes or OSAL event object is neither required nor desirable. The restricted
+PAC names and transfers the exact 16-bit `SCHEDULER_FINISHED_LIST_STATUS` mask
+while keeping the destination word positional as
+`SCHEDULER_FINISHED_LIST_REPORT`. The Bluetooth core drains one list bit per
+bounded step; a list-zero bit runs the executor's completion walk, which
+returns the executed items at the head of the list mirror to their role. The separately retained current hardware-list
 index and every finished-list bit use the same `0..16` hardware-list domain.
 A finished bit identifies a list, while the current index identifies the
 active list at a distinct temporal point; neither selects an affine item.

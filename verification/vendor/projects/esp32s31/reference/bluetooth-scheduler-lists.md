@@ -3,11 +3,17 @@
 This reference describes how the vendor Controller keeps several scheduler
 items and several hardware lists live at the same time: list ownership,
 time-ordered insertion, conflict resolution, insertion into a running list and
-completion. It is the input for a multi-item open scheduler. Single-item DTM
-publication and completion are described in
+completion. DTM descriptor lowering is described in
 [Direct Test Mode](bluetooth-direct-test-mode.md); the interrupt and deferred
 work path is described in [Bluetooth interrupts](bluetooth-interrupt-runtime.md).
-No open implementation of the contracts below exists yet.
+
+The open scheduler executor implements list zero from these bodies: an ordered
+mirror with strict wrapping overlap rejection, idle insertion, the live
+insertion bracket, two-phase cancellation with the skip hold, list deletion,
+the completion walk and the stopped state. Its hardware execution retains each
+command publication until the action that ends it and takes one fresh
+observation per wait. Conflicts are rejected before submission rather than
+moved. The open contracts at the end of this page remain hardware questions.
 
 ## Pinned public inputs
 

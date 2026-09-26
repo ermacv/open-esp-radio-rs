@@ -112,10 +112,10 @@ selects the legacy LE 1M transmitter role, copies the reset link state's
 rounded power, installs contiguous accepted raw windows and clears bookkeeping
 for every active item. No link image, field mask, rounded-power image or
 frequency integer crosses into the controller/LL layer. Before this mutation,
-the common Rust timeline reserves the complete chain duration, performs guarded
-initial admission and duration-preserving overlap displacement, then applies a
-separate fresh sequence-deadline check. Rejection releases the exact slot and
-returns the unchanged affine candidate.
+the radio role admits the event against one fresh Controller-time sample and
+the executor's list mirror: each channel reserves one channel spacing from its
+anchor minus the preparation lead, and an overlap is rejected instead of
+displaced. Rejection leaves the configured set unchanged.
 
 ## Reviewed response-capable memory profile
 
@@ -267,11 +267,10 @@ retain diagnostics rather than representing a retryable pre-publication
 failure. Every active item must be terminal before the exact affine LL event
 advances. Terminal diagnostics alone do not prove on-air success.
 
-The selected 1–3 primary channels form one prelinked hardware event. Recurrence
-retains the nominal phase, reclaimed graph and a source-owned 0–10 ms delay;
-timeline admission and a fresh sequence deadline precede the same publication
-and completion path. The controller actor owns live timing, delay selection
-and retention across async operations. Response-capable RX and accepted
+The selected 1–3 primary channels form one advertising event of one item per
+channel. Recurrence, the 0–10 ms advertising delay and live timing belong to
+the Link Layer core that plans each event; every event passes the same
+admission, publication and completion path. Response-capable RX and accepted
 `CONNECT_IND` transfer have their own memory and LL contracts.
 
 The response-capable path applies the common

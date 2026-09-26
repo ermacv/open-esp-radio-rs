@@ -201,13 +201,10 @@ epoch. It does not reproduce the vendor allocator or make the workspace
 connection-private. A distinct memory-layer transition consumes the
 resulting opaque environment link, privately installs the `workspace + 8`
 configuration endpoint and adjacent disabled-CTE policy, and returns a new
-affine graph state. The task-side transition first reserves the requested
-window in the common timeline, obtains the separate sequence-deadline
-observation, and only then writes the overlap-resolved window into the private
-descriptor. Cancellation at either CPU-owned frontier restores the timeline,
-graph and protocol event. In particular, the descriptor uses the common
-scheduler's resolved window rather than the requested window: overlap
-insertion is allowed to displace the initial candidate.
+affine graph state. The radio role admits each connection event against one
+fresh Controller-time sample and writes the requested window into the private
+descriptor; the executor rejects an overlapping window instead of displacing
+it, so the descriptor always carries the window the Link Layer core planned.
 
 Exact correspondence also identifies the current allocation suffix with the
 named same-chip `ble_lll_conn_slave_new`. The connection link state's selected
@@ -215,47 +212,18 @@ scheduler head is the item at the private free-list head. Allocation reads that
 item's compressed predecessor, advances the private head to the predecessor,
 detaches the selected item and passes only that item to the common scheduler;
 it does not publish the complete two-item private chain. The memory codec
-models that transition explicitly. The task service can join the detached
-item to its exclusive empty common list, and a failed join or pre-publication
-cancellation restores both the selected item's predecessor and the original
-private head. No compressed pointer or list word leaves the memory crate.
+models that transition explicitly and hands only the detached item to the
+executor. No compressed pointer or list word leaves the memory crate.
 
 These dependencies explain why Access Address plus CRCInit is not a runnable
-event image. The Rust owner also attaches a separate statically allocated
-three-node RX rotation graph with a two-packet event capacity. That pool represents the common non-scanning
-selector-two class rather than a connection-private vendor allocation, so a
-future response-capable advertiser can transfer the exact affine owner after
-accepting `CONNECT_IND`. Pre-publication cancellation clears the link-state RX
-endpoints and recovers both the pristine connection allocation and the intact
-pool. The resulting graph reaches a reversible common-list merge and
-crosses the complete first publication prefix. Before the first
-irreversible MMIO, the common-list identity and encoded HEAD are validated
-together. The infallible suffix publishes the pool through the non-scanning
-selector-two PAC/HAL accessor, publishes that exact item as the common
-scheduler HEAD, prepares dynamic interrupts and consumes the matching RUN
-proof into hardware-owned connection state. No raw selector, address or
-register image crosses the memory/HAL boundary. There is deliberately no
-software rollback after selector-two or HEAD becomes hardware-visible;
-completion consumes the affine fenced list-zero observation and classifies
-only in-flight, zero and opaque-nonzero status. It keeps the graph, RX
-publication, portable event and timeline reservation hardware-owned. The
-fresh hardware-head observation, atomic source-list unlink/mailbox arm and
-finite interrupt-or-direct removal gate retain the same owners through a
-removal-ready state. The lower memory boundary binds that exact proof,
-copies every contiguous completed RX PDU before mutation and restores only the
-event-local scheduler item and receive rotation. It deliberately preserves the
-live connection link state. Scheduler timeline/list release still gates CPU
-ownership at the role boundary and the later protocol-state advance.
-
-Production retention treats that graph and pool as one reusable affine
-allocation. Cold start binds the physical default transmit-power policy once,
-and the sole task runtime must check out both owners before preparing an event.
-The runtime slot remains observably vacant until cancellation or a future
-completed recycle returns the same pair of opaque storage identities. A
-foreign graph or RX pool cannot fill the slot, even if a native model assigned
-it the same synthetic controller address. Thus no borrowed production runtime
-can copy, replace or silently recreate connection memory while an event owns
-it.
+event image. A connection receives through its own class-zero chain, whose
+consumer is link-state `+0x08`, as `r_ble_lll_conn_use_rxbuf_from_link_state`
+selects; the connection pool instance owns that chain. Each event stays with
+the executor from list-zero insertion through `RUN`, the fenced finished-list
+capture and the completion walk. The completion walk returns the item; the role
+then copies every contiguous completed RX PDU, reports the captured anchor and
+the peer's acknowledgement, and preserves the live connection link state for
+the next event.
 
 The same exact correspondence identifies
 `r_sym_ble_1KGaCqPI03xSu9c6Rh0G` as `ble_lll_conn_update_link_state`. Together
@@ -270,9 +238,14 @@ The default opcode tables contain `0x02`, the plaintext `LL_TERMINATE_IND`
 opcode. Software CCM ciphertext can have that same first byte. The connection
 RX publication therefore clears `LINK_STATE_CONTROL` before publishing the
 head, leaving opcode interpretation to the authenticated software LL decoder.
-This policy is reapplied on every connection publication, including after PHY
-restoration. Advertising and scanning RX publication restore the initialization
-policy. The [HAL transaction](../../../../../crates/hardware/esp32s31/hal/src/bluetooth.rs)
+The vendor reapplies this policy on every connection publication and restores
+the initialization policy for advertising and scanning publication. The radio
+runtime publishes both global chains once per powered epoch, before the first
+RUN: the scanning chain with the initialization policy, then the non-scanning
+chain with the software-connection policy, which stays in force for every
+later event. Whether the policy affects non-connection receptions, and whether
+shared-PHY maintenance clears it so that it must be republished on resume,
+are open hardware questions. The [HAL transaction](../../../../../crates/hardware/esp32s31/hal/src/bluetooth.rs)
 owns that sequencing; cold BLE PHY initialization retains its reviewed vendor
 images. Neither raw register images nor private vendor flags cross into the
 portable Link Layer.

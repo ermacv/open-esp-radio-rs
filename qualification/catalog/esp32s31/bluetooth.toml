@@ -113,7 +113,7 @@ gaps = [
   { axis = "implementation", id = "source-127-expiration-consumer-and-controller-phy-tracking-integration-missing" },
   { axis = "vendor", id = "effective-counter-width-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
-  { axis = "async", id = "physical-counter-wake-causality-and-timeline-exhaustion-recovery-missing" },
+  { axis = "async", id = "physical-counter-wake-causality-missing" },
 ]
 
 [capabilities.catalog-scope]
@@ -552,8 +552,8 @@ limitations = "Only the exact declared scope is represented; source coverage doe
 
 [[capabilities]]
 id = "scheduler-head-transaction"
-title = "Event-driven scheduler lock-modify head transaction"
-scope = "Live finite PAC and HAL request publication with split task and ISR observations durable cancellation-safe worker state and lock-free latest-event handoff without polling"
+title = "Scheduler list-zero executor and hardware transactions"
+scope = "List-zero event executor with an ordered mirror and strict wrapping overlap rejection, idle insertion with head publication and RUN, live insertion through execution lock lock-modify request and execution modify, two-phase cancellation through the skip hold, list deletion, completion walk and stopped state, and hardware execution that retains each command publication until its release, validates every published address against the submitted item space and takes one fresh joint task and ISR observation per wait without polling"
 implementation = "incomplete"
 host = "covered"
 async = "bounded"
@@ -566,7 +566,8 @@ depends-on = [
   "interrupt-runtime",
 ]
 gaps = [
-  { axis = "implementation", id = "nonempty-list-lock-modify-admission-missing" },
+  { axis = "implementation", id = "hardware-lists-beyond-list-zero-missing" },
+  { axis = "vendor", id = "execution-lock-modify-and-skip-result-semantics-missing" },
   { axis = "vendor", id = "source-3-current-revision-trigger-proof-missing" },
   { axis = "hil", id = "scheduler-lock-modify-live-hardware-trace-missing" },
 ]
@@ -580,16 +581,16 @@ security = [
 ]
 composition = "scheduler-head-transaction"
 level = "lower-primitive"
-activation-boundary = "Live finite PAC and HAL request publication with split task and ISR observations durable cancellation-safe worker state and lock-free latest-event handoff without polling"
+activation-boundary = "List-zero event executor with an ordered mirror and strict wrapping overlap rejection, idle insertion with head publication and RUN, live insertion through execution lock lock-modify request and execution modify, two-phase cancellation through the skip hold, list deletion, completion walk and stopped state, and hardware execution that retains each command publication until its release, validates every published address against the submitted item space and takes one fresh joint task and ISR observation per wait without polling"
 limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
 
 [[capabilities]]
 id = "scheduler-finished-list-drain"
 title = "Bounded scheduler finished-list event drain"
-scope = "Typed sixteen-list hardware mask transfer admitted by exactly one non-copyable dequeued scheduler batch, one-list-per-step source-owned continuation without repeated MMIO retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, caller-owned absolute retry deadline, direct read-only removal rechecks independent of command-ready interrupt causality, and finite removal-ready observation"
+scope = "Typed sixteen-list hardware mask transfer admitted by exactly one non-copyable dequeued scheduler batch or a stopped receipt, one-list-per-step continuation without repeated MMIO, and a list-zero completion walk that returns executed items at the head of the executor mirror to their role pools"
 implementation = "incomplete"
 host = "covered"
-async = "incomplete"
+async = "bounded"
 vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/bluetooth-interrupt-runtime.md",
 ]
@@ -599,9 +600,9 @@ depends-on = [
 gaps = [
   { axis = "implementation", id = "unrelated-finished-list-dispatch-missing" },
   { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
-  { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
+  { axis = "vendor", id = "command-ready-source-124-causality-missing" },
+  { axis = "vendor", id = "software-list-removal-gate-after-completion-unproven" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
-  { axis = "async", id = "outer-finished-list-role-dispatch-missing" },
 ]
 
 [capabilities.catalog-scope]
@@ -613,7 +614,7 @@ security = [
 ]
 composition = "scheduler-finished-list-drain"
 level = "lower-primitive"
-activation-boundary = "Typed sixteen-list hardware mask transfer admitted by exactly one non-copyable dequeued scheduler batch, one-list-per-step source-owned continuation without repeated MMIO retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, caller-owned absolute retry deadline, direct read-only removal rechecks independent of command-ready interrupt causality, and finite removal-ready observation"
+activation-boundary = "Typed sixteen-list hardware mask transfer admitted by exactly one non-copyable dequeued scheduler batch or a stopped receipt, one-list-per-step continuation without repeated MMIO, and a list-zero completion walk that returns executed items at the head of the executor mirror to their role pools"
 limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
 
 [[capabilities]]

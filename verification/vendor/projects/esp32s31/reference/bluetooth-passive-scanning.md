@@ -372,17 +372,15 @@ No upper layer may construct register images.  No public LL type may contain
 the vendor link-state words.  SRAM masks remain private implementation details
 of typed memory accessors, just as for the DTM descriptors.
 
-The lower scheduler lifecycle reaches CPU reclamation. A CPU-owned scanner
-candidate first reserves the common source-owned timeline and passes its fresh
-sequence deadline. Only the overlap-resolved interval is encoded into SRAM;
-the reservation then remains inseparable from the item through list-zero
-merge, selector-one RX/command/head/interrupt/`RUN` publication, fenced
-finished-list capture, exact head retirement and the serialized post-unlink
-removal gate. Recycle validates the timeline identity before atomically
-returning the slot, copied PDU/RSSI results and both private lists. Every
-pre-publication cancellation likewise returns the exact graph and timeline
-owner. The production controller separately owns the role resource, runner
-and HCI routing; this lower contract does not establish their readiness.
+The radio role admits each scan window against one fresh Controller-time
+sample and rejects an overlapping window instead of moving it; only the
+admitted interval is encoded into SRAM. The scanner item then stays with the
+executor from list-zero insertion through the selector-one receive chain,
+`RUN`, fenced finished-list capture and the completion walk, which returns the
+item and lets the role copy the PDU/RSSI results out of the scanning chain. A
+cancelled window leaves through the executor's cancellation. The Link Layer
+core that owns scanning policy and HCI routing does not exist yet; this lower
+contract does not establish its readiness.
 
 ## Scope boundary
 

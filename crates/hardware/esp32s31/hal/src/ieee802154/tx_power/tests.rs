@@ -132,3 +132,23 @@ fn duplicated_boundary_levels_follow_public_branch_precedence() {
     assert_eq!(maximum.selected_provider_index(), 4);
     assert_eq!(maximum.effective_dbm(), 42);
 }
+
+#[test]
+fn the_esp32s31_provider_levels_resolve_every_request() {
+    let levels = Ieee802154TxPowerLevels::ESP32S31;
+    assert_eq!(
+        Ieee802154TxPowerLevels::new(levels.levels_dbm),
+        Ok(levels),
+        "the recovered set satisfies the provider contract"
+    );
+    assert_eq!(levels.len(), 16);
+    // A request between two levels floors to the lower one.
+    let default = levels.resolve(channel(), 20);
+    assert_eq!(
+        (default.effective_dbm(), default.selected_provider_index()),
+        (18, 14)
+    );
+    assert_eq!(levels.resolve(channel(), 0).selected_provider_index(), 8);
+    assert_eq!(levels.resolve(channel(), -128).selected_provider_index(), 0);
+    assert_eq!(levels.resolve(channel(), 127).effective_dbm(), 21);
+}

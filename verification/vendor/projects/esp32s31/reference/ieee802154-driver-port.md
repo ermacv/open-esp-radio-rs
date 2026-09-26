@@ -85,7 +85,7 @@ defers every decision to a task cannot meet these deadlines.
 | --- | --- | --- |
 | `esp_phy_enable` / `esp_phy_disable(PHY_MODEM_IEEE802154)` | RF client acquire and release around operations | PHY `join_ieee802154` / `leave_ieee802154` on the arbiter's shared PHY domain |
 | `esp_btbb_enable` / `esp_btbb_disable` | common BTBB initialization | arbiter BTBB reference, taken by `join_ieee802154` with the registration's gain byte |
-| `bt_bb_get_tx_pwr_table` | dBm-to-power-index table | HAL `tx_power` over an external level provider |
+| `bt_bb_get_tx_pwr_table` | dBm-to-power-index table | HAL `Ieee802154TxPowerLevels::ESP32S31`, recovered from the provider |
 | `esp_coex_ieee802154_*` | PTI scenes, external-coexistence stages, coexistence break notice | coexistence driver; the MAC foundation uses the disabled PTI baseline |
 | `ieee802154_txon_delay_set` (called by `ieee802154_mac_init`) | TX-on delay | arbiter shared TX-on override in `join_ieee802154`; `RXON_DELAY` in the HAL MAC foundation |
 | `bt_bb_get_cur_rx_info` | receive diagnostic | none |

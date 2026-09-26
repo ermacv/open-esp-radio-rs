@@ -239,9 +239,10 @@ postconditions:
 - PHY registration/calibration reaches opaque `register_chipv7_phy(...)`;
 - RF wakeup and tracking depend on opaque `phy_wakeup_init()`,
   `phy_track_pll_init()`, and `phy_track_pll()` effects;
-- MAC initialization still calls opaque `ieee802154_txon_delay_set()`;
-- TX policy still depends on the opaque channel power table behind
-  `bt_bb_get_tx_pwr_table()`.
+- MAC initialization calls closed `ieee802154_txon_delay_set()`, whose
+  recovered effects are the shared transmit-on delay and `RXON_DELAY`;
+- TX policy uses the level set of closed `bt_bb_get_tx_pwr_table()`, recovered
+  as `Ieee802154TxPowerLevels::ESP32S31`.
 
 The PHY client set is shared with Wi-Fi and Bluetooth, and BTBB has its own
 first/last-user refcount. A control owner cannot safely replace either with an

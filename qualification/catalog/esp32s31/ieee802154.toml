@@ -346,7 +346,7 @@ section = "ieee802154-phy-and-rf"
 title = "TX power"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[Power resolution](../../hal/src/ieee802154/tx_power.rs) validates caller-supplied levels and the PIB publishes the resolved index before each operation. A calibrated S31 level provider is not composed."
+scope-and-limitations = "[Power resolution](../../hal/src/ieee802154/tx_power.rs) carries the S31 BTBB provider level set recovered from `bt_bb_get_tx_pwr_table` (-24 to 21 dBm in 3 dB steps) and the PIB publishes the resolved index before each operation. On-air output power is not measured."
 packages = ["oer-esp32s31-hal"]
 
 [[items]]

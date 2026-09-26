@@ -53,18 +53,15 @@ bits. Readback must compare typed fields, including the context-zero enable
 bit, rather than compare complete register images.
 
 The source-backed PIB suborder is frequency, TX power, CCA mode, threshold,
-three ACK controls, coordinator, promiscuous, and pending mode. TX power is a
-mandatory gap: dBm conversion calls `bt_bb_get_tx_pwr_table()`, whose table is
-opaque. The HAL ports only the public clamp-and-floor scan over an external
-non-decreasing level set. It rejects an empty set, a length outside the public
-eight-bit domain, or descending values before producing a channel-bound opaque
-field code. No ESP32-S31 level values are embedded and no register write is
-reachable from that pure resolver. Supplying an arbitrary external slice, or
-borrowing it for the lifetime of one resolution, does not prove a provider or
-calibration epoch. The provider and its RF/BTBB readiness remain mandatory
-gaps: the open static transition can use a deterministic order for the proved
-fields and retain the vendor order inside the control subset, but it is not a
-complete PIB update and must not write a guessed TX-power code.
+three ACK controls, coordinator, promiscuous, and pending mode. TX power
+converts dBm through the level set returned by `bt_bb_get_tx_pwr_table()`.
+The HAL ports the public clamp-and-floor scan over a non-decreasing level set;
+it rejects an empty set, a length outside the public eight-bit domain, or
+descending values before producing a channel-bound opaque field code.
+`Ieee802154TxPowerLevels::ESP32S31` is the provider's set recovered from the
+vendor library: sixteen levels from -24 to 21 dBm in 3 dB steps, whose index
+is the `TXPOWER` field code. The level set is not an RF calibration result.
+The static policy transition itself writes no TX-power code.
 
 All event and abort masks remain zero before, during, and after this static
 policy transition. A write fence followed by one typed snapshot provides a

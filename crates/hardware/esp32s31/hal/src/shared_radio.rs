@@ -43,6 +43,14 @@ mod sealed {
     pub trait RadioClientOwner {}
 }
 
+const fn client_bit(client: RadioClient) -> u8 {
+    match client {
+        RadioClient::Wifi => 1,
+        RadioClient::Bluetooth => 1 << 1,
+        RadioClient::Ieee802154 => 1 << 2,
+    }
+}
+
 /// Protocol register owner that proves which client calls the arbiter.
 ///
 /// Only the protocol register sets implement it, so a caller cannot enter or
@@ -64,11 +72,38 @@ impl RadioClientOwner for Ieee802154TaskRegisters {
     const CLIENT: RadioClient = RadioClient::Ieee802154;
 }
 
+/// Protocol register owner that may use the shared BTBB baseband.
+pub trait BtbbClientOwner: RadioClientOwner {}
+impl BtbbClientOwner for BluetoothTaskRegisters {}
+impl BtbbClientOwner for Ieee802154TaskRegisters {}
+
+/// Why a client cannot take, leave or use the shared BTBB baseband.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BtbbError {
+    /// The client already holds the BTBB baseband.
+    AlreadyAcquired,
+    /// The client does not hold the BTBB baseband.
+    NotAcquired,
+    /// No PHY registration describes the shared PHY, so no gain parameter can
+    /// come from a registered state.
+    Unregistered,
+}
+
+/// Whether a BTBB acquisition ran the shared initialization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BtbbAcquired {
+    /// The first holder ran `bt_bb_v2_init_cmplx(1)`.
+    Initialized,
+    /// Another client already initialized the baseband; no register access.
+    Joined,
+}
+
 /// Shared registers and the PHY and power state that must stay with them.
 struct SharedRadioState {
     registers: SharedRadioRegisters,
     phy: PhyRouteState,
     power: CommonRadioPower,
+    btbb_clients: u8,
 }
 
 /// Unique arbiter of the shared radio partitions.
@@ -102,6 +137,7 @@ impl SharedRadio {
                 registers,
                 phy,
                 power: CommonRadioPower::default(),
+                btbb_clients: 0,
             }),
         }
     }
@@ -139,6 +175,9 @@ impl SharedRadio {
                 SharedRadioReleaseError::CommonPowerHeld,
             ));
         }
+        if state.btbb_clients != 0 {
+            return Err((Self::from_state(state), SharedRadioReleaseError::BtbbHeld));
+        }
         if let Err(error) = crate::root::check_phy_restore_complete(&state.phy) {
             return Err((
                 Self::from_state(state),
@@ -161,6 +200,11 @@ impl SharedRadio {
     }
 
     #[cfg(test)]
+    pub(crate) fn hold_btbb_for_test(&mut self, client: RadioClient) {
+        self.state.get_mut().btbb_clients |= client_bit(client);
+    }
+
+    #[cfg(test)]
     pub(crate) fn hold_common_power_for_test(&mut self, client: RadioClient) {
         self.state.get_mut().power.hold_for_test(client);
     }
@@ -171,6 +215,8 @@ impl SharedRadio {
 pub enum SharedRadioReleaseError {
     /// A client still holds common radio power.
     CommonPowerHeld,
+    /// A client still holds the shared BTBB baseband.
+    BtbbHeld,
     /// A PHY calibration still owns a restore obligation.
     Restore(crate::root::RadioPhyReleaseError),
 }
@@ -249,6 +295,93 @@ impl SharedRadioLease<'_> {
     ) -> Result<(), CommonRadioPowerError> {
         let state = self.state_mut();
         state.power.exit(state.registers.radio_phy_mut(), O::CLIENT)
+    }
+
+    /// Whether `client` currently holds the shared BTBB baseband.
+    pub fn holds_btbb(&self, client: RadioClient) -> bool {
+        self.state().btbb_clients & client_bit(client) != 0
+    }
+
+    /// Take the shared BTBB baseband as the protocol that owns `owner`.
+    ///
+    /// This is ESP-IDF's reference-counted `esp_btbb_enable`: only the first
+    /// holder runs the `bt_bb_v2_init_cmplx(1)` body, which also writes the
+    /// Bluetooth value of the shared TX-on delay; later holders join without
+    /// register access.
+    ///
+    /// # Errors
+    ///
+    /// The client already holds BTBB, or no registration describes the
+    /// shared PHY. Both are rejected before any register access.
+    ///
+    /// # Safety
+    ///
+    /// The Bluetooth/BTBB clocks and resets must be active, the shared PHY
+    /// registration must be complete, and `gain_parameter` must be the byte at
+    /// offset `0x120` of that registration's `phy_param` state.
+    #[allow(
+        unsafe_code,
+        reason = "the unsafe signature carries the common-PHY and clock prerequisites"
+    )]
+    pub unsafe fn btbb_acquire<O: BtbbClientOwner>(
+        &mut self,
+        _owner: &O,
+        gain_parameter: u8,
+    ) -> Result<BtbbAcquired, BtbbError> {
+        let bit = client_bit(O::CLIENT);
+        let state = self.state_mut();
+        if state.btbb_clients & bit != 0 {
+            return Err(BtbbError::AlreadyAcquired);
+        }
+        if state.phy.registration_epoch().is_none() {
+            return Err(BtbbError::Unregistered);
+        }
+        let acquired = if state.btbb_clients == 0 {
+            state.registers.initialize_btbb_v2_arg_one(gain_parameter);
+            BtbbAcquired::Initialized
+        } else {
+            BtbbAcquired::Joined
+        };
+        state.btbb_clients |= bit;
+        Ok(acquired)
+    }
+
+    /// Leave the shared BTBB baseband. Like ESP-IDF's `esp_btbb_disable`,
+    /// this only drops the reference and performs no register access.
+    ///
+    /// # Errors
+    ///
+    /// The client does not hold BTBB.
+    pub fn btbb_release<O: BtbbClientOwner>(&mut self, _owner: &O) -> Result<(), BtbbError> {
+        let bit = client_bit(O::CLIENT);
+        let state = self.state_mut();
+        if state.btbb_clients & bit == 0 {
+            return Err(BtbbError::NotAcquired);
+        }
+        state.btbb_clients &= !bit;
+        Ok(())
+    }
+
+    /// Apply the IEEE 802.15.4 value of the shared TX-on delay.
+    ///
+    /// ESP-IDF writes it at IEEE 802.15.4 MAC initialization, after
+    /// `esp_btbb_enable`; the last write wins and no release restores the
+    /// Bluetooth value. The device fence follows with the caller's MAC timing.
+    ///
+    /// # Errors
+    ///
+    /// IEEE 802.15.4 does not hold BTBB, so the BTBB initialization that this
+    /// override must follow may not have run.
+    pub fn override_ieee802154_tx_on_delay(
+        &mut self,
+        _owner: &Ieee802154TaskRegisters,
+    ) -> Result<(), BtbbError> {
+        let state = self.state_mut();
+        if state.btbb_clients & client_bit(RadioClient::Ieee802154) == 0 {
+            return Err(BtbbError::NotAcquired);
+        }
+        state.registers.override_ieee802154_shared_tx_on_delay();
+        Ok(())
     }
 
     /// Borrow the shared PHY for one PHY-layer operation.

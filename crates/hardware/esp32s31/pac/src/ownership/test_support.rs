@@ -10,7 +10,6 @@ pub(crate) fn ieee802154_task() -> (Ieee802154TaskRegisters, Ieee802154Interrupt
         ieee802154,
         radio_phy,
         coexistence,
-        bluetooth,
         shared_radio,
         ..
     } = RadioPartitions::for_validation();
@@ -21,6 +20,5 @@ pub(crate) fn ieee802154_task() -> (Ieee802154TaskRegisters, Ieee802154Interrupt
             coexistence,
             shared_radio,
         }),
-        bluetooth,
     })
 }

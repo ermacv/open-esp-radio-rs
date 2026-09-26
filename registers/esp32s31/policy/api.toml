@@ -136,7 +136,6 @@ peripherals = [
     "BLUETOOTH_RESET_IDLE_STATUS_0",
     "BTDM_SCHEDULER_TABLE",
     "BTMAC_BLE_PHY_INIT",
-    "BT_V3_2_BASEBAND",
     "BT_V3_2_CTE",
 ]
 
@@ -158,8 +157,9 @@ peripherals = [
 [[ownership-partitions]]
 name = "SharedRadioPeripherals"
 member = "shared_radio"
-description = "Protocol-neutral physical register words touched by more than one radio lifecycle and serialized before either protocol receives a narrow capability."
+description = "Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability."
 peripherals = [
+    "BT_V3_2_BASEBAND",
     "SHARED_RADIO_INIT_CONTROL",
     "SHARED_BASEBAND_RESET_IDLE_STATUS",
     "SHARED_BASEBAND_TX_TIMING",

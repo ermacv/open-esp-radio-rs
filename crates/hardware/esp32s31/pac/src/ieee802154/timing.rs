@@ -174,3 +174,22 @@ impl Ieee802154TaskRegisters {
 
 #[cfg(test)]
 mod tests;
+
+impl crate::SharedRadioRegisters {
+    /// Apply the IEEE 802.15.4 shared TX-on delay override alone.
+    ///
+    /// SOURCE: the complete shared setter reached by `ieee802154_txon_delay_set`
+    /// from `ieee802154_mac_init`, which ESP-IDF runs after
+    /// `esp_btbb_enable`: `AUXILIARY_TX_ON_DELAY=((50-10)<<3)`. The BTBB
+    /// initialization writes the Bluetooth value to the same field only on its
+    /// first enable, so the last IEEE 802.15.4 MAC initialization wins and no
+    /// release restores the previous value. The caller orders this after the
+    /// shared BTBB initialization; the device fence is the caller's.
+    #[doc(hidden)]
+    pub fn override_ieee802154_shared_tx_on_delay(&mut self) {
+        generated::override_ieee802154_shared_tx_on_delay(
+            &self.shared_radio.shared_baseband_tx_timing,
+            generated::Ieee802154SharedTxOnDelayOverride::Delay50,
+        );
+    }
+}

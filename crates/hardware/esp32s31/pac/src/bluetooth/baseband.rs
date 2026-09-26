@@ -9,34 +9,28 @@
 
 #![deny(unsafe_code)]
 
-use crate::{
-    BluetoothTaskRegisters, Ieee802154TaskRegisters, SharedRadioRegisters, device_fence, svd,
-};
+use crate::{Ieee802154TaskRegisters, SharedRadioRegisters, device_fence, svd};
 
-impl BluetoothTaskRegisters {
+impl SharedRadioRegisters {
     /// Execute only the exact MMIO path of vendor `bt_bb_v2_init_cmplx(1)`.
     ///
-    /// The caller-provided byte is the positional value read by the vendor
-    /// body from the real linked `phy_param` object at offset `0x120`. Its
-    /// higher-level meaning remains unassigned. The vendor diagnostic print
-    /// selected by argument one is intentionally outside this hardware
-    /// transaction and is omitted from the comparison effect contract. After
-    /// the body, this standalone Bluetooth edge adds exactly one device fence
-    /// before returning to its lifecycle owner.
+    /// The BTBB baseband is shared by Bluetooth and IEEE 802.15.4, so this
+    /// transaction belongs to the shared radio owner. The caller-provided byte
+    /// is the positional value read by the vendor body from the real linked
+    /// `phy_param` object at offset `0x120`. Its higher-level meaning remains
+    /// unassigned. The vendor diagnostic print selected by argument one is
+    /// intentionally outside this hardware transaction and is omitted from
+    /// the comparison effect contract. After the body, this edge adds exactly
+    /// one device fence before returning to its lifecycle owner.
     ///
-    /// Common-PHY and clock ordering do not belong to the PAC. The controller
-    /// lifecycle above HAL is the only safe production caller and retains
-    /// those owners while this finite register transaction executes.
+    /// Common-PHY and clock ordering do not belong to the PAC. The lifecycle
+    /// above HAL is the only safe production caller and retains those owners
+    /// while this finite register transaction executes.
     #[doc(hidden)]
-    pub fn initialize_baseband_v2_arg_one(
-        &mut self,
-        shared: &mut SharedRadioRegisters,
-        gain_parameter: u8,
-    ) {
+    pub fn initialize_btbb_v2_arg_one(&mut self, gain_parameter: u8) {
         let mut port = BluetoothBasebandV2Transaction {
-            bluetooth: &self.bluetooth,
-            radio_phy: &shared.radio_phy.peripherals,
-            shared_radio: &shared.shared_radio,
+            radio_phy: &self.radio_phy.peripherals,
+            shared_radio: &self.shared_radio,
         };
         execute_standalone_bluetooth_transition(&mut port, gain_parameter);
     }
@@ -69,7 +63,6 @@ impl Ieee802154TaskRegisters {
         gain_parameter: u8,
     ) {
         let mut port = BluetoothBasebandV2Transaction {
-            bluetooth: &self.peripherals.btbb.bluetooth,
             radio_phy: &self.peripherals.radio_phy.peripherals,
             shared_radio: &self.peripherals.btbb.shared_radio,
         };
@@ -99,7 +92,6 @@ where
 
 /// One borrow-scoped view of the exact generated owners touched by BTBB v2.
 struct BluetoothBasebandV2Transaction<'a> {
-    bluetooth: &'a svd::peripheral_ownership::BluetoothControllerPeripherals,
     radio_phy: &'a svd::peripheral_ownership::RadioPhyPeripherals,
     shared_radio: &'a svd::peripheral_ownership::SharedRadioPeripherals,
 }
@@ -123,7 +115,7 @@ impl BluetoothBasebandV2TransitionPort for BluetoothBasebandV2Transaction<'_> {
 
 impl BluetoothBasebandV2Transaction<'_> {
     fn initialize_baseband_v2_tx(&self) {
-        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        let baseband = &self.shared_radio.bt_v3_2_baseband;
         crate::generated::initialize_bluetooth_baseband_tx_argument(baseband);
         crate::generated::initialize_bluetooth_baseband_tx_setup_image(baseband);
         crate::generated::initialize_bluetooth_baseband_tx_low_byte(baseband);
@@ -140,7 +132,7 @@ impl BluetoothBasebandV2Transaction<'_> {
         self.initialize_receive_recorrection();
         self.initialize_receive_detection();
 
-        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        let baseband = &self.shared_radio.bt_v3_2_baseband;
         crate::generated::initialize_bluetooth_receive_correlator(baseband);
         crate::generated::initialize_bluetooth_receive_dpo_bit_19(baseband);
         crate::generated::initialize_bluetooth_receive_dpo_value(baseband);
@@ -156,7 +148,7 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_baseband_rx_setup(&self) {
-        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        let baseband = &self.shared_radio.bt_v3_2_baseband;
         crate::generated::initialize_bluetooth_receive_setup_argument(baseband);
         crate::generated::initialize_bluetooth_receive_setup_image(baseband);
         crate::generated::initialize_bluetooth_receive_setup_shared_control(
@@ -271,7 +263,7 @@ impl BluetoothBasebandV2Transaction<'_> {
         crate::generated::initialize_bluetooth_receive_restart_100_28_31(btagc);
         crate::generated::initialize_bluetooth_receive_restart_e8_10_15(btagc);
 
-        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        let baseband = &self.shared_radio.bt_v3_2_baseband;
         crate::generated::initialize_bluetooth_receive_restart_correlator(baseband);
         crate::generated::initialize_bluetooth_receive_restart_baseband_21(baseband);
         crate::generated::initialize_bluetooth_receive_restart_baseband_20(baseband);
@@ -329,7 +321,7 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_gaussian_1m_coefficients(&self) {
-        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        let baseband = &self.shared_radio.bt_v3_2_baseband;
         crate::generated::initialize_bluetooth_gaussian_1m_0_bits_28_31(baseband);
         crate::generated::initialize_bluetooth_gaussian_1m_0_bits_23_27(baseband);
         crate::generated::initialize_bluetooth_gaussian_1m_0_bits_17_22(baseband);
@@ -345,7 +337,7 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_gaussian_2m_coefficients(&self) {
-        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        let baseband = &self.shared_radio.bt_v3_2_baseband;
         crate::generated::initialize_bluetooth_gaussian_2m_0_bits_25_31(baseband);
         crate::generated::initialize_bluetooth_gaussian_2m_0_bits_17_24(baseband);
         crate::generated::initialize_bluetooth_gaussian_2m_0_bits_8_16(baseband);
@@ -358,7 +350,7 @@ impl BluetoothBasebandV2Transaction<'_> {
         crate::generated::initialize_bluetooth_tx_pa_delay(
             &self.radio_phy.phy_baseband_config_oracle,
         );
-        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        let baseband = &self.shared_radio.bt_v3_2_baseband;
         crate::generated::initialize_bluetooth_le_tx_delay(baseband);
         crate::generated::initialize_bluetooth_tx_cca_period_difference(baseband);
         crate::generated::initialize_bluetooth_tx_cca_period_argument(baseband);
@@ -369,10 +361,10 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_baseband_coexistence_defaults(&self) {
         crate::generated::initialize_bluetooth_baseband_coexistence_18(
-            &self.bluetooth.bt_v3_2_baseband,
+            &self.shared_radio.bt_v3_2_baseband,
         );
         crate::generated::initialize_bluetooth_baseband_coexistence_20(
-            &self.bluetooth.bt_v3_2_baseband,
+            &self.shared_radio.bt_v3_2_baseband,
         );
     }
 
@@ -387,7 +379,7 @@ impl BluetoothBasebandV2Transaction<'_> {
             &self.radio_phy.phy_btagc_recovered,
         );
         crate::generated::initialize_bluetooth_baseband_cca_default(
-            &self.bluetooth.bt_v3_2_baseband,
+            &self.shared_radio.bt_v3_2_baseband,
         );
     }
 

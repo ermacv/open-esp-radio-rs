@@ -96,3 +96,74 @@ fn common_power_membership_follows_the_proving_owner() {
     assert!(!lease.holds_common_power(RadioClient::Wifi));
     assert!(!lease.holds_common_power(RadioClient::Bluetooth));
 }
+
+#[test]
+fn btbb_joins_an_initialized_baseband_without_register_access() {
+    use crate::owner::PhyInitializationAccess;
+    use oer_esp32s31_pac::{Ieee802154TaskParts, Ieee802154TaskRegisters};
+    let RadioPartitions {
+        bluetooth,
+        ieee802154,
+        radio_phy,
+        coexistence,
+        shared_radio,
+        ..
+    } = RadioPartitions::for_validation();
+    let bluetooth = oer_esp32s31_pac::BluetoothTaskRegisters::new(bluetooth);
+    // The IEEE 802.15.4 owner only proves its identity; its own shared
+    // registers stay unused beside the arbiter under test.
+    let (ieee802154, _interrupts) = Ieee802154TaskRegisters::new(Ieee802154TaskParts {
+        ieee802154,
+        shared: SharedRadioRegisters::new(SharedRadioParts {
+            radio_phy,
+            coexistence,
+            shared_radio,
+        }),
+    });
+    let mut radio = arbiter();
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+
+    // Without a registration no gain parameter can be valid.
+    // SAFETY: rejected before any register access.
+    #[allow(unsafe_code)]
+    let unregistered = unsafe { lease.btbb_acquire(&bluetooth, 0) };
+    assert_eq!(unregistered, Err(BtbbError::Unregistered));
+    assert_eq!(
+        lease.override_ieee802154_tx_on_delay(&ieee802154),
+        Err(BtbbError::NotAcquired)
+    );
+    assert_eq!(lease.btbb_release(&bluetooth), Err(BtbbError::NotAcquired));
+    let _epoch = lease.phy_hal().begin_registration_epoch();
+    drop(lease);
+
+    // Bluetooth already initialized the baseband.
+    radio.hold_btbb_for_test(RadioClient::Bluetooth);
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+    // SAFETY: the baseband is initialized, so joining touches no register.
+    #[allow(unsafe_code)]
+    let joined = unsafe { lease.btbb_acquire(&ieee802154, 0) };
+    assert_eq!(joined, Ok(BtbbAcquired::Joined));
+    // SAFETY: rejected before any register access.
+    #[allow(unsafe_code)]
+    let again = unsafe { lease.btbb_acquire(&ieee802154, 0) };
+    assert_eq!(again, Err(BtbbError::AlreadyAcquired));
+    assert!(lease.holds_btbb(RadioClient::Ieee802154));
+    assert_eq!(lease.btbb_release(&ieee802154), Ok(()));
+    assert_eq!(lease.btbb_release(&bluetooth), Ok(()));
+    drop(lease);
+    assert!(radio.into_parts().is_ok());
+}
+
+#[test]
+fn the_arbiter_stays_while_btbb_is_held() {
+    let mut radio = arbiter();
+    radio.hold_btbb_for_test(RadioClient::Ieee802154);
+    let Err((_radio, error)) = radio.into_parts() else {
+        panic!("IEEE 802.15.4 still holds BTBB");
+    };
+    assert_eq!(error, SharedRadioReleaseError::BtbbHeld);
+}

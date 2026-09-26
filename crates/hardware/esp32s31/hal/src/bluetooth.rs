@@ -511,8 +511,9 @@ impl TaskOwner {
     )]
     pub unsafe fn initialize_baseband_v2_arg_one(&mut self, gain_parameter: u8) {
         self.reunitable = false;
-        let (task, shared) = self.registers.parts_mut();
-        task.initialize_baseband_v2_arg_one(shared, gain_parameter);
+        self.registers
+            .shared_mut()
+            .initialize_btbb_v2_arg_one(gain_parameter);
     }
 
     /// Execute the complete reviewed BLE base-stack task-enable hardware transaction.
@@ -535,7 +536,8 @@ impl TaskOwner {
         // SAFETY: forwarded unchanged from this function's `# Safety` contract,
         // which states the PAC transaction's prerequisites.
         unsafe {
-            self.registers.enable_ble_base_stack_hardware(inputs);
+            let (task, shared) = self.registers.parts_mut();
+            task.enable_ble_base_stack_hardware(shared, inputs);
         }
     }
 

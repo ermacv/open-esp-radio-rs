@@ -91,6 +91,10 @@ impl BluetoothRegisters {
         (&mut self.task, &mut self.shared)
     }
 
+    pub(crate) fn shared_mut(&mut self) -> &mut SharedRadioRegisters {
+        &mut self.shared
+    }
+
     pub(crate) const fn radio_phy(&self) -> &RadioPhyRegisters {
         self.shared.radio_phy()
     }

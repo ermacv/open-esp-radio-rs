@@ -16,11 +16,10 @@ pub(crate) struct WifiRadioPeripheralOwners {
 
 /// Physical owners used by one IEEE 802.15.4 task register set.
 ///
-/// The Bluetooth controller partition is intentionally nested behind the
-/// BTBB boundary. ESP-IDF's public IEEE 802.15.4 enable order calls the shared
-/// `esp_btbb_enable` lifecycle, but does not grant IEEE 802.15.4 authority over
-/// the Bluetooth controller. Keeping the complete generated partition private
-/// lets reviewed BTBB transactions be added without exposing BLE/EDR methods.
+/// ESP-IDF's public IEEE 802.15.4 enable order calls the shared
+/// `esp_btbb_enable` lifecycle. The BTBB baseband it initializes is part of
+/// the shared radio partition, so IEEE 802.15.4 holds no Bluetooth controller
+/// authority.
 pub(crate) struct Ieee802154TaskPeripheralOwners {
     pub(crate) ieee802154_mac: crate::ieee802154::ownership::TaskRegisters,
     pub(crate) ieee802154_interrupt_route: svd::Ieee802154InterruptRoute,
@@ -30,9 +29,8 @@ pub(crate) struct Ieee802154TaskPeripheralOwners {
     pub(crate) btbb: Ieee802154BtbbPeripheralOwners,
 }
 
-/// Generated partitions retained behind the narrow IEEE 802.15.4 BTBB role.
+/// Shared-radio partition retained behind the narrow IEEE 802.15.4 BTBB role.
 pub(crate) struct Ieee802154BtbbPeripheralOwners {
-    pub(crate) bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
     pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
 }
 
@@ -559,7 +557,6 @@ pub struct Ieee802154TaskRegisters {
 pub struct Ieee802154TaskParts {
     pub ieee802154: Ieee802154Partition,
     pub shared: SharedRadioRegisters,
-    pub bluetooth: BluetoothControllerPartition,
 }
 
 impl Ieee802154TaskRegisters {
@@ -578,7 +575,6 @@ impl Ieee802154TaskRegisters {
                     coexistence,
                     shared_radio,
                 },
-            bluetooth: BluetoothControllerPartition(bluetooth),
         } = parts;
         let svd::peripheral_ownership::Ieee802154Peripherals {
             ieee802154_mac,
@@ -593,10 +589,7 @@ impl Ieee802154TaskRegisters {
                     etm,
                     radio_phy,
                     coexistence,
-                    btbb: Ieee802154BtbbPeripheralOwners {
-                        bluetooth,
-                        shared_radio,
-                    },
+                    btbb: Ieee802154BtbbPeripheralOwners { shared_radio },
                 },
             },
             Ieee802154InterruptSetup {
@@ -614,11 +607,7 @@ impl Ieee802154TaskRegisters {
             etm,
             radio_phy,
             coexistence,
-            btbb:
-                Ieee802154BtbbPeripheralOwners {
-                    bluetooth,
-                    shared_radio,
-                },
+            btbb: Ieee802154BtbbPeripheralOwners { shared_radio },
         } = self.peripherals;
         let ieee802154_mac = crate::ieee802154::ownership::reunite(task_mac, interrupts.registers);
         Ieee802154TaskParts {
@@ -634,7 +623,6 @@ impl Ieee802154TaskRegisters {
                 coexistence,
                 shared_radio,
             },
-            bluetooth: BluetoothControllerPartition(bluetooth),
         }
     }
 

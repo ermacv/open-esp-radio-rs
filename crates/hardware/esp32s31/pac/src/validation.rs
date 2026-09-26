@@ -103,7 +103,7 @@ fn bluetooth_task() -> (
 ///
 /// The caller must provide an isolated validation image whose modeled state
 /// satisfies the common-PHY prerequisite of
-/// `BluetoothTaskRegisters::initialize_baseband_v2_arg_one`. No other radio
+/// `SharedRadioRegisters::initialize_btbb_v2_arg_one`. No other radio
 /// owner may be used after this function returns: the powered task and
 /// interrupt partitions are deliberately retained because verified Bluetooth
 /// teardown is not implemented yet.
@@ -113,9 +113,9 @@ fn bluetooth_task() -> (
 )]
 #[inline(always)]
 pub unsafe fn initialize_bluetooth_baseband_v2(gain_parameter: u8) {
-    let (mut task, interrupts) = bluetooth_task();
+    let (task, interrupts) = bluetooth_task();
     let mut shared = shared_radio_registers();
-    task.initialize_baseband_v2_arg_one(&mut shared, gain_parameter);
+    shared.initialize_btbb_v2_arg_one(gain_parameter);
     let _powered_owners = (task, shared, interrupts);
 }
 
@@ -213,12 +213,14 @@ pub unsafe fn initialize_bluetooth_phy_registers(
         runtime_configuration_low_byte,
     );
     let (mut task, interrupts) = bluetooth_task();
+    let mut shared = shared_radio_registers();
     // SAFETY: the caller models every prerequisite of
-    // `initialize_ble_phy_registers`; `task` is the sole validation owner.
+    // `initialize_ble_phy_registers`; `task` and `shared` are the sole
+    // validation owners.
     unsafe {
-        task.initialize_ble_phy_registers(inputs);
+        task.initialize_ble_phy_registers(&mut shared, inputs);
     }
-    let _powered_owners = (task, interrupts);
+    let _powered_owners = (task, shared, interrupts);
     true
 }
 

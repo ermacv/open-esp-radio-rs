@@ -8,7 +8,9 @@
 
 #![deny(unsafe_code)]
 
-use crate::{BluetoothControllerSramAddress, BluetoothTaskRegisters, device_fence};
+use crate::{
+    BluetoothControllerSramAddress, BluetoothTaskRegisters, SharedRadioRegisters, device_fence,
+};
 
 const ENVIRONMENT_LAST_OFFSET: u32 = 0x40;
 const NORMAL_PROFILE_PRIVATE_TIMING_SOURCE_BYTE: u8 = 61;
@@ -29,6 +31,7 @@ fn execute_base_stack_on_task_enable_hardware(
 
 struct HardwareBleBaseStackOnTaskEnableTransaction<'registers> {
     registers: &'registers mut BluetoothTaskRegisters,
+    shared: &'registers mut SharedRadioRegisters,
     inputs: BluetoothPhyRegisterInitInputs,
 }
 
@@ -37,7 +40,7 @@ impl BleBaseStackOnTaskEnableHardwareTransaction
 {
     fn enable_access_address_low_correlation(&mut self) {
         crate::generated::enable_ble_phy_access_address_low_correlation(
-            &self.registers.bluetooth.bt_v3_2_baseband,
+            &self.shared.shared_radio.bt_v3_2_baseband,
         );
     }
 
@@ -49,7 +52,8 @@ impl BleBaseStackOnTaskEnableHardwareTransaction
         // SAFETY: the enclosing composed transaction carries the same
         // lifecycle and pointed-storage prerequisites as the exact PHY leaf.
         unsafe {
-            self.registers.initialize_ble_phy_registers(self.inputs);
+            self.registers
+                .initialize_ble_phy_registers(self.shared, self.inputs);
         }
     }
 }
@@ -187,10 +191,12 @@ impl BluetoothTaskRegisters {
     )]
     pub unsafe fn enable_ble_base_stack_hardware(
         &mut self,
+        shared: &mut SharedRadioRegisters,
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
         let mut transaction = HardwareBleBaseStackOnTaskEnableTransaction {
             registers: self,
+            shared,
             inputs,
         };
         execute_base_stack_on_task_enable_hardware(&mut transaction);
@@ -215,7 +221,11 @@ impl BluetoothTaskRegisters {
         dead_code,
         reason = "the unsafe signature retains the exact PHY leaf lifecycle and storage prerequisites"
     )]
-    pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
+    pub unsafe fn initialize_ble_phy_registers(
+        &mut self,
+        shared: &mut SharedRadioRegisters,
+        inputs: BluetoothPhyRegisterInitInputs,
+    ) {
         let timing_byte = inputs.private_timing_source_byte.wrapping_sub(1);
         let environment = inputs.environment.address();
         let environment_member = inputs.environment.compressed_member(0x2c);
@@ -245,7 +255,7 @@ impl BluetoothTaskRegisters {
         // function table. The restricted transaction preserves its MMIO edge
         // at the same position without claiming a static call-table install.
         crate::generated::publish_ble_phy_le_tx_on_delay(
-            &bluetooth.bt_v3_2_baseband,
+            &shared.shared_radio.bt_v3_2_baseband,
             crate::generated::BluetoothPhyInitTimingByte::new(u32::from(
                 timing_byte.wrapping_sub(10),
             ))

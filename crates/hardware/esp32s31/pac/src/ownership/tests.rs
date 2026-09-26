@@ -50,7 +50,6 @@ fn ieee802154_register_set_reunites_its_interrupt_owner() {
     let partitions = RadioPartitions::for_validation();
     let RadioPartitions {
         ieee802154,
-        bluetooth,
         radio_phy,
         coexistence,
         shared_radio,
@@ -63,7 +62,6 @@ fn ieee802154_register_set_reunites_its_interrupt_owner() {
             coexistence,
             shared_radio,
         }),
-        bluetooth,
     });
     let Ieee802154TaskParts {
         ieee802154, shared, ..

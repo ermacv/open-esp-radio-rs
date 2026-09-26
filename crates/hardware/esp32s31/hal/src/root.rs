@@ -142,7 +142,6 @@ impl RadioHardware {
                 coexistence,
                 shared_radio,
             }),
-            bluetooth,
         });
         Ieee802154Route {
             task,
@@ -151,6 +150,7 @@ impl RadioHardware {
             retained: RetainedIeee802154 {
                 wifi_mac,
                 wifi_interrupts,
+                bluetooth,
                 bluetooth_modem_lp_timer,
                 bluetooth_interrupts,
             },
@@ -167,15 +167,12 @@ impl RadioHardware {
                 RetainedIeee802154 {
                     wifi_mac,
                     wifi_interrupts,
+                    bluetooth,
                     bluetooth_modem_lp_timer,
                     bluetooth_interrupts,
                 },
         } = route;
-        let Ieee802154TaskParts {
-            ieee802154,
-            shared,
-            bluetooth,
-        } = task.into_parts(interrupts);
+        let Ieee802154TaskParts { ieee802154, shared } = task.into_parts(interrupts);
         let SharedRadioParts {
             radio_phy,
             coexistence,
@@ -643,6 +640,7 @@ pub(crate) struct RetainedWifi {
 pub(crate) struct RetainedIeee802154 {
     wifi_mac: WifiMacPartition,
     wifi_interrupts: MacInterruptSetup,
+    bluetooth: BluetoothControllerPartition,
     bluetooth_modem_lp_timer: BluetoothModemLpTimerRegisters,
     bluetooth_interrupts: BluetoothInterruptSetup,
 }

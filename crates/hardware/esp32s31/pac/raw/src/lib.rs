@@ -58413,7 +58413,6 @@ pub mod peripheral_ownership {
         pub bluetooth_reset_idle_status_0: crate::BluetoothResetIdleStatus0,
         pub btdm_scheduler_table: crate::BtdmSchedulerTable,
         pub btmac_ble_phy_init: crate::BtmacBlePhyInit,
-        pub bt_v3_2_baseband: crate::BtV3_2Baseband,
         pub bt_v3_2_cte: crate::BtV3_2Cte,
     }
 
@@ -58428,8 +58427,9 @@ pub mod peripheral_ownership {
         pub bluetooth_scheduler_interrupt_runtime: crate::BluetoothSchedulerInterruptRuntime,
     }
 
-    /// Protocol-neutral physical register words touched by more than one radio lifecycle and serialized before either protocol receives a narrow capability.
+    /// Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability.
     pub struct SharedRadioPeripherals {
+        pub bt_v3_2_baseband: crate::BtV3_2Baseband,
         pub shared_radio_init_control: crate::SharedRadioInitControl,
         pub shared_baseband_reset_idle_status: crate::SharedBasebandResetIdleStatus,
         pub shared_baseband_tx_timing: crate::SharedBasebandTxTiming,
@@ -58463,7 +58463,7 @@ pub mod peripheral_ownership {
         pub bluetooth_modem_lp_timer: BluetoothModemLpTimerPeripherals,
         /// Bluetooth controller interrupt registers transferred independently from task lifecycle ownership to the hard ISR.
         pub bluetooth_interrupts: BluetoothInterruptPeripherals,
-        /// Protocol-neutral physical register words touched by more than one radio lifecycle and serialized before either protocol receives a narrow capability.
+        /// Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability.
         pub shared_radio: SharedRadioPeripherals,
         /// Modem event-task matrix. The restricted PAC splits its channels into disjoint capabilities: channels zero and one for IEEE 802.15.4 and channels four through seven for Bluetooth, each writing only its own bits of the write-trigger set and clear words.
         pub modem_etm: ModemEtmPeripherals,
@@ -58694,7 +58694,6 @@ pub mod peripheral_ownership {
                 bluetooth_reset_idle_status_0,
                 btdm_scheduler_table,
                 btmac_ble_phy_init,
-                bt_v3_2_baseband,
                 bt_v3_2_cte,
             },
             bluetooth_modem_lp_timer: BluetoothModemLpTimerPeripherals {
@@ -58705,6 +58704,7 @@ pub mod peripheral_ownership {
                 bluetooth_scheduler_interrupt_runtime,
             },
             shared_radio: SharedRadioPeripherals {
+                bt_v3_2_baseband,
                 shared_radio_init_control,
                 shared_baseband_reset_idle_status,
                 shared_baseband_tx_timing,

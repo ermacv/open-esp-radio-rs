@@ -5,7 +5,8 @@ acquires the generated singleton once as opaque register partitions; register
 sets such as `WifiRadioRegisters` and `BluetoothTaskRegisters` are assembled
 from those partitions and carry the reviewed domain transactions. Protocol
 register sets contain only their protocol's partitions. The radio PHY,
-coexistence arbitration and shared baseband partitions form the separate
+coexistence arbitration and shared baseband partitions, including the BTBB
+baseband that Bluetooth and IEEE 802.15.4 both initialize, form the separate
 `SharedRadioRegisters` owner; a transaction touching both protocol and shared
 registers takes it as an explicit argument, and the coexistence timer bank
 belongs to it. Per-protocol coexistence priority registers stay with that

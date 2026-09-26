@@ -568,7 +568,8 @@ oer_probe_macros::probe! {
     ) -> u32 {
         use oer_esp32s31_hal::types::{
             MacHtChannelWidth, MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate,
-            MacHtTxFormat, MacHtTxParameters, MacHtTxProgram, MacInterface,
+            MacHtTxFormat, MacHtTxParameters, MacHtTxProgram, MacInterface, MacTxControlFrame,
+            MacTxProtection,
         };
 
         let parameters = program_address as *const CanonicalHtTxParameters;
@@ -615,11 +616,36 @@ oer_probe_macros::probe! {
             3 => MacHtProtectionSpacing::Density7,
             _ => panic!("verification HT protection spacing is out of range"),
         };
+        // Production publishes the vendor `mac_tx_get_rts_rate` image for an
+        // unprotected PPDU; take it from the compiled driver mapping.
+        let control_rate = oer_esp32s31_ieee80211_mac::tx::HtRate::new(
+            oer_esp32s31_ieee80211_mac::tx::HtMcs::from_index(parameters.mcs as u8)
+                .expect("verification HT MCS is in range"),
+            match guard_interval {
+                MacHtGuardInterval::Long800Ns => {
+                    oer_esp32s31_ieee80211_mac::tx::HtGuardInterval::Long800Ns
+                }
+                MacHtGuardInterval::Short400Ns => {
+                    oer_esp32s31_ieee80211_mac::tx::HtGuardInterval::Short400Ns
+                }
+            },
+            match channel_width {
+                MacHtChannelWidth::Mhz20 => oer_esp32s31_ieee80211_mac::tx::HtChannelWidth::Mhz20,
+                MacHtChannelWidth::Mhz40 => oer_esp32s31_ieee80211_mac::tx::HtChannelWidth::Mhz40,
+            },
+        )
+        .vendor_control_rate()
+        .pac_rate();
         let dma = ValidationPreparedTxDma(parameters.descriptor_head);
         let program = MacHtTxProgram::new(
             &dma,
             MacHtTxParameters {
-                protection: oer_esp32s31_pac::MacTxProtection::None,
+                control: MacTxControlFrame {
+                    protection: MacTxProtection::None,
+                    rate: control_rate,
+                    power_primary: parameters.rts_power_primary as u8,
+                    power_alternate: parameters.rts_power_alternate as u8,
+                },
                 rate: MacHtRate {
                     mcs,
                     guard_interval,
@@ -630,8 +656,6 @@ oer_probe_macros::probe! {
                 descriptor_count: parameters.descriptor_count as u8,
                 data_power_primary: parameters.data_power_primary as u8,
                 data_power_alternate: parameters.data_power_alternate as u8,
-                rts_power_primary: parameters.rts_power_primary as u8,
-                rts_power_alternate: parameters.rts_power_alternate as u8,
                 protection_spacing,
                 timeout: parameters.timeout as u16,
                 scheduler_priority: parameters.scheduler_priority as u8,

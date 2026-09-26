@@ -1,8 +1,8 @@
 # ESP32-S31 shared radio system
 
-`oer-esp32s31-radio-system` owns the shared ESP32-S31 radio on the chip, as
-ESP-IDF's `esp_phy` component does: the [radio arbiter](../../../../hardware/esp32s31/hal/src/shared_radio.rs)
-with its [shared PHY domain](../../../../hardware/esp32s31/phy/src/concurrent.rs),
+`oer-esp32s31-radio-runtime` owns the shared ESP32-S31 radio on the chip, as
+ESP-IDF's `esp_phy` component does: the [radio arbiter](../../../hardware/esp32s31/hal/src/shared_radio.rs)
+with its [shared PHY domain](../../../hardware/esp32s31/phy/src/concurrent.rs),
 the platform token the PHY target port borrows and the platform sources of
 the modem clocks.
 

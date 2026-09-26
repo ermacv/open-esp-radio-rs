@@ -25,7 +25,7 @@ use oer_esp32s31_ieee802154_system::{
 };
 use oer_esp32s31_phy::ConcurrentTrackingTick;
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
-use oer_esp32s31_radio_system::RadioSystem;
+use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{
     Event as HilEvent, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirTxOutcome,
     Ieee802154SessionAck, Ieee802154SessionConfig, Ieee802154SessionFrame,

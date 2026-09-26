@@ -165,7 +165,7 @@ ieee802154-radio = [
     "dep:oer-esp32s31-ieee802154",
     "dep:oer-esp32s31-ieee802154-runtime",
     "dep:oer-esp32s31-ieee802154-system",
-    "dep:oer-esp32s31-radio-system",
+    "dep:oer-esp32s31-radio-runtime",
     "dep:oer-ieee802154",
 ]
 
@@ -203,7 +203,7 @@ oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], option
 oer-esp32s31-ieee802154 = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-runtime = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-system = { workspace = true, optional = true }
-oer-esp32s31-radio-system = { workspace = true, optional = true }
+oer-esp32s31-radio-runtime = { workspace = true, optional = true }
 oer-ieee802154 = { workspace = true, optional = true }
 oer-esp32s31-soc-esp-hal.workspace = true
 oer-esp32s31-executor-embassy.workspace = true

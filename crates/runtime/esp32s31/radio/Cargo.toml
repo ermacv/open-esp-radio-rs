@@ -1,5 +1,5 @@
 [package]
-name = "oer-esp32s31-radio-system"
+name = "oer-esp32s31-radio-runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,9 +10,9 @@ description = "Product-level ESP32-S31 shared radio: the arbiter, the shared PHY
 [dependencies]
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
-oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
-oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
-oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
+oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal" }
+oer-esp32s31-phy = { path = "../../../hardware/esp32s31/phy" }
+oer-esp32s31-phy-runtime = { path = "../phy" }
 
 [lints]
 workspace = true
@@ -24,6 +24,6 @@ targets = []
 
 [package.metadata.open-radio]
 scope = "production"
-layer = "composition"
+layer = "runtime"
 platform = "chip"
 chip = "esp32s31"

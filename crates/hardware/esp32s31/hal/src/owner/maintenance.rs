@@ -7,6 +7,7 @@
 //! No BLE/IEEE 802.15.4 timeslot or concurrent coexistence grant is implied.
 
 use super::{MacInterruptCheckpoint, MacInterruptSetup, RadioRuntimeOwner, SharedPhyHal, route};
+use crate::coex::{CoexPtiTable, PHY_GRANT_PROTECT_EVENT, PhyGrantProtect};
 use crate::ieee80211::mac::WifiMacHal;
 
 mod sealed {
@@ -44,6 +45,11 @@ pub trait InterruptAuthority: sealed::InterruptAuthority {}
 ///     fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
 ///         unimplemented!()
 ///     }
+///     fn phy_hal_with_grant(
+///         &mut self,
+///     ) -> (SharedPhyHal<'_, route::Bluetooth>, oer_esp32s31_hal::coex::PhyGrantProtect<'_>) {
+///         unimplemented!()
+///     }
 /// }
 /// ```
 pub trait PhyMaintenanceAccess: sealed::PhyMaintenanceAccess {
@@ -52,6 +58,18 @@ pub trait PhyMaintenanceAccess: sealed::PhyMaintenanceAccess {
 
     /// Borrow the shared PHY for one step of the admitted operation.
     fn phy_hal(&mut self) -> SharedPhyHal<'_, Self::Route>;
+
+    /// Borrow the shared PHY together with this owner's PHY grant-protect
+    /// request, for maintenance that brackets its hardware regions with it.
+    ///
+    /// The exclusive route has no radio arbiter; the request carries the
+    /// arbiter's cold event-48 priority.
+    fn phy_hal_with_grant(&mut self) -> (SharedPhyHal<'_, Self::Route>, PhyGrantProtect<'_>);
+}
+
+/// The cold PHY grant-protect priority of an exclusive route.
+const fn exclusive_grant_pti() -> crate::coex::CoexPti {
+    CoexPtiTable::VENDOR.pti(PHY_GRANT_PROTECT_EVENT)
 }
 
 impl<I: InterruptAuthority> sealed::PhyMaintenanceAccess for WifiAccess<I> {}
@@ -61,6 +79,10 @@ impl<I: InterruptAuthority> PhyMaintenanceAccess for WifiAccess<I> {
 
     fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Wifi> {
         WifiAccess::phy_hal(self)
+    }
+
+    fn phy_hal_with_grant(&mut self) -> (SharedPhyHal<'_, route::Wifi>, PhyGrantProtect<'_>) {
+        WifiAccess::phy_hal_with_grant(self)
     }
 }
 
@@ -72,14 +94,22 @@ impl PhyMaintenanceAccess for crate::bluetooth::BluetoothMaintenanceAccess<'_> {
     fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
         crate::owner::SharedPhyBorrow::borrow_shared_phy(self.task)
     }
+
+    fn phy_hal_with_grant(&mut self) -> (SharedPhyHal<'_, route::Bluetooth>, PhyGrantProtect<'_>) {
+        self.task.shared_phy_hal_with_grant()
+    }
 }
 impl InterruptAuthority for MacInterruptSetup {}
 impl InterruptAuthority for MacInterruptCheckpoint {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
-    MacActive { state: u8 },
+    MacActive {
+        state: u8,
+    },
     RxWalkerEnabled,
+    /// The PHY grant-protect request is still programmed.
+    GrantProtectHeld,
 }
 
 /// Original resources retained when admission has made no hardware changes.
@@ -125,6 +155,7 @@ pub struct AdmissionFailure<I: InterruptAuthority = MacInterruptSetup> {
 pub struct WifiAccess<I: InterruptAuthority = MacInterruptSetup> {
     registers: RadioRuntimeOwner,
     interrupts: I,
+    grant_protected: bool,
 }
 
 impl RadioRuntimeOwner {
@@ -183,6 +214,7 @@ fn admit<I: InterruptAuthority>(
     Ok(WifiAccess {
         registers,
         interrupts,
+        grant_protected: false,
     })
 }
 
@@ -191,6 +223,16 @@ impl<I: InterruptAuthority> WifiAccess<I> {
     pub fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Wifi> {
         let (registers, restore) = self.registers.phy_parts_mut();
         SharedPhyHal::new(registers, restore)
+    }
+
+    /// Narrow PHY borrow together with this access's PHY grant-protect
+    /// request. Release is refused while the request is programmed.
+    pub fn phy_hal_with_grant(&mut self) -> (SharedPhyHal<'_, route::Wifi>, PhyGrantProtect<'_>) {
+        let (registers, restore, timers) = self.registers.phy_and_coex_timer_parts_mut();
+        (
+            SharedPhyHal::new(registers, restore),
+            PhyGrantProtect::new(timers, exclusive_grant_pti(), &mut self.grant_protected),
+        )
     }
 
     /// Restore the caller's MAC postconditions after PHY children which may
@@ -210,6 +252,12 @@ impl<I: InterruptAuthority> WifiAccess<I> {
         mut self,
         check: impl FnOnce(&mut RadioRuntimeOwner) -> Result<(), Error>,
     ) -> Result<(RadioRuntimeOwner, I), ReleaseFailure<I>> {
+        if self.grant_protected {
+            return Err(ReleaseFailure {
+                error: Error::GrantProtectHeld,
+                _access: self,
+            });
+        }
         if let Err(error) = check(&mut self.registers) {
             return Err(ReleaseFailure {
                 error,

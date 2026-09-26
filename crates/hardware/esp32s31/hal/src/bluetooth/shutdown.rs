@@ -123,6 +123,7 @@ pub(super) fn release_after_phy_close(
         clocks,
         phy_state,
         time_latch: _,
+        grant_protected: _,
         reunitable: _,
     } = task;
     let cold = ColdOwner {
@@ -172,6 +173,7 @@ pub(super) fn release_retained_after_phy_close(
         clocks,
         phy_state,
         time_latch: _,
+        grant_protected: _,
         reunitable: _,
     } = task;
     let cold = ColdOwner {

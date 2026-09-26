@@ -31,7 +31,7 @@ fn independent_references_select_only_due_hardware_branches() {
         assert_eq!(decision.transmit.delta(), 30);
         assert_eq!(
             PhyCalibrationTrackingTransition::new(request, PARAMETERS).action(),
-            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false },
+            PhyCalibrationTrackingAction::SetGrantProtect { enabled: true },
         );
         let unchanged = PhyCalibrationTrackingParameters {
             transmit_reference_temperature: 50,
@@ -50,7 +50,7 @@ fn independent_references_select_only_due_hardware_branches() {
         assert!(forced.decision().transmit.is_due());
         assert_eq!(
             PhyCalibrationTrackingTransition::new(request, forced).action(),
-            PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
+            PhyCalibrationTrackingAction::SetGrantProtect { enabled: true },
         );
         // Observing demand did not commit or overwrite the source references.
         assert_eq!(unchanged.transmit_reference_temperature, 50);

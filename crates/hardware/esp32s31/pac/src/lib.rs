@@ -113,7 +113,7 @@ pub use bluetooth::{
 
 pub use cfr::CfrValue;
 
-pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
+pub use coex::{COEX_TIMER_COUNT, CoexTimerBankRegisters, CoexTimerRegister};
 
 pub use frequency::PhyFrequencyI2cNumberAddresses;
 

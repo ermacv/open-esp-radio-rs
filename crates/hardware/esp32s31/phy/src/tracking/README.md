@@ -202,16 +202,23 @@ calibration, or after TX PBus clearing and before calibration bandwidth setup.
 This register operation is not a substitute for physical maintenance admission.
 
 The vendor RX branch and shared TX branch each acquire and release grant
-protection separately, as does RFPLL. Current `libcoexist.a` (`02c57071`)
+protection separately, as does RFPLL. The pinned `libcoexist.a` (`c758e7b5`)
 provides strong hooks that request/release an event through the coex timer
-engine. Those hooks do not themselves wait for a grant acknowledgement or
-prove MAC/DMA quiescence. OER retains its wider physical maintenance admission
-through the complete call; no new live-radio access is inferred from the hooks.
+engine. OER follows those brackets: the calibration and RFPLL transitions emit
+`SetGrantProtect` at the same positions, and the target port executes them
+through `PhyGrantProtectPort`. The radio arbiter and every exclusive
+maintenance owner lend one `PhyGrantProtect` request beside the shared PHY, so
+the request is programmed in every configuration, including Wi-Fi alone. The
+hooks do not themselves wait for a grant acknowledgement or prove MAC/DMA
+quiescence. OER retains its wider physical maintenance admission through the
+complete call; no new live-radio access is inferred from the hooks. A failed
+branch leaves the request programmed with the rest of the poisoned epoch.
 
 The vendor composition combines archive request/event mapping with ROM release
 and timer operations. Its initializer installs the new mapper in the callback
 table used by ROM release. The PHY request selects event 48, timer 5 and request
-kind 2 (hardware selector 0), with zero timing arguments. Neither zero timing
+kind 2 (hardware selector 0), with zero timing arguments; the arbiter reserves
+timer 5 for it and lends only timers 0 through 4 to the coexistence policy. Neither zero timing
 arguments nor a successful return establish an indefinite or exclusive grant.
 `coex_status_get` delegates to a software-state accessor; it is not a hardware
 grant acknowledgement. A physical protection proof needs independent hardware

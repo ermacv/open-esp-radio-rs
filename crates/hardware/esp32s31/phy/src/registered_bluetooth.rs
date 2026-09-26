@@ -272,9 +272,9 @@ impl RegisteredBluetoothPhyClient {
             Ok(client) => return Ok((client, None)),
             Err(pending) => pending.begin_tracking(),
         };
-        let mut registers = access.phy_hal();
+        let (mut registers, mut grant) = access.phy_hal_with_grant();
         let result = pending
-            .track::<P, _, D, O>(platform, &mut registers, observer, deadline)
+            .track::<P, _, D, O>(platform, &mut registers, &mut grant, observer, deadline)
             .await;
         match result {
             Ok(success) => {

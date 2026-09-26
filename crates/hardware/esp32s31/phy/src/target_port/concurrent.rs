@@ -370,7 +370,7 @@ where
     };
     let mut tracking = pending.begin_tracking(registered.tracking_policy());
 
-    let (mut registers, phy) = lease.phy_hal_with_attachment();
+    let (mut registers, phy, mut grant) = lease.phy_hal_with_attachment_and_grant();
     if !tracking.describes(&registers) {
         *phy.slot_mut() = Slot::Poisoned;
         return Err(ConcurrentPhyTrackingError::Failed(
@@ -379,8 +379,12 @@ where
     }
     let result = {
         let state = registered.target_state_mut();
-        let mut port =
-            TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, &mut registers, observer);
+        let mut port = TargetPhyParamTrackingPort::<_, _, _, D, _>::new(
+            platform,
+            &mut registers,
+            &mut grant,
+            observer,
+        );
         match deadline {
             Some(deadline) => crate::tracking::deadline::run(
                 deadline,

@@ -16,9 +16,13 @@ fn separate_calibration_branches_restore_before_completion_and_commit_only_their
             if let PhyCalibrationTrackingAction::Complete(result) = action {
                 assert_eq!(result.common_updated, scope == Scope::Common);
                 assert_eq!(result.transmit_updated, scope == Scope::Transmit);
+                // Restoration completes before grant protection is withdrawn.
                 assert_eq!(
-                    actions.last(),
-                    Some(&PhyCalibrationTrackingAction::RestoreTxGainCompensation)
+                    actions[actions.len() - 2..],
+                    [
+                        PhyCalibrationTrackingAction::RestoreTxGainCompensation,
+                        PhyCalibrationTrackingAction::SetGrantProtect { enabled: false },
+                    ]
                 );
                 break;
             }

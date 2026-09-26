@@ -607,12 +607,16 @@ oer_probe_macros::probe! {
             oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
         let mut observer = oer_esp32s31_phy::NoopPhyTargetObserver;
         let mut platform = ();
+        // The PHY archive is compared without the coexistence archive, so its
+        // weak grant-protect hooks return without effect.
+        let mut grant = oer_esp32s31_phy::WeakPhyGrantProtect;
         let mut port = oer_esp32s31_phy::TargetPhyCalibrationTrackingPort::<
+            _,
             _,
             _,
             ProductionTraceDelay,
             _,
-        >::new(&mut platform, radio.phy_hal_mut(), &mut observer);
+        >::new(&mut platform, radio.phy_hal_mut(), &mut grant, &mut observer);
         let mut progress = 0;
         let status = {
             let mut child = validation::calibration_tracking(
@@ -792,10 +796,14 @@ oer_probe_macros::probe! {
         let mut radio =
             oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
         let mut platform = ();
+        // The PHY archive is compared without the coexistence archive, so its
+        // weak grant-protect hooks return without effect.
+        let mut grant = oer_esp32s31_phy::WeakPhyGrantProtect;
         let mut port =
-            oer_esp32s31_phy::TargetPhyParamTrackingPort::<_, _, ProductionTraceDelay, _>::new(
+            oer_esp32s31_phy::TargetPhyParamTrackingPort::<_, _, _, ProductionTraceDelay, _>::new(
                 &mut platform,
                 radio.phy_hal_mut(),
+                &mut grant,
                 oer_esp32s31_phy::NoopPhyTargetObserver,
             );
         let run = embassy_futures::block_on(oer_esp32s31_phy::executor::run_phy_param_tracking(

@@ -243,3 +243,70 @@ fn correction_updates_memory_only_for_nonzero_delta_and_waits_for_restore() {
         );
     }
 }
+
+/// `phy_rfpll_cap_track_new` requests grant protection only after the
+/// temperature decision admits a correction, and withdraws it only after
+/// hardware frequency control is restored.
+#[test]
+fn thermal_correction_is_bracketed_by_grant_protection_only_when_due() {
+    use super::thermal::{Action as Thermal, Completion as ThermalCompletion, Request, Transition};
+
+    let skipped = Transition::new(Request {
+        current_temperature: 20,
+        reference_temperature: 20,
+        current_channel: 11,
+        threshold_override: None,
+    });
+    assert!(matches!(skipped.action(), Thermal::Complete(_)));
+
+    let mut transition = Transition::new(Request {
+        current_temperature: 20,
+        reference_temperature: 20,
+        current_channel: 11,
+        threshold_override: Some(0),
+    });
+    let mut actions = std::vec::Vec::new();
+    for _ in 0..16 * DIRECTION {
+        let action = transition.action();
+        if let Thermal::Complete(_) = action {
+            break;
+        }
+        actions.push(action);
+        let completion = match action {
+            Thermal::SetGrantProtect { enabled } => ThermalCompletion::GrantProtectSet { enabled },
+            Thermal::SelectSoftwareControl => ThermalCompletion::SoftwareControlSelected,
+            Thermal::Settle => ThermalCompletion::Settled,
+            Thermal::ObserveBoundary => ThermalCompletion::BoundaryObserved,
+            Thermal::Correct(Action::Search(search)) => ThermalCompletion::Correction(
+                Completion::Search(complete_search_action(search, 100, Status::Other)),
+            ),
+            Thermal::Correct(Action::Memory(_)) => panic!("an unchanged cap writes no memory"),
+            Thermal::Correct(Action::Complete(_)) => panic!("a completed child is not an action"),
+            Thermal::RestoreHardwareControl => ThermalCompletion::HardwareControlRestored,
+            Thermal::Complete(_) => unreachable!(),
+        };
+        transition.advance(completion).unwrap();
+    }
+    assert!(matches!(transition.action(), Thermal::Complete(_)));
+    assert_eq!(
+        actions[..2],
+        [
+            Thermal::SetGrantProtect { enabled: true },
+            Thermal::SelectSoftwareControl
+        ]
+    );
+    assert_eq!(
+        actions[actions.len() - 2..],
+        [
+            Thermal::RestoreHardwareControl,
+            Thermal::SetGrantProtect { enabled: false }
+        ]
+    );
+    assert_eq!(
+        actions
+            .iter()
+            .filter(|action| matches!(action, Thermal::SetGrantProtect { .. }))
+            .count(),
+        2
+    );
+}

@@ -7,7 +7,8 @@
 //! separate from physical admission and child hardware equivalence. The
 //! registered owner is retained across every child and poisoned on incomplete
 //! hardware execution. Vendor grant hooks protect individual RFPLL, RX and TX
-//! regions; OER currently retains its wider exclusive maintenance boundary.
+//! regions, and the RFPLL and calibration children emit them at the same
+//! positions; OER also retains its wider exclusive maintenance boundary.
 
 use core::fmt;
 

@@ -214,11 +214,16 @@ fn complete_correction<D: PhyAsyncDelay>(
 
 pub(super) async fn complete_thermal<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
+    grant: &mut impl super::PhyGrantProtectPort,
     action: rfpll::thermal::Action,
 ) -> Result<rfpll::thermal::Completion, PhyTargetPortError> {
     use oer_esp32s31_hal::phy::frequency;
     use rfpll::thermal::{Action, Completion};
     Ok(match action {
+        Action::SetGrantProtect { enabled } => {
+            grant.set_grant_protect(enabled)?;
+            Completion::GrantProtectSet { enabled }
+        }
         Action::SelectSoftwareControl => {
             frequency::set_baseband_mode(registers, 2);
             Completion::SoftwareControlSelected
@@ -258,7 +263,10 @@ pub async fn track<D: PhyAsyncDelay>(
             return Ok(outcome);
         }
         child
-            .advance(complete_thermal::<D>(registers, child.action()).await?)
+            .advance(
+                complete_thermal::<D>(registers, &mut super::WeakPhyGrantProtect, child.action())
+                    .await?,
+            )
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
     }
 }

@@ -486,6 +486,18 @@ impl TaskResources {
         self.registers.borrow_shared_phy()
     }
 
+    /// Borrow the radio PHY together with this route's PHY grant-protect
+    /// request, for maintenance that brackets its hardware regions with it.
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    pub fn shared_phy_hal_with_grant(
+        &mut self,
+    ) -> (
+        SharedPhyHal<'_, route::Bluetooth>,
+        oer_esp32s31_hal::coex::PhyGrantProtect<'_>,
+    ) {
+        self.registers.shared_phy_hal_with_grant()
+    }
+
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn prepare_common_phy_power(
         &mut self,

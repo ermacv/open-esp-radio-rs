@@ -247,10 +247,11 @@ mod target {
                     }
                 };
             let result = {
-                let mut registers = access.phy_hal();
-                let mut port = TargetPhyParamTrackingPort::<_, _, D, _>::new(
+                let (mut registers, mut grant) = access.phy_hal_with_grant();
+                let mut port = TargetPhyParamTrackingPort::<_, _, _, D, _>::new(
                     platform,
                     &mut registers,
+                    &mut grant,
                     observer,
                 );
                 let mut tracking = core::pin::pin!(run_phy_param_tracking(

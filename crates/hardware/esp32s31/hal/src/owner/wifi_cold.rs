@@ -238,6 +238,20 @@ impl WifiColdRegisters {
         (self.registers.radio_phy_mut(), &mut self.route.phy_state)
     }
 
+    /// Borrow the shared PHY and the route restore slot together with the
+    /// coexistence timer bank.
+    pub(crate) fn phy_and_coex_timer_parts_mut(
+        &mut self,
+    ) -> (
+        &mut RadioPhyRegisters,
+        &mut PhyRouteState,
+        oer_esp32s31_pac::CoexTimerBankRegisters<'_>,
+    ) {
+        let (_, shared) = self.registers.parts_mut();
+        let (phy, timers) = shared.radio_phy_and_coex_timers_mut();
+        (phy, &mut self.route.phy_state, timers)
+    }
+
     /// Borrow the Wi-Fi register set together with the route restore slot.
     pub(crate) fn radio_parts_mut(&mut self) -> (&mut WifiRegisters, &mut PhyRouteState) {
         (&mut self.registers, &mut self.route.phy_state)

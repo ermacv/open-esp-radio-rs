@@ -30,6 +30,8 @@ pub(crate) use wifi_cold::{WifiColdRegisters, WifiRouteState};
 /// block from it.
 pub struct PhyHal {
     pub(crate) registers: WifiColdRegisters,
+    /// Whether this exclusive route's PHY grant-protect request is programmed.
+    pub(crate) grant_protected: bool,
 }
 
 /// One PAC-observed image of the Wi-Fi baseband enable condition.
@@ -661,6 +663,19 @@ impl RadioRuntimeOwner {
         (self.registers.radio_phy_mut(), self.route.phy_state_mut())
     }
 
+    /// Borrow the shared PHY parts together with the coexistence timer bank.
+    pub(crate) fn phy_and_coex_timer_parts_mut(
+        &mut self,
+    ) -> (
+        &mut RadioPhyRegisters,
+        &mut PhyRouteState,
+        oer_esp32s31_pac::CoexTimerBankRegisters<'_>,
+    ) {
+        let (_, shared) = self.registers.parts_mut();
+        let (phy, timers) = shared.radio_phy_and_coex_timers_mut();
+        (phy, self.route.phy_state_mut(), timers)
+    }
+
     /// Borrow the Wi-Fi register set together with the station wake state.
     pub(crate) fn station_wake_parts_mut(
         &mut self,
@@ -980,6 +995,7 @@ impl<P> Radio<P, state::Owned> {
             state: state::Powered {
                 registers: PhyHal {
                     registers: self.state.registers,
+                    grant_protected: false,
                 },
             },
         }
@@ -1007,6 +1023,7 @@ impl<P> Radio<P, state::Owned> {
             state: state::Powered {
                 registers: PhyHal {
                     registers: self.state.registers,
+                    grant_protected: false,
                 },
             },
         })
@@ -1054,6 +1071,30 @@ impl<P> Radio<P, state::Powered> {
         (&mut self.peripheral, &mut self.state.registers)
     }
 
+    /// Borrow the platform, the shared PHY and this route's PHY grant-protect
+    /// request together, for PHY maintenance that brackets its hardware
+    /// regions with the request. The exclusive route has no radio arbiter;
+    /// the request carries the arbiter's cold event-48 priority.
+    pub fn phy_hal_parts_with_grant(
+        &mut self,
+    ) -> (
+        &mut P,
+        SharedPhyHal<'_, route::Wifi>,
+        crate::coex::PhyGrantProtect<'_>,
+    ) {
+        let hal = &mut self.state.registers;
+        let (registers, restore, timers) = hal.registers.phy_and_coex_timer_parts_mut();
+        (
+            &mut self.peripheral,
+            SharedPhyHal::new(registers, restore),
+            crate::coex::PhyGrantProtect::new(
+                timers,
+                crate::coex::CoexPtiTable::VENDOR.pti(crate::coex::PHY_GRANT_PROTECT_EVENT),
+                &mut hal.grant_protected,
+            ),
+        )
+    }
+
     /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.
     ///
     /// Espressif's `enable_phy_with_wifi_rx` lifecycle wrapper performs this
@@ -1089,7 +1130,10 @@ impl<P> Radio<P, state::Powered> {
                 _radio: Radio {
                     peripheral,
                     state: state::Powered {
-                        registers: PhyHal { registers },
+                        registers: PhyHal {
+                            registers,
+                            grant_protected: false,
+                        },
                     },
                 },
                 error: error.into(),
@@ -1128,6 +1172,7 @@ impl<P> Radio<P, state::Powered> {
             state: state::Powered {
                 registers: PhyHal {
                     registers: WifiColdRegisters::from_retained(hardware),
+                    grant_protected: false,
                 },
             },
         }
@@ -1168,7 +1213,10 @@ impl<P> Radio<P, state::Powered> {
                 radio: Radio {
                     peripheral,
                     state: state::Powered {
-                        registers: PhyHal { registers },
+                        registers: PhyHal {
+                            registers,
+                            grant_protected: false,
+                        },
                     },
                 },
                 error,
@@ -1239,7 +1287,10 @@ impl<P> Radio<P, state::Running> {
         Radio {
             peripheral: self.peripheral,
             state: state::Powered {
-                registers: PhyHal { registers },
+                registers: PhyHal {
+                    registers,
+                    grant_protected: false,
+                },
             },
         }
     }

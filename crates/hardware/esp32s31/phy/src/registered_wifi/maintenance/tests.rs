@@ -285,7 +285,10 @@ fn explicit_rfpll_forces_measurement_without_enabling_periodic_work() {
     // Ordinary host fixture: this does not manufacture registered access.
     let mut state = PhyState::new(PhyConfig::production());
     let child = pending.begin_rfpll_cap_tracking(&mut state).unwrap();
-    assert_eq!(child.action(), thermal::Action::SelectSoftwareControl);
+    assert_eq!(
+        child.action(),
+        thermal::Action::SetGrantProtect { enabled: true }
+    );
     assert!(
         child.commit().is_err(),
         "measurement requires physical completions"

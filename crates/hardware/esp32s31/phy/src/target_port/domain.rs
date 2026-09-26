@@ -293,6 +293,7 @@ where
         mut self,
         platform: &mut P,
         registers: &mut Regs,
+        grant: &mut impl super::PhyGrantProtectPort,
         observer: O,
         deadline: Option<crate::tracking::deadline::TrackingDeadline>,
     ) -> Result<PhyTrackingSuccess<R>, PhyTrackingFailure<R>>
@@ -309,8 +310,9 @@ where
         }
         let result = {
             let (state, pending) = self.target_tracking_parts();
-            let mut port =
-                TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, registers, observer);
+            let mut port = TargetPhyParamTrackingPort::<_, _, _, D, _>::new(
+                platform, registers, grant, observer,
+            );
             match deadline {
                 Some(deadline) => crate::tracking::deadline::run(
                     deadline,

@@ -38,6 +38,11 @@ pub struct Outcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
+    /// Program (`true`) or withdraw (`false`) the PHY grant-protect request
+    /// around the correction, as `phy_rfpll_cap_track_new` does.
+    SetGrantProtect {
+        enabled: bool,
+    },
     SelectSoftwareControl,
     Settle,
     ObserveBoundary,
@@ -48,6 +53,7 @@ pub enum Action {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Completion {
+    GrantProtectSet { enabled: bool },
     SoftwareControlSelected,
     Settled,
     BoundaryObserved,
@@ -57,11 +63,13 @@ pub enum Completion {
 
 #[derive(Debug, Eq, PartialEq)]
 enum Step {
+    AcquireGrant,
     Select,
     Settle,
     Observe,
     Correct(Correction),
     Restore(super::Outcome),
+    ReleaseGrant(super::Outcome),
     Complete(Outcome),
 }
 
@@ -75,7 +83,7 @@ pub struct Transition {
 impl Transition {
     pub const fn new(request: Request) -> Self {
         let step = if request.is_due() {
-            Step::Select
+            Step::AcquireGrant
         } else {
             Step::Complete(Outcome {
                 reference_temperature: request.reference_temperature,
@@ -92,11 +100,13 @@ impl Transition {
     #[inline(always)]
     pub const fn action(&self) -> Action {
         match &self.step {
+            Step::AcquireGrant => Action::SetGrantProtect { enabled: true },
             Step::Select => Action::SelectSoftwareControl,
             Step::Settle => Action::Settle,
             Step::Observe => Action::ObserveBoundary,
             Step::Correct(child) => Action::Correct(child.action()),
             Step::Restore(_) => Action::RestoreHardwareControl,
+            Step::ReleaseGrant(_) => Action::SetGrantProtect { enabled: false },
             Step::Complete(outcome) => Action::Complete(*outcome),
         }
     }
@@ -104,6 +114,9 @@ impl Transition {
     #[inline(always)]
     pub fn advance(&mut self, completion: Completion) -> Result<(), Error> {
         match (&mut self.step, completion) {
+            (Step::AcquireGrant, Completion::GrantProtectSet { enabled: true }) => {
+                self.step = Step::Select
+            }
             (Step::Select, Completion::SoftwareControlSelected) => self.step = Step::Settle,
             (Step::Settle, Completion::Settled) => self.step = Step::Observe,
             (Step::Observe, Completion::BoundaryObserved) => {
@@ -116,6 +129,9 @@ impl Transition {
                 }
             }
             (Step::Restore(correction), Completion::HardwareControlRestored) => {
+                self.step = Step::ReleaseGrant(*correction);
+            }
+            (Step::ReleaseGrant(correction), Completion::GrantProtectSet { enabled: false }) => {
                 self.step = Step::Complete(Outcome {
                     reference_temperature: self.request.current_temperature,
                     correction: Some(*correction),

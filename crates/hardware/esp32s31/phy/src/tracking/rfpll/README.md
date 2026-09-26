@@ -48,10 +48,14 @@ transaction completes in one poll without timer suspension. Its finite edge
 limits do not establish a wall-clock bound. The caller must
 already hold exclusive physical PHY access. This child does not acquire a
 coexistence grant, disable hardware frequency updates, change thermal reference
-state, or authorize traffic to resume after failure.
+state, or authorize traffic to resume after failure; the thermal transition
+around it does the first two.
 
-`thermal::Transition` owns the temperature gate, measured correction and
-current frequency-control envelope. `target_port::rfpll::track` executes it.
+`thermal::Transition` owns the temperature gate, the grant-protect bracket,
+measured correction and current frequency-control envelope. As
+`phy_rfpll_cap_track_new` does, it requests grant protection only after the
+temperature gate admits work and withdraws it after hardware frequency
+control is restored. `target_port::rfpll::track` executes it.
 `maintain` requests unconditional work through that same transition, using a
 zero threshold for diagnostic callers; it does not duplicate the envelope:
 
@@ -87,8 +91,9 @@ be cancelled. On error its caller remains responsible for fault containment.
 The current archive initializes the parent's RFPLL-enable byte to one and its
 tracking child uses a default delta of 15 sensor units. That initializer is not
 a proof that no linked component later changes the policy. The grant acquire
-and release symbols in this archive are weak no-op definitions; their final
-behavior depends on symbol resolution in the linked vendor composition.
+and release symbols in this archive are weak no-op definitions; the pinned
+coexistence archive supplies the strong request/release that OER follows.
+Vendor comparison of the PHY archive alone uses `WeakPhyGrantProtect`.
 
 The current vendor child admits work when the absolute difference between
 signed current and reference temperatures is **at least** the threshold and

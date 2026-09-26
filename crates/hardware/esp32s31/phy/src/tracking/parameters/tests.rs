@@ -255,12 +255,12 @@ fn rfpll_child_routes_threshold_and_mints_parent_proof_only_after_commit() {
     let child = incomplete.begin_rfpll_cap_tracking(&mut state).unwrap();
     assert_eq!(
         child.action(),
-        crate::tracking::rfpll::thermal::Action::SelectSoftwareControl
+        crate::tracking::rfpll::thermal::Action::SetGrantProtect { enabled: true }
     );
     let child = child.commit().unwrap_err();
     assert_eq!(
         child.action(),
-        crate::tracking::rfpll::thermal::Action::SelectSoftwareControl
+        crate::tracking::rfpll::thermal::Action::SetGrantProtect { enabled: true }
     );
 }
 #[test]
@@ -301,6 +301,9 @@ fn measured_rfpll_reference_waits_for_restoration_and_parent_commit() {
             .commit()
             .expect_err("no parent proof before physical restoration");
         let completion = match child.action() {
+            thermal::Action::SetGrantProtect { enabled } => {
+                thermal::Completion::GrantProtectSet { enabled }
+            }
             thermal::Action::SelectSoftwareControl => thermal::Completion::SoftwareControlSelected,
             thermal::Action::Settle => thermal::Completion::Settled,
             thermal::Action::ObserveBoundary => thermal::Completion::BoundaryObserved,
@@ -327,6 +330,15 @@ fn measured_rfpll_reference_waits_for_restoration_and_parent_commit() {
     );
     child
         .advance(thermal::Completion::HardwareControlRestored)
+        .unwrap();
+    // The correction withdraws its grant protection before the parent commit.
+    assert_eq!(
+        child.action(),
+        thermal::Action::SetGrantProtect { enabled: false }
+    );
+    child = child.commit().unwrap_err();
+    child
+        .advance(thermal::Completion::GrantProtectSet { enabled: false })
         .unwrap();
     assert_eq!(
         child

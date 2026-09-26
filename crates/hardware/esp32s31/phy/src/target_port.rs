@@ -158,6 +158,51 @@ use oer_esp32s31_hal::owner::{
     PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext, state::Powered,
 };
 
+/// The maintaining owner's PHY grant-protect request.
+///
+/// Periodic tracking brackets its RFPLL correction and each calibration
+/// branch with this request, where the pinned archive calls
+/// `phy_acquire_grant_protect` and `phy_release_grant_protect`. The request
+/// raises the PHY's coexistence priority; it is never an ownership proof.
+pub trait PhyGrantProtectPort {
+    /// Program (`true`) or withdraw (`false`) the request.
+    ///
+    /// # Errors
+    ///
+    /// The request is not in the opposite state; nothing is written.
+    fn set_grant_protect(&mut self, enabled: bool) -> Result<(), PhyTargetPortError>;
+}
+
+impl PhyGrantProtectPort for oer_esp32s31_hal::coex::PhyGrantProtect<'_> {
+    fn set_grant_protect(&mut self, enabled: bool) -> Result<(), PhyTargetPortError> {
+        if enabled {
+            self.acquire()
+        } else {
+            self.release()
+        }
+        .map_err(|_| PhyTargetPortError::HardwareInvariant)
+    }
+}
+
+impl<G: PhyGrantProtectPort + ?Sized> PhyGrantProtectPort for &mut G {
+    fn set_grant_protect(&mut self, enabled: bool) -> Result<(), PhyTargetPortError> {
+        (**self).set_grant_protect(enabled)
+    }
+}
+
+/// The weak `phy_acquire_grant_protect` and `phy_release_grant_protect` of the
+/// PHY archive linked without the coexistence archive: both return without
+/// effect. Vendor comparison of PHY-only leaves uses this port.
+#[cfg(any(test, feature = "validation-probes"))]
+pub struct WeakPhyGrantProtect;
+
+#[cfg(any(test, feature = "validation-probes"))]
+impl PhyGrantProtectPort for WeakPhyGrantProtect {
+    fn set_grant_protect(&mut self, _enabled: bool) -> Result<(), PhyTargetPortError> {
+        Ok(())
+    }
+}
+
 const CHANNEL_READY_SAMPLE_LIMIT: u32 = 10_000;
 const RF_OPERATION_LIMIT: u32 = 100_000;
 const MAC_CHANNEL_SETTLE_US: u64 = 20;
@@ -467,17 +512,19 @@ pub struct TargetPhyRegisterPort<'a, P, R, D, O = NoopPhyTargetObserver> {
 /// It reuses the same leaf completer as cold registration, so periodic DCODE,
 /// RX gain, channel, TXDC and gain publication cannot drift into a second
 /// hardware implementation.
-pub struct TargetPhyCalibrationTrackingPort<'a, P, R, D, O = NoopPhyTargetObserver> {
+pub struct TargetPhyCalibrationTrackingPort<'a, P, R, G, D, O = NoopPhyTargetObserver> {
     platform: &'a mut P,
     registers: &'a mut R,
+    grant: &'a mut G,
     observer: &'a mut O,
     delay: PhantomData<D>,
 }
 
 /// Complete target port for one affine outer periodic-tracking request.
-pub struct TargetPhyParamTrackingPort<'a, P, R, D, O = NoopPhyTargetObserver> {
+pub struct TargetPhyParamTrackingPort<'a, P, R, G, D, O = NoopPhyTargetObserver> {
     platform: &'a mut P,
     registers: &'a mut R,
+    grant: &'a mut G,
     observer: O,
     delay: PhantomData<D>,
 }
@@ -1897,6 +1944,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
     async fn run_param_rfpll<O: PhyTargetObserver>(
         mut child: PhyParamTrackingRfpllTransition<'_>,
         registers: &mut impl SharedPhyAccess,
+        grant: &mut impl PhyGrantProtectPort,
         observer: &mut O,
     ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
         let request = child.request();
@@ -1929,7 +1977,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 });
                 return Ok(completion);
             }
-            let completion = rfpll::complete_thermal::<D>(registers, action).await?;
+            let completion = rfpll::complete_thermal::<D>(registers, grant, action).await?;
             child
                 .advance(completion)
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2033,30 +2081,37 @@ impl<'a, P, R, D, O> TargetPhyRegisterPort<'a, P, R, D, O> {
     }
 }
 
-impl<'a, P, R, D, O> TargetPhyCalibrationTrackingPort<'a, P, R, D, O> {
-    pub fn new(platform: &'a mut P, registers: &'a mut R, observer: &'a mut O) -> Self {
+impl<'a, P, R, G, D, O> TargetPhyCalibrationTrackingPort<'a, P, R, G, D, O> {
+    pub fn new(
+        platform: &'a mut P,
+        registers: &'a mut R,
+        grant: &'a mut G,
+        observer: &'a mut O,
+    ) -> Self {
         Self {
             platform,
             registers,
+            grant,
             observer,
             delay: PhantomData,
         }
     }
 }
 
-impl<'a, P, R, D, O> TargetPhyParamTrackingPort<'a, P, R, D, O> {
-    pub fn new(platform: &'a mut P, registers: &'a mut R, observer: O) -> Self {
+impl<'a, P, R, G, D, O> TargetPhyParamTrackingPort<'a, P, R, G, D, O> {
+    pub fn new(platform: &'a mut P, registers: &'a mut R, grant: &'a mut G, observer: O) -> Self {
         Self {
             platform,
             registers,
+            grant,
             observer,
             delay: PhantomData,
         }
     }
 }
 
-impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
-    PhyCalibrationTrackingPort for TargetPhyCalibrationTrackingPort<'_, P, R, D, O>
+impl<P, R: PhyInitializationAccess, G: PhyGrantProtectPort, D: PhyAsyncDelay, O: PhyTargetObserver>
+    PhyCalibrationTrackingPort for TargetPhyCalibrationTrackingPort<'_, P, R, G, D, O>
 {
     type Error = PhyTargetPortError;
 
@@ -2074,6 +2129,10 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
     ) -> Result<PhyCalibrationTrackingCompletion, Self::Error> {
         self.observer.operation_started();
         let completion = match transition.action() {
+            PhyCalibrationTrackingAction::SetGrantProtect { enabled } => {
+                self.grant.set_grant_protect(enabled)?;
+                PhyCalibrationTrackingCompletion::GrantProtectSet { enabled }
+            }
             PhyCalibrationTrackingAction::ClearPbus => {
                 let completed = calibration::clear_pbus::<D::ShortDelay, _>(
                     transition
@@ -2204,8 +2263,8 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
     }
 }
 
-impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyParamTrackingPort
-    for TargetPhyParamTrackingPort<'_, P, R, D, O>
+impl<P, R: PhyInitializationAccess, G: PhyGrantProtectPort, D: PhyAsyncDelay, O: PhyTargetObserver>
+    PhyParamTrackingPort for TargetPhyParamTrackingPort<'_, P, R, G, D, O>
 {
     type Error = PhyTargetPortError;
 
@@ -2232,6 +2291,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyP
                         .begin_rfpll_cap_tracking(state)
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
                     self.registers,
+                    &mut *self.grant,
                     &mut self.observer,
                 )
                 .await?
@@ -2251,9 +2311,10 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyP
                 let mut child = pending
                     .begin_calibration_tracking(state)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-                let mut port = TargetPhyCalibrationTrackingPort::<_, _, D, _>::new(
+                let mut port = TargetPhyCalibrationTrackingPort::<_, _, _, D, _>::new(
                     self.platform,
                     self.registers,
+                    &mut *self.grant,
                     &mut self.observer,
                 );
                 run_phy_calibration_tracking(&mut child, &mut port)
@@ -2322,8 +2383,13 @@ where
     O: PhyTargetObserver,
 {
     let result = {
-        let (platform, registers, state, pending) = tracking.target_tracking_parts();
-        let mut port = TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, registers, observer);
+        let (platform, mut registers, mut grant, state, pending) = tracking.target_tracking_parts();
+        let mut port = TargetPhyParamTrackingPort::<_, _, _, D, _>::new(
+            platform,
+            &mut registers,
+            &mut grant,
+            observer,
+        );
         run_phy_param_tracking(pending, state, &mut port).await
     };
     let outcome = match result {

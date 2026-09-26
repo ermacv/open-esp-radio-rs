@@ -94,6 +94,7 @@ impl Operation {
             | Calibration::DisableWifiBaseband
             | Calibration::EnableMacBaseband
             | Calibration::RestoreTxGainCompensation
+            | Calibration::SetGrantProtect { .. }
             | Calibration::Complete(_)
             | Calibration::Failed(_) => return None,
         })

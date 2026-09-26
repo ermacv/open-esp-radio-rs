@@ -188,15 +188,16 @@ pub use target_port::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
-    NoopPhyTargetObserver, PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig,
-    PhyRfBoundary, PhyRfCloseFailure, PhyRfWakeFailure, PhyRfWakePoisoned, PhyTargetObserver,
-    PhyTargetPortCounters, PhyTrackingFailure, PhyTrackingSuccess, TargetPhyParamTrackingError,
-    TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess, TargetPhyRegisterAttempt,
-    TargetPhyRegisterError, TargetPhyRegisterFailure, TargetPhyRegisterSuccess,
-    TargetPhyRegisterTerminalParts, run_target_phy_param_tracking, run_target_phy_register,
-    select_registered_wifi_channel, switch_registered_wifi_channel,
+    NoopPhyTargetObserver, PhyDomainRegisterFailure, PhyDomainRegistered, PhyGrantProtectPort,
+    PhyRegisterConfig, PhyRfBoundary, PhyRfCloseFailure, PhyRfWakeFailure, PhyRfWakePoisoned,
+    PhyTargetObserver, PhyTargetPortCounters, PhyTrackingFailure, PhyTrackingSuccess,
+    TargetPhyParamTrackingError, TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess,
+    TargetPhyRegisterAttempt, TargetPhyRegisterError, TargetPhyRegisterFailure,
+    TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts, run_target_phy_param_tracking,
+    run_target_phy_register, select_registered_wifi_channel, switch_registered_wifi_channel,
 };
 #[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub use target_port::{
     TargetPhyCalibrationTrackingPort, TargetPhyParamTrackingPort, TargetPhyRegisterPort,
+    WeakPhyGrantProtect,
 };

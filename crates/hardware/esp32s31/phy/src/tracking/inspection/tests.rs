@@ -73,7 +73,7 @@ fn thermal_conditions_and_scheduler_deadline_are_independent() {
     );
     assert_eq!(
         transition.action(),
-        PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true }
+        PhyCalibrationTrackingAction::SetGrantProtect { enabled: true }
     );
 }
 #[test]
@@ -130,7 +130,7 @@ fn optional_children_follow_policy_and_real_predicates() {
             rfpll.is_due(),
             matches!(
                 crate::tracking::rfpll::thermal::Transition::new(rfpll).action(),
-                crate::tracking::rfpll::thermal::Action::SelectSoftwareControl
+                crate::tracking::rfpll::thermal::Action::SetGrantProtect { enabled: true }
             )
         );
         let i2c = inspection.wifi_i2c.unwrap();

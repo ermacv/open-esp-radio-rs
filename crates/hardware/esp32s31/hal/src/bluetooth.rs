@@ -346,6 +346,7 @@ impl ColdOwner {
                 clocks: self.clocks,
                 phy_state: self.phy_state,
                 time_latch: ControllerTimeLatch::new(),
+                grant_protected: false,
                 reunitable: true,
             },
             InterruptSetupOwner {
@@ -365,6 +366,8 @@ pub struct TaskOwner {
     clocks: BluetoothClocks,
     phy_state: PhyRouteState,
     time_latch: ControllerTimeLatch,
+    /// Whether this exclusive route's PHY grant-protect request is programmed.
+    grant_protected: bool,
     reunitable: bool,
 }
 
@@ -471,6 +474,7 @@ impl TaskOwner {
             clocks,
             phy_state,
             time_latch: _,
+            grant_protected: _,
             reunitable: _,
         } = self;
         Ok(ColdOwner {
@@ -490,6 +494,27 @@ impl TaskOwner {
     ) -> (&mut oer_esp32s31_pac::RadioPhyRegisters, &mut PhyRouteState) {
         self.reunitable = false;
         (self.registers.radio_phy_mut(), &mut self.phy_state)
+    }
+
+    /// Borrow the shared PHY together with this route's PHY grant-protect
+    /// request. The exclusive route has no radio arbiter; the request carries
+    /// the arbiter's cold event-48 priority.
+    pub fn shared_phy_hal_with_grant(
+        &mut self,
+    ) -> (
+        crate::owner::SharedPhyHal<'_, crate::owner::route::Bluetooth>,
+        crate::coex::PhyGrantProtect<'_>,
+    ) {
+        self.reunitable = false;
+        let (phy, timers) = self.registers.shared_mut().radio_phy_and_coex_timers_mut();
+        (
+            crate::owner::SharedPhyHal::new(phy, &mut self.phy_state),
+            crate::coex::PhyGrantProtect::new(
+                timers,
+                crate::coex::CoexPtiTable::VENDOR.pti(crate::coex::PHY_GRANT_PROTECT_EVENT),
+                &mut self.grant_protected,
+            ),
+        )
     }
 
     #[cfg(test)]

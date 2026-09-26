@@ -1,8 +1,5 @@
 //! Coupled ownership of a powered radio and its target-registration proof.
 
-#[cfg(target_arch = "riscv32")]
-use oer_esp32s31_hal::owner::PhyHal;
-
 use oer_esp32s31_hal::owner::{Radio, state::Powered};
 
 #[cfg(target_arch = "riscv32")]
@@ -731,14 +728,26 @@ impl<P> RegisteredPhyPendingTracking<P> {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn target_tracking_parts(
         &mut self,
-    ) -> (&mut P, &mut PhyHal, &mut PhyState, &mut PhyPendingTracking) {
+    ) -> (
+        &mut P,
+        oer_esp32s31_hal::owner::SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Wifi>,
+        oer_esp32s31_hal::coex::PhyGrantProtect<'_>,
+        &mut PhyState,
+        &mut PhyPendingTracking,
+    ) {
         let Self {
             hardware,
             registered,
             pending,
         } = self;
-        let (platform, registers) = hardware.phy_hal_parts();
-        (platform, registers, registered.target_state_mut(), pending)
+        let (platform, registers, grant) = hardware.phy_hal_parts_with_grant();
+        (
+            platform,
+            registers,
+            grant,
+            registered.target_state_mut(),
+            pending,
+        )
     }
 }
 

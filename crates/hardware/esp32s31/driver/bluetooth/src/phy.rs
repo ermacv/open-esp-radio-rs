@@ -274,10 +274,11 @@ impl<P, const MT: usize> ControllerPhyPendingTracking<P, MT> {
         } = self;
         let result = {
             let (task, platform) = controller.common_phy_parts_mut();
-            let mut shared_phy = task.shared_phy_hal();
+            let (mut shared_phy, mut grant) = task.shared_phy_hal_with_grant();
             let mut tracking = core::pin::pin!(tracking.track::<P, _, D, O>(
                 platform,
                 &mut shared_phy,
+                &mut grant,
                 observer,
                 None,
             ));

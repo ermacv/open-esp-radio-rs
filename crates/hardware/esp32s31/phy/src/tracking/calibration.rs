@@ -3,7 +3,9 @@
 //! The current S31 vendor graph has one RX reference and one shared TX
 //! reference. Wi-Fi and BT/154 TX children run in that order inside the same
 //! frequency/gain envelope. References are published only after terminal
-//! restoration; grant arbitration remains the physical radio owner's job.
+//! restoration. Each measurement branch is bracketed by a grant-protect
+//! request, as `phy_cal_param_track` does; the request is a coexistence
+//! priority, and physical admission remains the radio owner's job.
 
 use crate::tracking::parameters::PhyCalibrationTrackClass;
 
@@ -54,18 +56,39 @@ pub enum PhyCalibrationTrackingAction {
     ClearPbus,
     CalibrateDcode,
     RecalibrateRxGain,
-    RestoreChipChannel { channel: u16, cbw: u8 },
-    SetHardwareFrequencyControl { enabled: bool },
+    RestoreChipChannel {
+        channel: u16,
+        cbw: u8,
+    },
+    SetHardwareFrequencyControl {
+        enabled: bool,
+    },
     AwaitSoftwareFrequencySettle,
-    SetForcedDigitalGain { enabled: bool },
-    ForceTxRxOff { enabled: bool },
-    ConfigureBasebandChannel { cbw: u8 },
-    CalibrateTxDcPwdet { class: PhyCalibrationTrackClass },
-    PublishWifiTxGain { channel: u16 },
+    SetForcedDigitalGain {
+        enabled: bool,
+    },
+    ForceTxRxOff {
+        enabled: bool,
+    },
+    ConfigureBasebandChannel {
+        cbw: u8,
+    },
+    CalibrateTxDcPwdet {
+        class: PhyCalibrationTrackClass,
+    },
+    PublishWifiTxGain {
+        channel: u16,
+    },
     PublishBluetoothIeee802154TxGain,
     DisableWifiBaseband,
     EnableMacBaseband,
     RestoreTxGainCompensation,
+    /// Program (`true`) or withdraw (`false`) the PHY grant-protect request
+    /// around one measurement branch, as `phy_acquire_grant_protect` and
+    /// `phy_release_grant_protect` do.
+    SetGrantProtect {
+        enabled: bool,
+    },
     Complete(PhyCalibrationTrackingOutcome),
     Failed(PhyCalibrationTrackingFailure),
 }
@@ -86,6 +109,7 @@ pub enum PhyCalibrationTrackingCompletion {
     WifiBasebandDisabled,
     MacBasebandEnabled,
     TxGainCompensationRestored,
+    GrantProtectSet { enabled: bool },
 }
 
 /// Opaque proof that both force-mode writes and both timer edges completed.
@@ -264,6 +288,7 @@ pub enum PhyCalibrationTrackingTransitionError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Step {
+    CommonAcquireGrant,
     CommonForceTxRxOff,
     CommonClearPbus,
     CommonDcode,
@@ -273,6 +298,8 @@ enum Step {
     CommonEnableMac,
     CommonReleaseTxRxOff,
     CommonRestoreTxGainCompensation,
+    CommonReleaseGrant,
+    TxAcquireGrant,
     TxDisableHardwareFrequency,
     TxSoftwareFrequencySettle,
     TxForceTxRxOff,
@@ -290,6 +317,7 @@ enum Step {
     TxReleaseTxRxOff,
     TxEnableHardwareFrequency,
     RestoreTxGainCompensation,
+    ReleaseGrant,
     Complete,
     Failed,
 }
@@ -330,9 +358,9 @@ impl PhyCalibrationTrackingTransition {
         let decision = parameters.decision();
         let threshold = decision.common.threshold;
         let step = if !matches!(scope, Scope::Transmit) && decision.common.is_due() {
-            Step::CommonForceTxRxOff
+            Step::CommonAcquireGrant
         } else if !matches!(scope, Scope::Common) && decision.transmit.is_due() {
-            Step::TxDisableHardwareFrequency
+            Step::TxAcquireGrant
         } else {
             Step::Complete
         };
@@ -412,6 +440,12 @@ impl PhyCalibrationTrackingTransition {
             }
             Step::CommonRestoreTxGainCompensation | Step::RestoreTxGainCompensation => {
                 PhyCalibrationTrackingAction::RestoreTxGainCompensation
+            }
+            Step::CommonAcquireGrant | Step::TxAcquireGrant => {
+                PhyCalibrationTrackingAction::SetGrantProtect { enabled: true }
+            }
+            Step::CommonReleaseGrant | Step::ReleaseGrant => {
+                PhyCalibrationTrackingAction::SetGrantProtect { enabled: false }
             }
             Step::Complete => PhyCalibrationTrackingAction::Complete(self.outcome()),
             Step::Failed => match self.failure {
@@ -507,12 +541,24 @@ impl PhyCalibrationTrackingTransition {
                 }
             }
             (
+                Step::CommonAcquireGrant,
+                PhyCalibrationTrackingCompletion::GrantProtectSet { enabled: true },
+            ) => Step::CommonForceTxRxOff,
+            (
                 Step::CommonRestoreTxGainCompensation,
                 PhyCalibrationTrackingCompletion::TxGainCompensationRestored,
             ) => {
                 self.common_updated = true;
-                self.first_transmit_step()
+                Step::CommonReleaseGrant
             }
+            (
+                Step::CommonReleaseGrant,
+                PhyCalibrationTrackingCompletion::GrantProtectSet { enabled: false },
+            ) => self.first_transmit_step(),
+            (
+                Step::TxAcquireGrant,
+                PhyCalibrationTrackingCompletion::GrantProtectSet { enabled: true },
+            ) => Step::TxDisableHardwareFrequency,
             (
                 Step::TxDisableHardwareFrequency,
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: false },
@@ -609,6 +655,10 @@ impl PhyCalibrationTrackingTransition {
             (
                 Step::RestoreTxGainCompensation,
                 PhyCalibrationTrackingCompletion::TxGainCompensationRestored,
+            ) => Step::ReleaseGrant,
+            (
+                Step::ReleaseGrant,
+                PhyCalibrationTrackingCompletion::GrantProtectSet { enabled: false },
             ) => {
                 if self.failure.is_some() {
                     Step::Failed
@@ -714,7 +764,7 @@ impl PhyCalibrationTrackingTransition {
 
     const fn first_transmit_step(self) -> Step {
         if !matches!(self.scope, Scope::Common) && self.parameters.decision().transmit.is_due() {
-            Step::TxDisableHardwareFrequency
+            Step::TxAcquireGrant
         } else {
             Step::Complete
         }

@@ -262,7 +262,7 @@ fn the_phy_grant_protect_request_cannot_be_withdrawn_before_it_is_programmed() {
     // Rejected before any register access.
     assert_eq!(
         lease.release_phy_grant_protect(),
-        Err(PhyGrantProtectError::NotProtected)
+        Err(crate::coex::PhyGrantProtectError::NotProtected)
     );
     drop(lease);
     assert!(radio.into_parts().is_ok());

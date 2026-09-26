@@ -200,7 +200,7 @@ pub unsafe fn initialize_bluetooth_phy_registers(
     environment_address: u32,
     resolving_list: crate::BluetoothControllerSramAddress,
     set_branch_control_0470_bit_18: bool,
-    runtime_configuration_low_byte: u8,
+    configuration_word_40: u32,
 ) -> bool {
     let Ok(environment) = BluetoothPhyEnvironmentAddress::new(environment_address) else {
         return false;
@@ -210,7 +210,7 @@ pub unsafe fn initialize_bluetooth_phy_registers(
         environment,
         resolving_list,
         set_branch_control_0470_bit_18,
-        runtime_configuration_low_byte,
+        configuration_word_40,
     );
     let (mut task, interrupts) = bluetooth_task();
     let mut shared = shared_radio_registers();

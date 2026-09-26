@@ -17013,17 +17013,11 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
         </register>
         <register>
           <name>INTERRUPT_ENABLE</name>
-          <description>BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17 and later enables sources 11, 15, 20 and 24. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown.</description>
+          <description>BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown.</description>
           <addressOffset>0xB4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
-            <field>
-              <name>SOURCE_11</name>
-              <description>The conditional BLE PHY initialization tail enables source 11. Its feature identity remains unknown.</description>
-              <bitOffset>11</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
             <field>
               <name>SCHEDULER_RUN</name>
               <description>The synchronous base-stack subscriber enables source 14 immediately before the scheduler RUN command.</description>
@@ -17031,27 +17025,9 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>SOURCE_15</name>
-              <description>The conditional BLE PHY initialization tail enables source 15. Its feature identity remains unknown.</description>
-              <bitOffset>15</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
               <name>SOURCE_17</name>
               <description>BLE PHY initialization preserves source 17 while disabling every other interrupt source. Its feature identity remains unknown.</description>
               <bitOffset>17</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>SOURCE_20</name>
-              <description>The conditional BLE PHY initialization tail enables source 20. Its feature identity remains unknown.</description>
-              <bitOffset>20</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>SOURCE_24</name>
-              <description>The conditional BLE PHY initialization tail enables source 24. Its feature identity remains unknown.</description>
-              <bitOffset>24</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
@@ -17068,20 +17044,6 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
               <name>SCHEDULER_RUN</name>
               <description>A one acknowledges stale scheduler-run source 14 before that source is enabled.</description>
               <bitOffset>14</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>INIT_CONTROL_00C4</name>
-          <description>The conditional tail of complete BLE PHY register initialization sets bit 9 through a fresh-read RMW. All other bits are preserved and their meanings remain unknown.</description>
-          <addressOffset>0xC4</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <fields>
-            <field>
-              <name>INIT_ENABLE_9</name>
-              <bitOffset>9</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
@@ -17307,7 +17269,7 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
         </register>
         <register>
           <name>INIT_VALUE_0540</name>
-          <description>BLE PHY register initialization writes the finite complete image 2000.</description>
+          <description>BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000.</description>
           <addressOffset>0x540</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -24137,6 +24099,12 @@ claimed.</description>
               <name>CH1</name>
               <description>Writing 1 enables channel 1.</description>
               <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH2</name>
+              <description>Writing 1 enables channel 2.</description>
+              <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>

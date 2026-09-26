@@ -18,6 +18,10 @@ id = "ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK"
 description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe: components/esp_hw_support/modem/modem_clock.c sha256 f6cd061416a1356a7ca3cadb84ad9d8c137971cd9c167a74507ecd57d80f7edd, components/esp_hw_support/modem/port/esp32s31/modem_clock_impl.c sha256 c89ae6110cb4ca4e1208db3ef7263c729c84c84b2b5edaed3e9a3ce7c3c1e4df, components/hal/esp32s31/modem_clock_hal.c sha256 53c1f8c25b86cbb8eff5d06633615dde605763310fa97bcd3261e9bd84cce56e, and components/hal/esp32s31/include/hal/modem_syscon_ll.h sha256 565e2246dfd4af00c073b8668ee0b81b2eef9992b24030d814055159fec30b0c. Together they prove the refcounted Wi-Fi, Bluetooth and IEEE 802.15.4 dependency sets, low-bit-first transition order, MODEM_SYSCON clock-map updates, individual clock gates and reset pulses."
 
 [[sources]]
+id = "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"
+description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe: components/hal/esp32s31/include/hal/modem_lpcon_ll.h sha256 5e6ce588f2e029aa3b895b57b0cfdad25efeacfc3cea835cdc320bcd06d5608f and components/hal/esp32s31/modem_clock_hal.c sha256 53c1f8c25b86cbb8eff5d06633615dde605763310fa97bcd3261e9bd84cce56e. Each Bluetooth RTC-timer low-power clock accessor writes one LP_TIMER_CONF field (the four source selectors and the divider) or the CLK_CONF timer gate; modem_clock_hal_deselect_all_ble_rtc_timer_lpclk_source clears the slow-oscillator, fast-oscillator, 32-kHz crystal and main-crystal selectors in that order."
+
+[[sources]]
 id = "ESP_RADIO_7F914782_S31_WIFI_CLOCKS"
 description = "Pinned public esp-radio commit 7f914782f5c689a74f37df83b89a0827d3800323, esp-radio/src/radio_clocks/clocks_ll/esp32s31.rs sha256 eece62426050ac22647bb31d75cf83c7acd41f551cacc31bcb2377e8dc4df4eb. The S31 Wi-Fi path preserves one MODEM_SYSCON RMW for the complete CLK_CONF1 low eleven-bit clock set, pulses the Wi-Fi MAC reset independently, and pulses the Wi-Fi baseband and MAC reset pair together."
 

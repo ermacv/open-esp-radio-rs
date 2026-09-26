@@ -12,10 +12,21 @@ use crate::{
     BluetoothControllerSramAddress, BluetoothTaskRegisters, SharedRadioRegisters, device_fence,
 };
 
-const ENVIRONMENT_LAST_OFFSET: u32 = 0x40;
-const NORMAL_PROFILE_PRIVATE_TIMING_SOURCE_BYTE: u8 = 61;
+/// Environment member whose raw address the transaction publishes at
+/// `0x201018a0`.
+const ENVIRONMENT_MEMBER_OFFSET: u32 = 0x2c;
+/// Last environment member, whose raw address the transaction publishes at
+/// `0x2010124c`.
+const ENVIRONMENT_LAST_OFFSET: u32 = 0x4d;
+/// `r_ble_controller_init` writes halfword 91 to controller configuration
+/// `+0x10` over the rodata default 90; CCA, which would override it, is off.
+const NORMAL_PROFILE_PRIVATE_TIMING_SOURCE_BYTE: u8 = 91;
 const NORMAL_PROFILE_SET_BRANCH_CONTROL_0470_BIT_18: bool = false;
-const NORMAL_PROFILE_RUNTIME_CONFIGURATION_LOW_BYTE: u8 = 0x9c;
+/// Controller configuration `+0x40`: the rodata default of
+/// `sym_controller_jqcSm1kAtUzAMoyGlaKq`, which nothing later writes.
+const NORMAL_PROFILE_CONFIGURATION_WORD_40: u32 = 0x7d0;
+/// Low byte of the complete `0x20101b74` image `0x1ba`.
+const RUNTIME_CONFIGURATION_LOW_BYTE: u8 = 0xba;
 
 trait BleBaseStackOnTaskEnableHardwareTransaction {
     fn enable_access_address_low_correlation(&mut self);
@@ -69,7 +80,7 @@ pub struct BluetoothPhyEnvironmentAddress(u32);
 /// Why a BLE PHY environment address cannot be represented.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothPhyEnvironmentAddressError {
-    /// The recovered transaction compresses one member as a word address.
+    /// The environment's word members would be misaligned.
     Unaligned,
     /// The final published member would overflow the address space.
     ExtentOverflow,
@@ -91,10 +102,6 @@ impl BluetoothPhyEnvironmentAddress {
     pub const fn address(self) -> u32 {
         self.0
     }
-
-    const fn compressed_member(self, offset: u32) -> u32 {
-        ((self.0 + offset) >> 2) & 0x000f_ffff
-    }
 }
 
 /// Complete external inputs read by the recovered BLE PHY init body.
@@ -107,7 +114,7 @@ pub struct BluetoothPhyRegisterInitInputs {
     environment: BluetoothPhyEnvironmentAddress,
     resolving_list: BluetoothControllerSramAddress,
     set_branch_control_0470_bit_18: bool,
-    runtime_configuration_low_byte: u8,
+    configuration_word_40: u32,
 }
 
 impl BluetoothPhyRegisterInitInputs {
@@ -128,7 +135,7 @@ impl BluetoothPhyRegisterInitInputs {
             environment,
             resolving_list,
             set_branch_control_0470_bit_18: NORMAL_PROFILE_SET_BRANCH_CONTROL_0470_BIT_18,
-            runtime_configuration_low_byte: NORMAL_PROFILE_RUNTIME_CONFIGURATION_LOW_BYTE,
+            configuration_word_40: NORMAL_PROFILE_CONFIGURATION_WORD_40,
         }
     }
 
@@ -144,14 +151,14 @@ impl BluetoothPhyRegisterInitInputs {
         environment: BluetoothPhyEnvironmentAddress,
         resolving_list: BluetoothControllerSramAddress,
         set_branch_control_0470_bit_18: bool,
-        runtime_configuration_low_byte: u8,
+        configuration_word_40: u32,
     ) -> Self {
         Self {
             private_timing_source_byte,
             environment,
             resolving_list,
             set_branch_control_0470_bit_18,
-            runtime_configuration_low_byte,
+            configuration_word_40,
         }
     }
 }
@@ -228,7 +235,7 @@ impl BluetoothTaskRegisters {
     ) {
         let timing_byte = inputs.private_timing_source_byte.wrapping_sub(1);
         let environment = inputs.environment.address();
-        let environment_member = inputs.environment.compressed_member(0x2c);
+        let environment_member = environment + ENVIRONMENT_MEMBER_OFFSET;
         let environment_tail = environment + ENVIRONMENT_LAST_OFFSET;
         let resolving_list = inputs.resolving_list.compressed_image();
 
@@ -244,16 +251,15 @@ impl BluetoothTaskRegisters {
         );
         crate::svd::sampled_bit_zero_write::preserve_ble_phy_interrupt_source_17(btmac);
         crate::svd::fixed_register_image::clear_all_ble_base_stack_interrupt_sources(btmac);
+
+        // `r_ble_phy_ramup_time_set`: the TX-on delay fields, then the
+        // external-baseband LE TX-on delay it tail-calls.
         crate::generated::clear_ble_phy_lc_tx_on_delay_fields(btmac);
         crate::generated::or_ble_phy_init_tx_on_delay(
             btmac,
             crate::generated::BluetoothPhyInitTimingByte::new(u32::from(timing_byte))
                 .expect("one byte always fits the reviewed BLE PHY timing domain"),
         );
-
-        // The vendor reaches this leaf through the registered external-BB
-        // function table. The restricted transaction preserves its MMIO edge
-        // at the same position without claiming a static call-table install.
         crate::generated::publish_ble_phy_le_tx_on_delay(
             &shared.shared_radio.bt_v3_2_baseband,
             crate::generated::BluetoothPhyInitTimingByte::new(u32::from(
@@ -272,7 +278,9 @@ impl BluetoothTaskRegisters {
         crate::svd::fixed_register_image::publish_ble_phy_init_value_04ac(btmac);
         crate::svd::fixed_register_image::publish_ble_phy_init_value_045c(btmac);
 
-        // Four independent fresh-read updates at 0x20101654.
+        // Four independent fresh-read updates at 0x20101654; the last two
+        // are `r_ble_phy_monitor_bb_sync`, which then clears 0x20101474 and
+        // publishes image 0x20 at 0x2010891c.
         crate::generated::clear_ble_phy_init_low_byte_pair(btmac);
         crate::generated::or_ble_phy_init_low_byte_pair(btmac);
         crate::generated::clear_ble_phy_init_byte_2_low_7(btmac);
@@ -298,7 +306,10 @@ impl BluetoothTaskRegisters {
 
         crate::svd::fixed_register_image::publish_ble_phy_init_control_0400(btmac);
         crate::generated::enable_ble_phy_init_control_0400(btmac);
-        crate::svd::fixed_register_image::publish_ble_phy_init_value_0540(btmac);
+        crate::svd::register_image_write::publish_ble_phy_init_configuration_word(
+            btmac,
+            inputs.configuration_word_40,
+        );
 
         // Each byte replacement is a distinct fresh-read RMW in vendor order.
         crate::generated::publish_ble_phy_init_0550_byte_0(btmac);
@@ -322,29 +333,30 @@ impl BluetoothTaskRegisters {
 
         crate::generated::publish_ble_phy_init_high_half_0458(btmac);
         crate::generated::publish_ble_phy_init_low_5_054c(btmac);
-        crate::svd::fixed_register_image::publish_ble_positional_word_891c_image_40(
-            &bluetooth.ble_hw_positional_word_891c,
-        );
 
         if inputs.set_branch_control_0470_bit_18 {
             crate::generated::set_ble_phy_init_branch_control_0470_bit_18(btmac);
         }
+        crate::svd::fixed_register_image::publish_ble_positional_word_891c_image_40(
+            &bluetooth.ble_hw_positional_word_891c,
+        );
 
         crate::svd::zero_based_field_write::publish_ble_phy_runtime_configuration(
             &bluetooth.ble_hw_runtime_control,
-            inputs.runtime_configuration_low_byte,
+            RUNTIME_CONFIGURATION_LOW_BYTE,
             true,
         );
         crate::svd::fixed_register_image::publish_ble_phy_init_followup_image_1(
             &bluetooth.ble_hw_runtime_control,
         );
-        crate::generated::enable_ble_phy_interrupt_sources_11_15_20_24(btmac);
-        crate::generated::enable_ble_phy_init_control_00c4(btmac);
 
         let controller = &bluetooth.bluetooth_controller_core;
         crate::svd::zero_register_write::clear_ble_phy_controller_value_0244(controller);
         crate::svd::fixed_register_image::publish_ble_phy_controller_value_01f0(controller);
         crate::svd::fixed_register_image::publish_ble_phy_controller_value_0248(controller);
+        // The vendor routes and enables channel zero; this owner's channel
+        // two carries the same route (see `BluetoothPhyEtmChannel`).
+        self.etm.route_and_enable();
         crate::svd::register_image_write::publish_ble_phy_controller_environment_tail(
             controller,
             environment_tail,

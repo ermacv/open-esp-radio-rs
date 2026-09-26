@@ -4807,13 +4807,6 @@ scope = []
 register-method = "interrupt_enable"
 
 [[registers.fields]]
-svd-name = "SOURCE_11"
-method = "source_11"
-bit-offset = 11
-bit-width = 1
-access = "read-write"
-
-[[registers.fields]]
 svd-name = "SCHEDULER_RUN"
 method = "scheduler_run"
 bit-offset = 14
@@ -4821,30 +4814,9 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOURCE_15"
-method = "source_15"
-bit-offset = 15
-bit-width = 1
-access = "read-write"
-
-[[registers.fields]]
 svd-name = "SOURCE_17"
 method = "source_17"
 bit-offset = 17
-bit-width = 1
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "SOURCE_20"
-method = "source_20"
-bit-offset = 20
-bit-width = 1
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "SOURCE_24"
-method = "source_24"
-bit-offset = 24
 bit-width = 1
 access = "read-write"
 
@@ -4865,24 +4837,6 @@ method = "scheduler_run"
 bit-offset = 14
 bit-width = 1
 access = "write-only"
-
-[[registers]]
-address = 537924804
-width = 32
-access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00C4"
-peripheral = "BTMAC_BLE_PHY_INIT"
-peripheral-type = "BtmacBlePhyInit"
-peripheral-module = "btmac_ble_phy_init"
-scope = []
-register-method = "init_control_00c4"
-
-[[registers.fields]]
-svd-name = "INIT_ENABLE_9"
-method = "init_enable_9"
-bit-offset = 9
-bit-width = 1
-access = "read-write"
 
 [[registers]]
 address = 537924920
@@ -38871,6 +38825,13 @@ access = "write-only"
 svd-name = "CH1"
 method = "ch1"
 bit-offset = 1
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "CH2"
+method = "ch2"
+bit-offset = 2
 bit-width = 1
 access = "write-only"
 

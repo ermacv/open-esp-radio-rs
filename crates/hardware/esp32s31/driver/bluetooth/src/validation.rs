@@ -190,7 +190,7 @@ pub unsafe fn initialize_phy_registers(
     environment_address: u32,
     resolving_list_address: u32,
     set_branch_control_0470_bit_18: bool,
-    runtime_configuration_low_byte: u8,
+    configuration_word_40: u32,
 ) -> bool {
     let Ok(resolving_list) = BluetoothControllerSramAddress::new(resolving_list_address) else {
         return false;
@@ -203,7 +203,22 @@ pub unsafe fn initialize_phy_registers(
             environment_address,
             resolving_list,
             set_branch_control_0470_bit_18,
-            runtime_configuration_low_byte,
+            configuration_word_40,
         )
     }
+}
+
+/// Run the production Bluetooth low-power timer clock selection once, on
+/// isolated validation owners of the shared radio. Returns whether the lease
+/// accepted it.
+#[inline(always)]
+pub fn select_low_power_clock() -> bool {
+    oer_esp32s31_hal::bluetooth::validation::select_low_power_clock()
+}
+
+/// Run the production Bluetooth low-power timer clock deselection
+/// transaction once, on isolated validation owners of the shared radio.
+#[inline(always)]
+pub fn deselect_low_power_clock() {
+    oer_esp32s31_hal::bluetooth::validation::deselect_low_power_clock();
 }

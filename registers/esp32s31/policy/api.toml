@@ -1357,6 +1357,13 @@ register = "INIT_DYNAMIC_IMAGE_04A0"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[opaque-domains]]
+name = "BluetoothPhyInitConfigurationWordImage"
+description = "Complete controller-configuration word the BLE PHY initialization publishes at 0x20101940."
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_VALUE_0540"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[opaque-domains]]
 name = "BluetoothPhyControllerEnvironmentTailImage"
 description = "Register-specific complete image produced from the validated BLE PHY environment tail address."
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
@@ -1945,6 +1952,25 @@ sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
 ]
 
+[[fixed-register-images]]
+name = "enable_bluetooth_phy_etm_channel2"
+peripheral = "MODEM_ETM"
+register = "CHANNEL_ENABLE_SET"
+value = 0x00000004
+sources = [
+    "BLOB_LIBBLE_PHY_INIT_REGISTERS",
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
+]
+
+[[fixed-register-sequences]]
+name = "route_bluetooth_phy_etm_channel2"
+peripheral = "MODEM_ETM"
+steps = [
+    { register = "CH%s_EVENT", index = 2, value = 8 },
+    { register = "CH%s_TASK", index = 2, value = 20 },
+]
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
 [[fixed-register-sequences]]
 name = "route_ieee802154_etm_timer0_to_tx_start"
 peripheral = "MODEM_ETM"
@@ -2088,13 +2114,6 @@ name = "publish_ble_phy_init_control_0400"
 peripheral = "BTMAC_BLE_PHY_INIT"
 register = "INIT_CONTROL_0400"
 value = 0x80000000
-sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
-
-[[fixed-register-images]]
-name = "publish_ble_phy_init_value_0540"
-peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_VALUE_0540"
-value = 0x000007d0
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[fixed-register-images]]
@@ -3391,20 +3410,6 @@ exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[field-or-modifies]]
-name = "enable_ble_phy_interrupt_sources_11_15_20_24"
-peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INTERRUPT_ENABLE"
-fields = [
-    { field = "SOURCE_11", source-bit-offset = 0 },
-    { field = "SOURCE_15", source-bit-offset = 0 },
-    { field = "SOURCE_20", source-bit-offset = 0 },
-    { field = "SOURCE_24", source-bit-offset = 0 },
-]
-value = 1
-exposure = "facade"
-sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
-
-[[field-or-modifies]]
 name = "enable_ble_scheduler_run_event_source"
 peripheral = "BTMAC_BLE_PHY_INIT"
 register = "INTERRUPT_ENABLE"
@@ -3412,15 +3417,6 @@ fields = [{ field = "SCHEDULER_RUN", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
-
-[[field-or-modifies]]
-name = "enable_ble_phy_init_control_00c4"
-peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_CONTROL_00C4"
-fields = [{ field = "INIT_ENABLE_9", source-bit-offset = 0 }]
-value = 1
-exposure = "facade"
-sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[field-replace-modifies]]
 name = "clear_ble_phy_lc_tx_on_delay_fields"
@@ -3670,6 +3666,14 @@ name = "publish_ble_phy_runtime_configuration"
 peripheral = "BLE_HW_RUNTIME_CONTROL"
 register = "PHY_INIT_CONFIGURATION"
 fields = ["VALUE_LOW_8", "CONFIG_8"]
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[register-image-writes]]
+name = "publish_ble_phy_init_configuration_word"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_VALUE_0540"
+domain = "BluetoothPhyInitConfigurationWordImage"
+exposure = "raw-only"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[register-image-writes]]
@@ -5991,19 +5995,59 @@ value = 0
 exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT"]
 
-[[field-argument-modifies]]
-name = "configure_shared_modem_low_power_timer"
+[[field-replace-modifies]]
+name = "deselect_bluetooth_low_power_timer_slow_oscillator"
 peripheral = "MODEM_LPCON_SHARED_CLOCK"
 register = "LP_TIMER_CONF"
-arguments = [
-    { name = "slow_oscillator_selected", field = "CLK_LP_TIMER_SEL_OSC_SLOW" },
-    { name = "fast_oscillator_selected", field = "CLK_LP_TIMER_SEL_OSC_FAST" },
-    { name = "crystal_selected", field = "CLK_LP_TIMER_SEL_XTAL" },
-    { name = "crystal_32khz_selected", field = "CLK_LP_TIMER_SEL_XTAL32K" },
-    { name = "divider_minus_one", field = "CLK_LP_TIMER_DIV_NUM", domain = "ModemLowPowerClockDivider" },
-]
+fields = [{ field = "CLK_LP_TIMER_SEL_OSC_SLOW", source-bit-offset = 0 }]
+value = 0
 exposure = "facade"
-sources = ["S31_MODEM_LPCON_STRUCT"]
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"]
+
+[[field-replace-modifies]]
+name = "deselect_bluetooth_low_power_timer_fast_oscillator"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "LP_TIMER_CONF"
+fields = [{ field = "CLK_LP_TIMER_SEL_OSC_FAST", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"]
+
+[[field-replace-modifies]]
+name = "deselect_bluetooth_low_power_timer_crystal_32khz"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "LP_TIMER_CONF"
+fields = [{ field = "CLK_LP_TIMER_SEL_XTAL32K", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"]
+
+[[field-replace-modifies]]
+name = "deselect_bluetooth_low_power_timer_crystal"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "LP_TIMER_CONF"
+fields = [{ field = "CLK_LP_TIMER_SEL_XTAL", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"]
+
+[[field-replace-modifies]]
+name = "select_bluetooth_low_power_timer_crystal"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "LP_TIMER_CONF"
+fields = [{ field = "CLK_LP_TIMER_SEL_XTAL", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_low_power_timer_divider"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "LP_TIMER_CONF"
+fields = [{ field = "CLK_LP_TIMER_DIV_NUM", source-bit-offset = 0 }]
+domain = "ModemLowPowerClockDivider"
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"]
 
 [[bounded-domains]]
 name = "PhyRxDcoCalibrationControl"

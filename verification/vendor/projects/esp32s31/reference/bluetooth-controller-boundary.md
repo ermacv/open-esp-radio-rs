@@ -114,15 +114,18 @@ without exporting the opaque words. Bluetooth policy then selects fail-stop
 over any simultaneous scheduler wake.
 
 The BLE PHY environment is an address-owned hardware object, not a vendor
-configuration ABI. Complete allocator `r_sym_ble_fkNcDe7YmOY2sALPjoRj`
-requests one `0x68`-byte environment, then stores separately zeroed allocations
-of `0x28`, `2 * 0x04` and `0x04` bytes through pointer fields `+0x30`, `+0x34`
-and `+0x38`. Current archive xrefs observe ordinary fields through `+0x38`,
-while `r_sym_ble_xxEI8lxgDQ94OX1GWAuO` fills the sixteen-byte region
-`+0x40..=+0x4f`; the register-init body separately publishes the `+0x2c`
-compressed member and the full `+0x40` address. The open memory owner therefore
-replaces those allocations with one zero-based static graph and installs only
-the three proven internal pointers. Resolving-list setup calls
+configuration ABI. Complete allocator `r_sym_ble_ragNLqDkbVnj7GUutTgs`
+(`r_ble_phy_env_init`) requests one `0x80`-byte environment, then stores
+separately zeroed allocations of `0x28`, `2 * 0x04` and `0x04` bytes through
+pointer fields `+0x30`, `+0x34` and `+0x38`. It then records the BTBB
+transmit-power table: its address at `+0x48`, its length at `+0x4c` and the
+sign-extended first and last levels at `+0x78` and `+0x7c`.
+`r_sym_ble_eRawefsj3HtGBKxFAm81` later fills the forty per-channel bytes
+`+0x4d..+0x75`; the register-init body publishes the raw addresses of members
+`+0x2c` and `+0x4d`. The open memory owner therefore replaces those
+allocations with one zero-based static graph that also retains the
+transmit-power table, and installs the three proven internal pointers and the
+table record. Resolving-list setup calls
 `r_os_mempool_init` with element size `0x40`, obtains one block, writes the
 initial `0x80000000` head word and publishes that block through the positional
 global pair. The first open owner reserves one such opaque hardware object;

@@ -13,12 +13,6 @@ code = "9e6ffcdda4a3fb11644fdb37dce52da8bc646e2497d19049da9543cd5c6a1449"
 [[function]]
 artifact = "libble_app"
 member = "10.o"
-symbol = "r_sym_ble_HMLMZPGDFKHQBGsbW7FL"
-code = "bda34a6a9c61bb1e7ba6843e095a5d4d2195672b8530993c40d5a703a332dcda"
-
-[[function]]
-artifact = "libble_app"
-member = "10.o"
 symbol = "r_sym_ble_NZbbpXEXzbgRpDNnAbBu"
 code = "265609ff86b7ba235ae308619aa88c2f61d2d850a8b82bb3a3805e303c5597ec"
 
@@ -123,12 +117,6 @@ artifact = "libble_app"
 member = "14.o"
 symbol = "r_sym_ble_JEoQPlfmpf3P9DQfpdtU"
 code = "eabc4cb7a5314c03a4370f2b4aeef6560f7f99bd571b6a1d640c8655144018e6"
-
-[[function]]
-artifact = "libble_app"
-member = "2.o"
-symbol = "r_sym_ble_bkm3VwbpfEvzyJJP4FZS"
-code = "f99de72e0d29f7f813bcc5e79b269bf04ebcaa9321e2598a2381ac5a7cf650b5"
 
 [[function]]
 artifact = "libble_app"
@@ -313,12 +301,6 @@ code = "12291b831949881087db781a57c9d4a1efea943ddd216187f629dd9f76b56d7a"
 [[function]]
 artifact = "libble_app"
 member = "72.o"
-symbol = "r_sym_ble_3472b6bNiQdnWkYo6Ggv"
-code = "881f6d628e5417240398fdfeccfd9dc50c8951fe86f0e9149dbc7adea4703e7f"
-
-[[function]]
-artifact = "libble_app"
-member = "72.o"
 symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ"
 code = "075caf1f36fdd635257260970f11512772523d590c828772da03ffdca75705a3"
 
@@ -345,6 +327,54 @@ artifact = "libble_app"
 member = "84.o"
 symbol = "r_sym_ble_4FFok3PKvvlIz1pFpu57"
 code = "5c9e4051c3448c70c233fe66f4bea3ae9fdd8ee78b74196258e0885eb2d812c6"
+
+[[function]]
+artifact = "libble_app"
+member = "base_4.o"
+symbol = "brk_sym_base_uevmRkB8BjrlJh1c3VnZ"
+code = "f313b154865f0d18a11cefcab3f065e4a70eb8708409d815b695742c315cac84"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_25.o"
+symbol = "r_sym_ble_Fh7KRrkOJ0DaZapRKpqP"
+code = "ac7c65f6b080d02b4e64ed3c828a035835e49695c4da52955d4379a592e9272f"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_38.o"
+symbol = "r_sym_ble_K9RI7JxM1NMxwdTUJ82J"
+code = "503794cce50efed06f3b3316a15f0c4e8e31894e1ecb49b6f1aa130caa5d8b3b"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_68.o"
+symbol = "r_sym_ble_9gO1NCZ8fOI7LwbgnMi6"
+code = "bda34a6a9c61bb1e7ba6843e095a5d4d2195672b8530993c40d5a703a332dcda"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_68.o"
+symbol = "r_sym_ble_fy9eOwbFJlqEr1QO6bwO"
+code = "305ea57c53d82ad997e63e629187da1d4e67f6ff15ee2b357ed8090ce682ba65"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_70.o"
+symbol = "r_sym_ble_D7WjPzItc9OF8YS067Wq"
+code = "10c7c3f0548e398f69cd3d2d1627763e796edfe496609c69d4ec009d40a2d13c"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_70.o"
+symbol = "r_sym_ble_dQthQ5ciPZuxiqTBiBNa"
+code = "1358578566d5b736e7c84e60a0c6869d39896bd49410a7061b6d00a4259f9a5a"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_70.o"
+symbol = "r_sym_ble_nENHlP4KBuQYlFVffaR5"
+code = "624124ad43eefcd26d05a88a90e0e1f8272c2acb2953632c7bf92dccd6ad0088"
 
 [[function]]
 artifact = "libble_app"

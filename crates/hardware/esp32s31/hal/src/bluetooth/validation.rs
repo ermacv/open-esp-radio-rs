@@ -78,7 +78,7 @@ pub unsafe fn initialize_phy_registers(
     environment_address: u32,
     resolving_list: BluetoothControllerSramAddress,
     set_branch_control_0470_bit_18: bool,
-    runtime_configuration_low_byte: u8,
+    configuration_word_40: u32,
 ) -> bool {
     // SAFETY: forwarded unchanged from this function's `# Safety` contract.
     unsafe {
@@ -87,7 +87,37 @@ pub unsafe fn initialize_phy_registers(
             environment_address,
             resolving_list,
             set_branch_control_0470_bit_18,
-            runtime_configuration_low_byte,
+            configuration_word_40,
         )
+    }
+}
+
+/// Run the production Bluetooth low-power timer clock selection once, on
+/// isolated validation owners of the shared radio.
+///
+/// Returns whether the lease accepted the selection.
+#[inline(always)]
+pub fn select_low_power_clock() -> bool {
+    let (shared, partitions) = crate::root::RadioHardware::for_validation().into_concurrent(());
+    let (controller, timer, interrupts) = partitions.bluetooth.into_parts();
+    let task = oer_esp32s31_pac::BluetoothTaskRegisters::new(controller);
+    let accepted = match shared.try_acquire() {
+        Ok(mut lease) => lease.select_bluetooth_low_power_clock(&task).is_ok(),
+        Err(_) => false,
+    };
+    // The comparison image retains every partition it mutated.
+    let _retained = (shared, task, timer, interrupts);
+    accepted
+}
+
+/// Run the production Bluetooth low-power timer clock deselection
+/// transaction once, on isolated validation owners of the shared radio.
+#[inline(always)]
+pub fn deselect_low_power_clock() {
+    let (shared, _partitions) = crate::root::RadioHardware::for_validation().into_concurrent(());
+    if let Ok(mut lease) = shared.try_acquire() {
+        crate::shared_radio::deselect_bluetooth_low_power_clock(
+            lease.registers_mut().radio_phy_mut(),
+        );
     }
 }

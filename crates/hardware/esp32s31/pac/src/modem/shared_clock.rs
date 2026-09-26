@@ -16,28 +16,6 @@ pub enum SharedModemClockGate {
     LowPowerTimer,
 }
 
-/// Reviewed Bluetooth low-power timer sources.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ModemLowPowerClockSource {
-    SlowOscillator,
-    FastOscillator,
-    Crystal,
-    Crystal32Khz,
-}
-
-/// Complete Bluetooth low-power timer source and divider configuration.
-///
-/// The value is an opaque readback used to restore the exact configuration
-/// captured before a route changed it.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct BluetoothLowPowerTimerConfiguration {
-    slow_oscillator_selected: bool,
-    fast_oscillator_selected: bool,
-    crystal_selected: bool,
-    crystal_32khz_selected: bool,
-    divider_minus_one: u16,
-}
-
 /// Semantic route-owned observation used by protocol clock checkpoints.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SharedModemClockObservation {
@@ -178,77 +156,36 @@ impl RadioPhyRegisters {
         }
     }
 
-    /// Read the complete Bluetooth low-power timer configuration.
-    #[doc(hidden)]
-    pub fn bluetooth_low_power_timer_configuration(&self) -> BluetoothLowPowerTimerConfiguration {
-        let (
-            slow_oscillator_selected,
-            fast_oscillator_selected,
-            crystal_selected,
-            crystal_32khz_selected,
-            divider_minus_one,
-        ) = crate::svd::field_snapshot_read::observe_bluetooth_low_power_timer_configuration(
-            &self.peripherals.modem_lpcon_shared_clock,
-        );
-        BluetoothLowPowerTimerConfiguration {
-            slow_oscillator_selected,
-            fast_oscillator_selected,
-            crystal_selected,
-            crystal_32khz_selected,
-            divider_minus_one,
-        }
-    }
-
-    /// Select one Bluetooth low-power timer source and divider.
-    #[doc(hidden)]
-    pub fn configure_bluetooth_low_power_timer(
-        &mut self,
-        source: ModemLowPowerClockSource,
-        divider: ModemLowPowerClockDivider,
-    ) {
-        crate::generated::configure_shared_modem_low_power_timer(
-            &self.peripherals.modem_lpcon_shared_clock,
-            source == ModemLowPowerClockSource::SlowOscillator,
-            source == ModemLowPowerClockSource::FastOscillator,
-            source == ModemLowPowerClockSource::Crystal,
-            source == ModemLowPowerClockSource::Crystal32Khz,
-            divider,
-        );
-    }
-
-    /// Restore one configuration captured by
-    /// [`Self::bluetooth_low_power_timer_configuration`].
-    #[doc(hidden)]
-    pub fn restore_bluetooth_low_power_timer_configuration(
-        &mut self,
-        configuration: BluetoothLowPowerTimerConfiguration,
-    ) {
-        let divider = ModemLowPowerClockDivider::new(u32::from(configuration.divider_minus_one))
-            .expect("generated twelve-bit LP timer readback must fit its write domain");
-        crate::generated::configure_shared_modem_low_power_timer(
-            &self.peripherals.modem_lpcon_shared_clock,
-            configuration.slow_oscillator_selected,
-            configuration.fast_oscillator_selected,
-            configuration.crystal_selected,
-            configuration.crystal_32khz_selected,
-            divider,
-        );
-    }
-
-    /// Deselect every Bluetooth low-power timer source, keeping the divider.
+    /// Deselect every Bluetooth low-power timer source.
     ///
-    /// This is `modem_clock_hal_deselect_all_ble_rtc_timer_lpclk_source`: the
-    /// four source selectors are cleared and the divider field is untouched.
+    /// This is `modem_clock_hal_deselect_all_ble_rtc_timer_lpclk_source`: one
+    /// write per selector, in the vendor's slow-oscillator, fast-oscillator,
+    /// 32-kHz crystal, main-crystal order. The divider is untouched.
     #[doc(hidden)]
     pub fn deselect_bluetooth_low_power_timer_sources(&mut self) {
-        let configuration = self.bluetooth_low_power_timer_configuration();
-        self.restore_bluetooth_low_power_timer_configuration(BluetoothLowPowerTimerConfiguration {
-            slow_oscillator_selected: false,
-            fast_oscillator_selected: false,
-            crystal_selected: false,
-            crystal_32khz_selected: false,
-            divider_minus_one: configuration.divider_minus_one,
-        });
+        let registers = &self.peripherals.modem_lpcon_shared_clock;
+        crate::generated::deselect_bluetooth_low_power_timer_slow_oscillator(registers);
+        crate::generated::deselect_bluetooth_low_power_timer_fast_oscillator(registers);
+        crate::generated::deselect_bluetooth_low_power_timer_crystal_32khz(registers);
+        crate::generated::deselect_bluetooth_low_power_timer_crystal(registers);
+    }
+
+    /// Select the main crystal as the only Bluetooth low-power timer source
+    /// and program its divider.
+    ///
+    /// This is the source and divider half of
+    /// `modem_clock_select_lp_clock_source(PERIPH_BT_MODULE, MAIN_XTAL, divider)`:
+    /// every selector is cleared, the main crystal is selected and the
+    /// divider written, each as its own field write.
+    #[doc(hidden)]
+    pub fn select_bluetooth_low_power_timer_main_crystal(
+        &mut self,
+        divider: ModemLowPowerClockDivider,
+    ) {
+        self.deselect_bluetooth_low_power_timer_sources();
+        let registers = &self.peripherals.modem_lpcon_shared_clock;
+        crate::generated::select_bluetooth_low_power_timer_crystal(registers);
+        crate::generated::set_bluetooth_low_power_timer_divider(registers, divider);
     }
 
     #[doc(hidden)]

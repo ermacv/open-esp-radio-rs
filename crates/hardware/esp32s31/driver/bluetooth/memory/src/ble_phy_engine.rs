@@ -1,13 +1,15 @@
 //! Static storage retained by the ESP32-S31 BLE PHY engine.
 //!
 //! The recovered register-initialization transaction publishes two addresses:
-//! a `0x68`-byte BLE environment, three tables referenced by its positional
+//! a `0x80`-byte BLE environment, three tables referenced by its positional
 //! pointer fields, and a controller-SRAM resolving-list object allocated in
 //! `0x40`-byte units. The BLE PHY module initialization copies the reviewed
 //! channel-frequency and receive packet-start calibration tables into those
-//! allocations. The register transaction publishes one environment member at
-//! `+0x2c` and the start of a subregion at `+0x40`. This module owns the
-//! complete recovered allocation graph and its stable location. It
+//! allocations and records the BTBB transmit-power table: its address at
+//! `+0x48`, its length at `+0x4c` and its first and last levels at `+0x78` and
+//! `+0x7c`. The register transaction publishes the environment members at
+//! `+0x2c` and `+0x4d`. This module owns the complete recovered allocation
+//! graph and its stable location. It
 //! deliberately does not assign semantics to still-unrecovered words or grant
 //! MMIO publication authority.
 
@@ -26,7 +28,7 @@ use oer_esp32s31_hal::types::{
 };
 
 /// Bytes in the complete recovered BLE PHY environment allocation.
-pub const BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES: usize = 0x68;
+pub const BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES: usize = 0x80;
 /// Bytes in one recovered resolving-list hardware allocation.
 pub const BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES: usize = 0x40;
 
@@ -36,6 +38,12 @@ const RX_ADDRESS_DELAYS_BYTES: usize = 0x04;
 const CHANNEL_FREQUENCY_OFFSETS_POINTER_OFFSET: usize = 0x30;
 const PACKET_START_OFFSETS_POINTER_OFFSET: usize = 0x34;
 const RX_ADDRESS_DELAYS_POINTER_OFFSET: usize = 0x38;
+const TX_POWER_LEVELS_POINTER_OFFSET: usize = 0x48;
+const TX_POWER_LEVEL_COUNT_OFFSET: usize = 0x4c;
+const TX_POWER_FIRST_LEVEL_OFFSET: usize = 0x78;
+const TX_POWER_LAST_LEVEL_OFFSET: usize = 0x7c;
+const TX_POWER_LEVELS: [i8; 16] = oer_esp32s31_hal::phy::baseband::TX_POWER_LEVELS_DBM;
+const TX_POWER_LEVELS_BYTES: usize = TX_POWER_LEVELS.len();
 const RESOLVING_LIST_INITIAL_HEAD_IMAGE: u32 = 0x8000_0000;
 
 const LE_1M_PHY_MODE_INDEX: usize = 1;
@@ -110,6 +118,7 @@ pub struct BlePhyEngineStorage {
     channel_frequency_offsets_mhz: [u8; CHANNEL_FREQUENCY_OFFSETS_BYTES],
     packet_start_offsets_micros: [u16; 4],
     rx_address_delays_micros: [u8; RX_ADDRESS_DELAYS_BYTES],
+    tx_power_levels_dbm: [i8; TX_POWER_LEVELS_BYTES],
     resolving_list: [VolatileCell<u8>; BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES],
     _pin: PhantomPinned,
 }
@@ -131,11 +140,19 @@ const _: () = {
                 + PACKET_START_OFFSETS_BYTES
     );
     assert!(
+        core::mem::offset_of!(BlePhyEngineStorage, tx_power_levels_dbm)
+            == BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES
+                + CHANNEL_FREQUENCY_OFFSETS_BYTES
+                + PACKET_START_OFFSETS_BYTES
+                + RX_ADDRESS_DELAYS_BYTES
+    );
+    assert!(
         core::mem::offset_of!(BlePhyEngineStorage, resolving_list)
             == BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES
                 + CHANNEL_FREQUENCY_OFFSETS_BYTES
                 + PACKET_START_OFFSETS_BYTES
                 + RX_ADDRESS_DELAYS_BYTES
+                + TX_POWER_LEVELS_BYTES
     );
 };
 
@@ -245,6 +262,7 @@ pub struct BlePhyEngineBinding {
     channel_frequency_offsets: BluetoothControllerSramAddress,
     packet_start_offsets: BluetoothControllerSramAddress,
     rx_address_delays: BluetoothControllerSramAddress,
+    tx_power_levels: BluetoothControllerSramAddress,
     resolving_list: BluetoothControllerSramAddress,
     end_exclusive: u32,
 }
@@ -255,6 +273,7 @@ impl BlePhyEngineBinding {
         channel_frequency_offsets: u32,
         packet_start_offsets: u32,
         rx_address_delays: u32,
+        tx_power_levels: u32,
         resolving_list: u32,
     ) -> Result<Self, BlePhyEngineBindError> {
         let environment = BluetoothPhyEnvironmentAddress::new(environment)
@@ -265,6 +284,8 @@ impl BlePhyEngineBinding {
         let packet_start_offsets = BluetoothControllerSramAddress::new(packet_start_offsets)
             .map_err(BlePhyEngineBindError::InvalidAuxiliary)?;
         let rx_address_delays = BluetoothControllerSramAddress::new(rx_address_delays)
+            .map_err(BlePhyEngineBindError::InvalidAuxiliary)?;
+        let tx_power_levels = BluetoothControllerSramAddress::new(tx_power_levels)
             .map_err(BlePhyEngineBindError::InvalidAuxiliary)?;
         let resolving_list = BluetoothControllerSramAddress::new(resolving_list)
             .map_err(BlePhyEngineBindError::InvalidResolvingList)?;
@@ -284,14 +305,19 @@ impl BlePhyEngineBinding {
             .address()
             .checked_add(PACKET_START_OFFSETS_BYTES as u32)
             .ok_or(BlePhyEngineBindError::ExtentOutsidePhysicalSram)?;
-        let expected_resolving_list = rx_address_delays
+        let expected_tx_power_levels = rx_address_delays
             .address()
             .checked_add(RX_ADDRESS_DELAYS_BYTES as u32)
+            .ok_or(BlePhyEngineBindError::ExtentOutsidePhysicalSram)?;
+        let expected_resolving_list = tx_power_levels
+            .address()
+            .checked_add(TX_POWER_LEVELS_BYTES as u32)
             .ok_or(BlePhyEngineBindError::ExtentOutsidePhysicalSram)?;
         if environment.address() < BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW
             || channel_frequency_offsets.address() != expected_channel_frequency_offsets
             || packet_start_offsets.address() != expected_packet_start_offsets
             || rx_address_delays.address() != expected_rx_address_delays
+            || tx_power_levels.address() != expected_tx_power_levels
             || resolving_list.address() != expected_resolving_list
             || end_exclusive > BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH
         {
@@ -302,6 +328,7 @@ impl BlePhyEngineBinding {
             channel_frequency_offsets,
             packet_start_offsets,
             rx_address_delays,
+            tx_power_levels,
             resolving_list,
             end_exclusive,
         })
@@ -389,6 +416,7 @@ impl BlePhyEngineStorage {
             channel_frequency_offsets_mhz: channel_frequency_offsets_mhz(),
             packet_start_offsets_micros: packet_start_offsets_micros(),
             rx_address_delays_micros: rx_address_delays_micros(),
+            tx_power_levels_dbm: TX_POWER_LEVELS,
             resolving_list: [const { VolatileCell::new(0) };
                 BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES],
             _pin: PhantomPinned,
@@ -450,12 +478,23 @@ impl BlePhyEngineStorage {
                     ));
                 }
             };
+        let tx_power_levels =
+            match u32::try_from(core::ptr::addr_of!(storage.tx_power_levels_dbm).addr()) {
+                Ok(address) => address,
+                Err(_) => {
+                    return Err(BlePhyEngineBindFailure::new(
+                        storage,
+                        BlePhyEngineBindError::AddressWidth,
+                    ));
+                }
+            };
         Self::pin_static_inner(
             storage,
             environment,
             channel_frequency_offsets,
             packet_start_offsets,
             rx_address_delays,
+            tx_power_levels,
             resolving_list,
         )
     }
@@ -471,13 +510,15 @@ impl BlePhyEngineStorage {
         let packet_start_offsets =
             channel_frequency_offsets + CHANNEL_FREQUENCY_OFFSETS_BYTES as u32;
         let rx_address_delays = packet_start_offsets + PACKET_START_OFFSETS_BYTES as u32;
-        let resolving_list = rx_address_delays + RX_ADDRESS_DELAYS_BYTES as u32;
+        let tx_power_levels = rx_address_delays + RX_ADDRESS_DELAYS_BYTES as u32;
+        let resolving_list = tx_power_levels + TX_POWER_LEVELS_BYTES as u32;
         Self::pin_static_inner(
             storage,
             environment,
             channel_frequency_offsets,
             packet_start_offsets,
             rx_address_delays,
+            tx_power_levels,
             resolving_list,
         )
     }
@@ -488,6 +529,7 @@ impl BlePhyEngineStorage {
         channel_frequency_offsets: u32,
         packet_start_offsets: u32,
         rx_address_delays: u32,
+        tx_power_levels: u32,
         resolving_list: u32,
     ) -> Result<BlePhyEngineCpuOwned, BlePhyEngineBindFailure> {
         let binding = match BlePhyEngineBinding::new(
@@ -495,6 +537,7 @@ impl BlePhyEngineStorage {
             channel_frequency_offsets,
             packet_start_offsets,
             rx_address_delays,
+            tx_power_levels,
             resolving_list,
         ) {
             Ok(binding) => binding,
@@ -508,7 +551,8 @@ impl BlePhyEngineStorage {
     }
 
     /// Write the allocation-time image: a zeroed environment and resolving
-    /// list with the reviewed table pointers and resolving-list head.
+    /// list with the reviewed table pointers, the transmit-power table record
+    /// and the resolving-list head.
     fn initialize_reviewed_allocation(&self, binding: &BlePhyEngineBinding) {
         let write = |cells: &[VolatileCell<u8>], offset: usize, bytes: [u8; 4]| {
             for (cell, byte) in cells[offset..offset + 4].iter().zip(bytes) {
@@ -532,6 +576,23 @@ impl BlePhyEngineStorage {
             &self.environment,
             RX_ADDRESS_DELAYS_POINTER_OFFSET,
             binding.rx_address_delays.address().to_le_bytes(),
+        );
+        write(
+            &self.environment,
+            TX_POWER_LEVELS_POINTER_OFFSET,
+            binding.tx_power_levels.address().to_le_bytes(),
+        );
+        self.environment[TX_POWER_LEVEL_COUNT_OFFSET].set(TX_POWER_LEVELS_BYTES as u8);
+        // The first and last levels are stored sign-extended to words.
+        write(
+            &self.environment,
+            TX_POWER_FIRST_LEVEL_OFFSET,
+            i32::from(TX_POWER_LEVELS[0]).to_le_bytes(),
+        );
+        write(
+            &self.environment,
+            TX_POWER_LAST_LEVEL_OFFSET,
+            i32::from(TX_POWER_LEVELS[TX_POWER_LEVELS_BYTES - 1]).to_le_bytes(),
         );
         write(
             &self.resolving_list,

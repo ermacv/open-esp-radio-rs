@@ -79,6 +79,12 @@ bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
+name = "CH2"
+description = "Writing 1 enables channel 2."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
 name = "CH4"
 description = "Writing 1 enables channel 4."
 bitOffset = 4
@@ -329,6 +335,16 @@ sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
+]
+provenance = "derived"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH2"
+sources = [
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
+    "BLOB_LIBBLE_PHY_INIT_REGISTERS",
 ]
 provenance = "derived"
 accuracy = "exact"

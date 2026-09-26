@@ -111,7 +111,10 @@ pub struct CoexistencePartition(svd::peripheral_ownership::CoexistencePeripheral
 
 /// Opaque Bluetooth controller register partition.
 #[must_use = "dropping a radio partition permanently loses its register authority"]
-pub struct BluetoothControllerPartition(svd::peripheral_ownership::BluetoothControllerPeripherals);
+pub struct BluetoothControllerPartition {
+    bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    etm: crate::modem::etm::BluetoothPhyEtmChannel,
+}
 
 /// Opaque shared-baseband register partition.
 #[must_use = "dropping a radio partition permanently loses its register authority"]
@@ -170,7 +173,8 @@ impl RadioPartitions {
             ieee802154,
             modem_etm,
         } = svd::peripheral_ownership::partition(peripherals);
-        let (ieee802154_etm, bluetooth_etm) = crate::modem::etm::split(modem_etm);
+        let (ieee802154_etm, bluetooth_phy_etm, bluetooth_etm) =
+            crate::modem::etm::split(modem_etm);
         Self {
             wifi_mac: WifiMacPartition(wifi_mac),
             wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
@@ -178,7 +182,10 @@ impl RadioPartitions {
                 peripherals: radio_phy,
             },
             coexistence: CoexistencePartition(coexistence),
-            bluetooth: BluetoothControllerPartition(bluetooth),
+            bluetooth: BluetoothControllerPartition {
+                bluetooth,
+                etm: bluetooth_phy_etm,
+            },
             bluetooth_modem_lp_timer: BluetoothModemLpTimerRegisters::new(
                 bluetooth_modem_lp_timer,
                 bluetooth_etm,
@@ -624,18 +631,23 @@ pub struct Ieee802154InterruptRegisters {
 #[must_use = "the Bluetooth task owner must be reunited before release"]
 pub struct BluetoothTaskRegisters {
     pub(crate) bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    /// Modem ETM channel two, which BLE PHY initialization programs.
+    pub(crate) etm: crate::modem::etm::BluetoothPhyEtmChannel,
 }
 
 impl BluetoothTaskRegisters {
     /// Assemble the Bluetooth task register set. This performs no MMIO.
     pub fn new(bluetooth: BluetoothControllerPartition) -> Self {
-        let BluetoothControllerPartition(bluetooth) = bluetooth;
-        Self { bluetooth }
+        let BluetoothControllerPartition { bluetooth, etm } = bluetooth;
+        Self { bluetooth, etm }
     }
 
     /// Return the partition. This performs no MMIO.
     pub fn into_partition(self) -> BluetoothControllerPartition {
-        BluetoothControllerPartition(self.bluetooth)
+        BluetoothControllerPartition {
+            bluetooth: self.bluetooth,
+            etm: self.etm,
+        }
     }
 
     #[doc(hidden)]

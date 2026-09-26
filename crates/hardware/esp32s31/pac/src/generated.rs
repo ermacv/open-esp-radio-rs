@@ -2279,6 +2279,22 @@ impl BluetoothPhyInitEnvironmentMemberImage {
     }
 }
 
+/// Complete controller-configuration word the BLE PHY initialization publishes at 0x20101940.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothPhyInitConfigurationWordImage(u32);
+
+impl BluetoothPhyInitConfigurationWordImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete image produced from the validated BLE PHY environment tail address.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothPhyControllerEnvironmentTailImage(u32);
@@ -3154,24 +3170,10 @@ pub(crate) fn set_ble_phy_init_branch_control_0470_bit_18(registers: &crate::svd
     crate::svd::field_or_modify::set_ble_phy_init_branch_control_0470_bit_18(registers);
 }
 
-/// Typed bridge for the reviewed `enable_ble_phy_interrupt_sources_11_15_20_24` fixed field-OR transaction.
-#[inline]
-pub(crate) fn enable_ble_phy_interrupt_sources_11_15_20_24(
-    registers: &crate::svd::BtmacBlePhyInit,
-) {
-    crate::svd::field_or_modify::enable_ble_phy_interrupt_sources_11_15_20_24(registers);
-}
-
 /// Typed bridge for the reviewed `enable_ble_scheduler_run_event_source` fixed field-OR transaction.
 #[inline]
 pub(crate) fn enable_ble_scheduler_run_event_source(registers: &crate::svd::BtmacBlePhyInit) {
     crate::svd::field_or_modify::enable_ble_scheduler_run_event_source(registers);
-}
-
-/// Typed bridge for the reviewed `enable_ble_phy_init_control_00c4` fixed field-OR transaction.
-#[inline]
-pub(crate) fn enable_ble_phy_init_control_00c4(registers: &crate::svd::BtmacBlePhyInit) {
-    crate::svd::field_or_modify::enable_ble_phy_init_control_00c4(registers);
 }
 
 /// Typed bridge for the reviewed `request_bluetooth_controller_time_latch` fixed field-OR transaction.
@@ -5280,6 +5282,55 @@ pub(crate) fn disable_shared_modem_low_power_timer_clock(
     registers: &crate::svd::ModemLpconSharedClock,
 ) {
     crate::svd::field_replace_modify::disable_shared_modem_low_power_timer_clock(registers);
+}
+
+/// Typed bridge for the reviewed `deselect_bluetooth_low_power_timer_slow_oscillator` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn deselect_bluetooth_low_power_timer_slow_oscillator(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::deselect_bluetooth_low_power_timer_slow_oscillator(registers);
+}
+
+/// Typed bridge for the reviewed `deselect_bluetooth_low_power_timer_fast_oscillator` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn deselect_bluetooth_low_power_timer_fast_oscillator(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::deselect_bluetooth_low_power_timer_fast_oscillator(registers);
+}
+
+/// Typed bridge for the reviewed `deselect_bluetooth_low_power_timer_crystal_32khz` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn deselect_bluetooth_low_power_timer_crystal_32khz(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::deselect_bluetooth_low_power_timer_crystal_32khz(registers);
+}
+
+/// Typed bridge for the reviewed `deselect_bluetooth_low_power_timer_crystal` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn deselect_bluetooth_low_power_timer_crystal(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::deselect_bluetooth_low_power_timer_crystal(registers);
+}
+
+/// Typed bridge for the reviewed `select_bluetooth_low_power_timer_crystal` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn select_bluetooth_low_power_timer_crystal(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::select_bluetooth_low_power_timer_crystal(registers);
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_low_power_timer_divider` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_low_power_timer_divider(
+    registers: &crate::svd::ModemLpconSharedClock,
+    value: ModemLowPowerClockDivider,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_low_power_timer_divider(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `clear_phy_rx_dco_calibration_control` fixed field-replacement transaction.
@@ -7942,26 +7993,6 @@ pub(crate) fn clear_bluetooth_scheduler_cancellation_control(
     registers: &crate::svd::BluetoothControllerCore,
 ) {
     crate::svd::field_replace_modify::clear_bluetooth_scheduler_cancellation_control(registers);
-}
-
-/// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
-#[inline]
-pub(crate) fn configure_shared_modem_low_power_timer(
-    registers: &crate::svd::ModemLpconSharedClock,
-    slow_oscillator_selected: bool,
-    fast_oscillator_selected: bool,
-    crystal_selected: bool,
-    crystal_32khz_selected: bool,
-    divider_minus_one: ModemLowPowerClockDivider,
-) {
-    crate::svd::field_argument_modify::configure_shared_modem_low_power_timer(
-        registers,
-        slow_oscillator_selected,
-        fast_oscillator_selected,
-        crystal_selected,
-        crystal_32khz_selected,
-        divider_minus_one.get(),
-    );
 }
 
 /// Typed bridge for the reviewed `restore_modem_source_clocks` multi-argument field-replacement transaction.

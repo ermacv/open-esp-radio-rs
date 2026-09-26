@@ -136,25 +136,12 @@ impl<'levels> Ieee802154TxPowerLevels<'levels> {
 }
 
 impl Ieee802154TxPowerLevels<'static> {
-    /// The ESP32-S31 BTBB provider's level set, in dBm.
+    /// The ESP32-S31 BTBB provider's level set,
+    /// [`crate::phy::baseband::TX_POWER_LEVELS_DBM`].
     ///
-    /// Source: `_oracles/libbtbb.a` sha256
-    /// ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df,
-    /// `bt_bb_v2.o` `bt_bb_get_tx_pwr_table`, which writes the count 16 and
-    /// fills its static `power_arr` with `phy_get_data_sat(x, 80, -60)` for
-    /// `x = -24, -21, ..., 21`; `phy_get_data_sat` is the ROM clamp at
-    /// 0x2f826024 of the ESP32-S31 rev0 ROM ELF sha256
-    /// d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542.
-    /// Every value lies inside the clamp. Concrete Blobray execution of the
-    /// linked object with the ROM clamp returned exactly these bytes.
-    ///
-    /// The values are the provider's signed dBm levels; the index into this
-    /// set is the MAC `TXPOWER` field code. They apply to the ESP32-S31 BTBB
-    /// and are not an RF calibration result.
+    /// The index into this set is the MAC `TXPOWER` field code.
     pub const ESP32S31: Self = Self {
-        levels_dbm: &[
-            -24, -21, -18, -15, -12, -9, -6, -3, 0, 3, 6, 9, 12, 15, 18, 21,
-        ],
+        levels_dbm: &crate::phy::baseband::TX_POWER_LEVELS_DBM,
     };
 }
 

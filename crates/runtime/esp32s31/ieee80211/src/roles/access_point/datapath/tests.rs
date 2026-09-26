@@ -193,7 +193,6 @@ impl DatapathNetworkRx for NetworkRx {
         }
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_observed(
         &mut self,
         frame: &[u8],
@@ -206,7 +205,6 @@ impl DatapathNetworkRx for NetworkRx {
         result
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
         frame: EthernetFrameParts<'_>,

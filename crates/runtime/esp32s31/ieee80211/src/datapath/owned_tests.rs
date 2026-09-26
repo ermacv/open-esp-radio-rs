@@ -29,7 +29,6 @@ impl DatapathNetworkRx for Endpoint {
         Poll::Ready(())
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_observed(
         &mut self,
         frame: &[u8],
@@ -39,7 +38,6 @@ impl DatapathNetworkRx for Endpoint {
         self.try_send(frame)
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
         frame: EthernetFrameParts<'_>,

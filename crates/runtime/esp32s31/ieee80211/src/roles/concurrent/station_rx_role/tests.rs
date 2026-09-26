@@ -51,7 +51,6 @@ impl DatapathNetworkRx for Network {
         }
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_observed(
         &mut self,
         frame: &[u8],
@@ -64,7 +63,6 @@ impl DatapathNetworkRx for Network {
         result
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
         frame: oer_ieee80211_mac::data::EthernetFrameParts<'_>,

@@ -44,7 +44,6 @@ impl<M: RawMutex, const RX: usize, const TX: usize> DatapathNetworkRx for Rx<'_,
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         self.0.poll_ready(cx)
     }
-    #[cfg(feature = "diagnostics")]
     fn try_send_observed(
         &mut self,
         frame: &[u8],
@@ -52,7 +51,6 @@ impl<M: RawMutex, const RX: usize, const TX: usize> DatapathNetworkRx for Rx<'_,
     ) -> Result<(), RxEnqueueError> {
         self.0.try_send_observed(frame, before_publish)
     }
-    #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
         frame: EthernetFrameParts<'_>,

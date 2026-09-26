@@ -259,7 +259,6 @@ impl DatapathNetworkRx for PairedNetworkRx {
         core::task::Poll::Ready(())
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_observed(
         &mut self,
         frame: &[u8],
@@ -272,7 +271,6 @@ impl DatapathNetworkRx for PairedNetworkRx {
         result
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
         frame: EthernetFrameParts<'_>,

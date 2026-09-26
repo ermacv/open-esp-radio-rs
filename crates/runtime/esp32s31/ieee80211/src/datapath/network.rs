@@ -38,19 +38,29 @@ pub trait DatapathNetworkRx {
     /// Poll the next publication credit without allocating a boxed future.
     fn poll_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()>;
 
-    #[cfg(feature = "diagnostics")]
+    /// Publish one frame, calling `before_publish` once it is admitted and
+    /// immediately before publication. Diagnostics use the callback to time
+    /// the publication edge. The default observes just before `try_send`; a
+    /// publisher that constructs the frame first overrides it to observe
+    /// after construction.
     fn try_send_observed(
         &mut self,
         frame: &[u8],
         before_publish: &mut dyn FnMut(),
-    ) -> Result<(), RxEnqueueError>;
+    ) -> Result<(), RxEnqueueError> {
+        before_publish();
+        self.try_send(frame)
+    }
 
-    #[cfg(feature = "diagnostics")]
+    /// Frame-parts form of [`Self::try_send_observed`].
     fn try_send_parts_observed(
         &mut self,
         frame: EthernetFrameParts<'_>,
         before_publish: &mut dyn FnMut(),
-    ) -> Result<(), RxEnqueueError>;
+    ) -> Result<(), RxEnqueueError> {
+        before_publish();
+        self.try_send_parts(frame)
+    }
 }
 
 /// Admission when a finite RX turn cannot obtain an output slot.
@@ -351,3 +361,6 @@ where
         N::wait_tx_publication(*self)
     }
 }
+
+#[cfg(test)]
+mod tests;

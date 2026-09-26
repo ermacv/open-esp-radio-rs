@@ -123,7 +123,6 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Datapat
         self.inner.poll_ready(context)
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_observed(
         &mut self,
         frame: &[u8],
@@ -133,7 +132,6 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Datapat
         self.inner.try_send(frame)
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
         frame: oer_esp32s31_ieee80211_runtime::datapath::network::EthernetFrameParts<'_>,

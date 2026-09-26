@@ -72,7 +72,6 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> DatapathNetworkRx
         OwnedRxPublisher::poll_ready(self, context)
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_observed(
         &mut self,
         frame: &[u8],
@@ -82,7 +81,6 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> DatapathNetworkRx
         OwnedRxPublisher::try_send(self, frame)
     }
 
-    #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
         frame: EthernetFrameParts<'_>,

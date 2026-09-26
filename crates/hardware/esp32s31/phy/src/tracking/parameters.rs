@@ -238,6 +238,9 @@ pub struct PhyParamTrackingCalibrationCompletion {
     transmit_updated: bool,
 }
 
+// Host tests and the vendor probe read back the committed branches;
+// production consumes them through the parent transition.
+#[cfg(any(test, feature = "validation-probes"))]
 impl PhyParamTrackingCalibrationCompletion {
     /// The common calibration references were recalibrated and committed.
     pub const fn common_updated(&self) -> bool {

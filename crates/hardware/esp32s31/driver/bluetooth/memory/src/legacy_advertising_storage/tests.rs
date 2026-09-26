@@ -127,12 +127,12 @@ fn three_channel_event_waits_for_and_reports_every_hardware_item() {
     assert!(prepared.storage.as_ref().get_ref().scheduler_items[2].is_terminal());
 
     let prepared = prepared.prepare_scheduler_bookkeeping();
-    prepared.storage.as_ref().get_ref().scheduler_items[0].words
-        [super::SCHEDULER_ITEM_WORD_38_OFFSET]
-        .set(0);
-    prepared.storage.as_ref().get_ref().scheduler_items[1].words
-        [super::SCHEDULER_ITEM_WORD_38_OFFSET]
-        .set(7);
+    prepared.storage.as_ref().get_ref().scheduler_items[0]
+        .header()
+        .set_status(0);
+    prepared.storage.as_ref().get_ref().scheduler_items[1]
+        .header()
+        .set_status(7);
     let running = super::LegacyAdvertisingMemoryGraphRunning {
         storage: prepared.storage,
         binding: prepared.binding,
@@ -149,9 +149,9 @@ fn three_channel_event_waits_for_and_reports_every_hardware_item() {
     else {
         panic!("the last channel still has its in-flight sentinel")
     };
-    running.storage.as_ref().get_ref().scheduler_items[2].words
-        [super::SCHEDULER_ITEM_WORD_38_OFFSET]
-        .set(0);
+    running.storage.as_ref().get_ref().scheduler_items[2]
+        .header()
+        .set_status(0);
 
     let observation = BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0])
         .expect("list zero is representable");
@@ -167,25 +167,25 @@ fn three_channel_event_waits_for_and_reports_every_hardware_item() {
     assert_eq!(statuses.item_count(), 3);
     assert_eq!(
         statuses.status(0),
-        Some(super::LegacyAdvertisingSchedulerItemCompletionStatus::Zero)
+        Some(super::SchedulerItemCompletionStatus::Zero)
     );
     assert!(matches!(
         statuses.status(1),
-        Some(super::LegacyAdvertisingSchedulerItemCompletionStatus::NonZero(status))
+        Some(super::SchedulerItemCompletionStatus::NonZero(status))
             if status.get() == 7
     ));
     assert_eq!(
         statuses.status(2),
-        Some(super::LegacyAdvertisingSchedulerItemCompletionStatus::Zero)
+        Some(super::SchedulerItemCompletionStatus::Zero)
     );
 }
 
 #[test]
 fn fenced_list_zero_observation_classifies_a_completed_event_once() {
     let prepared = first_event().prepare_scheduler_bookkeeping();
-    prepared.storage.as_ref().get_ref().scheduler_items[0].words
-        [super::SCHEDULER_ITEM_WORD_38_OFFSET]
-        .set(0);
+    prepared.storage.as_ref().get_ref().scheduler_items[0]
+        .header()
+        .set_status(0);
     let running = super::LegacyAdvertisingMemoryGraphRunning {
         storage: prepared.storage,
         binding: prepared.binding,
@@ -206,7 +206,7 @@ fn fenced_list_zero_observation_classifies_a_completed_event_once() {
     };
     assert_eq!(
         completed.statuses().status(0),
-        Some(super::LegacyAdvertisingSchedulerItemCompletionStatus::Zero)
+        Some(super::SchedulerItemCompletionStatus::Zero)
     );
     let head = BluetoothSchedulerHardwareListHead::from_address(scheduler_item_address)
         .expect("the retained graph has a nonempty scheduler-head identity");
@@ -222,7 +222,7 @@ fn fenced_list_zero_observation_classifies_a_completed_event_once() {
     let (owner, status) = recycled.into_parts();
     assert_eq!(
         status.status(0),
-        Some(super::LegacyAdvertisingSchedulerItemCompletionStatus::Zero)
+        Some(super::SchedulerItemCompletionStatus::Zero)
     );
     assert!(owner.prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6]).is_ok());
 }

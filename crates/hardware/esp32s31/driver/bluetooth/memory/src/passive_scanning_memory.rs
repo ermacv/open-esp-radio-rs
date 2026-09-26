@@ -21,6 +21,7 @@ use crate::{
     },
     rx_memory_list::RxMemoryListClass,
     scheduler_context::SchedulerContextStorage,
+    scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         ControllerSramLinkAddress,
@@ -62,7 +63,6 @@ const LINK_STATE_RX_SWAP_RESERVE_WORD: usize = 0x78 / 4;
 const LINK_STATE_SCHEDULER_HEAD_WORD: usize = 0x64 / 4;
 const SCHEDULER_ITEM_BYTES: usize = 0x60;
 const SCHEDULER_ITEM_WORDS: usize = SCHEDULER_ITEM_BYTES / 4;
-const SCHEDULER_ITEM_HARDWARE_NEXT_WORD: usize = 0;
 const SCHEDULER_ITEM_CONTEXT_WORD: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE_WORD: usize = 0x08 / 4;
 const SCHEDULER_ITEM_WORD_14: usize = 0x14 / 4;
@@ -71,16 +71,12 @@ const SCHEDULER_ITEM_ALLOCATION_FLAGS_WORD: usize = 0x1c / 4;
 const SCHEDULER_ITEM_ALLOCATION_CONFIG_WORD: usize = 0x20 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_WORD: usize = 0x24 / 4;
 const SCHEDULER_ITEM_EVENT_CLASS_WORD: usize = 0x2c / 4;
-const SCHEDULER_ITEM_WORD_38: usize = 0x38 / 4;
-const SCHEDULER_ITEM_WORD_44: usize = 0x44 / 4;
-const SCHEDULER_ITEM_WORD_48: usize = 0x48 / 4;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x00c0_0000;
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0x0fdf_ffff;
 const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
 const SCHEDULER_ITEM_EVENT_CLASS_IMAGE: u32 = 1;
 const SCHEDULER_ITEM_ALLOCATION_CONFIG_MAX: u32 = 0x0fff;
-const SCHEDULER_ITEM_LINK_MASK: u32 = 0x000f_ffff;
 
 /// Product-owned limits consumed by the passive-scanner item allocator.
 ///
@@ -116,13 +112,6 @@ impl PassiveScanSchedulerAllocationConfig {
             .wrapping_add(self.connections as u32)
             .wrapping_add(index as u32)
     }
-}
-
-/// Semantic non-sentinel status written to the scanner scheduler item.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PassiveScanSchedulerItemCompletionStatus {
-    Zero,
-    NonZero(core::num::NonZeroU32),
 }
 
 /// Private controller-shared scanner link state.
@@ -217,10 +206,9 @@ impl PassiveScanSchedulerItemStorage {
         for word in &self.words {
             word.set(0);
         }
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].set(
-            SCHEDULER_ITEM_ALLOCATION_PREFIX
-                | predecessor.map_or(0, ControllerSramLinkAddress::compressed_image),
-        );
+        let header = self.header();
+        header.set_hardware_next_word(SCHEDULER_ITEM_ALLOCATION_PREFIX);
+        header.link_hardware_next(predecessor);
         self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_LINK_STATE_WORD]
             .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image());
@@ -230,59 +218,52 @@ impl PassiveScanSchedulerItemStorage {
         self.words[SCHEDULER_ITEM_EVENT_CLASS_WORD].set(SCHEDULER_ITEM_EVENT_CLASS_IMAGE);
     }
 
+    fn header(&self) -> SchedulerItemHeader<'_, [VolatileCell<u32>; SCHEDULER_ITEM_WORDS]> {
+        SchedulerItemHeader::new(&self.words)
+    }
+
     fn reviewed_words(&self) -> PassiveScanSchedulerItemWords {
+        let header = self.header();
         PassiveScanSchedulerItemWords {
-            word_00: self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get(),
+            word_00: header.hardware_next_word(),
             word_04: self.words[SCHEDULER_ITEM_CONTEXT_WORD].get(),
             word_14: self.words[SCHEDULER_ITEM_WORD_14].get(),
             word_18: self.words[SCHEDULER_ITEM_WORD_18].get(),
-            word_38: self.words[SCHEDULER_ITEM_WORD_38].get(),
-            raw_start_word_44: self.words[SCHEDULER_ITEM_WORD_44].get(),
-            raw_end_word_48: self.words[SCHEDULER_ITEM_WORD_48].get(),
+            word_38: header.status(),
+            raw_start_word_44: header.raw_start(),
+            raw_end_word_48: header.raw_end(),
         }
     }
 
     fn detach_hardware_predecessor(&self) {
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD]
-            .set(self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get() & !SCHEDULER_ITEM_LINK_MASK);
+        self.header().link_hardware_next(None);
     }
 
     fn mark_in_flight(&self) {
-        self.words[SCHEDULER_ITEM_WORD_38].set(u32::MAX);
+        self.header().mark_unexecuted();
     }
 
     fn restore_cpu_owned_status(&self) {
-        self.words[SCHEDULER_ITEM_WORD_38].set(0);
+        self.header().set_status(0);
     }
 
-    fn completion_status(&self) -> Option<PassiveScanSchedulerItemCompletionStatus> {
-        let status = self.words[SCHEDULER_ITEM_WORD_38].get();
-        if status == u32::MAX {
-            None
-        } else if status == 0 {
-            Some(PassiveScanSchedulerItemCompletionStatus::Zero)
-        } else {
-            Some(PassiveScanSchedulerItemCompletionStatus::NonZero(
-                core::num::NonZeroU32::new(status)
-                    .expect("a nonzero scheduler status constructs a nonzero value"),
-            ))
-        }
+    fn completion_status(&self) -> Option<SchedulerItemCompletionStatus> {
+        self.header().completion_status()
     }
 
     fn restore_hardware_predecessor(&self, predecessor: ControllerSramLinkAddress) {
-        let image = self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get();
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD]
-            .set((image & !SCHEDULER_ITEM_LINK_MASK) | predecessor.compressed_image());
+        self.header().link_hardware_next(Some(predecessor));
     }
 
     fn write_reviewed_words(&self, words: PassiveScanSchedulerItemWords) {
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].set(words.word_00);
+        let header = self.header();
+        header.set_hardware_next_word(words.word_00);
         self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(words.word_04);
         self.words[SCHEDULER_ITEM_WORD_14].set(words.word_14);
         self.words[SCHEDULER_ITEM_WORD_18].set(words.word_18);
-        self.words[SCHEDULER_ITEM_WORD_38].set(words.word_38);
-        self.words[SCHEDULER_ITEM_WORD_44].set(words.raw_start_word_44);
-        self.words[SCHEDULER_ITEM_WORD_48].set(words.raw_end_word_48);
+        header.set_status(words.word_38);
+        header.set_raw_start(words.raw_start_word_44);
+        header.set_raw_end(words.raw_end_word_48);
     }
 
     #[cfg(test)]
@@ -293,7 +274,7 @@ impl PassiveScanSchedulerItemStorage {
         link_state: ControllerSramLinkAddress,
     ) -> bool {
         let predecessor = predecessor.map_or(0, ControllerSramLinkAddress::compressed_image);
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get() & 0x000f_ffff == predecessor
+        self.header().hardware_next_image() == predecessor
             && self.words[SCHEDULER_ITEM_CONTEXT_WORD].get() == scheduler_context.compressed_image()
             && self.words[SCHEDULER_ITEM_LINK_STATE_WORD].get() & 0x000f_ffff
                 == link_state.compressed_image()
@@ -908,7 +889,7 @@ pub enum PassiveScanMemoryGraphCompletionObservation {
 #[must_use = "the completed scanner graph must pass scheduler unlink before CPU access"]
 pub struct PassiveScanMemoryGraphCompletionObserved {
     running: PassiveScanMemoryGraphRunning,
-    status: PassiveScanSchedulerItemCompletionStatus,
+    status: SchedulerItemCompletionStatus,
 }
 
 impl PassiveScanMemoryGraphCompletionObserved {
@@ -918,7 +899,7 @@ impl PassiveScanMemoryGraphCompletionObserved {
     }
 
     /// Semantic scheduler completion status retained for diagnostics.
-    pub const fn status(&self) -> PassiveScanSchedulerItemCompletionStatus {
+    pub const fn status(&self) -> SchedulerItemCompletionStatus {
         self.status
     }
 
@@ -1089,7 +1070,7 @@ impl PassiveScanMemoryGraphRxExtracted {
 pub struct PassiveScanMemoryGraphRecycled {
     owner: PassiveScanMemoryGraphCpuOwned,
     batch: LeReceivedBatch,
-    status: PassiveScanSchedulerItemCompletionStatus,
+    status: SchedulerItemCompletionStatus,
 }
 
 impl PassiveScanMemoryGraphRecycled {
@@ -1098,7 +1079,7 @@ impl PassiveScanMemoryGraphRecycled {
     ) -> (
         PassiveScanMemoryGraphCpuOwned,
         LeReceivedBatch,
-        PassiveScanSchedulerItemCompletionStatus,
+        SchedulerItemCompletionStatus,
     ) {
         (self.owner, self.batch, self.status)
     }

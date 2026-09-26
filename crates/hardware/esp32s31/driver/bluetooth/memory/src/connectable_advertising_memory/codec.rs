@@ -11,6 +11,7 @@ use crate::{
     },
     legacy_advertising_tx_packet::LegacyAdvertisingTxPacketStorage,
     scheduler_context::SchedulerContextStorage,
+    scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         ControllerSramLinkAddress,
@@ -25,7 +26,6 @@ use super::{
     LegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError,
     LegacyConnectableAdvertisingMemoryGraphIdentity,
     LegacyConnectableAdvertisingMemoryGraphStorage, LegacyConnectableAdvertisingPostAnchorDuration,
-    LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
 };
 
 use vcell::VolatileCell;
@@ -64,20 +64,10 @@ const LINK_STATE_WORD_40: usize = 0x40 / 4;
 const LINK_STATE_WORD_50: usize = 0x50 / 4;
 const LINK_STATE_WORD_60: usize = 0x60 / 4;
 
-const SCHEDULER_ITEM_HARDWARE_NEXT: usize = 0;
 const SCHEDULER_ITEM_CONTEXT: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE: usize = 0x08 / 4;
 const SCHEDULER_ITEM_WORD_14: usize = 0x14 / 4;
 const SCHEDULER_ITEM_WORD_18: usize = 0x18 / 4;
-const SCHEDULER_ITEM_WORD_38: usize = 0x38 / 4;
-const SCHEDULER_ITEM_SEQUENCE_START: usize = 0x0c / 4;
-const SCHEDULER_ITEM_SEQUENCE_DURATION: usize = 0x10 / 4;
-const SCHEDULER_ITEM_RAW_START: usize = 0x44 / 4;
-const SCHEDULER_ITEM_RAW_END: usize = 0x48 / 4;
-const SCHEDULER_ITEM_CONTROL: usize = 0x4c / 4;
-const SCHEDULER_ITEM_SOFTWARE_NEXT: usize = 0x50 / 4;
-const SCHEDULER_ITEM_COMPLETED_LINK: usize = 0x54 / 4;
-const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
 // Common scheduler allocation installs both bits before the advertising role.
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x0060_0000;
@@ -241,6 +231,10 @@ struct SchedulerItemStorage {
 }
 
 impl SchedulerItemStorage {
+    fn header(&self) -> SchedulerItemHeader<'_, [VolatileCell<u32>; SCHEDULER_ITEM_WORDS]> {
+        SchedulerItemHeader::new(&self.words)
+    }
+
     const fn new() -> Self {
         Self {
             words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
@@ -255,7 +249,8 @@ impl SchedulerItemStorage {
         for word in &self.words {
             word.set(0);
         }
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT].set(SCHEDULER_ITEM_ALLOCATION_PREFIX);
+        self.header()
+            .set_hardware_next_word(SCHEDULER_ITEM_ALLOCATION_PREFIX);
         self.words[SCHEDULER_ITEM_CONTEXT].set(context.compressed_image());
         self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS].set(SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE);
         // Four five-bit lanes from the complete advertising PTI producer.
@@ -270,53 +265,42 @@ impl SchedulerItemStorage {
     }
 
     fn is_terminal(&self) -> bool {
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT].get() & SCHEDULER_ITEM_HARDWARE_NEXT_MASK == 0
+        self.header().hardware_next_image() == 0
     }
 
     fn reviewed_words(&self) -> LegacyAdvertisingSchedulerItemWords {
         LegacyAdvertisingSchedulerItemWords {
-            word_00: self.words[SCHEDULER_ITEM_HARDWARE_NEXT].get(),
+            word_00: self.header().hardware_next_word(),
             word_04: self.words[SCHEDULER_ITEM_CONTEXT].get(),
             word_14: self.words[SCHEDULER_ITEM_WORD_14].get(),
             word_18: self.words[SCHEDULER_ITEM_WORD_18].get(),
-            word_38: self.words[SCHEDULER_ITEM_WORD_38].get(),
-            raw_start_word_44: self.words[SCHEDULER_ITEM_RAW_START].get(),
-            raw_end_word_48: self.words[SCHEDULER_ITEM_RAW_END].get(),
-            word_4c: self.words[SCHEDULER_ITEM_CONTROL].get(),
+            word_38: self.header().status(),
+            raw_start_word_44: self.header().raw_start(),
+            raw_end_word_48: self.header().raw_end(),
+            word_4c: self.header().control(),
         }
     }
 
     fn write_reviewed_words(&self, words: LegacyAdvertisingSchedulerItemWords) {
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT].set(words.word_00);
+        self.header().set_hardware_next_word(words.word_00);
         self.words[SCHEDULER_ITEM_CONTEXT].set(words.word_04);
         self.words[SCHEDULER_ITEM_WORD_14].set(words.word_14);
         self.words[SCHEDULER_ITEM_WORD_18].set(words.word_18);
-        self.words[SCHEDULER_ITEM_WORD_38].set(words.word_38);
-        self.words[SCHEDULER_ITEM_RAW_START].set(words.raw_start_word_44);
-        self.words[SCHEDULER_ITEM_RAW_END].set(words.raw_end_word_48);
-        self.words[SCHEDULER_ITEM_CONTROL].set(words.word_4c);
+        self.header().set_status(words.word_38);
+        self.header().set_raw_start(words.raw_start_word_44);
+        self.header().set_raw_end(words.raw_end_word_48);
+        self.header().set_control(words.word_4c);
     }
 
-    fn completion_status(
-        &self,
-    ) -> Option<LegacyConnectableAdvertisingSchedulerItemCompletionStatus> {
-        match self.words[SCHEDULER_ITEM_WORD_38].get() {
-            u32::MAX => None,
-            0 => Some(LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero),
-            value => {
-                Some(LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(value))
-            }
-        }
+    fn completion_status(&self) -> Option<SchedulerItemCompletionStatus> {
+        self.header().completion_status()
     }
 
     #[cfg(test)]
-    fn model_controller_completion(
-        &self,
-        status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
-    ) {
-        self.words[SCHEDULER_ITEM_WORD_38].set(match status {
-            LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero => 0,
-            LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(value) => value,
+    fn model_controller_completion(&self, status: SchedulerItemCompletionStatus) {
+        self.header().set_status(match status {
+            SchedulerItemCompletionStatus::Zero => 0,
+            SchedulerItemCompletionStatus::NonZero(value) => value.get(),
         });
     }
 
@@ -325,7 +309,7 @@ impl SchedulerItemStorage {
         context: ControllerSramLinkAddress,
         link_state: ControllerSramLinkAddress,
     ) -> bool {
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT].get() == SCHEDULER_ITEM_ALLOCATION_PREFIX
+        self.header().hardware_next_word() == SCHEDULER_ITEM_ALLOCATION_PREFIX
             && self.words[SCHEDULER_ITEM_CONTEXT].get() == context.compressed_image()
             && self.words[SCHEDULER_ITEM_LINK_STATE].get()
                 == SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image()
@@ -446,10 +430,9 @@ impl LegacyConnectableAdvertisingGraphStorage {
         );
         self.scheduler_item.write_reviewed_words(words);
         // Common r_btdm_sched_calc_seq_time projection, after sequence admission.
-        self.scheduler_item.words[SCHEDULER_ITEM_SEQUENCE_START]
-            .set(raw_start.wrapping_add(raw_sequence_lead));
-        self.scheduler_item.words[SCHEDULER_ITEM_SEQUENCE_DURATION]
-            .set(raw_end.wrapping_sub(raw_start));
+        self.scheduler_item
+            .header()
+            .set_sequence(raw_start, raw_end, raw_sequence_lead);
         self.link_state.detach_scheduler_item();
         Ok(())
     }
@@ -465,13 +448,13 @@ impl LegacyConnectableAdvertisingGraphStorage {
         &self,
     ) -> LegacyConnectableAdvertisingSchedulerBookkeepingSnapshot {
         let snapshot = LegacyConnectableAdvertisingSchedulerBookkeepingSnapshot {
-            control: self.scheduler_item.words[SCHEDULER_ITEM_CONTROL].get(),
-            status: self.scheduler_item.words[SCHEDULER_ITEM_WORD_38].get(),
-            completed_link: self.scheduler_item.words[SCHEDULER_ITEM_COMPLETED_LINK].get(),
+            control: self.scheduler_item.header().control(),
+            status: self.scheduler_item.header().status(),
+            completed_link: self.scheduler_item.header().completion_link(),
         };
-        self.scheduler_item.words[SCHEDULER_ITEM_CONTROL].set(snapshot.control & !0xff);
-        self.scheduler_item.words[SCHEDULER_ITEM_WORD_38].set(u32::MAX);
-        self.scheduler_item.words[SCHEDULER_ITEM_COMPLETED_LINK].set(0);
+        self.scheduler_item.header().clear_event_byte();
+        self.scheduler_item.header().mark_unexecuted();
+        self.scheduler_item.header().set_completion_link(0);
         snapshot
     }
 
@@ -479,18 +462,20 @@ impl LegacyConnectableAdvertisingGraphStorage {
         &self,
         snapshot: LegacyConnectableAdvertisingSchedulerBookkeepingSnapshot,
     ) {
-        self.scheduler_item.words[SCHEDULER_ITEM_CONTROL].set(snapshot.control);
-        self.scheduler_item.words[SCHEDULER_ITEM_WORD_38].set(snapshot.status);
-        self.scheduler_item.words[SCHEDULER_ITEM_COMPLETED_LINK].set(snapshot.completed_link);
+        self.scheduler_item.header().set_control(snapshot.control);
+        self.scheduler_item.header().set_status(snapshot.status);
+        self.scheduler_item
+            .header()
+            .set_completion_link(snapshot.completed_link);
     }
 
     pub(super) fn prepare_empty_list_link(
         &self,
     ) -> LegacyConnectableAdvertisingSoftwareLinkSnapshot {
         let snapshot = LegacyConnectableAdvertisingSoftwareLinkSnapshot(
-            self.scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT].get(),
+            self.scheduler_item.header().previous(),
         );
-        self.scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT].set(0);
+        self.scheduler_item.header().set_previous(0);
         snapshot
     }
 
@@ -498,28 +483,23 @@ impl LegacyConnectableAdvertisingGraphStorage {
         &self,
         snapshot: LegacyConnectableAdvertisingSoftwareLinkSnapshot,
     ) {
-        self.scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT].set(snapshot.0);
+        self.scheduler_item.header().set_previous(snapshot.0);
     }
 
-    pub(super) fn completion_status(
-        &self,
-    ) -> Option<LegacyConnectableAdvertisingSchedulerItemCompletionStatus> {
+    pub(super) fn completion_status(&self) -> Option<SchedulerItemCompletionStatus> {
         self.scheduler_item.completion_status()
     }
 
     #[cfg(test)]
-    pub(super) fn model_controller_completion(
-        &self,
-        status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
-    ) {
+    pub(super) fn model_controller_completion(&self, status: SchedulerItemCompletionStatus) {
         self.scheduler_item.model_controller_completion(status);
     }
 
     /// Model the sequencer's wait and duration using its encoded timing inputs.
     #[cfg(test)]
     pub(super) fn model_controller_elapsed(&self, now: u32) -> bool {
-        let start = self.scheduler_item.words[SCHEDULER_ITEM_SEQUENCE_START].get();
-        let duration = self.scheduler_item.words[SCHEDULER_ITEM_SEQUENCE_DURATION].get();
+        let start = self.scheduler_item.header().sequence_start();
+        let duration = self.scheduler_item.header().sequence_duration();
         let elapsed = now.wrapping_sub(start) as i32;
         elapsed >= 0 && elapsed as u32 >= duration
     }

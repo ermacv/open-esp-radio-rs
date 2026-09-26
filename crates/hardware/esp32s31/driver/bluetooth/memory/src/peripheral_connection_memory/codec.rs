@@ -9,6 +9,7 @@ use crate::{
     direction_finding_workspace::DirectionFindingWorkspaceLink,
     le_tx_power::rounded_tx_power,
     scheduler_context::SchedulerContextStorage,
+    scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         ControllerSramLinkAddress,
@@ -75,22 +76,15 @@ const LINK_STATE_DIRECTION_FINDING_CONFIGURATION_READY: u32 = 1 << 30;
 const LINK_STATE_DIRECTION_FINDING_POLICY_RETAINED: u32 = 0x8007_ffff;
 const LINK_STATE_DIRECTION_FINDING_DISABLED_BASELINE: u32 = 0x0018_0000;
 
-const SCHEDULER_ITEM_NEXT: usize = 0;
 const SCHEDULER_ITEM_CONTEXT: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE: usize = 2;
-const SCHEDULER_ITEM_CLASS: usize = 0x4c / 4;
 const SCHEDULER_ITEM_CONTEXT_STATE: usize = 1;
-const SCHEDULER_ITEM_SEQUENCE_START: usize = 0x0c / 4;
-const SCHEDULER_ITEM_SEQUENCE_DURATION: usize = 0x10 / 4;
 const SCHEDULER_ITEM_RATE_AND_POWER: usize = 0x14 / 4;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY: usize = 0x18 / 4;
 const SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES: usize = 0x24 / 4;
 const SCHEDULER_ITEM_ALLOCATION_FLAGS: usize = 0x1c / 4;
 const SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION: usize = 0x2c / 4;
 const SCHEDULER_ITEM_CAPTURED_ANCHOR: usize = 0x34 / 4;
-const SCHEDULER_ITEM_STATUS: usize = 0x38 / 4;
-const SCHEDULER_ITEM_START: usize = 0x44 / 4;
-const SCHEDULER_ITEM_END: usize = 0x48 / 4;
 const SCHEDULER_ITEM_LINK_MASK: u32 = 0x000f_ffff;
 // Common allocation sets both bits; the connection role retains them.
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
@@ -302,6 +296,10 @@ impl PeripheralConnectionSchedulerCompletionObservation {
 }
 
 impl PeripheralConnectionSchedulerItemStorage {
+    fn header(&self) -> SchedulerItemHeader<'_, [VolatileCell<u32>; SCHEDULER_ITEM_WORDS]> {
+        SchedulerItemHeader::new(&self.words)
+    }
+
     const fn new() -> Self {
         Self {
             words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
@@ -318,14 +316,15 @@ impl PeripheralConnectionSchedulerItemStorage {
             word.set(0);
         }
         let successor = successor.map_or(0, ControllerSramLinkAddress::compressed_image);
-        self.words[SCHEDULER_ITEM_NEXT].set(SCHEDULER_ITEM_ALLOCATION_PREFIX | successor);
+        self.header()
+            .set_hardware_next_word(SCHEDULER_ITEM_ALLOCATION_PREFIX | successor);
         self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS].set(SCHEDULER_ITEM_PERIPHERAL_ALLOCATION_FLAGS);
         self.words[SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES]
             .set(STANDALONE_RADIO_REQUEST_PRIORITY | (STANDALONE_RADIO_REQUEST_PRIORITY << 5));
         self.words[SCHEDULER_ITEM_CONTEXT].set(scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_LINK_STATE]
             .set(SCHEDULER_ITEM_PERIPHERAL_PREFIX | link_state.compressed_image());
-        self.words[SCHEDULER_ITEM_CLASS].set(SCHEDULER_ITEM_CONNECTION_CLASS);
+        self.header().set_control(SCHEDULER_ITEM_CONNECTION_CLASS);
     }
 
     fn retains_allocation(
@@ -335,7 +334,7 @@ impl PeripheralConnectionSchedulerItemStorage {
         link_state: ControllerSramLinkAddress,
     ) -> bool {
         let successor = successor.map_or(0, ControllerSramLinkAddress::compressed_image);
-        self.words[SCHEDULER_ITEM_NEXT].get() & SCHEDULER_ITEM_LINK_MASK == successor
+        self.header().hardware_next_image() == successor
             && self.words[SCHEDULER_ITEM_CONTEXT].get() & SCHEDULER_ITEM_LINK_MASK
                 == scheduler_context.compressed_image()
             && self.words[SCHEDULER_ITEM_LINK_STATE].get() & SCHEDULER_ITEM_LINK_MASK
@@ -343,13 +342,13 @@ impl PeripheralConnectionSchedulerItemStorage {
     }
 
     fn detach_hardware_predecessor(&self) {
-        self.words[SCHEDULER_ITEM_NEXT]
-            .set(self.words[SCHEDULER_ITEM_NEXT].get() & !SCHEDULER_ITEM_LINK_MASK);
+        self.header().link_hardware_next(None);
     }
 
     fn restore_hardware_predecessor(&self, predecessor: ControllerSramLinkAddress) {
-        self.words[SCHEDULER_ITEM_NEXT]
-            .set(SCHEDULER_ITEM_ALLOCATION_PREFIX | predecessor.compressed_image());
+        self.header().set_hardware_next_word(
+            SCHEDULER_ITEM_ALLOCATION_PREFIX | predecessor.compressed_image(),
+        );
     }
 
     // Current r_btdm_sched_calc_seq_time: the sequencer starts after the
@@ -359,31 +358,32 @@ impl PeripheralConnectionSchedulerItemStorage {
         window: PeripheralConnectionSchedulerWindow,
         raw_sequence_lead: u32,
     ) {
-        self.words[SCHEDULER_ITEM_SEQUENCE_START]
-            .set(window.start().wrapping_add(raw_sequence_lead));
-        self.words[SCHEDULER_ITEM_SEQUENCE_DURATION].set(window.end().wrapping_sub(window.start()));
+        self.header()
+            .set_sequence(window.start(), window.end(), raw_sequence_lead);
     }
 
     fn mark_in_flight(&self) {
-        self.words[SCHEDULER_ITEM_STATUS].set(u32::MAX);
+        self.header().mark_unexecuted();
     }
 
     fn restore_cpu_owned_status(&self) {
-        self.words[SCHEDULER_ITEM_STATUS].set(0);
+        self.header().set_status(0);
     }
 
     fn completion_observation(&self) -> Option<PeripheralConnectionSchedulerCompletionObservation> {
-        match self.words[SCHEDULER_ITEM_STATUS].get() {
-            u32::MAX => None,
-            status => Some(PeripheralConnectionSchedulerCompletionObservation {
-                status: if status == 0 {
+        let header = self.header();
+        let recorded = header.completion_status()?;
+        Some(PeripheralConnectionSchedulerCompletionObservation {
+            status: match recorded {
+                SchedulerItemCompletionStatus::Zero => {
                     PeripheralConnectionSchedulerItemCompletionStatus::Zero
-                } else {
+                }
+                SchedulerItemCompletionStatus::NonZero(_) => {
                     PeripheralConnectionSchedulerItemCompletionStatus::NonZero
-                },
-                capture_available: status & SCHEDULER_ITEM_CAPTURE_AVAILABLE != 0,
-            }),
-        }
+                }
+            },
+            capture_available: header.status() & SCHEDULER_ITEM_CAPTURE_AVAILABLE != 0,
+        })
     }
 
     fn captured_anchor_availability(
@@ -425,10 +425,10 @@ impl PeripheralConnectionSchedulerItemStorage {
         );
         self.words[SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION]
             .set(SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE | receive_wait.total_micros());
-        self.words[SCHEDULER_ITEM_STATUS].set(0);
-        self.words[SCHEDULER_ITEM_START].set(window.start());
-        self.words[SCHEDULER_ITEM_END].set(window.end());
-        self.words[SCHEDULER_ITEM_CLASS].set(self.words[SCHEDULER_ITEM_CLASS].get() & 0xffff_ff00);
+        self.header().set_status(0);
+        self.header().set_raw_start(window.start());
+        self.header().set_raw_end(window.end());
+        self.header().clear_event_byte();
     }
 
     fn prepare_reviewed_recurring_event_fields(
@@ -457,10 +457,10 @@ impl PeripheralConnectionSchedulerItemStorage {
             SCHEDULER_ITEM_RECEIVE_WAIT_LONG_MODE | (total_micros >> 1)
         };
         self.words[SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION].set(receive_wait_image);
-        self.words[SCHEDULER_ITEM_STATUS].set(0);
-        self.words[SCHEDULER_ITEM_START].set(window.start());
-        self.words[SCHEDULER_ITEM_END].set(window.end());
-        self.words[SCHEDULER_ITEM_CLASS].set(self.words[SCHEDULER_ITEM_CLASS].get() & 0xffff_ff00);
+        self.header().set_status(0);
+        self.header().set_raw_start(window.start());
+        self.header().set_raw_end(window.end());
+        self.header().clear_event_byte();
     }
 
     #[cfg(test)]
@@ -492,7 +492,7 @@ impl PeripheralConnectionSchedulerItemStorage {
             )
             | (PeripheralConnectionSchedulerItemCompletionStatus::Aborted, _) => return false,
         };
-        self.words[SCHEDULER_ITEM_STATUS].set(status);
+        self.header().set_status(status);
         true
     }
 }
@@ -680,8 +680,8 @@ impl PeripheralConnectionMemoryGraphStorage {
     #[cfg(test)]
     pub(super) fn model_controller_sequence_elapsed(&self, now: u32) -> bool {
         let item = &self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1];
-        let start = item.words[SCHEDULER_ITEM_SEQUENCE_START].get();
-        let duration = item.words[SCHEDULER_ITEM_SEQUENCE_DURATION].get();
+        let start = item.header().sequence_start();
+        let duration = item.header().sequence_duration();
         let elapsed = now.wrapping_sub(start) as i32;
         elapsed >= 0 && elapsed as u32 >= duration
     }

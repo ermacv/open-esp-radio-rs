@@ -20,6 +20,7 @@ use crate::{
     },
     legacy_advertising_event_image::LegacyAdvertisingOwnAddress,
     rx_memory_list::RxMemoryListClass,
+    scheduler_item::SchedulerItemCompletionStatus,
 };
 
 use oer_esp32s31_hal::{
@@ -985,10 +986,7 @@ impl LegacyConnectableAdvertisingMemoryGraphRunning {
     }
 
     #[cfg(test)]
-    fn model_controller_completion(
-        &self,
-        status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
-    ) {
+    fn model_controller_completion(&self, status: SchedulerItemCompletionStatus) {
         self.prepared
             .storage
             .as_ref()
@@ -1010,17 +1008,6 @@ impl LegacyConnectableAdvertisingMemoryGraphRunning {
     }
 }
 
-/// Opaque category of one non-sentinel connectable-advertising item status.
-///
-/// Zero versus nonzero remains diagnostic and does not classify an RX PDU or
-/// authorize portable `CONNECT_IND` admission.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LegacyConnectableAdvertisingSchedulerItemCompletionStatus {
-    Zero,
-    /// Exact opaque hardware value, retained only for diagnosis.
-    NonZero(u32),
-}
-
 /// One bounded observation of the hardware-owned response-capable graph.
 #[must_use = "the graph and any unrelated finished-list proof remain owned"]
 pub enum LegacyConnectableAdvertisingMemoryGraphCompletionObservation {
@@ -1036,7 +1023,7 @@ pub enum LegacyConnectableAdvertisingMemoryGraphCompletionObservation {
 #[must_use = "the completed graph must pass exact scheduler removal before CPU access"]
 pub struct LegacyConnectableAdvertisingMemoryGraphCompletionObserved {
     running: LegacyConnectableAdvertisingMemoryGraphRunning,
-    status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    status: SchedulerItemCompletionStatus,
 }
 
 impl LegacyConnectableAdvertisingMemoryGraphCompletionObserved {
@@ -1044,7 +1031,7 @@ impl LegacyConnectableAdvertisingMemoryGraphCompletionObserved {
         self.running.scheduler_item_address()
     }
 
-    pub const fn status(&self) -> LegacyConnectableAdvertisingSchedulerItemCompletionStatus {
+    pub const fn status(&self) -> SchedulerItemCompletionStatus {
         self.status
     }
 
@@ -1275,7 +1262,7 @@ pub struct LegacyConnectableAdvertisingMemoryGraphRecycled {
     owner: LegacyConnectableAdvertisingMemoryGraphCpuOwned,
     pool: NonScanningRxMemoryCpuOwned,
     batch: LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
-    status: LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    status: SchedulerItemCompletionStatus,
 }
 
 impl LegacyConnectableAdvertisingMemoryGraphRecycled {
@@ -1320,7 +1307,7 @@ impl LegacyConnectableAdvertisingMemoryGraphRecycled {
         LegacyConnectableAdvertisingMemoryGraphCpuOwned,
         NonScanningRxMemoryCpuOwned,
         LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+        SchedulerItemCompletionStatus,
     ) {
         (self.owner, self.pool, self.batch, self.status)
     }
@@ -1341,7 +1328,7 @@ impl LegacyConnectableAdvertisingMemoryGraphRxDispatchPrepared {
         self.recycled.batch
     }
 
-    pub const fn status(&self) -> LegacyConnectableAdvertisingSchedulerItemCompletionStatus {
+    pub const fn status(&self) -> SchedulerItemCompletionStatus {
         self.recycled.status
     }
 
@@ -1351,7 +1338,7 @@ impl LegacyConnectableAdvertisingMemoryGraphRxDispatchPrepared {
         LegacyConnectableAdvertisingMemoryGraphCpuOwned,
         NonScanningRxMemoryCpuOwned,
         LeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+        SchedulerItemCompletionStatus,
     ) {
         self.recycled.into_parts()
     }

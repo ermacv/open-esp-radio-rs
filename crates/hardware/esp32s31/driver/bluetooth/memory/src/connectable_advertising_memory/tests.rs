@@ -7,6 +7,10 @@ use oer_esp32s31_hal::bluetooth::{
 
 use super::*;
 
+fn nonzero(value: u32) -> core::num::NonZeroU32 {
+    core::num::NonZeroU32::new(value).expect("test status is nonzero")
+}
+
 const ADVERTISER: [u8; 6] = [1, 2, 3, 4, 5, 6];
 const ADV_IND_PDU: [u8; 11] = [0x60, 9, 1, 2, 3, 4, 5, 6, 2, 1, 6];
 const SCAN_RESPONSE_PDU: [u8; 8] = [0x44, 6, 1, 2, 3, 4, 5, 6];
@@ -212,9 +216,7 @@ fn completion_requires_list_zero_and_a_non_sentinel_item_status() {
         }
         _ => panic!("the in-flight sentinel must retain hardware ownership"),
     };
-    running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(0x42),
-    );
+    running.model_controller_completion(SchedulerItemCompletionStatus::NonZero(nonzero(0x42)));
 
     let running = match running.observe_completion(finished_list(1)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::ListMismatch {
@@ -237,7 +239,7 @@ fn completion_requires_list_zero_and_a_non_sentinel_item_status() {
     assert_eq!(completed.scheduler_item_address(), scheduler_item);
     assert_eq!(
         completed.status(),
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(0x42)
+        SchedulerItemCompletionStatus::NonZero(nonzero(0x42))
     );
 }
 
@@ -254,9 +256,7 @@ fn matching_removal_extracts_then_rearms_both_cpu_owned_graphs() {
             .graph
             .model_controller_can_request_radio()
     );
-    running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero,
-    );
+    running.model_controller_completion(SchedulerItemCompletionStatus::Zero);
     let completed = match running.observe_completion(finished_list(0)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
             completed,
@@ -278,10 +278,7 @@ fn matching_removal_extracts_then_rearms_both_cpu_owned_graphs() {
     assert_eq!(pool.identity(), pool_identity);
     assert!(pool.is_initialized());
     assert!(batch.is_empty());
-    assert_eq!(
-        status,
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero
-    );
+    assert_eq!(status, SchedulerItemCompletionStatus::Zero);
     let next = owner
         .prepare_response_capable_event(input(LegacyAdvertisingPrimaryChannel::Channel37), pool, 0)
         .expect("reclaimed owners prepare another advertising event");
@@ -300,9 +297,7 @@ fn copied_receive_batch_is_admitted_to_role_dispatch_after_reclamation() {
     let scheduler_item = running.scheduler_item_address();
     let received = [0x03, 6, 1, 2, 3, 4, 5, 6];
     running.model_controller_receive(0, &received, -31, 12_345);
-    running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1),
-    );
+    running.model_controller_completion(SchedulerItemCompletionStatus::NonZero(nonzero(1)));
     let completed = match running.observe_completion(finished_list(0)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
             completed,
@@ -331,10 +326,7 @@ fn copied_receive_batch_is_admitted_to_role_dispatch_after_reclamation() {
     assert_eq!(owner.identity(), graph_identity);
     assert_eq!(pool.identity(), pool_identity);
     assert!(pool.is_initialized());
-    assert_eq!(
-        status,
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1)
-    );
+    assert_eq!(status, SchedulerItemCompletionStatus::NonZero(nonzero(1)));
 }
 
 #[test]
@@ -342,9 +334,7 @@ fn rx_progress_observation_requires_removal_and_preserves_a_completion_gap() {
     let (running, _, _) = running(0x2f00_3500, 0x2f00_7500);
     let address = running.scheduler_item_address();
     running.model_controller_receive(1, &[0x43, 0], -31, 123);
-    running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero,
-    );
+    running.model_controller_completion(SchedulerItemCompletionStatus::Zero);
     let LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(completed) =
         running.observe_completion(finished_list(0))
     else {
@@ -388,9 +378,7 @@ fn discarded_receive_observation_cannot_become_no_connection() {
     let (running, graph_identity, pool_identity) = running(0x2f00_3600, 0x2f00_7600);
     let scheduler_item = running.scheduler_item_address();
     running.model_controller_discard(0);
-    running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero,
-    );
+    running.model_controller_completion(SchedulerItemCompletionStatus::Zero);
     let completed = match running.observe_completion(finished_list(0)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
             completed,
@@ -421,9 +409,7 @@ fn discarded_receive_observation_cannot_become_no_connection() {
 fn removal_list_mismatch_retains_the_completed_graph_and_proof() {
     let (running, _, _) = running(0x2f00_3800, 0x2f00_7800);
     let scheduler_item = running.scheduler_item_address();
-    running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1),
-    );
+    running.model_controller_completion(SchedulerItemCompletionStatus::NonZero(nonzero(1)));
     let completed = match running.observe_completion(finished_list(0)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
             completed,
@@ -452,9 +438,7 @@ fn removal_list_mismatch_retains_the_completed_graph_and_proof() {
 fn removal_head_mismatch_retains_the_completed_graph_and_proof() {
     let (running, _, _) = running(0x2f00_3c00, 0x2f00_7c00);
     let scheduler_item = running.scheduler_item_address();
-    running.model_controller_completion(
-        LegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero(1),
-    );
+    running.model_controller_completion(SchedulerItemCompletionStatus::NonZero(nonzero(1)));
     let completed = match running.observe_completion(finished_list(0)) {
         LegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
             completed,

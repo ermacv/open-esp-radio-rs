@@ -7,7 +7,7 @@
 
 #![forbid(unsafe_code)]
 
-use core::{marker::PhantomPinned, num::NonZeroU32, pin::Pin};
+use core::{marker::PhantomPinned, pin::Pin};
 
 use crate::{
     le_tx_packet::{
@@ -20,6 +20,7 @@ use crate::{
     },
     legacy_advertising_tx_packet::LegacyAdvertisingTxPacketStorage,
     scheduler_context::SchedulerContextStorage,
+    scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         ControllerSramLinkAddress,
@@ -79,20 +80,12 @@ const LINK_STATE_WORD_40_OFFSET: usize = 0x40 / 4;
 const LINK_STATE_WORD_50_OFFSET: usize = 0x50 / 4;
 const LINK_STATE_WORD_60_OFFSET: usize = 0x60 / 4;
 
-const SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET: usize = 0;
 const SCHEDULER_ITEM_CONTEXT_OFFSET: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
-const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE: u32 = 0x0010_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX_IMAGE: u32 = 0x0060_0000;
 const SCHEDULER_ITEM_WORD_14_OFFSET: usize = 0x14 / 4;
 const SCHEDULER_ITEM_WORD_18_OFFSET: usize = 0x18 / 4;
-const SCHEDULER_ITEM_WORD_38_OFFSET: usize = 0x38 / 4;
-const SCHEDULER_ITEM_WORD_44_OFFSET: usize = 0x44 / 4;
-const SCHEDULER_ITEM_WORD_48_OFFSET: usize = 0x48 / 4;
-const SCHEDULER_ITEM_WORD_4C_OFFSET: usize = 0x4c / 4;
-const SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET: usize = 0x50 / 4;
-const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
 
 type AdvertisingTxPacketAddress = LeTxPacketAddress<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>;
 type AdvertisingTxPacketLength =
@@ -219,6 +212,10 @@ struct LegacyAdvertisingSchedulerItemStorage {
 }
 
 impl LegacyAdvertisingSchedulerItemStorage {
+    fn header(&self) -> SchedulerItemHeader<'_, [VolatileCell<u32>; SCHEDULER_ITEM_WORDS]> {
+        SchedulerItemHeader::new(&self.words)
+    }
+
     const fn new() -> Self {
         Self {
             words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
@@ -237,39 +234,39 @@ impl LegacyAdvertisingSchedulerItemStorage {
         link_state: ControllerSramLinkAddress,
     ) {
         self.clear();
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].set(SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE);
+        self.header()
+            .set_hardware_next_word(SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE);
         self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].set(scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_LINK_STATE_OFFSET]
             .set(SCHEDULER_ITEM_LINK_STATE_PREFIX_IMAGE | link_state.compressed_image());
     }
 
     fn is_terminal(&self) -> bool {
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].get() & SCHEDULER_ITEM_HARDWARE_NEXT_MASK
-            == 0
+        self.header().hardware_next_image() == 0
     }
 
     fn reviewed_words(&self) -> LegacyAdvertisingSchedulerItemWords {
         LegacyAdvertisingSchedulerItemWords {
-            word_00: self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].get(),
+            word_00: self.header().hardware_next_word(),
             word_04: self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].get(),
             word_14: self.words[SCHEDULER_ITEM_WORD_14_OFFSET].get(),
             word_18: self.words[SCHEDULER_ITEM_WORD_18_OFFSET].get(),
-            word_38: self.words[SCHEDULER_ITEM_WORD_38_OFFSET].get(),
-            raw_start_word_44: self.words[SCHEDULER_ITEM_WORD_44_OFFSET].get(),
-            raw_end_word_48: self.words[SCHEDULER_ITEM_WORD_48_OFFSET].get(),
-            word_4c: self.words[SCHEDULER_ITEM_WORD_4C_OFFSET].get(),
+            word_38: self.header().status(),
+            raw_start_word_44: self.header().raw_start(),
+            raw_end_word_48: self.header().raw_end(),
+            word_4c: self.header().control(),
         }
     }
 
     fn write_reviewed_words(&self, words: LegacyAdvertisingSchedulerItemWords) {
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].set(words.word_00);
+        self.header().set_hardware_next_word(words.word_00);
         self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].set(words.word_04);
         self.words[SCHEDULER_ITEM_WORD_14_OFFSET].set(words.word_14);
         self.words[SCHEDULER_ITEM_WORD_18_OFFSET].set(words.word_18);
-        self.words[SCHEDULER_ITEM_WORD_38_OFFSET].set(words.word_38);
-        self.words[SCHEDULER_ITEM_WORD_44_OFFSET].set(words.raw_start_word_44);
-        self.words[SCHEDULER_ITEM_WORD_48_OFFSET].set(words.raw_end_word_48);
-        self.words[SCHEDULER_ITEM_WORD_4C_OFFSET].set(words.word_4c);
+        self.header().set_status(words.word_38);
+        self.header().set_raw_start(words.raw_start_word_44);
+        self.header().set_raw_end(words.raw_end_word_48);
+        self.header().set_control(words.word_4c);
     }
 
     #[cfg(test)]
@@ -278,8 +275,7 @@ impl LegacyAdvertisingSchedulerItemStorage {
         scheduler_context: ControllerSramLinkAddress,
         link_state: ControllerSramLinkAddress,
     ) -> bool {
-        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].get() & SCHEDULER_ITEM_HARDWARE_NEXT_MASK
-            == 0
+        self.header().hardware_next_image() == 0
             && self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].get()
                 == scheduler_context.compressed_image()
             && self.words[SCHEDULER_ITEM_LINK_STATE_OFFSET].get()
@@ -777,12 +773,12 @@ impl LegacyAdvertisingMemoryGraphEventPrepared {
         let mut previous_status = [0; BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY];
         let mut previous_completed_link = [0; BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY];
         for (index, item) in items.iter().enumerate().take(self.item_count as usize) {
-            previous_control[index] = item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].get();
-            previous_status[index] = item.words[SCHEDULER_ITEM_WORD_38_OFFSET].get();
-            previous_completed_link[index] = item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET].get();
-            item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].set(previous_control[index] & !0xff);
-            item.words[SCHEDULER_ITEM_WORD_38_OFFSET].set(u32::MAX);
-            item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET].set(0);
+            previous_control[index] = item.header().control();
+            previous_status[index] = item.header().status();
+            previous_completed_link[index] = item.header().completion_link();
+            item.header().clear_event_byte();
+            item.header().mark_unexecuted();
+            item.header().set_completion_link(0);
         }
 
         LegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
@@ -830,8 +826,8 @@ impl LegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
         let mut previous_software_next = [0; BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY];
         for index in 0..self.item_count as usize {
             let item = &items[index];
-            previous_software_next[index] = item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET].get();
-            item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET].set(0);
+            previous_software_next[index] = item.header().previous();
+            item.header().set_previous(0);
         }
 
         LegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
@@ -849,10 +845,10 @@ impl LegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
     pub fn cancel(mut self) -> LegacyAdvertisingMemoryGraphEventPrepared {
         let items = self.storage.as_mut().project().scheduler_items;
         for (index, item) in items.iter().enumerate().take(self.item_count as usize) {
-            item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].set(self.previous_control[index]);
-            item.words[SCHEDULER_ITEM_WORD_38_OFFSET].set(self.previous_status[index]);
-            item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET]
-                .set(self.previous_completed_link[index]);
+            item.header().set_control(self.previous_control[index]);
+            item.header().set_status(self.previous_status[index]);
+            item.header()
+                .set_completion_link(self.previous_completed_link[index]);
         }
         LegacyAdvertisingMemoryGraphEventPrepared {
             storage: self.storage,
@@ -907,7 +903,8 @@ impl LegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
     pub fn cancel(mut self) -> LegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
         let items = self.storage.as_mut().project().scheduler_items;
         for (index, item) in items.iter().enumerate().take(self.item_count as usize) {
-            item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET].set(self.previous_software_next[index]);
+            item.header()
+                .set_previous(self.previous_software_next[index]);
         }
         LegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
             storage: self.storage,
@@ -982,23 +979,20 @@ impl LegacyAdvertisingMemoryGraphRunning {
                 observed,
             };
         }
-        let mut statuses = [LegacyAdvertisingSchedulerItemCompletionStatus::Zero;
+        let mut statuses = [SchedulerItemCompletionStatus::Zero;
             BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY];
         for (index, status) in statuses
             .iter_mut()
             .enumerate()
             .take(self.item_count as usize)
         {
-            let raw = self.storage.as_ref().get_ref().scheduler_items[index].words
-                [SCHEDULER_ITEM_WORD_38_OFFSET]
-                .get();
-            if raw == u32::MAX {
+            let Some(recorded) = self.storage.as_ref().get_ref().scheduler_items[index]
+                .header()
+                .completion_status()
+            else {
                 return LegacyAdvertisingMemoryGraphCompletionObservation::StillInFlight(self);
-            }
-            *status = match NonZeroU32::new(raw) {
-                None => LegacyAdvertisingSchedulerItemCompletionStatus::Zero,
-                Some(status) => LegacyAdvertisingSchedulerItemCompletionStatus::NonZero(status),
             };
+            *status = recorded;
         }
         let item_count = self.item_count;
         LegacyAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
@@ -1013,18 +1007,10 @@ impl LegacyAdvertisingMemoryGraphRunning {
     }
 }
 
-/// Semantic non-sentinel advertising scheduler status.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LegacyAdvertisingSchedulerItemCompletionStatus {
-    Zero,
-    NonZero(NonZeroU32),
-}
-
 /// Diagnostic completion values for every item in one hardware event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LegacyAdvertisingEventCompletionStatuses {
-    statuses: [LegacyAdvertisingSchedulerItemCompletionStatus;
-        BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY],
+    statuses: [SchedulerItemCompletionStatus; BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY],
     len: u8,
 }
 
@@ -1033,10 +1019,7 @@ impl LegacyAdvertisingEventCompletionStatuses {
         self.len as usize
     }
 
-    pub const fn status(
-        self,
-        position: usize,
-    ) -> Option<LegacyAdvertisingSchedulerItemCompletionStatus> {
+    pub const fn status(self, position: usize) -> Option<SchedulerItemCompletionStatus> {
         if position < self.item_count() {
             Some(self.statuses[position])
         } else {

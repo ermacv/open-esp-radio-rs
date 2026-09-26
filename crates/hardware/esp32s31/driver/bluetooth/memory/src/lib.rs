@@ -39,7 +39,10 @@ mod passive_scanning_memory;
 mod peripheral_connection_memory;
 mod rx_memory_list;
 mod scheduler_context;
+mod scheduler_item;
 mod sram_link;
+
+pub use scheduler_item::{SCHEDULER_ITEM_UNEXECUTED, SchedulerItemCompletionStatus};
 
 #[cfg(not(target_arch = "riscv32"))]
 pub use ble_phy_engine::BlePhyEngineModelAddress;
@@ -87,9 +90,7 @@ pub use connectable_advertising_memory::{
     LegacyConnectableAdvertisingMemoryGraphSchedulerProofError,
     LegacyConnectableAdvertisingMemoryGraphStorage, LegacyConnectableAdvertisingMemoryInput,
     LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPduFitError,
-    LegacyConnectableAdvertisingPostAnchorDuration,
-    LegacyConnectableAdvertisingSchedulerItemCompletionStatus,
-    LegacyConnectableScanResponsePacketInput,
+    LegacyConnectableAdvertisingPostAnchorDuration, LegacyConnectableScanResponsePacketInput,
 };
 
 #[cfg(not(target_arch = "riscv32"))]
@@ -162,7 +163,7 @@ pub use legacy_advertising_storage::{
     LegacyAdvertisingMemoryGraphRecycleError, LegacyAdvertisingMemoryGraphRecycleFailure,
     LegacyAdvertisingMemoryGraphRecyclePrepared, LegacyAdvertisingMemoryGraphRecycled,
     LegacyAdvertisingMemoryGraphRunning, LegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
-    LegacyAdvertisingMemoryGraphStorage, LegacyAdvertisingSchedulerItemCompletionStatus,
+    LegacyAdvertisingMemoryGraphStorage,
 };
 #[cfg(not(target_arch = "riscv32"))]
 pub use non_scanning_rx_memory::NonScanningRxMemoryModelAddress;
@@ -194,7 +195,6 @@ pub use passive_scanning_memory::{
     PassiveScanMemoryGraphRunning, PassiveScanMemoryGraphRxExtracted,
     PassiveScanMemoryGraphRxExtractionFailure, PassiveScanMemoryGraphSchedulerAdmissionPrepared,
     PassiveScanMemoryGraphStorage, PassiveScanSchedulerAllocationConfig,
-    PassiveScanSchedulerItemCompletionStatus,
 };
 #[cfg(not(target_arch = "riscv32"))]
 pub use peripheral_connection_memory::PeripheralConnectionMemoryGraphModelAddress;

@@ -1,6 +1,6 @@
 //! Private SRAM layout and word codec for one DTM memory graph.
 
-use core::{marker::PhantomPinned, num::NonZeroU32, pin::Pin};
+use core::{marker::PhantomPinned, pin::Pin};
 
 use crate::{
     dtm_event_image::{
@@ -15,6 +15,7 @@ use crate::{
         LeTxBufferHeaderStorage, LeTxPacketAddress, LeTxPacketPreparedLength, LeTxPacketStorage,
     },
     scheduler_context::SchedulerContextStorage,
+    scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         ControllerSramLinkAddress,
@@ -69,12 +70,6 @@ const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0xffdf_ffff;
 const SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET: usize = 0x20 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_OFFSET: usize = 0x24 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
-pub(super) const SCHEDULER_ITEM_STATUS_OFFSET: usize = 0x38 / 4;
-const SCHEDULER_ITEM_CONTROL_OFFSET: usize = 0x4c / 4;
-const SCHEDULER_ITEM_CONTROL_BYTE: usize = 2;
-const SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET: usize = 0;
-const SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET: usize = 0x50 / 4;
-const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
 const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4;
 const RX_PACKET_WORDS: usize = BLUETOOTH_DTM_RX_PACKET_BYTES.div_ceil(4);
 const PRIVATE_SCHEDULER_ALLOCATION_ADDITION: u32 = 5;
@@ -225,14 +220,18 @@ impl DtmSchedulerItemStorage {
         self.words[index].set(value);
     }
 
+    pub(super) fn header(
+        &self,
+    ) -> SchedulerItemHeader<'_, [VolatileCell<u32>; SCHEDULER_ITEM_WORDS]> {
+        SchedulerItemHeader::new(&self.words)
+    }
+
     fn hardware_chain_word(&self) -> DtmSchedulerHardwareChainWord {
-        DtmSchedulerHardwareChainWord::from_storage(
-            self.read_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET),
-        )
+        DtmSchedulerHardwareChainWord::from_storage(self.header().hardware_next_word())
     }
 
     fn write_hardware_chain_word(&self, word: DtmSchedulerHardwareChainWord) {
-        self.write_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET, word.into_storage());
+        self.header().set_hardware_next_word(word.into_storage());
     }
 
     fn terminate_hardware_chain(&self) -> DtmSchedulerHardwareChainWord {
@@ -834,16 +833,13 @@ impl DtmMemoryGraphStorage {
     pub(super) fn prepare_scheduler_bookkeeping(
         self: Pin<&mut Self>,
     ) -> DtmSchedulerBookkeepingRollback {
-        let scheduler_item = self.project().scheduler_item;
-        let previous_control = scheduler_item.read_word(SCHEDULER_ITEM_CONTROL_OFFSET);
-        let previous_status = scheduler_item.read_word(SCHEDULER_ITEM_STATUS_OFFSET);
-        let previous_completed_link =
-            scheduler_item.read_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET);
-        let mut control = previous_control.to_le_bytes();
-        control[SCHEDULER_ITEM_CONTROL_BYTE] = 0;
-        scheduler_item.write_word(SCHEDULER_ITEM_CONTROL_OFFSET, u32::from_le_bytes(control));
-        scheduler_item.write_word(SCHEDULER_ITEM_STATUS_OFFSET, u32::MAX);
-        scheduler_item.write_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, 0);
+        let header = self.project().scheduler_item.header();
+        let previous_control = header.control();
+        let previous_status = header.status();
+        let previous_completed_link = header.completion_link();
+        header.clear_scheduler_byte();
+        header.mark_unexecuted();
+        header.set_completion_link(0);
         DtmSchedulerBookkeepingRollback {
             previous_control,
             previous_status,
@@ -855,13 +851,10 @@ impl DtmMemoryGraphStorage {
         self: Pin<&mut Self>,
         rollback: DtmSchedulerBookkeepingRollback,
     ) {
-        let scheduler_item = self.project().scheduler_item;
-        scheduler_item.write_word(SCHEDULER_ITEM_CONTROL_OFFSET, rollback.previous_control);
-        scheduler_item.write_word(SCHEDULER_ITEM_STATUS_OFFSET, rollback.previous_status);
-        scheduler_item.write_word(
-            SCHEDULER_ITEM_COMPLETED_LINK_OFFSET,
-            rollback.previous_completed_link,
-        );
+        let header = self.project().scheduler_item.header();
+        header.set_control(rollback.previous_control);
+        header.set_status(rollback.previous_status);
+        header.set_completion_link(rollback.previous_completed_link);
     }
 
     pub(super) fn prepare_empty_list_link(
@@ -870,8 +863,8 @@ impl DtmMemoryGraphStorage {
     ) -> DtmEmptyListRollback {
         let scheduler_item = self.project().scheduler_item;
         let previous_hardware_chain = scheduler_item.terminate_hardware_chain();
-        let previous_software_next = scheduler_item.read_word(SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET);
-        scheduler_item.write_word(SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET, 0);
+        let previous_software_next = scheduler_item.header().previous();
+        scheduler_item.header().set_previous(0);
         DtmEmptyListRollback {
             bookkeeping,
             previous_hardware_chain,
@@ -885,28 +878,27 @@ impl DtmMemoryGraphStorage {
     ) -> DtmSchedulerBookkeepingRollback {
         let scheduler_item = self.project().scheduler_item;
         scheduler_item.write_hardware_chain_word(rollback.previous_hardware_chain);
-        scheduler_item.write_word(
-            SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET,
-            rollback.previous_software_next,
-        );
+        scheduler_item
+            .header()
+            .set_previous(rollback.previous_software_next);
         rollback.bookkeeping
     }
 
     pub(super) fn observe_completion_status(&self) -> Option<DtmSchedulerItemCompletionStatus> {
-        let status = self.scheduler_item.read_word(SCHEDULER_ITEM_STATUS_OFFSET);
-        if status == u32::MAX {
-            None
-        } else {
-            Some(match NonZeroU32::new(status) {
-                None => DtmSchedulerItemCompletionStatus::Zero,
-                Some(status) => DtmSchedulerItemCompletionStatus::NonZero(status),
+        self.scheduler_item
+            .header()
+            .completion_status()
+            .map(|recorded| match recorded {
+                SchedulerItemCompletionStatus::Zero => DtmSchedulerItemCompletionStatus::Zero,
+                SchedulerItemCompletionStatus::NonZero(status) => {
+                    DtmSchedulerItemCompletionStatus::NonZero(status)
+                }
             })
-        }
     }
 
     pub(super) fn commit_scheduler_recycle(self: Pin<&mut Self>) {
         let scheduler_item = self.project().scheduler_item;
-        scheduler_item.write_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, 0);
+        scheduler_item.header().set_completion_link(0);
         let _ = scheduler_item.terminate_hardware_chain();
     }
 

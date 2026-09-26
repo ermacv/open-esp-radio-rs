@@ -26,8 +26,7 @@ use super::{
     DtmMemoryGraphRxSuccessObserved, DtmMemoryGraphRxSuccessRecycleError, DtmMemoryGraphStorage,
     DtmPositionalEventSeed, DtmPositionalEventWords, DtmRxResultProjection,
     DtmRxResultProjectionError, DtmSchedulerAllocationConfig, DtmSchedulerItemCompletionStatus,
-    DtmTxPacketPrepareError,
-    codec::{LINK_STATE_RX_TAIL_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET},
+    DtmTxPacketPrepareError, codec::LINK_STATE_RX_TAIL_OFFSET,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -82,7 +81,8 @@ fn running_owner_from_cpu(owner: DtmMemoryGraphCpuOwned, status: u32) -> DtmMemo
         .as_ref()
         .get_ref()
         .scheduler_item
-        .write_word(SCHEDULER_ITEM_STATUS_OFFSET, status);
+        .header()
+        .set_status(status);
     owner
 }
 

@@ -148,15 +148,22 @@ pub fn publication(
 ) -> Vec<Effect> {
     let bb = halfwords(&calculated[count..count * 3]);
     let rf = halfwords(&calculated[count * 3..count * 5]);
-    let seed_data = words(seed_words);
+    // The publisher reads its four seed halfwords from the seed words and the
+    // calculated bytes that follow them in memory, so baseband indices 3 and 4
+    // select calculated bytes.
+    let seed_data: Vec<u8> = words(seed_words)
+        .into_iter()
+        .chain(calculated.iter().copied())
+        .collect();
     let mut result = vec![(Access::Read, GAIN_BASE, (base << 24) | 0x005a_a55a)];
     let mut control = fill_word(fill);
     for i in 0..count {
         let index = match bb[i] {
-            0 => 0,
             128 => 1,
             256 => 2,
-            other => panic!("unexpected baseband gain {other}"),
+            32 => 3,
+            160 => 4,
+            _ => 0,
         };
         let field = |n: usize| {
             u64::from(u16::from_le_bytes([
@@ -694,7 +701,8 @@ impl Gain {
                         .collect();
                     for i in 0..32usize {
                         let shift = (i % 2) * 16;
-                        let value = [0u32, 128, 256][i % 3];
+                        // Every baseband gain `phy_index_to_txbbgain` encodes.
+                        let value = [0u32, 128, 256, 32, 160][i % 5];
                         image[14 + i / 2] =
                             (image[14 + i / 2] & !(0xffff << shift)) | (value << shift);
                     }

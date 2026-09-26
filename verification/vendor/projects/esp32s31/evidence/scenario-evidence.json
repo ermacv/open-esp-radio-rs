@@ -157,7 +157,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "a7eb4ae71fc56a99b04e7f7363f55949dd054d1ffcd0c722ed64391b799ec26f"
+      "sha256": "d46a3f9c0c5ba4286ee22d8eda24a82cf2da4e8b771fbc6714c96455a048b98c"
     },
     {
       "path": "verification/vendor/schema",
@@ -206,15 +206,15 @@
           "total": 16
         },
         "directions": {
-          "reached": 11,
+          "reached": 12,
           "total": 12
         },
         "excluded": 0,
-        "untriaged": 1
+        "untriaged": 0
       },
       "observation": {
-        "executed": 26,
-        "observed": 26,
+        "executed": 27,
+        "observed": 27,
         "reviewed": 0,
         "untriaged": 0
       }
@@ -877,13 +877,7 @@
       }
     }
   ],
-  "untriaged": [
-    {
-      "function": "phy_txbbgain_to_index",
-      "offset": 34,
-      "kind": "taken"
-    }
-  ],
+  "untriaged": [],
   "unobserved": [
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port.rs",

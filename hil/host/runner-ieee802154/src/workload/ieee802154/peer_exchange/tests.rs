@@ -164,3 +164,17 @@ fn the_enhanced_ack_is_matched_exactly() {
     assert!(check_peer_enhanced_ack(transmitted(ack(0x72, true)), &expected).is_err());
     assert!(check_peer_enhanced_ack(Some(PeerEvent::TransmitFailed(3)), &expected).is_err());
 }
+
+#[test]
+fn only_an_unacknowledged_transmit_passes_the_foreign_check() {
+    let mut evidence = Ieee802154SessionTransmitEvidence {
+        result: Ieee802154SessionResult::Done,
+        outcome: Ieee802154AirTxOutcome::NoAcknowledgement,
+        acknowledgement: None,
+    };
+    check_device_unacknowledged(&evidence, 0x73).unwrap();
+    evidence.outcome = Ieee802154AirTxOutcome::Success;
+    assert!(check_device_unacknowledged(&evidence, 0x73).is_err());
+    evidence.outcome = Ieee802154AirTxOutcome::ChannelBusy;
+    assert!(check_device_unacknowledged(&evidence, 0x73).is_err());
+}

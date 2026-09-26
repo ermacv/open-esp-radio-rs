@@ -61,6 +61,9 @@ const PEER_SEQUENCE_BASE: u8 = 0x80;
 /// The device's data frames acquire the channel as OpenThread does by
 /// default: CSMA-CA with `macMaxCsmaBackoffs` 4.
 const DEVICE_TX_MODE: Ieee802154SessionTxMode = Ieee802154SessionTxMode::CsmaCa { max_backoffs: 4 };
+/// Retransmissions of the device's data frames; OpenThread's default of
+/// fifteen would only lengthen the unacknowledged check.
+const DEVICE_FRAME_RETRIES: u8 = 3;
 
 pub struct Config {
     pub boots: u8,
@@ -241,6 +244,7 @@ fn exchange<L: PeerLink>(
             Ieee802154SessionTransmitRequest {
                 frame: session_frame(&frame)?,
                 mode: DEVICE_TX_MODE,
+                max_frame_retries: DEVICE_FRAME_RETRIES,
             },
             COMMAND_TIMEOUT,
         )?;
@@ -261,6 +265,21 @@ fn exchange<L: PeerLink>(
         peer_to_device.push(format!("seq={sequence} acknowledged"));
     }
     check_device_received(&capture.collect_ieee802154_session()?, &sent)?;
+
+    // Nobody acknowledges a foreign destination: the device retries, then
+    // reports no acknowledgement.
+    let unanswered = data_frame(true, 0x73, FOREIGN_SHORT, DEVICE_SHORT);
+    check_device_unacknowledged(
+        &capture.transmit_ieee802154_session(
+            Ieee802154SessionTransmitRequest {
+                frame: session_frame(&unanswered)?,
+                mode: DEVICE_TX_MODE,
+                max_frame_retries: DEVICE_FRAME_RETRIES,
+            },
+            COMMAND_TIMEOUT,
+        )?,
+        0x73,
+    )?;
 
     let foreign = data_frame(true, 0x70, FOREIGN_SHORT, PEER_SHORT);
     peer.transmit(false, &foreign)?;
@@ -297,6 +316,7 @@ fn exchange<L: PeerLink>(
             Ieee802154SessionTransmitRequest {
                 frame: session_frame(&frame)?,
                 mode: Ieee802154SessionTxMode::Direct,
+                max_frame_retries: 0,
             },
             COMMAND_TIMEOUT,
         )?,
@@ -317,7 +337,9 @@ fn exchange<L: PeerLink>(
         boot,
         device_to_peer,
         peer_to_device,
-        filtered: String::from("foreign destination unacknowledged and unreported"),
+        filtered: String::from(
+            "foreign destination unacknowledged and unreported; device frame to it retried, then unacknowledged",
+        ),
         pending: String::from("data request acknowledged with frame pending"),
         enhanced_ack: String::from("2015 frame acknowledged with the enhanced ACK"),
         maintenance: String::from("tracked, then exchanged in both directions"),
@@ -354,6 +376,24 @@ pub(crate) fn check_device_transmit(
         None => {
             Err(format!("device transmit seq={sequence} has no matching acknowledgement").into())
         }
+    }
+}
+
+pub(crate) fn check_device_unacknowledged(
+    evidence: &Ieee802154SessionTransmitEvidence,
+    sequence: u8,
+) -> Result<()> {
+    expect_session("transmit", evidence.result)?;
+    if evidence.outcome == Ieee802154AirTxOutcome::NoAcknowledgement
+        && evidence.acknowledgement.is_none()
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "device transmit seq={sequence} to a foreign destination ended {:?}",
+            evidence.outcome
+        )
+        .into())
     }
 }
 

@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 175;
+pub const PROTOCOL_VERSION: u16 = 176;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///

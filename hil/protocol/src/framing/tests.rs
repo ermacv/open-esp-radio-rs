@@ -1987,6 +1987,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         !Ieee802154SessionTransmitRequest {
             frame: Ieee802154SessionFrame::from_slice(&[1, 2]).unwrap(),
             mode: Ieee802154SessionTxMode::Direct,
+            max_frame_retries: 0,
         }
         .validate()
     );
@@ -1995,6 +1996,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         Command::TransmitIeee802154Session(Ieee802154SessionTransmitRequest {
             frame: full(),
             mode: Ieee802154SessionTxMode::CsmaCa { max_backoffs: 4 },
+            max_frame_retries: 15,
         }),
         Command::ReceiveIeee802154Session,
         Command::CollectIeee802154Session,

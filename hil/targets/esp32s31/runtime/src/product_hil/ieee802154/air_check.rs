@@ -132,6 +132,7 @@ async fn run_cycle(
         channel,
         mode: TxMode::Direct,
         transmit_power_dbm: None,
+        max_frame_retries: 0,
     }))?;
     cycle.direct = transmitted(system, requested_at_micros).await?;
 
@@ -145,6 +146,7 @@ async fn run_cycle(
                 at: RadioTimestamp::from_micros(at),
             },
             transmit_power_dbm: None,
+            max_frame_retries: 0,
         }))?;
         *scheduled = transmitted(system, at).await?;
     }

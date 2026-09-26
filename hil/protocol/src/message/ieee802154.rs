@@ -475,6 +475,9 @@ pub struct Ieee802154SessionTransmitRequest {
     pub frame: Ieee802154SessionFrame,
     /// How the transmission acquires the channel.
     pub mode: Ieee802154SessionTxMode,
+    /// Retransmissions after an attempt without acknowledgement or channel
+    /// access; zero sends the frame once.
+    pub max_frame_retries: u8,
 }
 
 /// How one session transmission acquires the channel.

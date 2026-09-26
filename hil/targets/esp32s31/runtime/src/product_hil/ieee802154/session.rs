@@ -48,8 +48,8 @@ use crate::console::{
 
 type Radio = RadioSystem<EspHalRadioPeripheral, EspHalRadioClocks>;
 
-/// Bound on one transmission's terminal event.
-const TRANSMIT_TIMEOUT: Duration = Duration::from_millis(500);
+/// Bound on one transmission's terminal event, over its retries.
+const TRANSMIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Frames received since the previous collection.
 #[derive(Default)]
@@ -166,6 +166,7 @@ impl Session {
             channel: self.channel,
             mode,
             transmit_power_dbm: None,
+            max_frame_retries: request.max_frame_retries,
         })) {
             evidence.result = result;
             return evidence;

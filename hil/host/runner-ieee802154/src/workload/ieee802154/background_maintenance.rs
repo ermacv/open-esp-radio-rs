@@ -143,6 +143,7 @@ fn session(capture: &SerialCapture, config: &Config) -> Result<Ieee802154Session
         Ieee802154SessionTransmitRequest {
             frame: session_frame(&data_frame(false, 1, PEER_SHORT, DEVICE_SHORT))?,
             mode: Ieee802154SessionTxMode::Direct,
+            max_frame_retries: 0,
         },
         COMMAND_TIMEOUT,
     )?;

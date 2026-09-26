@@ -24,7 +24,7 @@ oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
 oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
 oer-esp32s31-soc-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
-oer-esp32s31-radio-system = { path = "../radio" }
+oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }
 static_cell = "2.1.1"
 
 [lints]

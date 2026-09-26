@@ -68,7 +68,7 @@ composition = "production"
 scope = "Idle-first periodic shared-PHY maintenance with bounded deferral throughout the Bluetooth Controller lifetime, a time-budgeted pause across eligible established ACL events per transaction, and no preemption of active DTM TX/RX"
 limits = "No LE Controller composition currently exists. The listed sources are the remaining lower primitives that such a composition must use; they do not implement this contract"
 source-paths = [
-  "crates/composition/esp32s31/embassy/radio/src/system.rs",
+  "crates/runtime/esp32s31/radio/src/system.rs",
   "crates/protocols/bluetooth/le/ll/src/connection/maintenance.rs",
   "crates/hardware/esp32s31/phy/src/tracking/fail_stop.rs",
   "crates/adapters/esp-hal/esp32s31/soc/src/reset.rs",

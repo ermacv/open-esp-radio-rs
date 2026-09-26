@@ -11,7 +11,7 @@ use oer_esp32s31_phy::{
     PhyCalibrationIdentity, concurrent::MaintenancePolicy, phy_get_rf_cal_version,
 };
 use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
-use oer_esp32s31_radio_system::RadioSystem;
+use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{Ieee802154AirTxOutcome, Ieee802154SessionMaintenancePolicy};
 use oer_ieee802154::TxStatus;
 use static_cell::ConstStaticCell;

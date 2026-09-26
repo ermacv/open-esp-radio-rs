@@ -41,7 +41,7 @@ use oer_esp32s31_phy::{
     state::client::PhyModemClient,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
-use oer_esp32s31_radio_system::{RadioPhyError, RadioSystem};
+use oer_esp32s31_radio_runtime::{RadioPhyError, RadioSystem};
 
 use crate::maintenance::{
     Ieee802154PhyMaintenance, MAINTENANCE_PERIOD_MICROS, next_attempt_micros,

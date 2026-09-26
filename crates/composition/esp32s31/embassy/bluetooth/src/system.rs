@@ -67,7 +67,7 @@ use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothPrimaryInterruptStep, EspHalBluetoothSchedulerRunInterruptError,
     PublishedEspHalBluetoothInterruptOwners,
 };
-use oer_esp32s31_radio_system::{RadioPhyError, RadioSystem};
+use oer_esp32s31_radio_runtime::{RadioPhyError, RadioSystem};
 use static_cell::{ConstStaticCell, StaticCell};
 
 /// Slots of the source-127 software timer queue.

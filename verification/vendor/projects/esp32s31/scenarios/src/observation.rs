@@ -184,6 +184,18 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "probe snapshot artifact: the tracking probes read the RX-gain memory \
+            parameters to export their DC banks and drop `parameter_002`, which the RX-gain \
+            scenario compares where calibration uses it",
+        places: &[("state.rs", "parameter_002: self.config.pbus_rx_path,")],
+    },
+    Decision {
+        reason: "diagnostic-print selectors retained with the TX-power child's parent action: \
+            commit reads only its variant and `enabled`, and the vendor diagnostics select \
+            only console output, which production does not emit",
+        places: &[("tracking/parameters.rs", "Ok(Self {")],
+    },
+    Decision {
         reason: "temperature acquisition provenance, a production scheduling record with no \
             vendor counterpart; the temperature and sensor index are compared",
         places: &[("tracking/temperature.rs", "Acquisition::Undated => Self {")],

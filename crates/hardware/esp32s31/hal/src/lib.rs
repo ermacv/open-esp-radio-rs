@@ -4,8 +4,10 @@
 //! ESP32-S31 register transactions and affine radio ownership.
 //!
 //! [`root`] owns the protocol-neutral radio root and composes the restricted
-//! PAC partitions into exclusive protocol routes. [`owner`] retains the Wi-Fi
-//! route and grants bounded capabilities.
+//! PAC partitions into exclusive protocol routes. [`shared_radio`] arbitrates
+//! the shared radio partitions and PHY state between concurrently running
+//! routes through non-blocking leases. [`owner`] retains the Wi-Fi route and
+//! grants bounded capabilities.
 //! [`phy`], [`ieee80211`], [`bluetooth`] and [`ieee802154`] implement domain
 //! operations through those capabilities. [`types`] exposes value contracts
 //! without granting PAC access. Protocol policy and executor waits belong to
@@ -32,6 +34,7 @@ pub mod coex;
 
 pub mod power;
 pub mod root;
+pub mod shared_radio;
 pub mod types;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]

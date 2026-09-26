@@ -72,13 +72,17 @@ pub mod route {
     pub enum Bluetooth {}
     /// Borrowed from the IEEE 802.15.4 task owner.
     pub enum Ieee802154 {}
+    /// Borrowed through a lease of the shared radio arbiter.
+    pub enum Shared {}
 
     impl sealed::Route for Wifi {}
     impl sealed::Route for Bluetooth {}
     impl sealed::Route for Ieee802154 {}
+    impl sealed::Route for Shared {}
     impl Route for Wifi {}
     impl Route for Bluetooth {}
     impl Route for Ieee802154 {}
+    impl Route for Shared {}
 }
 
 /// Narrow borrowed HAL capability for the protocol-neutral radio PHY.

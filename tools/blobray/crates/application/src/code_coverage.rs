@@ -205,6 +205,7 @@ fn function_coverage(
         uncovered_directions,
         modeled: function.modeled.clone(),
         unresolved: function.unresolved.clone(),
+        followed: function.followed.clone(),
         gaps: function.gaps.clone(),
     })
 }

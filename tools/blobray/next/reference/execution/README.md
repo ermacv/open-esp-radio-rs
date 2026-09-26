@@ -694,13 +694,16 @@ code symbol's start is a tail call. The closure does not enter call-model and
 FIFO-service binding addresses or goal symbols; those transfer sites are
 `modeled`. Indirect transfers with neither kind of target, typically ones that
 never executed, and direct transfers leaving executable captured code, are
-`unresolved`; a `jalr x0, 0(ra)` return is neither.
+`unresolved`; a `jalr x0, 0(ra)` return is neither. Indirect transfers the
+closure follows only to their observed targets are `followed`: targets no
+execution reached, such as the other arms of a jump table, are outside the
+closure, so the site itself remains a location to account for.
 Undecodable instructions are `gaps`.
 
 The summary names the decoder and semantic identities and carries the report.
 Each closure function lists its basic blocks reached out of all, both
 directions of each conditional branch, its uncovered block leaders and branch
-directions, and its modeled, unresolved and gap sites; a defined code symbol at
+directions, and its modeled, unresolved, followed and gap sites; a defined code symbol at
 its entry names it. Each root lists its closure functions and the distinct
 blocks and directions over them. `outside` counts executed vendor instructions
 that no closure decoded, such as code reached through an unresolved transfer.

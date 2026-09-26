@@ -46,6 +46,10 @@ pub struct ClosureFunction {
     /// Indirect transfer sites without a statically known target, and direct
     /// transfers leaving the executable captured code.
     pub unresolved: Vec<u32>,
+    /// Indirect transfer sites without a statically known target that the
+    /// closure follows only to their executed targets: targets no execution
+    /// reached, such as the other arms of a jump table, stay outside it.
+    pub followed: Vec<u32>,
     /// Instructions the decoder does not support.
     pub gaps: Vec<u32>,
 }
@@ -63,6 +67,7 @@ pub struct FunctionCodeCoverage {
     pub uncovered_directions: Vec<BranchDirection>,
     pub modeled: Vec<u32>,
     pub unresolved: Vec<u32>,
+    pub followed: Vec<u32>,
     pub gaps: Vec<u32>,
 }
 

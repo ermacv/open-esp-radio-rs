@@ -167,6 +167,7 @@ fn code_coverage_reports_root_closures_boundaries_and_unions() {
     assert_eq!(root.name, None);
     assert_eq!(root.modeled, vec![0x100c]);
     assert_eq!(root.unresolved, vec![0x1018]);
+    assert!(root.followed.is_empty());
     assert!(root.gaps.is_empty());
     assert_eq!(
         root.blocks,
@@ -225,8 +226,10 @@ fn code_coverage_reports_root_closures_boundaries_and_unions() {
     );
     let both = report(&f, &[&fallthrough, &taken]);
     assert!(both.roots[0].blocks.complete() && both.roots[0].directions.complete());
-    // The observed target resolves the executed indirect call.
+    // The observed target is followed; the site stays visible, since other
+    // targets no execution reached are outside the closure.
     assert!(both.functions[0].unresolved.is_empty(), "{both:?}");
+    assert_eq!(both.functions[0].followed, vec![0x1018]);
     assert!(
         both.functions
             .iter()

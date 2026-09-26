@@ -6,7 +6,8 @@
 //! instruction, add callees; so do the observed targets of other executed
 //! indirect transfers. A jump to another function's defined start is a tail
 //! transfer. Transfers to declared boundaries stop the closure; indirect
-//! transfers with neither a static nor an observed target stay unresolved.
+//! transfers with neither a static nor an observed target stay unresolved,
+//! and those followed only to observed targets are reported as followed.
 use blobray_domain::*;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -51,6 +52,7 @@ struct Function {
     callees: BTreeSet<u32>,
     modeled: BTreeSet<u32>,
     unresolved: BTreeSet<u32>,
+    followed: BTreeSet<u32>,
     gaps: BTreeSet<u32>,
     pending: Vec<u32>,
 }
@@ -193,6 +195,7 @@ impl Walker<'_, '_> {
                             None if !link && base == 1 && offset == 0 => {}
                             None => match self.input.observed.get(&pc) {
                                 Some(targets) => {
+                                    f.followed.insert(pc);
                                     for target in targets {
                                         self.transfer(&mut f, entry, pc, *target, link);
                                     }
@@ -229,6 +232,7 @@ impl Walker<'_, '_> {
             callees: f.callees.into_iter().collect(),
             modeled: f.modeled.into_iter().collect(),
             unresolved: f.unresolved.into_iter().collect(),
+            followed: f.followed.into_iter().collect(),
             gaps: f.gaps.into_iter().collect(),
         })
     }

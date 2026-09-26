@@ -114,7 +114,10 @@ impl StationOrdinarySnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_esp32s31_ieee80211_mac::tx::{LegacyRate, TxPhyRate};
+    use oer_esp32s31_ieee80211_mac::tx::{
+        LegacyRate, TxPhyRate,
+        protection::{TxProtection, TxProtectionDecision, TxProtectionReasons},
+    };
     use oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::{
         OrdinaryTxReport, OrdinaryTxRetryReport,
     };
@@ -137,6 +140,13 @@ mod tests {
                 cts_timeouts: 1,
                 ack_timeouts: 0,
                 collisions: 0,
+            },
+            // A CTS timeout exists only behind an RTS.
+            protection: TxProtectionDecision {
+                protection: TxProtection::RtsCts {
+                    rate: LegacyRate::Ofdm24M,
+                },
+                reasons: TxProtectionReasons::LENGTH,
             },
         };
         counters.record(Some(OrdinaryTxOutcome::Success(report)));
@@ -193,6 +203,7 @@ mod tests {
             },
             completion: Some(completion),
             retries: OrdinaryTxRetryReport::default(),
+            protection: TxProtectionDecision::UNPROTECTED,
         })));
         assert_eq!(
             counters.snapshot().delta_since(earlier),

@@ -262,6 +262,22 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     ))
     .await;
     yield_now().await;
+    let histogram = aggregate.completion_to_publication_histogram;
+    runtime_log_reliably(format_args!(
+        "OAMPTH le50={} le100={} le200={} le500={} le1000={} gt1000={} \
+         unprepared={}/{} unprepared_max_us={}",
+        histogram[0],
+        histogram[1],
+        histogram[2],
+        histogram[3],
+        histogram[4],
+        histogram[5],
+        aggregate.unprepared_publication_samples,
+        aggregate.unprepared_publication_micros,
+        aggregate.unprepared_publication_lifetime_max_micros,
+    ))
+    .await;
+    yield_now().await;
     runtime_log_reliably(format_args!(
         "OAMPTR r2={}/{} r3={}/{} r4={}/{}",
         aggregate.exchanges_by_publications[2],
@@ -289,7 +305,8 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     runtime_log_reliably(format_args!(
         "OAMPSP samples={} passes={} passes_max={} control_ready_passes={} \
          completion_to_return_us={} completion_to_return_max_us={} \
-         return_to_loop_us={} return_to_loop_max_us={} \
+         return_to_first_pass_us={} return_to_first_pass_max_us={} \
+         multi_pass={} additional_passes_us={} additional_passes_max_us={} \
          stop_poll_us={} stop_poll_max_us={} readiness_us={} readiness_max_us={}",
         scheduler.samples,
         scheduler.scheduler_passes,
@@ -299,10 +316,13 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
         scheduler
             .completion_to_active_service_return
             .lifetime_max_micros,
-        scheduler.active_service_return_to_scheduler_loop.micros,
+        scheduler.active_service_return_to_first_pass.micros,
         scheduler
-            .active_service_return_to_scheduler_loop
+            .active_service_return_to_first_pass
             .lifetime_max_micros,
+        scheduler.multi_pass_samples,
+        scheduler.additional_passes.micros,
+        scheduler.additional_passes.lifetime_max_micros,
         scheduler.stop_poll.micros,
         scheduler.stop_poll.lifetime_max_micros,
         scheduler.control_readiness.micros,

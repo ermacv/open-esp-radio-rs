@@ -230,10 +230,12 @@ fn terminal_completion_is_correlated_with_the_next_publication() {
     assert_eq!(
         delta
             .prepared_scheduler_timing
-            .active_service_return_to_scheduler_loop
+            .active_service_return_to_first_pass
             .micros,
         15
     );
+    assert_eq!(delta.prepared_scheduler_timing.multi_pass_samples, 0);
+    assert_eq!(delta.prepared_scheduler_timing.additional_passes.micros, 0);
     assert_eq!(delta.prepared_scheduler_timing.stop_poll.micros, 5);
     assert_eq!(delta.prepared_scheduler_timing.control_readiness.micros, 15);
     assert_eq!(
@@ -327,6 +329,7 @@ fn scheduler_trace_recorder_preserves_detours_and_resets_at_terminal_service() {
         trace.take(),
         Some(PreparedTxSchedulerTrace {
             active_service_returned_micros: 30,
+            first_scheduler_loop_resumed_micros: 40,
             scheduler_loop_resumed_micros: 40,
             stop_poll_completed_micros: 45,
             control_readiness_checked_micros: 50,
@@ -475,4 +478,72 @@ fn prepared_standby_owners_survive_interval_reset_until_publish_or_cancel() {
     assert_eq!(delta.standby_pending_start, 1);
     assert_eq!(delta.standby_pending_end, 0);
     assert_eq!(delta.standby_cancelled, 1);
+}
+
+#[test]
+fn a_scheduler_detour_is_not_charged_to_return_latency() {
+    let counters = AggregateTxCounters::with_clock(|| 100);
+    let before = counters.snapshot();
+    counters.observe(AggregateTxObservation::Completed {
+        acknowledged: 32,
+        individual_retry: false,
+    });
+    let phases = [
+        (PreparedTxSchedulerPhase::ActiveServiceReturned, 110),
+        // An RX detour: the first pass leaves the chain.
+        (PreparedTxSchedulerPhase::SchedulerLoopResumed, 115),
+        (PreparedTxSchedulerPhase::SchedulerLoopResumed, 715),
+        (PreparedTxSchedulerPhase::StopPollCompleted, 716),
+        (
+            PreparedTxSchedulerPhase::ControlReadinessChecked { ready: false },
+            718,
+        ),
+        (PreparedTxSchedulerPhase::PreparedReadinessChecked, 720),
+        (PreparedTxSchedulerPhase::PreparedBatchChecked, 725),
+        (PreparedTxSchedulerPhase::PreparedEntry, 730),
+    ];
+    for (phase, at_micros) in phases {
+        counters.observe(AggregateTxObservation::PreparedSchedulerPhase { phase, at_micros });
+    }
+    counters.observe(AggregateTxObservation::Published {
+        at_micros: 740,
+        program_micros: 4,
+    });
+    let timing = counters
+        .snapshot()
+        .wrapping_delta_since(before)
+        .prepared_scheduler_timing;
+    assert_eq!(timing.samples, 1);
+    assert_eq!(timing.scheduler_passes, 2);
+    assert_eq!(timing.active_service_return_to_first_pass.micros, 5);
+    assert_eq!(timing.multi_pass_samples, 1);
+    assert_eq!(timing.additional_passes.micros, 600);
+    assert_eq!(timing.stop_poll.micros, 1);
+    let delta = counters.snapshot().wrapping_delta_since(before);
+    assert_eq!(delta.completion_to_publication_histogram, [0, 0, 0, 0, 1, 0]);
+    assert_eq!(delta.unprepared_publication_samples, 0);
+}
+
+#[test]
+fn publication_latency_is_bucketed_and_unprepared_successors_are_counted() {
+    let counters = AggregateTxCounters::with_clock(|| 100);
+    let before = counters.snapshot();
+    counters.observe(AggregateTxObservation::Completed {
+        acknowledged: 32,
+        individual_retry: false,
+    });
+    // No prepared entry: the scheduler claimed the successor itself.
+    counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
+        phase: PreparedTxSchedulerPhase::ActiveServiceReturned,
+        at_micros: 110,
+    });
+    counters.observe(AggregateTxObservation::Published {
+        at_micros: 2_600,
+        program_micros: 4,
+    });
+    let delta = counters.snapshot().wrapping_delta_since(before);
+    assert_eq!(delta.completion_to_publication_histogram, [0, 0, 0, 0, 0, 1]);
+    assert_eq!(delta.unprepared_publication_samples, 1);
+    assert_eq!(delta.unprepared_publication_micros, 2_500);
+    assert_eq!(delta.prepared_scheduler_timing.samples, 0);
 }

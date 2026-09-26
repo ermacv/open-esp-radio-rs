@@ -761,7 +761,7 @@ oer_probe_macros::probe! {
         initial_rate: u32,
     ) {
         use oer_esp32s31_ieee80211_mac::tx::{
-            LegacyRate, TxPhyRate,
+            HtChannelWidth, TxPhyRate,
             runtime::{OrdinaryRetryCounters, select_ordinary_retry_rate},
         };
 
@@ -775,9 +775,11 @@ oer_probe_macros::probe! {
                 long: descriptor.add(7).read(),
             }
         };
-        let initial = LegacyRate::from_code(initial_rate as u8)
-            .expect("reviewed rcGetRate cases start from a legacy rate");
-        let selected = select_ordinary_retry_rate(TxPhyRate::Legacy(initial), counters)
+        // The byte carries no channel width; the selected code does not
+        // depend on it.
+        let initial = TxPhyRate::from_code(initial_rate as u8, HtChannelWidth::Mhz20)
+            .expect("reviewed rcGetRate cases start from a legacy or HT rate");
+        let selected = select_ordinary_retry_rate(initial, counters)
             .expect("reviewed rcGetRate cases remain inside their schedule");
         // SAFETY: the same case-owned descriptor covers byte 0x0c.
         unsafe { descriptor.add(0x0c).write(selected.code()) };

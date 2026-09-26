@@ -185,6 +185,10 @@ fn call_boundary(image: &BTreeMap<String, u32>, name: &str) -> CallBoundary {
 pub struct RateTables {
     pub index: Vec<u8>,
     pub arena: Vec<u8>,
+    /// The 802.11n schedule arena and the record index the vendor's
+    /// `rc11NRate2SchedIdx` returns for each HT rate code.
+    pub dot11n: Vec<u8>,
+    pub dot11n_index: BTreeMap<u32, u8>,
 }
 
 impl RateTables {
@@ -192,13 +196,29 @@ impl RateTables {
     const OBJECT: &'static str = "trc.o";
     const INDEX_SECTION: &'static str = ".rodata.CSWTCH.73";
     const ARENA_SECTION: &'static str = ".data.rc11GSchedTbl";
+    const DOT11N_SECTION: &'static str = ".data.rc11NSchedTbl";
+    /// Local vendor function returning the 802.11n record index of a rate
+    /// code, and its only caller, a global symbol that links it.
+    const DOT11N_INDEX: &'static str = "rc11NRate2SchedIdx";
+    const DOT11N_INDEX_CALLER: &'static str = "rcUpdatePhyMode";
     /// Bytes of one schedule record.
     const RECORD: usize = 12;
     /// Index-table entry of a rate with no 802.11g record.
     const UNMAPPED: u8 = 0xff;
 
-    /// The vendor schedule record of legacy rate `code`.
+    /// The vendor schedule record of `code`: its 802.11n record for an HT
+    /// rate, its 802.11g record for a legacy rate.
     fn record(&self, code: u32) -> Result<Vec<u8>> {
+        if let Some(index) = self.dot11n_index.get(&code) {
+            let start = usize::from(*index) * Self::RECORD;
+            return self
+                .dot11n
+                .get(start..start + Self::RECORD)
+                .map(<[u8]>::to_vec)
+                .ok_or_else(|| {
+                    invalid(format!("vendor 802.11n record {index} outside the arena"))
+                });
+        }
         let index = *self
             .index
             .get(code as usize)
@@ -525,6 +545,23 @@ const RATE_SCHEDULE: u32 = 0x3fff_1200;
 /// Legacy initial rates: every code the vendor maps to an 802.11g record,
 /// checked against the captured index table when the scenario starts.
 const RATE_CODES: &[u32] = &[0, 1, 2, 5, 6, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf];
+/// HT rate codes production retries through an 802.11n record: long-GI
+/// MCS0 to MCS7 and short-GI MCS7.
+const HT_RATE_CODES: &[u32] = &[0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x21];
+/// Every initial rate of the `rcGetRate` comparison.
+const RETRY_RATE_CODES: [u32; RATE_CODES.len() + HT_RATE_CODES.len()] = {
+    let mut codes = [0; RATE_CODES.len() + HT_RATE_CODES.len()];
+    let mut i = 0;
+    while i < RATE_CODES.len() {
+        codes[i] = RATE_CODES[i];
+        i += 1;
+    }
+    while i < codes.len() {
+        codes[i] = HT_RATE_CODES[i - RATE_CODES.len()];
+        i += 1;
+    }
+    codes
+};
 /// Long-range codes the vendor also maps to 802.11g records. Production
 /// publishes no long-range frame, so its ordinary retry selector admits no
 /// long-range initial rate.
@@ -937,7 +974,7 @@ pub const LEAVES: &[Leaf] = &[
                 &[
                     ("_rate_context", Domain::Words(&[RATE_CONTEXT])),
                     ("descriptor_address", Domain::Words(&[RATE_DESCRIPTOR])),
-                    ("initial_rate", Domain::Words(RATE_CODES)),
+                    ("initial_rate", Domain::Words(&RETRY_RATE_CODES)),
                 ],
                 false,
             ),
@@ -994,6 +1031,48 @@ pub const LEAVES: &[Leaf] = &[
         &["ic_set_mac"],
     ),
 ];
+
+/// The 802.11n record index of every HT rate code, returned by the vendor's
+/// own `rc11NRate2SchedIdx` executed in the linked image.
+fn dot11n_indices(
+    session: &mut Session,
+    vendor: &ExecutionTarget,
+    entry: u32,
+) -> Result<BTreeMap<u32, u8>> {
+    let rows = HT_RATE_CODES
+        .iter()
+        .map(|code| {
+            let mut row = case(
+                format!("{}-{code:x}", RateTables::DOT11N_INDEX),
+                direct(entry, &[*code], vec![], vec![], vec![]),
+                None,
+                SessionReset::Cold,
+                false,
+            );
+            // Vendor-only: nothing to compare.
+            row.relation = None;
+            row.stack_fill = Some(LEAF_FILLS[0]);
+            row
+        })
+        .collect();
+    let records = session
+        .submit(
+            RateTables::DOT11N_INDEX,
+            &request(vendor, None, None, rows, LEAF_EVENTS),
+            None,
+        )?
+        .records
+        .clone();
+    HT_RATE_CODES
+        .iter()
+        .enumerate()
+        .map(|(case, code)| {
+            let index = crate::i2c::returned_low(&records, case as u32, false)
+                .ok_or_else(|| invalid(format!("no 802.11n record index for {code:#x}")))?;
+            Ok((*code, u8::try_from(index)?))
+        })
+        .collect()
+}
 
 /// Every byte of data section `section` of `object` in the captured archive.
 fn vendor_section(session: &Session, object: &str, section: &str) -> Result<Vec<u8>> {
@@ -1115,7 +1194,7 @@ impl Mac {
                 sha256: Some(crate::artifacts::sha256("libnet80211")),
             },
         ];
-        let session = Session::start(
+        let mut session = Session::start(
             &options.binary,
             &options.output,
             options.budget,
@@ -1130,6 +1209,7 @@ impl Mac {
             .filter(|l| !l.rom)
             .map(|l| (if l.net80211 { NET80211_INPUT } else { 0 }, l.vendor))
             .filter(|(_, v)| *v != LEAVES[0].vendor)
+            .chain([(0, RateTables::DOT11N_INDEX_CALLER)])
             .collect();
         vendors.sort_unstable();
         vendors.dedup();
@@ -1153,19 +1233,26 @@ impl Mac {
             &[crate::layout::ROM_INPUT, PHY_SDK_INPUT],
         )?;
         let (vendor, production) = session.targets(&linked.image)?;
+        let entry = image_symbols(&session.run.join("image/image.elf"))?
+            .get(RateTables::DOT11N_INDEX)
+            .copied()
+            .ok_or_else(|| invalid("the linked image lacks rc11NRate2SchedIdx"))?;
+        let dot11n_index = dot11n_indices(&mut session, &vendor, entry)?;
         let rates = RateTables {
             index: vendor_section(&session, RateTables::OBJECT, RateTables::INDEX_SECTION)?,
             arena: vendor_section(&session, RateTables::OBJECT, RateTables::ARENA_SECTION)?,
+            dot11n: vendor_section(&session, RateTables::OBJECT, RateTables::DOT11N_SECTION)?,
+            dot11n_index,
         };
         let admitted: Vec<u32> = rates
             .mapped()
             .into_iter()
             .filter(|code| !UNADMITTED_RATE_CODES.contains(code))
             .collect();
-        for code in RATE_CODES {
-            if !rates.covers_publication_limit(*code)? {
+        for code in RETRY_RATE_CODES {
+            if !rates.covers_publication_limit(code)? {
                 return Err(invalid(format!(
-                    "vendor 802.11g record of rate {code:#x} ends before its publication limit"
+                    "vendor record of rate {code:#x} ends before its publication limit"
                 )));
             }
         }

@@ -50,6 +50,22 @@ pub fn prepare(ctx: &Context) -> Result<(std::path::PathBuf, std::path::PathBuf)
 
 pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let (runner, receipt_path) = prepare(ctx)?;
+    if hands_off_terminal(args) {
+        // Fixture installation ends in a foreground sudo handoff. A supervised
+        // child runs in its own process group, which is a background group for
+        // the terminal, so sudo could not read the password. Replace this
+        // process instead: the runner keeps the foreground group and streams.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt as _;
+            let error = ctx
+                .command(&runner)
+                .args(args)
+                .env("OER_OBSERVER_RECEIPT", &receipt_path)
+                .exec();
+            return Err(format!("cannot hand the terminal to the HIL runner: {error}").into());
+        }
+    }
     // Cleanup scopes in the runner have 30-second budgets and may unwind
     // multiple owned fixtures. This is a shutdown allowance, never a run timeout.
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
@@ -59,6 +75,12 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         std::time::Duration::from_secs(300),
     )?;
     Ok(exit_code(child.wait_forwarding_cancellation()?))
+}
+
+/// Commands that need the terminal's foreground process group.
+fn hands_off_terminal(args: &[OsString]) -> bool {
+    matches!(args, [fixture, install, ..] if fixture == "fixture" && install == "install")
+        && !args.iter().any(|arg| arg == "--dry-run")
 }
 
 pub(crate) fn exit_code(status: std::process::ExitStatus) -> std::process::ExitCode {
@@ -87,5 +109,25 @@ mod tests {
             .wait_forwarding_cancellation()
             .unwrap();
         assert_eq!(exit_code(status), std::process::ExitCode::from(37));
+    }
+
+    #[test]
+    fn only_a_real_fixture_install_takes_the_terminal() {
+        let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
+        assert!(hands_off_terminal(&args(&[
+            "fixture",
+            "install",
+            "--provider",
+            "linux-net"
+        ])));
+        assert!(!hands_off_terminal(&args(&[
+            "fixture",
+            "install",
+            "--provider",
+            "linux-net",
+            "--dry-run"
+        ])));
+        assert!(!hands_off_terminal(&args(&["fixture", "check", "x"])));
+        assert!(!hands_off_terminal(&args(&["run", "boot-smoke"])));
     }
 }

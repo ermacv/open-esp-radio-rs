@@ -30,11 +30,20 @@ protocol compositions are clients of the system:
   `RadioSystem::run_tracking_until` ends when a stop future completes, which
   it polls only between ticks so a started tick always finishes.
 
-The IEEE 802.15.4 and Bluetooth compositions are clients of the system. The
-Wi-Fi composition still owns the radio through its exclusive route.
+- `RadioGuard::suspend_ieee802154` and `RadioGuard::resume_ieee802154` are
+  the vendor `ieee802154_rf_disable`/`ieee802154_rf_enable` pair around
+  IEEE 802.15.4 sleep: the operational MAC route leaves the PHY client set
+  while keeping its BTBB reference, RF closes when no client remains, and a
+  wake reopens RF before the client re-enters. The vendor compiles this
+  sleep only with modem retention and tickless idle, so a composition
+  enables it explicitly.
+
+The Wi-Fi, Bluetooth and IEEE 802.15.4 compositions are all clients of the
+system.
 
 ## Limits
 
 The system keeps no calibration cache across registrations or resets, and
-does not compose coexistence policy, sleep or RF gating. A tracking failure
+does not compose coexistence policy. There is no modem retention or light
+sleep: RF close keeps the registration and calibration, nothing else. A tracking failure
 leaves the domain poisoned; the chip must be reset.

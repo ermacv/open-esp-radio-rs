@@ -208,6 +208,21 @@ pub const DECISIONS: &[Decision] = &[
         places: &[("state.rs", "self.bluetooth.power_tracking = value;")],
     },
     Decision {
+        reason: "client ownership bits of the validation-only pending parent fixture; the \
+            compared parent transition never reads them",
+        places: &[
+            (
+                "state/client.rs",
+                "owner.bits = if request.wifi() { WIFI_BIT } else { 0 }",
+            ),
+            ("state/client.rs", "| if request.bluetooth_ieee802154() {"),
+            (
+                "state/client.rs",
+                "owner.tracker_model_armed = owner.bits != 0;",
+            ),
+        ],
+    },
+    Decision {
         reason: "temperature acquisition provenance, a production scheduling record with no \
             vendor counterpart; the temperature and sensor index are compared",
         places: &[("tracking/temperature.rs", "Acquisition::Undated => Self {")],

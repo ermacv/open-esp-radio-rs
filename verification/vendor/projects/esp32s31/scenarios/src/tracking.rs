@@ -30,7 +30,7 @@ pub type Options = PhyOptions;
 const TRACKING_EVENTS: u32 = 1 << 20;
 /// Production probe input and output words of the combined root and parent.
 const COMBINED_INPUT_WORDS: usize = 8;
-const PARENT_INPUT_WORDS: usize = 13;
+const PARENT_INPUT_WORDS: usize = 15;
 const COMBINED_OUTPUT_BYTES: u32 = 176;
 const PARENT_OUTPUT_BYTES: u32 = 190;
 /// Calibration snapshot bytes both roots start with.
@@ -107,6 +107,12 @@ const COMBINED: [OutputField; 9] = [
     field("shared-rx-dc", 436, 94, 2, 34),
 ];
 /// Additional committed parent fields: power temperature, shared cache,
+/// `phy_param` guard bytes of the parent: a nonzero inhibit byte skips every
+/// child (the vendor ORs it with byte 0x17), and a nonzero calibration byte
+/// skips calibration tracking.
+const TRACKING_INHIBIT: usize = 0x195;
+const CALIBRATION_TRACKING_DISABLED: usize = 0x192;
+
 /// `phy_param` byte of the vendor Wi-Fi I2C tracking band: 0 nominal, 1 cold,
 /// 2 elevated, 3 hot.
 const I2C_BAND: usize = 77;
@@ -216,15 +222,21 @@ pub struct Case {
     pub previous_band: u8,
     /// Whether parent Bluetooth/802.15.4 TX-power tracking is enabled.
     pub power_tracking: bool,
+    /// Whether a vendor guard inhibits the whole parent.
+    pub inhibited: bool,
+    /// Whether the parent runs calibration tracking.
+    pub calibration_tracking: bool,
 }
 
 impl Case {
     fn label(&self, root: Root) -> String {
         format!(
-            "{root:?}-{}-band{}-power{}-wifi{}-bt{}-fill{:x}-rfpll{:?}",
+            "{root:?}-{}-band{}-power{}-inhibit{}-cal{}-wifi{}-bt{}-fill{:x}-rfpll{:?}",
             self.name,
             self.previous_band,
             u8::from(self.power_tracking),
+            u8::from(self.inhibited),
+            u8::from(self.calibration_tracking),
             u8::from(self.clients.0),
             u8::from(self.clients.1),
             self.fill,
@@ -249,6 +261,8 @@ impl Case {
             words.extend([
                 u16::from(self.previous_band),
                 u16::from(self.power_tracking),
+                u16::from(self.inhibited),
+                u16::from(self.calibration_tracking),
             ]);
         }
         words
@@ -279,6 +293,8 @@ impl Case {
             data[POWER_ENABLED] = u8::from(self.power_tracking);
             data[RFPLL_ENABLED] = u8::from(self.correction.is_some());
             data[I2C_BAND] = self.previous_band;
+            data[TRACKING_INHIBIT] = u8::from(self.inhibited);
+            data[CALIBRATION_TRACKING_DISABLED] = u8::from(!self.calibration_tracking);
         }
         if self.threshold < DEFAULT_THRESHOLD {
             data[THRESHOLD_OVERRIDE..THRESHOLD_OVERRIDE + 2]
@@ -645,35 +661,88 @@ pub fn cases(root: Root, rfpll: Option<i8>) -> Vec<Case> {
     // Parent cases that start from a retained band: each non-nominal band
     // held, and a nominal temperature leaving an elevated band;
     // and one with Bluetooth/802.15.4 TX-power tracking disabled.
-    let held: &[(&'static str, i16, u8, bool)] = if root == Root::Parent && rfpll.is_none() {
+    // the parent inhibited, and calibration tracking disabled where it is due
+    // (no RX calibration runs, so no DCODE reads are scripted).
+    type Held = (&'static str, [i16; 3], bool, u8, bool, bool, bool);
+    let held: &[Held] = if root == Root::Parent && rfpll.is_none() {
         &[
-            ("cold-held", -20, 1, true),
-            ("elevated-held", 55, 2, true),
-            ("hot-held", 95, 3, true),
-            ("nominal-from-elevated", 20, 2, true),
-            ("power-tracking-disabled", 106, 0, false),
-            ("power-tracking-disabled-cold", -61, 0, false),
+            ("cold-held", [-20; 3], false, 1, true, false, true),
+            ("elevated-held", [55; 3], false, 2, true, false, true),
+            ("hot-held", [95; 3], false, 3, true, false, true),
+            (
+                "nominal-from-elevated",
+                [20; 3],
+                false,
+                2,
+                true,
+                false,
+                true,
+            ),
+            (
+                "power-tracking-disabled",
+                [106; 3],
+                false,
+                0,
+                false,
+                false,
+                true,
+            ),
+            (
+                "power-tracking-disabled-cold",
+                [-61; 3],
+                false,
+                0,
+                false,
+                false,
+                true,
+            ),
+            ("inhibited", [40, 0, 0], false, 0, true, true, true),
+            (
+                "calibration-disabled",
+                [40, 0, 0],
+                false,
+                0,
+                true,
+                false,
+                false,
+            ),
         ]
     } else {
         &[]
     };
     let specs: Vec<_> = specs
         .into_iter()
-        .map(|(name, temperatures, rx, threshold)| (name, temperatures, rx, threshold, 0, true))
-        .chain(held.iter().map(|&(name, temperature, band, power)| {
-            (
-                name,
-                [temperature; 3],
-                false,
-                DEFAULT_THRESHOLD,
-                band,
-                power,
-            )
-        }))
+        .map(|(name, temperatures, rx, threshold)| {
+            (name, temperatures, rx, threshold, 0, true, false, true)
+        })
+        .chain(held.iter().map(
+            |&(name, temperatures, rx, band, power, inhibited, calibration)| {
+                (
+                    name,
+                    temperatures,
+                    rx,
+                    DEFAULT_THRESHOLD,
+                    band,
+                    power,
+                    inhibited,
+                    calibration,
+                )
+            },
+        ))
         .collect();
     let mut result = vec![];
     for clients in [(false, false), (true, false), (false, true), (true, true)] {
-        for &(name, temperatures, rx, threshold, previous_band, power_tracking) in &specs {
+        for &(
+            name,
+            temperatures,
+            rx,
+            threshold,
+            previous_band,
+            power_tracking,
+            inhibited,
+            calibration_tracking,
+        ) in &specs
+        {
             for fill in FILLS {
                 result.push(Case {
                     name,
@@ -685,6 +754,8 @@ pub fn cases(root: Root, rfpll: Option<i8>) -> Vec<Case> {
                     fill,
                     previous_band,
                     power_tracking,
+                    inhibited,
+                    calibration_tracking,
                 });
             }
         }
@@ -786,6 +857,8 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
                 fill,
                 previous_band: 0,
                 power_tracking: true,
+                inhibited: false,
+                calibration_tracking: true,
             };
             let input: Vec<u8> = profile
                 .inputs(root)
@@ -927,7 +1000,9 @@ mod tests {
     fn families_cover_clients_fills_and_parent_bands() {
         assert_eq!(cases(Root::Combined, None).len(), 4 * 10 * FILLS.len());
         let parent = cases(Root::Parent, None);
-        assert_eq!(parent.len(), 4 * (22 + 6) * FILLS.len());
+        assert_eq!(parent.len(), 4 * (22 + 8) * FILLS.len());
+        assert!(parent.iter().any(|c| c.inhibited));
+        assert!(parent.iter().any(|c| !c.calibration_tracking));
         assert!(parent.iter().any(|c| !c.power_tracking));
         assert!((1..=3).all(|band| parent.iter().any(|c| c.previous_band == band)));
         assert_eq!(cases(Root::Parent, Some(-5)).len(), 4 * 6 * FILLS.len());

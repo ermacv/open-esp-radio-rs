@@ -16,6 +16,9 @@ pub enum RadioEvent<'frame> {
         status: TxStatus,
         /// Optional received acknowledgement MAC bytes and metadata.
         acknowledgement: Option<ReceivedFrame<'frame>>,
+        /// The auxiliary security header fields the radio wrote into the
+        /// frame, `None` when it wrote none.
+        security: Option<AppliedSecurity>,
     },
     /// Terminal energy scan completion.
     EnergyScanDone {
@@ -85,6 +88,38 @@ pub enum FramePending {
     Unavailable,
 }
 
+/// Auxiliary security header fields a radio wrote into a frame it secured:
+/// what OpenThread reads back from a transmitted frame
+/// (`SubMac::SignalFrameCounterUsedOnTxDone`) or from the receive
+/// information of a frame acknowledged with a secured enhanced ACK
+/// (`mAckFrameCounter`, `mAckKeyId`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AppliedSecurity {
+    /// The frame counter the frame carries.
+    pub frame_counter: u32,
+    /// The key index of a key identifier mode 1 frame.
+    pub key_id: Option<u8>,
+}
+
+/// The acknowledgement the radio sent for a received frame, as ESP-IDF's
+/// OpenThread port reports it in the receive information
+/// (`mAckedWithFramePending`, `mAckedWithSecEnhAck`).
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct SentAcknowledgement {
+    /// The acknowledgement set the frame-pending bit.
+    pub frame_pending: bool,
+    /// The security of a secured enhanced acknowledgement.
+    pub security: Option<AppliedSecurity>,
+}
+
+impl SentAcknowledgement {
+    /// No acknowledgement information: frame pending clear, unsecured.
+    pub const NONE: Self = Self {
+        frame_pending: false,
+        security: None,
+    };
+}
+
 /// Backend-neutral receive metadata.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RxMetadata {
@@ -102,6 +137,8 @@ pub struct RxMetadata {
     pub security: SecurityStatus,
     /// Frame-pending observation when the frame is an acknowledgement.
     pub frame_pending: FramePending,
+    /// The acknowledgement the radio sent for the frame.
+    pub sent_acknowledgement: SentAcknowledgement,
 }
 
 /// One borrowed received MAC frame and its normalized metadata.

@@ -317,6 +317,7 @@ impl RadioStateMachine {
                     id,
                     status,
                     acknowledgement,
+                    ..
                 },
             ) => {
                 require_id(expected, id)?;

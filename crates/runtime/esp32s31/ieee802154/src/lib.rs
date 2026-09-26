@@ -40,9 +40,9 @@ use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
-    AcceptedCommand, AutoPendingMode, CommandError, Frame, MacKeys, PendingTable, RadioCommand,
-    RadioEvent, RadioFault, RadioState, ReceivedFrame, RequestId, RestingState, RxMetadata,
-    TxStatus,
+    AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, MacKeys, PendingTable,
+    RadioCommand, RadioEvent, RadioFault, RadioState, ReceivedFrame, RequestId, RestingState,
+    RxMetadata, TxStatus,
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
@@ -90,6 +90,8 @@ pub enum Ieee802154RadioEvent {
         status: TxStatus,
         /// The received acknowledgement.
         acknowledgement: Option<Ieee802154OwnedFrame>,
+        /// The security header fields the radio wrote into the frame.
+        security: Option<AppliedSecurity>,
     },
     /// Terminal energy scan completion.
     EnergyScanDone {
@@ -132,10 +134,12 @@ impl Ieee802154RadioEvent {
                 id,
                 status,
                 acknowledgement,
+                security,
             } => Self::TransmitDone {
                 id,
                 status,
                 acknowledgement: acknowledgement.map(Ieee802154OwnedFrame::copy),
+                security,
             },
             RadioEvent::EnergyScanDone { id, energy_dbm } => {
                 Self::EnergyScanDone { id, energy_dbm }
@@ -159,10 +163,12 @@ impl Ieee802154RadioEvent {
                 id,
                 status,
                 acknowledgement,
+                security,
             } => RadioEvent::TransmitDone {
                 id: *id,
                 status: *status,
                 acknowledgement: acknowledgement.as_ref().map(Ieee802154OwnedFrame::received),
+                security: *security,
             },
             Self::EnergyScanDone { id, energy_dbm } => RadioEvent::EnergyScanDone {
                 id: *id,

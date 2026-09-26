@@ -62,10 +62,17 @@ set. With keys the radio secures every attempt of a secured frame: a new
 frame counter unless the attempt retransmits the frame, the current key
 index and key, and in key identifier mode 1 the extended address as the
 nonce source; secured enhanced ACKs take their counter from the same keys.
-As in the port, a retransmission keeps its counter; the port takes a new
-one per retry only for a CSL receiver, which is not composed. Security the
-upper layer arms with `set_transmit_security` takes precedence for the next
-transmission, and without keys a secured frame goes out as given. Frames in
+As in the port, a retransmission keeps its counter and key index; the port
+takes a new counter per retry only for a CSL receiver, which is not composed.
+A request's `TxSecurity` carries the port's transmit information:
+`Retransmission` for the stack's own retransmission (`mIsARetx`) and
+`Processed` for a frame the stack already secured (`mIsSecurityProcessed`),
+which goes out as given. The transmit completion reports the frame counter
+and key index the radio wrote, which the port leaves in the stack's frame,
+and each received frame reports the frame-pending bit and the security of
+the acknowledgement it was sent. Security the upper layer arms with
+`set_transmit_security` takes precedence for the next transmission, and
+without keys a secured frame goes out as given. Frames in
 other key identifier modes reuse the address of the last mode 1
 transmission, as the port's shared `s_security_addr` does; unlike the port,
 secured enhanced ACKs do not refresh it.

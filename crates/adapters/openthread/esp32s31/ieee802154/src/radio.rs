@@ -8,7 +8,7 @@ use oer_esp32s31_ieee802154_runtime::{
 };
 use oer_ieee802154::{
     Channel, CommandError, Configuration, EnergyScanRequest, FrameView, RadioCommand, RadioState,
-    RequestId, TxMode, TxRequest,
+    RequestId, TxMode, TxRequest, TxSecurity,
 };
 use openthread::{
     Capabilities, Config, MacCapabilities, PsduMeta, Radio, RadioCaps, RadioErrorKind,
@@ -268,6 +268,7 @@ where
             mode,
             transmit_power_dbm: Some(power),
             max_frame_retries: 0,
+            security: TxSecurity::Radio,
         }))?;
         self.pending = Some(id);
         let terminal = self.terminal(id).await;

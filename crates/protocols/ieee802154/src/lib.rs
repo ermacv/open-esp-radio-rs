@@ -54,11 +54,11 @@ pub use mac::security::{MacKeys, TransmitSecurity};
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
 pub use radio::command::{
-    CommandKind, Configuration, EnergyScanRequest, RadioCommand, TxMode, TxRequest,
+    CommandKind, Configuration, EnergyScanRequest, RadioCommand, TxMode, TxRequest, TxSecurity,
 };
 pub use radio::event::{
-    FcsStatus, FramePending, RadioEvent, RadioFault, ReceivedFrame, RxMetadata, SecurityStatus,
-    TxStatus,
+    AppliedSecurity, FcsStatus, FramePending, RadioEvent, RadioFault, ReceivedFrame, RxMetadata,
+    SecurityStatus, SentAcknowledgement, TxStatus,
 };
 pub use radio::state::{
     AcceptedCommand, CommandError, EventError, RadioState, RadioStateMachine, RestingState,

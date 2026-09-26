@@ -29,11 +29,11 @@ use oer_esp32s31_ieee802154::engine::{
     Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,
 };
 use oer_ieee802154::{
-    AcceptedCommand, AttemptFailure, Channel, CommandError, Configuration, CsmaCa, FcsStatus,
-    FramePending, FrameRetries, FrameView, KeyIdMode, MacKeys, PhrFrame, RadioCapabilities,
-    RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine, RadioTimestamp,
-    ReceivedFrame, RequestId, RestingState, RetryStart, RxMetadata, SecurityStatus, TxMode,
-    TxStatus, generate_enhanced_ack,
+    AcceptedCommand, AppliedSecurity, AttemptFailure, Channel, CommandError, Configuration, CsmaCa,
+    FcsStatus, FramePending, FrameRetries, FrameVersion, FrameView, KeyIdMode, MacKeys, PhrFrame,
+    RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine,
+    RadioTimestamp, ReceivedFrame, RequestId, RestingState, RetryStart, RxMetadata, SecurityStatus,
+    SentAcknowledgement, TxMode, TxSecurity, TxStatus, generate_enhanced_ack,
 };
 
 /// The portable capabilities the role implements.
@@ -113,7 +113,7 @@ impl Ieee802154EnhancedAckGenerator {
         frame: &[u8; FRAME_SIZE],
         info: &Ieee802154FrameInfo,
         ack: &mut [u8; FRAME_SIZE],
-        keys: Option<&mut MacKeys>,
+        security: &mut RadioSecurity,
     ) -> Ieee802154EnhancedAck {
         // The PHR counts the RSSI and LQI bytes that replace the FCS.
         let length = usize::from(frame[0] & 0x7f);
@@ -129,10 +129,21 @@ impl Ieee802154EnhancedAckGenerator {
             return Ieee802154EnhancedAck::Refused;
         };
         let key = match generated.security() {
-            Some(_) => match keys.and_then(|keys| keys.secure(&mut generated)) {
-                Some(key) => Some(key),
-                None => return Ieee802154EnhancedAck::Refused,
-            },
+            Some(header) => {
+                let Some(keys) = security.keys.as_mut() else {
+                    return Ieee802154EnhancedAck::Refused;
+                };
+                let frame_counter = keys.frame_counter();
+                let Some(key) = keys.secure(&mut generated) else {
+                    return Ieee802154EnhancedAck::Refused;
+                };
+                // The port's `s_ack_frame_counter` and `s_ack_key_id`.
+                security.enhanced_ack = Some(AppliedSecurity {
+                    frame_counter,
+                    key_id: header.key_index,
+                });
+                Some(key)
+            }
             None => None,
         };
         let bytes = generated.bytes();
@@ -199,6 +210,10 @@ struct Transmission {
     security: Option<ArmedSecurity>,
     /// Whether the engine still holds `security`.
     armed: bool,
+    /// Who secures the frame when no security is armed.
+    tx_security: TxSecurity,
+    /// The security header fields an attempt wrote into the frame.
+    applied: Option<AppliedSecurity>,
     phase: Phase,
 }
 
@@ -262,16 +277,23 @@ impl Transmission {
                 engine.set_transmit_security(ll, self.image(), &security.key, &security.address);
             }
         } else if let Some(keys) = env.security.keys.as_mut()
+            && self.tx_security != TxSecurity::Processed
             && PhrFrame::new(self.image()).security_enabled()
         {
-            // The port's transmit security: a new frame counter unless this
-            // retransmits the frame, the current key index and key, and the
+            // The port's transmit security: a new frame counter and key index
+            // unless this retransmits the frame, the current key, and the
             // extended address read for key identifier mode 1.
-            let security = keys.transmit_security(self.retries.retries() > 0);
+            let retransmission =
+                self.tx_security == TxSecurity::Retransmission || self.retries.retries() > 0;
+            let security = keys.transmit_security(retransmission);
             let length = usize::from(self.image[0]) + 1;
-            if security.apply(&mut self.image[..length]) == Some(KeyIdMode::Index) {
+            let mode = security.apply(&mut self.image[..length]);
+            if mode == Some(KeyIdMode::Index) {
                 env.security.address =
                     ll.multipan_extended_address(Ieee802154MultipanIndex::CONTEXT0);
+            }
+            if let Some(applied) = mode.and_then(|mode| security.applied(mode)) {
+                self.applied = Some(applied);
             }
             engine.set_transmit_security(ll, self.image(), &security.key, &env.security.address);
         }
@@ -313,7 +335,7 @@ pub trait Ieee802154RadioSink {
 /// One engine notification the portable contract carries.
 #[derive(Clone, Copy)]
 enum Notification {
-    Received(Ieee802154RxSlot),
+    Received(Ieee802154RxSlot, SentAcknowledgement),
     Transmitted(Option<Ieee802154RxSlot>),
     TransmitFailed(Ieee802154TxError),
     EnergyDetected(i8),
@@ -342,6 +364,9 @@ struct RadioSecurity {
     /// The port's `s_security_addr`: the extended address of the last key
     /// identifier mode 1 transmission.
     address: [u8; 8],
+    /// The security of the enhanced ACK generated since the last received
+    /// frame (`s_with_security_enh_ack`).
+    enhanced_ack: Option<AppliedSecurity>,
 }
 
 type Notifications = [Option<Notification>; NOTIFICATIONS];
@@ -378,10 +403,21 @@ impl Ieee802154Environment for Collector<'_> {
     fn receive_done(
         &mut self,
         slot: Ieee802154RxSlot,
-        _frame: &[u8; FRAME_SIZE],
-        _info: &Ieee802154FrameInfo,
+        frame: &[u8; FRAME_SIZE],
+        info: &Ieee802154FrameInfo,
     ) {
-        self.push(Notification::Received(slot));
+        // `ot_radio_receive_done`: the secured enhanced ACK belongs to a
+        // 2015 frame that requested one; it is forgotten either way.
+        let frame = PhrFrame::new(frame);
+        let enhanced = frame.ack_required() && frame.version() == FrameVersion::V2015;
+        let security = self.security.enhanced_ack.take().filter(|_| enhanced);
+        self.push(Notification::Received(
+            slot,
+            SentAcknowledgement {
+                frame_pending: info.pending,
+                security,
+            },
+        ));
     }
 
     fn receive_sfd_done(&mut self) {}
@@ -417,7 +453,7 @@ impl Ieee802154Environment for Collector<'_> {
         ack: &mut [u8; FRAME_SIZE],
     ) -> Ieee802154EnhancedAck {
         match self.enhanced_ack {
-            Some(generator) => generator.generate(frame, info, ack, self.security.keys.as_mut()),
+            Some(generator) => generator.generate(frame, info, ack, self.security),
             None => Ieee802154EnhancedAck::Refused,
         }
     }
@@ -518,6 +554,7 @@ fn received_frame<'image>(
             fcs: FcsStatus::Valid,
             security: SecurityStatus::Unprocessed,
             frame_pending,
+            sent_acknowledgement: SentAcknowledgement::NONE,
         },
     })
 }
@@ -547,6 +584,7 @@ impl<'storage> Ieee802154Radio<'storage> {
             security: RadioSecurity {
                 keys: None,
                 address: [0; 8],
+                enhanced_ack: None,
             },
         }
     }
@@ -557,10 +595,15 @@ impl<'storage> Ieee802154Radio<'storage> {
     /// secured frame takes a new frame counter unless it retransmits the
     /// frame, and the current key index and key; the key identifier mode 1
     /// attempt reads the extended address as the nonce source, others reuse
-    /// the last one read. Secured enhanced ACKs take their counter from the
-    /// same keys. Security the upper layer arms with
-    /// [`Self::set_transmit_security`] takes precedence for the next
-    /// transmission; without keys a secured frame goes out as given.
+    /// the last one read. A request's [`TxSecurity`] says who secures it:
+    /// `Retransmission` keeps the counter and key index the frame carries
+    /// (`mIsARetx`), `Processed` sends a frame the stack secured as given
+    /// (`mIsSecurityProcessed`). The transmit completion reports the fields
+    /// written, and a received frame reports the security of the enhanced
+    /// ACK it was sent (`mAckFrameCounter`, `mAckKeyId`). Secured enhanced
+    /// ACKs take their counter from the same keys. Security the upper layer
+    /// arms with [`Self::set_transmit_security`] takes precedence for the
+    /// next transmission; without keys a secured frame goes out as given.
     pub fn mac_keys(&mut self) -> &mut Option<MacKeys> {
         &mut self.security.keys
     }
@@ -652,6 +695,8 @@ impl<'storage> Ieee802154Radio<'storage> {
                     retries: FrameRetries::new(request.max_frame_retries),
                     security,
                     armed: security.is_some(),
+                    tx_security: request.security,
+                    applied: None,
                     phase: Phase::Attempting,
                 };
                 transmission.start_access(engine, ll, &mut collector);
@@ -829,9 +874,10 @@ impl<'storage> Ieee802154Radio<'storage> {
             RadioState::Disabled | RadioState::Resting(_) => None,
         };
         match notification {
-            Notification::Received(slot) => {
+            Notification::Received(slot, sent) => {
                 let (image, info) = self.engine.rx_frame(slot);
-                if let Some(frame) = received_frame(&image, &info, false, flushed.flatten()) {
+                if let Some(mut frame) = received_frame(&image, &info, false, flushed.flatten()) {
+                    frame.metadata.sent_acknowledgement = sent;
                     let event = RadioEvent::Received(frame);
                     if flushed.is_some() || self.machine.observe(event).is_ok() {
                         sink.event(event);
@@ -850,6 +896,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                             acknowledgement: acknowledgement
                                 .as_ref()
                                 .and_then(|(image, info)| received_frame(image, info, true, None)),
+                            security: self.transmission.as_ref().and_then(|t| t.applied),
                         };
                         self.finish(event, sink)
                     }
@@ -883,6 +930,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                         id,
                         status,
                         acknowledgement: None,
+                        security: self.transmission.as_ref().and_then(|t| t.applied),
                     },
                     sink,
                 )

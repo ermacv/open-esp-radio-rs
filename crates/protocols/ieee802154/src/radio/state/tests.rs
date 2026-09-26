@@ -19,6 +19,7 @@ fn metadata(channel: Channel) -> RxMetadata {
         fcs: FcsStatus::Valid,
         security: SecurityStatus::Unprocessed,
         frame_pending: crate::FramePending::Unavailable,
+        sent_acknowledgement: Default::default(),
     }
 }
 
@@ -81,6 +82,7 @@ fn transmit_correlates_completion_and_restores_receive() {
         mode: TxMode::CsmaCa { max_backoffs: 4 },
         transmit_power_dbm: Some(3),
         max_frame_retries: 0,
+        security: Default::default(),
     };
     machine.admit(RadioCommand::Transmit(request)).unwrap();
     assert_eq!(
@@ -96,6 +98,7 @@ fn transmit_correlates_completion_and_restores_receive() {
             id: RequestId::new(6),
             status: TxStatus::Success,
             acknowledgement: None,
+            security: Default::default(),
         }),
         Err(EventError::RequestMismatch {
             expected: ID,
@@ -107,6 +110,7 @@ fn transmit_correlates_completion_and_restores_receive() {
             id: ID,
             status: TxStatus::Success,
             acknowledgement: None,
+            security: Default::default(),
         })
         .unwrap();
     assert_eq!(
@@ -147,6 +151,7 @@ fn acknowledgement_capability_is_derived_only_from_the_fcf() {
             mode: TxMode::Direct,
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: Default::default(),
         }))
         .unwrap();
 
@@ -160,6 +165,7 @@ fn acknowledgement_capability_is_derived_only_from_the_fcf() {
             mode: TxMode::Direct,
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: Default::default(),
         })),
         Err(CommandError::Unsupported {
             command: CommandKind::Transmit,
@@ -240,6 +246,7 @@ fn failed_transmit_cannot_publish_an_acknowledgement() {
             mode: TxMode::Direct,
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: Default::default(),
         }))
         .unwrap();
     let ack_bytes = [2];
@@ -255,6 +262,7 @@ fn failed_transmit_cannot_publish_an_acknowledgement() {
             id: ID,
             status: TxStatus::NoAcknowledgement,
             acknowledgement: Some(ack),
+            security: Default::default(),
         }),
         Err(EventError::AcknowledgementOnFailedTransmit)
     );
@@ -321,6 +329,7 @@ fn a_transmission_from_receive_mode_accepts_frames_on_its_channel() {
                 mode: TxMode::CsmaCa { max_backoffs: 4 },
                 transmit_power_dbm: None,
                 max_frame_retries: 0,
+                security: Default::default(),
             }))
             .unwrap();
     };
@@ -360,6 +369,7 @@ fn frame_retries_require_the_retry_capability() {
             mode: TxMode::Direct,
             transmit_power_dbm: None,
             max_frame_retries,
+            security: Default::default(),
         })
     };
     let mut machine = enabled(RadioCapabilities::NONE);

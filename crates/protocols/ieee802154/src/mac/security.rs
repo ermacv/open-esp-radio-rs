@@ -6,6 +6,7 @@
 
 use crate::mac::enhanced_ack::{EnhancedAck, KeyIdMode};
 use crate::mac::header::PhrFrame;
+use crate::radio::event::AppliedSecurity;
 
 const SECURITY_CONTROL_SIZE: usize = 1;
 const FRAME_COUNTER_SIZE: usize = 4;
@@ -109,8 +110,9 @@ impl MacKeys {
 pub struct TransmitSecurity {
     /// The frame counter written into the frame; `None` keeps the frame's.
     pub frame_counter: Option<u32>,
-    /// The key index a key identifier mode 1 frame carries.
-    pub key_id: u8,
+    /// The key index written into a key identifier mode 1 frame; `None`
+    /// keeps the frame's.
+    pub key_id: Option<u8>,
     /// The key the frame is secured with.
     pub key: [u8; 16],
 }
@@ -122,43 +124,76 @@ impl TransmitSecurity {
     /// frame's key identifier mode, or `None` when the image has no
     /// auxiliary security header to write.
     pub fn apply(&self, image: &mut [u8]) -> Option<KeyIdMode> {
-        let frame = PhrFrame::new(image);
-        if !frame.security_enabled() {
-            return None;
+        write_security_header(image, self.frame_counter, self.key_id)
+    }
+
+    /// The fields [`Self::apply`] wrote into a frame of `mode`: none when
+    /// the attempt kept the frame's counter.
+    pub fn applied(&self, mode: KeyIdMode) -> Option<AppliedSecurity> {
+        Some(AppliedSecurity {
+            frame_counter: self.frame_counter?,
+            key_id: match mode {
+                KeyIdMode::Index => self.key_id,
+                _ => None,
+            },
+        })
+    }
+}
+
+impl AppliedSecurity {
+    /// Write these fields into the `[PHR, MAC...]` image of the same secured
+    /// frame, as the radio wrote them into its copy. Returns `false` when
+    /// the image has no auxiliary security header to write.
+    pub fn write(&self, image: &mut [u8]) -> bool {
+        write_security_header(image, Some(self.frame_counter), self.key_id).is_some()
+    }
+}
+
+/// Write the frame counter and, in key identifier mode 1, the key index
+/// into the auxiliary security header of a secured `[PHR, MAC...]` image.
+fn write_security_header(
+    image: &mut [u8],
+    frame_counter: Option<u32>,
+    key_id: Option<u8>,
+) -> Option<KeyIdMode> {
+    let frame = PhrFrame::new(image);
+    if !frame.security_enabled() {
+        return None;
+    }
+    let offset = usize::from(frame.security_header_offset()?);
+    let control = *image.get(offset)?;
+    let mode_1 = control & KEY_ID_MODE_MASK == KEY_ID_MODE_1;
+    let key_index = offset + SECURITY_CONTROL_SIZE + FRAME_COUNTER_SIZE;
+    if image.len() <= key_index - 1 + usize::from(mode_1) {
+        return None;
+    }
+    if let Some(counter) = frame_counter {
+        image[offset + SECURITY_CONTROL_SIZE..key_index].copy_from_slice(&counter.to_le_bytes());
+    }
+    if mode_1 {
+        if let Some(key_id) = key_id {
+            image[key_index] = key_id;
         }
-        let offset = usize::from(frame.security_header_offset()?);
-        let control = *image.get(offset)?;
-        let mode_1 = control & KEY_ID_MODE_MASK == KEY_ID_MODE_1;
-        let key_index = offset + SECURITY_CONTROL_SIZE + FRAME_COUNTER_SIZE;
-        if image.len() <= key_index - 1 + usize::from(mode_1) {
-            return None;
-        }
-        if let Some(counter) = self.frame_counter {
-            image[offset + SECURITY_CONTROL_SIZE..key_index]
-                .copy_from_slice(&counter.to_le_bytes());
-        }
-        if mode_1 {
-            image[key_index] = self.key_id;
-            Some(KeyIdMode::Index)
-        } else {
-            Some(match control & KEY_ID_MODE_MASK {
-                0x00 => KeyIdMode::Implicit,
-                0x10 => KeyIdMode::Source4,
-                _ => KeyIdMode::Source8,
-            })
-        }
+        Some(KeyIdMode::Index)
+    } else {
+        Some(match control & KEY_ID_MODE_MASK {
+            0x00 => KeyIdMode::Implicit,
+            0x10 => KeyIdMode::Source4,
+            _ => KeyIdMode::Source8,
+        })
     }
 }
 
 impl MacKeys {
-    /// The security of one transmit attempt (`otPlatRadioTransmit`): a new
-    /// frame counter unless the attempt retransmits the frame, the current
-    /// key identifier and the current key. Every CCA attempt of a first
-    /// transmission is a transmit of its own and takes a new counter.
+    /// The security of one transmit attempt (`otPlatRadioTransmit`): unless
+    /// the attempt retransmits the frame, a new frame counter and the
+    /// current key identifier; the current key either way. Every CCA
+    /// attempt of a first transmission is a transmit of its own and takes a
+    /// new counter.
     pub fn transmit_security(&mut self, retransmission: bool) -> TransmitSecurity {
         TransmitSecurity {
             frame_counter: (!retransmission).then(|| self.take_frame_counter()),
-            key_id: self.key_id,
+            key_id: (!retransmission).then_some(self.key_id),
             key: self.current,
         }
     }

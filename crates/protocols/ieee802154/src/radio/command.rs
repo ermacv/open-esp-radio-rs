@@ -120,6 +120,25 @@ pub enum TxMode {
     },
 }
 
+/// Who secures a frame whose security-enabled bit is set, as the transmit
+/// information of OpenThread's `otRadioFrame` (`mIsSecurityProcessed`,
+/// `mIsARetx`) tells a radio that claims `OT_RADIO_CAPS_TRANSMIT_SEC`.
+///
+/// A radio without MAC keys transmits every frame as given.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum TxSecurity {
+    /// The radio secures the frame with its MAC keys and writes a new frame
+    /// counter and, in key identifier mode 1, its key index.
+    #[default]
+    Radio,
+    /// The frame retransmits one the radio secured: the radio secures it
+    /// again under the frame counter and key index it already carries.
+    Retransmission,
+    /// The upper layer already secured the frame; the radio transmits it
+    /// as given.
+    Processed,
+}
+
 /// Borrowed portable transmission request.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TxRequest<'frame> {
@@ -136,6 +155,8 @@ pub struct TxRequest<'frame> {
     /// Retransmissions after an attempt without acknowledgement or channel
     /// access (`macMaxFrameRetries`); zero sends the frame once.
     pub max_frame_retries: u8,
+    /// Who secures the frame when its security-enabled bit is set.
+    pub security: TxSecurity,
 }
 
 /// One bounded energy-detection scan request.

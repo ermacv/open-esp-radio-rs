@@ -164,6 +164,7 @@ fn a_transmission_completes_through_the_event_queue() {
             mode: TxMode::Direct,
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: Default::default(),
         }))
         .unwrap();
     runtime.interrupt(None, &[Ieee802154Event::TxDone]);
@@ -173,6 +174,7 @@ fn a_transmission_completes_through_the_event_queue() {
             id: RequestId::new(5),
             status: TxStatus::Success,
             acknowledgement: None,
+            security: Default::default(),
         })
     );
     assert_eq!(
@@ -359,6 +361,7 @@ fn a_running_operation_or_a_missing_radio_refuses_the_pause() {
             mode: TxMode::Direct,
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: Default::default(),
         }))
         .unwrap();
     assert_eq!(runtime.pause().err(), Some(Ieee802154PauseError::Busy));
@@ -425,6 +428,7 @@ fn next_event_runs_csma_ca_backoffs() {
             mode: TxMode::CsmaCa { max_backoffs: 3 },
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: Default::default(),
         }))
         .unwrap();
     let command = || {
@@ -459,6 +463,7 @@ fn next_event_runs_csma_ca_backoffs() {
             id: RequestId::new(5),
             status: TxStatus::Success,
             acknowledgement: None,
+            security: Default::default(),
         })
     );
 }
@@ -478,6 +483,7 @@ fn next_event_runs_retry_delays() {
             mode: TxMode::Direct,
             transmit_power_dbm: None,
             max_frame_retries: 1,
+            security: Default::default(),
         }))
         .unwrap();
     // The last MAC command, cleared once read.
@@ -516,6 +522,7 @@ fn next_event_runs_retry_delays() {
             id: RequestId::new(5),
             status: TxStatus::NoAcknowledgement,
             acknowledgement: None,
+            security: Default::default(),
         })
     );
 }
@@ -554,6 +561,7 @@ fn closed_rf_admission_refuses_commands_that_need_rf() {
             mode: TxMode::Direct,
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: Default::default(),
         }),
         RadioCommand::ClearChannelAssessment {
             id: RequestId::new(6),

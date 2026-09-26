@@ -15,8 +15,9 @@ use oer_esp32s31_hal::ieee802154::{
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
-    Channel, CommandError, Configuration, EnergyScanRequest, FramePending, FrameView, MacKeys,
-    RadioCommand, RadioEvent, RadioState, RequestId, RestingState, TxMode, TxRequest, TxStatus,
+    AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FramePending,
+    FrameView, MacKeys, RadioCommand, RadioEvent, RadioState, RequestId, RestingState,
+    SentAcknowledgement, TxMode, TxRequest, TxSecurity, TxStatus,
 };
 
 use super::{
@@ -52,11 +53,22 @@ enum Seen {
     Fault,
 }
 
+/// The delivered events, the security each transmission reported and the
+/// acknowledgement each received frame was sent.
 #[derive(Default)]
-struct Sink(Vec<Seen>);
+struct Sink(
+    Vec<Seen>,
+    Vec<Option<AppliedSecurity>>,
+    Vec<SentAcknowledgement>,
+);
 
 impl Ieee802154RadioSink for Sink {
     fn event(&mut self, event: RadioEvent<'_>) {
+        match event {
+            RadioEvent::Received(frame) => self.2.push(frame.metadata.sent_acknowledgement),
+            RadioEvent::TransmitDone { security, .. } => self.1.push(security),
+            _ => {}
+        }
         self.0.push(match event {
             RadioEvent::Received(frame) => Seen::Received {
                 mac: frame.frame.bytes().to_vec(),
@@ -66,6 +78,7 @@ impl Ieee802154RadioSink for Sink {
                 id,
                 status,
                 acknowledgement,
+                ..
             } => Seen::TransmitDone {
                 id,
                 status,
@@ -150,6 +163,7 @@ impl Bench {
             mode,
             transmit_power_dbm: None,
             max_frame_retries: 0,
+            security: Default::default(),
         }))
     }
 
@@ -453,6 +467,22 @@ fn a_secured_2015_frame_is_answered_with_a_secured_enhanced_ack() {
         }]
     );
     assert!(!bench.hw.transmit_security);
+    // The receive information of `ot_radio_receive_done`.
+    assert_eq!(
+        bench.sink.2,
+        [SentAcknowledgement {
+            frame_pending: true,
+            security: Some(AppliedSecurity {
+                frame_counter: 7,
+                key_id: Some(1)
+            })
+        }]
+    );
+
+    // The next frame was not answered with a secured ACK.
+    bench.deliver(&DATA);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert_eq!(bench.sink.2[1].security, None);
 }
 
 /// Without keys a secured 2015 frame gets no ACK and is delivered at once,
@@ -647,6 +677,7 @@ impl Bench {
             mode,
             transmit_power_dbm: None,
             max_frame_retries: retries,
+            security: Default::default(),
         }))
         .unwrap();
     }
@@ -823,4 +854,66 @@ fn armed_security_or_no_keys_leave_the_frame_as_given() {
     bench.transmit_retried(&SECURED_MODE_1, TxMode::Direct, 0);
     assert!(!bench.hw.transmit_security);
     assert_eq!(bench.transmitted_security(), ([0, 0, 0, 0], 0));
+}
+
+impl Bench {
+    fn transmit_secured(&mut self, mac: &[u8], security: TxSecurity) {
+        self.submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(3),
+            frame: FrameView::new(mac).unwrap(),
+            channel: channel(11),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+            max_frame_retries: 0,
+            security,
+        }))
+        .unwrap();
+    }
+}
+
+/// The transmission reports the frame counter and key index it wrote, also
+/// when no acknowledgement arrived, as the port leaves them in the stack's
+/// frame for `SubMac::SignalFrameCounterUsedOnTxDone`.
+#[test]
+fn a_transmission_reports_the_security_it_wrote() {
+    let mut bench = Bench::enabled();
+    *bench.radio.mac_keys() = Some(MacKeys::new(4, [1; 16], [2; 16], [3; 16], 100));
+    bench.transmit_secured(&SECURED_MODE_1, TxSecurity::Radio);
+    assert_eq!(bench.transmitted_security(), ([100, 0, 0, 0], 4));
+    bench.no_ack();
+    assert_eq!(
+        bench.sink.1,
+        [Some(AppliedSecurity {
+            frame_counter: 100,
+            key_id: Some(4)
+        })]
+    );
+
+    // Unsecured frames report nothing.
+    bench.transmit_secured(&DATA, TxSecurity::Radio);
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    assert_eq!(bench.sink.1[1], None);
+}
+
+/// The stack's retransmission (`mIsARetx`) is secured again under the
+/// counter and key index the frame carries; a frame the stack secured
+/// itself (`mIsSecurityProcessed`) goes out as given.
+#[test]
+fn stack_retransmissions_keep_their_counter_and_processed_frames_are_sent_as_given() {
+    let mut carried = SECURED_MODE_1;
+    carried[10..15].copy_from_slice(&[55, 0, 0, 0, 3]);
+
+    let mut bench = Bench::enabled();
+    *bench.radio.mac_keys() = Some(MacKeys::new(4, [1; 16], [2; 16], [3; 16], 100));
+    bench.transmit_secured(&carried, TxSecurity::Retransmission);
+    assert!(bench.hw.transmit_security);
+    assert_eq!(bench.transmitted_security(), ([55, 0, 0, 0], 3));
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    bench.tx_abort(Ieee802154TxAbortReason::RxAckTimeout);
+    assert_eq!(bench.sink.1, [None]);
+
+    bench.transmit_secured(&carried, TxSecurity::Processed);
+    assert!(!bench.hw.transmit_security);
+    assert_eq!(bench.transmitted_security(), ([55, 0, 0, 0], 3));
+    assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 100);
 }

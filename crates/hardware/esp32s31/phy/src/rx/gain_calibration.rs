@@ -919,7 +919,6 @@ pub enum PhyRxGainDcAction {
     },
     I2c(MaskedI2cWriteAction),
     Calibration(PhyRxDcCalibrationAction),
-    Minimum(PhyRxDcMinimumAction),
     ConfigurePbusWorkMode,
     DelayMicros {
         phase: PhyRxGainDcDelayPhase,
@@ -957,7 +956,6 @@ pub enum PhyRxGainDcCompletion {
     },
     I2c(MaskedI2cWriteCompletion),
     Calibration(PhyRxDcCalibrationCompletion),
-    Minimum(PhyRxDcMinimumCompletion),
     PbusWorkModeConfigured {
         settle_required: bool,
     },
@@ -2428,22 +2426,13 @@ pub enum PhyRxGainDcExternalBinding {
     Pbus(PhyRxGainDcPbusBinding),
     I2c(crate::analog::i2c::MaskedI2cWriteBinding),
     Calibration(PhyRxDcCalibrationExternalBinding),
-    Minimum(crate::rx::dc_offset::PhyRxDcMinimumExternalBinding),
     Timer(PhyRxGainDcTimerBinding),
 }
 
 impl PhyRxGainDcExternalBinding {
     pub fn lower(action: PhyRxGainDcAction) -> Result<Self, PhyRxGainCalibrationBindingError> {
-        match action {
-            PhyRxGainDcAction::Calibration(action) => {
-                return PhyRxDcCalibrationExternalBinding::lower(action).map(Self::Calibration);
-            }
-            PhyRxGainDcAction::Minimum(action) => {
-                return crate::rx::dc_offset::PhyRxDcMinimumExternalBinding::lower(action)
-                    .map(Self::Minimum)
-                    .map_err(|_| PhyRxGainCalibrationBindingError::UnsupportedAction);
-            }
-            _ => {}
+        if let PhyRxGainDcAction::Calibration(action) = action {
+            return PhyRxDcCalibrationExternalBinding::lower(action).map(Self::Calibration);
         }
         if let Ok(binding) = PhyRxGainDcMmioBinding::new(action) {
             return Ok(Self::Mmio(binding));

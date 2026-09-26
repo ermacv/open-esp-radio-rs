@@ -269,7 +269,10 @@ impl PhyBluetoothTxGainChild {
     }
 
     /// Execute the complete child as one blocking target transaction.
-    #[cfg(target_arch = "riscv32")]
+    ///
+    /// Production steps this child inside the TX-gain initialization graph;
+    /// only the standalone vendor comparison executes it alone.
+    #[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
     pub fn execute_target<D: crate::target_executor::PhyShortDelay>(
         mut self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,

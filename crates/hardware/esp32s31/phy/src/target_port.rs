@@ -1382,9 +1382,6 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                     Self::complete_rx_dc_calibration(binding, registers).await?,
                 ))
             }
-            PhyRxGainDcExternalBinding::Minimum(binding) => Ok(PhyRxGainDcCompletion::Minimum(
-                Self::complete_rx_dc_minimum(binding, registers).await?,
-            )),
             PhyRxGainDcExternalBinding::Timer(binding) => {
                 D::after_micros(Kind::Settle, u64::from(binding.micros())).await;
                 Ok(binding.into_completion())

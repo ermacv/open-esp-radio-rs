@@ -1,0 +1,34 @@
+[package]
+name = "oer-esp32s31-ieee802154-openthread"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OpenThread radio for the ESP32-S31 IEEE 802.15.4 runtime"
+
+[dependencies]
+embassy-sync = "0.8.0"
+heapless = "0.9.3"
+oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
+oer-esp32s31-ieee802154-runtime = { path = "../../../../runtime/esp32s31/ieee802154" }
+oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
+
+# OpenThread is built from source for the chip target only; host builds of
+# the workspace do not compile its C library.
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+openthread = { version = "0.4.0", default-features = false }
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+# The OpenThread radio exists only for the chip target; document it there alone.
+default-target = "riscv32imafc-unknown-none-elf"
+targets = []
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "adapter"
+platform = "chip"
+chip = "esp32s31"

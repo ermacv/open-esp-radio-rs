@@ -642,7 +642,7 @@ section = "ieee802154-product-stacks"
 title = "Thread"
 status = "host-only"
 level = "composed-product"
-scope-and-limitations = "Network/upper-MAC stack integration requires an adequate radio backend; this matrix does not claim a production Thread integration."
+scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) implements the openthread crate's Radio over the runtime, with OpenThread's SubMac running CSMA/CA, retries and security. No composition runs an OpenThread instance, and this matrix does not claim a production Thread integration."
 
 [[items]]
 id = "ieee802154-product-stacks-zigbee"

@@ -12,11 +12,12 @@ use core::{
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
+use oer_network_interface::NetworkInterfaceId;
 
 use crate::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
     DatapathRxWorkCounters, DatapathServices, SelectedBurstMaterializer, SoftwareTxFrame,
-    WifiTxProgress, WifiTxWake, network::DatapathNetworkRxSet,
+    TxBatchDemand, WifiTxProgress, WifiTxWake, network::DatapathNetworkRxSet,
 };
 
 /// One bounded RX owner spanning physical descriptor service and any
@@ -184,8 +185,12 @@ where
         false
     }
 
-    fn preferred_batch_size(&self) -> usize {
-        1
+    /// Aggregation demand of this role's next network batch.
+    fn batch_demand<I>(&self, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
+        TxBatchDemand::single(self.prepared_frame_count() + network.queue_len())
     }
 
     fn prepared_frame_count(&self) -> usize {
@@ -534,8 +539,11 @@ where
         self.role.tx.has_prepared()
     }
 
-    fn preferred_tx_batch_size(&self) -> usize {
-        self.role.tx.preferred_batch_size()
+    fn tx_batch_demand<I>(&self, _interface: NetworkInterfaceId, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
+        self.role.tx.batch_demand(network)
     }
 
     fn prepared_tx_frame_count(&self) -> usize {

@@ -239,7 +239,7 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
         self.mac.has_operational_tx_block_ack()
     }
 
-    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
-        self.mac.smallest_operational_tx_block_ack_window()
+    pub fn operational_tx_block_ack_window(&self, peer: [u8; 6]) -> Option<u16> {
+        self.mac.operational_tx_block_ack_window(peer)
     }
 }

@@ -349,8 +349,11 @@ where
         self.has_prepared_network_tx()
     }
 
-    fn preferred_batch_size(&self) -> usize {
-        self.preferred_network_batch_size()
+    fn batch_demand<I>(&self, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = B>,
+    {
+        self.network_batch_demand(network.queue_len())
     }
 
     fn prepared_frame_count(&self) -> usize {

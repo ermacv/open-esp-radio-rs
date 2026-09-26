@@ -283,10 +283,8 @@ where
         self.mac.engine().has_operational_tx_block_ack()
     }
 
-    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
-        self.mac
-            .engine()
-            .smallest_operational_tx_block_ack_window()
+    pub fn operational_tx_block_ack_window(&self, peer: [u8; 6]) -> Option<u16> {
+        self.mac.engine().operational_tx_block_ack_window(peer)
     }
 
     pub const fn tx_pending(&self) -> bool {

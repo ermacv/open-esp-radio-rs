@@ -6,8 +6,10 @@
 //! Embassy DATAPATH binding for one active AP role.
 
 use crate::datapath::{
-    MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame, rx::turn::FusedRxTurn,
+    MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame, TxBatchDemand,
+    rx::turn::FusedRxTurn,
 };
+use oer_network_interface::NetworkInterfaceId;
 
 use super::*;
 
@@ -927,10 +929,31 @@ where
         }
     }
 
-    fn preferred_tx_batch_size(&self) -> usize {
-        access_point_tx_batch_target(
-            self.control.smallest_operational_tx_block_ack_window(),
-            AMPDU_SLOTS,
+    fn classify_network_tx<I>(
+        &mut self,
+        _interface: NetworkInterfaceId,
+        network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    {
+        self.network_tx
+            .classify_network_backlog(self.control.mac.engine_mut(), network)
+    }
+
+    fn tx_batch_demand<I>(&self, _interface: NetworkInterfaceId, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    {
+        let engine = self.control.mac.engine();
+        self.network_tx.batch_demand(
+            |destination| {
+                access_point_tx_batch_target(
+                    engine.operational_tx_block_ack_window(destination),
+                    AMPDU_SLOTS,
+                )
+            },
+            network,
         )
     }
 }

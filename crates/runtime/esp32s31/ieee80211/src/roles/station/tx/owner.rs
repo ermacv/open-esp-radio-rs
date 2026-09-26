@@ -383,12 +383,17 @@ where
             || self.standby_error.is_some()
     }
 
-    pub fn preferred_network_batch_size(&self) -> usize {
-        (0_u8..8)
-            .map(|tid| self.aggregate_frame_limit(tid))
-            .max()
-            .unwrap_or(0)
-            .max(1)
+    /// Every station MPDU is addressed to its AP, so one aggregation target
+    /// covers the prepared standby and all `queued` source owners.
+    pub fn network_batch_demand(&self, queued: usize) -> TxBatchDemand {
+        TxBatchDemand {
+            target: (0_u8..8)
+                .map(|tid| self.aggregate_frame_limit(tid))
+                .max()
+                .unwrap_or(0)
+                .max(1),
+            ready: self.prepared_network_frame_count() + queued,
+        }
     }
 
     pub fn prepared_network_frame_count(&self) -> usize {

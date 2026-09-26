@@ -391,17 +391,18 @@ where
                 let interface = self
                     .next_network_tx_interface()
                     .expect("pending network TX has one VIF owner");
-                let preferred = self.services.preferred_tx_batch_size_for(interface);
-                let available = self
-                    .services
-                    .prepared_tx_frame_count()
-                    .saturating_add(self.network.tx_queue_len(interface));
+                let network_tx = self.network.tx_consumer(interface);
+                // Classified owners are retained by this VIF and take
+                // precedence at the next turn. Like standby preparation,
+                // classification yields while the other VIF has queued TX.
+                if !self.competing_tx_pending(interface) {
+                    self.services.classify_network_tx(interface, &network_tx)?;
+                }
+                let demand = self.services.tx_batch_demand(interface, &network_tx);
+                drop(network_tx);
                 let slot = self.tx_batch_state_slot(interface);
-                wait_for_batch_until = self.tx_batch_states[slot].collection_deadline(
-                    preferred,
-                    available,
-                    Instant::now(),
-                );
+                wait_for_batch_until =
+                    self.tx_batch_states[slot].collection_deadline(demand, Instant::now());
 
                 if wait_for_batch_until.is_none() {
                     // A partial standby arena and newly queued frames form

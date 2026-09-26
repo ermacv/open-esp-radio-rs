@@ -25,7 +25,9 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use crate::datapath::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
+use crate::datapath::{
+    MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame, TxBatchDemand,
+};
 
 use oer_esp32s31_hal::types::MacInterface;
 

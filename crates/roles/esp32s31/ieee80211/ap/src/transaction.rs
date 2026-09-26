@@ -320,8 +320,8 @@ impl<'beacon> ApMacParked<'beacon> {
         self.engine.has_operational_tx_block_ack()
     }
 
-    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
-        self.engine.smallest_operational_tx_block_ack_window()
+    pub fn operational_tx_block_ack_window(&self, peer: [u8; 6]) -> Option<u16> {
+        self.engine.operational_tx_block_ack_window(peer)
     }
 }
 

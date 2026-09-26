@@ -26,7 +26,7 @@ use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
 use crate::{
     datapath::{
         DatapathControlContext, DatapathControlProgress, DatapathRxProgress, MaterializedTxFrame,
-        PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame, WifiTxProgress,
+        PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame, TxBatchDemand, WifiTxProgress,
         network::DatapathNetworkRx,
         paired::{
             DatapathPairRole, DatapathPairedNetworkTxService, DatapathPairedPhysicalTx,
@@ -1174,10 +1174,24 @@ where
             .is_some_and(ConnectedTx::has_prepared_network_tx)
     }
 
-    fn preferred_batch_size(&self) -> usize {
-        self.tx()
-            .active()
-            .map_or(1, ConnectedTx::preferred_network_batch_size)
+    fn batch_demand<I>(&self, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
+        self.tx().active().map_or_else(
+            || TxBatchDemand::single(network.queue_len()),
+            |tx| tx.network_batch_demand(network.queue_len()),
+        )
     }
 
     fn prepared_frame_count(&self) -> usize {
@@ -1467,8 +1481,11 @@ where
         self.tx().has_prepared()
     }
 
-    fn preferred_batch_size(&self) -> usize {
-        self.tx().preferred_batch_size()
+    fn batch_demand<I>(&self, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
+        self.tx().batch_demand(network)
     }
 
     fn prepared_frame_count(&self) -> usize {

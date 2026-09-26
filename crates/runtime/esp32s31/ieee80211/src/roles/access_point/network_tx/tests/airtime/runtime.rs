@@ -3,7 +3,7 @@
 use super::*;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
-mod fifo;
+use super::super::fifo;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Case {

@@ -1051,7 +1051,8 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
         1,
         "AP requests only the source-owned baseline A-MSDU class"
     );
-    assert_eq!(service.smallest_operational_tx_block_ack_window(), None);
+    assert_eq!(service.operational_tx_block_ack_window(PEER), None);
+    assert!(!service.has_operational_tx_block_ack());
     assert!(service.begin_tx_block_ack(PEER, 101).unwrap().is_none());
     assert!(service.begin_tx_block_ack(OTHER, 101).unwrap().is_none());
     let response = BlockAckAction::AddbaResponse {
@@ -1084,9 +1085,11 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
     );
     assert!(service.peer_status(OTHER).unwrap().tx_block_ack.is_none());
     assert_eq!(
-        service.smallest_operational_tx_block_ack_window(),
+        service.operational_tx_block_ack_window(PEER),
         Some(AP_TX_BLOCK_ACK_WINDOW)
     );
+    assert_eq!(service.operational_tx_block_ack_window(OTHER), None);
+    assert!(service.has_operational_tx_block_ack());
 
     service
         .on_tx_block_ack_action(
@@ -1103,9 +1106,11 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
         "peer-originated RX DELBA cannot revoke the AP-originated TX agreement"
     );
     assert_eq!(
-        service.smallest_operational_tx_block_ack_window(),
+        service.operational_tx_block_ack_window(PEER),
         Some(AP_TX_BLOCK_ACK_WINDOW)
     );
+    assert_eq!(service.operational_tx_block_ack_window(OTHER), None);
+    assert!(service.has_operational_tx_block_ack());
 
     service
         .on_tx_block_ack_action(
@@ -1118,7 +1123,8 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
         )
         .unwrap();
     assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_none());
-    assert_eq!(service.smallest_operational_tx_block_ack_window(), None);
+    assert_eq!(service.operational_tx_block_ack_window(PEER), None);
+    assert!(!service.has_operational_tx_block_ack());
 
     let request = service.begin_tx_block_ack(PEER, 200).unwrap().unwrap();
     let response = BlockAckAction::AddbaResponse {

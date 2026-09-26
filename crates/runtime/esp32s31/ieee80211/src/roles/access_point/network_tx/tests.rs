@@ -4,6 +4,10 @@ use super::{
 };
 
 #[cfg(feature = "owned-network")]
+mod batch_demand;
+#[cfg(feature = "owned-network")]
+mod fifo;
+#[cfg(feature = "owned-network")]
 mod power_save_admission;
 #[cfg(feature = "owned-network")]
 mod selection;

@@ -1,7 +1,10 @@
 //! Bounded lease storage and per-flow selection over one shared arena.
 
 use crate::{
-    datapath::software_tx_queue::{IndexedLeaseArena, RoundRobinTxQueues},
+    datapath::{
+        TxBatchDemand,
+        software_tx_queue::{IndexedLeaseArena, RoundRobinTxQueues},
+    },
     diagnostics::aggregate_tx::NetworkTxRetentionDropReason,
 };
 
@@ -394,6 +397,112 @@ where
             self.discard_retention(NetworkTxRetentionDropReason::ActiveQueueFull, frame);
         }
         Ok(())
+    }
+
+    /// Move a FIFO source's visible backlog into per-destination retention.
+    ///
+    /// Each owner leaves the source only after its retention credit is known
+    /// to exist, so a full arena leaves the remaining backlog in place. A
+    /// source with destination queues is already classified and stays intact.
+    pub(in super::super) fn classify_network_backlog(
+        &mut self,
+        engine: &mut ApEngine<'_>,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    ) -> Result<(), AccessPointDatapathError> {
+        if network.destination_queues().is_some() {
+            return Ok(());
+        }
+        for _ in 0..network.queue_len() {
+            if self.frame_arena.remaining_capacity() == 0 {
+                break;
+            }
+            let Some(frame) = network.try_take() else {
+                break;
+            };
+            self.retain_active_frame(engine, frame)?;
+        }
+        Ok(())
+    }
+
+    /// Aggregation demand of the next network batch.
+    ///
+    /// A staged successor fixes its destination. Otherwise the batch is
+    /// complete as soon as any destination holds its own target, so a peer
+    /// without a Block Ack agreement or group traffic is never delayed for
+    /// another peer's aggregate. An owner still unclassified in a FIFO source
+    /// has no known destination and is never delayed either.
+    pub(in super::super) fn batch_demand(
+        &self,
+        target_for: impl Fn([u8; 6]) -> usize,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    ) -> TxBatchDemand {
+        if self.prepared_group_release.is_some()
+            || self.prepared_buffered_release.is_some()
+            || self.awake_buffered_peer.is_some()
+        {
+            return TxBatchDemand::single(self.prepared_frame_count().max(1));
+        }
+        let queues = network.destination_queues();
+        let source_for = |destination| queues.map_or(0, |queues| queues.pending_for(destination));
+        let unclassified = if queues.is_some() {
+            0
+        } else {
+            network.queue_len()
+        };
+        let retained_for = |destination| {
+            self.active_frames
+                .heads()
+                .filter(|(key, _)| key.destination == destination)
+                .map(|(key, _)| self.active_frames.len_for(key))
+                .sum::<usize>()
+        };
+        if let Some(destination) = self.prepared_destination() {
+            let staged = self.prepared_standby.as_ref().map_or_else(
+                || self.prepared_frame_count(),
+                |batch| batch.admitted + retained_for(destination),
+            );
+            return TxBatchDemand {
+                target: target_for(destination),
+                ready: staged + source_for(destination) + unclassified,
+            };
+        }
+
+        let demand_for = |destination| TxBatchDemand {
+            target: target_for(destination),
+            ready: retained_for(destination) + source_for(destination),
+        };
+        let mut fullest: Option<TxBatchDemand> = None;
+        let mut consider = |demand: TxBatchDemand| {
+            if demand.complete() {
+                return Some(demand);
+            }
+            if fullest.is_none_or(|fullest| demand.ready > fullest.ready) {
+                fullest = Some(demand);
+            }
+            None
+        };
+        for (key, _) in self.active_frames.heads() {
+            if let Some(complete) = consider(demand_for(key.destination)) {
+                return complete;
+            }
+        }
+        if let Some(queues) = queues {
+            // Strictly increasing addresses bound one pass over the source.
+            let mut previous = None;
+            while let Some((destination, _)) = queues.next_head_after(previous) {
+                if previous.is_some_and(|last| destination <= last) {
+                    break;
+                }
+                previous = Some(destination);
+                if let Some(complete) = consider(demand_for(destination)) {
+                    return complete;
+                }
+            }
+        }
+        if unclassified != 0 {
+            return TxBatchDemand::single(unclassified);
+        }
+        fullest.unwrap_or(TxBatchDemand::single(0))
     }
 
     pub(super) fn take_matching_active_or_network(

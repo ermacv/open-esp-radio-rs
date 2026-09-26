@@ -60,6 +60,30 @@ const TX_BURST_ENTRY_GAP: Duration = Duration::from_millis(2);
 const TX_BURST_QUIET_TIMEOUT: Duration = Duration::from_millis(4);
 const RX_TX_FAIRNESS_QUANTUM_FRAMES: u32 = 8;
 
+/// Aggregation demand of the next network batch of one logical interface.
+///
+/// `target` is the number of MPDUs worth collecting for the destination the
+/// batch would serve: its negotiated Block Ack window, or one for a peer
+/// without an operational agreement and for group traffic. `ready` counts the
+/// owners already visible for that destination. A scheduler waits for more
+/// frames only while the demand is incomplete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TxBatchDemand {
+    pub target: usize,
+    pub ready: usize,
+}
+
+impl TxBatchDemand {
+    /// Demand without a destination worth aggregating for.
+    pub const fn single(ready: usize) -> Self {
+        Self { target: 1, ready }
+    }
+
+    pub const fn complete(self) -> bool {
+        self.ready >= self.target
+    }
+}
+
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 static RECYCLED_RX_PROBE_DELAY_MICROS: AtomicU32 = AtomicU32::new(0);
 #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -163,15 +187,14 @@ impl TxBatchState {
 
     /// Return a bounded collection deadline only after queue history proves a
     /// burst. The first frame after a quiet period always remains immediate.
-    fn collection_deadline(
-        &mut self,
-        preferred: usize,
-        ready_frames: usize,
-        now: Instant,
-    ) -> Option<Instant> {
-        if preferred <= 1 || ready_frames == 0 || ready_frames >= preferred {
+    fn collection_deadline(&mut self, demand: TxBatchDemand, now: Instant) -> Option<Instant> {
+        let TxBatchDemand {
+            target,
+            ready: ready_frames,
+        } = demand;
+        if target <= 1 || ready_frames == 0 || demand.complete() {
             self.collection_deadline = None;
-            if ready_frames >= preferred && preferred > 1 {
+            if demand.complete() && target > 1 {
                 self.burst = true;
             }
             return None;
@@ -511,18 +534,29 @@ where {
         false
     }
 
-    /// Preferred number of MPDUs visible before starting a network batch.
-    /// Non-aggregate services keep the default immediate single-frame path.
-    fn preferred_tx_batch_size(&self) -> usize {
-        1
+    /// Move a source's visible backlog into role-owned per-destination
+    /// retention, so [`Self::tx_batch_demand`] can attribute every owner to its
+    /// destination. Sources that expose destination queues need no such step;
+    /// roles without destination-dependent aggregation leave the source intact.
+    fn classify_network_tx<I>(
+        &mut self,
+        _interface: NetworkInterfaceId,
+        _network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
+        Ok(())
     }
 
-    /// Preferred batch for a concrete logical interface before its first
-    /// frame is claimed. Standalone services use one policy; paired services
-    /// override this to preserve independent STA/AP aggregation contracts.
-    fn preferred_tx_batch_size_for(&self, interface: NetworkInterfaceId) -> usize {
-        let _ = interface;
-        self.preferred_tx_batch_size()
+    /// Aggregation demand of the next network batch of `interface`, before
+    /// its first frame is claimed. Non-aggregate services keep the default
+    /// immediate single-frame path.
+    fn tx_batch_demand<I>(&self, _interface: NetworkInterfaceId, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
+        TxBatchDemand::single(self.prepared_tx_frame_count() + network.queue_len())
     }
 
     /// MPDUs already retained in the software-owned standby arena.
@@ -636,3 +670,5 @@ mod service;
 
 #[cfg(all(test, feature = "owned-network"))]
 mod owned_tests;
+#[cfg(test)]
+mod tests;

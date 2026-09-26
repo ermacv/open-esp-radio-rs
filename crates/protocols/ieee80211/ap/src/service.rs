@@ -619,7 +619,7 @@ pub struct AccessPointService<'peers> {
     buffered_group_frames: u16,
     buffered_group_release_generation: u32,
     buffered_group_release_in_flight: bool,
-    smallest_operational_tx_block_ack_window: Option<u16>,
+    operational_tx_block_ack: bool,
 }
 
 /// Credential ownership for one AP epoch. Open deliberately has no PMK, GTK
@@ -657,7 +657,7 @@ impl<'peers> AccessPointService<'peers> {
             buffered_group_frames: 0,
             buffered_group_release_generation: 0,
             buffered_group_release_in_flight: false,
-            smallest_operational_tx_block_ack_window: None,
+            operational_tx_block_ack: false,
         }
     }
 
@@ -686,7 +686,7 @@ impl<'peers> AccessPointService<'peers> {
             buffered_group_frames: 0,
             buffered_group_release_generation: 0,
             buffered_group_release_in_flight: false,
-            smallest_operational_tx_block_ack_window: None,
+            operational_tx_block_ack: false,
         }
     }
 
@@ -782,17 +782,23 @@ impl<'peers> AccessPointService<'peers> {
         }
     }
 
-    pub fn has_operational_tx_block_ack(&self) -> bool {
-        self.smallest_operational_tx_block_ack_window().is_some()
+    pub const fn has_operational_tx_block_ack(&self) -> bool {
+        self.operational_tx_block_ack
     }
 
-    /// Smallest currently operational downlink Block Ack window.
+    /// Operational downlink Block Ack window of one peer.
     ///
-    /// A scheduler choosing a batch before it inspects the destination peer
-    /// must not wait for more frames than any operational peer can admit. The
-    /// per-peer agreement remains authoritative when the aggregate is built.
-    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
-        self.smallest_operational_tx_block_ack_window
+    /// A scheduler collecting a batch for this destination must not wait for
+    /// more frames than its agreement admits; a peer without an operational
+    /// agreement (or a group destination) receives single MPDUs.
+    pub fn operational_tx_block_ack_window(&self, peer: [u8; 6]) -> Option<u16> {
+        self.storage()
+            .peers
+            .iter()
+            .flatten()
+            .find(|existing| existing.address == peer)
+            .and_then(|existing| existing.tx_block_ack.operational())
+            .map(|agreement| agreement.window)
     }
 
     pub const fn associated_count(&self) -> u8 {
@@ -837,7 +843,7 @@ impl<'peers> AccessPointService<'peers> {
     fn revise_status(&mut self) {
         let mut associated = 0_u8;
         let mut authorized = 0_u8;
-        let mut smallest_window = None;
+        let mut operational_tx_block_ack = false;
         for peer in self.storage().peers.iter().flatten() {
             if matches!(peer.phase, ApPeerPhase::Securing | ApPeerPhase::Authorized) {
                 associated = associated.saturating_add(1);
@@ -845,15 +851,11 @@ impl<'peers> AccessPointService<'peers> {
             if peer.phase == ApPeerPhase::Authorized {
                 authorized = authorized.saturating_add(1);
             }
-            if let Some(agreement) = peer.tx_block_ack.operational() {
-                smallest_window = Some(smallest_window.map_or(agreement.window, |current: u16| {
-                    current.min(agreement.window)
-                }));
-            }
+            operational_tx_block_ack |= peer.tx_block_ack.operational().is_some();
         }
         self.associated_count = associated;
         self.authorized_count = authorized;
-        self.smallest_operational_tx_block_ack_window = smallest_window;
+        self.operational_tx_block_ack = operational_tx_block_ack;
         self.status_revision = self.status_revision.wrapping_add(1);
     }
 

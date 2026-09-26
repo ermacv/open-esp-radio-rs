@@ -18,7 +18,7 @@ use oer_network_interface::NetworkInterfaceId;
 use super::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
     DatapathRxWorkCounters, DatapathServices, DatapathStopProgress, SelectedBurstMaterializer,
-    SoftwareTxFrame, WifiTxProgress, WifiTxWake,
+    SoftwareTxFrame, TxBatchDemand, WifiTxProgress, WifiTxWake,
     network::{DatapathNetworkRx, DatapathNetworkRxSet},
 };
 
@@ -470,8 +470,21 @@ where
         false
     }
 
-    fn preferred_batch_size(&self) -> usize {
-        1
+    /// Move a FIFO source's backlog into role-owned per-destination
+    /// retention before [`Self::batch_demand`] inspects it.
+    fn classify_network<I>(&mut self, _network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
+        Ok(())
+    }
+
+    /// Aggregation demand of this role's next network batch.
+    fn batch_demand<I>(&self, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
+        TxBatchDemand::single(self.prepared_frame_count() + network.queue_len())
     }
 
     fn prepared_frame_count(&self) -> usize {
@@ -915,20 +928,33 @@ where
         unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared()).is_some()
     }
 
-    fn preferred_tx_batch_size(&self) -> usize {
-        match self.prepared.or_else(|| {
-            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
-        }) {
-            Some(DatapathPairRole::First) => self.first_tx.preferred_batch_size(),
-            Some(DatapathPairRole::Second) => self.second_tx.preferred_batch_size(),
-            None => 1,
+    fn classify_network_tx<I>(
+        &mut self,
+        interface: NetworkInterfaceId,
+        network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
+        match self.role_for(interface) {
+            DatapathPairRole::First => self
+                .first_tx
+                .classify_network(network)
+                .map_err(DatapathPairedServiceError::FirstTx),
+            DatapathPairRole::Second => self
+                .second_tx
+                .classify_network(network)
+                .map_err(DatapathPairedServiceError::SecondTx),
         }
     }
 
-    fn preferred_tx_batch_size_for(&self, interface: NetworkInterfaceId) -> usize {
+    fn tx_batch_demand<I>(&self, interface: NetworkInterfaceId, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         match self.role_for(interface) {
-            DatapathPairRole::First => self.first_tx.preferred_batch_size(),
-            DatapathPairRole::Second => self.second_tx.preferred_batch_size(),
+            DatapathPairRole::First => self.first_tx.batch_demand(network),
+            DatapathPairRole::Second => self.second_tx.batch_demand(network),
         }
     }
 

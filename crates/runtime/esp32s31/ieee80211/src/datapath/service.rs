@@ -195,14 +195,18 @@ where
         if !self.services.prepared_tx_start_ready() {
             return Ok(None);
         }
+        if !self.competing_tx_pending(interface) {
+            self.services.classify_network_tx(interface, &network)?;
+        }
         let admitted = self.services.prepared_tx_frame_count().max(1);
-        let preferred = self.services.preferred_tx_batch_size_for(interface).max(1);
+        let target = self.services.tx_batch_demand(interface, &network).target;
+        drop(network);
         #[cfg(any(feature = "diagnostics", test))]
         self.services.mark_prepared_tx_scheduler_phase(
             PreparedTxSchedulerPhase::PreparedBatchChecked,
             Instant::now().as_micros(),
         );
-        Ok((admitted >= preferred).then_some((interface, admitted)))
+        Ok((admitted >= target).then_some((interface, admitted)))
     }
 
     pub(super) const fn network_turn_owed(&self) -> bool {
@@ -319,10 +323,10 @@ where
                 if origin == DatapathTxOrigin::Network {
                     let prepared = self.services.has_prepared_tx();
                     let prepared_frames = self.services.prepared_tx_frame_count();
-                    let preferred_frames = self
-                        .prepared_tx_interface
-                        .map(|interface| self.services.preferred_tx_batch_size_for(interface))
-                        .unwrap_or(1);
+                    let preferred_frames = self.prepared_tx_interface.map_or(1, |interface| {
+                        let network = self.network.tx_consumer(interface);
+                        self.services.tx_batch_demand(interface, &network).target
+                    });
                     CORE0_PERFORMANCE.record_tx_network_completion(
                         prepared_frames,
                         preferred_frames,
@@ -429,9 +433,10 @@ where
             let preparation_threshold = can_prepare.then(|| {
                 let interface = active_tx_interface
                     .expect("active TX network preparation requires one VIF owner");
+                let network = self.network.tx_consumer(interface);
                 self.services
-                    .preferred_tx_batch_size_for(interface)
-                    .max(1)
+                    .tx_batch_demand(interface, &network)
+                    .target
                     .saturating_sub(self.services.prepared_tx_frame_count())
                     .max(1)
             });

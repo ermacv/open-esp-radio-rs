@@ -10,6 +10,7 @@
 //! SoftAP protocol role borrowed by the common same-channel DATAPATH owner.
 
 use crate::datapath::{
+    TxBatchDemand,
     paired::{
         DatapathPairRole, DatapathPairedNetworkTxService, DatapathPairedPhysicalTx,
         DatapathPairedPhysicalTxError, DatapathPairedRoleOwner, DatapathPairedRoleTransitionError,
@@ -998,13 +999,55 @@ where
         self.network_tx.has_prepared()
     }
 
-    fn preferred_batch_size(&self) -> usize {
-        self.protocol.active().map_or(1, |active| {
-            access_point_tx_batch_target(
-                active.processor.smallest_operational_tx_block_ack_window(),
-                AMPDU_SLOTS,
-            )
-        })
+    fn classify_network<I>(&mut self, network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
+        let Some(active) = self.protocol.active_mut() else {
+            return Ok(());
+        };
+        self.network_tx
+            .classify_network_backlog(active.processor.mac.engine_mut(), network)
+            .map_err(StaApAccessPointTxError::Operation)
+    }
+
+    fn batch_demand<I>(&self, network: &I) -> TxBatchDemand
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
+        let Some(active) = self.protocol.active() else {
+            return TxBatchDemand::single(network.queue_len());
+        };
+        let engine = active.processor.mac.engine();
+        self.network_tx.batch_demand(
+            |destination| {
+                access_point_tx_batch_target(
+                    engine.operational_tx_block_ack_window(destination),
+                    AMPDU_SLOTS,
+                )
+            },
+            network,
+        )
     }
 
     fn prepared_frame_count(&self) -> usize {

@@ -13,7 +13,7 @@ use oer_esp32s31_pac::{
     WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
 };
 
-use crate::phy::restore::PhyRestoreSlot;
+use crate::phy::{registration::PhyRegistration, restore::PhyRouteState};
 
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
 ///
@@ -33,6 +33,7 @@ use crate::phy::restore::PhyRestoreSlot;
 #[must_use = "dropping the radio root permanently loses the unique hardware capability"]
 pub struct RadioHardware {
     partitions: RadioPartitions,
+    phy_registration: PhyRegistration,
 }
 
 impl RadioHardware {
@@ -41,14 +42,19 @@ impl RadioHardware {
     /// Leaving the route retires the current PHY registration, so a
     /// registration result held apart from its hardware cannot describe a
     /// later route.
-    fn returned(mut partitions: RadioPartitions) -> Self {
-        partitions.radio_phy.retire_registration_epoch();
-        Self { partitions }
+    fn returned(partitions: RadioPartitions, phy: PhyRouteState) -> Self {
+        Self {
+            partitions,
+            phy_registration: phy.into_registration(),
+        }
     }
 
     /// Acquire the radio register singleton once.
     pub fn take() -> Option<Self> {
-        RadioPartitions::take().map(|partitions| Self { partitions })
+        RadioPartitions::take().map(|partitions| Self {
+            partitions,
+            phy_registration: PhyRegistration::new(),
+        })
     }
 
     /// Construct the complete root inside one isolated validation image.
@@ -57,6 +63,7 @@ impl RadioHardware {
     pub fn for_validation() -> Self {
         Self {
             partitions: RadioPartitions::for_validation(),
+            phy_registration: PhyRegistration::new(),
         }
     }
 
@@ -73,6 +80,7 @@ impl RadioHardware {
             shared_radio,
             ieee802154,
         } = self.partitions;
+        let phy = PhyRouteState::new(self.phy_registration);
         WifiRoute {
             registers: WifiRadioRegisters::new(WifiRadioParts {
                 wifi_mac,
@@ -82,6 +90,7 @@ impl RadioHardware {
                 shared_radio,
             }),
             interrupts: wifi_interrupts,
+            phy,
             retained: RetainedBluetooth {
                 bluetooth,
                 modem_lp_timer: bluetooth_modem_lp_timer,
@@ -94,6 +103,7 @@ impl RadioHardware {
     pub(crate) fn from_wifi(
         registers: WifiRadioRegisters,
         interrupts: MacInterruptSetup,
+        phy: PhyRouteState,
         retained: RetainedBluetooth,
     ) -> Self {
         let WifiRadioParts {
@@ -108,17 +118,20 @@ impl RadioHardware {
             modem_lp_timer,
             interrupts: bluetooth_interrupts,
         } = retained;
-        Self::returned(RadioPartitions {
-            wifi_mac,
-            wifi_interrupts: interrupts,
-            radio_phy,
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer: modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154,
-        })
+        Self::returned(
+            RadioPartitions {
+                wifi_mac,
+                wifi_interrupts: interrupts,
+                radio_phy,
+                coexistence,
+                bluetooth,
+                bluetooth_modem_lp_timer: modem_lp_timer,
+                bluetooth_interrupts,
+                shared_radio,
+                ieee802154,
+            },
+            phy,
+        )
     }
 
     /// Consume the root into the exclusive Bluetooth route.
@@ -137,6 +150,7 @@ impl RadioHardware {
             shared_radio,
             ieee802154,
         } = self.partitions;
+        let phy = PhyRouteState::new(self.phy_registration);
         BluetoothRoute {
             task: BluetoothTaskRegisters::new(BluetoothTaskParts {
                 bluetooth,
@@ -146,6 +160,7 @@ impl RadioHardware {
             }),
             modem_lp_timer: bluetooth_modem_lp_timer,
             interrupts: bluetooth_interrupts,
+            phy,
             retained: RetainedWifi {
                 wifi_mac,
                 interrupts: wifi_interrupts,
@@ -159,6 +174,7 @@ impl RadioHardware {
         task: BluetoothTaskRegisters,
         modem_lp_timer: BluetoothModemLpTimerRegisters,
         interrupts: BluetoothInterruptSetup,
+        phy: PhyRouteState,
         retained: RetainedWifi,
     ) -> Self {
         let BluetoothTaskParts {
@@ -172,17 +188,20 @@ impl RadioHardware {
             interrupts: wifi_interrupts,
             ieee802154,
         } = retained;
-        Self::returned(RadioPartitions {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy,
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer: modem_lp_timer,
-            bluetooth_interrupts: interrupts,
-            shared_radio,
-            ieee802154,
-        })
+        Self::returned(
+            RadioPartitions {
+                wifi_mac,
+                wifi_interrupts,
+                radio_phy,
+                coexistence,
+                bluetooth,
+                bluetooth_modem_lp_timer: modem_lp_timer,
+                bluetooth_interrupts: interrupts,
+                shared_radio,
+                ieee802154,
+            },
+            phy,
+        )
     }
 
     /// Consume the root into the exclusive IEEE 802.15.4 route.
@@ -205,6 +224,7 @@ impl RadioHardware {
             shared_radio,
             ieee802154,
         } = self.partitions;
+        let phy = PhyRouteState::new(self.phy_registration);
         let (task, interrupts) = Ieee802154TaskRegisters::new(Ieee802154TaskParts {
             ieee802154,
             radio_phy,
@@ -215,6 +235,7 @@ impl RadioHardware {
         Ieee802154Route {
             task,
             interrupts,
+            phy,
             retained: RetainedIeee802154 {
                 wifi_mac,
                 wifi_interrupts,
@@ -229,6 +250,7 @@ impl RadioHardware {
         let Ieee802154Route {
             task,
             interrupts,
+            phy,
             retained:
                 RetainedIeee802154 {
                     wifi_mac,
@@ -244,17 +266,20 @@ impl RadioHardware {
             bluetooth,
             shared_radio,
         } = task.into_parts(interrupts);
-        Self::returned(RadioPartitions {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy,
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154,
-        })
+        Self::returned(
+            RadioPartitions {
+                wifi_mac,
+                wifi_interrupts,
+                radio_phy,
+                coexistence,
+                bluetooth,
+                bluetooth_modem_lp_timer,
+                bluetooth_interrupts,
+                shared_radio,
+                ieee802154,
+            },
+            phy,
+        )
     }
 }
 
@@ -288,7 +313,7 @@ pub enum WifiPowerRestoreCheckpoint {
 
 /// Reject release while a PHY calibration still owns a restore obligation.
 pub(crate) fn check_phy_restore_complete(
-    restore: &PhyRestoreSlot,
+    restore: &PhyRouteState,
 ) -> Result<(), RadioPhyReleaseError> {
     if restore.txdc_pending() {
         return Err(RadioPhyReleaseError::TxDcPwdetRestorePending);
@@ -309,6 +334,7 @@ pub(crate) fn check_phy_restore_complete(
 pub(crate) struct WifiRoute {
     pub(crate) registers: WifiRadioRegisters,
     pub(crate) interrupts: MacInterruptSetup,
+    pub(crate) phy: PhyRouteState,
     pub(crate) retained: RetainedBluetooth,
 }
 
@@ -317,6 +343,7 @@ pub(crate) struct BluetoothRoute {
     pub(crate) task: BluetoothTaskRegisters,
     pub(crate) modem_lp_timer: BluetoothModemLpTimerRegisters,
     pub(crate) interrupts: BluetoothInterruptSetup,
+    pub(crate) phy: PhyRouteState,
     pub(crate) retained: RetainedWifi,
 }
 
@@ -324,6 +351,7 @@ pub(crate) struct BluetoothRoute {
 pub(crate) struct Ieee802154Route {
     pub(crate) task: Ieee802154TaskRegisters,
     pub(crate) interrupts: Ieee802154InterruptSetup,
+    pub(crate) phy: PhyRouteState,
     pub(crate) retained: RetainedIeee802154,
 }
 

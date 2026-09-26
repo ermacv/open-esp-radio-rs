@@ -256,6 +256,7 @@ fn production_hal_borrows_the_dedicated_ieee802154_task_partition() {
     let Ieee802154Route {
         mut task,
         mut interrupts,
+        phy,
         retained,
     } = RadioHardware::for_validation().into_ieee802154();
     {
@@ -271,6 +272,7 @@ fn production_hal_borrows_the_dedicated_ieee802154_task_partition() {
     let _hardware = RadioHardware::from_ieee802154(Ieee802154Route {
         task,
         interrupts,
+        phy,
         retained,
     });
 }

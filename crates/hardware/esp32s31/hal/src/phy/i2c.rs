@@ -19,7 +19,7 @@ pub use crate::phy::restore::{
 };
 use crate::{
     owner::{SharedPhyAccess, phy_parts_mut},
-    phy::restore::PhyRestoreSlot,
+    phy::restore::PhyRouteState,
     phy_pac, phy_pac_mut,
 };
 
@@ -655,7 +655,7 @@ impl PhyI2cConfigurationAccess for RadioPhyRegisters {
 /// Shared PHY registers paired with the route restore slot.
 struct BluetoothTxPowerPort<'a> {
     phy: &'a mut RadioPhyRegisters,
-    restore: &'a mut PhyRestoreSlot,
+    restore: &'a mut PhyRouteState,
 }
 
 impl BluetoothTxPowerControlI2cAccess for BluetoothTxPowerPort<'_> {

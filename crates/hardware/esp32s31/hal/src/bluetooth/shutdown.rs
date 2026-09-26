@@ -120,7 +120,7 @@ pub(super) fn release_after_phy_close(
         modem_lp_timer: _,
         retained,
         clocks,
-        phy_restore,
+        phy_state,
         time_latch: _,
         reunitable: _,
     } = task;
@@ -130,7 +130,7 @@ pub(super) fn release_after_phy_close(
         interrupts: output,
         retained,
         clocks,
-        phy_restore,
+        phy_state,
     };
     cold.release().map_err(|failure| {
         let (owner, error) = failure.into_parts();

@@ -12,14 +12,14 @@ use crate::{
 
 use super::*;
 
-use crate::phy::restore::PhyRestoreSlot;
+use crate::phy::restore::PhyRouteState;
 
 mod interrupt_checkpoint;
 pub mod maintenance;
 mod wifi_cold;
 
+pub use crate::phy::registration::PhyRegistrationEpoch;
 pub use interrupt_checkpoint::MacInterruptCheckpoint;
-pub use oer_esp32s31_pac::PhyRegistrationEpoch;
 pub(crate) use wifi_cold::{WifiColdRegisters, WifiRouteState};
 
 /// Powered-lifecycle PHY capability.
@@ -104,14 +104,14 @@ pub mod route {
 /// ```
 pub struct SharedPhyHal<'owner, R: route::Route> {
     pub(crate) registers: &'owner mut RadioPhyRegisters,
-    pub(crate) restore: &'owner mut PhyRestoreSlot,
+    pub(crate) restore: &'owner mut PhyRouteState,
     route: core::marker::PhantomData<fn() -> R>,
 }
 
 impl<'owner, R: route::Route> SharedPhyHal<'owner, R> {
     pub(crate) fn new(
         registers: &'owner mut RadioPhyRegisters,
-        restore: &'owner mut PhyRestoreSlot,
+        restore: &'owner mut PhyRouteState,
     ) -> Self {
         Self {
             registers,
@@ -124,26 +124,28 @@ impl<'owner, R: route::Route> SharedPhyHal<'owner, R> {
 pub(crate) mod sealed {
 
     use crate::{
-        bluetooth::TaskOwner, owner::WifiBasebandEnableObservation, phy::restore::PhyRestoreSlot,
+        bluetooth::TaskOwner, owner::WifiBasebandEnableObservation, phy::restore::PhyRouteState,
     };
 
     use super::RadioPhyRegisters;
 
     pub trait SharedPhyBorrow {
-        fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot);
+        fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState);
     }
 
     impl SharedPhyBorrow for TaskOwner {
-        fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+        fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
             self.phy_parts_mut()
         }
     }
 
     pub trait SharedPhyAccess {
         fn pac(&self) -> &RadioPhyRegisters;
+        /// The route PHY software state lent together with the registers.
+        fn route_state(&self) -> &PhyRouteState;
         /// Borrow the shared PHY registers together with the route restore
         /// slot that serializes PHY calibrations.
-        fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot);
+        fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState);
     }
 
     pub trait SharedPhyContext {
@@ -184,7 +186,7 @@ pub trait SharedPhyAccess: sealed::SharedPhyAccess {
     /// A registration result held apart from its hardware is valid for this
     /// borrow only while its recorded epoch equals this value.
     fn registration_epoch(&self) -> Option<PhyRegistrationEpoch> {
-        sealed::SharedPhyAccess::pac(self).registration_epoch()
+        sealed::SharedPhyAccess::route_state(self).registration_epoch()
     }
 
     fn set_phy_calibration_clock(&mut self, enabled: bool) {
@@ -343,7 +345,7 @@ pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationA
     /// only invalidates existing registration results; it cannot mint one.
     fn begin_registration_epoch(&mut self) -> PhyRegistrationEpoch {
         sealed::SharedPhyAccess::parts_mut(self)
-            .0
+            .1
             .begin_registration_epoch()
     }
 }
@@ -353,7 +355,11 @@ impl sealed::SharedPhyAccess for PhyHal {
         self.registers.radio().radio_phy()
     }
 
-    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+    fn route_state(&self) -> &PhyRouteState {
+        self.registers.phy_state()
+    }
+
+    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
         self.registers.phy_parts_mut()
     }
 }
@@ -381,7 +387,11 @@ impl<R: route::Route> sealed::SharedPhyAccess for SharedPhyHal<'_, R> {
         self.registers
     }
 
-    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+    fn route_state(&self) -> &PhyRouteState {
+        self.restore
+    }
+
+    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
         (self.registers, self.restore)
     }
 }
@@ -409,7 +419,7 @@ impl<R: route::Route> PhyInitializationAccess for SharedPhyHal<'_, R> {}
 #[doc(hidden)]
 pub struct ValidationSharedPhy<'registers> {
     registers: &'registers mut RadioPhyRegisters,
-    restore: PhyRestoreSlot,
+    restore: PhyRouteState,
 }
 
 #[cfg(feature = "validation-probes")]
@@ -417,7 +427,7 @@ impl<'registers> ValidationSharedPhy<'registers> {
     pub fn new(registers: &'registers mut RadioPhyRegisters) -> Self {
         Self {
             registers,
-            restore: PhyRestoreSlot::default(),
+            restore: PhyRouteState::for_validation(),
         }
     }
 }
@@ -428,7 +438,11 @@ impl sealed::SharedPhyAccess for ValidationSharedPhy<'_> {
         self.registers
     }
 
-    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+    fn route_state(&self) -> &PhyRouteState {
+        &self.restore
+    }
+
+    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
         (self.registers, &mut self.restore)
     }
 }
@@ -456,7 +470,7 @@ pub(crate) fn phy_pac_mut(access: &mut (impl SharedPhyAccess + ?Sized)) -> &mut 
 
 pub(crate) fn phy_parts_mut(
     access: &mut (impl SharedPhyAccess + ?Sized),
-) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
     sealed::SharedPhyAccess::parts_mut(access)
 }
 
@@ -637,13 +651,13 @@ impl RadioRuntimeOwner {
     }
 
     /// Borrow the Wi-Fi register set together with the route restore slot.
-    pub(crate) fn channel_parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut PhyRestoreSlot) {
-        (&mut self.registers, self.route.phy_restore_mut())
+    pub(crate) fn channel_parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut PhyRouteState) {
+        (&mut self.registers, self.route.phy_state_mut())
     }
 
     /// Borrow the shared PHY together with the route restore slot.
-    pub(crate) fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
-        (self.registers.radio_phy_mut(), self.route.phy_restore_mut())
+    pub(crate) fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
+        (self.registers.radio_phy_mut(), self.route.phy_state_mut())
     }
 
     /// Borrow the Wi-Fi register set together with the station wake state.

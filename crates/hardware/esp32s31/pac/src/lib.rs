@@ -245,8 +245,8 @@ pub use ownership::{
     BluetoothTaskParts, BluetoothTaskRegisters, CoexistencePartition, Ieee802154InterruptRegisters,
     Ieee802154InterruptSetup, Ieee802154Partition, Ieee802154TaskParts, Ieee802154TaskRegisters,
     MacInterruptEvents, MacInterruptObservation, MacInterruptSnapshot,
-    MacPowerInterruptObservation, MacPowerInterruptSnapshot, PhyRegistrationEpoch, RadioPartitions,
-    RadioPhyRegisters, SharedRadioPartition, WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
+    MacPowerInterruptObservation, MacPowerInterruptSnapshot, RadioPartitions, RadioPhyRegisters,
+    SharedRadioPartition, WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
 };
 
 pub(crate) use ownership::device_fence;

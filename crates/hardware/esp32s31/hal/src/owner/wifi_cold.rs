@@ -8,7 +8,7 @@ use oer_esp32s31_pac::{
 use crate::{
     clock::WifiClocks,
     ieee80211::station_wake::StationWakeState,
-    phy::restore::PhyRestoreSlot,
+    phy::restore::PhyRouteState,
     power::RoutePower,
     root::{RadioHardware, RadioPhyReleaseError, RetainedBluetooth, WifiRoute},
     types::{MacInterruptEnableState, MacInterruptMask},
@@ -18,13 +18,13 @@ use crate::{
 pub(crate) struct WifiRouteState {
     retained: RetainedBluetooth,
     clocks: WifiClocks,
-    phy_restore: PhyRestoreSlot,
+    phy_state: PhyRouteState,
     station_wake: StationWakeState,
 }
 
 impl WifiRouteState {
-    pub(crate) fn phy_restore_mut(&mut self) -> &mut PhyRestoreSlot {
-        &mut self.phy_restore
+    pub(crate) fn phy_state_mut(&mut self) -> &mut PhyRouteState {
+        &mut self.phy_state
     }
 
     pub(crate) fn station_wake_mut(&mut self) -> &mut StationWakeState {
@@ -50,6 +50,7 @@ impl WifiColdRegisters {
         let WifiRoute {
             registers,
             interrupts,
+            phy,
             retained,
         } = hardware.into_wifi();
         Self {
@@ -58,7 +59,7 @@ impl WifiColdRegisters {
             route: WifiRouteState {
                 retained,
                 clocks: WifiClocks::default(),
-                phy_restore: PhyRestoreSlot::default(),
+                phy_state: phy,
                 station_wake: StationWakeState::default(),
             },
         }
@@ -101,7 +102,7 @@ impl WifiColdRegisters {
     /// TX-power control still awaits restoration, or when a cold-power
     /// baseline fails readback.
     pub(crate) fn release(mut self) -> Result<RadioHardware, (Self, RadioPhyReleaseError)> {
-        if let Err(error) = crate::root::check_phy_restore_complete(&self.route.phy_restore) {
+        if let Err(error) = crate::root::check_phy_restore_complete(&self.route.phy_state) {
             return Err((self, error));
         }
         let phy = self.registers.radio_phy_mut();
@@ -112,6 +113,7 @@ impl WifiColdRegisters {
         Ok(RadioHardware::from_wifi(
             self.registers,
             self.interrupts,
+            self.route.phy_state,
             self.route.retained,
         ))
     }
@@ -137,19 +139,24 @@ impl WifiColdRegisters {
             .retain_coexistence(self.registers.radio_phy_mut());
     }
 
+    /// The route PHY software state.
+    pub(crate) fn phy_state(&self) -> &PhyRouteState {
+        &self.route.phy_state
+    }
+
     /// Borrow the shared PHY together with the route restore slot.
-    pub(crate) fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
-        (self.registers.radio_phy_mut(), &mut self.route.phy_restore)
+    pub(crate) fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
+        (self.registers.radio_phy_mut(), &mut self.route.phy_state)
     }
 
     /// Borrow the Wi-Fi register set together with the route restore slot.
-    pub(crate) fn radio_parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut PhyRestoreSlot) {
-        (&mut self.registers, &mut self.route.phy_restore)
+    pub(crate) fn radio_parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut PhyRouteState) {
+        (&mut self.registers, &mut self.route.phy_state)
     }
 
     #[cfg(test)]
-    pub(crate) fn phy_restore_mut(&mut self) -> &mut PhyRestoreSlot {
-        &mut self.route.phy_restore
+    pub(crate) fn phy_state_mut(&mut self) -> &mut PhyRouteState {
+        &mut self.route.phy_state
     }
 
     pub(crate) fn radio(&self) -> &WifiRadioRegisters {

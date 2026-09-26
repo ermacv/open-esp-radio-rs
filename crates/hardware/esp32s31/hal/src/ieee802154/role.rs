@@ -53,7 +53,7 @@ use crate::{
         },
     },
     owner::{SharedPhyHal, route},
-    phy::restore::PhyRestoreSlot,
+    phy::restore::PhyRouteState,
     power::{self, PowerError},
     root::{Ieee802154Route, RadioHardware, RadioPhyReleaseError, RetainedIeee802154},
 };
@@ -64,7 +64,7 @@ struct OwnedIeee802154Backend<P> {
     interrupts: Ieee802154InterruptSetup,
     retained: RetainedIeee802154,
     clocks: SharedClockLeases,
-    phy_restore: PhyRestoreSlot,
+    phy_state: PhyRouteState,
 }
 
 /// Failed cold-route release retaining the complete IEEE 802.15.4 owner.
@@ -242,6 +242,7 @@ impl<P> Ieee802154Owned<P> {
         let Ieee802154Route {
             task,
             interrupts,
+            phy,
             retained,
         } = hardware.into_ieee802154();
         Self {
@@ -251,7 +252,7 @@ impl<P> Ieee802154Owned<P> {
                 interrupts,
                 retained,
                 clocks: SharedClockLeases::default(),
-                phy_restore: PhyRestoreSlot::default(),
+                phy_state: phy,
             },
         }
     }
@@ -270,7 +271,7 @@ impl<P> Ieee802154Owned<P> {
     /// platform while TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power control still
     /// awaits restoration in the route restore slot.
     pub fn release(self) -> Result<(P, RadioHardware), Ieee802154OwnedReleaseFailure<P>> {
-        if let Err(error) = crate::root::check_phy_restore_complete(&self.backend.phy_restore) {
+        if let Err(error) = crate::root::check_phy_restore_complete(&self.backend.phy_state) {
             return Err(Ieee802154OwnedReleaseFailure { owner: self, error });
         }
         let OwnedIeee802154Backend {
@@ -279,7 +280,7 @@ impl<P> Ieee802154Owned<P> {
             interrupts,
             retained,
             mut clocks,
-            phy_restore: _,
+            phy_state,
         } = self.backend;
         clocks.release_all(task.radio_phy_mut());
         Ok((
@@ -287,14 +288,15 @@ impl<P> Ieee802154Owned<P> {
             RadioHardware::from_ieee802154(Ieee802154Route {
                 task,
                 interrupts,
+                phy: phy_state,
                 retained,
             }),
         ))
     }
 
     #[cfg(test)]
-    pub(crate) fn phy_restore_mut(&mut self) -> &mut PhyRestoreSlot {
-        &mut self.backend.phy_restore
+    pub(crate) fn phy_state_mut(&mut self) -> &mut PhyRouteState {
+        &mut self.backend.phy_state
     }
 
     /// Borrow the integration token before any lifecycle mutation.
@@ -732,7 +734,7 @@ impl<P> Ieee802154Clocked<P> {
     #[doc(hidden)]
     pub fn common_phy_parts(&mut self) -> (&mut P, SharedPhyHal<'_, route::Ieee802154>) {
         let backend = self.inner.backend_mut();
-        let shared_phy = SharedPhyHal::new(backend.task.radio_phy_mut(), &mut backend.phy_restore);
+        let shared_phy = SharedPhyHal::new(backend.task.radio_phy_mut(), &mut backend.phy_state);
         (&mut backend.platform, shared_phy)
     }
 }

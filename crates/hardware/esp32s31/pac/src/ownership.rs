@@ -47,77 +47,6 @@ pub(crate) struct Ieee802154BtbbPeripheralOwners {
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
-    pub(crate) registration: RegistrationEpochState,
-}
-
-/// Identity of one PHY registration on the unique radio-PHY partition.
-///
-/// A registration issues a new epoch before it touches hardware. The epoch
-/// stays current until another registration begins or the HAL returns the
-/// partition to the neutral radio root. A registration result held apart from
-/// its hardware
-/// is valid for that hardware only while its epoch equals
-/// [`RadioPhyRegisters::registration_epoch`].
-///
-/// The value is 32 bits wide so that the registered PHY owners carrying it
-/// keep their size; those owners live inside reviewed async stack frames.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PhyRegistrationEpoch(core::num::NonZeroU32);
-
-/// Software registration bookkeeping carried with the physical partition.
-///
-/// One word holds the last issued epoch in its low 31 bits and whether that
-/// epoch is current in its top bit, so every radio owner carries it without
-/// growing.
-pub(crate) struct RegistrationEpochState(u32);
-
-impl RegistrationEpochState {
-    const CURRENT: u32 = 1 << 31;
-    const COUNTER: u32 = Self::CURRENT - 1;
-
-    const fn new() -> Self {
-        Self(0)
-    }
-
-    const fn issued(&self) -> u32 {
-        self.0 & Self::COUNTER
-    }
-}
-
-impl RadioPhyRegisters {
-    /// Begin a registration and retire every earlier epoch of this partition.
-    ///
-    /// Call this before the first registration hardware edge: a failed or
-    /// abandoned attempt has still changed the hardware that older results
-    /// describe.
-    pub fn begin_registration_epoch(&mut self) -> PhyRegistrationEpoch {
-        // Each registration runs a full calibration graph, so 2^31 of them
-        // cannot occur in one boot. Wrapping past zero keeps this total.
-        let next = self.registration.issued().wrapping_add(1) & RegistrationEpochState::COUNTER;
-        let issued = core::num::NonZeroU32::new(next).unwrap_or(core::num::NonZeroU32::MIN);
-        self.registration = RegistrationEpochState(issued.get() | RegistrationEpochState::CURRENT);
-        PhyRegistrationEpoch(issued)
-    }
-
-    /// The registration that currently describes this partition, if any.
-    pub const fn registration_epoch(&self) -> Option<PhyRegistrationEpoch> {
-        if self.registration.0 & RegistrationEpochState::CURRENT == 0 {
-            return None;
-        }
-        match core::num::NonZeroU32::new(self.registration.issued()) {
-            Some(issued) => Some(PhyRegistrationEpoch(issued)),
-            None => None,
-        }
-    }
-
-    /// Retire the current registration as the partition leaves its route.
-    ///
-    /// The HAL calls this whenever a route returns the partition to the
-    /// neutral radio root.
-    #[doc(hidden)]
-    pub fn retire_registration_epoch(&mut self) {
-        self.registration = RegistrationEpochState(self.registration.issued());
-    }
 }
 
 /// Opaque Wi-Fi MAC register partition.
@@ -190,7 +119,6 @@ impl RadioPartitions {
             wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
-                registration: RegistrationEpochState::new(),
             },
             coexistence: CoexistencePartition(coexistence),
             bluetooth: BluetoothControllerPartition(bluetooth),

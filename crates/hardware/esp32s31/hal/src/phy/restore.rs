@@ -8,6 +8,7 @@
 //! register access. A route cannot release the neutral radio root while the
 //! slot is occupied.
 
+use super::registration::{PhyRegistration, PhyRegistrationEpoch};
 use oer_esp32s31_pac::{RxDcoControlField, TxDcPwdetFields, TxIqToneControlFields};
 
 /// Preparing TX-DC PWDET was rejected before any register access.
@@ -89,13 +90,47 @@ enum Restore {
     },
 }
 
-/// The single restore obligation retained by one protocol route.
-#[derive(Debug, Default)]
-pub struct PhyRestoreSlot {
+/// HAL software state beside the shared PHY partition for one route: the
+/// single calibration restore obligation and the PHY registration epoch.
+#[derive(Debug)]
+pub struct PhyRouteState {
     restore: Restore,
+    registration: PhyRegistration,
 }
 
-impl PhyRestoreSlot {
+impl PhyRouteState {
+    /// Enter a route with the root's registration counter and no restore.
+    pub(crate) const fn new(registration: PhyRegistration) -> Self {
+        Self {
+            restore: Restore::Empty,
+            registration,
+        }
+    }
+
+    /// Fresh state for an isolated validation image or a host test.
+    #[cfg(any(test, feature = "validation-probes"))]
+    pub(crate) const fn for_validation() -> Self {
+        Self::new(PhyRegistration::new())
+    }
+
+    /// Leave the route: retire the current registration and return the
+    /// counter to the neutral root. The caller has checked that no restore
+    /// obligation remains.
+    pub(crate) fn into_registration(self) -> PhyRegistration {
+        debug_assert_eq!(self.restore, Restore::Empty);
+        self.registration.retired()
+    }
+
+    /// The registration that currently describes the route's PHY, if any.
+    pub(crate) const fn registration_epoch(&self) -> Option<PhyRegistrationEpoch> {
+        self.registration.current()
+    }
+
+    /// Begin a registration and retire every earlier epoch.
+    pub(crate) fn begin_registration_epoch(&mut self) -> PhyRegistrationEpoch {
+        self.registration.begin()
+    }
+
     pub(crate) const fn txdc_pending(&self) -> bool {
         matches!(self.restore, Restore::TxDcPwdet(_))
     }

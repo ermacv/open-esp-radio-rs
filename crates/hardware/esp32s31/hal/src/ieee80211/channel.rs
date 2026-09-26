@@ -2,7 +2,7 @@
 
 use core::cell::RefMut;
 
-use crate::{owner::SharedPhyAccess, phy::restore::PhyRestoreSlot};
+use crate::{owner::SharedPhyAccess, phy::restore::PhyRouteState};
 
 use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
 
@@ -12,10 +12,10 @@ use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
 /// the radio owner. No PAC owner or generic register accessor is exposed.
 #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
 enum ChannelRegisters<'radio> {
-    Owned(&'radio mut WifiRadioRegisters, &'radio mut PhyRestoreSlot),
+    Owned(&'radio mut WifiRadioRegisters, &'radio mut PhyRouteState),
     Published(
         RefMut<'radio, WifiRadioRegisters>,
-        RefMut<'radio, PhyRestoreSlot>,
+        RefMut<'radio, PhyRouteState>,
     ),
 }
 
@@ -35,7 +35,14 @@ impl ChannelRegisters<'_> {
         }
     }
 
-    fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+    fn route_state(&self) -> &PhyRouteState {
+        match self {
+            Self::Owned(_, state) => state,
+            Self::Published(_, state) => state,
+        }
+    }
+
+    fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
         match self {
             Self::Owned(registers, restore) => (registers.radio_phy_mut(), restore),
             Self::Published(registers, restore) => (registers.radio_phy_mut(), restore),
@@ -54,7 +61,7 @@ impl<'radio, P> RadioChannelHal<'radio, P> {
     pub(crate) fn from_owned(
         platform: &'radio mut P,
         registers: &'radio mut WifiRadioRegisters,
-        restore: &'radio mut PhyRestoreSlot,
+        restore: &'radio mut PhyRouteState,
     ) -> Self {
         Self {
             platform,
@@ -65,7 +72,7 @@ impl<'radio, P> RadioChannelHal<'radio, P> {
     pub(crate) fn from_published(
         platform: &'radio mut P,
         registers: RefMut<'radio, WifiRadioRegisters>,
-        restore: RefMut<'radio, PhyRestoreSlot>,
+        restore: RefMut<'radio, PhyRouteState>,
     ) -> Self {
         Self {
             platform,
@@ -79,7 +86,11 @@ impl<P> crate::sealed::SharedPhyAccess for RadioChannelHal<'_, P> {
         self.registers.get().radio_phy()
     }
 
-    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+    fn route_state(&self) -> &PhyRouteState {
+        self.registers.route_state()
+    }
+
+    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRouteState) {
         self.registers.phy_parts_mut()
     }
 }

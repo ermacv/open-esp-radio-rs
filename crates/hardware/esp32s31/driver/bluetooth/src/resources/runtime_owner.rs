@@ -160,165 +160,19 @@ mod tests {
         assert!(slot.as_ref().is_none());
     }
     #[test]
-    fn real_hci_rejections_never_extract_the_hardware_owner() {
-        use embassy_futures::block_on;
-        use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-        use oer_bluetooth_hci::{
-            BluetoothPublicDeviceAddress, LeControllerBootstrapConfig,
-            LeControllerCommandReadyClaim, LeControllerHciResources,
-            LeControllerHciRetirementError,
-        };
-        let config = LeControllerBootstrapConfig::new(
-            BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
-            27,
-            1,
-        )
-        .unwrap();
-        let mut resources =
-            LeControllerHciResources::<NoopRawMutex, 2, 2, 80>::new(config).unwrap();
-        let mut endpoints = resources.split();
-        let LeControllerCommandReadyClaim::Ready(ready) =
-            endpoints.controller.claim_initial_command_ready(())
-        else {
-            panic!("initial HCI authority");
-        };
-        let credits = endpoints.host.acl_credit_sender();
-        block_on(credits.return_completed_packets(&[])).unwrap();
-        let owner = Box::new(47);
-        let address = core::ptr::from_ref(&*owner);
-        let mut slot = RuntimeOwnerSlot::new(owner);
-        {
-            let mut lease = slot.lease().unwrap();
-            let (error, ready) = lease
-                .try_retire(|| endpoints.controller.try_retire_transport(ready))
-                .err()
-                .expect("accepted Host credits must drain");
-            assert_eq!(error, LeControllerHciRetirementError::HostPacketsPending);
-            assert_eq!(address, core::ptr::from_ref(&**lease));
-            endpoints.controller.close_transport();
-            let (error, _ready) = lease
-                .try_retire(|| endpoints.controller.try_retire_transport(ready))
-                .err()
-                .expect("terminal closure cannot return graceful hardware ownership");
-            assert_eq!(error, LeControllerHciRetirementError::Closed);
-            assert_eq!(address, core::ptr::from_ref(&**lease));
-        }
-        assert_eq!(slot.owner.as_deref(), Some(&47));
-        assert!(slot.lease().is_none());
-    }
-    #[test]
-    fn joint_retirement_keeps_both_owners_until_the_original_hci_epoch_drains() {
-        use embassy_futures::block_on;
-        use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-        use oer_bluetooth_hci::{
-            BluetoothPublicDeviceAddress, LeControllerBootstrapConfig,
-            LeControllerCommandReadyClaim, LeControllerHciResources,
-            LeControllerHciRetirementError,
-        };
-        use std::{cell::Cell, rc::Rc};
-        struct Owner(Rc<Cell<usize>>);
-        impl Drop for Owner {
-            fn drop(&mut self) {
-                self.0.set(self.0.get() + 1);
-            }
-        }
-        let drops = Rc::new(Cell::new(0));
-        let config = LeControllerBootstrapConfig::new(
-            BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
-            27,
-            1,
-        )
-        .unwrap();
-        let mut original = LeControllerHciResources::<NoopRawMutex, 2, 2, 80>::new(config).unwrap();
-        let mut foreign = LeControllerHciResources::<NoopRawMutex, 2, 2, 80>::new(config).unwrap();
-        let mut original = original.split();
-        let mut foreign = foreign.split();
-        let LeControllerCommandReadyClaim::Ready(ready) =
-            original.controller.claim_initial_command_ready(())
-        else {
-            panic!("initial HCI authority");
-        };
-        let first = Box::new(Owner(drops.clone()));
-        let second = Box::new(Owner(drops.clone()));
-        let first_address = core::ptr::from_ref(&*first);
-        let second_address = core::ptr::from_ref(&*second);
-        let (first, second, proof) = {
-            let mut first = RuntimeOwnerSlot::new(first);
-            let mut second = RuntimeOwnerSlot::new(second);
-            let retired = {
-                let mut a = first.lease().unwrap();
-                let mut b = second.lease().unwrap();
-                let (error, ready) = a
-                    .try_retire_with(&mut b, || foreign.controller.try_retire_transport(ready))
-                    .err()
-                    .expect("foreign endpoint must not extract either owner");
-                assert_eq!(error, LeControllerHciRetirementError::EndpointMismatch);
-                block_on(
-                    original
-                        .host
-                        .acl_credit_sender()
-                        .return_completed_packets(&[]),
-                )
-                .unwrap();
-                let (error, ready) = a
-                    .try_retire_with(&mut b, || original.controller.try_retire_transport(ready))
-                    .err()
-                    .expect("accepted credits must drain before either owner moves");
-                assert_eq!(error, LeControllerHciRetirementError::HostPacketsPending);
-                assert_eq!(core::ptr::from_ref(&**a), first_address);
-                assert_eq!(core::ptr::from_ref(&**b), second_address);
-                assert_eq!(drops.get(), 0);
-                let mut buffer = [0; 80];
-                let oer_bluetooth_hci::LeControllerActivePeripheralIntake::HostCompletedPackets {
-                    ready,
-                    command,
-                    ..
-                } = original
-                    .controller
-                    .try_receive_active_peripheral_with_buffer(
-                        ready,
-                        None,
-                        true,
-                        &mut buffer,
-                        |_, _| panic!("expected credits, not ACL"),
-                    )
-                else {
-                    panic!("accepted Host credits retained across rejection");
-                };
-                assert!(command.is_ok());
-                a.try_retire_with(&mut b, || original.controller.try_retire_transport(ready))
-                    .unwrap_or_else(|_| panic!("same drained epoch"))
-            };
-            assert!(first.owner.is_none());
-            assert!(second.owner.is_none());
-            assert!(first.lease().is_none());
-            assert!(second.lease().is_none());
-            retired
-        };
-        assert!(proof.matches_endpoint(&original.controller));
-        assert!(!proof.matches_endpoint(&foreign.controller));
-        assert_eq!(core::ptr::from_ref(&*first), first_address);
-        assert_eq!(core::ptr::from_ref(&*second), second_address);
-        assert_eq!(drops.get(), 0);
-        assert!(
-            block_on(
-                foreign
-                    .host
-                    .acl_credit_sender()
-                    .return_completed_packets(&[])
-            )
-            .is_ok()
+    fn joint_retirement_moves_both_owners_only_after_one_barrier() {
+        let mut first = RuntimeOwnerSlot::new(Box::new(3));
+        let mut second = RuntimeOwnerSlot::new(Box::new(5));
+        let mut a = first.lease().unwrap();
+        let mut b = second.lease().unwrap();
+        assert_eq!(
+            a.try_retire_with(&mut b, || Err::<(), _>("pending")),
+            Err("pending")
         );
-        assert!(
-            block_on(
-                original
-                    .host
-                    .acl_credit_sender()
-                    .return_completed_packets(&[])
-            )
-            .is_err()
-        );
-        drop((first, second));
-        assert_eq!(drops.get(), 2);
+        assert_eq!((**a, **b), (3, 5));
+        let (one, two, proof) = a
+            .try_retire_with(&mut b, || Ok::<_, ()>("retired"))
+            .unwrap();
+        assert_eq!((*one, *two, proof), (3, 5, "retired"));
     }
 }

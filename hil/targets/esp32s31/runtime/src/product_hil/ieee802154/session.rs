@@ -33,7 +33,8 @@ use oer_hil_protocol::{
     Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
     Ieee802154SessionStopEvidence, Ieee802154SessionTransmitEvidence,
-    Ieee802154SessionTransmitRequest, RejectReason, ieee802154_frame_crc32c,
+    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, RejectReason,
+    ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, RadioCommand, RequestId,
@@ -154,10 +155,10 @@ impl Session {
             return evidence;
         };
         let id = self.id();
-        let mode = if request.cca {
-            TxMode::ClearChannelAssessment
-        } else {
-            TxMode::Direct
+        let mode = match request.mode {
+            Ieee802154SessionTxMode::Direct => TxMode::Direct,
+            Ieee802154SessionTxMode::ClearChannelAssessment => TxMode::ClearChannelAssessment,
+            Ieee802154SessionTxMode::CsmaCa { max_backoffs } => TxMode::CsmaCa { max_backoffs },
         };
         if let Err(result) = self.submit(RadioCommand::Transmit(TxRequest {
             id,

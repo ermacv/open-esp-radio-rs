@@ -79,7 +79,7 @@ pub use message::{
     Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
     Ieee802154SessionStopEvidence, Ieee802154SessionTransmitEvidence,
-    Ieee802154SessionTransmitRequest, Ieee802154ValidationEdDurationState,
+    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, Ieee802154ValidationEdDurationState,
     Ieee802154ValidationEventEnableState, Ieee802154ValidationRxAbortEnableState,
     InitializationConfiguration, Ipv4Endpoint, LinkHealth, NetworkCredentials,
     NetworkCredentialsError, NetworkInfo, NetworkIpv4Configuration, NetworkSchedulerEvidence,

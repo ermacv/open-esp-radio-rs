@@ -473,8 +473,24 @@ pub struct Ieee802154SessionTransmitRequest {
     /// MAC bytes; the frame's acknowledgement-request bit selects whether an
     /// acknowledgement is awaited.
     pub frame: Ieee802154SessionFrame,
-    /// Assess the channel before transmitting.
-    pub cca: bool,
+    /// How the transmission acquires the channel.
+    pub mode: Ieee802154SessionTxMode,
+}
+
+/// How one session transmission acquires the channel.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154SessionTxMode {
+    /// Transmit at once.
+    #[default]
+    Direct,
+    /// One clear-channel assessment first.
+    ClearChannelAssessment,
+    /// Unslotted CSMA-CA with up to `max_backoffs` backoffs after a busy
+    /// channel.
+    CsmaCa {
+        /// Backoffs after a busy channel before reporting it busy.
+        max_backoffs: u8,
+    },
 }
 
 impl Ieee802154SessionTransmitRequest {

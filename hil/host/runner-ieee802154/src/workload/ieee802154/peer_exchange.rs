@@ -26,7 +26,7 @@ use oer_hil_protocol::{
     Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
     Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionTransmitEvidence,
-    Ieee802154SessionTransmitRequest, ieee802154_frame_crc32c,
+    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, ieee802154_frame_crc32c,
 };
 use serde::Serialize;
 
@@ -58,6 +58,9 @@ const PEER_EXTENDED: [u8; 8] = [0x02, 0x54, 0x31, 0x43, 0x35, 0x70, 0x65, 0x4f];
 /// Sequence numbers of peer-originated frames start here, apart from the
 /// device's.
 const PEER_SEQUENCE_BASE: u8 = 0x80;
+/// The device's data frames acquire the channel as OpenThread does by
+/// default: CSMA-CA with `macMaxCsmaBackoffs` 4.
+const DEVICE_TX_MODE: Ieee802154SessionTxMode = Ieee802154SessionTxMode::CsmaCa { max_backoffs: 4 };
 
 pub struct Config {
     pub boots: u8,
@@ -237,13 +240,13 @@ fn exchange<L: PeerLink>(
         let evidence = capture.transmit_ieee802154_session(
             Ieee802154SessionTransmitRequest {
                 frame: session_frame(&frame)?,
-                cca: false,
+                mode: DEVICE_TX_MODE,
             },
             COMMAND_TIMEOUT,
         )?;
         check_device_transmit(&evidence, sequence)?;
         check_peer_received(peer.next_event(PEER_EVENT_TIMEOUT)?, &frame)?;
-        device_to_peer.push(format!("seq={sequence} acknowledged delivered"));
+        device_to_peer.push(format!("seq={sequence} CSMA-CA acknowledged delivered"));
     }
 
     capture.receive_ieee802154_session()?;
@@ -293,7 +296,7 @@ fn exchange<L: PeerLink>(
         &capture.transmit_ieee802154_session(
             Ieee802154SessionTransmitRequest {
                 frame: session_frame(&frame)?,
-                cca: false,
+                mode: Ieee802154SessionTxMode::Direct,
             },
             COMMAND_TIMEOUT,
         )?,

@@ -12,7 +12,7 @@ use std::{fs, path::Path, time::Duration};
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
     Ieee802154AirTxOutcome, Ieee802154SessionConfig, Ieee802154SessionMaintenancePolicy,
-    Ieee802154SessionStopEvidence, Ieee802154SessionTransmitRequest,
+    Ieee802154SessionStopEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
 };
 use serde::Serialize;
 
@@ -142,7 +142,7 @@ fn session(capture: &SerialCapture, config: &Config) -> Result<Ieee802154Session
     let transmitted = capture.transmit_ieee802154_session(
         Ieee802154SessionTransmitRequest {
             frame: session_frame(&data_frame(false, 1, PEER_SHORT, DEVICE_SHORT))?,
-            cca: false,
+            mode: Ieee802154SessionTxMode::Direct,
         },
         COMMAND_TIMEOUT,
     )?;

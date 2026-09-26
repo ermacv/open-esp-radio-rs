@@ -1956,6 +1956,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         Ieee802154SessionFrame, Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest,
         Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
         Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest,
+        Ieee802154SessionTxMode,
     };
     let full = || {
         let mut frame = Ieee802154SessionFrame::new();
@@ -1985,7 +1986,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
     assert!(
         !Ieee802154SessionTransmitRequest {
             frame: Ieee802154SessionFrame::from_slice(&[1, 2]).unwrap(),
-            cca: false
+            mode: Ieee802154SessionTxMode::Direct,
         }
         .validate()
     );
@@ -1993,7 +1994,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         Command::StartIeee802154Session(config),
         Command::TransmitIeee802154Session(Ieee802154SessionTransmitRequest {
             frame: full(),
-            cca: true,
+            mode: Ieee802154SessionTxMode::CsmaCa { max_backoffs: 4 },
         }),
         Command::ReceiveIeee802154Session,
         Command::CollectIeee802154Session,

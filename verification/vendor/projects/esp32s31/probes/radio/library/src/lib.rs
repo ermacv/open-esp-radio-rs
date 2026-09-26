@@ -786,6 +786,53 @@ oer_probe_macros::probe! {
     }
 }
 
+oer_probe_macros::probe! {
+    /// ABI projection around the production retry-rate selector for an HE
+    /// single-MPDU: the initial and selected rates are 802.11ax
+    /// rate-control bytes.
+    pub fn open_libpp_tx_retry_trace_rc_get_he_rate(
+        _rate_context: u32,
+        descriptor_address: u32,
+        initial_rate: u32,
+    ) {
+        use oer_esp32s31_ieee80211_mac::{
+            rate::schedule::RateScheduleKind,
+            rx::HeGuardIntervalAndLtf,
+            tx::{
+                HtChannelWidth, TxPhyRate,
+                runtime::{OrdinaryRetryCounters, select_ordinary_retry_rate},
+            },
+        };
+
+        let descriptor = descriptor_address as *mut u8;
+        // SAFETY: every comparison case supplies a writable descriptor object
+        // covering the vendor counter and selected-rate bytes.
+        let counters = unsafe {
+            OrdinaryRetryCounters {
+                mpdu: descriptor.add(5).read(),
+                short: descriptor.add(6).read(),
+                long: descriptor.add(7).read(),
+            }
+        };
+        // The byte carries no 800-ns LTF count; the selected byte does not
+        // depend on it.
+        let initial = TxPhyRate::from_rate_control_code(
+            RateScheduleKind::Dot11Ax,
+            initial_rate as u8,
+            HtChannelWidth::Mhz20,
+            HeGuardIntervalAndLtf::TwoLtf800Ns,
+        )
+        .expect("reviewed HE rcGetRate cases start from an 802.11ax rate");
+        let selected = select_ordinary_retry_rate(initial, counters)
+            .expect("reviewed rcGetRate cases remain inside their schedule");
+        let code = selected
+            .rate_control_code()
+            .expect("an 802.11ax schedule selects a rate-control byte");
+        // SAFETY: the same case-owned descriptor covers byte 0x0c.
+        unsafe { descriptor.add(0x0c).write(code) };
+    }
+}
+
 // These validation-only leaves make the result of the compiled production
 // completion classifier observable without introducing a shadow numeric
 // encoding. The non-pure inline assembly prevents LLVM from deleting the

@@ -404,10 +404,14 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     );
     assert_eq!(
         engine.admit_rx_data(rx_request),
-        ApRxAdmission::rejected(ApRxError::Replay(CcmpReplayError::Replayed {
-            packet_number: rx_pn3,
-            highest: rx_pn3,
-        })),
+        ApRxAdmission::replayed(
+            duplicate_owner,
+            CcmpReplayError::Replayed {
+                packet_number: rx_pn3,
+                highest: rx_pn3,
+            }
+        ),
+        "an ordinary replay rejection keeps its exact duplicate owner"
     );
     let rx_pn4 = CcmpPacketNumber::new(4).unwrap();
     let ordinary_rx_request = ApOrdinaryPairwiseRxRequest::new(

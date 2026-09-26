@@ -42,7 +42,7 @@ impl<'storage> ApEngine<'storage> {
                             header.packet_number(),
                         ) {
                             Ok(()) => ApRxAdmission::authorized(duplicate_owner),
-                            Err(error) => rejected_rx_security(error),
+                            Err(error) => rejected_ordinary_rx_security(duplicate_owner, error),
                         }
                     }
                     _ => ApRxAdmission::rejected(ApRxError::SecurityModeMismatch),
@@ -138,7 +138,7 @@ impl<'storage> ApEngine<'storage> {
             request.ccmp_header().packet_number(),
         ) {
             Ok(()) => ApRxAdmission::authorized(rx_peer.duplicate_owner),
-            Err(error) => rejected_rx_security(error),
+            Err(error) => rejected_ordinary_rx_security(rx_peer.duplicate_owner, error),
         }
     }
 

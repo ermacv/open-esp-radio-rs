@@ -189,6 +189,80 @@ fn ordinary_pairwise_fast_path_matches_general_dispatch_and_duplicate_state() {
 }
 
 #[test]
+fn retransmission_is_removed_as_a_duplicate_before_replay_detection() {
+    let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1, 2, 3, 4];
+    let mut storage = [0_u8; 192];
+    let owner = duplicate_owner(1, 11).with_key_generation(6);
+    let replayed = CcmpReplayError::Replayed {
+        packet_number: CcmpPacketNumber::new(7).unwrap(),
+        highest: CcmpPacketNumber::new(7).unwrap(),
+    };
+    let mut general = ApRxDispatcher::new(config());
+    let mut fast = ApRxDispatcher::new(config());
+    let mut sink = Sink::default();
+
+    let accepted = protected_fragment(&mut storage, 36, 0, false, false, 7, DESTINATION, &payload);
+    for dispatcher in [&mut general, &mut fast] {
+        assert!(matches!(
+            dispatcher.dispatch_at(
+                segment(&storage, accepted),
+                1,
+                |_| ApRxAdmission::authorized(owner),
+                &mut sink,
+            ),
+            ApRxDispatch::Data { .. }
+        ));
+    }
+
+    // The peer missed our ACK and retransmits the same MPDU and PN.
+    let retry = protected_fragment(&mut storage, 36, 0, false, true, 7, DESTINATION, &payload);
+    assert_eq!(
+        general.dispatch_at(
+            segment(&storage, retry),
+            2,
+            |_| ApRxAdmission::replayed(owner, replayed),
+            &mut sink,
+        ),
+        ApRxDispatch::Duplicate
+    );
+    assert_eq!(
+        fast.try_dispatch_ordinary_pairwise(
+            segment(&storage, retry),
+            |_| ApRxAdmission::replayed(owner, replayed),
+            &mut sink,
+        ),
+        Some(ApRxDispatch::Duplicate)
+    );
+
+    // Without Retry, or with another Sequence Control, a reused PN is a replay.
+    for descriptor in [
+        protected_fragment(&mut storage, 36, 0, false, false, 7, DESTINATION, &payload),
+        protected_fragment(&mut storage, 37, 0, false, true, 7, DESTINATION, &payload),
+    ] {
+        assert_eq!(
+            general.dispatch_at(
+                segment(&storage, descriptor),
+                3,
+                |_| ApRxAdmission::replayed(owner, replayed),
+                &mut sink,
+            ),
+            ApRxDispatch::Rejected(ApRxError::Replay(replayed))
+        );
+    }
+    // A rejected MPDU never becomes the accepted retry fingerprint.
+    let retry = protected_fragment(&mut storage, 37, 0, false, true, 7, DESTINATION, &payload);
+    assert_eq!(
+        fast.try_dispatch_ordinary_pairwise(
+            segment(&storage, retry),
+            |_| ApRxAdmission::replayed(owner, replayed),
+            &mut sink,
+        ),
+        Some(ApRxDispatch::Rejected(ApRxError::Replay(replayed)))
+    );
+    assert_eq!(sink.ethernet.len(), 2);
+}
+
+#[test]
 fn ordinary_pairwise_fallback_preserves_fragment_clock() {
     let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1, 2, 3, 4];
     let mut storage = [0_u8; 192];

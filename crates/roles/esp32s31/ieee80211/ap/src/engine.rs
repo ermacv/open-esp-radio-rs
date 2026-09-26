@@ -97,6 +97,18 @@ impl From<ApWpa2Error> for ApEngineError {
     }
 }
 
+/// An ordinary MPDU's replay rejection keeps its exact duplicate owner, so
+/// the dispatcher can remove a retransmitted duplicate first.
+fn rejected_ordinary_rx_security(
+    owner: crate::rx::ApRxDuplicateOwner,
+    error: ApSecurityError,
+) -> ApRxAdmission {
+    match error {
+        ApSecurityError::Replay(error) => ApRxAdmission::replayed(owner, error),
+        error => rejected_rx_security(error),
+    }
+}
+
 fn rejected_rx_security(error: ApSecurityError) -> ApRxAdmission {
     match error {
         ApSecurityError::Replay(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),

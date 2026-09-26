@@ -210,6 +210,13 @@ enum ApRxAdmissionOutcome {
     Prepared(ApRxPreparedReplay),
     Unauthorized,
     Rejected(ApRxError),
+    /// Replay detection rejected an ordinary MPDU of this exact owner. The
+    /// dispatcher still applies duplicate removal, which precedes replay
+    /// detection in IEEE 802.11 receive processing.
+    Replay {
+        owner: ApRxDuplicateOwner,
+        error: CcmpReplayError,
+    },
 }
 
 /// Exact bounded duplicate-filter ownership for one AP association.
@@ -285,12 +292,19 @@ impl ApRxAdmission {
         }
     }
 
+    pub(crate) const fn replayed(owner: ApRxDuplicateOwner, error: CcmpReplayError) -> Self {
+        Self {
+            outcome: ApRxAdmissionOutcome::Replay { owner, error },
+        }
+    }
+
     pub(crate) const fn authorized_owner(self) -> Option<ApRxDuplicateOwner> {
         match self.outcome {
             ApRxAdmissionOutcome::Authorized(owner) => Some(owner),
             ApRxAdmissionOutcome::Prepared(_)
             | ApRxAdmissionOutcome::Unauthorized
-            | ApRxAdmissionOutcome::Rejected(_) => None,
+            | ApRxAdmissionOutcome::Rejected(_)
+            | ApRxAdmissionOutcome::Replay { .. } => None,
         }
     }
 }
@@ -538,6 +552,9 @@ impl ApRxDispatcher {
         let duplicate_owner =
             match admit(ApOrdinaryPairwiseRxRequest::new(peer, lane, ccmp_header)).outcome {
                 ApRxAdmissionOutcome::Authorized(owner) => owner,
+                ApRxAdmissionOutcome::Replay { owner, error } => {
+                    return self.replay_rejection(peer, owner, error, retry, sequence_control, tid);
+                }
                 ApRxAdmissionOutcome::Prepared(_) => {
                     return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
                 }
@@ -694,6 +711,9 @@ impl ApRxDispatcher {
                 ApRxAdmissionOutcome::Rejected(error) => {
                     return ApRxDispatch::Rejected(error);
                 }
+                ApRxAdmissionOutcome::Replay { error, .. } => {
+                    return ApRxDispatch::Rejected(ApRxError::Replay(error));
+                }
                 ApRxAdmissionOutcome::Prepared(_) => {
                     return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
                 }
@@ -704,6 +724,9 @@ impl ApRxDispatcher {
         let duplicate_owner =
             match admit(ApRxAdmissionRequest::new(peer, lane, ccmp_header)).outcome {
                 ApRxAdmissionOutcome::Authorized(owner) => owner,
+                ApRxAdmissionOutcome::Replay { owner, error } => {
+                    return self.replay_rejection(peer, owner, error, retry, sequence_control, tid);
+                }
                 ApRxAdmissionOutcome::Prepared(_) => {
                     return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
                 }
@@ -815,6 +838,9 @@ impl ApRxDispatcher {
             ApRxAdmissionOutcome::Rejected(error) => {
                 return ApRxDispatch::Rejected(error);
             }
+            ApRxAdmissionOutcome::Replay { error, .. } => {
+                return ApRxDispatch::Rejected(ApRxError::Replay(error));
+            }
         };
         self.bind_duplicate_owner(peer, duplicate_owner);
         if view.fragment.fragment_number() == 0
@@ -920,6 +946,9 @@ impl ApRxDispatcher {
             ApRxAdmissionOutcome::Rejected(error) => {
                 return ApRxDispatch::Rejected(error);
             }
+            ApRxAdmissionOutcome::Replay { error, .. } => {
+                return ApRxDispatch::Rejected(ApRxError::Replay(error));
+            }
             ApRxAdmissionOutcome::Prepared(_) => {
                 return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
             }
@@ -974,6 +1003,9 @@ impl ApRxDispatcher {
             ApRxAdmissionOutcome::Rejected(error) => {
                 return ApRxDispatch::Rejected(error);
             }
+            ApRxAdmissionOutcome::Replay { error, .. } => {
+                return ApRxDispatch::Rejected(ApRxError::Replay(error));
+            }
             ApRxAdmissionOutcome::Authorized(_) => {
                 return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
             }
@@ -991,6 +1023,7 @@ impl ApRxDispatcher {
             let commit = match admit(ApRxAdmissionRequest::commit_fragment(prepared)).outcome {
                 ApRxAdmissionOutcome::Authorized(committed) if committed == owner => Ok(()),
                 ApRxAdmissionOutcome::Rejected(error) => Err(error),
+                ApRxAdmissionOutcome::Replay { error, .. } => Err(ApRxError::Replay(error)),
                 _ => Err(ApRxError::KeyGenerationMismatch),
             };
             if let Err(error) = commit {
@@ -1012,6 +1045,9 @@ impl ApRxDispatcher {
             match admit(ApRxAdmissionRequest::commit_fragment(prepared)).outcome {
                 ApRxAdmissionOutcome::Authorized(committed) if committed == owner => {}
                 ApRxAdmissionOutcome::Rejected(error) => return Err(error),
+                ApRxAdmissionOutcome::Replay { error, .. } => {
+                    return Err(ApRxError::Replay(error));
+                }
                 _ => return Err(ApRxError::KeyGenerationMismatch),
             }
             sink.publish(ApRxEvent {
@@ -1103,6 +1139,27 @@ impl ApRxDispatcher {
             .as_mut()
             .map(|state| &mut state.filter)
             .expect("exact duplicate owner always materializes its bounded slot")
+    }
+
+    /// IEEE 802.11 removes duplicates before replay detection. A Retry of the
+    /// MPDU last accepted from this exact owner carries that MPDU's PN, so
+    /// its replay rejection is a duplicate, not a replay. History is only
+    /// read: a rejected MPDU never becomes the accepted retry fingerprint.
+    #[cold]
+    fn replay_rejection(
+        &self,
+        peer: [u8; 6],
+        owner: ApRxDuplicateOwner,
+        error: CcmpReplayError,
+        retry: bool,
+        sequence_control: u16,
+        tid: Option<u8>,
+    ) -> ApRxDispatch {
+        if self.is_known_ordinary_duplicate(peer, owner, retry, sequence_control, tid) {
+            ApRxDispatch::Duplicate
+        } else {
+            ApRxDispatch::Rejected(ApRxError::Replay(error))
+        }
     }
 
     #[inline(always)]

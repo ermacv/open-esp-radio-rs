@@ -1424,7 +1424,22 @@ fn dispatches_protected_ethernet_and_owns_duplicate_history() {
         MacRxEvidence::ProtocolValidated(false)
     );
 
+    // A retransmission reuses the accepted PN. Duplicate removal precedes
+    // replay detection, so it is a duplicate rather than a replay.
     storage[FRAME_OFFSET + 1] |= 0x08;
+    assert_eq!(
+        dispatcher.dispatch(
+            segment(&storage, SIGNAL),
+            &mut mpdu,
+            &mut ethernet,
+            &mut sink,
+        ),
+        ConnectedRxDispatch::Duplicate
+    );
+    assert_eq!(sink.ethernet.len(), 1);
+
+    // Without Retry the reused PN is a replay.
+    storage[FRAME_OFFSET + 1] &= !0x08;
     let replay = dispatcher.dispatch(
         segment(&storage, SIGNAL),
         &mut mpdu,

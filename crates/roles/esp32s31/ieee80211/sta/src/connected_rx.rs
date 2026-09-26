@@ -2066,7 +2066,9 @@ impl ConnectedRxDispatcher {
                 header,
             ) {
                 Ok(prepared) => prepared,
-                Err(error) => return rejected(protection, ConnectedRxError::CcmpReplay(error)),
+                Err(error) => {
+                    return self.replay_rejection(protection, error, retry, sequence_control, tid);
+                }
             };
             // Hardware MIC verification, complete decapsulation and associated
             // peer admission have all completed. Commit before any Ethernet
@@ -2188,7 +2190,7 @@ impl ConnectedRxDispatcher {
             .shared_ccmp_replay
             .commit_pairwise_immediate(tid, ccmp_header)
         {
-          return rejected(protection, ConnectedRxError::CcmpReplay(error));
+          return self.replay_rejection(protection, error, retry, sequence_control, tid);
         }
         #[cfg(feature = "task-poll-telemetry")]
         let cycle_replay = connected_rx_cycle_count();
@@ -2509,6 +2511,31 @@ impl ConnectedRxDispatcher {
             payload: frame.payload,
         });
         ConnectedRxDispatch::UnprotectedEapol
+    }
+}
+
+impl ConnectedRxDispatcher {
+    /// IEEE 802.11 removes duplicates before replay detection. A Retry of the
+    /// MPDU last accepted in the same sequence space carries that MPDU's PN,
+    /// so its replay rejection is a duplicate, not a replay. History is only
+    /// read: a rejected MPDU never becomes the accepted retry fingerprint.
+    #[cold]
+    fn replay_rejection(
+        &self,
+        protection: ConnectedRxProtection,
+        error: StaCcmpRxReplayError,
+        retry: bool,
+        sequence_control: u16,
+        tid: Option<u8>,
+    ) -> ConnectedRxDispatch {
+        if matches!(error, StaCcmpRxReplayError::Replay(_))
+            && self
+                .duplicate_filter
+                .is_known_duplicate(retry, sequence_control, tid)
+        {
+            return ConnectedRxDispatch::Duplicate;
+        }
+        rejected(protection, ConnectedRxError::CcmpReplay(error))
     }
 }
 

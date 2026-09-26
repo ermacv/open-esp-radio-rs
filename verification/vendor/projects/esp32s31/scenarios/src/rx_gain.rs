@@ -125,7 +125,8 @@ pub struct Profile {
     /// Guard flags; zero executes calibration.
     pub flags: u8,
     pub estimator: Estimator,
-    /// Every estimator readiness wait first sees activity, then readiness.
+    /// Every estimator readiness wait first sees a not-ready poll with
+    /// activity, then one without, then readiness.
     pub activity: bool,
     pub rx_saturation: bool,
     pub seed: u16,
@@ -402,19 +403,24 @@ pub fn rx_models(profile: &Profile, ready: bool) -> Vec<DeviceDeclaration> {
         if profile.activity {
             models.push(DeviceDeclaration {
                 id: "estimator-ready".into(),
-                applicability: "estimator readiness after one not-ready poll".into(),
+                applicability: "estimator readiness after two not-ready polls".into(),
                 lifetime: blobray_domain::RegionLifetime::Phase,
                 behavior: blobray_domain::DeviceBehavior::CyclicRead {
                     address: ESTIMATOR_READY,
                     width: 4,
-                    values: vec![0, ESTIMATOR_DONE],
+                    values: vec![0, 0, ESTIMATOR_DONE],
                 },
             });
-            models.push(constant_read(
-                "estimator-activity",
-                ESTIMATOR_ACTIVITY,
-                ESTIMATOR_ACTIVE,
-            ));
+            models.push(DeviceDeclaration {
+                id: "estimator-activity".into(),
+                applicability: "activity on the first not-ready poll of every wait only".into(),
+                lifetime: blobray_domain::RegionLifetime::Phase,
+                behavior: blobray_domain::DeviceBehavior::CyclicRead {
+                    address: ESTIMATOR_ACTIVITY,
+                    width: 4,
+                    values: vec![ESTIMATOR_ACTIVE, 0],
+                },
+            });
         } else {
             models.push(constant_read(
                 "estimator-ready",
@@ -669,6 +675,7 @@ pub fn exercise(ctx: &mut RxGain) -> Result<()> {
         }
     }
     containment(ctx)?;
+    unadmitted_activity(ctx)?;
     negative(ctx)
 }
 
@@ -799,6 +806,26 @@ fn containment(ctx: &mut RxGain) -> Result<()> {
             case += 1;
         }
     }
+    Ok(())
+}
+
+/// Characterized difference, not a claim: with readiness activity and no
+/// detected RX saturation no estimate is admitted, and the ROM's first radio
+/// search then returns its never-initialized output slot, stack contents
+/// that production replaces with a cleared slot (user decision 2026-09-26).
+fn unadmitted_activity(ctx: &mut RxGain) -> Result<()> {
+    let profile = Profile {
+        rx_saturation: false,
+        ..activity_profiles()[0]
+    };
+    ctx.image.execute_without_events(
+        "rx-unadmitted-activity",
+        ctx.rows(&profile)?,
+        profile.fill,
+        Right::Production,
+        ComparisonVerdict::Diff,
+        ACTIVITY_EVENTS,
+    )?;
     Ok(())
 }
 

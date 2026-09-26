@@ -128,6 +128,48 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "estimator mode argument: every `phy_dc_iq_est` caller in the claimed \
+            closures passes zero",
+        places: &[
+            Place::Range {
+                function: "phy_dc_iq_est",
+                start: 0x10,
+                end: 0x14,
+            },
+            Place::Range {
+                function: "phy_dc_iq_est",
+                start: 0x5c,
+                end: 0x60,
+            },
+        ],
+    },
+    Decision {
+        reason: "RX-DC minimum search that admits no estimate: readiness activity without a \
+            detected RX saturation, whose first radio search returns the ROM's \
+            never-initialized output slot; characterized as a DIFF, not claimed \
+            (user decision 2026-09-26)",
+        places: &[
+            // The rejected-estimate direction of the saturation guard ...
+            Place::Range {
+                function: "phy_rxdc_est_min",
+                start: 0x52,
+                end: 0x53,
+            },
+            // ... the retry while no estimate lowered the minimum, and the
+            // exhausted search's power sentinel.
+            Place::Range {
+                function: "phy_rxdc_est_min",
+                start: 0x62,
+                end: 0x63,
+            },
+            Place::Range {
+                function: "phy_rxdc_est_min",
+                start: 0x76,
+                end: 0x7e,
+            },
+        ],
+    },
+    Decision {
         reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
             and channel 14 fail-closed, as the qualified AP/STA profile requires",
         places: &[

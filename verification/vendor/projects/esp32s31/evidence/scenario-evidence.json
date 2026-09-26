@@ -153,7 +153,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "126695446dcdbc2a786f9db4f35943411b311894d86f91c92d61031b56b31163"
+      "sha256": "91962bd742e046727510f57fb8840d434389e1a55a8c40ed8564931887ed65bc"
     },
     {
       "path": "verification/vendor/schema",
@@ -769,11 +769,11 @@
           "total": 703
         },
         "directions": {
-          "reached": 176,
+          "reached": 177,
           "total": 702
         },
-        "excluded": 910,
-        "untriaged": 74
+        "excluded": 918,
+        "untriaged": 65
       },
       "observation": {
         "executed": 449,
@@ -832,8 +832,8 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 931,
-        "untriaged": 208
+        "excluded": 941,
+        "untriaged": 198
       },
       "observation": {
         "executed": 1385,
@@ -862,8 +862,8 @@
           "reached": 351,
           "total": 982
         },
-        "excluded": 931,
-        "untriaged": 225
+        "excluded": 941,
+        "untriaged": 215
       },
       "observation": {
         "executed": 1812,
@@ -952,26 +952,6 @@
     {
       "function": "phy_code_to_temp",
       "offset": 68,
-      "kind": "block"
-    },
-    {
-      "function": "phy_dc_iq_est",
-      "offset": 16,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_dc_iq_est",
-      "offset": 18,
-      "kind": "block"
-    },
-    {
-      "function": "phy_dc_iq_est",
-      "offset": 92,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_dc_iq_est",
-      "offset": 94,
       "kind": "block"
     },
     {
@@ -1073,11 +1053,6 @@
       "function": "phy_index_to_txbbgain",
       "offset": 26,
       "kind": "block"
-    },
-    {
-      "function": "phy_iq_est_enable",
-      "offset": 166,
-      "kind": "taken"
     },
     {
       "function": "phy_linear_to_db",
@@ -1253,26 +1228,6 @@
       "function": "phy_rfrx_gain_index_new",
       "offset": 100,
       "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rxdc_est_min",
-      "offset": 82,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rxdc_est_min",
-      "offset": 98,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rxdc_est_min",
-      "offset": 118,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rxdc_est_min",
-      "offset": 122,
-      "kind": "block"
     },
     {
       "function": "phy_set_chan_freq_sw_start",

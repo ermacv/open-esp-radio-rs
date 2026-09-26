@@ -5,6 +5,11 @@
     feature = "ieee802154-ed-event-probe"
 ))]
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
 
 #[cfg(feature = "ieee802154-event-status-probe")]
 use oer_esp32s31_hal::ieee802154::{
@@ -12,17 +17,6 @@ use oer_esp32s31_hal::ieee802154::{
     Ieee802154EventStatusProbeEvidence as HalIeee802154EventStatusProbeEvidence,
     Ieee802154EventStatusProbeIsolation,
     Ieee802154EventStatusProbeStop as HalIeee802154EventStatusProbeStop,
-};
-#[cfg(any(
-    feature = "ieee802154-event-status-probe",
-    feature = "ieee802154-ed-event-probe"
-))]
-use oer_esp32s31_hal::{
-    ieee802154::Ieee802154Owned,
-    types::{
-        Ieee802154ObservedEventState as HalIeee802154ObservedEventState,
-        Ieee802154ValidationEventEnableState as HalIeee802154ValidationEventEnableState,
-    },
 };
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use oer_esp32s31_hal::{
@@ -43,6 +37,18 @@ use oer_esp32s31_hal::{
         Ieee802154ValidationEdDurationState as HalIeee802154ValidationEdDurationState,
     },
 };
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+use oer_esp32s31_hal::{
+    ieee802154::{Ieee802154Cold, Ieee802154FoundationConfigured},
+    root::RadioHardware,
+    types::{
+        Ieee802154ObservedEventState as HalIeee802154ObservedEventState,
+        Ieee802154ValidationEventEnableState as HalIeee802154ValidationEventEnableState,
+    },
+};
 
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use oer_hil_protocol::{
@@ -61,6 +67,33 @@ use oer_hil_protocol::{
     feature = "ieee802154-ed-event-probe"
 ))]
 use oer_hil_protocol::{Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState};
+
+/// Bring the IEEE 802.15.4 client of a concurrent split to its MAC
+/// foundation: common power, module clocks, MAC reset, foundation.
+///
+/// The radio peripheral token proves the image owns the radio; the modem
+/// clocks' platform sources come from ESP-HAL's counted clock tree. The probe
+/// image is reset-isolated and terminal: the module clocks and common power
+/// stay on, and the arbiter and the other partitions are dropped without
+/// release.
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+fn ieee802154_foundation(
+    _radio: EspHalRadioPeripheral,
+) -> Option<Ieee802154FoundationConfigured> {
+    let (shared, partitions) = RadioHardware::take()?.into_concurrent(());
+    let mut lease = shared.try_acquire().ok()?;
+    let powered = Ieee802154Cold::from_partition(partitions.ieee802154)
+        .power_up(&mut lease)
+        .ok()?;
+    let clocked = powered
+        .enable_clocks(&mut lease, &mut EspHalRadioClocks::new())
+        .ok()?;
+    let reset = clocked.reset_mac(&mut lease).ok()?;
+    reset.configure_foundation().ok()
+}
 
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
@@ -309,19 +342,7 @@ pub(super) fn run_event_status_probe(
     else {
         return unsupported_ieee802154_event_status_probe();
     };
-    let Ok(owned) = Ieee802154Owned::claim(platform) else {
-        return unsupported_ieee802154_event_status_probe();
-    };
-    let Ok(powered) = owned.power_up() else {
-        return unsupported_ieee802154_event_status_probe();
-    };
-    let Ok(clocked) = powered.into_ieee802154_clocked() else {
-        return unsupported_ieee802154_event_status_probe();
-    };
-    let Ok(reset) = clocked.reset_mac() else {
-        return unsupported_ieee802154_event_status_probe();
-    };
-    let Ok(foundation) = reset.configure_foundation() else {
+    let Some(foundation) = ieee802154_foundation(platform) else {
         return unsupported_ieee802154_event_status_probe();
     };
     let finished = foundation.validation_probe_event_status(config, isolation);
@@ -583,19 +604,7 @@ pub(super) fn run_ed_event_probe(
     let Some(isolation) = Ieee802154EdEventProbeIsolation::claim_for_reset_isolated_image() else {
         return unsupported_ieee802154_ed_event_probe();
     };
-    let Ok(owned) = Ieee802154Owned::claim(platform) else {
-        return unsupported_ieee802154_ed_event_probe();
-    };
-    let Ok(powered) = owned.power_up() else {
-        return unsupported_ieee802154_ed_event_probe();
-    };
-    let Ok(clocked) = powered.into_ieee802154_clocked() else {
-        return unsupported_ieee802154_ed_event_probe();
-    };
-    let Ok(reset) = clocked.reset_mac() else {
-        return unsupported_ieee802154_ed_event_probe();
-    };
-    let Ok(foundation) = reset.configure_foundation() else {
+    let Some(foundation) = ieee802154_foundation(platform) else {
         return unsupported_ieee802154_ed_event_probe();
     };
     let Ok(channel) = Ieee802154Channel::new(11) else {

@@ -5,11 +5,25 @@
 //!
 //! 1. the same symbol name, unique in both revisions;
 //! 2. the same normalized body, unique among the unpaired functions;
-//! 3. the call graph: paired callers with the same call count vote for the
-//!    callees at equal call positions, until no vote changes. A voted pair
-//!    must still share a minimum part of its body;
-//! 4. body similarity with a required margin over the second candidate,
-//!    accepted only as a mutual best, followed by another call-graph pass.
+//! 3. the call graph: paired callers vote for the callees at corresponding
+//!    call positions, until no vote changes. Call lists of equal length
+//!    correspond position by position; lists of different length are aligned
+//!    on their already corresponding callees, and only the positions inside
+//!    equally long gaps between those anchors correspond. A voted pair must
+//!    still share a minimum part of its body;
+//! 4. body similarity, accepted only as a mutual best: either above the
+//!    similarity minimum with a required margin over the second candidate, or
+//!    above a lower dominance floor while at least a fixed multiple of the
+//!    second candidate in both directions;
+//! 5. the neighbourhood: the functions a paired caller's counterpart calls,
+//!    and the callers of a paired callee's counterpart, are where an unpaired
+//!    function is expected. Each such relation supports a candidate; the
+//!    candidate with the most support, then the most similar body, is
+//!    accepted only as a unique and mutual best above a similarity floor.
+//!
+//! Steps 2 to 5 repeat until none pairs another function: every accepted
+//! pair leaves the candidate pools, so a later pass can find a function's
+//! counterpart once a closer rival has been paired elsewhere.
 //!
 //! Ambiguity is never resolved by choice: an unpaired function stays unpaired.
 
@@ -30,7 +44,21 @@ pub enum Evidence {
     SameName,
     ExactBody,
     CallGraph,
-    Similar { ppm: u32 },
+    Similar {
+        ppm: u32,
+    },
+    /// A mutual best below the similarity minimum that dominates its runner
+    /// up in both directions.
+    Dominant {
+        ppm: u32,
+        runner_up_ppm: u32,
+    },
+    /// The unique mutual best among the functions paired callers and callees
+    /// expect, with the number of supporting relations.
+    Neighbourhood {
+        support: u32,
+        ppm: u32,
+    },
 }
 
 /// One function pair between the left and right revisions.
@@ -54,6 +82,12 @@ pub struct Policy {
     pub margin_ppm: u32,
     /// Minimum body similarity of a call-graph pair in parts per million.
     pub call_graph_minimum_ppm: u32,
+    /// Minimum similarity of a dominant pair in parts per million.
+    pub dominant_minimum_ppm: u32,
+    /// How many times a dominant pair must exceed its runner up.
+    pub dominance_ratio: u32,
+    /// Minimum similarity of a neighbourhood pair in parts per million.
+    pub neighbourhood_minimum_ppm: u32,
 }
 
 impl Default for Policy {
@@ -62,6 +96,9 @@ impl Default for Policy {
             minimum_ppm: 850_000,
             margin_ppm: 50_000,
             call_graph_minimum_ppm: 500_000,
+            dominant_minimum_ppm: 500_000,
+            dominance_ratio: 2,
+            neighbourhood_minimum_ppm: 600_000,
         }
     }
 }
@@ -70,10 +107,17 @@ impl Default for Policy {
 pub fn correlate(left: &Revision, right: &Revision, policy: Policy) -> Vec<Pair> {
     let mut state = State::new(left, right);
     state.pair_same_names();
-    state.pair_exact_bodies();
-    state.pair_call_graph(policy);
-    state.pair_similar(policy);
-    state.pair_call_graph(policy);
+    loop {
+        let paired = state.pairs.len();
+        state.pair_exact_bodies();
+        state.pair_call_graph(policy);
+        state.pair_similar(policy);
+        state.pair_call_graph(policy);
+        state.pair_neighbourhood(policy);
+        if state.pairs.len() == paired {
+            break;
+        }
+    }
     let mut pairs: Vec<Pair> = state.pairs.into_values().collect();
     pairs.sort_by_key(|pair| pair.right);
     pairs
@@ -108,7 +152,9 @@ impl<'a> State<'a> {
         );
         let identical = left_body.fingerprint == right_body.fingerprint;
         let similarity_ppm = match evidence {
-            Evidence::Similar { ppm } => ppm,
+            Evidence::Similar { ppm }
+            | Evidence::Dominant { ppm, .. }
+            | Evidence::Neighbourhood { ppm, .. } => ppm,
             _ if identical => 1_000_000,
             _ => similarity_ppm(&left_body.parcels, &right_body.parcels),
         };
@@ -178,10 +224,11 @@ impl<'a> State<'a> {
             for pair in self.pairs.values() {
                 let left_calls = &self.left.functions[pair.left].body.calls;
                 let right_calls = &self.right.functions[pair.right].body.calls;
-                if left_calls.len() != right_calls.len() {
-                    continue;
-                }
-                for (left_callee, right_callee) in left_calls.iter().zip(right_calls) {
+                for (left_position, right_position) in
+                    self.corresponding_calls(left_calls, right_calls)
+                {
+                    let (left_callee, right_callee) =
+                        (&left_calls[left_position], &right_calls[right_position]);
                     let (Some(&left), Some(&right)) = (
                         self.left_names.get(left_callee.as_str()),
                         self.right_names.get(right_callee.as_str()),
@@ -224,6 +271,100 @@ impl<'a> State<'a> {
         }
     }
 
+    /// Whether two callees already correspond: the same name, or a pair.
+    fn anchored(&self, left: &str, right: &str) -> bool {
+        left == right
+            || self
+                .left_names
+                .get(left)
+                .and_then(|index| self.pairs.get(index))
+                .is_some_and(|pair| self.right_names.get(right) == Some(&pair.right))
+    }
+
+    /// Call positions that correspond between two call lists: every position
+    /// of equally long lists, otherwise the positions inside equally long gaps
+    /// between the anchors of a longest common subsequence of corresponding
+    /// callees.
+    fn corresponding_calls(&self, left: &[String], right: &[String]) -> Vec<(usize, usize)> {
+        if left.len() == right.len() {
+            return (0..left.len()).map(|index| (index, index)).collect();
+        }
+        let mut lengths = vec![vec![0_u32; right.len() + 1]; left.len() + 1];
+        for (i, left_callee) in left.iter().enumerate().rev() {
+            for (j, right_callee) in right.iter().enumerate().rev() {
+                lengths[i][j] = if self.anchored(left_callee, right_callee) {
+                    lengths[i + 1][j + 1] + 1
+                } else {
+                    lengths[i + 1][j].max(lengths[i][j + 1])
+                };
+            }
+        }
+        let mut anchors = Vec::new();
+        let (mut i, mut j) = (0, 0);
+        while i < left.len() && j < right.len() {
+            if self.anchored(&left[i], &right[j]) && lengths[i][j] == lengths[i + 1][j + 1] + 1 {
+                anchors.push((i, j));
+                i += 1;
+                j += 1;
+            } else if lengths[i + 1][j] >= lengths[i][j + 1] {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+        anchors.push((left.len(), right.len()));
+        let mut positions = Vec::new();
+        let (mut left_start, mut right_start) = (0, 0);
+        for (left_end, right_end) in anchors {
+            if left_end - left_start == right_end - right_start {
+                positions.extend((left_start..left_end).zip(right_start..right_end));
+            }
+            (left_start, right_start) = (left_end + 1, right_end + 1);
+        }
+        positions
+    }
+
+    fn pair_neighbourhood(&mut self, policy: Policy) {
+        let left = Calls::new(self.left, &self.left_names);
+        let right = Calls::new(self.right, &self.right_names);
+        let left_to_right: HashMap<usize, usize> = self
+            .pairs
+            .values()
+            .map(|pair| (pair.left, pair.right))
+            .collect();
+        let right_to_left: HashMap<usize, usize> = self
+            .pairs
+            .values()
+            .map(|pair| (pair.right, pair.left))
+            .collect();
+        let left_paired: HashSet<usize> = self.pairs.keys().copied().collect();
+        let accepted: Vec<(usize, usize, Evidence)> = self
+            .unpaired_left()
+            .filter_map(|left_index| {
+                let candidates = expected(
+                    left_index,
+                    &left,
+                    &right,
+                    &left_to_right,
+                    &self.right_paired,
+                );
+                let (right_index, support, ppm) =
+                    best_expected(left_index, candidates, self.left, self.right, policy)?;
+                let candidates = expected(right_index, &right, &left, &right_to_left, &left_paired);
+                let (back, _, _) =
+                    best_expected(right_index, candidates, self.right, self.left, policy)?;
+                (back == left_index).then_some((
+                    left_index,
+                    right_index,
+                    Evidence::Neighbourhood { support, ppm },
+                ))
+            })
+            .collect();
+        for (left_index, right_index, evidence) in accepted {
+            self.insert(left_index, right_index, evidence);
+        }
+    }
+
     fn pair_similar(&mut self, policy: Policy) {
         let lefts: Vec<usize> = self.unpaired_left().collect();
         let rights: Vec<usize> = self.unpaired_right().collect();
@@ -252,20 +393,39 @@ impl<'a> State<'a> {
                 record(&mut best_left, right, left, score);
             }
         }
-        let accepted: Vec<(usize, usize, u32)> = best_right
+        let accepted: Vec<(usize, usize, Evidence)> = best_right
             .iter()
             .filter_map(|(left, (right, score, second))| {
                 let (back, _, back_second) = best_left.get(right)?;
+                if *back != *left {
+                    return None;
+                }
                 let lead = |second: u32| score.saturating_sub(second) >= policy.margin_ppm;
-                (*back == *left
-                    && *score >= policy.minimum_ppm
-                    && lead(*second)
-                    && lead(*back_second))
-                .then_some((*left, *right, *score))
+                let dominates = |second: u32| {
+                    u64::from(*score) >= u64::from(second) * u64::from(policy.dominance_ratio)
+                };
+                if *score >= policy.minimum_ppm && lead(*second) && lead(*back_second) {
+                    Some((*left, *right, Evidence::Similar { ppm: *score }))
+                } else if *score >= policy.dominant_minimum_ppm
+                    && dominates(*second)
+                    && dominates(*back_second)
+                {
+                    let runner_up_ppm = (*second).max(*back_second);
+                    Some((
+                        *left,
+                        *right,
+                        Evidence::Dominant {
+                            ppm: *score,
+                            runner_up_ppm,
+                        },
+                    ))
+                } else {
+                    None
+                }
             })
             .collect();
-        for (left, right, ppm) in accepted {
-            self.insert(left, right, Evidence::Similar { ppm });
+        for (left, right, evidence) in accepted {
+            self.insert(left, right, evidence);
         }
     }
 }
@@ -317,4 +477,88 @@ fn record(table: &mut HashMap<usize, (usize, u32, u32)>, key: usize, candidate: 
     } else {
         entry.2 = entry.2.max(score);
     }
+}
+
+/// Call relations between the uniquely named functions of one revision.
+struct Calls {
+    callees: Vec<BTreeSet<usize>>,
+    callers: Vec<BTreeSet<usize>>,
+}
+
+impl Calls {
+    fn new(revision: &Revision, names: &HashMap<&str, usize>) -> Self {
+        let count = revision.functions.len();
+        let mut callees = vec![BTreeSet::new(); count];
+        let mut callers = vec![BTreeSet::new(); count];
+        for (caller, function) in revision.functions.iter().enumerate() {
+            for callee in &function.body.calls {
+                if let Some(&callee) = names.get(callee.as_str()) {
+                    callees[caller].insert(callee);
+                    callers[callee].insert(caller);
+                }
+            }
+        }
+        Self { callees, callers }
+    }
+}
+
+/// Unpaired functions of the other revision where `index` is expected, with
+/// the number of relations that support each: the callees of each paired
+/// caller's counterpart and the callers of each paired callee's counterpart.
+fn expected(
+    index: usize,
+    this: &Calls,
+    other: &Calls,
+    counterpart: &HashMap<usize, usize>,
+    other_paired: &HashSet<usize>,
+) -> BTreeMap<usize, u32> {
+    let mut support: BTreeMap<usize, u32> = BTreeMap::new();
+    let related = [
+        (&this.callers[index], &other.callees),
+        (&this.callees[index], &other.callers),
+    ];
+    for (neighbours, relation) in related {
+        for neighbour in neighbours {
+            let Some(&paired) = counterpart.get(neighbour) else {
+                continue;
+            };
+            for candidate in &relation[paired] {
+                if !other_paired.contains(candidate) {
+                    *support.entry(*candidate).or_default() += 1;
+                }
+            }
+        }
+    }
+    support
+}
+
+/// The unique best expected candidate above the similarity floor, as
+/// (candidate, support, similarity): the most support, then the most similar
+/// body. A tie within the similarity margin leaves `index` unpaired.
+fn best_expected(
+    index: usize,
+    candidates: BTreeMap<usize, u32>,
+    this: &Revision,
+    other: &Revision,
+    policy: Policy,
+) -> Option<(usize, u32, u32)> {
+    let body = &this.functions[index].body;
+    let mut scored: Vec<(u32, u32, usize)> = candidates
+        .into_iter()
+        .filter(|(candidate, _)| comparable(body.size, other.functions[*candidate].body.size))
+        .map(|(candidate, support)| {
+            let ppm = similarity_ppm(&body.parcels, &other.functions[candidate].body.parcels);
+            (support, ppm, candidate)
+        })
+        .filter(|(_, ppm, _)| *ppm >= policy.neighbourhood_minimum_ppm)
+        .collect();
+    scored.sort_by(|a, b| b.cmp(a));
+    let (support, ppm, candidate) = *scored.first()?;
+    if let Some((next_support, next_ppm, _)) = scored.get(1)
+        && *next_support == support
+        && ppm.saturating_sub(*next_ppm) < policy.margin_ppm
+    {
+        return None;
+    }
+    Some((candidate, support, ppm))
 }

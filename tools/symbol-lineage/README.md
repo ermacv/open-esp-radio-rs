@@ -27,12 +27,30 @@ step pairs only functions that are still unpaired on both sides:
 
 1. the same symbol name, unique in both revisions;
 2. the same normalized body, unique among the unpaired functions;
-3. the call graph: two paired functions with the same number of calls vote
-   for the callees at equal call positions. A pair needs a single, mutual
-   vote and at least `--call-graph-minimum-ppm` body similarity;
-4. body similarity of at least `--minimum-similarity-ppm`, with a
-   `--similarity-margin-ppm` lead over the next candidate in both directions,
-   followed by another call-graph pass.
+3. the call graph: paired callers vote for the callees at corresponding call
+   positions. Call lists of equal length correspond position by position.
+   Lists of different length are aligned on the callees that already
+   correspond (a longest common subsequence), and only positions inside
+   equally long gaps between those anchors vote. A pair needs a single,
+   mutual vote and at least `--call-graph-minimum-ppm` body similarity;
+4. body similarity, accepted only as a mutual best: at least
+   `--minimum-similarity-ppm` with a `--similarity-margin-ppm` lead over the
+   next candidate in both directions, or else at least
+   `--dominant-minimum-ppm` while `--dominance-ratio` times the next
+   candidate in both directions (a rewritten function with no close rival);
+5. the neighbourhood: an unpaired function is expected among the callees of
+   its paired callers' counterparts and the callers of its paired callees'
+   counterparts. Each such relation supports a candidate. The candidate with
+   the most support, then the most similar body of at least
+   `--neighbourhood-minimum-ppm`, is accepted only when no other candidate
+   has equal support within the similarity margin, and only as a mutual best.
+   This separates identical bodies, such as small getters, by where they are
+   called.
+
+Steps 2 to 5 repeat until a round pairs nothing. Each accepted pair leaves
+the candidate pools, so a later round can pair a function whose closest
+rival has since been paired elsewhere, and a call-graph or neighbourhood vote
+can use pairs found by similarity.
 
 A normalized body masks exactly the immediate bits that each RISC-V
 relocation resolves at link time. Opcodes, registers, relocation types and
@@ -40,8 +58,9 @@ branch targets inside the function stay significant; target symbol names do
 not. Similarity is the longest common subsequence of 16-bit parcels relative
 to both lengths.
 
-Ambiguity is never resolved by choice. Duplicate names or bodies and
-competing votes leave functions unpaired. A function that first appears after
+Ambiguity is never resolved by choice. Duplicate names or bodies stay
+unpaired unless their neighbourhoods tell them apart, and competing votes or
+tied candidates leave functions unpaired. A function that first appears after
 the named revision, or whose chain breaks, has no recovered name and needs a
 manual decision.
 
@@ -55,8 +74,10 @@ identifier.
 ## Outputs
 
 - `--out`: JSON report with revision identities, per-step counts and, for
-  every function of the last revision, its source name, origin revision and
-  the evidence and body similarity of every step;
+  every function of the last revision, its source name, origin revision, the
+  evidence and body similarity of every step since that origin (`steps`), and
+  its complete pairing chain whether or not a source name exists (`chain`),
+  which follows a function across revisions that are all obfuscated;
 - `--names`: compact TOML map from each recovered generated name to its source
   name, origin revision, weakest evidence and lowest body similarity;
 - `--redefine-syms`: `generated source` lines for

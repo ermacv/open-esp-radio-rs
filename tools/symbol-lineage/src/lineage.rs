@@ -56,6 +56,10 @@ pub struct Recovered {
     pub origin: Option<String>,
     /// Evidence for every revision step since `origin`.
     pub steps: Vec<Step>,
+    /// Evidence for every revision step since the earliest revision of the
+    /// function's unbroken pairing chain, whether or not it carries a source
+    /// name. Its first step names the function in that revision.
+    pub chain: Vec<Step>,
 }
 
 /// Evidence for one revision step of a lineage.
@@ -77,6 +81,8 @@ pub struct StepSummary {
     pub exact_body: usize,
     pub call_graph: usize,
     pub similar: usize,
+    pub dominant: usize,
+    pub neighbourhood: usize,
     pub changed_bodies: usize,
     /// Pairs whose bodies share less than half of their parcels.
     pub dissimilar: usize,
@@ -127,11 +133,15 @@ pub fn trace(revisions: &[Revision], policy: Policy, class: &NameClass) -> Linea
                 Evidence::ExactBody => summary.exact_body += 1,
                 Evidence::CallGraph => summary.call_graph += 1,
                 Evidence::Similar { .. } => summary.similar += 1,
+                Evidence::Dominant { .. } => summary.dominant += 1,
+                Evidence::Neighbourhood { .. } => summary.neighbourhood += 1,
             }
             summary.changed_bodies += usize::from(!pair.identical);
             summary.dissimilar += usize::from(pair.similarity_ppm < 500_000);
             let previous = &current[pair.left];
             let entry = &mut next[pair.right];
+            entry.chain.clone_from(&previous.chain);
+            entry.chain.push(step(right, previous, pair));
             if previous.source_name.is_none() {
                 continue;
             }
@@ -190,6 +200,7 @@ fn seed(revision: &Revision, class: &NameClass) -> Vec<Recovered> {
                 source_name: plain.then(|| function.name.clone()),
                 origin: plain.then(|| revision.label.clone()),
                 steps: Vec::new(),
+                chain: Vec::new(),
             }
         })
         .collect()

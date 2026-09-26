@@ -60,6 +60,15 @@ struct Arguments {
     /// Required lead over the next candidate in parts per million.
     #[arg(long, default_value_t = Policy::default().margin_ppm)]
     similarity_margin_ppm: u32,
+    /// Minimum similarity of a dominant mutual best in parts per million.
+    #[arg(long, default_value_t = Policy::default().dominant_minimum_ppm)]
+    dominant_minimum_ppm: u32,
+    /// How many times a dominant mutual best must exceed its runner up.
+    #[arg(long, default_value_t = Policy::default().dominance_ratio)]
+    dominance_ratio: u32,
+    /// Minimum similarity of a neighbourhood pair in parts per million.
+    #[arg(long, default_value_t = Policy::default().neighbourhood_minimum_ppm)]
+    neighbourhood_minimum_ppm: u32,
 }
 
 fn main() -> ExitCode {
@@ -86,6 +95,9 @@ fn run(arguments: Arguments) -> Result<(), Error> {
         minimum_ppm: arguments.minimum_similarity_ppm,
         margin_ppm: arguments.similarity_margin_ppm,
         call_graph_minimum_ppm: arguments.call_graph_minimum_ppm,
+        dominant_minimum_ppm: arguments.dominant_minimum_ppm,
+        dominance_ratio: arguments.dominance_ratio,
+        neighbourhood_minimum_ppm: arguments.neighbourhood_minimum_ppm,
     };
     let class = if arguments.obfuscated_prefixes.is_empty() {
         NameClass::Heuristic
@@ -224,6 +236,8 @@ fn strength_rank(evidence: Evidence) -> u8 {
         Evidence::ExactBody => 1,
         Evidence::CallGraph => 2,
         Evidence::Similar { .. } => 3,
+        Evidence::Neighbourhood { .. } => 4,
+        Evidence::Dominant { .. } => 5,
     }
 }
 
@@ -233,19 +247,23 @@ fn evidence_name(evidence: Evidence) -> &'static str {
         Evidence::ExactBody => "exact-body",
         Evidence::CallGraph => "call-graph",
         Evidence::Similar { .. } => "similar",
+        Evidence::Dominant { .. } => "dominant",
+        Evidence::Neighbourhood { .. } => "neighbourhood",
     }
 }
 
 fn report(lineage: &Lineage) {
     for step in &lineage.steps {
         println!(
-            "STEP {} -> {}: same-name={} exact-body={} call-graph={} similar={} changed={} dissimilar={} unpaired={}/{}",
+            "STEP {} -> {}: same-name={} exact-body={} call-graph={} similar={} dominant={} neighbourhood={} changed={} dissimilar={} unpaired={}/{}",
             step.from,
             step.to,
             step.same_name,
             step.exact_body,
             step.call_graph,
             step.similar,
+            step.dominant,
+            step.neighbourhood,
             step.changed_bodies,
             step.dissimilar,
             step.unpaired_left,

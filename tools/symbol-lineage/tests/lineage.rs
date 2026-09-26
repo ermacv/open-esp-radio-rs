@@ -252,3 +252,174 @@ fn archive_reader_extracts_functions_and_their_calls() {
     assert_eq!(function.body.calls, ["r_callee"]);
     assert_eq!(function.body.size, bytes.len());
 }
+
+/// A caller body with `calls` call sites, each followed by distinct filler.
+fn calls_bytes(calls: usize, filler: u8) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for _ in 0..calls {
+        bytes.extend([0x97, 0x00, 0x00, 0x00, 0xe7, 0x80, 0x00, 0x00]);
+    }
+    bytes.extend([0x01, filler]);
+    bytes.extend(RET);
+    bytes
+}
+
+#[test]
+fn call_lists_of_different_length_vote_inside_equal_gaps_between_anchors() {
+    // The caller gains one call after the changed callee; the stable callee
+    // anchors the alignment and the gap before it pairs the changed callee.
+    let changed_old = leaf(0x10, 40);
+    let mut changed_new = changed_old.clone();
+    changed_new[7] ^= 0xff;
+    let left = revision(
+        "left",
+        vec![
+            function("r_caller", &calls_bytes(2, 1), &["r_changed", "r_stable"]),
+            function("r_changed", &changed_old, &[]),
+            function("r_stable", &leaf(0x60, 20), &[]),
+        ],
+    );
+    let right = revision(
+        "right",
+        vec![
+            function(
+                "r_caller",
+                &calls_bytes(3, 1),
+                &[
+                    &tokens("Changed0Token0Aa1Bb2Cc"),
+                    "r_stable",
+                    &tokens("Added0Token0Dd3Ee4Ff5"),
+                ],
+            ),
+            function(&tokens("Changed0Token0Aa1Bb2Cc"), &changed_new, &[]),
+            function("r_stable", &leaf(0x60, 20), &[]),
+            function(&tokens("Added0Token0Dd3Ee4Ff5"), &leaf(0x90, 6), &[]),
+        ],
+    );
+    let pairs = correlate(&left, &right, Policy::default());
+    let changed = pairs.iter().find(|pair| pair.right == 1).unwrap();
+    assert_eq!((changed.left, changed.evidence), (1, Evidence::CallGraph));
+    assert!(pairs.iter().all(|pair| pair.right != 3));
+}
+
+/// `leaf` with one byte replaced every `stride` bytes; an even stride of
+/// `2 * n` changes every `n`-th parcel.
+fn edited(seed: u8, length: usize, stride: usize) -> Vec<u8> {
+    let mut bytes = leaf(seed, length);
+    for index in (0..length).step_by(stride) {
+        bytes[index] ^= 0x5a;
+    }
+    bytes
+}
+
+#[test]
+fn a_dominant_mutual_best_pairs_below_the_similarity_minimum() {
+    let old = leaf(0x21, 64);
+    let new = edited(0x21, 64, 6);
+    let left = revision("left", vec![function("r_rewritten", &old, &[])]);
+    let right = revision(
+        "right",
+        vec![
+            function(&tokens("Rewritten0Token0Aa1Bb2"), &new, &[]),
+            function(&tokens("Unrelated0Token0Cc3Dd4"), &leaf(0xc7, 64), &[]),
+        ],
+    );
+    let pairs = correlate(&left, &right, Policy::default());
+    let [pair] = pairs.as_slice() else {
+        panic!("expected one pair, got {pairs:?}");
+    };
+    assert_eq!(pair.right, 0);
+    let Evidence::Dominant { ppm, runner_up_ppm } = pair.evidence else {
+        panic!("expected dominance, got {:?}", pair.evidence);
+    };
+    assert!(ppm < Policy::default().minimum_ppm);
+    assert!(u64::from(ppm) >= 2 * u64::from(runner_up_ppm));
+}
+
+#[test]
+fn a_close_runner_up_blocks_dominance() {
+    let old = leaf(0x21, 64);
+    let left = revision("left", vec![function("r_rewritten", &old, &[])]);
+    let right = revision(
+        "right",
+        vec![
+            function(&tokens("Rewritten0Token0Aa1Bb2"), &edited(0x21, 64, 6), &[]),
+            function(&tokens("Rewritten1Token0Cc3Dd4"), &edited(0x21, 64, 8), &[]),
+        ],
+    );
+    assert!(correlate(&left, &right, Policy::default()).is_empty());
+}
+
+#[test]
+fn the_neighbourhood_pairs_identical_bodies_where_paired_callers_expect_them() {
+    // Two identical getters, each called by one caller whose call count
+    // changes: only the neighbourhood tells them apart.
+    let getter = leaf(0x33, 10);
+    let left = revision(
+        "left",
+        vec![
+            function("r_first_caller", &calls_bytes(1, 1), &["r_first_getter"]),
+            function("r_second_caller", &calls_bytes(1, 2), &["r_second_getter"]),
+            function("r_first_getter", &getter, &[]),
+            function("r_second_getter", &getter, &[]),
+        ],
+    );
+    let right = revision(
+        "right",
+        vec![
+            function(
+                "r_first_caller",
+                &calls_bytes(2, 1),
+                &[
+                    &tokens("First0Getter0Aa1Bb2Cc"),
+                    &tokens("First0Getter0Aa1Bb2Cc"),
+                ],
+            ),
+            function(
+                "r_second_caller",
+                &calls_bytes(2, 2),
+                &[
+                    &tokens("Second0Getter0Dd3Ee4F"),
+                    &tokens("Second0Getter0Dd3Ee4F"),
+                ],
+            ),
+            function(&tokens("First0Getter0Aa1Bb2Cc"), &getter, &[]),
+            function(&tokens("Second0Getter0Dd3Ee4F"), &getter, &[]),
+        ],
+    );
+    let pairs = correlate(&left, &right, Policy::default());
+    let partner = |right: usize| {
+        pairs
+            .iter()
+            .find(|pair| pair.right == right)
+            .map(|pair| (pair.left, pair.evidence))
+    };
+    assert!(matches!(
+        partner(2),
+        Some((2, Evidence::Neighbourhood { support: 1, .. }))
+    ));
+    assert!(matches!(
+        partner(3),
+        Some((3, Evidence::Neighbourhood { support: 1, .. }))
+    ));
+}
+
+#[test]
+fn the_pairing_chain_crosses_revisions_without_source_names() {
+    let body = leaf(0x44, 20);
+    let first = tokens("First0Token0Aa1Bb2Cc3");
+    let second = tokens("Second0Token0Dd4Ee5Ff");
+    let lineage = trace(
+        &[
+            revision("r0", vec![function(&first, &body, &[])]),
+            revision("r1", vec![function(&second, &body, &[])]),
+        ],
+        Policy::default(),
+        &NameClass::Prefixes(vec!["r_sym_".into()]),
+    );
+    let function = &lineage.functions[0];
+    assert_eq!(function.source_name, None);
+    assert!(function.steps.is_empty());
+    assert_eq!(function.chain.len(), 1);
+    assert_eq!(function.chain[0].previous_name, first);
+}

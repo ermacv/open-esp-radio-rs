@@ -470,9 +470,81 @@ const PPDU_HT_40MHZ: u32 = 0x8000;
 /// MPDU, which has one descriptor.
 const PPDU_HT_DESCRIPTOR_COUNT_WORDS: [usize; 2] = [10, 11];
 const PPDU_SINGLE_DESCRIPTOR_COUNT: u32 = 0x0001_0000;
+const PPDU_DESCRIPTOR_COUNT_MASK: u32 = 0x00ff_0000;
 /// Offset of the `pTxRx` row word whose bytes 0 and 1 are the entry classes
 /// `mac_tx_set_len` and `mac_tx_set_htsig` publish.
 const PPDU_AUXILIARY_CLASS_OFFSET: u32 = 0x40;
+/// The transmit context (`esf_buf`) of the fixture and its word at 0x24,
+/// whose halfword bit 12 marks an A-MPDU for `mac_tx_set_plcp0` and
+/// `mac_tx_set_hesig` and whose byte 0x26 is the MPDU descriptor count
+/// `mac_tx_set_hesig` publishes.
+const PPDU_TX_CONTEXT: u32 = 0x3fff_1100;
+const PPDU_TX_CONTEXT_FLAGS_WORD: usize = 9;
+const PPDU_HE_AGGREGATE: u32 = 1 << 12;
+const PPDU_HE_AGGREGATE_MPDUS: u32 = 0x0002_0000;
+const PPDU_HE_SINGLE_MPDU: u32 = 0x0001_0000;
+/// Descriptor word-0 bits of an HE SU PPDU: bit 31 selects the HE branch of
+/// `hal_mac_tx_set_ppdu` and bit 30 the SU acknowledgement of
+/// `mac_tx_set_plcp0`.
+const PPDU_HE_SU: u32 = 1 << 31 | 1 << 30;
+/// Descriptor word 1, whose low nibble is the TID `mac_tx_set_tb` tests
+/// against `wifi_he_get_hetb_tid_bitmap`: 0x01, 0x81, 0xa1 or 0xa3 by
+/// configuration, 0xa1 otherwise. TID 6 is in none, so the PPDU gets no HE
+/// trigger-based preparation, which production does not implement.
+const PPDU_HE_TID_WORD: usize = 1;
+const PPDU_HE_NON_TB_TID: u32 = 6;
+/// Descriptor word 10, whose low halfword (0x28) is the minimum-MPDU spacing
+/// `mac_tx_set_hesig` publishes in all three channel-width lanes.
+const PPDU_HE_SPACING_WORD: usize = 10;
+const PPDU_HE_CANONICAL_SPACING: usize = 11;
+/// HT-object byte 0x2f, whose low two bits `mac_tx_set_hesig` publishes as
+/// the HE-SIG-A GI/LTF code.
+const PPDU_HE_GI_LTF_WORD: usize = 11;
+const PPDU_HE_GI_LTF_SHIFT: u32 = 24;
+/// First HE rate code; the vendor descriptor carries `0x1a + MCS` for every
+/// GI/LTF.
+const PPDU_HE_CODE: u32 = 0x1a;
+/// Canonical HE parameters: MCS, GI/LTF and format come from the case state;
+/// LDPC (the vendor's `esp_wifi_cert_tx_bcc` default), no DCM, the fixture
+/// APEP length, BSS color and spatial reuse zero, and the HT fixture's
+/// spacing, priorities and interface.
+const PPDU_HE_CANONICAL: [u32; 20] = [
+    0,
+    PPDU_DESCRIPTOR,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0xc2e,
+    1,
+    0,
+    0,
+    40,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+];
+const PPDU_HE_CANONICAL_MCS: usize = 2;
+const PPDU_HE_CANONICAL_GI_LTF: usize = 3;
+const PPDU_HE_CANONICAL_FORMAT: usize = 6;
+const PPDU_HE_CANONICAL_DESCRIPTORS: usize = 8;
+/// Every HE SU rate: MCS, GI/LTF code (bits 8..10) and A-MPDU (bit 16).
+const PPDU_HE_STATES: [u32; 80] = {
+    let mut states = [0; 80];
+    let mut i = 0;
+    while i < states.len() {
+        let i32 = i as u32;
+        states[i] = i32 % 10 | (i32 / 10 % 4) << 8 | (i32 / 40) << 16;
+        i += 1;
+    }
+    states
+};
 /// First HT rate-control code of each guard interval.
 const PPDU_HT_LONG_GI_CODE: u32 = 0x10;
 const PPDU_HT_SHORT_GI_CODE: u32 = 0x1a;
@@ -620,6 +692,34 @@ enum Frame {
     Legacy {
         group: bool,
     },
+    /// An HE SU PPDU with its GI/LTF code.
+    He {
+        aggregate: bool,
+        gi_ltf: u32,
+    },
+}
+
+/// The HE fixture: the HT fixture's objects as an HE SU PPDU.
+fn he_ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
+    let [_, _, _, state] = words_in else {
+        unreachable!("PPDU words: program, auxiliary, power table, state")
+    };
+    let (mcs, gi_ltf, aggregate) = (state & 0xff, state >> 8 & 0xff, state >> 16 & 1);
+    let mut canonical = PPDU_HE_CANONICAL;
+    canonical[PPDU_HE_CANONICAL_MCS] = mcs;
+    canonical[PPDU_HE_CANONICAL_GI_LTF] = gi_ltf;
+    canonical[PPDU_HE_CANONICAL_FORMAT] = aggregate;
+    canonical[PPDU_HE_CANONICAL_DESCRIPTORS] = 1 + aggregate;
+    ppdu_objects(
+        vendor_side,
+        PPDU_HE_CODE + mcs,
+        0,
+        Frame::He {
+            aggregate: aggregate == 1,
+            gi_ltf,
+        },
+        words(&canonical),
+    )
 }
 
 /// Vendor PP objects of the fixture with rate-control code `code` and the
@@ -631,8 +731,12 @@ fn ppdu_objects(
     frame: Frame,
     canonical: Vec<u8>,
 ) -> Result<Objects> {
-    let single = !matches!(frame, Frame::HtAggregate);
+    // The HT single-MPDU and legacy transformations of the A-MPDU fixture.
+    let single = matches!(frame, Frame::HtSingle | Frame::Legacy { .. });
     let legacy = matches!(frame, Frame::Legacy { .. });
+    // Every non-A-MPDU HT fixture and every HE fixture reads the frame
+    // buffer through descriptor word 1.
+    let buffer = !matches!(frame, Frame::HtAggregate);
     let rom = |name: &str| vendor_side.symbol(name);
     let mut vendor: Vec<(u32, Vec<u8>)> = PPDU_VENDOR
         .iter()
@@ -645,19 +749,44 @@ fn ppdu_objects(
                 if single {
                     values[0] &= !PPDU_AGGREGATE_BITS;
                     for word in PPDU_HT_DESCRIPTOR_COUNT_WORDS {
-                        values[word] = PPDU_SINGLE_DESCRIPTOR_COUNT;
+                        values[word] &= !PPDU_DESCRIPTOR_COUNT_MASK;
+                        values[word] |= PPDU_SINGLE_DESCRIPTOR_COUNT;
                     }
                 }
                 if let Frame::Legacy { group: true } = frame {
                     values[0] |= PPDU_GROUP_RECEIVER;
                 }
+                if let Frame::He { aggregate, gi_ltf } = frame {
+                    values[0] &= !PPDU_AGGREGATE_BITS;
+                    values[0] |= PPDU_HE_SU;
+                    values[PPDU_HE_TID_WORD] = PPDU_HE_NON_TB_TID;
+                    values[PPDU_HE_SPACING_WORD] &= !0xffff;
+                    values[PPDU_HE_SPACING_WORD] |= PPDU_HE_CANONICAL[PPDU_HE_CANONICAL_SPACING];
+                    values[PPDU_HE_GI_LTF_WORD] &= !(0xff << PPDU_HE_GI_LTF_SHIFT);
+                    values[PPDU_HE_GI_LTF_WORD] |= gi_ltf << PPDU_HE_GI_LTF_SHIFT;
+                    if !aggregate {
+                        for word in PPDU_HT_DESCRIPTOR_COUNT_WORDS {
+                            values[word] &= !PPDU_DESCRIPTOR_COUNT_MASK;
+                            values[word] |= PPDU_SINGLE_DESCRIPTOR_COUNT;
+                        }
+                    }
+                }
+            }
+            if let Frame::He { aggregate, .. } = frame
+                && *address == PPDU_TX_CONTEXT
+            {
+                values[PPDU_TX_CONTEXT_FLAGS_WORD] = if aggregate {
+                    PPDU_HE_AGGREGATE | PPDU_HE_AGGREGATE_MPDUS
+                } else {
+                    PPDU_HE_SINGLE_MPDU
+                };
             }
             // A single MPDU has no aggregation state: its `pTxRx` row
             // contributes entry class zero to both packed length words.
             if single && *address == PPDU_AUXILIARY + PPDU_AUXILIARY_CLASS_OFFSET {
                 values[0] = 0;
             }
-            if single && *address == PPDU_DESCRIPTOR {
+            if buffer && *address == PPDU_DESCRIPTOR {
                 values[1] = PPDU_LEGACY_BUFFER;
             }
             if legacy && *address == PPDU_PROGRAM {
@@ -669,7 +798,12 @@ fn ppdu_objects(
         .collect();
     let mut table = vec![0u8; PPDU_OSI_BYTES];
     table[PPDU_COEX_PTI_CLAMP_SLOT..].copy_from_slice(&PPDU_COEX_PTI_CLAMP.to_le_bytes());
-    if single {
+    // `mac_tx_set_hesig` reads the certification BCC override from ROM
+    // `.bss`, zero unless certification code sets it: LDPC.
+    if matches!(frame, Frame::He { .. }) {
+        vendor.push((rom("esp_wifi_cert_tx_bcc")?, vec![0; 4]));
+    }
+    if buffer {
         vendor.push((
             PPDU_LEGACY_BUFFER,
             words(&[PPDU_LEGACY_CANONICAL[PPDU_LEGACY_CANONICAL_SIGNAL]]),
@@ -1200,6 +1334,22 @@ pub const LEAVES: &[Leaf] = &[
             legacy_ppdu_abi,
         ),
         &PPDU_LEGACY_STATES,
+    ),
+    stated(
+        objects(
+            leaf(
+                "hal_mac_tx_set_ppdu",
+                "open_libpp_tx_trace_hal_mac_tx_set_he_ppdu",
+                &[
+                    ("program_address", Domain::Words(&[INPUT])),
+                    ("_vendor_auxiliary", Domain::Words(&[PPDU_AUXILIARY])),
+                    ("power_table", Domain::Words(&[PPDU_POWER_COPY])),
+                ],
+                false,
+            ),
+            he_ppdu_abi,
+        ),
+        &PPDU_HE_STATES,
     ),
     stated(
         objects(

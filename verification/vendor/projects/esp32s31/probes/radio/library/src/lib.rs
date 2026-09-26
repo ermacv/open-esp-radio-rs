@@ -557,6 +557,30 @@ struct CanonicalLegacyTxParameters {
     hardware_key_selector: u32,
 }
 
+#[repr(C)]
+struct CanonicalHeTxParameters {
+    queue: u32,
+    descriptor_head: u32,
+    mcs: u32,
+    guard_interval_and_ltf: u32,
+    ldpc: u32,
+    dcm: u32,
+    format: u32,
+    apep_length: u32,
+    descriptor_count: u32,
+    bss_color: u32,
+    spatial_reuse: u32,
+    protection_spacing: u32,
+    timeout: u32,
+    scheduler_priority: u32,
+    packet_priority: u32,
+    priority_count: u32,
+    aifsn: u32,
+    contention_window: u32,
+    interface: u32,
+    hardware_key_selector: u32,
+}
+
 struct ValidationPreparedTxDma(u32);
 
 // SAFETY: this verification-only authority is instantiated solely from the
@@ -756,6 +780,116 @@ oer_probe_macros::probe! {
         )
         .expect("verification legacy parameters are in the reviewed PAC domain");
         oer_esp32s31_hal::validation::hal_mac_tx_set_legacy_ppdu(parameters.queue as u8, program)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// The HE SU responsibility of `hal_mac_tx_set_ppdu` over canonical
+    /// parameters; powers come from the power table at the codes production
+    /// selects.
+    pub fn open_libpp_tx_trace_hal_mac_tx_set_he_ppdu(
+        program_address: u32,
+        _vendor_auxiliary: u32,
+        power_table: u32,
+    ) -> u32 {
+        use oer_esp32s31_hal::types::{
+            MacHeFecCoding, MacHeGuardIntervalAndLtf, MacHeMcs, MacHeRate, MacHeTxFormat,
+            MacHeTxParameters, MacHeTxProgram, MacInterface, MacTxControlFrame, MacTxProtection,
+        };
+        use oer_esp32s31_ieee80211_mac::{
+            rx::HeGuardIntervalAndLtf,
+            tx::{HeMcs, HeRate},
+        };
+
+        let parameters = program_address as *const CanonicalHeTxParameters;
+        // SAFETY: the verification profile supplies one initialized, aligned
+        // and immutable parameter object for the duration of this call.
+        let parameters = unsafe { &*parameters };
+        let interface = match parameters.interface {
+            0 => MacInterface::Station,
+            1 => MacInterface::AccessPoint,
+            2 => MacInterface::Context2,
+            3 => MacInterface::Context3,
+            _ => panic!("verification MAC interface is out of range"),
+        };
+        let mcs = match parameters.mcs {
+            0 => MacHeMcs::Mcs0,
+            1 => MacHeMcs::Mcs1,
+            2 => MacHeMcs::Mcs2,
+            3 => MacHeMcs::Mcs3,
+            4 => MacHeMcs::Mcs4,
+            5 => MacHeMcs::Mcs5,
+            6 => MacHeMcs::Mcs6,
+            7 => MacHeMcs::Mcs7,
+            8 => MacHeMcs::Mcs8,
+            9 => MacHeMcs::Mcs9,
+            _ => panic!("verification HE MCS is out of range"),
+        };
+        let (gi_ltf, driver_gi_ltf) = match parameters.guard_interval_and_ltf {
+            0 => (MacHeGuardIntervalAndLtf::OneLtf800Ns, HeGuardIntervalAndLtf::OneLtf800Ns),
+            1 => (MacHeGuardIntervalAndLtf::TwoLtf800Ns, HeGuardIntervalAndLtf::TwoLtf800Ns),
+            2 => (MacHeGuardIntervalAndLtf::TwoLtf1600Ns, HeGuardIntervalAndLtf::TwoLtf1600Ns),
+            3 => (MacHeGuardIntervalAndLtf::FourLtf3200Ns, HeGuardIntervalAndLtf::FourLtf3200Ns),
+            _ => panic!("verification HE guard interval is out of range"),
+        };
+        let format = match parameters.format {
+            0 => MacHeTxFormat::Smpdu,
+            1 => MacHeTxFormat::Ampdu,
+            _ => panic!("verification HE format is out of range"),
+        };
+        let rate = HeRate::new(
+            HeMcs::from_index(parameters.mcs as u8).expect("verification HE MCS is in range"),
+            driver_gi_ltf,
+        );
+        let control = rate.vendor_control_rate();
+        let power = |code: u8| {
+            let pair = (power_table + 2 * u32::from(code)) as *const [u8; 2];
+            // SAFETY: the verification profile supplies the whole table.
+            unsafe { pair.read() }
+        };
+        let [data_power_primary, data_power_alternate] = power(rate.power_lookup_code());
+        let [rts_power_primary, rts_power_alternate] = power(control.code());
+        let dma = ValidationPreparedTxDma(parameters.descriptor_head);
+        let program = MacHeTxProgram::new(
+            &dma,
+            MacHeTxParameters {
+                control: MacTxControlFrame {
+                    protection: MacTxProtection::None,
+                    rate: control.pac_rate(),
+                    power_primary: rts_power_primary,
+                    power_alternate: rts_power_alternate,
+                },
+                rate: MacHeRate {
+                    mcs,
+                    guard_interval_and_ltf: gi_ltf,
+                    fec_coding: if parameters.ldpc != 0 {
+                        MacHeFecCoding::Ldpc
+                    } else {
+                        MacHeFecCoding::Bcc
+                    },
+                    dcm: parameters.dcm != 0,
+                },
+                format,
+                apep_length: parameters.apep_length as u16,
+                descriptor_count: parameters.descriptor_count as u8,
+                bss_color: parameters.bss_color as u8,
+                spatial_reuse: parameters.spatial_reuse as u8,
+                software_he_control: None,
+                data_power_primary,
+                data_power_alternate,
+                protection_spacing: parameters.protection_spacing as u16,
+                timeout: parameters.timeout as u16,
+                scheduler_priority: parameters.scheduler_priority as u8,
+                packet_priority: parameters.packet_priority as u8,
+                priority_count: parameters.priority_count as u16,
+                aifsn: parameters.aifsn as u8,
+                contention_window: parameters.contention_window as u16,
+                interface,
+                hardware_key_selector: parameters.hardware_key_selector as u8,
+            },
+        )
+        .expect("verification HE parameters are in the reviewed PAC domain");
+        oer_esp32s31_hal::validation::hal_mac_tx_set_he_ppdu(parameters.queue as u8, program)
     }
 }
 

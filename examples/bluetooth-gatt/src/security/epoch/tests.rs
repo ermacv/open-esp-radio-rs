@@ -1,5 +1,6 @@
 use super::*;
 use crate::security::bonds::RamBondStore;
+use bt_hci::cmd::{Cmd, Opcode, controller_baseband::Reset};
 use bt_hci::controller::ExternalController;
 use core::{
     future::pending,
@@ -7,11 +8,92 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use oer_bluetooth_controller::LeController;
 use oer_bluetooth_hci::*;
 use trouble_host::prelude::*;
 
 mod bootstrap;
 mod failures;
+
+type Transport = LeControllerHciResources<NoopRawMutex, 4, 4, 258>;
+
+fn config() -> LeControllerBootstrapConfig {
+    LeControllerBootstrapConfig::new(
+        BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+        251,
+        4,
+    )
+    .unwrap()
+}
+
+fn transport() -> Transport {
+    Transport::new(config()).unwrap()
+}
+
+/// The Controller core behind the real transport, stepped by the test: a
+/// command can be held before the core executes it.
+struct Peer<'c> {
+    transport: InProcessHciControllerTransport<'c, NoopRawMutex, 4, 4, 258>,
+    core: LeController<'static, 4>,
+}
+
+/// A command taken from the Host and not yet executed.
+struct Held {
+    opcode: Opcode,
+    parameters: [u8; 255],
+    length: usize,
+}
+
+impl<'c> Peer<'c> {
+    fn new(transport: InProcessHciControllerTransport<'c, NoopRawMutex, 4, 4, 258>) -> Self {
+        Self {
+            transport,
+            core: LeController::new(config(), None),
+        }
+    }
+
+    /// Take the Host's next command without executing it.
+    fn hold(&mut self) -> Option<Held> {
+        let mut buffer = [0; 258];
+        match self.transport.try_receive(&mut buffer) {
+            Ok(HostToControllerFrame::Command(command)) => {
+                let mut held = Held {
+                    opcode: command.opcode(),
+                    parameters: [0; 255],
+                    length: command.parameters().len(),
+                };
+                held.parameters[..held.length].copy_from_slice(command.parameters());
+                Some(held)
+            }
+            Err(HciChannelError::Empty) => None,
+            other => panic!("unexpected Host packet {other:?}"),
+        }
+    }
+
+    /// Take the Host's Reset without executing it.
+    fn hold_reset(&mut self) -> Held {
+        let held = self.hold().expect("Host must submit its Reset");
+        assert_eq!(held.opcode, Reset::OPCODE, "expected Reset");
+        held
+    }
+
+    /// Execute a held command and publish its response.
+    fn answer(&mut self, held: Held) -> Opcode {
+        self.core
+            .command(HciCommandPacket::new(
+                held.opcode,
+                &held.parameters[..held.length],
+            ))
+            .expect("one command at a time");
+        while let Some(packet) = self.core.front() {
+            self.transport
+                .try_publish(packet.kind(), packet.as_bytes())
+                .expect("available response capacity");
+            self.core.pop();
+        }
+        held.opcode
+    }
+}
 
 fn poll<T>(future: impl Future<Output = T>) -> T {
     match pin!(future)
@@ -25,18 +107,9 @@ fn poll<T>(future: impl Future<Output = T>) -> T {
 
 #[test]
 fn stop_before_host_initialization_retains_ram_bond_and_waits_for_real_reset_response() {
-    let config = LeControllerBootstrapConfig::new(
-        BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
-        251,
-        4,
-    )
-    .unwrap();
-    let mut transport = LeControllerHciResources::<NoopRawMutex, 4, 4, 258>::new(config).unwrap();
+    let mut transport = transport();
     let endpoints = transport.split();
-    let mut peer = endpoints.controller;
-    let LeControllerCommandReadyClaim::Ready(ready) = peer.claim_initial_command_ready(()) else {
-        panic!("initial command ownership");
-    };
+    let mut peer = Peer::new(endpoints.controller);
     let mut resources = HostResources::<DefaultPacketPool, 1, 3>::new();
     let stack = trouble_host::new(
         ExternalController::<_, 1>::new(endpoints.host),
@@ -56,27 +129,12 @@ fn stop_before_host_initialization_retains_ram_bond_and_waits_for_real_reset_res
         let mut epoch = pin!(run(stack, &mut bonds, &comparison, async {}, |_| {}));
         let mut cx = Context::from_waker(Waker::noop());
         assert!(epoch.as_mut().poll(&mut cx).is_pending());
-        let mut buffer = [0; 258];
-        let LeControllerCommandIntake::Command { command, .. } =
-            peer.try_receive_classified_command_with_buffer(ready, &mut buffer)
-        else {
-            panic!("shutdown submitted Reset before initialization");
-        };
-        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
-            peer.route_idle_classified_command(command)
-        else {
-            panic!("expected Reset");
-        };
+        let reset = peer
+            .hold()
+            .expect("shutdown submitted Reset before initialization");
+        assert_eq!(reset.opcode, Reset::OPCODE);
         assert!(epoch.as_mut().poll(&mut cx).is_pending());
-        let LeControllerResetCompletion::ResponsePending(response) =
-            peer.complete_reset_after_quiescence(barrier)
-        else {
-            panic!("matching reset barrier");
-        };
-        assert!(epoch.as_mut().poll(&mut cx).is_pending());
-        let LeControllerResponsePublication::Published(_ready) = response.try_publish(&peer) else {
-            panic!("response capacity");
-        };
+        peer.answer(reset);
         // Controller::read dispatches completion; the next poll observes it.
         let mut exit = None;
         for _ in 0..4 {

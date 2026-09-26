@@ -1,6 +1,9 @@
-//! The target wrapper around real Host/HCI code, with actual queued responses.
+//! The target wrapper around real Host/HCI code and the Controller core, with actual queued responses.
 use super::{snapshot, state};
-use bt_hci::controller::ExternalController;
+use bt_hci::{
+    cmd::{Cmd, controller_baseband::Reset},
+    controller::ExternalController,
+};
 use core::{
     pin::pin,
     task::{Context, Poll, Waker},
@@ -9,6 +12,7 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use gatt_application::security::{
     bonds::RamBondStore, comparison::NumericComparison, epoch, gatt::Observation,
 };
+use oer_bluetooth_controller::LeController;
 use oer_bluetooth_hci::*;
 use oer_hil_protocol::{BluetoothGattResetReadGate as Phase, Command, Event};
 use oer_hil_target_core::bluetooth_gatt::secure::reset_gate::GatedController;
@@ -68,20 +72,16 @@ fn read_error_preserves_requested_cause_and_unconsumed_response() {
 }
 
 fn exercise(cancel: bool, fail: bool) {
-    let mut transport = LeControllerHciResources::<NoopRawMutex, 4, 4, 258>::new(
-        LeControllerBootstrapConfig::new(
-            BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
-            251,
-            4,
-        )
-        .unwrap(),
+    let config = LeControllerBootstrapConfig::new(
+        BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+        251,
+        4,
     )
     .unwrap();
+    let mut transport = LeControllerHciResources::<NoopRawMutex, 4, 4, 258>::new(config).unwrap();
     let endpoints = transport.split();
-    let mut peer = endpoints.controller;
-    let LeControllerCommandReadyClaim::Ready(ready) = peer.claim_initial_command_ready(()) else {
-        panic!("fresh owner");
-    };
+    let peer = endpoints.controller;
+    let mut core = LeController::<'_, 4>::new(config, None);
     let state = state::State::new();
     state.observe(Observation::Advertising);
     assert!(matches!(
@@ -113,38 +113,29 @@ fn exercise(cancel: bool, fail: bool) {
     let count = std::sync::Arc::new(WakeCount(std::sync::atomic::AtomicUsize::new(0)));
     let waker = Waker::from(count.clone());
     let mut cx = Context::from_waker(&waker);
-    let ready = {
+    {
         let mut lifecycle = pin!(epoch::run(stack, &mut bonds, &comparison, async {}, |_| {}));
         assert!(lifecycle.as_mut().poll(&mut cx).is_pending());
         assert_eq!(gate.phase(), Phase::ReaderHeld);
         let mut buffer = [0; 258];
-        let LeControllerCommandIntake::Command { command, .. } =
-            peer.try_receive_classified_command_with_buffer(ready, &mut buffer)
-        else {
+        let Ok(HostToControllerFrame::Command(command)) = peer.try_receive(&mut buffer) else {
             panic!("actual Reset queued");
         };
-        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
-            peer.route_idle_classified_command(command)
-        else {
-            panic!("Reset barrier");
-        };
-        let LeControllerResetCompletion::ResponsePending(response) =
-            peer.complete_reset_after_quiescence(barrier)
-        else {
-            panic!("matching completion");
-        };
-        let LeControllerResponsePublication::Published(ready) = response.try_publish(&peer) else {
-            panic!("response capacity");
-        };
+        assert_eq!(command.opcode(), Reset::OPCODE);
+        core.command(command).expect("one command");
+        let response = core
+            .front()
+            .expect("an idle Controller completes Reset at once");
+        peer.try_publish(response.kind(), response.as_bytes())
+            .expect("response capacity");
+        core.pop();
         for _ in 0..4 {
             assert!(lifecycle.as_mut().poll(&mut cx).is_pending());
         }
-        let Err((error, ready)) = peer.try_retire_transport(ready) else {
-            panic!("reader has not consumed response");
-        };
         assert_eq!(
-            error,
-            LeControllerHciRetirementError::ControllerPacketsPending
+            peer.try_retire().err(),
+            Some(HciRetirementError::ControllerPacketsPending),
+            "reader has not consumed response"
         );
         if !cancel {
             assert!(matches!(
@@ -198,8 +189,7 @@ fn exercise(cancel: bool, fail: bool) {
                 assert!(exit.reset.is_ok());
             }
         }
-        ready
-    };
+    }
     if cancel || fail {
         assert_eq!(
             gate.phase(),
@@ -209,12 +199,12 @@ fn exercise(cancel: bool, fail: bool) {
                 Phase::ReaderHeld
             }
         );
-        assert!(matches!(
-            peer.try_retire_transport(ready),
-            Err((LeControllerHciRetirementError::ControllerPacketsPending, _))
-        ));
+        assert_eq!(
+            peer.try_retire().err(),
+            Some(HciRetirementError::ControllerPacketsPending)
+        );
     } else {
         assert_eq!(gate.phase(), Phase::Released);
-        assert!(peer.try_retire_transport(ready).is_ok());
+        assert!(peer.try_retire().is_ok());
     }
 }

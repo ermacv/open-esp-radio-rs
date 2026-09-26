@@ -1,55 +1,8 @@
-//! Failure/cancellation through the actual Host and affine Controller endpoint.
+//! Failure/cancellation through the actual Host and the Controller core.
 
 use super::*;
 use crate::security::bonds::StoreError;
 use core::cell::Cell;
-
-type Transport = LeControllerHciResources<NoopRawMutex, 4, 4, 258>;
-type Peer<'a> = LeControllerCommandEndpoint<'a, NoopRawMutex, 4, 4, 258>;
-
-pub(super) fn transport() -> Transport {
-    Transport::new(
-        LeControllerBootstrapConfig::new(
-            BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
-            251,
-            4,
-        )
-        .unwrap(),
-    )
-    .unwrap()
-}
-
-pub(super) fn reset_barrier<'a>(
-    peer: &mut Peer<'a>,
-    ready: LeControllerCommandReady<'a, ()>,
-) -> LeControllerResetBarrier<'a, ()> {
-    let LeControllerCommandIntake::Command { command, .. } =
-        peer.try_receive_classified_command_with_buffer(ready, &mut [0; 258])
-    else {
-        panic!("Host must submit its shutdown command");
-    };
-    let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
-        peer.route_idle_classified_command(command)
-    else {
-        panic!("expected Reset, not advertising or enrollment");
-    };
-    barrier
-}
-
-pub(super) fn complete_reset<'a>(
-    peer: &mut Peer<'a>,
-    barrier: LeControllerResetBarrier<'a, ()>,
-) -> LeControllerCommandReady<'a, ()> {
-    let LeControllerResetCompletion::ResponsePending(response) =
-        peer.complete_reset_after_quiescence(barrier)
-    else {
-        panic!("matching Reset owner");
-    };
-    let LeControllerResponsePublication::Published(ready) = response.try_publish(peer) else {
-        panic!("available response capacity");
-    };
-    ready
-}
 
 struct Store<'a> {
     wait: bool,
@@ -101,10 +54,7 @@ fn immediate_stop_cancels_pending_store_read_before_reset_completes() {
 fn check_store_exit(stop: bool) {
     let mut transport = transport();
     let endpoints = transport.split();
-    let mut peer = endpoints.controller;
-    let LeControllerCommandReadyClaim::Ready(ready) = peer.claim_initial_command_ready(()) else {
-        panic!("fresh Controller authority");
-    };
+    let mut peer = Peer::new(endpoints.controller);
     let mut resources = HostResources::<DefaultPacketPool, 1, 3>::new();
     let stack = trouble_host::new(
         ExternalController::<_, 1>::new(endpoints.host),
@@ -135,10 +85,10 @@ fn check_store_exit(stop: bool) {
         assert!(epoch.as_mut().poll(&mut cx).is_pending());
         assert_eq!(reads.get(), 1);
         assert_eq!(cancelled.get(), u32::from(stop));
-        let barrier = reset_barrier(&mut peer, ready);
+        let reset = peer.hold_reset();
         // Ending the application does not synthesize a Reset response.
         assert!(epoch.as_mut().poll(&mut cx).is_pending());
-        let _ready = complete_reset(&mut peer, barrier);
+        peer.answer(reset);
         let mut exit = None;
         for _ in 0..4 {
             if let Poll::Ready(value) = epoch.as_mut().poll(&mut cx) {
@@ -168,10 +118,7 @@ fn check_store_exit(stop: bool) {
 fn cancelled_host_epoch_cannot_retire_an_unconsumed_reset_response() {
     let mut transport = transport();
     let endpoints = transport.split();
-    let mut peer = endpoints.controller;
-    let LeControllerCommandReadyClaim::Ready(ready) = peer.claim_initial_command_ready(()) else {
-        panic!("fresh Controller authority");
-    };
+    let mut peer = Peer::new(endpoints.controller);
     let mut resources = HostResources::<DefaultPacketPool, 1, 3>::new();
     let stack = trouble_host::new(
         ExternalController::<_, 1>::new(endpoints.host),
@@ -180,7 +127,7 @@ fn cancelled_host_epoch_cannot_retire_an_unconsumed_reset_response() {
     .build();
     let mut bonds = RamBondStore::<1>::new();
     let comparison = NumericComparison::new();
-    let barrier = {
+    let reset = {
         let mut epoch = pin!(run(stack, &mut bonds, &comparison, async {}, |_| {}));
         assert!(
             epoch
@@ -188,22 +135,15 @@ fn cancelled_host_epoch_cannot_retire_an_unconsumed_reset_response() {
                 .poll(&mut Context::from_waker(Waker::noop()))
                 .is_pending()
         );
-        reset_barrier(&mut peer, ready)
-        // Drop the consuming Host future while the peer still owns the barrier.
+        peer.hold_reset()
+        // Drop the consuming Host future while the peer still holds the Reset.
     };
-    let ready = complete_reset(&mut peer, barrier);
-    let Err((error, retained)) = peer.try_retire_transport(ready) else {
+    peer.answer(reset);
+    let Err(error) = peer.transport.try_retire() else {
         panic!("dropped Host must not manufacture drained HCI ownership");
     };
-    assert_eq!(
-        error,
-        LeControllerHciRetirementError::ControllerPacketsPending
-    );
-    // Rejection returns the same command owner; it cannot be retried into PASS
-    // until the independent response-consumption obligation has been discharged.
-    let Err((again, _retained)) = peer.try_retire_transport(retained) else {
-        panic!("unconsumed completion remains outstanding");
-    };
-    assert_eq!(again, error);
+    assert_eq!(error, HciRetirementError::ControllerPacketsPending);
+    // Retirement stays refused until the response is consumed.
+    assert_eq!(peer.transport.try_retire().err(), Some(error));
     assert!(comparison.pending().is_none());
 }

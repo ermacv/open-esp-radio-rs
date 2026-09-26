@@ -6,10 +6,11 @@ the modem low-power timer and the hardware scheduler with its event executor,
 list-zero hardware execution and finished lists. It knows no LE role. The
 [radio role](../../../../roles/esp32s31/bluetooth/radio/) lowers the portable
 LE radio contract onto the executor, and the
-[radio runtime](../../../../runtime/esp32s31/bluetooth/) drives it; no LE
-Controller core or final integration exists yet.
+[radio runtime](../../../../runtime/esp32s31/bluetooth/) drives it. The
+portable [LE Controller core](../../../../protocols/bluetooth/le/controller/)
+serves HCI over that runtime.
 
-Portable HCI policy and LE Link Layer codecs live in
+Portable HCI codecs and LE Link Layer codecs live in
 [`crates/protocols/bluetooth`](../../../../protocols/bluetooth/).
 
 The module table below is the engine API map. `FEATURES.md` links current

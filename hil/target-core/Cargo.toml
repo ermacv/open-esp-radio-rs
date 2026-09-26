@@ -38,6 +38,7 @@ xarxa = { git = "https://github.com/embassy-rs/xarxa", rev = "14c369bbcbe8ee7167
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-time = { version = "0.5.1", features = ["std", "generic-queue-64"] }
 embedded-io = "0.7.1"
+oer-bluetooth-controller = { path = "../../crates/protocols/bluetooth/le/controller" }
 oer-bluetooth-hci = { path = "../../crates/protocols/bluetooth/hci" }
 oer-embassy-net-upstream = { path = "../../crates/adapters/embassy-net/upstream" }
 oer-xarxa-upstream = { path = "../../crates/adapters/xarxa/upstream" }

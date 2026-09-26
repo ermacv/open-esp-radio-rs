@@ -28,7 +28,8 @@ Cargo package identities are independent of this directory hierarchy.
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |
 | `protocols/bluetooth/le/ll/` | Portable LE PDU codecs, protocol-role state and the Direct Test Mode session planner |
 | `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values |
-| `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` retains bootstrap, command/response authority and `le` policies |
+| `protocols/bluetooth/le/controller/` | Sans-IO LE Controller core: HCI command service, concurrent Link Layer roles (non-connectable advertising, passive scanning, Direct Test Mode) and the radio event arbiter |
+| `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` holds reset-scoped bootstrap state, command classification and the `le` codecs |
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
@@ -40,6 +41,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/embassy/esp32s31/` | Executor/time platform ABI and coexistence mailbox |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
+| `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio port |
 | `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
 | `adapters/embassy-net/{owned,upstream}/`, `adapters/embassy-net/esp32s31/ieee80211-upstream/` | Owned-packet and released-interface network adapters; the chip bridge binds the released interface to Wi-Fi execution |
 | `adapters/xarxa/upstream/`, `adapters/xarxa/esp32s31/ieee80211-upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure; the chip bridge binds it to Wi-Fi execution |

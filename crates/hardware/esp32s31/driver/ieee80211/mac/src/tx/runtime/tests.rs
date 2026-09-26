@@ -267,8 +267,10 @@ fn ordinary_retry_limit_collision_and_abort_restore_the_minimum_cw() {
             set_retry_bit: true
         }
     );
+    // Outside a TXOP an ACK timeout counts short, even for a long frame.
     assert_eq!(retry.counters().mpdu, 1);
-    assert_eq!(retry.counters().long, 2);
+    assert_eq!(retry.counters().short, 1);
+    assert_eq!(retry.counters().long, 1);
 
     retry.abort(&mut policy);
     assert_eq!(policy.contention_exponent(queue), 2);

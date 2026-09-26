@@ -546,20 +546,18 @@ impl OrdinaryMpduRetryState {
     }
 
     fn observe_ack_timeout(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
+        // SOURCE: complete `libpp.a[lmac.o]::lmacProcessAckTimeout`. Only a
+        // frame inside a granted TXOP (descriptor word-0 bit 8) reaches
+        // `lmacProcessLongRetryFail`; every other frame, whatever its length,
+        // reaches `lmacProcessShortRetryFail(context, 0, 0, _)`, which counts
+        // the MPDU and short retries against the short limit. Production
+        // requests no TXOP, so its ACK timeouts always take the short path.
         self.counters.mpdu = self.counters.mpdu.saturating_add(1);
-        let class_limit_reached = match self.frame_class {
-            OrdinaryFrameClass::Short => {
-                self.counters.short = self.counters.short.saturating_add(1);
-                self.counters.short >= VENDOR_SHORT_RETRY_LIMIT
-            }
-            OrdinaryFrameClass::Long => {
-                self.counters.long = self.counters.long.saturating_add(1);
-                self.counters.long >= VENDOR_LONG_RETRY_LIMIT
-            }
-        };
+        self.counters.short = self.counters.short.saturating_add(1);
         self.finish_or_retry(
             policy,
-            class_limit_reached || self.counters.mpdu >= self.mpdu_retry_limit,
+            self.counters.short >= VENDOR_SHORT_RETRY_LIMIT
+                || self.counters.mpdu >= self.mpdu_retry_limit,
             true,
         )
     }

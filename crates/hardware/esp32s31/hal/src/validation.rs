@@ -12,8 +12,8 @@ use crate::{
         validation_mac_power_interrupt_registers,
     },
     types::{
-        MacHtTxProgram, MacInterface, MacInterruptSnapshot, MacPowerInterruptSnapshot,
-        TxBlockAckPayload,
+        MacHtTxProgram, MacInterface, MacInterruptSnapshot, MacLegacyTxProgram,
+        MacPowerInterruptSnapshot, TxBlockAckPayload,
     },
 };
 
@@ -184,6 +184,14 @@ pub fn hal_mac_tx_set_ppdu(queue: u8, program: MacHtTxProgram) -> u32 {
     owner()
         .pac_mut()
         .validation_program_ht_mac_tx_ppdu(queue, program);
+    0
+}
+
+#[inline(always)]
+pub fn hal_mac_tx_set_legacy_ppdu(queue: u8, program: MacLegacyTxProgram) -> u32 {
+    owner()
+        .pac_mut()
+        .validation_program_legacy_mac_tx_ppdu(queue, program);
     0
 }
 

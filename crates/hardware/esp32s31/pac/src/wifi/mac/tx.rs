@@ -937,6 +937,32 @@ impl WifiRadioRegisters {
             .config(bank)
             .modify(|_, w| w.timeout().set(parameters.timeout));
 
+        self.program_legacy_mac_tx_ppdu(queue, program);
+
+        queue::configure_edca(
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
+            u32::from(queue),
+            parameters.aifsn,
+            parameters.contention_window,
+            parameters.interface,
+        );
+        true
+    }
+
+    /// Publish the complete legacy responsibility of vendor
+    /// `hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
+    ///
+    /// Queue readiness, timeout, EDCA and the final ENABLE|VALID ownership
+    /// edge belong to the surrounding production transaction, as for
+    /// [`Self::program_ht_mac_tx_ppdu`].
+    pub(crate) fn program_legacy_mac_tx_ppdu(&mut self, queue: u8, program: MacLegacyTxProgram) {
+        let parameters = program.parameters;
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        assert!(parameters.scheduler_priority <= 0x0f);
+        assert!(parameters.packet_priority <= 0x0f);
+        assert!(parameters.priority_count <= 0x0fff);
+        let bank = physical_bank(queue);
+        let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         crate::svd::zero_based_field_write::publish_mac_tx_prepared_control(
             control_bank,
             bank,
@@ -944,6 +970,15 @@ impl WifiRadioRegisters {
             2,
             true,
             u8::from(!parameters.group_receiver),
+        );
+        // `mac_tx_set_plcp0` publishes the control image and immediately
+        // clears software RTS through one fresh-read protection update.
+        queue::configure_rts(
+            control_bank,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+            u32::from(queue),
+            false,
+            None,
         );
         let vectors = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
         crate::svd::zero_based_field_write::publish_mac_tx_plcp1_fields(
@@ -961,13 +996,9 @@ impl WifiRadioRegisters {
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
-        queue::configure_rts(
-            control_bank,
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
-            u32::from(queue),
-            false,
-            None,
-        );
+        // The parent's independent PTI-low edge; a legacy PPDU holds no TXOP.
+        let pti = vectors.pti(bank);
+        pti.modify(|_, writer| writer.txop().clear_bit());
         crate::svd::zero_based_field_write::publish_mac_tx_length_control_fields(
             vectors,
             bank,
@@ -975,6 +1006,12 @@ impl WifiRadioRegisters {
             parameters.control.rate.register_value(),
             1,
         );
+        // `mac_tx_set_txop_q` of a queue without a granted TXOP slot: the
+        // slot `lmacInitAc` leaves (and `lmacReleaseTxopQueue` restores)
+        // clears the TXOP count through one fresh-read update.
+        vectors
+            .length_control(bank)
+            .modify(|_, w| w.ht20_txop_count().set(0));
         crate::svd::zero_based_field_write::publish_mac_tx_power_fields(
             vectors,
             bank,
@@ -995,21 +1032,11 @@ impl WifiRadioRegisters {
         control_bank
             .config(bank)
             .modify(|_, w| w.scheduler_priority().set(parameters.scheduler_priority));
-        let pti = vectors.pti(bank);
         pti.modify(|_, w| w.pti_2().set(parameters.packet_priority));
         pti.modify(|_, w| w.pti_1().set(parameters.packet_priority));
         pti.modify(|_, w| w.pti_0().set(parameters.packet_priority));
         pti.modify(|_, w| w.pti_3().set(parameters.packet_priority));
         pti.modify(|_, w| w.count().set(parameters.priority_count));
-
-        queue::configure_edca(
-            control_bank,
-            u32::from(queue),
-            parameters.aifsn,
-            parameters.contention_window,
-            parameters.interface,
-        );
-        true
     }
 
     /// Program one non-aggregate HT queue up to its final ENABLE|VALID edge.

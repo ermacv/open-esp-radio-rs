@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::{MacHtTxProgram, MacInterface, WifiRadioRegisters};
+use crate::{MacHtTxProgram, MacInterface, MacLegacyTxProgram, WifiRadioRegisters};
 
 impl WifiRadioRegisters {
     /// Execute the production cold-init CTS reset for all ordinary queues.
@@ -139,5 +139,15 @@ impl WifiRadioRegisters {
     /// forging a DMA publication capability in an isolated comparison image.
     pub fn validation_program_ht_mac_tx_ppdu(&mut self, queue: u8, program: MacHtTxProgram) {
         self.program_ht_mac_tx_ppdu(queue, program);
+    }
+
+    /// Execute the exact production legacy queue-programming transaction
+    /// without forging a DMA publication capability.
+    pub fn validation_program_legacy_mac_tx_ppdu(
+        &mut self,
+        queue: u8,
+        program: MacLegacyTxProgram,
+    ) {
+        self.program_legacy_mac_tx_ppdu(queue, program);
     }
 }

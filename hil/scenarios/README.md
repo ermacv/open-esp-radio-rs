@@ -109,6 +109,29 @@ failure and is not an RF execution-time claim. The
 [HT20 continuity scenario](ieee80211/station/station-phy-maintenance-continuity.toml)
 keeps this functional property separate from existing throughput/latency gates.
 
+### BSS protection
+
+A station UDP workload that transmits on an HT link may declare
+`[wifi.workload.induced_protection]` with a `peer` (`non-ht-member` or
+`overlapping-legacy-bss`, see the host guide) and a
+`minimum_protected_ppdu_percent`. The independent air observer captures
+control frames and data sent to the station fixture AP; the target is the one
+station other than the laptop peer that sends that data. It publishes:
+
+- `wifi.protection.rts-cts-before-data`: basis points of the target's data
+  PPDUs that an RTS (target to AP) and CTS (to the target) immediately
+  precede, at least the declared percentage; the remainder bounds observer
+  capture loss.
+- `wifi.protection.control-rate`: target RTS frames whose PHY differs from
+  the required control rate (DSSS/HR under ERP protection, OFDM otherwise),
+  exactly zero.
+- `wifi.protection.nav-covers-exchange`: protected PPDUs whose RTS NAV, from
+  the RTS TSFT plus its airtime and Duration, ends before the AP's BlockAck or
+  Ack ends, exactly zero.
+
+Fewer than 50 observed PPDUs, or none with an evaluable NAV, is an
+insufficient observation rather than a pass.
+
 ### AP availability
 
 `station-ap-loss` waits for connection, stops the controlled AP, requires beacon

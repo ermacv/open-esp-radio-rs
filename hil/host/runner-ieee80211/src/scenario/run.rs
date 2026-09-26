@@ -5,12 +5,13 @@ use std::{path::Path, time::Duration};
 use hil_core::{context::Context, image::ImageClass, lab::link::PhyExpectation};
 
 use super::{
-    Direction, RoleOperation, StationIcmp, StationReconnect, StationTcp, StationUdp, WifiScenario,
-    WifiWorkload,
+    Direction, InducedProtection, ProtectionPeer, RoleOperation, StationIcmp, StationReconnect,
+    StationTcp, StationUdp, WifiScenario, WifiWorkload, station::PROTECTION_CHECKS,
 };
 use crate::{
     Result,
-    fixture::prepared::Prepared,
+    evidence::{air::MacAddress, protection::Expectation},
+    fixture::{openwrt::air_monitor::ProtectionCapture, prepared::Prepared},
     workload::{
         ieee80211::{self, control::Operation},
         traffic,
@@ -135,7 +136,99 @@ pub(super) fn execute(
     }
 }
 
+/// Run station UDP, observing the target's protection when the workload
+/// induces it. Both verdicts are reported; the traffic failure wins.
 fn station_udp(
+    workload: &StationUdp,
+    image: ImageClass,
+    output: &Path,
+    context: &Context<'_>,
+) -> Result<()> {
+    let Some(induced) = workload.induced_protection else {
+        return station_udp_traffic(workload, image, output, context);
+    };
+    // The bound only stops a capture whose workload never finishes it.
+    let bound = Duration::from_secs(u64::from(workload.duration_seconds) + 180);
+    let capture = ProtectionCapture::start(context.lab, bound, output)?;
+    let traffic = station_udp_traffic(workload, image, output, context);
+    let protection = assess_protection(capture, induced, context);
+    traffic.and(protection)
+}
+
+fn assess_protection(
+    capture: ProtectionCapture,
+    induced: InducedProtection,
+    context: &Context<'_>,
+) -> Result<()> {
+    use hil_core::evidence::run::{Comparison, Measurement, MeasurementUnit};
+    // The non-HT member is the laptop: its own data to the AP is not the
+    // target's. An overlapping legacy BSS never joins the AP.
+    let peer = match induced.peer {
+        ProtectionPeer::NonHtMember => Some(
+            std::fs::read_to_string("/sys/class/net/wlan0/address")?
+                .trim()
+                .parse::<MacAddress>()?,
+        ),
+        ProtectionPeer::OverlappingLegacyBss => None,
+    };
+    let evidence = capture.finish(
+        peer,
+        Expectation {
+            erp: induced.peer == ProtectionPeer::OverlappingLegacyBss,
+        },
+    )?;
+    if evidence.data_ppdus < MINIMUM_PROTECTION_PPDUS || evidence.nav_evaluated == 0 {
+        return Err(format!(
+            "protection observation is insufficient: {} data PPDUs, {} with an evaluable NAV",
+            evidence.data_ppdus, evidence.nav_evaluated
+        )
+        .into());
+    }
+    let measurements = [
+        Measurement::observed(
+            PROTECTION_CHECKS[0],
+            evidence.protected_basis_points(),
+            MeasurementUnit::BasisPoints,
+        )
+        .evaluated(
+            Comparison::AtLeast,
+            u64::from(induced.minimum_protected_ppdu_percent) * 100,
+        ),
+        Measurement::observed(
+            PROTECTION_CHECKS[1],
+            u64::from(evidence.wrong_control_rate),
+            MeasurementUnit::Count,
+        )
+        .evaluated(Comparison::Exactly, 0),
+        Measurement::observed(
+            PROTECTION_CHECKS[2],
+            u64::from(evidence.nav_short),
+            MeasurementUnit::Count,
+        )
+        .evaluated(Comparison::Exactly, 0),
+    ];
+    let failed = measurements
+        .iter()
+        .filter(|measurement| {
+            measurement.verdict == Some(hil_core::evidence::run::MeasurementVerdict::Failed)
+        })
+        .map(|measurement| format!("{}={}", measurement.name, measurement.value))
+        .collect::<Vec<_>>();
+    context.measurements.record(measurements);
+    if !failed.is_empty() {
+        return Err(format!(
+            "target did not follow the induced BSS protection: {}; {evidence:?}",
+            failed.join(", ")
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// Fewer target PPDUs cannot establish a protection share.
+const MINIMUM_PROTECTION_PPDUS: u32 = 50;
+
+fn station_udp_traffic(
     workload: &StationUdp,
     image: ImageClass,
     output: &Path,

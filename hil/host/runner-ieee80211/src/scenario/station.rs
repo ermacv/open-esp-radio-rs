@@ -35,11 +35,22 @@ pub struct StationUdp {
     pub criteria: StationUdpCriteria,
 }
 
+/// Protection the station fixture AP must advertise during the workload,
+/// and how completely the target must follow it on the air.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InducedProtection {
+    pub peer: ProtectionPeer,
+    /// Minimum share of the target's observed data PPDUs that an RTS/CTS
+    /// exchange precedes. The remainder bounds observer capture loss.
+    pub minimum_protected_ppdu_percent: u8,
+}
+
 /// A standard-conformant peer that obliges the station fixture AP to
 /// advertise protection. Both use the laptop radio.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum InducedProtection {
+pub enum ProtectionPeer {
     /// The laptop joins the AP without HT capability: HT Protection becomes
     /// non-HT mixed.
     NonHtMember,
@@ -193,11 +204,24 @@ impl StationUdp {
         {
             return Err("a fixed OpenWrt guard interval requires a strict HT guard-interval expectation and both air observers".into());
         }
-        if self.induced_protection.is_some() && observation.independent_air_monitor {
-            return Err(
-                "induced protection uses the laptop radio, which cannot also observe the air"
-                    .into(),
-            );
+        if let Some(induced) = self.induced_protection {
+            if observation.independent_air_monitor {
+                return Err(
+                    "induced protection uses the laptop radio, which cannot also observe the air"
+                        .into(),
+                );
+            }
+            if !direction.transmits() || self.link.phy == PhyExpectation::He20 {
+                return Err(
+                    "induced protection is observed on the target's HT data transmissions".into(),
+                );
+            }
+            bounded(
+                induced.minimum_protected_ppdu_percent,
+                1,
+                100,
+                "induced_protection.minimum_protected_ppdu_percent",
+            )?;
         }
         if direction == Direction::Tx && self.link.phy == PhyExpectation::Ht20 {
             return Err("station UDP TX requires HE20 or HT40".into());
@@ -209,6 +233,9 @@ impl StationUdp {
     }
 
     pub(super) fn checks(&self, checks: &mut Vec<&'static str>) {
+        if self.induced_protection.is_some() {
+            checks.extend(PROTECTION_CHECKS);
+        }
         if !self.offer.receive_only() {
             return;
         }
@@ -229,6 +256,13 @@ impl StationUdp {
         }
     }
 }
+
+/// Named observations of the target following induced BSS protection.
+pub const PROTECTION_CHECKS: [&str; 3] = [
+    "wifi.protection.rts-cts-before-data",
+    "wifi.protection.control-rate",
+    "wifi.protection.nav-covers-exchange",
+];
 
 impl StationMaintenance {
     fn validate(&self, duration_seconds: u16, direction: Direction) -> Result<()> {

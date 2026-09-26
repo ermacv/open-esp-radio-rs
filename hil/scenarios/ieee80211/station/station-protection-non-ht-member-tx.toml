@@ -13,7 +13,10 @@ link = { phy = "ht40" }
 duration_seconds = 16
 payload_bytes = 1472
 offer = { tx_bps = 16000000 }
-induced_protection = "non-ht-member"
+
+[wifi.workload.induced_protection]
+peer = "non-ht-member"
+minimum_protected_ppdu_percent = 95
 
 [wifi.workload.criteria]
 exact_delivery = true

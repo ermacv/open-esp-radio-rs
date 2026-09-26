@@ -125,6 +125,8 @@ pub struct AirFrame {
     pub block_ack: Option<BlockAckBitmap>,
     /// MAC time (TSFT) of the first bit of the MPDU, when the capture has it.
     pub mac_time_micros: Option<u64>,
+    /// A DSSS/HR PPDU used the short PLCP preamble.
+    pub short_preamble: Option<bool>,
     /// ERP Information element payload of a beacon or probe response.
     pub erp_information: Option<u8>,
     /// HT Protection field of an HT Operation element.
@@ -140,7 +142,7 @@ pub enum Payload {
     Include,
 }
 
-const FIELDS: [&str; 19] = [
+const FIELDS: [&str; 20] = [
     "frame.time_epoch",
     "wlan.fc.type_subtype",
     "wlan.ta",
@@ -157,6 +159,7 @@ const FIELDS: [&str; 19] = [
     "wlan.fixed.ssc.sequence",
     "wlan.ba.bm",
     "radiotap.mactime",
+    "radiotap.flags.preamble",
     "wlan.erp_info",
     "wlan.ht.info.ht_protection",
     "data.data",
@@ -246,10 +249,11 @@ fn frame(fields: &[&str]) -> Result<AirFrame> {
                 bitmap,
             }),
         mac_time_micros: optional(fields[15])?,
-        erp_information: optional(fields[16])?,
-        ht_protection: optional(fields[17])?,
+        short_preamble: present(fields[16]).map(flag).transpose()?,
+        erp_information: optional(fields[17])?,
+        ht_protection: optional(fields[18])?,
         payload: fields
-            .get(18)
+            .get(19)
             .and_then(|value| present(value))
             .map(decode_hex)
             .transpose()?,

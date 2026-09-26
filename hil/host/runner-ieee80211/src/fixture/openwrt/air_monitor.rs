@@ -159,3 +159,63 @@ pub fn observe_beacons(
     .filter(|frame| frame.kind == FrameKind::BEACON && frame.transmitter == Some(bssid))
     .collect())
 }
+
+/// Control frames and data sent to the station fixture AP, captured by the
+/// independent observer for the protection analysis.
+pub struct ProtectionCapture {
+    remote: RemoteCapture,
+    bssid: MacAddress,
+}
+
+impl ProtectionCapture {
+    /// `bound` limits the capture if the workload never finishes it.
+    pub fn start(lab: &LabConfig, bound: Duration, output: &Path) -> Result<Self> {
+        let observer = lab
+            .air_observer
+            .as_ref()
+            .ok_or("protection evidence requires the independent air observer")?;
+        let StationFixtureConfig::OpenWrt(ap) = &lab.station_fixture else {
+            return Err("protection evidence requires the OpenWrt station fixture".into());
+        };
+        let bssid = fixture_bssid(ap)?;
+        let geometry = local::air_monitor::resolve_observer_action(ap)?;
+        fs::create_dir_all(output)?;
+        let remote = RemoteCapture::start_independent(
+            observer,
+            geometry,
+            &format!("type ctl or (type data and wlan addr1 {bssid})"),
+            SnapshotLength::Headers,
+            output.join("protection-air.pcap"),
+            bound,
+        )?;
+        Ok(Self { remote, bssid })
+    }
+
+    pub fn finish(
+        mut self,
+        peer: Option<MacAddress>,
+        expectation: crate::evidence::protection::Expectation,
+    ) -> Result<crate::evidence::protection::ProtectionEvidence> {
+        let (captured, dropped) = self.remote.finish_capture()?;
+        if dropped != 0 {
+            return Err(
+                format!("protection observer dropped {dropped} of {captured} frames").into(),
+            );
+        }
+        let frames = air::decode(
+            self.remote.output_path(),
+            "wlan.fc.type == 1 || wlan.fc.type == 2",
+            air::Payload::Omit,
+        )?;
+        let evidence =
+            crate::evidence::protection::analyze(&frames, self.bssid, peer, expectation)?;
+        fs::write(
+            self.remote.output_path().with_extension("json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schema": 1, "captured_frames": captured, "bssid": self.bssid.to_string(),
+                "erp_protection": expectation.erp, "evidence": evidence,
+            }))?,
+        )?;
+        Ok(evidence)
+    }
+}

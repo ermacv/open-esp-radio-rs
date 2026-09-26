@@ -57,6 +57,36 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
         );
     };
     let kind = field("kind").and_then(Value::as_str);
+    if let Some(induced) = field("induced_protection").filter(|v| !v.is_null()) {
+        let percent = induced
+            .get("minimum_protected_ppdu_percent")
+            .and_then(Value::as_u64)
+            .filter(|percent| (1..=100).contains(percent))
+            .ok_or("induced protection names no protected-PPDU floor")?;
+        checks.insert(
+            "wifi.protection.rts-cts-before-data".into(),
+            Contract {
+                unit: "basis-points",
+                image_sensitive: false,
+                comparison: "at-least",
+                threshold: percent * 100,
+            },
+        );
+        for name in [
+            "wifi.protection.control-rate",
+            "wifi.protection.nav-covers-exchange",
+        ] {
+            checks.insert(
+                name.into(),
+                Contract {
+                    unit: "count",
+                    image_sensitive: false,
+                    comparison: "exactly",
+                    threshold: 0,
+                },
+            );
+        }
+    }
     if matches!(kind, Some("station-ap-loss" | "station-ap-absence")) {
         exactly_once(&mut checks, "wifi.station.control-responsive");
         if kind == Some("station-ap-loss") {
@@ -184,6 +214,36 @@ mod tests {
 
     fn observed(value: u64) -> Value {
         json!({"name": "wifi.maintenance.same-link", "value": value, "unit": "count", "threshold": {"comparison": "exactly", "value": 1}, "verdict": "passed"})
+    }
+
+    #[test]
+    fn induced_protection_publishes_its_air_contracts() {
+        let published = contracts(&json!({"wifi":{"workload":{"kind":"station-udp",
+            "offer":{"tx_bps":1000},"induced_protection":{"peer":"non-ht-member",
+            "minimum_protected_ppdu_percent":95}}}}))
+        .unwrap();
+        let share = &published["wifi.protection.rts-cts-before-data"];
+        let sample = |value: u64| {
+            json!({"name":"wifi.protection.rts-cts-before-data","value":value,"unit":"basis-points",
+                "threshold":{"comparison":"at-least","value":9_500},"verdict":"passed"})
+        };
+        assert!(passes(
+            "wifi.protection.rts-cts-before-data",
+            share,
+            &[sample(9_600)]
+        ));
+        assert!(!passes(
+            "wifi.protection.rts-cts-before-data",
+            share,
+            &[sample(9_400)]
+        ));
+        assert!(published.contains_key("wifi.protection.control-rate"));
+        assert!(published.contains_key("wifi.protection.nav-covers-exchange"));
+        assert!(
+            contracts(&json!({"wifi":{"workload":{"kind":"station-udp",
+                "induced_protection":{"peer":"non-ht-member"}}}}))
+            .is_err()
+        );
     }
 
     #[test]

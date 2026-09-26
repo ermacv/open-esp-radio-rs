@@ -425,3 +425,39 @@ fn a_control_differs_from_its_experiment_only_by_maintenance() {
     ));
     assert!(transmit_experiment.validate_control(&transmit).is_err());
 }
+
+#[test]
+fn induced_protection_needs_ht_transmission_and_publishes_air_checks() {
+    let tx = UDP_RX.replace(
+        "offer = { rx_bps = 50000000 }",
+        "offer = { tx_bps = 16000000 }",
+    );
+    let induced = |peer: &str, percent: u8| {
+        format!(
+            "{tx}[workload.induced_protection]\npeer = '{peer}'\nminimum_protected_ppdu_percent = {percent}\n"
+        )
+    };
+    let scenario = valid(&induced("non-ht-member", 95));
+    let plan = scenario.plan();
+    assert!(plan.requirements.non_ht_member && plan.requirements.air_observer);
+    assert!(!plan.requirements.legacy_bss);
+    assert_eq!(
+        plan.checks,
+        [
+            "wifi.protection.control-rate",
+            "wifi.protection.nav-covers-exchange",
+            "wifi.protection.rts-cts-before-data",
+        ]
+    );
+    let legacy = valid(&induced("overlapping-legacy-bss", 90)).plan();
+    assert!(legacy.requirements.legacy_bss && !legacy.requirements.non_ht_member);
+    invalid(&induced("non-ht-member", 0));
+    invalid(&format!(
+        "{UDP_RX}[workload.induced_protection]\npeer = 'non-ht-member'\nminimum_protected_ppdu_percent = 95\n"
+    ));
+    invalid(&induced("non-ht-member", 95).replace("'ht40'", "'he20'"));
+    invalid(&format!(
+        "{}[workload.observation]\nopenwrt_tx_monitor = true\nindependent_air_monitor = true\n",
+        induced("non-ht-member", 95)
+    ));
+}

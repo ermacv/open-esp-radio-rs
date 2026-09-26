@@ -72,7 +72,7 @@ struct Wifi {
     wifi_rx_table_last_index: u8,
     shared_rx_table_last_index: u8,
     wifi_index_dc: [[u16; 2]; 8],
-    wifi_fine_dc: [[u16; 2]; oer_esp32s31_phy::rx::gain_calibration::FINE_CODES],
+    wifi_fine_dc: [[u16; 2]; oer_esp32s31_phy::PHY_RX_FINE_DC_CODES],
     shared_index_dc: [[u16; 2]; 11],
 }
 

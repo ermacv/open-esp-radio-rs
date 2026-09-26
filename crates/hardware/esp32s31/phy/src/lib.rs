@@ -166,7 +166,10 @@ pub use {
         dcode::PhyDcodeOutcome, pbus::PhyPbusClearOutcome, temperature::PhyTemperatureOutcome,
     },
     channel::PhyChipChannelFailure,
-    rx::{gain::PhyRxGainInitOutcome, gain_calibration::PhyRxGainDcQuality},
+    rx::{
+        gain::PhyRxGainInitOutcome,
+        gain_calibration::{FINE_CODES as PHY_RX_FINE_DC_CODES, PhyRxGainDcQuality},
+    },
     tx::dc_power_detector::PhyTxDcPwdetOutcome,
 };
 /// Shared finite observation/attempt bound used by target executors and host

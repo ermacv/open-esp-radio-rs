@@ -218,10 +218,24 @@ serialized by one mechanism:
   IEEE 802.15.4 as clients of the one client set;
 - `evaluate_periodic_tracking` and an acquisition that needs initial tracking
   leave the domain pending, and no client operation proceeds until it settles;
-- `admit_maintenance` checks, without register access, that every active client
-  presents a `ClientQuiescence` proof whose window is open;
-  `maintain_concurrent_phy` then runs the tracking transaction inside the
-  earliest `release_by` window. A started failure poisons the domain.
+- `admit_maintenance` checks, without register access, whether pending
+  tracking may start under the domain's `MaintenancePolicy`, and
+  `maintain_concurrent_phy` then runs the tracking transaction. A started
+  failure poisons the domain.
+  - `Vendor` (the default) follows ESP-IDF's `phy_common.c`: the periodic
+    timer runs `phy_param_track_tot` under the PHY lock alone, without
+    pausing any protocol. The arbiter lease is that lock, and the tracking
+    graph brackets its RF-sensitive regions with the grant-protect request.
+  - `Quiesced` is a stricter local policy: every active client presents a
+    `ClientQuiescence` proof whose window is open, and tracking runs inside
+    the earliest `release_by` window.
+- `track_concurrent_phy` is one tick of the vendor `phy_track_pll`: it
+  evaluates the clients' tracking period and runs due tracking under the
+  vendor policy, or reports that the quiesced policy awaits proofs.
+  `run_concurrent_phy_tracking` is the vendor periodic timer: every tracking
+  period it takes the lease, waiting while another holder owns it, and runs
+  one tick. The composition that owns the arbiter runs it for the lifetime of
+  the shared domain.
 
 IEEE 802.15.4 composes these steps in [its client module](src/ieee802154_client.rs).
 `join_ieee802154` runs on the HAL `Ieee802154Clocked` owner: it checks that the

@@ -3,11 +3,16 @@
 
 use super::*;
 use crate::{
-    concurrent::{ConcurrentPhy, ConcurrentPhyError, Slot, admit_maintenance},
+    concurrent::{
+        ConcurrentPhy, ConcurrentPhyError, MaintenancePolicy, Slot, admit_maintenance,
+        evaluate_periodic_tracking,
+    },
     registered_route::PhyDomain,
+    state::client::{DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyPllTrackClock},
 };
 use oer_esp32s31_hal::shared_radio::{
-    ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadioLease,
+    ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadio,
+    SharedRadioLease,
 };
 
 /// Outputs of the shared domain's registration.
@@ -417,6 +422,129 @@ where
             Err(ConcurrentPhyTrackingError::Failed(
                 TargetPhyParamTrackingError::MissingCompletedOwner,
             ))
+        }
+    }
+}
+
+/// Result of one periodic tracking tick of the shared domain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConcurrentTrackingTick {
+    /// No tracking was due.
+    NotDue,
+    /// Tracking was due and ran to completion.
+    Tracked(PhyParamTrackingOutcome),
+    /// The domain cannot track now (not registered, RF closed, or poisoned);
+    /// nothing changed.
+    Unavailable(ConcurrentPhyError),
+    /// Tracking is due, but the domain's [`MaintenancePolicy::Quiesced`]
+    /// needs client proofs; run [`maintain_concurrent_phy`] with them.
+    AwaitingQuiescence,
+}
+
+/// One tick of ESP-IDF's periodic `phy_track_pll`: evaluate the clients'
+/// tracking period and, when tracking is due, run it under the domain's
+/// admission policy.
+///
+/// Under [`MaintenancePolicy::Vendor`] the tracking transaction runs at once
+/// with protocols running, as the vendor timer callback does under its PHY
+/// lock; the lease is that lock, and the tracking graph brackets its
+/// RF-sensitive regions with the grant-protect request.
+///
+/// # Errors
+///
+/// The tracking clock was rejected, or tracking started and failed; after a
+/// failure the domain is poisoned.
+///
+/// # Cancellation
+///
+/// Once tracking starts, drive this future to a terminal result;
+/// cancellation then leaves hardware partially updated and requires reset.
+pub async fn track_concurrent_phy<P, D, O>(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    platform: &mut P,
+    clock: &mut impl PhyPllTrackClock,
+    observer: O,
+) -> Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let due = if lease.attachment().tracking_pending() {
+        true
+    } else {
+        match evaluate_periodic_tracking(lease, clock) {
+            Ok(due) => due,
+            Err(
+                error @ (ConcurrentPhyError::NotRegistered
+                | ConcurrentPhyError::RfClosed
+                | ConcurrentPhyError::Poisoned),
+            ) => return Ok(ConcurrentTrackingTick::Unavailable(error)),
+            Err(error) => return Err(ConcurrentPhyTrackingError::Rejected(error)),
+        }
+    };
+    if !due {
+        return Ok(ConcurrentTrackingTick::NotDue);
+    }
+    if lease.attachment().maintenance_policy() == MaintenancePolicy::Quiesced {
+        return Ok(ConcurrentTrackingTick::AwaitingQuiescence);
+    }
+    maintain_concurrent_phy::<P, D, O>(lease, platform, &[], observer)
+        .await
+        .map(ConcurrentTrackingTick::Tracked)
+}
+
+/// Retry interval while another holder owns the arbiter lease.
+const LEASE_RETRY_MICROS: u64 = 1_000;
+
+/// ESP-IDF's periodic `phy_track_pll` timer for the shared domain.
+///
+/// Every [`DEFAULT_PLL_TRACK_PERIOD_MICROS`] it takes the arbiter lease,
+/// waiting while another holder owns it as the vendor callback waits for its
+/// PHY lock, runs one [`track_concurrent_phy`] tick and drops the lease. A
+/// domain that is not registered or has RF closed is skipped until the next
+/// period. The composition that owns the arbiter runs this future for the
+/// lifetime of the shared domain.
+///
+/// # Errors
+///
+/// Returns only when a tick fails, or when the domain is poisoned; the domain
+/// then requires reset.
+///
+/// # Cancellation
+///
+/// Cancel it only between ticks, that is while it waits; cancelling a running
+/// tracking transaction requires reset.
+pub async fn run_concurrent_phy_tracking<P, D, O>(
+    radio: &SharedRadio<ConcurrentPhy>,
+    platform: &mut P,
+    clock: &mut impl PhyPllTrackClock,
+    mut observer: impl FnMut() -> O,
+) -> ConcurrentPhyTrackingError
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    loop {
+        D::after_micros(
+            crate::executor::wait::Kind::Completion,
+            DEFAULT_PLL_TRACK_PERIOD_MICROS,
+        )
+        .await;
+        let mut lease = loop {
+            match radio.try_acquire() {
+                Ok(lease) => break lease,
+                Err(_) => {
+                    D::after_micros(crate::executor::wait::Kind::Completion, LEASE_RETRY_MICROS)
+                        .await
+                }
+            }
+        };
+        match track_concurrent_phy::<P, D, O>(&mut lease, platform, clock, observer()).await {
+            Ok(ConcurrentTrackingTick::Unavailable(ConcurrentPhyError::Poisoned)) => {
+                return ConcurrentPhyTrackingError::Rejected(ConcurrentPhyError::Poisoned);
+            }
+            Ok(_) => {}
+            Err(error) => return error,
         }
     }
 }

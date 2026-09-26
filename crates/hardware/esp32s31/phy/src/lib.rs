@@ -183,8 +183,8 @@ pub use target_executor::{PhyAsyncDelay, PhyShortDelay, PhyTargetPortError};
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
-    ConcurrentRfError, close_concurrent_rf, maintain_concurrent_phy, register_concurrent_phy,
-    wake_concurrent_rf,
+    ConcurrentRfError, ConcurrentTrackingTick, close_concurrent_rf, maintain_concurrent_phy,
+    register_concurrent_phy, run_concurrent_phy_tracking, track_concurrent_phy, wake_concurrent_rf,
 };
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{

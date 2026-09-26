@@ -143,6 +143,19 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
         acquire_client(&mut lease, PhyModemClient::Bluetooth, &mut Clock(0)),
         Err(ConcurrentPhyError::TrackingPending)
     );
+    // The vendor policy admits pending tracking with the client running.
+    assert_eq!(
+        lease.attachment().maintenance_policy(),
+        MaintenancePolicy::Vendor
+    );
+    assert_eq!(
+        admit_maintenance(&lease, &[], 5).map(MaintenanceAdmission::release_by_micros),
+        Ok(None)
+    );
+    // The quiesced policy requires a proof from every active client.
+    lease
+        .attachment_mut()
+        .set_maintenance_policy(MaintenancePolicy::Quiesced);
     assert_eq!(
         admit_maintenance(&lease, &[], 5),
         Err(ConcurrentPhyError::MissingQuiescence(PhyModemClient::Wifi))
@@ -151,6 +164,33 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
         admit_maintenance(&lease, &[until(RadioClient::Wifi, 1, 100)], 5)
             .map(MaintenanceAdmission::release_by_micros),
         Ok(Some(100))
+    );
+}
+
+#[test]
+fn the_vendor_policy_ignores_proofs_and_still_needs_pending_tracking() {
+    let radio = registered_arbiter();
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+    assert_eq!(
+        acquire_client(&mut lease, PhyModemClient::Ieee802154, &mut Clock(0)),
+        Ok(ConcurrentAcquire::Settled)
+    );
+    // Nothing is due: the vendor policy does not invent maintenance.
+    assert_eq!(
+        admit_maintenance(&lease, &[], 0),
+        Err(ConcurrentPhyError::NoTrackingPending)
+    );
+    assert_eq!(
+        evaluate_periodic_tracking(&mut lease, &mut Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS)),
+        Ok(true)
+    );
+    // A closed proof window does not matter under the vendor policy.
+    assert_eq!(
+        admit_maintenance(&lease, &[until(RadioClient::Ieee802154, 1, 2)], 5)
+            .map(MaintenanceAdmission::release_by_micros),
+        Ok(None)
     );
 }
 

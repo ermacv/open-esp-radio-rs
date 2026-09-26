@@ -211,7 +211,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "Scheme selection"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "`CoexStatusWords::select` reproduces `coex_schm_status_change` and matches the vendor selection over every combination of the status bits it tests. No radio publishes its status to a running schedule yet."
+scope-and-limitations = "`CoexStatusWords::select` reproduces `coex_schm_status_change`; the vendor `coex` scenario compares it, and the status-bit, timeout and restart entries, with the pinned `libcoexist.a` over every combination of the tested status values. No radio publishes its status to a running schedule yet."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-wifi-idle-connected-scan-connecting-schemes"

@@ -14,7 +14,9 @@ notification or a joint Wi-Fi/Bluetooth/IEEE 802.15.4 runtime. See
 `CoexSchedule` is the recovered `coex_schm_env` of esp-coex-lib `c758e7b5`.
 Each radio publishes status bits (`set_status_bits`, `clear_status_bits`);
 the status words select one of the 107 recovered schemes of
-`coexist_scheme.o`, exactly as `coex_schm_status_change` does. A scheme
+`coexist_scheme.o`, exactly as `coex_schm_status_change` does. The
+[vendor `coex` scenario](../../../../../verification/vendor/projects/esp32s31/README.md#coexistence-schedule-comparison)
+compares the compiled schedule with the pinned `libcoexist.a` entries. A scheme
 divides a period into phases; a phase lasts period × interval × share
 microseconds and notifies Wi-Fi, Bluetooth or both. The schedule programs no
 priority itself: a notified radio requests its own events through

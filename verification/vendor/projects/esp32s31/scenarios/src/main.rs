@@ -2,7 +2,7 @@
 use clap::{Parser, Subcommand};
 use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Entry, Index};
 use oer_esp32s31_vendor_scenarios::{
-    ble, calibration_leaves, calibration_prefix, channel, coverage,
+    ble, calibration_leaves, calibration_prefix, channel, coex, coverage,
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
@@ -80,6 +80,9 @@ enum Scenario {
         /// Compiled Bluetooth probe image.
         #[arg(long)]
         bluetooth_production: PathBuf,
+        /// Authenticated `libcoexist.a` (coexistence schedule).
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libcoexist"))]
+        libcoexist: PathBuf,
         /// Write the native evidence index qualification reads.
         #[arg(long)]
         index: Option<PathBuf>,
@@ -95,6 +98,15 @@ enum Scenario {
         /// Authenticated vendor firmware supplying logging symbols.
         #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
+    },
+    /// The coexistence time-slice schedule of `libcoexist.a`: scheme
+    /// selection, status bits, phase timeouts and restarts.
+    Coex {
+        #[command(flatten)]
+        common: Common,
+        /// Authenticated `libcoexist.a`.
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libcoexist"))]
+        libcoexist: PathBuf,
     },
     /// Wi-Fi MAC HAL leaves of `libpp.a` over every radio register fill.
     WifiMac {
@@ -565,6 +577,28 @@ fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Ou
     ))
 }
 
+fn coex(common: Common, libcoexist: PathBuf) -> Result<Outcome> {
+    let options = coex::CoexOptions {
+        binary: common.binary,
+        library: libcoexist,
+        rom: common.rom,
+        production: common.production,
+        linker: common.linker,
+        output: common.output,
+        budget: common.budget,
+        patches: common.patches,
+    };
+    let mut ctx = coex::Coex::new(&options)?;
+    coex::exercise(&mut ctx)?;
+    let claims = ctx
+        .session
+        .claims("coex", &ctx.roots, coex::CLAIMS, coverage::DECISIONS)?;
+    Ok((
+        finish(&[], "authenticated coexistence schedule passed", &ctx.run),
+        claims,
+    ))
+}
+
 fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = rx_gain::RxGain::new(&common.phy(), &phy_sdk)?;
     rx_gain::exercise(&mut ctx)?;
@@ -701,7 +735,7 @@ mod evidence {
 
     pub fn index(
         common: &Common,
-        optional: &[&PathBuf; 6],
+        optional: &[&PathBuf; 7],
         entries: Vec<Entry>,
         untriaged: Vec<evidence_index::Location>,
         unobserved: Vec<evidence_index::SourceLine>,
@@ -719,6 +753,7 @@ mod evidence {
             ("libpp", optional[3]),
             ("libnet80211", optional[4]),
             ("bluetooth-production", optional[5]),
+            ("libcoexist", optional[6]),
         ] {
             inputs.insert(role.to_owned(), sha256(path)?);
         }
@@ -773,6 +808,7 @@ struct AllInputs {
     libpp: PathBuf,
     libnet80211: PathBuf,
     bluetooth_production: PathBuf,
+    libcoexist: PathBuf,
 }
 
 /// Run every PHY comparison scenario; each must pass with no unmet obligation.
@@ -784,6 +820,7 @@ fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<Exit
         libpp,
         libnet80211,
         bluetooth_production,
+        libcoexist,
     } = inputs;
     if !common.patches.is_empty() {
         if index.is_some() {
@@ -842,6 +879,10 @@ fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<Exit
                     phy_sdk.clone(),
                 )
             }),
+        ),
+        (
+            "coex",
+            Box::new(|| coex(within("coex"), libcoexist.clone())),
         ),
     ];
     // Scenarios share no state: each owns its session and output directory.
@@ -959,6 +1000,7 @@ fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<Exit
                 &libpp,
                 &libnet80211,
                 &bluetooth_production,
+                &libcoexist,
             ],
             entries,
             coverage::uncovered_everywhere(&closures, untriaged)
@@ -990,6 +1032,7 @@ fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => single(gain(common, rftest)),
         Scenario::Channel { common } => single(channel(common)),
+        Scenario::Coex { common, libcoexist } => single(coex(common, libcoexist)),
         Scenario::RxGain { common, phy_sdk } => single(rx_gain(common, phy_sdk)),
         Scenario::TxDc { common, phy_sdk } => single(tx_dc(common, phy_sdk)),
         Scenario::Tracking { common, phy_sdk } => single(tracking(common, phy_sdk)),
@@ -1012,6 +1055,7 @@ fn main() -> ExitCode {
             libpp,
             libnet80211,
             bluetooth_production,
+            libcoexist,
             index,
         } => all(
             common,
@@ -1022,6 +1066,7 @@ fn main() -> ExitCode {
                 libpp,
                 libnet80211,
                 bluetooth_production,
+                libcoexist,
             },
             index,
         ),

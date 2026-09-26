@@ -48,7 +48,7 @@ are the measurement authority, not this documentation.
 ## All PHY comparison scenarios
 
 `all` runs every native comparison scenario (`gain`, `i2c`, `channel`,
-`rx-gain`, `tx-dc`, `tracking`, `wifi-mac`, `bluetooth`) under one budget, each in its own
+`rx-gain`, `tx-dc`, `tracking`, `wifi-mac`, `bluetooth`, `coex`) under one budget, each in its own
 directory below `--output`. It requires every optional input, so no obligation
 is left unmet, stops at the first failure and prints each scenario's duration.
 With `--index <path>` it then writes the native evidence index qualification
@@ -402,6 +402,37 @@ Negative cases are:
 - an unknown policy input, which stops at the exact byte read and blocks later
   phases;
 - event exhaustion, which fails with a resource limit.
+
+## Coexistence schedule comparison
+
+The `coex` scenario ([`coex.rs`](scenarios/src/coex.rs)) compares the time-slice
+schedule of the pinned `libcoexist.a[coexist_scheme.o]` with the production
+`CoexSchedule` through the `open_coex_schm_trace_step` probe. A cold setup case
+points the ROM cell `g_coa_funcs_p` at a modeled adapter table (semaphore
+take/give, timer disarm and `timer_arm_us`); before each compared case the ROM
+`memcpy` writes one schedule state over the vendor `coex_schm_env`. The probe
+receives the same state as a vendor-shaped image together with the linked
+address of every `coex_schm_<name>` scheme, so both sides report the selected
+scheme as the same pointer; schemes the linker drops keep unique unmapped
+addresses.
+
+Each case enters one schedule entry: `coex_schm_status_change` over every
+combination of the tested Wi-Fi, BLE, classic-Bluetooth, external-coexistence
+and IEEE 802.15.4 status values; `coex_schm_status_bit_set` and `_clear` from
+every Wi-Fi state with and without BLE; and `coex_schm_timeout_process` and
+`coex_schm_process_restart` at every phase of every linked scheme under
+looping and non-looping status. The relation compares the scheme pointer, the
+phase index and the five status words; the scenario then requires the
+production step to re-arm the phase timer for the vendor's `timer_arm_us`
+microseconds and to notify exactly the phase callbacks the vendor called. The
+static entries are entered at their linked addresses; claims name the global
+entries.
+
+```console
+cargo xtask vendor-scenario coex \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
+  --linker /usr/bin/ld.lld --output target/blobray-research/coex --limit-mode watchdog
+```
 
 ## Inputs and probes
 

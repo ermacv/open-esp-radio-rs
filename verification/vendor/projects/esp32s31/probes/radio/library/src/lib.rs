@@ -2193,3 +2193,137 @@ oer_probe_macros::probe! {
     pub fn open_phy_trace_owned_software_frequency_control() =>
         with_phy(|registers| open_phy_trace_dis_hw_set_freq(registers));
 }
+
+/// Byte offsets of the vendor `coex_schm_env` fields the schedule owns.
+mod coex_schm_env {
+    pub const SCHEME: usize = 0;
+    pub const PHASE_INDEX: usize = 4;
+    pub const WIFI: usize = 6;
+    pub const BLE: usize = 8;
+    pub const BT: usize = 10;
+    pub const INTERVAL: usize = 12;
+    pub const EXTERNAL_COEX: usize = 56;
+    pub const FLEXIBLE_PERIOD: usize = 58;
+    pub const IEEE802154: usize = 60;
+    pub const BYTES: usize = 64;
+}
+
+oer_probe_macros::probe! {
+    /// Compiled production-path probe for the `coexist_scheme.o` schedule
+    /// entries. `env` is a vendor-shaped `coex_schm_env` image and `schemes`
+    /// the vendor address of every `coex_schm_<name>` in
+    /// `CoexSchemeId::ALL` order, so the selected scheme is reported as the
+    /// vendor pointer. `operation` selects `coex_schm_status_change` (0),
+    /// `coex_schm_status_bit_set(kind, bits)` (1), `_clear` (2),
+    /// `coex_schm_timeout_process` (3) or `coex_schm_process_restart` (4).
+    /// The image is rewritten with the resulting state; `report` receives
+    /// whether the phase timer was re-armed, its microseconds and whether
+    /// Wi-Fi and Bluetooth were notified. Returns 1 when a phase step ran.
+    ///
+    /// # Safety
+    /// `env` must point to 64 writable bytes, `schemes` to one readable word
+    /// per scheme and `report` to four writable words.
+    pub unsafe fn open_coex_schm_trace_step(
+        env: *mut u8,
+        schemes: *const u32,
+        operation: u32,
+        kind: u32,
+        bits: u32,
+        report: *mut u32,
+    ) -> u32 {
+        use coex_schm_env as field;
+        use oer_esp32s31_coex::{
+            CoexSchedule, CoexSchemeId, CoexStatusType, CoexStatusWords,
+        };
+        // SAFETY: the caller supplies the image, the address table and the
+        // report as documented; the probe is their only user.
+        let (env, schemes, report) = unsafe {
+            (
+                core::slice::from_raw_parts_mut(env, field::BYTES),
+                core::slice::from_raw_parts(schemes, CoexSchemeId::ALL.len()),
+                core::slice::from_raw_parts_mut(report, 4),
+            )
+        };
+        let half = |env: &[u8], at: usize| u16::from_le_bytes([env[at], env[at + 1]]);
+        let word = |env: &[u8], at: usize| {
+            u32::from_le_bytes([env[at], env[at + 1], env[at + 2], env[at + 3]])
+        };
+        let Some(scheme) = CoexSchemeId::ALL
+            .into_iter()
+            .zip(schemes)
+            .find(|(_, address)| **address == word(env, field::SCHEME))
+            .map(|(scheme, _)| scheme)
+        else {
+            return u32::MAX;
+        };
+        let status = CoexStatusWords {
+            wifi: half(env, field::WIFI),
+            ble: half(env, field::BLE),
+            bt: half(env, field::BT),
+            external_coex: half(env, field::EXTERNAL_COEX),
+            ieee802154: half(env, field::IEEE802154),
+        };
+        let mut schedule = CoexSchedule::for_validation(
+            status,
+            scheme,
+            env[field::PHASE_INDEX],
+            word(env, field::INTERVAL),
+            env[field::FLEXIBLE_PERIOD],
+        );
+        let kind = match kind {
+            0 => Some(CoexStatusType::Wifi),
+            1 => Some(CoexStatusType::Ble),
+            2 => Some(CoexStatusType::Bt),
+            3 => Some(CoexStatusType::ExternalCoex),
+            4 => Some(CoexStatusType::Ieee802154),
+            _ => None,
+        };
+        let step = match (operation, kind) {
+            (0, _) => {
+                schedule = CoexSchedule::for_validation(
+                    status,
+                    status.select(),
+                    schedule.phase_index(),
+                    schedule.interval(),
+                    schedule.flexible_period(),
+                );
+                None
+            }
+            (1, Some(kind)) => schedule.set_status_bits(kind, bits as u16),
+            (2, Some(kind)) => {
+                schedule.clear_status_bits(kind, bits as u16);
+                None
+            }
+            (1 | 2, None) => None,
+            (3, _) => schedule.timeout().ok(),
+            (4, _) => schedule.restart().ok(),
+            _ => return u32::MAX,
+        };
+        let selected = schemes[CoexSchemeId::ALL
+            .into_iter()
+            .position(|scheme| scheme == schedule.scheme())
+            .expect("every scheme is listed")];
+        env[field::SCHEME..field::SCHEME + 4].copy_from_slice(&selected.to_le_bytes());
+        env[field::PHASE_INDEX] = schedule.phase_index();
+        let status = schedule.status();
+        for (at, value) in [
+            (field::WIFI, status.wifi),
+            (field::BLE, status.ble),
+            (field::BT, status.bt),
+            (field::EXTERNAL_COEX, status.external_coex),
+            (field::IEEE802154, status.ieee802154),
+        ] {
+            env[at..at + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        report.copy_from_slice(&match step {
+            Some(step) => [
+                u32::from(step.timer_micros.is_some()),
+                step.timer_micros.unwrap_or(0),
+                u32::from(step.notify_wifi),
+                u32::from(step.notify_bluetooth),
+            ],
+            None => [0; 4],
+        });
+        u32::from(step.is_some())
+    }
+}

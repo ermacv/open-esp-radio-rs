@@ -330,3 +330,19 @@ fn every_channel_maps_to_the_reviewed_vendor_frequency_code() {
         78
     );
 }
+
+/// `ieee802154_freq_to_channel` inverts `ieee802154_channel_to_freq` and
+/// rejects every other code.
+#[test]
+fn a_frequency_code_names_a_channel_only_on_the_five_code_grid() {
+    for number in IEEE802154_MIN_CHANNEL..=IEEE802154_MAX_CHANNEL {
+        let channel = Ieee802154Channel::new(number).unwrap();
+        assert_eq!(
+            Ieee802154Channel::from_frequency_code(channel.frequency_code().value()),
+            Some(channel)
+        );
+    }
+    for code in [0, 2, 4, 7, 83, 255] {
+        assert_eq!(Ieee802154Channel::from_frequency_code(code), None);
+    }
+}

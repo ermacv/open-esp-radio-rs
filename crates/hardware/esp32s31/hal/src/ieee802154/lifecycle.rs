@@ -60,6 +60,18 @@ impl Ieee802154Channel {
     pub const fn frequency_code(self) -> Ieee802154FrequencyCode {
         Ieee802154FrequencyCode::new((self.0 - IEEE802154_MIN_CHANNEL) * 5 + 3)
     }
+
+    /// `ieee802154_freq_to_channel`: the channel whose frequency code is
+    /// `code`, or `None` for a code the vendor utility asserts against.
+    pub const fn from_frequency_code(code: u8) -> Option<Self> {
+        if code < 3 || !(code - 3).is_multiple_of(5) {
+            return None;
+        }
+        match Self::new((code - 3) / 5 + IEEE802154_MIN_CHANNEL) {
+            Ok(channel) => Some(channel),
+            Err(_) => None,
+        }
+    }
 }
 
 impl TryFrom<u8> for Ieee802154Channel {

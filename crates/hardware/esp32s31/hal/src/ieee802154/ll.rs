@@ -19,14 +19,21 @@ use oer_esp32s31_pac::{
     Ieee802154TxPowerCode as PacTxPowerCode,
 };
 
+use oer_esp32s31_pac::Ieee802154MacCommand as PacMacCommand;
+
 pub use oer_esp32s31_pac::{
-    Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154RxAbortEnableSet,
-    Ieee802154TxAbortEnableSet,
+    Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
+    Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154TxAbortEnableSet,
 };
 
 use crate::ieee802154::{
+    backend::ed_duration_units,
     lifecycle::{COEX_DISABLED_PTI, Ieee802154Channel},
-    mac::{Ieee802154Event, Ieee802154TaskOwner},
+    mac::{
+        Ieee802154Event, Ieee802154EventMask, Ieee802154InterruptOwner,
+        Ieee802154RxAbortReasonObservation, Ieee802154TaskOwner,
+        Ieee802154TxAbortReasonObservation,
+    },
     policy::Ieee802154CcaMode,
     tx_power::Ieee802154ResolvedTxPower,
 };
@@ -40,12 +47,80 @@ pub enum Ieee802154Timer {
     Timer1,
 }
 
+/// Operation commands of `ieee802154_ll_set_cmd`; timer commands are
+/// [`Ieee802154LowLevel::start_timer`] and [`Ieee802154LowLevel::stop_timer`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Ieee802154LlCommand {
+    /// `IEEE802154_CMD_TX_START`.
+    TxStart,
+    /// `IEEE802154_CMD_RX_START`.
+    RxStart,
+    /// `IEEE802154_CMD_CCA_TX_START`.
+    CcaTxStart,
+    /// `IEEE802154_CMD_ED_START`.
+    EdStart,
+    /// `IEEE802154_CMD_STOP`.
+    Stop,
+}
+
+impl Ieee802154LlCommand {
+    const fn into_pac(self) -> PacMacCommand {
+        match self {
+            Self::TxStart => PacMacCommand::Transmit,
+            Self::RxStart => PacMacCommand::Receive,
+            Self::CcaTxStart => PacMacCommand::ClearChannelThenTransmit,
+            Self::EdStart => PacMacCommand::EnergyDetection,
+            Self::Stop => PacMacCommand::Stop,
+        }
+    }
+}
+
 /// The `ieee802154_ll_*` accessors, the modem ETM register steps and the
 /// timer commands used by the driver's hardware helpers.
 ///
 /// Each method is one accessor of the pinned public LL; implementations must
 /// not add, merge or reorder register transactions.
 pub trait Ieee802154LowLevel {
+    /// `ieee802154_ll_set_cmd` of an operation command.
+    fn set_command(&mut self, command: Ieee802154LlCommand);
+    /// `ieee802154_ll_get_events`.
+    fn events(&mut self) -> Ieee802154EventObservation;
+    /// `ieee802154_ll_clear_events`: clear the asserted events of `mask`.
+    fn clear_events(&mut self, mask: Ieee802154EventMask);
+    /// `ieee802154_ll_get_rx_abort_reason`.
+    fn rx_abort_reason(&mut self) -> Ieee802154RxAbortReasonObservation;
+    /// `ieee802154_ll_get_tx_abort_reason`.
+    fn tx_abort_reason(&mut self) -> Ieee802154TxAbortReasonObservation;
+    /// `ieee802154_ll_get_rx_status`.
+    fn rx_status(&mut self) -> Ieee802154RxStatus;
+    /// `ieee802154_ll_is_current_rx_frame`.
+    fn is_current_rx_frame(&mut self) -> bool;
+    /// `ieee802154_ll_set_tx_addr`.
+    fn set_tx_address(&mut self, address: u32);
+    /// `ieee802154_ll_set_rx_addr`.
+    fn set_rx_address(&mut self, address: u32);
+    /// `ieee802154_ll_get_tx_auto_ack`.
+    fn tx_auto_ack(&mut self) -> bool;
+    /// `ieee802154_ll_get_rx_auto_ack`.
+    fn rx_auto_ack(&mut self) -> bool;
+    /// `ieee802154_ll_get_tx_enhance_ack`.
+    fn tx_enhanced_ack(&mut self) -> bool;
+    /// `ieee802154_ll_get_pending_mode`.
+    fn pending_mode(&mut self) -> bool;
+    /// `ieee802154_ll_set_pending_bit`.
+    fn set_pending_bit(&mut self, pending: bool);
+    /// `ieee802154_ll_get_freq`.
+    fn frequency_code(&mut self) -> u8;
+    /// `ieee802154_ll_get_ed_rss`.
+    fn ed_rss(&mut self) -> i8;
+    /// `ieee802154_ll_is_cca_busy`.
+    fn cca_busy(&mut self) -> bool;
+    /// `ieee802154_ll_set_ed_duration` in 16-microsecond symbols.
+    fn set_ed_duration(&mut self, symbols: u16);
+    /// `ieee802154_ll_enhack_generate_done_notify`.
+    fn notify_enhanced_ack_generated(&mut self);
+    /// `ieee802154_ll_disable_rx_abort_events`.
+    fn disable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet);
     /// `ieee802154_ll_enable_events(IEEE802154_EVENT_MASK)`.
     fn enable_all_events(&mut self);
     /// `ieee802154_ll_enable_events` of one event.
@@ -178,86 +253,190 @@ pub fn mac_init_registers<Ll: Ieee802154LowLevel + ?Sized>(ll: &mut Ll) {
     ll.disable_coex();
 }
 
-impl Ieee802154LowLevel for Ieee802154TaskOwner {
+/// The MAC task and interrupt owners joined for one critical section.
+///
+/// The public driver runs its operation starts, stops and interrupt handler
+/// under one critical section over the complete MAC register block, so this
+/// port is the only implementation of [`Ieee802154LowLevel`] over hardware.
+pub struct Ieee802154MacPort<'owners> {
+    task: &'owners mut Ieee802154TaskOwner,
+    interrupts: &'owners mut Ieee802154InterruptOwner,
+}
+
+impl<'owners> Ieee802154MacPort<'owners> {
+    /// Join the task owner with its active interrupt owner.
+    pub fn new(
+        task: &'owners mut Ieee802154TaskOwner,
+        interrupts: &'owners mut Ieee802154InterruptOwner,
+    ) -> Self {
+        Self { task, interrupts }
+    }
+}
+
+impl Ieee802154LowLevel for Ieee802154MacPort<'_> {
+    fn set_command(&mut self, command: Ieee802154LlCommand) {
+        self.task.lease().request_mac_command(command.into_pac());
+    }
+
+    fn events(&mut self) -> Ieee802154EventObservation {
+        self.interrupts.registers().events()
+    }
+
+    fn clear_events(&mut self, mask: Ieee802154EventMask) {
+        self.interrupts.registers_mut().clear_events(mask);
+    }
+
+    fn rx_abort_reason(&mut self) -> Ieee802154RxAbortReasonObservation {
+        self.interrupts.registers().rx_abort_reason()
+    }
+
+    fn tx_abort_reason(&mut self) -> Ieee802154TxAbortReasonObservation {
+        self.interrupts.registers().tx_abort_reason()
+    }
+
+    fn rx_status(&mut self) -> Ieee802154RxStatus {
+        self.task.lease().rx_status()
+    }
+
+    fn is_current_rx_frame(&mut self) -> bool {
+        self.task.lease().rx_status().frame_in_progress()
+    }
+
+    fn set_tx_address(&mut self, address: u32) {
+        self.task.lease().publish_transmit_dma_address(address);
+    }
+
+    fn set_rx_address(&mut self, address: u32) {
+        self.task.lease().publish_receive_dma_address(address);
+    }
+
+    fn tx_auto_ack(&mut self) -> bool {
+        self.task.lease().tx_auto_ack()
+    }
+
+    fn rx_auto_ack(&mut self) -> bool {
+        self.task.lease().rx_auto_ack()
+    }
+
+    fn tx_enhanced_ack(&mut self) -> bool {
+        self.task.lease().enhanced_ack_tx()
+    }
+
+    fn pending_mode(&mut self) -> bool {
+        self.task.lease().pending_mode()
+    }
+
+    fn set_pending_bit(&mut self, pending: bool) {
+        self.task.lease().set_frame_pending(pending);
+    }
+
+    fn frequency_code(&mut self) -> u8 {
+        self.task.lease().frequency_code().value()
+    }
+
+    fn ed_rss(&mut self) -> i8 {
+        self.interrupts.registers().ed_rss()
+    }
+
+    fn cca_busy(&mut self) -> bool {
+        self.interrupts.registers().cca_busy()
+    }
+
+    fn set_ed_duration(&mut self, symbols: u16) {
+        self.task
+            .lease()
+            .set_ed_duration(ed_duration_units(symbols));
+    }
+
+    fn notify_enhanced_ack_generated(&mut self) {
+        self.task.lease().notify_enhanced_ack_generated();
+    }
+
+    fn disable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet) {
+        self.task.lease().disable_rx_aborts(set);
+    }
+
     fn enable_all_events(&mut self) {
-        self.lease().enable_all_events();
+        self.task.lease().enable_all_events();
     }
 
     fn enable_event(&mut self, event: Ieee802154Event) {
-        self.lease().enable_event(event);
+        self.task.lease().enable_event(event);
     }
 
     fn disable_event(&mut self, event: Ieee802154Event) {
-        self.lease().disable_event(event);
+        self.task.lease().disable_event(event);
     }
 
     fn enable_tx_aborts(&mut self, set: Ieee802154TxAbortEnableSet) {
-        self.lease().enable_tx_aborts(set);
+        self.task.lease().enable_tx_aborts(set);
     }
 
     fn enable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet) {
-        self.lease().enable_rx_aborts(set);
+        self.task.lease().enable_rx_aborts(set);
     }
 
     fn set_ed_sample_mode(&mut self, mode: Ieee802154EdSampleMode) {
-        self.lease().set_ed_sample_mode(mode);
+        self.task.lease().set_ed_sample_mode(mode);
     }
 
     fn disable_coex(&mut self) {
         let pti = PacPti::new(COEX_DISABLED_PTI).expect("the disabled PTI fits five bits");
-        let mut lease = self.lease();
+        let mut lease = self.task.lease();
         lease.set_txrx_pti(pti);
         lease.set_ack_pti(pti);
     }
 
     fn set_channel(&mut self, channel: Ieee802154Channel) {
-        self.lease().set_frequency_code(channel.frequency_code());
+        self.task
+            .lease()
+            .set_frequency_code(channel.frequency_code());
     }
 
     fn set_tx_power(&mut self, power: &Ieee802154ResolvedTxPower<'_>) {
         let code = PacTxPowerCode::new(u32::from(power.field_code().value()))
             .expect("a provider index is at most 254");
-        self.lease().set_tx_power_code(code);
+        self.task.lease().set_tx_power_code(code);
     }
 
     fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {
-        self.lease().set_cca_mode(mode.into_pac());
+        self.task.lease().set_cca_mode(mode.into_pac());
     }
 
     fn set_cca_threshold(&mut self, threshold_dbm: i8) {
-        self.lease().set_cca_threshold_code(threshold_dbm);
+        self.task.lease().set_cca_threshold_code(threshold_dbm);
     }
 
     fn set_tx_auto_ack(&mut self, enable: bool) {
-        self.lease().set_tx_auto_ack(enable);
+        self.task.lease().set_tx_auto_ack(enable);
     }
 
     fn set_rx_auto_ack(&mut self, enable: bool) {
-        self.lease().set_rx_auto_ack(enable);
+        self.task.lease().set_rx_auto_ack(enable);
     }
 
     fn set_tx_enhanced_ack(&mut self, enable: bool) {
-        self.lease().set_enhanced_ack_tx(enable);
+        self.task.lease().set_enhanced_ack_tx(enable);
     }
 
     fn set_coordinator(&mut self, enable: bool) {
-        self.lease().set_coordinator(enable);
+        self.task.lease().set_coordinator(enable);
     }
 
     fn set_promiscuous(&mut self, enable: bool) {
-        self.lease().set_promiscuous(enable);
+        self.task.lease().set_promiscuous(enable);
     }
 
     fn set_pending_mode(&mut self, enhanced: bool) {
-        self.lease().set_pending_mode(enhanced);
+        self.task.lease().set_pending_mode(enhanced);
     }
 
     fn set_transmit_security(&mut self, enable: bool) {
-        self.lease().set_transmit_security(enable);
+        self.task.lease().set_transmit_security(enable);
     }
 
     fn set_timer_threshold(&mut self, timer: Ieee802154Timer, microseconds: u32) {
-        let mut lease = self.lease();
+        let mut lease = self.task.lease();
         let mut timers = lease.timer_lease();
         match timer {
             Ieee802154Timer::Timer0 => {
@@ -270,7 +449,7 @@ impl Ieee802154LowLevel for Ieee802154TaskOwner {
     }
 
     fn start_timer(&mut self, timer: Ieee802154Timer) {
-        let mut lease = self.lease();
+        let mut lease = self.task.lease();
         let mut timers = lease.timer_lease();
         match timer {
             Ieee802154Timer::Timer0 => timers.start_timer0(),
@@ -279,7 +458,7 @@ impl Ieee802154LowLevel for Ieee802154TaskOwner {
     }
 
     fn stop_timer(&mut self, timer: Ieee802154Timer) {
-        let mut lease = self.lease();
+        let mut lease = self.task.lease();
         let mut timers = lease.timer_lease();
         match timer {
             Ieee802154Timer::Timer0 => timers.stop_timer0(),
@@ -288,19 +467,19 @@ impl Ieee802154LowLevel for Ieee802154TaskOwner {
     }
 
     fn etm_channel_enabled(&mut self, channel: Ieee802154EtmChannel) -> bool {
-        self.lease().etm_channel_enabled(channel)
+        self.task.lease().etm_channel_enabled(channel)
     }
 
     fn disable_etm_channel(&mut self, channel: Ieee802154EtmChannel) {
-        self.lease().disable_etm_channel(channel);
+        self.task.lease().disable_etm_channel(channel);
     }
 
     fn enable_etm_channel(&mut self, channel: Ieee802154EtmChannel) {
-        self.lease().enable_etm_channel(channel);
+        self.task.lease().enable_etm_channel(channel);
     }
 
     fn set_etm_route(&mut self, route: Ieee802154EtmRoute) {
-        self.lease().set_etm_route(route);
+        self.task.lease().set_etm_route(route);
     }
 }
 

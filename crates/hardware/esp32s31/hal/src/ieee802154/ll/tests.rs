@@ -4,13 +4,19 @@
 use std::{vec, vec::Vec};
 
 use super::{
-    Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154LowLevel,
-    Ieee802154RxAbortEnableSet, Ieee802154Timer, Ieee802154TxAbortEnableSet, etm_channel_clear,
-    etm_set_event_task, event_end_process, mac_init_registers, sec_clear, target_time_expired,
-    timer_fire_at, timer_threshold,
+    Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
+    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,
+    Ieee802154Timer, Ieee802154TxAbortEnableSet, etm_channel_clear, etm_set_event_task,
+    event_end_process, mac_init_registers, sec_clear, target_time_expired, timer_fire_at,
+    timer_threshold,
 };
 use crate::ieee802154::{
-    lifecycle::Ieee802154Channel, mac::Ieee802154Event, policy::Ieee802154CcaMode,
+    lifecycle::Ieee802154Channel,
+    mac::{
+        Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReasonObservation,
+        Ieee802154TxAbortReasonObservation,
+    },
+    policy::Ieee802154CcaMode,
     tx_power::Ieee802154ResolvedTxPower,
 };
 
@@ -51,7 +57,40 @@ pub(crate) struct Recorder {
     pub(crate) enabled: Vec<Ieee802154EtmChannel>,
 }
 
+/// The HAL helpers never reach the interrupt-side or operation accessors;
+/// the driver engine tests cover them.
+macro_rules! unused {
+    ($($name:ident($($arg:ty),*) $(-> $ret:ty)?;)*) => {
+        $(fn $name(&mut self, $(_: $arg),*) $(-> $ret)? {
+            unreachable!(concat!(stringify!($name), " is not a HAL helper accessor"))
+        })*
+    };
+}
+
 impl Ieee802154LowLevel for Recorder {
+    unused! {
+        set_command(Ieee802154LlCommand);
+        events() -> Ieee802154EventObservation;
+        clear_events(Ieee802154EventMask);
+        rx_abort_reason() -> Ieee802154RxAbortReasonObservation;
+        tx_abort_reason() -> Ieee802154TxAbortReasonObservation;
+        rx_status() -> Ieee802154RxStatus;
+        is_current_rx_frame() -> bool;
+        set_tx_address(u32);
+        set_rx_address(u32);
+        tx_auto_ack() -> bool;
+        rx_auto_ack() -> bool;
+        tx_enhanced_ack() -> bool;
+        pending_mode() -> bool;
+        set_pending_bit(bool);
+        frequency_code() -> u8;
+        ed_rss() -> i8;
+        cca_busy() -> bool;
+        set_ed_duration(u16);
+        notify_enhanced_ack_generated();
+        disable_rx_aborts(Ieee802154RxAbortEnableSet);
+    }
+
     fn enable_all_events(&mut self) {
         self.calls.push(Call::EnableAllEvents);
     }

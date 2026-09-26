@@ -2686,6 +2686,43 @@ impl Ieee802154InterruptRegisters {
         }
     }
 
+    /// `ieee802154_ll_get_events`: one read of the event field, without
+    /// acknowledging it.
+    pub fn events(&self) -> Ieee802154EventObservation {
+        Ieee802154EventObservation::from_readback(self.registers.event_readback())
+    }
+
+    /// `ieee802154_ll_clear_events`: clear the asserted events of `mask` and
+    /// leave every other event latched.
+    pub fn clear_events(&mut self, mask: Ieee802154EventMask) {
+        self.registers
+            .clear_events(|event| mask.contains(event_of(event)));
+    }
+
+    /// `ieee802154_ll_get_rx_abort_reason`.
+    pub fn rx_abort_reason(&self) -> Ieee802154RxAbortReasonObservation {
+        Ieee802154RxAbortReasonObservation::from_field(
+            self.registers.rx_status_readback().abort_reason_code(),
+        )
+    }
+
+    /// `ieee802154_ll_get_ed_rss`.
+    pub fn ed_rss(&self) -> i8 {
+        self.registers.ed_rss_code()
+    }
+
+    /// `ieee802154_ll_is_cca_busy`.
+    pub fn cca_busy(&self) -> bool {
+        self.registers.cca_busy()
+    }
+
+    /// `ieee802154_ll_get_tx_abort_reason`.
+    pub fn tx_abort_reason(&self) -> Ieee802154TxAbortReasonObservation {
+        Ieee802154TxAbortReasonObservation::from_field(
+            self.registers.tx_status_readback().abort_reason_code(),
+        )
+    }
+
     /// Acknowledge exactly one sampled W1C event image and consume it.
     pub fn acknowledge_interrupt(&mut self, snapshot: Ieee802154InterruptSnapshot) {
         self.registers
@@ -2724,6 +2761,24 @@ impl Ieee802154TaskRegisters {
             interrupt_route: &self.peripherals.ieee802154_interrupt_route,
             etm: &self.peripherals.btbb.shared_radio.modem_etm,
         }
+    }
+}
+
+const fn event_of(event: crate::ieee802154::ownership::RawEvent) -> Ieee802154Event {
+    use crate::ieee802154::ownership::RawEvent;
+    match event {
+        RawEvent::TxDone => Ieee802154Event::TxDone,
+        RawEvent::RxDone => Ieee802154Event::RxDone,
+        RawEvent::AckTxDone => Ieee802154Event::AckTxDone,
+        RawEvent::AckRxDone => Ieee802154Event::AckRxDone,
+        RawEvent::RxAbort => Ieee802154Event::RxAbort,
+        RawEvent::TxAbort => Ieee802154Event::TxAbort,
+        RawEvent::EdDone => Ieee802154Event::EdDone,
+        RawEvent::Timer0Overflow => Ieee802154Event::Timer0Overflow,
+        RawEvent::Timer1Overflow => Ieee802154Event::Timer1Overflow,
+        RawEvent::ClockCountMatch => Ieee802154Event::ClockCountMatch,
+        RawEvent::TxSfdDone => Ieee802154Event::TxSfdDone,
+        RawEvent::RxSfdDone => Ieee802154Event::RxSfdDone,
     }
 }
 

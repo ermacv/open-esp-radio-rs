@@ -19,9 +19,10 @@ use oer_esp32s31_pac::{
 };
 
 pub use oer_esp32s31_pac::{
-    Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservationError,
-    Ieee802154InterruptSnapshot, Ieee802154RxAbortReason, Ieee802154RxAbortReasonObservation,
-    Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
+    Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservation,
+    Ieee802154EventObservationError, Ieee802154InterruptSnapshot, Ieee802154RxAbortReason,
+    Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReason,
+    Ieee802154TxAbortReasonObservation,
 };
 
 use crate::phy::restore::PhyRouteState;
@@ -244,6 +245,14 @@ pub struct Ieee802154InterruptOwner {
 }
 
 impl Ieee802154InterruptOwner {
+    pub(crate) const fn registers(&self) -> &PacInterruptRegisters {
+        &self.registers
+    }
+
+    pub(crate) fn registers_mut(&mut self) -> &mut PacInterruptRegisters {
+        &mut self.registers
+    }
+
     /// Capture one ISR event/status batch before acknowledging any event.
     pub fn sample_interrupt(&self) -> Ieee802154InterruptSnapshot {
         self.registers.sample_interrupt()

@@ -508,7 +508,6 @@ impl Ieee802154EventReadback {
         }
     }
 
-    #[cfg(feature = "validation-probes")]
     pub(crate) fn from_event_status(reader: &crate::svd::ieee802154_mac::event_status::R) -> Self {
         Self {
             tx_done: reader.tx_done().bit_is_set(),
@@ -702,13 +701,13 @@ impl TaskRegisters {
             writer.rx_abort().clear_bit();
             writer.tx_abort().clear_bit();
             writer.ed_done().clear_bit();
-            writer.unclassified_7().clear_bit();
+            writer.unclassified_7().bit(false);
             writer.timer0_overflow().clear_bit();
             writer.timer1_overflow().clear_bit();
             writer.clock_count_match().clear_bit();
             writer.tx_sfd_done().clear_bit();
             writer.rx_sfd_done().clear_bit();
-            writer.unclassified_13().clear_bit()
+            writer.unclassified_13().bit(false)
         });
     }
 
@@ -723,13 +722,13 @@ impl TaskRegisters {
             writer.rx_abort().set_bit();
             writer.tx_abort().clear_bit();
             writer.ed_done().set_bit();
-            writer.unclassified_7().clear_bit();
+            writer.unclassified_7().bit(false);
             writer.timer0_overflow().clear_bit();
             writer.timer1_overflow().clear_bit();
             writer.clock_count_match().clear_bit();
             writer.tx_sfd_done().clear_bit();
             writer.rx_sfd_done().clear_bit();
-            writer.unclassified_13().clear_bit()
+            writer.unclassified_13().bit(false)
         });
     }
 
@@ -744,13 +743,13 @@ impl TaskRegisters {
             writer.rx_abort().set_bit();
             writer.tx_abort().set_bit();
             writer.ed_done().set_bit();
-            writer.unclassified_7().clear_bit();
+            writer.unclassified_7().bit(false);
             writer.timer0_overflow().clear_bit();
             writer.timer1_overflow().set_bit();
             writer.clock_count_match().clear_bit();
             writer.tx_sfd_done().set_bit();
             writer.rx_sfd_done().set_bit();
-            writer.unclassified_13().clear_bit()
+            writer.unclassified_13().bit(false)
         });
     }
 
@@ -765,13 +764,13 @@ impl TaskRegisters {
             writer.rx_abort().set_bit();
             writer.tx_abort().set_bit();
             writer.ed_done().set_bit();
-            writer.unclassified_7().clear_bit();
+            writer.unclassified_7().bit(false);
             writer.timer0_overflow().set_bit();
             writer.timer1_overflow().set_bit();
             writer.clock_count_match().clear_bit();
             writer.tx_sfd_done().set_bit();
             writer.rx_sfd_done().set_bit();
-            writer.unclassified_13().clear_bit()
+            writer.unclassified_13().bit(false)
         });
     }
 
@@ -1492,6 +1491,60 @@ impl InterruptRegisters {
             &mut self.registers,
             snapshot,
         );
+    }
+
+    /// `ieee802154_ll_get_events`: one read of the event field without
+    /// acknowledging it.
+    #[inline]
+    pub fn event_readback(&self) -> Ieee802154EventReadback {
+        Ieee802154EventReadback::from_event_status(&self.registers.event_status().read())
+    }
+
+    /// `ieee802154_ll_clear_events`: `EVENT_STATUS &= mask`. The write-one-to-
+    /// clear word is read and written back with only the asserted events that
+    /// `in_mask` selects, so events outside the mask stay latched.
+    #[inline]
+    pub fn clear_events(&mut self, in_mask: impl Fn(RawEvent) -> bool) {
+        self.registers.event_status().modify(|current, writer| {
+            writer
+                .tx_done()
+                .bit(current.tx_done().bit() && in_mask(RawEvent::TxDone));
+            writer
+                .rx_done()
+                .bit(current.rx_done().bit() && in_mask(RawEvent::RxDone));
+            writer
+                .ack_tx_done()
+                .bit(current.ack_tx_done().bit() && in_mask(RawEvent::AckTxDone));
+            writer
+                .ack_rx_done()
+                .bit(current.ack_rx_done().bit() && in_mask(RawEvent::AckRxDone));
+            writer
+                .rx_abort()
+                .bit(current.rx_abort().bit() && in_mask(RawEvent::RxAbort));
+            writer
+                .tx_abort()
+                .bit(current.tx_abort().bit() && in_mask(RawEvent::TxAbort));
+            writer
+                .ed_done()
+                .bit(current.ed_done().bit() && in_mask(RawEvent::EdDone));
+            writer.unclassified_7().bit(false);
+            writer
+                .timer0_overflow()
+                .bit(current.timer0_overflow().bit() && in_mask(RawEvent::Timer0Overflow));
+            writer
+                .timer1_overflow()
+                .bit(current.timer1_overflow().bit() && in_mask(RawEvent::Timer1Overflow));
+            writer
+                .clock_count_match()
+                .bit(current.clock_count_match().bit() && in_mask(RawEvent::ClockCountMatch));
+            writer
+                .tx_sfd_done()
+                .bit(current.tx_sfd_done().bit() && in_mask(RawEvent::TxSfdDone));
+            writer
+                .rx_sfd_done()
+                .bit(current.rx_sfd_done().bit() && in_mask(RawEvent::RxSfdDone));
+            writer.unclassified_13().bit(false)
+        });
     }
 
     /// Observe the complete RX status word captured for an RX-abort event.

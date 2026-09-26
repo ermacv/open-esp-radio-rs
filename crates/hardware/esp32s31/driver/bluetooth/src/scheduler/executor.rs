@@ -7,15 +7,16 @@
 //! the HAL. Conflicts are resolved before submission; an overlapping window is
 //! rejected, not moved.
 //!
-//! This core implements insertion while the scheduler is idle, insertion into
-//! a running list through the vendor lock and modify transactions, and the
-//! completion walk. Cancellation and stop build on the same mirror and item
-//! access.
+//! The executor implements insertion while the scheduler is idle, insertion
+//! into a running list through the vendor lock and modify transactions,
+//! cancellation of listed events, deletion of the whole list, the completion
+//! walk and the stopped state. At most one list transaction runs at a time;
+//! while it runs the mirror is frozen and every other operation is refused.
 
 #![forbid(unsafe_code)]
 
 use oer_esp32s31_bluetooth_memory::{ControllerSramLinkAddress, SchedulerItemCompletionStatus};
-use oer_esp32s31_hal::bluetooth::BluetoothSchedulerWorkObservation;
+use oer_esp32s31_hal::bluetooth::{BluetoothSchedulerStopped, BluetoothSchedulerWorkObservation};
 
 use crate::scheduler::{
     list::{SchedulerList, SchedulerListInsertError},
@@ -47,6 +48,12 @@ pub trait SchedulerItemAccess<I> {
 
     /// Recorded status, or `None` while hardware has not executed the item.
     fn completion_status(&self, id: I) -> Option<SchedulerItemCompletionStatus>;
+
+    /// Mark an item as deleted before it leaves the list, as vendor
+    /// cancellation does: set the skip marker in its hardware link word and
+    /// the deleted flag. Its own hardware next link is kept, so hardware that
+    /// already holds the item can still follow the chain.
+    fn mark_deleted(&mut self, id: I);
 }
 
 /// Why an event was not submitted.
@@ -58,13 +65,29 @@ pub enum SchedulerSubmitError<I> {
     SchedulerBusy,
     /// The scheduler is idle; insertion does not need a live-list transaction.
     SchedulerIdle,
-    /// A live-list insertion is in progress; the mirror is frozen until it ends.
-    InsertionActive,
+    /// A list transaction is in progress; the mirror is frozen until it ends.
+    TransactionActive,
+    /// The executor holds the stopped receipt; nothing may start the
+    /// scheduler before it resumes.
+    Stopped,
 }
 
-/// The mirror is frozen by a live-list insertion.
+/// The mirror is frozen by a list transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SchedulerInsertionActive;
+pub struct SchedulerTransactionActive;
+
+/// Why the executor refused a stopped receipt. The receipt is returned.
+#[derive(Debug)]
+pub enum SchedulerStopRejected {
+    /// A list transaction is in progress and must finish first.
+    TransactionActive(BluetoothSchedulerStopped),
+    /// The executor already holds a stopped receipt.
+    AlreadyStopped(BluetoothSchedulerStopped),
+}
+
+/// The executor does not hold a stopped receipt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SchedulerNotStopped;
 
 /// Hardware action after an insertion into an idle scheduler.
 ///
@@ -108,14 +131,24 @@ impl<I: Copy, const CAPACITY: usize> SchedulerCompletion<I, CAPACITY> {
 /// Executor core for hardware list zero.
 pub struct SchedulerExecutor<I, const CAPACITY: usize> {
     list: SchedulerList<I, CAPACITY>,
-    live: Option<live::LivePhase<I>>,
+    transaction: Option<Transaction<I, CAPACITY>>,
+    stopped: Option<BluetoothSchedulerStopped>,
+}
+
+/// The single list transaction in progress.
+#[derive(Clone, Copy)]
+enum Transaction<I, const CAPACITY: usize> {
+    Live(live::LivePhase<I>),
+    Cancel(cancel::CancelPhase<I, CAPACITY>),
+    Flush,
 }
 
 impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub const fn new() -> Self {
         Self {
             list: SchedulerList::new(),
-            live: None,
+            transaction: None,
+            stopped: None,
         }
     }
 
@@ -136,8 +169,9 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
         id: I,
         window: SchedulerRawWindow,
     ) -> Result<SchedulerIdleInsertion, SchedulerSubmitError<I>> {
-        if self.live.is_some() {
-            return Err(SchedulerSubmitError::InsertionActive);
+        self.admit_transaction()?;
+        if self.stopped.is_some() {
+            return Err(SchedulerSubmitError::Stopped);
         }
         if scheduler.is_busy() {
             return Err(SchedulerSubmitError::SchedulerBusy);
@@ -157,9 +191,9 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub fn take_completed(
         &mut self,
         items: &mut impl SchedulerItemAccess<I>,
-    ) -> Result<SchedulerCompletion<I, CAPACITY>, SchedulerInsertionActive> {
-        if self.live.is_some() {
-            return Err(SchedulerInsertionActive);
+    ) -> Result<SchedulerCompletion<I, CAPACITY>, SchedulerTransactionActive> {
+        if self.transaction.is_some() {
+            return Err(SchedulerTransactionActive);
         }
         let scan = self
             .list
@@ -193,9 +227,73 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
         items: &impl SchedulerItemAccess<I>,
         scheduler: BluetoothSchedulerWorkObservation,
     ) -> Option<SchedulerIdleInsertion> {
-        if scheduler.is_busy() || self.live.is_some() {
+        if scheduler.is_busy() || self.transaction.is_some() || self.stopped.is_some() {
             return None;
         }
+        self.first_unexecuted(items)
+    }
+
+    /// Advance the list transaction in progress with the awaited observation.
+    pub fn advance(
+        &mut self,
+        items: &mut impl SchedulerItemAccess<I>,
+        observation: SchedulerObservation,
+    ) -> Result<SchedulerStep<I, CAPACITY>, SchedulerTransactionFault> {
+        match self
+            .transaction
+            .ok_or(SchedulerTransactionFault::NoTransaction)?
+        {
+            Transaction::Live(phase) => self.advance_live(items, phase, observation),
+            Transaction::Cancel(phase) => self.advance_cancel(items, phase, observation),
+            Transaction::Flush => self.advance_flush(items, observation),
+        }
+    }
+
+    /// Take ownership of the stopped receipt produced by the scheduler stop
+    /// sequence.
+    ///
+    /// While the executor holds it, nothing starts the scheduler: idle
+    /// insertion and restart are refused. Completion, cancellation and list
+    /// deletion stay available and take their idle paths.
+    pub fn enter_stopped(
+        &mut self,
+        stopped: BluetoothSchedulerStopped,
+    ) -> Result<(), SchedulerStopRejected> {
+        if self.transaction.is_some() {
+            return Err(SchedulerStopRejected::TransactionActive(stopped));
+        }
+        if self.stopped.is_some() {
+            return Err(SchedulerStopRejected::AlreadyStopped(stopped));
+        }
+        self.stopped = Some(stopped);
+        Ok(())
+    }
+
+    /// The stopped receipt the executor holds.
+    ///
+    /// A quiescence proof borrows it through the executor, so the executor
+    /// cannot resume while the proof is alive.
+    pub const fn stopped(&self) -> Option<&BluetoothSchedulerStopped> {
+        self.stopped.as_ref()
+    }
+
+    /// Consume the stopped receipt and report the event to restart at.
+    ///
+    /// Listed events keep their windows; the caller cancels events whose
+    /// start has passed before it resumes.
+    pub fn resume(
+        &mut self,
+        items: &impl SchedulerItemAccess<I>,
+    ) -> Result<Option<SchedulerIdleInsertion>, SchedulerNotStopped> {
+        // Resuming ends the stopped span; the receipt is spent.
+        drop(self.stopped.take().ok_or(SchedulerNotStopped)?);
+        Ok(self.first_unexecuted(items))
+    }
+
+    fn first_unexecuted(
+        &self,
+        items: &impl SchedulerItemAccess<I>,
+    ) -> Option<SchedulerIdleInsertion> {
         self.list
             .iter()
             .map(|(id, _)| id)
@@ -203,6 +301,13 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
             .map(|head| SchedulerIdleInsertion {
                 head: items.link(head),
             })
+    }
+
+    fn admit_transaction(&self) -> Result<(), SchedulerSubmitError<I>> {
+        if self.transaction.is_some() {
+            return Err(SchedulerSubmitError::TransactionActive);
+        }
+        Ok(())
     }
 
     /// Link `id` into the mirror and the item memory.
@@ -233,11 +338,14 @@ impl<I: Copy + Eq, const CAPACITY: usize> Default for SchedulerExecutor<I, CAPAC
     }
 }
 
+mod cancel;
 mod live;
+mod step;
 
-pub use live::{
-    SchedulerLiveAction, SchedulerLiveFault, SchedulerLiveNext, SchedulerLiveObservation,
-    SchedulerLiveStep, SchedulerLiveWait,
+pub use cancel::SchedulerCancelError;
+pub use step::{
+    SchedulerAction, SchedulerNext, SchedulerObservation, SchedulerReleased, SchedulerStep,
+    SchedulerTransactionFault, SchedulerWait,
 };
 
 #[cfg(test)]

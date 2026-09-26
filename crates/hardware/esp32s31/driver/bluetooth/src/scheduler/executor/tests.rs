@@ -13,6 +13,7 @@ struct Item {
     previous: Option<ControllerSramLinkAddress>,
     status: Option<SchedulerItemCompletionStatus>,
     prepared: bool,
+    deleted: bool,
 }
 
 /// Item memory for event identities 0..8.
@@ -69,6 +70,7 @@ impl SchedulerItemAccess<u8> for Items {
             previous,
             status: None,
             prepared: true,
+            deleted: false,
         };
     }
 
@@ -82,6 +84,10 @@ impl SchedulerItemAccess<u8> for Items {
 
     fn completion_status(&self, id: u8) -> Option<SchedulerItemCompletionStatus> {
         self.0[usize::from(id)].status
+    }
+
+    fn mark_deleted(&mut self, id: u8) {
+        self.0[usize::from(id)].deleted = true;
     }
 }
 
@@ -211,12 +217,12 @@ mod live {
 
     use super::{Items, busy, idle, link, window};
     use crate::scheduler::executor::{
-        SchedulerExecutor, SchedulerLiveAction as Action, SchedulerLiveFault,
-        SchedulerLiveNext as Next, SchedulerLiveObservation as Observation, SchedulerLiveStep,
-        SchedulerLiveWait as Wait, SchedulerSubmitError,
+        SchedulerAction as Action, SchedulerExecutor, SchedulerNext as Next,
+        SchedulerObservation as Observation, SchedulerStep, SchedulerSubmitError,
+        SchedulerTransactionFault, SchedulerWait as Wait,
     };
 
-    fn actions(step: &SchedulerLiveStep) -> Vec<Action> {
+    fn actions(step: &SchedulerStep<u8, 4>) -> Vec<Action> {
         step.actions().collect()
     }
 
@@ -251,12 +257,12 @@ mod live {
         assert_eq!(items.chain(link(1)), [1, 2]);
 
         let step = executor
-            .advance_live_insertion(&mut items, Observation::ExecutionLock(Lock::Pending))
+            .advance(&mut items, Observation::ExecutionLock(Lock::Pending))
             .unwrap();
         assert_eq!(step.next(), Next::Await(Wait::ExecutionLock));
 
         let step = executor
-            .advance_live_insertion(
+            .advance(
                 &mut items,
                 Observation::ExecutionLock(Lock::ExecutionLockRetained),
             )
@@ -268,15 +274,15 @@ mod live {
         assert!(executor.take_completed(&mut items).is_err());
         assert_eq!(
             executor.submit_idle(&mut items, idle(), 4, window(400)),
-            Err(SchedulerSubmitError::InsertionActive)
+            Err(SchedulerSubmitError::TransactionActive)
         );
 
         let step = executor
-            .advance_live_insertion(&mut items, lock_modify(true, true))
+            .advance(&mut items, lock_modify(true, true))
             .unwrap();
         assert_eq!(step.next(), Next::Await(Wait::LockModify));
         let step = executor
-            .advance_live_insertion(&mut items, lock_modify(true, false))
+            .advance(&mut items, lock_modify(true, false))
             .unwrap();
         assert_eq!(actions(&step), [Action::ReleaseExecutionLock]);
         assert_eq!(step.next(), Next::Finished);
@@ -291,7 +297,7 @@ mod live {
             .unwrap();
 
         let step = executor
-            .advance_live_insertion(
+            .advance(
                 &mut items,
                 Observation::ExecutionLock(Lock::ReconcileCurrentHead),
             )
@@ -303,11 +309,14 @@ mod live {
         assert_eq!(step.next(), Next::Await(Wait::ExecutionModify));
 
         let step = executor
-            .advance_live_insertion(&mut items, Observation::ExecutionModify(Modify::Ready))
+            .advance(&mut items, Observation::ExecutionModify(Modify::Ready))
             .unwrap();
         assert_eq!(
             actions(&step),
-            [Action::PublishHead(link(3)), Action::ReleaseExecutionModify]
+            [
+                Action::PublishHead(Some(link(3))),
+                Action::ReleaseExecutionModify
+            ]
         );
         assert_eq!(step.next(), Next::Finished);
         assert_eq!(items.chain(link(1)), [1, 3, 2]);
@@ -321,11 +330,14 @@ mod live {
             .unwrap();
         assert_eq!(actions(&step), [Action::PublishExecutionModify]);
         let step = executor
-            .advance_live_insertion(&mut items, Observation::ExecutionModify(Modify::Ready))
+            .advance(&mut items, Observation::ExecutionModify(Modify::Ready))
             .unwrap();
         assert_eq!(
             actions(&step),
-            [Action::PublishHead(link(3)), Action::ReleaseExecutionModify]
+            [
+                Action::PublishHead(Some(link(3))),
+                Action::ReleaseExecutionModify
+            ]
         );
         assert_eq!(items.chain(link(3)), [3, 1, 2]);
     }
@@ -337,16 +349,15 @@ mod live {
             .begin_live_insertion(&items, busy(), 3, window(100))
             .unwrap();
         assert_eq!(
-            executor
-                .advance_live_insertion(&mut items, Observation::ExecutionModify(Modify::Ready)),
-            Err(SchedulerLiveFault::UnexpectedObservation)
+            executor.advance(&mut items, Observation::ExecutionModify(Modify::Ready)),
+            Err(SchedulerTransactionFault::UnexpectedObservation)
         );
         assert_eq!(
-            executor.advance_live_insertion(
+            executor.advance(
                 &mut items,
                 Observation::ExecutionLock(Lock::UnsupportedHardwareResult)
             ),
-            Err(SchedulerLiveFault::UnsupportedExecutionLockResult)
+            Err(SchedulerTransactionFault::UnsupportedExecutionLockResult)
         );
         assert_eq!(items.chain(link(1)), [1, 2]);
         assert!(!executor.list().contains(3));
@@ -355,17 +366,16 @@ mod live {
             .begin_live_insertion(&items, busy(), 3, window(0xffff_ff00))
             .unwrap();
         assert_eq!(
-            executor.advance_live_insertion(
+            executor.advance(
                 &mut items,
                 Observation::ExecutionModify(Modify::HardwareRejected)
             ),
-            Err(SchedulerLiveFault::ExecutionModifyRejected)
+            Err(SchedulerTransactionFault::ExecutionModifyRejected)
         );
         assert!(!executor.list().contains(3));
         assert_eq!(
-            executor
-                .advance_live_insertion(&mut items, Observation::ExecutionModify(Modify::Ready)),
-            Err(SchedulerLiveFault::NoInsertion)
+            executor.advance(&mut items, Observation::ExecutionModify(Modify::Ready)),
+            Err(SchedulerTransactionFault::NoTransaction)
         );
     }
 
@@ -380,5 +390,355 @@ mod live {
         let restart = executor.restart_if_idle(&items, idle()).unwrap();
         assert_eq!(restart.head, link(2));
         assert!(executor.restart_if_idle(&items, busy()).is_none());
+    }
+}
+
+mod cancel {
+    use std::vec::Vec;
+
+    use oer_esp32s31_bluetooth_memory::{ControllerSramLinkAddress, SchedulerItemCompletionStatus};
+    use oer_esp32s31_hal::bluetooth::{
+        BluetoothSchedulerCancellationDisposition as Hold,
+        BluetoothSchedulerExecutionModifyDisposition as Modify,
+        BluetoothSchedulerLockModifyObservation, BluetoothSchedulerSkipDisposition as Skip,
+        BluetoothSchedulerSkipResult as SkipResult, BluetoothSchedulerStopped,
+        BluetoothSchedulerWorkObservation,
+    };
+
+    use super::{Items, busy, idle, link, window};
+    use crate::scheduler::executor::{
+        SchedulerAction as Action, SchedulerCancelError, SchedulerExecutor, SchedulerNext as Next,
+        SchedulerNotStopped, SchedulerObservation as Observation, SchedulerStep,
+        SchedulerStopRejected, SchedulerSubmitError, SchedulerTransactionActive,
+        SchedulerTransactionFault, SchedulerWait as Wait,
+    };
+
+    type Executor = SchedulerExecutor<u8, 4>;
+    type Step = SchedulerStep<u8, 4>;
+
+    fn actions(step: &Step) -> Vec<Action> {
+        step.actions().collect()
+    }
+
+    fn released(step: &Step) -> Vec<(u8, Option<SchedulerItemCompletionStatus>)> {
+        step.released().iter().collect()
+    }
+
+    fn listed(executor: &Executor) -> Vec<u8> {
+        executor.list().iter().map(|(id, _)| id).collect()
+    }
+
+    fn lock_modify(start: bool) -> Observation {
+        Observation::LockModify(
+            BluetoothSchedulerLockModifyObservation::from_fields_for_validation(true, start, 0),
+        )
+    }
+
+    /// Events 1..=4 at starts 0, 100, 200 and 300.
+    fn four_events() -> (Executor, Items) {
+        let mut executor = SchedulerExecutor::new();
+        let mut items = Items::new();
+        for id in 1..=4 {
+            let _ = executor
+                .submit_idle(&mut items, idle(), id, window((u32::from(id) - 1) * 100))
+                .unwrap();
+        }
+        (executor, items)
+    }
+
+    /// Start a running cancellation and open its hold.
+    fn open_hold(
+        executor: &mut Executor,
+        items: &mut Items,
+        scheduler: BluetoothSchedulerWorkObservation,
+        head: Option<ControllerSramLinkAddress>,
+        ids: &[u8],
+    ) -> Step {
+        let step = executor.begin_cancel(items, scheduler, head, ids).unwrap();
+        assert_eq!(actions(&step), []);
+        assert_eq!(step.next(), Next::Await(Wait::LockModify));
+        let step = executor.advance(items, lock_modify(true)).unwrap();
+        assert_eq!(step.next(), Next::Await(Wait::LockModify));
+        let step = executor.advance(items, lock_modify(false)).unwrap();
+        assert_eq!(
+            actions(&step),
+            [
+                Action::IndexCancellation,
+                Action::AcknowledgeCancellationSource,
+                Action::RequestCancellation
+            ]
+        );
+        assert_eq!(step.next(), Next::Await(Wait::Cancellation));
+        let step = executor
+            .advance(items, Observation::Cancellation(Hold::Pending))
+            .unwrap();
+        assert_eq!(step.next(), Next::Await(Wait::Cancellation));
+        executor
+            .advance(items, Observation::Cancellation(Hold::Settled))
+            .unwrap()
+    }
+
+    #[test]
+    fn idle_cancellation_unlinks_and_republishes_the_head() {
+        let (mut executor, mut items) = four_events();
+
+        let step = executor
+            .begin_cancel(&mut items, idle(), None, &[3, 2])
+            .unwrap();
+        assert_eq!(actions(&step), [Action::PublishHead(Some(link(1)))]);
+        assert_eq!(step.next(), Next::Finished);
+        assert_eq!(released(&step), [(2, None), (3, None)]);
+        assert_eq!(items.chain(link(1)), [1, 4]);
+        assert_eq!(items.0[4].previous, Some(link(1)));
+        // A deleted item keeps its own next link for hardware that holds it.
+        assert!(items.0[2].deleted && items.0[3].deleted);
+        assert_eq!(items.0[3].next, Some(link(4)));
+
+        let step = executor
+            .begin_cancel(&mut items, idle(), None, &[1])
+            .unwrap();
+        assert_eq!(actions(&step), [Action::PublishHead(Some(link(4)))]);
+        assert_eq!(items.0[4].previous, None);
+        let step = executor
+            .begin_cancel(&mut items, idle(), None, &[4])
+            .unwrap();
+        assert_eq!(actions(&step), [Action::PublishHead(None)]);
+        assert!(executor.list().is_empty());
+    }
+
+    #[test]
+    fn rejected_cancellations_change_no_item() {
+        let (mut executor, mut items) = four_events();
+        let before = items.0;
+        assert_eq!(
+            executor.begin_cancel(&mut items, idle(), None, &[9]),
+            Err(SchedulerCancelError::NotListed(9))
+        );
+        assert_eq!(
+            executor.begin_cancel(&mut items, idle(), None, &[2, 2]),
+            Err(SchedulerCancelError::NotListed(2))
+        );
+        assert_eq!(
+            executor.begin_cancel(&mut items, busy(), Some(link(7)), &[2]),
+            Err(SchedulerCancelError::ForeignHardwareHead)
+        );
+        assert_eq!(items.0, before);
+        assert_eq!(listed(&executor), [1, 2, 3, 4]);
+
+        items.execute(1, 0);
+        let _ = executor.take_completed(&mut items).unwrap();
+        let _ = executor
+            .begin_live_insertion(&items, busy(), 5, window(400))
+            .unwrap();
+        assert_eq!(
+            executor.begin_cancel(&mut items, busy(), None, &[2]),
+            Err(SchedulerCancelError::TransactionActive)
+        );
+    }
+
+    #[test]
+    fn running_cancellation_skips_only_unexecuted_events_up_to_the_hardware_head() {
+        let (mut executor, mut items) = four_events();
+        items.execute(1, 0);
+
+        let step = open_hold(&mut executor, &mut items, busy(), Some(link(2)), &[1, 2, 3]);
+        // Event 1 executed and event 3 starts after the hardware head.
+        assert_eq!(actions(&step), [Action::PublishSkip(link(2))]);
+        assert_eq!(step.next(), Next::Await(Wait::Skip));
+        assert_eq!(listed(&executor), [4]);
+        assert_eq!(
+            executor.take_completed(&mut items).err(),
+            Some(SchedulerTransactionActive)
+        );
+        assert_eq!(
+            executor.begin_flush(&items, busy()).err(),
+            Some(SchedulerTransactionActive)
+        );
+
+        let step = executor
+            .advance(&mut items, Observation::Skip(Skip::Pending))
+            .unwrap();
+        assert_eq!(step.next(), Next::Await(Wait::Skip));
+        assert!(step.released().is_empty());
+        let step = executor
+            .advance(
+                &mut items,
+                Observation::Skip(Skip::Completed(SkipResult::One)),
+            )
+            .unwrap();
+        assert_eq!(
+            actions(&step),
+            [Action::ClearSkip, Action::ReleaseCancellation]
+        );
+        assert_eq!(step.next(), Next::Finished);
+        assert_eq!(
+            released(&step),
+            [
+                (1, Some(SchedulerItemCompletionStatus::Zero)),
+                (2, None),
+                (3, None)
+            ]
+        );
+        assert!(executor.take_completed(&mut items).is_ok());
+    }
+
+    #[test]
+    fn without_a_hardware_head_every_unexecuted_event_is_skipped_until_a_terminal_result() {
+        let (mut executor, mut items) = four_events();
+
+        let step = open_hold(&mut executor, &mut items, busy(), None, &[1, 2, 3]);
+        assert_eq!(actions(&step), [Action::PublishSkip(link(1))]);
+        // Execution is sampled when the loop reaches each event.
+        items.execute(2, 0);
+        let step = executor
+            .advance(
+                &mut items,
+                Observation::Skip(Skip::Completed(SkipResult::Three)),
+            )
+            .unwrap();
+        assert_eq!(
+            actions(&step),
+            [Action::ClearSkip, Action::PublishSkip(link(3))]
+        );
+        let step = executor
+            .advance(&mut items, Observation::Skip(Skip::SchedulerIdle))
+            .unwrap();
+        assert_eq!(
+            actions(&step),
+            [Action::ClearSkip, Action::ReleaseCancellation]
+        );
+        assert_eq!(step.released().len(), 3);
+
+        let (mut executor, mut items) = four_events();
+        let _ = open_hold(&mut executor, &mut items, busy(), None, &[1, 2]);
+        let step = executor
+            .advance(
+                &mut items,
+                Observation::Skip(Skip::Completed(SkipResult::Two)),
+            )
+            .unwrap();
+        assert_eq!(
+            actions(&step),
+            [Action::ClearSkip, Action::ReleaseCancellation]
+        );
+        assert_eq!(step.next(), Next::Finished);
+    }
+
+    #[test]
+    fn a_hold_without_skip_targets_closes_at_once() {
+        let (mut executor, mut items) = four_events();
+        let step = open_hold(&mut executor, &mut items, busy(), Some(link(1)), &[3]);
+        assert_eq!(actions(&step), [Action::ReleaseCancellation]);
+        assert_eq!(released(&step), [(3, None)]);
+    }
+
+    #[test]
+    fn an_unsupported_skip_result_withholds_the_detached_events() {
+        let (mut executor, mut items) = four_events();
+        let _ = open_hold(&mut executor, &mut items, busy(), None, &[1]);
+        assert_eq!(
+            executor.advance(&mut items, Observation::Cancellation(Hold::Settled)),
+            Err(SchedulerTransactionFault::UnexpectedObservation)
+        );
+        assert_eq!(
+            executor.advance(
+                &mut items,
+                Observation::Skip(Skip::UnsupportedHardwareResult)
+            ),
+            Err(SchedulerTransactionFault::UnsupportedSkipResult)
+        );
+        assert_eq!(
+            executor.advance(&mut items, Observation::Skip(Skip::Pending)),
+            Err(SchedulerTransactionFault::NoTransaction)
+        );
+        assert_eq!(listed(&executor), [2, 3, 4]);
+    }
+
+    #[test]
+    fn list_deletion_releases_every_event() {
+        let (mut executor, items) = four_events();
+        let step = executor.begin_flush(&items, idle()).unwrap();
+        assert_eq!(actions(&step), [Action::PublishHead(None)]);
+        assert_eq!(step.released().len(), 4);
+        assert!(executor.list().is_empty());
+
+        let (mut executor, mut items) = four_events();
+        items.execute(1, 0);
+        let step = executor.begin_flush(&items, busy()).unwrap();
+        assert_eq!(actions(&step), [Action::PublishExecutionModifyListDeletion]);
+        assert_eq!(step.next(), Next::Await(Wait::ExecutionModify));
+        let step = executor
+            .advance(&mut items, Observation::ExecutionModify(Modify::Pending))
+            .unwrap();
+        assert_eq!(step.next(), Next::Await(Wait::ExecutionModify));
+        assert_eq!(
+            executor.advance(&mut items, Observation::Skip(Skip::Pending)),
+            Err(SchedulerTransactionFault::UnexpectedObservation)
+        );
+        assert_eq!(listed(&executor), [1, 2, 3, 4]);
+        let step = executor
+            .advance(&mut items, Observation::ExecutionModify(Modify::Ready))
+            .unwrap();
+        assert_eq!(
+            actions(&step),
+            [Action::PublishHead(None), Action::ReleaseExecutionModify]
+        );
+        assert_eq!(
+            released(&step)[..2],
+            [(1, Some(SchedulerItemCompletionStatus::Zero)), (2, None)]
+        );
+        assert!(executor.list().is_empty());
+
+        let (mut executor, mut items) = four_events();
+        let _ = executor.begin_flush(&items, busy()).unwrap();
+        assert_eq!(
+            executor.advance(
+                &mut items,
+                Observation::ExecutionModify(Modify::HardwareRejected)
+            ),
+            Err(SchedulerTransactionFault::ExecutionModifyRejected)
+        );
+        assert_eq!(listed(&executor), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn the_stopped_receipt_blocks_every_start_until_resume() {
+        let (mut executor, mut items) = four_events();
+        executor
+            .enter_stopped(BluetoothSchedulerStopped::for_validation())
+            .unwrap();
+        assert!(executor.stopped().is_some());
+        assert!(matches!(
+            executor.enter_stopped(BluetoothSchedulerStopped::for_validation()),
+            Err(SchedulerStopRejected::AlreadyStopped(_))
+        ));
+        assert_eq!(
+            executor.submit_idle(&mut items, idle(), 5, window(400)),
+            Err(SchedulerSubmitError::Stopped)
+        );
+        assert!(executor.restart_if_idle(&items, idle()).is_none());
+
+        // Stale events are cancelled on the idle path before resuming.
+        let step = executor
+            .begin_cancel(&mut items, idle(), None, &[1])
+            .unwrap();
+        assert_eq!(actions(&step), [Action::PublishHead(Some(link(2)))]);
+        items.execute(2, 0);
+
+        let restart = executor.resume(&items).unwrap().unwrap();
+        assert_eq!(restart.head, link(3));
+        assert!(executor.stopped().is_none());
+        assert_eq!(executor.resume(&items), Err(SchedulerNotStopped));
+    }
+
+    #[test]
+    fn the_scheduler_cannot_stop_inside_a_transaction() {
+        let (mut executor, items) = four_events();
+        let _ = executor.begin_flush(&items, busy()).unwrap();
+        assert!(matches!(
+            executor.enter_stopped(BluetoothSchedulerStopped::for_validation()),
+            Err(SchedulerStopRejected::TransactionActive(_))
+        ));
+        assert!(executor.stopped().is_none());
     }
 }

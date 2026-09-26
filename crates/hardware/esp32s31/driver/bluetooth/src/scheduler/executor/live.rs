@@ -15,100 +15,17 @@
 //! classification and an unsupported result ends the insertion without
 //! linking the event.
 
-use oer_esp32s31_bluetooth_memory::ControllerSramLinkAddress;
 use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionModifyDisposition,
-    BluetoothSchedulerLockModifyObservation, BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerWorkObservation,
 };
 
-use super::{SchedulerExecutor, SchedulerItemAccess, SchedulerSubmitError};
+use super::{
+    SchedulerAction, SchedulerExecutor, SchedulerItemAccess, SchedulerNext, SchedulerObservation,
+    SchedulerReleased, SchedulerStep, SchedulerSubmitError, SchedulerTransactionFault,
+    SchedulerWait, Transaction,
+};
 use crate::scheduler::window::SchedulerRawWindow;
-
-/// One hardware action of a live insertion, performed in order.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SchedulerLiveAction {
-    /// Publish the execution lock at this listed item of list zero.
-    PublishExecutionLock(ControllerSramLinkAddress),
-    /// Clear the execution-lock START.
-    ReleaseExecutionLock,
-    /// Publish execution modify for list zero.
-    PublishExecutionModify,
-    /// Clear the execution-modify START.
-    ReleaseExecutionModify,
-    /// Publish a lock-modify request for this item of list zero.
-    PublishLockModify(ControllerSramLinkAddress),
-    /// Publish this item as the head of list zero.
-    PublishHead(ControllerSramLinkAddress),
-}
-
-/// Hardware observation that a live insertion waits for.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SchedulerLiveWait {
-    ExecutionLock,
-    ExecutionModify,
-    LockModify,
-}
-
-/// What follows the actions of a step.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SchedulerLiveNext {
-    /// Deliver the next observation of this kind.
-    Await(SchedulerLiveWait),
-    /// The insertion is complete; the mirror accepts other operations again.
-    Finished,
-}
-
-/// Actions to perform in order, then the next expectation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "the actions must be performed before the next observation"]
-pub struct SchedulerLiveStep {
-    actions: [Option<SchedulerLiveAction>; 2],
-    next: SchedulerLiveNext,
-}
-
-impl SchedulerLiveStep {
-    const fn new(actions: [Option<SchedulerLiveAction>; 2], next: SchedulerLiveNext) -> Self {
-        Self { actions, next }
-    }
-
-    const fn wait(wait: SchedulerLiveWait) -> Self {
-        Self::new([None, None], SchedulerLiveNext::Await(wait))
-    }
-
-    /// Actions to perform, in order.
-    pub fn actions(&self) -> impl Iterator<Item = SchedulerLiveAction> + '_ {
-        self.actions.iter().flatten().copied()
-    }
-
-    pub const fn next(&self) -> SchedulerLiveNext {
-        self.next
-    }
-}
-
-/// Observation delivered to a waiting live insertion.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SchedulerLiveObservation {
-    ExecutionLock(BluetoothSchedulerExecutionLockDisposition),
-    ExecutionModify(BluetoothSchedulerExecutionModifyDisposition),
-    LockModify(BluetoothSchedulerLockModifyObservation),
-}
-
-/// Why a live insertion ended without linking its event, or why an
-/// observation was refused.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SchedulerLiveFault {
-    /// No live insertion is in progress.
-    NoInsertion,
-    /// The observation does not match the awaited kind; the insertion
-    /// continues to wait.
-    UnexpectedObservation,
-    /// The execution lock returned a result on which the vendor asserts. The
-    /// caller must still clear the execution-lock START.
-    UnsupportedExecutionLockResult,
-    /// Execution modify reported the status the vendor treats as impossible.
-    /// The caller must still clear the execution-modify START.
-    ExecutionModifyRejected,
-}
 
 #[derive(Clone, Copy)]
 pub(super) enum LivePhase<I> {
@@ -128,10 +45,8 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
         scheduler: BluetoothSchedulerWorkObservation,
         id: I,
         window: SchedulerRawWindow,
-    ) -> Result<SchedulerLiveStep, SchedulerSubmitError<I>> {
-        if self.live.is_some() {
-            return Err(SchedulerSubmitError::InsertionActive);
-        }
+    ) -> Result<SchedulerStep<I, CAPACITY>, SchedulerSubmitError<I>> {
+        self.admit_transaction()?;
         if !scheduler.is_busy() {
             return Err(SchedulerSubmitError::SchedulerIdle);
         }
@@ -141,103 +56,97 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
             .map_err(SchedulerSubmitError::List)?;
         Ok(match placement.predecessor {
             Some(predecessor) => {
-                self.live = Some(LivePhase::Lock { id, window });
-                SchedulerLiveStep::new(
-                    [
-                        Some(SchedulerLiveAction::PublishExecutionLock(
-                            items.link(predecessor),
-                        )),
-                        None,
-                    ],
-                    SchedulerLiveNext::Await(SchedulerLiveWait::ExecutionLock),
+                self.transaction = Some(Transaction::Live(LivePhase::Lock { id, window }));
+                SchedulerStep::new(
+                    &[SchedulerAction::PublishExecutionLock(
+                        items.link(predecessor),
+                    )],
+                    SchedulerNext::Await(SchedulerWait::ExecutionLock),
                 )
             }
             None => {
-                self.live = Some(LivePhase::Modify { id, window });
-                SchedulerLiveStep::new(
-                    [Some(SchedulerLiveAction::PublishExecutionModify), None],
-                    SchedulerLiveNext::Await(SchedulerLiveWait::ExecutionModify),
+                self.transaction = Some(Transaction::Live(LivePhase::Modify { id, window }));
+                SchedulerStep::new(
+                    &[SchedulerAction::PublishExecutionModify],
+                    SchedulerNext::Await(SchedulerWait::ExecutionModify),
                 )
             }
         })
     }
 
     /// Advance the live insertion with the awaited observation.
-    pub fn advance_live_insertion(
+    pub(super) fn advance_live(
         &mut self,
         items: &mut impl SchedulerItemAccess<I>,
-        observation: SchedulerLiveObservation,
-    ) -> Result<SchedulerLiveStep, SchedulerLiveFault> {
-        let phase = self.live.ok_or(SchedulerLiveFault::NoInsertion)?;
+        phase: LivePhase<I>,
+        observation: SchedulerObservation,
+    ) -> Result<SchedulerStep<I, CAPACITY>, SchedulerTransactionFault> {
         match (phase, observation) {
-            (
-                LivePhase::Lock { id, window },
-                SchedulerLiveObservation::ExecutionLock(disposition),
-            ) => match disposition {
-                BluetoothSchedulerExecutionLockDisposition::Pending => {
-                    Ok(SchedulerLiveStep::wait(SchedulerLiveWait::ExecutionLock))
+            (LivePhase::Lock { id, window }, SchedulerObservation::ExecutionLock(disposition)) => {
+                match disposition {
+                    BluetoothSchedulerExecutionLockDisposition::Pending => {
+                        Ok(SchedulerStep::wait(SchedulerWait::ExecutionLock))
+                    }
+                    BluetoothSchedulerExecutionLockDisposition::ExecutionLockRetained => {
+                        self.link_planned(items, id, window);
+                        self.transaction = Some(Transaction::Live(LivePhase::LockModify));
+                        Ok(SchedulerStep::new(
+                            &[SchedulerAction::PublishLockModify(items.link(id))],
+                            SchedulerNext::Await(SchedulerWait::LockModify),
+                        ))
+                    }
+                    BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead => {
+                        self.transaction =
+                            Some(Transaction::Live(LivePhase::Modify { id, window }));
+                        Ok(SchedulerStep::new(
+                            &[
+                                SchedulerAction::ReleaseExecutionLock,
+                                SchedulerAction::PublishExecutionModify,
+                            ],
+                            SchedulerNext::Await(SchedulerWait::ExecutionModify),
+                        ))
+                    }
+                    BluetoothSchedulerExecutionLockDisposition::UnsupportedHardwareResult => {
+                        self.transaction = None;
+                        Err(SchedulerTransactionFault::UnsupportedExecutionLockResult)
+                    }
                 }
-                BluetoothSchedulerExecutionLockDisposition::ExecutionLockRetained => {
-                    self.link_planned(items, id, window);
-                    self.live = Some(LivePhase::LockModify);
-                    Ok(SchedulerLiveStep::new(
-                        [
-                            Some(SchedulerLiveAction::PublishLockModify(items.link(id))),
-                            None,
-                        ],
-                        SchedulerLiveNext::Await(SchedulerLiveWait::LockModify),
-                    ))
-                }
-                BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead => {
-                    self.live = Some(LivePhase::Modify { id, window });
-                    Ok(SchedulerLiveStep::new(
-                        [
-                            Some(SchedulerLiveAction::ReleaseExecutionLock),
-                            Some(SchedulerLiveAction::PublishExecutionModify),
-                        ],
-                        SchedulerLiveNext::Await(SchedulerLiveWait::ExecutionModify),
-                    ))
-                }
-                BluetoothSchedulerExecutionLockDisposition::UnsupportedHardwareResult => {
-                    self.live = None;
-                    Err(SchedulerLiveFault::UnsupportedExecutionLockResult)
-                }
-            },
+            }
             (
                 LivePhase::Modify { id, window },
-                SchedulerLiveObservation::ExecutionModify(disposition),
+                SchedulerObservation::ExecutionModify(disposition),
             ) => match disposition {
                 BluetoothSchedulerExecutionModifyDisposition::Pending => {
-                    Ok(SchedulerLiveStep::wait(SchedulerLiveWait::ExecutionModify))
+                    Ok(SchedulerStep::wait(SchedulerWait::ExecutionModify))
                 }
                 BluetoothSchedulerExecutionModifyDisposition::Ready => {
                     self.link_planned(items, id, window);
-                    self.live = None;
-                    Ok(SchedulerLiveStep::new(
-                        [
-                            Some(SchedulerLiveAction::PublishHead(items.link(id))),
-                            Some(SchedulerLiveAction::ReleaseExecutionModify),
+                    self.transaction = None;
+                    Ok(SchedulerStep::finished(
+                        &[
+                            SchedulerAction::PublishHead(Some(items.link(id))),
+                            SchedulerAction::ReleaseExecutionModify,
                         ],
-                        SchedulerLiveNext::Finished,
+                        SchedulerReleased::new(),
                     ))
                 }
                 BluetoothSchedulerExecutionModifyDisposition::HardwareRejected => {
-                    self.live = None;
-                    Err(SchedulerLiveFault::ExecutionModifyRejected)
+                    self.transaction = None;
+                    Err(SchedulerTransactionFault::ExecutionModifyRejected)
                 }
             },
-            (LivePhase::LockModify, SchedulerLiveObservation::LockModify(observation)) => {
+            (LivePhase::LockModify, SchedulerObservation::LockModify(observation)) => {
                 if observation.wait_active() {
-                    Ok(SchedulerLiveStep::wait(SchedulerLiveWait::LockModify))
+                    Ok(SchedulerStep::wait(SchedulerWait::LockModify))
                 } else {
-                    self.live = None;
-                    Ok(SchedulerLiveStep::new(
-                        [Some(SchedulerLiveAction::ReleaseExecutionLock), None],
-                        SchedulerLiveNext::Finished,
+                    self.transaction = None;
+                    Ok(SchedulerStep::finished(
+                        &[SchedulerAction::ReleaseExecutionLock],
+                        SchedulerReleased::new(),
                     ))
                 }
             }
-            _ => Err(SchedulerLiveFault::UnexpectedObservation),
+            _ => Err(SchedulerTransactionFault::UnexpectedObservation),
         }
     }
 

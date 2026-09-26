@@ -5,7 +5,7 @@
   "inputs": {
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "677702aadbf40a3579ca5409aaaadd007789cc0ccd85d4a5837d5bfc1615849b",
+    "production": "7896a24dc90974060d86196ef1c7c78919fb1210d32cfc17d6020782a1fa8a03",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
     "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -17,15 +17,15 @@
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/ieee80211",
-      "sha256": "b2282b83cb8c7d14569079abc285dc07d4abf91929cb524ce997077042a3b838"
+      "sha256": "0f8c5ae17f7048c35d17ddf807962ee5036cf003fd709580ecd850c57e6aeaea"
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
-      "sha256": "4912178384945638eb25b0b090195546d07e72996939a7acfe48718f34aa47c0"
+      "sha256": "ba40218d326828595026bb300e5642cae9f3f972387f3f744ccbe974108081e0"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211",
-      "sha256": "76e015aed126612abe5a27c6b554c06ec406b3ae2c7663020b21212bf9d647b6"
+      "sha256": "82afe0211fdba5f0c56817f56bf58c12fcbdb782d14fdcc6e6d10c4dc7382999"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma",
@@ -36,24 +36,20 @@
       "sha256": "03ff1046b2aadbd49f69c583c8d643c7f9f20c9bf80eb8681f432897c80e974f"
     },
     {
-      "path": "crates/hardware/esp32s31/driver/ieee802154/irq",
-      "sha256": "e0a80ca05bbec3d4094893b6cad0d7a2fd112dbd7df6cea49f345c321b913d41"
-    },
-    {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "7e8236a4e0fad76d786bde3a686ec7a79077ae44404904bfd7486ee7d9257010"
+      "sha256": "4b7dbbe495cd9b8eae024224457ab06f86cc184cc233b9ed7eecafab6463ce30"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "5b7dc520140e3fb27a75ed20dded4cfd396c42fae2de85ef6ff22a829499892f"
+      "sha256": "57c426afe9d79dfbcfd1a08e988eab125ac058874ba203a93a9fad5c11c10b96"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "9e0b80c24a20ea470f23c0539752f212a64dbdfde2c01f031ba04fe45079cdfa"
+      "sha256": "a2a6f6852077b544b02aaa6955362bbcb8149a3907ca8ac004f3b184d352498b"
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "7b4e2a5df4bae671226071033e5c6dcc89b314f4b00d9c617749abf0f2dd234b"
+      "sha256": "80332fc7b8f223636517c965393598fea4e0a24de6829f945a48a9b1c2ecf390"
     },
     {
       "path": "crates/memory",
@@ -97,7 +93,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211",
-      "sha256": "9a6e885b96554a448c9f5dbf5338d9833e61a957223cc41170e4360015e80bc0"
+      "sha256": "95f4c1c89e748ad8ef22ff41812fe26cff7c1e84dcdd49776d26891cbbdbc631"
     },
     {
       "path": "crates/runtime/ieee80211",
@@ -148,16 +144,16 @@
       "sha256": "783ed7cbd4f2c0ec72a4604426a45f8009bc71859b8f6ac5c96c449f6abe18a1"
     },
     {
-      "path": "verification/vendor/projects/esp32s31/probes/elf",
-      "sha256": "9b591639d0cd2779f193e1d40a805f5aa661dd14d0648eb5540f813a6011191f"
+      "path": "verification/vendor/projects/esp32s31/probes/radio/elf",
+      "sha256": "ef4c2a4d28d2f6858d333417fb2dc7401b31ca7d57ef9ecbb1dd96ece1801dd5"
     },
     {
-      "path": "verification/vendor/projects/esp32s31/probes/library",
-      "sha256": "da451506a83c01f2912c0d3db03b61836c4bd7de22d4d9070a9cb8950886632d"
+      "path": "verification/vendor/projects/esp32s31/probes/radio/library",
+      "sha256": "bea3939eca7df7c5330074c28523b8ad0c3e1b9eea20c7e7987f15f75f13125c"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "dc1602fb17ee7f27eb349dbbdfdf11dd9bb2f48e5209f9092f5d9e53e05efa03"
+      "sha256": "68f27ff198eff21bc891e38f635a2d3835b74292e5fb022bd8170356256782ed"
     },
     {
       "path": "verification/vendor/schema",
@@ -308,7 +304,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "dd9ce3a637e1909f37f2accd63942b85a443c264c740d52a246dba231dd7a69f"
+        "e15c09620cf84caeaf0b38ef42a93ba9162c6459e47641147dc3da4c09c59c62"
       ],
       "coverage": {
         "blocks": {
@@ -337,7 +333,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "f3bea6b0e4f07374bee1c4c098d5c853b99b8e0c52915c61726f2bad96b1c161"
+        "2f9c00396fd9c89549ff07dfeb5a37f3964933beb8405297a1522fdb7085cc92"
       ],
       "coverage": {
         "blocks": {
@@ -366,7 +362,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "d84140db37924344720c7f66276dce5758551761ea077169afd74b12df05258e"
+        "4ad8de95fc9e54ff93bbf30c417b5f68a0db016ed402d71887a1137dee159c71"
       ],
       "coverage": {
         "blocks": {
@@ -395,7 +391,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "81542895777234105be06cce69eb40fde38944772f18bd0fbb59adcd5617e433"
+        "ece266a0e191b3dd8a0750ec417f19298aa94b89a3e5cf6c2ad3bbfa2972b500"
       ],
       "coverage": {
         "blocks": {
@@ -424,7 +420,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "e0072e4b31fca90153954d54a7abf410d456b51cf6cac677716c5d53aad8c4d1"
+        "953a1365183a3ca7590a83e8310f77e4fa42d2cc03b96b4316e03157aa8fa0ed"
       ],
       "coverage": {
         "blocks": {
@@ -453,7 +449,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "2a090fd4c638eb68f46544190e1042aff657495bbdaad5b8266fce293037e4e1"
+        "773e70a2b19264472e5e659e110331b5e648b8724aa792c5c81233a039f02d19"
       ],
       "coverage": {
         "blocks": {
@@ -617,7 +613,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "988ac8ed40abb74f3a5c887e301e933bf62e3bdbd5193935858142f81c73207f"
+        "28f82f568cd42ff4b7f1e800cca6254d86c75f1fc11186f1068d322b302a6881"
       ],
       "coverage": {
         "blocks": {
@@ -646,7 +642,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "fad2f115aeaac8db0040c9c7cac09e8422577982368dfb388e2612c4b3c0aaa9"
+        "223305aba35893c56481bbc3f71e4c8c2d22f0b043184dbe45c47f28c611553b"
       ],
       "coverage": {
         "blocks": {
@@ -661,10 +657,10 @@
         "untriaged": 24
       },
       "observation": {
-        "executed": 206,
-        "observed": 199,
+        "executed": 200,
+        "observed": 191,
         "reviewed": 1,
-        "untriaged": 6
+        "untriaged": 8
       }
     },
     {
@@ -675,7 +671,7 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "059a9a3519dad21b85f72f137f97e261928742c43e2f4b9009d7e53e28837c72"
+        "67341f4c359ee609d3d93858e554db39aa8a167a42ad85a9a29e900ea38ec54a"
       ],
       "coverage": {
         "blocks": {
@@ -704,8 +700,8 @@
       "verdict": "match",
       "cases": 56,
       "reviews": [
-        "34d3dd18bb22e9022ff29e221822cd7018dc6e3aabcf2655f1d9b5bc7979143d",
-        "8be936ed441d448f3f4b8f5e6071a084cdcf30ca13e0db7c5574a38d8771e60e"
+        "9060742c82dca7120f50d30d7e7461a4ed4e01d3948f47aa1fb4790298030676",
+        "ba63e4cc0cc102d1924181edeae3c2e30d32ac0de31a6b6f34ae717eb36fbf6f"
       ],
       "coverage": {
         "blocks": {
@@ -720,10 +716,10 @@
         "untriaged": 121
       },
       "observation": {
-        "executed": 363,
+        "executed": 365,
         "observed": 353,
-        "reviewed": 4,
-        "untriaged": 6
+        "reviewed": 2,
+        "untriaged": 10
       }
     },
     {
@@ -734,7 +730,7 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "e18192845d057121ee80f27f1bbb7daddcc14827d59f0a8f13166d57dda73973"
+        "7b86fd7b763bca50859dbdab064465ea366d860451be604f38106114c9317266"
       ],
       "coverage": {
         "blocks": {
@@ -763,8 +759,8 @@
       "verdict": "match",
       "cases": 56,
       "reviews": [
-        "794e281f3aebbcae1924f5e1b161291b8a22dac965fc158faad4720420d5302c",
-        "97ebecd7678ceaf481246740f364d30ad28599fe4ca7113debb74367d5df92eb"
+        "320873d0860c1108fc300be67f8f6b4d055bb14d40c68887d1e3980db51a1835",
+        "b466c0f8995fd4eb6798600269af8039bc5e3812bf34f66acfd7824e4a458581"
       ],
       "coverage": {
         "blocks": {
@@ -779,8 +775,8 @@
         "untriaged": 137
       },
       "observation": {
-        "executed": 467,
-        "observed": 428,
+        "executed": 463,
+        "observed": 424,
         "reviewed": 12,
         "untriaged": 27
       }
@@ -793,8 +789,8 @@
       "verdict": "match",
       "cases": 64,
       "reviews": [
-        "039241ed565cf8fcfbb6ad75c4f6cec82c9e6a792b59768aea8664242f54d494",
-        "db2775946a1c29d7e32bf2d03b64c6f958a06f32ebfd67c09060d4138151e5f7"
+        "2149661fe858ffd9780cf621015418ec40b6984ff6fded95214d3d818df2acfa",
+        "86aa98f7b28ab9b18102f11578995c3e02dfccb5db1a778bbdcc1b786cb975b1"
       ],
       "coverage": {
         "blocks": {
@@ -823,8 +819,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "4695eedb0fc31be15f5c4c3119efedd0fbbc0949856f5d2afc3e0404016f1155",
-        "b8c280abffd8d2b33bc3b5b88d7260ade3f3f8c68fe35d8c9d393ba2ea3069eb"
+        "49bca4b2b48b8b1593dc4e9819f74661321cda5f952adaedec279da828f68598",
+        "96e1acc5f57c66c4fe074311dd47b6f3bdc869f24dd134163f3e05af205d4b3e"
       ],
       "coverage": {
         "blocks": {
@@ -839,10 +835,10 @@
         "untriaged": 279
       },
       "observation": {
-        "executed": 1401,
-        "observed": 1341,
+        "executed": 1402,
+        "observed": 1343,
         "reviewed": 17,
-        "untriaged": 43
+        "untriaged": 42
       }
     },
     {
@@ -853,8 +849,8 @@
       "verdict": "match",
       "cases": 320,
       "reviews": [
-        "777f18b09acaebf559c2de2a00dcc2f5bf8f47796f2e3d3930ba1923941fa635",
-        "d80e707e93dd52e1fb363319eb5d29c8dd241a08f13774daef6b51d208badb0b"
+        "65fa1f150f5978c10f4d54387436178b337d274bf7166914b614877100708f36",
+        "be93813e80f6d12633eec88fea1ccf651130e11249d72c98783c812e972360b4"
       ],
       "coverage": {
         "blocks": {
@@ -869,10 +865,10 @@
         "untriaged": 296
       },
       "observation": {
-        "executed": 1830,
-        "observed": 1742,
+        "executed": 1829,
+        "observed": 1743,
         "reviewed": 32,
-        "untriaged": 56
+        "untriaged": 54
       }
     }
   ],
@@ -2655,27 +2651,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/frequency.rs",
-      "line": 399
+      "line": 402
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/frequency.rs",
-      "line": 401
+      "line": 404
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/rfpll.rs",
-      "line": 65
+      "line": 59
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/rfpll.rs",
-      "line": 77
+      "line": 71
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/rfpll.rs",
-      "line": 78
+      "line": 72
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/rfpll.rs",
-      "line": 80
+      "line": 74
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/rx/dc_offset.rs",
@@ -2743,23 +2739,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/state.rs",
-      "line": 575
+      "line": 867
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/state.rs",
-      "line": 861
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/state.rs",
-      "line": 1290
+      "line": 1296
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port/rfpll.rs",
-      "line": 192
+      "line": 182
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port/rfpll.rs",
-      "line": 242
+      "line": 195
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/target_port/rfpll.rs",
+      "line": 245
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port/temperature.rs",
@@ -2767,43 +2763,43 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
-      "line": 2216
+      "line": 2228
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
-      "line": 2324
+      "line": 2336
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
-      "line": 2422
+      "line": 2434
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
-      "line": 2513
+      "line": 2525
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
-      "line": 2560
+      "line": 2572
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
+      "line": 3150
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 359
+      "line": 361
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 360
+      "line": 362
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 382
+      "line": 384
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 386
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 681
+      "line": 388
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
@@ -2811,31 +2807,39 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 684
+      "line": 685
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 698
+      "line": 686
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 708
+      "line": 700
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
-      "line": 713
+      "line": 710
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/tracking/calibration.rs",
+      "line": 715
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/parameters.rs",
-      "line": 595
+      "line": 602
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/parameters.rs",
-      "line": 838
+      "line": 847
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/rfpll/thermal.rs",
       "line": 89
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/tracking/rfpll.rs",
+      "line": 128
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/temperature.rs",
@@ -2852,6 +2856,18 @@
     {
       "path": "crates/hardware/esp32s31/phy/src/tx/dc_power_detector.rs",
       "line": 425
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/validation.rs",
+      "line": 43
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/validation.rs",
+      "line": 44
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/validation.rs",
+      "line": 46
     }
   ]
 }

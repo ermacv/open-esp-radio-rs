@@ -22,6 +22,10 @@
 - [Wi-Fi network integration](wifi-egress.md)
 - [PHY compiled comparison](phy/README.md)
 
+# Hardware
+
+- [Hardware errata](hardware-errata.md)
+
 # Evidence
 
 - [Verification and qualification contract](verification-and-qualification.md)

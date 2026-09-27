@@ -33,15 +33,13 @@ accepted; the peer's `@READY` handshake then decides.
 
 ### USB Serial/JTAG resets
 
-ESP-IDF's modem clock init enables the analog I2C master clock in the PMU's
-MODEM state as well as ACTIVE (`MODEM_LPCON` `clk_i2c_mst_st_map` 0x4 → 0x6).
-That map lives in the LP domain and survives the HP-system reset a USB
-Serial/JTAG (RTS) pulse triggers, after which the ESP32-C5 rev 1.0 ROM boots
-into UART/SDIO download with USB dead until the RST button. The peer never
-enters the MODEM state, so on the ESP32-C5 it restores the ROM's ACTIVE-only
-map at start and after each radio enable, and USB resets and flashes over it
-work. The runner still takes a running peer over with `SYNC` instead of a
-reset.
+ESP-IDF leaves a clock setting in the ESP32-C5's LP domain that makes a
+USB Serial/JTAG reset of rev 1.0 boot into UART/SDIO download with USB dead;
+[Hardware errata](../../../docs/hardware-errata.md#esp32-c5-rev-10-a-usb-serialjtag-reset-boots-into-uartsdio-download)
+describes it. The peer never enters the PMU MODEM state, so on the ESP32-C5 it
+restores the ROM's ACTIVE-only analog I2C master clock map at start and after
+each radio enable, and USB resets and flashes over it work. The runner still
+takes a running peer over with `SYNC` instead of a reset.
 
 ## Line protocol
 

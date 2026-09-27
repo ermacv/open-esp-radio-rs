@@ -1609,6 +1609,12 @@ code = "88052b326595cfd63e4105c06b396ab44868723410ada84f221b5676233dc829"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_sta.o"
+symbol = "sta_assoc_comeback"
+code = "a3fe8c1d24afcfdf974535366fd078c60797d752399224b66c9a29edac5cfacd"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
 symbol = "sta_bip_check"
 code = "26c4fd6f526be163d9f728c54a14a74a30f9a84eefbd1ef5975d22d2854955da"
 
@@ -1617,6 +1623,12 @@ artifact = "libnet80211"
 member = "ieee80211_sta.o"
 symbol = "sta_input"
 code = "920a9120e90b18155fd00f3e7d02862544f7560f88e1cb0cc0ff1f85768a1246"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
+symbol = "sta_recv_assoc"
+code = "cbeaa9e2b7a5e99f826110c871523d05594e7a2123235a572ca132caccf0e75a"
 
 [[function]]
 artifact = "libnet80211"

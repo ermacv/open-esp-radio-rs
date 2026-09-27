@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "7ef051f1fa4edfca49f1d888b0542e2eaf7d2481b80782229923aa779452984f",
+    "input-2": "334c44478bb9221af99e556551710a2afeb65a109773073d88b72e6f933bc57b",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
   "sources": [
@@ -28,7 +28,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
-      "sha256": "e3b7f24a5e7ca58c434d3eb11edbb78362ff941eb27d9e3f01b9f7e0cb335dec"
+      "sha256": "2288181b530cac14c4d3cb2815caf8d90c2d3719c6409735708e69bfff631387"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211",
@@ -44,7 +44,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "f4706f63a4665afe142113f5b243cb000aca7e430ce890de85646e52d266b625"
+      "sha256": "b25396a4d1cfbb6616253f0b82fe68d22bd70767ac24ec15abf7997b3d6375ac"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -56,7 +56,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "be9ca957bec028d724734805ef3650fca84923e5c66ecc36d2d1ada491fbd2d2"
+      "sha256": "815ec1465246caffd69b512c73c26654d1450caf5b56891e50cd4681d6e006bc"
     },
     {
       "path": "crates/memory",
@@ -188,8 +188,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "8b99b8abc8a8c883f9a615fd804d411d871d6fa551cc0334664a83b768661445",
-        "aae1dee7e1e9f5054a3b6b42040ce082d46f19c7fba06d8243f84740e1673a85"
+        "38511cf983e6fdb6f59c14224c6cfd092b4cc6c6e2a49c90477592783fa78851",
+        "70903aa81296ee3ee1f404e557527d6c4d84f61f3c384ce2a1b9435c070e4a86"
       ],
       "coverage": {
         "blocks": {
@@ -225,8 +225,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "3e98721ae2ba6ed42c3e88c16f86a386f14813ed1aacec7f7cb15a844c83ea88",
-        "bd0abaa9b8a5bb4d5416290493d669c1410a87971cab99b7ac97a29dfe69d4f3"
+        "3afd9ccd960422cf8f13c73cb2e764e6a085a6dc6644f80019428f64c5e76d37",
+        "de08a46f05d4aa597a40ece28619384d3097bb678536c11dcdefbf0f8413d0be"
       ],
       "coverage": {
         "blocks": {

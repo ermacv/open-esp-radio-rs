@@ -8,11 +8,16 @@
 //! output projection. Peripheral inputs are synthetic; grant overrides and
 //! RF exclusion are outside this software comparison.
 use crate::contracts::{
-    OutputField, omitted_read, omitted_read_before, output_projection, phy_contract, plumbing,
+    omitted_read, omitted_read_before, output_projection, phy_contract, plumbing,
 };
 use crate::harness::{Buffer, Result, case, selection, with_stack_fill};
 use crate::i2c::returned_low;
 use crate::layout::*;
+use crate::phy::committed::{
+    CALIBRATION, CALIBRATION_BYTES, COMMITTED_BYTES, COMMON_REFERENCE, CURRENT_TEMPERATURE,
+    OutputField, PARAMETER_BANDWIDTH, PARAMETER_CHANNEL, SENSOR_INDEX, SHARED_LAST_INDEX,
+    TRANSMIT_REFERENCE, WIFI_LAST_INDEX, committed, field,
+};
 use crate::phy::{
     PhyImage, PhyOptions, Right, delay_calls, image_layout, phy_sdk_input, select, start_session,
 };
@@ -33,11 +38,6 @@ const COMBINED_INPUT_WORDS: usize = 8;
 const PARENT_INPUT_WORDS: usize = 15;
 const COMBINED_OUTPUT_BYTES: u32 = 170;
 const PARENT_OUTPUT_BYTES: u32 = 184;
-/// Calibration snapshot bytes both roots start with.
-const SNAPSHOT_BYTES: usize = 154;
-/// Committed-state bytes every root ends with: DCODE codes, status bytes, the
-/// shared and Wi-Fi RX-gain table last indices and the tracking progress word.
-const COMMITTED_BYTES: u32 = 16;
 /// Untouched production output bytes.
 const OUTPUT_FILL: u8 = 0xa5;
 /// Channel, bandwidth and crystal selector of every case.
@@ -47,32 +47,13 @@ const CRYSTAL: u16 = 0;
 /// Threshold input that selects the default threshold.
 const DEFAULT_THRESHOLD: u16 = 256;
 /// `phy_param` offsets of the tracking inputs.
-const CURRENT_TEMPERATURE: usize = 0;
-const COMMON_REFERENCE: usize = 400;
-const TRANSMIT_REFERENCE: usize = 72;
-const PARAMETER_CHANNEL: usize = 284;
-const PARAMETER_BANDWIDTH: usize = 287;
 const PARAMETER_RX_PATH: usize = 2;
 const PARAMETER_TX_PATH: usize = 20;
-const SHARED_LAST_INDEX: usize = 288;
-const WIFI_LAST_INDEX: usize = 289;
 const THRESHOLD_OVERRIDE: usize = 432;
 const RFPLL_ENABLED: usize = 10;
 const POWER_ENABLED: usize = 11;
 const TONE_CLEAR: usize = 427;
 const GAIN_ADJUSTMENT: usize = 434;
-/// `phy_param` offsets of the committed calibration state: the eight codes
-/// ROM `phy_dcode_cal_init` stores from 0x1a1, and the status word whose
-/// 0x80 and 0x200 bits `phy_set_rx_gain_table` sets after RX-gain DC and
-/// table completion.
-const DCODE: usize = 0x1a1;
-const CALIBRATION_STATUS: usize = 0xa4;
-/// `phy_param` offset of the tracking progress word the tracking children
-/// set and `phy_param_track_tot` clears and returns.
-const TRACKING_PROGRESS: usize = 0x1e6;
-/// `phy_param` byte of the temperature-sensor index ROM
-/// `phy_tsens_temp_read_local` stores with each sample.
-const SENSOR_INDEX: usize = 0x16;
 /// Sensor index of a fresh production state: DAC 15, the third sensor window.
 const INITIAL_SENSOR_INDEX: u8 = 2;
 /// Initial retained values the children consume.
@@ -99,19 +80,6 @@ fn rx_sample(fill: u8) -> i32 {
     if fill == FILLS[0] { 64 } else { -64 }
 }
 
-/// Committed fields of the combined root in production output order.
-const COMBINED: [OutputField; 9] = [
-    field("current-temperature", CURRENT_TEMPERATURE, 0, 2, 1),
-    field("common-reference", COMMON_REFERENCE, 2, 2, 1),
-    field("transmit-reference", TRANSMIT_REFERENCE, 4, 2, 1),
-    field("channel", PARAMETER_CHANNEL, 6, 2, 1),
-    field("bandwidth", PARAMETER_BANDWIDTH, 8, 1, 1),
-    field("wifi-dc-rows", 168, 10, 2, 12),
-    field("bluetooth-dc-rows", 260, 34, 2, 12),
-    // Wi-Fi per-gain DC, then the five `phy_rxdc_fine_cal` pairs.
-    field("wifi-rx-dc", 334, 58, 2, 26),
-    field("shared-rx-dc", 436, 110, 2, 22),
-];
 /// Additional committed parent fields: power temperature, shared cache,
 /// `phy_param` guard bytes of the parent: a nonzero inhibit byte skips every
 /// child (the vendor ORs it with byte 0x17), and a nonzero calibration byte
@@ -134,22 +102,6 @@ const PARENT: [OutputField; 7] = [
     field("i2c-band", I2C_BAND, 164, 1, 1),
     field("rfpll-reference", 304, 166, 2, 1),
 ];
-
-const fn field(
-    name: &'static str,
-    parameter: usize,
-    output: u32,
-    width: u8,
-    count: u32,
-) -> OutputField {
-    OutputField {
-        name,
-        parameter: parameter as u32,
-        output,
-        width,
-        count,
-    }
-}
 
 /// Which root and production entry a case family compares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -184,30 +136,11 @@ impl Root {
         }
     }
     fn fields(self) -> Vec<OutputField> {
-        let mut fields = Vec::from(COMBINED);
+        let mut fields = Vec::from(CALIBRATION);
         if self == Root::Parent {
             fields.extend(PARENT);
         }
-        let committed = self.output_bytes() - COMMITTED_BYTES;
-        fields.extend([
-            field("dcode", DCODE, committed, 1, 8),
-            field(
-                "calibration-status",
-                CALIBRATION_STATUS,
-                committed + 8,
-                1,
-                2,
-            ),
-            field(
-                "rx-table-last-indices",
-                SHARED_LAST_INDEX,
-                committed + 10,
-                1,
-                2,
-            ),
-            field("tracking-progress", TRACKING_PROGRESS, committed + 12, 2, 1),
-            field("sensor-index", SENSOR_INDEX, committed + 14, 1, 1),
-        ]);
+        fields.extend(committed(self.output_bytes() - COMMITTED_BYTES));
         fields
     }
 }
@@ -902,7 +835,7 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
                 .iter()
                 .flat_map(|w| w.to_le_bytes())
                 .collect();
-            expected.resize(SNAPSHOT_BYTES, 0);
+            expected.resize(CALIBRATION_BYTES as usize, 0);
             if root == Root::Parent {
                 let mut words = COMPLETED_POWER.to_vec();
                 words.extend([

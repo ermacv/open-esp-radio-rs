@@ -4,6 +4,7 @@
 pub mod calibration_leaves;
 pub mod calibration_prefix;
 pub mod channel;
+pub mod committed;
 pub mod gain;
 pub mod gain_state;
 pub mod i2c;

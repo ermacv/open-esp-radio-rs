@@ -17,6 +17,7 @@ use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
 use oer_esp32s31_ieee80211_mac::ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf};
 
 mod calibration_leaves;
+mod calibration_projection;
 mod i2c;
 mod production_trace;
 
@@ -275,7 +276,9 @@ fn ieee802154_level_pti(level: u32) -> Option<u32> {
         4 => Ieee802154CoexLevel::Idle,
         _ => return None,
     };
-    Some(u32::from(CoexPtiTable::VENDOR.ieee802154_pti(level).value()))
+    Some(u32::from(
+        CoexPtiTable::VENDOR.ieee802154_pti(level).value(),
+    ))
 }
 
 oer_probe_macros::probe! {

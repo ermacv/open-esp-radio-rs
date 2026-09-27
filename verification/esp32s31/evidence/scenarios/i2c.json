@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "2c5a23175febd53cf4079d2b0a3df2128dacd8e6eb27847e9e116753e266da58",
+    "input-2": "8e373c79319f52d019b370f89f53c1796bd7f9be07baacd931f5837fe5a25787",
     "input-3": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195",
     "input-4": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
@@ -45,7 +45,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "5debf873700231f8d6f8f7b2625dca72871d4322510a73b77841a7de143dfffc"
+      "sha256": "e518e228c2edb118ebaf59c80c2fd77531849f0ba8719855af384a43b63f5fb5"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -57,7 +57,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "ce56f9cb66fdbbd414fd63c48a08974b823042e5f41cf9c9661f4f23305546b9"
+      "sha256": "d64b19421894048b17ea6130778b5bf0901fb0ead91f5dec06e6122a4e0d3967"
     },
     {
       "path": "crates/memory",
@@ -161,11 +161,11 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library",
-      "sha256": "af63ec8e41e9178d51d6b611f38467a9e1cf5c66e7ccfe9ec7a5f7d71ee7a43e"
+      "sha256": "45a5e7dde2c9e867e0dfe9fc63e640d43a6b5d082084a7bea83646d5cb2515ec"
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "96f64d696ca9373180582995274f0413ccf91730600ee98b77f55e0536a6a7df"
+      "sha256": "59ab65b81b6c2fd9c176e83b56b28d4c610b566ab93b618b582fcb1c5198374c"
     },
     {
       "path": "verification/harness/codegen",

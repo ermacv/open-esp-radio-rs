@@ -155,17 +155,7 @@ pub fn phy_contract(
     }
 }
 
-/// One committed `phy_param` field and its production output location.
-#[derive(Clone, Copy, Debug)]
-pub struct OutputField {
-    pub name: &'static str,
-    /// Byte offset in `phy_param`.
-    pub parameter: u32,
-    /// Byte offset in the production output.
-    pub output: u32,
-    pub width: u8,
-    pub count: u32,
-}
+pub use crate::phy::committed::OutputField;
 
 /// Final-state projection from the vendor `phy_param` at `parameter` to the
 /// production output at `OUTPUT`. Output bytes outside `fields` are not claimed.

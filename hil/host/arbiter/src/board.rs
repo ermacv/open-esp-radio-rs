@@ -91,23 +91,29 @@ fn short_hash(hash: &str) -> &str {
 /// newest event of every startup-artifact host file. The artifact is a host
 /// file uploaded at each boot, so it belongs to a checkout, not to a board.
 pub(crate) fn latest(events: &[BoardEvent]) -> (Vec<&BoardEvent>, Vec<&BoardEvent>) {
-    let mut flashes: Vec<&BoardEvent> = Vec::new();
-    let mut artifacts: Vec<&BoardEvent> = Vec::new();
+    let flashes = newest_per_key(events, |event| match &event.kind {
+        BoardEventKind::Flashed { .. } => Some(event.device.as_deref()),
+        _ => None,
+    });
+    let artifacts = newest_per_key(events, |event| event.artifact_path().map(Some));
+    (flashes, artifacts)
+}
+
+/// The newest event of every key, in order of first appearance; `key`
+/// excludes an event by returning `None`.
+fn newest_per_key(
+    events: &[BoardEvent],
+    key: impl Fn(&BoardEvent) -> Option<Option<&str>>,
+) -> Vec<&BoardEvent> {
+    let mut newest: Vec<&BoardEvent> = Vec::new();
     for event in events {
-        let (list, same): (&mut Vec<&BoardEvent>, fn(&BoardEvent, &BoardEvent) -> bool) =
-            match &event.kind {
-                BoardEventKind::Flashed { .. } => (&mut flashes, |a, b| a.device == b.device),
-                BoardEventKind::StartupArtifactUploaded { .. }
-                | BoardEventKind::StartupArtifactWritten { .. } => (&mut artifacts, |a, b| {
-                    a.artifact_path() == b.artifact_path()
-                }),
-            };
-        match list.iter_mut().find(|known| same(known, event)) {
+        let Some(this) = key(event) else { continue };
+        match newest.iter_mut().find(|known| key(known) == Some(this)) {
             Some(known) => *known = event,
-            None => list.push(event),
+            None => newest.push(event),
         }
     }
-    (flashes, artifacts)
+    newest
 }
 
 impl BoardEvent {

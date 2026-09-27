@@ -420,16 +420,6 @@ pub const DECISIONS: &[Decision] = &[
         )],
     },
     Decision {
-        reason: "derived copy and equality of a scheduler diagnostic sample: a sample is \
-            accepted when two consecutive reads are equal, and with the modeled stable value \
-            the first pair is; the compared diagnostic reads and their count carry the \
-            behavior",
-        places: &[(
-            "pac/src/bluetooth/scheduler/runtime.rs",
-            "#[derive(Clone, Copy, Debug, Eq, PartialEq)]",
-        )],
-    },
-    Decision {
         reason: "construction of the BLE PHY fixture's shared-radio register owner: no \
             register effect, and the fixture holds it to its end, so only final state \
             depends on it; the compared transaction is `initialize_ble_phy_registers`",

@@ -10,8 +10,9 @@
 use crate::harness::Result;
 use crate::mac::{
     Domain, Leaf, Objects, Replacement, Suite, Vendor, in_archive, leaf, objects, ordered, prefix,
-    quiet, released, replaced, tail_prefix,
+    quiet, released, replaced, stated, tail_prefix,
 };
+use blobray_domain::ReadRun;
 
 /// Session inputs of the second to fourth suite archives.
 const BTDM_COMMON_INPUT: u64 = 4;
@@ -54,6 +55,50 @@ fn scheduler_abi(_words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
         image: vec![(
             vendor.symbol(SCHEDULER_ENVIRONMENT_CELL)?,
             SCHEDULER_ENVIRONMENT.to_le_bytes().to_vec(),
+        )],
+        ..Default::default()
+    })
+}
+
+/// The scheduler diagnostic value register both sides sample in pairs.
+const DIAGNOSTIC_VALUE: u32 = 0x2010_11ec;
+/// Sample states: the radio fill as a stable value, then a first pair that
+/// disagrees and settles on all bits set or on zero.
+const DIAGNOSTIC_STABLE: u32 = 0;
+const DIAGNOSTIC_SETTLES_SET: u32 = 1;
+const DIAGNOSTIC_SETTLES_CLEAR: u32 = 2;
+const DIAGNOSTIC_SAMPLE_STATES: &[u32] = &[
+    DIAGNOSTIC_STABLE,
+    DIAGNOSTIC_SETTLES_SET,
+    DIAGNOSTIC_SETTLES_CLEAR,
+];
+/// Reads of a sample whose first pair disagrees: that pair, then an
+/// agreeing pair.
+const SETTLING_READS_AFTER_FIRST: u32 = 3;
+
+/// The diagnostic value a sample state serves: none beyond the fill when
+/// stable; otherwise one differing read, then exactly the settled reads, so
+/// a side reading more or fewer than the two pairs fails the case.
+fn diagnostic_sample_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    let [state] = words else {
+        unreachable!("diagnostic sample: its state only")
+    };
+    let settled = match *state {
+        DIAGNOSTIC_STABLE => return Ok(Objects::default()),
+        DIAGNOSTIC_SETTLES_SET => u32::MAX,
+        DIAGNOSTIC_SETTLES_CLEAR => 0,
+        _ => unreachable!("declared diagnostic sample state"),
+    };
+    Ok(Objects {
+        sequences: vec![(
+            DIAGNOSTIC_VALUE,
+            vec![
+                ReadRun::once(!settled),
+                ReadRun {
+                    value: settled,
+                    count: SETTLING_READS_AFTER_FIRST,
+                },
+            ],
         )],
         ..Default::default()
     })
@@ -246,14 +291,22 @@ pub const LEAVES: &[Leaf] = &[
     ),
     // The diagnostic scheduler-BUSY sample opening the scheduler stop
     // (`r_btdm_sched_stop`): its busy path next calls the logger and its idle
-    // path tail-calls it.
+    // path tail-calls it. The sample crosses a clock domain and is accepted
+    // only when a fresh pair of reads agrees; the states model a stable
+    // value and a first pair that disagrees, settling busy or idle.
     in_archive(
         tail_prefix(
-            leaf(
-                "r_sym_bt_74l62ZLsZuXg67pPHSd7",
-                "open_ble_scheduler_stop_busy_trace_r_btdm_sched_stop",
-                &[],
-                false,
+            stated(
+                objects(
+                    leaf(
+                        "r_sym_bt_74l62ZLsZuXg67pPHSd7",
+                        "open_ble_scheduler_stop_busy_trace_r_btdm_sched_stop",
+                        &[],
+                        false,
+                    ),
+                    diagnostic_sample_abi,
+                ),
+                DIAGNOSTIC_SAMPLE_STATES,
             ),
             "wr_btdm_log_internal_x0",
         ),

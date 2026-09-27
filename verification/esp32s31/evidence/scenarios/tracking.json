@@ -176,7 +176,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "21c791e7a288c3053712c357fe1cfb7b42ab517fadacae464c465f072633dcb0"
+      "sha256": "62267651aaacca1e19f6fd44aee57ab0491cc5b1f9cd151bef6f9adeb5706e9f"
     },
     {
       "path": "verification/harness/codegen",

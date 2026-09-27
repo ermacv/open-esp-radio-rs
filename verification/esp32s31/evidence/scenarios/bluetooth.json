@@ -104,7 +104,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "21c791e7a288c3053712c357fe1cfb7b42ab517fadacae464c465f072633dcb0"
+      "sha256": "62267651aaacca1e19f6fd44aee57ab0491cc5b1f9cd151bef6f9adeb5706e9f"
     },
     {
       "path": "verification/harness/codegen",
@@ -274,7 +274,7 @@
       "symbol": "r_sym_bt_74l62ZLsZuXg67pPHSd7",
       "production": "open_ble_scheduler_stop_busy_trace_r_btdm_sched_stop",
       "verdict": "match",
-      "cases": 4,
+      "cases": 12,
       "reviews": [],
       "coverage": {
         "blocks": {
@@ -282,17 +282,17 @@
           "total": 38
         },
         "directions": {
-          "reached": 3,
+          "reached": 4,
           "total": 34
         },
         "open": 1,
         "excluded": 0,
-        "untriaged": 65
+        "untriaged": 64
       },
       "observation": {
         "executed": 18,
-        "observed": 17,
-        "reviewed": 1,
+        "observed": 18,
+        "reviewed": 0,
         "untriaged": 0
       },
       "state": {
@@ -1372,11 +1372,6 @@
       "function": "r_sym_ble_jhaN9KOsH0u0RgIu2DI9",
       "offset": 18,
       "kind": "block"
-    },
-    {
-      "function": "r_sym_bt_74l62ZLsZuXg67pPHSd7",
-      "offset": 38,
-      "kind": "taken"
     },
     {
       "function": "r_sym_bt_74l62ZLsZuXg67pPHSd7",
@@ -4858,6 +4853,10 @@
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
       "line": 360
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/runtime.rs",
+      "line": 358
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/runtime.rs",

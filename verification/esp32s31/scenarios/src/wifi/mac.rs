@@ -190,6 +190,10 @@ pub struct Objects {
     /// registers within the radio aperture whose initial value the case
     /// selects instead of the fill pattern.
     pub registers: Vec<(u32, u32)>,
+    /// Registers both sides read as a finite sequence, as (address, runs):
+    /// a read beyond the runs fails the case, so both sides must read each
+    /// exactly as often as the runs allow.
+    pub sequences: Vec<(u32, Vec<blobray_domain::ReadRun>)>,
 }
 
 /// Builds a case's objects from the semantic probe words, followed by the
@@ -2155,6 +2159,7 @@ impl Mac {
                     initial,
                     image,
                     registers,
+                    sequences,
                 ) = match leaf.vendor_abi {
                     Some(abi) => {
                         let mut semantic = words.clone();
@@ -2178,6 +2183,7 @@ impl Mac {
                             initial,
                             objects.image,
                             objects.registers,
+                            objects.sequences,
                         )
                     }
                     None => (
@@ -2189,11 +2195,19 @@ impl Mac {
                         vec![],
                         vec![],
                         vec![],
+                        vec![],
                     ),
                 };
                 // Exact register models take precedence over the aperture.
                 let devices = |fill: u8| {
                     let mut devices = vec![];
+                    for (index, (address, runs)) in sequences.iter().enumerate() {
+                        devices.push(crate::layout::sequence_read(
+                            &format!("case-sequence-{index}"),
+                            *address,
+                            runs.clone(),
+                        ));
+                    }
                     if !registers.is_empty() {
                         devices.push(crate::layout::register_bank(
                             "case-registers",

@@ -11,7 +11,7 @@
 use crate::{
     ControllerSramLinkAddress,
     le_phy_packet::{LeAccessAddress, LeCrcInit},
-    le_tx_power::rounded_tx_power,
+    le_tx_power::LeTxPower,
 };
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
@@ -256,7 +256,7 @@ impl DtmLinkStateReviewedWords {
         mut self,
         tx_head: Option<DtmTxHeaderHeadProjection>,
         rx_tail: Option<DtmRxHeaderTailProjection>,
-        default_tx_power_dbm: i8,
+        default_tx_power: LeTxPower,
         config: u8,
         role: DtmRole,
     ) -> Self {
@@ -267,8 +267,8 @@ impl DtmLinkStateReviewedWords {
         let transformed_high_half = (((word_00_with_link >> 16) as u16 & 0x600f) | 0x8ff0) as u32;
 
         self.word_00 = (word_00_with_link & 0x0000_ffff) | (transformed_high_half << 16);
-        self.word_04 = (self.word_04 & !LINK_STATE_POWER_MASK)
-            | ((rounded_tx_power(default_tx_power_dbm) as u32) << 23);
+        self.word_04 =
+            (self.word_04 & !LINK_STATE_POWER_MASK) | ((default_tx_power.index() as u32) << 23);
         self.word_08 = match rx_tail {
             Some(rx_tail) => rx_tail.apply_to_link_state_word(self.word_08),
             None => self.word_08 & !LOW_TWENTY_MASK,

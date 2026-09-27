@@ -32,6 +32,7 @@ mod le_rx_chain;
 mod le_rx_packet;
 mod le_tx_packet;
 mod le_tx_power;
+pub use le_tx_power::LeTxPower;
 mod legacy_advertising;
 mod legacy_advertising_event_image;
 mod legacy_advertising_tx_packet;
@@ -129,8 +130,8 @@ pub use legacy_advertising::{
 };
 
 pub use passive_scanning_event_image::{
-    PassiveScanDefaultTxPowerDbm, PassiveScanPrimaryChannel, PassiveScanResetConfig,
-    PassiveScanSchedulerWindow, PassiveScanStartSelection,
+    PassiveScanPrimaryChannel, PassiveScanResetConfig, PassiveScanSchedulerWindow,
+    PassiveScanStartSelection,
 };
 
 pub use passive_scanning::{
@@ -144,14 +145,13 @@ pub use peripheral_connection::{
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
     BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionCapturedAnchorTime,
-    PeripheralConnectionDataChannel, PeripheralConnectionDefaultTxPowerDbm,
-    PeripheralConnectionError, PeripheralConnectionEvent, PeripheralConnectionEventResult,
-    PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
-    PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
-    PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
-    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
-    PeripheralConnectionSchedulerWindow, PeripheralConnectionStorage,
-    PeripheralConnectionTransmitPduKind,
+    PeripheralConnectionDataChannel, PeripheralConnectionError, PeripheralConnectionEvent,
+    PeripheralConnectionEventResult, PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent,
+    PeripheralConnectionIdentity, PeripheralConnectionPool, PeripheralConnectionReceiveTime,
+    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringEvent,
+    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
+    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionStorage, PeripheralConnectionTransmitPduKind,
 };
 
 pub use rx_memory_list::RxMemoryListClass;

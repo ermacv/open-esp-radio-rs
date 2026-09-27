@@ -35,7 +35,7 @@ fn candidate_words(seed: DtmPositionalEventSeed) -> DtmPositionalEventWords {
     let link_state = current.link_state().apply_reset(
         Some(seed.tx_header_head_projection()),
         Some(seed.rx_header_tail_projection()),
-        0,
+        crate::LeTxPower::from_dbm(0).expect("provider level"),
         0,
         DtmRole::Transmitter,
     );
@@ -74,11 +74,13 @@ fn return_packet(pool: &Pool, instance: &SchedulerRoleInstance, result_word: u32
 #[test]
 fn the_reset_selects_the_dtm_identity_and_profile() {
     let storage = DtmStorage::new();
-    let reset =
-        storage
-            .link_state
-            .reviewed_words()
-            .apply_reset(None, None, 0, 0, DtmRole::Transmitter);
+    let reset = storage.link_state.reviewed_words().apply_reset(
+        None,
+        None,
+        crate::LeTxPower::from_dbm(0).expect("provider level"),
+        0,
+        DtmRole::Transmitter,
+    );
     assert_eq!(reset.access_address(), LeAccessAddress::DIRECT_TEST_MODE);
     assert_eq!(reset.crc_init(), LeCrcInit::LE_PRESET);
     assert!(reset.profile_word_14.direct_test_mode_is_selected());

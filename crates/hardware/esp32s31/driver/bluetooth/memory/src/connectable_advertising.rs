@@ -312,11 +312,11 @@ impl LinkStateStorage {
         binding: &LegacyConnectableAdvertisingBinding,
         (rx_head, rx_tail, rx_spare): (u32, u32, u32),
         own_address: LegacyAdvertisingOwnAddress,
-        default_tx_power_dbm: i8,
+        default_tx_power: crate::LeTxPower,
     ) {
         let mut words =
             self.reviewed_words()
-                .reset(binding.adv_ind_header, own_address, default_tx_power_dbm);
+                .reset(binding.adv_ind_header, own_address, default_tx_power);
         // The common no-response projection clears this consumer. Advertising
         // reset installs the primary TX header's successor for SCAN_RSP.
         words.word_04 = (words.word_04 & !COMPRESSED_LINK_MASK)
@@ -547,7 +547,7 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
         instance: &SchedulerRoleInstance,
         input: LegacyConnectableAdvertisingMemoryInput<'_>,
         chain: &LeRxChain<PACKETS>,
-        default_tx_power_dbm: i8,
+        default_tx_power: crate::LeTxPower,
     ) -> Result<(), LegacyConnectableAdvertisingError> {
         if chain.class() != RxMemoryListClass::NonScanning {
             return Err(LegacyConnectableAdvertisingError::ForeignReceiveClass);
@@ -573,7 +573,7 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
             cpu.binding,
             chain.snapshot(),
             input.own_address.codec(),
-            default_tx_power_dbm,
+            default_tx_power,
         );
         *cpu.state =
             LegacyConnectableAdvertisingState::Prepared(LegacyConnectableAdvertisingPrepared {

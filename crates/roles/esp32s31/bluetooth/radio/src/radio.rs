@@ -22,15 +22,14 @@ use oer_esp32s31_bluetooth_memory::{
     BlePhyLe1MPacketStartCalibration, DirectionFindingWorkspaceLink, DtmPool,
     DtmReceiverEventPhase, DtmRole, DtmSchedulerItemCompletionStatus, DtmSchedulerItemEventType,
     DtmSchedulerReceiverPhy, DtmSchedulerTransmitterPhy, LeRxChain, LeRxOutcome, LeRxSource,
-    LegacyAdvertisingPool, LegacyAdvertisingPrimaryChannelPlan, LegacyConnectableAdvIndPacketInput,
-    LegacyConnectableAdvertisingMemoryInput, LegacyConnectableAdvertisingOwnAddress,
-    LegacyConnectableAdvertisingPool, LegacyConnectableScanResponsePacketInput,
-    PassiveScanDefaultTxPowerDbm, PassiveScanPool, PassiveScanPrimaryChannel,
+    LeTxPower, LegacyAdvertisingPool, LegacyAdvertisingPrimaryChannelPlan,
+    LegacyConnectableAdvIndPacketInput, LegacyConnectableAdvertisingMemoryInput,
+    LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
+    LegacyConnectableScanResponsePacketInput, PassiveScanPool, PassiveScanPrimaryChannel,
     PassiveScanResetConfig, PassiveScanSchedulerWindow, PassiveScanStartSelection,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
-    PeripheralConnectionDefaultTxPowerDbm, PeripheralConnectionEventSpan,
-    PeripheralConnectionFirstEvent, PeripheralConnectionIdentity, PeripheralConnectionPool,
-    PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
+    PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
+    PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
     PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
     PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
     PeripheralConnectionSchedulerWindow, PeripheralConnectionTransmitPduKind,
@@ -830,6 +829,7 @@ impl<
         {
             return Err(RequestError::AlreadyConfigured);
         }
+        let tx_power = le_tx_power(configuration.tx_power)?;
         match configuration.scan_response {
             None => {
                 let index = free_slot(&self.legacy)?;
@@ -837,7 +837,7 @@ impl<
                 let instance = pool.acquire().ok_or(RequestError::NoInstance)?;
                 let result = pool
                     .prepare_packet(&instance, configuration.pdu.bytes())
-                    .and_then(|()| pool.reset_link_state(&instance, configuration.tx_power.dbm()));
+                    .and_then(|()| pool.reset_link_state(&instance, tx_power));
                 if result.is_err() {
                     let _ = pool.release(instance);
                     return Err(RequestError::Unsupported);
@@ -877,12 +877,7 @@ impl<
                     own_address,
                 );
                 if pool
-                    .prepare(
-                        &instance,
-                        input,
-                        &self.memory.non_scanning,
-                        configuration.tx_power.dbm(),
-                    )
+                    .prepare(&instance, input, &self.memory.non_scanning, tx_power)
                     .is_err()
                 {
                     let _ = pool.release(instance);
@@ -1087,11 +1082,12 @@ impl<
         if find_id(&self.scanners, configuration.scanner).is_some() {
             return Err(RequestError::AlreadyConfigured);
         }
+        let tx_power = le_tx_power(configuration.tx_power)?;
         let index = free_slot(&self.scanners)?;
         let pool = &mut self.memory.scanners;
         let instance = pool.acquire().ok_or(RequestError::NoInstance)?;
         let config = PassiveScanResetConfig::le_1m_public_accept_all(
-            PassiveScanDefaultTxPowerDbm::new(configuration.tx_power.dbm()),
+            tx_power,
             BluetoothControllerLatchedTime::from_bits(self.clock.latched),
         );
         if pool
@@ -1278,9 +1274,7 @@ impl<
                         event_span: span,
                         window: raw_window,
                         receive_wait,
-                        default_tx_power: PeripheralConnectionDefaultTxPowerDbm::new(
-                            facts.tx_power.dbm(),
-                        ),
+                        default_tx_power: le_tx_power(facts.tx_power)?,
                         priority,
                         coexistence,
                         protection,
@@ -1386,6 +1380,7 @@ impl<
         if test.payload.len() > DTM_MAX_PAYLOAD {
             return Err(RequestError::Unsupported);
         }
+        let tx_power = le_tx_power(test.tx_power)?;
         let phy = match test.phy {
             TestPhy::Le1M => DtmSchedulerTransmitterPhy::Le1M,
             TestPhy::Le2M => DtmSchedulerTransmitterPhy::Le2M,
@@ -1416,11 +1411,12 @@ impl<
             window,
             test.channel.rf_channel(),
             DtmSchedulerItemEventType::Transmitter(phy),
-            test.tx_power,
+            tx_power,
         )
     }
 
     fn test_receive(&mut self, test: TestReceive) -> Result<(), RequestError> {
+        let tx_power = le_tx_power(test.tx_power)?;
         let phy = match test.phy {
             TestPhy::Le1M => DtmSchedulerReceiverPhy::Le1M,
             TestPhy::Le2M => DtmSchedulerReceiverPhy::Le2M,
@@ -1443,7 +1439,7 @@ impl<
             window,
             test.channel.rf_channel(),
             DtmSchedulerItemEventType::Receiver { phase, phy },
-            test.tx_power,
+            tx_power,
         )
     }
 
@@ -1453,7 +1449,7 @@ impl<
         window: SchedulerRawWindow,
         rf_channel: u8,
         event_type: DtmSchedulerItemEventType,
-        tx_power: TxPower,
+        tx_power: LeTxPower,
     ) -> Result<(), RequestError> {
         let origin = self.clock.raw(0);
         let lead = self.policy.sequence_lead_raw_delta();
@@ -1468,7 +1464,7 @@ impl<
                     .apply_reset(
                         Some(seed.tx_header_head_projection()),
                         Some(seed.rx_header_tail_projection()),
-                        tx_power.dbm(),
+                        tx_power,
                         DTM_REVIEWED_CONFIG,
                         role,
                     )
@@ -1793,6 +1789,11 @@ fn drain_chain<const PACKETS: usize>(
             }
         }
     }
+}
+
+/// The provider level of `power`, refusing a request below the lowest one.
+fn le_tx_power(power: TxPower) -> Result<LeTxPower, RequestError> {
+    LeTxPower::from_dbm(power.dbm()).ok_or(RequestError::Unsupported)
 }
 
 fn overlaps(a: SchedulerRawWindow, b: SchedulerRawWindow) -> bool {

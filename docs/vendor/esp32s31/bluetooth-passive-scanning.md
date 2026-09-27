@@ -294,7 +294,7 @@ This table is a reviewed SRAM-codec input, not a public descriptor ABI:
 | Link-state word | Restricted passive-1M image |
 | ---: | ---: |
 | `+0x00` | `0x1ff00000` |
-| `+0x04` | five-bit rounded default power in bits 27:23 |
+| `+0x04` | provider-table index of the default power in bits 27:23 |
 | `+0x08` | `0x4ff00000` plus the bound RX-head low-20-bit link |
 | `+0x0c` | `0xa0100000` |
 | `+0x14` | `0x04000000` |

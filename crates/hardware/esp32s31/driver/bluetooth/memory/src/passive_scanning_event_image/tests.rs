@@ -5,10 +5,7 @@ use crate::{
 
 use oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime;
 
-use super::{
-    PassiveScanDefaultTxPowerDbm, PassiveScanLinkStateImage, PassiveScanResetConfig,
-    PassiveScanRxHeadProjection,
-};
+use super::{PassiveScanLinkStateImage, PassiveScanResetConfig, PassiveScanRxHeadProjection};
 
 #[test]
 fn restricted_profile_retains_only_semantic_dynamic_inputs() {
@@ -17,7 +14,7 @@ fn restricted_profile_retains_only_semantic_dynamic_inputs() {
             .expect("the model header is a nonzero controller link"),
     );
     let config = PassiveScanResetConfig::le_1m_public_accept_all(
-        PassiveScanDefaultTxPowerDbm::new(0),
+        crate::LeTxPower::from_dbm(0).expect("provider level"),
         BluetoothControllerLatchedTime::from_bits(0x1234_5678),
     );
 

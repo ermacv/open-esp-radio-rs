@@ -108,7 +108,7 @@ semantic values and performs these positional transforms privately:
 | Private object field | Source-owned input | Reviewed first-event behavior |
 | --- | --- | --- |
 | link state `+0x00` | owned empty TX sentinel | stores the compressed endpoint, 251-octet S31 capability and the two transmit-path ready states |
-| link state `+0x04` | signed default TX power | shared S31 five-bit rounded-power projection |
+| link state `+0x04` | signed default TX power | index of the highest BTBB provider power level not above the request; a request below the lowest level is refused |
 | link state `+0x08` | owned initialized RX pool | stores the compressed packetless predecessor and initial unconsumed receive sentinel |
 | link state `+0x0c` | S31 baseline control policy | installs the duplicated value 2 and makes that policy active |
 | link state `+0x18` | absolute connection creation time, then hardware valid-RX time | positional epoch conversion to controller ticks; preserved between events and read after unlink |

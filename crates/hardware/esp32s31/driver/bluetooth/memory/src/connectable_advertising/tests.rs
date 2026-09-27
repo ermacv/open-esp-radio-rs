@@ -73,7 +73,13 @@ fn input() -> LegacyConnectableAdvertisingMemoryInput<'static> {
 
 fn prepared(pool: &mut Pool, chain: &LeRxChain<2>) -> SchedulerRoleInstance {
     let instance = pool.acquire().unwrap();
-    pool.prepare(&instance, input(), chain, 0).unwrap();
+    pool.prepare(
+        &instance,
+        input(),
+        chain,
+        crate::LeTxPower::from_dbm(0).expect("provider level"),
+    )
+    .unwrap();
     instance
 }
 
@@ -231,7 +237,12 @@ fn a_scanning_chain_and_early_events_are_refused() {
     let mut pool = pool();
     let instance = pool.acquire().unwrap();
     assert_eq!(
-        pool.prepare(&instance, input(), &chain(RxMemoryListClass::Scanning), 0),
+        pool.prepare(
+            &instance,
+            input(),
+            &chain(RxMemoryListClass::Scanning),
+            crate::LeTxPower::from_dbm(0).expect("provider level")
+        ),
         Err(LegacyConnectableAdvertisingError::ForeignReceiveClass)
     );
     assert_eq!(

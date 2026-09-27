@@ -8,7 +8,7 @@
 
 use crate::{
     le_phy_packet::{LeAccessAddress, LeCrcInit},
-    le_tx_power::rounded_tx_power,
+    le_tx_power::LeTxPower,
     sram_link::ControllerSramLinkAddress,
 };
 
@@ -161,14 +161,14 @@ impl LegacyAdvertisingLinkStateWords {
         mut self,
         tx_header: ControllerSramLinkAddress,
         own_address: LegacyAdvertisingOwnAddress,
-        default_tx_power_dbm: i8,
+        default_tx_power: LeTxPower,
     ) -> Self {
         let transformed_high_half =
             ((((self.word_00 | 0x8000_0000) >> 16) as u16 & 0xe00f) | 0x1ff0) as u32;
         self.word_00 = (transformed_high_half << 16) | tx_header.compressed_image();
 
         self.word_04 = (self.word_04 & !(LOW_TWENTY_MASK | ROUNDED_POWER_MASK | RATE_LANES_MASK))
-            | ((rounded_tx_power(default_tx_power_dbm) as u32) << 23);
+            | ((default_tx_power.index() as u32) << 23);
         self.word_08 = 0xcff0_0000;
         self.word_0c |= 0xa000_0000;
         self.word_14 = (self.word_14 | 0x0400_0000) & !0x0800_0000;

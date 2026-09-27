@@ -18,11 +18,11 @@ use vcell::VolatileCell;
 
 pub use values::{
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionCapturedAnchorTime,
-    PeripheralConnectionDataChannel, PeripheralConnectionDefaultTxPowerDbm,
-    PeripheralConnectionEventSpan, PeripheralConnectionIdentity, PeripheralConnectionReceiveTime,
-    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringReceiveWait,
-    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
-    PeripheralConnectionSchedulerWindow, PeripheralConnectionTransmitPduKind,
+    PeripheralConnectionDataChannel, PeripheralConnectionEventSpan, PeripheralConnectionIdentity,
+    PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
+    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
+    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionTransmitPduKind,
 };
 
 use crate::{
@@ -35,7 +35,7 @@ use crate::{
     le_tx_packet::{
         LeTxBufferHeaderStorage, LeTxPacketAddress, LeTxPacketPrepareError, LeTxPacketStorage,
     },
-    le_tx_power::rounded_tx_power,
+    le_tx_power::LeTxPower,
     scheduler_context::SchedulerContextStorage,
     scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
     scheduler_pool::{
@@ -212,7 +212,7 @@ impl LinkStateStorage {
             .set(LINK_STATE_COMMON_RADIO_POLICY_BASELINE << 24);
         self.words[LINK_STATE_EVENT_PRIORITY].set(u32::from(event.priority.value()));
 
-        let power = u32::from(rounded_tx_power(event.default_tx_power.dbm()));
+        let power = u32::from(event.default_tx_power.index());
         let current = self.words[LINK_STATE_ROUNDED_POWER].get();
         self.words[LINK_STATE_ROUNDED_POWER]
             .set((current & !LINK_STATE_ROUNDED_POWER_MASK) | (power << 23));
@@ -545,7 +545,7 @@ pub struct PeripheralConnectionFirstEvent {
     pub event_span: PeripheralConnectionEventSpan,
     pub window: PeripheralConnectionSchedulerWindow,
     pub receive_wait: PeripheralConnectionReceiveWait,
-    pub default_tx_power: PeripheralConnectionDefaultTxPowerDbm,
+    pub default_tx_power: LeTxPower,
     pub priority: PeripheralConnectionSchedulerPriority,
     pub coexistence: ConnectionCoexistencePriorities,
     /// Coexistence protection of the connection; none leaves it clear.

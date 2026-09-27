@@ -654,6 +654,33 @@ fn configuration_errors_leave_the_radio_unchanged() {
 }
 
 #[test]
+fn a_power_below_the_provider_table_is_refused_before_any_instance() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    assert_eq!(
+        radio.request(
+            RadioRequest::ConfigureScanner(ScannerConfiguration {
+                scanner: ScannerId::new(0),
+                tx_power: TxPower::from_dbm(-25),
+            }),
+            &mut sink,
+        ),
+        Err(RequestError::Unsupported)
+    );
+    // The refusal took no scanner instance.
+    radio
+        .request(
+            RadioRequest::ConfigureScanner(ScannerConfiguration {
+                scanner: ScannerId::new(0),
+                tx_power: TxPower::from_dbm(-24),
+            }),
+            &mut sink,
+        )
+        .unwrap();
+    assert!(sink.0.is_empty());
+}
+
+#[test]
 fn a_stopped_scheduler_yields_the_bluetooth_quiescence_proof() {
     let mut radio = radio();
     assert!(radio.quiescence().is_none());

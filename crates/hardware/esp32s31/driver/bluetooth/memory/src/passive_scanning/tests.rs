@@ -7,9 +7,8 @@ use super::{
     SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD, SCHEDULER_ITEM_COEX_PRIORITIES_WORD,
 };
 use crate::{
-    PassiveScanCoexistencePriorities, PassiveScanDefaultTxPowerDbm, PassiveScanPrimaryChannel,
-    PassiveScanResetConfig, PassiveScanSchedulerWindow, PassiveScanStartSelection,
-    SchedulerItemCoexistencePriority,
+    PassiveScanCoexistencePriorities, PassiveScanPrimaryChannel, PassiveScanResetConfig,
+    PassiveScanSchedulerWindow, PassiveScanStartSelection, SchedulerItemCoexistencePriority,
     coexistence::lanes_image,
     le_phy_packet::{LeAccessAddress, LeCrcInit},
     le_rx_chain::{LeRxChain, LeRxChainModelAddress, LeRxChainStorage},
@@ -46,7 +45,7 @@ fn chain(class: RxMemoryListClass) -> LeRxChain<2> {
 
 fn config() -> PassiveScanResetConfig {
     PassiveScanResetConfig::le_1m_public_accept_all(
-        PassiveScanDefaultTxPowerDbm::new(0),
+        crate::LeTxPower::from_dbm(0).expect("provider level"),
         BluetoothControllerLatchedTime::from_bits(0x1234_5678),
     )
 }

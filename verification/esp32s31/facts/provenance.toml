@@ -223,6 +223,12 @@ code = "5846dcc8b9ef27e3147be9a69482247aaaff5c8d710e11762dad76f725e91665"
 [[function]]
 artifact = "libble_app"
 member = "ble_70.o"
+symbol = "r_sym_ble_5YIHPyqYswSaQs7KMvEA"
+code = "a9606573da63c41779a43eadb9a4b83fa348d108250bc346ea631fb591a25e4d"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_70.o"
 symbol = "r_sym_ble_95olV4pLl0ue84SnuzXf"
 code = "f262657b00b2c111f22489a4d026c381f1b4f683d5a7faa847b83833e0b83786"
 
@@ -249,6 +255,12 @@ artifact = "libble_app"
 member = "ble_70.o"
 symbol = "r_sym_ble_nENHlP4KBuQYlFVffaR5"
 code = "624124ad43eefcd26d05a88a90e0e1f8272c2acb2953632c7bf92dccd6ad0088"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_70.o"
+symbol = "r_sym_ble_ragNLqDkbVnj7GUutTgs"
+code = "5878d727c044f16ebcd8a32e77a2471f685bdc08c493981cf05566af6e5622b7"
 
 [[function]]
 artifact = "libble_app"

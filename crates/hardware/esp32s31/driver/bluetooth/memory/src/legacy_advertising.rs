@@ -402,7 +402,7 @@ impl<const N: usize> LegacyAdvertisingPool<N> {
     pub fn reset_link_state(
         &mut self,
         instance: &SchedulerRoleInstance,
-        default_tx_power_dbm: i8,
+        default_tx_power: crate::LeTxPower,
     ) -> Result<(), LegacyAdvertisingError> {
         let cpu = self.cpu(instance).map_err(LegacyAdvertisingError::Pool)?;
         let LegacyAdvertisingState::Packet(length) = *cpu.state else {
@@ -415,7 +415,7 @@ impl<const N: usize> LegacyAdvertisingPool<N> {
         let words = cpu.graph.link_state.reviewed_words().reset(
             cpu.binding.tx_header,
             own_address,
-            default_tx_power_dbm,
+            default_tx_power,
         );
         cpu.graph.link_state.write_reviewed_words(words);
         *cpu.state = LegacyAdvertisingState::Reset(length);

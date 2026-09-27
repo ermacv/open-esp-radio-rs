@@ -266,20 +266,6 @@ impl PeripheralConnectionRecurringReceiveWait {
     }
 }
 
-/// Physical default transmit-power request for the first connection profile.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PeripheralConnectionDefaultTxPowerDbm(i8);
-
-impl PeripheralConnectionDefaultTxPowerDbm {
-    pub const fn new(dbm: i8) -> Self {
-        Self(dbm)
-    }
-
-    pub const fn dbm(self) -> i8 {
-        self.0
-    }
-}
-
 /// Source-owned event priority shared by connection state and scheduler item.
 ///
 /// The first event starts at 13. A normally completed recurring event resets

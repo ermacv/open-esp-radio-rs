@@ -773,7 +773,11 @@ mod pools {
         let instance = pool.acquire().unwrap();
         pool.prepare_packet(&instance, &[0x02, 6, 1, 2, 3, 4, 5, 6])
             .unwrap();
-        pool.reset_link_state(&instance, 0).unwrap();
+        pool.reset_link_state(
+            &instance,
+            oer_esp32s31_bluetooth_memory::LeTxPower::from_dbm(0).expect("provider level"),
+        )
+        .unwrap();
         let event = pool
             .prepare_event(
                 &instance,

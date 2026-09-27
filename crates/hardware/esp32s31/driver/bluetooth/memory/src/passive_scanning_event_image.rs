@@ -4,7 +4,7 @@
 
 use crate::{
     le_phy_packet::{LeAccessAddress, LeCrcInit},
-    le_tx_power::rounded_tx_power,
+    le_tx_power::LeTxPower,
     sram_link::ControllerSramLinkAddress,
 };
 
@@ -89,25 +89,6 @@ pub enum PassiveScanStartSelection {
     EarliestAvailable,
 }
 
-/// Physical default transmit-power request retained by the scanner profile.
-///
-/// Passive scanning never transmits, but the common hardware link state still
-/// carries the controller's rounded default-power projection.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PassiveScanDefaultTxPowerDbm(i8);
-
-impl PassiveScanDefaultTxPowerDbm {
-    /// Bind one signed dBm request to the scanner hardware profile.
-    pub const fn new(dbm: i8) -> Self {
-        Self(dbm)
-    }
-
-    /// Return the physical signed request without exposing its SRAM encoding.
-    pub const fn dbm(self) -> i8 {
-        self.0
-    }
-}
-
 /// Dynamic inputs to the single supported passive-scanning reset profile.
 ///
 /// Construction fixes LE 1M, public own address, accept-all filtering,
@@ -115,14 +96,14 @@ impl PassiveScanDefaultTxPowerDbm {
 /// supply positional descriptor words or vendor option images.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PassiveScanResetConfig {
-    default_tx_power: PassiveScanDefaultTxPowerDbm,
+    default_tx_power: LeTxPower,
     controller_time: BluetoothControllerLatchedTime,
 }
 
 impl PassiveScanResetConfig {
     /// Construct the restricted passive LE 1M profile.
     pub const fn le_1m_public_accept_all(
-        default_tx_power: PassiveScanDefaultTxPowerDbm,
+        default_tx_power: LeTxPower,
         controller_time: BluetoothControllerLatchedTime,
     ) -> Self {
         Self {
@@ -131,7 +112,7 @@ impl PassiveScanResetConfig {
         }
     }
 
-    pub(super) const fn default_tx_power(self) -> PassiveScanDefaultTxPowerDbm {
+    pub(super) const fn default_tx_power(self) -> LeTxPower {
         self.default_tx_power
     }
 
@@ -173,8 +154,7 @@ impl PassiveScanLinkStateImage {
 
         // All masks and positional images remain private to this SRAM codec.
         words[WORD_00] = 0x1ff0_0000;
-        words[WORD_04] =
-            ((rounded_tx_power(config.default_tx_power().dbm()) as u32) << 23) & ROUNDED_POWER_MASK;
+        words[WORD_04] = ((config.default_tx_power().index() as u32) << 23) & ROUNDED_POWER_MASK;
         words[WORD_08] = rx_head.apply(0x4ff0_0000);
         words[WORD_0C] = 0xa010_0000;
         words[WORD_14] = 0x0400_0000;

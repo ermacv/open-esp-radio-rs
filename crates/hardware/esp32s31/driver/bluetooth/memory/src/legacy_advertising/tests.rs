@@ -46,7 +46,11 @@ fn all_channels() -> LegacyAdvertisingPrimaryChannelPlan {
 fn reset(pool: &mut LegacyAdvertisingPool<2>) -> SchedulerRoleInstance {
     let instance = pool.acquire().unwrap();
     pool.prepare_packet(&instance, &PDU).unwrap();
-    pool.reset_link_state(&instance, 0).unwrap();
+    pool.reset_link_state(
+        &instance,
+        crate::LeTxPower::from_dbm(0).expect("provider level"),
+    )
+    .unwrap();
     instance
 }
 
@@ -174,7 +178,10 @@ fn refused_steps_keep_the_instance_state() {
     let mut pool = pool();
     let instance = pool.acquire().unwrap();
     assert_eq!(
-        pool.reset_link_state(&instance, 0),
+        pool.reset_link_state(
+            &instance,
+            crate::LeTxPower::from_dbm(0).expect("provider level")
+        ),
         Err(LegacyAdvertisingError::State)
     );
     assert!(matches!(
@@ -184,7 +191,10 @@ fn refused_steps_keep_the_instance_state() {
     pool.prepare_packet(&instance, &[0x00, 6, 1, 2, 3, 4, 5, 6])
         .unwrap();
     assert_eq!(
-        pool.reset_link_state(&instance, 0),
+        pool.reset_link_state(
+            &instance,
+            crate::LeTxPower::from_dbm(0).expect("provider level")
+        ),
         Err(LegacyAdvertisingError::Pdu(
             LegacyAdvertisingPduError::UnsupportedPduType
         ))
@@ -205,7 +215,11 @@ fn the_controller_inserts_the_advertiser_address_before_the_data() {
     let instance = pool.acquire().unwrap();
     let expected = [0x42, 9, 1, 2, 3, 4, 5, 0xc6, 2, 1, 6];
     pool.prepare_packet(&instance, &expected).unwrap();
-    pool.reset_link_state(&instance, 7).unwrap();
+    pool.reset_link_state(
+        &instance,
+        crate::LeTxPower::from_dbm(7).expect("provider level"),
+    )
+    .unwrap();
     let (graph, _, state) = pool.shared(&instance).unwrap();
     let super::LegacyAdvertisingState::Reset(length) = *state else {
         panic!("the reset state keeps the packet length")

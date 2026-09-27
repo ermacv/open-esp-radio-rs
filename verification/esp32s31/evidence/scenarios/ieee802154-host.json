@@ -41,7 +41,7 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "345a46569bee5fc1aa15279081237822a9400d4d929a58a681fd38919ad51e49"
+      "sha256": "92f478dfad3b1688d1af01137ab759687710832a40d23a823f00a7dfe7287696"
     },
     {
       "path": "crates/hardware/esp32s31/pac",

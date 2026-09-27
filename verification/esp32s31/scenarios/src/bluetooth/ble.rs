@@ -112,10 +112,11 @@ const DIAGNOSTIC_SELECTOR: u32 = 0x2010_11e8;
 const SELECT_BUSY: u32 = 0x38;
 const SELECT_PROGRESS: u32 = 0xc01;
 const SELECT_SETTLE: u32 = 0x7;
-/// Sample values: idle (BUSY bit seven clear), a progress lane zero of two
+/// Sample values: idle (BUSY bit seven clear), busy, a progress lane zero of two
 /// (a conflicting state the vendor repeats on), and a settle of nine (not
 /// yet settled).
 const IDLE: u32 = 0;
+const BUSY: u32 = 0x80;
 const PROGRESS_REPEAT: u32 = 2;
 /// Progress lane zero of three repeats only when lane one's bits five and
 /// four read one.
@@ -225,7 +226,7 @@ fn execution_modify_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> 
 /// model checks the selections instead: an undeclared selector is an issue,
 /// and every sample must read exactly the runs declared for the selector in
 /// force, so each side selects the right signal before each sample.
-fn execution_modify_rules() -> Vec<blobray_domain::EffectRule> {
+fn scheduler_rules() -> Vec<blobray_domain::EffectRule> {
     vec![
         crate::contracts::ignored(
             "diagnostic-selections".into(),
@@ -238,7 +239,7 @@ fn execution_modify_rules() -> Vec<blobray_domain::EffectRule> {
                 followed_by: None,
             },
             MAX_SELECTIONS,
-            "the finite-step execution modify reselects its diagnostic signal after every \
+            "the finite-step execution modify and lock reselect their diagnostic signal after every \
             Pending because interleaved BUSY observations select 0x38; the vendor holds a \
             critical section across the polling loop; the diagnostic model checks every \
             selection against the sample that follows",
@@ -267,8 +268,37 @@ fn execution_modify_rules() -> Vec<blobray_domain::EffectRule> {
 /// at most two attempts, each a publication and a START clear.
 const FULL_FENCE: u8 = 0xf;
 const MAX_ORDERING_FENCES: u32 = 4;
-/// Selector writes one execution-modify case may perform per side.
+/// Selector writes one execution-modify or execution-lock case may perform
+/// per side.
 const MAX_SELECTIONS: u32 = 16;
+
+/// Execution-lock addresses (the first and last word of the encodable
+/// controller-SRAM window).
+const LOCK_ADDRESSES: &[u32] = &[0x2f00_0000, 0x2f3f_fffc];
+/// Execution-lock states: the scheduler idle, and busy for one sample after
+/// the publication.
+const LOCK_IDLE: u32 = 0;
+const LOCK_BUSY_ONCE: u32 = 1;
+const LOCK_STATES: &[u32] = &[LOCK_IDLE, LOCK_BUSY_ONCE];
+
+/// `(address, index, state)` in probe order; the vendor takes the list
+/// first. The idle preamble samples BUSY once, then the lock samples it
+/// until it reads idle.
+fn execution_lock_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    let [address, index, state] = *words else {
+        unreachable!("execution lock: address, index and state")
+    };
+    let busy: &[u32] = match state {
+        LOCK_IDLE => &[IDLE, IDLE],
+        LOCK_BUSY_ONCE => &[IDLE, BUSY, IDLE],
+        _ => unreachable!("declared execution-lock state"),
+    };
+    Ok(Objects {
+        vendor_words: vec![index, address],
+        devices: vec![diagnostic_port(&[(SELECT_BUSY, busy)])],
+        ..Default::default()
+    })
+}
 
 /// The baseband's `phy_param` gain byte, from the semantic words: the
 /// version flag and the byte.
@@ -478,10 +508,9 @@ pub const LEAVES: &[Leaf] = &[
         ),
         BTDM_COMMON_INPUT,
     ),
-    // The scheduler execution modify (`r_btdm_sched_execution_modify`),
-    // compared through its diagnostic samples. The execution lock
-    // (`r_btdm_sched_execution_lock`) is not compared
-    // yet: production publishes without the vendor's idle preamble.
+    // The scheduler execution modify (`r_btdm_sched_execution_modify`) and
+    // execution lock (`r_btdm_sched_execution_lock`), compared through their
+    // diagnostic samples.
     in_archive(
         ruled(
             quiet(
@@ -502,7 +531,31 @@ pub const LEAVES: &[Leaf] = &[
                 ),
                 SCHEDULER_QUIET,
             ),
-            execution_modify_rules,
+            scheduler_rules,
+        ),
+        BTDM_COMMON_INPUT,
+    ),
+    in_archive(
+        ruled(
+            quiet(
+                stated(
+                    objects(
+                        leaf(
+                            "r_sym_bt_9H3AnHbaHJ3auzSvPDme",
+                            "open_ble_scheduler_trace_execution_lock",
+                            &[
+                                ("address", Domain::Words(LOCK_ADDRESSES)),
+                                ("index", Domain::Words(HARDWARE_LISTS)),
+                            ],
+                            false,
+                        ),
+                        execution_lock_abi,
+                    ),
+                    LOCK_STATES,
+                ),
+                SCHEDULER_QUIET,
+            ),
+            scheduler_rules,
         ),
         BTDM_COMMON_INPUT,
     ),
@@ -610,6 +663,7 @@ pub const LEAVES: &[Leaf] = &[
 /// critical section and the assertion the bounded loops never reach.
 const SCHEDULER_QUIET: &[&str] = &[
     "wr_btdm_log_internal_x1",
+    "wr_btdm_log_internal_x2",
     "wr_btdm_osal_hw_enter_critical",
     "wr_btdm_osal_hw_exit_critical",
     "wr_btdm_compressed_assert_x2",

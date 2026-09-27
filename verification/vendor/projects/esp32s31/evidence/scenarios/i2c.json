@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "334c44478bb9221af99e556551710a2afeb65a109773073d88b72e6f933bc57b",
+    "input-2": "04726694dad1a222845bc265d6f632fdeb2809f5568e6f66cffbf64510565265",
     "input-3": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195",
     "input-4": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
@@ -45,7 +45,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "b25396a4d1cfbb6616253f0b82fe68d22bd70767ac24ec15abf7997b3d6375ac"
+      "sha256": "7eb1e3b4de66e7ff21c025f819bb9d850e20f53ead682c530d093d152a1a14ec"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -169,7 +169,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "b29c88e7897487a0267ed32826b50a199b0ff3ff86b07f11a717fa24130b43fd"
+      "sha256": "b7153c38131fd7747cd1eb7f79f126a18d01da6f65f56205c53c57d5f4325a63"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
@@ -223,7 +223,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "fd791d5cfbee3d540e972d3935dd23fcd6a761c467d38353831f78401002e66b"
+        "411bdb1676dc2b42348d8f2539b761ff52a0616884c97a3c4f8ff6502cb4db8b"
       ],
       "coverage": {
         "blocks": {
@@ -259,7 +259,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "8c41942cfabc7ee1615cd6d7d25e5ff61d1c7d889ef2027e3deae2b8b84d9d44"
+        "417bf95a2bb8b0dd60d9df6f5d62757a883ef7874a08894f7c58fd777582cae7"
       ],
       "coverage": {
         "blocks": {
@@ -295,7 +295,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "eee62b36c84bbe9dfa3a44366941709db9096fed48cd7cd3cd7a7028e9e2fd97"
+        "768bc26462651cd1dd216d527ae71a49c00856fa7f58151f66e6bad672a25db0"
       ],
       "coverage": {
         "blocks": {
@@ -331,7 +331,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "839fc6396fa93db8b2c3b3d0cde54907c9f946fa16d109c3936590326ef10f20"
+        "9c0df31f5a306c31d9d2a0acd62e8e0593ebd9cd8cfab82390d5113119a87784"
       ],
       "coverage": {
         "blocks": {
@@ -367,7 +367,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "577fd2551a82cf7a940f3a910d75f4d22cfd07c2a2b343f33368c89044a9119b"
+        "0deff23c4c3c9aceaa1a6fe09b05988db79e14f360ddf41120358810596b476b"
       ],
       "coverage": {
         "blocks": {
@@ -403,7 +403,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "e2f213d9dd985984fa34d1ee01f9a3b6344b59c5b1e2497bae5d9df0209c4c0b"
+        "a536cbc71c77b8e0d09b16407ffec4d28f33ff045e5033ca5428ca791cce18cb"
       ],
       "coverage": {
         "blocks": {
@@ -609,7 +609,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "79979050717df745d4b2453a2975cfcfea8d59f93ead3fefad6b5e7d99376307"
+        "f21bd524e20c4a39296f3d37a011d6804baee1f0bfb5ab06b4fa2455805e103b"
       ],
       "coverage": {
         "blocks": {
@@ -645,7 +645,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "9afb86851718f11659bbc001603ea171e75ccdbfc2dff38bba71c03e0fb00eb2"
+        "5feee2db5e83987bfe5ef4a852f6a1f972f946e369ee20ddbd1c9827127cd5c5"
       ],
       "coverage": {
         "blocks": {
@@ -681,8 +681,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "39864a1c0b9fabb38f46b85787f5c604753d733ff0fb56ebb34eb4d1ae819f73",
-        "d16e477e0f9bde6aeb9c8107f28d1dbf7f22273d603050675e8c94d5f4ef26d1"
+        "846b65de565dfc8c193787a83bf871601bfd25463c101737802b998c6e8d22f3",
+        "ba77f823d338c7e471b4e43550744126bc38e26a4c89065ce18d38c2ffd3d744"
       ],
       "coverage": {
         "blocks": {
@@ -718,7 +718,7 @@
       "verdict": "match",
       "cases": 101,
       "reviews": [
-        "762cc3f6b92d54ca7ac4684c441d7d4cb564099d42e81381d55a97ab7fc8cbe8"
+        "398e79c4f2dd91471b181a3b54149fbd90b5fdc56ea1dccc5de1f9ff82a39d34"
       ],
       "coverage": {
         "blocks": {
@@ -1014,7 +1014,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "line": 710
+      "line": 718
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",

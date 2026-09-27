@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "334c44478bb9221af99e556551710a2afeb65a109773073d88b72e6f933bc57b",
+    "input-2": "04726694dad1a222845bc265d6f632fdeb2809f5568e6f66cffbf64510565265",
     "input-3": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a"
   },
   "sources": [
@@ -44,7 +44,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "b25396a4d1cfbb6616253f0b82fe68d22bd70767ac24ec15abf7997b3d6375ac"
+      "sha256": "7eb1e3b4de66e7ff21c025f819bb9d850e20f53ead682c530d093d152a1a14ec"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -168,7 +168,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "b29c88e7897487a0267ed32826b50a199b0ff3ff86b07f11a717fa24130b43fd"
+      "sha256": "b7153c38131fd7747cd1eb7f79f126a18d01da6f65f56205c53c57d5f4325a63"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",

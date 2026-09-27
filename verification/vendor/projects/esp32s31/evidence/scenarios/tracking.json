@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "334c44478bb9221af99e556551710a2afeb65a109773073d88b72e6f933bc57b",
+    "input-2": "04726694dad1a222845bc265d6f632fdeb2809f5568e6f66cffbf64510565265",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
   "sources": [
@@ -44,7 +44,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "b25396a4d1cfbb6616253f0b82fe68d22bd70767ac24ec15abf7997b3d6375ac"
+      "sha256": "7eb1e3b4de66e7ff21c025f819bb9d850e20f53ead682c530d093d152a1a14ec"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -168,7 +168,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "b29c88e7897487a0267ed32826b50a199b0ff3ff86b07f11a717fa24130b43fd"
+      "sha256": "b7153c38131fd7747cd1eb7f79f126a18d01da6f65f56205c53c57d5f4325a63"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
@@ -188,8 +188,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "38511cf983e6fdb6f59c14224c6cfd092b4cc6c6e2a49c90477592783fa78851",
-        "70903aa81296ee3ee1f404e557527d6c4d84f61f3c384ce2a1b9435c070e4a86"
+        "1125508c841cd394597d30c163dee54106c5b25e9dc4ea5d76c185c1c522e5a2",
+        "6fe61bc92336c884c13acf4b2eff1d8fe11a39848953b0c750857c6030176232"
       ],
       "coverage": {
         "blocks": {
@@ -225,8 +225,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "3afd9ccd960422cf8f13c73cb2e764e6a085a6dc6644f80019428f64c5e76d37",
-        "de08a46f05d4aa597a40ece28619384d3097bb678536c11dcdefbf0f8413d0be"
+        "a168fa7cff08965f1dab16e3235fba87457b3c772135e308d8a694cb85729223",
+        "e997fd2d5402877fd628e60228c8dec3f0f89870f4152bd4ac4cd9eb56d9cded"
       ],
       "coverage": {
         "blocks": {
@@ -1788,7 +1788,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "line": 710
+      "line": 718
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",

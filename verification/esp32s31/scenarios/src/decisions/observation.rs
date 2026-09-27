@@ -358,7 +358,6 @@ pub const DECISIONS: &[Decision] = &[
                 "driver/coex/src/core.rs",
                 "self.uncertain_timers &= !timer_bit(index);",
             ),
-            ("driver/coex/src/core.rs", "1 << index.value()"),
         ],
     },
     Decision {

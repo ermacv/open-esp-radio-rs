@@ -11,14 +11,17 @@ It does not depend on Blobray peripheral models.
 ```console
 cargo xtask vendor-firmware esp32s31 calibration
 cargo build -p oer-esp32s31-phy-vendor-calibration
-cargo hil --owner <name> lease --budget 15m -- \
+cargo hil --owner <name> lease --board esp32s31 --air exclusive --budget 30m -- \
     target/debug/oer-esp32s31-phy-vendor-calibration capture --output <new directory>
 cargo run -p oer-esp32s31-phy-vendor-calibration -- compare --captures <directory>
 ```
 
 ## Capture
 
-`capture` holds the board's device lease and records every flash in the
+`capture` runs under a lease of the esp32s31 board with exclusive air,
+since cold calibration measures TX and RX DC and IQ that another
+transmission would bias. It holds the board's device lease and records
+every flash in the
 board journal. For each of `--boots` rounds (ten by default) it takes these
 steps:
 

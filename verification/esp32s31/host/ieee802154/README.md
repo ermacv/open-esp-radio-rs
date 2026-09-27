@@ -75,6 +75,15 @@ provides it as the driver's `bt_bb_get_tx_pwr_table`, and the engine uses the
 HAL's `ESP32S31_TX_POWER_LEVELS`. The tests require `MATCH` for every catalog
 scenario.
 
+The `recent-rssi` scenario reads `esp_ieee802154_get_recent_rssi` disabled,
+idle, receiving, awaiting an ACK and asleep, over receive-information images
+with nonzero upper bits. The production read is the runtime's over the PAC's
+baseband capability and passes no engine or MAC accessor, so the port
+records nothing for it: `MATCH` means the vendor call leaves no
+register-layer access in any state either. The value is not compared; a test
+pins it to the signed low byte of one `bt_bb_get_cur_rx_info` call, the
+geometry the register model publishes for the PAC read.
+
 `cargo xtask evidence --chip esp32s31 ieee802154-host` runs `compare` for every catalog
 scenario and, only when all of them MATCH, writes the stand's evidence shard
 `verification/esp32s31/evidence/scenarios/ieee802154-host.json`: one entry per

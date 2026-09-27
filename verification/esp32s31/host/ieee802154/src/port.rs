@@ -883,6 +883,10 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
                 engine.extended_address(&mut ll);
                 engine.ack_timeout(&mut ll);
             }
+            // The production read (`Ieee802154RecentRssi`) is the runtime's
+            // over the PAC's baseband capability and passes no engine or MAC
+            // accessor; the vendor call must leave none either.
+            Step::GetRecentRssi => {}
             Step::SetTransmitSecurity {
                 frame,
                 key,

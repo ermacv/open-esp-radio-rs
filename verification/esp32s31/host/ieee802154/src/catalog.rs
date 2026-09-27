@@ -613,6 +613,41 @@ fn enable() -> Vec<Step> {
     vec![Step::Enable]
 }
 
+/// Baseband receive-information images: the RSSI byte in the low eight bits
+/// under nonzero upper bits, at both ends of the signed range.
+pub const RECENT_RSSI_IMAGES: [(u64, i8); 4] = [
+    (0xa5a5_12c6, -58),
+    (0x0000_007f, 127),
+    (0xffff_ff80, -128),
+    (0x1234_5600, 0),
+];
+
+/// `esp_ieee802154_get_recent_rssi` disabled, idle, receiving, awaiting an
+/// ACK and asleep, over each receive-information image.
+fn recent_rssi() -> Vec<Step> {
+    let reads = |steps: &mut Vec<Step>| {
+        for (image, _) in RECENT_RSSI_IMAGES {
+            steps.push(Step::Input("bt_bb_get_cur_rx_info", image));
+            steps.push(Step::GetRecentRssi);
+        }
+    };
+    let mut steps = Vec::new();
+    reads(&mut steps);
+    steps.push(Step::Enable);
+    reads(&mut steps);
+    steps.push(Step::Receive);
+    reads(&mut steps);
+    steps.push(Step::Transmit {
+        frame: data_frame(true),
+        cca: false,
+    });
+    steps.push(interrupt(event::TX_DONE));
+    reads(&mut steps);
+    steps.push(Step::Sleep);
+    reads(&mut steps);
+    steps
+}
+
 fn enable_disable() -> Vec<Step> {
     vec![Step::Enable, Step::Receive, Step::Disable]
 }
@@ -739,6 +774,11 @@ pub const SCENARIOS: &[Scenario] = &[
         name: "enable-disable",
         inputs: no_inputs,
         steps: enable_disable,
+    },
+    Scenario {
+        name: "recent-rssi",
+        inputs: no_inputs,
+        steps: recent_rssi,
     },
     Scenario {
         name: "receive-abort-reasons",

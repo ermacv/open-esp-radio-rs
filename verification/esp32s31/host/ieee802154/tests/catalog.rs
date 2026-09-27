@@ -280,3 +280,38 @@ fn disable_frees_the_route_before_the_shared_resources_without_mac_writes() {
         ]
     );
 }
+
+/// `esp_ieee802154_get_recent_rssi` is `(int8_t)(bt_bb_get_cur_rx_info() &
+/// 0xff)` (esp_ieee802154_dev.c L271-L274): in every driver state it makes
+/// exactly one receive-information call and no register-layer access, and
+/// returns the image's low byte as a signed value whatever its upper bits.
+#[test]
+fn recent_rssi_is_the_signed_low_byte_of_one_rx_info_read() {
+    let trace = trace("recent-rssi");
+    let returns: Vec<usize> = trace
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.starts_with("return esp_ieee802154_get_recent_rssi"))
+        .map(|(index, _)| index)
+        .collect();
+    // Four images in each of five states.
+    assert_eq!(returns.len(), 20, "trace:\n{}", trace.join("\n"));
+    for &index in &returns {
+        assert_eq!(
+            trace[index - 1],
+            "ext bt_bb_get_cur_rx_info()",
+            "trace:\n{}",
+            trace.join("\n")
+        );
+        assert!(
+            index < 2 || !trace[index - 2].starts_with("ext bt_bb_get_cur_rx_info"),
+            "one read per call:\n{}",
+            trace.join("\n")
+        );
+    }
+    let values: Vec<&str> = returns
+        .iter()
+        .map(|&index| trace[index].rsplit(" = ").next().unwrap())
+        .collect();
+    assert_eq!(values, ["-58", "127", "-128", "0"].repeat(5));
+}

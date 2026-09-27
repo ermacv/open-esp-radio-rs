@@ -43,6 +43,9 @@ pub enum Step {
     /// `esp_ieee802154_get_panid`, `get_short_address`,
     /// `get_extended_address` and `get_ack_timeout`, in that order.
     GetIdentity,
+    /// `esp_ieee802154_get_recent_rssi`, reading the baseband receive
+    /// information the `bt_bb_get_cur_rx_info` input supplies.
+    GetRecentRssi,
     /// `esp_ieee802154_set_transmit_security` for `[length, psdu...]`.
     SetTransmitSecurity {
         frame: Vec<u8>,
@@ -150,6 +153,7 @@ unsafe extern "C" {
     fn esp_ieee802154_receive() -> i32;
     fn esp_ieee802154_receive_at(time: u32, duration: u32) -> i32;
     fn esp_ieee802154_sleep() -> i32;
+    fn esp_ieee802154_get_recent_rssi() -> i8;
     fn esp_ieee802154_energy_detect(duration: u32) -> i32;
     fn esp_ieee802154_cca() -> i32;
     fn esp_ieee802154_receive_handle_done(frame: *const u8) -> i32;
@@ -242,6 +246,10 @@ fn run_step(step: Step, last_rx: &mut Option<usize>) {
                 esp_ieee802154_get_extended_address(address.as_mut_ptr());
                 esp_ieee802154_get_ack_timeout();
             }
+            Step::GetRecentRssi => returned(
+                "esp_ieee802154_get_recent_rssi",
+                i32::from(esp_ieee802154_get_recent_rssi()),
+            ),
             Step::SetTransmitSecurity {
                 mut frame,
                 mut key,

@@ -5,7 +5,7 @@
 use std::{boxed::Box, vec, vec::Vec};
 
 use oer_esp32s31_hal::ieee802154::{
-    Ieee802154TxPowerLevels,
+    Ieee802154CcaMode, Ieee802154TxPowerLevels,
     ll::{Ieee802154LlCommand, model::Ieee802154LlModel},
     mac::{
         Ieee802154Event, Ieee802154RxAbortReason, Ieee802154RxAbortReasonObservation,
@@ -15,10 +15,10 @@ use oer_esp32s31_hal::ieee802154::{
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154State};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
-    AppliedSecurity, CSL_IE_TEMPLATE, Channel, CommandError, Configuration, EnergyScanRequest,
-    FramePending, FrameView, MacKeys, RadioCommand, RadioEvent, RadioState, RadioTimestamp,
-    RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest,
-    TxSecurity, TxStatus, csl_phase,
+    AppliedSecurity, CSL_IE_TEMPLATE, CcaMode, Channel, CommandError, Configuration,
+    EnergyScanRequest, FramePending, FrameView, MacKeys, RadioCommand, RadioEvent, RadioState,
+    RadioTimestamp, RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode,
+    TxRequest, TxSecurity, TxStatus, csl_phase,
 };
 
 use super::{
@@ -381,6 +381,13 @@ fn configuration_reaches_the_identity_and_the_pib() {
         Configuration::Promiscuous(false),
         Configuration::AutomaticAcknowledgement(false),
         Configuration::TransmitPowerDbm(0),
+        Configuration::ChannelTransmitPowerDbm {
+            channel: channel(15),
+            power_dbm: -3,
+        },
+        Configuration::CcaThresholdDbm(-70),
+        Configuration::CcaMode(CcaMode::CarrierAndEnergyDetection),
+        Configuration::PanCoordinator(true),
     ] {
         bench
             .submit(RadioCommand::Configure {
@@ -400,7 +407,47 @@ fn configuration_reaches_the_identity_and_the_pib() {
     let pib = bench.radio.engine().pib();
     assert!(!pib.promiscuous());
     assert!(!pib.auto_ack_tx());
-    assert_eq!(pib.power_table(), [0; 16]);
+    let mut powers = [0; 16];
+    powers[15 - 11] = -3;
+    assert_eq!(pib.power_table(), powers);
+    assert_eq!(pib.cca_threshold(), -70);
+    assert_eq!(pib.cca_mode(), Ieee802154CcaMode::CarrierAndEnergyDetection);
+    assert!(pib.coordinator());
+}
+
+/// CCA and per-channel power need their capabilities; the coordinator role
+/// does not.
+#[test]
+fn configuration_needs_the_capability_of_its_setting() {
+    use oer_ieee802154::{RadioCapabilities, RadioStateMachine};
+    let mut machine = RadioStateMachine::new(RadioCapabilities::NONE);
+    machine
+        .admit(RadioCommand::Enable {
+            id: RequestId::new(1),
+        })
+        .unwrap();
+    let configure = |configuration| RadioCommand::Configure {
+        id: RequestId::new(2),
+        configuration,
+    };
+    assert!(
+        machine
+            .admit(configure(Configuration::CcaThresholdDbm(-70)))
+            .is_err()
+    );
+    assert!(
+        machine
+            .admit(configure(Configuration::ChannelTransmitPowerDbm {
+                channel: channel(15),
+                power_dbm: 0,
+            }))
+            .is_err()
+    );
+    assert!(
+        machine
+            .admit(configure(Configuration::PanCoordinator(true)))
+            .is_ok()
+    );
 }
 
 /// A 2015 data frame requesting an ACK, short addresses, secured at

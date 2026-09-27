@@ -444,10 +444,16 @@ const fn required_configuration_capability(configuration: Configuration) -> Radi
     match configuration {
         Configuration::Promiscuous(_) => RadioCapabilities::PROMISCUOUS,
         Configuration::AutomaticAcknowledgement(_) => RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT,
-        Configuration::TransmitPowerDbm(_) => RadioCapabilities::TRANSMIT_POWER,
+        Configuration::TransmitPowerDbm(_) | Configuration::ChannelTransmitPowerDbm { .. } => {
+            RadioCapabilities::TRANSMIT_POWER
+        }
+        Configuration::CcaThresholdDbm(_) | Configuration::CcaMode(_) => {
+            RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT
+        }
         Configuration::PanId(_)
         | Configuration::ShortAddress(_)
-        | Configuration::ExtendedAddress(_) => RadioCapabilities::NONE,
+        | Configuration::ExtendedAddress(_)
+        | Configuration::PanCoordinator(_) => RadioCapabilities::NONE,
     }
 }
 

@@ -21,7 +21,7 @@
 extern crate std;
 
 use oer_esp32s31_hal::ieee802154::{
-    Ieee802154Channel, Ieee802154MultipanIndex,
+    Ieee802154CcaMode, Ieee802154Channel, Ieee802154MultipanIndex,
     ll::{Ieee802154LowLevel, Ieee802154RxStatus},
 };
 use oer_esp32s31_ieee802154::engine::{
@@ -30,12 +30,12 @@ use oer_esp32s31_ieee802154::engine::{
     Ieee802154TxError,
 };
 use oer_ieee802154::{
-    AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, Channel, CommandError,
-    Configuration, CsmaCa, FcsStatus, FramePending, FrameRetries, FrameVersion, FrameView,
-    KeyIdMode, MacKeys, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent, RadioFault,
-    RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId, RestingState,
-    RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TxMode, TxSecurity, TxStatus,
-    csl_phase, generate_enhanced_ack, write_csl_ie,
+    AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CcaMode, Channel,
+    CommandError, Configuration, CsmaCa, FcsStatus, FramePending, FrameRetries, FrameVersion,
+    FrameView, KeyIdMode, MacKeys, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent,
+    RadioFault, RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId,
+    RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TxMode, TxSecurity,
+    TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
 };
 
 /// The portable capabilities the role implements.
@@ -565,6 +565,16 @@ fn hal_channel(channel: Channel) -> Ieee802154Channel {
     Ieee802154Channel::new(channel.get()).expect("portable and HAL channels share 11 through 26")
 }
 
+/// The portable CCA mode as the MAC's.
+const fn hal_cca_mode(mode: CcaMode) -> Ieee802154CcaMode {
+    match mode {
+        CcaMode::Carrier => Ieee802154CcaMode::Carrier,
+        CcaMode::EnergyDetection => Ieee802154CcaMode::EnergyDetection,
+        CcaMode::CarrierOrEnergyDetection => Ieee802154CcaMode::CarrierOrEnergyDetection,
+        CcaMode::CarrierAndEnergyDetection => Ieee802154CcaMode::CarrierAndEnergyDetection,
+    }
+}
+
 /// Lend the MAC bytes of a received image: the PHR length counts two
 /// trailing bytes that carry RSSI and LQI in place of the FCS.
 ///
@@ -741,6 +751,16 @@ impl<'storage> Ieee802154Radio<'storage> {
                 Configuration::TransmitPowerDbm(power) => {
                     engine.pib().set_power_table([power; 16]);
                 }
+                Configuration::ChannelTransmitPowerDbm { channel, power_dbm } => {
+                    engine
+                        .pib()
+                        .set_power_for_channel(hal_channel(channel), power_dbm);
+                }
+                Configuration::CcaThresholdDbm(threshold) => {
+                    engine.pib().set_cca_threshold(threshold);
+                }
+                Configuration::CcaMode(mode) => engine.pib().set_cca_mode(hal_cca_mode(mode)),
+                Configuration::PanCoordinator(enable) => engine.pib().set_coordinator(enable),
             },
             RadioCommand::Transmit(request) => {
                 let channel = hal_channel(request.channel);

@@ -98,10 +98,16 @@ impl RadioCapabilities {
             Configuration::AutomaticAcknowledgement(_) => {
                 self.contains(Self::AUTOMATIC_ACKNOWLEDGEMENT)
             }
-            Configuration::TransmitPowerDbm(_) => self.contains(Self::TRANSMIT_POWER),
+            Configuration::TransmitPowerDbm(_) | Configuration::ChannelTransmitPowerDbm { .. } => {
+                self.contains(Self::TRANSMIT_POWER)
+            }
+            Configuration::CcaThresholdDbm(_) | Configuration::CcaMode(_) => {
+                self.contains(Self::CLEAR_CHANNEL_ASSESSMENT)
+            }
             Configuration::PanId(_)
             | Configuration::ShortAddress(_)
-            | Configuration::ExtendedAddress(_) => true,
+            | Configuration::ExtendedAddress(_)
+            | Configuration::PanCoordinator(_) => true,
         }
     }
 }

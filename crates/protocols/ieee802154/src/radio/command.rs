@@ -216,4 +216,37 @@ pub enum Configuration {
     AutomaticAcknowledgement(bool),
     /// Set the default transmit power in dBm.
     TransmitPowerDbm(i8),
+    /// Set the transmit power of one channel in dBm
+    /// (`esp_ieee802154_set_power_with_channel`).
+    ChannelTransmitPowerDbm {
+        /// The channel whose power changes.
+        channel: Channel,
+        /// Transmit power in dBm.
+        power_dbm: i8,
+    },
+    /// Set the energy threshold of clear-channel assessment in dBm
+    /// (`esp_ieee802154_set_cca_threshold`,
+    /// `otPlatRadioSetCcaEnergyDetectThreshold`).
+    CcaThresholdDbm(i8),
+    /// Set how clear-channel assessment decides that the channel is busy
+    /// (`esp_ieee802154_set_cca_mode`).
+    CcaMode(CcaMode),
+    /// Act as the PAN coordinator: accept data and command frames without a
+    /// destination address (`esp_ieee802154_set_coordinator`).
+    PanCoordinator(bool),
+}
+
+/// How clear-channel assessment decides that the channel is busy
+/// (IEEE 802.15.4 CCA modes, `esp_ieee802154_cca_mode_t`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CcaMode {
+    /// Busy when a carrier is detected (mode 2).
+    Carrier,
+    /// Busy when the energy is above the threshold (mode 1).
+    EnergyDetection,
+    /// Busy when a carrier is detected or the energy is above the threshold.
+    CarrierOrEnergyDetection,
+    /// Busy when a carrier is detected and the energy is above the threshold
+    /// (mode 3).
+    CarrierAndEnergyDetection,
 }

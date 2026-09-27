@@ -220,7 +220,7 @@ pointer.  The pinned `r_ble_lll_mmgmt_reset_rxlink` closes the cold
 publication order for selectors one and two: after clearing the first
 header's links and installing it as the software head/tail, it publishes that
 header to `CurrentRx` and then publishes zero to `NextRx`. It subsequently
-clears `CONTROL_20` in the current-pointer register and writes back a second
+clears `RX_VALID` in the current-pointer register and writes back a second
 fresh observation of that register, preserving any intervening hardware
 change. Both selector-one and selector-two publication perform this suffix
 through restricted PAC accessors; the broader meaning of that control bit

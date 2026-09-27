@@ -17836,14 +17836,14 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SLEEP_TIMER_CONTROL</name>
-          <description>BTDM sleep/wakeup transaction control. Initialization programs bits 0..2 and bit 24; callers set bit 26 and wait for hardware to clear it before reading latched time; the timer-programming path sets bit 31.</description>
+          <name>BTLC_TIMER_CONTROL</name>
+          <description>BT link-controller timer control. Bits 2:0 are the clock shift: r_obh_link_btlc_fre_get returns the crystal frequency in kHz shifted right by them. Initialization also programs bit 24; callers set bit 26 and wait for hardware to clear it before reading the capture words; the timer-programming path sets bit 31.</description>
           <addressOffset>0x90</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONFIG_LOW_3</name>
+              <name>CLOCK_SHIFT</name>
               <bitOffset>0</bitOffset>
               <bitWidth>3</bitWidth>
               <writeConstraint>
@@ -17889,8 +17889,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SLEEP_TIMER_VALUE_0</name>
-          <description>First runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.</description>
+          <name>BTLC_TIMER_VALUE_0</name>
+          <description>First of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.</description>
           <addressOffset>0x94</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17903,8 +17903,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SLEEP_TIMER_VALUE_1</name>
-          <description>Second runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.</description>
+          <name>BTLC_TIMER_VALUE_1</name>
+          <description>Second of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.</description>
           <addressOffset>0x98</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17917,8 +17917,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SLEEP_TIMER_VALUE_2</name>
-          <description>Third runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.</description>
+          <name>BTLC_TIMER_VALUE_2</name>
+          <description>Third of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.</description>
           <addressOffset>0x9C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17931,8 +17931,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SLEEP_TIMER_LATCHED_TIME_0</name>
-          <description>First word of the three-word sleep-timer snapshot read after software requests a latch and hardware clears SLEEP_TIMER_CONTROL.LATCH_REQUEST.</description>
+          <name>BTLC_TIMER_CAPTURE_0</name>
+          <description>First word of the timer capture r_obd_capture_btlc_timer reads after BTLC_TIMER_CONTROL.LATCH_REQUEST clears.</description>
           <addressOffset>0xAC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -17945,8 +17945,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SLEEP_TIMER_LATCHED_TIME_1</name>
-          <description>Second word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown.</description>
+          <name>BTLC_TIMER_CAPTURE_1</name>
+          <description>Second word of the same timer capture.</description>
           <addressOffset>0xB0</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -17959,8 +17959,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SLEEP_TIMER_LATCHED_TIME_2</name>
-          <description>Third word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown.</description>
+          <name>BTLC_TIMER_CAPTURE_2</name>
+          <description>Third word of the same timer capture.</description>
           <addressOffset>0xB4</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -18003,8 +18003,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SCHEDULER_LIST_POINTER_0</name>
-          <description>First 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value &lt;&lt; 2).</description>
+          <name>CURRENT_TX_LINK_POINTER</name>
+          <description>Current transmit link pointer (r_obh_link_current_txlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value &lt;&lt; 2).</description>
           <addressOffset>0xC8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18017,8 +18017,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SCHEDULER_LIST_POINTER_1</name>
-          <description>Second 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value &lt;&lt; 2).</description>
+          <name>CURRENT_RX_LINK_POINTER</name>
+          <description>Current receive link pointer (r_obh_link_current_rxlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value &lt;&lt; 2).</description>
           <addressOffset>0xCC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18102,22 +18102,22 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>HAL_INIT_CONTROL_0</name>
-          <description>BTDM HAL initialization sets bit 31 through a fresh-read RMW. The control meaning remains unknown.</description>
+          <name>WDT_CONFIG_0</name>
+          <description>First watchdog configuration word of r_obh_link_wdt_config; bit 31 is its enable. BTDM HAL initialization sets it through a fresh-read RMW.</description>
           <addressOffset>0xDC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>ENABLE_31</name>
+              <name>ENABLE</name>
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>HAL_INIT_CONTROL_1</name>
-          <description>BTDM HAL initialization replaces and sets the six independently observed positions 3, 6, 7, 15, 18 and 19. Positional groups preserve the exact masks without assigning hardware meaning.</description>
+          <name>WDT_CONFIG_1</name>
+          <description>Second watchdog configuration word of r_obh_link_wdt_config, which packs four arguments into it. BTDM HAL initialization replaces and sets positions 3, 6, 7, 15, 18 and 19; positional groups keep the exact masks.</description>
           <addressOffset>0xE0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18232,8 +18232,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>PHY_INIT_VALUE_01F0</name>
-          <description>Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown.</description>
+          <name>GPIO_DIAG_ARGUMENT_1</name>
+          <description>Second argument of r_obh_link_gpio_diag_set. Complete BLE PHY initialization writes the whole-word image 0x55.</description>
           <addressOffset>0x1F0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -18387,8 +18387,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>PHY_INIT_VALUE_0248</name>
-          <description>Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown.</description>
+          <name>GPIO_DIAG_CONTROL</name>
+          <description>GPIO diagnostic control of r_obh_link_gpio_diag_set, whose first argument replaces bits 7:4. Complete BLE PHY initialization writes the whole-word image 0x00000FFF.</description>
           <addressOffset>0x248</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -18617,8 +18617,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>MMGMT_LIST_1_POINTER_A</name>
-          <description>Selector 1 pointer A; memory-management paths also independently consume or clear control bit 20.</description>
+          <name>GLOBAL_RXLINK_1_CURRENT</name>
+          <description>Current pointer of global RX link 1 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.</description>
           <addressOffset>0x280</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18635,15 +18635,15 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               </writeConstraint>
             </field>
             <field>
-              <name>CONTROL_20</name>
+              <name>RX_VALID</name>
               <bitOffset>20</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>MMGMT_LIST_1_POINTER_B</name>
-          <description>Selector 1 pointer B.</description>
+          <name>GLOBAL_RXLINK_1_NEXT</name>
+          <description>Next pointer of global RX link 1 (r_obh_link_global_rxlink_next_ptr_set).</description>
           <addressOffset>0x284</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18662,8 +18662,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>MMGMT_LIST_2_POINTER_A</name>
-          <description>Selector 2 pointer A; memory-management paths also independently consume or clear control bit 20.</description>
+          <name>GLOBAL_RXLINK_2_CURRENT</name>
+          <description>Current pointer of global RX link 2 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.</description>
           <addressOffset>0x288</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18680,15 +18680,15 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               </writeConstraint>
             </field>
             <field>
-              <name>CONTROL_20</name>
+              <name>RX_VALID</name>
               <bitOffset>20</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>MMGMT_LIST_2_POINTER_B</name>
-          <description>Selector 2 pointer B.</description>
+          <name>GLOBAL_RXLINK_2_NEXT</name>
+          <description>Next pointer of global RX link 2 (r_obh_link_global_rxlink_next_ptr_set).</description>
           <addressOffset>0x28C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18707,8 +18707,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>MMGMT_LIST_3_POINTER_A</name>
-          <description>Selector 3 pointer A; memory-management paths also independently consume or clear control bit 20.</description>
+          <name>GLOBAL_RXLINK_3_CURRENT</name>
+          <description>Current pointer of global RX link 3 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.</description>
           <addressOffset>0x290</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18725,15 +18725,15 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               </writeConstraint>
             </field>
             <field>
-              <name>CONTROL_20</name>
+              <name>RX_VALID</name>
               <bitOffset>20</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>MMGMT_LIST_3_POINTER_B</name>
-          <description>Selector 3 pointer B.</description>
+          <name>GLOBAL_RXLINK_3_NEXT</name>
+          <description>Next pointer of global RX link 3 (r_obh_link_global_rxlink_next_ptr_set).</description>
           <addressOffset>0x294</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18938,8 +18938,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>INIT_ZERO_008C</name>
-          <description>One complete controller function writes the finite zero image twice. Its operation meaning remains unknown.</description>
+          <name>BTLC_TIMER_CC_0</name>
+          <description>Timer compare slot 0 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero.</description>
           <addressOffset>0x8C</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -18952,8 +18952,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>INIT_ZERO_00B8</name>
-          <description>One complete controller function writes the finite zero image twice. Its operation meaning remains unknown.</description>
+          <name>BTLC_TIMER_CC_1</name>
+          <description>Timer compare slot 1 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero.</description>
           <addressOffset>0xB8</addressOffset>
           <size>0x20</size>
           <access>write-only</access>

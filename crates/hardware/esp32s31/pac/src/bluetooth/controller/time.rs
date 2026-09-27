@@ -15,7 +15,7 @@
 pub struct BluetoothControllerLatchedTime(u32);
 
 impl BluetoothControllerLatchedTime {
-    /// Retain one complete `SLEEP_TIMER_LATCHED_TIME_0` image.
+    /// Retain one complete `BTLC_TIMER_CAPTURE_0` image.
     pub const fn from_bits(bits: u32) -> Self {
         Self(bits)
     }
@@ -30,7 +30,7 @@ impl crate::BluetoothTaskRegisters {
     /// Publish one controller-time latch request.
     ///
     /// The transaction performs one fresh-read RMW which sets only
-    /// `SLEEP_TIMER_CONTROL.LATCH_REQUEST`, followed by a device fence. It
+    /// `BTLC_TIMER_CONTROL.LATCH_REQUEST`, followed by a device fence. It
     /// does not wait for hardware.
     #[doc(hidden)]
     pub fn publish_controller_time_latch_request(&mut self) {

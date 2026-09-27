@@ -114,7 +114,7 @@ impl BluetoothTaskRegisters {
     /// Finish the reviewed initial RX-list reset after current/next publication.
     ///
     /// Pinned `memMgmt_4.o:r_sym_memMgmt_zJpaiu5wcM3sURVaC4Za`
-    /// (`r_ble_lll_mmgmt_reset_rxlink`) clears CONTROL_20,
+    /// (`r_ble_lll_mmgmt_reset_rxlink`) clears RX_VALID,
     /// then freshly reads and writes back the whole current-pointer register.
     /// The second operation preserves any intervening hardware update. Its
     /// broader control/rotation meaning remains unassigned. Selector three

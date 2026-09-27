@@ -101,13 +101,13 @@ minimum = 0
 maximum = 0xFF
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SLEEP_TIMER_CONTROL"
-description = "BTDM sleep/wakeup transaction control. Initialization programs bits 0..2 and bit 24; callers set bit 26 and wait for hardware to clear it before reading latched time; the timer-programming path sets bit 31."
+name = "BTLC_TIMER_CONTROL"
+description = "BT link-controller timer control. Bits 2:0 are the clock shift: r_obh_link_btlc_fre_get returns the crystal frequency in kHz shifted right by them. Initialization also programs bit 24; callers set bit 26 and wait for hardware to clear it before reading the capture words; the timer-programming path sets bit 31."
 addressOffset = 0x90
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "CONFIG_LOW_3"
+name = "CLOCK_SHIFT"
 bitOffset = 0
 bitWidth = 3
 [peripherals.registers.register.fields.writeConstraint.range]
@@ -140,8 +140,8 @@ bitOffset = 31
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SLEEP_TIMER_VALUE_0"
-description = "First runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."
+name = "BTLC_TIMER_VALUE_0"
+description = "First of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."
 addressOffset = 0x94
 size = 32
 access = "read-write"
@@ -151,8 +151,8 @@ bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SLEEP_TIMER_VALUE_1"
-description = "Second runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."
+name = "BTLC_TIMER_VALUE_1"
+description = "Second of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."
 addressOffset = 0x98
 size = 32
 access = "read-write"
@@ -162,8 +162,8 @@ bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SLEEP_TIMER_VALUE_2"
-description = "Third runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."
+name = "BTLC_TIMER_VALUE_2"
+description = "Third of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."
 addressOffset = 0x9C
 size = 32
 access = "read-write"
@@ -173,8 +173,8 @@ bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SLEEP_TIMER_LATCHED_TIME_0"
-description = "First word of the three-word sleep-timer snapshot read after software requests a latch and hardware clears SLEEP_TIMER_CONTROL.LATCH_REQUEST."
+name = "BTLC_TIMER_CAPTURE_0"
+description = "First word of the timer capture r_obd_capture_btlc_timer reads after BTLC_TIMER_CONTROL.LATCH_REQUEST clears."
 addressOffset = 0xAC
 size = 32
 access = "read-only"
@@ -184,8 +184,8 @@ bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SLEEP_TIMER_LATCHED_TIME_1"
-description = "Second word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown."
+name = "BTLC_TIMER_CAPTURE_1"
+description = "Second word of the same timer capture."
 addressOffset = 0xB0
 size = 32
 access = "read-only"
@@ -195,8 +195,8 @@ bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SLEEP_TIMER_LATCHED_TIME_2"
-description = "Third word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown."
+name = "BTLC_TIMER_CAPTURE_2"
+description = "Third word of the same timer capture."
 addressOffset = 0xB4
 size = 32
 access = "read-only"
@@ -230,8 +230,8 @@ bitOffset = 31
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SCHEDULER_LIST_POINTER_0"
-description = "First 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."
+name = "CURRENT_TX_LINK_POINTER"
+description = "Current transmit link pointer (r_obh_link_current_txlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."
 addressOffset = 0xC8
 size = 32
 access = "read-write"
@@ -241,8 +241,8 @@ bitOffset = 0
 bitWidth = 20
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SCHEDULER_LIST_POINTER_1"
-description = "Second 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."
+name = "CURRENT_RX_LINK_POINTER"
+description = "Current receive link pointer (r_obh_link_current_rxlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."
 addressOffset = 0xCC
 size = 32
 access = "read-write"
@@ -305,19 +305,19 @@ bitOffset = 31
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "HAL_INIT_CONTROL_0"
-description = "BTDM HAL initialization sets bit 31 through a fresh-read RMW. The control meaning remains unknown."
+name = "WDT_CONFIG_0"
+description = "First watchdog configuration word of r_obh_link_wdt_config; bit 31 is its enable. BTDM HAL initialization sets it through a fresh-read RMW."
 addressOffset = 0xDC
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "ENABLE_31"
+name = "ENABLE"
 bitOffset = 31
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "HAL_INIT_CONTROL_1"
-description = "BTDM HAL initialization replaces and sets the six independently observed positions 3, 6, 7, 15, 18 and 19. Positional groups preserve the exact masks without assigning hardware meaning."
+name = "WDT_CONFIG_1"
+description = "Second watchdog configuration word of r_obh_link_wdt_config, which packs four arguments into it. BTDM HAL initialization replaces and sets positions 3, 6, 7, 15, 18 and 19; positional groups keep the exact masks."
 addressOffset = 0xE0
 size = 32
 access = "read-write"
@@ -398,8 +398,8 @@ minimum = 0
 maximum = 0xFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "PHY_INIT_VALUE_01F0"
-description = "Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown."
+name = "GPIO_DIAG_ARGUMENT_1"
+description = "Second argument of r_obh_link_gpio_diag_set. Complete BLE PHY initialization writes the whole-word image 0x55."
 addressOffset = 0x1F0
 size = 32
 access = "write-only"
@@ -522,8 +522,8 @@ bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "PHY_INIT_VALUE_0248"
-description = "Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown."
+name = "GPIO_DIAG_CONTROL"
+description = "GPIO diagnostic control of r_obh_link_gpio_diag_set, whose first argument replaces bits 7:4. Complete BLE PHY initialization writes the whole-word image 0x00000FFF."
 addressOffset = 0x248
 size = 32
 access = "write-only"
@@ -694,8 +694,8 @@ minimum = 0
 maximum = 0xFFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "MMGMT_LIST_1_POINTER_A"
-description = "Selector 1 pointer A; memory-management paths also independently consume or clear control bit 20."
+name = "GLOBAL_RXLINK_1_CURRENT"
+description = "Current pointer of global RX link 1 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."
 addressOffset = 0x280
 size = 32
 access = "read-write"
@@ -707,13 +707,13 @@ bitWidth = 20
 minimum = 0
 maximum = 0xFFFFF
 [[peripherals.registers.register.fields]]
-name = "CONTROL_20"
+name = "RX_VALID"
 bitOffset = 20
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "MMGMT_LIST_1_POINTER_B"
-description = "Selector 1 pointer B."
+name = "GLOBAL_RXLINK_1_NEXT"
+description = "Next pointer of global RX link 1 (r_obh_link_global_rxlink_next_ptr_set)."
 addressOffset = 0x284
 size = 32
 access = "read-write"
@@ -726,8 +726,8 @@ minimum = 0
 maximum = 0xFFFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "MMGMT_LIST_2_POINTER_A"
-description = "Selector 2 pointer A; memory-management paths also independently consume or clear control bit 20."
+name = "GLOBAL_RXLINK_2_CURRENT"
+description = "Current pointer of global RX link 2 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."
 addressOffset = 0x288
 size = 32
 access = "read-write"
@@ -739,13 +739,13 @@ bitWidth = 20
 minimum = 0
 maximum = 0xFFFFF
 [[peripherals.registers.register.fields]]
-name = "CONTROL_20"
+name = "RX_VALID"
 bitOffset = 20
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "MMGMT_LIST_2_POINTER_B"
-description = "Selector 2 pointer B."
+name = "GLOBAL_RXLINK_2_NEXT"
+description = "Next pointer of global RX link 2 (r_obh_link_global_rxlink_next_ptr_set)."
 addressOffset = 0x28C
 size = 32
 access = "read-write"
@@ -758,8 +758,8 @@ minimum = 0
 maximum = 0xFFFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "MMGMT_LIST_3_POINTER_A"
-description = "Selector 3 pointer A; memory-management paths also independently consume or clear control bit 20."
+name = "GLOBAL_RXLINK_3_CURRENT"
+description = "Current pointer of global RX link 3 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."
 addressOffset = 0x290
 size = 32
 access = "read-write"
@@ -771,13 +771,13 @@ bitWidth = 20
 minimum = 0
 maximum = 0xFFFFF
 [[peripherals.registers.register.fields]]
-name = "CONTROL_20"
+name = "RX_VALID"
 bitOffset = 20
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "MMGMT_LIST_3_POINTER_B"
-description = "Selector 3 pointer B."
+name = "GLOBAL_RXLINK_3_NEXT"
+description = "Next pointer of global RX link 3 (r_obh_link_global_rxlink_next_ptr_set)."
 addressOffset = 0x294
 size = 32
 access = "read-write"
@@ -940,8 +940,8 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "INIT_ZERO_008C"
-description = "One complete controller function writes the finite zero image twice. Its operation meaning remains unknown."
+name = "BTLC_TIMER_CC_0"
+description = "Timer compare slot 0 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero."
 addressOffset = 0x8C
 size = 32
 access = "write-only"
@@ -952,8 +952,8 @@ bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "INIT_ZERO_00B8"
-description = "One complete controller function writes the finite zero image twice. Its operation meaning remains unknown."
+name = "BTLC_TIMER_CC_1"
+description = "Timer compare slot 1 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero."
 addressOffset = 0xB8
 size = 32
 access = "write-only"
@@ -1073,13 +1073,13 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_01F0"
-sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.GPIO_DIAG_ARGUMENT_1"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_01F0.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.GPIO_DIAG_ARGUMENT_1.IMAGE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1099,13 +1099,13 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_0248"
-sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.GPIO_DIAG_CONTROL"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_0248.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.GPIO_DIAG_CONTROL.IMAGE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1166,133 +1166,133 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.CLOCK_SHIFT"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.CONFIG_24"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.INIT_CLEAR_25_UNKNOWN"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.LATCH_REQUEST"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 provenance = "observed"
 accuracy = "exact"
-completeness = "partial"
+completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.CONFIG_LOW_3"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.INIT_CLEAR_27_30_UNKNOWN"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.CONFIG_24"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.TIMER_ARM"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.INIT_CLEAR_25_UNKNOWN"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.LATCH_REQUEST"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.INIT_CLEAR_27_30_UNKNOWN"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.TIMER_ARM"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_0"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_0"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_0.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_0.IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_1"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_1"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_1.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_1.IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_2"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_2"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_2.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_2.IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME_0"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_0"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_0.IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME_0.IMAGE"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_0"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.CURRENT_TX_LINK_POINTER"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_0.COMPRESSED_SRAM_POINTER"
+entity = "BLUETOOTH_CONTROLLER_CORE.CURRENT_TX_LINK_POINTER.COMPRESSED_SRAM_POINTER"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_1"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.CURRENT_RX_LINK_POINTER"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_1.COMPRESSED_SRAM_POINTER"
+entity = "BLUETOOTH_CONTROLLER_CORE.CURRENT_RX_LINK_POINTER.COMPRESSED_SRAM_POINTER"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1614,105 +1614,105 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A"
-sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_CURRENT"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A.COMPRESSED_SRAM_POINTER"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_CURRENT.COMPRESSED_SRAM_POINTER"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A.CONTROL_20"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_CURRENT.RX_VALID"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B"
-sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_NEXT"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B.COMPRESSED_SRAM_POINTER"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_NEXT.COMPRESSED_SRAM_POINTER"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A"
-sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_CURRENT"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A.COMPRESSED_SRAM_POINTER"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_CURRENT.COMPRESSED_SRAM_POINTER"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A.CONTROL_20"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_CURRENT.RX_VALID"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B"
-sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_NEXT"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B.COMPRESSED_SRAM_POINTER"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_NEXT.COMPRESSED_SRAM_POINTER"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A"
-sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_CURRENT"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A.COMPRESSED_SRAM_POINTER"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_CURRENT.COMPRESSED_SRAM_POINTER"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A.CONTROL_20"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_CURRENT.RX_VALID"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B"
-sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_NEXT"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B.COMPRESSED_SRAM_POINTER"
+entity = "BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_NEXT.COMPRESSED_SRAM_POINTER"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1768,49 +1768,49 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0"
-sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+entity = "BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_0"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0.ENABLE_31"
+entity = "BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_0.ENABLE"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1"
-sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+entity = "BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_1"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1.CONFIG_3"
+entity = "BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_1.CONFIG_3"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1.CONFIG_6_7"
+entity = "BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_1.CONFIG_6_7"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1.CONFIG_15"
+entity = "BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_1.CONFIG_15"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1.CONFIG_18_19"
+entity = "BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_1.CONFIG_18_19"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -2146,26 +2146,26 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_008C"
-sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CC_0"
+sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_008C.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CC_0.IMAGE"
 sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_00B8"
-sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CC_1"
+sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_00B8.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CC_1.IMAGE"
 sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -2276,26 +2276,26 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME_1"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT"]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_1"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME_1.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_1.IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME_2"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT"]
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_2"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME_2.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_2.IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT"]
 provenance = "observed"
 accuracy = "exact"

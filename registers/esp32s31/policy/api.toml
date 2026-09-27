@@ -2341,14 +2341,14 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[fixed-register-images]]
 name = "publish_ble_phy_controller_value_01f0"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "PHY_INIT_VALUE_01F0"
+register = "GPIO_DIAG_ARGUMENT_1"
 value = 0x00000055
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[fixed-register-images]]
 name = "publish_ble_phy_controller_value_0248"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "PHY_INIT_VALUE_0248"
+register = "GPIO_DIAG_CONTROL"
 value = 0x00000fff
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
@@ -3520,7 +3520,7 @@ sources = ["BLOB_LIBCOEX_EXTERNAL"]
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_1_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_1_POINTER_A"
+register = "GLOBAL_RXLINK_1_CURRENT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
@@ -3529,7 +3529,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-replace-modifies]]
 name = "clear_bluetooth_memory_list_1_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_1_POINTER_A"
+register = "GLOBAL_RXLINK_1_CURRENT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -3645,7 +3645,7 @@ sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_1_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_1_POINTER_B"
+register = "GLOBAL_RXLINK_1_NEXT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
@@ -3654,7 +3654,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-replace-modifies]]
 name = "clear_bluetooth_memory_list_1_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_1_POINTER_B"
+register = "GLOBAL_RXLINK_1_NEXT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -3663,7 +3663,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_2_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_2_POINTER_A"
+register = "GLOBAL_RXLINK_2_CURRENT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
@@ -3672,7 +3672,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-replace-modifies]]
 name = "clear_bluetooth_memory_list_2_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_2_POINTER_A"
+register = "GLOBAL_RXLINK_2_CURRENT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -3681,7 +3681,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_2_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_2_POINTER_B"
+register = "GLOBAL_RXLINK_2_NEXT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
@@ -3690,7 +3690,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-replace-modifies]]
 name = "clear_bluetooth_memory_list_2_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_2_POINTER_B"
+register = "GLOBAL_RXLINK_2_NEXT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -3699,7 +3699,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_3_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_3_POINTER_A"
+register = "GLOBAL_RXLINK_3_CURRENT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
@@ -3708,7 +3708,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-replace-modifies]]
 name = "clear_bluetooth_memory_list_3_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_3_POINTER_A"
+register = "GLOBAL_RXLINK_3_CURRENT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -3717,7 +3717,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_3_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_3_POINTER_B"
+register = "GLOBAL_RXLINK_3_NEXT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
@@ -3726,7 +3726,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-replace-modifies]]
 name = "clear_bluetooth_memory_list_3_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_3_POINTER_B"
+register = "GLOBAL_RXLINK_3_NEXT"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -4064,7 +4064,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-or-modifies]]
 name = "request_bluetooth_controller_time_latch"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SLEEP_TIMER_CONTROL"
+register = "BTLC_TIMER_CONTROL"
 fields = [{ field = "LATCH_REQUEST", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -4073,14 +4073,14 @@ sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"
 [[field-reads]]
 name = "observe_bluetooth_controller_time_latch_request"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SLEEP_TIMER_CONTROL"
+register = "BTLC_TIMER_CONTROL"
 field = "LATCH_REQUEST"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 
 [[field-reads]]
 name = "observe_bluetooth_controller_latched_time"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SLEEP_TIMER_LATCHED_TIME_0"
+register = "BTLC_TIMER_CAPTURE_0"
 field = "IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 
@@ -4261,8 +4261,8 @@ sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 [[field-replace-modifies]]
 name = "publish_bluetooth_hal_sleep_timer_shift"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SLEEP_TIMER_CONTROL"
-fields = [{ field = "CONFIG_LOW_3", source-bit-offset = 0 }]
+register = "BTLC_TIMER_CONTROL"
+fields = [{ field = "CLOCK_SHIFT", source-bit-offset = 0 }]
 domain = "BluetoothHalSleepTimerShift"
 exposure = "facade"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
@@ -4297,7 +4297,7 @@ sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 [[field-replace-modifies]]
 name = "configure_bluetooth_hal_control_1_high"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "HAL_INIT_CONTROL_1"
+register = "WDT_CONFIG_1"
 fields = [
     { field = "CONFIG_15", source-bit-offset = 0 },
     { field = "CONFIG_18_19", source-bit-offset = 1 },
@@ -4309,7 +4309,7 @@ sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 [[field-replace-modifies]]
 name = "configure_bluetooth_hal_control_1_low"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "HAL_INIT_CONTROL_1"
+register = "WDT_CONFIG_1"
 fields = [
     { field = "CONFIG_3", source-bit-offset = 0 },
     { field = "CONFIG_6_7", source-bit-offset = 1 },
@@ -4321,8 +4321,8 @@ sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 [[field-replace-modifies]]
 name = "enable_bluetooth_hal_control_0"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "HAL_INIT_CONTROL_0"
-fields = [{ field = "ENABLE_31", source-bit-offset = 0 }]
+register = "WDT_CONFIG_0"
+fields = [{ field = "ENABLE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
@@ -11004,8 +11004,8 @@ sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
 [[field-replace-modifies]]
 name = "clear_bluetooth_memory_list_1_initial_control"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_1_POINTER_A"
-fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
+register = "GLOBAL_RXLINK_1_CURRENT"
+fields = [{ field = "RX_VALID", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
@@ -11013,8 +11013,8 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-or-modifies]]
 name = "preserve_bluetooth_memory_list_1_initial_control"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_1_POINTER_A"
-fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
+register = "GLOBAL_RXLINK_1_CURRENT"
+fields = [{ field = "RX_VALID", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
@@ -11022,8 +11022,8 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-replace-modifies]]
 name = "clear_bluetooth_memory_list_2_initial_control"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_2_POINTER_A"
-fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
+register = "GLOBAL_RXLINK_2_CURRENT"
+fields = [{ field = "RX_VALID", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
@@ -11031,8 +11031,8 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 [[field-or-modifies]]
 name = "preserve_bluetooth_memory_list_2_initial_control"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "MMGMT_LIST_2_POINTER_A"
-fields = [{ field = "CONTROL_20", source-bit-offset = 0 }]
+register = "GLOBAL_RXLINK_2_CURRENT"
+fields = [{ field = "RX_VALID", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]

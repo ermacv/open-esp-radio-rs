@@ -41624,31 +41624,31 @@ pub mod bluetooth_controller_core {
         controller_auxiliary_pointer: ControllerAuxiliaryPointer,
         hal_init_bytes: HalInitBytes,
         _reserved5: [u8; 0x04],
-        init_zero_008c: InitZero008c,
-        sleep_timer_control: SleepTimerControl,
-        sleep_timer_value_0: SleepTimerValue0,
-        sleep_timer_value_1: SleepTimerValue1,
-        sleep_timer_value_2: SleepTimerValue2,
+        btlc_timer_cc_0: BtlcTimerCc0,
+        btlc_timer_control: BtlcTimerControl,
+        btlc_timer_value_0: BtlcTimerValue0,
+        btlc_timer_value_1: BtlcTimerValue1,
+        btlc_timer_value_2: BtlcTimerValue2,
         _reserved10: [u8; 0x0c],
-        sleep_timer_latched_time_0: SleepTimerLatchedTime0,
-        sleep_timer_latched_time_1: SleepTimerLatchedTime1,
-        sleep_timer_latched_time_2: SleepTimerLatchedTime2,
-        init_zero_00b8: InitZero00b8,
+        btlc_timer_capture_0: BtlcTimerCapture0,
+        btlc_timer_capture_1: BtlcTimerCapture1,
+        btlc_timer_capture_2: BtlcTimerCapture2,
+        btlc_timer_cc_1: BtlcTimerCc1,
         _reserved14: [u8; 0x08],
         controller_transaction_0: ControllerTransaction0,
-        scheduler_list_pointer_0: SchedulerListPointer0,
-        scheduler_list_pointer_1: SchedulerListPointer1,
+        current_tx_link_pointer: CurrentTxLinkPointer,
+        current_rx_link_pointer: CurrentRxLinkPointer,
         _reserved17: [u8; 0x08],
         controller_transaction_1: ControllerTransaction1,
-        hal_init_control_0: HalInitControl0,
-        hal_init_control_1: HalInitControl1,
+        wdt_config_0: WdtConfig0,
+        wdt_config_1: WdtConfig1,
         _reserved20: [u8; 0x08],
         scheduler_skip_request: SchedulerSkipRequest,
         _reserved21: [u8; 0xd0],
         hal_init_latch: HalInitLatch,
         hal_init_low_20: HalInitLow20,
         _reserved23: [u8; 0x28],
-        phy_init_value_01f0: PhyInitValue01f0,
+        gpio_diag_argument_1: GpioDiagArgument1,
         iso_coex_enable: IsoCoexEnable,
         iso_coex_control_0: IsoCoexControl0,
         iso_coex_threshold: IsoCoexThreshold,
@@ -41663,7 +41663,7 @@ pub mod bluetooth_controller_core {
         iso_coex_timing_1: IsoCoexTiming1,
         _reserved35: [u8; 0x0c],
         phy_init_zero_0244: PhyInitZero0244,
-        phy_init_value_0248: PhyInitValue0248,
+        gpio_diag_control: GpioDiagControl,
         phy_init_dynamic_image_024c: PhyInitDynamicImage024c,
         hal_init_scheduler_control: HalInitSchedulerControl,
         scheduler_command_0: SchedulerCommand0,
@@ -41672,12 +41672,12 @@ pub mod bluetooth_controller_core {
         scheduler_finished_list_report: SchedulerFinishedListReport,
         _reserved43: [u8; 0x18],
         hal_init_low_half: HalInitLowHalf,
-        mmgmt_list_1_pointer_a: MmgmtList1PointerA,
-        mmgmt_list_1_pointer_b: MmgmtList1PointerB,
-        mmgmt_list_2_pointer_a: MmgmtList2PointerA,
-        mmgmt_list_2_pointer_b: MmgmtList2PointerB,
-        mmgmt_list_3_pointer_a: MmgmtList3PointerA,
-        mmgmt_list_3_pointer_b: MmgmtList3PointerB,
+        global_rxlink_1_current: GlobalRxlink1Current,
+        global_rxlink_1_next: GlobalRxlink1Next,
+        global_rxlink_2_current: GlobalRxlink2Current,
+        global_rxlink_2_next: GlobalRxlink2Next,
+        global_rxlink_3_current: GlobalRxlink3Current,
+        global_rxlink_3_next: GlobalRxlink3Next,
         _reserved50: [u8; 0x08],
         scan_hw_snapshot: ScanHwSnapshot,
         _reserved51: [u8; 0x80],
@@ -41713,80 +41713,80 @@ pub mod bluetooth_controller_core {
         pub const fn hal_init_bytes(&self) -> &HalInitBytes {
             &self.hal_init_bytes
         }
-        #[doc = "0x8c - One complete controller function writes the finite zero image twice. Its operation meaning remains unknown."]
+        #[doc = "0x8c - Timer compare slot 0 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero."]
         #[inline(always)]
-        pub const fn init_zero_008c(&self) -> &InitZero008c {
-            &self.init_zero_008c
+        pub const fn btlc_timer_cc_0(&self) -> &BtlcTimerCc0 {
+            &self.btlc_timer_cc_0
         }
-        #[doc = "0x90 - BTDM sleep/wakeup transaction control. Initialization programs bits 0..2 and bit 24; callers set bit 26 and wait for hardware to clear it before reading latched time; the timer-programming path sets bit 31."]
+        #[doc = "0x90 - BT link-controller timer control. Bits 2:0 are the clock shift: r_obh_link_btlc_fre_get returns the crystal frequency in kHz shifted right by them. Initialization also programs bit 24; callers set bit 26 and wait for hardware to clear it before reading the capture words; the timer-programming path sets bit 31."]
         #[inline(always)]
-        pub const fn sleep_timer_control(&self) -> &SleepTimerControl {
-            &self.sleep_timer_control
+        pub const fn btlc_timer_control(&self) -> &BtlcTimerControl {
+            &self.btlc_timer_control
         }
-        #[doc = "0x94 - First runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."]
+        #[doc = "0x94 - First of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."]
         #[inline(always)]
-        pub const fn sleep_timer_value_0(&self) -> &SleepTimerValue0 {
-            &self.sleep_timer_value_0
+        pub const fn btlc_timer_value_0(&self) -> &BtlcTimerValue0 {
+            &self.btlc_timer_value_0
         }
-        #[doc = "0x98 - Second runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."]
+        #[doc = "0x98 - Second of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."]
         #[inline(always)]
-        pub const fn sleep_timer_value_1(&self) -> &SleepTimerValue1 {
-            &self.sleep_timer_value_1
+        pub const fn btlc_timer_value_1(&self) -> &BtlcTimerValue1 {
+            &self.btlc_timer_value_1
         }
-        #[doc = "0x9c - Third runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."]
+        #[doc = "0x9c - Third of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."]
         #[inline(always)]
-        pub const fn sleep_timer_value_2(&self) -> &SleepTimerValue2 {
-            &self.sleep_timer_value_2
+        pub const fn btlc_timer_value_2(&self) -> &BtlcTimerValue2 {
+            &self.btlc_timer_value_2
         }
-        #[doc = "0xac - First word of the three-word sleep-timer snapshot read after software requests a latch and hardware clears SLEEP_TIMER_CONTROL.LATCH_REQUEST."]
+        #[doc = "0xac - First word of the timer capture r_obd_capture_btlc_timer reads after BTLC_TIMER_CONTROL.LATCH_REQUEST clears."]
         #[inline(always)]
-        pub const fn sleep_timer_latched_time_0(&self) -> &SleepTimerLatchedTime0 {
-            &self.sleep_timer_latched_time_0
+        pub const fn btlc_timer_capture_0(&self) -> &BtlcTimerCapture0 {
+            &self.btlc_timer_capture_0
         }
-        #[doc = "0xb0 - Second word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown."]
+        #[doc = "0xb0 - Second word of the same timer capture."]
         #[inline(always)]
-        pub const fn sleep_timer_latched_time_1(&self) -> &SleepTimerLatchedTime1 {
-            &self.sleep_timer_latched_time_1
+        pub const fn btlc_timer_capture_1(&self) -> &BtlcTimerCapture1 {
+            &self.btlc_timer_capture_1
         }
-        #[doc = "0xb4 - Third word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown."]
+        #[doc = "0xb4 - Third word of the same timer capture."]
         #[inline(always)]
-        pub const fn sleep_timer_latched_time_2(&self) -> &SleepTimerLatchedTime2 {
-            &self.sleep_timer_latched_time_2
+        pub const fn btlc_timer_capture_2(&self) -> &BtlcTimerCapture2 {
+            &self.btlc_timer_capture_2
         }
-        #[doc = "0xb8 - One complete controller function writes the finite zero image twice. Its operation meaning remains unknown."]
+        #[doc = "0xb8 - Timer compare slot 1 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero."]
         #[inline(always)]
-        pub const fn init_zero_00b8(&self) -> &InitZero00b8 {
-            &self.init_zero_00b8
+        pub const fn btlc_timer_cc_1(&self) -> &BtlcTimerCc1 {
+            &self.btlc_timer_cc_1
         }
         #[doc = "0xc4 - First positional controller transaction word. The observed instruction sequence publishes bit 31 together with a dynamic low-twenty-bit value, waits for bit 30, then republishes while bit 31 remains clear. The hardware operation remains unknown."]
         #[inline(always)]
         pub const fn controller_transaction_0(&self) -> &ControllerTransaction0 {
             &self.controller_transaction_0
         }
-        #[doc = "0xc8 - First 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."]
+        #[doc = "0xc8 - Current transmit link pointer (r_obh_link_current_txlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."]
         #[inline(always)]
-        pub const fn scheduler_list_pointer_0(&self) -> &SchedulerListPointer0 {
-            &self.scheduler_list_pointer_0
+        pub const fn current_tx_link_pointer(&self) -> &CurrentTxLinkPointer {
+            &self.current_tx_link_pointer
         }
-        #[doc = "0xcc - Second 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."]
+        #[doc = "0xcc - Current receive link pointer (r_obh_link_current_rxlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."]
         #[inline(always)]
-        pub const fn scheduler_list_pointer_1(&self) -> &SchedulerListPointer1 {
-            &self.scheduler_list_pointer_1
+        pub const fn current_rx_link_pointer(&self) -> &CurrentRxLinkPointer {
+            &self.current_rx_link_pointer
         }
         #[doc = "0xd8 - Second positional controller transaction word. Observed instruction sequences publish bit 31 with either a dynamic low-twenty-bit value or zero, wait for bit 30, then republish while bit 31 remains clear. The hardware operation remains unknown."]
         #[inline(always)]
         pub const fn controller_transaction_1(&self) -> &ControllerTransaction1 {
             &self.controller_transaction_1
         }
-        #[doc = "0xdc - BTDM HAL initialization sets bit 31 through a fresh-read RMW. The control meaning remains unknown."]
+        #[doc = "0xdc - First watchdog configuration word of r_obh_link_wdt_config; bit 31 is its enable. BTDM HAL initialization sets it through a fresh-read RMW."]
         #[inline(always)]
-        pub const fn hal_init_control_0(&self) -> &HalInitControl0 {
-            &self.hal_init_control_0
+        pub const fn wdt_config_0(&self) -> &WdtConfig0 {
+            &self.wdt_config_0
         }
-        #[doc = "0xe0 - BTDM HAL initialization replaces and sets the six independently observed positions 3, 6, 7, 15, 18 and 19. Positional groups preserve the exact masks without assigning hardware meaning."]
+        #[doc = "0xe0 - Second watchdog configuration word of r_obh_link_wdt_config, which packs four arguments into it. BTDM HAL initialization replaces and sets positions 3, 6, 7, 15, 18 and 19; positional groups keep the exact masks."]
         #[inline(always)]
-        pub const fn hal_init_control_1(&self) -> &HalInitControl1 {
-            &self.hal_init_control_1
+        pub const fn wdt_config_1(&self) -> &WdtConfig1 {
+            &self.wdt_config_1
         }
         #[doc = "0xec - Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and the diagnostic scheduler BUSY sample are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established."]
         #[inline(always)]
@@ -41803,10 +41803,10 @@ pub mod bluetooth_controller_core {
         pub const fn hal_init_low_20(&self) -> &HalInitLow20 {
             &self.hal_init_low_20
         }
-        #[doc = "0x1f0 - Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown."]
+        #[doc = "0x1f0 - Second argument of r_obh_link_gpio_diag_set. Complete BLE PHY initialization writes the whole-word image 0x55."]
         #[inline(always)]
-        pub const fn phy_init_value_01f0(&self) -> &PhyInitValue01f0 {
-            &self.phy_init_value_01f0
+        pub const fn gpio_diag_argument_1(&self) -> &GpioDiagArgument1 {
+            &self.gpio_diag_argument_1
         }
         #[doc = "0x1f4 - ISO coexistence initialization sets bit 0; deinitialization clears it."]
         #[inline(always)]
@@ -41868,10 +41868,10 @@ pub mod bluetooth_controller_core {
         pub const fn phy_init_zero_0244(&self) -> &PhyInitZero0244 {
             &self.phy_init_zero_0244
         }
-        #[doc = "0x248 - Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown."]
+        #[doc = "0x248 - GPIO diagnostic control of r_obh_link_gpio_diag_set, whose first argument replaces bits 7:4. Complete BLE PHY initialization writes the whole-word image 0x00000FFF."]
         #[inline(always)]
-        pub const fn phy_init_value_0248(&self) -> &PhyInitValue0248 {
-            &self.phy_init_value_0248
+        pub const fn gpio_diag_control(&self) -> &GpioDiagControl {
+            &self.gpio_diag_control
         }
         #[doc = "0x24c - Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."]
         #[inline(always)]
@@ -41908,35 +41908,35 @@ pub mod bluetooth_controller_core {
         pub const fn hal_init_low_half(&self) -> &HalInitLowHalf {
             &self.hal_init_low_half
         }
-        #[doc = "0x280 - Selector 1 pointer A; memory-management paths also independently consume or clear control bit 20."]
+        #[doc = "0x280 - Current pointer of global RX link 1 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."]
         #[inline(always)]
-        pub const fn mmgmt_list_1_pointer_a(&self) -> &MmgmtList1PointerA {
-            &self.mmgmt_list_1_pointer_a
+        pub const fn global_rxlink_1_current(&self) -> &GlobalRxlink1Current {
+            &self.global_rxlink_1_current
         }
-        #[doc = "0x284 - Selector 1 pointer B."]
+        #[doc = "0x284 - Next pointer of global RX link 1 (r_obh_link_global_rxlink_next_ptr_set)."]
         #[inline(always)]
-        pub const fn mmgmt_list_1_pointer_b(&self) -> &MmgmtList1PointerB {
-            &self.mmgmt_list_1_pointer_b
+        pub const fn global_rxlink_1_next(&self) -> &GlobalRxlink1Next {
+            &self.global_rxlink_1_next
         }
-        #[doc = "0x288 - Selector 2 pointer A; memory-management paths also independently consume or clear control bit 20."]
+        #[doc = "0x288 - Current pointer of global RX link 2 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."]
         #[inline(always)]
-        pub const fn mmgmt_list_2_pointer_a(&self) -> &MmgmtList2PointerA {
-            &self.mmgmt_list_2_pointer_a
+        pub const fn global_rxlink_2_current(&self) -> &GlobalRxlink2Current {
+            &self.global_rxlink_2_current
         }
-        #[doc = "0x28c - Selector 2 pointer B."]
+        #[doc = "0x28c - Next pointer of global RX link 2 (r_obh_link_global_rxlink_next_ptr_set)."]
         #[inline(always)]
-        pub const fn mmgmt_list_2_pointer_b(&self) -> &MmgmtList2PointerB {
-            &self.mmgmt_list_2_pointer_b
+        pub const fn global_rxlink_2_next(&self) -> &GlobalRxlink2Next {
+            &self.global_rxlink_2_next
         }
-        #[doc = "0x290 - Selector 3 pointer A; memory-management paths also independently consume or clear control bit 20."]
+        #[doc = "0x290 - Current pointer of global RX link 3 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."]
         #[inline(always)]
-        pub const fn mmgmt_list_3_pointer_a(&self) -> &MmgmtList3PointerA {
-            &self.mmgmt_list_3_pointer_a
+        pub const fn global_rxlink_3_current(&self) -> &GlobalRxlink3Current {
+            &self.global_rxlink_3_current
         }
-        #[doc = "0x294 - Selector 3 pointer B."]
+        #[doc = "0x294 - Next pointer of global RX link 3 (r_obh_link_global_rxlink_next_ptr_set)."]
         #[inline(always)]
-        pub const fn mmgmt_list_3_pointer_b(&self) -> &MmgmtList3PointerB {
-            &self.mmgmt_list_3_pointer_b
+        pub const fn global_rxlink_3_next(&self) -> &GlobalRxlink3Next {
+            &self.global_rxlink_3_next
         }
         #[doc = "0x2a0 - BLE scan code reads this complete word twice until stable, converts it and stores the result in scan state. Inner hardware encoding remains unknown."]
         #[inline(always)]
@@ -42180,19 +42180,19 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SLEEP_TIMER_CONTROL (rw) register accessor: BTDM sleep/wakeup transaction control. Initialization programs bits 0..2 and bit 24; callers set bit 26 and wait for hardware to clear it before reading latched time; the timer-programming path sets bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sleep_timer_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sleep_timer_control`] module"]
-    #[doc(alias = "SLEEP_TIMER_CONTROL")]
-    pub type SleepTimerControl = crate::Reg<sleep_timer_control::SleepTimerControlSpec>;
-    #[doc = "BTDM sleep/wakeup transaction control. Initialization programs bits 0..2 and bit 24; callers set bit 26 and wait for hardware to clear it before reading latched time; the timer-programming path sets bit 31."]
-    pub mod sleep_timer_control {
-        #[doc = "Register `SLEEP_TIMER_CONTROL` reader"]
-        pub type R = crate::R<SleepTimerControlSpec>;
-        #[doc = "Register `SLEEP_TIMER_CONTROL` writer"]
-        pub type W = crate::W<SleepTimerControlSpec>;
-        #[doc = "Field `CONFIG_LOW_3` reader - "]
-        pub type ConfigLow3R = crate::FieldReader;
-        #[doc = "Field `CONFIG_LOW_3` writer - "]
-        pub type ConfigLow3W<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+    #[doc = "BTLC_TIMER_CONTROL (rw) register accessor: BT link-controller timer control. Bits 2:0 are the clock shift: r_obh_link_btlc_fre_get returns the crystal frequency in kHz shifted right by them. Initialization also programs bit 24; callers set bit 26 and wait for hardware to clear it before reading the capture words; the timer-programming path sets bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_control`] module"]
+    #[doc(alias = "BTLC_TIMER_CONTROL")]
+    pub type BtlcTimerControl = crate::Reg<btlc_timer_control::BtlcTimerControlSpec>;
+    #[doc = "BT link-controller timer control. Bits 2:0 are the clock shift: r_obh_link_btlc_fre_get returns the crystal frequency in kHz shifted right by them. Initialization also programs bit 24; callers set bit 26 and wait for hardware to clear it before reading the capture words; the timer-programming path sets bit 31."]
+    pub mod btlc_timer_control {
+        #[doc = "Register `BTLC_TIMER_CONTROL` reader"]
+        pub type R = crate::R<BtlcTimerControlSpec>;
+        #[doc = "Register `BTLC_TIMER_CONTROL` writer"]
+        pub type W = crate::W<BtlcTimerControlSpec>;
+        #[doc = "Field `CLOCK_SHIFT` reader - "]
+        pub type ClockShiftR = crate::FieldReader;
+        #[doc = "Field `CLOCK_SHIFT` writer - "]
+        pub type ClockShiftW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `CONFIG_24` reader - "]
         pub type Config24R = crate::BitReader;
         #[doc = "Field `CONFIG_24` writer - "]
@@ -42216,8 +42216,8 @@ pub mod bluetooth_controller_core {
         impl R {
             #[doc = "Bits 0:2"]
             #[inline(always)]
-            pub fn config_low_3(&self) -> ConfigLow3R {
-                ConfigLow3R::new((self.bits & 7) as u8)
+            pub fn clock_shift(&self) -> ClockShiftR {
+                ClockShiftR::new((self.bits & 7) as u8)
             }
             #[doc = "Bit 24"]
             #[inline(always)]
@@ -42248,60 +42248,60 @@ pub mod bluetooth_controller_core {
         impl W {
             #[doc = "Bits 0:2"]
             #[inline(always)]
-            pub fn config_low_3(&mut self) -> ConfigLow3W<'_, SleepTimerControlSpec> {
-                ConfigLow3W::new(self, 0)
+            pub fn clock_shift(&mut self) -> ClockShiftW<'_, BtlcTimerControlSpec> {
+                ClockShiftW::new(self, 0)
             }
             #[doc = "Bit 24"]
             #[inline(always)]
-            pub fn config_24(&mut self) -> Config24W<'_, SleepTimerControlSpec> {
+            pub fn config_24(&mut self) -> Config24W<'_, BtlcTimerControlSpec> {
                 Config24W::new(self, 24)
             }
             #[doc = "Bit 25 - HAL initialization clears this unassigned position together with the complete high-byte reset."]
             #[inline(always)]
             pub fn init_clear_25_unknown(
                 &mut self,
-            ) -> InitClear25UnknownW<'_, SleepTimerControlSpec> {
+            ) -> InitClear25UnknownW<'_, BtlcTimerControlSpec> {
                 InitClear25UnknownW::new(self, 25)
             }
             #[doc = "Bit 26"]
             #[inline(always)]
-            pub fn latch_request(&mut self) -> LatchRequestW<'_, SleepTimerControlSpec> {
+            pub fn latch_request(&mut self) -> LatchRequestW<'_, BtlcTimerControlSpec> {
                 LatchRequestW::new(self, 26)
             }
             #[doc = "Bits 27:30 - HAL initialization clears these unassigned positions together with the complete high-byte reset."]
             #[inline(always)]
             pub fn init_clear_27_30_unknown(
                 &mut self,
-            ) -> InitClear27_30UnknownW<'_, SleepTimerControlSpec> {
+            ) -> InitClear27_30UnknownW<'_, BtlcTimerControlSpec> {
                 InitClear27_30UnknownW::new(self, 27)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
-            pub fn timer_arm(&mut self) -> TimerArmW<'_, SleepTimerControlSpec> {
+            pub fn timer_arm(&mut self) -> TimerArmW<'_, BtlcTimerControlSpec> {
                 TimerArmW::new(self, 31)
             }
         }
-        #[doc = "BTDM sleep/wakeup transaction control. Initialization programs bits 0..2 and bit 24; callers set bit 26 and wait for hardware to clear it before reading latched time; the timer-programming path sets bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sleep_timer_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SleepTimerControlSpec;
-        impl crate::RegisterSpec for SleepTimerControlSpec {
+        #[doc = "BT link-controller timer control. Bits 2:0 are the clock shift: r_obh_link_btlc_fre_get returns the crystal frequency in kHz shifted right by them. Initialization also programs bit 24; callers set bit 26 and wait for hardware to clear it before reading the capture words; the timer-programming path sets bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerControlSpec;
+        impl crate::RegisterSpec for BtlcTimerControlSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`sleep_timer_control::R`](R) reader structure"]
-        impl crate::Readable for SleepTimerControlSpec {}
-        #[doc = "`write(|w| ..)` method takes [`sleep_timer_control::W`](W) writer structure"]
-        impl crate::Writable for SleepTimerControlSpec {
+        #[doc = "`read()` method returns [`btlc_timer_control::R`](R) reader structure"]
+        impl crate::Readable for BtlcTimerControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`btlc_timer_control::W`](W) writer structure"]
+        impl crate::Writable for BtlcTimerControlSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SLEEP_TIMER_VALUE_0 (rw) register accessor: First runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_value_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sleep_timer_value_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sleep_timer_value_0`] module"]
-    #[doc(alias = "SLEEP_TIMER_VALUE_0")]
-    pub type SleepTimerValue0 = crate::Reg<sleep_timer_value_0::SleepTimerValue0Spec>;
-    #[doc = "First runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."]
-    pub mod sleep_timer_value_0 {
-        #[doc = "Register `SLEEP_TIMER_VALUE_0` reader"]
-        pub type R = crate::R<SleepTimerValue0Spec>;
-        #[doc = "Register `SLEEP_TIMER_VALUE_0` writer"]
-        pub type W = crate::W<SleepTimerValue0Spec>;
+    #[doc = "BTLC_TIMER_VALUE_0 (rw) register accessor: First of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_value_0`] module"]
+    #[doc(alias = "BTLC_TIMER_VALUE_0")]
+    pub type BtlcTimerValue0 = crate::Reg<btlc_timer_value_0::BtlcTimerValue0Spec>;
+    #[doc = "First of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."]
+    pub mod btlc_timer_value_0 {
+        #[doc = "Register `BTLC_TIMER_VALUE_0` reader"]
+        pub type R = crate::R<BtlcTimerValue0Spec>;
+        #[doc = "Register `BTLC_TIMER_VALUE_0` writer"]
+        pub type W = crate::W<BtlcTimerValue0Spec>;
         #[doc = "Field `IMAGE` reader - "]
         pub type ImageR = crate::FieldReader<u32>;
         #[doc = "Field `IMAGE` writer - "]
@@ -42316,31 +42316,31 @@ pub mod bluetooth_controller_core {
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, SleepTimerValue0Spec> {
+            pub fn image(&mut self) -> ImageW<'_, BtlcTimerValue0Spec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "First runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_value_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sleep_timer_value_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SleepTimerValue0Spec;
-        impl crate::RegisterSpec for SleepTimerValue0Spec {
+        #[doc = "First of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerValue0Spec;
+        impl crate::RegisterSpec for BtlcTimerValue0Spec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`sleep_timer_value_0::R`](R) reader structure"]
-        impl crate::Readable for SleepTimerValue0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`sleep_timer_value_0::W`](W) writer structure"]
-        impl crate::Writable for SleepTimerValue0Spec {
+        #[doc = "`read()` method returns [`btlc_timer_value_0::R`](R) reader structure"]
+        impl crate::Readable for BtlcTimerValue0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`btlc_timer_value_0::W`](W) writer structure"]
+        impl crate::Writable for BtlcTimerValue0Spec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SLEEP_TIMER_VALUE_1 (rw) register accessor: Second runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_value_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sleep_timer_value_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sleep_timer_value_1`] module"]
-    #[doc(alias = "SLEEP_TIMER_VALUE_1")]
-    pub type SleepTimerValue1 = crate::Reg<sleep_timer_value_1::SleepTimerValue1Spec>;
-    #[doc = "Second runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."]
-    pub mod sleep_timer_value_1 {
-        #[doc = "Register `SLEEP_TIMER_VALUE_1` reader"]
-        pub type R = crate::R<SleepTimerValue1Spec>;
-        #[doc = "Register `SLEEP_TIMER_VALUE_1` writer"]
-        pub type W = crate::W<SleepTimerValue1Spec>;
+    #[doc = "BTLC_TIMER_VALUE_1 (rw) register accessor: Second of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_value_1`] module"]
+    #[doc(alias = "BTLC_TIMER_VALUE_1")]
+    pub type BtlcTimerValue1 = crate::Reg<btlc_timer_value_1::BtlcTimerValue1Spec>;
+    #[doc = "Second of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."]
+    pub mod btlc_timer_value_1 {
+        #[doc = "Register `BTLC_TIMER_VALUE_1` reader"]
+        pub type R = crate::R<BtlcTimerValue1Spec>;
+        #[doc = "Register `BTLC_TIMER_VALUE_1` writer"]
+        pub type W = crate::W<BtlcTimerValue1Spec>;
         #[doc = "Field `IMAGE` reader - "]
         pub type ImageR = crate::FieldReader<u32>;
         #[doc = "Field `IMAGE` writer - "]
@@ -42355,31 +42355,31 @@ pub mod bluetooth_controller_core {
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, SleepTimerValue1Spec> {
+            pub fn image(&mut self) -> ImageW<'_, BtlcTimerValue1Spec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "Second runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_value_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sleep_timer_value_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SleepTimerValue1Spec;
-        impl crate::RegisterSpec for SleepTimerValue1Spec {
+        #[doc = "Second of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerValue1Spec;
+        impl crate::RegisterSpec for BtlcTimerValue1Spec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`sleep_timer_value_1::R`](R) reader structure"]
-        impl crate::Readable for SleepTimerValue1Spec {}
-        #[doc = "`write(|w| ..)` method takes [`sleep_timer_value_1::W`](W) writer structure"]
-        impl crate::Writable for SleepTimerValue1Spec {
+        #[doc = "`read()` method returns [`btlc_timer_value_1::R`](R) reader structure"]
+        impl crate::Readable for BtlcTimerValue1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`btlc_timer_value_1::W`](W) writer structure"]
+        impl crate::Writable for BtlcTimerValue1Spec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SLEEP_TIMER_VALUE_2 (rw) register accessor: Third runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_value_2::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sleep_timer_value_2::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sleep_timer_value_2`] module"]
-    #[doc(alias = "SLEEP_TIMER_VALUE_2")]
-    pub type SleepTimerValue2 = crate::Reg<sleep_timer_value_2::SleepTimerValue2Spec>;
-    #[doc = "Third runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."]
-    pub mod sleep_timer_value_2 {
-        #[doc = "Register `SLEEP_TIMER_VALUE_2` reader"]
-        pub type R = crate::R<SleepTimerValue2Spec>;
-        #[doc = "Register `SLEEP_TIMER_VALUE_2` writer"]
-        pub type W = crate::W<SleepTimerValue2Spec>;
+    #[doc = "BTLC_TIMER_VALUE_2 (rw) register accessor: Third of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_2::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_2::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_value_2`] module"]
+    #[doc(alias = "BTLC_TIMER_VALUE_2")]
+    pub type BtlcTimerValue2 = crate::Reg<btlc_timer_value_2::BtlcTimerValue2Spec>;
+    #[doc = "Third of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM."]
+    pub mod btlc_timer_value_2 {
+        #[doc = "Register `BTLC_TIMER_VALUE_2` reader"]
+        pub type R = crate::R<BtlcTimerValue2Spec>;
+        #[doc = "Register `BTLC_TIMER_VALUE_2` writer"]
+        pub type W = crate::W<BtlcTimerValue2Spec>;
         #[doc = "Field `IMAGE` reader - "]
         pub type ImageR = crate::FieldReader<u32>;
         #[doc = "Field `IMAGE` writer - "]
@@ -42394,30 +42394,29 @@ pub mod bluetooth_controller_core {
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, SleepTimerValue2Spec> {
+            pub fn image(&mut self) -> ImageW<'_, BtlcTimerValue2Spec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "Third runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_value_2::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sleep_timer_value_2::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SleepTimerValue2Spec;
-        impl crate::RegisterSpec for SleepTimerValue2Spec {
+        #[doc = "Third of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_2::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_2::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerValue2Spec;
+        impl crate::RegisterSpec for BtlcTimerValue2Spec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`sleep_timer_value_2::R`](R) reader structure"]
-        impl crate::Readable for SleepTimerValue2Spec {}
-        #[doc = "`write(|w| ..)` method takes [`sleep_timer_value_2::W`](W) writer structure"]
-        impl crate::Writable for SleepTimerValue2Spec {
+        #[doc = "`read()` method returns [`btlc_timer_value_2::R`](R) reader structure"]
+        impl crate::Readable for BtlcTimerValue2Spec {}
+        #[doc = "`write(|w| ..)` method takes [`btlc_timer_value_2::W`](W) writer structure"]
+        impl crate::Writable for BtlcTimerValue2Spec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SLEEP_TIMER_LATCHED_TIME_0 (r) register accessor: First word of the three-word sleep-timer snapshot read after software requests a latch and hardware clears SLEEP_TIMER_CONTROL.LATCH_REQUEST.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_latched_time_0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sleep_timer_latched_time_0`] module"]
-    #[doc(alias = "SLEEP_TIMER_LATCHED_TIME_0")]
-    pub type SleepTimerLatchedTime0 =
-        crate::Reg<sleep_timer_latched_time_0::SleepTimerLatchedTime0Spec>;
-    #[doc = "First word of the three-word sleep-timer snapshot read after software requests a latch and hardware clears SLEEP_TIMER_CONTROL.LATCH_REQUEST."]
-    pub mod sleep_timer_latched_time_0 {
-        #[doc = "Register `SLEEP_TIMER_LATCHED_TIME_0` reader"]
-        pub type R = crate::R<SleepTimerLatchedTime0Spec>;
+    #[doc = "BTLC_TIMER_CAPTURE_0 (r) register accessor: First word of the timer capture r_obd_capture_btlc_timer reads after BTLC_TIMER_CONTROL.LATCH_REQUEST clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_capture_0`] module"]
+    #[doc(alias = "BTLC_TIMER_CAPTURE_0")]
+    pub type BtlcTimerCapture0 = crate::Reg<btlc_timer_capture_0::BtlcTimerCapture0Spec>;
+    #[doc = "First word of the timer capture r_obd_capture_btlc_timer reads after BTLC_TIMER_CONTROL.LATCH_REQUEST clears."]
+    pub mod btlc_timer_capture_0 {
+        #[doc = "Register `BTLC_TIMER_CAPTURE_0` reader"]
+        pub type R = crate::R<BtlcTimerCapture0Spec>;
         #[doc = "Field `IMAGE` reader - "]
         pub type ImageR = crate::FieldReader<u32>;
         impl R {
@@ -42427,22 +42426,21 @@ pub mod bluetooth_controller_core {
                 ImageR::new(self.bits)
             }
         }
-        #[doc = "First word of the three-word sleep-timer snapshot read after software requests a latch and hardware clears SLEEP_TIMER_CONTROL.LATCH_REQUEST.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_latched_time_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SleepTimerLatchedTime0Spec;
-        impl crate::RegisterSpec for SleepTimerLatchedTime0Spec {
+        #[doc = "First word of the timer capture r_obd_capture_btlc_timer reads after BTLC_TIMER_CONTROL.LATCH_REQUEST clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerCapture0Spec;
+        impl crate::RegisterSpec for BtlcTimerCapture0Spec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`sleep_timer_latched_time_0::R`](R) reader structure"]
-        impl crate::Readable for SleepTimerLatchedTime0Spec {}
+        #[doc = "`read()` method returns [`btlc_timer_capture_0::R`](R) reader structure"]
+        impl crate::Readable for BtlcTimerCapture0Spec {}
     }
-    #[doc = "SLEEP_TIMER_LATCHED_TIME_1 (r) register accessor: Second word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_latched_time_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sleep_timer_latched_time_1`] module"]
-    #[doc(alias = "SLEEP_TIMER_LATCHED_TIME_1")]
-    pub type SleepTimerLatchedTime1 =
-        crate::Reg<sleep_timer_latched_time_1::SleepTimerLatchedTime1Spec>;
-    #[doc = "Second word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown."]
-    pub mod sleep_timer_latched_time_1 {
-        #[doc = "Register `SLEEP_TIMER_LATCHED_TIME_1` reader"]
-        pub type R = crate::R<SleepTimerLatchedTime1Spec>;
+    #[doc = "BTLC_TIMER_CAPTURE_1 (r) register accessor: Second word of the same timer capture.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_capture_1`] module"]
+    #[doc(alias = "BTLC_TIMER_CAPTURE_1")]
+    pub type BtlcTimerCapture1 = crate::Reg<btlc_timer_capture_1::BtlcTimerCapture1Spec>;
+    #[doc = "Second word of the same timer capture."]
+    pub mod btlc_timer_capture_1 {
+        #[doc = "Register `BTLC_TIMER_CAPTURE_1` reader"]
+        pub type R = crate::R<BtlcTimerCapture1Spec>;
         #[doc = "Field `IMAGE` reader - "]
         pub type ImageR = crate::FieldReader<u32>;
         impl R {
@@ -42452,22 +42450,21 @@ pub mod bluetooth_controller_core {
                 ImageR::new(self.bits)
             }
         }
-        #[doc = "Second word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_latched_time_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SleepTimerLatchedTime1Spec;
-        impl crate::RegisterSpec for SleepTimerLatchedTime1Spec {
+        #[doc = "Second word of the same timer capture.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerCapture1Spec;
+        impl crate::RegisterSpec for BtlcTimerCapture1Spec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`sleep_timer_latched_time_1::R`](R) reader structure"]
-        impl crate::Readable for SleepTimerLatchedTime1Spec {}
+        #[doc = "`read()` method returns [`btlc_timer_capture_1::R`](R) reader structure"]
+        impl crate::Readable for BtlcTimerCapture1Spec {}
     }
-    #[doc = "SLEEP_TIMER_LATCHED_TIME_2 (r) register accessor: Third word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_latched_time_2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sleep_timer_latched_time_2`] module"]
-    #[doc(alias = "SLEEP_TIMER_LATCHED_TIME_2")]
-    pub type SleepTimerLatchedTime2 =
-        crate::Reg<sleep_timer_latched_time_2::SleepTimerLatchedTime2Spec>;
-    #[doc = "Third word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown."]
-    pub mod sleep_timer_latched_time_2 {
-        #[doc = "Register `SLEEP_TIMER_LATCHED_TIME_2` reader"]
-        pub type R = crate::R<SleepTimerLatchedTime2Spec>;
+    #[doc = "BTLC_TIMER_CAPTURE_2 (r) register accessor: Third word of the same timer capture.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_2::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_capture_2`] module"]
+    #[doc(alias = "BTLC_TIMER_CAPTURE_2")]
+    pub type BtlcTimerCapture2 = crate::Reg<btlc_timer_capture_2::BtlcTimerCapture2Spec>;
+    #[doc = "Third word of the same timer capture."]
+    pub mod btlc_timer_capture_2 {
+        #[doc = "Register `BTLC_TIMER_CAPTURE_2` reader"]
+        pub type R = crate::R<BtlcTimerCapture2Spec>;
         #[doc = "Field `IMAGE` reader - "]
         pub type ImageR = crate::FieldReader<u32>;
         impl R {
@@ -42477,13 +42474,13 @@ pub mod bluetooth_controller_core {
                 ImageR::new(self.bits)
             }
         }
-        #[doc = "Third word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`sleep_timer_latched_time_2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SleepTimerLatchedTime2Spec;
-        impl crate::RegisterSpec for SleepTimerLatchedTime2Spec {
+        #[doc = "Third word of the same timer capture.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerCapture2Spec;
+        impl crate::RegisterSpec for BtlcTimerCapture2Spec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`sleep_timer_latched_time_2::R`](R) reader structure"]
-        impl crate::Readable for SleepTimerLatchedTime2Spec {}
+        #[doc = "`read()` method returns [`btlc_timer_capture_2::R`](R) reader structure"]
+        impl crate::Readable for BtlcTimerCapture2Spec {}
     }
     #[doc = "CONTROLLER_TRANSACTION_0 (rw) register accessor: First positional controller transaction word. The observed instruction sequence publishes bit 31 together with a dynamic low-twenty-bit value, waits for bit 30, then republishes while bit 31 remains clear. The hardware operation remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`controller_transaction_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`controller_transaction_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@controller_transaction_0`] module"]
     #[doc(alias = "CONTROLLER_TRANSACTION_0")]
@@ -42567,16 +42564,15 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_LIST_POINTER_0 (rw) register accessor: First 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2).\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_list_pointer_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_list_pointer_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_list_pointer_0`] module"]
-    #[doc(alias = "SCHEDULER_LIST_POINTER_0")]
-    pub type SchedulerListPointer0 =
-        crate::Reg<scheduler_list_pointer_0::SchedulerListPointer0Spec>;
-    #[doc = "First 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."]
-    pub mod scheduler_list_pointer_0 {
-        #[doc = "Register `SCHEDULER_LIST_POINTER_0` reader"]
-        pub type R = crate::R<SchedulerListPointer0Spec>;
-        #[doc = "Register `SCHEDULER_LIST_POINTER_0` writer"]
-        pub type W = crate::W<SchedulerListPointer0Spec>;
+    #[doc = "CURRENT_TX_LINK_POINTER (rw) register accessor: Current transmit link pointer (r_obh_link_current_txlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2).\n\nYou can [`read`](crate::Reg::read) this register and get [`current_tx_link_pointer::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`current_tx_link_pointer::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@current_tx_link_pointer`] module"]
+    #[doc(alias = "CURRENT_TX_LINK_POINTER")]
+    pub type CurrentTxLinkPointer = crate::Reg<current_tx_link_pointer::CurrentTxLinkPointerSpec>;
+    #[doc = "Current transmit link pointer (r_obh_link_current_txlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."]
+    pub mod current_tx_link_pointer {
+        #[doc = "Register `CURRENT_TX_LINK_POINTER` reader"]
+        pub type R = crate::R<CurrentTxLinkPointerSpec>;
+        #[doc = "Register `CURRENT_TX_LINK_POINTER` writer"]
+        pub type W = crate::W<CurrentTxLinkPointerSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
@@ -42593,32 +42589,31 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, SchedulerListPointer0Spec> {
+            ) -> CompressedSramPointerW<'_, CurrentTxLinkPointerSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
         }
-        #[doc = "First 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2).\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_list_pointer_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_list_pointer_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerListPointer0Spec;
-        impl crate::RegisterSpec for SchedulerListPointer0Spec {
+        #[doc = "Current transmit link pointer (r_obh_link_current_txlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2).\n\nYou can [`read`](crate::Reg::read) this register and get [`current_tx_link_pointer::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`current_tx_link_pointer::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CurrentTxLinkPointerSpec;
+        impl crate::RegisterSpec for CurrentTxLinkPointerSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`scheduler_list_pointer_0::R`](R) reader structure"]
-        impl crate::Readable for SchedulerListPointer0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`scheduler_list_pointer_0::W`](W) writer structure"]
-        impl crate::Writable for SchedulerListPointer0Spec {
+        #[doc = "`read()` method returns [`current_tx_link_pointer::R`](R) reader structure"]
+        impl crate::Readable for CurrentTxLinkPointerSpec {}
+        #[doc = "`write(|w| ..)` method takes [`current_tx_link_pointer::W`](W) writer structure"]
+        impl crate::Writable for CurrentTxLinkPointerSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_LIST_POINTER_1 (rw) register accessor: Second 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2).\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_list_pointer_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_list_pointer_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_list_pointer_1`] module"]
-    #[doc(alias = "SCHEDULER_LIST_POINTER_1")]
-    pub type SchedulerListPointer1 =
-        crate::Reg<scheduler_list_pointer_1::SchedulerListPointer1Spec>;
-    #[doc = "Second 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."]
-    pub mod scheduler_list_pointer_1 {
-        #[doc = "Register `SCHEDULER_LIST_POINTER_1` reader"]
-        pub type R = crate::R<SchedulerListPointer1Spec>;
-        #[doc = "Register `SCHEDULER_LIST_POINTER_1` writer"]
-        pub type W = crate::W<SchedulerListPointer1Spec>;
+    #[doc = "CURRENT_RX_LINK_POINTER (rw) register accessor: Current receive link pointer (r_obh_link_current_rxlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2).\n\nYou can [`read`](crate::Reg::read) this register and get [`current_rx_link_pointer::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`current_rx_link_pointer::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@current_rx_link_pointer`] module"]
+    #[doc(alias = "CURRENT_RX_LINK_POINTER")]
+    pub type CurrentRxLinkPointer = crate::Reg<current_rx_link_pointer::CurrentRxLinkPointerSpec>;
+    #[doc = "Current receive link pointer (r_obh_link_current_rxlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."]
+    pub mod current_rx_link_pointer {
+        #[doc = "Register `CURRENT_RX_LINK_POINTER` reader"]
+        pub type R = crate::R<CurrentRxLinkPointerSpec>;
+        #[doc = "Register `CURRENT_RX_LINK_POINTER` writer"]
+        pub type W = crate::W<CurrentRxLinkPointerSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
@@ -42635,19 +42630,19 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, SchedulerListPointer1Spec> {
+            ) -> CompressedSramPointerW<'_, CurrentRxLinkPointerSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
         }
-        #[doc = "Second 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2).\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_list_pointer_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_list_pointer_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerListPointer1Spec;
-        impl crate::RegisterSpec for SchedulerListPointer1Spec {
+        #[doc = "Current receive link pointer (r_obh_link_current_rxlinkptr_get); software reconstructs the SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2).\n\nYou can [`read`](crate::Reg::read) this register and get [`current_rx_link_pointer::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`current_rx_link_pointer::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CurrentRxLinkPointerSpec;
+        impl crate::RegisterSpec for CurrentRxLinkPointerSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`scheduler_list_pointer_1::R`](R) reader structure"]
-        impl crate::Readable for SchedulerListPointer1Spec {}
-        #[doc = "`write(|w| ..)` method takes [`scheduler_list_pointer_1::W`](W) writer structure"]
-        impl crate::Writable for SchedulerListPointer1Spec {
+        #[doc = "`read()` method returns [`current_rx_link_pointer::R`](R) reader structure"]
+        impl crate::Readable for CurrentRxLinkPointerSpec {}
+        #[doc = "`write(|w| ..)` method takes [`current_rx_link_pointer::W`](W) writer structure"]
+        impl crate::Writable for CurrentRxLinkPointerSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -42819,54 +42814,54 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HAL_INIT_CONTROL_0 (rw) register accessor: BTDM HAL initialization sets bit 31 through a fresh-read RMW. The control meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hal_init_control_0`] module"]
-    #[doc(alias = "HAL_INIT_CONTROL_0")]
-    pub type HalInitControl0 = crate::Reg<hal_init_control_0::HalInitControl0Spec>;
-    #[doc = "BTDM HAL initialization sets bit 31 through a fresh-read RMW. The control meaning remains unknown."]
-    pub mod hal_init_control_0 {
-        #[doc = "Register `HAL_INIT_CONTROL_0` reader"]
-        pub type R = crate::R<HalInitControl0Spec>;
-        #[doc = "Register `HAL_INIT_CONTROL_0` writer"]
-        pub type W = crate::W<HalInitControl0Spec>;
-        #[doc = "Field `ENABLE_31` reader - "]
-        pub type Enable31R = crate::BitReader;
-        #[doc = "Field `ENABLE_31` writer - "]
-        pub type Enable31W<'a, REG> = crate::BitWriter<'a, REG>;
+    #[doc = "WDT_CONFIG_0 (rw) register accessor: First watchdog configuration word of r_obh_link_wdt_config; bit 31 is its enable. BTDM HAL initialization sets it through a fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdt_config_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdt_config_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdt_config_0`] module"]
+    #[doc(alias = "WDT_CONFIG_0")]
+    pub type WdtConfig0 = crate::Reg<wdt_config_0::WdtConfig0Spec>;
+    #[doc = "First watchdog configuration word of r_obh_link_wdt_config; bit 31 is its enable. BTDM HAL initialization sets it through a fresh-read RMW."]
+    pub mod wdt_config_0 {
+        #[doc = "Register `WDT_CONFIG_0` reader"]
+        pub type R = crate::R<WdtConfig0Spec>;
+        #[doc = "Register `WDT_CONFIG_0` writer"]
+        pub type W = crate::W<WdtConfig0Spec>;
+        #[doc = "Field `ENABLE` reader - "]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - "]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 31"]
             #[inline(always)]
-            pub fn enable_31(&self) -> Enable31R {
-                Enable31R::new(((self.bits >> 31) & 1) != 0)
+            pub fn enable(&self) -> EnableR {
+                EnableR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 31"]
             #[inline(always)]
-            pub fn enable_31(&mut self) -> Enable31W<'_, HalInitControl0Spec> {
-                Enable31W::new(self, 31)
+            pub fn enable(&mut self) -> EnableW<'_, WdtConfig0Spec> {
+                EnableW::new(self, 31)
             }
         }
-        #[doc = "BTDM HAL initialization sets bit 31 through a fresh-read RMW. The control meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_control_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_control_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct HalInitControl0Spec;
-        impl crate::RegisterSpec for HalInitControl0Spec {
+        #[doc = "First watchdog configuration word of r_obh_link_wdt_config; bit 31 is its enable. BTDM HAL initialization sets it through a fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdt_config_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdt_config_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct WdtConfig0Spec;
+        impl crate::RegisterSpec for WdtConfig0Spec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`hal_init_control_0::R`](R) reader structure"]
-        impl crate::Readable for HalInitControl0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`hal_init_control_0::W`](W) writer structure"]
-        impl crate::Writable for HalInitControl0Spec {
+        #[doc = "`read()` method returns [`wdt_config_0::R`](R) reader structure"]
+        impl crate::Readable for WdtConfig0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`wdt_config_0::W`](W) writer structure"]
+        impl crate::Writable for WdtConfig0Spec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HAL_INIT_CONTROL_1 (rw) register accessor: BTDM HAL initialization replaces and sets the six independently observed positions 3, 6, 7, 15, 18 and 19. Positional groups preserve the exact masks without assigning hardware meaning.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hal_init_control_1`] module"]
-    #[doc(alias = "HAL_INIT_CONTROL_1")]
-    pub type HalInitControl1 = crate::Reg<hal_init_control_1::HalInitControl1Spec>;
-    #[doc = "BTDM HAL initialization replaces and sets the six independently observed positions 3, 6, 7, 15, 18 and 19. Positional groups preserve the exact masks without assigning hardware meaning."]
-    pub mod hal_init_control_1 {
-        #[doc = "Register `HAL_INIT_CONTROL_1` reader"]
-        pub type R = crate::R<HalInitControl1Spec>;
-        #[doc = "Register `HAL_INIT_CONTROL_1` writer"]
-        pub type W = crate::W<HalInitControl1Spec>;
+    #[doc = "WDT_CONFIG_1 (rw) register accessor: Second watchdog configuration word of r_obh_link_wdt_config, which packs four arguments into it. BTDM HAL initialization replaces and sets positions 3, 6, 7, 15, 18 and 19; positional groups keep the exact masks.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdt_config_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdt_config_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdt_config_1`] module"]
+    #[doc(alias = "WDT_CONFIG_1")]
+    pub type WdtConfig1 = crate::Reg<wdt_config_1::WdtConfig1Spec>;
+    #[doc = "Second watchdog configuration word of r_obh_link_wdt_config, which packs four arguments into it. BTDM HAL initialization replaces and sets positions 3, 6, 7, 15, 18 and 19; positional groups keep the exact masks."]
+    pub mod wdt_config_1 {
+        #[doc = "Register `WDT_CONFIG_1` reader"]
+        pub type R = crate::R<WdtConfig1Spec>;
+        #[doc = "Register `WDT_CONFIG_1` writer"]
+        pub type W = crate::W<WdtConfig1Spec>;
         #[doc = "Field `CONFIG_3` reader - "]
         pub type Config3R = crate::BitReader;
         #[doc = "Field `CONFIG_3` writer - "]
@@ -42908,34 +42903,34 @@ pub mod bluetooth_controller_core {
         impl W {
             #[doc = "Bit 3"]
             #[inline(always)]
-            pub fn config_3(&mut self) -> Config3W<'_, HalInitControl1Spec> {
+            pub fn config_3(&mut self) -> Config3W<'_, WdtConfig1Spec> {
                 Config3W::new(self, 3)
             }
             #[doc = "Bits 6:7"]
             #[inline(always)]
-            pub fn config_6_7(&mut self) -> Config6_7W<'_, HalInitControl1Spec> {
+            pub fn config_6_7(&mut self) -> Config6_7W<'_, WdtConfig1Spec> {
                 Config6_7W::new(self, 6)
             }
             #[doc = "Bit 15"]
             #[inline(always)]
-            pub fn config_15(&mut self) -> Config15W<'_, HalInitControl1Spec> {
+            pub fn config_15(&mut self) -> Config15W<'_, WdtConfig1Spec> {
                 Config15W::new(self, 15)
             }
             #[doc = "Bits 18:19"]
             #[inline(always)]
-            pub fn config_18_19(&mut self) -> Config18_19W<'_, HalInitControl1Spec> {
+            pub fn config_18_19(&mut self) -> Config18_19W<'_, WdtConfig1Spec> {
                 Config18_19W::new(self, 18)
             }
         }
-        #[doc = "BTDM HAL initialization replaces and sets the six independently observed positions 3, 6, 7, 15, 18 and 19. Positional groups preserve the exact masks without assigning hardware meaning.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct HalInitControl1Spec;
-        impl crate::RegisterSpec for HalInitControl1Spec {
+        #[doc = "Second watchdog configuration word of r_obh_link_wdt_config, which packs four arguments into it. BTDM HAL initialization replaces and sets positions 3, 6, 7, 15, 18 and 19; positional groups keep the exact masks.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdt_config_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdt_config_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct WdtConfig1Spec;
+        impl crate::RegisterSpec for WdtConfig1Spec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`hal_init_control_1::R`](R) reader structure"]
-        impl crate::Readable for HalInitControl1Spec {}
-        #[doc = "`write(|w| ..)` method takes [`hal_init_control_1::W`](W) writer structure"]
-        impl crate::Writable for HalInitControl1Spec {
+        #[doc = "`read()` method returns [`wdt_config_1::R`](R) reader structure"]
+        impl crate::Readable for WdtConfig1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`wdt_config_1::W`](W) writer structure"]
+        impl crate::Writable for WdtConfig1Spec {
             type Safety = crate::Unsafe;
         }
     }
@@ -43053,29 +43048,29 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PHY_INIT_VALUE_01F0 (w) register accessor: Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_value_01f0::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_value_01f0`] module"]
-    #[doc(alias = "PHY_INIT_VALUE_01F0")]
-    pub type PhyInitValue01f0 = crate::Reg<phy_init_value_01f0::PhyInitValue01f0Spec>;
-    #[doc = "Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown."]
-    pub mod phy_init_value_01f0 {
-        #[doc = "Register `PHY_INIT_VALUE_01F0` writer"]
-        pub type W = crate::W<PhyInitValue01f0Spec>;
+    #[doc = "GPIO_DIAG_ARGUMENT_1 (w) register accessor: Second argument of r_obh_link_gpio_diag_set. Complete BLE PHY initialization writes the whole-word image 0x55.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gpio_diag_argument_1::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gpio_diag_argument_1`] module"]
+    #[doc(alias = "GPIO_DIAG_ARGUMENT_1")]
+    pub type GpioDiagArgument1 = crate::Reg<gpio_diag_argument_1::GpioDiagArgument1Spec>;
+    #[doc = "Second argument of r_obh_link_gpio_diag_set. Complete BLE PHY initialization writes the whole-word image 0x55."]
+    pub mod gpio_diag_argument_1 {
+        #[doc = "Register `GPIO_DIAG_ARGUMENT_1` writer"]
+        pub type W = crate::W<GpioDiagArgument1Spec>;
         #[doc = "Field `IMAGE` writer - "]
         pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, PhyInitValue01f0Spec> {
+            pub fn image(&mut self) -> ImageW<'_, GpioDiagArgument1Spec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_value_01f0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct PhyInitValue01f0Spec;
-        impl crate::RegisterSpec for PhyInitValue01f0Spec {
+        #[doc = "Second argument of r_obh_link_gpio_diag_set. Complete BLE PHY initialization writes the whole-word image 0x55.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gpio_diag_argument_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GpioDiagArgument1Spec;
+        impl crate::RegisterSpec for GpioDiagArgument1Spec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`phy_init_value_01f0::W`](W) writer structure"]
-        impl crate::Writable for PhyInitValue01f0Spec {
+        #[doc = "`write(|w| ..)` method takes [`gpio_diag_argument_1::W`](W) writer structure"]
+        impl crate::Writable for GpioDiagArgument1Spec {
             type Safety = crate::Unsafe;
         }
     }
@@ -43459,29 +43454,29 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PHY_INIT_VALUE_0248 (w) register accessor: Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_value_0248::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_value_0248`] module"]
-    #[doc(alias = "PHY_INIT_VALUE_0248")]
-    pub type PhyInitValue0248 = crate::Reg<phy_init_value_0248::PhyInitValue0248Spec>;
-    #[doc = "Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown."]
-    pub mod phy_init_value_0248 {
-        #[doc = "Register `PHY_INIT_VALUE_0248` writer"]
-        pub type W = crate::W<PhyInitValue0248Spec>;
+    #[doc = "GPIO_DIAG_CONTROL (w) register accessor: GPIO diagnostic control of r_obh_link_gpio_diag_set, whose first argument replaces bits 7:4. Complete BLE PHY initialization writes the whole-word image 0x00000FFF.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gpio_diag_control::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gpio_diag_control`] module"]
+    #[doc(alias = "GPIO_DIAG_CONTROL")]
+    pub type GpioDiagControl = crate::Reg<gpio_diag_control::GpioDiagControlSpec>;
+    #[doc = "GPIO diagnostic control of r_obh_link_gpio_diag_set, whose first argument replaces bits 7:4. Complete BLE PHY initialization writes the whole-word image 0x00000FFF."]
+    pub mod gpio_diag_control {
+        #[doc = "Register `GPIO_DIAG_CONTROL` writer"]
+        pub type W = crate::W<GpioDiagControlSpec>;
         #[doc = "Field `IMAGE` writer - "]
         pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, PhyInitValue0248Spec> {
+            pub fn image(&mut self) -> ImageW<'_, GpioDiagControlSpec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_value_0248::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct PhyInitValue0248Spec;
-        impl crate::RegisterSpec for PhyInitValue0248Spec {
+        #[doc = "GPIO diagnostic control of r_obh_link_gpio_diag_set, whose first argument replaces bits 7:4. Complete BLE PHY initialization writes the whole-word image 0x00000FFF.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gpio_diag_control::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GpioDiagControlSpec;
+        impl crate::RegisterSpec for GpioDiagControlSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`phy_init_value_0248::W`](W) writer structure"]
-        impl crate::Writable for PhyInitValue0248Spec {
+        #[doc = "`write(|w| ..)` method takes [`gpio_diag_control::W`](W) writer structure"]
+        impl crate::Writable for GpioDiagControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -43951,24 +43946,24 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "MMGMT_LIST_1_POINTER_A (rw) register accessor: Selector 1 pointer A; memory-management paths also independently consume or clear control bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_1_pointer_a::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_1_pointer_a::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@mmgmt_list_1_pointer_a`] module"]
-    #[doc(alias = "MMGMT_LIST_1_POINTER_A")]
-    pub type MmgmtList1PointerA = crate::Reg<mmgmt_list_1_pointer_a::MmgmtList1PointerASpec>;
-    #[doc = "Selector 1 pointer A; memory-management paths also independently consume or clear control bit 20."]
-    pub mod mmgmt_list_1_pointer_a {
-        #[doc = "Register `MMGMT_LIST_1_POINTER_A` reader"]
-        pub type R = crate::R<MmgmtList1PointerASpec>;
-        #[doc = "Register `MMGMT_LIST_1_POINTER_A` writer"]
-        pub type W = crate::W<MmgmtList1PointerASpec>;
+    #[doc = "GLOBAL_RXLINK_1_CURRENT (rw) register accessor: Current pointer of global RX link 1 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_1_current::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_1_current::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@global_rxlink_1_current`] module"]
+    #[doc(alias = "GLOBAL_RXLINK_1_CURRENT")]
+    pub type GlobalRxlink1Current = crate::Reg<global_rxlink_1_current::GlobalRxlink1CurrentSpec>;
+    #[doc = "Current pointer of global RX link 1 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."]
+    pub mod global_rxlink_1_current {
+        #[doc = "Register `GLOBAL_RXLINK_1_CURRENT` reader"]
+        pub type R = crate::R<GlobalRxlink1CurrentSpec>;
+        #[doc = "Register `GLOBAL_RXLINK_1_CURRENT` writer"]
+        pub type W = crate::W<GlobalRxlink1CurrentSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
         pub type CompressedSramPointerW<'a, REG> =
             crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
-        #[doc = "Field `CONTROL_20` reader - "]
-        pub type Control20R = crate::BitReader;
-        #[doc = "Field `CONTROL_20` writer - "]
-        pub type Control20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_VALID` reader - "]
+        pub type RxValidR = crate::BitReader;
+        #[doc = "Field `RX_VALID` writer - "]
+        pub type RxValidW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
@@ -43977,8 +43972,8 @@ pub mod bluetooth_controller_core {
             }
             #[doc = "Bit 20"]
             #[inline(always)]
-            pub fn control_20(&self) -> Control20R {
-                Control20R::new(((self.bits >> 20) & 1) != 0)
+            pub fn rx_valid(&self) -> RxValidR {
+                RxValidR::new(((self.bits >> 20) & 1) != 0)
             }
         }
         impl W {
@@ -43986,36 +43981,36 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, MmgmtList1PointerASpec> {
+            ) -> CompressedSramPointerW<'_, GlobalRxlink1CurrentSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
             #[doc = "Bit 20"]
             #[inline(always)]
-            pub fn control_20(&mut self) -> Control20W<'_, MmgmtList1PointerASpec> {
-                Control20W::new(self, 20)
+            pub fn rx_valid(&mut self) -> RxValidW<'_, GlobalRxlink1CurrentSpec> {
+                RxValidW::new(self, 20)
             }
         }
-        #[doc = "Selector 1 pointer A; memory-management paths also independently consume or clear control bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_1_pointer_a::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_1_pointer_a::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct MmgmtList1PointerASpec;
-        impl crate::RegisterSpec for MmgmtList1PointerASpec {
+        #[doc = "Current pointer of global RX link 1 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_1_current::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_1_current::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GlobalRxlink1CurrentSpec;
+        impl crate::RegisterSpec for GlobalRxlink1CurrentSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`mmgmt_list_1_pointer_a::R`](R) reader structure"]
-        impl crate::Readable for MmgmtList1PointerASpec {}
-        #[doc = "`write(|w| ..)` method takes [`mmgmt_list_1_pointer_a::W`](W) writer structure"]
-        impl crate::Writable for MmgmtList1PointerASpec {
+        #[doc = "`read()` method returns [`global_rxlink_1_current::R`](R) reader structure"]
+        impl crate::Readable for GlobalRxlink1CurrentSpec {}
+        #[doc = "`write(|w| ..)` method takes [`global_rxlink_1_current::W`](W) writer structure"]
+        impl crate::Writable for GlobalRxlink1CurrentSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "MMGMT_LIST_1_POINTER_B (rw) register accessor: Selector 1 pointer B.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_1_pointer_b::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_1_pointer_b::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@mmgmt_list_1_pointer_b`] module"]
-    #[doc(alias = "MMGMT_LIST_1_POINTER_B")]
-    pub type MmgmtList1PointerB = crate::Reg<mmgmt_list_1_pointer_b::MmgmtList1PointerBSpec>;
-    #[doc = "Selector 1 pointer B."]
-    pub mod mmgmt_list_1_pointer_b {
-        #[doc = "Register `MMGMT_LIST_1_POINTER_B` reader"]
-        pub type R = crate::R<MmgmtList1PointerBSpec>;
-        #[doc = "Register `MMGMT_LIST_1_POINTER_B` writer"]
-        pub type W = crate::W<MmgmtList1PointerBSpec>;
+    #[doc = "GLOBAL_RXLINK_1_NEXT (rw) register accessor: Next pointer of global RX link 1 (r_obh_link_global_rxlink_next_ptr_set).\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_1_next::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_1_next::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@global_rxlink_1_next`] module"]
+    #[doc(alias = "GLOBAL_RXLINK_1_NEXT")]
+    pub type GlobalRxlink1Next = crate::Reg<global_rxlink_1_next::GlobalRxlink1NextSpec>;
+    #[doc = "Next pointer of global RX link 1 (r_obh_link_global_rxlink_next_ptr_set)."]
+    pub mod global_rxlink_1_next {
+        #[doc = "Register `GLOBAL_RXLINK_1_NEXT` reader"]
+        pub type R = crate::R<GlobalRxlink1NextSpec>;
+        #[doc = "Register `GLOBAL_RXLINK_1_NEXT` writer"]
+        pub type W = crate::W<GlobalRxlink1NextSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
@@ -44033,40 +44028,40 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, MmgmtList1PointerBSpec> {
+            ) -> CompressedSramPointerW<'_, GlobalRxlink1NextSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
         }
-        #[doc = "Selector 1 pointer B.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_1_pointer_b::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_1_pointer_b::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct MmgmtList1PointerBSpec;
-        impl crate::RegisterSpec for MmgmtList1PointerBSpec {
+        #[doc = "Next pointer of global RX link 1 (r_obh_link_global_rxlink_next_ptr_set).\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_1_next::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_1_next::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GlobalRxlink1NextSpec;
+        impl crate::RegisterSpec for GlobalRxlink1NextSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`mmgmt_list_1_pointer_b::R`](R) reader structure"]
-        impl crate::Readable for MmgmtList1PointerBSpec {}
-        #[doc = "`write(|w| ..)` method takes [`mmgmt_list_1_pointer_b::W`](W) writer structure"]
-        impl crate::Writable for MmgmtList1PointerBSpec {
+        #[doc = "`read()` method returns [`global_rxlink_1_next::R`](R) reader structure"]
+        impl crate::Readable for GlobalRxlink1NextSpec {}
+        #[doc = "`write(|w| ..)` method takes [`global_rxlink_1_next::W`](W) writer structure"]
+        impl crate::Writable for GlobalRxlink1NextSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "MMGMT_LIST_2_POINTER_A (rw) register accessor: Selector 2 pointer A; memory-management paths also independently consume or clear control bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_2_pointer_a::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_2_pointer_a::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@mmgmt_list_2_pointer_a`] module"]
-    #[doc(alias = "MMGMT_LIST_2_POINTER_A")]
-    pub type MmgmtList2PointerA = crate::Reg<mmgmt_list_2_pointer_a::MmgmtList2PointerASpec>;
-    #[doc = "Selector 2 pointer A; memory-management paths also independently consume or clear control bit 20."]
-    pub mod mmgmt_list_2_pointer_a {
-        #[doc = "Register `MMGMT_LIST_2_POINTER_A` reader"]
-        pub type R = crate::R<MmgmtList2PointerASpec>;
-        #[doc = "Register `MMGMT_LIST_2_POINTER_A` writer"]
-        pub type W = crate::W<MmgmtList2PointerASpec>;
+    #[doc = "GLOBAL_RXLINK_2_CURRENT (rw) register accessor: Current pointer of global RX link 2 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_2_current::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_2_current::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@global_rxlink_2_current`] module"]
+    #[doc(alias = "GLOBAL_RXLINK_2_CURRENT")]
+    pub type GlobalRxlink2Current = crate::Reg<global_rxlink_2_current::GlobalRxlink2CurrentSpec>;
+    #[doc = "Current pointer of global RX link 2 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."]
+    pub mod global_rxlink_2_current {
+        #[doc = "Register `GLOBAL_RXLINK_2_CURRENT` reader"]
+        pub type R = crate::R<GlobalRxlink2CurrentSpec>;
+        #[doc = "Register `GLOBAL_RXLINK_2_CURRENT` writer"]
+        pub type W = crate::W<GlobalRxlink2CurrentSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
         pub type CompressedSramPointerW<'a, REG> =
             crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
-        #[doc = "Field `CONTROL_20` reader - "]
-        pub type Control20R = crate::BitReader;
-        #[doc = "Field `CONTROL_20` writer - "]
-        pub type Control20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_VALID` reader - "]
+        pub type RxValidR = crate::BitReader;
+        #[doc = "Field `RX_VALID` writer - "]
+        pub type RxValidW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
@@ -44075,8 +44070,8 @@ pub mod bluetooth_controller_core {
             }
             #[doc = "Bit 20"]
             #[inline(always)]
-            pub fn control_20(&self) -> Control20R {
-                Control20R::new(((self.bits >> 20) & 1) != 0)
+            pub fn rx_valid(&self) -> RxValidR {
+                RxValidR::new(((self.bits >> 20) & 1) != 0)
             }
         }
         impl W {
@@ -44084,36 +44079,36 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, MmgmtList2PointerASpec> {
+            ) -> CompressedSramPointerW<'_, GlobalRxlink2CurrentSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
             #[doc = "Bit 20"]
             #[inline(always)]
-            pub fn control_20(&mut self) -> Control20W<'_, MmgmtList2PointerASpec> {
-                Control20W::new(self, 20)
+            pub fn rx_valid(&mut self) -> RxValidW<'_, GlobalRxlink2CurrentSpec> {
+                RxValidW::new(self, 20)
             }
         }
-        #[doc = "Selector 2 pointer A; memory-management paths also independently consume or clear control bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_2_pointer_a::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_2_pointer_a::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct MmgmtList2PointerASpec;
-        impl crate::RegisterSpec for MmgmtList2PointerASpec {
+        #[doc = "Current pointer of global RX link 2 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_2_current::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_2_current::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GlobalRxlink2CurrentSpec;
+        impl crate::RegisterSpec for GlobalRxlink2CurrentSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`mmgmt_list_2_pointer_a::R`](R) reader structure"]
-        impl crate::Readable for MmgmtList2PointerASpec {}
-        #[doc = "`write(|w| ..)` method takes [`mmgmt_list_2_pointer_a::W`](W) writer structure"]
-        impl crate::Writable for MmgmtList2PointerASpec {
+        #[doc = "`read()` method returns [`global_rxlink_2_current::R`](R) reader structure"]
+        impl crate::Readable for GlobalRxlink2CurrentSpec {}
+        #[doc = "`write(|w| ..)` method takes [`global_rxlink_2_current::W`](W) writer structure"]
+        impl crate::Writable for GlobalRxlink2CurrentSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "MMGMT_LIST_2_POINTER_B (rw) register accessor: Selector 2 pointer B.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_2_pointer_b::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_2_pointer_b::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@mmgmt_list_2_pointer_b`] module"]
-    #[doc(alias = "MMGMT_LIST_2_POINTER_B")]
-    pub type MmgmtList2PointerB = crate::Reg<mmgmt_list_2_pointer_b::MmgmtList2PointerBSpec>;
-    #[doc = "Selector 2 pointer B."]
-    pub mod mmgmt_list_2_pointer_b {
-        #[doc = "Register `MMGMT_LIST_2_POINTER_B` reader"]
-        pub type R = crate::R<MmgmtList2PointerBSpec>;
-        #[doc = "Register `MMGMT_LIST_2_POINTER_B` writer"]
-        pub type W = crate::W<MmgmtList2PointerBSpec>;
+    #[doc = "GLOBAL_RXLINK_2_NEXT (rw) register accessor: Next pointer of global RX link 2 (r_obh_link_global_rxlink_next_ptr_set).\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_2_next::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_2_next::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@global_rxlink_2_next`] module"]
+    #[doc(alias = "GLOBAL_RXLINK_2_NEXT")]
+    pub type GlobalRxlink2Next = crate::Reg<global_rxlink_2_next::GlobalRxlink2NextSpec>;
+    #[doc = "Next pointer of global RX link 2 (r_obh_link_global_rxlink_next_ptr_set)."]
+    pub mod global_rxlink_2_next {
+        #[doc = "Register `GLOBAL_RXLINK_2_NEXT` reader"]
+        pub type R = crate::R<GlobalRxlink2NextSpec>;
+        #[doc = "Register `GLOBAL_RXLINK_2_NEXT` writer"]
+        pub type W = crate::W<GlobalRxlink2NextSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
@@ -44131,40 +44126,40 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, MmgmtList2PointerBSpec> {
+            ) -> CompressedSramPointerW<'_, GlobalRxlink2NextSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
         }
-        #[doc = "Selector 2 pointer B.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_2_pointer_b::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_2_pointer_b::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct MmgmtList2PointerBSpec;
-        impl crate::RegisterSpec for MmgmtList2PointerBSpec {
+        #[doc = "Next pointer of global RX link 2 (r_obh_link_global_rxlink_next_ptr_set).\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_2_next::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_2_next::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GlobalRxlink2NextSpec;
+        impl crate::RegisterSpec for GlobalRxlink2NextSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`mmgmt_list_2_pointer_b::R`](R) reader structure"]
-        impl crate::Readable for MmgmtList2PointerBSpec {}
-        #[doc = "`write(|w| ..)` method takes [`mmgmt_list_2_pointer_b::W`](W) writer structure"]
-        impl crate::Writable for MmgmtList2PointerBSpec {
+        #[doc = "`read()` method returns [`global_rxlink_2_next::R`](R) reader structure"]
+        impl crate::Readable for GlobalRxlink2NextSpec {}
+        #[doc = "`write(|w| ..)` method takes [`global_rxlink_2_next::W`](W) writer structure"]
+        impl crate::Writable for GlobalRxlink2NextSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "MMGMT_LIST_3_POINTER_A (rw) register accessor: Selector 3 pointer A; memory-management paths also independently consume or clear control bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_3_pointer_a::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_3_pointer_a::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@mmgmt_list_3_pointer_a`] module"]
-    #[doc(alias = "MMGMT_LIST_3_POINTER_A")]
-    pub type MmgmtList3PointerA = crate::Reg<mmgmt_list_3_pointer_a::MmgmtList3PointerASpec>;
-    #[doc = "Selector 3 pointer A; memory-management paths also independently consume or clear control bit 20."]
-    pub mod mmgmt_list_3_pointer_a {
-        #[doc = "Register `MMGMT_LIST_3_POINTER_A` reader"]
-        pub type R = crate::R<MmgmtList3PointerASpec>;
-        #[doc = "Register `MMGMT_LIST_3_POINTER_A` writer"]
-        pub type W = crate::W<MmgmtList3PointerASpec>;
+    #[doc = "GLOBAL_RXLINK_3_CURRENT (rw) register accessor: Current pointer of global RX link 3 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_3_current::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_3_current::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@global_rxlink_3_current`] module"]
+    #[doc(alias = "GLOBAL_RXLINK_3_CURRENT")]
+    pub type GlobalRxlink3Current = crate::Reg<global_rxlink_3_current::GlobalRxlink3CurrentSpec>;
+    #[doc = "Current pointer of global RX link 3 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20."]
+    pub mod global_rxlink_3_current {
+        #[doc = "Register `GLOBAL_RXLINK_3_CURRENT` reader"]
+        pub type R = crate::R<GlobalRxlink3CurrentSpec>;
+        #[doc = "Register `GLOBAL_RXLINK_3_CURRENT` writer"]
+        pub type W = crate::W<GlobalRxlink3CurrentSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
         pub type CompressedSramPointerW<'a, REG> =
             crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
-        #[doc = "Field `CONTROL_20` reader - "]
-        pub type Control20R = crate::BitReader;
-        #[doc = "Field `CONTROL_20` writer - "]
-        pub type Control20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_VALID` reader - "]
+        pub type RxValidR = crate::BitReader;
+        #[doc = "Field `RX_VALID` writer - "]
+        pub type RxValidW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
@@ -44173,8 +44168,8 @@ pub mod bluetooth_controller_core {
             }
             #[doc = "Bit 20"]
             #[inline(always)]
-            pub fn control_20(&self) -> Control20R {
-                Control20R::new(((self.bits >> 20) & 1) != 0)
+            pub fn rx_valid(&self) -> RxValidR {
+                RxValidR::new(((self.bits >> 20) & 1) != 0)
             }
         }
         impl W {
@@ -44182,36 +44177,36 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, MmgmtList3PointerASpec> {
+            ) -> CompressedSramPointerW<'_, GlobalRxlink3CurrentSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
             #[doc = "Bit 20"]
             #[inline(always)]
-            pub fn control_20(&mut self) -> Control20W<'_, MmgmtList3PointerASpec> {
-                Control20W::new(self, 20)
+            pub fn rx_valid(&mut self) -> RxValidW<'_, GlobalRxlink3CurrentSpec> {
+                RxValidW::new(self, 20)
             }
         }
-        #[doc = "Selector 3 pointer A; memory-management paths also independently consume or clear control bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_3_pointer_a::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_3_pointer_a::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct MmgmtList3PointerASpec;
-        impl crate::RegisterSpec for MmgmtList3PointerASpec {
+        #[doc = "Current pointer of global RX link 3 (r_obh_link_global_rxlink_curr_ptr_set) in bits 19:0 and its valid flag (r_obh_link_global_rxvalid_set) in bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_3_current::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_3_current::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GlobalRxlink3CurrentSpec;
+        impl crate::RegisterSpec for GlobalRxlink3CurrentSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`mmgmt_list_3_pointer_a::R`](R) reader structure"]
-        impl crate::Readable for MmgmtList3PointerASpec {}
-        #[doc = "`write(|w| ..)` method takes [`mmgmt_list_3_pointer_a::W`](W) writer structure"]
-        impl crate::Writable for MmgmtList3PointerASpec {
+        #[doc = "`read()` method returns [`global_rxlink_3_current::R`](R) reader structure"]
+        impl crate::Readable for GlobalRxlink3CurrentSpec {}
+        #[doc = "`write(|w| ..)` method takes [`global_rxlink_3_current::W`](W) writer structure"]
+        impl crate::Writable for GlobalRxlink3CurrentSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "MMGMT_LIST_3_POINTER_B (rw) register accessor: Selector 3 pointer B.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_3_pointer_b::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_3_pointer_b::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@mmgmt_list_3_pointer_b`] module"]
-    #[doc(alias = "MMGMT_LIST_3_POINTER_B")]
-    pub type MmgmtList3PointerB = crate::Reg<mmgmt_list_3_pointer_b::MmgmtList3PointerBSpec>;
-    #[doc = "Selector 3 pointer B."]
-    pub mod mmgmt_list_3_pointer_b {
-        #[doc = "Register `MMGMT_LIST_3_POINTER_B` reader"]
-        pub type R = crate::R<MmgmtList3PointerBSpec>;
-        #[doc = "Register `MMGMT_LIST_3_POINTER_B` writer"]
-        pub type W = crate::W<MmgmtList3PointerBSpec>;
+    #[doc = "GLOBAL_RXLINK_3_NEXT (rw) register accessor: Next pointer of global RX link 3 (r_obh_link_global_rxlink_next_ptr_set).\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_3_next::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_3_next::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@global_rxlink_3_next`] module"]
+    #[doc(alias = "GLOBAL_RXLINK_3_NEXT")]
+    pub type GlobalRxlink3Next = crate::Reg<global_rxlink_3_next::GlobalRxlink3NextSpec>;
+    #[doc = "Next pointer of global RX link 3 (r_obh_link_global_rxlink_next_ptr_set)."]
+    pub mod global_rxlink_3_next {
+        #[doc = "Register `GLOBAL_RXLINK_3_NEXT` reader"]
+        pub type R = crate::R<GlobalRxlink3NextSpec>;
+        #[doc = "Register `GLOBAL_RXLINK_3_NEXT` writer"]
+        pub type W = crate::W<GlobalRxlink3NextSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
@@ -44229,19 +44224,19 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn compressed_sram_pointer(
                 &mut self,
-            ) -> CompressedSramPointerW<'_, MmgmtList3PointerBSpec> {
+            ) -> CompressedSramPointerW<'_, GlobalRxlink3NextSpec> {
                 CompressedSramPointerW::new(self, 0)
             }
         }
-        #[doc = "Selector 3 pointer B.\n\nYou can [`read`](crate::Reg::read) this register and get [`mmgmt_list_3_pointer_b::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`mmgmt_list_3_pointer_b::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct MmgmtList3PointerBSpec;
-        impl crate::RegisterSpec for MmgmtList3PointerBSpec {
+        #[doc = "Next pointer of global RX link 3 (r_obh_link_global_rxlink_next_ptr_set).\n\nYou can [`read`](crate::Reg::read) this register and get [`global_rxlink_3_next::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`global_rxlink_3_next::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct GlobalRxlink3NextSpec;
+        impl crate::RegisterSpec for GlobalRxlink3NextSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`mmgmt_list_3_pointer_b::R`](R) reader structure"]
-        impl crate::Readable for MmgmtList3PointerBSpec {}
-        #[doc = "`write(|w| ..)` method takes [`mmgmt_list_3_pointer_b::W`](W) writer structure"]
-        impl crate::Writable for MmgmtList3PointerBSpec {
+        #[doc = "`read()` method returns [`global_rxlink_3_next::R`](R) reader structure"]
+        impl crate::Readable for GlobalRxlink3NextSpec {}
+        #[doc = "`write(|w| ..)` method takes [`global_rxlink_3_next::W`](W) writer structure"]
+        impl crate::Writable for GlobalRxlink3NextSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -44774,55 +44769,55 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_ZERO_008C (w) register accessor: One complete controller function writes the finite zero image twice. Its operation meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_zero_008c::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_zero_008c`] module"]
-    #[doc(alias = "INIT_ZERO_008C")]
-    pub type InitZero008c = crate::Reg<init_zero_008c::InitZero008cSpec>;
-    #[doc = "One complete controller function writes the finite zero image twice. Its operation meaning remains unknown."]
-    pub mod init_zero_008c {
-        #[doc = "Register `INIT_ZERO_008C` writer"]
-        pub type W = crate::W<InitZero008cSpec>;
+    #[doc = "BTLC_TIMER_CC_0 (w) register accessor: Timer compare slot 0 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_cc_0::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_cc_0`] module"]
+    #[doc(alias = "BTLC_TIMER_CC_0")]
+    pub type BtlcTimerCc0 = crate::Reg<btlc_timer_cc_0::BtlcTimerCc0Spec>;
+    #[doc = "Timer compare slot 0 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero."]
+    pub mod btlc_timer_cc_0 {
+        #[doc = "Register `BTLC_TIMER_CC_0` writer"]
+        pub type W = crate::W<BtlcTimerCc0Spec>;
         #[doc = "Field `IMAGE` writer - "]
         pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitZero008cSpec> {
+            pub fn image(&mut self) -> ImageW<'_, BtlcTimerCc0Spec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "One complete controller function writes the finite zero image twice. Its operation meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_zero_008c::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitZero008cSpec;
-        impl crate::RegisterSpec for InitZero008cSpec {
+        #[doc = "Timer compare slot 0 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_cc_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerCc0Spec;
+        impl crate::RegisterSpec for BtlcTimerCc0Spec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`init_zero_008c::W`](W) writer structure"]
-        impl crate::Writable for InitZero008cSpec {
+        #[doc = "`write(|w| ..)` method takes [`btlc_timer_cc_0::W`](W) writer structure"]
+        impl crate::Writable for BtlcTimerCc0Spec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_ZERO_00B8 (w) register accessor: One complete controller function writes the finite zero image twice. Its operation meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_zero_00b8::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_zero_00b8`] module"]
-    #[doc(alias = "INIT_ZERO_00B8")]
-    pub type InitZero00b8 = crate::Reg<init_zero_00b8::InitZero00b8Spec>;
-    #[doc = "One complete controller function writes the finite zero image twice. Its operation meaning remains unknown."]
-    pub mod init_zero_00b8 {
-        #[doc = "Register `INIT_ZERO_00B8` writer"]
-        pub type W = crate::W<InitZero00b8Spec>;
+    #[doc = "BTLC_TIMER_CC_1 (w) register accessor: Timer compare slot 1 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_cc_1::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btlc_timer_cc_1`] module"]
+    #[doc(alias = "BTLC_TIMER_CC_1")]
+    pub type BtlcTimerCc1 = crate::Reg<btlc_timer_cc_1::BtlcTimerCc1Spec>;
+    #[doc = "Timer compare slot 1 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero."]
+    pub mod btlc_timer_cc_1 {
+        #[doc = "Register `BTLC_TIMER_CC_1` writer"]
+        pub type W = crate::W<BtlcTimerCc1Spec>;
         #[doc = "Field `IMAGE` writer - "]
         pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitZero00b8Spec> {
+            pub fn image(&mut self) -> ImageW<'_, BtlcTimerCc1Spec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "One complete controller function writes the finite zero image twice. Its operation meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_zero_00b8::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitZero00b8Spec;
-        impl crate::RegisterSpec for InitZero00b8Spec {
+        #[doc = "Timer compare slot 1 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_cc_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtlcTimerCc1Spec;
+        impl crate::RegisterSpec for BtlcTimerCc1Spec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`init_zero_00b8::W`](W) writer structure"]
-        impl crate::Writable for InitZero00b8Spec {
+        #[doc = "`write(|w| ..)` method takes [`btlc_timer_cc_1::W`](W) writer structure"]
+        impl crate::Writable for BtlcTimerCc1Spec {
             type Safety = crate::Unsafe;
         }
     }
@@ -60090,20 +60085,20 @@ pub mod field_read {
         registers.ftm_control().read().enable().bit()
     }
 
-    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SLEEP_TIMER_CONTROL`.`LATCH_REQUEST` without exposing its register block.
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`BTLC_TIMER_CONTROL`.`LATCH_REQUEST` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_controller_time_latch_request(
         registers: &crate::BluetoothControllerCore,
     ) -> bool {
-        registers.sleep_timer_control().read().latch_request().bit()
+        registers.btlc_timer_control().read().latch_request().bit()
     }
 
-    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SLEEP_TIMER_LATCHED_TIME_0`.`IMAGE` without exposing its register block.
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`BTLC_TIMER_CAPTURE_0`.`IMAGE` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_controller_latched_time(
         registers: &crate::BluetoothControllerCore,
     ) -> u32 {
-        registers.sleep_timer_latched_time_0().read().image().bits()
+        registers.btlc_timer_capture_0().read().image().bits()
     }
 
     /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0`.`STATUS_24` without exposing its register block.
@@ -61650,7 +61645,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000055` to `BLUETOOTH_CONTROLLER_CORE`.`PHY_INIT_VALUE_01F0`.
+    /// Publish the SVD-qualified image `0x00000055` to `BLUETOOTH_CONTROLLER_CORE`.`GPIO_DIAG_ARGUMENT_1`.
     #[inline]
     pub fn publish_ble_phy_controller_value_01f0(registers: &crate::BluetoothControllerCore) {
         // SAFETY: generator validation proves that the target is a
@@ -61658,12 +61653,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .phy_init_value_01f0()
+                .gpio_diag_argument_1()
                 .write_with_zero(|writer| writer.bits(0x00000055));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000fff` to `BLUETOOTH_CONTROLLER_CORE`.`PHY_INIT_VALUE_0248`.
+    /// Publish the SVD-qualified image `0x00000fff` to `BLUETOOTH_CONTROLLER_CORE`.`GPIO_DIAG_CONTROL`.
     #[inline]
     pub fn publish_ble_phy_controller_value_0248(registers: &crate::BluetoothControllerCore) {
         // SAFETY: generator validation proves that the target is a
@@ -61671,7 +61666,7 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .phy_init_value_0248()
+                .gpio_diag_control()
                 .write_with_zero(|writer| writer.bits(0x00000fff));
         }
     }
@@ -65482,21 +65477,23 @@ pub mod masked_register_modify {
 /// Safe, SVD-declared field-local OR read-modify-write transactions.
 pub mod field_or_modify {
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_CURRENT fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_1_pointer_a(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.mmgmt_list_1_pointer_a().modify(|reader, writer| {
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .compressed_sram_pointer()
-                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
-            }
-        });
+        registers
+            .global_rxlink_1_current()
+            .modify(|reader, writer| {
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .compressed_sram_pointer()
+                        .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+                }
+            });
     }
 
     /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields `[SOURCE_21, SOURCES_27_28]` while preserving the fresh register observation.
@@ -65589,13 +65586,13 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_NEXT fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_1_pointer_b(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.mmgmt_list_1_pointer_b().modify(|reader, writer| {
+        registers.global_rxlink_1_next().modify(|reader, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -65606,30 +65603,32 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_CURRENT fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_2_pointer_a(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.mmgmt_list_2_pointer_a().modify(|reader, writer| {
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .compressed_sram_pointer()
-                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
-            }
-        });
+        registers
+            .global_rxlink_2_current()
+            .modify(|reader, writer| {
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .compressed_sram_pointer()
+                        .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+                }
+            });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_NEXT fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_2_pointer_b(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.mmgmt_list_2_pointer_b().modify(|reader, writer| {
+        registers.global_rxlink_2_next().modify(|reader, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -65640,30 +65639,32 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_CURRENT fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_3_pointer_a(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.mmgmt_list_3_pointer_a().modify(|reader, writer| {
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .compressed_sram_pointer()
-                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
-            }
-        });
+        registers
+            .global_rxlink_3_current()
+            .modify(|reader, writer| {
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .compressed_sram_pointer()
+                        .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+                }
+            });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_NEXT fields `[COMPRESSED_SRAM_POINTER]` while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_3_pointer_b(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.mmgmt_list_3_pointer_b().modify(|reader, writer| {
+        registers.global_rxlink_3_next().modify(|reader, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -65765,10 +65766,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields `[LATCH_REQUEST]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL fields `[LATCH_REQUEST]` while preserving the fresh register observation.
     #[inline]
     pub fn request_bluetooth_controller_time_latch(registers: &crate::BluetoothControllerCore) {
-        registers.sleep_timer_control().modify(|reader, writer| {
+        registers.btlc_timer_control().modify(|reader, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -65814,34 +65815,38 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[CONTROL_20]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_CURRENT fields `[RX_VALID]` while preserving the fresh register observation.
     #[inline]
     pub fn preserve_bluetooth_memory_list_1_initial_control(
         registers: &crate::BluetoothControllerCore,
     ) {
-        registers.mmgmt_list_1_pointer_a().modify(|reader, writer| {
-            let input = 0x00000000_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer
-                .control_20()
-                .bit(reader.control_20().bit() || (input & 0x00000001) != 0)
-        });
+        registers
+            .global_rxlink_1_current()
+            .modify(|reader, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .rx_valid()
+                    .bit(reader.rx_valid().bit() || (input & 0x00000001) != 0)
+            });
     }
 
-    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields `[CONTROL_20]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_CURRENT fields `[RX_VALID]` while preserving the fresh register observation.
     #[inline]
     pub fn preserve_bluetooth_memory_list_2_initial_control(
         registers: &crate::BluetoothControllerCore,
     ) {
-        registers.mmgmt_list_2_pointer_a().modify(|reader, writer| {
-            let input = 0x00000000_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer
-                .control_20()
-                .bit(reader.control_20().bit() || (input & 0x00000001) != 0)
-        });
+        registers
+            .global_rxlink_2_current()
+            .modify(|reader, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .rx_valid()
+                    .bit(reader.rx_valid().bit() || (input & 0x00000001) != 0)
+            });
     }
 }
 
@@ -66303,10 +66308,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_CURRENT fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_pointer_a(registers: &crate::BluetoothControllerCore) {
-        registers.mmgmt_list_1_pointer_a().modify(|_, writer| {
+        registers.global_rxlink_1_current().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66357,10 +66362,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_NEXT fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_pointer_b(registers: &crate::BluetoothControllerCore) {
-        registers.mmgmt_list_1_pointer_b().modify(|_, writer| {
+        registers.global_rxlink_1_next().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66368,10 +66373,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_CURRENT fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_2_pointer_a(registers: &crate::BluetoothControllerCore) {
-        registers.mmgmt_list_2_pointer_a().modify(|_, writer| {
+        registers.global_rxlink_2_current().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66379,10 +66384,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_NEXT fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_2_pointer_b(registers: &crate::BluetoothControllerCore) {
-        registers.mmgmt_list_2_pointer_b().modify(|_, writer| {
+        registers.global_rxlink_2_next().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66390,10 +66395,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_CURRENT fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_3_pointer_a(registers: &crate::BluetoothControllerCore) {
-        registers.mmgmt_list_3_pointer_a().modify(|_, writer| {
+        registers.global_rxlink_3_current().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66401,10 +66406,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_3_NEXT fields `[COMPRESSED_SRAM_POINTER]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_3_pointer_b(registers: &crate::BluetoothControllerCore) {
-        registers.mmgmt_list_3_pointer_b().modify(|_, writer| {
+        registers.global_rxlink_3_next().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66671,16 +66676,16 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields `[CONFIG_LOW_3]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL fields `[CLOCK_SHIFT]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_hal_sleep_timer_shift(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.sleep_timer_control().modify(|_, writer| {
+        registers.btlc_timer_control().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.config_low_3().bits((input & 0x00000007) as u8) }
+            unsafe { writer.clock_shift().bits((input & 0x00000007) as u8) }
         });
     }
 
@@ -66715,10 +66720,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1 fields `[CONFIG_15, CONFIG_18_19]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_1 fields `[CONFIG_15, CONFIG_18_19]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_bluetooth_hal_control_1_high(registers: &crate::BluetoothControllerCore) {
-        registers.hal_init_control_1().modify(|_, writer| {
+        registers.wdt_config_1().modify(|_, writer| {
             let input = 0x00000007_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66732,10 +66737,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1 fields `[CONFIG_3, CONFIG_6_7]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_1 fields `[CONFIG_3, CONFIG_6_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_bluetooth_hal_control_1_low(registers: &crate::BluetoothControllerCore) {
-        registers.hal_init_control_1().modify(|_, writer| {
+        registers.wdt_config_1().modify(|_, writer| {
             let input = 0x00000007_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66749,14 +66754,14 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0 fields `[ENABLE_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WDT_CONFIG_0 fields `[ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_bluetooth_hal_control_0(registers: &crate::BluetoothControllerCore) {
-        registers.hal_init_control_0().modify(|_, writer| {
+        registers.wdt_config_0().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.enable_31().bit((input & 0x00000001) != 0)
+            writer.enable().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -74186,29 +74191,29 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields `[CONTROL_20]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_1_CURRENT fields `[RX_VALID]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_initial_control(
         registers: &crate::BluetoothControllerCore,
     ) {
-        registers.mmgmt_list_1_pointer_a().modify(|_, writer| {
+        registers.global_rxlink_1_current().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.control_20().bit((input & 0x00000001) != 0)
+            writer.rx_valid().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields `[CONTROL_20]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.GLOBAL_RXLINK_2_CURRENT fields `[RX_VALID]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_2_initial_control(
         registers: &crate::BluetoothControllerCore,
     ) {
-        registers.mmgmt_list_2_pointer_a().modify(|_, writer| {
+        registers.global_rxlink_2_current().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.control_20().bit((input & 0x00000001) != 0)
+            writer.rx_valid().bit((input & 0x00000001) != 0)
         });
     }
 

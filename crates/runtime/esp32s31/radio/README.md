@@ -54,6 +54,16 @@ protocol compositions are clients of the system:
   lifetime of the radio. Each phase change publishes the phase to
   `RadioSystem::wifi_coex_phase` and `bluetooth_coex_phase`, which keep only
   the latest unread phase.
+  `enable_coex` and `disable_coex` count the enabled radios as `coex_enable`
+  does: the second radio starts coexistence (`RadioSystem::wifi_coex_started`,
+  `bluetooth_coex_started` with `true`), falling back to one radio stops it
+  for Bluetooth, and the last disable withdraws every request.
+  `set_coex_wifi_channel` records the Wi-Fi channel for Bluetooth
+  (`RadioSystem::bluetooth_wifi_channel`, `RadioGuard::coex_wifi_channel`),
+  and `end_bluetooth_preemption` reports the end of a Bluetooth preemption
+  to Wi-Fi (`RadioSystem::wifi_coex_preemption_end`). The schedule's period,
+  interval, flexible period and phases are read through
+  `RadioGuard::coex_schedule`.
 
 The Wi-Fi, Bluetooth and IEEE 802.15.4 compositions are all clients of the
 system.

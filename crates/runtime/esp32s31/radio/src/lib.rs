@@ -29,7 +29,7 @@ mod system;
 
 #[cfg(target_arch = "riscv32")]
 pub use system::{
-    Ieee802154Asleep, Ieee802154JoinError, Ieee802154Left, Ieee802154WakeError,
-    Ieee802154WakeFailure, RadioGuard, RadioPhyError, RadioPhyPrepared, RadioResources,
-    RadioSystem,
+    CoexPreemptionEnd, CoexWifiChannel, Ieee802154Asleep, Ieee802154JoinError, Ieee802154Left,
+    Ieee802154WakeError, Ieee802154WakeFailure, RadioGuard, RadioPhyError, RadioPhyPrepared,
+    RadioResources, RadioSystem,
 };

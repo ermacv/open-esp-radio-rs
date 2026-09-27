@@ -8,7 +8,7 @@ use embassy_sync::{
     signal::Signal,
 };
 
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use oer_esp32s31_coex::{
     CoexArbiterPorts, CoexClientRequest, CoexCore, CoexError, CoexEventId, CoexExpiry, CoexPhase,
     CoexPhaseChange, CoexPhaseTimer, CoexSchedule, CoexScheduleExecutor, CoexStatusType,
@@ -52,6 +52,29 @@ pub struct RadioResources<P, C> {
     coex: CoexCore,
     /// The coexistence schedule and its phase timer state.
     schedule: CoexScheduleExecutor,
+    /// Radios that enabled coexistence (`coex_core_enable` count).
+    coex_clients: u8,
+    /// The Wi-Fi channel `coex_wifi_channel_set` last recorded.
+    wifi_channel: CoexWifiChannel,
+}
+
+/// The Wi-Fi channel the coexistence module records for Bluetooth.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CoexWifiChannel {
+    /// Primary channel.
+    pub primary: u8,
+    /// Secondary channel.
+    pub secondary: u8,
+}
+
+/// When a Bluetooth preemption ends, as `coex_iso_end_int_handle` reports it
+/// to Wi-Fi.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CoexPreemptionEnd {
+    /// The preemption ends at this instant.
+    At(Instant),
+    /// Bluetooth reported no end time.
+    Unknown,
 }
 
 /// The coexistence schedule's wake-ups: its phase-timer command and the
@@ -60,6 +83,10 @@ struct CoexSignals {
     timer: Signal<CriticalSectionRawMutex, CoexPhaseTimer>,
     wifi: Signal<CriticalSectionRawMutex, CoexPhase>,
     bluetooth: Signal<CriticalSectionRawMutex, CoexPhase>,
+    wifi_started: Signal<CriticalSectionRawMutex, ()>,
+    bluetooth_started: Signal<CriticalSectionRawMutex, bool>,
+    wifi_channel: Signal<CriticalSectionRawMutex, CoexWifiChannel>,
+    preemption_end: Signal<CriticalSectionRawMutex, CoexPreemptionEnd>,
 }
 
 impl CoexSignals {
@@ -68,6 +95,10 @@ impl CoexSignals {
             timer: Signal::new(),
             wifi: Signal::new(),
             bluetooth: Signal::new(),
+            wifi_started: Signal::new(),
+            bluetooth_started: Signal::new(),
+            wifi_channel: Signal::new(),
+            preemption_end: Signal::new(),
         }
     }
 
@@ -213,6 +244,8 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
                     retained_cache: None,
                     coex: CoexCore::new(),
                     schedule: CoexScheduleExecutor::new(),
+                    coex_clients: 0,
+                    wifi_channel: CoexWifiChannel::default(),
                 }),
                 identity,
                 coex: CoexSignals::new(),
@@ -364,6 +397,33 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
     /// Unread phases are replaced as in [`Self::wifi_coex_phase`].
     pub async fn bluetooth_coex_phase(&self) -> CoexPhase {
         self.coex.bluetooth.wait().await
+    }
+
+    /// The next start of coexistence, as the vendor calls the Wi-Fi start
+    /// callback (`coex_register_start_cb`): a second radio enabled it.
+    pub async fn wifi_coex_started(&self) {
+        self.coex.wifi_started.wait().await;
+    }
+
+    /// The next coexistence start (`true`) or stop (`false`), as the vendor
+    /// calls the two BLE callbacks of `coex_register_ble_cb`. Only the latest
+    /// unread change is kept.
+    pub async fn bluetooth_coex_started(&self) -> bool {
+        self.coex.bluetooth_started.wait().await
+    }
+
+    /// The next Wi-Fi channel change, as the vendor calls the Bluetooth
+    /// callback of `coex_register_wifi_channel_change_callback`. Only the
+    /// latest unread channel is kept.
+    pub async fn bluetooth_wifi_channel(&self) -> CoexWifiChannel {
+        self.coex.wifi_channel.wait().await
+    }
+
+    /// The next end of a Bluetooth preemption, as the vendor calls the Wi-Fi
+    /// callback of `esp_coex_configure_iso_end_wifi_cb`. Only the latest
+    /// unread end is kept.
+    pub async fn wifi_coex_preemption_end(&self) -> CoexPreemptionEnd {
+        self.coex.preemption_end.wait().await
     }
 
     /// The coexistence schedule's phase timer, the vendor `esp_timer` whose
@@ -708,21 +768,71 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         .await
     }
 
-    /// Enable coexistence requests, as `coex_enable` does.
+    /// Enable coexistence for one radio, as `coex_enable` does. Each radio
+    /// enables it once; the first enables requests, and every later one
+    /// starts coexistence: Wi-Fi's start wait and Bluetooth's start wait
+    /// wake, as the vendor calls its start callbacks.
     pub fn enable_coex(&mut self) {
-        self.resources.coex.enable();
+        let clients = self.resources.coex_clients.saturating_add(1);
+        self.resources.coex_clients = clients;
+        if clients == 1 {
+            self.resources.coex.enable();
+        } else {
+            self.coex.wifi_started.signal(());
+            self.coex.bluetooth_started.signal(true);
+        }
     }
 
-    /// Withdraw every programmed coexistence request and disable requests,
-    /// as `coex_disable` does.
+    /// Disable coexistence for one radio, as `coex_disable` does. When one
+    /// radio remains, coexistence stops and Bluetooth's start wait reports
+    /// the stop; when none remains, every programmed request is withdrawn
+    /// and requests are disabled. Without an enabled radio nothing changes.
     ///
     /// # Errors
     ///
     /// A timer could not be disabled; the core keeps it as uncertain.
     pub fn disable_coex(&mut self) -> Result<(), CoexError> {
-        let ports = CoexArbiterPorts::new(&mut self.lease);
-        let (mut timer, _) = ports.ports();
-        self.resources.coex.disable(&mut timer)
+        let Some(clients) = self.resources.coex_clients.checked_sub(1) else {
+            return Ok(());
+        };
+        self.resources.coex_clients = clients;
+        match clients {
+            0 => {
+                let ports = CoexArbiterPorts::new(&mut self.lease);
+                let (mut timer, _) = ports.ports();
+                self.resources.coex.disable(&mut timer)
+            }
+            1 => {
+                self.coex.bluetooth_started.signal(false);
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Record the Wi-Fi channel, as `coex_wifi_channel_set` does, and wake
+    /// Bluetooth's channel wait.
+    pub fn set_coex_wifi_channel(&mut self, channel: CoexWifiChannel) {
+        self.resources.wifi_channel = channel;
+        self.coex.wifi_channel.signal(channel);
+    }
+
+    /// The Wi-Fi channel last recorded, as `coex_wifi_channel_get` reads it.
+    pub fn coex_wifi_channel(&self) -> CoexWifiChannel {
+        self.resources.wifi_channel
+    }
+
+    /// Report the end of a Bluetooth preemption `remaining_micros` from now,
+    /// or `None` without an end time, as `coex_iso_end_int_handle` does; it
+    /// wakes Wi-Fi's preemption-end wait.
+    pub fn end_bluetooth_preemption(&mut self, remaining_micros: Option<u32>) {
+        let end = match remaining_micros {
+            Some(micros) => CoexPreemptionEnd::At(
+                Instant::now() + embassy_time::Duration::from_micros(u64::from(micros)),
+            ),
+            None => CoexPreemptionEnd::Unknown,
+        };
+        self.coex.preemption_end.signal(end);
     }
 
     /// Program a Wi-Fi coexistence request, as `coex_wifi_request` does,

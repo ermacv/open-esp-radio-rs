@@ -55,6 +55,86 @@ fn partial_missing_bucket(missing: u8) -> usize {
     }
 }
 
+/// Lower bound of the second BlockAck SNR bucket. The first bucket counts
+/// every sample below it and the last every sample at or above
+/// `BLOCK_ACK_SNR_FLOOR_DB + (BLOCK_ACK_SNR_BUCKETS - 2) * BLOCK_ACK_SNR_STEP_DB`.
+pub const BLOCK_ACK_SNR_FLOOR_DB: i8 = 20;
+pub const BLOCK_ACK_SNR_STEP_DB: i8 = 4;
+pub const BLOCK_ACK_SNR_BUCKETS: usize = 12;
+
+fn block_ack_snr_bucket(snr_db: i8) -> usize {
+    if snr_db < BLOCK_ACK_SNR_FLOOR_DB {
+        return 0;
+    }
+    let step = (snr_db - BLOCK_ACK_SNR_FLOOR_DB) / BLOCK_ACK_SNR_STEP_DB;
+    (step as usize + 1).min(BLOCK_ACK_SNR_BUCKETS - 1)
+}
+
+/// SNR of the responses that completed one class of aggregate publications.
+struct BlockAckSnrCounters {
+    samples: AtomicU32,
+    /// Wrapping two's-complement sum of the signed samples.
+    sum_db: AtomicU32,
+    histogram: [AtomicU32; BLOCK_ACK_SNR_BUCKETS],
+}
+
+impl BlockAckSnrCounters {
+    const fn new() -> Self {
+        Self {
+            samples: AtomicU32::new(0),
+            sum_db: AtomicU32::new(0),
+            histogram: [const { AtomicU32::new(0) }; BLOCK_ACK_SNR_BUCKETS],
+        }
+    }
+
+    fn record(&self, snr_db: i8) {
+        self.samples.fetch_add(1, Ordering::Relaxed);
+        self.sum_db
+            .fetch_add(i32::from(snr_db) as u32, Ordering::Relaxed);
+        self.histogram[block_ack_snr_bucket(snr_db)].fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> BlockAckSnrSnapshot {
+        BlockAckSnrSnapshot {
+            samples: self.samples.load(Ordering::Relaxed),
+            sum_db: self.sum_db.load(Ordering::Relaxed) as i32,
+            histogram: core::array::from_fn(|bucket| {
+                self.histogram[bucket].load(Ordering::Relaxed)
+            }),
+        }
+    }
+}
+
+/// SNR distribution of one BlockAck class over an observation interval.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BlockAckSnrSnapshot {
+    pub samples: u32,
+    pub sum_db: i32,
+    /// Samples below [`BLOCK_ACK_SNR_FLOOR_DB`], then one bucket per
+    /// [`BLOCK_ACK_SNR_STEP_DB`], with the last bucket open-ended.
+    pub histogram: [u32; BLOCK_ACK_SNR_BUCKETS],
+}
+
+impl BlockAckSnrSnapshot {
+    /// Mean SNR in tenths of a decibel, when at least one sample exists.
+    pub fn mean_decidb(&self) -> Option<i32> {
+        (self.samples != 0).then(|| {
+            let samples = i64::from(self.samples);
+            (i64::from(self.sum_db) * 10 / samples) as i32
+        })
+    }
+
+    fn delta(&self, earlier: &Self) -> Self {
+        Self {
+            samples: self.samples.wrapping_sub(earlier.samples),
+            sum_db: self.sum_db.wrapping_sub(earlier.sum_db),
+            histogram: core::array::from_fn(|bucket| {
+                self.histogram[bucket].wrapping_sub(earlier.histogram[bucket])
+            }),
+        }
+    }
+}
+
 struct PhaseTimingCounters {
     micros: AtomicU32,
     lifetime_max_micros: AtomicU32,
@@ -486,6 +566,9 @@ pub struct AggregateTxCounters {
     partial_missing_by_position: [AtomicU32; BLOCK_ACK_POSITIONS],
     partial_missing_counts: [AtomicU32; PARTIAL_MISSING_BUCKETS],
     empty_block_ack: AtomicU32,
+    full_block_ack_snr: BlockAckSnrCounters,
+    partial_block_ack_snr: BlockAckSnrCounters,
+    block_ack_snr_unavailable: AtomicU32,
     tx_irq_epochs: AtomicU32,
     tx_irq_service_samples: AtomicU32,
     tx_irq_clock_skew_samples: AtomicU32,
@@ -603,6 +686,9 @@ impl AggregateTxCounters {
             partial_missing_by_position: [const { AtomicU32::new(0) }; BLOCK_ACK_POSITIONS],
             partial_missing_counts: [const { AtomicU32::new(0) }; PARTIAL_MISSING_BUCKETS],
             empty_block_ack: AtomicU32::new(0),
+            full_block_ack_snr: BlockAckSnrCounters::new(),
+            partial_block_ack_snr: BlockAckSnrCounters::new(),
+            block_ack_snr_unavailable: AtomicU32::new(0),
             tx_irq_epochs: AtomicU32::new(0),
             tx_irq_service_samples: AtomicU32::new(0),
             tx_irq_clock_skew_samples: AtomicU32::new(0),
@@ -793,6 +879,9 @@ impl AggregateTxCounters {
                 self.partial_missing_counts[bucket].load(Ordering::Relaxed)
             }),
             empty_block_ack: self.empty_block_ack.load(Ordering::Relaxed),
+            full_block_ack_snr: self.full_block_ack_snr.snapshot(),
+            partial_block_ack_snr: self.partial_block_ack_snr.snapshot(),
+            block_ack_snr_unavailable: self.block_ack_snr_unavailable.load(Ordering::Relaxed),
             tx_irq_epochs: self.tx_irq_epochs.load(Ordering::Relaxed),
             tx_irq_service_samples: self.tx_irq_service_samples.load(Ordering::Relaxed),
             tx_irq_clock_skew_samples: self.tx_irq_clock_skew_samples.load(Ordering::Relaxed),
@@ -1182,6 +1271,7 @@ impl AggregateTxObserver for AggregateTxCounters {
                 starting_sequence,
                 subframes,
                 missing_original_indices,
+                block_ack_snr_db,
             } => {
                 let missing = missing_original_indices.count_ones() as u8;
                 self.publications_pending.fetch_sub(1, Ordering::Relaxed);
@@ -1212,6 +1302,21 @@ impl AggregateTxObserver for AggregateTxCounters {
                         self.block_ack_start_outside_window
                             .fetch_add(1, Ordering::Relaxed);
                     }
+                }
+                let snr_class = if missing == 0 {
+                    Some(&self.full_block_ack_snr)
+                } else if missing == subframes {
+                    None
+                } else {
+                    Some(&self.partial_block_ack_snr)
+                };
+                match (snr_class, block_ack_snr_db) {
+                    (Some(class), Some(snr_db)) if block_ack_received => class.record(snr_db),
+                    (Some(_), _) => {
+                        self.block_ack_snr_unavailable
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
+                    (None, _) => {}
                 }
                 if missing == 0 {
                     self.full_block_ack.fetch_add(1, Ordering::Relaxed);
@@ -1509,6 +1614,12 @@ pub struct AggregateTxCounterSnapshot {
     /// Partial BlockAcks by missing count: 1, 2, 3-4, 5-8, 9 or more.
     pub partial_missing_counts: [u32; PARTIAL_MISSING_BUCKETS],
     pub empty_block_ack: u32,
+    /// Response SNR of BlockAcks that acknowledged every original subframe.
+    pub full_block_ack_snr: BlockAckSnrSnapshot,
+    /// Response SNR of BlockAcks that left some original subframes missing.
+    pub partial_block_ack_snr: BlockAckSnrSnapshot,
+    /// Completions whose status carried no response SNR.
+    pub block_ack_snr_unavailable: u32,
     pub tx_irq_epochs: u32,
     pub tx_irq_service_samples: u32,
     pub tx_irq_clock_skew_samples: u32,
@@ -1709,6 +1820,13 @@ impl AggregateTxCounterSnapshot {
                     .wrapping_sub(earlier.partial_missing_counts[bucket])
             }),
             empty_block_ack: self.empty_block_ack.wrapping_sub(earlier.empty_block_ack),
+            full_block_ack_snr: self.full_block_ack_snr.delta(&earlier.full_block_ack_snr),
+            partial_block_ack_snr: self
+                .partial_block_ack_snr
+                .delta(&earlier.partial_block_ack_snr),
+            block_ack_snr_unavailable: self
+                .block_ack_snr_unavailable
+                .wrapping_sub(earlier.block_ack_snr_unavailable),
             tx_irq_epochs: self.tx_irq_epochs.wrapping_sub(earlier.tx_irq_epochs),
             tx_irq_service_samples: self
                 .tx_irq_service_samples

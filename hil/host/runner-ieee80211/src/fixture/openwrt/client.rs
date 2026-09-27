@@ -67,6 +67,25 @@ pub struct OpenWrtClientLinkEvidence {
     pub tx_failed: u64,
     pub tx_duration_micros: u64,
     pub tid0_aqm_drops: u64,
+    /// Frames from the AP that mac80211 dropped after reception.
+    pub rx_drop_misc: u64,
+    /// Averaged signal of the AP's frames at the client after the workload.
+    pub signal_avg_dbm: Option<i32>,
+    /// Survey of the operating primary channel during the workload.
+    pub channel: OpenWrtClientChannelSurvey,
+}
+
+/// Channel time the client radio attributed to each activity during the
+/// workload. Busy time outside BSS reception and own transmission is air
+/// occupied by other transmitters or non-decodable energy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct OpenWrtClientChannelSurvey {
+    pub active_millis: u64,
+    pub busy_millis: u64,
+    pub receive_millis: u64,
+    pub bss_receive_millis: u64,
+    pub transmit_millis: u64,
+    pub noise_dbm: Option<i32>,
 }
 
 #[derive(Clone)]
@@ -82,6 +101,9 @@ struct OpenWrtClientLinkSnapshot {
     tx_failed: u64,
     tx_duration_micros: u64,
     tid0_aqm_drops: u64,
+    rx_drop_misc: u64,
+    signal_avg_dbm: Option<i32>,
+    survey: OpenWrtClientChannelSurvey,
 }
 
 pub struct OpenWrtClientLinkObservation {
@@ -363,6 +385,40 @@ impl OpenWrtClientLinkObservation {
                 self.before.tid0_aqm_drops,
                 after.tid0_aqm_drops,
             )?,
+            rx_drop_misc: counter_delta(
+                "RX drop misc",
+                self.before.rx_drop_misc,
+                after.rx_drop_misc,
+            )?,
+            signal_avg_dbm: after.signal_avg_dbm,
+            channel: OpenWrtClientChannelSurvey {
+                active_millis: counter_delta(
+                    "channel active time",
+                    self.before.survey.active_millis,
+                    after.survey.active_millis,
+                )?,
+                busy_millis: counter_delta(
+                    "channel busy time",
+                    self.before.survey.busy_millis,
+                    after.survey.busy_millis,
+                )?,
+                receive_millis: counter_delta(
+                    "channel receive time",
+                    self.before.survey.receive_millis,
+                    after.survey.receive_millis,
+                )?,
+                bss_receive_millis: counter_delta(
+                    "channel BSS receive time",
+                    self.before.survey.bss_receive_millis,
+                    after.survey.bss_receive_millis,
+                )?,
+                transmit_millis: counter_delta(
+                    "channel transmit time",
+                    self.before.survey.transmit_millis,
+                    after.survey.transmit_millis,
+                )?,
+                noise_dbm: after.survey.noise_dbm,
+            },
         })
     }
 }
@@ -444,7 +500,17 @@ fn snapshot_link(fixture: &OpenWrtConfig) -> Result<OpenWrtClientLinkSnapshot> {
          printf 'tx_retries=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx retries:/ {{print $3}}')\"; \
          printf 'tx_failed=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx failed:/ {{print $3}}')\"; \
          printf 'tx_duration=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx duration:/ {{print $3}}')\"; \
-         printf 'tid0_aqm_drops=%s\\n' \"$(awk '$1 == 0 {{print $6}}' \"$aqm\")\""
+         printf 'tid0_aqm_drops=%s\\n' \"$(awk '$1 == 0 {{print $6}}' \"$aqm\")\"; \
+         printf 'rx_drop_misc=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*rx drop misc:/ {{print $4}}')\"; \
+         printf 'signal_avg=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*signal avg:/ {{print $3}}')\"; \
+         iw dev {INTERFACE} survey dump | awk '\
+           /frequency:/ {{ used = ($0 ~ /in use/) }} \
+           used && /noise:/ {{ print \"survey_noise=\" $2 }} \
+           used && /channel active time:/ {{ print \"survey_active=\" $4 }} \
+           used && /channel busy time:/ {{ print \"survey_busy=\" $4 }} \
+           used && /channel receive time:/ {{ print \"survey_receive=\" $4 }} \
+           used && /channel BSS receive time:/ {{ print \"survey_bss_receive=\" $5 }} \
+           used && /channel transmit time:/ {{ print \"survey_transmit=\" $4 }}'"
     );
     parse_link_snapshot(ssh(fixture, &script)?)
 }
@@ -472,6 +538,16 @@ fn parse_link_snapshot(output: std::process::Output) -> Result<OpenWrtClientLink
         tx_failed: tagged_u64(&output, "tx_failed")?,
         tx_duration_micros: tagged_u64(&output, "tx_duration")?,
         tid0_aqm_drops: tagged_u64(&output, "tid0_aqm_drops")?,
+        rx_drop_misc: tagged_u64(&output, "rx_drop_misc")?,
+        signal_avg_dbm: tagged_optional_i32(&output, "signal_avg")?,
+        survey: OpenWrtClientChannelSurvey {
+            active_millis: tagged_u64(&output, "survey_active")?,
+            busy_millis: tagged_u64(&output, "survey_busy")?,
+            receive_millis: tagged_u64(&output, "survey_receive")?,
+            bss_receive_millis: tagged_u64(&output, "survey_bss_receive")?,
+            transmit_millis: tagged_u64(&output, "survey_transmit")?,
+            noise_dbm: tagged_optional_i32(&output, "survey_noise")?,
+        },
     })
 }
 
@@ -490,6 +566,16 @@ fn tagged_optional_u64(output: &str, key: &str) -> Result<Option<u64>> {
             value
                 .parse()
                 .map_err(|error| format!("invalid OpenWrt `{key}` counter: {error}").into())
+        })
+        .transpose()
+}
+
+fn tagged_optional_i32(output: &str, key: &str) -> Result<Option<i32>> {
+    tagged_optional_string(output, key)
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|error| format!("invalid OpenWrt `{key}` value: {error}").into())
         })
         .transpose()
 }

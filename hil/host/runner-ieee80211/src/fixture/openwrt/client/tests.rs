@@ -89,3 +89,42 @@ fn failed_link_snapshot_keeps_exit_status_even_without_remote_diagnostics() {
     assert!(text.contains("exit status: 1"), "{text}");
     assert!(text.contains("stdout=\"\" stderr=\"\""), "{text}");
 }
+
+#[cfg(unix)]
+#[test]
+fn link_snapshot_carries_client_signal_and_operating_channel_survey() {
+    use std::os::unix::process::ExitStatusExt;
+    let snapshot = |stdout: &str| {
+        parse_link_snapshot(std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        })
+    };
+    let counters = "rx_bytes=1\nrx_packets=1\ntx_bytes=1\ntx_packets=1\ntx_retries=0\n\
+                    tx_failed=0\ntx_duration=1\ntid0_aqm_drops=0\nrx_drop_misc=4\n";
+    let survey = "survey_active=1000\nsurvey_busy=400\nsurvey_receive=300\n\
+                  survey_bss_receive=250\nsurvey_transmit=20\n";
+    let parsed = snapshot(&format!(
+        "{counters}signal_avg=-41\nsurvey_noise=-92\n{survey}"
+    ))
+    .unwrap();
+    assert_eq!(parsed.rx_drop_misc, 4);
+    assert_eq!(parsed.signal_avg_dbm, Some(-41));
+    assert_eq!(
+        parsed.survey,
+        OpenWrtClientChannelSurvey {
+            active_millis: 1_000,
+            busy_millis: 400,
+            receive_millis: 300,
+            bss_receive_millis: 250,
+            transmit_millis: 20,
+            noise_dbm: Some(-92),
+        }
+    );
+    // Signal and noise are optional driver reports; channel times are not.
+    let parsed = snapshot(&format!("{counters}signal_avg=\n{survey}")).unwrap();
+    assert_eq!(parsed.signal_avg_dbm, None);
+    assert_eq!(parsed.survey.noise_dbm, None);
+    assert!(snapshot(&format!("{counters}survey_active=1000\n")).is_err());
+}

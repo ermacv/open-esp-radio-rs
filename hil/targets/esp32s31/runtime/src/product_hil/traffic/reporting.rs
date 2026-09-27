@@ -376,6 +376,21 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     ))
     .await;
     yield_now().await;
+    let full = aggregate.full_block_ack_snr;
+    let partial = aggregate.partial_block_ack_snr;
+    runtime_log_reliably(format_args!(
+        "OAMPBS unavailable={} full_samples={} full_mean_ddb={} full={:?} \
+         partial_samples={} partial_mean_ddb={} partial={:?}",
+        aggregate.block_ack_snr_unavailable,
+        full.samples,
+        full.mean_decidb().unwrap_or(0),
+        full.histogram,
+        partial.samples,
+        partial.mean_decidb().unwrap_or(0),
+        partial.histogram,
+    ))
+    .await;
+    yield_now().await;
     runtime_log_reliably(format_args!(
         "OAMPI tx_irq_epochs={} tx_irq_samples={} tx_irq_skew={} \
          tx_irq_service_us={} tx_irq_service_max_us={} tx_flight_samples={} \

@@ -440,6 +440,7 @@ fn publication_balance_tracks_attempts_across_live_interval_boundaries() {
         starting_sequence: SequenceNumber::new(0).unwrap(),
         subframes: 2,
         missing_original_indices: 0b10,
+        block_ack_snr_db: Some(30),
     });
     counters.record_publication(2, 1); // Retry is a new publication.
     counters.record_hardware_timeout();
@@ -567,6 +568,7 @@ fn partial_block_acks_are_attributed_to_original_positions() {
             starting_sequence: SequenceNumber::new(0).unwrap(),
             subframes,
             missing_original_indices,
+            block_ack_snr_db: Some(30),
         };
     // First publication loses positions 3 and 31; its compacted retry then
     // loses original position 31 again.
@@ -583,4 +585,66 @@ fn partial_block_acks_are_attributed_to_original_positions() {
     assert_eq!(delta.partial_missing_by_position[31], 2);
     assert_eq!(delta.partial_missing_by_position.iter().sum::<u32>(), 3);
     assert_eq!(delta.partial_missing_counts, [1, 1, 0, 0, 0]);
+}
+
+#[test]
+fn block_ack_snr_is_classified_by_acknowledgement_outcome() {
+    let counters = AggregateTxCounters::new();
+    let before = counters.snapshot();
+    let block_ack = |block_ack_received, missing_original_indices, block_ack_snr_db| {
+        AggregateTxObservation::BlockAckProcessed {
+            tx_status: 0,
+            block_ack_received,
+            control: 0,
+            first_sequence: SequenceNumber::new(0).unwrap(),
+            starting_sequence: SequenceNumber::new(0).unwrap(),
+            subframes: 32,
+            missing_original_indices,
+            block_ack_snr_db,
+        }
+    };
+    counters.observe(block_ack(true, 0, Some(41)));
+    counters.observe(block_ack(true, 0, Some(44)));
+    counters.observe(block_ack(true, 0, Some(12)));
+    counters.observe(block_ack(true, 1 << 5, Some(21)));
+    // A success without a received BlockAck carries no response SNR.
+    counters.observe(block_ack(false, 1 << 5, Some(50)));
+    counters.observe(block_ack(true, 0, None));
+    // An empty BlockAck has no acknowledged subframe to attribute.
+    counters.observe(block_ack(true, u32::MAX, Some(35)));
+    let delta = counters.snapshot().wrapping_delta_since(before);
+    assert_eq!(delta.full_block_ack_snr.samples, 3);
+    assert_eq!(delta.full_block_ack_snr.mean_decidb(), Some(323));
+    assert_eq!(delta.full_block_ack_snr.histogram[0], 1);
+    assert_eq!(delta.full_block_ack_snr.histogram[6], 1);
+    assert_eq!(delta.full_block_ack_snr.histogram[7], 1);
+    assert_eq!(delta.partial_block_ack_snr.samples, 1);
+    assert_eq!(delta.partial_block_ack_snr.mean_decidb(), Some(210));
+    assert_eq!(delta.partial_block_ack_snr.histogram[1], 1);
+    assert_eq!(delta.block_ack_snr_unavailable, 2);
+}
+
+#[test]
+fn block_ack_snr_extremes_fall_into_open_buckets() {
+    let counters = AggregateTxCounters::new();
+    let before = counters.snapshot();
+    for snr_db in [i8::MIN, i8::MAX] {
+        counters.observe(AggregateTxObservation::BlockAckProcessed {
+            tx_status: 0,
+            block_ack_received: true,
+            control: 0,
+            first_sequence: SequenceNumber::new(0).unwrap(),
+            starting_sequence: SequenceNumber::new(0).unwrap(),
+            subframes: 2,
+            missing_original_indices: 0,
+            block_ack_snr_db: Some(snr_db),
+        });
+    }
+    let snr = counters
+        .snapshot()
+        .wrapping_delta_since(before)
+        .full_block_ack_snr;
+    assert_eq!(snr.histogram[0], 1);
+    assert_eq!(snr.histogram[BLOCK_ACK_SNR_BUCKETS - 1], 1);
+    assert_eq!(snr.mean_decidb(), Some(-5));
 }

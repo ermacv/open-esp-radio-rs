@@ -6,7 +6,7 @@
 //! access point still holds the association before it believes an
 //! unprotected disconnect.
 //!
-//! SOURCE: complete pinned `libnet80211.a[ieee80211.o]::
+//! SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211.o]::
 //! ieee80211_is_robust_mgmt_frm` and `libnet80211.a[ieee80211_sta.o]::
 //! ieee80211_is_action_category_robust`; IEEE 802.11-2016 9.6.10 (SA Query).
 

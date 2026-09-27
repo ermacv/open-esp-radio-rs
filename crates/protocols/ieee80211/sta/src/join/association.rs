@@ -90,7 +90,7 @@ pub enum StaAssociationRuntimeError {
 /// deadline, retransmission cadence, management sequence consumption and
 /// terminal response policy; it does not own timers, DMA or MAC registers.
 ///
-/// SOURCE: complete `libnet80211.a[ieee80211_sta.o]::
+/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_sta.o]::
 /// ieee80211_sta_new_state` Association branch arms the 1,000-ms state timer.
 /// The 160-ms retransmission cadence is the hardware-qualified open STA policy
 /// previously owned by the ESP32-S31 HIL and remains isolated in
@@ -255,7 +255,7 @@ impl StaAssociationRuntime {
     /// comeback time plus 100 TUs. A second refusal, or one longer than
     /// 5000 TUs, ends the association.
     ///
-    /// SOURCE: complete pinned `libnet80211.a[ieee80211_sta.o]::
+    /// SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211_sta.o]::
     /// sta_recv_assoc` and `sta_assoc_comeback`.
     fn come_back(&mut self, comeback_tu: u32) -> StaAssociationEvent {
         if self.came_back || comeback_tu > MAXIMUM_COMEBACK_TU {

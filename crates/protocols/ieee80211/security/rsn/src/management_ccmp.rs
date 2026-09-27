@@ -11,7 +11,7 @@
 //! zero, its additional authentication data keeps the Frame Control subtype,
 //! and its packet numbers form one replay counter apart from every data TID.
 //!
-//! SOURCE: IEEE 802.11-2016 12.5.3 (CCMP); complete pinned
+//! SOURCE(esp32s31): IEEE 802.11-2016 12.5.3 (CCMP); complete pinned
 //! `libnet80211.a[ieee80211_sta.o]::sta_recv_mgmt` and
 //! `libnet80211.a[ieee80211_crypto_ccmp.o]::ieee80211_ccmp_decrypt`.
 

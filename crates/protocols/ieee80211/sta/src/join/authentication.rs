@@ -62,7 +62,7 @@ pub enum StaAuthenticationRuntimeError {
 /// and supplies extracted management frames. It therefore remains independent
 /// of Embassy, DMA layout and the ESP32-S31 MAC.
 ///
-/// SOURCE: complete `libnet80211.a[ieee80211_sta.o]::
+/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_sta.o]::
 /// ieee80211_sta_new_state` ordinary Authentication branch arms the 1,000-ms
 /// state timer. This runtime owns the open STA policy of at most three
 /// authentication attempts, including sequence allocation and timer outcomes.

@@ -226,7 +226,7 @@ impl ScanRecord {
     /// must permit any channel width. The secondary offset uses IEEE 802.11
     /// values one (above) and three (below).
     ///
-    /// SOURCE: the complete IEs copied by this module from Beacon/Probe
+    /// SOURCE(esp32s31): the complete IEs copied by this module from Beacon/Probe
     /// Response frames; the ESP32-S31 mapping from above/below to CBW 2/3 is
     /// independently recovered in
     /// `oer-esp32s31-pac/src/phy/frequency.rs::bss_tx_offset` from the

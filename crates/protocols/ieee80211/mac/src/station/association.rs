@@ -7,7 +7,7 @@ use super::*;
 /// The caller supplies calibrated Rust-owned PHY gain-table indices. No ROM
 /// function, C ABI callback or vendor global is retained at this boundary.
 ///
-/// SOURCE: complete `libnet80211.a[ieee80211_he.o]::
+/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_he.o]::
 /// ieee80211_add_ulmu_pwrcap` queries `phy_get_max_pwr` for rates 16..=25,
 /// subtracts every rate 17..=25 primary byte from rate 16, then writes the
 /// nine differences after Extension ID 60 and two reserved zero bytes.
@@ -61,7 +61,7 @@ impl HeUlMuPowerCapability {
 
 /// Minimum and maximum transmit power advertised by an HE STA, in dBm.
 ///
-/// SOURCE: complete `libnet80211.a[ieee80211_he.o]::
+/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_he.o]::
 /// ieee80211_add_power_cap` writes Element ID 33, the result of
 /// `hal_get_tx_min_pwr`, and `hal_get_tx_pwr(16, 1)`. Complete
 /// `ieee80211_assoc_req_construct` emits this element immediately after RSN
@@ -316,7 +316,7 @@ impl AssociationRequest<'_> {
             offset += capability.len();
         }
 
-        // SOURCE: complete `libnet80211.a[ieee80211_output.o]::
+        // SOURCE(esp32s31): complete `libnet80211.a[ieee80211_output.o]::
         // ieee80211_assoc_req_construct` appends Extended Supported Rates
         // only after the selected RSN and the HE Power Capability.
         if extended_rates_len != 0 {

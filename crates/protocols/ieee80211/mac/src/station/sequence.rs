@@ -12,7 +12,7 @@ use crate::sequence::SequenceNumber;
 /// traffic and every QoS TID have independent counters, owned together by
 /// [`StaTxSequenceCounters`].
 ///
-/// SOURCE: complete `libnet80211.a[ieee80211_ht.o]::
+/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_ht.o]::
 /// ieee80211_ampdu_request` instructions 0x9a..0xa2 load the AddBA Starting
 /// Sequence Number from the node's TID-indexed halfword at
 /// `(tid + 0x50) * 2 + 0x0e`. The captured open-driver AddBA/action exchange

@@ -112,7 +112,7 @@ const RSNXE_SAE_H2E: u8 = 1 << 5;
 /// element omits the Group Management Cipher Suite as the vendor supplicant
 /// does for the default.
 ///
-/// SOURCE: complete pinned `libnet80211.a[ieee80211_input.o]::
+/// SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211_input.o]::
 /// ieee80211_parse_rsn` (AKM switch table `CSWTCH.76`, PMF flag
 /// `g_ic+0x210`); ESP-IDF `wpa_gen_wpa_ie_rsn` and `wpa_gen_rsnxe`.
 fn select_personal_rsn(

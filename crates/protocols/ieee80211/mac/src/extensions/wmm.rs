@@ -44,7 +44,7 @@ impl WmmParameterSet {
 
 /// Parse one complete vendor-specific WMM Parameter Element.
 ///
-/// SOURCE: complete
+/// SOURCE(esp32s31): complete
 /// `libnet80211.a[ieee80211_sta.o]::ieee80211_parse_wmeparams`
 /// (size `0xae`) and
 /// `ieee80211_wme_standard_ac_to_esp_ac` (size `0x48`). The blob accepts a

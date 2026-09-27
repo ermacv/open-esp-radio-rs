@@ -160,7 +160,7 @@ pub struct TriggerCommonEncoding {
 impl TriggerCommonEncoding {
     /// Encode Common Info using the inverse of the complete blob decoder.
     ///
-    /// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_COMMON_INFO]: complete
+    /// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_COMMON_INFO]: complete
     /// `libpp.a[hal_debug.o]::dbg_dump_trig_common_info`. This method
     /// reverses only its instruction-proven shifts and masks; it does not
     /// choose policy values for reserved or scheduling fields.
@@ -226,7 +226,7 @@ pub struct TriggerScheduledUserEncoding {
 impl TriggerScheduledUserEncoding {
     /// Encode User Info using the inverse of the complete blob decoder.
     ///
-    /// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_USER_SS]: complete
+    /// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_USER_SS]: complete
     /// `libpp.a[hal_debug.o]::dbg_dump_trig_user_ss`.
     pub fn encode(self) -> Result<[u8; TRIGGER_USER_INFO_LEN], TriggerEncodeError> {
         if self.association_id == 0 || self.association_id > 0x0fff {
@@ -268,7 +268,7 @@ impl TriggerScheduledUserEncoding {
 impl TriggerBasicDependentInfo {
     /// Encode Basic Trigger-dependent User Info.
     ///
-    /// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_BASIC_DEPENDENT]: complete
+    /// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_BASIC_DEPENDENT]: complete
     /// `libpp.a[hal_debug.o]::dbg_dump_trig_basic_dependent`.
     pub fn encode(self) -> Result<u8, TriggerEncodeError> {
         if self.mpdu_mu_spacing_factor > 0x03
@@ -340,7 +340,7 @@ pub enum TriggerRuAllocation {
 impl TriggerRuAllocation {
     /// Classify the seven-bit Trigger RU allocation without guessing gaps.
     ///
-    /// SOURCE\[BLOB_LIBPP_HAL_UTILITIES_RU2STR]: complete
+    /// SOURCE(esp32s31)\[BLOB_LIBPP_HAL_UTILITIES_RU2STR]: complete
     /// `libpp.a[hal_utilities.o]::ru2str` (size `0x8c`) formats
     /// 0..8 as 26-tone index `raw+1`, 37..40 as 52-tone index `raw-36`,
     /// 53..54 as 106-tone index `raw-52`, 61..62 as 242-tone index
@@ -621,7 +621,7 @@ pub fn parse_trigger_frame(frame: &[u8]) -> Result<TriggerFrame<'_>, TriggerPars
 
 /// Parse the fixed eight-byte Trigger Common Info field.
 ///
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_COMMON_INFO]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_COMMON_INFO]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_trig_common_info`. The blob reads
 /// two little-endian words and extracts bits 0:62 exactly as represented here;
 /// bit 63 is retained as `trailing_reserved` even though the debug printer
@@ -677,7 +677,7 @@ pub struct TriggerUserRuInfo {
 
 /// Parse the random-access RU form of a five-byte Trigger User Info field.
 ///
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_USER_RU]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_USER_RU]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_trig_user_ru`.
 pub fn parse_trigger_user_ru(bytes: &[u8]) -> Result<TriggerUserRuInfo, TriggerParseError> {
     require(bytes, TRIGGER_USER_INFO_LEN)?;
@@ -716,7 +716,7 @@ pub struct TriggerUserSpatialStreamInfo {
 
 /// Parse the scheduled spatial-stream form of Trigger User Info.
 ///
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_USER_SS]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_USER_SS]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_trig_user_ss`. The blob suppresses
 /// this form for AID12 `0xfff`; this bounded parser preserves the bytes and
 /// leaves that semantic decision to the caller.
@@ -752,7 +752,7 @@ pub struct TriggerBasicDependentInfo {
     pub preferred_access_category: u8,
 }
 
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_BASIC_DEPENDENT]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_BASIC_DEPENDENT]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_trig_basic_dependent`.
 pub fn parse_trigger_basic_dependent(
     bytes: &[u8],
@@ -766,7 +766,7 @@ pub fn parse_trigger_basic_dependent(
     })
 }
 
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_BFRP_DEPENDENT]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_BFRP_DEPENDENT]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_trig_bfrp_dependent`.
 pub fn parse_trigger_bfrp_dependent(bytes: &[u8]) -> Result<u8, TriggerParseError> {
     require(bytes, TRIGGER_BFRP_DEPENDENT_LEN)?;
@@ -783,7 +783,7 @@ pub struct TriggerMuBarDependentInfo {
     pub starting_sequence_number: SequenceNumber,
 }
 
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_MUBAR_DEPENDENT]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_MUBAR_DEPENDENT]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_trig_mubar_dependent`.
 pub fn parse_trigger_mu_bar_dependent(
     bytes: &[u8],
@@ -811,7 +811,7 @@ pub struct TriggerNfrpUserInfo {
     pub multiplexing: bool,
 }
 
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_NFRP_USER]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRIG_NFRP_USER]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_trig_nfrp_user`.
 pub fn parse_trigger_nfrp_user(bytes: &[u8]) -> Result<TriggerNfrpUserInfo, TriggerParseError> {
     require(bytes, TRIGGER_NFRP_USER_INFO_LEN)?;
@@ -841,7 +841,7 @@ pub struct TriggerResponseSchedulingControl {
 
 /// Parse the 32-bit Trigger Response Scheduling HE-control information.
 ///
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRS_CONTROL]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_TRS_CONTROL]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_trs_control`.
 pub fn parse_trigger_response_scheduling_control(
     bytes: &[u8],
@@ -874,7 +874,7 @@ pub struct UplinkPowerHeadroomControl {
 
 /// Parse the fields printed from a 32-bit UPH HE-control information word.
 ///
-/// SOURCE\[BLOB_LIBPP_DBG_DUMP_UPH_CONTROL]: complete
+/// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_UPH_CONTROL]: complete
 /// `libpp.a[hal_debug.o]::dbg_dump_uph_control`. The blob only names
 /// bits 6:13; bits 14:31 remain explicitly unparsed instead of being guessed.
 pub fn parse_uplink_power_headroom_control(

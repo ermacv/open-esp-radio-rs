@@ -43,7 +43,7 @@ pub enum HeCompressedBeamformingReportError {
 
 /// One FCS-stripped HE NDP Announcement MPDU.
 ///
-/// SOURCE: complete pinned `libpp.a[wdev.o]::is_ndpa_to_dut`,
+/// SOURCE(esp32s31): complete pinned `libpp.a[wdev.o]::is_ndpa_to_dut`,
 /// size `0x7e`. The blob receives an on-air length including the four-byte
 /// FCS, subtracts 21 bytes, divides by four and walks station words from
 /// offset 17. Removing the FCS produces the equivalent checked geometry

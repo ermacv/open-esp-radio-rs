@@ -11,7 +11,7 @@
 //! uses H2E when the access point advertises it in its RSNXE, hunting and
 //! pecking otherwise (`sae_pwe_h2e` defaults to both).
 //!
-//! SOURCE: ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! SOURCE(esp32s31): ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
 //! `components/wpa_supplicant/src/common/sae.c` and `dragonfly.c`,
 //! `components/wpa_supplicant/esp_supplicant/src/esp_wpa3.c`; the pinned
 //! `libnet80211.a[ieee80211_ioctl.o]::map_wifi_config_sae_pwe_to_supp`;

@@ -40,7 +40,7 @@ pub use duplicate::RxDuplicateFilter;
 /// this choice explicit prevents an ordinary HT QoS frame from accidentally
 /// advertising a field that is absent on air.
 ///
-/// SOURCE: complete `libnet80211.a[ieee80211_he.o]::
+/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_he.o]::
 /// ieee80211_encap_esfbuf_htc` sets Order and descriptor HTC metadata;
 /// `libpp.a[hal_mac_ctl.o]::hal_he_set_htc` writes the per-queue HTC
 /// word and its software-select bit. Complete `libpp.a[pp_he.o]::
@@ -293,7 +293,7 @@ pub const fn plan_data_encapsulation(
 
 /// Plan one data MPDU whose HE-Control bytes are inserted by MAC hardware.
 ///
-/// SOURCE: complete
+/// SOURCE(esp32s31): complete
 /// `libnet80211.a[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`
 /// sets byte-one bit seven but does not extend or move the DMA header.
 /// Complete `libpp.a[pp_he.o]::ppCalSubFrameLength` accounts for the

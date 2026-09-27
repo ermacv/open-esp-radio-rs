@@ -8,7 +8,7 @@ use oer_bluetooth_radio::{CoexistenceLevel, RadioDuration};
 
 /// Advertising events between raised events for an advertising interval.
 ///
-/// SOURCE: pinned `libble_app.a` `coexAdv.c.o_1.o`
+/// SOURCE(esp32s31): pinned `libble_app.a` `coexAdv.c.o_1.o`
 /// `r_sym_coexAdv_VG7vTjgdtb9y55QZyPP0` (the `r_ble_lll_adv_coex_dpc_update_on_adv_start`
 /// role in `oer-symbol-lineage`) over the legacy table
 /// `sym_coexAdv_H8ZFnQsVsYzrsw6Rv2Wu` = `04 09 0b 03 02 01 28 00 50 00`: an
@@ -29,7 +29,7 @@ pub(crate) const fn advertising_period(interval: RadioDuration) -> u16 {
 /// The level of the advertising event planned after `ended` events of the
 /// set ended.
 ///
-/// SOURCE: pinned `libble_app.a` `coexAdv.c.o_1.o`
+/// SOURCE(esp32s31): pinned `libble_app.a` `coexAdv.c.o_1.o`
 /// `r_sym_coexAdv_A5DXuOYpsXb125NuYN3d` counts one update per ended event
 /// and raises the level when the count is a multiple of the period;
 /// `ble_2.o` `r_sym_ble_2eLkvpKuoaxT83Mj406p` schedules the next event
@@ -48,7 +48,7 @@ const CONNECTION_OPENING_EVENTS: u16 = 6;
 
 /// The level of a peripheral connection event.
 ///
-/// SOURCE: pinned `libble_app.a` `coexConn.c.o_1.o`
+/// SOURCE(esp32s31): pinned `libble_app.a` `coexConn.c.o_1.o`
 /// `r_sym_coexConn_zaMnJdgVnBd25ru35IkB` (the
 /// `r_ble_lll_conn_coex_dpc_update_on_event_scheduled` role) over the table
 /// `sym_coexConn_1jwNCSpbwgr6k9BEu0Eg` = `04 09 0b 04 09 0b 08 06 03 14 02 28

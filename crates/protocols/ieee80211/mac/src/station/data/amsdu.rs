@@ -199,7 +199,7 @@ impl StaProtectedAmsduFrame<'_> {
     /// changed by on-the-fly hardware CCMP. It owns no DMA pointer and cannot
     /// change the encoded length.
     ///
-    /// SOURCE: `libpp.a[pp.o]::ppResortTxAMPDU` retains the complete
+    /// SOURCE(esp32s31): `libpp.a[pp.o]::ppResortTxAMPDU` retains the complete
     /// CCMP-ready MPDU across a missing BlockAck bit and changes only retry
     /// metadata.
     ///

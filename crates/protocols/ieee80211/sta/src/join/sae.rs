@@ -9,7 +9,7 @@
 //! rearms it for 2000 ms after sending the Confirm, and a timeout ends the
 //! attempt.
 //!
-//! SOURCE: complete pinned `libnet80211.a[ieee80211_sta.o]::sta_auth_sae`
+//! SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211_sta.o]::sta_auth_sae`
 //! and the SAE branch of `ieee80211_sta_new_state`; ESP-IDF
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
 //! `components/wpa_supplicant/esp_supplicant/src/esp_wpa3.c`.

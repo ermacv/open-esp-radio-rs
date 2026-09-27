@@ -31,6 +31,17 @@ cache inside the lease. `doctor` and `fixture check` do not flash: they report
 the other image and who flashed it. A board without a recorded flash is
 accepted; the peer's `@READY` handshake then decides.
 
+### Never reset a running peer through USB
+
+A USB Serial/JTAG reset (RTS) of the ESP32-C5 while this application runs,
+with its radio on or off (after `OFF`), leaves the chip in ROM download
+(`boot:0x0`) with a dead USB until the board's RST button is pressed; ESP-IDF
+master and v6.1 behave alike. The runner therefore never resets the peer: it
+opens the console without passing through the reset state and takes the
+running peer over with `SYNC`. Flashing another image over a running peer
+through USB hangs the board in the same way; the
+[Thread peer](../esp32c5-openthread/README.md) shares this limit.
+
 ## Line protocol
 
 Lines end with `\n`. Every protocol line from the peer starts with `@`; the

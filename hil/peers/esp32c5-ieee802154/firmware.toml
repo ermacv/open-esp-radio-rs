@@ -4,7 +4,3 @@ image = "ieee802154-peer"
 chip = "esp32c5"
 # The one ESP-IDF pin every catalog image builds against.
 pins = "esp32s31"
-# Built against ESP-IDF 4d59230d the running image stops the esp32c5's USB
-# Serial/JTAG from answering, and only the board's RST button recovers it.
-# Remove this line once ieee802154-peer-enable-bisect has found the cause.
-hold = "on ESP-IDF 4d59230d it stops the esp32c5's USB Serial/JTAG; see ieee802154-peer-enable-bisect"

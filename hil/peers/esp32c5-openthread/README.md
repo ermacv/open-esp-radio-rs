@@ -20,6 +20,10 @@ catalog, without the OpenThread CLI, the ESP-IDF console or the lwIP glue:
 cargo hil firmware flash openthread-peer --board esp32c5
 ```
 
+Like the IEEE 802.15.4 peer, a running Thread peer must not be reset or
+flashed over through USB; see
+[that limit](../esp32c5-ieee802154/README.md#never-reset-a-running-peer-through-usb).
+
 ## Line protocol
 
 After boot the peer prints `@READY protocol=1 target=esp32c5 stack=openthread`.

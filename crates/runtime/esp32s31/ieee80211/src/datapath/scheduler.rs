@@ -256,14 +256,20 @@ where
             // Re-running physical queue discovery, burst classification and
             // collection-deadline calculation here creates an avoidable air
             // gap on every saturated BA transaction.
-            if let Some((interface, admitted)) = self.prepared_network_tx_candidate()? {
+            // A station in power save holds its network frames: they stay
+            // queued, and the idle wait below ignores their readiness until a
+            // control input admits them again.
+            let network_admitted = self.services.control_admits_network_tx();
+            if network_admitted
+                && let Some((interface, admitted)) = self.prepared_network_tx_candidate()?
+            {
                 self.start_prepared_network_tx(interface, admitted).await?;
                 continue;
             }
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.prepared_completed();
-            let network_tx_pending =
-                self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
+            let network_tx_pending = network_admitted
+                && (self.services.has_prepared_tx() || self.network_tx_queue_len() != 0);
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.network_pending_completed();
             #[cfg(feature = "task-poll-telemetry")]
@@ -422,6 +428,9 @@ where
             match select(
                 stop.as_mut(),
                 select3(wait_rx, self.services.wait_control_ready(), async {
+                    if !network_admitted {
+                        core::future::pending::<()>().await;
+                    }
                     if let Some(interface) = prepared_tx_interface {
                         network.wait_tx_ready(interface).await;
                     } else {

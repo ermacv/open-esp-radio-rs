@@ -42,6 +42,9 @@ use oer_esp32s31_ieee80211_sta::connected_rx::{
 };
 
 use oer_esp32s31_ieee80211_runtime::roles::station::epoch::StoppedStaRx;
+use oer_esp32s31_ieee80211_runtime::roles::station::power::{
+    StationPowerLink, StationRf, finish_station_power, read_power_coex, run_station_power_agent,
+};
 use oer_esp32s31_ieee80211_runtime::{
     datapath::{
         DatapathRunner, DatapathServices,
@@ -579,6 +582,9 @@ pub(super) static STA_AP_STAGED_RX_QUEUE:
         RX_STAGE_CAPACITY,
         RX_STAGE_SLOT_COUNT,
     > = oer_esp32s31_ieee80211_runtime::datapath::rx::routed::StaApStagedRxQueue::new();
+/// The connected station's link to its power agent.
+static STATION_POWER_LINK: StationPowerLink<CriticalSectionRawMutex> = StationPowerLink::new();
+
 pub(super) static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
 pub(super) static RX_REORDER_STORAGE: RxReorderFrameStorage<
@@ -768,8 +774,8 @@ pub(crate) struct ObservedConnectedRxSink<S> {
 
 #[cfg(feature = "diagnostics")]
 impl<S: MacConnectedRxSink> MacConnectedRxSink for ObservedConnectedRxSink<S> {
-    fn wants_power_save_delivery(&self) -> bool {
-        self.inner.wants_power_save_delivery()
+    fn wants_power_save_data(&self) -> bool {
+        self.inner.wants_power_save_data()
     }
 
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
@@ -1047,6 +1053,10 @@ pub(crate) enum ConnectedStationReplaySetupFailure {
 /// Non-reusable connected owner retained at the exact failed transition.
 /// No variant exposes the ordinary disconnected owner required for retry.
 pub enum ConnectedStationFault<'state, 'security> {
+    /// The association ended with the station's RF asleep.
+    RfAsleep {
+        _returned: ConnectedStationReturn<'state, 'security>,
+    },
     InvalidConnectedPolicy {
         _resources: ConnectedStationResources<'state, 'security>,
         _error: ConnectedStaConfigError,
@@ -1274,6 +1284,7 @@ pub(super) const fn connected_config(power: StationPowerMode) -> ConnectedStaCon
 )]
 pub(crate) async fn run_connected<'state, 'security>(
     station_control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,
+    radio: &'static crate::SharedRadio,
     resources: ConnectedStationResources<'state, 'security>,
 ) -> ConnectedStationRunExit<'state, 'security> {
     let prepared = match prepare_esp32s31_connected_service::<
@@ -1677,6 +1688,10 @@ pub(crate) async fn run_connected<'state, 'security>(
     };
     let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
     let tx_sequences = sequences;
+    let power = {
+        let mut guard = radio.lock().await;
+        STATION_POWER_LINK.bind(read_power_coex(&mut guard))
+    };
     let drivers = match ConnectedStaPort::compose(
         plan,
         hardware,
@@ -1710,6 +1725,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             receiver: control_receiver,
             reorder_commands: reorder_sender,
             rx_block_ack: &crate::supervisor::PRODUCTION_RX_BLOCK_ACK,
+            power: Some(power),
         },
     ) {
         Ok(drivers) => drivers,
@@ -1835,12 +1851,26 @@ pub(crate) async fn run_connected<'state, 'security>(
     }
 
     let mut radio_runner = Some(radio_runner);
+    let mut role = role;
+    let mut station_rf = StationRf::new(&mut role);
     let (result, requested_command) = await_stack_boundary!(execution::run(
         connected_datapath,
         station_control,
         &mut radio_runner,
+        run_station_power_agent(
+            &STATION_POWER_LINK,
+            radio,
+            crate::interrupts::power_irq_runtime(),
+            &mut station_rf,
+        ),
     ));
-    let mut role = role;
+    // The stop's air releases and RF wake reach the agent after the
+    // datapath returned; perform them before the radio resources leave.
+    let power_stop = finish_station_power(&STATION_POWER_LINK, radio, &mut station_rf).await;
+    let rf_asleep = station_rf.asleep();
+    if let Err(failure) = power_stop {
+        diagnostics_event!("open-radio: station power agent failed at stop: {failure:?}");
+    }
     let platform = role.platform_mut();
     let radio_runner = radio_runner.expect("terminal execution returns its live owner");
     let raw_exit =
@@ -2096,7 +2126,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         teardown.aggregate,
         control_resources,
     );
-    ConnectedStationRunExit::Returned(ConnectedStationReturn {
+    let returned = ConnectedStationReturn {
         disconnected,
         runtime: production_station_runtime(
             role,
@@ -2127,5 +2157,13 @@ pub(crate) async fn run_connected<'state, 'security>(
             } => StaAttemptSecurity::new(pmk, supplicant_nonce, sequences, message4_protection),
         },
         outcome,
-    })
+    };
+    // RF that could not wake leaves the Wi-Fi PHY client suspended; the vendor
+    // aborts on a failed `esp_phy_enable`, and the owners stay quarantined.
+    if rf_asleep {
+        return ConnectedStationRunExit::Faulted(ConnectedStationFault::RfAsleep {
+            _returned: returned,
+        });
+    }
+    ConnectedStationRunExit::Returned(returned)
 }

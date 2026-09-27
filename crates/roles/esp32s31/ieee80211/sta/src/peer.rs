@@ -88,6 +88,9 @@ pub struct StaConnectedLink {
     pub bssid: [u8; 6],
     pub association_id: u16,
     pub beacon_interval_tu: u16,
+    /// The access point's timestamp in the beacon or probe response the
+    /// station joined from; power management places its TBTT from it.
+    pub beacon_timestamp_tsf: u64,
     pub peer_qos: bool,
     pub association_phy: PhyMode,
     /// The selected HT channel width is allowed to use a 400 ns guard
@@ -230,6 +233,7 @@ impl StaPeerPort {
             bssid: prepared.access_point.bssid,
             association_id: response.association_id,
             beacon_interval_tu: prepared.access_point.beacon_interval_tu,
+            beacon_timestamp_tsf: prepared.access_point.timestamp,
             peer_qos: plan.peer_qos,
             association_phy: station.association_phy,
             peer_supports_ht_short_guard_interval: match station.association_phy {

@@ -323,12 +323,16 @@ impl ConnectedStaPort {
                 plan.beacon_loss,
             )
             .expect("a fresh connected control owner has no beacon-monitor epoch");
-        if let Some(policy) = plan.power_save {
-            control.enable_power_save(policy);
-            if let Some(association_id) = StaAssociationId::new(plan.link.association_id) {
-                control.enable_ps_poll(association_id);
-            }
-            control.enable_hardware_doze_boundary();
+        if let Some(binding) = resources.power {
+            control.enable_power_management(
+                plan.config.power.into(),
+                PmBeacon {
+                    timestamp_tsf: plan.link.beacon_timestamp_tsf,
+                    interval_tu: plan.link.beacon_interval_tu,
+                    tim: None,
+                },
+                binding,
+            );
         }
         if plan.security_mode() == oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal
             && plan.config.block_ack.request_initial_tx_block_ack

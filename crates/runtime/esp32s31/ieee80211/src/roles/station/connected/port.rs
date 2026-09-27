@@ -31,6 +31,7 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_esp32s31_ieee80211_sta::{
     connected_rx::{ConnectedRxConfig, StaCcmpRxReplayRxEndpoint},
     control_tx::ControlTransmitter,
+    modem_sleep::PmBeacon,
     peer::{ConnectedStaPeer, StaConnectedLink},
     single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
 };
@@ -49,7 +50,6 @@ use oer_ieee80211_softmac::{
 
 use oer_ieee80211_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError},
-    power_save::{StaPowerSavePolicy, StaPowerSavePolicyError},
     request::StationPowerMode,
 };
 
@@ -58,6 +58,8 @@ use crate::diagnostics::{
     aggregate_tx::AggregateTxObserver,
     rx_pipeline::{RxPipelineObserver, RxReorderAgreementObserver},
 };
+
+use crate::roles::station::power::StationPowerBinding;
 
 use crate::{
     datapath::{

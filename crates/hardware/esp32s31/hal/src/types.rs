@@ -36,9 +36,7 @@ pub use oer_esp32s31_pac::{
     MacTxDetachOutcome, MacTxDetachReason, MacTxPowerPair, MacTxPowerTable, MacTxProtection,
     MacTxPtiCount, MacTxPtiProgram, MacTxQueueDetached, MacTxQueueIndex, MacTxStatisticsSnapshot,
     PbusMemoryGroupBoundary, PhyAdcRate, PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
-    PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot, StaBeaconMissLimit,
-    StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig, StaModemWakeRestore,
-    StaTbttAutoPeriod, StaTbttSchedule, StaTbttWakeRestore, StaWakeProtectEarlyTimeRaw,
+    PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot, StaTbttSchedule,
     TxBlockAckPayload,
 };
 
@@ -49,8 +47,4 @@ pub use crate::phy::restore::{
     TxIqToneControlRestoreError,
 };
 
-pub use crate::ieee80211::station_wake::{
-    StaModemWakePrepareError, StaModemWakeRestoreError, StaModemWakeRestoreFailure,
-    StaTbttScheduleError, StaTbttWakePrepareError, StaTbttWakeRestoreError,
-    StaTbttWakeRestoreFailure,
-};
+pub use crate::ieee80211::station_wake::StaTbttScheduleError;

@@ -24,8 +24,6 @@ pub(crate) mod interrupt;
 
 pub(crate) mod last_rx_buffer;
 
-pub(crate) mod modem_wakeup;
-
 pub(crate) mod rx;
 
 pub(crate) mod sniffer;

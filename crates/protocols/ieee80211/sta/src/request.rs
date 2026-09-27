@@ -5,10 +5,7 @@
 //! chip adapter can consume the exact application policy without depending on
 //! the top-level radio facade.
 
-use core::{
-    fmt,
-    num::{NonZeroU16, NonZeroU32},
-};
+use core::{fmt, num::NonZeroU16};
 
 pub use oer_ieee80211_mac::ssid::{WifiSsid, WifiSsidError};
 use oer_ieee80211_mac::station::association::Preference;
@@ -45,59 +42,29 @@ impl Default for StationListenInterval {
     }
 }
 
-/// Application policy for legacy 802.11 station power-save signalling.
+/// Station power management for one complete service/reconnect epoch, as
+/// the vendor Wi-Fi library offers it.
 ///
-/// The guard is validated again against the associated AP's beacon interval
-/// before a connected owner is built. This value authorizes PM signalling;
-/// it does not by itself authorize RF, PHY, clock or wake-register changes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StationPowerSavePolicy {
-    listen_interval: StationListenInterval,
-    wake_guard_micros: NonZeroU32,
-}
-
-impl StationPowerSavePolicy {
-    pub const fn new(
-        listen_interval: StationListenInterval,
-        wake_guard_micros: NonZeroU32,
-    ) -> Self {
-        Self {
-            listen_interval,
-            wake_guard_micros,
-        }
-    }
-
-    pub const fn listen_interval(self) -> StationListenInterval {
-        self.listen_interval
-    }
-
-    pub const fn wake_guard_micros(self) -> u32 {
-        self.wake_guard_micros.get()
-    }
-}
-
-/// Station power policy for one complete service/reconnect epoch.
+/// Every mode follows the coexistence schedule while another radio shares
+/// the air: the station then advertises power save outside its Wi-Fi slices
+/// even with [`Self::None`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum StationPowerMode {
-    /// Remain awake and never advertise PM=1.
+    /// No power save of its own (`WIFI_PS_NONE`).
     #[default]
-    AlwaysAwake,
-    /// Use legacy TIM/DTIM-aware PM signalling after association.
-    LegacyPowerSave(StationPowerSavePolicy),
+    None,
+    /// Modem sleep waking for every DTIM (`WIFI_PS_MIN_MODEM`).
+    MinModem,
+    /// Modem sleep waking at the listen interval (`WIFI_PS_MAX_MODEM`).
+    MaxModem(StationListenInterval),
 }
 
 impl StationPowerMode {
+    /// The listen interval the station advertises in its association.
     pub const fn listen_interval(self) -> StationListenInterval {
         match self {
-            Self::AlwaysAwake => StationListenInterval::DEFAULT,
-            Self::LegacyPowerSave(policy) => policy.listen_interval(),
-        }
-    }
-
-    pub const fn power_save_policy(self) -> Option<StationPowerSavePolicy> {
-        match self {
-            Self::AlwaysAwake => None,
-            Self::LegacyPowerSave(policy) => Some(policy),
+            Self::None | Self::MinModem => StationListenInterval::DEFAULT,
+            Self::MaxModem(listen_interval) => listen_interval,
         }
     }
 }

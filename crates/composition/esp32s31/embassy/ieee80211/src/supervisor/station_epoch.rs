@@ -205,6 +205,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let interface = runtime.board().interface;
         let returned = oer_ieee80211_runtime::await_stack_boundary!(run_connected(
             control,
+            self.radio,
             ConnectedStationResources::new(
                 runtime,
                 epoch,

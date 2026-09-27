@@ -46,7 +46,6 @@ use oer_ieee80211_softmac::{
 };
 #[cfg(test)]
 use oer_ieee80211_softmac::{MacRxCryptoStatus, MacRxEvidence};
-use oer_ieee80211_sta::power_save::StaPsPollDelivery;
 use static_cell::StaticCell;
 
 use oer_esp32s31_ieee80211_mac::{
@@ -1088,10 +1087,10 @@ pub enum ConnectedRxEvent<'frame> {
         payload: &'frame [u8],
     },
     PeerDisconnect(StaDisconnect),
-    /// One admitted associated unicast delivery that can complete the
-    /// currently armed legacy PS-Poll service transaction. A fragmented Open
-    /// MSDU reaches this edge only after complete reassembly.
-    PowerSaveDelivery(StaPsPollDelivery),
+    /// One admitted data frame of the access point while the station runs
+    /// in power save. A fragmented Open MSDU reaches this edge only after
+    /// complete reassembly.
+    PowerSaveData(PowerSaveData),
     Ethernet {
         frame: EthernetFrameParts<'frame>,
         raw: &'frame [u8],
@@ -1127,11 +1126,16 @@ pub enum ConnectedRxControlEvent {
     BlockAck(BlockAckAction),
     IndividualTwt(IndividualTwtAction),
     PeerDisconnect(StaDisconnect),
-    PowerSaveDelivery(StaPsPollDelivery),
-    /// More than one delivery crossed the single outstanding PS-Poll lane.
-    /// Connected control must restore PM=0 instead of guessing which poll an
-    /// overwritten observation belonged to.
-    PowerSaveDeliveryRace,
+    PowerSaveData(PowerSaveData),
+}
+
+/// The part of an admitted data frame station power management reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PowerSaveData {
+    /// The frame is group addressed.
+    pub group: bool,
+    /// The access point buffers more frames for the station.
+    pub more_data: bool,
 }
 
 impl ConnectedRxEvent<'_> {
@@ -1174,9 +1178,7 @@ impl ConnectedRxEvent<'_> {
             Self::PeerDisconnect(disconnect) => {
                 Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
             }
-            Self::PowerSaveDelivery(delivery) => {
-                Some(ConnectedRxControlEvent::PowerSaveDelivery(delivery))
-            }
+            Self::PowerSaveData(data) => Some(ConnectedRxControlEvent::PowerSaveData(data)),
             Self::Ethernet { .. } => None,
         }
     }
@@ -1189,13 +1191,13 @@ pub trait ConnectedRxSink {
     #[cfg(feature = "task-poll-telemetry")]
     fn observe_data_cycle_profile(&mut self, _profile: ConnectedRxDataCycleProfile) {}
 
-    /// Return whether connected control currently waits for one legacy
-    /// PS-Poll delivery observation.
+    /// Return whether station power management currently reads data frames:
+    /// only while the station advertises power save.
     ///
     /// Ordinary active-mode traffic must not pay the publication and mailbox
     /// cost for an event with no consumer. Test and simple observer sinks keep
     /// the conservative default so their event contract is unchanged.
-    fn wants_power_save_delivery(&self) -> bool {
+    fn wants_power_save_data(&self) -> bool {
         true
     }
 
@@ -2089,8 +2091,9 @@ impl ConnectedRxDispatcher {
         {
             return ConnectedRxDispatch::Duplicate;
         }
-        if protection == ConnectedRxProtection::Pairwise && sink.wants_power_save_delivery() {
-            sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
+        if sink.wants_power_save_data() {
+            sink.publish(ConnectedRxEvent::PowerSaveData(PowerSaveData {
+                group: protection == ConnectedRxProtection::Group,
                 more_data: public_frame_control & MORE_DATA != 0,
             }));
         }
@@ -2202,8 +2205,9 @@ impl ConnectedRxDispatcher {
         }
         #[cfg(feature = "task-poll-telemetry")]
         let cycle_duplicate = connected_rx_cycle_count();
-        if sink.wants_power_save_delivery() {
-            sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
+        if sink.wants_power_save_data() {
+            sink.publish(ConnectedRxEvent::PowerSaveData(PowerSaveData {
+                group: false,
                 more_data: public_frame_control & MORE_DATA != 0,
             }));
         }
@@ -2297,18 +2301,16 @@ impl ConnectedRxDispatcher {
             // per-fragment history, and no fragment mutates ordinary history.
             return ConnectedRxDispatch::Duplicate;
         }
-        let power_save_delivery =
-            (protection == ConnectedRxProtection::Pairwise).then_some(StaPsPollDelivery {
-                more_data: u16::from_le_bytes([view.mpdu[0], view.mpdu[1]]) & MORE_DATA != 0,
-            });
+        let power_save_data = PowerSaveData {
+            group: protection == ConnectedRxProtection::Group,
+            more_data: u16::from_le_bytes([view.mpdu[0], view.mpdu[1]]) & MORE_DATA != 0,
+        };
         let raw = view.raw;
         let metadata = view.metadata;
         self.fragment_admission_active = true;
         match self.fragments.ingest(view.fragment, now_micros, |data| {
-            if let Some(delivery) = power_save_delivery
-                && sink.wants_power_save_delivery()
-            {
-                sink.publish(ConnectedRxEvent::PowerSaveDelivery(delivery));
+            if sink.wants_power_save_data() {
+                sink.publish(ConnectedRxEvent::PowerSaveData(power_save_data));
             }
             sink.publish(ConnectedRxEvent::Ethernet {
                 frame: data.ethernet_frame(),
@@ -2432,8 +2434,9 @@ impl ConnectedRxDispatcher {
 
         let outcome = admission.ingest(|data| {
             let publication = commit_ccmp_replay(shared_replay, owned_replay, prepared)?;
-            if sink.wants_power_save_delivery() {
-                sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
+            if sink.wants_power_save_data() {
+                sink.publish(ConnectedRxEvent::PowerSaveData(PowerSaveData {
+                    group: false,
                     more_data,
                 }));
             }

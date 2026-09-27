@@ -47,6 +47,7 @@ fn peer() -> ConnectedStaPeer {
             bssid: [7, 8, 9, 10, 11, 12],
             association_id: 7,
             beacon_interval_tu: 100,
+            beacon_timestamp_tsf: 0,
             peer_qos: true,
             association_phy: PhyMode::He20,
             peer_supports_ht_short_guard_interval: false,
@@ -88,7 +89,7 @@ fn ht40_mcs32_peer() -> ConnectedStaPeer {
 
 fn config() -> ConnectedStaConfig {
     ConnectedStaConfig {
-        power: StationPowerMode::AlwaysAwake,
+        power: StationPowerMode::None,
         tx: ConnectedStaTxPolicy {
             rate: ConnectedStaRateConfig {
                 high_throughput_enabled: true,
@@ -286,6 +287,7 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
             receiver,
             reorder_commands: reorder_sender,
             rx_block_ack: &rx_block_ack,
+            power: None,
         },
     );
     assert_eq!(control.rx_block_ack().maximum_window(), 32);

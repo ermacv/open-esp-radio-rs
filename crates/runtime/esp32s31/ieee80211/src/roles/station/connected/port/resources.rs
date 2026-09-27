@@ -174,6 +174,8 @@ pub struct ConnectedStaControlResources<'resources, M: RawMutex, const CAPACITY:
     pub receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
     pub reorder_commands: RxReorderCommandSender<'resources, M>,
     pub rx_block_ack: &'resources StaApRxBlockAck,
+    /// The power agent link of a station running power management.
+    pub power: Option<StationPowerBinding<'resources, M>>,
 }
 
 /// Final owner graph immediately before the connected services begin running.

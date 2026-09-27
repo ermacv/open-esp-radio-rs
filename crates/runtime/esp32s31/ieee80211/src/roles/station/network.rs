@@ -79,8 +79,8 @@ impl<'resources, N, O> EmbassyNetConnectedRxSink<'resources, N, O> {
 impl<N: DatapathNetworkRx, O: ConnectedRxSink> ConnectedRxSink
     for EmbassyNetConnectedRxSink<'_, N, O>
 {
-    fn wants_power_save_delivery(&self) -> bool {
-        self.observer.wants_power_save_delivery()
+    fn wants_power_save_data(&self) -> bool {
+        self.observer.wants_power_save_data()
     }
 
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {

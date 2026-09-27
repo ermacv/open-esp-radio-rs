@@ -68,7 +68,7 @@ use oer_ieee80211_mac::{
         STA_PROTECTED_QOS_ETHERNET_HEADROOM, STA_PROTECTED_QOS_ETHERNET_OVERHEAD,
         StaTxSequenceCounters, StationFrameError, sta_protected_amsdu_pair_frame_length,
     },
-    station_power_save::{StaAssociationId, StaPowerManagement},
+    station_power_save::StaPowerManagement,
 };
 
 use oer_ieee80211_datapath::PhysicalTxSource;
@@ -93,7 +93,9 @@ use crate::{
     },
 };
 
-use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
+use oer_esp32s31_ieee80211_sta::connected_control::{
+    ConnectedDisconnectReason, NetworkTxPowerReport,
+};
 
 const AMPDU_ABORT_SETTLE_US: u64 = 16;
 const HE_TRIGGER_DATA_TID: u8 = 0;
@@ -144,6 +146,7 @@ pub struct ConnectedTxParked<'observer, const SLOTS: usize> {
     he_trigger_based: Option<HeTriggerBasedTxConfig>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
     pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
+    network_power: NetworkTxPowerReport,
     #[cfg(any(feature = "diagnostics", test))]
     observer: Option<&'observer dyn crate::diagnostics::aggregate_tx::AggregateTxObserver>,
     #[cfg(not(any(feature = "diagnostics", test)))]
@@ -409,6 +412,10 @@ pub struct ConnectedTx<
     active: ConnectedTxActive<SLOTS>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
     pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
+    /// The ordinary transaction in flight carries network data.
+    network_ordinary: bool,
+    /// Network data TX not yet read by power management.
+    network_power: NetworkTxPowerReport,
     #[cfg(any(feature = "diagnostics", test))]
     observer: Option<&'ampdu dyn crate::diagnostics::aggregate_tx::AggregateTxObserver>,
     block_ack_status_sink: Option<StationTxBlockAckStatusSink>,

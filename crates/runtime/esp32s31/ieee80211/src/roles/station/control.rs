@@ -15,8 +15,6 @@
 
 use core::future::Future;
 
-use embassy_futures::select::{Either, select};
-
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use embassy_time::{Instant, Timer};
@@ -30,10 +28,6 @@ use oer_ieee80211_mac::twt::IndividualTwtFlowId;
 use oer_ieee80211_sta::{
     ftm::FtmRequesterConfig,
     link_monitor::{StaBeaconLossConfig, StaBeaconMonitor},
-    power_save::{
-        StaDozePermit, StaDozePrepareError, StaDozeRestore, StaDozeRestoreFailure, StaDozeRestored,
-        StaPowerSavePlanner, StaPowerSavePolicy, StaPowerSaveState, StaPreparedDoze,
-    },
     twt::{
         IndividualTwtProposal, IndividualTwtRequester, IndividualTwtRequesterConfig,
         IndividualTwtWakePlan,
@@ -59,12 +53,11 @@ pub use oer_esp32s31_ieee80211_sta::{
             StationHardwareBeaconMonitorFrontier, StationHardwareBeaconMonitorStopped,
         },
         control::{
-            ConnectedControlHardware, StationDozeHardwareError, StationIndividualTwtHardwareError,
+            ConnectedControlHardware, StationIndividualTwtHardwareError,
             StationIndividualTwtHardwareStage, StationIndividualTwtUnsupportedStage,
-            StationLowPowerFrontierStatus, StationLowPowerHardwareFrontier,
-            station_low_power_hardware_frontier,
         },
     },
+    modem_sleep::{ModemSleep, PmBeacon, SleepType},
 };
 
 use crate::{
@@ -73,7 +66,13 @@ use crate::{
         rx::reorder::{RxReorderCommandSender, try_send_rx_reorder_command},
         services::DatapathControlService,
     },
-    roles::{concurrent::StaApRxBlockAck, station::control_mailbox::ConnectedControlReceiver},
+    roles::{
+        concurrent::StaApRxBlockAck,
+        station::{
+            control_mailbox::ConnectedControlReceiver,
+            power::{StationPowerBinding, StationPowerLink},
+        },
+    },
 };
 
 /// Executor deadline capability kept outside the finite control core.
@@ -133,16 +132,8 @@ pub struct ConnectedControl<'resources, M: RawMutex, const CAPACITY: usize> {
     rx_reorder_commands: Option<RxReorderCommandSender<'resources, M>>,
     security: Option<ConnectedWpa2Security>,
     deferred_control_event: Option<ConnectedRxControlEvent>,
-    hardware_doze_boundary_enabled: bool,
-    doze_restore: Option<StaDozeRestore>,
-    last_doze_boundary_failure: Option<StationDozeBoundaryFailure>,
+    power: Option<&'resources StationPowerLink<M>>,
     hardware_beacon_monitor: Option<StationHardwareBeaconMonitorEpoch>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StationDozeBoundaryFailure {
-    Prepare(StaDozePrepareError),
-    Hardware(StationDozeHardwareError),
 }
 
 const fn control_event_requires_active(event: ConnectedRxControlEvent) -> bool {
@@ -193,9 +184,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             rx_reorder_commands: None,
             security: None,
             deferred_control_event: None,
-            hardware_doze_boundary_enabled: false,
-            doze_restore: None,
-            last_doze_boundary_failure: None,
+            power: None,
             hardware_beacon_monitor: None,
         }
     }
@@ -214,9 +203,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             rx_reorder_commands: None,
             security: None,
             deferred_control_event: None,
-            hardware_doze_boundary_enabled: false,
-            doze_restore: None,
-            last_doze_boundary_failure: None,
+            power: None,
             hardware_beacon_monitor: None,
         }
     }
@@ -305,16 +292,16 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         }
     }
 
-    pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
-        self.core.enable_power_save(policy);
-        self.receiver.set_power_save_delivery_armed(false);
-    }
-
-    pub fn enable_ps_poll(
+    /// Start power management for this association over its agent link.
+    pub fn enable_power_management(
         &mut self,
-        association_id: oer_ieee80211_mac::station_power_save::StaAssociationId,
+        sleep_type: SleepType,
+        join_beacon: PmBeacon,
+        binding: StationPowerBinding<'resources, M>,
     ) {
-        self.core.enable_ps_poll(association_id);
+        self.core
+            .enable_power_management(sleep_type, join_beacon, binding.coex);
+        self.power = Some(binding.link);
     }
 
     pub fn enable_individual_twt_requester(&mut self, config: IndividualTwtRequesterConfig) {
@@ -359,23 +346,6 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     ) -> Self {
         self.core = self.core.with_he_trigger_based(config);
         self
-    }
-
-    /// Drive the affine hardware-doze boundary after each logical permit.
-    /// ESP32-S31 production currently reaches this boundary and records
-    /// `Unsupported`; it does not claim that RF or PHY entered sleep.
-    pub fn enable_hardware_doze_boundary(&mut self) {
-        self.hardware_doze_boundary_enabled = true;
-    }
-
-    pub const fn last_doze_boundary_failure(&self) -> Option<StationDozeBoundaryFailure> {
-        self.last_doze_boundary_failure
-    }
-
-    /// Report the reviewed source frontier without entering modem, RF, PHY,
-    /// baseband or clock sleep and without reading or writing hardware.
-    pub const fn low_power_hardware_frontier(&self) -> StationLowPowerHardwareFrontier {
-        station_low_power_hardware_frontier()
     }
 
     pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {
@@ -451,102 +421,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         self.core.beacon_lost()
     }
 
-    pub const fn power_save(&self) -> Option<&StaPowerSavePlanner> {
-        self.core.power_save()
-    }
-
-    pub const fn power_save_wake_deadline_micros(&self) -> Option<u64> {
-        self.core.power_save_wake_deadline_micros()
-    }
-
-    pub fn take_doze_permit(&mut self) -> Option<StaDozePermit> {
-        self.core.take_doze_permit()
-    }
-
-    /// Bind the next logical permit to the live hardware TSF. The returned
-    /// affine token still cannot enter RF/PHY sleep by itself; callers must
-    /// present it to `ConnectedControlHardware::enter_station_doze`, whose
-    /// production implementation deliberately fails closed until that leaf
-    /// is audited.
-    pub fn prepare_doze_transaction<H>(
-        &mut self,
-        hardware: &mut H,
-    ) -> Result<Option<StaPreparedDoze>, StaDozePrepareError>
-    where
-        H: ConnectedControlHardware,
-    {
-        self.take_doze_permit()
-            .map(|permit| StaPreparedDoze::prepare(permit, hardware.station_tsf()))
-            .transpose()
-    }
-
-    pub fn enter_prepared_doze<H>(
-        prepared: StaPreparedDoze,
-        hardware: &mut H,
-    ) -> Result<
-        oer_ieee80211_sta::power_save::StaDozeRestore,
-        oer_ieee80211_sta::power_save::StaDozeEntryFailure<StationDozeHardwareError>,
-    >
-    where
-        H: ConnectedControlHardware,
-    {
-        prepared.enter_with(hardware, ConnectedControlHardware::enter_station_doze)
-    }
-
-    pub fn restore_from_doze<H>(
-        restore: StaDozeRestore,
-        hardware: &mut H,
-    ) -> Result<StaDozeRestored, StaDozeRestoreFailure<StationDozeHardwareError>>
-    where
-        H: ConnectedControlHardware,
-    {
-        restore.restore_with(hardware, ConnectedControlHardware::restore_station_awake)
-    }
-
-    fn service_hardware_doze_boundary<H>(
-        &mut self,
-        hardware: &mut H,
-        allow_entry: bool,
-    ) -> Result<Option<DatapathControlProgress<ConnectedDisconnectReason>>, ConnectedControlError>
-    where
-        H: ConnectedControlHardware,
-    {
-        if let Some(restore) = self.doze_restore.take() {
-            match Self::restore_from_doze(restore, hardware) {
-                Ok(_) => {}
-                Err(failure) => {
-                    self.doze_restore = Some(failure.restore);
-                    return Err(failure.error.into());
-                }
-            }
-        }
-        if !self.hardware_doze_boundary_enabled || !allow_entry {
-            return Ok(None);
-        }
-        let Some(permit) = self.core.take_doze_permit() else {
-            return Ok(None);
-        };
-        let prepared = match StaPreparedDoze::prepare(permit, hardware.station_tsf()) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                self.last_doze_boundary_failure = Some(StationDozeBoundaryFailure::Prepare(error));
-                return Ok(None);
-            }
-        };
-        match Self::enter_prepared_doze(prepared, hardware) {
-            Ok(restore) => {
-                self.doze_restore = Some(restore);
-                self.last_doze_boundary_failure = None;
-                // Do not immediately restore in this same scheduler turn.
-                // The next timer, mailbox, network-TX or stop edge owns wake.
-                Ok(Some(DatapathControlProgress::Idle))
-            }
-            Err(failure) => {
-                self.last_doze_boundary_failure =
-                    Some(StationDozeBoundaryFailure::Hardware(failure.error));
-                Ok(None)
-            }
-        }
+    pub const fn power_management(&self) -> &ModemSleep {
+        self.core.power_management()
     }
 
     pub fn shutdown<H, X>(
@@ -558,17 +434,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        self.receiver.set_power_save_delivery_armed(false);
-        if let Some(restore) = self.doze_restore.take()
-            && let Err(failure) = Self::restore_from_doze(restore, hardware)
-        {
-            self.doze_restore = Some(failure.restore);
-            return Err(failure.error.into());
-        }
+        self.receiver.set_power_save_data_armed(false);
         let shutdown = self
             .rx_block_ack
             .sessions()
             .with_sessions(|rx_block_ack| self.core.shutdown(hardware, tx, rx_block_ack))?;
+        // The stop's air releases and RF wake reach the agent, which performs
+        // them before the association's radio resources return.
+        self.forward_power_commands()?;
         let hardware_beacon_monitor = self
             .hardware_beacon_monitor
             .take()
@@ -599,7 +472,67 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
                 .security
                 .as_ref()
                 .is_some_and(ConnectedWpa2Security::tx_in_flight)
-            || self.core.has_immediate_work(!self.receiver.is_empty())
+            || self.power.is_some_and(StationPowerLink::has_input)
+            || self.core.has_immediate_work(self.control_event_ready())
+    }
+
+    /// Whether a received event can be consumed now. Events leading to a
+    /// frame wait while power management holds the TX queues, and must not
+    /// keep the service spinning meanwhile.
+    fn control_event_ready(&self) -> bool {
+        if self.power_holds_tx() {
+            self.deferred_control_event.is_none() && !self.receiver.is_empty()
+        } else {
+            !self.receiver.is_empty()
+        }
+    }
+
+    /// Whether frames other than power management's Null must wait: the
+    /// station is outside its Wi-Fi slice, its RF sleeps, or the agent has
+    /// not yet performed a command power management relies on.
+    fn power_holds_tx(&self) -> bool {
+        self.core.power_blocks_tx() || self.power.is_some_and(StationPowerLink::outstanding)
+    }
+
+    /// Whether a network or ESP-NOW frame may be published now.
+    pub fn admits_frames(&self) -> bool {
+        !self.power_holds_tx() && self.core.admits_network_tx()
+    }
+
+    /// Hand every queued power command to the agent.
+    fn forward_power_commands(&mut self) -> Result<(), ConnectedControlError> {
+        let Some(link) = self.power else {
+            return Ok(());
+        };
+        while let Some(command) = self.core.take_power_command() {
+            link.send(command)
+                .map_err(|_| ConnectedControlError::PowerCommandOverflow)?;
+        }
+        Ok(())
+    }
+
+    /// Move the agent's inputs into the control core.
+    fn collect_power_inputs(&mut self) -> Result<(), ConnectedControlError> {
+        let Some(link) = self.power else {
+            return Ok(());
+        };
+        if let Some(failure) = link.failure() {
+            let _ = failure;
+            return Err(ConnectedControlError::PowerAgentFailed);
+        }
+        if let Some(coex) = link.coex() {
+            self.core.set_power_coex(coex);
+        }
+        if link.take_tbtt() {
+            self.core.observe_tbtt();
+        }
+        if let Some(phase) = link.take_phase() {
+            self.core.observe_coex_phase(phase);
+        }
+        if let Some(end) = link.take_preemption() {
+            self.core.observe_preemption_end(end);
+        }
+        Ok(())
     }
 
     /// Earliest role-local control deadline. Reading it does not require the
@@ -616,18 +549,16 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         if self.has_immediate_work() {
             return;
         }
-        if let Some(deadline) = self.next_alarm_deadline() {
-            match select(
-                self.receiver.ready(),
-                Timer::at(Instant::from_micros(deadline)),
-            )
-            .await
-            {
-                Either::First(()) | Either::Second(()) => {}
+        let power = self.power;
+        let deadline = self.next_alarm_deadline();
+        let receiver = &self.receiver;
+        wait_control_input(receiver, power, async move {
+            match deadline {
+                Some(deadline) => Timer::at(Instant::from_micros(deadline)).await,
+                None => core::future::pending().await,
             }
-        } else {
-            self.receiver.ready().await;
-        }
+        })
+        .await;
     }
 
     /// Wait without consuming the event that made control work ready.
@@ -638,13 +569,16 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         if self.has_immediate_work() {
             return;
         }
-        if let Some(deadline) = self.core.next_alarm_deadline() {
-            match select(self.receiver.ready(), tx.wait_until_micros(deadline)).await {
-                Either::First(()) | Either::Second(()) => {}
+        let power = self.power;
+        let deadline = self.core.next_alarm_deadline();
+        let receiver = &self.receiver;
+        wait_control_input(receiver, power, async move {
+            match deadline {
+                Some(deadline) => tx.wait_until_micros(deadline).await,
+                None => core::future::pending().await,
             }
-        } else {
-            self.receiver.ready().await;
-        }
+        })
+        .await;
     }
 
     fn service_core_step<H, X>(
@@ -677,29 +611,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         });
         let exiting = matches!(&result, Ok(DatapathControlProgress::Exit(_)));
         self.receiver
-            .set_power_save_delivery_armed(!exiting && self.core.ps_poll_delivery_armed());
-        result
-    }
-
-    pub fn begin_absence(&mut self) -> bool {
-        if self.doze_restore.is_some() || self.security.as_ref().is_some_and(|s| s.tx_in_flight()) {
-            return false;
-        }
-        self.core.begin_absence()
-    }
-
-    pub fn restore_absence(&mut self) -> bool {
-        self.core.restore_absence()
-    }
-    pub fn absence_admitted(&self) -> bool {
-        self.core.absence_admitted()
-    }
-    pub fn service_absence<H: ConnectedControlHardware, X: ConnectedControlTx>(
-        &mut self,
-        hardware: &mut H,
-        tx: &mut X,
-    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError> {
-        self.core.service_absence(hardware, tx)
+            .set_power_save_data_armed(!exiting && self.core.wants_power_save_data());
+        let result = result?;
+        self.forward_power_commands()?;
+        Ok(result)
     }
 
     pub fn service<'a, H, X>(
@@ -732,13 +647,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             let snapshot = hardware.station_beacon_monitor_readback();
             let _ = epoch.evaluate_once(snapshot);
         }
-        let allow_doze_entry = !context.network_tx_pending
-            && !context.stop_pending
-            && self.deferred_control_event.is_none()
-            && self.receiver.is_empty();
-        if let Some(progress) = self.service_hardware_doze_boundary(hardware, allow_doze_entry)? {
-            return Ok(progress);
-        }
+        self.collect_power_inputs()?;
         // The shared ordinary-TX completion always precedes newly queued
         // RX work. Security and the generic control core can never both
         // own that transaction.
@@ -749,12 +658,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         }
 
         if self.core.tx_in_flight() {
-            let queued_control_pending = self.deferred_control_event.is_some()
-                || if self.core.ps_poll_tx_in_flight() {
-                    self.receiver.non_power_save_delivery_pending()
-                } else {
-                    !self.receiver.is_empty()
-                };
+            let queued_control_pending =
+                self.deferred_control_event.is_some() || !self.receiver.is_empty();
             return self.service_core_step(hardware, tx, None, queued_control_pending, context);
         }
 
@@ -764,18 +669,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             ));
         }
 
-        // Security processing can publish EAPOL immediately, so retain that
-        // frame until an acknowledged PM=0 transition completes. Beacons are
-        // deliberately handled below while PM=1: a mandatory listen/DTIM
-        // receive edge is not itself an exit from legacy power-save.
-        if self.receiver.security_pending()
-            && self
-                .core
-                .power_save()
-                .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
-        {
-            return self.service_core_step(hardware, tx, None, true, context);
-        }
+        // Security processing can publish EAPOL immediately, so its frames
+        // wait while power management holds the TX queues. Beacons are
+        // handled below meanwhile: they drive power management itself.
+        let holds_tx = self.power_holds_tx();
 
         // A peer disconnect keeps terminal priority once TX ownership is
         // free. GTK rekey then precedes non-terminal BlockAck work.
@@ -788,7 +685,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
                 context,
             );
         }
-        if let Some(frame) = self.receiver.try_receive_security() {
+        if !holds_tx && let Some(frame) = self.receiver.try_receive_security() {
             let Some(security) = self.security.as_mut() else {
                 return Ok(DatapathControlProgress::Exit(
                     ConnectedDisconnectReason::GroupKeyHandshakeFailed,
@@ -796,23 +693,30 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             };
             return Ok(security.process(hardware, tx, frame).await);
         }
-        let event = self
-            .deferred_control_event
-            .take()
-            .or_else(|| self.receiver.try_receive_power_save_delivery())
-            .or_else(|| self.receiver.try_receive_control())
+        let deferred = if holds_tx {
+            None
+        } else {
+            self.deferred_control_event.take()
+        };
+        let event = deferred
+            .or_else(|| self.receiver.try_receive_power_save_data())
+            .or_else(|| {
+                if holds_tx && self.deferred_control_event.is_some() {
+                    None
+                } else {
+                    self.receiver.try_receive_control()
+                }
+            })
             .or_else(|| self.receiver.try_receive_he_observation());
-        if event.is_some_and(|event| {
-            control_event_requires_active(event)
-                || (self.core.he_trigger_runtime_enabled()
-                    && he_control_event_requires_active(event))
-        }) && self
-            .core
-            .power_save()
-            .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+        if holds_tx
+            && event.is_some_and(|event| {
+                control_event_requires_active(event)
+                    || (self.core.he_trigger_runtime_enabled()
+                        && he_control_event_requires_active(event))
+            })
         {
             self.deferred_control_event = event;
-            return self.service_core_step(hardware, tx, None, true, context);
+            return self.service_core_step(hardware, tx, None, false, context);
         }
         self.service_core_step(
             hardware,
@@ -843,32 +747,43 @@ where
         ConnectedControl::service_with_context(self, hardware, tx, context)
     }
 
-    fn ready(&self, _tx: &X, now_micros: u64) -> bool {
+    fn ready(&self, tx: &X, now_micros: u64) -> bool {
         self.has_immediate_work()
+            || (self.core.power_management().is_started() && tx.has_network_tx_report())
             || self
                 .next_alarm_deadline()
                 .is_some_and(|deadline| deadline <= now_micros)
     }
 
     fn required_before_network_tx(&self) -> bool {
-        self.doze_restore.is_some()
-            || self
-                .core
-                .power_save()
-                .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
+        self.core.network_tx_needs_offer(DatapathControlContext {
+            network_tx_pending: true,
+            stop_pending: false,
+        })
     }
 
-    fn required_before_stop(&self) -> bool {
-        self.doze_restore.is_some()
-            || self
-                .core
-                .power_save()
-                .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
+    fn admits_network_tx(&self) -> bool {
+        self.admits_frames()
     }
 
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a {
         ConnectedControl::wait_ready(self, tx)
     }
+}
+
+/// Wait for a received event, a power input or `deadline`.
+async fn wait_control_input<M: RawMutex, const CAPACITY: usize>(
+    receiver: &ConnectedControlReceiver<'_, M, CAPACITY>,
+    power: Option<&StationPowerLink<M>>,
+    deadline: impl Future<Output = ()>,
+) {
+    let power = async move {
+        match power {
+            Some(link) => link.wait().await,
+            None => core::future::pending().await,
+        }
+    };
+    let _ = embassy_futures::select::select3(receiver.ready(), power, deadline).await;
 }
 
 #[cfg(test)]

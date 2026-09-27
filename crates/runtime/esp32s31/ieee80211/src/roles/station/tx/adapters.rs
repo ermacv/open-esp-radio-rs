@@ -21,6 +21,14 @@ impl<
         self.take_last_ordinary_outcome()
     }
 
+    fn has_network_tx_report(&self) -> bool {
+        !self.network_power.is_empty()
+    }
+
+    fn take_network_tx_report(&mut self) -> NetworkTxPowerReport {
+        core::mem::take(&mut self.network_power)
+    }
+
     fn now_micros(&self) -> u64 {
         self.ordinary.now_micros()
     }
@@ -53,19 +61,6 @@ impl<
         }
         self.ordinary
             .start_power_management_null(hardware, power_management)?;
-        self.active = ConnectedTxActive::Ordinary;
-        Ok(DatapathControlProgress::TxPending)
-    }
-
-    fn start_ps_poll<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
-        &mut self,
-        hardware: &mut H,
-        association_id: StaAssociationId,
-    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
-        if self.active() {
-            return Err(SingleMpduTxError::Busy);
-        }
-        self.ordinary.start_ps_poll(hardware, association_id)?;
         self.active = ConnectedTxActive::Ordinary;
         Ok(DatapathControlProgress::TxPending)
     }

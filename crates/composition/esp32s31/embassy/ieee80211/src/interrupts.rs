@@ -34,6 +34,11 @@ pub(crate) static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
 static POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     EmbassyPowerIrqRuntime::new();
 
+/// The power interrupt's executor handoff, for the station power agent.
+pub(crate) fn power_irq_runtime() -> &'static EmbassyPowerIrqRuntime<CriticalSectionRawMutex> {
+    &POWER_IRQ_RUNTIME
+}
+
 #[cfg(feature = "mac-irq-diagnostics")]
 static MAC_IRQ_OBSERVER: OnceLock<fn(MacIrqObservation)> = OnceLock::new();
 

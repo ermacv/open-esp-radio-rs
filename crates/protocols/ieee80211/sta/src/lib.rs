@@ -19,11 +19,9 @@ mod test_support;
 pub mod ftm;
 pub mod join;
 pub mod link_monitor;
-pub mod power_save;
 pub mod request;
 pub mod scan;
 pub mod station;
 pub mod twt;
 
-pub mod absence;
 pub mod association;

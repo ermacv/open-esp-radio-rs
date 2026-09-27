@@ -36,7 +36,7 @@ use oer_ieee80211_mac::{
         StaActionFrame, StaDataFrame, StaProtectedDataFrame, StaProtectedEthernetFrame,
         StaTxSequenceCounters, StationFrameError,
     },
-    station_power_save::{StaAssociationId, StaNullDataFrame, StaPowerManagement, StaPsPollFrame},
+    station_power_save::{StaNullDataFrame, StaPowerManagement},
 };
 
 use oer_ieee80211_softmac::{
@@ -138,8 +138,6 @@ impl ActionTxConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SingleMpduTxError {
     Busy,
-    /// The abstract control owner has no PS-Poll publication implementation.
-    PsPollUnsupported,
     EthernetFrameTooShort,
     SecurityModeMismatch,
     PacketNumber(CcmpTxPacketNumberError),
@@ -966,54 +964,6 @@ where
                 bssid: self.config.bssid,
                 sequence_number,
                 power_management,
-            }
-            .encode(&mut buffer[TX_METADATA_SIZE..])
-            .map_err(SingleMpduTxError::Encode)?
-        };
-        self.ordinary
-            .start(
-                hardware,
-                OrdinaryTxPlan {
-                    frame_length,
-                    descriptor_capacity: None,
-                    exchange: MacTxPlan {
-                        access_category: LegacyTxQueue::Voice.access_category(),
-                        initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
-                        ),
-                        publication_limit: self.config.exchange.publication_limit,
-                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
-                    },
-                    hardware_mic_length: 0,
-                    hardware_key_selector: 0,
-                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
-                    scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
-                    packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
-                },
-            )
-            .map_err(Into::into)
-    }
-
-    /// Encode and publish one legacy PS-Poll control frame.
-    ///
-    /// The ordinary unicast transaction owns ACK detection, bounded retry and
-    /// terminal completion exactly as it does for PM Null Data. A successful
-    /// return is not buffered-data evidence; connected control must still
-    /// await one BSSID-validated delivery observation.
-    pub fn start_ps_poll<H: TxHardware>(
-        &mut self,
-        hardware: &mut H,
-        association_id: StaAssociationId,
-    ) -> Result<WifiTxProgress, SingleMpduTxError> {
-        if self.ordinary.active() {
-            return Err(SingleMpduTxError::Busy);
-        }
-        let frame_length = {
-            let buffer = self.ordinary.buffer_mut()?;
-            StaPsPollFrame {
-                station_address: self.config.station_address,
-                bssid: self.config.bssid,
-                association_id,
             }
             .encode(&mut buffer[TX_METADATA_SIZE..])
             .map_err(SingleMpduTxError::Encode)?

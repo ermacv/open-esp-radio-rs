@@ -16,84 +16,9 @@ use oer_esp32s31_ieee80211_mac::{
     tx::TxHardware,
 };
 
-use oer_ieee80211_sta::{
-    power_save::StaDozePermit,
-    twt::{IndividualTwtAgreement, IndividualTwtProposal},
-};
+use oer_ieee80211_sta::twt::{IndividualTwtAgreement, IndividualTwtProposal};
 
-/// Deepest completed stage of one hardware doze attempt.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StationDozeHardwareStage {
-    None,
-    /// The station TBTT target plus two-register wake gate were programmed and
-    /// restored through the affine PAC token.
-    StationTbttWakePrefix {
-        target_bits_35_10: u32,
-    },
-}
-
-/// First hardware boundary whose semantics are not present in reviewed S31
-/// evidence.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StationDozeUnsupportedStage {
-    /// The four generic TSF timer WDEVPWR causes are known, but the low three
-    /// timer-control bits do not identify which compare domain is the STA TSF.
-    StationWdevpwrCompareBinding,
-    /// No entered transaction exists for the generic default restore method.
-    HardwareSleepEntry,
-}
-
-/// Fail-closed result retaining exact reached-stage evidence.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StationDozeHardwareError {
-    WakePrepare(oer_esp32s31_hal::types::StaTbttWakePrepareError),
-    Unsupported {
-        reached: StationDozeHardwareStage,
-        missing: StationDozeUnsupportedStage,
-    },
-}
-
-/// Source status for one low-power hardware boundary.
-///
-/// None of these values means that RF, PHY, baseband or clocks entered sleep.
-/// The report is intentionally static: it exposes the reviewed implementation
-/// frontier without probing an unqualified register at runtime.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StationLowPowerFrontierStatus {
-    /// A field-exact source transaction exists, but connected control does not
-    /// activate it because its raw counter units are not proven.
-    SourceTransaction,
-    /// Connected control may program and roll back this prefix solely to
-    /// report the next missing semantic boundary.
-    ReachableRollbackProbe,
-    /// Reviewed SVD/vendor-comparison inputs do not define this contract.
-    MissingReviewedSemantics,
-}
-
-/// Exact ESP32-S31 connected-station low-power implementation frontier.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StationLowPowerHardwareFrontier {
-    pub modem_wakeup_field_transaction: StationLowPowerFrontierStatus,
-    pub modem_counter_unit_conversion: StationLowPowerFrontierStatus,
-    pub station_tbtt_tsf_wake_prefix: StationLowPowerFrontierStatus,
-    pub station_wdevpwr_cause_binding: StationLowPowerFrontierStatus,
-    pub rf_phy_baseband_clock_sleep_wake: StationLowPowerFrontierStatus,
-    pub automatic_hardware_beacon_filter: StationLowPowerFrontierStatus,
-    pub concurrent_role_channel_quiescence: StationLowPowerFrontierStatus,
-}
-
-/// Publish the source-only frontier without touching hardware.
-pub const fn station_low_power_hardware_frontier() -> StationLowPowerHardwareFrontier {
-    StationLowPowerHardwareFrontier {
-        modem_wakeup_field_transaction: StationLowPowerFrontierStatus::SourceTransaction,
-        modem_counter_unit_conversion: StationLowPowerFrontierStatus::MissingReviewedSemantics,
-        station_tbtt_tsf_wake_prefix: StationLowPowerFrontierStatus::ReachableRollbackProbe,
-        station_wdevpwr_cause_binding: StationLowPowerFrontierStatus::MissingReviewedSemantics,
-        rf_phy_baseband_clock_sleep_wake: StationLowPowerFrontierStatus::MissingReviewedSemantics,
-        automatic_hardware_beacon_filter: StationLowPowerFrontierStatus::MissingReviewedSemantics,
-        concurrent_role_channel_quiescence: StationLowPowerFrontierStatus::MissingReviewedSemantics,
-    }
-}
+use oer_esp32s31_hal::types::{MacPti, StaTbttSchedule, StaTbttScheduleError};
 
 /// Deepest source-proven stage of one S31 individual-TWT handoff.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -153,29 +78,32 @@ pub trait ConnectedControlHardware:
         enabled: bool,
     ) -> Result<(), S31RxBlockAckAgreementError>;
 
-    /// Enter modem doze atomically. `Err` must leave every hardware owner in
-    /// its awake pre-call state. Production currently exercises and rolls back
-    /// the reviewed target/wake-gate prefix, then fails closed before binding
-    /// it to a WDEVPWR compare cause or entering an RF/PHY power transition.
-    fn enter_station_doze(
-        &mut self,
-        _permit: &StaDozePermit,
-    ) -> Result<(), StationDozeHardwareError> {
-        Err(StationDozeHardwareError::Unsupported {
-            reached: StationDozeHardwareStage::None,
-            missing: StationDozeUnsupportedStage::HardwareSleepEntry,
-        })
-    }
+    /// Program the station TBTT schedule of power management.
+    fn start_station_tbtt(&mut self, schedule: StaTbttSchedule);
 
-    /// Restore every hardware owner changed by `enter_station_doze`. Failure
-    /// retains the affine restore obligation at the caller and must quarantine
-    /// normal TX/teardown progress.
-    fn restore_station_awake(&mut self) -> Result<(), StationDozeHardwareError> {
-        Err(StationDozeHardwareError::Unsupported {
-            reached: StationDozeHardwareStage::None,
-            missing: StationDozeUnsupportedStage::HardwareSleepEntry,
-        })
-    }
+    /// Replace the running station TBTT interval.
+    fn set_station_tbtt_interval(
+        &mut self,
+        interval_micros: u32,
+    ) -> Result<(), StaTbttScheduleError>;
+
+    /// Replace the station TBTT lead and the wake lead beside it.
+    fn set_station_tbtt_ahead(&mut self, ahead_micros: u16, wake_ahead_micros: u16);
+
+    /// Stop the station TBTT schedule.
+    fn stop_station_tbtt(&mut self);
+
+    /// Block or unblock the TX queues for station power management.
+    fn set_power_save_tx_block(&mut self, blocked: bool);
+
+    /// Publish the beacon receive priority.
+    fn set_rx_beacon_pti(&mut self, pti: MacPti);
+
+    /// Clear the beacon receive priority request.
+    fn clear_rx_beacon_pti(&mut self);
+
+    /// Publish the hardware beacon receive window and time.
+    fn set_rx_beacon_time(&mut self, window_micros: u16, time_micros: u32);
 
     /// Prove that this exact proposal can be represented before the shared TX
     /// owner is allowed to publish a TWT Setup request. An error must not
@@ -250,17 +178,39 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
         CooperativeRadioHardware::set_he_tid_enabled(self, tid, enabled)
     }
 
-    fn enter_station_doze(
+    fn start_station_tbtt(&mut self, schedule: StaTbttSchedule) {
+        CooperativeRadioHardware::start_station_tbtt(self, schedule);
+    }
+
+    fn set_station_tbtt_interval(
         &mut self,
-        permit: &StaDozePermit,
-    ) -> Result<(), StationDozeHardwareError> {
-        let target_bits_35_10 = self
-            .probe_station_tbtt_wake_prefix(permit.wake_tsf)
-            .map_err(StationDozeHardwareError::WakePrepare)?;
-        Err(StationDozeHardwareError::Unsupported {
-            reached: StationDozeHardwareStage::StationTbttWakePrefix { target_bits_35_10 },
-            missing: StationDozeUnsupportedStage::StationWdevpwrCompareBinding,
-        })
+        interval_micros: u32,
+    ) -> Result<(), StaTbttScheduleError> {
+        CooperativeRadioHardware::set_station_tbtt_interval(self, interval_micros)
+    }
+
+    fn set_station_tbtt_ahead(&mut self, ahead_micros: u16, wake_ahead_micros: u16) {
+        CooperativeRadioHardware::set_station_tbtt_ahead(self, ahead_micros, wake_ahead_micros);
+    }
+
+    fn stop_station_tbtt(&mut self) {
+        CooperativeRadioHardware::stop_station_tbtt(self);
+    }
+
+    fn set_power_save_tx_block(&mut self, blocked: bool) {
+        CooperativeRadioHardware::set_power_save_tx_block(self, blocked);
+    }
+
+    fn set_rx_beacon_pti(&mut self, pti: MacPti) {
+        CooperativeRadioHardware::set_rx_beacon_pti(self, pti);
+    }
+
+    fn clear_rx_beacon_pti(&mut self) {
+        CooperativeRadioHardware::clear_rx_beacon_pti(self);
+    }
+
+    fn set_rx_beacon_time(&mut self, window_micros: u16, time_micros: u32) {
+        CooperativeRadioHardware::set_rx_beacon_time(self, window_micros, time_micros);
     }
 
     fn admit_station_individual_twt(

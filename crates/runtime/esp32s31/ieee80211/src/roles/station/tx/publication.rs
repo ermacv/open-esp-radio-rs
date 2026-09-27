@@ -195,6 +195,8 @@ where
             });
         }
         self.active = ConnectedTxActive::Ordinary;
+        self.network_ordinary = true;
+        self.network_power.started = true;
         Ok(progress)
     }
 
@@ -1083,6 +1085,7 @@ where
         self.last_aggregate_status = None;
         self.pending_ordinary_retry = None;
         self.active = ConnectedTxActive::Aggregate(active);
+        self.network_power.started = true;
         Ok(WifiTxProgress::Pending)
     }
 

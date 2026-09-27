@@ -86,7 +86,6 @@ pub enum ConnectedStaConfigError {
     TxBlockAck(TxBlockAckError),
     RxBlockAck(RxBlockAckSessionsError),
     BeaconLoss(StaBeaconLossConfigError),
-    PowerSave(StaPowerSavePolicyError),
 }
 
 /// Complete owner return when connected policy validation fails.
@@ -108,7 +107,6 @@ pub struct ConnectedStaPlan {
     pub(super) aggregate_rate_policy: StaTxRatePolicy,
     pub(super) rate_control: Option<StaRateControlAssociation>,
     pub(super) beacon_loss: StaBeaconLossConfig,
-    pub(super) power_save: Option<StaPowerSavePolicy>,
     pub(super) esp_now_rx: Option<EspNowRxEpoch>,
     pub(super) ccmp_rx_replay: Option<StaCcmpRxReplayRxEndpoint>,
     pub(super) security: oer_ieee80211_mac::security::WifiSecurityMode,
@@ -140,9 +138,6 @@ pub enum ConnectedStaEspNowRxError {
         connected: BoundVirtualInterface,
         esp_now: BoundVirtualInterface,
     },
-    /// Passive ESP-NOW receive has no independent wake owner. Admitting it
-    /// while legacy power save may enter doze would silently lose datagrams.
-    RequiresAlwaysAwake,
 }
 
 impl ConnectedStaPlan {
@@ -175,19 +170,12 @@ impl ConnectedStaPlan {
         self.beacon_loss
     }
 
-    pub const fn power_save(&self) -> Option<StaPowerSavePolicy> {
-        self.power_save
-    }
-
     /// Install peer/duplicate ownership created while this exact STA VIF and
     /// home channel were active.
     pub fn enable_esp_now_rx(
         &mut self,
         epoch: EspNowRxEpoch,
     ) -> Result<(), ConnectedStaEspNowRxError> {
-        if self.power_save.is_some() {
-            return Err(ConnectedStaEspNowRxError::RequiresAlwaysAwake);
-        }
         if epoch.config().station() != self.interface {
             return Err(ConnectedStaEspNowRxError::StationBinding {
                 connected: self.interface,
@@ -512,24 +500,6 @@ impl ConnectedStaPort {
                 });
             }
         };
-        let power_save = match config.power.power_save_policy() {
-            None => None,
-            Some(policy) => match StaPowerSavePolicy::for_association(
-                peer.link.beacon_interval_tu,
-                policy.listen_interval(),
-                policy.wake_guard_micros(),
-                config.receive.beacon_miss_limit,
-            ) {
-                Ok(policy) => Some(policy),
-                Err(error) => {
-                    return Err(ConnectedStaPrepareFailure {
-                        error: ConnectedStaConfigError::PowerSave(error),
-                        peer,
-                    });
-                }
-            },
-        };
-
         let ConnectedStaPeer { link, rate_control } = peer;
         let ht_duplicate_tx_selection = select_esp32s31_ht_duplicate_tx(
             request,
@@ -556,7 +526,6 @@ impl ConnectedStaPort {
             aggregate_rate_policy: aggregate_policy,
             rate_control: Some(rate_control),
             beacon_loss,
-            power_save,
             esp_now_rx: None,
             ccmp_rx_replay: None,
             security,

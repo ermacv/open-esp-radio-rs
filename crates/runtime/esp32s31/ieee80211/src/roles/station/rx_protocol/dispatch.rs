@@ -278,10 +278,9 @@ where
     ) -> ConnectedRxDispatch {
         #[cfg(any(feature = "diagnostics", test))]
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
-        let (result, used, metadata, power_save_delivery) = {
-            let wants_power_save_delivery = self.sink.wants_power_save_delivery();
-            let mut deferred =
-                DeferredEthernetFrames::new(self.ethernet, wants_power_save_delivery);
+        let (result, used, metadata, power_save_data) = {
+            let wants_power_save_data = self.sink.wants_power_save_data();
+            let mut deferred = DeferredEthernetFrames::new(self.ethernet, wants_power_save_data);
             let result =
                 self.runtime
                     .dispatcher
@@ -290,7 +289,7 @@ where
                 result,
                 deferred.used(),
                 deferred.metadata,
-                deferred.power_save_delivery,
+                deferred.power_save_data,
             )
         };
         #[cfg(any(feature = "diagnostics", test))]
@@ -312,9 +311,8 @@ where
         }
         let raw = segment.buffer;
         let metadata = metadata.unwrap_or_else(MacRxMetadata::unavailable);
-        if let Some(delivery) = power_save_delivery {
-            self.sink
-                .publish(ConnectedRxEvent::PowerSaveDelivery(delivery));
+        if let Some(data) = power_save_data {
+            self.sink.publish(ConnectedRxEvent::PowerSaveData(data));
         }
         let mut offset = 0_usize;
         while let Some(record) =
@@ -375,8 +373,8 @@ impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
         self.data_cycles = Some(profile);
     }
 
-    fn wants_power_save_delivery(&self) -> bool {
-        self.sink.wants_power_save_delivery()
+    fn wants_power_save_data(&self) -> bool {
+        self.sink.wants_power_save_data()
     }
 
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {

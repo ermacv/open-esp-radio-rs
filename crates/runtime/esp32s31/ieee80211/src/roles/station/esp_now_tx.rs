@@ -391,7 +391,7 @@ impl<
         // Ordinary network TX owns the next arbitration turn. Returning Idle
         // lets DATAPATH claim it in this same scheduler iteration even though
         // the bounded ESP-NOW mailbox remains ready.
-        if context.network_tx_pending || !esp_now_pending {
+        if context.network_tx_pending || !esp_now_pending || !self.inner.admits_frames() {
             return Ok(DatapathControlProgress::Idle);
         }
 
@@ -575,7 +575,8 @@ where
     fn ready(&self, tx: &X, now_micros: u64) -> bool {
         self.active.is_some()
             || self.pending_inner_terminal.is_some()
-            || self.mailbox.as_ref().is_some_and(EspNowTxMailboxOwner::has_pending)
+            || (self.inner.admits_frames()
+                && self.mailbox.as_ref().is_some_and(EspNowTxMailboxOwner::has_pending))
             || <ConnectedControl<'resources, M, CONTROL_CAPACITY> as DatapathControlService<
                 H,
                 X,
@@ -587,6 +588,10 @@ where
             H,
             X,
         >>::required_before_network_tx(&self.inner)
+    }
+
+    fn admits_network_tx(&self) -> bool {
+        self.inner.admits_frames()
     }
 
     fn required_before_stop(&self) -> bool {
@@ -606,16 +611,20 @@ where
     #[allow(clippy::manual_async_fn)]
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a {
         async move {
+            let admits = self.inner.admits_frames();
             if self.active.is_some()
                 || self.pending_inner_terminal.is_some()
-                || self
-                    .mailbox
-                    .as_ref()
-                    .is_some_and(EspNowTxMailboxOwner::has_pending)
+                || (admits
+                    && self
+                        .mailbox
+                        .as_ref()
+                        .is_some_and(EspNowTxMailboxOwner::has_pending))
             {
                 return;
             }
-            let Some(mailbox) = self.mailbox.as_ref() else {
+            // While power management holds frames, a queued ESP-NOW frame
+            // waits for the power input that releases them.
+            let Some(mailbox) = self.mailbox.as_ref().filter(|_| admits) else {
                 self.inner.wait_ready(tx).await;
                 return;
             };

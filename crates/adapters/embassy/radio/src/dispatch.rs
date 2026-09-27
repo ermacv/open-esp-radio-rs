@@ -16,10 +16,6 @@ use super::transport::EmbassyWifiSupervisorEndpoint;
 /// without moving hardware. `Start` carries a fully capability-checked,
 /// owner-independent service request which the concrete actor may now
 /// materialize by consuming its stopped owner.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "the no-alloc dispatch transfers the complete validated service request to the stopped owner"
-)]
 pub enum EmbassyWifiStoppedDispatch {
     Handled,
     Start(WifiServiceRequest),

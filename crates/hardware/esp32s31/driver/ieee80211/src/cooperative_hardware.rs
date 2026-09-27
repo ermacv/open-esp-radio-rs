@@ -79,6 +79,14 @@ impl<'arena> CooperativeRadioHardware<'arena> {
         self.registers.access()
     }
 
+    fn station_wake_hal(
+        &self,
+    ) -> oer_esp32s31_hal::ieee80211::station_wake::StationWakeHal<'arena> {
+        self.registers.access().try_station_wake_hal().expect(
+            "a synchronous station wake transaction must not overlap another MMIO transaction",
+        )
+    }
+
     fn wifi_mac_hal(&self) -> WifiMacHal<'arena> {
         self.registers
             .access()
@@ -507,22 +515,52 @@ impl CooperativeRadioHardware<'_> {
         self.wifi_mac_hal().station_tsf()
     }
 
-    /// Exercise the complete reviewed station-TBTT target/wake-gate prefix and
-    /// roll it back before returning. Success is reached-stage evidence only;
-    /// it does not imply that a WDEVPWR cause or RF/PHY sleep was armed.
-    pub fn probe_station_tbtt_wake_prefix(
+    /// Program the station TBTT schedule of power management.
+    pub fn start_station_tbtt(&mut self, schedule: oer_esp32s31_hal::types::StaTbttSchedule) {
+        self.station_wake_hal().start_station_tbtt(schedule);
+    }
+
+    /// Replace the running station TBTT interval.
+    pub fn set_station_tbtt_interval(
         &mut self,
-        wake_tsf: u64,
-    ) -> Result<u32, oer_esp32s31_hal::types::StaTbttWakePrepareError> {
-        let mut hal = self.registers.access().try_station_wake_hal().expect(
-            "a synchronous station wake transaction must not overlap another MMIO transaction",
-        );
-        let restore = hal.prepare_station_tbtt_wake(wake_tsf)?;
-        let programmed_target = restore.programmed_target_bits_35_10();
-        if hal.restore_station_tbtt_wake(restore).is_err() {
-            unreachable!("a freshly prepared station-TBTT prefix must retain its rollback state");
-        }
-        Ok(programmed_target)
+        interval_micros: u32,
+    ) -> Result<(), oer_esp32s31_hal::types::StaTbttScheduleError> {
+        self.station_wake_hal()
+            .set_station_tbtt_interval(interval_micros)
+    }
+
+    /// Replace the station TBTT lead and the wake lead beside it.
+    pub fn set_station_tbtt_ahead(&mut self, ahead_micros: u16, wake_ahead_micros: u16) {
+        self.station_wake_hal()
+            .set_station_tbtt_ahead(ahead_micros, wake_ahead_micros);
+    }
+
+    /// Stop the station TBTT schedule.
+    pub fn stop_station_tbtt(&mut self) {
+        self.station_wake_hal().stop_station_tbtt();
+    }
+
+    /// Block or unblock the TX queues for station power management.
+    pub fn set_power_save_tx_block(&mut self, blocked: bool) {
+        self.wifi_mac_hal().set_power_save_tx_block(blocked);
+    }
+
+    /// Publish the beacon receive priority.
+    pub fn set_rx_beacon_pti(&mut self, pti: oer_esp32s31_hal::types::MacPti) {
+        // The vendor passes one priority as both the beacon and the shared
+        // priority (`pm_coex.o::pm_coex_update_rx_beacon_pti`).
+        self.wifi_mac_hal().set_rx_beacon_pti(pti, pti);
+    }
+
+    /// Clear the beacon receive priority request.
+    pub fn clear_rx_beacon_pti(&mut self) {
+        self.wifi_mac_hal().clear_rx_beacon_pti();
+    }
+
+    /// Publish the hardware beacon receive window and time.
+    pub fn set_rx_beacon_time(&mut self, window_micros: u16, time_micros: u32) {
+        self.wifi_mac_hal()
+            .set_rx_beacon_time(window_micros, time_micros);
     }
 
     pub fn program_rx_block_ack(

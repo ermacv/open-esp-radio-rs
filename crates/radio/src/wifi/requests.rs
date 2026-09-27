@@ -23,9 +23,8 @@ use oer_ieee80211_softmac::{
     WifiConfigError, WifiStandaloneEspNowPlan, WifiStationConfig,
 };
 pub use oer_ieee80211_sta::request::{
-    StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
-    StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
-    StationScanChannelsError, StationScanPolicy,
+    StationDiscovery, StationListenInterval, StationPowerMode, StationScanChannelIter,
+    StationScanChannelOrderIter, StationScanChannels, StationScanChannelsError, StationScanPolicy,
 };
 use oer_ieee80211_sta::station::StaReconnectPolicy;
 
@@ -489,7 +488,7 @@ impl StationRequest {
             security,
             reconnect,
             scan,
-            power_mode: StationPowerMode::AlwaysAwake,
+            power_mode: StationPowerMode::None,
         }
     }
 

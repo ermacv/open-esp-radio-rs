@@ -208,8 +208,8 @@ impl<S: ConnectedRxSink> ConnectedRxSink for AlwaysReadyConnectedRxSink<S> {
         self.0.publish(event);
     }
 
-    fn wants_power_save_delivery(&self) -> bool {
-        self.0.wants_power_save_delivery()
+    fn wants_power_save_data(&self) -> bool {
+        self.0.wants_power_save_data()
     }
 
     fn supports_esp_now_v2(&self) -> bool {
@@ -246,17 +246,17 @@ impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
 struct DeferredEthernetFrames<'storage> {
     frames: PackedEthernetWriter<'storage>,
     metadata: Option<MacRxMetadata<RxPhyInfo>>,
-    power_save_delivery: Option<oer_ieee80211_sta::power_save::StaPsPollDelivery>,
-    wants_power_save_delivery: bool,
+    power_save_data: Option<oer_esp32s31_ieee80211_sta::connected_rx::PowerSaveData>,
+    wants_power_save_data: bool,
 }
 
 impl<'storage> DeferredEthernetFrames<'storage> {
-    fn new(storage: &'storage mut [u8], wants_power_save_delivery: bool) -> Self {
+    fn new(storage: &'storage mut [u8], wants_power_save_data: bool) -> Self {
         Self {
             frames: PackedEthernetWriter::new(storage),
             metadata: None,
-            power_save_delivery: None,
-            wants_power_save_delivery,
+            power_save_data: None,
+            wants_power_save_data,
         }
     }
 
@@ -266,13 +266,13 @@ impl<'storage> DeferredEthernetFrames<'storage> {
 }
 
 impl ConnectedRxSink for DeferredEthernetFrames<'_> {
-    fn wants_power_save_delivery(&self) -> bool {
-        self.wants_power_save_delivery
+    fn wants_power_save_data(&self) -> bool {
+        self.wants_power_save_data
     }
 
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
-        if let ConnectedRxEvent::PowerSaveDelivery(delivery) = event {
-            self.power_save_delivery = Some(delivery);
+        if let ConnectedRxEvent::PowerSaveData(data) = event {
+            self.power_save_data = Some(data);
             return;
         }
         let ConnectedRxEvent::Ethernet {

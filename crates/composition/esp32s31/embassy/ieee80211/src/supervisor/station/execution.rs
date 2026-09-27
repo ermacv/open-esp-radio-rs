@@ -9,11 +9,13 @@ use core::cell::{Cell, RefCell};
 
 mod exchange;
 #[cfg(feature = "connected-datapath-cycle-telemetry")]
-use core::future::{Future, poll_fn};
+use core::future::poll_fn;
 
 use embassy_executor::Spawner;
 
-use embassy_futures::select::{Either, select};
+use core::{convert::Infallible, future::Future, pin::pin};
+
+use embassy_futures::select::{Either, Either3, select, select3};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
@@ -21,7 +23,10 @@ use exchange::Exchange;
 
 use oer_esp32s31_ieee80211_runtime::{
     datapath::{DatapathRunnerExit, execution::Control},
-    roles::station::connected::{StationCommand, StationCommandReceiver},
+    roles::station::{
+        connected::{StationCommand, StationCommandReceiver},
+        power::StationPowerFailure,
+    },
 };
 
 use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
@@ -178,22 +183,42 @@ async fn connected_datapath_task(mailbox: &'static ConnectedDatapathMailbox) {
 
 /// Keep active execution separate from connection assembly and terminal
 /// teardown. A station command stops the worker at its next TX-idle boundary.
+///
+/// `power` is the station's power agent. It runs until the worker returns;
+/// when it fails, control reads the failure and ends the association, so the
+/// agent then only waits.
 pub(super) async fn run(
     mailbox: &'static ConnectedDatapathMailbox,
     station_control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,
     runner: &mut Option<ConnectedDatapathRunner>,
+    power: impl Future<Output = StationPowerFailure>,
 ) -> (
     Result<DatapathRunnerExit<ConnectedDisconnectReason>, ConnectedDatapathError>,
     Option<StationCommand>,
 ) {
+    let power = async {
+        let _failure = power.await;
+        core::future::pending::<Infallible>().await
+    };
+    let mut power = pin!(power);
     mailbox.start(runner);
-    let command = match select(mailbox.wait_completed(), station_control.wait()).await {
-        Either::First(()) => None,
-        Either::Second(command) => {
+    let command = match select3(
+        mailbox.wait_completed(),
+        station_control.wait(),
+        power.as_mut(),
+    )
+    .await
+    {
+        Either3::First(()) => None,
+        Either3::Second(command) => {
             mailbox.request_stop();
-            mailbox.wait_completed().await;
+            match select(mailbox.wait_completed(), power.as_mut()).await {
+                Either::First(()) => {}
+                Either::Second(never) => match never {},
+            }
             Some(command)
         }
+        Either3::Third(never) => match never {},
     };
     (take_runner(mailbox, runner), command)
 }

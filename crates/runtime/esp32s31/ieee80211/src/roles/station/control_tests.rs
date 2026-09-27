@@ -54,7 +54,6 @@ use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     station::{StaDisconnect, StaDisconnectKind, StaTxSequenceCounters},
     station_beacon::{StaBeaconObservation, StaBeaconProtection, StaTimObservation},
-    station_power_save::StaPowerManagement,
     twt::{
         IndividualTwtAction, IndividualTwtControl, IndividualTwtFlowId, IndividualTwtFlowType,
         IndividualTwtParameterSet, IndividualTwtSetup, IndividualTwtSetupCommand,
@@ -63,13 +62,16 @@ use oer_ieee80211_mac::{
 
 use oer_ieee80211_softmac::{MacRxMetadata, MacTxPlan};
 
-use oer_ieee80211_sta::power_save::StaPowerSaveState;
-
 use oer_ieee80211_rsn::{
     OwnedEapolFrame, Pmk, Ptk, PtkContext, RsnInterface,
     aes::{RsnSoftwareAes, software_aes128_key_wrap},
     frames::{OwnedRsnIe, RsnGtk, RsnPlainKeyData, RsnTxFrame},
     supplicant::{RsnConnectedSupplicant, RsnStaSupplicant, RsnStaSupplicantAction},
+};
+
+use oer_esp32s31_ieee80211_sta::{
+    connected_control::{ConnectedPowerCommand, PowerCoexSnapshot},
+    modem_sleep::{CoexPhaseView, CoexView, PmCoexEvent, PmState},
 };
 
 use super::*;
@@ -176,6 +178,9 @@ struct Hardware {
     twt_admit: bool,
     twt_install_count: usize,
     station_policy: Option<MacStaReceivePolicySnapshot>,
+    tbtt: Option<oer_esp32s31_hal::types::StaTbttSchedule>,
+    tx_blocked: bool,
+    beacon_pti: Option<oer_esp32s31_hal::types::MacPti>,
 }
 
 impl CcmpKeyHardware for Hardware {
@@ -349,6 +354,47 @@ impl ConnectedControlHardware for Hardware {
         Ok(())
     }
 
+    fn start_station_tbtt(&mut self, schedule: oer_esp32s31_hal::types::StaTbttSchedule) {
+        self.tbtt = Some(schedule);
+    }
+
+    fn set_station_tbtt_interval(
+        &mut self,
+        interval_micros: u32,
+    ) -> Result<(), oer_esp32s31_hal::types::StaTbttScheduleError> {
+        let schedule = self
+            .tbtt
+            .as_mut()
+            .ok_or(oer_esp32s31_hal::types::StaTbttScheduleError::NotScheduled)?;
+        schedule.interval_micros = interval_micros;
+        Ok(())
+    }
+
+    fn set_station_tbtt_ahead(&mut self, ahead_micros: u16, wake_ahead_micros: u16) {
+        if let Some(schedule) = self.tbtt.as_mut() {
+            schedule.ahead_micros = ahead_micros;
+            schedule.wake_ahead_micros = wake_ahead_micros;
+        }
+    }
+
+    fn stop_station_tbtt(&mut self) {
+        self.tbtt = None;
+    }
+
+    fn set_power_save_tx_block(&mut self, blocked: bool) {
+        self.tx_blocked = blocked;
+    }
+
+    fn set_rx_beacon_pti(&mut self, pti: oer_esp32s31_hal::types::MacPti) {
+        self.beacon_pti = Some(pti);
+    }
+
+    fn clear_rx_beacon_pti(&mut self) {
+        self.beacon_pti = None;
+    }
+
+    fn set_rx_beacon_time(&mut self, _window_micros: u16, _time_micros: u32) {}
+
     fn replace_sta_group_ccmp(
         &mut self,
         slot: &mut StaGroupCcmpSlot,
@@ -502,9 +548,33 @@ fn beacon_event(observation: StaBeaconObservation) -> ConnectedRxEvent<'static> 
     }
 }
 
-fn power_save_policy() -> StaPowerSavePolicy {
-    StaPowerSavePolicy::new(100, 2_000).unwrap()
+/// Wi-Fi and Bluetooth share the air: six periods of 100 TU, Wi-Fi owning
+/// half of phase 0.
+fn shared_coex() -> PowerCoexSnapshot {
+    PowerCoexSnapshot {
+        view: CoexView {
+            active: true,
+            current_period: 6,
+            flexible_period: 1,
+            interval: 1_024,
+            phase0_share_percent: 50,
+        },
+        beacon_pti: oer_esp32s31_hal::types::MacPti::new(7).unwrap(),
+    }
 }
+
+fn join_beacon() -> PmBeacon {
+    PmBeacon {
+        timestamp_tsf: 1_000_000,
+        interval_tu: 100,
+        tim: None,
+    }
+}
+
+const WIFI_SLICE: CoexPhaseView = CoexPhaseView {
+    share_percent: 50,
+    wifi: CoexPhaseView::WIFI_SLICE | CoexPhaseView::SLICE_END,
+};
 
 fn individual_twt_parameters(implicit: bool) -> IndividualTwtParameterSet {
     IndividualTwtParameterSet {
@@ -521,32 +591,6 @@ fn individual_twt_parameters(implicit: bool) -> IndividualTwtParameterSet {
         wake_interval_mantissa: 1_024,
         twt_channel: 0,
     }
-}
-
-#[test]
-fn connected_low_power_diagnostic_stays_before_physical_sleep() {
-    let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
-    let (_publisher, receiver) = resources.split();
-    let control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
-    );
-    let frontier = control.low_power_hardware_frontier();
-
-    assert_eq!(
-        frontier.station_tbtt_tsf_wake_prefix,
-        StationLowPowerFrontierStatus::ReachableRollbackProbe
-    );
-    assert_eq!(
-        frontier.station_wdevpwr_cause_binding,
-        StationLowPowerFrontierStatus::MissingReviewedSemantics
-    );
-    assert_eq!(
-        frontier.rf_phy_baseband_clock_sleep_wake,
-        StationLowPowerFrontierStatus::MissingReviewedSemantics
-    );
 }
 
 #[test]
@@ -1585,265 +1629,213 @@ fn connected_beacon_protection_updates_the_tx_bss_facts() {
     assert_eq!(tx.policy().protection().bss(), associated);
 }
 
-#[test]
-fn doze_permit_requires_idle_beacon_and_acknowledged_pm_one() {
-    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
-    let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
-    );
-    control.enable_power_save(power_save_policy());
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-    let mut hardware = Hardware {
-        station_tsf: 1_000_100,
-        prepare: true,
-        ..Hardware::default()
-    };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-    publisher.publish(beacon_event(idle_beacon()));
+fn service(
+    control: &mut ConnectedControl<'_, NoopRawMutex, 4>,
+    hardware: &mut Hardware,
+    tx: &mut SingleMpduTx<'_, Power, fn() -> u32, Timer, 512>,
+    context: DatapathControlContext,
+) -> DatapathControlProgress<ConnectedDisconnectReason> {
+    embassy_futures::block_on(control.service_with_context(hardware, tx, context)).unwrap()
+}
 
-    assert_eq!(
-        embassy_futures::block_on(control.service_with_context(
-            &mut hardware,
-            &mut tx,
-            DatapathControlContext::IDLE,
-        )),
-        Ok(DatapathControlProgress::TxPending)
-    );
-    assert_eq!(
-        control.power_save().unwrap().state(),
-        StaPowerSaveState::AdvertisingPowerSave
-    );
-    assert_eq!(control.take_doze_permit(), None);
-
-    finish_tx(&mut hardware, &mut tx, 0);
-    hardware.station_tsf = 1_001_000;
-    assert_eq!(
-        embassy_futures::block_on(control.service_with_context(
-            &mut hardware,
-            &mut tx,
-            DatapathControlContext::IDLE,
-        )),
-        Ok(DatapathControlProgress::More)
-    );
-    assert_eq!(
-        control.power_save().unwrap().state(),
-        StaPowerSaveState::PowerSave
-    );
-    assert_eq!(
-        control.take_doze_permit(),
-        Some(StaDozePermit {
-            beacon_timestamp_tsf: 1_000_000,
-            next_listen_tsf: 1_102_400,
-            next_dtim_tsf: 1_102_400,
-            wake_tsf: 1_100_400,
-            wake_after_beacons: 1,
-            wake_reason: oer_ieee80211_sta::power_save::StaDozeWakeReason::ListenIntervalAndDtim,
-            dtim_count: 1,
-            dtim_period: 3,
-        })
-    );
+/// Run control until it waits, the agent performing each command.
+fn settle(
+    control: &mut ConnectedControl<'_, NoopRawMutex, 4>,
+    link: &StationPowerLink<NoopRawMutex>,
+    hardware: &mut Hardware,
+    tx: &mut SingleMpduTx<'_, Power, fn() -> u32, Timer, 512>,
+    context: DatapathControlContext,
+    performed: &mut std::vec::Vec<ConnectedPowerCommand>,
+) -> DatapathControlProgress<ConnectedDisconnectReason> {
+    loop {
+        let progress = service(control, hardware, tx, context);
+        link.perform_for_test(&mut |command| performed.push(command), None, false);
+        if progress != DatapathControlProgress::More {
+            return progress;
+        }
+    }
 }
 
 #[test]
-fn queued_network_traffic_blocks_pm_one() {
+fn a_shared_station_leaves_the_air_at_its_slice_end_and_holds_its_frames() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
-    let (mut publisher, receiver) = resources.split();
+    let (_publisher, receiver) = resources.split();
+    let link = StationPowerLink::<NoopRawMutex>::new();
     let mut control = ConnectedControl::new(
         receiver,
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.enable_power_save(power_save_policy());
+    control.enable_power_management(SleepType::None, join_beacon(), link.bind(shared_coex()));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
-        station_tsf: 1_000_100,
         prepare: true,
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-    publisher.publish(beacon_event(idle_beacon()));
+    let mut performed = std::vec::Vec::new();
 
-    assert_eq!(
-        embassy_futures::block_on(control.service_with_context(
-            &mut hardware,
-            &mut tx,
-            DatapathControlContext {
-                network_tx_pending: true,
-                stop_pending: false,
-            },
-        )),
-        Ok(DatapathControlProgress::More)
+    // The start places the TBTT on the join beacon's boundary and publishes
+    // the beacon priority and the schedule interval.
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
     );
-    assert_eq!(
-        control.power_save().unwrap().state(),
-        StaPowerSaveState::Awake
-    );
-    assert_eq!(control.take_doze_permit(), None);
-}
+    // Nine beacon intervals of 102.4 ms precede the join timestamp.
+    assert_eq!(hardware.tbtt.unwrap().first_tbtt_tsf, 9 * 102_400);
+    assert_eq!(hardware.beacon_pti, oer_esp32s31_hal::types::MacPti::new(7));
+    assert!(performed.contains(&ConnectedPowerCommand::SetCoexFlexiblePeriod(1)));
 
-#[test]
-fn failed_pm_one_returns_to_awake_without_a_permit() {
-    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
-    let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    // The Wi-Fi phase requests the slice and arms its end.
+    link.perform_for_test(&mut |_| {}, Some(WIFI_SLICE), false);
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
     );
-    control.enable_power_save(power_save_policy());
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-    let mut hardware = Hardware {
-        station_tsf: 1_000_100,
-        prepare: true,
-        ..Hardware::default()
-    };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-    publisher.publish(beacon_event(idle_beacon()));
-    assert_eq!(
-        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(DatapathControlProgress::TxPending)
-    );
-
-    finish_tx(&mut hardware, &mut tx, 5);
-    assert_eq!(
-        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(DatapathControlProgress::More)
-    );
-    assert_eq!(
-        control.power_save().unwrap().state(),
-        StaPowerSaveState::Awake
-    );
-    assert_eq!(control.take_doze_permit(), None);
-    assert!(matches!(
-        control.last_tx_failure(),
-        Some(ConnectedControlTxFailure {
-            kind: ConnectedControlTxKind::PowerManagement(StaPowerManagement::PowerSave),
+    assert!(performed.iter().any(|command| matches!(
+        command,
+        ConnectedPowerCommand::CoexRequest {
+            event: PmCoexEvent::Slice,
             ..
-        })
-    ));
-}
+        }
+    )));
+    assert!(control.admits_frames());
 
-#[test]
-fn queued_network_traffic_restores_pm_zero_before_data() {
-    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
-    let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
-    );
-    control.enable_power_save(power_save_policy());
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-    let mut hardware = Hardware {
-        station_tsf: 1_000_100,
-        prepare: true,
-        ..Hardware::default()
-    };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-    publisher.publish(beacon_event(idle_beacon()));
+    // At the slice end the queues block and PM=1 goes out.
+    let deadline = control.next_alarm_deadline().unwrap();
+    embassy_futures::block_on(tx.wait_until_micros(deadline));
     assert_eq!(
-        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(DatapathControlProgress::TxPending)
+        settle(
+            &mut control,
+            &link,
+            &mut hardware,
+            &mut tx,
+            DatapathControlContext::IDLE,
+            &mut performed,
+        ),
+        DatapathControlProgress::TxPending
     );
+    assert!(hardware.tx_blocked);
+    assert!(!control.admits_frames());
+    assert_eq!(control.power_management().state(), PmState::PowerSave);
+
+    // Traffic queued outside the slice waits for the next one.
     finish_tx(&mut hardware, &mut tx, 0);
-    hardware.station_tsf = 1_001_000;
-    assert_eq!(
-        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(DatapathControlProgress::More)
-    );
-
     let pending = DatapathControlContext {
         network_tx_pending: true,
         stop_pending: false,
     };
-    assert_eq!(
-        embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(DatapathControlProgress::TxPending)
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        pending,
+        &mut performed,
     );
-    assert_eq!(
-        control.power_save().unwrap().state(),
-        StaPowerSaveState::AdvertisingActive
-    );
-    assert_eq!(control.take_doze_permit(), None);
+    assert!(!control.admits_frames());
 
+    // The next TBTT restarts the phases at the Wi-Fi slice and wakes the
+    // station for its frame, which carries PM=0.
+    link.perform_for_test(&mut |_| {}, Some(WIFI_SLICE), true);
+    assert_eq!(
+        settle(
+            &mut control,
+            &link,
+            &mut hardware,
+            &mut tx,
+            pending,
+            &mut performed,
+        ),
+        DatapathControlProgress::TxPending
+    );
+    assert!(!control.admits_frames());
     finish_tx(&mut hardware, &mut tx, 0);
-    assert_eq!(
-        embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(DatapathControlProgress::More)
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        pending,
+        &mut performed,
     );
-    assert_eq!(
-        control.power_save().unwrap().state(),
-        StaPowerSaveState::Awake
-    );
-    assert_eq!(
-        embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(DatapathControlProgress::Idle)
-    );
+    assert!(!hardware.tx_blocked);
+    assert_eq!(control.power_management().state(), PmState::Awake);
+    assert!(control.admits_frames());
 }
 
 #[test]
-fn failed_pm_zero_disconnects_instead_of_releasing_queued_data() {
+fn frames_wait_until_the_agent_performed_the_commands_before_them() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
-    let (mut publisher, receiver) = resources.split();
+    let (_publisher, receiver) = resources.split();
+    let link = StationPowerLink::<NoopRawMutex>::new();
     let mut control = ConnectedControl::new(
         receiver,
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.enable_power_save(power_save_policy());
+    control.enable_power_management(SleepType::None, join_beacon(), link.bind(shared_coex()));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
-        station_tsf: 1_000_100,
         prepare: true,
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-    publisher.publish(beacon_event(idle_beacon()));
-    assert_eq!(
-        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(DatapathControlProgress::TxPending)
+    service(
+        &mut control,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
     );
-    finish_tx(&mut hardware, &mut tx, 0);
-    hardware.station_tsf = 1_001_000;
-    assert_eq!(
-        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(DatapathControlProgress::More)
-    );
+    assert!(link.outstanding());
+    assert!(!control.admits_frames());
+    link.perform_for_test(&mut |_| {}, None, false);
+    assert!(control.admits_frames());
+}
 
-    let pending = DatapathControlContext {
-        network_tx_pending: true,
-        stop_pending: false,
+#[test]
+fn shutdown_stops_power_management_and_hands_the_releases_to_the_agent() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let (_publisher, receiver) = resources.split();
+    let link = StationPowerLink::<NoopRawMutex>::new();
+    let mut control = ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    control.enable_power_management(SleepType::None, join_beacon(), link.bind(shared_coex()));
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
     };
-    assert_eq!(
-        embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(DatapathControlProgress::TxPending)
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut performed = std::vec::Vec::new();
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
     );
-    finish_tx(&mut hardware, &mut tx, 5);
-    assert_eq!(
-        embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(DatapathControlProgress::Exit(
-            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::ActiveStateRestoreFailed
-        ))
-    );
-    assert_eq!(
-        control.power_save().unwrap().state(),
-        StaPowerSaveState::PowerSave
-    );
-    assert!(matches!(
-        control.last_tx_failure(),
-        Some(ConnectedControlTxFailure {
-            kind: ConnectedControlTxKind::PowerManagement(StaPowerManagement::Active),
-            ..
-        })
-    ));
+    assert!(hardware.tbtt.is_some());
+
+    control.shutdown(&mut hardware, &mut tx).unwrap();
+    assert!(hardware.tbtt.is_none());
+    assert!(!hardware.tx_blocked);
+    assert!(!control.power_management().is_started());
 }
 
 #[test]

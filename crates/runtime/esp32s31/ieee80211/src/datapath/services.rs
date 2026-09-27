@@ -114,6 +114,12 @@ pub trait DatapathControlService<H, X> {
         false
     }
 
+    /// Whether the scheduler may publish a queued network frame now. A
+    /// station in power save holds its frames until it leaves it.
+    fn admits_network_tx(&self) -> bool {
+        true
+    }
+
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a;
 }
 
@@ -482,6 +488,10 @@ where
 
     fn control_required_before_network_tx(&self) -> bool {
         self.role.control.required_before_network_tx()
+    }
+
+    fn control_admits_network_tx(&self) -> bool {
+        self.role.control.admits_network_tx()
     }
 
     fn control_required_before_stop(&self) -> bool {

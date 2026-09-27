@@ -385,7 +385,7 @@ struct RecordingSink {
     ethernet_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
     block_ack: Vec<BlockAckAction>,
     peer_disconnects: Vec<StaDisconnect>,
-    power_save_deliveries: Vec<StaPsPollDelivery>,
+    power_save_deliveries: Vec<PowerSaveData>,
     unprotected_eapol: Vec<Vec<u8>>,
 }
 
@@ -414,7 +414,7 @@ impl ConnectedRxSink for RecordingSink {
             ConnectedRxEvent::PeerDisconnect(disconnect) => {
                 self.peer_disconnects.push(disconnect);
             }
-            ConnectedRxEvent::PowerSaveDelivery(delivery) => {
+            ConnectedRxEvent::PowerSaveData(delivery) => {
                 self.power_save_deliveries.push(delivery);
             }
             ConnectedRxEvent::UnprotectedEapol { payload, .. } => {
@@ -762,7 +762,10 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
     assert_eq!(&sink.ethernet[0][14..], &[1, 2, 3, 4, 5]);
     assert_eq!(
         sink.power_save_deliveries,
-        [StaPsPollDelivery { more_data: false }]
+        [PowerSaveData {
+            group: false,
+            more_data: false
+        }]
     );
 
     let _ = dispatcher.dispatch_with_runtime_received_at(
@@ -898,7 +901,10 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
     assert_eq!(&sink.ethernet[0][14..], &[1, 2, 3, 4, 5]);
     assert_eq!(
         sink.power_save_deliveries,
-        [StaPsPollDelivery { more_data: false }]
+        [PowerSaveData {
+            group: false,
+            more_data: false
+        }]
     );
 
     final_storage[FRAME_OFFSET + 1] |= 0x08;

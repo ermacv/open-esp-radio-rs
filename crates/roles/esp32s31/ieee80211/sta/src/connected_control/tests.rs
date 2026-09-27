@@ -17,7 +17,6 @@ fn readiness_combines_owned_state_with_external_event_state() {
     core.initial_tx_block_ack[1] = true;
     core.tx_block_ack_attempts_remaining[1] = 1;
     assert!(core.has_immediate_work(false));
-    assert!(core.has_pending_traffic(DatapathControlContext::IDLE, false));
 }
 
 #[test]
@@ -66,24 +65,35 @@ fn connected_ftm_request_is_consumed_at_hardware_frontier() {
 }
 
 #[test]
-fn absence_does_not_steal_idle_power_save_or_an_existing_control_transaction() {
-    let mut control = core();
-    control.enable_power_save(StaPowerSavePolicy::new(100, 2000).unwrap());
-    assert!(!control.begin_absence());
+fn frames_of_blocked_tx_queues_are_not_immediate_work() {
+    let mut core = core();
+    core.initial_tx_block_ack[1] = true;
+    core.tx_block_ack_attempts_remaining[1] = 1;
+    core.power.tx_blocked = true;
+    assert!(core.power_blocks_tx());
+    assert!(!core.admits_network_tx());
+    assert!(!core.has_immediate_work(false));
+    // A received event is still consumed: it may be a beacon.
+    assert!(core.has_immediate_work(true));
+}
+
+#[test]
+fn power_commands_leave_in_order_and_overflow_is_an_error() {
+    let mut core = core();
+    for interval in 0..POWER_COMMAND_CAPACITY as u32 {
+        core.power
+            .push_command(ConnectedPowerCommand::SetCoexInterval(interval))
+            .unwrap();
+    }
     assert_eq!(
-        control.power_save().unwrap().state(),
-        StaPowerSaveState::Awake
+        core.power.push_command(ConnectedPowerCommand::RfWake),
+        Err(ConnectedControlError::PowerCommandOverflow)
     );
-    let mut control = core();
-    control.in_flight = Some(ControlInFlight::BeaconProbe);
-    assert!(!control.begin_absence());
-    assert!(matches!(
-        control.in_flight,
-        Some(ControlInFlight::BeaconProbe)
-    ));
-    control.in_flight = None;
-    assert!(control.begin_absence());
-    assert!(!control.begin_absence());
-    assert!(!control.absence_admitted());
-    assert!(!control.restore_absence());
+    for interval in 0..POWER_COMMAND_CAPACITY as u32 {
+        assert_eq!(
+            core.take_power_command(),
+            Some(ConnectedPowerCommand::SetCoexInterval(interval))
+        );
+    }
+    assert_eq!(core.take_power_command(), None);
 }

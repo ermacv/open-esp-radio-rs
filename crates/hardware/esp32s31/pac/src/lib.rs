@@ -208,10 +208,6 @@ pub use wifi::mac::{
         ConnectedStaWithoutPowerSavePrepared, MacInterruptEnableState, MacInterruptRegisters,
         MacInterruptSetup, MacPowerInterruptRegisters, MacPowerWakeCause, MacTsfTimerIndex,
     },
-    modem_wakeup::{
-        StaBeaconMissLimit, StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig,
-        StaModemWakeRestore, StaTbttAutoPeriod, StaWakeProtectEarlyTimeRaw,
-    },
     rx::{
         dma::{MacRxDmaSnapshot, MacRxNextDescriptorObservation},
         policy::{
@@ -224,7 +220,7 @@ pub use wifi::mac::{
             MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
         },
     },
-    tsf::{StaTbttSchedule, StaTbttWakeGateBaselineUnsupported, StaTbttWakeRestore},
+    tsf::StaTbttSchedule,
     tx::{
         MacHeFecCoding, MacHeGuardIntervalAndLtf, MacHeMcs, MacHeRate, MacHeTxFormat,
         MacHeTxParameters, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtChannelWidth,

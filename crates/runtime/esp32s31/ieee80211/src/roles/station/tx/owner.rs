@@ -84,6 +84,8 @@ where
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
             pending_ordinary_retry: None,
+            network_ordinary: false,
+            network_power: NetworkTxPowerReport::default(),
             #[cfg(any(feature = "diagnostics", test))]
             observer: None,
             block_ack_status_sink: None,
@@ -507,6 +509,7 @@ where
         let he_trigger_based = self.he_trigger_based;
         let last_aggregate_status = self.last_aggregate_status;
         let pending_ordinary_retry = self.pending_ordinary_retry;
+        let network_power = self.network_power;
         #[cfg(any(feature = "diagnostics", test))]
         let observer = self.observer;
         let block_ack_status_sink = self.block_ack_status_sink;
@@ -529,6 +532,7 @@ where
                 he_trigger_based,
                 last_aggregate_status,
                 pending_ordinary_retry,
+                network_power,
                 #[cfg(any(feature = "diagnostics", test))]
                 observer,
                 #[cfg(not(any(feature = "diagnostics", test)))]
@@ -557,6 +561,7 @@ where
             he_trigger_based,
             last_aggregate_status,
             pending_ordinary_retry,
+            network_power,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(not(any(feature = "diagnostics", test)))]
@@ -581,6 +586,7 @@ where
         owner.block_ack_generation_exhausted = block_ack_generation_exhausted;
         owner.last_aggregate_status = last_aggregate_status;
         owner.pending_ordinary_retry = pending_ordinary_retry;
+        owner.network_power = network_power;
         owner.he_trigger_based = he_trigger_based;
         #[cfg(any(feature = "diagnostics", test))]
         {

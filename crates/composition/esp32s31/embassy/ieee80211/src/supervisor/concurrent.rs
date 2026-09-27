@@ -179,8 +179,8 @@ impl ProductionWifiEpochRunner {
                 interface,
                 // Same-radio SoftAP cannot remain available while the STA
                 // sleeps. Association keeps the requested listen interval,
-                // but paired operation deliberately suppresses PM=1.
-                connected_config(StationPowerMode::AlwaysAwake),
+                // and paired operation runs no station power management.
+                connected_config(StationPowerMode::None),
                 peer,
                 installed_security,
                 security,
@@ -688,6 +688,7 @@ impl ProductionWifiEpochRunner {
                 receiver: control_receiver,
                 reorder_commands: reorder_sender,
                 rx_block_ack: &super::PRODUCTION_RX_BLOCK_ACK,
+                power: None,
             },
         );
         if let StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } =

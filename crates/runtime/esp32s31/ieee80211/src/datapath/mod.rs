@@ -345,6 +345,11 @@ where {
         false
     }
 
+    /// Whether control lets the scheduler publish a network frame now.
+    fn control_admits_network_tx(&self) -> bool {
+        true
+    }
+
     fn control_required_before_stop(&self) -> bool {
         false
     }

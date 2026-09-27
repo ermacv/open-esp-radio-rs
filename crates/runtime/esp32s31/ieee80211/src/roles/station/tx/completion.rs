@@ -41,6 +41,15 @@ where
                 if progress == WifiTxProgress::Pending {
                     self.active = ConnectedTxActive::Ordinary;
                 } else {
+                    if core::mem::take(&mut self.network_ordinary)
+                        && self.pending_ordinary_retry.is_none()
+                    {
+                        self.network_power.completed = Some(
+                            self.ordinary
+                                .last_outcome()
+                                .is_some_and(|outcome| outcome.is_success()),
+                        );
+                    }
                     self.observe_ordinary_rate_control();
                     #[cfg(any(feature = "diagnostics", test))]
                     if let Some(observer) = self.observer {
@@ -79,6 +88,10 @@ where
             observer.observe_station_terminal(status);
         }
         self.last_aggregate_status = Some(status);
+        self.network_power.completed = Some(
+            matches!(status.result, MacAmpduTxResult::Delivered)
+                || status.block_acknowledged_subframes != 0,
+        );
     }
 
     fn service_abort_settle<H: HtAmpduHardware>(

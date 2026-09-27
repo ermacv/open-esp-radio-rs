@@ -91,6 +91,17 @@ pub enum SleepType {
     MaxModem,
 }
 
+impl From<oer_ieee80211_sta::request::StationPowerMode> for SleepType {
+    fn from(mode: oer_ieee80211_sta::request::StationPowerMode) -> Self {
+        use oer_ieee80211_sta::request::StationPowerMode;
+        match mode {
+            StationPowerMode::None => Self::None,
+            StationPowerMode::MinModem => Self::MinModem,
+            StationPowerMode::MaxModem(_) => Self::MaxModem,
+        }
+    }
+}
+
 /// Power-management state (`g_pm[1]`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PmState {
@@ -169,7 +180,13 @@ pub enum PmAction {
         ahead_micros: u16,
         wake_ahead_micros: u16,
     },
-    /// Publish the beacon receive priority for the beacon window, or clear it.
+    /// Publish the beacon-window event's priority as the beacon receive
+    /// priority (`true`), or priority zero (`false`).
+    ///
+    /// SOURCE: complete pinned `libpp.a[pm_coex.o]::
+    /// pm_coex_update_rx_beacon_pti` passes `coex_pti_get(0)`, or zero, as
+    /// both arguments of `hal_set_rx_beacon_pti`. It selects event 1 only
+    /// under the hardware beacon monitor, which this model leaves out.
     RxBeaconPriority(bool),
     /// Clear the beacon receive priority after a beacon.
     ClearRxBeaconPriority,
@@ -279,11 +296,11 @@ pub struct CoexPhaseView {
 
 impl CoexPhaseView {
     /// Wi-Fi owns this phase: it requests its slice and may transmit.
-    const WIFI_SLICE: u8 = 0x02;
+    pub const WIFI_SLICE: u8 = 0x02;
     /// This phase ends a Wi-Fi slice: arm the slice-end timer.
-    const SLICE_END: u8 = 0x01;
+    pub const SLICE_END: u8 = 0x01;
     /// This phase lends the air to Wi-Fi without its own slice.
-    const SHARED: u8 = 0x04;
+    pub const SHARED: u8 = 0x04;
 }
 
 /// The beacon a station received from its access point.
@@ -327,14 +344,16 @@ enum WakeResult {
     Waking,
 }
 
-/// The clocks one power-management input reads.
+/// The clock one power-management input reads.
+///
+/// The vendor keeps timer deadlines in `esp_timer_get_time` and measures the
+/// station's position in the schedule cycle between two readings of the
+/// free-running MAC microsecond counter at `0x2010_d800`. Only differences
+/// of that counter matter, so one monotonic microsecond clock serves both.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PmClock {
-    /// Monotonic time, `esp_timer_get_time`, in microseconds.
+    /// Monotonic time, in microseconds.
     pub now_micros: u64,
-    /// The free-running MAC microsecond counter at `0x2010_d800`, from which
-    /// the vendor measures the station's position in the schedule cycle.
-    pub mac_time: u32,
 }
 
 /// What the TX path reports when power management asks.
@@ -395,7 +414,7 @@ pub struct ModemSleep {
     slice_deadline: u64,
     /// `[432]`: rest of the cycle after the Wi-Fi slice.
     cycle_remainder: u64,
-    /// `[96]`: MAC time at the TBTT the cycle position counts from.
+    /// `[96]`: time of the TBTT the cycle position counts from.
     cycle_anchor: u64,
     /// `[440]`: the sleep-delay timer is armed.
     sleep_delay_armed: bool,
@@ -648,7 +667,7 @@ impl ModemSleep {
         let offset = if cycle == 0 {
             0
         } else {
-            u64::from(clock.mac_time).wrapping_sub(self.cycle_anchor) % cycle
+            clock.now_micros.wrapping_sub(self.cycle_anchor) % cycle
         };
         let slice = u64::from(coex.phase0_share_percent)
             * u64::from(coex.interval)
@@ -920,7 +939,7 @@ impl ModemSleep {
         // its slice ended under coexistence.
         let keep_anchor = beacon_was_expected || (coex.active && self.beacon_expected_at_slice_end);
         if !keep_anchor {
-            self.cycle_anchor = u64::from(clock.mac_time);
+            self.cycle_anchor = clock.now_micros;
         }
         self.coex_tbtt(clock, coex, traffic, actions);
         self.set_next_tbtt(coex, actions);

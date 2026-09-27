@@ -16,10 +16,7 @@ fn shared() -> CoexView {
 }
 
 fn clock(now_micros: u64) -> PmClock {
-    PmClock {
-        now_micros,
-        mac_time: now_micros as u32,
-    }
+    PmClock { now_micros }
 }
 
 fn beacon(timestamp_tsf: u64, tim: Option<PmTim>) -> PmBeacon {

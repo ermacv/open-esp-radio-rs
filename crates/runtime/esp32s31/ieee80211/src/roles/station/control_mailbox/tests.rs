@@ -1,13 +1,12 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_esp32s31_ieee80211_mac::tx::ampdu::BlockAckAction;
 use oer_esp32s31_ieee80211_sta::connected_rx::{
-    ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
+    ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink, PowerSaveData,
 };
 use oer_ieee80211_mac::{
     data::EthernetFrameParts,
     station::{StaDisconnect, StaDisconnectKind},
 };
-use oer_ieee80211_sta::power_save::StaPsPollDelivery;
 
 use super::*;
 
@@ -76,23 +75,29 @@ fn embassy_endpoints_preserve_fifo_and_report_overflow() {
 }
 
 #[test]
-fn power_save_delivery_publication_is_requested_only_while_armed() {
+fn power_save_data_is_published_only_while_armed() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
-    assert!(!publisher.wants_power_save_delivery());
+    let data = PowerSaveData {
+        group: false,
+        more_data: true,
+    };
+    assert!(!publisher.wants_power_save_data());
+    publisher.publish(ConnectedRxEvent::PowerSaveData(data));
+    assert_eq!(receiver.try_receive_power_save_data(), None);
 
-    receiver.set_power_save_delivery_armed(true);
-    assert!(publisher.wants_power_save_delivery());
-    publisher.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
-        more_data: false,
-    }));
+    receiver.set_power_save_data_armed(true);
+    assert!(publisher.wants_power_save_data());
+    publisher.publish(ConnectedRxEvent::PowerSaveData(data));
     assert_eq!(
-        receiver.try_receive_power_save_delivery(),
-        Some(ConnectedRxControlEvent::PowerSaveDelivery(
-            StaPsPollDelivery { more_data: false }
-        ))
+        receiver.try_receive_power_save_data(),
+        Some(ConnectedRxControlEvent::PowerSaveData(data))
     );
-    assert!(!publisher.wants_power_save_delivery());
+
+    publisher.publish(ConnectedRxEvent::PowerSaveData(data));
+    receiver.set_power_save_data_armed(false);
+    assert!(!publisher.wants_power_save_data());
+    assert_eq!(receiver.try_receive_power_save_data(), None);
 }
 
 #[test]

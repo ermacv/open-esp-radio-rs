@@ -47,8 +47,8 @@ impl<'resources, M: RawMutex, S, const CAPACITY: usize>
 impl<M: RawMutex, S: ConnectedRxSink, const CAPACITY: usize> ConnectedRxSink
     for EspNowMailboxConnectedRxSink<'_, M, S, CAPACITY>
 {
-    fn wants_power_save_delivery(&self) -> bool {
-        self.inner.wants_power_save_delivery()
+    fn wants_power_save_data(&self) -> bool {
+        self.inner.wants_power_save_data()
     }
 
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {

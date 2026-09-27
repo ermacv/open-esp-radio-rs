@@ -47,6 +47,38 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn authenticate_open(&mut self, peer: [u8; 6], now_micros: u64) -> ApMlmeAction {
+        let status = self.authenticate(peer, now_micros);
+        ApMlmeAction::AuthenticationResponse { peer, status }
+    }
+
+    /// Record `peer`'s accepted SAE exchange: the station is authenticated
+    /// with its PMK, and the security association is cached for a later
+    /// association to resume. Returns the status the station's slot allows.
+    pub fn authenticate_sae(
+        &mut self,
+        peer: [u8; 6],
+        pmk: Pmk,
+        pmkid: [u8; AP_PMKID_LEN],
+        now_micros: u64,
+    ) -> Result<u16, ApServiceError> {
+        if self.security_policy() != ApSecurityPolicy::Wpa3Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
+        self.storage_mut()
+            .pmksa
+            .insert(ApPmksa::new(peer, pmk.duplicate(), pmkid));
+        let status = self.authenticate(peer, now_micros);
+        if status == AP_STATUS_SUCCESS {
+            let existing = self.checked_peer_mut(peer)?;
+            existing.pmk = Some(pmk);
+            existing.pmkid = Some(pmkid);
+        }
+        Ok(status)
+    }
+
+    /// Give `peer` a fresh Authenticated entry, keeping the AID of an entry
+    /// it already had.
+    fn authenticate(&mut self, peer: [u8; 6], now_micros: u64) -> u16 {
         let (status, changed) = if let Some(index) = self.peer_index(peer) {
             let association_id = self.storage().peers[index]
                 .as_ref()
@@ -80,10 +112,14 @@ impl<'peers> AccessPointService<'peers> {
         if changed {
             self.revise_status();
         }
-        ApMlmeAction::AuthenticationResponse { peer, status }
+        status
     }
 
-    pub fn associate_wpa2(
+    /// Admit an association into an RSN epoch. A WPA3 station uses the PMK of
+    /// its accepted SAE exchange, or resumes a cached one by naming its
+    /// PMKID; a station that names only unknown PMKIDs, or that neither
+    /// authenticated by SAE nor names a PMKID, is refused with status 53.
+    pub fn associate_rsn(
         &mut self,
         peer: [u8; 6],
         security: ApAssociationSecurityObservation<'_>,
@@ -95,19 +131,38 @@ impl<'peers> AccessPointService<'peers> {
         if self.security_mode() != WifiSecurityMode::Wpa2Personal {
             return Err(ApServiceError::SecurityModeMismatch);
         }
-        let association_security_ies = if security.malformed_elements || security.legacy_wpa_present
-        {
+        let policy = self.security_policy();
+        let association_security = if security.malformed_elements || security.legacy_wpa_present {
             None
         } else {
-            Self::validated_wpa2_association_security_ies(security)
+            Self::validated_association_security(policy, security)
         };
-        let akm = association_security_ies.as_ref().map(|(akm, _)| *akm);
-        let association_security_binding = match association_security_ies.as_ref() {
-            Some((_, ies)) => Some(
-                self.wpa2_material()?
-                    .0
+        let akm = association_security.as_ref().map(|_| match policy {
+            ApSecurityPolicy::Wpa3Personal => Akm::Sae,
+            ApSecurityPolicy::Open | ApSecurityPolicy::Wpa2Personal => Akm::Psk,
+        });
+        let resumed = match (&association_security, policy) {
+            (Some((rsn, _)), ApSecurityPolicy::Wpa3Personal) => {
+                match self.resume_sae_pmk(peer, rsn.pmkids())? {
+                    Some(resumed) => Some(resumed),
+                    None => {
+                        return Ok(ApMlmeAction::AssociationResponse {
+                            peer,
+                            status: AP_STATUS_INVALID_PMKID,
+                            association_id: None,
+                        });
+                    }
+                }
+            }
+            _ => None,
+        };
+        let association_security_binding = match association_security.as_ref() {
+            Some((_, ies)) => Some(match &resumed {
+                Some((pmk, _)) => pmk.bind_association_security_ies(ies.as_bytes()),
+                None => self
+                    .peer_pmk(peer)?
                     .bind_association_security_ies(ies.as_bytes()),
-            ),
+            }),
             None => None,
         };
         let access_point = self.address;
@@ -139,6 +194,10 @@ impl<'peers> AccessPointService<'peers> {
         )?;
         existing.phase = ApPeerPhase::Securing;
         existing.wpa2 = Some(wpa2);
+        if let Some((pmk, pmkid)) = resumed {
+            existing.pmk = Some(pmk);
+            existing.pmkid = Some(pmkid);
+        }
         existing.association_security_binding = association_security_binding;
         existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
         existing.short_preamble = capabilities.short_preamble;
@@ -153,6 +212,40 @@ impl<'peers> AccessPointService<'peers> {
             status: AP_STATUS_SUCCESS,
             association_id: Some(association_id),
         })
+    }
+
+    /// The PMK a WPA3 association of `peer` uses: of the listed PMKIDs, the
+    /// first naming its current SAE association or a cached one, or its SAE
+    /// association when it lists none.
+    fn resume_sae_pmk(
+        &self,
+        peer: [u8; 6],
+        mut pmkids: impl Iterator<Item = [u8; AP_PMKID_LEN]>,
+    ) -> Result<Option<(Pmk, [u8; AP_PMKID_LEN])>, ApServiceError> {
+        if self.security_policy() != ApSecurityPolicy::Wpa3Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
+        let pmksa = &self.storage().pmksa;
+        let existing = self.checked_peer(peer)?;
+        let mut listed = false;
+        let found = pmkids.find_map(|pmkid| {
+            listed = true;
+            if existing.pmkid == Some(pmkid) {
+                existing.pmk.as_ref().map(|pmk| (pmk.duplicate(), pmkid))
+            } else {
+                pmksa
+                    .find(peer, pmkid)
+                    .map(|cached| (cached.pmk().duplicate(), pmkid))
+            }
+        });
+        if found.is_some() || listed {
+            return Ok(found);
+        }
+        Ok(existing
+            .pmk
+            .as_ref()
+            .zip(existing.pmkid)
+            .map(|(pmk, pmkid)| (pmk.duplicate(), pmkid)))
     }
 
     /// Admit an association into an explicitly Open AP epoch.

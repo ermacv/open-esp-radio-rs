@@ -22,16 +22,20 @@ impl<'peers> AccessPointService<'peers> {
                     && security.rsnxe.is_none()
             }
             WifiSecurityMode::Wpa2Personal => {
-                Self::validated_wpa2_association_security_ies(security).is_some()
+                Self::validated_association_security(self.security_policy(), security).is_some()
             }
         }
     }
 
-    /// The station's validated Association security elements and the suite
-    /// its RSN element selects.
-    pub(super) fn validated_wpa2_association_security_ies(
+    /// The station's validated Association security elements under this
+    /// BSS's `policy`. WPA2-Personal admits PSK without required management
+    /// frame protection and without a PMKID, as it caches none; WPA3-Personal
+    /// admits SAE with management frame protection, and a station may name
+    /// the PMKIDs it resumes.
+    pub(super) fn validated_association_security(
+        policy: ApSecurityPolicy,
         security: ApAssociationSecurityObservation<'_>,
-    ) -> Option<(Akm, OwnedAssociationSecurityIes)> {
+    ) -> Option<(ValidatedRsnElement, OwnedAssociationSecurityIes)> {
         if !security.privacy
             || security.rsn_ie_count != 1
             || security.rsnxe_count > 1
@@ -41,19 +45,20 @@ impl<'peers> AccessPointService<'peers> {
             return None;
         }
         let rsn = validate_rsn_element(security.rsn_ie?).ok()?;
-        // The access point caches no PMKSA, so it refuses a station that
-        // resumes one.
-        if rsn.pmkid_count() != 0 {
-            return None;
-        }
-        // The access point protects no management frames, so it refuses a
-        // station that associates only with protection.
-        if rsn.management_frame_protection().required {
+        let protection = rsn.management_frame_protection();
+        let admitted = match policy {
+            ApSecurityPolicy::Open => false,
+            ApSecurityPolicy::Wpa2Personal => {
+                rsn.lists_akm(Akm::Psk) && rsn.pmkid_count() == 0 && !protection.required
+            }
+            ApSecurityPolicy::Wpa3Personal => rsn.lists_akm(Akm::Sae) && protection.capable,
+        };
+        if !admitted {
             return None;
         }
         let ies = OwnedAssociationSecurityIes::try_copy(rsn.owned(), security.rsnxe.unwrap_or(&[]))
             .ok()?;
-        Some((rsn.akm(), ies))
+        Some((rsn, ies))
     }
 
     /// Signal that the successful Association Response reached TX complete.
@@ -89,8 +94,7 @@ impl<'peers> AccessPointService<'peers> {
             .as_ref()
             .ok_or(ApServiceError::WrongPeerPhase)?
             .akm();
-        let (pmk, _) = self.wpa2_material()?;
-        Ok(pmk.derive_ptk(akm, context))
+        Ok(self.peer_pmk(peer)?.derive_ptk(akm, context))
     }
 
     /// Build Message 1 only after the successful Association Response reached
@@ -332,8 +336,8 @@ impl<'peers> AccessPointService<'peers> {
                 .association_security_binding
                 .as_ref()
                 .is_some_and(|binding| {
-                    self.wpa2_material()
-                        .is_ok_and(|(pmk, _)| binding.matches(pmk, message2.key_frame().key_data()))
+                    self.peer_pmk(peer)
+                        .is_ok_and(|pmk| binding.matches(pmk, message2.key_frame().key_data()))
                 });
         let action = self
             .checked_peer_mut(peer)?
@@ -363,13 +367,7 @@ impl<'peers> AccessPointService<'peers> {
             };
         }
 
-        let (_, gtk) = self.wpa2_material()?;
-        let authenticator_rsn = OwnedRsnIe::<64>::try_copy(self.security_policy().rsn_element())?;
-        let plain = RsnPlainKeyData::<RSN_PLAIN_KEY_DATA_CAPACITY>::build(
-            authenticator_rsn.as_bytes(),
-            gtk,
-            None,
-        )?;
+        let plain = self.message3_key_data()?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let action = self
             .checked_peer_mut(peer)?
@@ -410,13 +408,7 @@ impl<'peers> AccessPointService<'peers> {
             .pending_ptk
             .as_ref()
             .ok_or(ApWpa2Error::MissingPairwiseKey)?;
-        let (_, gtk) = self.wpa2_material()?;
-        let authenticator_rsn = OwnedRsnIe::<64>::try_copy(self.security_policy().rsn_element())?;
-        let plain = RsnPlainKeyData::<RSN_PLAIN_KEY_DATA_CAPACITY>::build(
-            authenticator_rsn.as_bytes(),
-            gtk,
-            None,
-        )?;
+        let plain = self.message3_key_data()?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let response =
             build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(ptk);
@@ -431,7 +423,38 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn gtk(&self) -> Result<&RsnGtk, ApServiceError> {
-        self.wpa2_material().map(|(_, gtk)| gtk)
+        match &self.security {
+            AccessPointSecurityMaterial::Open => Err(ApServiceError::SecurityModeMismatch),
+            AccessPointSecurityMaterial::Wpa2Personal { gtk, .. }
+            | AccessPointSecurityMaterial::Wpa3Personal { gtk, .. } => Ok(gtk),
+        }
+    }
+
+    /// The IGTK of a BSS that protects management frames.
+    pub fn igtk(&self) -> Option<&RsnIgtk> {
+        match &self.security {
+            AccessPointSecurityMaterial::Wpa3Personal { igtk, .. } => Some(igtk),
+            AccessPointSecurityMaterial::Open
+            | AccessPointSecurityMaterial::Wpa2Personal { .. } => None,
+        }
+    }
+
+    /// Message 3's key data: this BSS's RSN element and RSNXE as advertised,
+    /// the GTK and, when management frames are protected, the IGTK.
+    fn message3_key_data(
+        &self,
+    ) -> Result<RsnPlainKeyData<RSN_PLAIN_KEY_DATA_CAPACITY>, ApWpa2Error> {
+        let policy = self.security_policy();
+        let rsn = policy.rsn_element();
+        let rsnx = policy.rsnx_element();
+        let mut elements = [0_u8; 64];
+        elements[..rsn.len()].copy_from_slice(rsn);
+        elements[rsn.len()..rsn.len() + rsnx.len()].copy_from_slice(rsnx);
+        Ok(RsnPlainKeyData::build(
+            &elements[..rsn.len() + rsnx.len()],
+            self.gtk()?,
+            self.igtk(),
+        )?)
     }
 
     pub fn authorize(&mut self, peer: [u8; 6], now_micros: u64) -> Result<(), ApServiceError> {
@@ -454,10 +477,17 @@ impl<'peers> AccessPointService<'peers> {
         Ok(())
     }
 
-    pub(super) fn wpa2_material(&self) -> Result<(&Pmk, &RsnGtk), ApServiceError> {
+    /// The PMK of `peer`'s association: the BSS's for WPA2-Personal, the
+    /// station's own for WPA3-Personal.
+    pub(super) fn peer_pmk(&self, peer: [u8; 6]) -> Result<&Pmk, ApServiceError> {
         match &self.security {
             AccessPointSecurityMaterial::Open => Err(ApServiceError::SecurityModeMismatch),
-            AccessPointSecurityMaterial::Wpa2Personal { pmk, gtk } => Ok((pmk, gtk)),
+            AccessPointSecurityMaterial::Wpa2Personal { pmk, .. } => Ok(pmk),
+            AccessPointSecurityMaterial::Wpa3Personal { .. } => self
+                .checked_peer(peer)?
+                .pmk
+                .as_ref()
+                .ok_or(ApServiceError::WrongPeerPhase),
         }
     }
 }

@@ -452,7 +452,7 @@ fn associated_activity_refreshes_the_configured_inactivity_frontier() {
     );
     service.authenticate_open(PEER, 0);
     service
-        .associate_wpa2(
+        .associate_rsn(
             PEER,
             association_security(&WPA2_RSN),
             ht_capabilities(),
@@ -485,7 +485,7 @@ fn association_owns_a_bounded_wpa2_state() {
     service.authenticate_open(PEER, 0);
     assert_eq!(
         service
-            .associate_wpa2(
+            .associate_rsn(
                 PEER,
                 association_security(&WPA2_RSN),
                 ht_capabilities(),
@@ -530,7 +530,7 @@ fn association_rejects_a_peer_without_a_common_legacy_rate() {
     service.authenticate_open(PEER, 0);
     assert_eq!(
         service
-            .associate_wpa2(
+            .associate_rsn(
                 PEER,
                 association_security(&WPA2_RSN),
                 ApAssociationCapabilities {
@@ -567,7 +567,7 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     // Supplicants may add their own RSN capabilities. Message 3 must not
     // reflect those bytes back: it authenticates the AP's beacon RSN IE.
     service
-        .associate_wpa2(
+        .associate_rsn(
             PEER,
             association_security(&SUPPLICANT_RSN),
             ht_capabilities(),
@@ -684,7 +684,7 @@ fn message2_must_echo_the_exact_association_rsn() {
     let mut service = service(&mut storage);
     service.authenticate_open(PEER, 0);
     service
-        .associate_wpa2(
+        .associate_rsn(
             PEER,
             association_security(&SUPPLICANT_RSN),
             ht_capabilities(),
@@ -713,7 +713,7 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
     let mut service = service(&mut storage);
     service.authenticate_open(PEER, 0);
     service
-        .associate_wpa2(
+        .associate_rsn(
             PEER,
             association_security(&SUPPLICANT_RSN),
             ht_capabilities(),
@@ -821,7 +821,7 @@ fn message2_must_echo_the_exact_association_rsnxe() {
     let mut rejected = service(&mut rejected_storage);
     rejected.authenticate_open(PEER, 0);
     rejected
-        .associate_wpa2(
+        .associate_rsn(
             PEER,
             association_security_with_rsnxe(&SUPPLICANT_RSN, Some(&RSNXE)),
             ht_capabilities(),
@@ -841,7 +841,7 @@ fn message2_must_echo_the_exact_association_rsnxe() {
     let mut accepted = service(&mut accepted_storage);
     accepted.authenticate_open(PEER, 0);
     accepted
-        .associate_wpa2(
+        .associate_rsn(
             PEER,
             association_security_with_rsnxe(&SUPPLICANT_RSN, Some(&RSNXE)),
             ht_capabilities(),
@@ -867,7 +867,7 @@ fn exhausted_pairwise_update_count_closes_the_peer() {
     let mut service = service(&mut storage);
     service.authenticate_open(PEER, 0);
     service
-        .associate_wpa2(
+        .associate_rsn(
             PEER,
             association_security(&WPA2_RSN),
             ht_capabilities(),
@@ -906,7 +906,7 @@ fn invalid_rsn_does_not_open_the_controlled_port() {
     let mut service = service(&mut storage);
     service.authenticate_open(PEER, 0);
     assert_eq!(
-        service.associate_wpa2(
+        service.associate_rsn(
             PEER,
             association_security(&[0x30, 0]),
             LEGACY_CAPABILITIES,
@@ -968,7 +968,7 @@ fn all_fifteen_aids_are_stable_and_reused_after_removal() {
         );
         assert!(matches!(
             service
-                .associate_wpa2(
+                .associate_rsn(
                     peer,
                     association_security(&WPA2_RSN),
                     ht_capabilities(),
@@ -1015,9 +1015,11 @@ fn bounded_peer_table_has_an_explicit_memory_ceiling() {
     // non-reusable RX association epochs, and eight independent QoS
     // sequence spaces remain explicit. The 16-byte sequence array is
     // required per receiver: sharing it across clients creates artificial
-    // BlockAck holes. The bounded table still uses no dynamic allocation.
+    // BlockAck holes. A WPA3 station keeps its own PMK and PMKID, and the
+    // storage holds the ten-entry PMKSA cache. The bounded table still uses
+    // no dynamic allocation.
     assert!(
-        core::mem::size_of::<AccessPointPeerStorage>() <= 4_928,
+        core::mem::size_of::<AccessPointPeerStorage>() <= 6_200,
         "peer storage size {}",
         core::mem::size_of::<AccessPointPeerStorage>()
     );
@@ -1029,7 +1031,7 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
     let mut service = service(&mut storage);
     service.authenticate_open(PEER, 1);
     service
-        .associate_wpa2(
+        .associate_rsn(
             PEER,
             association_security(&WPA2_RSN),
             ht_capabilities(),
@@ -1042,7 +1044,7 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
 
     service.authenticate_open(OTHER, 1);
     service
-        .associate_wpa2(
+        .associate_rsn(
             OTHER,
             association_security(&WPA2_RSN),
             LEGACY_CAPABILITIES,
@@ -1243,4 +1245,165 @@ fn a_station_resuming_a_pmksa_is_refused_by_an_access_point_without_a_cache() {
     resuming[22..24].copy_from_slice(&1_u16.to_le_bytes());
     resuming[24..40].copy_from_slice(&[0x5a; 16]);
     assert!(!service.matches_association_security(association_security(&resuming)));
+}
+
+const SAE_STATION_RSN: [u8; 22] = [
+    0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 8, 0x80, 0,
+];
+const SAE_PMK: [u8; 32] = [0x3c; 32];
+const SAE_PMKID: [u8; 16] = [0x4d; 16];
+
+fn wpa3_service(storage: &mut AccessPointPeerStorage) -> AccessPointService<'_> {
+    AccessPointService::new_wpa3(
+        AP,
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
+        AccessPointClientLimit::new(2).unwrap(),
+        AccessPointInactiveTimeout::default(),
+        storage,
+    )
+}
+
+fn sae_station_rsn_with_pmkid(pmkid: [u8; 16]) -> [u8; 40] {
+    let mut rsn = [0_u8; 40];
+    rsn[..22].copy_from_slice(&SAE_STATION_RSN);
+    rsn[1] = 38;
+    rsn[22..24].copy_from_slice(&1_u16.to_le_bytes());
+    rsn[24..].copy_from_slice(&pmkid);
+    rsn
+}
+
+fn association_status(action: ApMlmeAction) -> u16 {
+    let ApMlmeAction::AssociationResponse { status, .. } = action else {
+        panic!("association answers with a response");
+    };
+    status
+}
+
+#[test]
+fn a_wpa3_handshake_uses_the_sae_pmk_and_delivers_the_igtk() {
+    const ANONCE: [u8; 32] = [7; 32];
+    const SNONCE: [u8; 32] = [8; 32];
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = wpa3_service(&mut storage);
+    assert_eq!(
+        service.authenticate_sae(PEER, Pmk::from_bytes(SAE_PMK), SAE_PMKID, 0),
+        Ok(AP_STATUS_SUCCESS)
+    );
+    let action = service
+        .associate_rsn(
+            PEER,
+            association_security(&SAE_STATION_RSN),
+            ht_capabilities(),
+            ANONCE,
+            9,
+            1,
+        )
+        .unwrap();
+    assert_eq!(association_status(action), AP_STATUS_SUCCESS);
+    service.begin_wpa2_frame::<512>(PEER).unwrap();
+
+    let ptk = Pmk::from_bytes(SAE_PMK).derive_ptk(
+        oer_ieee80211_rsn::Akm::Sae,
+        PtkContext {
+            authenticator_address: AP,
+            supplicant_address: PEER,
+            authenticator_nonce: ANONCE,
+            supplicant_nonce: SNONCE,
+        },
+    );
+    let rsn = OwnedRsnIe::<64>::try_copy(&SAE_STATION_RSN).unwrap();
+    let message2 = RsnTxFrame::<512>::message2(oer_ieee80211_rsn::Akm::Sae, AP, 9, SNONCE, &rsn)
+        .unwrap()
+        .authenticate(&ptk);
+    let message2 =
+        OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, PEER, message2.as_bytes())
+            .unwrap();
+    let ApWpa2Progress::Transmit(message3) = service.on_eapol(PEER, message2).unwrap() else {
+        panic!("message 2 must produce message 3");
+    };
+    assert!(message3.key_frame().verify_mic(&ptk));
+    let plaintext = software_aes128_key_unwrap(ptk.kek(), message3.key_frame().key_data())
+        .expect("AP wrapped its Message 3 key data");
+    let keys = parse_gtk_key_data(
+        plaintext.as_bytes(),
+        &oer_ieee80211_mac::security::AP_WPA3_PERSONAL_RSN_ELEMENT,
+        &oer_ieee80211_mac::security::AP_SAE_H2E_RSNX_ELEMENT,
+        true,
+    )
+    .unwrap();
+    assert_eq!(keys.igtk.unwrap().key(), &[0x66; 16]);
+}
+
+#[test]
+fn a_wpa3_association_resumes_only_a_known_pmkid() {
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = wpa3_service(&mut storage);
+    let associate = |service: &mut AccessPointService<'_>, rsn: &[u8]| {
+        association_status(
+            service
+                .associate_rsn(
+                    PEER,
+                    association_security(rsn),
+                    ht_capabilities(),
+                    [7; 32],
+                    9,
+                    1,
+                )
+                .unwrap(),
+        )
+    };
+
+    // Open System authentication without a cached association.
+    service.authenticate_open(PEER, 0);
+    assert_eq!(
+        associate(&mut service, &SAE_STATION_RSN),
+        AP_STATUS_INVALID_PMKID
+    );
+    assert_eq!(
+        associate(&mut service, &sae_station_rsn_with_pmkid(SAE_PMKID)),
+        AP_STATUS_INVALID_PMKID
+    );
+
+    // An SAE exchange caches the association; Open System then resumes it.
+    service
+        .authenticate_sae(PEER, Pmk::from_bytes(SAE_PMK), SAE_PMKID, 0)
+        .unwrap();
+    service.authenticate_open(PEER, 0);
+    assert_eq!(
+        associate(&mut service, &sae_station_rsn_with_pmkid([0x11; 16])),
+        AP_STATUS_INVALID_PMKID
+    );
+    assert_eq!(
+        associate(&mut service, &sae_station_rsn_with_pmkid(SAE_PMKID)),
+        AP_STATUS_SUCCESS
+    );
+}
+
+#[test]
+fn a_wpa3_access_point_refuses_psk_and_stations_without_protection() {
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = wpa3_service(&mut storage);
+    service
+        .authenticate_sae(PEER, Pmk::from_bytes(SAE_PMK), SAE_PMKID, 0)
+        .unwrap();
+    assert!(!service.matches_association_security(association_security(&WPA2_RSN)));
+    let mut unprotected = SAE_STATION_RSN;
+    unprotected[20] = 0;
+    assert!(!service.matches_association_security(association_security(&unprotected)));
+    assert_eq!(
+        association_status(
+            service
+                .associate_rsn(
+                    PEER,
+                    association_security(&WPA2_RSN),
+                    ht_capabilities(),
+                    [7; 32],
+                    9,
+                    1,
+                )
+                .unwrap()
+        ),
+        AP_STATUS_INVALID_RSN
+    );
 }

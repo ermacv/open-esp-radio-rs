@@ -5,8 +5,8 @@
 //! chip node pointers are deliberately outside this crate.
 
 use oer_ieee80211_mac::security::rsn::{
-    RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR, RSN_CIPHER_BIP_CMAC_128, RSN_CIPHER_CCMP, RsnElement,
-    RsnSyntaxError, ieee_suite,
+    RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR, RSN_CIPHER_BIP_CMAC_128, RSN_CIPHER_CCMP,
+    RSN_PMKID_LEN, RsnElement, RsnSyntaxError, ieee_suite,
 };
 
 use crate::{
@@ -67,6 +67,22 @@ impl ValidatedRsnElement {
     /// PMKSA names its PMKID.
     pub const fn pmkid_count(&self) -> u16 {
         self.pmkid_count
+    }
+
+    /// Whether the element's AKM list names `akm`.
+    pub fn lists_akm(&self, akm: Akm) -> bool {
+        RsnElement::parse(self.owned.as_bytes())
+            .expect("a validated element parses again")
+            .akm_suites()
+            .iter()
+            .any(|selector| Akm::from_suite_selector(selector) == Some(akm))
+    }
+
+    /// The PMKIDs the element lists, in order.
+    pub fn pmkids(&self) -> impl Iterator<Item = [u8; RSN_PMKID_LEN]> + '_ {
+        RsnElement::parse(self.owned.as_bytes())
+            .expect("a validated element parses again")
+            .pmkids()
     }
 
     pub const fn management_frame_protection(&self) -> ManagementFrameProtection {

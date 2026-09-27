@@ -80,7 +80,7 @@ pub struct RsnElement<'a> {
     pairwise_ciphers: RsnSuiteList<'a>,
     akm_suites: RsnSuiteList<'a>,
     capabilities: Option<u16>,
-    pmkid_count: Option<u16>,
+    pmkids: Option<&'a [u8]>,
     group_management_cipher: Option<[u8; 4]>,
 }
 
@@ -106,10 +106,9 @@ impl<'a> RsnElement<'a> {
         let pairwise_ciphers = reader.suite_list()?;
         let akm_suites = reader.suite_list()?;
         let capabilities = reader.optional(Reader::u16)?;
-        let pmkid_count = reader.optional(|reader| {
+        let pmkids = reader.optional(|reader| {
             let count = reader.u16()?;
-            reader.take(usize::from(count) * RSN_PMKID_LEN)?;
-            Ok(count)
+            reader.take(usize::from(count) * RSN_PMKID_LEN)
         })?;
         let group_management_cipher = reader.optional(Reader::suite)?;
         if !reader.bytes.is_empty() {
@@ -121,7 +120,7 @@ impl<'a> RsnElement<'a> {
             pairwise_ciphers,
             akm_suites,
             capabilities,
-            pmkid_count,
+            pmkids,
             group_management_cipher,
         })
     }
@@ -145,7 +144,18 @@ impl<'a> RsnElement<'a> {
 
     /// Number of PMKIDs, or `None` when the PMKID Count field is absent.
     pub const fn pmkid_count(&self) -> Option<u16> {
-        self.pmkid_count
+        match self.pmkids {
+            Some(pmkids) => Some((pmkids.len() / RSN_PMKID_LEN) as u16),
+            None => None,
+        }
+    }
+
+    /// The listed PMKIDs, in order.
+    pub fn pmkids(&self) -> impl Iterator<Item = [u8; RSN_PMKID_LEN]> + use<'a> {
+        self.pmkids
+            .unwrap_or(&[])
+            .chunks_exact(RSN_PMKID_LEN)
+            .map(|pmkid| pmkid.try_into().expect("a PMKID chunk has its length"))
     }
 
     pub const fn group_management_cipher(&self) -> Option<[u8; 4]> {

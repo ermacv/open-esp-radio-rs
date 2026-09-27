@@ -114,7 +114,7 @@ fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
 
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let gtk = RsnGtk::new(1, false, INITIAL_GTK).unwrap();
-    let plain = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let wrapped = software_aes128_key_wrap(peer_ptk.kek(), plain.as_bytes()).unwrap();
     let message3 = RsnTxFrame::<512>::message3(
         oer_ieee80211_rsn::Akm::Psk,
@@ -779,7 +779,7 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
     };
     let rsn = OwnedRsnIe::<64>::try_copy(&WPA2_RSN).unwrap();
     let gtk = RsnGtk::new(1, false, [0x6a; 16]).unwrap();
-    let plain = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes()).unwrap();
     let message3 = RsnTxFrame::<512>::message3(
         oer_ieee80211_rsn::Akm::Psk,

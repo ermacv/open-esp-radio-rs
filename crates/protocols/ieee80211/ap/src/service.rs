@@ -15,6 +15,8 @@ pub use crate::limits::{
 };
 
 use oer_ieee80211_mac::ap::{ApAssociationSecurityObservation, ApPowerSaveObservation};
+
+use crate::pmksa::{AP_PMKID_LEN, ApPmksa, ApPmksaCache};
 use oer_ieee80211_mac::beacon::{TimAssociationId, TimBitmapError, TimVirtualBitmap};
 use oer_ieee80211_mac::block_ack::{
     AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckConfig,
@@ -28,10 +30,10 @@ use oer_ieee80211_mac::security::{ApSecurityPolicy, WifiSecurityMode};
 use oer_ieee80211_rsn::{
     Akm, AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
-    element::validate_rsn_element,
+    element::{ValidatedRsnElement, validate_rsn_element},
     frames::{
-        OwnedAssociationSecurityIes, OwnedRsnIe, RSN_PLAIN_KEY_DATA_CAPACITY, RsnFrameError,
-        RsnGtk, RsnPlainKeyData, RsnTxFrame, build_ap_action_frame,
+        OwnedAssociationSecurityIes, RSN_PLAIN_KEY_DATA_CAPACITY, RsnFrameError, RsnGtk, RsnIgtk,
+        RsnPlainKeyData, RsnTxFrame, build_ap_action_frame,
     },
     retry::{RsnRetry, RsnRetryAction, RsnRetryAlarm, RsnRetryConfig, RsnRetryError},
     state::{
@@ -43,6 +45,9 @@ pub const AP_STATUS_SUCCESS: u16 = 0;
 pub const AP_STATUS_TOO_MANY_STATIONS: u16 = 17;
 pub const AP_STATUS_UNSUPPORTED_RATES: u16 = 18;
 pub const AP_STATUS_INVALID_RSN: u16 = 40;
+/// Status 53: the station named no PMKID of a security association this
+/// access point holds for it.
+pub const AP_STATUS_INVALID_PMKID: u16 = 53;
 pub const AP_ASSOCIATION_DEADLINE_MICROS: u64 = 15_000_000;
 /// AP-owned response window for each four-way-handshake publication.
 ///
@@ -404,6 +409,11 @@ struct ApPeer {
     association_epoch: u32,
     phase: ApPeerPhase,
     wpa2: Option<RsnApState>,
+    /// The PMK of a WPA3 station: from its accepted SAE exchange, or the
+    /// cached one its association resumed.
+    pmk: Option<Pmk>,
+    /// The PMKID of `pmk`.
+    pmkid: Option<[u8; AP_PMKID_LEN]>,
     association_security_binding: Option<AssociationSecurityBinding>,
     pending_ptk: Option<Ptk>,
     wpa2_retry: RsnRetry,
@@ -434,6 +444,8 @@ struct ApPeer {
 pub struct AccessPointPeerStorage {
     peers: [Option<ApPeer>; AP_MAX_CLIENTS],
     generation: u32,
+    /// The security associations a WPA3 epoch's stations may resume.
+    pmksa: ApPmksaCache,
 }
 
 impl AccessPointPeerStorage {
@@ -441,6 +453,7 @@ impl AccessPointPeerStorage {
         Self {
             peers: [const { None }; AP_MAX_CLIENTS],
             generation: 0,
+            pmksa: ApPmksaCache::new(),
         }
     }
 }
@@ -483,6 +496,8 @@ impl ApPeer {
             association_epoch,
             phase: ApPeerPhase::Authenticated,
             wpa2: None,
+            pmk: None,
+            pmkid: None,
             association_security_binding: None,
             pending_ptk: None,
             wpa2_retry: new_ap_wpa2_retry(),
@@ -622,9 +637,12 @@ pub struct AccessPointService<'peers> {
 
 /// Credential ownership for one AP epoch. Open deliberately has no PMK, GTK
 /// or placeholder key bytes that could be installed by a later generic path.
+/// A WPA3 epoch has no BSS-wide PMK: each station's comes from SAE, and the
+/// peer storage keeps the security associations stations may resume.
 pub enum AccessPointSecurityMaterial {
     Open,
     Wpa2Personal { pmk: Pmk, gtk: RsnGtk },
+    Wpa3Personal { gtk: RsnGtk, igtk: RsnIgtk },
 }
 
 impl<'peers> AccessPointService<'peers> {
@@ -636,27 +654,32 @@ impl<'peers> AccessPointService<'peers> {
         inactive_timeout: AccessPointInactiveTimeout,
         peer_storage: &'peers mut AccessPointPeerStorage,
     ) -> Self {
-        peer_storage.peers.fill_with(|| None);
-        peer_storage.generation = peer_storage
-            .generation
-            .checked_add(1)
-            .expect("AP peer generation space is not reusable");
-        Self {
+        Self::with_security(
             address,
-            security: AccessPointSecurityMaterial::Wpa2Personal { pmk, gtk },
-            peer_storage: Some(peer_storage),
+            AccessPointSecurityMaterial::Wpa2Personal { pmk, gtk },
             client_limit,
             inactive_timeout,
-            next_management_sequence: SequenceNumber::ZERO,
-            next_data_sequence: SequenceNumber::ZERO,
-            status_revision: 0,
-            associated_count: 0,
-            authorized_count: 0,
-            buffered_group_frames: 0,
-            buffered_group_release_generation: 0,
-            buffered_group_release_in_flight: false,
-            operational_tx_block_ack: false,
-        }
+            peer_storage,
+        )
+    }
+
+    /// A WPA3-Personal epoch: stations authenticate by SAE, and the IGTK
+    /// protects group-addressed management frames.
+    pub fn new_wpa3(
+        address: [u8; 6],
+        gtk: RsnGtk,
+        igtk: RsnIgtk,
+        client_limit: AccessPointClientLimit,
+        inactive_timeout: AccessPointInactiveTimeout,
+        peer_storage: &'peers mut AccessPointPeerStorage,
+    ) -> Self {
+        Self::with_security(
+            address,
+            AccessPointSecurityMaterial::Wpa3Personal { gtk, igtk },
+            client_limit,
+            inactive_timeout,
+            peer_storage,
+        )
     }
 
     pub fn new_open(
@@ -665,14 +688,31 @@ impl<'peers> AccessPointService<'peers> {
         inactive_timeout: AccessPointInactiveTimeout,
         peer_storage: &'peers mut AccessPointPeerStorage,
     ) -> Self {
+        Self::with_security(
+            address,
+            AccessPointSecurityMaterial::Open,
+            client_limit,
+            inactive_timeout,
+            peer_storage,
+        )
+    }
+
+    fn with_security(
+        address: [u8; 6],
+        security: AccessPointSecurityMaterial,
+        client_limit: AccessPointClientLimit,
+        inactive_timeout: AccessPointInactiveTimeout,
+        peer_storage: &'peers mut AccessPointPeerStorage,
+    ) -> Self {
         peer_storage.peers.fill_with(|| None);
+        peer_storage.pmksa = ApPmksaCache::new();
         peer_storage.generation = peer_storage
             .generation
             .checked_add(1)
             .expect("AP peer generation space is not reusable");
         Self {
             address,
-            security: AccessPointSecurityMaterial::Open,
+            security,
             peer_storage: Some(peer_storage),
             client_limit,
             inactive_timeout,
@@ -693,6 +733,7 @@ impl<'peers> AccessPointService<'peers> {
         match &self.security {
             AccessPointSecurityMaterial::Open => ApSecurityPolicy::Open,
             AccessPointSecurityMaterial::Wpa2Personal { .. } => ApSecurityPolicy::Wpa2Personal,
+            AccessPointSecurityMaterial::Wpa3Personal { .. } => ApSecurityPolicy::Wpa3Personal,
         }
     }
 

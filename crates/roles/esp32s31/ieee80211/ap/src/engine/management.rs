@@ -198,7 +198,7 @@ impl<'storage> ApEngine<'storage> {
                         self.service
                             .associate_open(peer, security, capabilities, now_micros)?
                     }
-                    WifiSecurityMode::Wpa2Personal => self.service.associate_wpa2(
+                    WifiSecurityMode::Wpa2Personal => self.service.associate_rsn(
                         peer,
                         security,
                         capabilities,

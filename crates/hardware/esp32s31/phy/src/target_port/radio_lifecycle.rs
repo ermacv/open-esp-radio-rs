@@ -65,6 +65,9 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
 pub static OER_WAKE_TRACE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 #[allow(unsafe_code)]
+const WAKE_EXECUTE: core::ops::RangeInclusive<u32> = 1..=18;
+
+#[allow(unsafe_code)]
 pub fn wake_trace(value: u32) {
     OER_WAKE_TRACE.store(value, core::sync::atomic::Ordering::SeqCst);
     unsafe extern "C" {
@@ -392,6 +395,13 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
         };
         step += 1;
         wake_trace(0x2000 | step);
+        // DEBUG bisection: execute only the steps in WAKE_EXECUTE.
+        if !WAKE_EXECUTE.contains(&step) {
+            transition
+                .advance(PhyRfWakeCompletion::executed(operation))
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            continue;
+        }
         {
             match operation {
                 PhyRfWakeOperation::SetBasebandMode { mode } => {

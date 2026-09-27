@@ -146,6 +146,15 @@ impl<'m> Devices<'m> {
                     push(*index_address, *width, 0)?;
                     push(*data_address, *width, 1)?;
                 }
+                DeviceBehavior::SelectedSequence {
+                    selector_address,
+                    value_address,
+                    width,
+                    ..
+                } => {
+                    push(*selector_address, *width, 0)?;
+                    push(*value_address, *width, 1)?;
+                }
                 DeviceBehavior::ConstantRead { address, width, .. }
                 | DeviceBehavior::SequenceRead { address, width, .. }
                 | DeviceBehavior::W1c { address, width, .. }
@@ -319,6 +328,14 @@ impl<'m> Instance<'m> {
                     instance.values.push(*value, c.position())?;
                 }
             }
+            DeviceBehavior::SelectedSequence { sequences, .. } => {
+                // Per sequence: the run it reads and the reads that run gave.
+                for sequence in sequences {
+                    instance.sequence_remaining += ReadRun::total(&sequence.runs)?;
+                    instance.values.push(0, c.position())?;
+                    instance.values.push(0, c.position())?;
+                }
+            }
             DeviceBehavior::W1c { initial, .. }
             | DeviceBehavior::ReadClear { initial, .. }
             | DeviceBehavior::SelfClearing { initial, .. } => instance.value = *initial,
@@ -384,6 +401,29 @@ impl<'m> Instance<'m> {
                 }),
                 None => Err(DeviceIssue::UnknownIndex),
             },
+            DeviceBehavior::SelectedSequence { sequences, .. } => {
+                if slot == 0 {
+                    Err(DeviceIssue::WriteOnly)
+                } else if let Some(selected) = self.index {
+                    let selected = selected as usize;
+                    let (run, used) = (self.values[2 * selected], self.values[2 * selected + 1]);
+                    match sequences[selected].runs.get(run as usize) {
+                        Some(read) => {
+                            self.sequence_remaining -= 1;
+                            if used + 1 == read.count {
+                                self.values[2 * selected] = run + 1;
+                                self.values[2 * selected + 1] = 0;
+                            } else {
+                                self.values[2 * selected + 1] = used + 1;
+                            }
+                            Ok(read.value)
+                        }
+                        None => Err(DeviceIssue::ExhaustedReads),
+                    }
+                } else {
+                    Err(DeviceIssue::UnknownIndex)
+                }
+            }
         };
         match value {
             Ok(value) => {
@@ -436,6 +476,19 @@ impl<'m> Instance<'m> {
             },
             DeviceBehavior::RetainedAperture { .. } => {
                 unreachable!("apertures dispatch by address")
+            }
+            DeviceBehavior::SelectedSequence { sequences, .. } => {
+                if slot == 1 {
+                    Err(DeviceIssue::ReadOnly)
+                } else {
+                    match sequences.iter().position(|s| s.selector == value) {
+                        Some(selected) => {
+                            self.index = Some(selected as u32);
+                            Ok(())
+                        }
+                        None => Err(DeviceIssue::UnknownSelector { selector: value }),
+                    }
+                }
             }
             DeviceBehavior::IndexedBank { .. } => {
                 if slot == 0 {
@@ -553,7 +606,9 @@ impl<'m> Instance<'m> {
             reads: self.reads,
             writes: self.writes,
             remaining_reads: match &self.declaration.behavior {
-                DeviceBehavior::SequenceRead { .. } => self.sequence_remaining,
+                DeviceBehavior::SequenceRead { .. } | DeviceBehavior::SelectedSequence { .. } => {
+                    self.sequence_remaining
+                }
                 DeviceBehavior::CommandBank(_) => self.commands.as_ref().unwrap().remaining(),
                 DeviceBehavior::CyclicRead { .. } => 0,
                 _ => (reads - self.read_cursor) as u32,
@@ -571,6 +626,58 @@ impl<'m> Instance<'m> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_selected_sequence_answers_each_selector_from_its_own_runs() {
+        let mut d = declaration(RegionLifetime::Phase);
+        d.behavior = DeviceBehavior::SelectedSequence {
+            selector_address: 0x1000,
+            value_address: 0x1004,
+            width: 4,
+            sequences: vec![
+                SelectedRuns {
+                    selector: 0x38,
+                    runs: vec![ReadRun::once(1), ReadRun { value: 2, count: 2 }],
+                },
+                SelectedRuns {
+                    selector: 7,
+                    runs: vec![ReadRun::once(9)],
+                },
+            ],
+        };
+        d.validate().unwrap();
+        let memory = WorkingMemory::new(1 << 16).unwrap();
+        let mut instance = Instance::new(&d, &memory, &mut || Ok(())).unwrap();
+        let control = &mut || Ok(());
+        // Reading before any selection is an issue.
+        let mut fresh = Instance::new(&d, &memory, control).unwrap();
+        assert_eq!(fresh.read(1, control).unwrap(), None);
+        assert_eq!(fresh.observation(true).status, ModelStatus::Incomplete);
+        assert!(instance.write(0, 0x38, control).unwrap());
+        assert_eq!(instance.read(1, control).unwrap(), Some(1));
+        // Another selector keeps the first sequence's position.
+        assert!(instance.write(0, 7, control).unwrap());
+        assert_eq!(instance.read(1, control).unwrap(), Some(9));
+        assert!(instance.write(0, 0x38, control).unwrap());
+        assert_eq!(instance.read(1, control).unwrap(), Some(2));
+        assert_eq!(instance.observation(true).status, ModelStatus::Incomplete);
+        assert_eq!(instance.read(1, control).unwrap(), Some(2));
+        assert_eq!(instance.observation(true).status, ModelStatus::Complete);
+        // Past its runs, an undeclared selector or a selector read.
+        assert_eq!(instance.read(1, control).unwrap(), None);
+        let mut other = Instance::new(&d, &memory, control).unwrap();
+        other.write(0, 0xc01, control).unwrap();
+        assert_eq!(
+            other.observation(false).issue,
+            Some(DeviceIssue::UnknownSelector { selector: 0xc01 })
+        );
+        let mut reader = Instance::new(&d, &memory, control).unwrap();
+        assert_eq!(reader.read(0, control).unwrap(), None);
+        assert_eq!(
+            reader.observation(false).issue,
+            Some(DeviceIssue::WriteOnly)
+        );
+    }
+
     #[test]
     fn repeated_reads_keep_constant_capacity_and_cancel_before_cursor_progress() {
         let mut d = declaration(RegionLifetime::Session);

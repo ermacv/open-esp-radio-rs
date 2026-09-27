@@ -102,6 +102,14 @@ impl<'a> Models<'a> {
                 (Some(ReadRun::total(runs)? as usize), Some(0))
             }
             DeviceBehavior::Fifo { reads, writes, .. } => (Some(reads.len()), Some(writes.len())),
+            DeviceBehavior::SelectedSequence { sequences, .. } => {
+                c.checkpoint(sequences.len() as u64)?;
+                let mut total = 0usize;
+                for sequence in sequences {
+                    total += ReadRun::total(&sequence.runs)? as usize;
+                }
+                (Some(total), None)
+            }
             DeviceBehavior::ConstantRead { .. }
             | DeviceBehavior::CyclicRead { .. }
             | DeviceBehavior::ReadClear { .. } => (None, Some(0)),

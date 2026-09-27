@@ -76,6 +76,18 @@ pub enum DeviceBehavior {
         width: u8,
         values: Vec<u32>,
     },
+    /// A multiplexed read port: each write to `selector_address` selects the
+    /// sequence declared for that selector, and each read of
+    /// `value_address` consumes the selected sequence's finite runs. Writing
+    /// an undeclared selector, reading the selector, writing the value or
+    /// reading without a selection or past the selected runs is an issue;
+    /// the model completes when every sequence is consumed.
+    SelectedSequence {
+        selector_address: u32,
+        value_address: u32,
+        width: u8,
+        sequences: Vec<SelectedRuns>,
+    },
     /// Word-aligned MMIO range in which every naturally aligned 1-, 2- or
     /// 4-byte access not claimed by an exact port of another model is retained
     /// storage: a word reads `initial` until written, then its last value.
@@ -86,6 +98,15 @@ pub enum DeviceBehavior {
         length: u32,
         initial: u32,
     },
+}
+
+/// The finite reads one selector of a [`DeviceBehavior::SelectedSequence`]
+/// answers.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SelectedRuns {
+    pub selector: u32,
+    pub runs: Vec<ReadRun>,
 }
 
 /// An explicit finite count of identical consecutive peripheral responses.
@@ -126,6 +147,7 @@ pub enum DeviceIssue {
     WriteMismatch { expected: u32, actual: u32 },
     UnknownIndex,
     IndexOutOfRange { index: u32 },
+    WriteOnly,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -265,6 +287,31 @@ impl DeviceDeclaration {
                 }
                 scalar(*address, *width, values)?;
             }
+            DeviceBehavior::SelectedSequence {
+                selector_address,
+                value_address,
+                width,
+                sequences,
+            } => {
+                if selector_address == value_address
+                    || sequences.is_empty()
+                    || sequences.len() > MAX_DEVICE_VALUES
+                    || sequences
+                        .iter()
+                        .enumerate()
+                        .any(|(i, s)| sequences[..i].iter().any(|t| t.selector == s.selector))
+                {
+                    return Err(bad());
+                }
+                let selectors: Vec<u32> = sequences.iter().map(|s| s.selector).collect();
+                scalar(*selector_address, *width, &selectors)?;
+                for sequence in sequences {
+                    ReadRun::total(&sequence.runs)?;
+                    for run in &sequence.runs {
+                        scalar(*value_address, *width, &[run.value])?;
+                    }
+                }
+            }
             DeviceBehavior::RetainedAperture { start, length, .. } => {
                 if !start.is_multiple_of(4)
                     || !length.is_multiple_of(4)
@@ -311,6 +358,10 @@ impl DeviceDeclaration {
             DeviceBehavior::IndexedBank { values, .. }
             | DeviceBehavior::CyclicRead { values, .. } => values.len() * 4,
             DeviceBehavior::Fifo { reads, writes, .. } => (reads.len() + writes.len()) * 4,
+            DeviceBehavior::SelectedSequence { sequences, .. } => sequences
+                .iter()
+                .map(|s| 4 + s.runs.len() * std::mem::size_of::<ReadRun>())
+                .sum(),
             _ => 0,
         };
         (self.id.len() + self.applicability.len() + values) as u64
@@ -475,6 +526,30 @@ impl DeviceDeclaration {
             } => {
                 for n in [9, *start, *length, *initial] {
                     put(n)?;
+                }
+            }
+            DeviceBehavior::SelectedSequence {
+                selector_address,
+                value_address,
+                width,
+                sequences,
+            } => {
+                for n in [
+                    11,
+                    *selector_address,
+                    *value_address,
+                    u32::from(*width),
+                    sequences.len() as u32,
+                ] {
+                    put(n)?;
+                }
+                for sequence in sequences {
+                    put(sequence.selector)?;
+                    put(sequence.runs.len() as u32)?;
+                    for run in &sequence.runs {
+                        put(run.value)?;
+                        put(run.count)?;
+                    }
                 }
             }
         }

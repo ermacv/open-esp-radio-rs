@@ -35,7 +35,9 @@ const ASSOCIATION_CAPABILITY_MASK: u16 = 0x0431;
 const SUPPORTED_RATES_ELEMENT_CAPACITY: usize = 8;
 const SELECTED_RSN_IE_LEN: usize = 22;
 /// The RSN element and, under SAE, an RSNXE of one capability octet.
-const SELECTED_SECURITY_IES_CAPACITY: usize = SELECTED_RSN_IE_LEN + 3;
+const SELECTED_SECURITY_IES_CAPACITY: usize = SELECTED_RSN_IE_LEN + PMKID_LIST_LEN + 3;
+/// A PMKID list naming one PMKID.
+const PMKID_LIST_LEN: usize = 2 + 16;
 const HE_UL_MU_POWER_CAPABILITY_IE_LEN: usize = 14;
 const HE_UL_MU_POWER_CAPABILITY_EXTENSION_ID: u8 = 60;
 const POWER_CAPABILITY_IE_LEN: usize = 4;

@@ -66,6 +66,31 @@ impl SelectedRsn {
     pub const fn akm(&self) -> SelectedAkm {
         self.akm
     }
+
+    /// The same selection naming `pmkid`: an SAE association that resumes a
+    /// cached PMKSA lists its PMKID after the RSN capabilities, as the
+    /// vendor's `wpa_gen_wpa_ie_rsn` does for the current PMKSA.
+    ///
+    /// # Panics
+    ///
+    /// The selection is not SAE: only SAE associations are cached.
+    pub fn with_pmkid(self, pmkid: [u8; 16]) -> Self {
+        assert!(
+            matches!(self.akm, SelectedAkm::Sae { .. }),
+            "only an SAE association resumes a cached PMKSA"
+        );
+        let mut resumed = self;
+        let rsnxe = &self.bytes[SELECTED_RSN_IE_LEN..usize::from(self.length)];
+        resumed.bytes[1] += PMKID_LIST_LEN as u8;
+        resumed.bytes[SELECTED_RSN_IE_LEN..SELECTED_RSN_IE_LEN + 2]
+            .copy_from_slice(&1_u16.to_le_bytes());
+        resumed.bytes[SELECTED_RSN_IE_LEN + 2..SELECTED_RSN_IE_LEN + PMKID_LIST_LEN]
+            .copy_from_slice(&pmkid);
+        let rsnxe_start = SELECTED_RSN_IE_LEN + PMKID_LIST_LEN;
+        resumed.bytes[rsnxe_start..rsnxe_start + rsnxe.len()].copy_from_slice(rsnxe);
+        resumed.length = (rsnxe_start + rsnxe.len()) as u8;
+        resumed
+    }
 }
 
 /// RSN Extension element identifier.
@@ -195,12 +220,12 @@ fn select_personal_rsn(
     ]);
     selected.length = SELECTED_RSN_IE_LEN as u8;
     if matches!(akm, SelectedAkm::Sae { .. }) {
-        selected.bytes[SELECTED_RSN_IE_LEN..SELECTED_SECURITY_IES_CAPACITY].copy_from_slice(&[
+        selected.bytes[SELECTED_RSN_IE_LEN..SELECTED_RSN_IE_LEN + 3].copy_from_slice(&[
             RSNXE_ELEMENT_ID,
             1,
             RSNXE_SAE_H2E,
         ]);
-        selected.length = SELECTED_SECURITY_IES_CAPACITY as u8;
+        selected.length = SELECTED_RSN_IE_LEN as u8 + 3;
     }
     Ok(selected)
 }

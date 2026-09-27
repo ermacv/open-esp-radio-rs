@@ -19,6 +19,7 @@ mod test_support;
 pub mod ftm;
 pub mod join;
 pub mod link_monitor;
+pub mod pmksa;
 pub mod request;
 pub mod scan;
 pub mod station;

@@ -31,6 +31,11 @@ fn authentication_response(status_code: u16) -> [u8; 30] {
     frame
 }
 
+/// The WPA2-Personal security elements selected for `record`.
+fn wpa2_rsn(record: &ScanRecord) -> SelectedRsn {
+    select_association_rsn(record, StaSecurityPolicy::Wpa2Personal).unwrap()
+}
+
 fn access_point_with_rsn(akms: &[[u8; 4]], capabilities: u16) -> ScanRecord {
     let mut record = ScanRecord::EMPTY;
     record.ssid[..4].copy_from_slice(b"test");
@@ -276,7 +281,7 @@ fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8], [0, 0x0f, 0xac, 2]], 0x80);
     let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal).unwrap();
     assert_eq!(selected.akm(), SelectedAkm::Sae { h2e: false });
-    assert_eq!(selected.as_bytes().len(), SELECTED_SECURITY_IES_CAPACITY);
+    assert_eq!(selected.as_bytes().len(), SELECTED_RSN_IE_LEN + 3);
     assert_eq!(&selected.as_bytes()[8..14], &[1, 0, 0, 0x0f, 0xac, 4]);
     assert_eq!(&selected.as_bytes()[14..20], &[1, 0, 0, 0x0f, 0xac, 8]);
     // SPP A-MSDU capable, MFPC and, under SAE, MFPR.
@@ -289,6 +294,27 @@ fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
             .unwrap()
             .akm(),
         SelectedAkm::Sae { h2e: false }
+    );
+}
+
+#[test]
+fn a_resumed_sae_association_lists_its_pmkid_before_the_rsnxe() {
+    let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8]], 0xc0);
+    let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal).unwrap();
+    let resumed = selected.with_pmkid([0x5a; 16]);
+    let bytes = resumed.as_bytes();
+    assert_eq!(bytes.len(), SELECTED_SECURITY_IES_CAPACITY);
+    assert_eq!(&bytes[..2], &[48, 38]);
+    assert_eq!(&bytes[2..22], &selected.as_bytes()[2..22]);
+    assert_eq!(&bytes[22..24], &[1, 0]);
+    assert_eq!(&bytes[24..40], &[0x5a; 16]);
+    assert_eq!(&bytes[40..], &[244, 1, 0x20]);
+    assert_eq!(resumed.akm(), selected.akm());
+    assert!(
+        crate::security::rsn::RsnElement::parse(&bytes[..40])
+            .unwrap()
+            .akm_suites()
+            .contains(crate::security::rsn::ieee_suite(8))
     );
 }
 
@@ -423,7 +449,7 @@ fn association_request_contains_selected_rsn() {
         sequence_number: seq(2),
         listen_interval: 1,
         phy: PhyMode::Legacy,
-        security: StaSecurityPolicy::Wpa2Personal,
+        security: &wpa2_rsn(&record),
         power_capability: None,
         he_ul_mu_power: None,
     }
@@ -450,7 +476,7 @@ fn ht20_request_fails_closed_when_the_ap_did_not_advertise_ht() {
             sequence_number: seq(2),
             listen_interval: 1,
             phy: PhyMode::Ht20,
-            security: StaSecurityPolicy::Wpa2Personal,
+            security: &wpa2_rsn(&record),
             power_capability: None,
             he_ul_mu_power: None,
         }
@@ -473,7 +499,7 @@ fn association_encoder_uses_the_explicit_local_profile() {
         sequence_number: seq(2),
         listen_interval: 1,
         phy: PhyMode::Ht20,
-        security: StaSecurityPolicy::Wpa2Personal,
+        security: &wpa2_rsn(&record),
         power_capability: None,
         he_ul_mu_power: None,
     }

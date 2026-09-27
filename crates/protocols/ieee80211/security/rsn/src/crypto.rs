@@ -64,6 +64,12 @@ impl Pmk {
         Self(bytes)
     }
 
+    /// A second owner of the same key, for a PMKSA cache that outlives the
+    /// association which derived it.
+    pub fn duplicate(&self) -> Self {
+        Self(self.0)
+    }
+
     pub fn derive(passphrase: &[u8], ssid: &[u8]) -> Result<Self, PskDerivationError> {
         if !(PSK_PASSPHRASE_MIN_LEN..=PSK_PASSPHRASE_MAX_LEN).contains(&passphrase.len()) {
             return Err(PskDerivationError::InvalidPassphraseLength);

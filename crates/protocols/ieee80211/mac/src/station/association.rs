@@ -162,8 +162,8 @@ pub struct AssociationRequest<'a> {
     pub sequence_number: SequenceNumber,
     pub listen_interval: u16,
     pub phy: PhyMode,
-    /// The station request's security policy.
-    pub security: StaSecurityPolicy,
+    /// The security elements this station selected for the access point.
+    pub security: &'a SelectedRsn,
     /// HE Power Capability derived from the same calibrated rate-16 power
     /// source used by the MAC. Non-HE modes must leave it absent.
     pub power_capability: Option<StaPowerCapability>,
@@ -200,8 +200,7 @@ impl AssociationRequest<'_> {
         }
         let first_rates_len = rates_len.min(SUPPORTED_RATES_ELEMENT_CAPACITY);
         let extended_rates_len = rates_len - first_rates_len;
-        let selected_rsn = select_association_rsn(self.access_point, self.security)
-            .map_err(AssociationRequestError::Security)?;
+        let selected_rsn = self.security;
         let (ht_capability, he_capability, power_capability, he_ul_mu_power) = match self.phy {
             PhyMode::Legacy => (None, None, None, None),
             PhyMode::Ht20 if self.access_point.ht_capability_ie_present => {
@@ -288,9 +287,9 @@ impl AssociationRequest<'_> {
         // fail-closed if a record is ever assembled outside that path.
         let capability = ((self.access_point.capability_info & ASSOCIATION_CAPABILITY_MASK) | 1)
             & !0x0010
-            | match self.security.link_mode() {
-                WifiSecurityMode::Open => 0,
-                WifiSecurityMode::Wpa2Personal => 0x0010,
+            | match self.security.akm() {
+                SelectedAkm::Open => 0,
+                SelectedAkm::Psk | SelectedAkm::PskSha256 | SelectedAkm::Sae { .. } => 0x0010,
             };
         frame[24..26].copy_from_slice(&capability.to_le_bytes());
         frame[26..28].copy_from_slice(&self.listen_interval.to_le_bytes());
@@ -360,7 +359,6 @@ impl AssociationRequest<'_> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AssociationRequestError {
     Frame(StationFrameError),
-    Security(StaSecurityError),
     HtUnsupportedByAccessPoint,
     Ht40UnsupportedByAccessPoint,
     He20UnsupportedByAccessPoint,

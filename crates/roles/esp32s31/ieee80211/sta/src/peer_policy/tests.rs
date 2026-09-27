@@ -41,6 +41,7 @@ fn he20_plan_joins_one_peer_view_without_vendor_layout() {
         he_operation: true,
         wmm: true,
         wmm_parameters: Some(parse_wmm_parameter_element(&STANDARD_WMM).unwrap()),
+        association_comeback_tu: None,
     };
     let plan = scan
         .complete(&access_point, &response, PhyMode::He20, -95)
@@ -81,6 +82,7 @@ fn response_wmm_overrides_the_scan_parameter_set() {
         he_operation: true,
         wmm: true,
         wmm_parameters: Some(parse_wmm_parameter_element(&wider).unwrap()),
+        association_comeback_tu: None,
     };
     let plan = scan
         .complete(&access_point, &response, PhyMode::He20, -95)
@@ -100,6 +102,7 @@ fn rejected_association_cannot_produce_a_peer_plan() {
         he_operation: false,
         wmm: false,
         wmm_parameters: None,
+        association_comeback_tu: None,
     };
     assert_eq!(
         StaPeerScanPolicy::new(&access_point)

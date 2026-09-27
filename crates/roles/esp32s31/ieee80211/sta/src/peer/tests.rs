@@ -205,6 +205,7 @@ fn port_owns_scan_and_association_peer_programming() {
         he_operation: true,
         wmm: true,
         wmm_parameters: Some(parse_wmm_parameter_element(&STANDARD_WMM).unwrap()),
+        association_comeback_tu: None,
     };
     let mut hardware = MockRadio::new(-95);
     let programmed = StaPeerPort::program(
@@ -283,6 +284,7 @@ fn scan_mcs32_capability_reaches_the_connected_ht40_owner_without_tx_admission()
         he_operation: false,
         wmm: false,
         wmm_parameters: None,
+        association_comeback_tu: None,
     };
     let mut hardware = MockRadio::new(-95);
     let programmed = StaPeerPort::program(

@@ -757,9 +757,11 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         runtime_trace(0x4001);
         let last = leave_ieee802154(self.lease(), clocked, membership)?;
         runtime_trace(0x4002);
-        // DEBUG: keep RF open on leave to isolate close/wake.
-        let _ = last;
-        let rf_closed = Ok(false);
+        let rf_closed = if last {
+            self.close_phy_if_idle().await
+        } else {
+            Ok(false)
+        };
         runtime_trace(0x4003);
         Ok(Ieee802154Left { rf_closed })
     }

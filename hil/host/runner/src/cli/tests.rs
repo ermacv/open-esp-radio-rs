@@ -432,15 +432,11 @@ fn archive_cli_does_not_require_lab_or_network_for_offline_commands() {
         ],
         vec!["hil", "archive", "verify", "comparison.tar.gz"],
         vec!["hil", "archive", "import", "comparison.tar.gz"],
-        vec![
-            "hil",
-            "archive",
-            "fetch",
-            "comparison",
-            "--repo",
-            "ermacv/evidence",
-        ],
     ] {
         Cli::try_parse_from(args).unwrap();
+    }
+    // The private GitHub transport is gone; archives move offline only.
+    for command in ["publish", "fetch"] {
+        assert!(Cli::try_parse_from(["hil", "archive", command, "x", "--repo", "o/r"]).is_err());
     }
 }

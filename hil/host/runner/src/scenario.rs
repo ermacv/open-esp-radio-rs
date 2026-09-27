@@ -35,7 +35,10 @@ impl Family {
         let channel = |channel: u8| Spectrum::ieee802154(channel, Need::None, Emits::None);
         let range = |spectrum: Spectrum| (spectrum.low_khz, spectrum.high_khz);
         match self {
-            Self::Ieee802154(Ieee802154::EventStatus(_) | Ieee802154::EdEvent(_)) => Vec::new(),
+            // The MAC-foundation probes keep RF closed.
+            Self::Ieee802154(
+                Ieee802154::EventStatus(_) | Ieee802154::EdEvent(_) | Ieee802154::RouteProbe(_),
+            ) => Vec::new(),
             Self::Ieee802154(Ieee802154::AirCheck(scenario)) => {
                 vec![range(channel(scenario.channel))]
             }

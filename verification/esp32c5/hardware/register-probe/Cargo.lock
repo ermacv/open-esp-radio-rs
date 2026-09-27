@@ -951,6 +951,7 @@ name = "oer-esp32c5-pac-raw"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "oer-ieee80211-pac-raw",
  "vcell",
 ]
 
@@ -965,6 +966,13 @@ dependencies = [
  "esp32c5",
  "oer-esp32c5-pac",
  "oer-esp32c5-pac-raw",
+]
+
+[[package]]
+name = "oer-ieee80211-pac-raw"
+version = "0.1.0"
+dependencies = [
+ "vcell",
 ]
 
 [[package]]

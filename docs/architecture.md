@@ -198,6 +198,19 @@ assertions. `policy` owns API selection, lints and shared register ownership.
 input; `published` contains generated SVD/bindings. Generated Rust stays with
 the production PAC that consumes it.
 
+A peripheral whose layout is identical on several chips has one layout in a
+register library such as `registers/ieee80211`, placed by each chip's
+`device.toml` at its own base address with that chip's reviews. The library
+publishes the register blocks and their reviewed transactions, without any
+address, into portable hardware crates (`oer-ieee80211-pac-raw` and
+`oer-ieee80211-pac`); each chip's raw PAC re-exports the blocks under its
+addressed `Periph` type. Shared code takes the register block by reference and
+is monomorphized per chip, so no chip is selected by `cfg` in portable code and
+nothing is dispatched at run time. Only closed chip PACs and HALs may depend on
+these crates, and a Bluetooth graph may carry them because they are register
+access, not Wi-Fi software. A layout that differs between chips forks into a
+per-chip fragment.
+
 Source-only publication selects the model, API, assertions, provider, lint
 pack and evidence catalogs explicitly. It does not select private vendor
 binaries. Full vendor investigations add their own artifact context. These

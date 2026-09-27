@@ -52,6 +52,8 @@ members = [
     "crates/hardware/esp32s31/driver/ieee80211",
     "crates/hardware/esp32s31/driver/ieee80211/dma",
     "crates/hardware/ieee802154/engine",
+    "crates/hardware/ieee80211/pac/raw",
+    "crates/hardware/ieee80211/pac",
     "crates/hardware/radio/analog",
     "crates/hardware/radio/clock",
     "crates/hardware/esp32s31/driver/ieee80211/mac",

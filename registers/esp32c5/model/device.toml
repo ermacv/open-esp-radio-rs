@@ -15,7 +15,6 @@ fragments = [
     "peripherals/pcr-radio.toml",
     "peripherals/wifi-mac-aux-tsf-control.toml",
     "peripherals/wifi-mac-bssid-policy.toml",
-    "peripherals/wifi-mac-interface-address.toml",
     "peripherals/wifi-mac-interrupt.toml",
     "peripherals/wifi-mac-power-interrupt.toml",
     "peripherals/wifi-mac-rtc-timer-update.toml",
@@ -23,6 +22,12 @@ fragments = [
     "peripherals/wifi-mac-sta-tsf-load.toml",
     "peripherals/wifi-mac-tx-common.toml",
 ]
+
+[[shared-fragments]]
+library = "../../ieee80211/model/library.toml"
+fragment = "peripherals/wifi-mac-interface-address.toml"
+review = "peripherals/wifi-mac-interface-address.review.toml"
+placement = { WIFI_MAC_INTERFACE_ADDRESS = 0x600A405C }
 
 [device]
 name = "ESP32C5_RADIO"

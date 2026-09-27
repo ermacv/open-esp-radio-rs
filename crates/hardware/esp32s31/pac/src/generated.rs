@@ -37,27 +37,6 @@ impl core::ops::BitOr for MacInterruptMask {
     }
 }
 
-/// Reviewed ESP32-S31 Wi-Fi MAC interface selector shared by address, BSSID, crypto, TX and ordinary receive-BlockAck transactions.
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum MacInterface {
-    /// Infrastructure-station hardware context; traced from STA callers into interface and key-control fields.
-    Station = 0x00000000,
-    /// SoftAP hardware context; traced from AP callers into interface and key-control fields.
-    AccessPoint = 0x00000001,
-    /// Reviewed third hardware selector accepted by the complete EDCA and RX BlockAck leaves; its protocol-role semantics are not assigned.
-    Context2 = 0x00000002,
-    /// Reviewed fourth hardware selector accepted by the complete EDCA and RX BlockAck leaves; its protocol-role semantics are not assigned.
-    Context3 = 0x00000003,
-}
-
-impl MacInterface {
-    /// Numeric image for diagnostics and the private raw-PAC bridge.
-    pub const fn bits(self) -> u32 {
-        self as u32
-    }
-}
-
 /// The sole fixed-crystal modem-power tick target accepted by the ESP32-S31 common-PHY prelude.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -5619,15 +5598,6 @@ pub(crate) fn initialize_bluetooth_shared_receive_final_image(
 #[inline]
 pub(crate) fn enable_wifi_mac_core(registers: &crate::svd::WifiMacCoreEnable) {
     crate::svd::field_replace_modify::enable_wifi_mac_core(registers);
-}
-
-/// Typed bridge for the reviewed `enable_mac_interface_receive_policy` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn enable_mac_interface_receive_policy(
-    registers: &crate::svd::WifiMacInterfaceAddress,
-    index: usize,
-) {
-    crate::svd::field_replace_modify::enable_mac_interface_receive_policy(registers, index);
 }
 
 /// Typed bridge for the reviewed `initialize_shared_modem_power_state_map` fixed field-replacement transaction.

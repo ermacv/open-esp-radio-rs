@@ -30,10 +30,12 @@ attribute. The table below maps package identities to source owners.
 
 ## Generated access and trusted handwritten code
 
-`hardware/esp32s31/pac/raw/` is the `oer-esp32s31-pac-raw` package, and
-`hardware/esp32c5/pac/raw/` the `oer-esp32c5-pac-raw` package.
-Each contains only SVD-generated register access, checked through the
-generator/publisher pipeline. The publisher has no declaration for
+`hardware/esp32s31/pac/raw/` is the `oer-esp32s31-pac-raw` package,
+`hardware/esp32c5/pac/raw/` the `oer-esp32c5-pac-raw` package and
+`hardware/ieee80211/pac/raw/` the `oer-ieee80211-pac-raw` package of the
+Wi-Fi MAC register blocks both chips place at their own addresses. Each
+contains only SVD-generated register access, checked through the
+generator/publisher pipeline; the shared package contains no address. The publisher has no declaration for
 handwritten modules in this package.
 
 `hardware/esp32s31/pac/` contains the handwritten semantic radio PAC and its

@@ -16454,171 +16454,6 @@ pub mod wifi_mac_bssid_policy {
         }
     }
 }
-#[doc = "Four interface-address pairs consumed by MAC receive filtering."]
-pub type WifiMacInterfaceAddress =
-    crate::Periph<wifi_mac_interface_address::RegisterBlock, 0x2010_405c>;
-impl core::fmt::Debug for WifiMacInterfaceAddress {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("WifiMacInterfaceAddress").finish()
-    }
-}
-#[doc = "Four interface-address pairs consumed by MAC receive filtering."]
-pub mod wifi_mac_interface_address {
-    #[repr(C)]
-    #[doc = "Register block"]
-    pub struct RegisterBlock {
-        address_low: (),
-        _reserved1: [u8; 0x04],
-        address_high: (),
-    }
-    impl RegisterBlock {
-        #[doc = "0x00..0x10 - Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
-        #[inline(always)]
-        pub const fn address_low(&self, n: usize) -> &AddressLow {
-            #[allow(clippy::no_effect)]
-            [(); 4][n];
-            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() }
-        }
-        #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
-        #[inline(always)]
-        pub fn address_low_iter(&self) -> impl Iterator<Item = &AddressLow> {
-            (0..4)
-                .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
-        }
-        #[doc = "0x04..0x14 - Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
-        #[inline(always)]
-        pub const fn address_high(&self, n: usize) -> &AddressHigh {
-            #[allow(clippy::no_effect)]
-            [(); 4][n];
-            unsafe {
-                &*core::ptr::from_ref(self)
-                    .cast::<u8>()
-                    .add(4)
-                    .add(8 * n)
-                    .cast()
-            }
-        }
-        #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x14 - Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
-        #[inline(always)]
-        pub fn address_high_iter(&self) -> impl Iterator<Item = &AddressHigh> {
-            (0..4).map(move |n| unsafe {
-                &*core::ptr::from_ref(self)
-                    .cast::<u8>()
-                    .add(4)
-                    .add(8 * n)
-                    .cast()
-            })
-        }
-    }
-    #[doc = "ADDRESS_LOW (rw) register accessor: Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_low`] module"]
-    #[doc(alias = "ADDRESS_LOW")]
-    pub type AddressLow = crate::Reg<address_low::AddressLowSpec>;
-    #[doc = "Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
-    pub mod address_low {
-        #[doc = "Register `ADDRESS_LOW%s` reader"]
-        pub type R = crate::R<AddressLowSpec>;
-        #[doc = "Register `ADDRESS_LOW%s` writer"]
-        pub type W = crate::W<AddressLowSpec>;
-        #[doc = "Field `BYTES_0_3` reader - "]
-        pub type Bytes0_3R = crate::FieldReader<u32>;
-        #[doc = "Field `BYTES_0_3` writer - "]
-        pub type Bytes0_3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
-        impl R {
-            #[doc = "Bits 0:31"]
-            #[inline(always)]
-            pub fn bytes_0_3(&self) -> Bytes0_3R {
-                Bytes0_3R::new(self.bits)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:31"]
-            #[inline(always)]
-            pub fn bytes_0_3(&mut self) -> Bytes0_3W<'_, AddressLowSpec> {
-                Bytes0_3W::new(self, 0)
-            }
-        }
-        #[doc = "Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AddressLowSpec;
-        impl crate::RegisterSpec for AddressLowSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`address_low::R`](R) reader structure"]
-        impl crate::Readable for AddressLowSpec {}
-        #[doc = "`write(|w| ..)` method takes [`address_low::W`](W) writer structure"]
-        impl crate::Writable for AddressLowSpec {
-            type Safety = crate::Safe;
-        }
-    }
-    #[doc = "ADDRESS_HIGH (rw) register accessor: Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_high`] module"]
-    #[doc(alias = "ADDRESS_HIGH")]
-    pub type AddressHigh = crate::Reg<address_high::AddressHighSpec>;
-    #[doc = "Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
-    pub mod address_high {
-        #[doc = "Register `ADDRESS_HIGH%s` reader"]
-        pub type R = crate::R<AddressHighSpec>;
-        #[doc = "Register `ADDRESS_HIGH%s` writer"]
-        pub type W = crate::W<AddressHighSpec>;
-        #[doc = "Field `BYTES_4_5` reader - "]
-        pub type Bytes4_5R = crate::FieldReader<u16>;
-        #[doc = "Field `BYTES_4_5` writer - "]
-        pub type Bytes4_5W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
-        #[doc = "Field `RX_POLICY_ENABLE` reader - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
-        pub type RxPolicyEnableR = crate::BitReader;
-        #[doc = "Field `RX_POLICY_ENABLE` writer - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
-        pub type RxPolicyEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `POLICY_HIGH_UNKNOWN` reader - "]
-        pub type PolicyHighUnknownR = crate::FieldReader<u16>;
-        #[doc = "Field `POLICY_HIGH_UNKNOWN` writer - "]
-        pub type PolicyHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
-        impl R {
-            #[doc = "Bits 0:15"]
-            #[inline(always)]
-            pub fn bytes_4_5(&self) -> Bytes4_5R {
-                Bytes4_5R::new((self.bits & 0xffff) as u16)
-            }
-            #[doc = "Bit 16 - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
-            #[inline(always)]
-            pub fn rx_policy_enable(&self) -> RxPolicyEnableR {
-                RxPolicyEnableR::new(((self.bits >> 16) & 1) != 0)
-            }
-            #[doc = "Bits 17:31"]
-            #[inline(always)]
-            pub fn policy_high_unknown(&self) -> PolicyHighUnknownR {
-                PolicyHighUnknownR::new(((self.bits >> 17) & 0x7fff) as u16)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:15"]
-            #[inline(always)]
-            pub fn bytes_4_5(&mut self) -> Bytes4_5W<'_, AddressHighSpec> {
-                Bytes4_5W::new(self, 0)
-            }
-            #[doc = "Bit 16 - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
-            #[inline(always)]
-            pub fn rx_policy_enable(&mut self) -> RxPolicyEnableW<'_, AddressHighSpec> {
-                RxPolicyEnableW::new(self, 16)
-            }
-            #[doc = "Bits 17:31"]
-            #[inline(always)]
-            pub fn policy_high_unknown(&mut self) -> PolicyHighUnknownW<'_, AddressHighSpec> {
-                PolicyHighUnknownW::new(self, 17)
-            }
-        }
-        #[doc = "Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AddressHighSpec;
-        impl crate::RegisterSpec for AddressHighSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`address_high::R`](R) reader structure"]
-        impl crate::Readable for AddressHighSpec {}
-        #[doc = "`write(|w| ..)` method takes [`address_high::W`](W) writer structure"]
-        impl crate::Writable for AddressHighSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-}
 #[doc = "Four WDEVRX_ABORT receive-queue policy words. Complete dbg_read_rx_misc names every used bit through 19; queue three is also the complete promiscuous-sniffer control word."]
 pub type WifiMacRxFilter = crate::Periph<wifi_mac_rx_filter::RegisterBlock, 0x2010_40d8>;
 impl core::fmt::Debug for WifiMacRxFilter {
@@ -58416,6 +58251,16 @@ pub mod modem_etm {
         }
     }
 }
+#[doc = "Four interface-address pairs consumed by MAC receive filtering."]
+pub type WifiMacInterfaceAddress =
+    crate::Periph<wifi_mac_interface_address::RegisterBlock, 0x2010_405c>;
+impl core::fmt::Debug for WifiMacInterfaceAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacInterfaceAddress").finish()
+    }
+}
+#[doc = "Register block shared with other chips; its layout comes from a register library."]
+pub use oer_ieee80211_pac_raw::wifi_mac_interface_address;
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
@@ -58489,8 +58334,6 @@ pub struct Peripherals {
     pub wifi_mac_rx_runtime_results: WifiMacRxRuntimeResults,
     #[doc = "WIFI_MAC_BSSID_POLICY"]
     pub wifi_mac_bssid_policy: WifiMacBssidPolicy,
-    #[doc = "WIFI_MAC_INTERFACE_ADDRESS"]
-    pub wifi_mac_interface_address: WifiMacInterfaceAddress,
     #[doc = "WIFI_MAC_RX_FILTER"]
     pub wifi_mac_rx_filter: WifiMacRxFilter,
     #[doc = "WIFI_MAC_CONTROL"]
@@ -58645,6 +58488,8 @@ pub struct Peripherals {
     pub ieee802154_interrupt_route: Ieee802154InterruptRoute,
     #[doc = "MODEM_ETM"]
     pub modem_etm: ModemEtm,
+    #[doc = "WIFI_MAC_INTERFACE_ADDRESS"]
+    pub wifi_mac_interface_address: WifiMacInterfaceAddress,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -58701,7 +58546,6 @@ impl Peripherals {
             wifi_mac_rx_end_state: unsafe { WifiMacRxEndState::steal() },
             wifi_mac_rx_runtime_results: unsafe { WifiMacRxRuntimeResults::steal() },
             wifi_mac_bssid_policy: unsafe { WifiMacBssidPolicy::steal() },
-            wifi_mac_interface_address: unsafe { WifiMacInterfaceAddress::steal() },
             wifi_mac_rx_filter: unsafe { WifiMacRxFilter::steal() },
             wifi_mac_control: unsafe { WifiMacControl::steal() },
             wifi_mac_regdma_control: unsafe { WifiMacRegdmaControl::steal() },
@@ -58781,10 +58625,10 @@ impl Peripherals {
             ieee802154_mac: unsafe { Ieee802154Mac::steal() },
             ieee802154_interrupt_route: unsafe { Ieee802154InterruptRoute::steal() },
             modem_etm: unsafe { ModemEtm::steal() },
+            wifi_mac_interface_address: unsafe { WifiMacInterfaceAddress::steal() },
         }
     }
 }
-
 /// Safe, SVD-declared read-and-acknowledge interrupt transactions.
 pub mod interrupt_snapshot {
 
@@ -59516,7 +59360,6 @@ pub mod peripheral_ownership {
             wifi_mac_rx_end_state,
             wifi_mac_rx_runtime_results,
             wifi_mac_bssid_policy,
-            wifi_mac_interface_address,
             wifi_mac_rx_filter,
             wifi_mac_control,
             wifi_mac_regdma_control,
@@ -59594,6 +59437,7 @@ pub mod peripheral_ownership {
             ieee802154_mac,
             ieee802154_interrupt_route,
             modem_etm,
+            wifi_mac_interface_address,
         } = peripherals;
         PeripheralPartitions {
             wifi_mac: WifiMacPeripherals {
@@ -64171,40 +64015,6 @@ pub mod zero_based_field_write {
             registers
                 .bssid_low(index)
                 .write_with_zero(|writer| writer.bytes_0_3().set(value));
-        }
-    }
-
-    /// Write `BYTES_0_3` in `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_LOW%s` while publishing zero to every other register bit.
-    #[inline]
-    pub fn mac_interface_address_low(
-        registers: &crate::WifiMacInterfaceAddress,
-        index: usize,
-        value: u32,
-    ) {
-        // SAFETY: the SVD extension explicitly qualifies the zero-based
-        // transaction, and generator validation proves every selected field
-        // accepts every value representable by its public argument type.
-        unsafe {
-            registers
-                .address_low(index)
-                .write_with_zero(|writer| writer.bytes_0_3().set(value));
-        }
-    }
-
-    /// Write `BYTES_4_5` in `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_HIGH%s` while publishing zero to every other register bit.
-    #[inline]
-    pub fn mac_interface_address_high(
-        registers: &crate::WifiMacInterfaceAddress,
-        index: usize,
-        value: u16,
-    ) {
-        // SAFETY: the SVD extension explicitly qualifies the zero-based
-        // transaction, and generator validation proves every selected field
-        // accepts every value representable by its public argument type.
-        unsafe {
-            registers
-                .address_high(index)
-                .write_with_zero(|writer| writer.bytes_4_5().set(value));
         }
     }
 
@@ -69356,20 +69166,6 @@ pub mod field_replace_modify {
                     .mac_disable_gates_unknown()
                     .bits((input & 0x0000000f) as u8)
             }
-        });
-    }
-
-    /// Replace WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s fields `[RX_POLICY_ENABLE]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn enable_mac_interface_receive_policy(
-        registers: &crate::WifiMacInterfaceAddress,
-        index: usize,
-    ) {
-        registers.address_high(index).modify(|_, writer| {
-            let input = 0x00000001_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.rx_policy_enable().bit((input & 0x00000001) != 0)
         });
     }
 

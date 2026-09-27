@@ -36,7 +36,6 @@ fragments = [
     "peripherals/wifi-mac-rx-end-state.toml",
     "peripherals/wifi-mac-rx-runtime-results.toml",
     "peripherals/wifi-mac-bssid-policy.toml",
-    "peripherals/wifi-mac-interface-address.toml",
     "peripherals/wifi-mac-rx-filter.toml",
     "peripherals/wifi-mac-control.toml",
     "peripherals/wifi-mac-regdma-control.toml",
@@ -114,6 +113,12 @@ fragments = [
     "peripherals/ieee802154-interrupt-route.toml",
     "peripherals/modem-etm.toml",
 ]
+
+[[shared-fragments]]
+library = "../../ieee80211/model/library.toml"
+fragment = "peripherals/wifi-mac-interface-address.toml"
+review = "peripherals/wifi-mac-interface-address.review.toml"
+placement = { WIFI_MAC_INTERFACE_ADDRESS = 0x2010405C }
 
 [device]
 name = "ESP32S31_RADIO"

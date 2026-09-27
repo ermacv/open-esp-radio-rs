@@ -12,6 +12,7 @@ validation-probes = ["oer-esp32s31-pac-raw/validation-probes"]
 
 [dependencies]
 oer-memory = { path = "../../../memory" }
+oer-ieee80211-pac = { path = "../../ieee80211/pac" }
 oer-esp32s31-pac-raw = { path = "raw", features = ["critical-section"] }
 
 [dev-dependencies]

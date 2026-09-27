@@ -5,8 +5,13 @@
 
 use crate::{Result, checks::common::ProductionPackage};
 
-/// Generated register bindings of each chip; they state no crate-root policy.
-const GENERATED: &[&str] = &["oer-esp32s31-pac-raw", "oer-esp32c5-pac-raw"];
+/// Generated register bindings of each chip and of the register layouts
+/// chips share; they state no crate-root policy.
+const GENERATED: &[&str] = &[
+    "oer-esp32s31-pac-raw",
+    "oer-esp32c5-pac-raw",
+    "oer-ieee80211-pac-raw",
+];
 const AUDITED_UNSAFE: &[&str] = &[
     "oer-memory",
     "oer-esp32s31-bluetooth",
@@ -23,8 +28,14 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-ieee802154-system",
     "oer-esp32c5-pac",
 ];
-/// The closed radio PAC of each chip.
-const CLOSED_PACS: &[&str] = &["oer-esp32s31-pac", "oer-esp32c5-pac"];
+/// The closed radio PAC of each chip and the closed PAC crates of the register
+/// layouts chips share.
+pub(super) const CLOSED_PACS: &[&str] = &[
+    "oer-esp32s31-pac",
+    "oer-esp32c5-pac",
+    "oer-ieee80211-pac-raw",
+    "oer-ieee80211-pac",
+];
 /// The HAL is the only production consumer of the closed PAC; drivers and
 /// adapters reach hardware through HAL owners.
 const PAC_CONSUMERS: &[&str] = &[
@@ -34,6 +45,7 @@ const PAC_CONSUMERS: &[&str] = &[
     "oer-esp32c5-pac-raw",
     "oer-esp32c5-pac",
     "oer-esp32c5-hal",
+    "oer-ieee80211-pac",
 ];
 /// The crate-root attribute that states each production library's unsafe
 /// policy. Rustc and Clippy enforce it in every build; this check keeps the

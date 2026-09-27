@@ -2440,6 +2440,7 @@ name = "oer-esp32c5-pac-raw"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "oer-ieee80211-pac-raw",
  "vcell",
 ]
 
@@ -2795,6 +2796,7 @@ name = "oer-esp32s31-pac"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-pac-raw",
+ "oer-ieee80211-pac",
  "oer-memory",
 ]
 
@@ -2803,6 +2805,7 @@ name = "oer-esp32s31-pac-raw"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "oer-ieee80211-pac-raw",
  "vcell",
 ]
 
@@ -3128,6 +3131,20 @@ name = "oer-ieee80211-mac"
 version = "0.1.0"
 
 [[package]]
+name = "oer-ieee80211-pac"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-pac-raw",
+]
+
+[[package]]
+name = "oer-ieee80211-pac-raw"
+version = "0.1.0"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
 name = "oer-ieee80211-rsn"
 version = "0.1.0"
 dependencies = [
@@ -3336,8 +3353,11 @@ dependencies = [
  "oer-register-contracts",
  "oer-register-model",
  "oer-register-review",
+ "proc-macro2",
+ "quote",
  "serde",
  "svd2rust",
+ "syn 2.0.119",
  "tempfile",
  "toml_edit",
 ]

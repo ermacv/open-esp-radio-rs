@@ -6620,70 +6620,6 @@
       </registers>
     </peripheral>
     <peripheral>
-      <name>WIFI_MAC_INTERFACE_ADDRESS</name>
-      <description>Four interface-address pairs consumed by MAC receive filtering.</description>
-      <baseAddress>0x2010405C</baseAddress>
-      <registers>
-        <register>
-          <dim>4</dim>
-          <dimIncrement>0x8</dimIncrement>
-          <dimIndex>0-3</dimIndex>
-          <name>ADDRESS_LOW%s</name>
-          <description>Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.</description>
-          <addressOffset>0x0</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <fields>
-            <field>
-              <name>BYTES_0_3</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>4294967295</maximum>
-                </range>
-              </writeConstraint>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <dim>4</dim>
-          <dimIncrement>0x8</dimIncrement>
-          <dimIndex>0-3</dimIndex>
-          <name>ADDRESS_HIGH%s</name>
-          <description>Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.</description>
-          <addressOffset>0x4</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <fields>
-            <field>
-              <name>BYTES_4_5</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>16</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>65535</maximum>
-                </range>
-              </writeConstraint>
-            </field>
-            <field>
-              <name>RX_POLICY_ENABLE</name>
-              <description>Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch.</description>
-              <bitOffset>16</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>POLICY_HIGH_UNKNOWN</name>
-              <bitOffset>17</bitOffset>
-              <bitWidth>15</bitWidth>
-            </field>
-          </fields>
-        </register>
-      </registers>
-    </peripheral>
-    <peripheral>
       <name>WIFI_MAC_RX_FILTER</name>
       <description>Four WDEVRX_ABORT receive-queue policy words. Complete dbg_read_rx_misc names every used bit through 19; queue three is also the complete promiscuous-sniffer control word.</description>
       <baseAddress>0x201040D8</baseAddress>
@@ -24680,6 +24616,70 @@ claimed.</description>
                   <value>88</value>
                 </enumeratedValue>
               </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_INTERFACE_ADDRESS</name>
+      <description>Four interface-address pairs consumed by MAC receive filtering.</description>
+      <baseAddress>0x2010405C</baseAddress>
+      <registers>
+        <register>
+          <dim>4</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-3</dimIndex>
+          <name>ADDRESS_LOW%s</name>
+          <description>Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>4</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-3</dimIndex>
+          <name>ADDRESS_HIGH%s</name>
+          <description>Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BYTES_4_5</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>RX_POLICY_ENABLE</name>
+              <description>Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>POLICY_HIGH_UNKNOWN</name>
+              <bitOffset>17</bitOffset>
+              <bitWidth>15</bitWidth>
             </field>
           </fields>
         </register>

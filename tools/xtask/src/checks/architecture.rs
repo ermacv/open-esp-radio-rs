@@ -202,15 +202,21 @@ fn hil_wifi_profile(profiles: &[String]) -> Result<&str> {
 
 /// Reject production Wi-Fi packages in a resolved Bluetooth consumer. Name
 /// prefixes also catch Wi-Fi packages that no explicit list names yet.
+///
+/// Closed register PACs are not Wi-Fi software: a chip's closed PAC carries
+/// its Wi-Fi MAC registers into every image that uses it, including the
+/// shared Wi-Fi MAC register crates, whose `ieee80211` token names their
+/// registers.
 pub fn reject_wifi_in_bluetooth(graph: &Graph, manifest: &std::path::Path) -> Result<()> {
     let root = graph.root(manifest)?;
     for id in graph.reachable(&root).keys() {
         let name = graph.package(id).name.as_str();
         // The package naming rule gives every Wi-Fi package the `ieee80211`
         // domain token.
-        let wifi = name
-            .strip_prefix("oer-")
-            .is_some_and(|tokens| tokens.split('-').any(|token| token == "ieee80211"));
+        let wifi = !unsafe_policy::CLOSED_PACS.contains(&name)
+            && name
+                .strip_prefix("oer-")
+                .is_some_and(|tokens| tokens.split('-').any(|token| token == "ieee80211"));
         if wifi || name.starts_with("embassy-net") {
             return Err(format!("Bluetooth consumer depends on Wi-Fi package {name}").into());
         }
@@ -221,6 +227,48 @@ pub fn reject_wifi_in_bluetooth(graph: &Graph, manifest: &std::path::Path) -> Re
 #[cfg(test)]
 mod tests {
     use super::hil_wifi_profile;
+
+    /// A Bluetooth application package depending on `dependency`.
+    fn bluetooth_graph(
+        dependency: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf, crate::graph::Graph) {
+        let repository = tempfile::tempdir().unwrap();
+        std::fs::write(
+            repository.path().join("Cargo.toml"),
+            "[workspace]\nresolver = '3'\nmembers = ['app', 'dependency']\n",
+        )
+        .unwrap();
+        for (directory, name, dependencies) in [
+            (
+                "app",
+                "bluetooth-app",
+                format!("{dependency} = {{ path = '../dependency' }}\n"),
+            ),
+            ("dependency", dependency, String::new()),
+        ] {
+            let path = repository.path().join(directory);
+            std::fs::create_dir_all(path.join("src")).unwrap();
+            std::fs::write(
+                path.join("Cargo.toml"),
+                format!("[package]\nname = '{name}'\nversion = '0.1.0'\nedition = '2024'\n[dependencies]\n{dependencies}"),
+            )
+            .unwrap();
+            std::fs::write(path.join("src/lib.rs"), "").unwrap();
+        }
+        let context = crate::Context::new(repository.path()).unwrap();
+        let manifest = repository.path().join("app/Cargo.toml");
+        let graph = crate::cargo::metadata(&context, &manifest, &[], None, false).unwrap();
+        (repository, manifest, graph)
+    }
+
+    #[test]
+    fn bluetooth_graphs_admit_closed_register_pacs_but_not_wifi_software() {
+        let (_repository, manifest, graph) = bluetooth_graph("oer-ieee80211-pac");
+        super::reject_wifi_in_bluetooth(&graph, &manifest).unwrap();
+        let (_repository, manifest, graph) = bluetooth_graph("oer-ieee80211-sta");
+        let error = super::reject_wifi_in_bluetooth(&graph, &manifest).unwrap_err();
+        assert!(error.to_string().contains("oer-ieee80211-sta"), "{error}");
+    }
 
     #[test]
     fn wifi_overlays_select_the_explicit_profile_independently_of_order() {

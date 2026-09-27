@@ -133,6 +133,7 @@ name = "oer-esp32s31-pac"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-pac-raw",
+ "oer-ieee80211-pac",
  "oer-memory",
 ]
 
@@ -141,6 +142,21 @@ name = "oer-esp32s31-pac-raw"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "oer-ieee80211-pac-raw",
+ "vcell",
+]
+
+[[package]]
+name = "oer-ieee80211-pac"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-pac-raw",
+]
+
+[[package]]
+name = "oer-ieee80211-pac-raw"
+version = "0.1.0"
+dependencies = [
  "vcell",
 ]
 

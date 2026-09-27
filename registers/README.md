@@ -12,6 +12,9 @@ register owners and both generated Rust outputs remain in
 The [ESP32-C5 model](esp32c5/README.md) follows the same layout for the
 IEEE 802.15.4 MAC, its interrupt route and ETM channels; its outputs are
 [`crates/hardware/esp32c5/pac`](../crates/hardware/esp32c5/pac).
+The [Wi-Fi MAC register library](ieee80211/README.md) owns layouts both chips
+place at their own base addresses; its outputs are
+[`crates/hardware/ieee80211/pac`](../crates/hardware/ieee80211/pac/README.md).
 
 Generic loading, validation and generation remain in
 [register tool](../tools/registers/README.md). A vendor project references the

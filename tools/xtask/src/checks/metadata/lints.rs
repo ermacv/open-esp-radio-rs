@@ -11,7 +11,11 @@ use std::path::{Path, PathBuf};
 const INDEPENDENT_POLICY: &str = "tools/blobray/Cargo.toml";
 
 /// Generated register bindings cannot satisfy `unsafe_op_in_unsafe_fn`.
-const OWN_POLICY_PACKAGES: &[&str] = &["oer-esp32s31-pac-raw", "oer-esp32c5-pac-raw"];
+const OWN_POLICY_PACKAGES: &[&str] = &[
+    "oer-esp32s31-pac-raw",
+    "oer-esp32c5-pac-raw",
+    "oer-ieee80211-pac-raw",
+];
 
 /// One Cargo workspace and the manifests of its members.
 pub(super) struct Island {

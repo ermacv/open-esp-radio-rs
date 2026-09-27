@@ -6,8 +6,19 @@ use oer_hil_protocol::BluetoothPeripheralTermination;
 use serde::{Deserialize, Serialize};
 
 pub use oer_hil_fixture_install::bluetooth_contract::{
-    CONNECTION_RESET_SCHEMA, EXPECTED_REMOTE_FEATURES, HELPER_CAPABILITIES,
+    CONNECTION_RESET_SCHEMA, HELPER_CAPABILITIES,
 };
+
+/// The target's LE features as the central's Controller reports them:
+/// Encryption, Peripheral Feature Exchange, Ping, LE Data Packet Length
+/// Extension and CSA #2, which the central also supports.
+///
+/// Feature expectations are independent of the production implementation;
+/// matching the mask alone does not establish encrypted interoperability.
+pub const EXPECTED_REMOTE_FEATURES: [u8; 8] = [0x39, 0x40, 0, 0, 0, 0, 0, 0];
+
+/// The target's Link Layer version, company identifier and subversion.
+pub const EXPECTED_REMOTE_VERSION: (u8, u16, u16) = (0x0d, 0xffff, 1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Adapter(pub u16);
@@ -344,9 +355,9 @@ impl ConnectionReset {
             && self.remote_features_after_micros.is_some()
             && self.remote_version_command_status
             && self.remote_version_complete
-            && self.remote_version == Some(0x0d)
-            && self.remote_version_company == Some(0xffff)
-            && self.remote_version_subversion == Some(1)
+            && self.remote_version == Some(EXPECTED_REMOTE_VERSION.0)
+            && self.remote_version_company == Some(EXPECTED_REMOTE_VERSION.1)
+            && self.remote_version_subversion == Some(EXPECTED_REMOTE_VERSION.2)
             && self.remote_version_after_micros.is_some()
             && self.acl_sent
             && self.acl_echo_received

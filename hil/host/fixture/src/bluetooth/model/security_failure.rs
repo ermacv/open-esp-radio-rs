@@ -82,7 +82,7 @@ impl Report {
             && if self.read_version_before_disconnect {
                 self.failure == Failure::MissingKey
                     && self.version_command_status
-                    && self.remote_version == Some((0x0d, 0xffff, 1))
+                    && self.remote_version == Some(super::EXPECTED_REMOTE_VERSION)
             } else {
                 !self.version_command_status && self.remote_version.is_none()
             }
@@ -164,8 +164,11 @@ mod tests {
                 r.passed(adapter, peer, failure),
                 failure == Failure::MissingKey
             );
-            r.remote_version = Some((0x0d, 0xffff, 2));
-            assert!(!r.passed(adapter, peer, failure));
+            // The runner, not the helper, rejects a foreign identity.
+            for foreign in [(0x0c, 0xffff, 1), (0x0d, 0x00ff, 1), (0x0d, 0xffff, 2)] {
+                r.remote_version = Some(foreign);
+                assert!(!r.passed(adapter, peer, failure));
+            }
             r.read_version_before_disconnect = false;
             assert!(!r.passed(adapter, peer, failure));
             r.version_command_status = false;

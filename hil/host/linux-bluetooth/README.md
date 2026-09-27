@@ -203,11 +203,14 @@ validate its echo and reset its local Controller. It then waits for the target's
 connection retirement and advertising recovery. Each cycle requires the external central's
 Connection Complete, successful LE Read Remote Features and Read Remote Version
 Information Command Status events followed by their correlated completions,
-the exact negotiated feature mask `19:40:00:00:00:00:00:00` (Encryption,
-Peripheral Feature Exchange, LE Ping and CSA #2), Core version 5.4, company
-value `0xffff` and subversion 1, two distinct exact 251-byte ACL echoes separated
+the exact negotiated feature mask `39:40:00:00:00:00:00:00` (Encryption,
+Peripheral Feature Exchange, LE Ping, LE Data Packet Length Extension and
+CSA #2), Core version 5.4, company value `0xffff` and subversion 1, two distinct
+exact 251-byte ACL echoes separated
 by an exact 120-ms Connection Update and applied two-channel map, and a
-restoration report. It also requires exactly twenty target Host ACL fragments,
+restoration report. The helper records the target's features and identity;
+the unprivileged runner judges them, so a firmware change never requires
+reinstalling the helper. It also requires exactly twenty target Host ACL fragments,
 twenty explicit Host credit returns, one deliberate first-credit hold, two
 reassembled echo queues and two Host-to-Controller completion credits, one
 target-side peripheral

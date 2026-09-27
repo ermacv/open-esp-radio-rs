@@ -143,7 +143,6 @@ mod peer {
                     || report.remote_version.is_some()
                     || e.handle != handle
                     || e.status != Status::SUCCESS
-                    || (e.version.into_inner(), e.company_id, e.subversion) != (0x0d, 0xffff, 1)
                 {
                     return Err("invalid post-rejection remote-version completion".into());
                 }
@@ -307,20 +306,32 @@ mod peer {
         }
 
         #[test]
-        fn version_diagnostic_rejects_failed_command_foreign_identity_and_early_disconnect() {
+        fn version_diagnostic_rejects_failed_command_foreign_handle_and_early_disconnect() {
             let h = ConnHandle::new(1);
             let mut early = report(Failure::MissingKey);
             early.read_version_before_disconnect = true;
             assert!(observe(&VERSION_STATUS, h, &mut early).is_err());
             let mut rejected = rejected_with_version_probe();
             assert!(observe(&[4, 15, 4, 0x0c, 1, 0x1d, 4], h, &mut rejected).is_err());
-            for (index, value) in [(3, 8), (4, 2), (6, 0x0c), (7, 0), (9, 2)] {
+            for (index, value) in [(3, 8), (4, 2)] {
                 let mut r = rejected_with_version_probe();
                 observe(&VERSION_STATUS, h, &mut r).unwrap();
                 let mut packet = VERSION;
                 packet[index] = value;
                 assert!(observe(&packet, h, &mut r).is_err());
                 assert!(r.remote_version.is_none());
+            }
+            // A foreign identity is recorded for the runner to judge.
+            for (index, value) in [(6, 0x0c), (7, 0), (9, 2)] {
+                let mut r = rejected_with_version_probe();
+                observe(&VERSION_STATUS, h, &mut r).unwrap();
+                let mut packet = VERSION;
+                packet[index] = value;
+                observe(&packet, h, &mut r).unwrap();
+                assert!(
+                    r.remote_version
+                        .is_some_and(|identity| identity != (0x0d, 0xffff, 1))
+                );
             }
             let mut r = rejected_with_version_probe();
             assert!(observe(&[4, 5, 4, 0, 1, 0, 0x16], h, &mut r).is_err());

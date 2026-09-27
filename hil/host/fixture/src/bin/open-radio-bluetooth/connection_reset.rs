@@ -3,7 +3,7 @@
 use super::{
     Result,
     hci::Socket,
-    model::{ConnectionReset, EXPECTED_REMOTE_FEATURES, PeerAddress},
+    model::{ConnectionReset, PeerAddress},
 };
 use bt_hci::{
     FromHciBytes,
@@ -34,9 +34,6 @@ pub(super) const ACL_ECHO_PAYLOAD: [u8; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES] 
     bluetooth_peripheral_acl_payload();
 pub(super) const POST_UPDATE_ACL_ECHO_PAYLOAD: [u8; BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES] =
     bluetooth_peripheral_acl_payload_for_sequence(1);
-const EXPECTED_REMOTE_VERSION: u8 = 0x0d;
-const EXPECTED_REMOTE_VERSION_COMPANY: u16 = 0xffff;
-const EXPECTED_REMOTE_VERSION_SUBVERSION: u16 = 1;
 
 pub(super) enum ConnectionRunOutcome {
     Complete,
@@ -345,10 +342,9 @@ fn read_remote_features(
                     .to_result()
                     .map_err(|error| format!("remote feature exchange failed: {error:?}"))?;
                 let features = complete.le_features.into_inner();
-                if complete.handle != handle || features != EXPECTED_REMOTE_FEATURES {
-                    return Err(
-                        "remote feature completion does not match the target profile".into(),
-                    );
+                // The runner judges the features against the target profile.
+                if complete.handle != handle {
+                    return Err("remote feature completion names another connection".into());
                 }
                 report.remote_features_complete = true;
                 report.remote_features = Some(features);
@@ -404,14 +400,9 @@ fn read_remote_version(
                     .to_result()
                     .map_err(|error| format!("remote version exchange failed: {error:?}"))?;
                 let version = complete.version.into_inner();
-                if complete.handle != handle
-                    || version != EXPECTED_REMOTE_VERSION
-                    || complete.company_id != EXPECTED_REMOTE_VERSION_COMPANY
-                    || complete.subversion != EXPECTED_REMOTE_VERSION_SUBVERSION
-                {
-                    return Err(
-                        "remote version completion does not match the target identity".into(),
-                    );
+                // The runner judges the identity against the target profile.
+                if complete.handle != handle {
+                    return Err("remote version completion names another connection".into());
                 }
                 report.remote_version_complete = true;
                 report.remote_version = Some(version);

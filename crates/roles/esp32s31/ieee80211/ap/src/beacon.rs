@@ -43,6 +43,10 @@ impl<'storage> ApBeacon<'storage> {
         update_bss_protection(&mut self.storage[..self.len], protection)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each beacon field is an independent 802.11 input the caller owns"
+    )]
     pub fn new(
         storage: &'storage mut [u8; AP_BEACON_CAPACITY],
         access_point: [u8; 6],

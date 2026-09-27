@@ -105,14 +105,11 @@ async = "incomplete"
 depends-on = [
   "static-mac-policy",
 ]
-vendor-anchors = [
-  "docs/vendor/esp32s31/ieee802154-control.md",
-]
+vendor-not-applicable = "masked-foundation-polled-ed-cca-has-no-esp-idf-counterpart"
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
 ]
 gaps = [
-  { axis = "vendor", id = "complete-polled-ed-cca-production-trace-not-executable" },
   { axis = "hil", id = "cca-busy-operation-cell-missing" },
   { axis = "async", id = "public-operation-runs-the-finite-poll-budget-synchronously" },
 ]

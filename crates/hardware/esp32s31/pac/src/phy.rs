@@ -5,6 +5,19 @@
 use super::{RadioPhyRegisters, RxDcoControlField};
 
 impl RadioPhyRegisters {
+    /// Registers of the radio-PHY partition image, which reads every
+    /// readable partition register in the order the published register
+    /// model defines (`partition-image-reads` of the PAC API policy).
+    pub const REGISTER_IMAGE_LEN: usize = crate::generated::RADIO_PHY_REGISTER_IMAGE_LEN;
+
+    /// Read register `index` of the radio-PHY partition image; `None` past
+    /// its end. The read has no effect on the register, but a register
+    /// whose clock domain is off may not answer, so a caller reads only
+    /// the indices known to be readable in the current radio state.
+    pub fn register_image(&self, index: usize) -> Option<u32> {
+        crate::generated::radio_phy_register_image(&self.peripherals, index)
+    }
+
     /// Capture the RX-DCO control field, then clear it with a fresh RMW.
     pub fn capture_and_clear_rx_dco_control(&mut self) -> RxDcoControlField {
         let registers = &self.peripherals.phy_rx_dco_oracle;

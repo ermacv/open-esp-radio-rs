@@ -8470,3 +8470,16 @@ pub(crate) fn request_mac_itwt_clear(
 ) {
     crate::svd::indexed_bit_set_modify::request_mac_itwt_clear(registers, index.get());
 }
+
+/// Registers the reviewed `radio_phy_register_image` partition image observes.
+pub(crate) const RADIO_PHY_REGISTER_IMAGE_LEN: usize =
+    crate::svd::partition_image_read::RADIO_PHY_REGISTER_IMAGE_LEN;
+
+/// Typed bridge for the reviewed `radio_phy_register_image` partition image.
+#[inline]
+pub(crate) fn radio_phy_register_image(
+    registers: &crate::svd::peripheral_ownership::RadioPhyPeripherals,
+    index: usize,
+) -> Option<u32> {
+    crate::svd::partition_image_read::radio_phy_register_image(registers, index)
+}

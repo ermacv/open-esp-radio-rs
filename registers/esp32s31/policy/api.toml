@@ -10966,3 +10966,9 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "SCHEDULER_COMMAND_1"
 fields = ["HARDWARE_LIST_MASK", "OPAQUE_16", "START"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_LIST_DELETION", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_DELETION_ROLE"]
+
+[[partition-image-reads]]
+name = "radio_phy_register_image"
+partition = "RadioPhyPeripherals"
+exposure = "facade"
+sources = ["HIL_VENDOR_CALIBRATION_REGISTERS_2026_09_27"]

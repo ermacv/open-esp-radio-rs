@@ -32,3 +32,7 @@ description = "Earlier ESP32-S31 complete-vendor HIL final-link wrappers around 
 [[sources]]
 id = "HIL_VENDOR_STA_AUTH_POLICY_2026_07_28"
 description = "../esp32s31_rust firmware wifi-sta-auth-probe on ESP32-S31 rev0 with the complete vendor driver, 2026-07-28. The first Open Authentication TX capture showed queue-zero RX filter 0x0001c387. This exactly matches wifi_set_rx_policy jump-table case six, including UBSSID-policy bits 8 and 1 set; the vendor station then associated, completed WPA2 and obtained DHCP. Applying only these two bits to the open driver reproduced the register image but did not independently cure its intermittent TX status-five/authentication timeout."
+
+[[sources]]
+id = "HIL_VENDOR_CALIBRATION_REGISTERS_2026_09_27"
+description = "verification/esp32s31/hil-vendor/calibration on ESP32-S31 rev0, 2026-09-27: after cold Wi-Fi PHY calibration with the pinned ESP-IDF 7b9cc1ac and libphy 20f1db05, the firmware read every readable register of the published RadioPhyPeripherals partition on host request over three boots (verification/esp32s31/hardware/calibration). 173 of 209 registers read without effect and 9 varied between boots; 36 registers of PHY_BTAGC_RECOVERED and PHY_BRX_RECOVERED reset the chip when read with their clock domain off. The partition image observes the calibrated register state for the hardware calibration cross-check; it performs no writes."

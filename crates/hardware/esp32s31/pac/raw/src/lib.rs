@@ -62465,6 +62465,837 @@ pub mod register_image_write {
     }
 }
 
+/// Safe, SVD-declared read-only observations of every readable register of
+/// an ownership partition, by image index.
+pub mod partition_image_read {
+
+    /// Registers of `RadioPhyPeripherals` that [`radio_phy_register_image`] observes.
+    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 209;
+
+    /// Read register `index` of the `RadioPhyPeripherals` image; `None` past its end.
+    pub fn radio_phy_register_image(
+        registers: &crate::peripheral_ownership::RadioPhyPeripherals,
+        index: usize,
+    ) -> Option<u32> {
+        Some(match index {
+            0 => registers
+                .phy_frequency_channel_oracle
+                .frequency_control()
+                .read()
+                .bits(),
+            1 => registers
+                .phy_frequency_channel_oracle
+                .frequency_memory_read_control()
+                .read()
+                .bits(),
+            2 => registers
+                .phy_frequency_channel_oracle
+                .frequency_parameter_1_status()
+                .read()
+                .bits(),
+            3 => registers
+                .phy_frequency_channel_oracle
+                .i2c_number_control()
+                .read()
+                .bits(),
+            4 => registers
+                .phy_frequency_channel_oracle
+                .frequency_memory_read_result()
+                .read()
+                .bits(),
+            5 => registers
+                .phy_clock_oracle
+                .table_memory_index_source()
+                .read()
+                .bits(),
+            6 => registers
+                .phy_baseband_config_oracle
+                .front_end_and_tone_stop_control()
+                .read()
+                .bits(),
+            7 => registers
+                .phy_baseband_config_oracle
+                .tx_gain_compensation()
+                .read()
+                .bits(),
+            8 => registers
+                .phy_baseband_config_oracle
+                .tx_dc_measurement_control_status()
+                .read()
+                .bits(),
+            9 => registers
+                .phy_baseband_config_oracle
+                .tone_path_0_control()
+                .read()
+                .bits(),
+            10 => registers
+                .phy_baseband_config_oracle
+                .tone_path_1_control()
+                .read()
+                .bits(),
+            11 => registers
+                .phy_baseband_config_oracle
+                .rx_gain_dc_control()
+                .read()
+                .bits(),
+            12 => registers
+                .phy_baseband_config_oracle
+                .tone_selector_control()
+                .read()
+                .bits(),
+            13 => registers
+                .phy_fedata_recovered
+                .rx_filter_mode_opaque()
+                .read()
+                .bits(),
+            14 => registers.phy_rx_dco_oracle.control().read().bits(),
+            15 => registers
+                .phy_baseband_config_oracle
+                .iq_correction_control()
+                .read()
+                .bits(),
+            16 => registers
+                .phy_fedata_recovered
+                .tx_rx_reset_opaque()
+                .read()
+                .bits(),
+            17 => registers
+                .phy_baseband_config_oracle
+                .front_end_clear_control()
+                .read()
+                .bits(),
+            18 => registers
+                .phy_baseband_config_oracle
+                .adc_rate_and_front_end_control()
+                .read()
+                .bits(),
+            19 => registers
+                .phy_iq_estimator_oracle
+                .estimator_config()
+                .read()
+                .bits(),
+            20 => registers
+                .phy_iq_estimator_oracle
+                .estimator_control()
+                .read()
+                .bits(),
+            21 => registers
+                .phy_iq_estimator_oracle
+                .signal_power_sum_i()
+                .read()
+                .bits(),
+            22 => registers
+                .phy_iq_estimator_oracle
+                .signal_power_difference_i()
+                .read()
+                .bits(),
+            23 => registers
+                .phy_iq_estimator_oracle
+                .signal_power_difference_q()
+                .read()
+                .bits(),
+            24 => registers
+                .phy_iq_estimator_oracle
+                .signal_power_sum_q()
+                .read()
+                .bits(),
+            25 => registers
+                .phy_iq_estimator_oracle
+                .dc_i_accumulator()
+                .read()
+                .bits(),
+            26 => registers
+                .phy_iq_estimator_oracle
+                .dc_q_accumulator()
+                .read()
+                .bits(),
+            27 => registers
+                .phy_iq_estimator_oracle
+                .power_accumulator()
+                .read()
+                .bits(),
+            28 => registers
+                .phy_iq_estimator_oracle
+                .estimator_ready_status()
+                .read()
+                .bits(),
+            29 => registers
+                .phy_clock_oracle
+                .fe_bb_clock_control_opaque()
+                .read()
+                .bits(),
+            30 => registers
+                .phy_baseband_config_oracle
+                .power_detector_control()
+                .read()
+                .bits(),
+            31 => registers
+                .phy_baseband_config_oracle
+                .power_detector_sar_control_status()
+                .read()
+                .bits(),
+            32 => registers
+                .phy_baseband_config_oracle
+                .power_detector_table_1()
+                .read()
+                .bits(),
+            33 => registers
+                .phy_baseband_config_oracle
+                .power_detector_sar_result()
+                .read()
+                .bits(),
+            34 => registers
+                .phy_baseband_config_oracle
+                .power_detector_sar_result_1()
+                .read()
+                .bits(),
+            35 => registers
+                .phy_baseband_config_oracle
+                .power_detector_sar_result_2()
+                .read()
+                .bits(),
+            36 => registers
+                .phy_baseband_config_oracle
+                .power_detector_sar_result_3()
+                .read()
+                .bits(),
+            37 => registers
+                .phy_fectrl_recovered
+                .antenna_config_word_0_opaque()
+                .read()
+                .bits(),
+            38 => registers
+                .phy_fectrl_recovered
+                .antenna_config_word_1_opaque()
+                .read()
+                .bits(),
+            39 => registers
+                .phy_fectrl_recovered
+                .antenna_config_word_2_opaque()
+                .read()
+                .bits(),
+            40 => registers
+                .phy_fectrl_recovered
+                .antenna_config_word_3_opaque()
+                .read()
+                .bits(),
+            41 => registers.phy_memory.command().read().bits(),
+            42 => registers.phy_memory.group_boundary(0).read().bits(),
+            43 => registers.phy_memory.group_boundary(1).read().bits(),
+            44 => registers.phy_memory.group_boundary(2).read().bits(),
+            45 => registers.phy_memory.group_boundary(3).read().bits(),
+            46 => registers.phy_memory.group_boundary(4).read().bits(),
+            47 => registers.phy_memory.group_boundary(5).read().bits(),
+            48 => registers
+                .phy_baseband_config_oracle
+                .tx_pa_control_0()
+                .read()
+                .bits(),
+            49 => registers
+                .phy_baseband_config_oracle
+                .tx_pa_control_1()
+                .read()
+                .bits(),
+            50 => registers
+                .phy_frequency_channel_oracle
+                .fbw_bt_filter_control()
+                .read()
+                .bits(),
+            51 => registers.phy_pbus.command().read().bits(),
+            52 => registers.phy_pbus.mode().read().bits(),
+            53 => registers.phy_pbus.status_clock_force().read().bits(),
+            54 => registers.phy_pbus.read_result_0().read().bits(),
+            55 => registers.phy_pbus.read_result_1().read().bits(),
+            56 => registers.phy_pbus.read_result_2().read().bits(),
+            57 => registers.phy_pbus.read_result_3().read().bits(),
+            58 => registers.phy_pbus.read_result_4().read().bits(),
+            59 => registers
+                .phy_agc_oracle
+                .agc_parameter_control()
+                .read()
+                .bits(),
+            60 => registers
+                .phy_iq_estimator_oracle
+                .estimator_activity_status()
+                .read()
+                .bits(),
+            61 => registers
+                .phy_baseband_config_oracle
+                .dac_scale_control()
+                .read()
+                .bits(),
+            62 => registers
+                .phy_baseband_config_oracle
+                .front_end_init_0c08()
+                .read()
+                .bits(),
+            63 => registers
+                .phy_baseband_config_oracle
+                .iq_correction_aux()
+                .read()
+                .bits(),
+            64 => registers
+                .phy_fedata_wifi_recovered
+                .cfo_config_word_0_opaque()
+                .read()
+                .bits(),
+            65 => registers
+                .phy_fedata_wifi_recovered
+                .frequency_correction_word_0_opaque()
+                .read()
+                .bits(),
+            66 => registers
+                .phy_fedata_wifi_recovered
+                .frequency_correction_word_1_opaque()
+                .read()
+                .bits(),
+            67 => registers
+                .phy_baseband_config_oracle
+                .front_end_init_0c20()
+                .read()
+                .bits(),
+            68 => registers.phy_btagc_recovered.cte_dc_shift().read().bits(),
+            69 => registers.phy_btagc_recovered.cte_re_gain().read().bits(),
+            70 => registers
+                .phy_btagc_recovered
+                .rx_gain_force_opaque()
+                .read()
+                .bits(),
+            71 => registers
+                .phy_btagc_recovered
+                .rx_comp_control()
+                .read()
+                .bits(),
+            72 => registers
+                .phy_btagc_recovered
+                .gain_offset_word_0_opaque()
+                .read()
+                .bits(),
+            73 => registers.phy_btagc_recovered.rx_config_004c().read().bits(),
+            74 => registers
+                .phy_btagc_recovered
+                .agc_gain_max_control()
+                .read()
+                .bits(),
+            75 => registers.phy_btagc_recovered.agc_gain_image().read().bits(),
+            76 => registers
+                .phy_btagc_recovered
+                .gain_offset_word_1_opaque()
+                .read()
+                .bits(),
+            77 => registers
+                .phy_btagc_recovered
+                .agc_recorrect_control_006c()
+                .read()
+                .bits(),
+            78 => registers
+                .phy_btagc_recovered
+                .agc_restart_config_0084()
+                .read()
+                .bits(),
+            79 => registers.phy_btagc_recovered.rx_config_0088().read().bits(),
+            80 => registers.phy_btagc_recovered.rx_config_008c().read().bits(),
+            81 => registers.phy_btagc_recovered.cca_config().read().bits(),
+            82 => registers.phy_btagc_recovered.cte_agc_target().read().bits(),
+            83 => registers
+                .phy_btagc_recovered
+                .shared_rx_sense_and_detect_00a0()
+                .read()
+                .bits(),
+            84 => registers
+                .phy_btagc_recovered
+                .shared_rx_sense_and_detect_00a8()
+                .read()
+                .bits(),
+            85 => registers
+                .phy_btagc_recovered
+                .agc_recorrect_and_target_00b0()
+                .read()
+                .bits(),
+            86 => registers
+                .phy_btagc_recovered
+                .agc_recorrect_and_target_00b4()
+                .read()
+                .bits(),
+            87 => registers
+                .phy_btagc_recovered
+                .shared_rx_sense_and_detect_00b8()
+                .read()
+                .bits(),
+            88 => registers
+                .phy_btagc_recovered
+                .agc_recorrect_and_restart_00bc()
+                .read()
+                .bits(),
+            89 => registers
+                .phy_btagc_recovered
+                .agc_detect_config_00c0()
+                .read()
+                .bits(),
+            90 => registers
+                .phy_btagc_recovered
+                .agc_detect_config_00c4()
+                .read()
+                .bits(),
+            91 => registers
+                .phy_btagc_recovered
+                .agc_config_00d0()
+                .read()
+                .bits(),
+            92 => registers
+                .phy_btagc_recovered
+                .agc_config_00d4()
+                .read()
+                .bits(),
+            93 => registers
+                .phy_btagc_recovered
+                .agc_restart_bits_00dc()
+                .read()
+                .bits(),
+            94 => registers
+                .phy_btagc_recovered
+                .agc_restart_image_00e0()
+                .read()
+                .bits(),
+            95 => registers
+                .phy_btagc_recovered
+                .agc_restart_image_00e4()
+                .read()
+                .bits(),
+            96 => registers
+                .phy_btagc_recovered
+                .agc_restart_image_00e8()
+                .read()
+                .bits(),
+            97 => registers
+                .phy_btagc_recovered
+                .agc_restart_image_00ec()
+                .read()
+                .bits(),
+            98 => registers
+                .phy_btagc_recovered
+                .agc_restart_image_00f0()
+                .read()
+                .bits(),
+            99 => registers
+                .phy_btagc_recovered
+                .agc_restart_image_00f8()
+                .read()
+                .bits(),
+            100 => registers
+                .phy_btagc_recovered
+                .agc_restart_image_0100()
+                .read()
+                .bits(),
+            101 => registers
+                .phy_frequency_channel_oracle
+                .channel_tx_offset_control()
+                .read()
+                .bits(),
+            102 => registers
+                .phy_baseband_config_oracle
+                .i2c_tx_rate_control()
+                .read()
+                .bits(),
+            103 => registers
+                .phy_agc_recovered_gaps
+                .rx_sense_word_0_opaque()
+                .read()
+                .bits(),
+            104 => registers
+                .phy_agc_recovered_gaps
+                .rx_sense_word_1_opaque()
+                .read()
+                .bits(),
+            105 => registers
+                .phy_baseband_config_oracle
+                .noise_floor_control()
+                .read()
+                .bits(),
+            106 => registers
+                .phy_agc_recovered_gaps
+                .cca_control_opaque()
+                .read()
+                .bits(),
+            107 => registers.phy_agc_oracle.agc_shared_control().read().bits(),
+            108 => registers.phy_agc_oracle.agc_antenna_control().read().bits(),
+            109 => registers.phy_agc_oracle.dc_memory_control().read().bits(),
+            110 => registers
+                .phy_agc_oracle
+                .rx_11b_path_control_0()
+                .read()
+                .bits(),
+            111 => registers
+                .phy_agc_recovered_gaps
+                .noise_floor_status_opaque()
+                .read()
+                .bits(),
+            112 => registers
+                .phy_agc_oracle
+                .agc_saturation_control()
+                .read()
+                .bits(),
+            113 => registers
+                .phy_agc_recovered_gaps
+                .rssi_status_opaque()
+                .read()
+                .bits(),
+            114 => registers
+                .phy_agc_recovered_gaps
+                .channel_filter_control_opaque()
+                .read()
+                .bits(),
+            115 => registers.phy_agc_oracle.agc_gain_limit_low().read().bits(),
+            116 => registers
+                .phy_agc_oracle
+                .rx_compensation_high_control()
+                .read()
+                .bits(),
+            117 => registers
+                .phy_agc_oracle
+                .csi_dump_force_control()
+                .read()
+                .bits(),
+            118 => registers
+                .phy_agc_recovered_gaps
+                .backup_word_cc_opaque()
+                .read()
+                .bits(),
+            119 => registers
+                .phy_agc_recovered_gaps
+                .rifs_mode_control_opaque()
+                .read()
+                .bits(),
+            120 => registers
+                .phy_agc_oracle
+                .rx_11b_window_control()
+                .read()
+                .bits(),
+            121 => registers
+                .phy_agc_recovered_gaps
+                .rx_sense_backup_word_opaque()
+                .read()
+                .bits(),
+            122 => registers.phy_agc_oracle.antenna_control_0().read().bits(),
+            123 => registers.phy_agc_oracle.antenna_control_2().read().bits(),
+            124 => registers
+                .phy_agc_oracle
+                .rx_11b_path_control_1()
+                .read()
+                .bits(),
+            125 => registers
+                .phy_agc_oracle
+                .agc_init_high_control()
+                .read()
+                .bits(),
+            126 => registers
+                .phy_agc_oracle
+                .rx_gain_limit_control()
+                .read()
+                .bits(),
+            127 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_7400()
+                .read()
+                .bits(),
+            128 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_7428()
+                .read()
+                .bits(),
+            129 => registers
+                .phy_agc_recovered_gaps
+                .cfo_config_word_1_opaque()
+                .read()
+                .bits(),
+            130 => registers
+                .phy_agc_recovered_gaps
+                .cfo_config_word_2_opaque()
+                .read()
+                .bits(),
+            131 => registers
+                .phy_agc_recovered_gaps
+                .cfo_config_word_3_opaque()
+                .read()
+                .bits(),
+            132 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_743c()
+                .read()
+                .bits(),
+            133 => registers
+                .phy_baseband_config_oracle
+                .tx_output_filter_control()
+                .read()
+                .bits(),
+            134 => registers
+                .phy_baseband_config_oracle
+                .tx_power_track_control_0()
+                .read()
+                .bits(),
+            135 => registers
+                .phy_baseband_config_oracle
+                .tx_power_track_control_1()
+                .read()
+                .bits(),
+            136 => registers
+                .phy_baseband_config_oracle
+                .tx_power_track_control_2()
+                .read()
+                .bits(),
+            137 => registers
+                .phy_baseband_config_oracle
+                .tx_power_track_control_3()
+                .read()
+                .bits(),
+            138 => registers
+                .phy_baseband_config_oracle
+                .hccfr_control()
+                .read()
+                .bits(),
+            139 => registers
+                .phy_baseband_config_oracle
+                .hccfr_value()
+                .read()
+                .bits(),
+            140 => registers
+                .phy_baseband_config_oracle
+                .iccfr_force_control()
+                .read()
+                .bits(),
+            141 => registers
+                .phy_baseband_config_oracle
+                .iccfr_enable_control()
+                .read()
+                .bits(),
+            142 => registers
+                .phy_nrx_recovered_gaps
+                .fft_scale_control_opaque()
+                .read()
+                .bits(),
+            143 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_7808()
+                .read()
+                .bits(),
+            144 => registers
+                .phy_nrx_recovered_gaps
+                .backup_word_0c_opaque()
+                .read()
+                .bits(),
+            145 => registers
+                .phy_nrx_recovered_gaps
+                .one_tone_spur_control_opaque()
+                .read()
+                .bits(),
+            146 => registers
+                .phy_frequency_channel_oracle
+                .nrx_frequency_control()
+                .read()
+                .bits(),
+            147 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_7890()
+                .read()
+                .bits(),
+            148 => registers
+                .phy_nrx_recovered_gaps
+                .frequency_correction_control_opaque()
+                .read()
+                .bits(),
+            149 => registers
+                .phy_nrx_recovered_gaps
+                .cfo_high_control_opaque()
+                .read()
+                .bits(),
+            150 => registers
+                .phy_agc_oracle
+                .post_init_rx_control()
+                .read()
+                .bits(),
+            151 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_78dc()
+                .read()
+                .bits(),
+            152 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_78e4()
+                .read()
+                .bits(),
+            153 => registers
+                .phy_nrx_recovered_gaps
+                .channel_filter_control_opaque()
+                .read()
+                .bits(),
+            154 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_790c()
+                .read()
+                .bits(),
+            155 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_7980()
+                .read()
+                .bits(),
+            156 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_7a28()
+                .read()
+                .bits(),
+            157 => registers
+                .phy_baseband_config_oracle
+                .baseband_tx_pa_control()
+                .read()
+                .bits(),
+            158 => registers
+                .phy_baseband_config_oracle
+                .baseband_watchdog_status()
+                .read()
+                .bits(),
+            159 => registers
+                .phy_bb_recovered_gaps
+                .spur_coefficient_control_0_opaque()
+                .read()
+                .bits(),
+            160 => registers
+                .phy_baseband_config_oracle
+                .baseband_tx_pa_timing()
+                .read()
+                .bits(),
+            161 => registers
+                .phy_baseband_config_oracle
+                .baseband_watchdog_control()
+                .read()
+                .bits(),
+            162 => registers
+                .phy_baseband_config_oracle
+                .baseband_watchdog_enable()
+                .read()
+                .bits(),
+            163 => registers
+                .phy_baseband_config_oracle
+                .noise_floor_enable_0()
+                .read()
+                .bits(),
+            164 => registers
+                .phy_baseband_config_oracle
+                .noise_floor_enable_1()
+                .read()
+                .bits(),
+            165 => registers
+                .phy_bb_recovered_gaps
+                .cca_counter_control_opaque()
+                .read()
+                .bits(),
+            166 => registers
+                .phy_bb_recovered_gaps
+                .cca_counter_status_0_opaque()
+                .read()
+                .bits(),
+            167 => registers
+                .phy_bb_recovered_gaps
+                .cca_counter_status_1_opaque()
+                .read()
+                .bits(),
+            168 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_7ca8()
+                .read()
+                .bits(),
+            169 => registers
+                .phy_baseband_config_oracle
+                .baseband_init_7cd0()
+                .read()
+                .bits(),
+            170 => registers
+                .phy_frequency_channel_oracle
+                .channel_cbw_control_0()
+                .read()
+                .bits(),
+            171 => registers
+                .phy_frequency_channel_oracle
+                .channel_cbw_control_1()
+                .read()
+                .bits(),
+            172 => registers
+                .phy_bb_recovered_gaps
+                .cfo_config_word_4_opaque()
+                .read()
+                .bits(),
+            173 => registers
+                .phy_bb_recovered_gaps
+                .cfo_config_word_5_opaque()
+                .read()
+                .bits(),
+            174 => registers.phy_agc_oracle.ftm_control().read().bits(),
+            175 => registers.phy_agc_oracle.rx_11b_mode_control().read().bits(),
+            176 => registers
+                .phy_brx_recovered_gaps
+                .frequency_correction_control_opaque()
+                .read()
+                .bits(),
+            177 => registers
+                .phy_agc_oracle
+                .agc_update_8078_control()
+                .read()
+                .bits(),
+            178 => registers.modem_syscon_radio.clk_conf().read().bits(),
+            179 => registers
+                .modem_syscon_radio
+                .clk_conf_power_st()
+                .read()
+                .bits(),
+            180 => registers.modem_syscon_radio.modem_rst_conf().read().bits(),
+            181 => registers.modem_syscon_radio.clk_conf1().read().bits(),
+            182 => registers.modem_syscon_radio.wifi_bb_cfg().read().bits(),
+            183 => registers
+                .phy_cold_deadline_oracle
+                .deadline_counter_unknown()
+                .read()
+                .bits(),
+            184 => registers
+                .modem_lpcon_shared_clock
+                .lp_timer_conf()
+                .read()
+                .bits(),
+            185 => registers
+                .modem_lpcon_shared_clock
+                .coex_lp_clk_conf()
+                .read()
+                .bits(),
+            186 => registers.modem_lpcon_shared_clock.clk_conf().read().bits(),
+            187 => registers
+                .modem_lpcon_shared_clock
+                .clk_conf_power_st()
+                .read()
+                .bits(),
+            188 => registers.modem_lpcon_phy_tick.tick_conf().read().bits(),
+            189 => registers.i2c_ana_mst.i2c0_ctrl().read().bits(),
+            190 => registers.i2c_ana_mst.i2c1_ctrl().read().bits(),
+            191 => registers.i2c_ana_mst.ana_conf0().read().bits(),
+            192 => registers.i2c_ana_mst.ana_conf1().read().bits(),
+            193 => registers.i2c_ana_mst.ana_conf2().read().bits(),
+            194 => registers.i2c_ana_mst.i2c0_ctrl1().read().bits(),
+            195 => registers.i2c_ana_mst.i2c1_ctrl1().read().bits(),
+            196 => registers.i2c_ana_mst.hw_i2c_ctrl().read().bits(),
+            197 => registers.hp_sys_clkrst_radio.modem_ctrl0().read().bits(),
+            198 => registers.hp_sys_clkrst_radio.ref_160m_ctrl0().read().bits(),
+            199 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
+            200 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
+            201 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
+            202 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
+            203 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
+            204 => registers.pmu_radio.rf_pwc().read().bits(),
+            205 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
+            206 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
+            207 => registers.lp_tsens.ctrl().read().bits(),
+            208 => registers.lp_tsens.clk_conf().read().bits(),
+            _ => return None,
+        })
+    }
+}
+
 /// Safe, SVD-declared field writes based on an all-zero register image.
 pub mod zero_based_field_write {
 

@@ -15,6 +15,7 @@ use oer_esp32s31_coex::{
     CoexPhaseChange, CoexPhaseTimer, CoexPti, CoexPtiTable, CoexSchedule, CoexScheduleExecutor,
     CoexStatusType, CoexTimerIndex,
 };
+use oer_esp32s31_hal::coex::{ExternalCoexConfig, ExternalCoexError};
 use oer_esp32s31_hal::{
     ieee80211::client::WifiClocksOn,
     ieee802154::Ieee802154Clocked,
@@ -41,6 +42,10 @@ use oer_esp32s31_phy::{
     },
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
+
+/// The external coexistence schedule status bits `ic_set_extern_coex` sets
+/// and `ic_stop_extern_coex` clears (`coex_schm_status_bit_set(3, 1 | 2)`).
+const EXTERNAL_COEX_STATUS: u16 = 0x01 | 0x02;
 
 /// The IEEE 802.15.4 schedule status bit of the pinned libcoexist
 /// `esp_coex_ieee802154_status_enable` and `_disable`
@@ -125,6 +130,15 @@ impl WifiCoexViewCell {
     fn set(&self, view: WifiCoexView) {
         self.0.lock(|cell| cell.set(view));
     }
+}
+
+/// Why external coexistence could not stop.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExternalCoexStopError {
+    /// The arbiter's external coexistence could not stop.
+    External(ExternalCoexError),
+    /// Disabling coexistence could not withdraw a request timer.
+    Coex(CoexError),
 }
 
 /// When a Bluetooth preemption ends, as `coex_iso_end_int_handle` reports it
@@ -961,6 +975,51 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     pub fn disable_ieee802154_coex(&mut self) -> Result<(), CoexError> {
         self.clear_coex_status_bits(CoexStatusType::Ieee802154, IEEE802154_COEX_STATUS);
         self.disable_coex()
+    }
+
+    /// Start external coexistence, as ESP-IDF's
+    /// `esp_enable_extern_coex_gpio_pin` does after the platform routed the
+    /// external signals: the arbiter programs the coexistence module clock,
+    /// the work mode, grant and priorities and enables the block; then
+    /// coexistence is enabled for the external radio and its schedule status
+    /// bits 1 and 2 are published, as `esp_coex_external_set` does.
+    ///
+    /// # Errors
+    ///
+    /// External coexistence already runs, or the module clock failed; nothing
+    /// changed.
+    pub fn start_external_coex(
+        &mut self,
+        config: ExternalCoexConfig,
+    ) -> Result<(), ExternalCoexError> {
+        let (lease, _, clocks) = self.parts();
+        lease.start_external_coex(config, clocks)?;
+        self.enable_coex();
+        self.set_coex_status_bits(CoexStatusType::ExternalCoex, EXTERNAL_COEX_STATUS);
+        Ok(())
+    }
+
+    /// Stop external coexistence, as `esp_coex_external_stop` does: withdraw
+    /// the schedule status, disable coexistence for the external radio, then
+    /// clear the priorities, disable the block and release its module clock.
+    /// The caller releases the routed signals afterwards.
+    ///
+    /// # Errors
+    ///
+    /// External coexistence does not run, a coexistence timer could not be
+    /// withdrawn, or releasing the module clock failed.
+    pub fn stop_external_coex(&mut self) -> Result<(), ExternalCoexStopError> {
+        if self.lease.external_coex().is_none() {
+            return Err(ExternalCoexStopError::External(
+                ExternalCoexError::NotActive,
+            ));
+        }
+        self.clear_coex_status_bits(CoexStatusType::ExternalCoex, EXTERNAL_COEX_STATUS);
+        self.disable_coex().map_err(ExternalCoexStopError::Coex)?;
+        let (lease, _, clocks) = self.parts();
+        lease
+            .stop_external_coex(clocks)
+            .map_err(ExternalCoexStopError::External)
     }
 
     /// Record the Wi-Fi channel, as `coex_wifi_channel_set` does, and wake

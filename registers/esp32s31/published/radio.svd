@@ -13396,6 +13396,181 @@
       </registers>
     </peripheral>
     <peripheral>
+      <name>COEX_EXTERNAL</name>
+      <description>External coexistence control beside the coexistence timer bank. The complete hal_external_coexist.o leaves of the pinned libcoexist address these words at 0x2010f49c, 0x2010f4a0, 0x2010f4a4, 0x2010f4d0 and 0x2010f4d8 through fresh-read RMW operations; the GPIO matrix routing of the request, priority, grant and TX-line signals belongs to the platform, not to this block.</description>
+      <baseAddress>0x2010F49C</baseAddress>
+      <registers>
+        <register>
+          <name>PTI</name>
+          <description>External priority word. hal_set_extern_pti publishes three priorities in bits 11:0 in the basic modes, or a fixed advanced image in the follower mode; hal_clr_extern_pti clears them. hal_set_extern_coex_mode replaces bits 29:28 with the work mode, and hal_set_extern_pti_mode sets bits 31:30 in the one-wire leader mode and the advanced grant fields in the follower mode.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>PRIORITY_0</name>
+              <description>Low nibble of the third hal_set_extern_pti argument in the basic modes; zero in the advanced mode.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>PRIORITY_1</name>
+              <description>Low nibble of the second hal_set_extern_pti argument in the basic modes; 0xf in the advanced mode.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>PRIORITY_2</name>
+              <description>Low nibble of the first hal_set_extern_pti argument in the basic modes; zero in the advanced mode.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>ADVANCED_PRIORITY</name>
+              <description>0xf in the advanced mode with two or three wires, zero otherwise.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>ADVANCED_GRANT_0_UNKNOWN</name>
+              <description>Advanced follower field: 1 with one wire, 0xc otherwise; hal_clr_extern_pti sets 0xf in the advanced mode.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>ADVANCED_GRANT_1_UNKNOWN</name>
+              <description>Advanced follower field: 1 with one wire, 8 otherwise; hal_clr_extern_pti sets 0xf in the advanced mode.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>ADVANCED_GRANT_2_UNKNOWN</name>
+              <description>Advanced follower field: 1; hal_clr_extern_pti sets 0xf in the advanced mode.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>WORK_MODE</name>
+              <description>Low two bits of the hal_set_extern_coex_mode argument: the external work mode (0 leader, 1 one-wire leader variant, 2 follower).</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>MODE_FLAGS_UNKNOWN</name>
+              <description>Set to 0b11 by hal_set_extern_pti_mode in mode 1 and in the follower mode; the leader mode leaves them unchanged.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CONTROL</name>
+          <description>External control word written by hal_set_extern_coex_validity, hal_set_extern_coex_delay, hal_set_extern_coex_sync and the enable pair.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>VALIDATE_HIGH</name>
+              <description>hal_set_extern_coex_validity: set when the external grant is valid high.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>GRANT_DELAY</name>
+              <description>hal_set_extern_coex_delay replaces bits 8:1 with its argument; ic_set_extern_coex_params passes the grant delay in microseconds shifted left by four and masked to 0xf0.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>ENABLE</name>
+              <description>Set by hal_enable_extern_coex and cleared by hal_disable_extern_coex, after the other enable fields.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>SYNC</name>
+              <description>hal_set_extern_coex_sync replaces bits 19:10 with the low ten bits of its argument; hal_set_extern_pti_mode writes zero and then 0x14 in the leader mode.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>10</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN</name>
+              <description>Bits no external-coexistence leaf writes.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>ENABLE_1</name>
+          <description>hal_enable_extern_coex sets bit 14 and hal_disable_extern_coex clears it.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>LOW_UNKNOWN</name>
+              <description>Bits no external-coexistence leaf writes.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>14</bitWidth>
+            </field>
+            <field>
+              <name>ENABLE</name>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>HIGH_UNKNOWN</name>
+              <description>Bits no external-coexistence leaf writes.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>17</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>ENABLE_MASK_0</name>
+          <description>hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them.</description>
+          <addressOffset>0x34</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>MASK</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN</name>
+              <description>Bits no external-coexistence leaf writes.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>28</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>ENABLE_MASK_1</name>
+          <description>hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them. The same field is the IEEE 802.15.4 PTI offset that hal_set_IEEE802154_pti_offset replaces and hal_get_IEEE802154_pti_offset reads.</description>
+          <addressOffset>0x3C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>MASK</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN</name>
+              <description>Bits no external-coexistence leaf writes.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>28</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>WIFI_MAC_COEX_RUNTIME</name>
       <description>Runtime receive-beacon and individual-TWT COEX/PTI words recovered from five complete hal_coex.o leaves. Register addresses, masks and RMW order are exact; fields whose electrical meaning is not established retain UNKNOWN names.</description>
       <baseAddress>0x2010D89C</baseAddress>

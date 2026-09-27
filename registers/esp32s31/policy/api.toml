@@ -114,6 +114,7 @@ member = "coexistence"
 description = "Shared coexistence arbitration register views owned by the radio arbitration service rather than any protocol role; per-protocol priority configuration belongs to that protocol's partition."
 peripherals = [
     "COEX_HW_TIMER",
+    "COEX_EXTERNAL",
     "PHY_FECOEX_RECOVERED",
 ]
 
@@ -341,6 +342,41 @@ name = "Delay117"
 value = 117
 description = "Literal ten-bit TXRX_SWITCH_DELAY image written by ieee802154_txon_delay_set."
 sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
+
+[[bounded-domains]]
+name = "ExternalCoexNibble"
+description = "One four-bit external coexistence priority or grant field image."
+min = 0
+max = 15
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[bounded-domains]]
+name = "ExternalCoexWorkMode"
+description = "The two-bit external coexistence work mode hal_set_extern_coex_mode publishes."
+min = 0
+max = 3
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[bounded-domains]]
+name = "ExternalCoexGrantDelay"
+description = "The eight-bit grant delay image hal_set_extern_coex_delay publishes."
+min = 0
+max = 255
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[bounded-domains]]
+name = "ExternalCoexSync"
+description = "The ten-bit synchronization image hal_set_extern_coex_sync publishes."
+min = 0
+max = 0x3ff
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[bounded-domains]]
+name = "ExternalCoexFlag"
+description = "One external coexistence control bit."
+min = 0
+max = 1
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
 
 [[bounded-domains]]
 name = "MacPti"
@@ -3184,6 +3220,150 @@ input-mask = 0x000000ff
 set-mask = 0x00000000
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_priority_0"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "PRIORITY_0", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_priority_1"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "PRIORITY_1", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_priority_2"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "PRIORITY_2", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_advanced_priority"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "ADVANCED_PRIORITY", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_advanced_grant_0"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "ADVANCED_GRANT_0_UNKNOWN", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_advanced_grant_1"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "ADVANCED_GRANT_1_UNKNOWN", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_advanced_grant_2"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "ADVANCED_GRANT_2_UNKNOWN", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_work_mode"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "WORK_MODE", source-bit-offset = 0 }]
+domain = "ExternalCoexWorkMode"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_mode_flags"
+peripheral = "COEX_EXTERNAL"
+register = "PTI"
+fields = [{ field = "MODE_FLAGS_UNKNOWN", source-bit-offset = 0 }]
+value = 0x3
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_validate_high"
+peripheral = "COEX_EXTERNAL"
+register = "CONTROL"
+fields = [{ field = "VALIDATE_HIGH", source-bit-offset = 0 }]
+domain = "ExternalCoexFlag"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_grant_delay"
+peripheral = "COEX_EXTERNAL"
+register = "CONTROL"
+fields = [{ field = "GRANT_DELAY", source-bit-offset = 0 }]
+domain = "ExternalCoexGrantDelay"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_sync"
+peripheral = "COEX_EXTERNAL"
+register = "CONTROL"
+fields = [{ field = "SYNC", source-bit-offset = 0 }]
+domain = "ExternalCoexSync"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_enable"
+peripheral = "COEX_EXTERNAL"
+register = "CONTROL"
+fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+domain = "ExternalCoexFlag"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_enable_1"
+peripheral = "COEX_EXTERNAL"
+register = "ENABLE_1"
+fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+domain = "ExternalCoexFlag"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_enable_mask_0"
+peripheral = "COEX_EXTERNAL"
+register = "ENABLE_MASK_0"
+fields = [{ field = "MASK", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
+
+[[field-replace-modifies]]
+name = "set_coex_external_enable_mask_1"
+peripheral = "COEX_EXTERNAL"
+register = "ENABLE_MASK_1"
+fields = [{ field = "MASK", source-bit-offset = 0 }]
+domain = "ExternalCoexNibble"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_EXTERNAL"]
 
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_1_pointer_a"

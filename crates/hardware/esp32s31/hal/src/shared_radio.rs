@@ -126,6 +126,7 @@ struct SharedRadioState<T> {
     coex_pti: CoexPtiTable,
     phy_grant_protected: bool,
     bluetooth_low_power_clock: bool,
+    external_coex: Option<crate::coex::ExternalCoexConfig>,
     attachment: T,
 }
 
@@ -203,8 +204,13 @@ pub enum PhyClockModule {
     Calibration,
 }
 
-/// One lease slot per protocol client and per PHY-domain module.
-const CLOCK_SLOTS: usize = 5;
+/// One lease slot per protocol client, per PHY-domain module and for the
+/// coexistence module of external coexistence.
+const CLOCK_SLOTS: usize = 6;
+
+/// The coexistence module clock ESP-IDF's `coex_module_enable` holds while
+/// external coexistence runs.
+const EXTERNAL_COEX_SLOT: usize = 5;
 
 const fn client_index(client: RadioClient) -> usize {
     match client {
@@ -277,6 +283,7 @@ impl<T> SharedRadio<T> {
                 coex_pti: CoexPtiTable::VENDOR,
                 phy_grant_protected: false,
                 bluetooth_low_power_clock: false,
+                external_coex: None,
                 attachment,
             }),
         }
@@ -351,6 +358,12 @@ impl<T> SharedRadio<T> {
             return Err((
                 Self::from_state(state),
                 SharedRadioReleaseError::BluetoothLowPowerClockSelected,
+            ));
+        }
+        if state.external_coex.is_some() {
+            return Err((
+                Self::from_state(state),
+                SharedRadioReleaseError::ExternalCoexActive,
             ));
         }
         if let Err(error) = crate::root::check_phy_restore_complete(&state.phy) {
@@ -519,6 +532,8 @@ pub enum SharedRadioReleaseError {
     PhyGrantProtectHeld,
     /// Bluetooth still selects its low-power timer clock.
     BluetoothLowPowerClockSelected,
+    /// External coexistence still runs.
+    ExternalCoexActive,
     /// A PHY calibration still owns a restore obligation.
     Restore(crate::root::RadioPhyReleaseError),
 }
@@ -821,6 +836,63 @@ impl<T> SharedRadioLease<'_, T> {
         platform: &mut impl PlatformClockProvider,
     ) -> Result<(), ModemClockError> {
         self.enable_slot(phy_index(module), phy_module(module), platform)
+    }
+
+    /// Start external coexistence with `config`, the register half of
+    /// ESP-IDF's `esp_enable_extern_coex_gpio_pin` after the caller routed
+    /// the signals: the coexistence module clock (`coex_module_enable`), the
+    /// work mode and grant (`esp_coex_external_params`), then the priorities
+    /// and the enable of `esp_coex_external_set`.
+    ///
+    /// # Errors
+    ///
+    /// External coexistence already runs, or the module clock failed; no
+    /// register changed.
+    pub fn start_external_coex(
+        &mut self,
+        config: crate::coex::ExternalCoexConfig,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), crate::coex::ExternalCoexError> {
+        if self.state().external_coex.is_some() {
+            return Err(crate::coex::ExternalCoexError::AlreadyActive);
+        }
+        self.enable_slot(EXTERNAL_COEX_SLOT, ModemClockModule::Coexistence, platform)
+            .map_err(crate::coex::ExternalCoexError::Clock)?;
+        let state = self.state_mut();
+        let registers = &mut state.registers;
+        registers.configure_external_coex_mode(config.role, config.wires);
+        registers.configure_external_coex_grant(config.grant_delay_us, config.validate_high);
+        registers.publish_external_coex_priorities(config.role, config.wires, config.priorities());
+        registers.set_external_coex_enabled(true);
+        state.external_coex = Some(config);
+        Ok(())
+    }
+
+    /// Stop external coexistence, the register half of
+    /// `esp_coex_external_stop`: clear the priorities, disable, then release
+    /// the coexistence module clock.
+    ///
+    /// # Errors
+    ///
+    /// External coexistence does not run, or releasing the module clock
+    /// failed after the registers were stopped.
+    pub fn stop_external_coex(
+        &mut self,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), crate::coex::ExternalCoexError> {
+        let state = self.state_mut();
+        let Some(config) = state.external_coex.take() else {
+            return Err(crate::coex::ExternalCoexError::NotActive);
+        };
+        state.registers.clear_external_coex_priorities(config.role);
+        state.registers.set_external_coex_enabled(false);
+        self.disable_slot(EXTERNAL_COEX_SLOT, platform)
+            .map_err(crate::coex::ExternalCoexError::Clock)
+    }
+
+    /// The running external coexistence, if any.
+    pub fn external_coex(&self) -> Option<crate::coex::ExternalCoexConfig> {
+        self.state().external_coex
     }
 
     /// Disable a modem clock module of the shared PHY domain.

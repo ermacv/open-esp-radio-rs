@@ -31368,6 +31368,473 @@ pub mod coex_hw_timer {
         }
     }
 }
+#[doc = "External coexistence control beside the coexistence timer bank. The complete hal_external_coexist.o leaves of the pinned libcoexist address these words at 0x2010f49c, 0x2010f4a0, 0x2010f4a4, 0x2010f4d0 and 0x2010f4d8 through fresh-read RMW operations; the GPIO matrix routing of the request, priority, grant and TX-line signals belongs to the platform, not to this block."]
+pub type CoexExternal = crate::Periph<coex_external::RegisterBlock, 0x2010_f49c>;
+impl core::fmt::Debug for CoexExternal {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("CoexExternal").finish()
+    }
+}
+#[doc = "External coexistence control beside the coexistence timer bank. The complete hal_external_coexist.o leaves of the pinned libcoexist address these words at 0x2010f49c, 0x2010f4a0, 0x2010f4a4, 0x2010f4d0 and 0x2010f4d8 through fresh-read RMW operations; the GPIO matrix routing of the request, priority, grant and TX-line signals belongs to the platform, not to this block."]
+pub mod coex_external {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        pti: Pti,
+        control: Control,
+        enable_1: Enable1,
+        _reserved3: [u8; 0x28],
+        enable_mask_0: EnableMask0,
+        _reserved4: [u8; 0x04],
+        enable_mask_1: EnableMask1,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - External priority word. hal_set_extern_pti publishes three priorities in bits 11:0 in the basic modes, or a fixed advanced image in the follower mode; hal_clr_extern_pti clears them. hal_set_extern_coex_mode replaces bits 29:28 with the work mode, and hal_set_extern_pti_mode sets bits 31:30 in the one-wire leader mode and the advanced grant fields in the follower mode."]
+        #[inline(always)]
+        pub const fn pti(&self) -> &Pti {
+            &self.pti
+        }
+        #[doc = "0x04 - External control word written by hal_set_extern_coex_validity, hal_set_extern_coex_delay, hal_set_extern_coex_sync and the enable pair."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+        #[doc = "0x08 - hal_enable_extern_coex sets bit 14 and hal_disable_extern_coex clears it."]
+        #[inline(always)]
+        pub const fn enable_1(&self) -> &Enable1 {
+            &self.enable_1
+        }
+        #[doc = "0x34 - hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them."]
+        #[inline(always)]
+        pub const fn enable_mask_0(&self) -> &EnableMask0 {
+            &self.enable_mask_0
+        }
+        #[doc = "0x3c - hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them. The same field is the IEEE 802.15.4 PTI offset that hal_set_IEEE802154_pti_offset replaces and hal_get_IEEE802154_pti_offset reads."]
+        #[inline(always)]
+        pub const fn enable_mask_1(&self) -> &EnableMask1 {
+            &self.enable_mask_1
+        }
+    }
+    #[doc = "PTI (rw) register accessor: External priority word. hal_set_extern_pti publishes three priorities in bits 11:0 in the basic modes, or a fixed advanced image in the follower mode; hal_clr_extern_pti clears them. hal_set_extern_coex_mode replaces bits 29:28 with the work mode, and hal_set_extern_pti_mode sets bits 31:30 in the one-wire leader mode and the advanced grant fields in the follower mode.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@pti`] module"]
+    #[doc(alias = "PTI")]
+    pub type Pti = crate::Reg<pti::PtiSpec>;
+    #[doc = "External priority word. hal_set_extern_pti publishes three priorities in bits 11:0 in the basic modes, or a fixed advanced image in the follower mode; hal_clr_extern_pti clears them. hal_set_extern_coex_mode replaces bits 29:28 with the work mode, and hal_set_extern_pti_mode sets bits 31:30 in the one-wire leader mode and the advanced grant fields in the follower mode."]
+    pub mod pti {
+        #[doc = "Register `PTI` reader"]
+        pub type R = crate::R<PtiSpec>;
+        #[doc = "Register `PTI` writer"]
+        pub type W = crate::W<PtiSpec>;
+        #[doc = "Field `PRIORITY_0` reader - Low nibble of the third hal_set_extern_pti argument in the basic modes; zero in the advanced mode."]
+        pub type Priority0R = crate::FieldReader;
+        #[doc = "Field `PRIORITY_0` writer - Low nibble of the third hal_set_extern_pti argument in the basic modes; zero in the advanced mode."]
+        pub type Priority0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `PRIORITY_1` reader - Low nibble of the second hal_set_extern_pti argument in the basic modes; 0xf in the advanced mode."]
+        pub type Priority1R = crate::FieldReader;
+        #[doc = "Field `PRIORITY_1` writer - Low nibble of the second hal_set_extern_pti argument in the basic modes; 0xf in the advanced mode."]
+        pub type Priority1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `PRIORITY_2` reader - Low nibble of the first hal_set_extern_pti argument in the basic modes; zero in the advanced mode."]
+        pub type Priority2R = crate::FieldReader;
+        #[doc = "Field `PRIORITY_2` writer - Low nibble of the first hal_set_extern_pti argument in the basic modes; zero in the advanced mode."]
+        pub type Priority2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `ADVANCED_PRIORITY` reader - 0xf in the advanced mode with two or three wires, zero otherwise."]
+        pub type AdvancedPriorityR = crate::FieldReader;
+        #[doc = "Field `ADVANCED_PRIORITY` writer - 0xf in the advanced mode with two or three wires, zero otherwise."]
+        pub type AdvancedPriorityW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `ADVANCED_GRANT_0_UNKNOWN` reader - Advanced follower field: 1 with one wire, 0xc otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."]
+        pub type AdvancedGrant0UnknownR = crate::FieldReader;
+        #[doc = "Field `ADVANCED_GRANT_0_UNKNOWN` writer - Advanced follower field: 1 with one wire, 0xc otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."]
+        pub type AdvancedGrant0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `ADVANCED_GRANT_1_UNKNOWN` reader - Advanced follower field: 1 with one wire, 8 otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."]
+        pub type AdvancedGrant1UnknownR = crate::FieldReader;
+        #[doc = "Field `ADVANCED_GRANT_1_UNKNOWN` writer - Advanced follower field: 1 with one wire, 8 otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."]
+        pub type AdvancedGrant1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `ADVANCED_GRANT_2_UNKNOWN` reader - Advanced follower field: 1; hal_clr_extern_pti sets 0xf in the advanced mode."]
+        pub type AdvancedGrant2UnknownR = crate::FieldReader;
+        #[doc = "Field `ADVANCED_GRANT_2_UNKNOWN` writer - Advanced follower field: 1; hal_clr_extern_pti sets 0xf in the advanced mode."]
+        pub type AdvancedGrant2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `WORK_MODE` reader - Low two bits of the hal_set_extern_coex_mode argument: the external work mode (0 leader, 1 one-wire leader variant, 2 follower)."]
+        pub type WorkModeR = crate::FieldReader;
+        #[doc = "Field `WORK_MODE` writer - Low two bits of the hal_set_extern_coex_mode argument: the external work mode (0 leader, 1 one-wire leader variant, 2 follower)."]
+        pub type WorkModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `MODE_FLAGS_UNKNOWN` reader - Set to 0b11 by hal_set_extern_pti_mode in mode 1 and in the follower mode; the leader mode leaves them unchanged."]
+        pub type ModeFlagsUnknownR = crate::FieldReader;
+        #[doc = "Field `MODE_FLAGS_UNKNOWN` writer - Set to 0b11 by hal_set_extern_pti_mode in mode 1 and in the follower mode; the leader mode leaves them unchanged."]
+        pub type ModeFlagsUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:3 - Low nibble of the third hal_set_extern_pti argument in the basic modes; zero in the advanced mode."]
+            #[inline(always)]
+            pub fn priority_0(&self) -> Priority0R {
+                Priority0R::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:7 - Low nibble of the second hal_set_extern_pti argument in the basic modes; 0xf in the advanced mode."]
+            #[inline(always)]
+            pub fn priority_1(&self) -> Priority1R {
+                Priority1R::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:11 - Low nibble of the first hal_set_extern_pti argument in the basic modes; zero in the advanced mode."]
+            #[inline(always)]
+            pub fn priority_2(&self) -> Priority2R {
+                Priority2R::new(((self.bits >> 8) & 0x0f) as u8)
+            }
+            #[doc = "Bits 12:15 - 0xf in the advanced mode with two or three wires, zero otherwise."]
+            #[inline(always)]
+            pub fn advanced_priority(&self) -> AdvancedPriorityR {
+                AdvancedPriorityR::new(((self.bits >> 12) & 0x0f) as u8)
+            }
+            #[doc = "Bits 16:19 - Advanced follower field: 1 with one wire, 0xc otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."]
+            #[inline(always)]
+            pub fn advanced_grant_0_unknown(&self) -> AdvancedGrant0UnknownR {
+                AdvancedGrant0UnknownR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bits 20:23 - Advanced follower field: 1 with one wire, 8 otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."]
+            #[inline(always)]
+            pub fn advanced_grant_1_unknown(&self) -> AdvancedGrant1UnknownR {
+                AdvancedGrant1UnknownR::new(((self.bits >> 20) & 0x0f) as u8)
+            }
+            #[doc = "Bits 24:27 - Advanced follower field: 1; hal_clr_extern_pti sets 0xf in the advanced mode."]
+            #[inline(always)]
+            pub fn advanced_grant_2_unknown(&self) -> AdvancedGrant2UnknownR {
+                AdvancedGrant2UnknownR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:29 - Low two bits of the hal_set_extern_coex_mode argument: the external work mode (0 leader, 1 one-wire leader variant, 2 follower)."]
+            #[inline(always)]
+            pub fn work_mode(&self) -> WorkModeR {
+                WorkModeR::new(((self.bits >> 28) & 3) as u8)
+            }
+            #[doc = "Bits 30:31 - Set to 0b11 by hal_set_extern_pti_mode in mode 1 and in the follower mode; the leader mode leaves them unchanged."]
+            #[inline(always)]
+            pub fn mode_flags_unknown(&self) -> ModeFlagsUnknownR {
+                ModeFlagsUnknownR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3 - Low nibble of the third hal_set_extern_pti argument in the basic modes; zero in the advanced mode."]
+            #[inline(always)]
+            pub fn priority_0(&mut self) -> Priority0W<'_, PtiSpec> {
+                Priority0W::new(self, 0)
+            }
+            #[doc = "Bits 4:7 - Low nibble of the second hal_set_extern_pti argument in the basic modes; 0xf in the advanced mode."]
+            #[inline(always)]
+            pub fn priority_1(&mut self) -> Priority1W<'_, PtiSpec> {
+                Priority1W::new(self, 4)
+            }
+            #[doc = "Bits 8:11 - Low nibble of the first hal_set_extern_pti argument in the basic modes; zero in the advanced mode."]
+            #[inline(always)]
+            pub fn priority_2(&mut self) -> Priority2W<'_, PtiSpec> {
+                Priority2W::new(self, 8)
+            }
+            #[doc = "Bits 12:15 - 0xf in the advanced mode with two or three wires, zero otherwise."]
+            #[inline(always)]
+            pub fn advanced_priority(&mut self) -> AdvancedPriorityW<'_, PtiSpec> {
+                AdvancedPriorityW::new(self, 12)
+            }
+            #[doc = "Bits 16:19 - Advanced follower field: 1 with one wire, 0xc otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."]
+            #[inline(always)]
+            pub fn advanced_grant_0_unknown(&mut self) -> AdvancedGrant0UnknownW<'_, PtiSpec> {
+                AdvancedGrant0UnknownW::new(self, 16)
+            }
+            #[doc = "Bits 20:23 - Advanced follower field: 1 with one wire, 8 otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."]
+            #[inline(always)]
+            pub fn advanced_grant_1_unknown(&mut self) -> AdvancedGrant1UnknownW<'_, PtiSpec> {
+                AdvancedGrant1UnknownW::new(self, 20)
+            }
+            #[doc = "Bits 24:27 - Advanced follower field: 1; hal_clr_extern_pti sets 0xf in the advanced mode."]
+            #[inline(always)]
+            pub fn advanced_grant_2_unknown(&mut self) -> AdvancedGrant2UnknownW<'_, PtiSpec> {
+                AdvancedGrant2UnknownW::new(self, 24)
+            }
+            #[doc = "Bits 28:29 - Low two bits of the hal_set_extern_coex_mode argument: the external work mode (0 leader, 1 one-wire leader variant, 2 follower)."]
+            #[inline(always)]
+            pub fn work_mode(&mut self) -> WorkModeW<'_, PtiSpec> {
+                WorkModeW::new(self, 28)
+            }
+            #[doc = "Bits 30:31 - Set to 0b11 by hal_set_extern_pti_mode in mode 1 and in the follower mode; the leader mode leaves them unchanged."]
+            #[inline(always)]
+            pub fn mode_flags_unknown(&mut self) -> ModeFlagsUnknownW<'_, PtiSpec> {
+                ModeFlagsUnknownW::new(self, 30)
+            }
+        }
+        #[doc = "External priority word. hal_set_extern_pti publishes three priorities in bits 11:0 in the basic modes, or a fixed advanced image in the follower mode; hal_clr_extern_pti clears them. hal_set_extern_coex_mode replaces bits 29:28 with the work mode, and hal_set_extern_pti_mode sets bits 31:30 in the one-wire leader mode and the advanced grant fields in the follower mode.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PtiSpec;
+        impl crate::RegisterSpec for PtiSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`pti::R`](R) reader structure"]
+        impl crate::Readable for PtiSpec {}
+        #[doc = "`write(|w| ..)` method takes [`pti::W`](W) writer structure"]
+        impl crate::Writable for PtiSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: External control word written by hal_set_extern_coex_validity, hal_set_extern_coex_delay, hal_set_extern_coex_sync and the enable pair.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "External control word written by hal_set_extern_coex_validity, hal_set_extern_coex_delay, hal_set_extern_coex_sync and the enable pair."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `VALIDATE_HIGH` reader - hal_set_extern_coex_validity: set when the external grant is valid high."]
+        pub type ValidateHighR = crate::BitReader;
+        #[doc = "Field `VALIDATE_HIGH` writer - hal_set_extern_coex_validity: set when the external grant is valid high."]
+        pub type ValidateHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `GRANT_DELAY` reader - hal_set_extern_coex_delay replaces bits 8:1 with its argument; ic_set_extern_coex_params passes the grant delay in microseconds shifted left by four and masked to 0xf0."]
+        pub type GrantDelayR = crate::FieldReader;
+        #[doc = "Field `GRANT_DELAY` writer - hal_set_extern_coex_delay replaces bits 8:1 with its argument; ic_set_extern_coex_params passes the grant delay in microseconds shifted left by four and masked to 0xf0."]
+        pub type GrantDelayW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `ENABLE` reader - Set by hal_enable_extern_coex and cleared by hal_disable_extern_coex, after the other enable fields."]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - Set by hal_enable_extern_coex and cleared by hal_disable_extern_coex, after the other enable fields."]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SYNC` reader - hal_set_extern_coex_sync replaces bits 19:10 with the low ten bits of its argument; hal_set_extern_pti_mode writes zero and then 0x14 in the leader mode."]
+        pub type SyncR = crate::FieldReader<u16>;
+        #[doc = "Field `SYNC` writer - hal_set_extern_coex_sync replaces bits 19:10 with the low ten bits of its argument; hal_set_extern_pti_mode writes zero and then 0x14 in the leader mode."]
+        pub type SyncW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `UNKNOWN` reader - Bits no external-coexistence leaf writes."]
+        pub type UnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `UNKNOWN` writer - Bits no external-coexistence leaf writes."]
+        pub type UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bit 0 - hal_set_extern_coex_validity: set when the external grant is valid high."]
+            #[inline(always)]
+            pub fn validate_high(&self) -> ValidateHighR {
+                ValidateHighR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 1:8 - hal_set_extern_coex_delay replaces bits 8:1 with its argument; ic_set_extern_coex_params passes the grant delay in microseconds shifted left by four and masked to 0xf0."]
+            #[inline(always)]
+            pub fn grant_delay(&self) -> GrantDelayR {
+                GrantDelayR::new(((self.bits >> 1) & 0xff) as u8)
+            }
+            #[doc = "Bit 9 - Set by hal_enable_extern_coex and cleared by hal_disable_extern_coex, after the other enable fields."]
+            #[inline(always)]
+            pub fn enable(&self) -> EnableR {
+                EnableR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bits 10:19 - hal_set_extern_coex_sync replaces bits 19:10 with the low ten bits of its argument; hal_set_extern_pti_mode writes zero and then 0x14 in the leader mode."]
+            #[inline(always)]
+            pub fn sync(&self) -> SyncR {
+                SyncR::new(((self.bits >> 10) & 0x03ff) as u16)
+            }
+            #[doc = "Bits 20:31 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn unknown(&self) -> UnknownR {
+                UnknownR::new(((self.bits >> 20) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - hal_set_extern_coex_validity: set when the external grant is valid high."]
+            #[inline(always)]
+            pub fn validate_high(&mut self) -> ValidateHighW<'_, ControlSpec> {
+                ValidateHighW::new(self, 0)
+            }
+            #[doc = "Bits 1:8 - hal_set_extern_coex_delay replaces bits 8:1 with its argument; ic_set_extern_coex_params passes the grant delay in microseconds shifted left by four and masked to 0xf0."]
+            #[inline(always)]
+            pub fn grant_delay(&mut self) -> GrantDelayW<'_, ControlSpec> {
+                GrantDelayW::new(self, 1)
+            }
+            #[doc = "Bit 9 - Set by hal_enable_extern_coex and cleared by hal_disable_extern_coex, after the other enable fields."]
+            #[inline(always)]
+            pub fn enable(&mut self) -> EnableW<'_, ControlSpec> {
+                EnableW::new(self, 9)
+            }
+            #[doc = "Bits 10:19 - hal_set_extern_coex_sync replaces bits 19:10 with the low ten bits of its argument; hal_set_extern_pti_mode writes zero and then 0x14 in the leader mode."]
+            #[inline(always)]
+            pub fn sync(&mut self) -> SyncW<'_, ControlSpec> {
+                SyncW::new(self, 10)
+            }
+            #[doc = "Bits 20:31 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn unknown(&mut self) -> UnknownW<'_, ControlSpec> {
+                UnknownW::new(self, 20)
+            }
+        }
+        #[doc = "External control word written by hal_set_extern_coex_validity, hal_set_extern_coex_delay, hal_set_extern_coex_sync and the enable pair.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ENABLE_1 (rw) register accessor: hal_enable_extern_coex sets bit 14 and hal_disable_extern_coex clears it.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable_1`] module"]
+    #[doc(alias = "ENABLE_1")]
+    pub type Enable1 = crate::Reg<enable_1::Enable1Spec>;
+    #[doc = "hal_enable_extern_coex sets bit 14 and hal_disable_extern_coex clears it."]
+    pub mod enable_1 {
+        #[doc = "Register `ENABLE_1` reader"]
+        pub type R = crate::R<Enable1Spec>;
+        #[doc = "Register `ENABLE_1` writer"]
+        pub type W = crate::W<Enable1Spec>;
+        #[doc = "Field `LOW_UNKNOWN` reader - Bits no external-coexistence leaf writes."]
+        pub type LowUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `LOW_UNKNOWN` writer - Bits no external-coexistence leaf writes."]
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
+        #[doc = "Field `ENABLE` reader - "]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - "]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_UNKNOWN` reader - Bits no external-coexistence leaf writes."]
+        pub type HighUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_UNKNOWN` writer - Bits no external-coexistence leaf writes."]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 17, u32>;
+        impl R {
+            #[doc = "Bits 0:13 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn low_unknown(&self) -> LowUnknownR {
+                LowUnknownR::new((self.bits & 0x3fff) as u16)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn enable(&self) -> EnableR {
+                EnableR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bits 15:31 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new((self.bits >> 15) & 0x0001_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:13 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn low_unknown(&mut self) -> LowUnknownW<'_, Enable1Spec> {
+                LowUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn enable(&mut self) -> EnableW<'_, Enable1Spec> {
+                EnableW::new(self, 14)
+            }
+            #[doc = "Bits 15:31 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, Enable1Spec> {
+                HighUnknownW::new(self, 15)
+            }
+        }
+        #[doc = "hal_enable_extern_coex sets bit 14 and hal_disable_extern_coex clears it.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Enable1Spec;
+        impl crate::RegisterSpec for Enable1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`enable_1::R`](R) reader structure"]
+        impl crate::Readable for Enable1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`enable_1::W`](W) writer structure"]
+        impl crate::Writable for Enable1Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ENABLE_MASK_0 (rw) register accessor: hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_mask_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_mask_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable_mask_0`] module"]
+    #[doc(alias = "ENABLE_MASK_0")]
+    pub type EnableMask0 = crate::Reg<enable_mask_0::EnableMask0Spec>;
+    #[doc = "hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them."]
+    pub mod enable_mask_0 {
+        #[doc = "Register `ENABLE_MASK_0` reader"]
+        pub type R = crate::R<EnableMask0Spec>;
+        #[doc = "Register `ENABLE_MASK_0` writer"]
+        pub type W = crate::W<EnableMask0Spec>;
+        #[doc = "Field `MASK` reader - "]
+        pub type MaskR = crate::FieldReader;
+        #[doc = "Field `MASK` writer - "]
+        pub type MaskW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `UNKNOWN` reader - Bits no external-coexistence leaf writes."]
+        pub type UnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN` writer - Bits no external-coexistence leaf writes."]
+        pub type UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn mask(&self) -> MaskR {
+                MaskR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:31 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn unknown(&self) -> UnknownR {
+                UnknownR::new((self.bits >> 4) & 0x0fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn mask(&mut self) -> MaskW<'_, EnableMask0Spec> {
+                MaskW::new(self, 0)
+            }
+            #[doc = "Bits 4:31 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn unknown(&mut self) -> UnknownW<'_, EnableMask0Spec> {
+                UnknownW::new(self, 4)
+            }
+        }
+        #[doc = "hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_mask_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_mask_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EnableMask0Spec;
+        impl crate::RegisterSpec for EnableMask0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`enable_mask_0::R`](R) reader structure"]
+        impl crate::Readable for EnableMask0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`enable_mask_0::W`](W) writer structure"]
+        impl crate::Writable for EnableMask0Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ENABLE_MASK_1 (rw) register accessor: hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them. The same field is the IEEE 802.15.4 PTI offset that hal_set_IEEE802154_pti_offset replaces and hal_get_IEEE802154_pti_offset reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_mask_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_mask_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable_mask_1`] module"]
+    #[doc(alias = "ENABLE_MASK_1")]
+    pub type EnableMask1 = crate::Reg<enable_mask_1::EnableMask1Spec>;
+    #[doc = "hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them. The same field is the IEEE 802.15.4 PTI offset that hal_set_IEEE802154_pti_offset replaces and hal_get_IEEE802154_pti_offset reads."]
+    pub mod enable_mask_1 {
+        #[doc = "Register `ENABLE_MASK_1` reader"]
+        pub type R = crate::R<EnableMask1Spec>;
+        #[doc = "Register `ENABLE_MASK_1` writer"]
+        pub type W = crate::W<EnableMask1Spec>;
+        #[doc = "Field `MASK` reader - "]
+        pub type MaskR = crate::FieldReader;
+        #[doc = "Field `MASK` writer - "]
+        pub type MaskW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `UNKNOWN` reader - Bits no external-coexistence leaf writes."]
+        pub type UnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN` writer - Bits no external-coexistence leaf writes."]
+        pub type UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
+        impl R {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn mask(&self) -> MaskR {
+                MaskR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bits 4:31 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn unknown(&self) -> UnknownR {
+                UnknownR::new((self.bits >> 4) & 0x0fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3"]
+            #[inline(always)]
+            pub fn mask(&mut self) -> MaskW<'_, EnableMask1Spec> {
+                MaskW::new(self, 0)
+            }
+            #[doc = "Bits 4:31 - Bits no external-coexistence leaf writes."]
+            #[inline(always)]
+            pub fn unknown(&mut self) -> UnknownW<'_, EnableMask1Spec> {
+                UnknownW::new(self, 4)
+            }
+        }
+        #[doc = "hal_enable_extern_coex sets bits 3:0 and hal_disable_extern_coex clears them. The same field is the IEEE 802.15.4 PTI offset that hal_set_IEEE802154_pti_offset replaces and hal_get_IEEE802154_pti_offset reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_mask_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_mask_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EnableMask1Spec;
+        impl crate::RegisterSpec for EnableMask1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`enable_mask_1::R`](R) reader structure"]
+        impl crate::Readable for EnableMask1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`enable_mask_1::W`](W) writer structure"]
+        impl crate::Writable for EnableMask1Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "Runtime receive-beacon and individual-TWT COEX/PTI words recovered from five complete hal_coex.o leaves. Register addresses, masks and RMW order are exact; fields whose electrical meaning is not established retain UNKNOWN names."]
 pub type WifiMacCoexRuntime = crate::Periph<wifi_mac_coex_runtime::RegisterBlock, 0x2010_d89c>;
 impl core::fmt::Debug for WifiMacCoexRuntime {
@@ -58056,6 +58523,8 @@ pub struct Peripherals {
     pub wifi_mac_tsf_timer: WifiMacTsfTimer,
     #[doc = "COEX_HW_TIMER"]
     pub coex_hw_timer: CoexHwTimer,
+    #[doc = "COEX_EXTERNAL"]
+    pub coex_external: CoexExternal,
     #[doc = "WIFI_MAC_COEX_RUNTIME"]
     pub wifi_mac_coex_runtime: WifiMacCoexRuntime,
     #[doc = "WIFI_MAC_POWER_INTERRUPT"]
@@ -58228,6 +58697,7 @@ impl Peripherals {
             wifi_mac_interrupt: unsafe { WifiMacInterrupt::steal() },
             wifi_mac_tsf_timer: unsafe { WifiMacTsfTimer::steal() },
             coex_hw_timer: unsafe { CoexHwTimer::steal() },
+            coex_external: unsafe { CoexExternal::steal() },
             wifi_mac_coex_runtime: unsafe { WifiMacCoexRuntime::steal() },
             wifi_mac_power_interrupt: unsafe { WifiMacPowerInterrupt::steal() },
             wifi_mac_cold_handshake: unsafe { WifiMacColdHandshake::steal() },
@@ -58887,6 +59357,7 @@ pub mod peripheral_ownership {
     /// Shared coexistence arbitration register views owned by the radio arbitration service rather than any protocol role; per-protocol priority configuration belongs to that protocol's partition.
     pub struct CoexistencePeripherals {
         pub coex_hw_timer: crate::CoexHwTimer,
+        pub coex_external: crate::CoexExternal,
         pub phy_fecoex_recovered: crate::PhyFecoexRecovered,
     }
 
@@ -59041,6 +59512,7 @@ pub mod peripheral_ownership {
             wifi_mac_interrupt,
             wifi_mac_tsf_timer,
             coex_hw_timer,
+            coex_external,
             wifi_mac_coex_runtime,
             wifi_mac_power_interrupt,
             wifi_mac_cold_handshake,
@@ -59172,6 +59644,7 @@ pub mod peripheral_ownership {
             },
             coexistence: CoexistencePeripherals {
                 coex_hw_timer,
+                coex_external,
                 phy_fecoex_recovered,
             },
             bluetooth: BluetoothControllerPeripherals {
@@ -64729,6 +65202,179 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[PRIORITY_0]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_priority_0(registers: &crate::CoexExternal, input: u32) {
+        registers.pti().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.priority_0().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[PRIORITY_1]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_priority_1(registers: &crate::CoexExternal, input: u32) {
+        registers.pti().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.priority_1().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[PRIORITY_2]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_priority_2(registers: &crate::CoexExternal, input: u32) {
+        registers.pti().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.priority_2().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[ADVANCED_PRIORITY]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_advanced_priority(registers: &crate::CoexExternal, input: u32) {
+        registers.pti().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.advanced_priority().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[ADVANCED_GRANT_0_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_advanced_grant_0(registers: &crate::CoexExternal, input: u32) {
+        registers.pti().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .advanced_grant_0_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[ADVANCED_GRANT_1_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_advanced_grant_1(registers: &crate::CoexExternal, input: u32) {
+        registers.pti().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .advanced_grant_1_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[ADVANCED_GRANT_2_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_advanced_grant_2(registers: &crate::CoexExternal, input: u32) {
+        registers.pti().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .advanced_grant_2_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[WORK_MODE]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_work_mode(registers: &crate::CoexExternal, input: u32) {
+        registers.pti().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.work_mode().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.PTI fields `[MODE_FLAGS_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_mode_flags(registers: &crate::CoexExternal) {
+        registers.pti().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.mode_flags_unknown().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.CONTROL fields `[VALIDATE_HIGH]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_validate_high(registers: &crate::CoexExternal, input: u32) {
+        registers.control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.validate_high().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.CONTROL fields `[GRANT_DELAY]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_grant_delay(registers: &crate::CoexExternal, input: u32) {
+        registers.control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.grant_delay().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.CONTROL fields `[SYNC]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_sync(registers: &crate::CoexExternal, input: u32) {
+        registers.control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sync().bits((input & 0x000003ff) as u16) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.CONTROL fields `[ENABLE]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_enable(registers: &crate::CoexExternal, input: u32) {
+        registers.control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.ENABLE_1 fields `[ENABLE]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_enable_1(registers: &crate::CoexExternal, input: u32) {
+        registers.enable_1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.ENABLE_MASK_0 fields `[MASK]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_enable_mask_0(registers: &crate::CoexExternal, input: u32) {
+        registers.enable_mask_0().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.mask().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace COEX_EXTERNAL.ENABLE_MASK_1 fields `[MASK]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_external_enable_mask_1(registers: &crate::CoexExternal, input: u32) {
+        registers.enable_mask_1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.mask().bits((input & 0x0000000f) as u8) }
         });
     }
 

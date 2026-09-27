@@ -131,6 +131,22 @@ name = "modem-lpcon-platform-high"
 address-space = "cpu"
 kind = "mmio"
 start = 0x2010F460
+end-exclusive = 0x2010F49C
+permissions = "rw"
+
+[[regions]]
+name = "coex-external"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F49C
+end-exclusive = 0x2010F4DC
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-platform-after-coex-external"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F4DC
 end-exclusive = 0x2010F800
 permissions = "rw"
 

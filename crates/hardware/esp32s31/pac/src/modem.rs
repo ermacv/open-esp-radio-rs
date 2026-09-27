@@ -3,6 +3,7 @@
 pub(crate) mod clock_device;
 
 pub(crate) mod coex;
+pub(crate) mod coex_external;
 
 pub(crate) mod etm;
 

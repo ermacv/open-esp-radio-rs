@@ -1231,6 +1231,12 @@ code = "6cf6e30c218039cc30dcfcf28671c3935baa495e7d78ab9b053e5bd2ace8f8c6"
 [[function]]
 artifact = "libcoexist"
 member = "coexist_hw.o"
+symbol = "hal_get_IEEE802154_pti_offset"
+code = "e3db8a61a3e98a4380ea133911ea658f3508fd4fcab2d2f39eab8773ae0dc545"
+
+[[function]]
+artifact = "libcoexist"
+member = "coexist_hw.o"
 symbol = "hal_ieee802154_coex_break_notify"
 code = "be7b9b2e5febaef3ef3f45b57489b02bd25fc0673a3c8be300be8a779b725bfc"
 
@@ -1248,9 +1254,39 @@ code = "6339da312b4b89894abea013e3999e432b3fa0ee9a5b322b651bacfe50e6e949"
 
 [[function]]
 artifact = "libcoexist"
+member = "coexist_hw.o"
+symbol = "hal_set_IEEE802154_pti_offset"
+code = "a9ddfa2fb0e2bd337d12a1495662cf0e871c26d4a5073f85a84563fb8f4ac655"
+
+[[function]]
+artifact = "libcoexist"
 member = "coexist_scheme.o"
 symbol = "coex_wifi_channel_set"
 code = "cabc0a1e044a5ce3d49ef11bf03b2b125d317ed9aa01b1c2b47d2195bc6a6716"
+
+[[function]]
+artifact = "libcoexist"
+member = "external_coex.o"
+symbol = "ic_set_extern_coex"
+code = "df9bb3de4b01f743654bf3bbe7bf8a08d232924d6f84a8602f991301ed7649a4"
+
+[[function]]
+artifact = "libcoexist"
+member = "external_coex.o"
+symbol = "ic_set_extern_coex_params"
+code = "48af0ccf1a76168c6d699be4d8301d67b491ad03bd9681e85ab38a2db6b1ee5b"
+
+[[function]]
+artifact = "libcoexist"
+member = "external_coex.o"
+symbol = "ic_stop_extern_coex"
+code = "fb46d36d715394989c05ff5402484e010e7362f79d0d11565370e0abdd736e7f"
+
+[[function]]
+artifact = "libcoexist"
+member = "hal_external_coexist.o"
+symbol = "hal_clr_extern_pti"
+code = "9123a3271eab6aae770932060c7508da247ba42e7e90e15568cc566f79513966"
 
 [[function]]
 artifact = "libcoexist"
@@ -1263,6 +1299,42 @@ artifact = "libcoexist"
 member = "hal_external_coexist.o"
 symbol = "hal_enable_extern_coex"
 code = "3f44274c6de56a44dee3439a1290833f2104fadd8fb78402583d7726a9e72df1"
+
+[[function]]
+artifact = "libcoexist"
+member = "hal_external_coexist.o"
+symbol = "hal_set_extern_coex_delay"
+code = "24932319028ea81b855120e239b79885e3cc033db45ca84574e5aa6011c27cd8"
+
+[[function]]
+artifact = "libcoexist"
+member = "hal_external_coexist.o"
+symbol = "hal_set_extern_coex_mode"
+code = "b1c66187fc29bef0abee37a7b7120eaf6c5eb1ee826504a7355839895cabf10b"
+
+[[function]]
+artifact = "libcoexist"
+member = "hal_external_coexist.o"
+symbol = "hal_set_extern_coex_sync"
+code = "07be3d53354e04aa1ff7341ae95d65a3b17502fe6d88c9a26a5e0d3bc18a9015"
+
+[[function]]
+artifact = "libcoexist"
+member = "hal_external_coexist.o"
+symbol = "hal_set_extern_coex_validity"
+code = "d3099dcf98f6493ee96a2c997beb66ed72ff6fc76b67a8ea3ca71ad85afd7c90"
+
+[[function]]
+artifact = "libcoexist"
+member = "hal_external_coexist.o"
+symbol = "hal_set_extern_pti"
+code = "82f0b468c42944f5fb4a8b467681a126c9174810bbbea5267af622ac60b3a31c"
+
+[[function]]
+artifact = "libcoexist"
+member = "hal_external_coexist.o"
+symbol = "hal_set_extern_pti_mode"
+code = "6d1d3e74811f513c451f0439eac7b84f8c0cfd27e19d677087feaa6a289ded6d"
 
 [[function]]
 artifact = "libnet80211"

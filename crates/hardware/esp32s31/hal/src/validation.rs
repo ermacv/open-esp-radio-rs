@@ -232,3 +232,92 @@ pub fn hal_mac_set_bssid(interface: u32, address: &[u8; 6]) {
         .wifi_mac_hal()
         .program_interface_bssid(mac_interface(interface), *address);
 }
+
+/// Compiled leaves of `hal_external_coexist.o` on isolated shared registers.
+pub mod coex_external {
+    use oer_esp32s31_pac::{ExternalCoexPriority, ExternalCoexRole, ExternalCoexWires};
+
+    /// A vendor argument outside the reviewed domain: no write.
+    pub const REJECTED: u32 = u32::MAX;
+
+    fn with_registers(operation: impl FnOnce(&mut oer_esp32s31_pac::SharedRadioRegisters)) -> u32 {
+        operation(&mut oer_esp32s31_pac::validation::shared_radio_registers());
+        0
+    }
+
+    fn role(mode: u32) -> Option<ExternalCoexRole> {
+        match mode {
+            0 => Some(ExternalCoexRole::Leader),
+            2 => Some(ExternalCoexRole::Follower),
+            _ => None,
+        }
+    }
+
+    fn wires(wire: u32) -> Option<ExternalCoexWires> {
+        match wire {
+            0 => Some(ExternalCoexWires::One),
+            1 => Some(ExternalCoexWires::Two),
+            2 => Some(ExternalCoexWires::Three),
+            3 => Some(ExternalCoexWires::Four),
+            _ => None,
+        }
+    }
+
+    fn priority(value: u32) -> ExternalCoexPriority {
+        ExternalCoexPriority::new((value & 0xf) as u8)
+            .unwrap_or_else(|| unreachable!("a masked nibble is a priority"))
+    }
+
+    /// `hal_set_extern_pti_mode(mode)` with the stored wire type.
+    pub fn hal_set_extern_pti_mode(mode: u32, wire: u32) -> u32 {
+        let (Some(role), Some(wires)) = (role(mode), wires(wire)) else {
+            return REJECTED;
+        };
+        with_registers(|registers| registers.configure_external_coex_mode(role, wires))
+    }
+
+    /// `hal_set_extern_pti(first, second, third)` in the mode and with the
+    /// wire type `hal_set_extern_pti_mode` stored.
+    pub fn hal_set_extern_pti(mode: u32, wire: u32, first: u32, second: u32, third: u32) -> u32 {
+        let (Some(role), Some(wires)) = (role(mode), wires(wire)) else {
+            return REJECTED;
+        };
+        with_registers(|registers| {
+            registers.publish_external_coex_priorities(
+                role,
+                wires,
+                [priority(first), priority(second), priority(third)],
+            )
+        })
+    }
+
+    /// `hal_clr_extern_pti` in the stored mode.
+    pub fn hal_clr_extern_pti(mode: u32) -> u32 {
+        let Some(role) = role(mode) else {
+            return REJECTED;
+        };
+        with_registers(|registers| registers.clear_external_coex_priorities(role))
+    }
+
+    /// `hal_enable_extern_coex` (`enabled`) or `hal_disable_extern_coex`.
+    pub fn hal_set_extern_coex_enabled(enabled: bool) -> u32 {
+        with_registers(|registers| registers.set_external_coex_enabled(enabled))
+    }
+
+    /// `ic_set_extern_coex_params` with the stored wire type: the work mode,
+    /// then the grant delay and validity.
+    pub fn ic_set_extern_coex_params(
+        mode: u32,
+        wire: u32,
+        delay_us: u32,
+        validate_high: bool,
+    ) -> u32 {
+        let (Some(role), Some(wires)) = (role(mode), wires(wire)) else {
+            return REJECTED;
+        };
+        with_registers(|registers| {
+            registers.configure_external_coex_mode(role, wires);
+            registers.configure_external_coex_grant(delay_us as u8, validate_high);
+        })
+    }
+}

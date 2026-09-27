@@ -298,3 +298,16 @@ fn a_held_validation_grant_protect_is_owned_by_the_lease() {
         Err(PhyGrantProtectError::AlreadyProtected)
     );
 }
+
+#[test]
+fn stopping_external_coexistence_that_never_started_is_rejected() {
+    let radio = arbiter();
+    let mut lease = radio
+        .try_acquire()
+        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
+    assert_eq!(lease.external_coex(), None);
+    assert_eq!(
+        lease.stop_external_coex(&mut NoPlatform),
+        Err(crate::coex::ExternalCoexError::NotActive)
+    );
+}

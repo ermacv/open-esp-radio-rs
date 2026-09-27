@@ -6,10 +6,6 @@ id = "BLOB_LIBCOEX_IEEE802154_HANDOFF"
 description = "libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; complete coexist_api.o esp_coex_ieee802154_coex_break_notify tail-calls coexist_hw.o hal_ieee802154_coex_break_notify, whose complete body returns without effects. Complete esp_coex_ieee802154_extcoex_rx_stage and esp_coex_ieee802154_extcoex_tx_stage bodies also return without effects. The TXRX/ACK PTI wrappers separately map a client priority and call hal_set_IEEE802154_TXRX_pti / hal_set_IEEE802154_ACK_pti; force_rx_enable calls the force-RX and coex-delay setters. These named leaves establish no CPU-observed RF grant or release acknowledgement. No general absence of hardware coexistence is inferred."
 
 [[sources]]
-id = "BLOB_LIBCOEX_EXTERNAL_HAL"
-description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; no-call hal_enable_extern_coex and hal_disable_extern_coex leaves each perform four ordered fresh-read RMW edges over 0x2010f4d0, 0x2010f4d8, 0x2010f4a4 and 0x2010f4a0. These addresses are in the high MODEM_LPCON block, remain outside the radio-owned register model, and are not exposed by the current official ESP32-S31 PAC. The evidence records the vendor transaction without claiming local ownership; a future external-wired-COEX implementation needs an explicit platform-owned register model and proof boundary."
-
-[[sources]]
 id = "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"
 description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/libphy.a, sha256 116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2; complete phy_reg.o phy_start_tx_tone_step_new body, size 0xf4. It clears the tone stop field of 0x2010040c before calling g_phyFuns + 0x30 with zero; only when both path selectors are zero does it set that field to three and tail-call g_phyFuns + 0x30 with one."
 
@@ -392,6 +388,10 @@ description = "espressif/esp-coex-lib commit c758e7b56e0fa22177a0539796e1df59978
 [[sources]]
 id = "BLOB_LIBCOEX_HW_TIMER"
 description = "espressif/esp-coex-lib commit c758e7b56e0fa22177a0539796e1df59978dc322, esp32s31/libcoexist.a, sha256 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147; complete coexist_hw.o coex_hw_timer_set/enable/disable/force/unforce leaves prove the 0x2010f400 + index*0x10 bank, word offsets and ordered RMW masks. Complete coexist_core.o coex_core_timer_idx_get guards event numbers 1 through 48 and its complete 48-byte switch table contains only timer indices 0 through 5 or 0xff; event 48 selects timer 5, the PHY grant-protect request. Complete coex_core_request maps request kinds 0 through 4 to the timer client field through its five-byte table 02 01 00 03 04 and asserts on any larger kind."
+
+[[sources]]
+id = "BLOB_LIBCOEX_EXTERNAL"
+description = "espressif/esp-coex-lib commit c758e7b56e0fa22177a0539796e1df59978dc322, esp32s31/libcoexist.a, sha256 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147; complete hal_external_coexist.o hal_set_extern_pti, hal_clr_extern_pti, hal_set_extern_pti_mode, hal_set_extern_coex_mode, hal_set_extern_coex_sync, hal_set_extern_coex_delay, hal_set_extern_coex_validity, hal_enable_extern_coex and hal_disable_extern_coex, and complete external_coex.o ic_set_extern_coex, ic_set_extern_coex_params and ic_stop_extern_coex, prove the words at 0x2010f49c, 0x2010f4a0, 0x2010f4a4, 0x2010f4d0 and 0x2010f4d8, their fields and the ordered fresh-read RMW sequences of starting, configuring and stopping external coexistence. ic_set_extern_coex maps the MID and HIGH external priority levels to 8 and 0xc, and publishes the external coexistence schedule status bits 1 and 2."
 
 [[ranges]]
 name = "FECOEX"

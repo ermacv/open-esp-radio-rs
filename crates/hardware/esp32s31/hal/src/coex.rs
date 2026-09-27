@@ -332,5 +332,79 @@ impl<'registers> CoexTimerBank<'registers> {
     }
 }
 
+pub use oer_esp32s31_pac::{ExternalCoexRole, ExternalCoexWires};
+
+/// An external priority level (`esp_coex_pti_level_t`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExternalCoexLevel {
+    Mid,
+    High,
+}
+
+impl ExternalCoexLevel {
+    /// The priority `ic_set_extern_coex` publishes for this level.
+    const fn priority(self) -> u8 {
+        match self {
+            Self::Mid => 0x8,
+            Self::High => 0xc,
+        }
+    }
+}
+
+/// The priority `ic_set_extern_coex` publishes first, whatever the levels.
+const EXTERNAL_COEX_BASE_PRIORITY: u8 = 0x3;
+
+/// External coexistence, as ESP-IDF's `esp_enable_extern_coex_gpio_pin`
+/// configures it after routing the signals.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExternalCoexConfig {
+    pub role: ExternalCoexRole,
+    pub wires: ExternalCoexWires,
+    /// Grant delay in microseconds; the hardware keeps the low four bits.
+    pub grant_delay_us: u8,
+    /// Whether the external grant is valid high.
+    pub validate_high: bool,
+    /// The two levels `esp_coex_external_set` receives last; ESP-IDF passes
+    /// `MID` and `HIGH`.
+    pub levels: [ExternalCoexLevel; 2],
+}
+
+impl ExternalCoexConfig {
+    /// ESP-IDF's defaults for `role` and `wires`: no grant delay, valid high,
+    /// and the `MID`, `HIGH` levels.
+    pub const fn vendor(role: ExternalCoexRole, wires: ExternalCoexWires) -> Self {
+        Self {
+            role,
+            wires,
+            grant_delay_us: 0,
+            validate_high: true,
+            levels: [ExternalCoexLevel::Mid, ExternalCoexLevel::High],
+        }
+    }
+
+    pub(crate) fn priorities(self) -> [oer_esp32s31_pac::ExternalCoexPriority; 3] {
+        let priority = |value| {
+            oer_esp32s31_pac::ExternalCoexPriority::new(value)
+                .unwrap_or_else(|| unreachable!("the reviewed priorities fit four bits"))
+        };
+        [
+            priority(EXTERNAL_COEX_BASE_PRIORITY),
+            priority(self.levels[0].priority()),
+            priority(self.levels[1].priority()),
+        ]
+    }
+}
+
+/// Why external coexistence cannot change.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExternalCoexError {
+    /// External coexistence already runs.
+    AlreadyActive,
+    /// External coexistence does not run.
+    NotActive,
+    /// The coexistence module clock could not change.
+    Clock(crate::shared_radio::ModemClockError),
+}
+
 #[cfg(test)]
 mod tests;

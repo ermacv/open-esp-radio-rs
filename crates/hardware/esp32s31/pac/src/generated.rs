@@ -658,6 +658,121 @@ impl PhyTxPowerTrackingState {
     }
 }
 
+/// One four-bit external coexistence priority or grant field image.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ExternalCoexNibble(u32);
+
+impl ExternalCoexNibble {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000000f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000000f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// The two-bit external coexistence work mode hal_set_extern_coex_mode publishes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ExternalCoexWorkMode(u32);
+
+impl ExternalCoexWorkMode {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000003;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000003 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// The eight-bit grant delay image hal_set_extern_coex_delay publishes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ExternalCoexGrantDelay(u32);
+
+impl ExternalCoexGrantDelay {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// The ten-bit synchronization image hal_set_extern_coex_sync publishes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ExternalCoexSync(u32);
+
+impl ExternalCoexSync {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000003ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000003ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One external coexistence control bit.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ExternalCoexFlag(u32);
+
+impl ExternalCoexFlag {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000001;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000001 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -3427,6 +3542,147 @@ pub(crate) fn raise_phy_pbus_work_mode_pulse(registers: &crate::svd::PhyAgcOracl
 #[inline]
 pub(crate) fn lower_phy_pbus_work_mode_pulse(registers: &crate::svd::PhyAgcOracle) {
     crate::svd::field_replace_modify::lower_phy_pbus_work_mode_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `set_coex_external_priority_0` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_priority_0(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_priority_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_priority_1` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_priority_1(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_priority_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_priority_2` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_priority_2(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_priority_2(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_advanced_priority` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_advanced_priority(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_advanced_priority(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_advanced_grant_0` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_advanced_grant_0(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_advanced_grant_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_advanced_grant_1` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_advanced_grant_1(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_advanced_grant_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_advanced_grant_2` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_advanced_grant_2(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_advanced_grant_2(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_work_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_work_mode(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexWorkMode,
+) {
+    crate::svd::field_replace_modify::set_coex_external_work_mode(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_mode_flags` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_mode_flags(registers: &crate::svd::CoexExternal) {
+    crate::svd::field_replace_modify::set_coex_external_mode_flags(registers);
+}
+
+/// Typed bridge for the reviewed `set_coex_external_validate_high` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_validate_high(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexFlag,
+) {
+    crate::svd::field_replace_modify::set_coex_external_validate_high(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_grant_delay` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_grant_delay(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexGrantDelay,
+) {
+    crate::svd::field_replace_modify::set_coex_external_grant_delay(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_sync` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_sync(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexSync,
+) {
+    crate::svd::field_replace_modify::set_coex_external_sync(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_enable` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_enable(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexFlag,
+) {
+    crate::svd::field_replace_modify::set_coex_external_enable(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_enable_1` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_enable_1(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexFlag,
+) {
+    crate::svd::field_replace_modify::set_coex_external_enable_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_enable_mask_0` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_enable_mask_0(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_enable_mask_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_coex_external_enable_mask_1` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_external_enable_mask_1(
+    registers: &crate::svd::CoexExternal,
+    value: ExternalCoexNibble,
+) {
+    crate::svd::field_replace_modify::set_coex_external_enable_mask_1(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_pointer_a` fixed field-replacement transaction.

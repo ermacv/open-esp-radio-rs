@@ -43045,6 +43045,208 @@ bit-width = 31
 access = "read-write"
 
 [[registers]]
+address = 537982108
+width = 32
+access = "read-write"
+identity = "COEX_EXTERNAL.PTI"
+peripheral = "COEX_EXTERNAL"
+peripheral-type = "CoexExternal"
+peripheral-module = "coex_external"
+scope = []
+register-method = "pti"
+
+[[registers.fields]]
+svd-name = "PRIORITY_0"
+method = "priority_0"
+bit-offset = 0
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PRIORITY_1"
+method = "priority_1"
+bit-offset = 4
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PRIORITY_2"
+method = "priority_2"
+bit-offset = 8
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADVANCED_PRIORITY"
+method = "advanced_priority"
+bit-offset = 12
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADVANCED_GRANT_0_UNKNOWN"
+method = "advanced_grant_0_unknown"
+bit-offset = 16
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADVANCED_GRANT_1_UNKNOWN"
+method = "advanced_grant_1_unknown"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADVANCED_GRANT_2_UNKNOWN"
+method = "advanced_grant_2_unknown"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "WORK_MODE"
+method = "work_mode"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODE_FLAGS_UNKNOWN"
+method = "mode_flags_unknown"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537982112
+width = 32
+access = "read-write"
+identity = "COEX_EXTERNAL.CONTROL"
+peripheral = "COEX_EXTERNAL"
+peripheral-type = "CoexExternal"
+peripheral-module = "coex_external"
+scope = []
+register-method = "control"
+
+[[registers.fields]]
+svd-name = "VALIDATE_HIGH"
+method = "validate_high"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "GRANT_DELAY"
+method = "grant_delay"
+bit-offset = 1
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SYNC"
+method = "sync"
+bit-offset = 10
+bit-width = 10
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 20
+bit-width = 12
+access = "read-write"
+
+[[registers]]
+address = 537982116
+width = 32
+access = "read-write"
+identity = "COEX_EXTERNAL.ENABLE_1"
+peripheral = "COEX_EXTERNAL"
+peripheral-type = "CoexExternal"
+peripheral-module = "coex_external"
+scope = []
+register-method = "enable_1"
+
+[[registers.fields]]
+svd-name = "LOW_UNKNOWN"
+method = "low_unknown"
+bit-offset = 0
+bit-width = 14
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 15
+bit-width = 17
+access = "read-write"
+
+[[registers]]
+address = 537982160
+width = 32
+access = "read-write"
+identity = "COEX_EXTERNAL.ENABLE_MASK_0"
+peripheral = "COEX_EXTERNAL"
+peripheral-type = "CoexExternal"
+peripheral-module = "coex_external"
+scope = []
+register-method = "enable_mask_0"
+
+[[registers.fields]]
+svd-name = "MASK"
+method = "mask"
+bit-offset = 0
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 4
+bit-width = 28
+access = "read-write"
+
+[[registers]]
+address = 537982168
+width = 32
+access = "read-write"
+identity = "COEX_EXTERNAL.ENABLE_MASK_1"
+peripheral = "COEX_EXTERNAL"
+peripheral-type = "CoexExternal"
+peripheral-module = "coex_external"
+scope = []
+register-method = "enable_mask_1"
+
+[[registers.fields]]
+svd-name = "MASK"
+method = "mask"
+bit-offset = 0
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 4
+bit-width = 28
+access = "read-write"
+
+[[registers]]
 address = 537982976
 width = 32
 access = "read-write"

@@ -3,7 +3,7 @@ id = "icmp-latency-ht40-split"
 description = "Split-core HT40 connected-station ICMP latency and loss"
 repetitions = 3
 transfer = "identical-image"
-tags = ["qualification", "icmp", "station", "ht40", "split-core"]
+tags = ["qualification", "icmp", "station", "ht40", "split-core", "air-strict"]
 
 [wifi]
 image = "performance"

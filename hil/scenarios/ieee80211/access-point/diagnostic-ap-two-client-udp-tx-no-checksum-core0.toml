@@ -3,7 +3,7 @@ id = "diagnostic-ap-two-client-udp-tx-no-checksum-core0"
 description = "Two-client AP UDP TX software checksum-cost coarse diagnostic"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "checksum", "core0", "coarse"]
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "checksum", "core0", "coarse", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-coarse"

@@ -3,7 +3,7 @@ id = "diagnostic-ap-sparse-peer-tx-aggregation"
 description = "Saturated AP TX plus sparse peer with aggregate and terminal radio evidence"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "access-point", "multi-client", "ht40", "aggregation"]
+tags = ["diagnostic", "access-point", "multi-client", "ht40", "aggregation", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-poll"

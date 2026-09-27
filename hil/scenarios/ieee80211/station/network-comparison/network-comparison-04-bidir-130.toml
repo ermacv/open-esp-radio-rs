@@ -3,7 +3,7 @@ id = "network-comparison-04-bidir-130"
 description = "Four-stack HT40 comparison: bidir-130"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "station", "ht40", "network-comparison", "network-comparison-bidirectional"]
+tags = ["diagnostic", "station", "ht40", "network-comparison", "network-comparison-bidirectional", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

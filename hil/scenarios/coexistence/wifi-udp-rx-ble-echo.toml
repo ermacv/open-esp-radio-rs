@@ -1,7 +1,7 @@
 schema = 5
 id = "wifi-udp-rx-ble-echo"
 description = "Joint Wi-Fi/Bluetooth LE image on the shared radio: HT20 station UDP receive and a GATT ATT echo load over one Bluetooth connection during the same 12 s interval"
-tags = ["qualification", "coexistence", "wifi", "bluetooth"]
+tags = ["qualification", "coexistence", "wifi", "bluetooth", "air-strict"]
 
 [coexistence]
 phy = "ht20"

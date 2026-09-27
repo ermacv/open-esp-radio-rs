@@ -2,7 +2,7 @@ schema = 5
 id = "udp-rx-ht40-task-residence-saturated"
 description = "Split-core HT40 saturated RX residence control for the production direct/adaptive path"
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "rx-residence-saturated"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "rx-residence-saturated", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

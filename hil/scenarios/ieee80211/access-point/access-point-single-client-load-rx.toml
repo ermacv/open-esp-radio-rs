@@ -3,7 +3,7 @@ id = "access-point-single-client-load-rx"
 description = "Observer-free sustained single-client AP inbound performance baseline"
 repetitions = 1
 transfer = "identical-image"
-tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "rx"]
+tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "rx", "air-strict"]
 
 [wifi]
 image = "performance"

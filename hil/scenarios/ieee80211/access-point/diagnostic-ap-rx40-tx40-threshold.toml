@@ -3,7 +3,7 @@ id = "diagnostic-ap-rx40-tx40-threshold"
 description = "Temporary same-ELF AP balanced duplex threshold control at 40/40 Mbit/s"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "access-point", "udp", "bidirectional", "threshold"]
+tags = ["diagnostic", "access-point", "udp", "bidirectional", "threshold", "air-strict"]
 
 [wifi]
 image = "correctness"

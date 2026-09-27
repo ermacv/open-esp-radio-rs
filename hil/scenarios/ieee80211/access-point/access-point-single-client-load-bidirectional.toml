@@ -3,7 +3,7 @@ id = "access-point-single-client-load-bidirectional"
 description = "Observer-free station-level balanced single-client AP performance baseline"
 repetitions = 1
 transfer = "identical-image"
-tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "bidirectional"]
+tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "bidirectional", "air-strict"]
 
 [wifi]
 image = "performance"

@@ -2,7 +2,7 @@ schema = 5
 id = "udp-tx-ht40-mac-wait-diagnostic"
 description = "HT40 saturated TX latency observation, including busy-channel and low-throughput conditions"
 repetitions = 1
-tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "mac-irq"]
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "mac-irq", "air-strict"]
 
 [wifi]
 image = "diagnostic-tx-wait"

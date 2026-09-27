@@ -3,7 +3,7 @@ id = "tcp-tx-dma-ownership"
 description = "TCP transmit with receive-side DMA lease timing for peer traffic"
 repetitions = 3
 transfer = "identical-image"
-tags = ["diagnostic", "tcp", "station", "memory"]
+tags = ["diagnostic", "tcp", "station", "memory", "air-strict"]
 
 [wifi]
 image = "diagnostic-rx-ownership"

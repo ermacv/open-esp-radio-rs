@@ -2,7 +2,7 @@ schema = 5
 id = "access-point-protection-non-ht-client-tx"
 description = "HT40 AP UDP TX to the OpenWrt client while an associated non-HT laptop obliges the AP to protect HT PPDUs"
 transfer = "unchanged-functional-contract"
-tags = ["qualification", "wifi", "access-point", "protection", "udp", "tx", "ht40"]
+tags = ["qualification", "wifi", "access-point", "protection", "udp", "tx", "ht40", "air-strict"]
 
 [wifi]
 image = "correctness"

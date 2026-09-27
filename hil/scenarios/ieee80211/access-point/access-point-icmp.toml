@@ -2,7 +2,7 @@ schema = 5
 id = "access-point-icmp"
 description = "AP HT40 MCS7 latency and loss over 100 ICMP requests per WPA2 epoch"
 transfer = "identical-image"
-tags = ["qualification", "wifi", "access-point", "network", "single-client", "ht40", "icmp"]
+tags = ["qualification", "wifi", "access-point", "network", "single-client", "ht40", "icmp", "air-strict"]
 
 [wifi]
 image = "correctness"

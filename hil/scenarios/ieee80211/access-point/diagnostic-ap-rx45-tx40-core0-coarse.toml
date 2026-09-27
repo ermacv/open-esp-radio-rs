@@ -3,7 +3,7 @@ id = "diagnostic-ap-rx45-tx40-core0-coarse"
 description = "Temporary AP 45 Mbit/s uplink and 40 Mbit/s downlink Core0 phase diagnostic"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "ht40", "bidirectional", "core0"]
+tags = ["diagnostic", "wifi", "access-point", "ht40", "bidirectional", "core0", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-coarse"

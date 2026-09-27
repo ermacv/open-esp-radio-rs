@@ -3,7 +3,7 @@ id = "diagnostic-ap-rx42-tx40-sgi-fixed-client-mcs7"
 description = "AP 42/40 Mbit/s fixed-MCS7/SGI client A/B with Core0 RX telemetry"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "ht40", "bidirectional", "task-poll", "fixed-client-mcs", "short-gi"]
+tags = ["diagnostic", "wifi", "access-point", "ht40", "bidirectional", "task-poll", "fixed-client-mcs", "short-gi", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-cycles"

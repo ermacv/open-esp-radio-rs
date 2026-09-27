@@ -3,7 +3,7 @@ id = "diagnostic-ap-two-client-udp-tx-egress-burst"
 description = "Same-image two-client AP UDP TX pre-DMA destination-burst discriminator"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "txq", "egress", "task-residence"]
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "txq", "egress", "task-residence", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

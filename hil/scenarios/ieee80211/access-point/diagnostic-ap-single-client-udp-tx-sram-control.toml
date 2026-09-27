@@ -3,7 +3,7 @@ id = "diagnostic-ap-single-client-udp-tx-sram-control"
 description = "Bounded single-client SRAM-backed Wi-Fi TX control for the direct-PSRAM DMA address proof"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "udp", "tx", "sram", "dma", "address-proof", "control"]
+tags = ["diagnostic", "wifi", "access-point", "udp", "tx", "sram", "dma", "address-proof", "control", "air-strict"]
 
 [wifi]
 image = "diagnostic-tx-architecture"

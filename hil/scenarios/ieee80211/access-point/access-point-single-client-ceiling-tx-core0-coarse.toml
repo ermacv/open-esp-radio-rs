@@ -3,7 +3,7 @@ id = "access-point-single-client-ceiling-tx-core0-coarse"
 description = "Single-client AP HT40 saturated UDP transmit with coarse Core0 phase accounting"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "tx", "core0", "coarse-cycles"]
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "tx", "core0", "coarse-cycles", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-coarse"

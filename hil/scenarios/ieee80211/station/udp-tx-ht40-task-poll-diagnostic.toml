@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-tx-ht40-task-poll-diagnostic"
 description = "Split radio/network HT40 saturated TX executor-residence diagnostic"
-tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-poll"]
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-poll", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-poll"

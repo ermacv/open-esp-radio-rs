@@ -3,7 +3,7 @@ id = "diagnostic-ap-airtime-rx40-observed"
 description = "Temporary AP uplink-only control for terminal MAC RX error correlation"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic-ap-airtime", "diagnostic-ap-rx-hardware"]
+tags = ["diagnostic-ap-airtime", "diagnostic-ap-rx-hardware", "air-strict"]
 
 [wifi]
 image = "correctness"

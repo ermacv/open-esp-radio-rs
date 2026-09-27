@@ -2,7 +2,7 @@ schema = 5
 id = "icmp-latency"
 description = "Connected-station ICMP latency and loss"
 transfer = "identical-image"
-tags = ["qualification", "icmp", "station"]
+tags = ["qualification", "icmp", "station", "air-strict"]
 
 [wifi]
 image = "correctness"

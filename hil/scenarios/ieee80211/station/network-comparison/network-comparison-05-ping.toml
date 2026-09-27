@@ -2,7 +2,7 @@ schema = 5
 id = "network-comparison-05-ping"
 description = "Four-stack HT40 comparison: idle ICMP echo latency"
 repetitions = 1
-tags = ["diagnostic", "station", "ht40", "network-comparison"]
+tags = ["diagnostic", "station", "ht40", "network-comparison", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

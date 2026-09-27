@@ -3,7 +3,7 @@ id = "udp-tx-ht40-mac-irq-diagnostic"
 description = "HT40 saturated TX publication-to-IRQ and IRQ-to-service latency"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "mac-irq"]
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "mac-irq", "air-strict"]
 
 [wifi]
 image = "diagnostic-mac-irq"

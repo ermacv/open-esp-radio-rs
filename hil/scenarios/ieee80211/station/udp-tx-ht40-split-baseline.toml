@@ -3,7 +3,7 @@ id = "udp-tx-ht40-split-baseline"
 description = "Stable split-core HT40 UDP station-to-host performance baseline"
 repetitions = 3
 transfer = "identical-image"
-tags = ["qualification", "udp", "station", "ht40", "split-core", "baseline"]
+tags = ["qualification", "udp", "station", "ht40", "split-core", "baseline", "air-strict"]
 
 [wifi]
 image = "performance"

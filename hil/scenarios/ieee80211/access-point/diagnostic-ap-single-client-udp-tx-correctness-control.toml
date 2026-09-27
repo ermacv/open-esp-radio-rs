@@ -3,7 +3,7 @@ id = "diagnostic-ap-single-client-udp-tx-correctness-control"
 description = "Correctness-image control for saturated single-client AP UDP TX"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "single-client", "udp", "tx", "saturation", "control"]
+tags = ["diagnostic", "wifi", "access-point", "single-client", "udp", "tx", "saturation", "control", "air-strict"]
 
 [wifi]
 image = "correctness"

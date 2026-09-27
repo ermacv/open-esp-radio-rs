@@ -3,7 +3,7 @@ id = "access-point-two-client-session-smoke"
 description = "Bound-socket readiness, bidirectional sessions and evidence across two AP epochs"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "access-point", "multi-client", "session-smoke"]
+tags = ["diagnostic", "access-point", "multi-client", "session-smoke", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

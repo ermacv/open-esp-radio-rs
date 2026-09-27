@@ -3,7 +3,7 @@ id = "diagnostic-ap-airtime-rx45-observed"
 description = "Temporary AP 45 Mbit/s uplink-only control for duplex-threshold localization"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic-ap-airtime-sweep", "diagnostic-ap-rx-disposition"]
+tags = ["diagnostic-ap-airtime-sweep", "diagnostic-ap-rx-disposition", "air-strict"]
 
 [wifi]
 image = "correctness"

@@ -3,7 +3,7 @@ id = "diagnostic-ap-two-client-udp-tx-stack-egress-queue"
 description = "Two-client AP UDP TX stack-side destination queue selection before direct-DMA admission"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "txq", "stack-egress", "direct"]
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "txq", "stack-egress", "direct", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

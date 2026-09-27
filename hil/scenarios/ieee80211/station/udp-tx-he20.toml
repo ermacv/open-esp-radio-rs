@@ -2,7 +2,7 @@ schema = 5
 id = "udp-tx-he20"
 description = "Sustained HE20 UDP station-to-host transmission"
 transfer = "identical-image"
-tags = ["qualification", "udp", "station"]
+tags = ["qualification", "udp", "station", "air-strict"]
 
 [wifi]
 image = "correctness"

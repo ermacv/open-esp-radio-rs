@@ -3,7 +3,7 @@ id = "access-point-single-client-bidirectional-rx-delivery"
 description = "Single-client AP full-duplex RX delivery-frontier diagnostic"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "load", "bidirectional", "rx-delivery"]
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "load", "bidirectional", "rx-delivery", "air-strict"]
 
 [wifi]
 image = "diagnostic-rx-delivery"

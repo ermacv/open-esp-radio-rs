@@ -2,7 +2,7 @@ schema = 5
 id = "udp-rx-ht40-core0-level-irq-diagnostic"
 description = "Same-image HT40 RX with level-IRQ recycled completion diagnostic"
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "level-irq-ab"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "level-irq-ab", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-coarse"

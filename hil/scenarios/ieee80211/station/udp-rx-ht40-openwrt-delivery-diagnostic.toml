@@ -3,7 +3,7 @@ id = "udp-rx-ht40-openwrt-delivery-diagnostic"
 description = "Split-core HT40 AP TX-monitor to station delivery-frontier diagnostic"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "openwrt-monitor"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "openwrt-monitor", "air-strict"]
 
 [wifi]
 image = "diagnostic-rx-delivery"

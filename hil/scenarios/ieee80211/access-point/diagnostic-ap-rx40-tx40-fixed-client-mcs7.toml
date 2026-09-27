@@ -3,7 +3,7 @@ id = "diagnostic-ap-rx40-tx40-fixed-client-mcs7"
 description = "Same-image AP duplex control with the controlled client TX fixed at HT40 MCS7"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "access-point", "udp", "bidirectional", "fixed-client-mcs"]
+tags = ["diagnostic", "access-point", "udp", "bidirectional", "fixed-client-mcs", "air-strict"]
 
 [wifi]
 image = "diagnostic-rx-delivery"

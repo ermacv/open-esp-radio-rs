@@ -3,7 +3,7 @@ id = "udp-tx-ht40-ceiling"
 description = "HT40 UDP station-to-host ceiling and 100 Mbit/s regression check"
 repetitions = 3
 transfer = "identical-image"
-tags = ["qualification", "characterization", "udp", "station", "ht40", "split-core", "ceiling"]
+tags = ["qualification", "characterization", "udp", "station", "ht40", "split-core", "ceiling", "air-strict"]
 
 [wifi]
 image = "correctness"

@@ -2,7 +2,7 @@ schema = 5
 id = "udp-rx-ht40-guard-interval-auto-diagnostic"
 description = "Same-ELF HT40 MCS7 automatic-GI RX ceiling and Core0 residence control"
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "automatic-gi", "same-elf"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "automatic-gi", "same-elf", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-poll"

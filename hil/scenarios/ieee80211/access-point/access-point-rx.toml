@@ -2,7 +2,7 @@ schema = 5
 id = "access-point-rx"
 description = "Two AP ownership epochs with exact inbound UDP delivery"
 transfer = "identical-image"
-tags = ["qualification", "wifi", "access-point", "network", "rx"]
+tags = ["qualification", "wifi", "access-point", "network", "rx", "air-strict"]
 
 [wifi]
 image = "correctness"

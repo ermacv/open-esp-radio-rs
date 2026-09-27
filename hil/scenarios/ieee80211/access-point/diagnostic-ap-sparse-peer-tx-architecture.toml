@@ -3,7 +3,7 @@ id = "diagnostic-ap-sparse-peer-tx-architecture"
 description = "Saturated AP TX plus sparse peer with radio architecture observations"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "access-point", "multi-client", "ht40", "owned-ap-localization"]
+tags = ["diagnostic", "access-point", "multi-client", "ht40", "owned-ap-localization", "air-strict"]
 
 [wifi]
 image = "diagnostic-tx-architecture"

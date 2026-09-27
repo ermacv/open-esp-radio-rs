@@ -2,7 +2,7 @@ schema = 5
 id = "udp-rx-ht40-core0-rx-cycles-diagnostic"
 description = "Intrusive Core0 RX phase, service-batch, credit-floor and task-residence diagnostic"
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "core0", "cycles", "credits", "admission-ab", "cache-ab"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "core0", "cycles", "credits", "admission-ab", "cache-ab", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-cycles"

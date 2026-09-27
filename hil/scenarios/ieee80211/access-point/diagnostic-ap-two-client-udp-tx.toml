@@ -3,7 +3,7 @@ id = "diagnostic-ap-two-client-udp-tx"
 description = "Two-client AP UDP TX endpoint and per-flow accounting smoke"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx"]
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "air-strict"]
 
 [wifi]
 image = "correctness"

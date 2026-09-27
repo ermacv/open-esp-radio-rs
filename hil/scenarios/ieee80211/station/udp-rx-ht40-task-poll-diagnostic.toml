@@ -2,7 +2,7 @@ schema = 5
 id = "udp-rx-ht40-task-poll-diagnostic"
 description = "Split-core HT40 saturated RX executor-residence diagnostic"
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "checksum-ab", "rx-residence-sweep"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "checksum-ab", "rx-residence-sweep", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

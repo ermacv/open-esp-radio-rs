@@ -3,7 +3,7 @@ id = "ap-network-comparison-04-tx-sparse-peer"
 description = "Two physical stations with ESP as AP: tx-sparse-peer"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "access-point", "multi-client", "ht40", "ap-network-comparison"]
+tags = ["diagnostic", "access-point", "multi-client", "ht40", "ap-network-comparison", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

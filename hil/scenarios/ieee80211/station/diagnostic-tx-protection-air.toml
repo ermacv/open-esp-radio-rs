@@ -3,7 +3,7 @@ id = "diagnostic-tx-protection-air"
 description = "Bounded HT40 transmit workload with independent capture for RTS/CTS investigation; delivery alone does not qualify protection"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "station", "tx-protection", "ht40"]
+tags = ["diagnostic", "station", "tx-protection", "ht40", "air-strict"]
 
 [wifi]
 image = "correctness"

@@ -3,7 +3,7 @@ id = "diagnostic-ap-airtime-rx40-tx40-open-observed"
 description = "Temporary same-ELF open AP duplex control for CCMP-path localization"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic-ap-airtime-sweep", "diagnostic-ap-security-control"]
+tags = ["diagnostic-ap-airtime-sweep", "diagnostic-ap-security-control", "air-strict"]
 
 [wifi]
 image = "correctness"

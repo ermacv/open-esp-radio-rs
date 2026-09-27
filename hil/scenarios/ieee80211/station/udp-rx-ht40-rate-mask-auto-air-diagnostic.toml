@@ -2,7 +2,7 @@ schema = 5
 id = "udp-rx-ht40-rate-mask-auto-air-diagnostic"
 description = "HT40 MCS7 automatic-rate RX air and AP aggregation control"
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "automatic-gi", "rate-mask", "air"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "automatic-gi", "rate-mask", "air", "air-strict"]
 
 [wifi]
 image = "diagnostic-rx-delivery"

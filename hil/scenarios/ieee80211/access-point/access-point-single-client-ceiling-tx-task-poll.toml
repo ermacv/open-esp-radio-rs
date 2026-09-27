@@ -3,7 +3,7 @@ id = "access-point-single-client-ceiling-tx-task-poll"
 description = "Diagnostic single-client AP HT40 saturated UDP transmit executor-residence characterization"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "tx", "task-poll"]
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "tx", "task-poll", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-poll"

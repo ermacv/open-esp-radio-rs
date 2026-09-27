@@ -3,7 +3,7 @@ id = "network-comparison-02-rx-ceiling"
 description = "Four-stack HT40 comparison: rx-ceiling"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "station", "ht40", "network-comparison"]
+tags = ["diagnostic", "station", "ht40", "network-comparison", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

@@ -3,7 +3,7 @@ id = "diagnostic-ap-two-client-udp-tx-egress-burst-core0"
 description = "Two-client AP UDP TX pre-DMA destination-burst coarse Core0 diagnostic"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "txq", "egress", "core0", "coarse"]
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "txq", "egress", "core0", "coarse", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-coarse"

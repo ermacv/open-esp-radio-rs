@@ -2,7 +2,7 @@ schema = 5
 id = "tcp-tx"
 description = "Sustained TCP station-to-host transmission"
 transfer = "identical-image"
-tags = ["qualification", "tcp", "station"]
+tags = ["qualification", "tcp", "station", "air-strict"]
 
 [wifi]
 image = "correctness"

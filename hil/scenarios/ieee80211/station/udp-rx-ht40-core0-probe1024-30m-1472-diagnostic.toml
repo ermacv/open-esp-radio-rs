@@ -2,7 +2,7 @@ schema = 5
 id = "udp-rx-ht40-core0-probe1024-30m-1472-diagnostic"
 description = "Same-image HT40 RX fixed 1024-us masked continuation at 30 Mbit/s"
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "masked-probe-ab", "rx-residence-sweep"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "masked-probe-ab", "rx-residence-sweep", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-coarse"

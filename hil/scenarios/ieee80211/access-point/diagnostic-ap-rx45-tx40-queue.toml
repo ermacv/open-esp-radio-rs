@@ -3,7 +3,7 @@ id = "diagnostic-ap-rx45-tx40-queue"
 description = "Temporary one-cycle AP duplex queue and CCA observation"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic-ap-rx-disposition"]
+tags = ["diagnostic-ap-rx-disposition", "air-strict"]
 
 [wifi]
 image = "correctness"

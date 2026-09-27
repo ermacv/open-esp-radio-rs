@@ -2,7 +2,7 @@ schema = 5
 id = "diagnostic-ap-rx45-tx40-cold-boots"
 description = "Temporary AP 45/40 Mbit/s control comparing first and second epochs after a hardware reset"
 transfer = "identical-image"
-tags = ["diagnostic-ap-lifecycle", "diagnostic-ap-rx-disposition"]
+tags = ["diagnostic-ap-lifecycle", "diagnostic-ap-rx-disposition", "air-strict"]
 
 [wifi]
 image = "correctness"

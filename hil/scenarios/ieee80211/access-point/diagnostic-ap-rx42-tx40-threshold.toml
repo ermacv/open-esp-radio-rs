@@ -3,7 +3,7 @@ id = "diagnostic-ap-rx42-tx40-threshold"
 description = "Temporary AP duplex threshold probe with 42 Mbit/s uplink and 40 Mbit/s downlink"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic-ap-airtime-threshold"]
+tags = ["diagnostic-ap-airtime-threshold", "air-strict"]
 
 [wifi]
 image = "correctness"

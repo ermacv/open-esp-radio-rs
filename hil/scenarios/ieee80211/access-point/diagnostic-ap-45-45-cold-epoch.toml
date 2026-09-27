@@ -2,7 +2,7 @@ schema = 5
 id = "diagnostic-ap-45-45-cold-epoch"
 description = "Temporary AP 45+45 Mbit/s cold-epoch control for role-transition leakage"
 transfer = "identical-image"
-tags = ["diagnostic-ap-lifecycle", "diagnostic-ap-rx-disposition"]
+tags = ["diagnostic-ap-lifecycle", "diagnostic-ap-rx-disposition", "air-strict"]
 
 [wifi]
 image = "correctness"

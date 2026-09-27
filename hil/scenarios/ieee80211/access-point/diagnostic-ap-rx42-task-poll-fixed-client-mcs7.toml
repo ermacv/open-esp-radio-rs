@@ -3,7 +3,7 @@ id = "diagnostic-ap-rx42-task-poll-fixed-client-mcs7"
 description = "AP 42 Mbit/s fixed-MCS7 uplink control with Core0 task-poll telemetry"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "ht40", "rx", "task-poll", "fixed-client-mcs"]
+tags = ["diagnostic", "wifi", "access-point", "ht40", "rx", "task-poll", "fixed-client-mcs", "air-strict"]
 
 [wifi]
 image = "diagnostic-core0-rx-cycles"

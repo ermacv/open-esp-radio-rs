@@ -3,7 +3,7 @@ id = "diagnostic-ap-two-client-udp-tx-task-poll"
 description = "Two-client saturated AP UDP TX executor residence characterization"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "saturation", "task-poll"]
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "saturation", "task-poll", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-poll"

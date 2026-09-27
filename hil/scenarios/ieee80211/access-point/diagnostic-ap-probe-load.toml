@@ -3,7 +3,7 @@ id = "diagnostic-ap-probe-load"
 description = "AP UDP progress under single, fixed-MAC and rotating-MAC probe request load"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "access-point", "multi-client", "ht40", "aggregation"]
+tags = ["diagnostic", "access-point", "multi-client", "ht40", "aggregation", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-poll"

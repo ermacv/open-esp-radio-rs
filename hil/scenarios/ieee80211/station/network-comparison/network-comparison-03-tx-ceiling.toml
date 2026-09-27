@@ -2,7 +2,7 @@ schema = 5
 id = "network-comparison-03-tx-ceiling"
 description = "Four-stack HT40 comparison: tx-ceiling"
 repetitions = 1
-tags = ["diagnostic", "station", "ht40", "network-comparison"]
+tags = ["diagnostic", "station", "ht40", "network-comparison", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

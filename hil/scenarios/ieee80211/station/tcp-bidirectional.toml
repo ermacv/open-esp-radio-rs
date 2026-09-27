@@ -2,7 +2,7 @@ schema = 5
 id = "tcp-bidirectional"
 description = "Simultaneous TCP receive and transmit"
 transfer = "identical-image"
-tags = ["qualification", "tcp", "station", "full-duplex"]
+tags = ["qualification", "tcp", "station", "full-duplex", "air-strict"]
 
 [wifi]
 image = "correctness"

@@ -3,7 +3,7 @@ id = "access-point-single-client-ceiling-rx-task-residence"
 description = "Production-like single-client AP HT40 UDP receive ceiling and Core0 residence diagnostic"
 repetitions = 1
 transfer = "identical-image"
-tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "rx", "task-poll"]
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "rx", "task-poll", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

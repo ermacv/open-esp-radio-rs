@@ -3,7 +3,7 @@ id = "udp-bidirectional-ht40-rx-delivery-split"
 description = "Split-core HT40 full-duplex RX delivery-frontier diagnostic"
 repetitions = 3
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "full-duplex", "ht40", "split-core"]
+tags = ["diagnostic", "udp", "station", "full-duplex", "ht40", "split-core", "air-strict"]
 
 [wifi]
 image = "diagnostic-rx-delivery"

@@ -2,7 +2,7 @@ schema = 5
 id = "udp-rx-delivery-diagnostic"
 description = "RX reorder, network enqueue and UDP consumer frontier evidence"
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station"]
+tags = ["diagnostic", "udp", "station", "air-strict"]
 
 [wifi]
 image = "diagnostic-rx-delivery"

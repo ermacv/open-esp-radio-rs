@@ -2,7 +2,7 @@ schema = 5
 id = "station-access-point-rx-task-residence"
 description = "Production-like Core0 residence with simultaneous STA and AP UDP ingress at a 65 Mbit/s aggregate offer"
 repetitions = 3
-tags = ["wifi", "sta-ap", "udp", "rx", "task-residence", "psram-stack"]
+tags = ["wifi", "sta-ap", "udp", "rx", "task-residence", "psram-stack", "air-strict"]
 
 [wifi]
 image = "diagnostic-task-residence"

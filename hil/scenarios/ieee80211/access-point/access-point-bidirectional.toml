@@ -2,7 +2,7 @@ schema = 5
 id = "access-point-bidirectional"
 description = "Two AP ownership epochs with exact simultaneous UDP delivery"
 transfer = "identical-image"
-tags = ["qualification", "wifi", "access-point", "network", "bidirectional"]
+tags = ["qualification", "wifi", "access-point", "network", "bidirectional", "air-strict"]
 
 [wifi]
 image = "correctness"

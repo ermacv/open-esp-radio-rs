@@ -53,7 +53,13 @@ fn device_status_at(output: &Path, lab: &crate::lab::config::LabConfig) -> Resul
 }
 
 pub fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
-    flash_application(root, &artifacts.application_image, &artifacts.output, port)
+    flash_application(
+        root,
+        &artifacts.application_image,
+        Some(&artifacts.bootstrap_elf),
+        &artifacts.output,
+        port,
+    )
 }
 
 pub fn flash_archived(
@@ -81,19 +87,58 @@ pub fn flash_replayed(
         .join("target/hil/esp32s31/replay")
         .join(run_id)
         .join(image.id());
-    flash_application(root, application, &output, port)
+    // Every archived image keeps its bootstrap ELF beside the application.
+    let bootstrap = application.with_file_name("bootstrap.elf");
+    flash_application(
+        root,
+        application,
+        bootstrap.is_file().then_some(bootstrap.as_path()),
+        &output,
+        port,
+    )
 }
 
-/// Write the HIL partition table, `application` into `ota_0` and an
-/// `ota_0` selector, then reset; `output` receives the encoded table and
-/// selector.
+/// Write the ESP-IDF bootloader for the board's flash layout, the HIL
+/// partition table, `application` into `ota_0` and an `ota_0` selector, then
+/// reset; `output` receives the encoded images.
+///
+/// The bootloader is written on every flash: the stand's boards are shared,
+/// and a consumer flashing its own ESP-IDF image (for example with a 2 MB
+/// flash size) leaves a bootloader that rejects the HIL partition table. It
+/// comes from the same `espflash` encoding of the image's `bootstrap` ELF that
+/// standalone firmware flashes; without an ELF the board's bootloader stays.
 pub fn flash_application(
     root: &Path,
     application: &Path,
+    bootstrap: Option<&Path>,
     output: &Path,
     port: &Path,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
+    match bootstrap {
+        Some(bootstrap) => {
+            let container = output.join("rom-container.bin");
+            let mut encode = Command::new(program_from_env("ESPFLASH", "espflash"));
+            oer_esp32s31_firmware::save_rom_image_command(&mut encode, root, bootstrap, &container);
+            run_command(&mut encode, "encode the ESP-IDF bootloader")?;
+            let bootloader = output.join("bootloader.bin");
+            fs::write(
+                &bootloader,
+                oer_esp32s31_firmware::flash::rom_bootloader(&fs::read(&container)?)?,
+            )?;
+            write_flash_binary(
+                port,
+                oer_esp32s31_firmware::flash::BOOTLOADER_OFFSET,
+                &bootloader,
+                "no-reset",
+                "write ESP-IDF bootloader",
+            )?;
+        }
+        None => eprintln!(
+            "hil: {} has no bootstrap ELF; the board keeps its current bootloader",
+            application.display()
+        ),
+    }
     let partition_csv = root.join("platform/esp32s31/partitions/applications.csv");
     let partition_bin = output.join("partitions.bin");
     let selector_bin = output.join("otadata-ota0-valid.bin");

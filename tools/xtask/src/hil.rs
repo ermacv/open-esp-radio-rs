@@ -92,6 +92,9 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let status = child.wait_forwarding_cancellation()?;
     if produces_runs(args) {
         record_evidence(ctx, &receipt_path)?;
+        if let Err(error) = prune_automatically(ctx) {
+            eprintln!("hil: automatic pruning of the run store failed: {error}");
+        }
     }
     Ok(exit_code(status))
 }
@@ -572,9 +575,9 @@ fn runs(
         },
         /// List, or with --apply delete, runs no rule keeps.
         Prune {
-            #[arg(long, default_value_t = 30)]
+            #[arg(long, default_value_t = PRUNE_DAYS)]
             days: u64,
-            #[arg(long, default_value_t = 5)]
+            #[arg(long, default_value_t = PRUNE_KEEP_FAILED)]
             keep_failed: usize,
             #[arg(long)]
             apply: bool,
@@ -787,6 +790,57 @@ fn devices(args: &[OsString]) -> Result<std::process::ExitCode> {
         }
     }
     Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// Rule of the automatic pruning, which `cargo hil runs prune` defaults to.
+const PRUNE_DAYS: u64 = 30;
+const PRUNE_KEEP_FAILED: usize = 5;
+/// Automatic pruning runs at most once per this interval.
+const PRUNE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// Delete, at most once a day, the runs of the shared store that no rule
+/// keeps; see `cargo hil runs prune`.
+fn prune_automatically(ctx: &Context) -> Result<()> {
+    use crate::hil_runs;
+    let runs = crate::hil_store::shared_runs(HIL_TARGET)?;
+    let store = runs.parent().ok_or("the run store has no parent")?;
+    let marker = store.join("last-prune");
+    if std::fs::metadata(&marker)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age < PRUNE_INTERVAL)
+    {
+        return Ok(());
+    }
+    std::fs::write(&marker, b"")?;
+    let all = hil_runs::all(&runs)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis() as u64;
+    let keep = hil_runs::retained(
+        &all,
+        &hil_runs::Retention {
+            keep_days: PRUNE_DAYS,
+            keep_failed: PRUNE_KEEP_FAILED,
+        },
+        now,
+        &hil_runs::pins(store).into_keys().collect(),
+        &hil_runs::cited_by_shards(&ctx.root),
+    );
+    let (mut removed, mut freed) = (0, 0);
+    for run in all.iter().filter(|run| !keep.contains_key(&run.id)) {
+        freed += hil_runs::exclusive_bytes(&run.directory);
+        std::fs::remove_dir_all(&run.directory)?;
+        removed += 1;
+    }
+    if removed > 0 {
+        eprintln!(
+            "hil: pruned {removed} runs ({} MiB) no rule keeps; see `cargo hil runs prune`",
+            freed >> 20
+        );
+    }
+    Ok(())
 }
 
 /// Make this checkout's run directory the shared store, migrating its runs.

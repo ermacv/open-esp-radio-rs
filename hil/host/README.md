@@ -235,10 +235,12 @@ directory and the end of `uart.log`. `compare` and `history` use per-scenario
 means of numeric measurements over repetitions. These views never decide
 qualification.
 
+After every command that executes scenarios, `cargo hil` applies this rule
+to the shared store, at most once a day, and reports what it deleted.
 `prune` keeps pinned runs, runs cited by committed evidence shards, runs whose
 firmware another run replayed, runs younger than `--days` (30), incomplete
 runs, the latest pass and the `--keep-failed` (5) newest failures of every
-scenario and image class. Without `--apply` it only lists the other runs and
+scenario and image class. Run by hand without `--apply` it only lists the other runs and
 the bytes only they hold; hard-linked firmware shared with kept runs is not
 counted. Pins live in the store's `pins.json`.
 

@@ -70,6 +70,10 @@ async fn client(
         Ok(system) => system,
         Err(_) => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-start\r\n"),
     };
+    crate::console::runtime_log(format_args!(
+        "OPEN_RADIO_HIL bluetooth=started at_micros={}",
+        embassy_time::Instant::now().as_micros()
+    ));
     let hci = start_bluetooth_hci(system.runtime(), public_address, Some(VERSION), entropy);
     spawner.spawn(super::runner(radio, SYSTEM.init(system)).expect("Bluetooth runner task"));
     spawner.spawn(super::service(hci.service).expect("Bluetooth HCI task"));

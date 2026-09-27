@@ -1,7 +1,7 @@
 schema = 5
 id = "ieee802154-air-check"
 description = "Single-device IEEE 802.15.4 cycles on the shared radio arbiter: start, energy scan, CCA, direct transmit, two ETM-scheduled transmits, promiscuous receive window, ETM-scheduled receive window and stop"
-tags = ["ieee802154", "arbiter-client", "on-air", "energy-scan", "cca", "transmit", "scheduled-transmit", "scheduled-receive", "etm", "receive", "lifecycle"]
+tags = ["ieee802154", "arbiter-client", "on-air", "air-exclusive", "energy-scan", "cca", "transmit", "scheduled-transmit", "scheduled-receive", "etm", "receive", "lifecycle"]
 
 [ieee802154]
 kind = "air-check"

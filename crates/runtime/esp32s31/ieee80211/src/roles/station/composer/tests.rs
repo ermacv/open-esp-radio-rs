@@ -379,6 +379,9 @@ impl<'security> StationEnginePort<'security, NoopRawMutex> for ScanTransitionPor
     }
 }
 
+static TEST_PMKSA: oer_esp32s31_ieee80211_sta::attempt::StaSharedPmksa =
+    oer_esp32s31_ieee80211_sta::attempt::StaSharedPmksa::new();
+
 #[test]
 fn phase_owner_returns_runtime_target_and_security_without_reconstruction() {
     let pmk = Pmk::derive(b"password", b"ssid").expect("test WPA2 input is valid");
@@ -402,6 +405,7 @@ fn phase_owner_returns_runtime_target_and_security_without_reconstruction() {
                 pmk,
                 oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 || 7,
+                &TEST_PMKSA,
             ),
             [0x5a; 32],
             sequences,
@@ -455,6 +459,7 @@ fn common_engine_rejects_running_scan_without_refresh_before_port_entry() {
                 pmk,
                 oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 || 7,
+                &TEST_PMKSA,
             ),
             [0x33; 32],
             sequences,
@@ -513,6 +518,7 @@ fn common_engine_selects_candidate_before_dispatching_initial_join() {
                 pmk,
                 oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 || 7,
+                &TEST_PMKSA,
             ),
             [0x55; 32],
             sequences,
@@ -574,6 +580,7 @@ fn common_engine_dispatches_join_ready_scan_owner_to_reconnected_phase() {
                 pmk,
                 oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 || 7,
+                &TEST_PMKSA,
             ),
             [0x44; 32],
             sequences,
@@ -626,6 +633,7 @@ fn running_scan_completion_prepares_reconnect_only_for_a_selected_candidate() {
             pmk,
             oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             || 7,
+            &TEST_PMKSA,
         ),
         [0; 32],
         sequences,

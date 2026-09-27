@@ -8,7 +8,7 @@
 //! from static storage or retained in an abandoned async task.
 
 use crate::connected::management_protection::StationManagementProtection;
-use core::{future::Future, marker::PhantomData};
+use core::{cell::RefCell, future::Future, marker::PhantomData};
 
 use crate::{
     connected_rx::StaCcmpRxReplayEpoch,
@@ -33,6 +33,7 @@ use {
 
 use oer_ieee80211_sta::{
     join::{StaAssociationSuccess, StaAuthenticationSuccess},
+    pmksa::{STA_PMKID_LEN, StaPmksa, StaPmksaCache},
     station::{StaFailureDisposition, StaLifecycleStage},
 };
 
@@ -92,6 +93,55 @@ impl StaIdentity {
     }
 }
 
+/// The station's PMKSA cache, shared by every station epoch of one Wi-Fi
+/// owner as the vendor supplicant's `gWpaSm.pmksa` outlives its
+/// associations: a stopped and restarted station still resumes a cached SAE
+/// association.
+pub struct StaSharedPmksa(critical_section::Mutex<RefCell<StaPmksaCache>>);
+
+impl StaSharedPmksa {
+    pub const fn new() -> Self {
+        Self(critical_section::Mutex::new(RefCell::new(
+            StaPmksaCache::new(),
+        )))
+    }
+
+    /// The PMK and PMKID of the cached association with `access_point`.
+    pub fn resume(&self, access_point: &ScanRecord) -> Option<(Pmk, [u8; STA_PMKID_LEN])> {
+        critical_section::with(|cs| {
+            self.0
+                .borrow_ref_mut(cs)
+                .resume(access_point.bssid, access_point.ssid_bytes())
+                .map(|entry| (entry.pmk().duplicate(), entry.pmkid()))
+        })
+    }
+
+    /// Cache the association an SAE authentication with `access_point`
+    /// derived.
+    pub fn insert(&self, access_point: &ScanRecord, pmk: &Pmk, pmkid: [u8; STA_PMKID_LEN]) {
+        let Some(entry) = StaPmksa::new(
+            access_point.bssid,
+            access_point.ssid_bytes(),
+            pmk.duplicate(),
+            pmkid,
+        ) else {
+            return;
+        };
+        critical_section::with(|cs| self.0.borrow_ref_mut(cs).insert(entry));
+    }
+
+    /// Forget the association with `bssid`.
+    pub fn remove(&self, bssid: [u8; 6]) {
+        critical_section::with(|cs| self.0.borrow_ref_mut(cs).remove(bssid));
+    }
+}
+
+impl Default for StaSharedPmksa {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The personal credentials of one station request.
 ///
 /// A WPA2-Personal request keeps its PSK and, because the station upgrades to
@@ -103,29 +153,46 @@ pub struct StaPersonalCredentials {
     psk: Option<Pmk>,
     sae_password: SaePassword,
     sae_random: fn() -> u32,
+    pmksa: &'static StaSharedPmksa,
 }
 
 impl StaPersonalCredentials {
-    pub const fn wpa2(psk: Pmk, sae_password: SaePassword, sae_random: fn() -> u32) -> Self {
+    pub const fn wpa2(
+        psk: Pmk,
+        sae_password: SaePassword,
+        sae_random: fn() -> u32,
+        pmksa: &'static StaSharedPmksa,
+    ) -> Self {
         Self {
             policy: StaSecurityPolicy::Wpa2Personal,
             psk: Some(psk),
             sae_password,
             sae_random,
+            pmksa,
         }
     }
 
-    pub const fn wpa3(sae_password: SaePassword, sae_random: fn() -> u32) -> Self {
+    pub const fn wpa3(
+        sae_password: SaePassword,
+        sae_random: fn() -> u32,
+        pmksa: &'static StaSharedPmksa,
+    ) -> Self {
         Self {
             policy: StaSecurityPolicy::Wpa3Personal,
             psk: None,
             sae_password,
             sae_random,
+            pmksa,
         }
     }
 
     pub const fn policy(&self) -> StaSecurityPolicy {
         self.policy
+    }
+
+    /// The station's cached SAE associations.
+    pub const fn pmksa(&self) -> &'static StaSharedPmksa {
+        self.pmksa
     }
 
     /// This station's SAE commit toward `access_point`, deriving the password
@@ -352,6 +419,8 @@ pub enum StaAttemptStateError {
     MissingHandshake,
     MissingKeys,
     MissingConnectedSecurity,
+    /// Association ran before authentication selected its security elements.
+    MissingSelectedRsn,
 }
 
 /// Value-only reports produced by the real driver phases.
@@ -362,6 +431,8 @@ pub struct StaAttemptReport {
     /// that a handshake or key installation succeeded.
     pub security: Option<StaAttemptSecurityExecution>,
     pub authentication: Option<StaAuthenticationSuccess>,
+    /// The SAE association resumed a cached PMKSA instead of running SAE.
+    pub pmksa_resumed: bool,
     pub association: Option<StaAssociationSuccess>,
     pub peer: Option<StaPeerProgrammingReport>,
     /// Message-2 progress is retained even when the handshake later fails.

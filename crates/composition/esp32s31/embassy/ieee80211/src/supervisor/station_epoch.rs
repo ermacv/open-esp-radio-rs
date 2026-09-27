@@ -17,6 +17,11 @@ pub(super) enum ProductionStationMode {
     PairedCutover,
 }
 
+/// The station's PMKSA cache: it outlives every station epoch of the Wi-Fi
+/// owner, so a restarted station resumes a cached SAE association.
+static STATION_PMKSA: oer_esp32s31_ieee80211_sta::attempt::StaSharedPmksa =
+    oer_esp32s31_ieee80211_sta::attempt::StaSharedPmksa::new();
+
 impl<O> ProductionStationEnginePort<O> {
     fn new(
         radio: &'static SharedRadio,
@@ -228,6 +233,12 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 };
             }
         };
+        if let ConnectedStationOutcome::Disconnected(reason) = returned.outcome
+            && reason.forgets_pmksa()
+            && let Some(credentials) = returned.security.credentials()
+        {
+            credentials.pmksa().remove(station.access_point.bssid);
+        }
         let owner = ProductionStationOwner::new(
             returned.runtime,
             ProductionStationPhase::RunningScan {
@@ -472,9 +483,10 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 progress,
             } => {
                 diagnostics_event!(
-                    "open-radio: station joined phases={} auth={} assoc={} wpa2={} m4={}",
+                    "open-radio: station joined phases={} auth={} pmksa={} assoc={} wpa2={} m4={}",
                     progress.completed_count(),
                     report.authentication.is_some(),
+                    report.pmksa_resumed,
                     report.association.is_some(),
                     report.wpa2.is_some(),
                     report.message4.is_some()
@@ -615,9 +627,10 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 progress,
             } => {
                 diagnostics_event!(
-                    "open-radio: station rejoined phases={} auth={} assoc={} wpa2={} m4={}",
+                    "open-radio: station rejoined phases={} auth={} pmksa={} assoc={} wpa2={} m4={}",
                     progress.completed_count(),
                     report.authentication.is_some(),
+                    report.pmksa_resumed,
                     report.association.is_some(),
                     report.wpa2.is_some(),
                     report.message4.is_some()
@@ -898,13 +911,13 @@ impl ProductionWifiEpochRunner {
         match security {
             StationSecurity::Open => StaAttemptSecurity::open(sequences),
             StationSecurity::Wpa2Personal { pmk, password } => StaAttemptSecurity::new(
-                StaPersonalCredentials::wpa2(pmk, password, super::tx_entropy),
+                StaPersonalCredentials::wpa2(pmk, password, super::tx_entropy, &STATION_PMKSA),
                 self.supplicant_nonce(),
                 sequences,
                 oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::Unprotected,
             ),
             StationSecurity::Wpa3Personal(password) => StaAttemptSecurity::new(
-                StaPersonalCredentials::wpa3(password, super::tx_entropy),
+                StaPersonalCredentials::wpa3(password, super::tx_entropy, &STATION_PMKSA),
                 self.supplicant_nonce(),
                 sequences,
                 oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::Unprotected,

@@ -40,7 +40,7 @@ use oer_esp32s31_ieee80211_sta::{
     attempt::{
         StaAttemptConnected, StaAttemptPort, StaAttemptReport, StaAttemptSecurity,
         StaAttemptSecurityExecution, StaAttemptStateError, StaAttemptStation, StaAttemptStepError,
-        StaConnectedEntryFailure, StaInstalledSecurity,
+        StaConnectedEntryFailure, StaInstalledSecurity, StaPersonalCredentials,
     },
     join::{StaJoinObserver, StaJoinPortError, StaJoinTransmit},
     peer::{
@@ -57,7 +57,9 @@ use oer_esp32s31_ieee80211_sta::{
 
 use oer_ieee80211_mac::{
     security::WifiSecurityMode,
-    station::{AssociationResponse, SelectedAkm, StaSecurityError, select_association_rsn},
+    station::{
+        AssociationResponse, SelectedAkm, SelectedRsn, StaSecurityError, select_association_rsn,
+    },
 };
 
 use oer_ieee80211_sta::{

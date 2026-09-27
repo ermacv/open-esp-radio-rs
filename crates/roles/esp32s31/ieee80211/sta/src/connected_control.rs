@@ -103,6 +103,26 @@ pub enum ConnectedDisconnectReason {
     SaQueryTimeout,
 }
 
+impl ConnectedDisconnectReason {
+    /// Whether the access point ended the association for a reason that
+    /// invalidates its PMKSA: an expired authentication, a class 2 or 3
+    /// frame, a four-way handshake timeout, or an invalid PMKID, MDE or FTE.
+    ///
+    /// SOURCE: ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+    /// `components/wpa_supplicant/esp_supplicant/src/esp_wpa_main.c`
+    /// (`wpa_sta_disconnected_cb`, which clears the current PMKSA for these
+    /// reasons and keeps it for every other).
+    pub const fn forgets_pmksa(self) -> bool {
+        match self {
+            Self::PeerDeauthentication { reason_code }
+            | Self::PeerDisassociation { reason_code } => {
+                matches!(reason_code, 2 | 6 | 7 | 15 | 49 | 50 | 51)
+            }
+            _ => false,
+        }
+    }
+}
+
 impl From<StaDisconnect> for ConnectedDisconnectReason {
     fn from(disconnect: StaDisconnect) -> Self {
         match disconnect.kind {

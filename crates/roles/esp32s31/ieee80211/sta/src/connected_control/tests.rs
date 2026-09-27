@@ -97,3 +97,15 @@ fn power_commands_leave_in_order_and_overflow_is_an_error() {
     }
     assert_eq!(core.take_power_command(), None);
 }
+
+#[test]
+fn only_invalidating_peer_disconnects_forget_the_pmksa() {
+    for reason_code in [2, 6, 7, 15, 49, 50, 51] {
+        assert!(ConnectedDisconnectReason::PeerDeauthentication { reason_code }.forgets_pmksa());
+        assert!(ConnectedDisconnectReason::PeerDisassociation { reason_code }.forgets_pmksa());
+    }
+    for reason_code in [1, 3, 4, 8, 14] {
+        assert!(!ConnectedDisconnectReason::PeerDeauthentication { reason_code }.forgets_pmksa());
+    }
+    assert!(!ConnectedDisconnectReason::BeaconLoss.forgets_pmksa());
+}

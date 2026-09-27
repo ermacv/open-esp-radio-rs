@@ -142,7 +142,7 @@ where
                         sequence_number: attempt.sequence_number,
                         listen_interval: self.station.listen_interval,
                         phy: profile.phy,
-                        security: self.station.security,
+                        security: &self.station.rsn,
                         power_capability: profile.power_capability,
                         he_ul_mu_power: profile.he_ul_mu_power,
                     },

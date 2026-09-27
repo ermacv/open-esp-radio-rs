@@ -126,10 +126,15 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
-        let selected = select_association_rsn(&owner.station.access_point, owner.station.security)
-            .map_err(|error| {
-                StaAttemptStepError::terminal(StaAttemptTargetError::Security(error))
-            })?;
+        let mut selected =
+            select_association_rsn(&owner.station.access_point, owner.station.security).map_err(
+                |error| StaAttemptStepError::terminal(StaAttemptTargetError::Security(error)),
+            )?;
+        // An SAE association with a cached PMKSA of this access point skips
+        // SAE: it authenticates by Open System and names the PMKID, as the
+        // vendor's `wpa3_build_sae_commit` declines a commit when
+        // `wpa_sta_cur_pmksa_matches_akm`.
+        let mut resumed = false;
         let sae = match selected.akm() {
             SelectedAkm::Sae { h2e } => {
                 let credentials = owner.security.credentials().ok_or_else(|| {
@@ -137,24 +142,38 @@ where
                         StaAttemptStateError::MissingConnectedSecurity,
                     ))
                 })?;
-                let commit = credentials
-                    .sae_commit(
-                        owner.station.station_address,
-                        &owner.station.access_point,
-                        h2e,
-                    )
-                    .map_err(|error| {
-                        StaAttemptStepError::retry_current(StaAttemptTargetError::SaeCommit(error))
-                    })?;
-                Some(StaSaeAuthentication::new(
-                    owner.station.station_address,
-                    owner.station.access_point.bssid,
-                    commit,
-                    h2e,
-                ))
+                match credentials.pmksa().resume(&owner.station.access_point) {
+                    Some((pmk, pmkid)) => {
+                        selected = selected.with_pmkid(pmkid);
+                        owner.security.set_sae_pmk(Some(pmk));
+                        resumed = true;
+                        None
+                    }
+                    None => {
+                        let commit = credentials
+                            .sae_commit(
+                                owner.station.station_address,
+                                &owner.station.access_point,
+                                h2e,
+                            )
+                            .map_err(|error| {
+                                StaAttemptStepError::retry_current(
+                                    StaAttemptTargetError::SaeCommit(error),
+                                )
+                            })?;
+                        Some(StaSaeAuthentication::new(
+                            owner.station.station_address,
+                            owner.station.access_point.bssid,
+                            commit,
+                            h2e,
+                        ))
+                    }
+                }
             }
             SelectedAkm::Open | SelectedAkm::Psk | SelectedAkm::PskSha256 => None,
         };
+        owner.selected_rsn = Some(selected);
+        owner.report.pmksa_resumed = resumed;
         owner
             .channel
             .publish_coex_activity(WifiCoexActivity::Connecting {
@@ -178,9 +197,9 @@ where
                 owner.station.station_address,
                 owner.station.access_point,
                 owner.station.association_preference,
+                selected,
             )
-            .with_listen_interval(owner.listen_interval)
-            .with_security(owner.station.security),
+            .with_listen_interval(owner.listen_interval),
         );
         port.prepare_authentication();
         let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
@@ -189,16 +208,24 @@ where
                 .authenticate_sae(exchange, owner.security.sequences.non_qos_mut())
                 .await
                 .map(|pmk| {
-                    owner
-                        .security
-                        .set_sae_pmk(Some(oer_ieee80211_rsn::Pmk::from_bytes(pmk.pmk)));
+                    let pmk_key = oer_ieee80211_rsn::Pmk::from_bytes(pmk.pmk);
+                    if let Some(credentials) = owner.security.credentials() {
+                        credentials.pmksa().insert(
+                            &owner.station.access_point,
+                            &pmk_key,
+                            pmk.pmkid,
+                        );
+                    }
+                    owner.security.set_sae_pmk(Some(pmk_key));
                     StaAuthenticationSuccess {
                         attempt: 1,
                         total_received_frames: 0,
                     }
                 }),
             None => {
-                owner.security.set_sae_pmk(None);
+                if !resumed {
+                    owner.security.set_sae_pmk(None);
+                }
                 runner
                     .authenticate(
                         owner.station.station_address,
@@ -225,6 +252,11 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
+        let selected = owner.selected_rsn.ok_or_else(|| {
+            StaAttemptStepError::terminal(StaAttemptTargetError::State(
+                StaAttemptStateError::MissingSelectedRsn,
+            ))
+        })?;
         owner
             .channel
             .publish_coex_activity(WifiCoexActivity::Connecting {
@@ -248,9 +280,9 @@ where
                 owner.station.station_address,
                 owner.station.access_point,
                 owner.station.association_preference,
+                selected,
             )
-            .with_listen_interval(owner.listen_interval)
-            .with_security(owner.station.security),
+            .with_listen_interval(owner.listen_interval),
         );
         let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
         let result = runner
@@ -269,9 +301,12 @@ where
                 owner.report.association = Some(success);
                 Ok(())
             }
-            Err(error) => Err(StaAttemptStepError::retry_current(
-                StaAttemptTargetError::Association(error),
-            )),
+            Err(error) => {
+                forget_pmksa(owner.security.credentials(), &selected, &owner.station);
+                Err(StaAttemptStepError::retry_current(
+                    StaAttemptTargetError::Association(error),
+                ))
+            }
         }
     }
 
@@ -294,10 +329,11 @@ where
             owner.station.association_preference,
         )
         .phy;
-        let selected = select_association_rsn(&owner.station.access_point, owner.station.security)
-            .map_err(|error| {
-                StaAttemptStepError::terminal(StaAttemptTargetError::Security(error))
-            })?;
+        let selected = owner.selected_rsn.ok_or_else(|| {
+            StaAttemptStepError::terminal(StaAttemptTargetError::State(
+                StaAttemptStateError::MissingSelectedRsn,
+            ))
+        })?;
         let ProgrammedStaPeer { peer, report } = StaPeerPort::program(
             StaPeerRadio::new(&mut *owner.hardware, &mut *owner.transmit),
             StaPeerStation::new(
@@ -334,10 +370,11 @@ where
                 reconnecting: WifiReconnectPolicy::get().active(),
             })
             .await;
-        let selected_rsn =
-            select_association_rsn(&owner.station.access_point, owner.station.security).map_err(
-                |error| StaAttemptStepError::terminal(StaAttemptTargetError::Security(error)),
-            )?;
+        let selected_rsn = owner.selected_rsn.ok_or_else(|| {
+            StaAttemptStepError::terminal(StaAttemptTargetError::State(
+                StaAttemptStateError::MissingSelectedRsn,
+            ))
+        })?;
         let receive = owner.receive.take().ok_or_else(|| {
             StaAttemptStepError::terminal(StaAttemptTargetError::State(
                 StaAttemptStateError::MissingReceive,
@@ -389,9 +426,12 @@ where
                 owner.pending_keys = Some(pending);
                 Ok(())
             }
-            Err(error) => Err(StaAttemptStepError::retry_current(
-                StaAttemptTargetError::Wpa2Handshake(error),
-            )),
+            Err(error) => {
+                forget_pmksa(owner.security.credentials(), &selected_rsn, &owner.station);
+                Err(StaAttemptStepError::retry_current(
+                    StaAttemptTargetError::Wpa2Handshake(error),
+                ))
+            }
         }
     }
 
@@ -519,5 +559,20 @@ where
                 }
             }
         }
+    }
+}
+
+/// Forget the PMKSA of an SAE association that failed after authentication,
+/// as the vendor's `wpa_sta_disconnected_cb` clears the current PMKSA on an
+/// association failure, an invalid PMKID or a four-way handshake timeout.
+fn forget_pmksa(
+    credentials: Option<&StaPersonalCredentials>,
+    selected: &SelectedRsn,
+    station: &StaAttemptStation,
+) {
+    if matches!(selected.akm(), SelectedAkm::Sae { .. })
+        && let Some(credentials) = credentials
+    {
+        credentials.pmksa().remove(station.access_point.bssid);
     }
 }

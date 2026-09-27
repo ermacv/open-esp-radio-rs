@@ -264,3 +264,20 @@ fn connected_entry_failure_must_return_the_consumed_owner() {
     assert_eq!(failure.progress.completed_count(), 7);
     assert!(!failure.progress.completed(StaAttemptStage::ConnectedEntry));
 }
+
+#[test]
+fn the_shared_pmksa_resumes_an_sae_association_until_it_is_forgotten() {
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let mut access_point = ScanRecord {
+        bssid: [2, 1, 2, 3, 4, 5],
+        ..ScanRecord::EMPTY
+    };
+    access_point.ssid[..3].copy_from_slice(b"lab");
+    access_point.ssid_len = 3;
+    assert!(PMKSA.resume(&access_point).is_none());
+    PMKSA.insert(&access_point, &Pmk::from_bytes([7; 32]), [9; STA_PMKID_LEN]);
+    let (_, pmkid) = PMKSA.resume(&access_point).unwrap();
+    assert_eq!(pmkid, [9; STA_PMKID_LEN]);
+    PMKSA.remove(access_point.bssid);
+    assert!(PMKSA.resume(&access_point).is_none());
+}

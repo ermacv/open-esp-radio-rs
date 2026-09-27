@@ -45,6 +45,9 @@ pub struct StaAttemptTargetOwner<
     pub(super) listen_interval: oer_ieee80211_sta::request::StationListenInterval,
     pub(super) security: StaAttemptSecurity<'security>,
     pub(super) prepared_peer: Option<PreparedStaPeer>,
+    /// The security elements authentication selected, which association,
+    /// peer programming and the four-way handshake then use unchanged.
+    pub(super) selected_rsn: Option<SelectedRsn>,
     pub(super) association: Option<AssociationResponse>,
     pub(super) connected_peer: Option<ConnectedStaPeer>,
     pub(super) pending_keys: Option<RsnPendingKeyInstall>,
@@ -113,6 +116,7 @@ impl<
             listen_interval,
             security,
             prepared_peer: None,
+            selected_rsn: None,
             association: None,
             connected_peer: None,
             pending_keys: None,
@@ -120,6 +124,7 @@ impl<
             report: StaAttemptReport {
                 security: None,
                 authentication: None,
+                pmksa_resumed: false,
                 association: None,
                 peer: None,
                 wpa2_handshake: None,

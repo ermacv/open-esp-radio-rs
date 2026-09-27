@@ -8,6 +8,15 @@ use oer_ieee80211_mac::{
 const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
 const BSSID: [u8; 6] = [0x30, 0x05, 0x5c, 0x11, 0x22, 0x33];
 
+/// The WPA2-Personal security elements selected for `record`.
+fn wpa2_rsn(record: &ScanRecord) -> oer_ieee80211_mac::station::SelectedRsn {
+    oer_ieee80211_mac::station::select_association_rsn(
+        record,
+        oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
+    )
+    .unwrap()
+}
+
 fn access_point_with_rsn(akms: &[[u8; 4]], capabilities: u16) -> ScanRecord {
     let mut record = ScanRecord::EMPTY;
     record.ssid[..4].copy_from_slice(b"test");
@@ -66,7 +75,7 @@ fn ht20_association_request_reproduces_the_migration_capabilities() {
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 1,
         phy: PhyMode::Ht20,
-        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
+        security: &wpa2_rsn(&record),
         power_capability: None,
         he_ul_mu_power: None,
     }
@@ -98,7 +107,7 @@ fn ht40_request_claims_width_short_gi_without_unqualified_mcs32() {
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 1,
         phy: PhyMode::Ht40,
-        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
+        security: &wpa2_rsn(&record),
         power_capability: None,
         he_ul_mu_power: None,
     }
@@ -181,7 +190,7 @@ fn he20_request_masks_unowned_power_save_and_feedback_claims() {
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 3,
         phy: PhyMode::He20,
-        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
+        security: &wpa2_rsn(&record),
         power_capability: Some(StaPowerCapability::new(-11, 20).unwrap()),
         he_ul_mu_power: Some(power),
     }

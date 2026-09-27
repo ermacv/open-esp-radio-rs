@@ -226,7 +226,13 @@ fn port_orders_driver_edges_and_keeps_diagnostics_external() {
         Reconnecting(&requests),
     );
     let storage = StaJoinStorage::new(&mut frame, Observer(&mut diagnostic_hardware));
-    let station = StaJoinStation::new(LOCAL, he_access_point(), Preference::PreferHe20);
+    let access_point = he_access_point();
+    let rsn = oer_ieee80211_mac::station::select_association_rsn(
+        &access_point,
+        oer_ieee80211_mac::security::StaSecurityPolicy::Open,
+    )
+    .unwrap();
+    let station = StaJoinStation::new(LOCAL, access_point, Preference::PreferHe20, rsn);
     let mut port = StaJoinPort::new(radio, storage, station);
 
     embassy_futures::block_on(async {

@@ -1466,6 +1466,7 @@ fn initialize_ordinary_tx_probe() -> Result<OrdinaryTxProbeState, u32> {
                 interface: OrdinaryTxInterface::Station,
                 scheduler_priority: 1,
                 packet_priority: 1,
+                priority_count: 1,
             },
         )
         .map_err(|_| 12_u32)?;

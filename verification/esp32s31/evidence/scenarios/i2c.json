@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "591580aac4808379c3102b6781c5c9ffd5165ac7cc7964a330daac5f4db68cd5",
+    "input-2": "549ca4128dcc79a0c1282156f3705626855a22a0713fd655622ede036324991a",
     "input-3": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195",
     "input-4": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
@@ -165,7 +165,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "fd88d51f407019dcd43faf6fc487dfd88136fc77b84975d8db674f01648147ca"
+      "sha256": "e36f9a890b95a3e691842da02c2c819b3a3bb0a06599a612f8462a336deaf2f6"
     },
     {
       "path": "verification/harness/codegen",
@@ -663,8 +663,8 @@
       "observation": {
         "executed": 315,
         "observed": 301,
-        "reviewed": 7,
-        "untriaged": 7
+        "reviewed": 8,
+        "untriaged": 6
       },
       "state": {
         "written": 5,
@@ -736,8 +736,8 @@
       "observation": {
         "executed": 223,
         "observed": 201,
-        "reviewed": 2,
-        "untriaged": 20
+        "reviewed": 3,
+        "untriaged": 19
       },
       "state": {
         "written": 0,
@@ -870,10 +870,6 @@
     "strlen"
   ],
   "unobserved": [
-    {
-      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "line": 305
-    },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_executor.rs",
       "line": 313

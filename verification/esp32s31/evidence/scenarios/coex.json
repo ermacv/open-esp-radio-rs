@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "591580aac4808379c3102b6781c5c9ffd5165ac7cc7964a330daac5f4db68cd5"
+    "input-2": "549ca4128dcc79a0c1282156f3705626855a22a0713fd655622ede036324991a"
   },
   "sources": [
     {
@@ -163,7 +163,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "fd88d51f407019dcd43faf6fc487dfd88136fc77b84975d8db674f01648147ca"
+      "sha256": "e36f9a890b95a3e691842da02c2c819b3a3bb0a06599a612f8462a336deaf2f6"
     },
     {
       "path": "verification/harness/codegen",
@@ -203,8 +203,8 @@
       "observation": {
         "executed": 72,
         "observed": 66,
-        "reviewed": 0,
-        "untriaged": 6
+        "reviewed": 6,
+        "untriaged": 0
       },
       "state": {
         "written": 15,
@@ -237,8 +237,8 @@
       "observation": {
         "executed": 72,
         "observed": 66,
-        "reviewed": 0,
-        "untriaged": 6
+        "reviewed": 6,
+        "untriaged": 0
       },
       "state": {
         "written": 8,
@@ -271,8 +271,8 @@
       "observation": {
         "executed": 30,
         "observed": 23,
-        "reviewed": 0,
-        "untriaged": 7
+        "reviewed": 7,
+        "untriaged": 0
       },
       "state": {
         "written": 1,
@@ -2010,36 +2010,7 @@
     "coex_schm_status_change",
     "coex_schm_unlock"
   ],
-  "unobserved": [
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 56
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 60
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 606
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 616
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 617
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 623
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 624
-    }
-  ],
+  "unobserved": [],
   "observed": [
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule/schemes.rs",

@@ -306,4 +306,61 @@ pub const DECISIONS: &[Decision] = &[
             "current: request.initial,",
         )],
     },
+    Decision {
+        reason: "phase-timer duration and phase notifications of a schedule step, and the \
+            idle last phase that re-arms nothing: the coex scenario compares them outside the \
+            relation, requiring the production report to equal the vendor's `timer_arm_us` \
+            microseconds and the phase callbacks it called",
+        places: &[
+            ("driver/coex/src/schedule.rs", "self.wifi != 0"),
+            (
+                "driver/coex/src/schedule.rs",
+                "self.bluetooth[0] != 0 || self.bluetooth[1] != 0",
+            ),
+            (
+                "driver/coex/src/schedule.rs",
+                "return Err(CoexScheduleIdle::LastPhase);",
+            ),
+            ("driver/coex/src/schedule.rs", "u32::from(scheme.period)"),
+            (
+                "driver/coex/src/schedule.rs",
+                ".wrapping_mul(self.interval)",
+            ),
+            (
+                "driver/coex/src/schedule.rs",
+                "notify_wifi: phase.notifies_wifi(),",
+            ),
+            (
+                "driver/coex/src/schedule.rs",
+                "notify_bluetooth: phase.notifies_bluetooth(),",
+            ),
+        ],
+    },
+    Decision {
+        reason: "validation-only construction of the isolated arbiter lease and Wi-Fi clock \
+            proof in the probe image: they carry no data the compared leaf reads, and its \
+            register effects and return compare",
+        places: &[
+            ("hal/src/shared_radio.rs", "*self.held.get_mut() = true;"),
+            ("hal/src/ieee80211/client.rs", "Self {"),
+        ],
+    },
+    Decision {
+        reason: "dating of a tracking temperature sample for the runtime's freshness policy: \
+            the probe's delay backend reports no time, and the vendor keeps no sample age to \
+            compare",
+        places: &[
+            ("phy/src/target_executor.rs", "None"),
+            ("phy/src/target_port.rs", "let started = D::now_micros();"),
+        ],
+    },
+    Decision {
+        reason: "relaxed power-tracking flag stored in the validation state fixture: the \
+            compiled probe forwards the same input straight into the tracking policy, whose \
+            threshold selection is observed",
+        places: &[(
+            "phy/src/state.rs",
+            "state.wifi.tx_power_tracking_slow = relaxed_threshold.into();",
+        )],
+    },
 ];

@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "591580aac4808379c3102b6781c5c9ffd5165ac7cc7964a330daac5f4db68cd5"
+    "input-2": "549ca4128dcc79a0c1282156f3705626855a22a0713fd655622ede036324991a"
   },
   "sources": [
     {
@@ -163,7 +163,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "fd88d51f407019dcd43faf6fc487dfd88136fc77b84975d8db674f01648147ca"
+      "sha256": "e36f9a890b95a3e691842da02c2c819b3a3bb0a06599a612f8462a336deaf2f6"
     },
     {
       "path": "verification/harness/codegen",
@@ -206,8 +206,8 @@
       "observation": {
         "executed": 629,
         "observed": 613,
-        "reviewed": 7,
-        "untriaged": 9
+        "reviewed": 9,
+        "untriaged": 7
       },
       "state": {
         "written": 11,
@@ -243,8 +243,8 @@
       "observation": {
         "executed": 148,
         "observed": 129,
-        "reviewed": 3,
-        "untriaged": 16
+        "reviewed": 4,
+        "untriaged": 15
       },
       "state": {
         "written": 1,
@@ -678,14 +678,6 @@
     "strlen"
   ],
   "unobserved": [
-    {
-      "path": "crates/hardware/esp32s31/hal/src/ieee80211/client.rs",
-      "line": 197
-    },
-    {
-      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "line": 305
-    },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
       "line": 718

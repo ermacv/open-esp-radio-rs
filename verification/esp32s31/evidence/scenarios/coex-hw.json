@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "66accde6a06b80bec32fb1397b0520d35257d6bdc6dfb65214ec5e51e237cbd9",
+    "input-2": "1138ba88733dffe6f0453498e0b45e7bd26a7bbea447f02d09f4bcbec5a7f8d6",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895"
   },
@@ -29,7 +29,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
-      "sha256": "77fcba717f966eadc051ff33537e992c62420086f70eaccaff91ecd990837f9f"
+      "sha256": "a63e70d5086b25565a950106a7a57f887bfe1d181ac3d3e3b9a230cafdce75a1"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211",
@@ -173,11 +173,11 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library",
-      "sha256": "95378ffdc278163e04a0f0771e2f32e5bb2d9502c301eafcba2120828bfe9527"
+      "sha256": "974580e2b4e83944ca0f17be04d49d423bc5394613877e60fcb1a55beeba96dc"
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "21c791e7a288c3053712c357fe1cfb7b42ab517fadacae464c465f072633dcb0"
+      "sha256": "cc1532d0c14f19c6a5ae8f519154935505604eef6a904cbd1c0814228a3be950"
     },
     {
       "path": "verification/harness/codegen",
@@ -471,6 +471,42 @@
         "observed": 33,
         "reviewed": 3,
         "untriaged": 7
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_hw_timer_freq_set",
+      "production": "open_coex_trace_timer_freq_set",
+      "verdict": "match",
+      "cases": 640,
+      "reviews": [
+        "d5cb6e27032b3bc8aaef52b7e37967c891a7b69cb5a508fc9433af007564d824"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 12,
+          "total": 12
+        },
+        "directions": {
+          "reached": 14,
+          "total": 14
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 35,
+        "observed": 33,
+        "reviewed": 0,
+        "untriaged": 2
       },
       "state": {
         "written": 0,
@@ -1070,6 +1106,7 @@
     "coex_hw_timer_disable",
     "coex_hw_timer_enable",
     "coex_hw_timer_force",
+    "coex_hw_timer_freq_set",
     "coex_hw_timer_set",
     "coex_hw_timer_tick_get",
     "coex_hw_timer_unforce",
@@ -1101,39 +1138,35 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 102
+      "line": 110
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 111
+      "line": 122
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 113
+      "line": 127
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 114
+      "line": 136
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 120
+      "line": 138
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 129
+      "line": 139
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 133
+      "line": 145
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 143
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 153
+      "line": 154
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
@@ -1141,11 +1174,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 160
+      "line": 168
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 163
+      "line": 178
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
+      "line": 183
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
+      "line": 185
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
+      "line": 188
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/clock.rs",
+      "line": 25
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/clock.rs",
@@ -1360,6 +1409,14 @@
       "line": 103
     },
     {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 111
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 118
+    },
+    {
       "path": "crates/hardware/esp32s31/hal/src/coex.rs",
       "line": 43
     },
@@ -1422,6 +1479,10 @@
     {
       "path": "crates/hardware/esp32s31/hal/src/coex.rs",
       "line": 312
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/coex.rs",
+      "line": 323
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/coex.rs",
@@ -1833,6 +1894,26 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 71115
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 71120
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 71126
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 71133
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 71139
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
       "line": 71147
     },
     {
@@ -1970,6 +2051,14 @@
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
       "line": 6700
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 6709
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 6718
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
@@ -2217,11 +2306,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/shared_clock.rs",
+      "line": 106
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/shared_clock.rs",
+      "line": 107
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/shared_clock.rs",
       "line": 116
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/shared_clock.rs",
       "line": 127
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/ownership.rs",
+      "line": 91
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ownership.rs",

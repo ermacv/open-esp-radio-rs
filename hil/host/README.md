@@ -179,7 +179,11 @@ identified by the MAC address its USB Serial/JTAG port reports as USB serial
 number, independent of `/dev/ttyACM*` numbering. Every board is part of the
 stand: flash and use any board only under a lease.
 
-A board is named by its full chip name (`esp32s31`, `esp32c5`). Wherever a
+A board is named by its full chip name (`esp32s31`, `esp32c5`). The registry
+names boards itself: the only board of a chip is the chip, and once a chip has
+several boards each becomes the chip with the last four hexadecimal digits of
+its MAC (`esp32c5-2564`); write the same on the board. A name set with
+`cargo hil devices set --name` that follows neither form is kept. Wherever a
 board is expected (`--board`, `board =` in the lab configuration), its
 registered name, its MAC, or its chip when it is the only registered board of
 that chip selects it; a chip with several registered boards is refused with

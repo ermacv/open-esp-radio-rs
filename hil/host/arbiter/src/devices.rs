@@ -160,7 +160,8 @@ impl Arbiter {
                     *field = value;
                 }
             }
-            let device = device.clone();
+            name_by_chip(&mut registry.devices);
+            let device = registry.devices[index].clone();
             registry.devices.sort_by(|a, b| a.mac.cmp(&b.mac));
             let temporary = path.with_extension("json.tmp");
             fs::write(&temporary, serde_json::to_vec_pretty(&registry)?)?;
@@ -168,6 +169,52 @@ impl Arbiter {
             Ok(device)
         })
     }
+}
+
+/// Name boards after their chip: the only board of a chip is the chip, and
+/// several boards of one chip are the chip with the last four hexadecimal
+/// digits of their MAC, which is also what to write on the board. Names an
+/// operator chose otherwise are kept.
+fn name_by_chip(devices: &mut [Device]) {
+    let chips = devices
+        .iter()
+        .filter_map(|device| device.chip.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for chip in chips {
+        let several = devices
+            .iter()
+            .filter(|device| device.chip.as_deref() == Some(chip.as_str()))
+            .count()
+            > 1;
+        for device in devices
+            .iter_mut()
+            .filter(|device| device.chip.as_deref() == Some(chip.as_str()))
+        {
+            let generated = device
+                .name
+                .as_deref()
+                .is_none_or(|name| name == chip || is_chip_tail_name(name, &chip));
+            if generated {
+                device.name = Some(if several {
+                    format!("{chip}-{}", mac_tail(&device.mac))
+                } else {
+                    chip.clone()
+                });
+            }
+        }
+    }
+}
+
+/// The last four hexadecimal digits of a MAC, lower case.
+fn mac_tail(mac: &str) -> String {
+    let digits = mac.replace(':', "").to_lowercase();
+    digits[digits.len().saturating_sub(4)..].to_owned()
+}
+
+fn is_chip_tail_name(name: &str, chip: &str) -> bool {
+    name.strip_prefix(chip)
+        .and_then(|rest| rest.strip_prefix('-'))
+        .is_some_and(|tail| tail.len() == 4 && tail.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 fn read_registry(path: &Path) -> crate::Result<Registry> {
@@ -253,6 +300,44 @@ mod tests {
             "30:ED:A0:F3:F6:D0"
         );
         assert!(board_mac(&devices, "s3").is_err());
+    }
+
+    #[test]
+    fn boards_are_named_by_chip_and_by_mac_tail_once_a_chip_has_several() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = Arbiter::at(directory.path()).unwrap();
+        let register = |mac: &str, chip: &str| {
+            arbiter
+                .register_device(Device {
+                    mac: mac.into(),
+                    chip: Some(chip.into()),
+                    name: None,
+                })
+                .unwrap()
+        };
+        assert_eq!(
+            register("38:44:BE:AA:25:64", "esp32c5").name.as_deref(),
+            Some("esp32c5")
+        );
+        arbiter
+            .set_device(Device {
+                mac: "30:ED:A0:F3:F6:D0".into(),
+                chip: Some("esp32s31".into()),
+                name: Some("bench-dut".into()),
+            })
+            .unwrap();
+        assert_eq!(
+            register("38:44:BE:AA:99:0F", "esp32c5").name.as_deref(),
+            Some("esp32c5-990f")
+        );
+        let names = arbiter
+            .devices()
+            .unwrap()
+            .into_iter()
+            .map(|device| device.name.unwrap())
+            .collect::<Vec<_>>();
+        // An operator's own name stays.
+        assert_eq!(names, ["bench-dut", "esp32c5-2564", "esp32c5-990f"]);
     }
 
     #[test]

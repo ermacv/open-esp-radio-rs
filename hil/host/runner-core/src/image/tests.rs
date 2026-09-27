@@ -544,3 +544,26 @@ fn watchdog_fault_image_cannot_be_mistaken_for_automatic_maintenance() {
             .contains("bluetooth-phy-maintenance")
     );
 }
+
+#[test]
+fn firmware_builds_drop_inherited_cargo_overrides_that_change_the_image() {
+    let names = [
+        "CARGO_PROFILE_RELEASE_OPT_LEVEL",
+        "CARGO_BUILD_RUSTFLAGS",
+        "CARGO_TARGET_RISCV32IMAFC_UNKNOWN_NONE_ELF_RUSTFLAGS",
+        "CARGO_BUILD_JOBS",
+        "CARGO_TARGET_DIR",
+        "RUSTFLAGS",
+        "PATH",
+    ]
+    .map(std::ffi::OsString::from);
+    assert_eq!(
+        super::inherited_build_overrides(names.into_iter()),
+        [
+            "CARGO_PROFILE_RELEASE_OPT_LEVEL",
+            "CARGO_BUILD_RUSTFLAGS",
+            "CARGO_TARGET_RISCV32IMAFC_UNKNOWN_NONE_ELF_RUSTFLAGS",
+        ]
+        .map(std::ffi::OsString::from)
+    );
+}

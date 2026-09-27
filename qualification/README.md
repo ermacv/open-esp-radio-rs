@@ -495,7 +495,10 @@ and the `.cargo/config.toml` files the builds discover, so a change in another
 radio's driver leaves it current. The evaluator independently runs `cargo tree`
 for the image's runtime (with the features its build provenance records) and
 bootstrap; when the recorded list lacks the manifest of any package found
-there, the shard falls back to the broad binding. A replayed
+there, or the build inherited `RUSTFLAGS` or `CARGO_ENCODED_RUSTFLAGS`, the
+shard falls back to the broad binding. Firmware builds drop inherited
+`CARGO_PROFILE_*`, `CARGO_BUILD_*` and `CARGO_TARGET_*` variables except the
+job count and target directory. A replayed
 image or an older bundle without recorded inputs binds the path packages of
 `hil/targets/esp32s31` and `platform/esp32s31` and every qualifying observer
 instead. The evaluator reads shards next to run bundles. A shard whose

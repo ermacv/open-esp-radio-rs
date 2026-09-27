@@ -348,6 +348,13 @@ fn recorded_sources(
         else {
             return Ok(None);
         };
+        // Inherited compiler flags change the image outside the checkout.
+        let environment = &provenance["environment"];
+        if !environment["inherited_rustflags"].is_null()
+            || !environment["inherited_encoded_rustflags"].is_null()
+        {
+            return Ok(None);
+        }
         let Some(expected) = packages(&provenance)? else {
             return Ok(None);
         };
@@ -545,6 +552,25 @@ mod tests {
             );
         }
         assert!(sources.windows(2).all(|w| w[0] < w[1]), "sorted and unique");
+        // Inherited RUSTFLAGS: the broad binding.
+        fs::write(
+            run.join("firmware/correctness/build-provenance.json"),
+            serde_json::to_vec(
+                &json!({"parameters": {}, "environment": {"inherited_rustflags": "-Copt-level=0"}}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            recorded_sources(&root, &run, &[image("correctness", false)], None, &radio)
+                .unwrap()
+                .is_none()
+        );
+        fs::write(
+            run.join("firmware/correctness/build-provenance.json"),
+            serde_json::to_vec(&json!({"parameters": {}})).unwrap(),
+        )
+        .unwrap();
         // A package `cargo tree` finds but the list lacks: the broad binding.
         let more = |_: &Value| {
             Ok(Some(BTreeSet::from([

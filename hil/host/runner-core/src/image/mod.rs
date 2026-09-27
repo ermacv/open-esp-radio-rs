@@ -693,7 +693,31 @@ fn build_resolved(
 }
 
 fn cargo_command() -> Command {
-    Command::new(program_from_env("CARGO", "cargo"))
+    let mut command = Command::new(program_from_env("CARGO", "cargo"));
+    for variable in inherited_build_overrides(env::vars_os().map(|(name, _)| name)) {
+        command.env_remove(variable);
+    }
+    command
+}
+
+/// Inherited Cargo variables that would change a firmware image without
+/// appearing in the checkout: profiles, build and target settings. The build
+/// relies on the repository's Cargo configuration instead. `RUSTFLAGS` stays
+/// and is recorded in the build provenance; job count and target directory do
+/// not change the image.
+fn inherited_build_overrides(
+    names: impl Iterator<Item = std::ffi::OsString>,
+) -> Vec<std::ffi::OsString> {
+    names
+        .filter(|name| {
+            let name = name.to_string_lossy();
+            ["CARGO_PROFILE_", "CARGO_BUILD_", "CARGO_TARGET_"]
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
+                && name != "CARGO_BUILD_JOBS"
+                && name != "CARGO_TARGET_DIR"
+        })
+        .collect()
 }
 
 pub fn program_from_env(variable: &str, fallback: &str) -> OsString {

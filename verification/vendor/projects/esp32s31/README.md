@@ -48,7 +48,7 @@ are the measurement authority, not this documentation.
 ## All PHY comparison scenarios
 
 `all` runs every native comparison scenario (`gain`, `i2c`, `channel`,
-`rx-gain`, `tx-dc`, `tracking`, `wifi-mac`, `bluetooth`, `coex`) under one budget, each in its own
+`rx-gain`, `tx-dc`, `tracking`, `wifi-mac`, `bluetooth`, `coex`, `coex-hw`) under one budget, each in its own
 directory below `--output`. It requires every optional input, so no obligation
 is left unmet, stops at the first failure and prints each scenario's duration.
 With `--index <directory>` it then writes every scenario's shard of the

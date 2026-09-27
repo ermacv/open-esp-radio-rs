@@ -2,7 +2,7 @@
 use clap::{Parser, Subcommand};
 use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Index};
 use oer_esp32s31_vendor_scenarios::{
-    ble, calibration_leaves, calibration_prefix, channel, coex, coverage,
+    ble, calibration_leaves, calibration_prefix, channel, coex, coex_hw, coverage,
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
@@ -92,6 +92,15 @@ enum Scenario {
         /// Compiled Bluetooth probe image.
         #[arg(long)]
         bluetooth_production: PathBuf,
+        /// Authenticated vendor firmware supplying logging symbols.
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
+        phy_sdk: PathBuf,
+    },
+    /// Coexistence hardware-timer and core leaves of the pinned
+    /// `libcoexist.a` against the compiled radio probe image.
+    CoexHw {
+        #[command(flatten)]
+        common: Common,
         /// Authenticated vendor firmware supplying logging symbols.
         #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
@@ -606,6 +615,41 @@ fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Ou
     ))
 }
 
+fn coex_hw(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
+    let options = mac::MacOptions {
+        binary: common.binary,
+        suite: &coex_hw::COEX_HW,
+        archives: coex_hw::COEX_HW
+            .archives
+            .iter()
+            .map(|id| oer_esp32s31_vendor_scenarios::artifacts::default_path(id))
+            .collect(),
+        rom: common.rom,
+        phy_sdk,
+        production: common.production,
+        linker: common.linker,
+        output: common.output,
+        budget: common.budget,
+        patches: common.patches,
+    };
+    let mut ctx = mac::Mac::new(&options)?;
+    mac::exercise(&mut ctx)?;
+    let claims = ctx.session.claims(
+        "coex-hw",
+        &ctx.roots,
+        &mac::claims(&ctx),
+        coverage::DECISIONS,
+    )?;
+    Ok((
+        finish(
+            &[],
+            "authenticated coexistence hardware leaves passed",
+            &ctx.run,
+        ),
+        claims,
+    ))
+}
+
 fn coex(common: Common, libcoexist: PathBuf) -> Result<Outcome> {
     let options = coex::CoexOptions {
         binary: common.binary,
@@ -932,6 +976,10 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
             "coex",
             Box::new(|| coex(within("coex"), libcoexist.clone())),
         ),
+        (
+            "coex-hw",
+            Box::new(|| coex_hw(within("coex-hw"), phy_sdk.clone())),
+        ),
     ];
     // Scenarios share no state: each owns its session and output directory.
     // They run concurrently and their results join in the declared order.
@@ -1095,6 +1143,10 @@ fn main() -> ExitCode {
                 ..Shard::of("bluetooth", &common)
             };
             single(shard, bluetooth(common, bluetooth_production, phy_sdk))
+        }
+        Scenario::CoexHw { common, phy_sdk } => {
+            let shard = Shard::of("coex-hw", &common);
+            single(shard, coex_hw(common, phy_sdk))
         }
         Scenario::All {
             common,

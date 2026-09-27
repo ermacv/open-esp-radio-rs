@@ -132,6 +132,9 @@ pub struct Leaf {
     /// Release fences production adds when it releases the shared-radio
     /// lease after the leaf's register transaction.
     pub release_fences: u32,
+    /// Whether production may reject a case before it leases the radio, so
+    /// the release fences occur only in cases that reach the hardware.
+    pub release_optional: bool,
     /// Reviewed word writes production performs in place of vendor writes,
     /// each exactly once.
     pub replacements: &'static [Replacement],
@@ -328,6 +331,7 @@ pub(crate) const fn leaf(
         returns,
         ordering_fences: 0,
         release_fences: 0,
+        release_optional: false,
         replacements: &[],
         prefix_until: None,
         vendor_abi: None,
@@ -387,6 +391,17 @@ pub(crate) const fn ordered(leaf: Leaf, fences: u32) -> Leaf {
 pub(crate) const fn released(leaf: Leaf, fences: u32) -> Leaf {
     Leaf {
         release_fences: fences,
+        ..leaf
+    }
+}
+
+/// A leaf whose production counterpart releases its shared-radio lease
+/// with `fences` release fences in the cases it leases the radio at all: it
+/// rejects invalid arguments before leasing.
+pub(crate) const fn released_when_leased(leaf: Leaf, fences: u32) -> Leaf {
+    Leaf {
+        release_fences: fences,
+        release_optional: true,
         ..leaf
     }
 }
@@ -1901,12 +1916,23 @@ impl Mac {
                     followed_by: None,
                 }),
                 disposition: EffectDisposition::Added,
-                min_occurrences: leaf.release_fences,
+                min_occurrences: if leaf.release_optional {
+                    0
+                } else {
+                    leaf.release_fences
+                },
                 max_occurrences: leaf.release_fences,
-                reason: "production releases its shared-radio lease after the register \
+                reason: if leaf.release_optional {
+                    "production releases its shared-radio lease after the register \
+                    transaction, and leases the radio only for arguments that reach the \
+                    hardware; the vendor serializes with a critical section answered as quiet \
+                    calls"
+                } else {
+                    "production releases its shared-radio lease after the register \
                     transaction; the vendor serializes with a critical section answered as \
                     quiet calls"
-                    .into(),
+                }
+                .into(),
             });
         }
         if leaf.ordering_fences == 0 {
@@ -2323,11 +2349,12 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
                 }
                 continue;
             }
-            // A leaf must act: a register effect, or a write that changes an
-            // object it is compared through.
+            // A leaf must act: a register effect, a write that changes an
+            // object it is compared through, or a compared return word.
             let initial = &initial[index];
-            if crate::evidence::phy_effects(&crate::evidence::events(&records, case, false))
-                .is_empty()
+            if !leaf.returns
+                && crate::evidence::phy_effects(&crate::evidence::events(&records, case, false))
+                    .is_empty()
                 && (initial.is_empty()
                     || crate::evidence::output(&records, case, false) == *initial)
             {

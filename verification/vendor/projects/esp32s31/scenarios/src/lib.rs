@@ -10,6 +10,7 @@ pub mod calibration_leaves;
 pub mod calibration_prefix;
 pub mod channel;
 pub mod coex;
+pub mod coex_hw;
 pub mod contracts;
 pub mod coverage;
 pub mod evidence;

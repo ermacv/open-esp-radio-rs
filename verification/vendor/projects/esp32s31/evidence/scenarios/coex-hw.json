@@ -1,0 +1,806 @@
+{
+  "schema": 7,
+  "command": "vendor-scenario",
+  "target": "esp32s31",
+  "scenario": "coex-hw",
+  "inputs": {
+    "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
+    "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
+    "input-2": "46b10d4fda530af6c13ab68a179341a769f73bf49fdfa39b3df456dbad515414",
+    "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
+  },
+  "sources": [
+    {
+      "path": "crates/adapters/embassy-net/owned",
+      "sha256": "89eb21a9b5e47f2db945a9a9a9c1f75bf745dc2623093500c5a2c3b570c569da"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/radio",
+      "sha256": "b05a9967cb6661cb433dd4a206fdbac28e584858e847feb1b6e34f3e2c0f08e8"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/bluetooth",
+      "sha256": "7c3d9fa8616f6dff8471affa705136fe8a298211dc6120469bdd06bd44452299"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/bluetooth/memory",
+      "sha256": "78bdcf87f3ecfc02db2f6309dca9185514498377bbf6562faa8a56257f232bc4"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex",
+      "sha256": "2288181b530cac14c4d3cb2815caf8d90c2d3719c6409735708e69bfff631387"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211",
+      "sha256": "f553cfde24e2fbfa202224f87dbf78b80d16e9616e04cfc66ab5ae0a094d1505"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma",
+      "sha256": "18b263312a3cf9f4ec0b78e5d9fe455264cf92bdb8148c1e5d75461545687cd1"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac",
+      "sha256": "f0e063100a79e2ab79be3f4f748dc506c7acc8d3df932fd066db35226de67597"
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal",
+      "sha256": "7eb1e3b4de66e7ff21c025f819bb9d850e20f53ead682c530d093d152a1a14ec"
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac",
+      "sha256": "8e41e6dabd97ce0df4cbf29e140629ba37f6a666127273066130bd01a5a1bd36"
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw",
+      "sha256": "a77ecc62f3f6d4fedb1919d4adbd922aabbffd4b6c219f31218e82625f932b0d"
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy",
+      "sha256": "815ec1465246caffd69b512c73c26654d1450caf5b56891e50cd4681d6e006bc"
+    },
+    {
+      "path": "crates/memory",
+      "sha256": "7a365308d70124337653db5cf1d44cd33af8e46524fac4ce72facbf58c0ba2ce"
+    },
+    {
+      "path": "crates/network/interface",
+      "sha256": "936e8ccb161f6833f287b8e5c3a550cc140f87d200a1d2356111a4976c7847d5"
+    },
+    {
+      "path": "crates/protocols/bluetooth/hci",
+      "sha256": "01f938f6fa3d65146a652ca1d47934315c0abeada97ba3b79e69055703ca5da9"
+    },
+    {
+      "path": "crates/protocols/ieee80211/ap",
+      "sha256": "358d4f99d16edc8edadd3efc9cbba3db05442ae384d0fea6dc9360845259eeb3"
+    },
+    {
+      "path": "crates/protocols/ieee80211/datapath",
+      "sha256": "44a16fb83fc5c5684c2714cee1700f694008ed7d26d57d6e44afb34651e987f1"
+    },
+    {
+      "path": "crates/protocols/ieee80211/mac",
+      "sha256": "63b2ff5df9c0801352a79144c69a9c6f82f0115fe4280143ecc7234a4ac4b384"
+    },
+    {
+      "path": "crates/protocols/ieee80211/security/rsn",
+      "sha256": "c17e3f0dbb65cbcbbeea1625627e0443ac9126fc9e269473ef94b79bc5b6f678"
+    },
+    {
+      "path": "crates/protocols/ieee80211/softmac",
+      "sha256": "88eb574f819f094deec824c07f06254662b35f450ee11c62361eb1495a803c51"
+    },
+    {
+      "path": "crates/protocols/ieee80211/sta",
+      "sha256": "c329fc5bfa7eb149eebae97e23aa794704a27638997a9c34db891d4371eec1c8"
+    },
+    {
+      "path": "crates/roles/esp32s31/ieee80211/ap",
+      "sha256": "c229ad98262c1bc611aa04b531fca53736f342d71b9ed60fc848a5fbbe828d80"
+    },
+    {
+      "path": "crates/roles/esp32s31/ieee80211/sta",
+      "sha256": "867d9a6cd00d3b6f3a643b1984345ea106bd89c8bcf0e115fc327a80cbb31225"
+    },
+    {
+      "path": "crates/runtime/esp32s31/ieee80211",
+      "sha256": "22125567baa5d05407d2266950b2cb84df679e481e4401ea99e95c7a0fdf727a"
+    },
+    {
+      "path": "crates/runtime/esp32s31/phy",
+      "sha256": "823150b6406b8892cb32b46403d99029c24563e869560b8e2b8e2c505e7ebc78"
+    },
+    {
+      "path": "crates/runtime/esp32s31/radio",
+      "sha256": "cfe78d144482a60bdfdc7f221c1f38072440fc730232bdaf7e50d9d9e8e5527a"
+    },
+    {
+      "path": "crates/runtime/ieee80211",
+      "sha256": "841818e4a687ec63afa5d2fa8a75544c3b48455a13697278cf10898a6874c589"
+    },
+    {
+      "path": "tools/blobray/crates/analysis",
+      "sha256": "123d305f1a1cad6ccc8160e45ac2def6203d1273f77e6685ccd6f76f960e0d06"
+    },
+    {
+      "path": "tools/blobray/crates/application",
+      "sha256": "eb1f1fbe5e066a65604d7484edc9a33a42422bdffb61efbd0409c0e2725604b5"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts",
+      "sha256": "f251564c4a029847189f105a2dabdfea7cb8b114474f6af3f3510877e9c22c90"
+    },
+    {
+      "path": "tools/blobray/crates/domain",
+      "sha256": "cfe1222decd438d38e1897f8dc384924e455c1a28458876f5924bcd92b421b35"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge",
+      "sha256": "0822bb8a6898310084cb94523ebabe4edf1e887a78b3c11a31460cbbdd873161"
+    },
+    {
+      "path": "tools/blobray/crates/riscv",
+      "sha256": "4a6188f6fa3d2d6bd058cdc2ca3b1548454810c4c734b7b47d1693218830e129"
+    },
+    {
+      "path": "tools/blobray/crates/store",
+      "sha256": "1a7161ba1ba3bddca7ce772cfe6010d9ef93d3762603e33e0d81383cbd3fac54"
+    },
+    {
+      "path": "tools/blobray/crates/verification",
+      "sha256": "8e3273b88f7e7bbf866938778235de976e691b709c9b401684a7e403ac95cea0"
+    },
+    {
+      "path": "tools/blobray/next",
+      "sha256": "eacb4cce32b1afa8158d2894b16afe89cbd870da0544f3bb39e161fbb389ab2d"
+    },
+    {
+      "path": "verification/vendor/harness/codegen",
+      "sha256": "1f5ee164b11326afcca03ed4e7c4482f72923bf79838eb8fed61b5afaa52ae80"
+    },
+    {
+      "path": "verification/vendor/harness/macros",
+      "sha256": "783ed7cbd4f2c0ec72a4604426a45f8009bc71859b8f6ac5c96c449f6abe18a1"
+    },
+    {
+      "path": "verification/vendor/projects/esp32s31/probes/radio/elf",
+      "sha256": "ef4c2a4d28d2f6858d333417fb2dc7401b31ca7d57ef9ecbb1dd96ece1801dd5"
+    },
+    {
+      "path": "verification/vendor/projects/esp32s31/probes/radio/library",
+      "sha256": "b7153c38131fd7747cd1eb7f79f126a18d01da6f65f56205c53c57d5f4325a63"
+    },
+    {
+      "path": "verification/vendor/projects/esp32s31/scenarios",
+      "sha256": "e613d19b9ecf20d23c7535f5c4aa3144612f55ebcb833be5ad9cbe12117adc8e"
+    },
+    {
+      "path": "verification/vendor/schema",
+      "sha256": "0184433006f7fb5c41c679d3f6c64c5be69af48d40dfd6f9b76de019e0c73bed"
+    }
+  ],
+  "entries": [
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_hw_timer_enable",
+      "production": "open_coex_trace_coex_hw_timer_enable",
+      "verdict": "match",
+      "cases": 20,
+      "reviews": [
+        "3dfa4cde7713d01044b1bc5f92d5099a6755cdbb0801e1c34e51b135b8ef0345"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 32,
+        "observed": 30,
+        "reviewed": 0,
+        "untriaged": 2
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_hw_timer_disable",
+      "production": "open_coex_trace_coex_hw_timer_disable",
+      "verdict": "match",
+      "cases": 20,
+      "reviews": [
+        "ae3984dc03596a3a21209516a084085b410beaffde92372463bb9f811533512b"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 32,
+        "observed": 30,
+        "reviewed": 0,
+        "untriaged": 2
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_hw_timer_force",
+      "production": "open_coex_trace_coex_hw_timer_force",
+      "verdict": "match",
+      "cases": 20,
+      "reviews": [
+        "78fbc935287a3417cce3abac94b58673472a0430173b7cef51b7fe905f34ef71"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 26,
+        "observed": 24,
+        "reviewed": 0,
+        "untriaged": 2
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_hw_timer_unforce",
+      "production": "open_coex_trace_coex_hw_timer_unforce",
+      "verdict": "match",
+      "cases": 20,
+      "reviews": [
+        "c6a7020fea43aca92f6ba00ee4055125e9424ca4ec14a0c1dab4b34c9c331d95"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 27,
+        "observed": 25,
+        "reviewed": 0,
+        "untriaged": 2
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_core_pti_get",
+      "production": "open_coex_core_trace_pti_get",
+      "verdict": "match",
+      "cases": 392,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 3,
+          "total": 3
+        },
+        "directions": {
+          "reached": 2,
+          "total": 2
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 2,
+        "observed": 2,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_core_event_duration_get",
+      "production": "open_coex_core_trace_event_duration_get",
+      "verdict": "match",
+      "cases": 400,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 15,
+          "total": 15
+        },
+        "directions": {
+          "reached": 14,
+          "total": 14
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 6,
+        "observed": 6,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_core_timer_idx_get",
+      "production": "open_coex_core_trace_timer_idx_get",
+      "verdict": "match",
+      "cases": 196,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 3,
+          "total": 3
+        },
+        "directions": {
+          "reached": 2,
+          "total": 2
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 2,
+        "observed": 2,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex-hw",
+      "source": "archive",
+      "symbol": "coex_core_release",
+      "production": "open_coex_core_trace_release",
+      "verdict": "match",
+      "cases": 392,
+      "reviews": [
+        "ca37eec2a0c4ab46021f295dbf1e5b3697f51b7fcb6ceaf201f9a20f0205d4b0"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 7,
+          "total": 7
+        },
+        "directions": {
+          "reached": 4,
+          "total": 4
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 42,
+        "observed": 32,
+        "reviewed": 0,
+        "untriaged": 10
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    }
+  ],
+  "untriaged": [],
+  "functions": [
+    "coex_core_event_duration_get",
+    "coex_core_pti_get",
+    "coex_core_release",
+    "coex_core_timer_idx_get",
+    "coex_hw_timer_disable",
+    "coex_hw_timer_enable",
+    "coex_hw_timer_force",
+    "coex_hw_timer_unforce"
+  ],
+  "unobserved": [
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
+      "line": 124
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
+      "line": 126
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
+      "line": 127
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
+      "line": 157
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 126
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
+      "line": 1078
+    }
+  ],
+  "observed": [
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
+      "line": 28
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
+      "line": 114
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
+      "line": 115
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
+      "line": 125
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/model.rs",
+      "line": 37
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/model.rs",
+      "line": 40
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/model.rs",
+      "line": 59
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/model.rs",
+      "line": 61
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/model.rs",
+      "line": 62
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/model.rs",
+      "line": 63
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/model.rs",
+      "line": 67
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 104
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 121
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 123
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 124
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 125
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 129
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 132
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 136
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 140
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 144
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 148
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 206
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 207
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
+      "line": 212
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/coex.rs",
+      "line": 43
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/coex.rs",
+      "line": 88
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/coex.rs",
+      "line": 250
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/coex.rs",
+      "line": 312
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/coex.rs",
+      "line": 316
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/coex.rs",
+      "line": 320
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/coex.rs",
+      "line": 324
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/root.rs",
+      "line": 68
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
+      "line": 292
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 384
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 385
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 491
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 492
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 800
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 801
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 813
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 30970
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 31014
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 31039
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 57702
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 58753
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69064
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69068
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69075
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69079
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69086
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69090
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69097
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69101
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69108
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69112
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69119
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 69123
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 6270
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 6276
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 6282
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 6288
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 6294
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 6300
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 76
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 81
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 86
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 91
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 131
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 132
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 139
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 140
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 146
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/modem/coex.rs",
+      "line": 152
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/ownership.rs",
+      "line": 208
+    }
+  ],
+  "unprojected": []
+}

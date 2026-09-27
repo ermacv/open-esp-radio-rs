@@ -208,6 +208,7 @@ hil-requirements = [
   { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
   { scenario = "ieee802154-peer-exchange", minimum-repetitions = 1 },
   { scenario = "ieee802154-background-maintenance-vendor", minimum-repetitions = 1 },
+  { scenario = "ieee802154-live-rssi", minimum-repetitions = 1 },
 ]
 gaps = [
   { axis = "implementation", id = "joint-phy-maintenance-with-other-clients-missing" },
@@ -332,7 +333,7 @@ section = "ieee802154-phy-and-rf"
 title = "RSSI"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [engine](../../../ieee802154/engine/src/engine.rs) reports each received frame's hardware RSSI byte with the S31 compensation 0. The [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) reads the live baseband RSSI (`recent_rssi`, ESP-IDF's `esp_ieee802154_get_recent_rssi`) through the PAC's read-only baseband capability, and the OpenThread adapter answers `otPlatRadioGetRssi` with it; that byte reflects the most recent baseband reception of either protocol, as for the vendor. The HIL cell `ieee802154-channel-energy` compares the RSSI of the peer's burst frames with the channel energy on air. Calibrated measurement is not established, and no HIL cell checks the live read yet."
+scope-and-limitations = "The [engine](../../../ieee802154/engine/src/engine.rs) reports each received frame's hardware RSSI byte with the S31 compensation 0. The [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) reads the live baseband RSSI (`recent_rssi`, ESP-IDF's `esp_ieee802154_get_recent_rssi`) through the PAC's read-only baseband capability, and the OpenThread adapter answers `otPlatRadioGetRssi` with it; that byte reflects the most recent baseband reception of either protocol, as for the vendor. The HIL cell `ieee802154-channel-energy` compares the RSSI of the peer's burst frames with the channel energy on air. The HIL cell `ieee802154-live-rssi` reads it after the vendor peer's frames at 20 and -15 dBm: it agrees with the last frame's RSSI within 3 dB and follows the power step. Calibrated measurement is not established."
 packages = ["oer-ieee802154-engine", "oer-esp32s31-pac", "oer-esp32s31-ieee802154-runtime"]
 
 [[items]]

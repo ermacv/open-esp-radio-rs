@@ -58,6 +58,9 @@ review. Links include the line ranges used for the findings.
 | [`components/esp_phy/include/esp_private/phy.h`](https://github.com/espressif/esp-idf/blob/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_phy/include/esp_private/phy.h#L38-L182) | PHY declarations, including opaque RF wake/close effects | `04027a4f11a0cd6c6a76478d681f7e29e4ba8ecf038d120d991bcab01735a53f` |
 | [`components/esp_phy/src/btbb_init.c`](https://github.com/espressif/esp-idf/blob/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_phy/src/btbb_init.c#L98-L139) | BTBB first-user initialization/refcount | `bde0cddaa033d2f34a4eaf0f1994b2d417850dba9d2fc5e6e9ee0ceb7caca3c3` |
 | [`components/esp_phy/include/esp_private/btbb.h`](https://github.com/espressif/esp-idf/blob/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_phy/include/esp_private/btbb.h#L14-L20) | opaque BTBB declaration | `659a94ca15d9e7d5531f34c755476523d285bc2cbc0a378b58505e67facea289` |
+| [`components/ieee802154/driver/esp_ieee802154_dev.c`](https://github.com/espressif/esp-idf/blob/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/ieee802154/driver/esp_ieee802154_dev.c#L1134-L1250) | MAC sleep-retention module and RF gating | same file/hash as `esp_ieee802154_dev.c` above |
+| [`components/ieee802154/private_include/esp_ieee802154_util.h`](https://github.com/espressif/esp-idf/blob/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/ieee802154/private_include/esp_ieee802154_util.h#L37-L43) | RF gating build condition | `4ca86544b16248e1d66b85cc84df8ac37bde50727189b3b242513aab22e19017` |
+| [`components/soc/esp32s31/include/soc/soc_caps.h`](https://github.com/espressif/esp-idf/blob/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/soc/esp32s31/include/soc/soc_caps.h#L563-L586) | modem power-down, PAU links and REGDMA-triggered PHY retention | same file/hash as `soc_caps.h` above |
 | [`components/esp_coex/include/esp_coex_i154.h`](https://github.com/espressif/esp-idf/blob/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_coex/include/esp_coex_i154.h#L14-L41) | coexistence priorities and opaque setters | `4989f8d5a99300cf75419d099d735e38fb27be3f083bb79e7abe8a5af0d34f3e` |
 
 ## 1. Enable, clock, and reset order
@@ -277,3 +280,50 @@ requests every active class. The default period is 1000 ms. Timer callbacks,
 serialization, fallible hardware transitions and rollback need explicit
 owners. A client bit or successful clock/reset sequence cannot mint an
 RF-ready, receive-ready or transmit-ready capability.
+
+## Sleep retention and RF gating
+
+The ESP32-S31 powers the modem down in light sleep (`SOC_PM_SUPPORT_MODEM_PD`)
+and restores modem registers by REGDMA over five PAU links, the PHY on link 4
+(`SOC_PM_PAU_LINK_NUM`, `SOC_PM_PAU_REGDMA_LINK_IDX_PHY`,
+`SOC_PM_MODEM_RETENTION_BY_REGDMA`, `SOC_PM_SUPPORT_REGDMA_TRIGGERED_PHY`).
+The driver takes part in three ways:
+
+- With `CONFIG_PM_ENABLE`, `ieee802154_mac_init` initializes, allocates and
+  attaches the retention module `SLEEP_RETENTION_MODULE_802154_MAC` after
+  allocating the interrupt, and `ieee802154_mac_deinit` detaches, frees and
+  deinitializes it. The module depends on the `SLEEP_RETENTION_MODULE_BT_BB`
+  and `SLEEP_RETENTION_MODULE_CLOCK_MODEM` modules. With tickless idle its one
+  REGDMA entry, created at priority `REGDMA_LINK_PRI_IEEE802154`, is a
+  continuous copy of the whole MAC aperture from `0x20103000` through
+  `MAC_DATE` at offset `0x1a0`, 105 words.
+- Unconditionally on the S31, `ieee802154_mac_init` ends with
+  `esp_phy_modem_init(SLEEP_MODEM_IEEE802154)` and `ieee802154_mac_deinit`
+  begins with `esp_phy_modem_deinit`, the PHY's own retention on link 4.
+- With REGDMA modem retention and tickless idle, `IEEE802154_RF_DISABLE`
+  closes the PHY client (`esp_phy_disable`) whenever `ieee802154_sleep`
+  puts the radio to sleep, and `IEEE802154_RF_ENABLE` opens it again before
+  every transmission, reception, energy detection and CCA. Without both,
+  the two macros are empty and RF stays open while the radio sleeps.
+
+The port implements none of these. It has no light-sleep entry, modem
+power-down, REGDMA retention or tickless idle, so the radio's sleep is the
+MAC's alone and RF stays open for the client's lifetime, as in a vendor build
+without tickless idle. Three independent gates hold this:
+
+- The pinned esp-phy-lib (`20f1db05`) lacks
+  `phy_ana_i2c_master_burst_rf_onoff`, which the vendor's PHY retention link
+  uses to turn RF off and on. Without it the PHY registers are not restored
+  after modem power-down, so neither the PHY retention module nor light sleep
+  with the modem powered down can be ported faithfully; a MAC retention
+  module would have no hardware consumer.
+- Closing and reopening RF around each sleep is the stop-and-start path of the
+  PHY whose brownout after wake is not yet resolved.
+- A standing user decision forbids closing RF for an IEEE 802.15.4 sleep until
+  the pinned libphy provides that function.
+
+The retention graph is shared: the MAC module depends on the BT_BB and modem
+clock modules, which the PHY owns; Bluetooth consumes BT_BB rather than
+duplicating it. While the Bluetooth LE Controller runs, a restore must not
+rewrite its PHY ETM route (channel two) or the BTBB power table.
+

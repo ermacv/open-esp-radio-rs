@@ -90,7 +90,7 @@ defers every decision to a task cannot meet these deadlines.
 | `ieee802154_txon_delay_set` (called by `ieee802154_mac_init`) | MAC TX/RX timing delays | `TXON_DELAY`, `RXON_DELAY`, `TXRX_SWITCH_DELAY` and `TXOFF_DELAY` in the HAL MAC foundation; the shared auxiliary TX-on delay keeps the BTBB initialization value |
 | `bt_bb_get_cur_rx_info` | receive diagnostic | the PAC's `Ieee802154BasebandRxInfo` capability reads its RSSI byte; the rest of the word stays unmodelled |
 | `modem_clock_module_*` | module clock, reset and MAC reset | arbiter modem clock planner; MAC reset in the HAL IEEE 802.15.4 lifecycle |
-| `sleep_retention_*`, `esp_phy_modem_init` | register retention across light sleep | none |
+| `sleep_retention_*`, `esp_phy_modem_init` | register retention across light sleep | none; the vendor module graph and the gates that hold it are in the [lifecycle reference](ieee802154-lifecycle.md#sleep-retention-and-rf-gating) |
 
 ## Ownership map
 

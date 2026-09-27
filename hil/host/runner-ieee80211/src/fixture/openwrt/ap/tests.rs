@@ -89,7 +89,6 @@ impl Backend for Fake {
         operation: &str,
         _options: &Value,
         up: bool,
-        _pending: &Value,
         _ap_enabled: Option<bool>,
     ) -> Result<Zeroizing<String>> {
         self.calls.borrow_mut().push(format!("{operation}:{up}"));
@@ -138,13 +137,41 @@ fn restoring_uci_and_radio_up_is_insufficient_if_the_original_ap_is_missing() {
 }
 
 #[test]
+fn uncommitted_router_changes_are_refused_before_any_mutation() {
+    let fake = Fake {
+        calls: Default::default(),
+        fail: "",
+        before: json!({"up": true, "ap_enabled": true, "options": {"radio0": {"htmode": "HT20"}}, "pending": {"radio0": {"htmode": true, "channel": false}}}),
+    };
+    let calls = fake.calls.clone();
+    let Err(error) = AccessPoint::prepare(
+        fake,
+        Profile {
+            ht40_above: false,
+            phy: PhyExpectation::He20,
+            channel: 13,
+            management_frame_protection: ManagementFrameProtection::Disabled,
+            access_point_security: AccessPointSecurity::Wpa2Personal,
+        },
+        json!({}),
+    ) else {
+        panic!("an uncommitted change must be refused");
+    };
+    let message = error.to_string();
+    assert!(message.contains("radio0.htmode"), "{message}");
+    assert!(!message.contains("radio0.channel"), "{message}");
+    assert!(message.contains("uci revert wireless"), "{message}");
+    assert_eq!(*calls.borrow(), ["snapshot:true"]);
+}
+
+#[test]
 fn restores_after_partial_apply_readback_failure_and_stop_failure() {
     for fail in ["apply", "observe", "state", ""] {
         let calls = Default::default();
         let fake = Fake {
             calls,
             fail,
-            before: json!({"up": false, "ap_enabled": false, "options": {"radio0": {"htmode": "HT40"}}, "pending": {"radio0": {"htmode": true}}}),
+            before: json!({"up": false, "ap_enabled": false, "options": {"radio0": {"htmode": "HT40"}}, "pending": {"radio0": {"htmode": false}}}),
         };
         let observed = fake.calls.clone();
         let owner = AccessPoint::prepare(

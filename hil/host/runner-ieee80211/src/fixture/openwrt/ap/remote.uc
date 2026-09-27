@@ -127,7 +127,9 @@ function wait_state() {
 if (request.operation == 'apply' || request.operation == 'restore') {
     for (let name, values in request.options) {
         for (let key, value in values) {
-            if (request.operation == 'restore' && !request.pending[name][key])
+            // The scenario's changes are temporary; restoring reverts them
+            // to the committed configuration the snapshot found.
+            if (request.operation == 'restore')
                 config.revert('wireless', name, key);
             else if (value == null)
                 config.delete('wireless', name, key);

@@ -132,7 +132,6 @@ pub trait Backend {
         operation: &str,
         options: &Value,
         up: bool,
-        pending: &Value,
         ap_enabled: Option<bool>,
     ) -> Result<Zeroizing<String>>;
     fn observe(&self) -> Result<Observation>;
@@ -145,13 +144,12 @@ impl Backend for Remote {
         operation: &str,
         options: &Value,
         up: bool,
-        pending: &Value,
         ap_enabled: Option<bool>,
     ) -> Result<Zeroizing<String>> {
         if self.0.read_only && !matches!(operation, "snapshot" | "observe" | "verify") {
             return Err("read-only OpenWrt fixture forbids AP mutation".into());
         }
-        invoke(&self.0, operation, options, up, pending, ap_enabled)
+        invoke(&self.0, operation, options, up, ap_enabled)
     }
     fn observe(&self) -> Result<Observation> {
         observe(&self.0)
@@ -210,7 +208,7 @@ impl AccessPoint {
 
 impl<B: Backend> AccessPoint<B> {
     fn attach(backend: B, profile: Profile, options: Value) -> Result<Self> {
-        let before = backend.invoke("verify", &options, true, &Value::Null, None)?;
+        let before = backend.invoke("verify", &options, true, None)?;
         let applied = backend.observe()?;
         profile.verify(&applied)?;
         Ok(Self {
@@ -224,7 +222,8 @@ impl<B: Backend> AccessPoint<B> {
     }
 
     fn prepare(backend: B, profile: Profile, options: Value) -> Result<Self> {
-        let before = backend.invoke("snapshot", &options, true, &Value::Null, None)?;
+        let before = backend.invoke("snapshot", &options, true, None)?;
+        refuse_uncommitted_changes(&serde_json::from_str(&before)?)?;
         // Establish ownership before the first mutation, including a failed SSH reply.
         let mut owner = Self {
             backend,
@@ -241,9 +240,7 @@ impl<B: Backend> AccessPoint<B> {
                 he: false,
             },
         };
-        owner
-            .backend
-            .invoke("apply", &options, true, &Value::Null, None)?;
+        owner.backend.invoke("apply", &options, true, None)?;
         owner.applied = owner.backend.observe()?;
         profile.verify(&owner.applied)?;
         Ok(owner)
@@ -254,7 +251,7 @@ impl<B: Backend> AccessPoint<B> {
             return Err("read-only OpenWrt AP cannot be stopped".into());
         }
         self.backend
-            .invoke("state", &json!({}), false, &Value::Null, None)
+            .invoke("state", &json!({}), false, None)
             .map(|_| ())
     }
 
@@ -262,8 +259,7 @@ impl<B: Backend> AccessPoint<B> {
         if self.read_only {
             return Err("read-only OpenWrt AP cannot be restarted".into());
         }
-        self.backend
-            .invoke("state", &json!({}), true, &Value::Null, None)?;
+        self.backend.invoke("state", &json!({}), true, None)?;
         self.profile.verify(&self.backend.observe()?)
     }
 
@@ -278,13 +274,9 @@ impl<B: Backend> AccessPoint<B> {
         let ap_enabled = before["ap_enabled"]
             .as_bool()
             .ok_or("OpenWrt snapshot omitted AP state")?;
-        let after = self.backend.invoke(
-            "restore",
-            &before["options"],
-            up,
-            &before["pending"],
-            Some(ap_enabled),
-        )?;
+        let after = self
+            .backend
+            .invoke("restore", &before["options"], up, Some(ap_enabled))?;
         let after: Value = serde_json::from_str(&after)?;
         if after != before {
             // Name the mismatched contract without logging credential values.
@@ -312,8 +304,34 @@ impl<B: Backend> Drop for AccessPoint<B> {
     }
 }
 
+/// The scenario profile is applied as temporary UCI changes and restored by
+/// reverting them, so the router's own configuration must be committed:
+/// restoration cannot reproduce another owner's uncommitted change.
+fn refuse_uncommitted_changes(snapshot: &Value) -> Result<()> {
+    let pending = snapshot["pending"]
+        .as_object()
+        .ok_or("OpenWrt snapshot omitted its uncommitted UCI changes")?
+        .iter()
+        .flat_map(|(section, keys)| {
+            keys.as_object()
+                .into_iter()
+                .flatten()
+                .filter(|(_, pending)| pending.as_bool() == Some(true))
+                .map(move |(key, _)| format!("{section}.{key}"))
+        })
+        .collect::<Vec<_>>();
+    if pending.is_empty() {
+        return Ok(());
+    }
+    Err(crate::fixture::Error::new(format!(
+        "OpenWrt has uncommitted UCI changes: {}; run `uci revert wireless` on the router",
+        pending.join(", ")
+    ))
+    .into())
+}
+
 pub fn observe(config: &OpenWrtConfig) -> Result<Observation> {
-    let data = invoke(config, "observe", &json!({}), true, &Value::Null, None)?;
+    let data = invoke(config, "observe", &json!({}), true, None)?;
     serde_json::from_str(&data).map_err(Into::into)
 }
 
@@ -357,12 +375,11 @@ fn invoke(
     operation: &str,
     options: &Value,
     up: bool,
-    pending: &Value,
     ap_enabled: Option<bool>,
 ) -> Result<Zeroizing<String>> {
     let request = json!({"operation": operation, "radio": config.radio,
         "ap_section": config.ap_section, "interface": config.wireless_interface,
-        "options": options, "up": up, "pending": pending, "ap_enabled": ap_enabled});
+        "options": options, "up": up, "ap_enabled": ap_enabled});
     let program = Zeroizing::new(format!(
         "let request = {};\n{}",
         request,

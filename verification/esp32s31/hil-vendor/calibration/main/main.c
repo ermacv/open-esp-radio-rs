@@ -7,7 +7,8 @@
  *
  *   oer-vendor-calibration <object> <hex bytes>
  *
- * then starts the Wi-Fi client without a connection and prints
+ * then starts the Wi-Fi client without a connection, receiving on its home
+ * channel, and prints
  * `oer-vendor-calibration-end`. It then answers register reads
  * the host requests from the published register model:
  *
@@ -68,6 +69,10 @@ void app_main(void)
      * power save would close RF before the registers are read. */
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
+    /* An unconnected station holds no PHY client; production's bring-up
+     * enables Wi-Fi RX on its initial channel. Promiscuous RX holds the
+     * PHY and RX on the current home channel in the same way. */
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
     printf(REPORT_PREFIX "-end\n");
     fflush(stdout);
     usb_serial_jtag_driver_config_t config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();

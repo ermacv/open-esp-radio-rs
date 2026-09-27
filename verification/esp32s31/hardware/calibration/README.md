@@ -79,9 +79,9 @@ It records:
 ## Limitations
 
 Both sides are read at the same lifecycle point: the vendor firmware starts
-its Wi-Fi client without a connection and with power save off, since
-production has no modem sleep and keeps RF open after its role-neutral
-Wi-Fi bring-up. Production's missing modem sleep is a behavior difference
+its Wi-Fi client without a connection, with power save off and promiscuous
+RX on its home channel, since production's role-neutral Wi-Fi bring-up
+enables RX on its initial channel and has no modem sleep. Production's missing modem sleep is a behavior difference
 outside this calibration comparison.
 
 

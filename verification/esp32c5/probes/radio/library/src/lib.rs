@@ -341,8 +341,8 @@ fn parameter(parameters: u32, offset: usize) -> u8 {
     unsafe { core::ptr::read_volatile((parameters as usize + offset) as *const u8) }
 }
 
-/// Whether phy_param byte 0x2A, the IQ swap, is set.
-fn iq_swap(parameters: u32) -> bool {
+/// Whether phy_param byte 0x2A, set for a channel of at least 3001 MHz, is set.
+fn high_band(parameters: u32) -> bool {
     parameter(parameters, 0x2a) != 0
 }
 
@@ -366,7 +366,7 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     /// `phy_iq_swap_set()` over the `phy_param` image at `parameters`.
     pub fn open_phy_i2c_trace_phy_iq_swap_set(parameters: u32) -> u32 {
-        with_radio(|radio| radio.set_iq_swap(iq_swap(parameters)));
+        with_radio(|radio| radio.set_iq_swap(high_band(parameters)));
         0
     }
 }
@@ -374,7 +374,7 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     /// `phy_fe_reg_init()` over the `phy_param` image at `parameters`.
     pub fn open_phy_i2c_trace_phy_fe_reg_init(parameters: u32) -> u32 {
-        let (swap, scale) = (iq_swap(parameters), parameter(parameters, 0x28a));
+        let (swap, scale) = (high_band(parameters), parameter(parameters, 0x28a));
         with_radio(|radio| radio.initialize_front_end(swap, scale));
         0
     }
@@ -408,7 +408,7 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     /// `phy_pwdet_sar2_init()` over the `phy_param` image at `parameters`.
     pub fn open_phy_i2c_trace_phy_pwdet_sar2_init(parameters: u32) -> u32 {
-        let swap = iq_swap(parameters);
+        let swap = high_band(parameters);
         with_radio(|radio| radio.initialize_power_detector_sar2(swap));
         0
     }

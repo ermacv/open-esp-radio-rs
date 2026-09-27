@@ -2503,14 +2503,14 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>FRONT_END_INIT_0888</name>
-          <description>Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise.</description>
+          <description>Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.</description>
           <addressOffset>0x888</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>IQ_SWAP_UNKNOWN</name>
-              <description>IQ-swap-dependent bit; meaning unknown.</description>
+              <description>Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
             </field>

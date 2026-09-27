@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "dbf33c418c8d408d4005c849d12a1432deea82e2e5e57de3c8ddf914d104fffb",
     "input-1": "49693d745eb4b4e6e6c77be4f5213765d545d8c7a1d9742a8a619bf596c4e27a",
-    "input-2": "5181f8ae0a79d72514c6d405829d4e378cd7a9202b4c3c38016d85ed1056b1c5"
+    "input-2": "8f9b0679925c5c663b8bf5584304f3498b44e703c6e2dd02a08a24db01056b77"
   },
   "sources": [
     {
@@ -15,15 +15,15 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac",
-      "sha256": "b22a9fc9015fc09e5bd92d69d435506c86c46465493949b79e9f61896c7926bf"
+      "sha256": "b37e0829478002c4cb700858aca2232f507436daeb8892edbaae05fcbbe626e3"
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw",
-      "sha256": "54f04d8126a1c944edd17066af3b8216f6db65281f1858ab18ea3abe328fdf5c"
+      "sha256": "29b8c1d3048aa8eed6c368daac5c5eb8d5bae7797eff23b084deccf97e72fc84"
     },
     {
       "path": "crates/hardware/ieee802154/engine",
-      "sha256": "b580144a39a6ed3a8c5808544659bc857c591768ee1159bcafbc410cfdb2914c"
+      "sha256": "6860f8dfede265647150ddb4b157175168ad0ed39d3a8f9b0ae9f50d206a8415"
     },
     {
       "path": "crates/hardware/radio/analog",
@@ -79,7 +79,7 @@
     },
     {
       "path": "verification/esp32c5/probes/radio/library",
-      "sha256": "0dabbc1214f295620675182094f620ce2e48d1b8e38e0ca5a32a643b58f50ebf"
+      "sha256": "282ac3e7fc9cfffe70e9a5454e785a116b5cab80e6c667420e599bed09f9afec"
     },
     {
       "path": "verification/esp32c5/scenarios",
@@ -2635,19 +2635,11 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 95
+      "line": 97
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 100
-    },
-    {
-      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 107
-    },
-    {
-      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 108
+      "line": 102
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
@@ -2679,11 +2671,11 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 120
+      "line": 116
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 121
+      "line": 117
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
@@ -2699,11 +2691,11 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 130
+      "line": 125
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 131
+      "line": 126
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
@@ -2719,47 +2711,47 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 138
+      "line": 135
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 139
+      "line": 136
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 147
+      "line": 140
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 152
+      "line": 141
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 153
+      "line": 149
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 158
+      "line": 154
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 159
+      "line": 155
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 163
+      "line": 160
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 164
+      "line": 161
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 171
+      "line": 165
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 172
+      "line": 166
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
@@ -2775,27 +2767,27 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
+      "line": 176
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
       "line": 177
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 201
+      "line": 179
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 206
+      "line": 203
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 207
+      "line": 208
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 214
-    },
-    {
-      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 215
+      "line": 209
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
@@ -2811,11 +2803,11 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 229
+      "line": 219
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 230
+      "line": 220
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
@@ -2827,23 +2819,23 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
+      "line": 233
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
       "line": 234
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 240
+      "line": 236
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 241
+      "line": 242
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 247
-    },
-    {
-      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
-      "line": 248
+      "line": 243
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
@@ -2852,6 +2844,14 @@
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
       "line": 250
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
+      "line": 251
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
+      "line": 252
     }
   ],
   "unprojected": []

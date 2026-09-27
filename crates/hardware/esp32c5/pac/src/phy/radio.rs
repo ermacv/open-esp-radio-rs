@@ -90,9 +90,11 @@ impl PhyRadioRegisters {
         svd::fixed_register_image::open_phy_baseband_clock_gate(self.baseband());
     }
 
-    /// `phy_iq_swap_set`, with `iq_swap` the phy_param byte 0x2A being set.
-    pub fn set_iq_swap(&mut self, iq_swap: bool) {
-        if iq_swap {
+    /// `phy_iq_swap_set`, with `high_band` the phy_param byte 0x2A, which the
+    /// channel setters (`phy_chip_set_chan`) set when the channel frequency
+    /// is at least 3001 MHz.
+    pub fn set_iq_swap(&mut self, high_band: bool) {
+        if high_band {
             generated::clear_phy_front_end_init_0c08_first(self.baseband());
         } else {
             generated::set_phy_front_end_init_0c08(self.baseband());
@@ -100,9 +102,9 @@ impl PhyRadioRegisters {
         generated::clear_phy_rx_dco_calibration_control(self.baseband());
     }
 
-    /// `phy_fe_reg_init`, with `iq_swap` the phy_param byte 0x2A being set
+    /// `phy_fe_reg_init`, with `high_band` the phy_param byte 0x2A being set
     /// and `rx_iq_scale` the phy_param byte 0x28A.
-    pub fn initialize_front_end(&mut self, iq_swap: bool, rx_iq_scale: u8) {
+    pub fn initialize_front_end(&mut self, high_band: bool, rx_iq_scale: u8) {
         let baseband = self.baseband();
         generated::enable_phy_front_end_0894(baseband);
         generated::clear_phy_front_end_clear_first(baseband);
@@ -112,7 +114,7 @@ impl PhyRadioRegisters {
         generated::set_phy_tx_iq_correction_modes(baseband);
         generated::set_phy_rx_iq_scale_high(baseband, PhyRxIqScale::Zero);
         generated::set_phy_rx_iq_scale_low(baseband, PhyRxIqScale::Zero);
-        if iq_swap {
+        if high_band {
             generated::set_phy_front_end_iq_swap(baseband);
         } else {
             generated::clear_phy_front_end_iq_swap(baseband);
@@ -164,9 +166,9 @@ impl PhyRadioRegisters {
         generated::set_phy_rx_iq_scale_low(self.baseband(), low);
     }
 
-    /// `phy_pwdet_sar2_init`, with `iq_swap` the phy_param byte 0x2A being
+    /// `phy_pwdet_sar2_init`, with `high_band` the phy_param byte 0x2A being
     /// set.
-    pub fn initialize_power_detector_sar2(&mut self, iq_swap: bool) {
+    pub fn initialize_power_detector_sar2(&mut self, high_band: bool) {
         let baseband = self.baseband();
         generated::set_phy_power_detector_sar_mode(baseband);
         generated::clear_phy_power_detector_sar_config(baseband);
@@ -174,7 +176,7 @@ impl PhyRadioRegisters {
         generated::set_phy_power_detector_mode(baseband, PhyPowerDetectorMode::Sar2Initialization);
         generated::set_sar2_power_detector_capacitor(
             &self.peripherals.lp_aon_radio,
-            if iq_swap {
+            if high_band {
                 PhySar2PowerDetectorCapacitor::Four
             } else {
                 PhySar2PowerDetectorCapacitor::Two

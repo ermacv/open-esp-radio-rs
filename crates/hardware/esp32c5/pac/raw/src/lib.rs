@@ -6367,7 +6367,7 @@ pub mod phy_baseband_config {
         pub const fn tx_pa_control_1(&self) -> &TxPaControl1 {
             &self.tx_pa_control_1
         }
-        #[doc = "0x888 - Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise."]
+        #[doc = "0x888 - Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
         #[inline(always)]
         pub const fn front_end_init_0888(&self) -> &FrontEndInit0888 {
             &self.front_end_init_0888
@@ -7153,34 +7153,34 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_INIT_0888 (rw) register accessor: Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0888::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0888::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0888`] module"]
+    #[doc = "FRONT_END_INIT_0888 (rw) register accessor: Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0888::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0888::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0888`] module"]
     #[doc(alias = "FRONT_END_INIT_0888")]
     pub type FrontEndInit0888 = crate::Reg<front_end_init_0888::FrontEndInit0888Spec>;
-    #[doc = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise."]
+    #[doc = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
     pub mod front_end_init_0888 {
         #[doc = "Register `FRONT_END_INIT_0888` reader"]
         pub type R = crate::R<FrontEndInit0888Spec>;
         #[doc = "Register `FRONT_END_INIT_0888` writer"]
         pub type W = crate::W<FrontEndInit0888Spec>;
-        #[doc = "Field `IQ_SWAP_UNKNOWN` reader - IQ-swap-dependent bit; meaning unknown."]
+        #[doc = "Field `IQ_SWAP_UNKNOWN` reader - Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
         pub type IqSwapUnknownR = crate::BitReader;
-        #[doc = "Field `IQ_SWAP_UNKNOWN` writer - IQ-swap-dependent bit; meaning unknown."]
+        #[doc = "Field `IQ_SWAP_UNKNOWN` writer - Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
         pub type IqSwapUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 29 - IQ-swap-dependent bit; meaning unknown."]
+            #[doc = "Bit 29 - Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
             #[inline(always)]
             pub fn iq_swap_unknown(&self) -> IqSwapUnknownR {
                 IqSwapUnknownR::new(((self.bits >> 29) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 29 - IQ-swap-dependent bit; meaning unknown."]
+            #[doc = "Bit 29 - Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
             #[inline(always)]
             pub fn iq_swap_unknown(&mut self) -> IqSwapUnknownW<'_, FrontEndInit0888Spec> {
                 IqSwapUnknownW::new(self, 29)
             }
         }
-        #[doc = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0888::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0888::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0888::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0888::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrontEndInit0888Spec;
         impl crate::RegisterSpec for FrontEndInit0888Spec {
             type Ux = u32;

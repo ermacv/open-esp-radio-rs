@@ -269,14 +269,14 @@ bitWidth = 8
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "FRONT_END_INIT_0888"
-description = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise."
+description = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."
 addressOffset = 0x888
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "IQ_SWAP_UNKNOWN"
-description = "IQ-swap-dependent bit; meaning unknown."
+description = "Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."
 bitOffset = 29
 bitWidth = 1
 

@@ -34,6 +34,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask vendor-provenance --chip CHIP --accept NAME[,NAME]` | Record the pinned fingerprint of cited functions after reviewing their facts; `--rebuild --baseline DIR` recomputes the registry from the current citations with fingerprints of the revision in `DIR` |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it under a HIL stand lease and `--monitor` opens the console. Without `--port` it flashes the only attached board registered as `esp32s31` |
 | `cargo xtask build vendor-probes --chip esp32s31` | Build the three Rust probe images of the ESP32-S31 vendor comparison |
+| `cargo xtask build vendor-probes --chip esp32c5` | Build the Rust probe image of the ESP32-C5 vendor comparison |
 | `cargo xtask build vendor-probes --chip esp32s31 --list-roles` | List declared artifact roles without building or authenticating an artifact |
 
 The root Cargo alias selects this package. `--root PATH` selects an explicit

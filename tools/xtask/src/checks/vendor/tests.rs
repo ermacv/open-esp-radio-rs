@@ -35,7 +35,10 @@ fn every_declared_role_builds_a_distinct_locked_embedded_package_and_target_dire
     let mut packages = BTreeSet::new();
     let mut outputs = BTreeSet::new();
     for probe in &PROBES {
-        assert!(roles.insert(probe.role));
+        assert!(!probe.chip.is_empty());
+        if probe.chip == "esp32s31" {
+            assert!(roles.insert(probe.role));
+        }
         assert!(packages.insert(probe.package));
         assert!(outputs.insert(probe.target_directory));
         let command = command(&context, probe, None);
@@ -48,7 +51,7 @@ fn every_declared_role_builds_a_distinct_locked_embedded_package_and_target_dire
         assert!(
             arguments
                 .windows(2)
-                .any(|pair| pair == ["--target", "riscv32imafc-unknown-none-elf"])
+                .any(|pair| pair == ["--target", probe.target])
         );
         assert!(arguments.contains(&OsStr::new("--locked")));
         assert!(arguments.contains(&OsStr::new("--release")));
@@ -99,7 +102,7 @@ fn builder_rejects_invalid_jobs_before_execution_and_stops_at_failed_artifact() 
     let context = Context::new(directory.path()).unwrap();
     let mut calls = 0;
     assert!(
-        build(&context, Some(OsStr::new("0")), |_| {
+        build(&context, "esp32s31", Some(OsStr::new("0")), |_| {
             calls += 1;
             Ok(())
         })
@@ -107,7 +110,7 @@ fn builder_rejects_invalid_jobs_before_execution_and_stops_at_failed_artifact() 
     );
     assert_eq!(calls, 0);
     assert!(
-        build(&context, None, |_| {
+        build(&context, "esp32s31", None, |_| {
             calls += 1;
             Err("compiled artifact failed".into())
         })
@@ -122,7 +125,7 @@ fn every_requested_artifact_receives_the_explicit_job_override() {
     std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
     let context = Context::new(directory.path()).unwrap();
     let mut calls = 0;
-    build(&context, Some(OsStr::new("4")), |command| {
+    build(&context, "esp32s31", Some(OsStr::new("4")), |command| {
         let arguments: Vec<_> = command.get_args().collect();
         assert!(arguments.windows(2).any(|pair| pair == ["--jobs", "4"]));
         assert!(arguments.contains(&OsStr::new("--locked")));
@@ -130,5 +133,40 @@ fn every_requested_artifact_receives_the_explicit_job_override() {
         Ok(())
     })
     .unwrap();
-    assert_eq!(calls, PROBES.len());
+    assert_eq!(calls, probes("esp32s31").count());
+}
+
+#[test]
+fn each_chip_builds_its_own_workspace_for_its_instruction_set() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+    let context = Context::new(directory.path()).unwrap();
+    let mut seen = Vec::new();
+    build(&context, "esp32c5", None, |command| {
+        let arguments: Vec<_> = command.get_args().collect();
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["--target", "riscv32imac-unknown-none-elf"])
+        );
+        let manifest = arguments
+            .windows(2)
+            .find(|pair| pair[0] == "--manifest-path")
+            .map(|pair| pair[1].to_owned())
+            .unwrap();
+        assert!(
+            std::path::Path::new(&manifest).ends_with("verification/esp32c5/probes/Cargo.toml")
+        );
+        seen.push(());
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(seen.len(), 1);
+    assert!(
+        elf(&context, "oer-esp32c5-probe-radio-elf")
+            .unwrap()
+            .ends_with(
+                "esp32c5-probes/riscv32imac-unknown-none-elf/release/oer-esp32c5-probe-radio-elf"
+            )
+    );
 }

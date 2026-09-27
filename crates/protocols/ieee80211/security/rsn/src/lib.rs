@@ -23,6 +23,7 @@ pub mod bip;
 pub mod element;
 pub mod frames;
 pub mod keys;
+pub mod management_ccmp;
 pub mod retry;
 pub mod runner;
 pub mod state;

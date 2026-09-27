@@ -3176,6 +3176,7 @@ dependencies = [
  "pbkdf2",
  "sha1",
  "sha2",
+ "subtle",
  "zeroize",
 ]
 

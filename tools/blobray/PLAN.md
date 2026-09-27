@@ -85,6 +85,7 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 21 | deferred | Deferred (2026-09-27, architecture owner): until a concrete driver-verification claim needs it; the obligations below stand. Stable persistence after stages 15–19: freeze a research fixture corpus and transitive persistence contract that subsequent versions must read without conversion. |
 | 24.3 | backlog | Interpreter throughput of at least 100 million guest instructions per second, which needs an executor monomorphized over the session memory (application/backend boundary change); the measured 22 million per second keeps the full run at 3 s. |
 | 22.M | backlog | Whole-crate mutation campaign of the production PHY. Needs mutant cost cut by one to two orders of magnitude first, for example reuse of unchanged vendor-side executions (with backlog 16) instead of rerunning every scenario. |
+| 28.C | backlog | CI rerun of the vendor evidence scenarios (architecture owner, 2026-09-27). `cargo xtask evidence --check` needs the `local-build` pins `sdk`, `phy-sdk`, `libesp-hw-support` and `libhal`, which a clean runner cannot download. Obligation: build the pinned ESP-IDF reference project in CI and prove its outputs reproduce the pinned SHA-256 digests bit for bit before the check returns to the `images` job; until then Blobray's periodic local `--check` after every pull that touches production crates is the gate. |
 
 | Legacy leaf or leaves | Completion owner |
 | --- | --- |

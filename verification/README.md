@@ -43,7 +43,10 @@ and `tools/symbol-lineage` pairs obfuscated names across releases. See the
 production probe in one [Blobray](../tools/blobray/README.md) session and
 fails closed with MATCH, DIFF or INCOMPLETE. Each scenario writes its shard
 of the evidence index with `--index`; qualification treats a shard as stale
-when any source it records changed. The [ESP32-S31 project](esp32s31/README.md)
+when any source it records changed. CI does not rerun the vendor scenarios,
+because the `local-build` pins of `esp32s31/artifacts.toml` cannot be
+downloaded: Blobray's periodic local `cargo xtask evidence --chip <chip>
+--check` is the gate. The [ESP32-S31 project](esp32s31/README.md)
 describes the scenarios, their inputs and their reviewed decisions; the
 [vendor contract reference](../docs/vendor/esp32s31/README.md) explains the
 vendor behavior they cover.

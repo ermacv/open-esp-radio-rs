@@ -394,15 +394,17 @@ impl HilEvidenceIndex {
         repository: &RepositoryState,
     ) -> Result<Self> {
         let current_observer = observer::Current::load(root);
-        let mut directory = root.join(runs);
-        // A checkout whose runner never linked its run directory still reads
-        // the store shared by every checkout of this user.
-        if !directory.try_exists()?
-            && let Some(shared) = shared_runs(target).filter(|shared| shared.is_dir())
+        // The checkout's run directory, usually a link to the store shared by
+        // every checkout of this user, and that store itself: a checkout that
+        // has not joined the store yet reads both, each run once.
+        let mut directories = vec![root.join(runs)];
+        if let Some(shared) = shared_runs(target).filter(|shared| shared.is_dir())
+            && fs::canonicalize(&directories[0]).ok() != fs::canonicalize(&shared).ok()
         {
-            directory = shared;
+            directories.push(shared);
         }
-        if !directory.try_exists()? {
+        directories.retain(|directory| directory.exists());
+        if directories.is_empty() {
             return Ok(Self {
                 summary: HilEvidenceSummary {
                     evaluator_dirty: repository.dirty,
@@ -412,14 +414,23 @@ impl HilEvidenceIndex {
                 ..Self::default()
             });
         }
-        if !directory.is_dir() {
-            return Err(format!(
-                "HIL evidence path is not a directory: {}",
-                directory.display()
-            )
-            .into());
+        let mut entries = Vec::new();
+        let mut names = BTreeSet::new();
+        for directory in &directories {
+            if !directory.is_dir() {
+                return Err(format!(
+                    "HIL evidence path is not a directory: {}",
+                    directory.display()
+                )
+                .into());
+            }
+            for entry in fs::read_dir(directory)? {
+                let entry = entry?;
+                if names.insert(entry.file_name()) {
+                    entries.push(entry);
+                }
+            }
         }
-        let mut entries = fs::read_dir(&directory)?.collect::<std::io::Result<Vec<_>>>()?;
         entries.sort_by_key(std::fs::DirEntry::file_name);
         let mut scenarios = BTreeMap::<String, Vec<ScenarioEvidence>>::new();
         let mut summary = HilEvidenceSummary {
@@ -603,9 +614,13 @@ impl HilEvidenceIndex {
                             .exclusions
                             .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
                     } else if !observer::matches(root, &current_observer, observation, None)? {
-                        observation
-                            .exclusions
-                            .push(decision::Exclusion::ObserverIdentityNotEstablished);
+                        observation.exclusions.push(
+                            if observer::recorded_graph_projects(root, observation) {
+                                decision::Exclusion::ObserverIdentityNotEstablished
+                            } else {
+                                decision::Exclusion::ObserverGraphNotProjectable
+                            },
+                        );
                     }
                     if observation.exclusions.is_empty() && observation.outcome == Outcome::Passed {
                         qualifying = true;
@@ -1037,7 +1052,13 @@ fn valid_id(value: &str) -> bool {
 
 /// The HIL run store shared by every checkout: `$OER_HIL_STORE/<target>/runs`
 /// or the user's data directory, as `cargo hil` links it.
+///
+/// Tests never read it: their temporary checkouts would otherwise evaluate the
+/// user's whole store.
 fn shared_runs(target: &str) -> Option<PathBuf> {
+    if cfg!(test) {
+        return None;
+    }
     let root = match std::env::var_os("OER_HIL_STORE").filter(|value| !value.is_empty()) {
         Some(root) => PathBuf::from(root),
         None => std::env::var_os("XDG_DATA_HOME")

@@ -329,6 +329,13 @@ fn main() -> ExitCode {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
+    // Recorded shards enter the repository; hash every file they bind.
+    if raw_arguments
+        .first()
+        .is_some_and(|command| command == "hil-evidence")
+    {
+        hash_cache::disable();
+    }
     let arguments = match parse_arguments(raw_arguments) {
         Ok(arguments) => arguments,
         Err(error) => {

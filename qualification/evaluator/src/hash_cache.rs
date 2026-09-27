@@ -21,10 +21,28 @@ use sha2::{Digest, Sha256};
 
 type Key = (u64, u64, u64, i64, i64, i64, i64);
 
+/// Entries unseen this long are dropped when the cache is saved.
+const MAX_AGE_SECONDS: u64 = 30 * 24 * 3600;
+
 struct Cache {
     path: Option<PathBuf>,
-    entries: HashMap<String, String>,
+    /// Digest and the last time an evaluation used it.
+    entries: HashMap<String, (String, u64)>,
     added: bool,
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+/// Hash every file for the rest of this process, for commands whose results
+/// enter tracked files: the unauthenticated cache must not vouch for them.
+pub(crate) fn disable() {
+    if let Ok(mut cache) = cache().lock() {
+        cache.path = None;
+    }
 }
 
 fn cache() -> &'static Mutex<Cache> {
@@ -74,13 +92,15 @@ pub(crate) fn sha256_file(path: &Path) -> crate::Result<String> {
     let before = fs::metadata(path)?;
     let key = key(&before);
     let use_cache = {
-        let known = cache().lock().map_err(|_| "hash cache poisoned")?;
-        if known.path.is_some()
-            && let Some(digest) = known.entries.get(&key)
-        {
-            return Ok(digest.clone());
+        let mut known = cache().lock().map_err(|_| "hash cache poisoned")?;
+        let enabled = known.path.is_some();
+        if enabled && let Some((digest, seen)) = known.entries.get_mut(&key) {
+            *seen = now();
+            let digest = digest.clone();
+            known.added = true;
+            return Ok(digest);
         }
-        known.path.is_some()
+        enabled
     };
     let mut file = fs::File::open(path)?;
     let mut digest = Sha256::new();
@@ -96,7 +116,7 @@ pub(crate) fn sha256_file(path: &Path) -> crate::Result<String> {
     // A file written while it was hashed is not remembered.
     if use_cache && self::key(&fs::metadata(path)?) == key {
         let mut known = cache().lock().map_err(|_| "hash cache poisoned")?;
-        known.entries.insert(key, digest.clone());
+        known.entries.insert(key, (digest.clone(), now()));
         known.added = true;
     }
     Ok(digest)
@@ -110,6 +130,8 @@ pub(crate) fn save() {
     let Some(path) = cache.path.clone().filter(|_| cache.added) else {
         return;
     };
+    let oldest = now().saturating_sub(MAX_AGE_SECONDS);
+    cache.entries.retain(|_, (_, seen)| *seen >= oldest);
     let write = || -> crate::Result<()> {
         fs::create_dir_all(path.parent().ok_or("cache path has no parent")?)?;
         let temporary = path.with_extension(format!("json.{}", std::process::id()));

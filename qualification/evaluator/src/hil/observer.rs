@@ -257,6 +257,38 @@ fn inputs(root: &Path, prefixes: &[PathBuf]) -> Result<BTreeMap<String, String>>
     Ok(files)
 }
 
+/// Whether the observation's recorded observer graph projects onto today's
+/// observer inputs for its workload; an older runner's graph may not.
+pub(super) fn recorded_graph_projects(root: &Path, observation: &ScenarioEvidence) -> bool {
+    let Some(proof) = observation
+        .subject
+        .as_ref()
+        .and_then(|s| s.observer.as_ref())
+    else {
+        return true;
+    };
+    let document = observation
+        .run_directory
+        .as_ref()
+        .zip(
+            observation
+                .subject
+                .as_ref()
+                .and_then(|s| s.procedure.as_ref()),
+        )
+        .and_then(|(run, p)| read_json::<Value>(&run.join(&p.path)).ok());
+    let Ok(registry) = read_json::<Value>(&root.join("hil/schema/observer-inputs.json")) else {
+        return true;
+    };
+    let workload = document
+        .as_ref()
+        .and_then(build_inputs::workload)
+        .unwrap_or_default();
+    build_inputs::dependencies(&registry, &workload).is_ok_and(|dependencies| {
+        build_inputs::projection(&proof["build"]["resolved"], &dependencies).is_ok()
+    })
+}
+
 pub(super) fn matches(
     root: &Path,
     current: &Current,

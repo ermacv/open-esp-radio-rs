@@ -17,6 +17,9 @@ pub(super) enum Exclusion {
     SourceBindingNotEstablished,
     ProcedureMismatch,
     ObserverIdentityNotEstablished,
+    /// The observer's recorded package graph, from an older runner, does not
+    /// project onto today's observer inputs.
+    ObserverGraphNotProjectable,
     CurrentObserverConfigurationUnavailable,
 }
 

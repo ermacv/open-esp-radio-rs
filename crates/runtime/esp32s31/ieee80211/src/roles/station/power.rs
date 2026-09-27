@@ -368,10 +368,19 @@ mod agent {
                 select(radio.wifi_coex_preemption_end(), power_irq.wait()),
             )
             .await;
+            #[cfg(feature = "diagnostics")]
+            if let Either3::First(command) = &event {
+                log::info!("open-radio: power agent command {command:?} awaits the radio");
+            }
             let mut guard = radio.lock().await;
             match event {
                 Either3::First(command) => {
-                    if let Err(failure) = perform(&mut guard, rf, command).await {
+                    #[cfg(feature = "diagnostics")]
+                    log::info!("open-radio: power agent performs {command:?}");
+                    let performed = perform(&mut guard, rf, command).await;
+                    #[cfg(feature = "diagnostics")]
+                    log::info!("open-radio: power agent performed {:?}", performed.is_ok());
+                    if let Err(failure) = performed {
                         link.fail(failure);
                         return failure;
                     }

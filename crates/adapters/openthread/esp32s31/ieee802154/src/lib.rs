@@ -12,7 +12,8 @@
 //! ESP-IDF's OpenThread port reports, apart from timed transmission and
 //! reception: hardware acknowledgement with its timeout, address filtering,
 //! promiscuous mode, source matching for frame pending, energy scan,
-//! transmission from sleep and transmit security. As in the port,
+//! transmission from sleep, transmit security and timed transmission and
+//! reception for Coordinated Sampled Listening. As in the port,
 //! OpenThread's `SubMac` runs CSMA-CA backoffs and retries itself; each of
 //! its attempts reaches the radio as one transmission with or without a
 //! CCA, which the radio secures with OpenThread's keys and a frame counter

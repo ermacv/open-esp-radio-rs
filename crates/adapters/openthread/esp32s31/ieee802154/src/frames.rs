@@ -165,5 +165,29 @@ pub fn sent_ack_security(sent: SentAcknowledgement) -> Option<(u32, u8)> {
     Some((security.frame_counter, security.key_id?))
 }
 
+/// A time OpenThread gives in the low 32 bits of the radio clock
+/// (`otPlatRadioReceiveAt`, `mTxDelayBaseTime + mTxDelay`), in the full
+/// clock: the instant nearest to `now` with those low bits, up to half the
+/// 32-bit range before or after it.
+pub const fn radio_time(now: u64, low: u32) -> u64 {
+    let offset = low.wrapping_sub(now as u32) as i32;
+    now.wrapping_add_signed(offset as i64)
+}
+
+/// The CSL drift of ESP-IDF's OpenThread port, in ± ppm
+/// (`CONFIG_OPENTHREAD_CSL_ACCURACY` default).
+pub const CSL_ACCURACY_PPM: u8 = 50;
+
+/// The CSL uncertainty of ESP-IDF's OpenThread port, in units of 10
+/// microseconds (`CONFIG_OPENTHREAD_CSL_UNCERTAIN` default).
+pub const CSL_UNCERTAINTY: u8 = 50;
+
+/// A CSL period as OpenThread passes it (`otPlatRadioEnableCsl`, units of
+/// ten symbols) for the radio's 16-bit CSL IE field, as the port's
+/// `otMacFrameSetCslIe` truncates it.
+pub const fn csl_period(period: u32) -> u16 {
+    period as u16
+}
+
 #[cfg(test)]
 mod tests;

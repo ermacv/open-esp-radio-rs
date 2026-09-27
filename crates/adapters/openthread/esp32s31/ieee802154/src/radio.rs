@@ -4,31 +4,35 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::Deque;
 use oer_esp32s31_hal::ieee802154::ll::Ieee802154LowLevel;
 use oer_esp32s31_ieee802154_runtime::{
-    Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent, Ieee802154Runtime,
+    Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
+    Ieee802154Runtime,
 };
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView,
-    RadioCommand, RadioState, RequestId, TxMode, TxRequest, TxSecurity,
+    RadioCommand, RadioState, RadioTimestamp, RequestId, ScheduledReceiveRequest, TxMode,
+    TxRequest, TxSecurity,
 };
 use openthread::{
-    AckSecurity, Capabilities, Config, FrameCounterUpdate, MacCapabilities, MacKeys, PsduMeta,
-    Radio, RadioCaps, RadioErrorKind, SentAck, SrcMatchConfig, TxFrame,
+    AckSecurity, Capabilities, Config, CslConfig, FrameCounterUpdate, MacCapabilities, MacKeys,
+    PsduMeta, Radio, RadioCaps, RadioClock, RadioErrorKind, SentAck, SrcMatchConfig, TxFrame,
 };
 
 use crate::frames::{
-    PORT_INITIAL_KEYS, TransmitFailure, extended_address, extended_pending_address, pending_mode,
-    psdu_mac, scan_micros, sent_ack_security, set_frame_counter, set_mac_keys,
-    short_pending_address, transmit_failure, tx_security, write_applied_security, write_psdu,
+    CSL_ACCURACY_PPM, CSL_UNCERTAINTY, PORT_INITIAL_KEYS, TransmitFailure, csl_period,
+    extended_address, extended_pending_address, pending_mode, psdu_mac, radio_time, scan_micros,
+    sent_ack_security, set_frame_counter, set_mac_keys, short_pending_address, transmit_failure,
+    tx_security, write_applied_security, write_psdu,
 };
 
 /// The PHY capabilities the radio reports, as ESP-IDF's OpenThread port
-/// reports them (`otPlatRadioGetCaps`) apart from timed transmission and
-/// reception, which are not composed. Declare them to OpenThread before its
-/// instance is built (`OtResources::set_radio_caps`).
+/// reports them (`otPlatRadioGetCaps`). Declare them to OpenThread before
+/// its instance is built (`OtResources::set_radio_caps`).
 pub const OPEN_THREAD_RADIO_CAPABILITIES: Capabilities = Capabilities::ACK_TIMEOUT
     .union(Capabilities::ENERGY_SCAN)
     .union(Capabilities::SLEEP_TO_TX)
-    .union(Capabilities::TRANSMIT_SEC);
+    .union(Capabilities::TRANSMIT_SEC)
+    .union(Capabilities::RECEIVE_TIMING)
+    .union(Capabilities::TRANSMIT_TIMING);
 
 /// Figures the radio reports to OpenThread.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -54,6 +58,20 @@ pub struct OpenThreadRadio<'r, 's, M: RawMutex, H, const EVENTS: usize, const QU
     /// An operation whose terminal event is still owed.
     pending: Option<RequestId>,
     next_id: u32,
+    /// The runtime's radio clock, once the radio is initialized.
+    clock: Option<RadioClock>,
+}
+
+/// One frame to transmit and how.
+struct Outgoing<'a> {
+    psdu: &'a [u8],
+    channel: u8,
+    power: i8,
+    /// Its presence asks for a CCA at the radio's own threshold.
+    cca_threshold: Option<i8>,
+    /// The start time in the low 32 bits of the radio clock.
+    tx_at: Option<u32>,
+    security: TxSecurity,
 }
 
 /// The terminal event of one operation.
@@ -81,7 +99,14 @@ where
             received: Deque::new(),
             pending: None,
             next_id: 0,
+            clock: None,
         }
+    }
+
+    /// The full radio-clock instant of a 32-bit OpenThread radio time.
+    fn radio_timestamp(&self, low: u32) -> RadioTimestamp {
+        let now = self.clock.map_or(0, |clock| clock());
+        RadioTimestamp::from_micros(radio_time(now, low))
     }
 
     /// A request identifier; the runtime reserves `u32::MAX`.
@@ -154,16 +179,20 @@ where
     /// fields the radio wrote, whatever the outcome.
     async fn send(
         &mut self,
-        psdu: &[u8],
-        number: u8,
-        power: i8,
-        cca_threshold: Option<i8>,
-        security: TxSecurity,
+        outgoing: Outgoing<'_>,
         ack_psdu_buf: Option<&mut [u8]>,
     ) -> (
         Result<Option<PsduMeta>, RadioErrorKind>,
         Option<AppliedSecurity>,
     ) {
+        let Outgoing {
+            psdu,
+            channel: number,
+            power,
+            cca_threshold,
+            tx_at,
+            security,
+        } = outgoing;
         self.settle().await;
         let channel = match channel(number) {
             Ok(channel) => channel,
@@ -174,10 +203,14 @@ where
         };
         let id = self.id();
         // The threshold stays the radio's own; its presence asks for a CCA.
-        let mode = if cca_threshold.is_some() {
-            TxMode::ClearChannelAssessment
-        } else {
-            TxMode::Direct
+        // A delayed frame starts at its time (`esp_ieee802154_transmit_at`).
+        let mode = match (tx_at, cca_threshold.is_some()) {
+            (Some(at), cca) => TxMode::Scheduled {
+                at: self.radio_timestamp(at),
+                cca,
+            },
+            (None, true) => TxMode::ClearChannelAssessment,
+            (None, false) => TxMode::Direct,
         };
         if let Err(error) = self.submit(RadioCommand::Transmit(TxRequest {
             id,
@@ -220,6 +253,7 @@ where
                     rssi: Some(ack.metadata.rssi_dbm),
                     lqi: Some(ack.metadata.link_quality),
                     ack: None,
+                    timestamp: ack.metadata.timestamp.map(RadioTimestamp::as_micros),
                 })
             }
             _ => None,
@@ -260,12 +294,15 @@ where
         self.runtime
             .with_enhanced_ack(|generator| *generator = Some(Ieee802154EnhancedAckGenerator::new()))
             .map_err(|_| RadioErrorKind::Other)?;
+        self.clock = Some(self.runtime.clock().map_err(|_| RadioErrorKind::Other)?);
         Ok(RadioCaps {
             phy: OPEN_THREAD_RADIO_CAPABILITIES,
             mac: MacCapabilities::all(),
             receive_sensitivity: self.defaults.receive_sensitivity_dbm,
             default_tx_power: self.defaults.tx_power_dbm,
             default_cca_threshold: self.defaults.cca_threshold_dbm,
+            csl_accuracy: CSL_ACCURACY_PPM,
+            csl_uncertainty: CSL_UNCERTAINTY,
         })
     }
 
@@ -341,9 +378,15 @@ where
         ack_psdu_buf: Option<&mut [u8]>,
     ) -> Result<Option<PsduMeta>, Self::Error> {
         let security = TxSecurity::Processed;
-        self.send(psdu, number, power, cca_threshold, security, ack_psdu_buf)
-            .await
-            .0
+        let outgoing = Outgoing {
+            psdu,
+            channel: number,
+            power,
+            cca_threshold,
+            tx_at: None,
+            security,
+        };
+        self.send(outgoing, ack_psdu_buf).await.0
     }
 
     async fn transmit_frame(
@@ -354,11 +397,14 @@ where
         let security = tx_security(frame.retransmission, frame.security_processed);
         let (result, applied) = self
             .send(
-                frame.psdu,
-                frame.channel,
-                frame.power,
-                frame.cca_threshold,
-                security,
+                Outgoing {
+                    psdu: frame.psdu,
+                    channel: frame.channel,
+                    power: frame.power,
+                    cca_threshold: frame.cca_threshold,
+                    tx_at: frame.tx_at,
+                    security,
+                },
                 ack_psdu_buf,
             )
             .await;
@@ -366,6 +412,39 @@ where
             frame.header_updated = write_applied_security(applied, frame.psdu);
         }
         result
+    }
+
+    fn clock(&self) -> RadioClock {
+        self.clock.unwrap_or(openthread::embassy_radio_clock)
+    }
+
+    async fn receive_at(
+        &mut self,
+        number: u8,
+        start: u32,
+        duration: u32,
+    ) -> Result<(), Self::Error> {
+        self.settle().await;
+        let channel = channel(number)?;
+        let id = self.id();
+        let start = self.radio_timestamp(start);
+        self.submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
+            id,
+            channel,
+            start,
+            duration_us: duration,
+        }))
+    }
+
+    async fn set_csl(&mut self, csl: CslConfig) -> Result<(), Self::Error> {
+        self.runtime
+            .with_csl(|installed| {
+                *installed = Ieee802154Csl {
+                    period: csl_period(csl.period),
+                    sample_time: csl.sample_time,
+                }
+            })
+            .map_err(|_| RadioErrorKind::Other)
     }
 
     async fn set_mac_keys(&mut self, keys: &MacKeys) -> Result<(), Self::Error> {
@@ -420,6 +499,7 @@ where
             channel: frame.metadata.channel.get(),
             rssi: Some(frame.metadata.rssi_dbm),
             lqi: Some(frame.metadata.link_quality),
+            timestamp: frame.metadata.timestamp.map(RadioTimestamp::as_micros),
             ack: Some(SentAck {
                 frame_pending: sent.frame_pending,
                 security: sent_ack_security(sent).map(|(frame_counter, key_id)| AckSecurity {

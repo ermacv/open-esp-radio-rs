@@ -3,9 +3,10 @@ use oer_ieee802154::{
 };
 
 use super::{
-    PORT_INITIAL_KEYS, TransmitFailure, extended_address, extended_pending_address, pending_mode,
-    psdu_mac, scan_micros, sent_ack_security, set_frame_counter, set_mac_keys,
-    short_pending_address, transmit_failure, tx_security, write_applied_security, write_psdu,
+    PORT_INITIAL_KEYS, TransmitFailure, csl_period, extended_address, extended_pending_address,
+    pending_mode, psdu_mac, radio_time, scan_micros, sent_ack_security, set_frame_counter,
+    set_mac_keys, short_pending_address, transmit_failure, tx_security, write_applied_security,
+    write_psdu,
 };
 
 #[test]
@@ -145,4 +146,24 @@ fn sent_ack_security_needs_a_key_index() {
     assert_eq!(sent_ack_security(sent(Some(3))), Some((9, 3)));
     assert_eq!(sent_ack_security(sent(None)), None);
     assert_eq!(sent_ack_security(SentAcknowledgement::NONE), None);
+}
+
+/// OpenThread's 32-bit radio times extend to the nearest full instant,
+/// across a wrap of the low bits in either direction.
+#[test]
+fn radio_times_extend_around_now() {
+    assert_eq!(radio_time(1_000, 1_500), 1_500);
+    assert_eq!(radio_time(1_000, 900), 900);
+    let now = (7_u64 << 32) + 10;
+    assert_eq!(radio_time(now, 20), now + 10);
+    assert_eq!(radio_time(now, u32::MAX - 5), (7_u64 << 32) - 6);
+    let late = (7_u64 << 32) + u64::from(u32::MAX) - 10;
+    assert_eq!(radio_time(late, 30), (8_u64 << 32) + 30);
+}
+
+/// The CSL IE carries 16 bits of the period.
+#[test]
+fn csl_periods_fit_the_ie() {
+    assert_eq!(csl_period(3_125), 3_125);
+    assert_eq!(csl_period(0x1_0005), 5);
 }

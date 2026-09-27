@@ -56,6 +56,11 @@ const UDP_PORT: u16 = 1212;
 const UDP_BUFFER: usize = 1280;
 const UDP_SOCKETS: usize = 2;
 
+/// The CSL period in microseconds, from the build environment: with one,
+/// the device runs as a synchronized sleepy end device that samples its
+/// parent's channel in CSL windows; without one, as a minimal end device.
+const THREAD_CSL_PERIOD_US: Option<&str> = option_env!("THREAD_CSL_PERIOD_US");
+
 /// The active operational dataset as TLV hex, from the build environment.
 const THREAD_DATASET: &str = match option_env!("THREAD_DATASET") {
     Some(dataset) => dataset,
@@ -199,10 +204,21 @@ async fn thread_task(
     }
     ot.set_active_dataset_tlv_hexstr(THREAD_DATASET)
         .expect("THREAD_DATASET must be a valid dataset");
-    // A minimal end device: receiver on when idle, no router role, stable
-    // network data only.
-    ot.set_link_mode(true, false, false)
+    // An end device without the router role, with stable network data only:
+    // minimal (receiver on when idle), or synchronized sleepy with a CSL
+    // period, sampling in the windows its radio schedules.
+    let csl_period = THREAD_CSL_PERIOD_US.map(|period| {
+        period
+            .parse::<u32>()
+            .expect("THREAD_CSL_PERIOD_US must be a period in microseconds")
+    });
+    ot.set_link_mode(csl_period.is_none(), false, false)
         .expect("the MTD link mode must be accepted");
+    if let Some(period) = csl_period {
+        ot.set_csl_period(period)
+            .expect("THREAD_CSL_PERIOD_US must be a valid CSL period");
+        info!("CSL period {period} us");
+    }
     ot.enable_ipv6(true).expect("IPv6 must come up");
     ot.enable_thread(true).expect("Thread must start");
 

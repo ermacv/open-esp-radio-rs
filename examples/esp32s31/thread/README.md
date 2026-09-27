@@ -10,6 +10,12 @@ The device joins the network of the active operational dataset, logs its
 role and addresses on every state change and echoes UDP datagrams on port
 1212.
 
+OpenThread is built with Coordinated Sampled Listening (the `csl` feature
+of the `openthread` fork). With `THREAD_CSL_PERIOD_US` set at build time,
+the device runs as a synchronized sleepy end device instead: its receiver
+is off when idle and it samples its parent's channel once per CSL period
+in windows its radio schedules; the parent must support CSL.
+
 The IEEE EUI-64 is derived as ESP-IDF's `esp_read_mac(ESP_MAC_IEEE802154)`
 derives it from the base MAC and the eFuse MAC extension. Entropy comes from
 the hardware TRNG. Settings live in RAM and are lost on reset.

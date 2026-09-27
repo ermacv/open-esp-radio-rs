@@ -13,8 +13,12 @@ claims `OT_RADIO_CAPS_TRANSMIT_SEC` and reads back from it: the MAC keys and
 frame counter (`set_mac_keys`, `set_mac_frame_counter`), each frame's
 transmit information (`transmit_frame`: `mIsARetx`, `mIsSecurityProcessed`,
 and the frame counter and key index the radio wrote), the acknowledgement
-sent for a received frame (`PsduMeta::ack`) and the capabilities declared
-before the instance is built (`OtResources::set_radio_caps`).
+sent for a received frame (`PsduMeta::ack`), the capabilities declared
+before the instance is built (`OtResources::set_radio_caps`) and, with its
+`csl` feature, Coordinated Sampled Listening: the radio clock
+(`Radio::clock`), scheduled receive windows (`Radio::receive_at`), the CSL
+receiver state (`Radio::set_csl`), delayed transmission (`TxFrame::tx_at`)
+and receive SFD times (`PsduMeta::timestamp`).
 
 ## Use
 
@@ -34,10 +38,10 @@ entropy, settings storage and the C library functions OpenThread links.
 
 The capabilities are the ones the radio keeps under this trait:
 
-- PHY: ACK timeout, energy scan, transmission from sleep and transmit
-  security, as ESP-IDF's OpenThread port reports them
-  (`otPlatRadioGetCaps`); its timed transmission and reception are not
-  composed.
+- PHY: ACK timeout, energy scan, transmission from sleep, transmit
+  security and timed transmission and reception, as ESP-IDF's OpenThread
+  port reports them (`otPlatRadioGetCaps`). The CSL accuracy and
+  uncertainty are the port's defaults, 50 ppm and 500 microseconds.
 - MAC: hardware acknowledgement in both directions, PAN ID, short and
   extended address filtering, promiscuous mode and source matching. A
   disabled source-match table answers every poll with frame pending; an
@@ -58,6 +62,18 @@ ACK's counter and key index and its frame-pending bit, as the port's
 receive information does. Unlike the port, which reports the counter after
 the one the ACK carried, the radio reports the one the ACK carried. The
 radio acknowledges no second short address.
+
+The radio clock is the runtime's (ESP-HAL's microsecond clock, the port's
+`esp_timer`); OpenThread's 32-bit radio times are taken as the nearest
+instant of it. A CSL receiver's `otPlatRadioReceiveAt` becomes a scheduled
+receive window, outside which the radio sleeps; the first frame of the
+window ends it, as in the vendor driver. `otPlatRadioEnableCsl` and
+`otPlatRadioUpdateCslSampleTime` set the runtime's CSL state: enhanced ACKs
+then carry a CSL IE, every CSL IE the radio sends gets the period and the
+phase to the next sample time when its SFD goes out, and retransmissions
+take a new frame counter, all as the port does. A CSL transmitter's delayed
+frame becomes a scheduled transmission, with a CCA when OpenThread asks for
+one.
 
 Frames that arrive during a transmission or energy scan wait in a bounded
 queue for `receive`; a full queue drops the newest. A transmission whose

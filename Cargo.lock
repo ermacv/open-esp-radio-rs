@@ -3450,7 +3450,7 @@ dependencies = [
 [[package]]
 name = "openthread"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=fea16f635b4541c45757462c5833d9ad80e0d3e7#fea16f635b4541c45757462c5833d9ad80e0d3e7"
+source = "git+https://github.com/ermacv/openthread?rev=869d684a9abd8b76e21e29745f4f0d91e043e569#869d684a9abd8b76e21e29745f4f0d91e043e569"
 dependencies = [
  "bitflags 2.13.1",
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3465,7 +3465,7 @@ dependencies = [
 [[package]]
 name = "openthread-sys"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=fea16f635b4541c45757462c5833d9ad80e0d3e7#fea16f635b4541c45757462c5833d9ad80e0d3e7"
+source = "git+https://github.com/ermacv/openthread?rev=869d684a9abd8b76e21e29745f4f0d91e043e569#869d684a9abd8b76e21e29745f4f0d91e043e569"
 dependencies = [
  "anyhow",
  "bindgen",

@@ -43,6 +43,11 @@ protocol compositions are clients of the system:
   wake reopens RF before the client re-enters. The vendor compiles this
   sleep only with modem retention and tickless idle, so a composition
   enables it explicitly.
+- `RadioGuard::suspend_wifi` and `RadioGuard::resume_wifi` are the vendor
+  modem sleep's `wifi_rf_phy_disable`/`wifi_rf_phy_enable`: the Wi-Fi
+  membership becomes a suspended token while Wi-Fi leaves the PHY client set,
+  RF closes when no client remains, and a wake reopens RF before Wi-Fi
+  re-enters. The registration and calibration stay across the sleep.
 
 - Coexistence: `RadioGuard::enable_coex`, `disable_coex`,
   `request_wifi_coex`, `request_bluetooth_coex` and `release_coex` are the
@@ -63,7 +68,8 @@ protocol compositions are clients of the system:
   and `end_bluetooth_preemption` reports the end of a Bluetooth preemption
   to Wi-Fi (`RadioSystem::wifi_coex_preemption_end`). The schedule's period,
   interval, flexible period and phases are read through
-  `RadioGuard::coex_schedule`.
+  `RadioGuard::coex_schedule`; `RadioGuard::coex_active_for` answers
+  `coex_status_get` for one radio.
 
 The Wi-Fi, Bluetooth and IEEE 802.15.4 compositions are all clients of the
 system.

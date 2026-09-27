@@ -15,6 +15,7 @@ use oer_esp32s31_coex::{
     CoexTimerIndex,
 };
 use oer_esp32s31_hal::{
+    ieee80211::client::WifiClocked,
     ieee802154::Ieee802154Clocked,
     root::{ConcurrentPartitions, RadioHardware},
     shared_radio::{PlatformClockProvider, SharedRadio, SharedRadioLease},
@@ -34,6 +35,9 @@ use oer_esp32s31_phy::{
     register_concurrent_phy,
     state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS,
     track_concurrent_phy, wake_concurrent_rf,
+    wifi_client::{
+        WifiPhyLeaveFailure, WifiPhyMembership, WifiPhySuspended, resume_wifi, suspend_wifi,
+    },
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 
@@ -212,6 +216,35 @@ pub struct Ieee802154Left {
     /// failed; a [`ConcurrentRfError::Recoverable`] failure keeps RF open,
     /// any other started failure requires reset.
     pub rf_closed: Result<bool, ConcurrentRfError>,
+}
+
+/// Wi-Fi asleep after [`RadioGuard::suspend_wifi`].
+#[must_use = "closing RF after the last client may have failed"]
+pub struct WifiAsleep {
+    /// The suspended client, to resume or leave.
+    pub suspended: WifiPhySuspended,
+    /// Whether RF closed because Wi-Fi was the last client, or why closing
+    /// it failed; a [`ConcurrentRfError::Recoverable`] failure keeps RF open,
+    /// any other started failure requires reset.
+    pub rf_closed: Result<bool, ConcurrentRfError>,
+}
+
+/// Failed wake retaining the suspended Wi-Fi client.
+#[must_use = "a failed wake still owns the suspended Wi-Fi client"]
+pub struct WifiWakeFailure {
+    /// Why Wi-Fi did not wake.
+    pub error: WifiWakeError,
+    /// The unchanged suspended client.
+    pub suspended: WifiPhySuspended,
+}
+
+/// Why sleeping Wi-Fi could not wake.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiWakeError {
+    /// The shared PHY could not be prepared ([`RadioPhyError::started`]).
+    Phy(RadioPhyError),
+    /// The PHY domain rejected the client; nothing changed.
+    Client(ConcurrentPhyError),
 }
 
 /// Failed wake retaining the sleeping route.
@@ -810,6 +843,19 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         }
     }
 
+    /// Whether coexistence is active for `radio`, as `coex_status_get` with
+    /// that radio's bitmap answers it: coexistence started (a second radio
+    /// enabled it) and another radio publishes schedule status.
+    pub fn coex_active_for(&self, radio: CoexStatusType) -> bool {
+        self.resources.coex_clients >= 2
+            && self
+                .resources
+                .schedule
+                .schedule()
+                .status()
+                .others_publish(radio)
+    }
+
     /// Record the Wi-Fi channel, as `coex_wifi_channel_set` does, and wake
     /// Bluetooth's channel wait.
     pub fn set_coex_wifi_channel(&mut self, channel: CoexWifiChannel) {
@@ -925,5 +971,70 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         if let CoexExpiry::Changed(change) = self.resources.schedule.expire(generation) {
             self.coex.publish(change);
         }
+    }
+
+    /// Put Wi-Fi's RF to sleep, as the vendor modem sleep does through
+    /// `wifi_rf_phy_disable`: leave the PHY client set, keeping the
+    /// registration and calibration, then close RF when no client remains.
+    ///
+    /// The caller must have stopped its MAC use of RF and cleared the Wi-Fi
+    /// receive path first.
+    ///
+    /// # Errors
+    ///
+    /// The domain rejected the release; nothing changed and the membership
+    /// is returned. An RF close failure after the release is reported in
+    /// [`WifiAsleep::rf_closed`].
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, drive this future to a terminal result.
+    pub async fn suspend_wifi(
+        &mut self,
+        clocked: &WifiClocked,
+        membership: WifiPhyMembership,
+    ) -> Result<WifiAsleep, WifiPhyLeaveFailure> {
+        let (suspended, last) = suspend_wifi(self.lease(), clocked, membership)?;
+        let rf_closed = if last {
+            self.close_phy_if_idle().await
+        } else {
+            Ok(false)
+        };
+        Ok(WifiAsleep {
+            suspended,
+            rf_closed,
+        })
+    }
+
+    /// Wake Wi-Fi's RF, as the vendor modem wake does through
+    /// `wifi_rf_phy_enable`: wake closed RF, then re-enter the PHY client
+    /// set. A returned [`ConcurrentAcquire::TrackingDue`] means the domain
+    /// must run its tracking before the MAC uses RF.
+    ///
+    /// # Errors
+    ///
+    /// Preparing the shared PHY failed, or the domain rejected the client;
+    /// the suspended client is returned.
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, drive this future to a terminal result.
+    pub async fn resume_wifi(
+        &mut self,
+        clocked: &WifiClocked,
+        suspended: WifiPhySuspended,
+    ) -> Result<(WifiPhyMembership, ConcurrentAcquire), WifiWakeFailure> {
+        if let Err(error) = self.prepare_phy().await {
+            return Err(WifiWakeFailure {
+                error: WifiWakeError::Phy(error),
+                suspended,
+            });
+        }
+        resume_wifi(self.lease(), clocked, suspended, &mut EmbassyPhyTime).map_err(|failure| {
+            WifiWakeFailure {
+                error: WifiWakeError::Client(failure.error()),
+                suspended: failure.into_suspended(),
+            }
+        })
     }
 }

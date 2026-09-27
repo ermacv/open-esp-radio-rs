@@ -330,6 +330,61 @@ impl Session {
         Ok(selection)
     }
 
+    /// Digest of the reviewed content of the selected contract: its rules,
+    /// classification, claim ceiling, applicability and reason. The call
+    /// endpoints name this run's imported revision and prepared image, so
+    /// they stay out and the digest is the same for every run of unchanged
+    /// sources.
+    fn review_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
+        for contract in &self.effects {
+            let EffectContractRef::Content { contract: id } =
+                blobray_application::in_process::effect_contract_ref(contract)?
+            else {
+                continue;
+            };
+            if &id == selected {
+                let reviewed = serde_json::json!({
+                    "rules": contract.rules,
+                    "unclassified": contract.unclassified,
+                    "claim-ceiling": contract.claim_ceiling,
+                    "applicability": contract.applicability,
+                    "reason": contract.reason,
+                });
+                return Ok(crate::harness::sha256(&serde_json::to_vec(&reviewed)?));
+            }
+        }
+        Err(invalid(format!(
+            "no reviewed contract has identity {}",
+            selected.as_str()
+        )))
+    }
+
+    /// Digest of the reviewed content of the selected projection: its fields,
+    /// branches, applicability and reason, without the run-specific
+    /// endpoints.
+    fn projection_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
+        for projection in &self.projections {
+            let ProjectionRef::Content { projection: id } =
+                blobray_application::in_process::projection_ref(projection)?
+            else {
+                continue;
+            };
+            if &id == selected {
+                let reviewed = serde_json::json!({
+                    "fields": projection.fields,
+                    "branches": projection.branches,
+                    "applicability": projection.applicability,
+                    "reason": projection.reason,
+                });
+                return Ok(crate::harness::sha256(&serde_json::to_vec(&reviewed)?));
+            }
+        }
+        Err(invalid(format!(
+            "no reviewed projection has identity {}",
+            selected.as_str()
+        )))
+    }
+
     /// Select `projection` by content, as `review_effects` does for contracts.
     pub fn review_projection(
         &mut self,
@@ -771,10 +826,10 @@ impl Session {
                     continue;
                 }
                 if let Some(EffectContractRef::Content { contract }) = &relation.effects {
-                    reviews.insert(contract.as_str().to_owned());
+                    reviews.insert(self.review_digest(contract)?);
                 }
                 if let Some(ProjectionRef::Content { projection }) = &relation.projection {
-                    reviews.insert(projection.as_str().to_owned());
+                    reviews.insert(self.projection_digest(projection)?);
                 }
             }
         }

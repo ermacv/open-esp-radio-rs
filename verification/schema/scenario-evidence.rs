@@ -179,9 +179,11 @@ pub struct Entry {
     pub verdict: String,
     /// Compared cases of the root/entry pair.
     pub cases: u64,
-    /// SHA-256 content digests of the effect contracts and output
-    /// projections those comparisons selected, ascending and unique. The
-    /// contracts are typed values reviewed through git.
+    /// SHA-256 digests of the reviewed content of the effect contracts and
+    /// output projections those comparisons selected, ascending and unique:
+    /// rules or fields, applicability and reason, without the endpoints that
+    /// name one run's imported revision, so unchanged sources reproduce them.
+    /// The contracts are typed values reviewed through git.
     pub reviews: Vec<String>,
     pub coverage: Coverage,
     pub observation: Observation,

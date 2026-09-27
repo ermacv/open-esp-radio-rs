@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "bd22ff4480932623b57108113d0f9457fa5438fb8e2e185ccfd6327fc85904f7",
+    "input-2": "1876e33d6b9b86cae83de129fda05e46ad080bc185979d041b66400e6576c62c",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
   "sources": [
@@ -28,7 +28,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
-      "sha256": "6723e6acebaf932d899556c7dfccc237294b8c654783457f06e04703b771cb21"
+      "sha256": "2288181b530cac14c4d3cb2815caf8d90c2d3719c6409735708e69bfff631387"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211",
@@ -112,7 +112,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/radio",
-      "sha256": "0d09931d8c8d1dd7b68b8175238413d937dca64c4b71408978b9853dd40df0f0"
+      "sha256": "cfe78d144482a60bdfdc7f221c1f38072440fc730232bdaf7e50d9d9e8e5527a"
     },
     {
       "path": "crates/runtime/ieee80211",
@@ -164,7 +164,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "8576861629f483c19174142837913a34e8a9096c90c1b8a2b4926ed6978820ad"
+      "sha256": "10d909b01f062d95a81f7e13bddd600a5b1be66ac0e2a8acd94530a2a75607d4"
     },
     {
       "path": "verification/harness/codegen",
@@ -176,7 +176,7 @@
     },
     {
       "path": "verification/schema",
-      "sha256": "82131ecb3ee4afd0fc5ef27f25a73fc25932784c6b65cca9b7752772f404eb83"
+      "sha256": "da8d21fef553e0749263e2fb6ad17598cc50f1fba1ded4211ba2f16b11caaae0"
     }
   ],
   "entries": [
@@ -188,7 +188,7 @@
       "verdict": "match",
       "cases": 20,
       "reviews": [
-        "059cb47b11f2b682f445af8013e649482897d7f50dc0a072ce9900ddc988e4bc"
+        "ed53b45f5bdbe91f7ac43e77df9ccdfb435c066ff5d9631585633bb9dc550b62"
       ],
       "coverage": {
         "blocks": {
@@ -204,8 +204,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 33,
-        "observed": 31,
+        "executed": 32,
+        "observed": 30,
         "reviewed": 0,
         "untriaged": 2
       },
@@ -224,7 +224,7 @@
       "verdict": "match",
       "cases": 20,
       "reviews": [
-        "d766ef0ffb043746badcd6275d58a7d2d447a2e5fac8c3ae4f4c4101592e5b78"
+        "ed53b45f5bdbe91f7ac43e77df9ccdfb435c066ff5d9631585633bb9dc550b62"
       ],
       "coverage": {
         "blocks": {
@@ -240,8 +240,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 33,
-        "observed": 31,
+        "executed": 32,
+        "observed": 30,
         "reviewed": 0,
         "untriaged": 2
       },
@@ -260,7 +260,7 @@
       "verdict": "match",
       "cases": 20,
       "reviews": [
-        "5a4cdda1bc780b1a0c196f846566d759e84f28e3d9fc0f6413614b30358d2489"
+        "ed53b45f5bdbe91f7ac43e77df9ccdfb435c066ff5d9631585633bb9dc550b62"
       ],
       "coverage": {
         "blocks": {
@@ -276,8 +276,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 27,
-        "observed": 25,
+        "executed": 26,
+        "observed": 24,
         "reviewed": 0,
         "untriaged": 2
       },
@@ -296,7 +296,7 @@
       "verdict": "match",
       "cases": 20,
       "reviews": [
-        "40e1d23c4c4b2613f11e6025da614ae6deb65a7ae169572387321a0d8a78ff9e"
+        "ed53b45f5bdbe91f7ac43e77df9ccdfb435c066ff5d9631585633bb9dc550b62"
       ],
       "coverage": {
         "blocks": {
@@ -312,8 +312,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 28,
-        "observed": 26,
+        "executed": 27,
+        "observed": 25,
         "reviewed": 0,
         "untriaged": 2
       },
@@ -434,7 +434,7 @@
       "verdict": "match",
       "cases": 392,
       "reviews": [
-        "36e3ce4ddc8ca677c265a9600a28540df1e13a440af566183eab1dcc377abbc8"
+        "d5cb6e27032b3bc8aaef52b7e37967c891a7b69cb5a508fc9433af007564d824"
       ],
       "coverage": {
         "blocks": {
@@ -450,8 +450,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 43,
-        "observed": 33,
+        "executed": 42,
+        "observed": 32,
         "reviewed": 0,
         "untriaged": 10
       },
@@ -493,7 +493,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 31
+      "line": 126
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
@@ -501,14 +501,6 @@
     }
   ],
   "observed": [
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 81
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "line": 142
-    },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
       "line": 28
@@ -555,59 +547,59 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 20
+      "line": 104
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 26
+      "line": 121
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 28
+      "line": 123
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 29
+      "line": 124
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 30
+      "line": 125
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 34
+      "line": 129
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 37
+      "line": 132
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 41
+      "line": 136
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 45
+      "line": 140
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 49
+      "line": 144
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 53
+      "line": 148
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 99
+      "line": 206
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 100
+      "line": 207
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/validation.rs",
-      "line": 103
+      "line": 212
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/coex.rs",

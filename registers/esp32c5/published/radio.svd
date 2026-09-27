@@ -6,7 +6,8 @@
   <series>ESP32-C5</series>
   <version>0.1</version>
   <description>ESP32-C5 modem/radio registers owned by the radio drivers. This first stage
-    publishes the IEEE 802.15.4 MAC aperture only. Unknown fields are omitted.</description>
+    publishes the IEEE 802.15.4 MAC aperture, its interrupt route and
+    the modem ETM channels it programs. Unknown fields are omitted.</description>
   <licenseText>MIT OR Apache-2.0</licenseText>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
@@ -1468,6 +1469,186 @@
               <name>SFD_TIMEOUT</name>
               <bitOffset>14</bitOffset>
               <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>IEEE802154_INTERRUPT_ROUTE</name>
+      <description>The CPU interrupt-matrix word for ESP32-C5 modem source 12 (ZB_MAC). This
+source-specific view is retained with the IEEE 802.15.4 owner and publishes
+only the generated field readers needed to prove that a polled or validation
+transaction starts with the CPU route detached.</description>
+      <baseAddress>0x60010030</baseAddress>
+      <registers>
+        <register>
+          <name>CORE0_ROUTE</name>
+          <description>Destination and security routing for ZB_MAC.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>MAP</name>
+              <description>CPU-interrupt destination selected for the peripheral source.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_6_7</name>
+              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>PASS_IN_SEC</name>
+              <description>Secure-world pass-through selection for the peripheral source.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_9_31</name>
+              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>23</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>MODEM_ETM</name>
+      <description>ESP32-C5 modem event-task matrix at MODEM_BASE + 0x8800. The public
+IEEE 802.15.4 driver names the channel-enable, set and clear words and the
+per-channel event/task pair at an eight-byte stride from 0x18, and programs
+channels zero and one. Other channels and identifiers remain absent and no
+reset values are claimed.</description>
+      <baseAddress>0x600A8800</baseAddress>
+      <registers>
+        <register>
+          <name>CHANNEL_ENABLE</name>
+          <description>Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>CH0</name>
+              <description>Enabled state of channel 0.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH1</name>
+              <description>Enabled state of channel 1.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CHANNEL_ENABLE_SET</name>
+          <description>Channel-enable set word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added; the effect of writing other bits is not reviewed.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>CH0</name>
+              <description>Enable request of channel 0.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH1</name>
+              <description>Enable request of channel 1.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CHANNEL_ENABLE_CLEAR</name>
+          <description>Channel-enable clear word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added, only when that channel is enabled.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>CH0</name>
+              <description>Disable request of channel 0.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CH1</name>
+              <description>Disable request of channel 1.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>2</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-1</dimIndex>
+          <name>CH%s_EVENT</name>
+          <description>Complete event identifier monitored by the selected channel.</description>
+          <addressOffset>0x18</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>ID</name>
+              <description>Event identifier written as a complete word.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <enumeratedValues>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>IEEE802154_TIMER1_OVERFLOW</name>
+                  <value>58</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>IEEE802154_TIMER0_OVERFLOW</name>
+                  <value>59</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>2</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-1</dimIndex>
+          <name>CH%s_TASK</name>
+          <description>Complete task identifier triggered when the selected channel's event occurs.</description>
+          <addressOffset>0x1C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>ID</name>
+              <description>Task identifier written as a complete word.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <enumeratedValues>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>IEEE802154_ED_TRIG_TX</name>
+                  <value>65</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>IEEE802154_RX_START</name>
+                  <value>66</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>IEEE802154_TX_START</name>
+                  <value>69</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>

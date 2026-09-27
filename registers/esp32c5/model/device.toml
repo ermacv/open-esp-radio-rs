@@ -3,6 +3,8 @@ chip = "esp32c5"
 address-space = "cpu"
 fragments = [
     "peripherals/ieee802154-mac.toml",
+    "peripherals/ieee802154-interrupt-route.toml",
+    "peripherals/modem-etm.toml",
 ]
 
 [device]
@@ -10,7 +12,8 @@ name = "ESP32C5_RADIO"
 version = "0.1"
 description = """
 ESP32-C5 modem/radio registers owned by the radio drivers. This first stage
-    publishes the IEEE 802.15.4 MAC aperture only. Unknown fields are omitted."""
+    publishes the IEEE 802.15.4 MAC aperture, its interrupt route and
+    the modem ETM channels it programs. Unknown fields are omitted."""
 vendor = "Espressif"
 vendor-id = "ESP"
 series = "ESP32-C5"

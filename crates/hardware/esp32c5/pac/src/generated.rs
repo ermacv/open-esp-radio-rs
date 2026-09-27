@@ -275,3 +275,27 @@ pub(crate) fn set_ieee802154_txrx_switch_delay(
 ) {
     crate::svd::masked_register_modify::set_ieee802154_txrx_switch_delay(registers, value.bits());
 }
+
+/// Typed bridge for the reviewed `enable_ieee802154_etm_channel0` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_etm_channel0(registers: &crate::svd::ModemEtm) {
+    crate::svd::field_or_modify::enable_ieee802154_etm_channel0(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ieee802154_etm_channel1` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_etm_channel1(registers: &crate::svd::ModemEtm) {
+    crate::svd::field_or_modify::enable_ieee802154_etm_channel1(registers);
+}
+
+/// Typed bridge for the reviewed `disable_ieee802154_etm_channel0` fixed field-OR transaction.
+#[inline]
+pub(crate) fn disable_ieee802154_etm_channel0(registers: &crate::svd::ModemEtm) {
+    crate::svd::field_or_modify::disable_ieee802154_etm_channel0(registers);
+}
+
+/// Typed bridge for the reviewed `disable_ieee802154_etm_channel1` fixed field-OR transaction.
+#[inline]
+pub(crate) fn disable_ieee802154_etm_channel1(registers: &crate::svd::ModemEtm) {
+    crate::svd::field_or_modify::disable_ieee802154_etm_channel1(registers);
+}

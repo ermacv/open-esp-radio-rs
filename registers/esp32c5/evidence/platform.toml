@@ -16,3 +16,15 @@ description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7,
 [[sources]]
 id = "esp-idf-4d59230d-ieee802154-common-ll"
 description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7, https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/esp_hal_ieee802154/include/hal/ieee802154_common_ll.h, sha256 ba4ce294b402df311f25c4d0ce9cb33449e3eb41993aff94a25df5a66142d471. Public inline accessors prove the selected software read/write directions, command/event values and field use; they do not establish reset values or semantics for untouched fields. The ESP32-C5 extension https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/esp_hal_ieee802154/esp32c5/include/hal/ieee802154_ll.h, sha256 c369a2418ddd61cc65d536ab288ceb0fa78970abd91106be0b2a0f4ee3ad9cd1, adds no register accessor."
+
+[[sources]]
+id = "ESP_IDF_4D59230D_IEEE802154_DRIVER_ETM"
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7: components/ieee802154/driver/esp_ieee802154_util.c sha256 e1a012d5f359e2445128977e82a304ba94c100c2994729e062e26586596df38a and components/ieee802154/driver/esp_ieee802154_dev.c sha256 9aaccfa2832cb89bfdfd98086a984269e621400a272b02926c4e088d16222830. ieee802154_etm_channel_clear reads the modem ETM channel-enable word and, only when the channel bit is set, reads the clear word and writes it back with that bit added; ieee802154_etm_set_event_task clears the channel, writes the complete event and task words at the channel stride and reads the set word and writes it back with the channel bit added. The driver programs channel zero from TIMER0 overflow to TX_START or ED_TRIG_TX and channel one from TIMER1 overflow to RX_START. The ESP32-C5 ieee802154_reg.h (https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/soc/esp32c5/register/soc/ieee802154_reg.h) places ETM_REG_BASE at 0x600A8800, the set and clear words at +0x4 and +0x8, CH0 event and task at +0x18 and +0x1c with an eight-byte stride, and names events TIMER1_OVERFLOW 58 and TIMER0_OVERFLOW 59 and tasks ED_TRIG_TX 65, RX_START 66 and TX_START 69."
+
+[[sources]]
+id = "ESP_IDF_4D59230D_C5_INTERRUPT_SOURCES"
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7, components/soc/esp32c5/include/soc/interrupts.h, sha256 b9c461a3a6a86e77ba2ee0f8db999dc75f098bae31aa4f8ade0fcf7a070def00. The hardware source table assigns ETS_ZB_MAC_INTR_SOURCE to 12."
+
+[[sources]]
+id = "ESP_PACS_5CD68D2_C5_INTERRUPT_MATRIX"
+description = "Official esp-rs/esp-pacs commit 5cd68d2, https://github.com/esp-rs/esp-pacs/blob/5cd68d2/esp32c5/src/lib.rs publishes INTERRUPT_CORE0 at 0x60010000; esp32c5/src/interrupt_core0.rs sha256 265966e91e656261ca8dccef1115c84d26de056bd61589e27e1cb344c688293a places 84 source-indexed CORE_0_INTR_MAP words at four-byte stride, so source 12 resolves to offset 0x30; interrupt_core0/core_0_intr_map.rs sha256 da2da18dc58eabd5f07f84974e8bd39b4b5ba44774e550344aa77d3f7e9a45bf exposes MAP at bits 5:0 and PASS_IN_SEC at bit 8 with a zero reset value."

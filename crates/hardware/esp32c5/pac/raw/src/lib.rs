@@ -4411,6 +4411,560 @@ pub mod ieee802154_mac {
         }
     }
 }
+#[doc = "The CPU interrupt-matrix word for ESP32-C5 modem source 12 (ZB_MAC). This source-specific view is retained with the IEEE 802.15.4 owner and publishes only the generated field readers needed to prove that a polled or validation transaction starts with the CPU route detached."]
+pub type Ieee802154InterruptRoute =
+    crate::Periph<ieee802154_interrupt_route::RegisterBlock, 0x6001_0030>;
+impl core::fmt::Debug for Ieee802154InterruptRoute {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Ieee802154InterruptRoute").finish()
+    }
+}
+#[doc = "The CPU interrupt-matrix word for ESP32-C5 modem source 12 (ZB_MAC). This source-specific view is retained with the IEEE 802.15.4 owner and publishes only the generated field readers needed to prove that a polled or validation transaction starts with the CPU route detached."]
+pub mod ieee802154_interrupt_route {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        core0_route: Core0Route,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Destination and security routing for ZB_MAC."]
+        #[inline(always)]
+        pub const fn core0_route(&self) -> &Core0Route {
+            &self.core0_route
+        }
+    }
+    #[doc = "CORE0_ROUTE (rw) register accessor: Destination and security routing for ZB_MAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`core0_route::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`core0_route::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@core0_route`] module"]
+    #[doc(alias = "CORE0_ROUTE")]
+    pub type Core0Route = crate::Reg<core0_route::Core0RouteSpec>;
+    #[doc = "Destination and security routing for ZB_MAC."]
+    pub mod core0_route {
+        #[doc = "Register `CORE0_ROUTE` reader"]
+        pub type R = crate::R<Core0RouteSpec>;
+        #[doc = "Register `CORE0_ROUTE` writer"]
+        pub type W = crate::W<Core0RouteSpec>;
+        #[doc = "Field `MAP` reader - CPU-interrupt destination selected for the peripheral source."]
+        pub type MapR = crate::FieldReader;
+        #[doc = "Field `MAP` writer - CPU-interrupt destination selected for the peripheral source."]
+        pub type MapW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `UNCLASSIFIED_6_7` reader - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified6_7R = crate::FieldReader;
+        #[doc = "Field `UNCLASSIFIED_6_7` writer - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified6_7W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `PASS_IN_SEC` reader - Secure-world pass-through selection for the peripheral source."]
+        pub type PassInSecR = crate::BitReader;
+        #[doc = "Field `PASS_IN_SEC` writer - Secure-world pass-through selection for the peripheral source."]
+        pub type PassInSecW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_9_31` reader - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified9_31R = crate::FieldReader<u32>;
+        #[doc = "Field `UNCLASSIFIED_9_31` writer - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified9_31W<'a, REG> = crate::FieldWriter<'a, REG, 23, u32>;
+        impl R {
+            #[doc = "Bits 0:5 - CPU-interrupt destination selected for the peripheral source."]
+            #[inline(always)]
+            pub fn map(&self) -> MapR {
+                MapR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:7 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_6_7(&self) -> Unclassified6_7R {
+                Unclassified6_7R::new(((self.bits >> 6) & 3) as u8)
+            }
+            #[doc = "Bit 8 - Secure-world pass-through selection for the peripheral source."]
+            #[inline(always)]
+            pub fn pass_in_sec(&self) -> PassInSecR {
+                PassInSecR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bits 9:31 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_9_31(&self) -> Unclassified9_31R {
+                Unclassified9_31R::new((self.bits >> 9) & 0x007f_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - CPU-interrupt destination selected for the peripheral source."]
+            #[inline(always)]
+            pub fn map(&mut self) -> MapW<'_, Core0RouteSpec> {
+                MapW::new(self, 0)
+            }
+            #[doc = "Bits 6:7 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_6_7(&mut self) -> Unclassified6_7W<'_, Core0RouteSpec> {
+                Unclassified6_7W::new(self, 6)
+            }
+            #[doc = "Bit 8 - Secure-world pass-through selection for the peripheral source."]
+            #[inline(always)]
+            pub fn pass_in_sec(&mut self) -> PassInSecW<'_, Core0RouteSpec> {
+                PassInSecW::new(self, 8)
+            }
+            #[doc = "Bits 9:31 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_9_31(&mut self) -> Unclassified9_31W<'_, Core0RouteSpec> {
+                Unclassified9_31W::new(self, 9)
+            }
+        }
+        #[doc = "Destination and security routing for ZB_MAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`core0_route::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`core0_route::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Core0RouteSpec;
+        impl crate::RegisterSpec for Core0RouteSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`core0_route::R`](R) reader structure"]
+        impl crate::Readable for Core0RouteSpec {}
+        #[doc = "`write(|w| ..)` method takes [`core0_route::W`](W) writer structure"]
+        impl crate::Writable for Core0RouteSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CORE0_ROUTE to value 0"]
+        impl crate::Resettable for Core0RouteSpec {}
+    }
+}
+#[doc = "ESP32-C5 modem event-task matrix at MODEM_BASE + 0x8800. The public IEEE 802.15.4 driver names the channel-enable, set and clear words and the per-channel event/task pair at an eight-byte stride from 0x18, and programs channels zero and one. Other channels and identifiers remain absent and no reset values are claimed."]
+pub type ModemEtm = crate::Periph<modem_etm::RegisterBlock, 0x600a_8800>;
+impl core::fmt::Debug for ModemEtm {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ModemEtm").finish()
+    }
+}
+#[doc = "ESP32-C5 modem event-task matrix at MODEM_BASE + 0x8800. The public IEEE 802.15.4 driver names the channel-enable, set and clear words and the per-channel event/task pair at an eight-byte stride from 0x18, and programs channels zero and one. Other channels and identifiers remain absent and no reset values are claimed."]
+pub mod modem_etm {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        channel_enable: ChannelEnable,
+        channel_enable_set: ChannelEnableSet,
+        channel_enable_clear: ChannelEnableClear,
+        _reserved3: [u8; 0x0c],
+        ch_event: (),
+        _reserved4: [u8; 0x04],
+        ch_task: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled."]
+        #[inline(always)]
+        pub const fn channel_enable(&self) -> &ChannelEnable {
+            &self.channel_enable
+        }
+        #[doc = "0x04 - Channel-enable set word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added; the effect of writing other bits is not reviewed."]
+        #[inline(always)]
+        pub const fn channel_enable_set(&self) -> &ChannelEnableSet {
+            &self.channel_enable_set
+        }
+        #[doc = "0x08 - Channel-enable clear word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added, only when that channel is enabled."]
+        #[inline(always)]
+        pub const fn channel_enable_clear(&self) -> &ChannelEnableClear {
+            &self.channel_enable_clear
+        }
+        #[doc = "0x18..0x20 - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch_event(&self, n: usize) -> &ChEvent {
+            #[allow(clippy::no_effect)]
+            [(); 2][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(24)
+                    .add(8 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x18..0x20 - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub fn ch_event_iter(&self) -> impl Iterator<Item = &ChEvent> {
+            (0..2).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(24)
+                    .add(8 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x18 - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch0_event(&self) -> &ChEvent {
+            self.ch_event(0)
+        }
+        #[doc = "0x20 - Complete event identifier monitored by the selected channel."]
+        #[inline(always)]
+        pub const fn ch1_event(&self) -> &ChEvent {
+            self.ch_event(1)
+        }
+        #[doc = "0x1c..0x24 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch_task(&self, n: usize) -> &ChTask {
+            #[allow(clippy::no_effect)]
+            [(); 2][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(28)
+                    .add(8 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x1c..0x24 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub fn ch_task_iter(&self) -> impl Iterator<Item = &ChTask> {
+            (0..2).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(28)
+                    .add(8 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x1c - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch0_task(&self) -> &ChTask {
+            self.ch_task(0)
+        }
+        #[doc = "0x24 - Complete task identifier triggered when the selected channel's event occurs."]
+        #[inline(always)]
+        pub const fn ch1_task(&self) -> &ChTask {
+            self.ch_task(1)
+        }
+    }
+    #[doc = "CHANNEL_ENABLE (r) register accessor: Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable`] module"]
+    #[doc(alias = "CHANNEL_ENABLE")]
+    pub type ChannelEnable = crate::Reg<channel_enable::ChannelEnableSpec>;
+    #[doc = "Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled."]
+    pub mod channel_enable {
+        #[doc = "Register `CHANNEL_ENABLE` reader"]
+        pub type R = crate::R<ChannelEnableSpec>;
+        #[doc = "Field `CH0` reader - Enabled state of channel 0."]
+        pub type Ch0R = crate::BitReader;
+        #[doc = "Field `CH1` reader - Enabled state of channel 1."]
+        pub type Ch1R = crate::BitReader;
+        impl R {
+            #[doc = "Bit 0 - Enabled state of channel 0."]
+            #[inline(always)]
+            pub fn ch0(&self) -> Ch0R {
+                Ch0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Enabled state of channel 1."]
+            #[inline(always)]
+            pub fn ch1(&self) -> Ch1R {
+                Ch1R::new(((self.bits >> 1) & 1) != 0)
+            }
+        }
+        #[doc = "Channel-enable status word. The IEEE 802.15.4 driver reads it to decide whether a channel must be disabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChannelEnableSpec;
+        impl crate::RegisterSpec for ChannelEnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`channel_enable::R`](R) reader structure"]
+        impl crate::Readable for ChannelEnableSpec {}
+    }
+    #[doc = "CHANNEL_ENABLE_SET (rw) register accessor: Channel-enable set word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added; the effect of writing other bits is not reviewed.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_set::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_set::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable_set`] module"]
+    #[doc(alias = "CHANNEL_ENABLE_SET")]
+    pub type ChannelEnableSet = crate::Reg<channel_enable_set::ChannelEnableSetSpec>;
+    #[doc = "Channel-enable set word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added; the effect of writing other bits is not reviewed."]
+    pub mod channel_enable_set {
+        #[doc = "Register `CHANNEL_ENABLE_SET` reader"]
+        pub type R = crate::R<ChannelEnableSetSpec>;
+        #[doc = "Register `CHANNEL_ENABLE_SET` writer"]
+        pub type W = crate::W<ChannelEnableSetSpec>;
+        #[doc = "Field `CH0` reader - Enable request of channel 0."]
+        pub type Ch0R = crate::BitReader;
+        #[doc = "Field `CH0` writer - Enable request of channel 0."]
+        pub type Ch0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH1` reader - Enable request of channel 1."]
+        pub type Ch1R = crate::BitReader;
+        #[doc = "Field `CH1` writer - Enable request of channel 1."]
+        pub type Ch1W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Enable request of channel 0."]
+            #[inline(always)]
+            pub fn ch0(&self) -> Ch0R {
+                Ch0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Enable request of channel 1."]
+            #[inline(always)]
+            pub fn ch1(&self) -> Ch1R {
+                Ch1R::new(((self.bits >> 1) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Enable request of channel 0."]
+            #[inline(always)]
+            pub fn ch0(&mut self) -> Ch0W<'_, ChannelEnableSetSpec> {
+                Ch0W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Enable request of channel 1."]
+            #[inline(always)]
+            pub fn ch1(&mut self) -> Ch1W<'_, ChannelEnableSetSpec> {
+                Ch1W::new(self, 1)
+            }
+        }
+        #[doc = "Channel-enable set word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added; the effect of writing other bits is not reviewed.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_set::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_set::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChannelEnableSetSpec;
+        impl crate::RegisterSpec for ChannelEnableSetSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`channel_enable_set::R`](R) reader structure"]
+        impl crate::Readable for ChannelEnableSetSpec {}
+        #[doc = "`write(|w| ..)` method takes [`channel_enable_set::W`](W) writer structure"]
+        impl crate::Writable for ChannelEnableSetSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CHANNEL_ENABLE_CLEAR (rw) register accessor: Channel-enable clear word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added, only when that channel is enabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_enable_clear`] module"]
+    #[doc(alias = "CHANNEL_ENABLE_CLEAR")]
+    pub type ChannelEnableClear = crate::Reg<channel_enable_clear::ChannelEnableClearSpec>;
+    #[doc = "Channel-enable clear word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added, only when that channel is enabled."]
+    pub mod channel_enable_clear {
+        #[doc = "Register `CHANNEL_ENABLE_CLEAR` reader"]
+        pub type R = crate::R<ChannelEnableClearSpec>;
+        #[doc = "Register `CHANNEL_ENABLE_CLEAR` writer"]
+        pub type W = crate::W<ChannelEnableClearSpec>;
+        #[doc = "Field `CH0` reader - Disable request of channel 0."]
+        pub type Ch0R = crate::BitReader;
+        #[doc = "Field `CH0` writer - Disable request of channel 0."]
+        pub type Ch0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH1` reader - Disable request of channel 1."]
+        pub type Ch1R = crate::BitReader;
+        #[doc = "Field `CH1` writer - Disable request of channel 1."]
+        pub type Ch1W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Disable request of channel 0."]
+            #[inline(always)]
+            pub fn ch0(&self) -> Ch0R {
+                Ch0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Disable request of channel 1."]
+            #[inline(always)]
+            pub fn ch1(&self) -> Ch1R {
+                Ch1R::new(((self.bits >> 1) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Disable request of channel 0."]
+            #[inline(always)]
+            pub fn ch0(&mut self) -> Ch0W<'_, ChannelEnableClearSpec> {
+                Ch0W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Disable request of channel 1."]
+            #[inline(always)]
+            pub fn ch1(&mut self) -> Ch1W<'_, ChannelEnableClearSpec> {
+                Ch1W::new(self, 1)
+            }
+        }
+        #[doc = "Channel-enable clear word. The IEEE 802.15.4 driver reads it and writes it back with the selected channel bit added, only when that channel is enabled.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_enable_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_enable_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChannelEnableClearSpec;
+        impl crate::RegisterSpec for ChannelEnableClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`channel_enable_clear::R`](R) reader structure"]
+        impl crate::Readable for ChannelEnableClearSpec {}
+        #[doc = "`write(|w| ..)` method takes [`channel_enable_clear::W`](W) writer structure"]
+        impl crate::Writable for ChannelEnableClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CH_EVENT (rw) register accessor: Complete event identifier monitored by the selected channel.\n\nYou can [`read`](crate::Reg::read) this register and get [`ch_event::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ch_event::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ch_event`] module"]
+    #[doc(alias = "CH_EVENT")]
+    pub type ChEvent = crate::Reg<ch_event::ChEventSpec>;
+    #[doc = "Complete event identifier monitored by the selected channel."]
+    pub mod ch_event {
+        #[doc = "Register `CH%s_EVENT` reader"]
+        pub type R = crate::R<ChEventSpec>;
+        #[doc = "Register `CH%s_EVENT` writer"]
+        pub type W = crate::W<ChEventSpec>;
+        #[doc = "Event identifier written as a complete word."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Id {
+            #[doc = "58: `111010`"]
+            Ieee802154Timer1Overflow = 58,
+            #[doc = "59: `111011`"]
+            Ieee802154Timer0Overflow = 59,
+        }
+        impl From<Id> for u32 {
+            #[inline(always)]
+            fn from(variant: Id) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Id {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for Id {}
+        #[doc = "Field `ID` reader - Event identifier written as a complete word."]
+        pub type IdR = crate::FieldReader<Id>;
+        impl IdR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Id> {
+                match self.bits {
+                    58 => Some(Id::Ieee802154Timer1Overflow),
+                    59 => Some(Id::Ieee802154Timer0Overflow),
+                    _ => None,
+                }
+            }
+            #[doc = "`111010`"]
+            #[inline(always)]
+            pub fn is_ieee802154_timer1_overflow(&self) -> bool {
+                *self == Id::Ieee802154Timer1Overflow
+            }
+            #[doc = "`111011`"]
+            #[inline(always)]
+            pub fn is_ieee802154_timer0_overflow(&self) -> bool {
+                *self == Id::Ieee802154Timer0Overflow
+            }
+        }
+        #[doc = "Field `ID` writer - Event identifier written as a complete word."]
+        pub type IdW<'a, REG> = crate::FieldWriter<'a, REG, 32, Id>;
+        impl<'a, REG> IdW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "`111010`"]
+            #[inline(always)]
+            pub fn ieee802154_timer1_overflow(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154Timer1Overflow)
+            }
+            #[doc = "`111011`"]
+            #[inline(always)]
+            pub fn ieee802154_timer0_overflow(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154Timer0Overflow)
+            }
+        }
+        impl R {
+            #[doc = "Bits 0:31 - Event identifier written as a complete word."]
+            #[inline(always)]
+            pub fn id(&self) -> IdR {
+                IdR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Event identifier written as a complete word."]
+            #[inline(always)]
+            pub fn id(&mut self) -> IdW<'_, ChEventSpec> {
+                IdW::new(self, 0)
+            }
+        }
+        #[doc = "Complete event identifier monitored by the selected channel.\n\nYou can [`read`](crate::Reg::read) this register and get [`ch_event::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ch_event::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChEventSpec;
+        impl crate::RegisterSpec for ChEventSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ch_event::R`](R) reader structure"]
+        impl crate::Readable for ChEventSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ch_event::W`](W) writer structure"]
+        impl crate::Writable for ChEventSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CH_TASK (rw) register accessor: Complete task identifier triggered when the selected channel's event occurs.\n\nYou can [`read`](crate::Reg::read) this register and get [`ch_task::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ch_task::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ch_task`] module"]
+    #[doc(alias = "CH_TASK")]
+    pub type ChTask = crate::Reg<ch_task::ChTaskSpec>;
+    #[doc = "Complete task identifier triggered when the selected channel's event occurs."]
+    pub mod ch_task {
+        #[doc = "Register `CH%s_TASK` reader"]
+        pub type R = crate::R<ChTaskSpec>;
+        #[doc = "Register `CH%s_TASK` writer"]
+        pub type W = crate::W<ChTaskSpec>;
+        #[doc = "Task identifier written as a complete word."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Id {
+            #[doc = "65: `1000001`"]
+            Ieee802154EdTrigTx = 65,
+            #[doc = "66: `1000010`"]
+            Ieee802154RxStart = 66,
+            #[doc = "69: `1000101`"]
+            Ieee802154TxStart = 69,
+        }
+        impl From<Id> for u32 {
+            #[inline(always)]
+            fn from(variant: Id) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Id {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for Id {}
+        #[doc = "Field `ID` reader - Task identifier written as a complete word."]
+        pub type IdR = crate::FieldReader<Id>;
+        impl IdR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Id> {
+                match self.bits {
+                    65 => Some(Id::Ieee802154EdTrigTx),
+                    66 => Some(Id::Ieee802154RxStart),
+                    69 => Some(Id::Ieee802154TxStart),
+                    _ => None,
+                }
+            }
+            #[doc = "`1000001`"]
+            #[inline(always)]
+            pub fn is_ieee802154_ed_trig_tx(&self) -> bool {
+                *self == Id::Ieee802154EdTrigTx
+            }
+            #[doc = "`1000010`"]
+            #[inline(always)]
+            pub fn is_ieee802154_rx_start(&self) -> bool {
+                *self == Id::Ieee802154RxStart
+            }
+            #[doc = "`1000101`"]
+            #[inline(always)]
+            pub fn is_ieee802154_tx_start(&self) -> bool {
+                *self == Id::Ieee802154TxStart
+            }
+        }
+        #[doc = "Field `ID` writer - Task identifier written as a complete word."]
+        pub type IdW<'a, REG> = crate::FieldWriter<'a, REG, 32, Id>;
+        impl<'a, REG> IdW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "`1000001`"]
+            #[inline(always)]
+            pub fn ieee802154_ed_trig_tx(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154EdTrigTx)
+            }
+            #[doc = "`1000010`"]
+            #[inline(always)]
+            pub fn ieee802154_rx_start(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154RxStart)
+            }
+            #[doc = "`1000101`"]
+            #[inline(always)]
+            pub fn ieee802154_tx_start(self) -> &'a mut crate::W<REG> {
+                self.variant(Id::Ieee802154TxStart)
+            }
+        }
+        impl R {
+            #[doc = "Bits 0:31 - Task identifier written as a complete word."]
+            #[inline(always)]
+            pub fn id(&self) -> IdR {
+                IdR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Task identifier written as a complete word."]
+            #[inline(always)]
+            pub fn id(&mut self) -> IdW<'_, ChTaskSpec> {
+                IdW::new(self, 0)
+            }
+        }
+        #[doc = "Complete task identifier triggered when the selected channel's event occurs.\n\nYou can [`read`](crate::Reg::read) this register and get [`ch_task::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ch_task::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ChTaskSpec;
+        impl crate::RegisterSpec for ChTaskSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ch_task::R`](R) reader structure"]
+        impl crate::Readable for ChTaskSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ch_task::W`](W) writer structure"]
+        impl crate::Writable for ChTaskSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
@@ -4418,6 +4972,10 @@ static mut DEVICE_PERIPHERALS: bool = false;
 pub struct Peripherals {
     #[doc = "IEEE802154_MAC"]
     pub ieee802154_mac: Ieee802154Mac,
+    #[doc = "IEEE802154_INTERRUPT_ROUTE"]
+    pub ieee802154_interrupt_route: Ieee802154InterruptRoute,
+    #[doc = "MODEM_ETM"]
+    pub modem_etm: ModemEtm,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -4441,6 +4999,8 @@ impl Peripherals {
         unsafe { DEVICE_PERIPHERALS = true }
         Peripherals {
             ieee802154_mac: unsafe { Ieee802154Mac::steal() },
+            ieee802154_interrupt_route: unsafe { Ieee802154InterruptRoute::steal() },
+            modem_etm: unsafe { ModemEtm::steal() },
         }
     }
 }
@@ -4448,23 +5008,39 @@ impl Peripherals {
 /// Target-declared exhaustive ownership partitions of the raw SVD singleton.
 pub mod peripheral_ownership {
 
-    /// IEEE 802.15.4 MAC registers owned by the IEEE 802.15.4 hardware lifecycle.
+    /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
     pub struct Ieee802154Peripherals {
         pub ieee802154_mac: crate::Ieee802154Mac,
+        pub ieee802154_interrupt_route: crate::Ieee802154InterruptRoute,
+    }
+
+    /// Modem event-task matrix channels zero and one, programmed by the IEEE 802.15.4 driver.
+    pub struct ModemEtmPeripherals {
+        pub modem_etm: crate::ModemEtm,
     }
 
     /// Complete target-reviewed ownership decomposition.
     pub struct PeripheralPartitions {
-        /// IEEE 802.15.4 MAC registers owned by the IEEE 802.15.4 hardware lifecycle.
+        /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
         pub ieee802154: Ieee802154Peripherals,
+        /// Modem event-task matrix channels zero and one, programmed by the IEEE 802.15.4 driver.
+        pub modem_etm: ModemEtmPeripherals,
     }
 
     /// Consume the singleton and apply the exhaustive target-owned partition.
     #[inline]
     pub fn partition(peripherals: crate::Peripherals) -> PeripheralPartitions {
-        let crate::Peripherals { ieee802154_mac } = peripherals;
+        let crate::Peripherals {
+            ieee802154_mac,
+            ieee802154_interrupt_route,
+            modem_etm,
+        } = peripherals;
         PeripheralPartitions {
-            ieee802154: Ieee802154Peripherals { ieee802154_mac },
+            ieee802154: Ieee802154Peripherals {
+                ieee802154_mac,
+                ieee802154_interrupt_route,
+            },
+            modem_etm: ModemEtmPeripherals { modem_etm },
         }
     }
 
@@ -4547,6 +5123,25 @@ pub mod full_register_read {
     #[inline]
     pub fn observe_ieee802154_timer1_value(registers: &crate::Ieee802154Mac) -> u32 {
         registers.timer1_value().read().value().bits()
+    }
+}
+
+/// Safe same-sample observations through reviewed SVD fields.
+pub mod field_snapshot_read {
+
+    /// Read `MAP`, `UNCLASSIFIED_6_7`, `PASS_IN_SEC`, `UNCLASSIFIED_9_31` from one `IEEE802154_INTERRUPT_ROUTE`.`CORE0_ROUTE` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_ieee802154_core0_route(
+        registers: &crate::Ieee802154InterruptRoute,
+    ) -> (u8, u8, bool, u32) {
+        let sample = registers.core0_route().read();
+        (
+            sample.map().bits(),
+            sample.unclassified_6_7().bits(),
+            sample.pass_in_sec().bit(),
+            sample.unclassified_9_31().bits(),
+        )
     }
 }
 
@@ -4680,6 +5275,58 @@ pub mod fixed_register_image {
             registers
                 .enhanced_ack_notify()
                 .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+}
+
+/// Safe, SVD-declared ordered transactions of fixed complete-register images.
+pub mod fixed_register_sequence {
+
+    /// Execute the reviewed 2-step fixed-image transaction on `MODEM_ETM`.
+    #[inline]
+    pub fn route_ieee802154_etm_timer0_to_tx_start(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves every target is a writable
+        // 32-bit ordinary or write-one-to-clear register, every array
+        // index is in range, and provenance qualifies each exact image.
+        unsafe {
+            registers
+                .ch_event(0)
+                .write_with_zero(|writer| writer.bits(0x0000003b));
+            registers
+                .ch_task(0)
+                .write_with_zero(|writer| writer.bits(0x00000045));
+        }
+    }
+
+    /// Execute the reviewed 2-step fixed-image transaction on `MODEM_ETM`.
+    #[inline]
+    pub fn route_ieee802154_etm_timer0_to_ed_trig_tx(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves every target is a writable
+        // 32-bit ordinary or write-one-to-clear register, every array
+        // index is in range, and provenance qualifies each exact image.
+        unsafe {
+            registers
+                .ch_event(0)
+                .write_with_zero(|writer| writer.bits(0x0000003b));
+            registers
+                .ch_task(0)
+                .write_with_zero(|writer| writer.bits(0x00000041));
+        }
+    }
+
+    /// Execute the reviewed 2-step fixed-image transaction on `MODEM_ETM`.
+    #[inline]
+    pub fn route_ieee802154_etm_timer1_to_rx_start(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves every target is a writable
+        // 32-bit ordinary or write-one-to-clear register, every array
+        // index is in range, and provenance qualifies each exact image.
+        unsafe {
+            registers
+                .ch_event(1)
+                .write_with_zero(|writer| writer.bits(0x0000003a));
+            registers
+                .ch_task(1)
+                .write_with_zero(|writer| writer.bits(0x00000042));
         }
     }
 }
@@ -4902,6 +5549,62 @@ pub mod masked_register_modify {
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }
+        });
+    }
+}
+
+/// Safe, SVD-declared field-local OR read-modify-write transactions.
+pub mod field_or_modify {
+
+    /// OR one reviewed logical image into MODEM_ETM.CHANNEL_ENABLE_SET fields `[CH0]` while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_ieee802154_etm_channel0(registers: &crate::ModemEtm) {
+        registers.channel_enable_set().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .ch0()
+                .bit(reader.ch0().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into MODEM_ETM.CHANNEL_ENABLE_SET fields `[CH1]` while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_ieee802154_etm_channel1(registers: &crate::ModemEtm) {
+        registers.channel_enable_set().modify(|reader, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .ch1()
+                .bit(reader.ch1().bit() || ((input >> 1) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into MODEM_ETM.CHANNEL_ENABLE_CLEAR fields `[CH0]` while preserving the fresh register observation.
+    #[inline]
+    pub fn disable_ieee802154_etm_channel0(registers: &crate::ModemEtm) {
+        registers.channel_enable_clear().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .ch0()
+                .bit(reader.ch0().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into MODEM_ETM.CHANNEL_ENABLE_CLEAR fields `[CH1]` while preserving the fresh register observation.
+    #[inline]
+    pub fn disable_ieee802154_etm_channel1(registers: &crate::ModemEtm) {
+        registers.channel_enable_clear().modify(|reader, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .ch1()
+                .bit(reader.ch1().bit() || ((input >> 1) & 0x00000001) != 0)
         });
     }
 }

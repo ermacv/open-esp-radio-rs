@@ -2,6 +2,45 @@ schema = 2
 crate-name = "oer_esp32c5_pac_raw"
 
 [[registers]]
+address = 1610678320
+width = 32
+access = "read-write"
+identity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE"
+peripheral = "IEEE802154_INTERRUPT_ROUTE"
+peripheral-type = "Ieee802154InterruptRoute"
+peripheral-module = "ieee802154_interrupt_route"
+scope = []
+register-method = "core0_route"
+
+[[registers.fields]]
+svd-name = "MAP"
+method = "map"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_6_7"
+method = "unclassified_6_7"
+bit-offset = 6
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PASS_IN_SEC"
+method = "pass_in_sec"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_9_31"
+method = "unclassified_9_31"
+bit-offset = 9
+bit-width = 23
+access = "read-write"
+
+[[registers]]
 address = 1611280384
 width = 32
 access = "write-only"
@@ -1610,3 +1649,154 @@ method = "sfd_timeout"
 bit-offset = 14
 bit-width = 1
 access = "write-only"
+
+[[registers]]
+address = 1611302912
+width = 32
+access = "read-only"
+identity = "MODEM_ETM.CHANNEL_ENABLE"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "channel_enable"
+
+[[registers.fields]]
+svd-name = "CH0"
+method = "ch0"
+bit-offset = 0
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CH1"
+method = "ch1"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers]]
+address = 1611302916
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CHANNEL_ENABLE_SET"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "channel_enable_set"
+
+[[registers.fields]]
+svd-name = "CH0"
+method = "ch0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH1"
+method = "ch1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611302920
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "channel_enable_clear"
+
+[[registers.fields]]
+svd-name = "CH0"
+method = "ch0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CH1"
+method = "ch1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611302936
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH0_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_event"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611302940
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH0_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_task"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611302944
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH1_EVENT"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_event"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611302948
+width = 32
+access = "read-write"
+identity = "MODEM_ETM.CH1_TASK"
+peripheral = "MODEM_ETM"
+peripheral-type = "ModemEtm"
+peripheral-module = "modem_etm"
+scope = []
+register-method = "ch_task"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "ID"
+method = "id"
+bit-offset = 0
+bit-width = 32
+access = "read-write"

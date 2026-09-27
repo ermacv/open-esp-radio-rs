@@ -58,15 +58,16 @@ pub use oer_esp32s31_pac::{
     BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptAcknowledged,
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
     BluetoothPhyRegisterInitInputs, BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,
-    BluetoothScanStartPublished, BluetoothSchedulerCancellationDisposition,
-    BluetoothSchedulerCancellationIndexed, BluetoothSchedulerCancellationReleased,
-    BluetoothSchedulerCancellationRequested, BluetoothSchedulerCancellationSourceAcknowledged,
-    BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
-    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
-    BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
-    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothScanStartPublished, BluetoothSchedulerBusyObservation,
+    BluetoothSchedulerCancellationDisposition, BluetoothSchedulerCancellationIndexed,
+    BluetoothSchedulerCancellationReleased, BluetoothSchedulerCancellationRequested,
+    BluetoothSchedulerCancellationSourceAcknowledged, BluetoothSchedulerExecutionLockDisposition,
+    BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
+    BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadError,
+    BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListHeadRetirementObservation, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
@@ -1008,8 +1009,8 @@ impl InterruptRegistersOwner {
         self.registers.capture_primary_and_acknowledge()
     }
 
-    /// Capture the first scheduler-state observation used only by the
-    /// bank-one source-3 reference gate.
+    /// Sample scheduler BUSY through the diagnostic pair for the bank-one
+    /// source-3 reference gate.
     pub fn capture_scheduler_reference_gate(
         &mut self,
     ) -> BluetoothSchedulerReferenceGateObservation {
@@ -1031,6 +1032,12 @@ impl InterruptRegistersOwner {
         self.registers.capture_scheduler_work()
     }
 
+    /// Sample scheduler BUSY through the diagnostic pair for one task-side
+    /// scheduler decision.
+    pub fn capture_scheduler_busy(&mut self) -> BluetoothSchedulerBusyObservation {
+        self.registers.capture_scheduler_busy()
+    }
+
     /// Acknowledge interrupt source 7 for one indexed scheduler
     /// cancellation, between its index publication and its control request.
     pub fn acknowledge_scheduler_cancellation_source(
@@ -1041,8 +1048,9 @@ impl InterruptRegistersOwner {
             .acknowledge_scheduler_cancellation_source(indexed)
     }
 
-    /// Capture the interrupt-owned scheduler BUSY field for one lock/modify
-    /// decision without borrowing task-side controller registers.
+    /// Sample scheduler BUSY through the interrupt-owned diagnostic pair for
+    /// one lock/modify decision without borrowing task-side controller
+    /// registers.
     pub fn capture_scheduler_lock_modify_interrupt(
         &mut self,
     ) -> BluetoothSchedulerLockModifyInterruptObservation {
@@ -1579,7 +1587,7 @@ impl ControllerHal<'_> {
     /// short-circuit order.
     pub fn observe_scheduler_execution_lock(
         &mut self,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
     ) -> BluetoothSchedulerExecutionLockDisposition {
         self.registers.observe_scheduler_execution_lock(scheduler)
     }
@@ -1634,7 +1642,7 @@ impl ControllerHal<'_> {
     /// short-circuit order.
     pub fn observe_scheduler_execution_modify(
         &mut self,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
     ) -> BluetoothSchedulerExecutionModifyDisposition {
         self.registers.observe_scheduler_execution_modify(scheduler)
     }
@@ -1664,7 +1672,7 @@ impl ControllerHal<'_> {
     pub fn observe_scheduler_skip(
         &mut self,
         published: &BluetoothSchedulerSkipPublished,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
     ) -> BluetoothSchedulerSkipDisposition {
         self.registers.observe_scheduler_skip(published, scheduler)
     }
@@ -1713,7 +1721,7 @@ impl ControllerHal<'_> {
     pub fn observe_scheduler_cancellation(
         &mut self,
         requested: &mut BluetoothSchedulerCancellationRequested,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
     ) -> BluetoothSchedulerCancellationDisposition {
         self.registers
             .observe_scheduler_cancellation(requested, scheduler)

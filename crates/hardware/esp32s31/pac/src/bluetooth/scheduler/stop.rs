@@ -104,10 +104,10 @@ fn retire_head(
 }
 
 impl BluetoothTaskRegisters {
-    /// Observe scheduler BUSY with exactly one read.
+    /// Sample scheduler BUSY once through the diagnostic pair.
     #[doc(hidden)]
     pub fn scheduler_stop_busy(&mut self, interrupts: &mut BluetoothInterruptRegisters) -> bool {
-        crate::svd::field_read::observe_bluetooth_scheduler_software_list_busy(
+        super::runtime::sample_scheduler_busy(
             &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
         )
     }
@@ -148,7 +148,7 @@ impl BluetoothTaskRegisters {
         device_fence();
     }
 
-    /// Observe BUSY once; when it is clear, fence and return the stopped
+    /// Sample BUSY once; when it is clear, fence and return the stopped
     /// receipt. Sequencing the stop request belongs to the HAL.
     #[doc(hidden)]
     pub fn confirm_scheduler_stopped(

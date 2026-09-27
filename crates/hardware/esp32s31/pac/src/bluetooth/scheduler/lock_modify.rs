@@ -64,7 +64,8 @@ impl BluetoothSchedulerLockModifyTaskObservation {
     }
 }
 
-/// Interrupt-owned scheduler BUSY field captured at one event step.
+/// Scheduler BUSY sampled through the interrupt-owned diagnostic pair at one
+/// event step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use = "the interrupt-side scheduler observation must be joined or discarded"]
 pub struct BluetoothSchedulerLockModifyInterruptObservation {
@@ -264,13 +265,13 @@ impl BluetoothTaskRegisters {
 }
 
 impl BluetoothInterruptRegisters {
-    /// Capture the interrupt-owned BUSY field without borrowing any task-side
-    /// controller register.
+    /// Sample scheduler BUSY through the interrupt-owned diagnostic pair
+    /// without borrowing any task-side controller register.
     pub fn capture_scheduler_lock_modify_interrupt(
         &mut self,
     ) -> BluetoothSchedulerLockModifyInterruptObservation {
         BluetoothSchedulerLockModifyInterruptObservation {
-            busy: crate::svd::field_read::observe_bluetooth_scheduler_lock_modify_busy(
+            busy: super::runtime::sample_scheduler_busy(
                 &self.peripherals.bluetooth_scheduler_interrupt_runtime,
             ),
         }

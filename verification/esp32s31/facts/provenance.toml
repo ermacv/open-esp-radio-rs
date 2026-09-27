@@ -48,24 +48,6 @@ code = "82000d0ef706de3f2cf011239d156fc30a0c41e0fc07e1d7e755f2e8f143def9"
 
 [[function]]
 artifact = "libble_app"
-member = "110.o"
-symbol = "r_sym_ble_rmNuzAO8kQQQXQIpTzGZ"
-code = "e85e93373acd11324eaf9190462baeda1a65c3dd1987063fbbffed14d3f1095c"
-
-[[function]]
-artifact = "libble_app"
-member = "110.o"
-symbol = "r_sym_ble_yMicgnfj443R69TaZAC7"
-code = "a7a1ad3cec5caabae0175bbc890233ec47452704c2b84b078758652fe710d822"
-
-[[function]]
-artifact = "libble_app"
-member = "2.o"
-symbol = "r_sym_ble_uwrf0kLZsRbzFJ7u8SEr"
-code = "da4b48daa4c980abd3cb70442c9d5a65bff0f48a9563bfbb3ac16a332e8294f7"
-
-[[function]]
-artifact = "libble_app"
 member = "55.o"
 symbol = "r_sym_ble_G4zC4UNjJYmyjOsZ3vNq"
 code = "b985bbd3777f5f7fdc2280323ae918c3cb1cc23f06c5ddd0f00d01744f394d23"
@@ -75,6 +57,18 @@ artifact = "libble_app"
 member = "64.o"
 symbol = "r_sym_ble_4QeP6vZAoSzLLHdFgwD0"
 code = "a3dfe556923ad1cfe2a3cf000815ba51e68775c5e2315dae6e17322b37e6a78a"
+
+[[function]]
+artifact = "libble_app"
+member = "base_3.o"
+symbol = "api_base_ll_dumpDebugStatus"
+code = "4283829f189d5f9d8b8052d130d29a42a4a85a6919e66470dfb31af6adb2f2f6"
+
+[[function]]
+artifact = "libble_app"
+member = "base_4.o"
+symbol = "brk_sym_base_QIE6fqExGJrsGUIGYNSf"
+code = "c8a351b5441bee246dad5dc25a994abf7d8f4f8310aa3fd60f798011dbdaf4f2"
 
 [[function]]
 artifact = "libble_app"
@@ -283,6 +277,12 @@ code = "624124ad43eefcd26d05a88a90e0e1f8272c2acb2953632c7bf92dccd6ad0088"
 [[function]]
 artifact = "libble_app"
 member = "ble_74.o"
+symbol = "r_esp_ble_diag_select"
+code = "722ed60c83ad50f2302bc8ad2fc1d133e44cc676067936843b1d4e99c0fa5fe8"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_74.o"
 symbol = "r_esp_ble_ll_set_public_addr"
 code = "3392de95fa3d24a1e4209cef121335c55bf491bd05e03e976a32067ced76dddb"
 
@@ -343,6 +343,12 @@ code = "36ded198571cc816d54a2be662390177226b0c2f64e887f4c4ffd0c8ba869452"
 [[function]]
 artifact = "libble_app"
 member = "dtm_4.o"
+symbol = "sym_dtm_ifYtgHeQ0rvhqeqBbpl1"
+code = "a41ede87c8d8ef8e8d2e7014e04bdfd68f254ae8d0efb18a07fcba71e5e747a0"
+
+[[function]]
+artifact = "libble_app"
+member = "dtm_4.o"
 symbol = "sym_dtm_ikQ7xyHA5qBHWlaqAjZu"
 code = "fa1f708d56eaa01180e8bdfff261cde32fb32fdbabd4597479c5fe8712b9c79b"
 
@@ -390,6 +396,30 @@ code = "bea8e57e349fa785f5a46d4e2b7489ce5d1a0bf896ca462afe135a0a3d805865"
 
 [[function]]
 artifact = "libble_app"
+member = "scan_2.o"
+symbol = "brk_sym_scan_b8ogEC3hTjGmqL5oRuyw"
+code = "93519dbf6bfd5a4163a5d1ebddf99e70ffca3d8177e332f6311ec882fa8e9f4c"
+
+[[function]]
+artifact = "libble_app"
+member = "scan_2.o"
+symbol = "brk_sym_scan_fd4yzdFac8vdFTlQ4BPA"
+code = "b7258e4d1e203d596baeddd10e16ca460942fb7bb308685b908e09a57e52c71a"
+
+[[function]]
+artifact = "libble_app"
+member = "sched_3.o"
+symbol = "brk_sym_sched_MzeSZzbQ4ZKhWW6Wu5jV"
+code = "fc226c782b49e83cec6c42121c7f4beb3667cb4b5118174172d9bf6f9f45dd38"
+
+[[function]]
+artifact = "libble_app"
+member = "sched_3.o"
+symbol = "r_sym_sched_4yOHdQa50AXnZAom3x3f"
+code = "ec88294141d3e53cb4bb237c6c650dd755585f5b8c9365808e17494ebca13866"
+
+[[function]]
+artifact = "libble_app"
 member = "sched_3.o"
 symbol = "r_sym_sched_hG0vjzWD9iloJ7W5NaCG"
 code = "840978ea43383411b65037b3827cd103b8a423907d308f98a880c0a92be60388"
@@ -399,6 +429,12 @@ artifact = "libbredr_app"
 member = "bt_coex_schm_adapter.c.o"
 symbol = "r_bt_coex_schm_calculate_afh_by_wifi_channel"
 code = "528b98ca294f797c8ffd3d6ffa2142288825a7acd7c962287beecc24144d572c"
+
+[[function]]
+artifact = "libbredr_app"
+member = "btdm_common_sched.c.o"
+symbol = "btdm_common_sched_bredr_on_sched_hw_list_done"
+code = "3392de95fa3d24a1e4209cef121335c55bf491bd05e03e976a32067ced76dddb"
 
 [[function]]
 artifact = "libbtbb"
@@ -704,25 +740,25 @@ code = "f9c360e5a7d01627dd3e2fdb56f526c782359e8b89c3fded7e3919f7a215de9a"
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_4KfpZh0Hu5NprlqcNu0D"
-code = "307e747db738bcd5d78e027a11ceced36a774c7d7316e427544cff11547db13f"
+code = "13eee48f1255542b58d7bc7d8ac6e791ebc28eed13e3c9d67c996af179fb279c"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_74l62ZLsZuXg67pPHSd7"
-code = "2ef0ea74634bb30686ef200a704f160c640d2838809b74f6cfce2abfd1d0dbb5"
+code = "b56df604ce9d340eeaf06606571d93f4ec2a78a6835394730960c3b43c3b7a1a"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_9H3AnHbaHJ3auzSvPDme"
-code = "5b1fc91141efded98916cd3ea20fef57b382b1c4a05ae12aeee594507f70db64"
+code = "f0a2858bb080ef7e0ff6c80cdbf6b34b8062745fa40ebe3a3ac74b4cd8017cbc"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_B8fDByebTHuwRe8FZuRt"
-code = "5f672b4b6e91e2864bc021ace93e44bb0e618a47b254b0b2e21dffa66742c989"
+code = "ee423e4417737dd0571d0124c71ac9511ebad832a0705697e7dd6f7c41123d4e"
 
 [[function]]
 artifact = "libbtdm_common"
@@ -734,19 +770,25 @@ code = "a63819e6361af8243eabd6ed96c4ecf33193221bc48277f03dd012fb95f475d7"
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_DkrQYQcoyzIHdYi0CzWE"
-code = "328a84b36e8cc0094e3d84f9d57c6d6930a15b8ecd09b3cda337dc437f3ef71b"
+code = "811d0b41222fa01b0a1613282dfeebdc32d1362827b7b470e9ab2b1d8c0c190e"
+
+[[function]]
+artifact = "libbtdm_common"
+member = "18.o"
+symbol = "r_sym_bt_E8c5Eimm0z6kYe9v4wHr"
+code = "e02cedc933cc8350031456ca7e3a1020361ad5a44dfcb2d791b95ec94fb3340f"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_EabYtUaAIR05LXw3qZSA"
-code = "0d64040c1aff3fc58b70c650ca3c79669c67d1263a86d3975d5c3c65b8d5fb9a"
+code = "90de4c8ed742368d258a55bac404eff203672fcce6b29693bf74d91f9a6f13c8"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_FCfM3hAXphsk1qERleGZ"
-code = "6b438cafc0007341f528e7f39def5b189d7338a63d29fe1e4591e18a0aee3493"
+code = "88818fb3ce25ef0ce457a39b744640e5e9e9bd15f30a7b6e837daaf6ef071ca8"
 
 [[function]]
 artifact = "libbtdm_common"
@@ -758,43 +800,43 @@ code = "9ef8eb5b6bef451908ca742fec6d7a7a8e4d9d9a26b255943ac67a2e79443cf3"
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_KmzLfKJ5UUi7zkqz1Nwn"
-code = "3267a4ef5f26558868c0726c2b8af9567161e362c3f5ff878954b0cc194cce4b"
+code = "de92756c41bae70f88e3bc5675d2e97c08cc74a2d7a1536b1f0e63103d462f76"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_M9nG353V0svWrv1l1zGw"
-code = "9cd1ba3ac9a026584f3124a8936c048eacded05bc32fcbe8b9eec37a4481a6d7"
+code = "b3bd1fc0af8f8a86f481af29c5aab9b1fa28b5a1df66da771533798312fe7ad7"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_PVKilXLQPu1BjRkm4C6O"
-code = "ef411f3604e1479c91a609d947d6a356ee2468c487369ecd57c28430d7f3105f"
+code = "6e7ef6f36848f852df8132fba6593d40f8fca418db8f7f8128b1f3dc47e9d495"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_VrTmsQfPlkmys4UL0NZp"
-code = "4a484272f7457b189b3f7a0d08034d48f88a940bc991f8564fb6e2203248fd70"
+code = "85e20fdaa8e2ef93672258fe5d4708effb291d1431b88cfdb93046a57319178d"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_WHYoiw8ufY0AEM2KSRK1"
-code = "cf448f3a2b490cd73386a5c6bc31e1c81355c74e3a85b1165ff8d421e242dcf7"
+code = "21d0e0a283cc4dba2f2944518322b897210fa1acffa377e2465f512338cf795f"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_XPuqTHliEO5V9xpR7aJR"
-code = "d0718dcc7614c06ea0efc0d393197f75dd69dec8d996c480201963e4974699e1"
+code = "d4853b1db04687791b1669f39c05ead1a60471e73239c164f76794bb1f541a76"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_YRnBzKlWCjsIbotqvNyS"
-code = "ef9cdbb12b9756b3b4d38b2418a4582427f8e5b2f10f2c9343825572304d8239"
+code = "4a94fd8da584ab253c422d10a5c5fd49a6fa936fcfc6d95a332f26de6aa2dcd4"
 
 [[function]]
 artifact = "libbtdm_common"
@@ -806,13 +848,19 @@ code = "e0708cb0ce1ace04ac0b40170b1e85ab9ae13e231ce78fff7135a52556cf63fd"
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_qkNMymdnaJnYUfzpKgEp"
-code = "c4bc5af2ab9e50d9f54abe4feb925fc7cfeec1b7e0243270e5a56b242c6bd309"
+code = "0c45d64fe4a3b082b31260ca378893d4eaf8b622ef7f286f3f7621bf17361c90"
 
 [[function]]
 artifact = "libbtdm_common"
 member = "18.o"
 symbol = "r_sym_bt_rPoPGH6BBYjZaunDU5FV"
 code = "acc9eb8d27b1b7517ab72c3aebc9b32b3394f25836ac9f78fb01aeae4aa9fe59"
+
+[[function]]
+artifact = "libbtdm_common"
+member = "18.o"
+symbol = "r_sym_bt_vibwBXogwGafrHSYUbon"
+code = "1812017e8c26ae7a74e8bc9f77233fd0ad463be32ac02b6ff792fcd4fa2cc4cf"
 
 [[function]]
 artifact = "libbtdm_common"
@@ -846,9 +894,9 @@ code = "e004bb33de0342434d9d45e2fde10e2b1fd4904291153a94f259597247bd0a7d"
 
 [[function]]
 artifact = "libbtdm_common"
-member = "2.o"
-symbol = "r_sym_bt_3DcjgYC1ikQrP7jNyXGR"
-code = "14ea11b5c53eae68d74a6b95cbd601eda0426801d4aa197c0cf36334f44466fd"
+member = "19.o"
+symbol = "r_sym_bt_zwu3w1OKSOTGoGdV7TSf"
+code = "51e95d01cf39ece5b1f021eccde5ec4d46e83f79804e8c9898b62f2ad32a0fde"
 
 [[function]]
 artifact = "libbtdm_common"
@@ -877,8 +925,20 @@ code = "ae19aa6ea0397592ef59701393444db76d65d79207a78b3f25db633462d5f306"
 [[function]]
 artifact = "libbtdm_common"
 member = "7.o"
+symbol = "r_sym_bt_R9GZfnUbtn7k6mHtoZbv"
+code = "9cab3dfc50f4101dec41fc70d794d66f8ec080e59b3ff919cb1a56edb86e85b2"
+
+[[function]]
+artifact = "libbtdm_common"
+member = "7.o"
 symbol = "r_sym_bt_aGdrujd2MUAzWYH75baR"
 code = "29298562bbec459253a44c59f8a9cf0043a3f185c60682c20ab65af65fd0a4ed"
+
+[[function]]
+artifact = "libbtdm_common"
+member = "8.o"
+symbol = "r_sym_bt_37HcX0qW6j1XVtKakUIG"
+code = "1015b80bd8fd115c54019ca84bc2847de3a4e089713039a3f416f8b8d925d5ef"
 
 [[function]]
 artifact = "libbtdm_common"
@@ -896,7 +956,7 @@ code = "3ea3c802a7c1ff45443defd7b9e7f76adca64fb4f74bfb30065ca5622e57d7ef"
 artifact = "libbtdm_common"
 member = "8.o"
 symbol = "r_sym_bt_t4aeyhcVrKTNMSlq45XR"
-code = "25c004015b2eccc41998e46174223f7a7bdaf7086843e012783c60a7b82074a7"
+code = "fe9b77b276859fd5555da61bd7a17428b63721b26dc5eb32f270a72ab4984ddc"
 
 [[function]]
 artifact = "libbtdm_common"

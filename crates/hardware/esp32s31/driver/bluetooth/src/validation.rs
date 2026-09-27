@@ -33,6 +33,13 @@ pub fn capture_and_acknowledge_interrupts() {
     oer_esp32s31_hal::bluetooth::validation::capture_and_acknowledge_interrupts();
 }
 
+/// Take the diagnostic scheduler-BUSY sample that opens the production
+/// scheduler stop sequence.
+#[inline(always)]
+pub fn sample_scheduler_stop_busy() -> bool {
+    oer_esp32s31_hal::bluetooth::validation::sample_scheduler_stop_busy()
+}
+
 /// Execute the exact production scheduler hardware-list head clear transaction.
 #[inline(always)]
 pub fn clear_scheduler_hardware_list_heads() {

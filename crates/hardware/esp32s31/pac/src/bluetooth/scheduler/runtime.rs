@@ -8,7 +8,7 @@ use crate::{
     svd::{zero_based_field_write, zero_register_write},
 };
 
-/// First field-level `SCHEDULER_STATE` observation for bank-one source 3.
+/// Scheduler BUSY sampled through the diagnostic pair for bank-one source 3.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothSchedulerReferenceGateObservation {
     busy: bool,
@@ -96,8 +96,39 @@ impl BluetoothSchedulerWorkObservation {
     pub const fn current_hardware_list(&self) -> BluetoothSchedulerHardwareListIndex {
         self.current_hardware_list
     }
+}
 
-    /// Consume this temporal sample at the interrupt-side removal gate.
+/// Scheduler BUSY sampled through the diagnostic pair by a task-side
+/// transaction.
+///
+/// Each sample publishes the scheduler-status selection and accepts the first
+/// of two equal consecutive diagnostic values. The task borrows the interrupt
+/// owner for the sample, so no interrupt-side selection can separate the
+/// selector write from its value reads.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the scheduler BUSY sample must be consumed by one controller path"]
+pub struct BluetoothSchedulerBusyObservation {
+    busy: bool,
+}
+
+impl BluetoothSchedulerBusyObservation {
+    const fn new(busy: bool) -> Self {
+        Self { busy }
+    }
+
+    /// Construct a semantic BUSY sample for upper-layer validation.
+    #[cfg(any(feature = "validation-probes", test))]
+    #[doc(hidden)]
+    pub const fn from_busy_for_validation(busy: bool) -> Self {
+        Self::new(busy)
+    }
+
+    /// Whether the scheduler was busy when this sample was accepted.
+    pub const fn is_busy(&self) -> bool {
+        self.busy
+    }
+
+    /// Consume this sample at the software-list removal gate.
     ///
     /// A busy sample returns immediately and cannot authorize command-register
     /// reads. Only an idle sample yields the affine capability required by the
@@ -304,8 +335,73 @@ impl BluetoothSchedulerFinishedListObservation {
 }
 
 trait BluetoothSchedulerInterruptControl {
+    fn read_scheduler_busy(&mut self) -> bool;
     fn read_scheduler_state(&mut self) -> SchedulerStateObservation;
     fn clear_scheduler_reference(&mut self);
+}
+
+/// Selector and value accesses of the MAC diagnostic pair.
+trait BluetoothDiagnosticControl {
+    fn select_scheduler_status(&mut self);
+    fn read_diagnostic_value(&mut self) -> DiagnosticValue;
+}
+
+/// One complete diagnostic-value sample, compared field by field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DiagnosticValue {
+    value_0_low_7: u8,
+    value_0_bit_7: bool,
+    value_1: u8,
+    value_2: u8,
+    value_3: u8,
+}
+
+/// Select the scheduler-status signal and return its BUSY bit.
+///
+/// The value crosses from the MAC clock domain, so a sample is accepted only
+/// when two consecutive complete reads are equal. Like the vendor sample, the
+/// retry is unbounded and no fence separates the selector write from the
+/// reads.
+fn execute_scheduler_status_sample(control: &mut impl BluetoothDiagnosticControl) -> bool {
+    control.select_scheduler_status();
+    let accepted = loop {
+        let first = control.read_diagnostic_value();
+        if first == control.read_diagnostic_value() {
+            break first;
+        }
+    };
+    accepted.value_0_bit_7
+}
+
+struct HardwareDiagnosticControl<'a> {
+    registers: &'a crate::svd::BluetoothSchedulerInterruptRuntime,
+}
+
+impl BluetoothDiagnosticControl for HardwareDiagnosticControl<'_> {
+    fn select_scheduler_status(&mut self) {
+        crate::svd::fixed_register_write::select_bluetooth_scheduler_status_diagnostic(
+            self.registers,
+        );
+    }
+
+    fn read_diagnostic_value(&mut self) -> DiagnosticValue {
+        let (value_0_low_7, value_0_bit_7, value_1, value_2, value_3) =
+            crate::svd::field_snapshot_read::observe_bluetooth_diagnostic_value(self.registers);
+        DiagnosticValue {
+            value_0_low_7,
+            value_0_bit_7,
+            value_1,
+            value_2,
+            value_3,
+        }
+    }
+}
+
+/// Sample scheduler BUSY through the diagnostic pair of the interrupt owner.
+pub(crate) fn sample_scheduler_busy(
+    registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
+) -> bool {
+    execute_scheduler_status_sample(&mut HardwareDiagnosticControl { registers })
 }
 
 #[derive(Clone, Copy)]
@@ -320,6 +416,10 @@ struct HardwareSchedulerInterruptControl<'a> {
 }
 
 impl BluetoothSchedulerInterruptControl for HardwareSchedulerInterruptControl<'_> {
+    fn read_scheduler_busy(&mut self) -> bool {
+        sample_scheduler_busy(self.registers)
+    }
+
     fn read_scheduler_state(&mut self) -> SchedulerStateObservation {
         let (busy, state_29, current_link_index) =
             crate::svd::field_snapshot_read::observe_bluetooth_scheduler_interrupt_state(
@@ -382,7 +482,7 @@ impl BluetoothSchedulerSoftwareListRemovalRecheckControl
     for HardwareSchedulerSoftwareListRemovalRecheckControl<'_>
 {
     fn read_scheduler_busy(&mut self) -> bool {
-        crate::svd::field_read::observe_bluetooth_scheduler_software_list_busy(self.scheduler)
+        sample_scheduler_busy(self.scheduler)
     }
 
     fn read_command_0_status_26(&mut self) -> bool {
@@ -415,7 +515,7 @@ impl BluetoothSchedulerFinishedListControl for HardwareSchedulerFinishedListCont
 fn execute_reference_gate_observation(
     control: &mut impl BluetoothSchedulerInterruptControl,
 ) -> BluetoothSchedulerReferenceGateObservation {
-    BluetoothSchedulerReferenceGateObservation::new(control.read_scheduler_state().busy)
+    BluetoothSchedulerReferenceGateObservation::new(control.read_scheduler_busy())
 }
 
 fn execute_clear_scheduler_reference(control: &mut impl BluetoothSchedulerInterruptControl) {
@@ -487,11 +587,11 @@ fn join_software_list_removal(
 }
 
 impl BluetoothInterruptRegisters {
-    /// Read the first scheduler-state image required only by bank-one source 3.
+    /// Sample scheduler BUSY through the diagnostic pair for bank-one source 3.
     ///
     /// The later work observation is intentionally a separate MMIO method:
     /// the complete source-124 handler can clear `SCHEDULER_REFERENCE` between
-    /// these two reads, so one sampled image cannot stand in for both.
+    /// the two samples, and it reads `SCHEDULER_STATE` instead.
     pub fn capture_scheduler_reference_gate(
         &mut self,
     ) -> BluetoothSchedulerReferenceGateObservation {
@@ -504,7 +604,7 @@ impl BluetoothInterruptRegisters {
     /// Publish the complete zero image to `SCHEDULER_REFERENCE`.
     ///
     /// The primary classifier authorizes this only after bank-one source 3
-    /// observed `SCHEDULER_STATE.BUSY == 0` at the reference gate. This MMIO
+    /// observed a clear diagnostic BUSY sample at the reference gate. This MMIO
     /// operation deliberately does not reproduce the vendor's following
     /// intrusive-list assertion; the open scheduler has no such mutable list
     /// representation.
@@ -524,12 +624,20 @@ impl BluetoothInterruptRegisters {
         };
         execute_work_observation(&mut control)
     }
+
+    /// Sample scheduler BUSY through the diagnostic pair for a task-side
+    /// scheduler decision.
+    pub fn capture_scheduler_busy(&mut self) -> BluetoothSchedulerBusyObservation {
+        BluetoothSchedulerBusyObservation::new(sample_scheduler_busy(
+            &self.peripherals.bluetooth_scheduler_interrupt_runtime,
+        ))
+    }
 }
 
 impl BluetoothTaskRegisters {
     /// Finish one task-owned software-list removal observation.
     ///
-    /// The consumed idle capability proves the matching interrupt-side BUSY
+    /// The consumed idle capability proves the matching diagnostic BUSY
     /// sample was clear before either command register is touched. Command one
     /// is not read when command zero is clear. The operation performs at most
     /// two reads and always returns immediately.
@@ -547,8 +655,8 @@ impl BluetoothTaskRegisters {
     /// Recheck the complete post-unlink scheduler return predicate directly.
     ///
     /// This is one finite, ordered transaction matching complete
-    /// `r_sym_bt_FCfM3hAXphsk1qERleGZ`: a fresh `SCHEDULER_STATE.BUSY`
-    /// observation short-circuits both command reads, an idle observation
+    /// `r_sym_bt_FCfM3hAXphsk1qERleGZ`: a fresh diagnostic BUSY sample
+    /// short-circuits both command reads, an idle observation
     /// admits `SCHEDULER_COMMAND_0.STATUS_26`, and only a set status 26 admits
     /// `SCHEDULER_COMMAND_1.STATUS_18`. No interrupt capture or acknowledgement
     /// is implied by this direct task-side recheck.

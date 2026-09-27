@@ -18,8 +18,8 @@ use oer_esp32s31_bluetooth::{
     },
 };
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothControllerHalInitConfig, BluetoothSchedulerExecutionModifyDisposition,
-    BluetoothSchedulerWorkObservation,
+    BluetoothControllerHalInitConfig, BluetoothSchedulerBusyObservation,
+    BluetoothSchedulerExecutionModifyDisposition,
 };
 
 use super::{BluetoothRadio, BluetoothRadioSink, RadioStep};
@@ -76,7 +76,7 @@ fn radio() -> Radio {
 
 fn view(busy: bool) -> SchedulerHardwareView {
     SchedulerHardwareView {
-        work: BluetoothSchedulerWorkObservation::from_fields_for_validation(busy, false, 0),
+        busy: BluetoothSchedulerBusyObservation::from_busy_for_validation(busy),
         hardware_head: None,
     }
 }

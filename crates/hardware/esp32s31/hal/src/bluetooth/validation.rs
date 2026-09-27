@@ -16,6 +16,13 @@ pub fn capture_and_acknowledge_interrupts() {
     let _acknowledged = registers.capture_nrt_and_acknowledge();
 }
 
+/// Take the diagnostic scheduler-BUSY sample that opens the production
+/// scheduler stop sequence.
+#[inline(always)]
+pub fn sample_scheduler_stop_busy() -> bool {
+    oer_esp32s31_pac::validation::sample_bluetooth_scheduler_stop_busy()
+}
+
 /// Execute the exact finite MMIO transaction recovered for
 /// `bt_bb_v2_init_cmplx(1)`.
 ///

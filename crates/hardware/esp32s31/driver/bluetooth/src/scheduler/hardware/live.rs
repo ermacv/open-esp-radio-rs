@@ -193,25 +193,25 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
                 BluetoothSchedulerLockModifyObservation::from_split(interrupt, task),
             ));
         }
-        let work = self
+        let busy = self
             .storage
-            .with_interrupt_registers((), |interrupts, ()| interrupts.capture_scheduler_work())
+            .with_interrupt_registers((), |interrupts, ()| interrupts.capture_scheduler_busy())
             .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?;
         Ok(match (wait, cancellation, skip) {
             (SchedulerWait::ExecutionLock, _, _) => SchedulerObservation::ExecutionLock(
-                self.controller.observe_scheduler_execution_lock(work),
+                self.controller.observe_scheduler_execution_lock(busy),
             ),
             (SchedulerWait::ExecutionModify, _, _) => SchedulerObservation::ExecutionModify(
-                self.controller.observe_scheduler_execution_modify(work),
+                self.controller.observe_scheduler_execution_modify(busy),
             ),
             (SchedulerWait::Cancellation, Some(requested), _) => {
                 SchedulerObservation::Cancellation(
                     self.controller
-                        .observe_scheduler_cancellation(requested, work),
+                        .observe_scheduler_cancellation(requested, busy),
                 )
             }
             (SchedulerWait::Skip, _, Some(published)) => {
-                SchedulerObservation::Skip(self.controller.observe_scheduler_skip(published, work))
+                SchedulerObservation::Skip(self.controller.observe_scheduler_skip(published, busy))
             }
             _ => return Err(SchedulerHardwareError::NotAwaiting(wait)),
         })

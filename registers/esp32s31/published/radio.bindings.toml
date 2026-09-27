@@ -3537,6 +3537,70 @@ bit-width = 32
 access = "read-only"
 
 [[registers]]
+address = 537924072
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_SELECT"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+peripheral-type = "BluetoothSchedulerInterruptRuntime"
+peripheral-module = "bluetooth_scheduler_interrupt_runtime"
+scope = []
+register-method = "diagnostic_select"
+
+[[registers.fields]]
+svd-name = "SELECTION"
+method = "selection"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537924076
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_VALUE"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+peripheral-type = "BluetoothSchedulerInterruptRuntime"
+peripheral-module = "bluetooth_scheduler_interrupt_runtime"
+scope = []
+register-method = "diagnostic_value"
+
+[[registers.fields]]
+svd-name = "VALUE_0_LOW_7"
+method = "value_0_low_7"
+bit-offset = 0
+bit-width = 7
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "VALUE_0_BIT_7"
+method = "value_0_bit_7"
+bit-offset = 7
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "VALUE_1"
+method = "value_1"
+bit-offset = 8
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "VALUE_2"
+method = "value_2"
+bit-offset = 16
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "VALUE_3"
+method = "value_3"
+bit-offset = 24
+bit-width = 8
+access = "read-only"
+
+[[registers]]
 address = 537924080
 width = 32
 access = "write-only"

@@ -30,9 +30,9 @@ use oer_esp32s31_bluetooth_memory::{ControllerSramLinkAddress, LeRxChain, Schedu
 use oer_esp32s31_bluetooth_radio::validation::model_memory;
 use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerHalInitConfig, BluetoothControllerTimeScale,
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-    BluetoothSchedulerStop, BluetoothSchedulerStopStep, BluetoothSchedulerStopped,
-    BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerBusyObservation, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
+    BluetoothSchedulerStopped,
 };
 use oer_esp32s31_hal::shared_radio::{QuiescentSpan, RadioClient};
 
@@ -151,7 +151,7 @@ impl BluetoothRadioHardware for Model {
         // A started item whose execution is deferred keeps the scheduler busy.
         let busy = self.0.borrow().running;
         Ok(SchedulerHardwareView {
-            work: BluetoothSchedulerWorkObservation::from_fields_for_validation(busy, false, 0),
+            busy: BluetoothSchedulerBusyObservation::from_busy_for_validation(busy),
             hardware_head: None,
         })
     }

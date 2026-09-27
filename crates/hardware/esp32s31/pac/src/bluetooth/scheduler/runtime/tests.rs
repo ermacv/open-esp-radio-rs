@@ -1,14 +1,15 @@
 use std::vec::Vec;
 
 use super::{
-    BluetoothSchedulerFinishedListControl, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerInterruptControl, BluetoothSchedulerSoftwareListRemovalControl,
-    BluetoothSchedulerSoftwareListRemovalDisposition,
+    BluetoothDiagnosticControl, BluetoothSchedulerFinishedListControl,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerInterruptControl,
+    BluetoothSchedulerSoftwareListRemovalControl, BluetoothSchedulerSoftwareListRemovalDisposition,
     BluetoothSchedulerSoftwareListRemovalInterruptStep,
-    BluetoothSchedulerSoftwareListRemovalRecheckControl, SchedulerStateObservation,
-    execute_clear_scheduler_reference, execute_finished_list_transfer,
-    execute_reference_gate_observation, execute_software_list_removal_finish,
-    execute_software_list_removal_recheck, execute_work_observation,
+    BluetoothSchedulerSoftwareListRemovalRecheckControl, DiagnosticValue,
+    SchedulerStateObservation, execute_clear_scheduler_reference, execute_finished_list_transfer,
+    execute_reference_gate_observation, execute_scheduler_status_sample,
+    execute_software_list_removal_finish, execute_software_list_removal_recheck,
+    execute_work_observation,
 };
 
 #[test]
@@ -22,22 +23,26 @@ fn hardware_list_index_rejects_values_outside_the_scheduler_domain() {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum InterruptOperation {
+    SampleBusy,
     ReadState,
     ClearReference,
 }
 
 struct InterruptRecorder {
-    states: [SchedulerStateObservation; 2],
-    next_state: usize,
+    busy: bool,
+    state: SchedulerStateObservation,
     operations: Vec<InterruptOperation>,
 }
 
 impl BluetoothSchedulerInterruptControl for InterruptRecorder {
+    fn read_scheduler_busy(&mut self) -> bool {
+        self.operations.push(InterruptOperation::SampleBusy);
+        self.busy
+    }
+
     fn read_scheduler_state(&mut self) -> SchedulerStateObservation {
-        let state = self.states[self.next_state];
-        self.next_state += 1;
         self.operations.push(InterruptOperation::ReadState);
-        state
+        self.state
     }
 
     fn clear_scheduler_reference(&mut self) {
@@ -123,21 +128,14 @@ impl BluetoothSchedulerFinishedListControl for FinishedListRecorder {
 }
 
 #[test]
-fn temporal_state_reads_remain_distinct_across_reference_clear() {
+fn reference_gate_samples_busy_and_work_reads_state_after_the_clear() {
     let mut recorder = InterruptRecorder {
-        states: [
-            SchedulerStateObservation {
-                busy: false,
-                state_29: false,
-                current_hardware_list: BluetoothSchedulerHardwareListIndex(3),
-            },
-            SchedulerStateObservation {
-                busy: true,
-                state_29: true,
-                current_hardware_list: BluetoothSchedulerHardwareListIndex(9),
-            },
-        ],
-        next_state: 0,
+        busy: false,
+        state: SchedulerStateObservation {
+            busy: true,
+            state_29: true,
+            current_hardware_list: BluetoothSchedulerHardwareListIndex(9),
+        },
         operations: Vec::new(),
     };
 
@@ -152,7 +150,7 @@ fn temporal_state_reads_remain_distinct_across_reference_clear() {
     assert_eq!(
         recorder.operations,
         [
-            InterruptOperation::ReadState,
+            InterruptOperation::SampleBusy,
             InterruptOperation::ClearReference,
             InterruptOperation::ReadState,
         ]
@@ -291,18 +289,98 @@ fn direct_software_list_removal_recheck_preserves_all_short_circuit_edges() {
 
 #[test]
 fn busy_scheduler_cannot_authorize_task_side_command_reads() {
-    let step = super::BluetoothSchedulerWorkObservation::from_fields_for_validation(true, false, 0)
+    let step = super::BluetoothSchedulerBusyObservation::from_busy_for_validation(true)
         .into_software_list_removal_gate();
     assert_eq!(
         step,
         BluetoothSchedulerSoftwareListRemovalInterruptStep::Pending
     );
 
-    let step =
-        super::BluetoothSchedulerWorkObservation::from_fields_for_validation(false, false, 0)
-            .into_software_list_removal_gate();
+    let step = super::BluetoothSchedulerBusyObservation::from_busy_for_validation(false)
+        .into_software_list_removal_gate();
     assert!(matches!(
         step,
         BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(_)
     ));
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DiagnosticOperation {
+    SelectSchedulerStatus,
+    ReadValue,
+}
+
+struct DiagnosticRecorder {
+    values: Vec<DiagnosticValue>,
+    operations: Vec<DiagnosticOperation>,
+}
+
+impl BluetoothDiagnosticControl for DiagnosticRecorder {
+    fn select_scheduler_status(&mut self) {
+        self.operations
+            .push(DiagnosticOperation::SelectSchedulerStatus);
+    }
+
+    fn read_diagnostic_value(&mut self) -> DiagnosticValue {
+        self.operations.push(DiagnosticOperation::ReadValue);
+        self.values.remove(0)
+    }
+}
+
+const fn diagnostic(busy: bool, value_1: u8) -> DiagnosticValue {
+    DiagnosticValue {
+        value_0_low_7: 0x15,
+        value_0_bit_7: busy,
+        value_1,
+        value_2: 0,
+        value_3: 0,
+    }
+}
+
+#[test]
+fn scheduler_status_sample_selects_once_and_accepts_two_equal_reads() {
+    let mut recorder = DiagnosticRecorder {
+        values: Vec::from([diagnostic(true, 0), diagnostic(true, 0)]),
+        operations: Vec::new(),
+    };
+    assert!(execute_scheduler_status_sample(&mut recorder));
+    assert_eq!(
+        recorder.operations,
+        [
+            DiagnosticOperation::SelectSchedulerStatus,
+            DiagnosticOperation::ReadValue,
+            DiagnosticOperation::ReadValue,
+        ]
+    );
+}
+
+#[test]
+fn scheduler_status_sample_rereads_both_values_until_a_pair_is_equal() {
+    // A change in any lane rejects the pair, including one the BUSY bit does
+    // not occupy; the accepted pair decides BUSY.
+    let mut recorder = DiagnosticRecorder {
+        values: Vec::from([
+            diagnostic(true, 0),
+            diagnostic(true, 1),
+            diagnostic(true, 1),
+            diagnostic(false, 1),
+            diagnostic(false, 1),
+            diagnostic(false, 1),
+        ]),
+        operations: Vec::new(),
+    };
+    assert!(!execute_scheduler_status_sample(&mut recorder));
+    assert!(recorder.values.is_empty());
+    assert_eq!(
+        recorder.operations.first(),
+        Some(&DiagnosticOperation::SelectSchedulerStatus)
+    );
+    assert_eq!(
+        recorder
+            .operations
+            .iter()
+            .filter(|operation| **operation == DiagnosticOperation::SelectSchedulerStatus)
+            .count(),
+        1
+    );
 }

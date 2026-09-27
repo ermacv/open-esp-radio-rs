@@ -77,7 +77,7 @@ struct Hardware<'a> {
 
 impl Control for Hardware<'_> {
     fn busy(&mut self) -> bool {
-        field_read::observe_bluetooth_scheduler_software_list_busy(
+        crate::bluetooth::scheduler::runtime::sample_scheduler_busy(
             &self
                 .output
                 .peripherals

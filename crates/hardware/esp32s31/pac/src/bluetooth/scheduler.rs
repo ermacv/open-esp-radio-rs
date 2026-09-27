@@ -418,10 +418,11 @@ impl BluetoothTaskRegisters {
 
     /// Read the current head of one hardware list once, then fence.
     ///
-    /// SOURCE: same-chip named `r_btdm_sched_delete_specified_items`, instruction-identical
-    /// to current `r_sym_bt_qkNMymdnaJnYUfzpKgEp`, reads the head once
-    /// while the scheduler is busy and compares chained item start times
-    /// against it before skipping them.
+    /// SOURCE: complete current `r_sym_bt_qkNMymdnaJnYUfzpKgEp`, carried by
+    /// `oer-symbol-lineage` from same-chip named
+    /// `r_btdm_sched_delete_specified_items`, reads the head once after a set
+    /// diagnostic BUSY sample and compares chained item start times against
+    /// it before skipping them.
     pub fn observe_scheduler_hardware_list_head(
         &mut self,
         index: BluetoothSchedulerHardwareListIndex,
@@ -432,8 +433,9 @@ impl BluetoothTaskRegisters {
     /// Observe whether the hardware list admitted by one RUN is now empty.
     ///
     /// SOURCE: the post-picker tail of current
-    /// `r_sym_ble_rmNuzAO8kQQQXQIpTzGZ`, mapped to same-chip named
-    /// `r_sched_txn_onSchedHwListDone`, freshly reads the hardware-list head
+    /// `brk_sym_sched_MzeSZzbQ4ZKhWW6Wu5jV`, carried by `oer-symbol-lineage`
+    /// from same-chip named `r_sched_txn_onSchedHwListDone`, freshly reads the
+    /// hardware-list head
     /// after the source manager becomes empty and asserts that head is empty
     /// before the following software-list removal call.
     ///
@@ -533,12 +535,13 @@ impl BluetoothTaskRegisters {
 
     /// Publish the synchronous base-stack scheduler event required before RUN.
     ///
-    /// SOURCE: complete current `r_sym_bt_PVKilXLQPu1BjRkm4C6O` publishes
-    /// broker selector two after dynamic interrupt preparation. Its complete
-    /// registered subscriber `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` acknowledges
-    /// BTMAC source 14 before enabling it through a fresh-read RMW. This typed
-    /// transaction replaces the generic callback list without making the
-    /// synchronous hardware effect asynchronous.
+    /// SOURCE: complete current `r_sym_bt_PVKilXLQPu1BjRkm4C6O` dispatches
+    /// entry one of the linker-assembled scheduler broker table after dynamic
+    /// interrupt preparation. The entry's only subscriber,
+    /// `brk_sym_scan_b8ogEC3hTjGmqL5oRuyw`, acknowledges BTMAC source 14
+    /// before enabling it through a fresh-read RMW. This typed transaction
+    /// replaces the generic broker dispatch without making the synchronous
+    /// hardware effect asynchronous.
     #[doc(hidden)]
     pub fn publish_scheduler_run_event(
         &mut self,

@@ -48,7 +48,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "SCHEDULER_SRAM_POINTER_PREFIX"
-description = "Hardware initialization publishes bits 22..31 from an SRAM configuration address; scheduler list users OR this prefix with compressed 20-bit pointer values shifted left by two."
+description = "Hardware initialization publishes bits 22..31 from an SRAM configuration address. The pinned scheduler list users reconstruct pointers with the constant 0x2F000000 instead; the source-124 deferred-work snapshot and the recycle dequeue path still OR this prefix with compressed 20-bit pointer values shifted left by two."
 addressOffset = 0x74
 size = 32
 access = "read-write"
@@ -277,7 +277,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "SCHEDULER_SKIP_REQUEST"
-description = "Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and SCHEDULER_STATE.BUSY are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established."
+description = "Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and the diagnostic scheduler BUSY sample are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established."
 addressOffset = 0xEC
 size = 32
 access = "read-write"
@@ -977,7 +977,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "OPERATIONAL_STATUS_0208"
-description = "Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown."
+description = "Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."
 addressOffset = 0x208
 size = 32
 access = "read-only"
@@ -989,7 +989,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "SCHEDULER_LOCK_MODIFY_REQUEST"
-description = "The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or SCHEDULER_STATE.BUSY is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion."
+description = "The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or the diagnostic scheduler BUSY sample is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion."
 addressOffset = 0x218
 size = 32
 access = "read-write"
@@ -1016,7 +1016,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "OPERATIONAL_STATUS_0324"
-description = "The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown."
+description = "The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."
 addressOffset = 0x324
 size = 32
 access = "read-only"

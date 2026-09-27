@@ -74,6 +74,15 @@ pub fn bluetooth_interrupt_registers() -> BluetoothInterruptRegisters {
     }
 }
 
+/// Take the diagnostic scheduler-BUSY sample that opens the production
+/// scheduler stop sequence.
+#[inline(always)]
+pub fn sample_bluetooth_scheduler_stop_busy() -> bool {
+    let (mut task, _setup) = bluetooth_task();
+    let mut interrupts = bluetooth_interrupt_registers();
+    task.scheduler_stop_busy(&mut interrupts)
+}
+
 /// Construct the Bluetooth task register set and its inactive interrupt bank.
 #[inline(always)]
 fn bluetooth_task() -> (

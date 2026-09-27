@@ -113,13 +113,13 @@ impl ControllerPoweredTaskRuntime<'_> {
             .start(&mut backend, insertion)
     }
 
-    /// Sample the scheduler work state, then the head of list zero.
+    /// Sample scheduler BUSY, then the head of list zero.
     pub fn observe_scheduler_hardware(
         &mut self,
         storage: &impl SchedulerRunInterruptStorage,
     ) -> Result<SchedulerHardwareView, SchedulerHardwareError> {
-        let work = storage
-            .with_interrupt_registers((), |interrupts, ()| interrupts.capture_scheduler_work())
+        let busy = storage
+            .with_interrupt_registers((), |interrupts, ()| interrupts.capture_scheduler_busy())
             .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?;
         let head = self
             .task
@@ -133,7 +133,7 @@ impl ControllerPoweredTaskRuntime<'_> {
             ),
         };
         Ok(SchedulerHardwareView {
-            work,
+            busy,
             hardware_head,
         })
     }

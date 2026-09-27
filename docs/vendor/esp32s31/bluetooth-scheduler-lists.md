@@ -18,11 +18,13 @@ moved. The open contracts at the end of this page remain hardware questions.
 ## Pinned public inputs
 
 - ESP32-S31 Controller archive
-  [`espressif/esp32s31-bt-lib@7f20740dd66ee774ffce5db0b55507892551aa31`](https://github.com/espressif/esp32s31-bt-lib/tree/7f20740dd66ee774ffce5db0b55507892551aa31):
+  [`espressif/esp32s31-bt-lib@10c507788e9da0993709cf82e405c896561172d8`](https://github.com/espressif/esp32s31-bt-lib/tree/10c507788e9da0993709cf82e405c896561172d8),
+  the single pin of `verification/esp32s31/artifacts.toml`:
   `libbtdm_common.a` SHA-256
-  `fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099`
-  (scheduler member `19.o`) and `libble_app.a` SHA-256
-  `62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195`;
+  `389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41`
+  (scheduler member `18.o`) and `libble_app.a` SHA-256
+  `e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723`
+  (member `sched_3.o`);
 - same-chip role-name reference only:
   [`espressif/esp32s31-bt-lib@31c30949541a5d3abd4043a1cb66d55aa55577dd`](https://github.com/espressif/esp32s31-bt-lib/tree/31c30949541a5d3abd4043a1cb66d55aa55577dd),
   `libbtdm_common.a` SHA-256
@@ -37,44 +39,47 @@ intermediate archive revision by
 [`oer-symbol-lineage`](../../../tools/symbol-lineage/README.md): a name
 crosses revision `5e37d4d`, which introduced generated names, on its unchanged
 source name or on an identical relocation-normalized body, and later revisions
-keep generated names stable. The bodies that differ from the initial revision
-were read in their current form. The current `r_sched_txn_onSchedHwListDone`
-body differs only in its assertion helper.
+keep generated names stable; the pinned `libble_app.a` renamed the scheduler
+transaction functions again, and the tool pairs them by body and call graph.
+The last column gives the weakest evidence step of each name's chain. Every
+body was read in its pinned form.
 
 `r_sym_bt_DPWY0umixzmXEaFuUyCI` is `r_btdm_sched_run`: its revision-`5e37d4d`
 body is identical to the initial one. Revision `7729629` moved that body into
 the new function `r_sym_bt_PVKilXLQPu1BjRkm4C6O`, which has no recovered name,
 and made `r_btdm_sched_run` its caller.
 
-| Initial name | Current symbol | Current body |
+| Initial name | Current symbol | Name evidence |
 | --- | --- | --- |
-| `r_btdm_sched_insert_with_lock_modify` | `r_sym_bt_VrTmsQfPlkmys4UL0NZp` | one added instruction |
-| `r_btdm_sched_insertion_begin` | `r_sym_bt_EabYtUaAIR05LXw3qZSA` | changed |
-| `r_btdm_sched_insertion_end` | `r_sym_bt_4KfpZh0Hu5NprlqcNu0D` | changed |
-| `r_btdm_sched_execution_lock` | `r_sym_bt_9H3AnHbaHJ3auzSvPDme` | changed |
-| `r_btdm_sched_execution_modify` | `r_sym_bt_rPoPGH6BBYjZaunDU5FV` | changed |
-| `r_btdm_sched_wait_lock_modify_idle` | `r_sym_bt_B8fDByebTHuwRe8FZuRt` | identical |
-| `r_btdm_sched_merge_list_remove_overlap` | `r_sym_bt_YRnBzKlWCjsIbotqvNyS` | changed |
-| `r_btdm_sched_check_overlap_in_list` | `r_sym_bt_FovcDCPDYkKMaCv7y4Wb` | identical |
-| `r_btdm_sched_remove_unshareable_entries` | `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` | identical |
-| `r_btdm_sched_rm_item_directly` | `r_sym_bt_hddDtuOCoB0U4KYRErRq` | identical |
-| `r_btdm_sched_delete_from_list` | `r_sym_bt_KmzLfKJ5UUi7zkqz1Nwn` | changed |
-| `r_btdm_sched_delete_specified_items` | `r_sym_bt_qkNMymdnaJnYUfzpKgEp` | identical |
-| `r_btdm_sched_search_deleted_items` | `r_sym_bt_1Q7VVJH4siSgF2fbAf3f` | changed |
-| `r_btdm_sched_skip_specified_sch` | `r_sym_bt_DkrQYQcoyzIHdYi0CzWE` | identical |
-| `r_btdm_sched_stop` | `r_sym_bt_74l62ZLsZuXg67pPHSd7` | changed |
-| `r_btdm_hal_link_skip_specified_tl` | `r_sym_bt_t4aeyhcVrKTNMSlq45XR` | identical |
-| `r_btdm_sched_pick_finished_items` | `r_sym_bt_M9nG353V0svWrv1l1zGw` | identical |
-| `r_btdm_sched_run` | `r_sym_bt_DPWY0umixzmXEaFuUyCI` | changed |
-| `r_btdm_sched_get_hw_list_header` / `set_hw_list_header` | `r_sym_bt_6wSHUtNRioHeB7CKjVJA` / `r_sym_bt_8m3cRMNRZNfaJ7qVvayk` | identical |
-| `r_btdm_sched_mem_get_hw_start_time` | `r_sym_bt_sdf6bUMpe1CnARWl962a` | identical |
-| `r_btdm_sched_reset_new_item` | `r_sym_bt_RnJIqDW4oA0usCDLVZGy` | identical |
-| `r_sched_txn_insertIntoList` | `r_sym_ble_2NzCGxXVVAgscKC4JuXu` | identical |
-| `r_sched_txn_insertOne` | `r_sym_ble_jVs2DPPaJL7CDx8SeFuo` | identical |
-| `r_sched_txn_getListFromSch` / `getListFromDevice` | `r_sym_ble_oDSWrKSM8tZw8SolRxrc` / `r_sym_ble_9CBCO0GZ7pUHoTfKVbia` | identical |
-| `r_sched_txn_resortSwList` | `r_sym_ble_mrucwvpRHVsLLccQveKl` | identical |
-| `r_sched_txn_onSchedHwListDone` | `r_sym_ble_rmNuzAO8kQQQXQIpTzGZ` | assertion helper only |
-| `r_sched_txn_init` | `r_sym_ble_9VDW4bivmhCHFVAkh57O` | identical |
+| `r_btdm_sched_insert_with_lock_modify` | `r_sym_bt_VrTmsQfPlkmys4UL0NZp` | exact body |
+| `r_btdm_sched_insertion_begin` | `r_sym_bt_EabYtUaAIR05LXw3qZSA` | exact body |
+| `r_btdm_sched_insertion_end` | `r_sym_bt_4KfpZh0Hu5NprlqcNu0D` | exact body |
+| `r_btdm_sched_execution_lock` | `r_sym_bt_9H3AnHbaHJ3auzSvPDme` | exact body |
+| `r_btdm_sched_execution_modify` | `r_sym_bt_rPoPGH6BBYjZaunDU5FV` | exact body |
+| `r_btdm_sched_wait_lock_modify_idle` | `r_sym_bt_B8fDByebTHuwRe8FZuRt` | exact body |
+| `r_btdm_sched_merge_list_remove_overlap` | `r_sym_bt_YRnBzKlWCjsIbotqvNyS` | call graph |
+| `r_btdm_sched_check_overlap_in_list` | `r_sym_bt_FovcDCPDYkKMaCv7y4Wb` | exact body |
+| `r_btdm_sched_remove_unshareable_entries` | `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` | exact body |
+| `r_btdm_sched_rm_item_directly` | `r_sym_bt_hddDtuOCoB0U4KYRErRq` | exact body |
+| `r_btdm_sched_delete_from_list` | `r_sym_bt_KmzLfKJ5UUi7zkqz1Nwn` | exact body |
+| `r_btdm_sched_delete_specified_items` | `r_sym_bt_qkNMymdnaJnYUfzpKgEp` | exact body |
+| `r_btdm_sched_search_deleted_items` | `r_sym_bt_1Q7VVJH4siSgF2fbAf3f` | exact body |
+| `r_btdm_sched_skip_specified_sch` | `r_sym_bt_DkrQYQcoyzIHdYi0CzWE` | similar body |
+| `r_btdm_sched_stop` | `r_sym_bt_74l62ZLsZuXg67pPHSd7` | exact body |
+| `r_btdm_hal_link_skip_specified_tl` | `r_sym_bt_t4aeyhcVrKTNMSlq45XR` | exact body |
+| `r_btdm_sched_pick_finished_items` | `r_sym_bt_M9nG353V0svWrv1l1zGw` | exact body |
+| `r_btdm_sched_run` | `r_sym_bt_DPWY0umixzmXEaFuUyCI` | exact body |
+| `r_btdm_sched_get_hw_list_header` / `set_hw_list_header` | `r_sym_bt_6wSHUtNRioHeB7CKjVJA` / `r_sym_bt_8m3cRMNRZNfaJ7qVvayk` | exact body |
+| `r_btdm_sched_mem_get_hw_start_time` | `r_sym_bt_sdf6bUMpe1CnARWl962a` | exact body |
+| `r_btdm_sched_reset_new_item` | `r_sym_bt_RnJIqDW4oA0usCDLVZGy` | exact body |
+| `r_btdm_sched_replace_hw_entry_with_index` | `r_sym_bt_vibwBXogwGafrHSYUbon` | exact body |
+| `r_sched_txn_insertIntoList` | `r_sym_sched_OAGUngJKx5kn6bwQXdLx` | similar body |
+| `r_sched_txn_insertOne` | `r_sym_sched_mYA9XxLdNJrKN52WzuzL` | similar body |
+| `r_sched_txn_getListFromSch` / `getListFromDevice` | `r_sym_sched_M7rlJqpeQjP02yIEpjWX` / `r_sym_sched_RIkbUZx5qxZKaT5j7dWZ` | similar body |
+| `r_sched_txn_resortSwList` | `r_sym_sched_IuRfwmqxkZQzOfkj2sZX` | call graph |
+| `r_sched_txn_removeSwList` | `r_sym_sched_4yOHdQa50AXnZAom3x3f` | call graph |
+| `r_sched_txn_onSchedHwListDone` | `brk_sym_sched_MzeSZzbQ4ZKhWW6Wu5jV` | dominant candidate |
+| `r_sched_txn_init` | `r_sym_sched_TtqwTBf6GWrS99gJ5I6I` | call graph |
 
 ## Hardware list model
 
@@ -87,9 +92,13 @@ at `0x2010_b000 + 0x10 * i`:
 - word 1 is the hardware start time of that list.
 
 A list is a singly linked chain through item word `+0x00` bits 19:0, using the
-same compression. Walkers OR the shifted field with the value read from
-`0x2010_1074` to recover a full address. `SCHEDULER_STATE` at `0x2010_107c`
-reports BUSY in bit 31 and the list being executed in bits 23:20.
+same compression. Walkers OR the shifted field with the constant `0x2f00_0000`
+to recover a full address. `SCHEDULER_STATE` at `0x2010_107c` reports the list
+being executed in bits 23:20. Every scheduler function takes BUSY from the
+MAC diagnostic pair instead of that register: it writes the complete selector
+image `0x38` to `0x2010_11e8`, reads `0x2010_11ec` until two consecutive
+complete reads are equal and tests bit 7. BUSY below always means this
+sample.
 
 The BLE stack reserves thirteen lists: `r_sched_txn_init` stores 13 as the
 list count and `0x1fff` as the free-index bitmap. Hardware indexes are a
@@ -108,7 +117,7 @@ replace, the role-specific item layouts in the role references.
 | `+0x00` bit 24 | Marks the item that the merge reports to its optional first-marked output |
 | `+0x00` bit 22 | When clear, a completed item must not start after the current list head |
 | `+0x18` bits 3:0 | Priority nibble (not consulted on any reachable conflict path) |
-| `+0x30` bit 31 | Selects the device list and enables the late-start check |
+| `+0x30` bit 31 | Selects the device list; when clear, the overlap check applies the late-start check |
 | `+0x38` | Execution status. `0xffff_ffff` means not executed; hardware replaces it; preemption writes zero |
 | `+0x44` / `+0x48` | Start and end time; lists are ordered by start |
 | `+0x4d` | Item kind; kind 2 is a background item handled by a separate path |
@@ -157,8 +166,8 @@ head, the list start time is refreshed and the software lists are resorted.
 
 `r_btdm_sched_check_overlap_in_list(list, item, hint, priority, argument)`:
 
-1. rejects an item with `+0x30` bit 31 whose start is not later than the
-   current time plus the stack margin, returning -2;
+1. rejects an item whose `+0x30` bit 31 is clear and whose start is not later
+   than the current time plus the stack margin, returning -2;
 2. sets the item's `+0x4f` bit 3;
 3. starts after the latest predecessor of the hint whose `+0x4e` byte is zero,
    or at the list's current item;
@@ -194,9 +203,9 @@ function returns 7 when an item became the list head and 0 otherwise. `last`
 receives the final item of the chain.
 
 `r_btdm_sched_remove_unshareable_entries` walks from the given entry. Every
-overlapping entry without `+0x4f` bit 3 is published to the stack broker,
-unlinked, appended to the completion queue through `+0x54` and marked
-preempted: `+0x4f` bits 2:1 become `0b11` and an unexecuted status becomes 0.
+overlapping entry without `+0x4f` bit 3 is logged, gets `+0x00` bit 25 when
+the environment enables lock-modify, is unlinked, appended to the completion
+queue through `+0x54` and marked preempted: `+0x4f` bits 2:1 become `0b11` and an unexecuted status becomes 0.
 Preempted items therefore reach their recycle callback through the ordinary
 completion path.
 
@@ -222,7 +231,15 @@ insertion end. The registers are:
   Bit 26 reports the lock engine idle;
 - `0x2010_1258` execution modify: bit 31 START, bit 16 a mode flag, bits 15:0
   the list mask. Bit 17 reports completion and bit 19 is treated as impossible.
-  Bit 18 reports the modify engine idle;
+  Bit 18 reports the modify engine idle. Execution modify runs in the hardware
+  critical section and retries: after the lock-modify idle wait it writes
+  diagnostic selector `0x0c01`, publishes the request and samples the pair.
+  While lane zero holds 2, or 3 with bits 13:12 equal to `0b01`, it marks a
+  retry and samples again. It then waits while BUSY is set and bit 17 is
+  clear, asserting after 9999 iterations, and waits until the complete value
+  of diagnostic selector 7 differs from 9. A marked retry clears START and
+  starts over; otherwise it leaves the critical section and asserts that
+  bit 19 is clear;
 - `0x2010_1218` lock-modify request: bit 31 START and bits 19:0 compressed
   item, after the list index is written to the low nibble of `0x2010_136c`.
   Bits 30:27 return a result.
@@ -232,7 +249,7 @@ Before a lock or modify, the stack waits until BUSY clears or both engines
 report idle.
 
 After the merge, outcome 4 issues a lock-modify request for the last new item
-when the environment enables it, and publishes the result to the broker.
+when the environment enables it, and logs the result.
 Insertion end then:
 
 - for outcome 4 clears lock START;
@@ -241,8 +258,9 @@ Insertion end then:
 - when BUSY is clear, publishes the software list head with sleep policy
   disabled or, for an unexecuted submitted item, publishes that item and calls
   `r_btdm_sched_run`. That calls `r_sym_bt_PVKilXLQPu1BjRkm4C6O` (acknowledge
-  and enable the dynamic interrupts, broker event 2) and, when it returns
-  zero, writes 1 to `0x2010_1000` to start the scheduler.
+  and enable the dynamic interrupts, then scheduler broker entry one, whose
+  BLE subscriber acknowledges and enables BTMAC source 14) and, when it
+  returns zero, writes 1 to `0x2010_1000` to start the scheduler.
 
 ## Completion
 
@@ -314,9 +332,10 @@ of items, skips them one by one with the same loop rule and, when
 lock-modify is enabled, performs the same hold as a closing pulse.
 
 `r_btdm_sched_stop` returns when BUSY is clear. Otherwise it disables the
-dynamic interrupts, publishes broker event 3, waits for idle lock and modify
-engines, writes 1 to `0x2010_1004` and asserts if BUSY is still set after
-65536 polls.
+dynamic interrupts, dispatches entry two of the linker-assembled scheduler
+broker table (the BLE subscriber clears BTMAC source 14), waits for idle lock
+and modify engines, writes 1 to `0x2010_1004` and asserts if BUSY is still set
+after 65536 samples.
 
 ## Receive routing
 

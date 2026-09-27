@@ -96,7 +96,7 @@ pub use bluetooth::{
             BluetoothSchedulerLockModifyRequest, BluetoothSchedulerLockModifyTaskObservation,
         },
         runtime::{
-            BluetoothSchedulerFinishedHardwareListObserved,
+            BluetoothSchedulerBusyObservation, BluetoothSchedulerFinishedHardwareListObserved,
             BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
             BluetoothSchedulerHardwareListIndex, BluetoothSchedulerReferenceCleared,
             BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerSoftwareListRemovalIdle,

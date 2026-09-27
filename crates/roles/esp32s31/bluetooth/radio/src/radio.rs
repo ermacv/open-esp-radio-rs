@@ -411,7 +411,7 @@ impl<
             let mut items = space(&self.memory);
             match self.executor.begin_cancel(
                 &mut items,
-                &view.work,
+                &view.busy,
                 view.hardware_head,
                 &ids[..count],
             ) {
@@ -423,12 +423,12 @@ impl<
             // An idle scheduler with listed events, after a stop or a
             // cancellation, restarts at the first unexecuted one.
             let items = space(&self.memory);
-            return match self.executor.restart_if_idle(&items, &view.work) {
+            return match self.executor.restart_if_idle(&items, &view.busy) {
                 Some(insertion) => RadioStep::Start(insertion),
                 None => RadioStep::Idle,
             };
         };
-        if !view.work.is_busy() {
+        if !view.busy.is_busy() {
             let mut head = None;
             let mut inserted = [None; ITEMS];
             let mut count = 0;
@@ -436,7 +436,7 @@ impl<
             for &(id, window) in self.pending.iter().flatten() {
                 match self
                     .executor
-                    .submit_idle(&mut items, &view.work, id, window)
+                    .submit_idle(&mut items, &view.busy, id, window)
                 {
                     Ok(insertion) => {
                         head = Some(insertion);
@@ -458,7 +458,7 @@ impl<
         let items = space(&self.memory);
         match self
             .executor
-            .begin_live_insertion(&items, &view.work, id, window)
+            .begin_live_insertion(&items, &view.busy, id, window)
         {
             Ok(step) => {
                 self.pop_pending();

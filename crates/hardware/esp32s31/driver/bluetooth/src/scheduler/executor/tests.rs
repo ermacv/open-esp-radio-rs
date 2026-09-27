@@ -2,7 +2,7 @@ use core::num::NonZeroU32;
 use std::vec::Vec;
 
 use oer_esp32s31_bluetooth_memory::{ControllerSramLinkAddress, SchedulerItemCompletionStatus};
-use oer_esp32s31_hal::bluetooth::BluetoothSchedulerWorkObservation;
+use oer_esp32s31_hal::bluetooth::BluetoothSchedulerBusyObservation;
 
 use super::{SchedulerExecutor, SchedulerItemAccess, SchedulerSubmitError};
 use crate::scheduler::{list::SchedulerListInsertError, window::SchedulerRawWindow};
@@ -91,12 +91,12 @@ impl SchedulerItemAccess<u8> for Items {
     }
 }
 
-fn idle() -> BluetoothSchedulerWorkObservation {
-    BluetoothSchedulerWorkObservation::from_fields_for_validation(false, false, 0)
+fn idle() -> BluetoothSchedulerBusyObservation {
+    BluetoothSchedulerBusyObservation::from_busy_for_validation(false)
 }
 
-fn busy() -> BluetoothSchedulerWorkObservation {
-    BluetoothSchedulerWorkObservation::from_fields_for_validation(true, false, 0)
+fn busy() -> BluetoothSchedulerBusyObservation {
+    BluetoothSchedulerBusyObservation::from_busy_for_validation(true)
 }
 
 fn window(start: u32) -> SchedulerRawWindow {
@@ -398,11 +398,10 @@ mod cancel {
 
     use oer_esp32s31_bluetooth_memory::{ControllerSramLinkAddress, SchedulerItemCompletionStatus};
     use oer_esp32s31_hal::bluetooth::{
-        BluetoothSchedulerCancellationDisposition as Hold,
+        BluetoothSchedulerBusyObservation, BluetoothSchedulerCancellationDisposition as Hold,
         BluetoothSchedulerExecutionModifyDisposition as Modify,
         BluetoothSchedulerLockModifyObservation, BluetoothSchedulerSkipDisposition as Skip,
         BluetoothSchedulerSkipResult as SkipResult, BluetoothSchedulerStopped,
-        BluetoothSchedulerWorkObservation,
     };
 
     use super::{Items, busy, idle, link, window};
@@ -450,7 +449,7 @@ mod cancel {
     fn open_hold(
         executor: &mut Executor,
         items: &mut Items,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
         head: Option<ControllerSramLinkAddress>,
         ids: &[u8],
     ) -> Step {

@@ -16,8 +16,8 @@
 //! linking the event.
 
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionModifyDisposition,
-    BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerBusyObservation, BluetoothSchedulerExecutionLockDisposition,
+    BluetoothSchedulerExecutionModifyDisposition,
 };
 
 use super::{
@@ -42,7 +42,7 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     pub fn begin_live_insertion(
         &mut self,
         items: &impl SchedulerItemAccess<I>,
-        scheduler: &BluetoothSchedulerWorkObservation,
+        scheduler: &BluetoothSchedulerBusyObservation,
         id: I,
         window: SchedulerRawWindow,
     ) -> Result<SchedulerStep<I, CAPACITY>, SchedulerSubmitError<I>> {

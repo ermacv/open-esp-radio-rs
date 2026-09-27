@@ -8,7 +8,15 @@ The radio runtime rechecks pending scheduler waits after a bounded delay.
 
 ## Pinned inputs
 
-- public Controller archive:
+- public Controller archive
+  [`espressif/esp32s31-bt-lib@10c507788e9da0993709cf82e405c896561172d8`](https://github.com/espressif/esp32s31-bt-lib/tree/10c507788e9da0993709cf82e405c896561172d8),
+  `libbtdm_common.a` SHA-256
+  `389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41` and
+  `libble_app.a` SHA-256
+  `e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723`, the
+  single pin of `verification/esp32s31/artifacts.toml`, for the reference
+  gate, the linear broker and the finished-list path;
+- earlier public Controller archive, for the remaining rows:
   [`espressif/esp32s31-bt-lib@7f20740dd66ee774ffce5db0b55507892551aa31`](https://github.com/espressif/esp32s31-bt-lib/tree/7f20740dd66ee774ffce5db0b55507892551aa31),
   `libbtdm_common.a` SHA-256
   `fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099`;
@@ -31,18 +39,18 @@ inputs. The table below records only the distilled control and MMIO facts.
 
 | Body | Size | Recovered contract |
 | --- | ---: | --- |
-| `r_sym_bt_R9GZfnUbtn7k6mHtoZbv` | 166 bytes | Primary ISR: masked sample, shared W1C acknowledgement, selector 0, dynamic scheduler suffix, selector 1. |
+| `r_sym_bt_R9GZfnUbtn7k6mHtoZbv` | 186 bytes (10c5077) | Primary ISR: masked sample, shared W1C acknowledgement, HAL broker entry 0, dynamic scheduler suffix, HAL broker entry 1. |
 | `r_sym_bt_hkluARKZBNTcJqMeSNys` | 190 bytes | Primary fault prefix: tests exactly bank-zero source 15 and bank-one sources 9, 8 and 12 in that order; source 9 reads `0x2010_11c8/11cc` and source 12 reads `0x2010_1070` before asserting. |
-| `r_sym_bt_3DcjgYC1ikQrP7jNyXGR` | 58 bytes | Walks a linked callback list in registration order and stops when one callback returns nonzero. |
+| `r_sym_bt_OBoFn3bgoHEVQdNFtCsb` | 100 bytes (10c5077) | Linear broker dispatch: a table holds a halfword entry count and one pointer per entry to a halfword-counted callback list; it calls that entry's callbacks in order and stops when one returns nonzero. The tables are assembled at link time from `.subinfo` descriptors whose first byte is the entry index, replacing the run-time registration walk of 7f20740. |
 | `r_sym_bt_MDZbajeLxsB0cvuBOREd` / `r_sym_bt_2VbAPsx8lRNZdbVZTEOe` | complete leaves | Read `0x2010_105c/1068`, then copy both images to `0x2010_1058/1064`. |
 | `r_sym_bt_6lAYUFKOuBLyOZ6Kvsv5` / `r_sym_bt_Ak3CRkSbyZRhUlneqclG` / `r_sym_bt_DOVkQWJHjeuid8jcS9Bq` | 24 / 24 / 16 bytes | Enable, disable and W1C the exact dynamic images `0x1820_0000` and `0x0000_0008`. |
 | `r_sym_bt_37HcX0qW6j1XVtKakUIG` / `r_sym_bt_zczKhmPr5kLPCXpBc7GE` | 80 / 92 bytes | Decode `SCHEDULER_STATE`; the boolean consumed by deferred-work construction is exactly bit 31 AND bit 29. |
 | `r_sym_bt_iFvwGI2tL5M1WM3fIkHq` | 12 bytes | Instruction-identical to same-chip named `r_btdm_sched_get_current_link_index`: one `SCHEDULER_STATE` read returns exactly the zero-based hardware-list index in bits 23:20. |
 | `r_sym_bt_iEsFo1nbR5S71P2lMKhY` / `r_sym_bt_gs5GeSH15pdzrMDbb7oK` | 90 / 78 bytes | Build one static deferred event, optionally set its one-bit argument, and optionally publish the decoded state through selector 4. |
 | `r_sym_bt_uNi9OHmE7XdXfGqTelU5` | 112 bytes | Same-chip named `r_btdm_recycle_in_task`: consume and clear the marker, drain scheduler work, then publish selector `0x8000_0001`; this is a drain event, not one callback per hardware edge. |
-| `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` / `r_sym_bt_YRnBzKlWCjsIbotqvNyS` | 360 / 574 bytes | Insert a scheduler item through its `+0x54` intrusive link into the manager-root completion queue; task-side removal/reordering calls the insertion path. This proves a software producer, not a hardware completion FIFO. |
-| `r_sym_bt_WHYoiw8ufY0AEM2KSRK1` | 120 bytes | Same-chip named `r_btdm_sched_pop_executed_sch`: on every worker pop attempt, copy the low halfword from `0x2010_125c` to a zero-high image at `0x2010_1260`, merge the pending finished-list mask, synchronously publish broker event `0x8000_0004` when nonzero and then attempt a software completed-list pop. |
-| `r_sym_ble_rmNuzAO8kQQQXQIpTzGZ` / `r_sym_bt_M9nG353V0svWrv1l1zGw` | 462 / 322 bytes | Same-chip named `r_sched_txn_onSchedHwListDone` and `r_btdm_sched_pick_finished_items`: walk set finished-list bits, unlink matching scheduler items from the hardware-linked list and append them to the software completed queue through `item+0x54`. |
+| `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` / `r_sym_bt_YRnBzKlWCjsIbotqvNyS` | 334 / 562 bytes (10c5077) | Insert a scheduler item through its `+0x54` intrusive link into the manager-root completion queue; task-side removal/reordering calls the insertion path. This proves a software producer, not a hardware completion FIFO. |
+| `r_sym_bt_WHYoiw8ufY0AEM2KSRK1` | 122 bytes (10c5077) | Same-chip named `r_btdm_sched_pop_executed_sch`: on every worker pop attempt, copy the low halfword from `0x2010_125c` to a zero-high image at `0x2010_1260`, merge the pending finished-list mask, synchronously dispatch it through entry five of the scheduler flash broker table when nonzero and then attempt a software completed-list pop. |
+| `brk_sym_sched_MzeSZzbQ4ZKhWW6Wu5jV` / `r_sym_bt_M9nG353V0svWrv1l1zGw` | 458 / 324 bytes (10c5077) | Same-chip named `r_sched_txn_onSchedHwListDone` and `r_btdm_sched_pick_finished_items`: walk set finished-list bits, unlink matching scheduler items from the hardware-linked list and append them to the software completed queue through `item+0x54`. The first is the BLE subscriber of scheduler flash broker entry five; the BR/EDR subscriber of the same entry is the unobfuscated `btdm_common_sched_bredr_on_sched_hw_list_done`. |
 | `r_sym_bt_QsLKLOCC2pct4rL8uFBN` | 130 bytes | Same-chip named `r_btdm_recycle_process_dequeued_sch`: clear the dequeued link image, recover its link-state pointer and invoke the item-specific recycle callback stored at `item+0x58`. |
 | `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` / `r_sym_ble_T40PqM3CeultOGiVkAp0` | 136 / 186 bytes | Default manager-0 selector-6 consumer and its scheduler action. Selector 6 walks active BLE scheduler transactions/list entries and asserts on an inconsistent `item+0x38` state. |
 | `r_sym_ble_zrorswmoCrQoX5oTeECu` / `r_sym_ble_3wftOXafF5ZkxLriL8L3` / `r_sym_ble_q4hMJ7XLGGCzxwmAKSge` | 62 / 188 / 102 bytes | Default manager-0 selector-4 consumer. It checks BLE scheduler/current-item state and, for a false publication when the predicate holds, retries a scheduler operation while it returns `-2`, increasing the delay in steps of 100. |
@@ -97,8 +105,11 @@ to make one fresh scheduler observation, not proof that any particular raw
 source completed a hardware list.
 
 Bank 1 source 3 has precedence over the bank-zero branch. Its reference gate
-reads `SCHEDULER_STATE` at `0x2010_107c`; when bit 31 is clear it writes zero
-to `SCHEDULER_REFERENCE` at `0x2010_1078` and dispatches selector 6. The
+takes a diagnostic BUSY sample: it writes the complete selector image `0x38` to
+`DIAGNOSTIC_SELECT` at `0x2010_11e8`, reads `DIAGNOSTIC_VALUE` at
+`0x2010_11ec` until two consecutive complete reads are equal and tests bit 7.
+When that bit is clear it writes zero to `SCHEDULER_REFERENCE` at
+`0x2010_1078` and dispatches selector 6. The
 default BLE selector-6 consumer immediately performs a scheduler
 transaction/list consistency action. The typed classifier therefore returns
 `ClearReferenceAndContinue`. The callback has no MMIO or hardware mutation: it
@@ -156,9 +167,9 @@ that task-side scheduler item removal/reordering inserts items into a
 manager-root intrusive completion list through the link at `item+0x54`. On
 every worker pop attempt, `r_sym_bt_WHY...` performs the low-halfword transfer
 from `0x2010_125c` to `0x2010_1260`, merges the pending finished-list mask and
-synchronously publishes broker event `0x8000_0004`. Reviewed registration,
-source-domain, selector and continuation facts anchor the intended path to
-`r_sym_ble_rmN...`, which walks set list bits and calls
+synchronously dispatches it through entry five of the scheduler flash broker
+table. That entry's `.subinfo` descriptors bind it to `brk_sym_sched_MzeS...`,
+which walks set list bits and calls
 `r_sym_bt_M9n...` to move finished hardware-linked items onto that same
 software queue. The worker then pops an item, and `r_sym_bt_QsLK...` invokes
 its role-specific callback at `item+0x58`. For DTM this is the mapped

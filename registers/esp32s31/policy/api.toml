@@ -3714,19 +3714,27 @@ register = "SLEEP_TIMER_LATCHED_TIME_0"
 field = "IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 
+[[fixed-register-writes]]
+name = "select_bluetooth_scheduler_status_diagnostic"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "DIAGNOSTIC_SELECT"
+field = "SELECTION"
+variant = "SCHEDULER_STATUS"
+sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC"]
+
+[[field-snapshot-reads]]
+name = "observe_bluetooth_diagnostic_value"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "DIAGNOSTIC_VALUE"
+fields = ["VALUE_0_LOW_7", "VALUE_0_BIT_7", "VALUE_1", "VALUE_2", "VALUE_3"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
+
 [[field-snapshot-reads]]
 name = "observe_bluetooth_scheduler_interrupt_state"
 peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
 register = "SCHEDULER_STATE"
 fields = ["BUSY", "STATE_29", "CURRENT_LINK_INDEX"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
-
-[[field-reads]]
-name = "observe_bluetooth_scheduler_software_list_busy"
-peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
-register = "SCHEDULER_STATE"
-field = "BUSY"
-sources = ["BLOB_LIBBTDM_SCHEDULER_SOFTWARE_LIST_REMOVAL"]
 
 [[zero-based-field-writes]]
 name = "publish_bluetooth_scheduler_execution_lock_request"
@@ -6162,13 +6170,6 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "SCHEDULER_LOCK_MODIFY_REQUEST"
 fields = ["START", "RESULT"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_INSERTION_BRANCH", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
-
-[[field-reads]]
-name = "observe_bluetooth_scheduler_lock_modify_busy"
-peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
-register = "SCHEDULER_STATE"
-field = "BUSY"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 
 [[indexed-bit-set-modifies]]
 name = "request_rx_block_ack_entry_update"

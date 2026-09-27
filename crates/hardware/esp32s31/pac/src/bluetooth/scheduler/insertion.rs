@@ -8,8 +8,8 @@
 #![deny(unsafe_code)]
 
 use crate::{
-    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerWorkObservation, BluetoothTaskRegisters, device_fence,
+    BluetoothControllerSramAddress, BluetoothSchedulerBusyObservation,
+    BluetoothSchedulerHardwareListIndex, BluetoothTaskRegisters, device_fence,
 };
 
 /// Validated item and list selected for one insertion execution-lock attempt.
@@ -217,7 +217,7 @@ fn execute_execution_modify_list_deletion_publication(
 
 fn execute_execution_lock_observation(
     control: &mut impl BluetoothSchedulerInsertionExecutionObservationControl,
-    scheduler: BluetoothSchedulerWorkObservation,
+    scheduler: BluetoothSchedulerBusyObservation,
 ) -> BluetoothSchedulerExecutionLockDisposition {
     if !scheduler.is_busy() {
         return BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead;
@@ -234,7 +234,7 @@ fn execute_execution_lock_observation(
 
 fn execute_execution_modify_observation(
     control: &mut impl BluetoothSchedulerInsertionExecutionObservationControl,
-    scheduler: BluetoothSchedulerWorkObservation,
+    scheduler: BluetoothSchedulerBusyObservation,
 ) -> BluetoothSchedulerExecutionModifyDisposition {
     if scheduler.is_busy() && !control.observe_execution_modify_ready() {
         return BluetoothSchedulerExecutionModifyDisposition::Pending;
@@ -276,7 +276,7 @@ impl BluetoothTaskRegisters {
     /// positional result is read only after command-zero ready is set.
     pub fn observe_scheduler_execution_lock(
         &mut self,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
     ) -> BluetoothSchedulerExecutionLockDisposition {
         let mut control = HardwareBluetoothSchedulerInsertionExecutionControl {
             registers: &self.bluetooth.bluetooth_controller_core,
@@ -336,7 +336,7 @@ impl BluetoothTaskRegisters {
     /// without reading the terminal rejection field.
     pub fn observe_scheduler_execution_modify(
         &mut self,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
     ) -> BluetoothSchedulerExecutionModifyDisposition {
         let mut control = HardwareBluetoothSchedulerInsertionExecutionControl {
             registers: &self.bluetooth.bluetooth_controller_core,

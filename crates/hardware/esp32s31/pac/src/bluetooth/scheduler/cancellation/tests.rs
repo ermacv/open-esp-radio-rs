@@ -8,12 +8,12 @@ use super::{
     execute_skip_clear, execute_skip_observation, execute_skip_publication,
 };
 use crate::{
-    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerWorkObservation,
+    BluetoothControllerSramAddress, BluetoothSchedulerBusyObservation,
+    BluetoothSchedulerHardwareListIndex,
 };
 
-fn scheduler(busy: bool) -> BluetoothSchedulerWorkObservation {
-    BluetoothSchedulerWorkObservation::from_fields_for_validation(busy, false, 0)
+fn scheduler(busy: bool) -> BluetoothSchedulerBusyObservation {
+    BluetoothSchedulerBusyObservation::from_busy_for_validation(busy)
 }
 
 fn index(value: u8) -> BluetoothSchedulerHardwareListIndex {

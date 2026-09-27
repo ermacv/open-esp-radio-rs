@@ -17585,7 +17585,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>SCHEDULER_SRAM_POINTER_PREFIX</name>
-          <description>Hardware initialization publishes bits 22..31 from an SRAM configuration address; scheduler list users OR this prefix with compressed 20-bit pointer values shifted left by two.</description>
+          <description>Hardware initialization publishes bits 22..31 from an SRAM configuration address. The pinned scheduler list users reconstruct pointers with the constant 0x2F000000 instead; the source-124 deferred-work snapshot and the recycle dequeue path still OR this prefix with compressed 20-bit pointer values shifted left by two.</description>
           <addressOffset>0x74</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17887,7 +17887,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>SCHEDULER_SKIP_REQUEST</name>
-          <description>Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and SCHEDULER_STATE.BUSY are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established.</description>
+          <description>Scheduler skip request for one listed item. The cancellation path publishes START with a zero-based hardware-list index in bits 23:20 and a compressed item pointer in bits 19:0, waits while both START and the diagnostic scheduler BUSY sample are set, takes the two-bit RESULT, and then writes zero to the complete word. The effect on the item and the meaning of each RESULT value are not established.</description>
           <addressOffset>0xEC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18806,7 +18806,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>OPERATIONAL_STATUS_0208</name>
-          <description>Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
+          <description>Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
           <addressOffset>0x208</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -18820,7 +18820,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>SCHEDULER_LOCK_MODIFY_REQUEST</name>
-          <description>The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or SCHEDULER_STATE.BUSY is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion.</description>
+          <description>The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or the diagnostic scheduler BUSY sample is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion.</description>
           <addressOffset>0x218</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18855,7 +18855,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>OPERATIONAL_STATUS_0324</name>
-          <description>The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and SCHEDULER_STATE.BUSY is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
+          <description>The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
           <addressOffset>0x324</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -19324,17 +19324,20 @@ also exposing scheduler, sleep or memory-management state.
     </peripheral>
     <peripheral>
       <name>BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME</name>
-      <description>Two scheduler words transferred with BLUETOOTH_INTERRUPT_BANK to the primary
-hard handler. The complete source-124 suffix can read SCHEDULER_STATE at two
-distinct temporal points and can write a complete zero image to
-SCHEDULER_REFERENCE. Keeping this sparse physical view outside the task-side
+      <description>Scheduler words and the MAC diagnostic-signal pair transferred with
+BLUETOOTH_INTERRUPT_BANK to the primary hard handler. The source-124 reference
+gate samples scheduler BUSY through the diagnostic pair and can write a
+complete zero image to SCHEDULER_REFERENCE; the later deferred-work
+observation reads SCHEDULER_STATE. Task-side scheduler transactions borrow this
+owner for their own BUSY samples, which serializes every selector write with
+its value reads. Keeping this sparse physical view outside the task-side
 controller partition prevents either owner from manufacturing an MMIO alias.
 </description>
       <baseAddress>0x20101000</baseAddress>
       <registers>
         <register>
           <name>SCHEDULER_REFERENCE</name>
-          <description>The source-124 handler can publish the complete zero image when bank-one source 3 observes an idle scheduler. Other scheduler users compare bits 0..19 or publish complete images; upper encoding remains unknown.</description>
+          <description>The source-124 handler can publish the complete zero image when bank-one source 3 observes an idle scheduler through the diagnostic BUSY sample. Other scheduler users compare bits 0..19 or publish complete images; upper encoding remains unknown.</description>
           <addressOffset>0x78</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -19353,7 +19356,7 @@ controller partition prevents either owner from manufacturing an MMIO alias.
         </register>
         <register>
           <name>SCHEDULER_STATE</name>
-          <description>The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.</description>
+          <description>The source-124 handler reads this shared scheduler state before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions and the reference gate sample BUSY through DIAGNOSTIC_VALUE instead; other complete users consume or publish the low 20 and low 30 bits.</description>
           <addressOffset>0x7C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -19389,6 +19392,67 @@ controller partition prevents either owner from manufacturing an MMIO alias.
               <name>BUSY</name>
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DIAGNOSTIC_SELECT</name>
+          <description>Bluetooth MAC diagnostic-signal selector. Each byte lane selects one eight-bit diagnostic signal returned in the same lane of DIAGNOSTIC_VALUE. Scheduler command paths and the source-124 reference gate publish the complete SCHEDULER_STATUS image before sampling scheduler BUSY.</description>
+          <addressOffset>0x1E8</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>SELECTION</name>
+              <description>Complete observed selector images; only the images used by reviewed scheduler transactions are named.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>SCHEDULER_STATUS</name>
+                  <description>Lane zero selects the scheduler status signal; lanes one to three select signal zero.</description>
+                  <value>56</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DIAGNOSTIC_VALUE</name>
+          <description>Diagnostic-signal values for the four DIAGNOSTIC_SELECT lanes. The value crosses from the MAC clock domain: readers accept a sample only when two consecutive complete reads are equal.</description>
+          <addressOffset>0x1EC</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE_0_LOW_7</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>7</bitWidth>
+            </field>
+            <field>
+              <name>VALUE_0_BIT_7</name>
+              <description>Bit 7 of the lane-zero signal. With SCHEDULER_STATUS selected it is scheduler BUSY, with the polarity of SCHEDULER_STATE.BUSY.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>VALUE_1</name>
+              <bitOffset>8</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>VALUE_2</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>VALUE_3</name>
+              <bitOffset>24</bitOffset>
+              <bitWidth>8</bitWidth>
             </field>
           </fields>
         </register>

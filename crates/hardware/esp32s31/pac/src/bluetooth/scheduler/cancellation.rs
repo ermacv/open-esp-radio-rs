@@ -12,9 +12,8 @@
 #![deny(unsafe_code)]
 
 use crate::{
-    BluetoothControllerSramAddress, BluetoothInterruptRegisters,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerWorkObservation, BluetoothTaskRegisters,
-    device_fence,
+    BluetoothControllerSramAddress, BluetoothInterruptRegisters, BluetoothSchedulerBusyObservation,
+    BluetoothSchedulerHardwareListIndex, BluetoothTaskRegisters, device_fence,
 };
 
 /// Validated listed item and its hardware list for one skip request.
@@ -231,7 +230,7 @@ fn execute_skip_publication(
 
 fn execute_skip_observation(
     control: &mut impl BluetoothSchedulerCancellationControl,
-    scheduler: BluetoothSchedulerWorkObservation,
+    scheduler: BluetoothSchedulerBusyObservation,
 ) -> BluetoothSchedulerSkipDisposition {
     if !scheduler.is_busy() {
         return BluetoothSchedulerSkipDisposition::SchedulerIdle;
@@ -284,7 +283,7 @@ fn execute_cancellation_request(
 fn execute_cancellation_observation(
     control: &mut impl BluetoothSchedulerCancellationControl,
     requested: &mut BluetoothSchedulerCancellationRequested,
-    scheduler: BluetoothSchedulerWorkObservation,
+    scheduler: BluetoothSchedulerBusyObservation,
 ) -> BluetoothSchedulerCancellationDisposition {
     if !scheduler.is_busy() {
         return BluetoothSchedulerCancellationDisposition::SchedulerIdle;
@@ -341,7 +340,7 @@ impl BluetoothTaskRegisters {
     pub fn observe_scheduler_skip(
         &mut self,
         _published: &BluetoothSchedulerSkipPublished,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
     ) -> BluetoothSchedulerSkipDisposition {
         let mut control = HardwareBluetoothSchedulerCancellationControl {
             registers: &self.bluetooth.bluetooth_controller_core,
@@ -400,7 +399,7 @@ impl BluetoothTaskRegisters {
     pub fn observe_scheduler_cancellation(
         &mut self,
         requested: &mut BluetoothSchedulerCancellationRequested,
-        scheduler: BluetoothSchedulerWorkObservation,
+        scheduler: BluetoothSchedulerBusyObservation,
     ) -> BluetoothSchedulerCancellationDisposition {
         let mut control = HardwareBluetoothSchedulerCancellationControl {
             registers: &self.bluetooth.bluetooth_controller_core,

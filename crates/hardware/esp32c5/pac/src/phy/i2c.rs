@@ -123,7 +123,7 @@ impl PhyI2cRegisters {
 
     /// Replace the host-selection field and return the block's host, as
     /// `phy_get_i2c_hostid_` does on every access.
-    fn select_host(&mut self, block: PhyI2cBlock) -> PhyI2cHost {
+    pub fn configure_and_select_host(&mut self, block: PhyI2cBlock) -> PhyI2cHost {
         crate::generated::configure_phy_i2c_host_map(self.master());
         block.host()
     }
@@ -166,7 +166,7 @@ impl PhyI2cRegisters {
     /// The block's host is busy; the host map has been rewritten but no
     /// command was published.
     pub fn try_start_read(&mut self, address: PhyI2cAddress) -> Result<(), PhyI2cAccessError> {
-        let host = self.select_host(address.block);
+        let host = self.configure_and_select_host(address.block);
         if self.is_busy(host) {
             return Err(PhyI2cAccessError::Busy);
         }
@@ -205,7 +205,7 @@ impl PhyI2cRegisters {
         address: PhyI2cAddress,
         value: u8,
     ) -> Result<(), PhyI2cAccessError> {
-        let host = self.select_host(address.block);
+        let host = self.configure_and_select_host(address.block);
         if self.is_busy(host) {
             return Err(PhyI2cAccessError::Busy);
         }

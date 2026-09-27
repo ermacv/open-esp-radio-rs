@@ -699,7 +699,7 @@ and the Controller event carries it without exposing a register image. This
 proves active-list identity only. It does not prove which affine item is on
 that list, that the item has completed, or that its SRAM is CPU-visible.
 
-The coalesced bottom half is current 0x70-byte
+The coalesced bottom half is current 0x6a-byte
 `r_sym_bt_uNi9OHmE7XdXfGqTelU5`, mapped to named
 `r_btdm_recycle_in_task`. It repeatedly uses current
 `r_sym_bt_WHYoiw8ufY0AEM2KSRK1`, mapped to

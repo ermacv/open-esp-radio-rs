@@ -4021,22 +4021,6 @@ pub(crate) fn enable_bluetooth_hal_control_0(registers: &crate::svd::BluetoothCo
     crate::svd::field_replace_modify::enable_bluetooth_hal_control_0(registers);
 }
 
-/// Typed bridge for the reviewed `reset_bluetooth_hal_sleep_timer_high_for_scale_8` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn reset_bluetooth_hal_sleep_timer_high_for_scale_8(
-    registers: &crate::svd::BluetoothControllerCore,
-) {
-    crate::svd::field_replace_modify::reset_bluetooth_hal_sleep_timer_high_for_scale_8(registers);
-}
-
-/// Typed bridge for the reviewed `reset_bluetooth_hal_sleep_timer_high_for_scale_16` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn reset_bluetooth_hal_sleep_timer_high_for_scale_16(
-    registers: &crate::svd::BluetoothControllerCore,
-) {
-    crate::svd::field_replace_modify::reset_bluetooth_hal_sleep_timer_high_for_scale_16(registers);
-}
-
 /// Typed bridge for the reviewed `clear_bluetooth_hal_scheduler_config_16_20` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_hal_scheduler_config_16_20(

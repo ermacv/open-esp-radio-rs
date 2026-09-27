@@ -589,7 +589,7 @@ impl TaskOwner {
         }
     }
 
-    /// Execute the complete reviewed 50-operation controller HAL-init body
+    /// Execute the complete reviewed 49-operation controller HAL-init body
     /// at the upper controller lifecycle's verified transition.
     ///
     /// # Safety

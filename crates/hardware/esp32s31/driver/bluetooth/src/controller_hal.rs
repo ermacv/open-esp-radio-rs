@@ -1,7 +1,7 @@
 //! Owned controller HAL initialization immediately after clock setup.
 //!
 //! The complete reviewed `r_btdm_task_init` hardware subsequence executes the
-//! 50-operation controller HAL component before scheduler initialization.
+//! 49-operation controller HAL component before scheduler initialization.
 //! Vendor task-environment and broker setup are software architecture and are
 //! replaced by Rust-owned runtime resources rather than copied into this
 //! hardware typestate.

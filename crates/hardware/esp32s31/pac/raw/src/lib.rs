@@ -66708,56 +66708,6 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields `[CONFIG_24, INIT_CLEAR_25_UNKNOWN, LATCH_REQUEST, INIT_CLEAR_27_30_UNKNOWN, TIMER_ARM]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn reset_bluetooth_hal_sleep_timer_high_for_scale_8(
-        registers: &crate::BluetoothControllerCore,
-    ) {
-        registers.sleep_timer_control().modify(|_, writer| {
-            let input = 0x00000001_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .config_24()
-                    .bit((input & 0x00000001) != 0)
-                    .init_clear_25_unknown()
-                    .bit(((input >> 1) & 0x00000001) != 0)
-                    .latch_request()
-                    .bit(((input >> 2) & 0x00000001) != 0)
-                    .init_clear_27_30_unknown()
-                    .bits(((input >> 3) & 0x0000000f) as u8)
-                    .timer_arm()
-                    .bit(((input >> 7) & 0x00000001) != 0)
-            }
-        });
-    }
-
-    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields `[CONFIG_24, INIT_CLEAR_25_UNKNOWN, LATCH_REQUEST, INIT_CLEAR_27_30_UNKNOWN, TIMER_ARM]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn reset_bluetooth_hal_sleep_timer_high_for_scale_16(
-        registers: &crate::BluetoothControllerCore,
-    ) {
-        registers.sleep_timer_control().modify(|_, writer| {
-            let input = 0x00000000_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .config_24()
-                    .bit((input & 0x00000001) != 0)
-                    .init_clear_25_unknown()
-                    .bit(((input >> 1) & 0x00000001) != 0)
-                    .latch_request()
-                    .bit(((input >> 2) & 0x00000001) != 0)
-                    .init_clear_27_30_unknown()
-                    .bits(((input >> 3) & 0x0000000f) as u8)
-                    .timer_arm()
-                    .bit(((input >> 7) & 0x00000001) != 0)
-            }
-        });
-    }
-
     /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields `[CONFIG_16_20]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_hal_scheduler_config_16_20(registers: &crate::BluetoothControllerCore) {

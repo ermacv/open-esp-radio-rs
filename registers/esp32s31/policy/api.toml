@@ -4276,36 +4276,6 @@ exposure = "facade"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 
 [[field-replace-modifies]]
-name = "reset_bluetooth_hal_sleep_timer_high_for_scale_8"
-peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SLEEP_TIMER_CONTROL"
-fields = [
-    { field = "CONFIG_24", source-bit-offset = 0 },
-    { field = "INIT_CLEAR_25_UNKNOWN", source-bit-offset = 1 },
-    { field = "LATCH_REQUEST", source-bit-offset = 2 },
-    { field = "INIT_CLEAR_27_30_UNKNOWN", source-bit-offset = 3 },
-    { field = "TIMER_ARM", source-bit-offset = 7 },
-]
-value = 1
-exposure = "facade"
-sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
-
-[[field-replace-modifies]]
-name = "reset_bluetooth_hal_sleep_timer_high_for_scale_16"
-peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SLEEP_TIMER_CONTROL"
-fields = [
-    { field = "CONFIG_24", source-bit-offset = 0 },
-    { field = "INIT_CLEAR_25_UNKNOWN", source-bit-offset = 1 },
-    { field = "LATCH_REQUEST", source-bit-offset = 2 },
-    { field = "INIT_CLEAR_27_30_UNKNOWN", source-bit-offset = 3 },
-    { field = "TIMER_ARM", source-bit-offset = 7 },
-]
-value = 0
-exposure = "facade"
-sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
-
-[[field-replace-modifies]]
 name = "clear_bluetooth_hal_scheduler_config_16_20"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SCHEDULER_CONTROL"

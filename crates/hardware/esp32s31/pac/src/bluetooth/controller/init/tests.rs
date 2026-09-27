@@ -68,9 +68,9 @@ fn complete_transaction_has_semantic_prefix_and_thirty_two_lane_edges() {
         BluetoothControllerHalInitConfig::reviewed_standalone(),
     );
 
-    assert_eq!(recorder.operations.len(), 50);
+    assert_eq!(recorder.operations.len(), 49);
     assert_eq!(
-        recorder.operations[..18],
+        recorder.operations[..17],
         [
             HalInitOperation::PublishSchedulerSramPrefix,
             HalInitOperation::PublishSleepTimerShift(3),
@@ -82,7 +82,6 @@ fn complete_transaction_has_semantic_prefix_and_thirty_two_lane_edges() {
             HalInitOperation::ConfigureControl1High,
             HalInitOperation::ConfigureControl1Low,
             HalInitOperation::EnableControl0,
-            HalInitOperation::ResetSleepTimerHigh { config_24: false },
             HalInitOperation::ClearSchedulerConfig16To20,
             HalInitOperation::PublishSchedulerConfig16To20,
             HalInitOperation::EnableSchedulerControl,
@@ -93,7 +92,7 @@ fn complete_transaction_has_semantic_prefix_and_thirty_two_lane_edges() {
         ]
     );
 
-    for (global_index, pair) in recorder.operations[18..].chunks_exact(2).enumerate() {
+    for (global_index, pair) in recorder.operations[17..].chunks_exact(2).enumerate() {
         let register = if global_index < 8 {
             HalInitRegister::SlotMap0
         } else {

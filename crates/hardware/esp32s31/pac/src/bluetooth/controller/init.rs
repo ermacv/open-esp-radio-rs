@@ -263,9 +263,6 @@ enum HalInitOperation {
     ConfigureControl1High,
     ConfigureControl1Low,
     EnableControl0,
-    ResetSleepTimerHigh {
-        config_24: bool,
-    },
     ClearSchedulerConfig16To20,
     PublishSchedulerConfig16To20,
     EnableSchedulerControl,
@@ -309,9 +306,6 @@ fn execute_hal_init(
     transaction.apply(HalInitOperation::ConfigureControl1High);
     transaction.apply(HalInitOperation::ConfigureControl1Low);
     transaction.apply(HalInitOperation::EnableControl0);
-    transaction.apply(HalInitOperation::ResetSleepTimerHigh {
-        config_24: matches!(config.scale, BluetoothHalInitScale::Eight),
-    });
     transaction.apply(HalInitOperation::ClearSchedulerConfig16To20);
     transaction.apply(HalInitOperation::PublishSchedulerConfig16To20);
     transaction.apply(HalInitOperation::EnableSchedulerControl);
@@ -397,17 +391,6 @@ impl HalInitTransaction for MmioHalInit<'_> {
             }
             HalInitOperation::EnableControl0 => {
                 crate::svd::field_replace_modify::enable_bluetooth_hal_control_0(self.registers);
-            }
-            HalInitOperation::ResetSleepTimerHigh { config_24 } => {
-                if config_24 {
-                    crate::svd::field_replace_modify::reset_bluetooth_hal_sleep_timer_high_for_scale_8(
-                        self.registers,
-                    );
-                } else {
-                    crate::svd::field_replace_modify::reset_bluetooth_hal_sleep_timer_high_for_scale_16(
-                        self.registers,
-                    );
-                }
             }
             HalInitOperation::ClearSchedulerConfig16To20 => {
                 crate::svd::field_replace_modify::clear_bluetooth_hal_scheduler_config_16_20(
@@ -552,8 +535,10 @@ impl BluetoothTaskRegisters {
     ///
     /// SOURCE: pinned ESP32-S31 `libbtdm_common.a` member `7.o`, complete
     /// symbol `r_sym_bt_aGdrujd2MUAzWYH75baR`, plus its complete config setter,
-    /// byte-scaling helper and caller in member `21.o`.  The transaction has 50
-    /// ordered writes/RMWs and finishes before controller IRQ output setup.
+    /// byte-scaling helper and caller `r_btdm_task_init` in member `20.o`.
+    /// The transaction has 49 ordered writes/RMWs and finishes before
+    /// controller IRQ output setup; unlike earlier bodies it leaves the
+    /// sleep-timer control bits 24..31 as they are.
     ///
     /// This method does not initialize software events/lists, route a CPU
     /// interrupt, enable the Link Layer or claim HCI readiness.

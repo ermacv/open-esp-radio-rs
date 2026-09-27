@@ -24,6 +24,7 @@ pub mod advertising;
 pub mod connectable_advertising;
 pub mod connection;
 pub mod control;
+pub mod data_length;
 pub mod dtm;
 pub mod scanning;
 pub mod security;

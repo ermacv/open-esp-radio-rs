@@ -78,6 +78,11 @@ pub use controller::le::advertising::{
     LeLegacyAdvertisingRole, LeLegacyConnectableAdvertisingEnableRequest,
     LeLegacyNonconnectableAdvertisingEnableRequest, LeLegacyScanResponseData,
 };
+pub use controller::le::data_length::{
+    LE_DATA_LENGTH_CHANGE_EVENT_CAPACITY, LE_DATA_LENGTH_COMMAND_COMPLETE_EVENT_CAPACITY,
+    LeDataLengthChangeEvent, LeDataLengthCommand, LeDataLengthCommandCompleteEvent,
+    LeDataLengthParameters,
+};
 pub use controller::le::dtm::{
     LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LE_RECEIVER_TEST_V1_OPCODE, LE_RECEIVER_TEST_V2_OPCODE,
     LE_TEST_END_OPCODE, LE_TRANSMITTER_TEST_V1_OPCODE, LE_TRANSMITTER_TEST_V2_OPCODE,

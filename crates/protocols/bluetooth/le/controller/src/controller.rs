@@ -8,20 +8,25 @@ use bt_hci::{
 use oer_bluetooth_hci::{
     BootstrapCommandCompleteEvent, HciCommandPacket, LeConnectionUpdateCompleteEvent,
     LeControllerAclPacket, LeControllerBootstrap, LeControllerBootstrapConfig,
-    LeControllerCommandClassification, LeDisconnectionCompleteEvent, LeDtmCommand,
-    LeDtmCommandCompleteEvent, LeEncryptionChangeEvent, LeEncryptionKeyRefreshCompleteEvent,
-    LeHostCompletedPacketsCommand, LeHostCompletedPacketsDecodeError,
-    LeHostCompletedPacketsErrorEvent, LeLegacyAdvertisingCommandCompleteEvent,
-    LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingConfiguration,
-    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableRequest,
-    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
-    LeLegacyScanningConfiguration, LeLongTermKeyCommandCompleteEvent, LeLongTermKeyRequestEvent,
-    LeLongTermKeyRequestReplyCommand, LeNumberOfCompletedPacketsEvent,
+    LeControllerCommandClassification, LeDataLengthChangeEvent, LeDataLengthCommand,
+    LeDataLengthCommandCompleteEvent, LeDataLengthParameters, LeDisconnectionCompleteEvent,
+    LeDtmCommand, LeDtmCommandCompleteEvent, LeEncryptionChangeEvent,
+    LeEncryptionKeyRefreshCompleteEvent, LeHostCompletedPacketsCommand,
+    LeHostCompletedPacketsDecodeError, LeHostCompletedPacketsErrorEvent,
+    LeLegacyAdvertisingCommandCompleteEvent, LeLegacyAdvertisingCommandKind,
+    LeLegacyAdvertisingConfiguration, LeLegacyAdvertisingConfigurationCommand,
+    LeLegacyAdvertisingEnableRequest, LeLegacyScanningCommandCompleteEvent,
+    LeLegacyScanningCommandKind, LeLegacyScanningConfiguration, LeLongTermKeyCommandCompleteEvent,
+    LeLongTermKeyRequestEvent, LeLongTermKeyRequestReplyCommand, LeNumberOfCompletedPacketsEvent,
     LePeripheralConnectionCompleteEvent, LeRandCommandCompleteEvent, LeRandomSource,
     LeReadRemoteFeaturesCompleteEvent, LeReadRemoteVersionInformationCompleteEvent,
     OwnedBootstrapCommand, classify_le_controller_command,
 };
-use oer_bluetooth_ll::{control::LeVersionInformation, dtm::DTM_MAX_PAYLOAD};
+use oer_bluetooth_ll::{
+    control::LeVersionInformation,
+    data_length::{LeDataLength, LeDataLengths},
+    dtm::DTM_MAX_PAYLOAD,
+};
 use oer_bluetooth_radio::{
     EventId, RadioActivity, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
     RadioTiming, RequestError,
@@ -274,6 +279,12 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                     )
                     .as_bytes(),
                 );
+            }
+            LeControllerCommandClassification::DataLength(command) => {
+                self.data_length_command(command);
+            }
+            LeControllerCommandClassification::MalformedDataLength(response) => {
+                self.respond(response.as_bytes());
             }
             LeControllerCommandClassification::MalformedRandom(response) => {
                 self.respond(response.as_bytes());
@@ -559,6 +570,14 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                         );
                     }
                 }
+                PeripheralEvent::DataLengthChanged(lengths) => {
+                    if meta && le.is_le_data_length_change_enabled() {
+                        let (transmit, receive) = data_length_parameters(lengths);
+                        self.output.push_event(
+                            LeDataLengthChangeEvent::new(handle(), transmit, receive).as_bytes(),
+                        );
+                    }
+                }
                 PeripheralEvent::CompletedPackets(count) => {
                     self.output.push_event(
                         LeNumberOfCompletedPacketsEvent::new(handle(), count).as_bytes(),
@@ -610,6 +629,47 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         !self.bootstrap.is_pristine()
     }
 
+    fn data_length_command(&mut self, command: LeDataLengthCommand) {
+        let length = |parameters: LeDataLengthParameters| {
+            LeDataLength::new(parameters.octets, parameters.time_micros)
+                .expect("HCI validated the specified ranges")
+        };
+        let response = match command {
+            LeDataLengthCommand::Set { handle, transmit } => {
+                let admission = if self.peripheral.handle() == Some(handle) {
+                    self.peripheral.set_data_length(length(transmit))
+                } else {
+                    Admission::UnknownConnection
+                };
+                let status = match admission {
+                    Admission::Accepted => Status::SUCCESS,
+                    Admission::Disallowed => HciError::CMD_DISALLOWED.to_status(),
+                    Admission::UnknownConnection => HciError::UNKNOWN_CONN_IDENTIFIER.to_status(),
+                };
+                LeDataLengthCommandCompleteEvent::set(status, handle)
+            }
+            LeDataLengthCommand::ReadSuggestedDefault => {
+                let suggested = self.peripheral.suggested_data_length();
+                LeDataLengthCommandCompleteEvent::suggested_default(LeDataLengthParameters {
+                    octets: suggested.octets(),
+                    time_micros: suggested.time_micros(),
+                })
+            }
+            LeDataLengthCommand::WriteSuggestedDefault(transmit) => {
+                self.peripheral.suggest_data_length(length(transmit));
+                LeDataLengthCommandCompleteEvent::suggested_default_written(Status::SUCCESS)
+            }
+            LeDataLengthCommand::ReadMaximum => {
+                let (transmit, receive) = data_length_parameters(LeDataLengths {
+                    transmit: LeDataLength::SUPPORTED_MAXIMUM,
+                    receive: LeDataLength::SUPPORTED_MAXIMUM,
+                });
+                LeDataLengthCommandCompleteEvent::maximum(transmit, receive)
+            }
+        };
+        self.respond(response.as_bytes());
+    }
+
     fn bootstrap_command(&mut self, command: OwnedBootstrapCommand) {
         match command {
             OwnedBootstrapCommand::Reset => {
@@ -619,6 +679,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 }
                 self.dtm.abort();
                 self.peripheral.abort();
+                self.peripheral.suggest_data_length(LeDataLength::MINIMUM);
                 self.pending = Some(Pending::Reset);
             }
             OwnedBootstrapCommand::LeSetRandomAddress(_)
@@ -979,6 +1040,17 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
 }
 
 /// The next role event identity from `next`.
+/// The HCI form of both directions' lengths.
+fn data_length_parameters(
+    lengths: LeDataLengths,
+) -> (LeDataLengthParameters, LeDataLengthParameters) {
+    let parameters = |length: LeDataLength| LeDataLengthParameters {
+        octets: length.octets(),
+        time_micros: length.time_micros(),
+    };
+    (parameters(lengths.transmit), parameters(lengths.receive))
+}
+
 pub(crate) fn allocate_event(next: &mut u32) -> EventId {
     let id = EventId::new(*next);
     *next = if *next == LAST_ROLE_EVENT_ID {

@@ -12,8 +12,11 @@
 //! Between events at most one PDU waits for the central's acknowledgement.
 //! The next one is chosen in this order: an encryption procedure response,
 //! a Link Layer control response or request, then the next fragment of the
-//! Host ACL packet in progress. While encryption is being started, paused or
-//! restarted only its own responses and a required termination may be sent.
+//! Host ACL packet in progress, as long as the effective transmit length of the
+//! Data Length Update allows; an encrypted fragment leaves room for its MIC.
+//! While encryption is being started, paused or restarted only its own
+//! responses and a required termination may be sent. A new connection starts
+//! the Data Length Update when the Host suggested a longer default.
 //!
 //! Received packets are authenticated first, then dispatched to the control
 //! procedures or delivered to the Host as ACL data. A Channel Map Update or
@@ -52,9 +55,10 @@ use oer_bluetooth_ll::{
         LePeripheralReceive, LeRemoteFeaturesAdmission, LeRemoteFeaturesResult,
         LeRemoteVersionAdmission, LeRemoteVersionResult, LeVersionInformation,
     },
+    data_length::{LE_DATA_LENGTH_MAXIMUM_OCTETS, LeDataLength, LeDataLengths},
     security::{
-        LE_ACL_MIC_BYTES, LE_LEGACY_ENCRYPTED_PLAINTEXT_BYTES, LeLongTermKey,
-        LePeripheralEncryptionProcedure, LePeripheralEncryptionRandom,
+        LE_ACL_MIC_BYTES, LeLongTermKey, LePeripheralEncryptionProcedure,
+        LePeripheralEncryptionRandom,
     },
 };
 use oer_bluetooth_radio::{
@@ -74,8 +78,8 @@ pub(crate) fn handle() -> ConnHandle {
 /// Host events one connection event can produce: its receptions plus the
 /// procedure events that follow them.
 pub(crate) const EVENT_OUTPUT: usize = 8;
-/// Largest data channel payload without the Data Length Extension.
-const LL_PAYLOAD: usize = 27;
+/// Largest data channel payload the Data Length Extension allows.
+const LL_PAYLOAD: usize = LE_DATA_LENGTH_MAXIMUM_OCTETS as usize;
 /// Scheduling priority of the first event and of later events (vendor
 /// first-event transform and recurring baseline).
 const FIRST_PRIORITY: u8 = 13;
@@ -111,6 +115,7 @@ pub(crate) enum PeripheralEvent {
     },
     EncryptionChanged(Status, bool),
     KeyRefreshed(Status),
+    DataLengthChanged(LeDataLengths),
     CompletedPackets(u16),
 }
 
@@ -215,6 +220,8 @@ pub(crate) struct Peripheral {
     connection: Option<Connection>,
     events: Events,
     local_version: Option<LeVersionInformation>,
+    /// The Host's suggested transmit length for new connections.
+    suggested_data_length: LeDataLength,
     /// The request at the backend.
     requested: Option<RequestKind>,
     /// Data received for the Host, taken after every outcome.
@@ -227,6 +234,7 @@ impl Peripheral {
             connection: None,
             events: Events::new(),
             local_version,
+            suggested_data_length: LeDataLength::MINIMUM,
             requested: None,
             received: None,
         }
@@ -243,6 +251,30 @@ impl Peripheral {
             .as_ref()
             .filter(|connection| connection.opened && connection.closing.is_none())
             .map(|_| handle())
+    }
+
+    /// The Host's suggested transmit length for new connections.
+    pub(crate) const fn suggested_data_length(&self) -> LeDataLength {
+        self.suggested_data_length
+    }
+
+    /// Suggest the transmit length of later connections; Reset restores
+    /// the minimum.
+    pub(crate) fn suggest_data_length(&mut self, transmit: LeDataLength) {
+        self.suggested_data_length = transmit;
+    }
+
+    /// Ask the live connection to send up to `transmit`.
+    pub(crate) fn set_data_length(&mut self, transmit: LeDataLength) -> Admission {
+        let Some(connection) = self
+            .connection
+            .as_mut()
+            .filter(|c| c.opened && c.closing.is_none())
+        else {
+            return Admission::UnknownConnection;
+        };
+        connection.control.set_data_length(transmit);
+        Admission::Accepted
     }
 
     pub(crate) fn take_event(&mut self) -> Option<PeripheralEvent> {
@@ -289,7 +321,9 @@ impl Peripheral {
             submitting: None,
             opened: false,
             open_sent: false,
-            control: LePeripheralControl::new().with_local_version(self.local_version),
+            control: LePeripheralControl::new()
+                .with_local_version(self.local_version)
+                .with_data_length(self.suggested_data_length),
             security: LePeripheralEncryptionProcedure::new(),
             procedure_since: None,
             pending: None,
@@ -764,22 +798,28 @@ impl Connection {
         if self.security.blocks_unrelated_transmission() {
             return None;
         }
-        let maximum = if self.security.is_active() {
-            LE_LEGACY_ENCRYPTED_PLAINTEXT_BYTES
-        } else {
-            LL_PAYLOAD
-        };
-        let fragment = self.host_acl.as_ref()?.next_fragment(maximum)?;
+        let fragment = self.host_acl.as_ref()?.next_fragment(self.acl_payload())?;
         let length = fragment.payload().len();
         self.tx[..length].copy_from_slice(fragment.payload());
         Some((Pending::Acl, length))
+    }
+
+    /// The longest ACL fragment the effective transmit length allows; an
+    /// encrypted fragment leaves room for its MIC in the air time.
+    fn acl_payload(&self) -> usize {
+        let mic = if self.security.is_active() {
+            LE_ACL_MIC_BYTES as u16
+        } else {
+            0
+        };
+        usize::from(self.control.data_lengths().transmit.payload_octets(mic))
     }
 
     fn acl_kind(&self) -> DataPduKind {
         let continuing = self
             .host_acl
             .as_ref()
-            .and_then(|packet| packet.next_fragment(LL_PAYLOAD))
+            .and_then(|packet| packet.next_fragment(self.acl_payload()))
             .is_some_and(|fragment| fragment.is_continuing());
         if continuing {
             DataPduKind::Continuation
@@ -911,6 +951,9 @@ impl Connection {
         if let Some(result) = self.control.take_remote_version_result() {
             events.push(version_event(result));
         }
+        if let Some(lengths) = self.control.take_data_length_change() {
+            events.push(PeripheralEvent::DataLengthChanged(lengths));
+        }
     }
 
     /// Procedure timeouts, checked before planning.
@@ -939,6 +982,7 @@ impl Connection {
         !self.security.is_idle() && !self.security.is_active()
             || self.control.local_feature_request_transmitted()
             || self.control.local_version_request_transmitted()
+            || self.control.local_data_length_request_transmitted()
     }
 
     fn close_procedures(&mut self, events: &mut Events) {

@@ -214,7 +214,16 @@ fn trouble_no_security_bootstrap_and_conservative_extensions_are_supported() {
                 &LeReadLocalSupportedFeatures::new(),
             )
             .await,
-            &[(1 << 0) | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0],
+            &[
+                (1 << 0) | (1 << 3) | (1 << 4) | (1 << 5),
+                1 << 6,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
         );
 
         let advertising = round_trip(
@@ -696,6 +705,12 @@ fn dispatch_test_packet(
         | LeControllerCommandClassification::LongTermKeyNegativeReply(_)
         | LeControllerCommandClassification::MalformedLongTermKeyReply(_) => {
             command_error(crate::LeDisconnectCommand::OPCODE, HciError::UNKNOWN_CMD)
+        }
+        LeControllerCommandClassification::DataLength(command) => {
+            command_error(command.opcode(), HciError::UNKNOWN_CMD)
+        }
+        LeControllerCommandClassification::MalformedDataLength(response) => {
+            command_error(response.opcode(), HciError::UNKNOWN_CMD)
         }
         LeControllerCommandClassification::Bootstrap(command) => bootstrap.dispatch(command, false),
         LeControllerCommandClassification::MalformedBootstrap(response) => response,

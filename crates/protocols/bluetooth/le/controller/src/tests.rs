@@ -627,3 +627,41 @@ fn reset_stops_every_role_before_it_completes() {
         Some(Request::ConfigureConnectable(_, _))
     ));
 }
+
+#[test]
+fn data_length_commands_report_the_maximum_and_keep_the_suggestion_until_reset() {
+    const READ_SUGGESTED: Opcode = Opcode::new(OpcodeGroup::LE, 0x0023);
+    const WRITE_SUGGESTED: Opcode = Opcode::new(OpcodeGroup::LE, 0x0024);
+    const READ_MAXIMUM: Opcode = Opcode::new(OpcodeGroup::LE, 0x002f);
+    const SET_DATA_LENGTH: Opcode = Opcode::new(OpcodeGroup::LE, 0x0022);
+    let mut harness = Harness::configured();
+    harness.send(READ_MAXIMUM, &[]);
+    assert_eq!(
+        harness.drain(),
+        [std::vec![
+            0x0e, 12, 1, 0x2f, 0x20, SUCCESS, 251, 0, 0x48, 8, 251, 0, 0x48, 8
+        ]]
+    );
+    let suggested = |harness: &mut Harness| {
+        harness.send(READ_SUGGESTED, &[]);
+        let packets = harness.drain();
+        assert_eq!(packets.len(), 1);
+        packets[0][5..].to_vec()
+    };
+    assert_eq!(suggested(&mut harness), [SUCCESS, 27, 0, 0x48, 1]);
+    assert_eq!(
+        harness.command(WRITE_SUGGESTED, &[251, 0, 0x48, 8]),
+        Some(SUCCESS)
+    );
+    assert_eq!(suggested(&mut harness), [SUCCESS, 251, 0, 0x48, 8]);
+    assert_eq!(
+        harness.command(WRITE_SUGGESTED, &[26, 0, 0x48, 8]),
+        Some(0x12)
+    );
+    assert_eq!(
+        harness.command(SET_DATA_LENGTH, &[0, 0, 251, 0, 0x48, 8]),
+        Some(UNKNOWN_CONNECTION)
+    );
+    assert_eq!(harness.command(RESET, &[]), Some(SUCCESS));
+    assert_eq!(suggested(&mut harness), [SUCCESS, 27, 0, 0x48, 1]);
+}

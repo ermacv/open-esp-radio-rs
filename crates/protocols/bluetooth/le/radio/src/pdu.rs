@@ -17,8 +17,9 @@ pub enum PduError {
 const ADVERTISING_PAYLOAD_MAX: usize = 37;
 /// Advertiser address that starts every legacy advertising payload.
 const ADVERTISER_ADDRESS_BYTES: usize = 6;
-/// Maximum payload of a data channel PDU.
-const DATA_PAYLOAD_MAX: usize = 251;
+/// Maximum payload of a data channel PDU on air: 251 octets of data and an
+/// encrypted packet's 4-octet MIC.
+const DATA_PAYLOAD_MAX: usize = 255;
 
 /// One encoded legacy advertising PDU: header, length and payload starting
 /// with the advertiser address. Protocol validity stays with the caller.
@@ -132,9 +133,9 @@ mod tests {
 
     #[test]
     fn data_payloads_and_test_types_are_bounded() {
-        assert!(DataPdu::new(DataPduKind::Control, &[0; 251]).is_ok());
+        assert!(DataPdu::new(DataPduKind::Control, &[0; 255]).is_ok());
         assert_eq!(
-            DataPdu::new(DataPduKind::Start, &[0; 252]),
+            DataPdu::new(DataPduKind::Start, &[0; 256]),
             Err(PduError::TooLong)
         );
         assert_eq!(TestPayloadType::new(7).map(TestPayloadType::value), Ok(7));

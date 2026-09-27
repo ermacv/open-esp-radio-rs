@@ -5,6 +5,7 @@
 
 pub(crate) mod acl;
 pub(crate) mod advertising;
+pub(crate) mod data_length;
 pub(crate) mod dtm;
 pub(crate) mod peripheral;
 pub(crate) mod scanning;

@@ -114,6 +114,8 @@ pub enum LeControllerCommandComplete {
     ReadRemoteVersionInformationStatus(LeReadRemoteVersionInformationCommandStatusEvent),
     /// Completion for a positive, negative, rejected, or malformed LTK reply.
     LongTermKeyReply(LeLongTermKeyCommandCompleteEvent),
+    /// Completion of a Data Length Extension command.
+    DataLength(crate::LeDataLengthCommandCompleteEvent),
     /// Pure software bootstrap command completion.
     Bootstrap(BootstrapCommandCompleteEvent),
     /// Exceptional invalid-parameters response for Host completed-packet credits.
@@ -140,6 +142,7 @@ impl HciControllerResponse for LeControllerCommandComplete {
             Self::ReadRemoteFeaturesStatus(response) => response.as_bytes(),
             Self::ReadRemoteVersionInformationStatus(response) => response.as_bytes(),
             Self::LongTermKeyReply(response) => response.as_bytes(),
+            Self::DataLength(response) => response.as_bytes(),
             Self::Bootstrap(response) => response.as_bytes(),
             Self::HostCompletedPacketsError(response) => response.as_bytes(),
             Self::Dtm(response) => response.as_bytes(),
@@ -183,6 +186,12 @@ impl From<LeReadRemoteVersionInformationCommandStatusEvent> for LeControllerComm
 impl From<LeLongTermKeyCommandCompleteEvent> for LeControllerCommandComplete {
     fn from(response: LeLongTermKeyCommandCompleteEvent) -> Self {
         Self::LongTermKeyReply(response)
+    }
+}
+
+impl From<crate::LeDataLengthCommandCompleteEvent> for LeControllerCommandComplete {
+    fn from(response: crate::LeDataLengthCommandCompleteEvent) -> Self {
+        Self::DataLength(response)
     }
 }
 

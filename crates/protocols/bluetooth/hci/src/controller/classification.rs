@@ -4,17 +4,18 @@ use bt_hci::cmd::Opcode;
 
 use super::bootstrap::{BootstrapCommandDecodeError, invalid_parameters};
 
+use super::le::data_length::LeDataLengthDecodeError;
 use super::le::peripheral::{
     LeDisconnectDecodeError, LeReadRemoteFeaturesDecodeError,
     LeReadRemoteVersionInformationDecodeError,
 };
 use crate::{
-    BootstrapCommandCompleteEvent, HciCommandPacket, LeDisconnectCommand,
-    LeDisconnectCommandStatusEvent, LeDtmCommand, LeDtmCommandCompleteEvent,
-    LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
-    LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingConfigurationCommand,
-    LeLegacyAdvertisingEnableCommand, LeLegacyScanningCommand,
-    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
+    BootstrapCommandCompleteEvent, HciCommandPacket, LeDataLengthCommand,
+    LeDataLengthCommandCompleteEvent, LeDisconnectCommand, LeDisconnectCommandStatusEvent,
+    LeDtmCommand, LeDtmCommandCompleteEvent, LeLegacyAdvertisingCommand,
+    LeLegacyAdvertisingCommandCompleteEvent, LeLegacyAdvertisingCommandKind,
+    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
+    LeLegacyScanningCommand, LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
     LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand,
     LeLongTermKeyCommandCompleteEvent, LeLongTermKeyCommandDecodeError,
     LeLongTermKeyRequestNegativeReplyCommand, LeLongTermKeyRequestReplyCommand,
@@ -55,6 +56,10 @@ pub enum LeControllerCommandClassification {
     LongTermKeyNegativeReply(LeLongTermKeyRequestNegativeReplyCommand),
     /// A claimed LTK reply opcode had malformed parameters.
     MalformedLongTermKeyReply(LeLongTermKeyCommandCompleteEvent),
+    /// A validated Data Length Extension command.
+    DataLength(LeDataLengthCommand),
+    /// A Data Length Extension command had an invalid parameter body.
+    MalformedDataLength(LeDataLengthCommandCompleteEvent),
     /// A decoded bootstrap command awaits session-aware software dispatch.
     Bootstrap(OwnedBootstrapCommand),
     /// A known bootstrap opcode had malformed parameters and produced this response.
@@ -95,6 +100,8 @@ impl LeControllerCommandClassification {
             Self::LongTermKeyReply(_) => LeLongTermKeyRequestReplyCommand::OPCODE,
             Self::LongTermKeyNegativeReply(_) => LeLongTermKeyRequestNegativeReplyCommand::OPCODE,
             Self::MalformedLongTermKeyReply(response) => response.opcode(),
+            Self::DataLength(command) => command.opcode(),
+            Self::MalformedDataLength(response) => response.opcode(),
             Self::Bootstrap(command) => command.opcode(),
             Self::MalformedBootstrap(response) => response.opcode(),
             Self::Dtm(command) => command.kind().opcode(),
@@ -142,6 +149,14 @@ pub fn classify_le_controller_command(
             );
         }
         Err(LeDisconnectDecodeError::Unsupported) => {}
+    }
+
+    match LeDataLengthCommand::decode(command) {
+        Ok(command) => return LeControllerCommandClassification::DataLength(command),
+        Err(LeDataLengthDecodeError::Malformed(response)) => {
+            return LeControllerCommandClassification::MalformedDataLength(response);
+        }
+        Err(LeDataLengthDecodeError::Unsupported) => {}
     }
 
     match LeReadRemoteFeaturesCommand::decode(command) {

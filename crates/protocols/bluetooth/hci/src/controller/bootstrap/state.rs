@@ -160,10 +160,20 @@ impl LeControllerBootstrap {
             }
             OwnedBootstrapCommand::LeReadLocalSupportedFeatures => {
                 // Bit 0 is LE Encryption, bit 3 is Peripheral-initiated Feature
-                // Exchange, bit 4 is LE Ping, and bit 14 is CSA #2.
+                // Exchange, bit 4 is LE Ping, bit 5 is LE Data Packet Length
+                // Extension and bit 14 is CSA #2.
                 command_success(
                     opcode,
-                    &[(1 << 0) | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0],
+                    &[
+                        (1 << 0) | (1 << 3) | (1 << 4) | (1 << 5),
+                        1 << 6,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                    ],
                 )
             }
             OwnedBootstrapCommand::LeSetRandomAddress(address) => {

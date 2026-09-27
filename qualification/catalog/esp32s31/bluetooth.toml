@@ -2644,9 +2644,9 @@ scope-and-limitations = "No connected PHY negotiation/application owner exists; 
 id = "bluetooth-data-length-extension-data-length-update"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Data Length Extension / Data Length Update"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No negotiated connected packet-length owner exists."
+scope-and-limitations = "The [Link Layer](../../../../protocols/bluetooth/le/ll/src/data_length.rs) answers and starts the Data Length Update on LE 1M up to 251 octets and 2120 us; the [Controller](../../../../protocols/bluetooth/le/controller/src/peripheral.rs) fragments Host data by the effective transmit length, serves HCI LE Set Data Length, Read and Write Suggested Default Data Length and Read Maximum Data Length, and reports LE Data Length Change. The peripheral connection carries data PDUs up to 255 octets with the MIC. No hardware run qualifies it."
 
 [[items]]
 id = "bluetooth-feature-exchange"

@@ -255,7 +255,10 @@ pub const fn le_controller_supported_commands() -> [u8; 64] {
     commands[26] = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6);
     commands[27] = 1 << 5; // LE Read Remote Features.
     commands[28] = (1 << 1) | (1 << 2) | (1 << 4) | (1 << 5) | (1 << 6); // LTK replies and DTM.
-    commands[35] = 1 << 7; // LE Receiver Test v2.
+    // LE Set Data Length, Read and Write Suggested Default Data Length.
+    commands[33] = (1 << 6) | (1 << 7);
+    commands[34] = 1 << 0;
+    commands[35] = (1 << 3) | (1 << 7); // LE Read Maximum Data Length, LE Receiver Test v2.
     commands[36] = 1 << 0; // LE Transmitter Test v2.
     commands
 }

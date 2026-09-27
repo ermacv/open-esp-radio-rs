@@ -421,3 +421,118 @@ fn host_credits_hold_received_data_and_the_next_event() {
     assert_eq!(harness.drain(), [std::vec![0x00, 0x20, 1, 0, 0xbb]]);
     assert!(matches!(harness.step(), Some(Request::ConnectionEvent(_))));
 }
+
+const LE_SET_EVENT_MASK: Opcode = Opcode::new(OpcodeGroup::LE, 0x0001);
+const SET_DATA_LENGTH: Opcode = Opcode::new(OpcodeGroup::LE, 0x0022);
+
+/// `LL_LENGTH_REQ` or `LL_LENGTH_RSP` announcing 251 octets and 2120 us both
+/// ways.
+fn length_pdu(opcode: u8) -> Vec<u8> {
+    std::vec![0x03, 9, opcode, 251, 0, 0x48, 8, 251, 0, 0x48, 8]
+}
+
+#[test]
+fn data_length_update_lengthens_host_data_fragments() {
+    let (mut harness, first) = Harness::connected();
+    // The default LE mask plus LE Data Length Change.
+    assert_eq!(
+        harness.command(LE_SET_EVENT_MASK, &[0x5f, 0, 0, 0, 0, 0, 0, 0]),
+        Some(SUCCESS)
+    );
+    // The central's request: its response keeps the local minimum to send
+    // and raises the receive length.
+    harness.receive(first, &length_pdu(0x14));
+    assert_eq!(
+        harness.drain(),
+        [std::vec![
+            0x3e, 11, 0x07, 0, 0, 27, 0, 0x48, 1, 251, 0, 0x48, 8
+        ]]
+    );
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    assert_eq!(
+        harness.step(),
+        Some(Request::Transmit(
+            DataPduKind::Control,
+            std::vec![0x15, 251, 0, 0x48, 8, 27, 0, 0x48, 1]
+        ))
+    );
+    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+        panic!("the second event");
+    };
+    harness.acknowledge();
+    harness.end_at(second.id, Some(INDICATION_AT + 2_000 + INTERVAL));
+
+    // The Host asks to send longer packets: the local request follows.
+    harness.send(SET_DATA_LENGTH, &[0, 0, 251, 0, 0x48, 8]);
+    assert_eq!(
+        harness.drain(),
+        [std::vec![0x0e, 6, 1, 0x22, 0x20, SUCCESS, 0, 0]]
+    );
+    assert_eq!(
+        harness.step(),
+        Some(Request::Transmit(
+            DataPduKind::Control,
+            length_pdu(0x14)[2..].to_vec()
+        ))
+    );
+    let Some(Request::ConnectionEvent(third)) = harness.step() else {
+        panic!("the third event");
+    };
+    harness.acknowledge();
+    harness.receive(third.id, &length_pdu(0x15));
+    assert_eq!(
+        harness.drain(),
+        [std::vec![
+            0x3e, 11, 0x07, 0, 0, 251, 0, 0x48, 8, 251, 0, 0x48, 8
+        ]]
+    );
+    harness.end_at(third.id, Some(INDICATION_AT + 2_000 + 2 * INTERVAL));
+
+    // 200 octets of Host data now travel in one fragment.
+    let data: Vec<u8> = (0..200).map(|octet| octet as u8).collect();
+    harness.core.acl(bt_hci::data::AclPacket::new(
+        bt_hci::param::ConnHandle::new(0),
+        bt_hci::data::AclPacketBoundary::FirstNonFlushable,
+        bt_hci::data::AclBroadcastFlag::PointToPoint,
+        &data,
+    ));
+    assert_eq!(
+        harness.step(),
+        Some(Request::Transmit(DataPduKind::Start, data))
+    );
+}
+
+#[test]
+fn a_peer_without_data_length_update_keeps_the_minimum() {
+    let (mut harness, first) = Harness::connected();
+    assert_eq!(
+        harness.command(LE_SET_EVENT_MASK, &[0x5f, 0, 0, 0, 0, 0, 0, 0]),
+        Some(SUCCESS)
+    );
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    harness.send(SET_DATA_LENGTH, &[0, 0, 251, 0, 0x48, 8]);
+    harness.drain();
+    assert!(matches!(
+        harness.step(),
+        Some(Request::Transmit(DataPduKind::Control, _))
+    ));
+    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+        panic!("the second event");
+    };
+    harness.acknowledge();
+    // LL_UNKNOWN_RSP for LL_LENGTH_REQ.
+    harness.receive(second.id, &[0x03, 2, 0x07, 0x14]);
+    assert!(harness.drain().is_empty(), "no Data Length Change");
+    harness.end_at(second.id, Some(INDICATION_AT + 2_000 + INTERVAL));
+    let data: Vec<u8> = (0..30).collect();
+    harness.core.acl(bt_hci::data::AclPacket::new(
+        bt_hci::param::ConnHandle::new(0),
+        bt_hci::data::AclPacketBoundary::FirstNonFlushable,
+        bt_hci::data::AclBroadcastFlag::PointToPoint,
+        &data,
+    ));
+    let Some(Request::Transmit(DataPduKind::Start, fragment)) = harness.step() else {
+        panic!("the first fragment");
+    };
+    assert_eq!(fragment.len(), 27);
+}

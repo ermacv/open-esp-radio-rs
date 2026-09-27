@@ -1,4 +1,5 @@
-//! Bounded peripheral responder for feature, version and LE Ping exchange.
+//! Bounded peripheral responder for feature, version, LE Ping and Data Length
+//! Update exchange.
 //!
 //! Input must already have passed the controller's CRC and duplicate filters.
 //! This module does not own SN/NESN, encryption, ACL delivery or LL teardown.
@@ -8,6 +9,7 @@ use crate::connection::{
     LeConnectionTiming, LeDataChannelMap, LePeripheralChannelMapUpdateError,
     LePeripheralConnectionUpdateError,
 };
+use crate::data_length::{LeDataLength, LeDataLengthProcedure, LeDataLengths};
 
 /// Controller identity supplied by the product; independent of the radio vendor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -234,10 +236,11 @@ enum LocalVersionRequest {
 /// LE feature page zero supported by this bounded Peripheral controller.
 ///
 /// Bit 0 advertises LE Encryption; bits 3 and 4 advertise
-/// Peripheral-initiated Feature Exchange and LE Ping;
-/// bit 14 advertises Channel Selection Algorithm #2.
+/// Peripheral-initiated Feature Exchange and LE Ping; bit 5 advertises the
+/// LE Data Packet Length Extension; bit 14 advertises Channel Selection
+/// Algorithm #2.
 pub const fn le_peripheral_supported_features() -> [u8; 8] {
-    [1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0]
+    [1 | (1 << 3) | (1 << 4) | (1 << 5), 1 << 6, 0, 0, 0, 0, 0, 0]
 }
 
 /// Two waiting responses plus the independently retained controller TX packet.
@@ -254,6 +257,8 @@ pub struct LePeripheralControl {
     local_version: Option<LeVersionInformation>,
     local_version_request: LocalVersionRequest,
     remote_version_result: Option<LeRemoteVersionResult>,
+    data_length: LeDataLengthProcedure,
+    data_length_request: Option<LeControlResponse>,
 }
 
 impl LePeripheralControl {
@@ -270,6 +275,41 @@ impl LePeripheralControl {
             local_version: None,
             local_version_request: LocalVersionRequest::None,
             remote_version_result: None,
+            data_length: LeDataLengthProcedure::new(LeDataLength::MINIMUM),
+            data_length_request: None,
+        }
+    }
+
+    /// Send data PDUs of up to `transmit` once the peer agrees; a longer
+    /// length than the minimum starts the Data Length Update procedure.
+    pub fn with_data_length(mut self, transmit: LeDataLength) -> Self {
+        self.data_length = LeDataLengthProcedure::new(transmit);
+        self.data_length.start_if_extended();
+        self.queue_data_length_request();
+        self
+    }
+
+    /// The effective lengths of both directions.
+    pub const fn data_lengths(&self) -> LeDataLengths {
+        self.data_length.effective()
+    }
+
+    /// Request a new local transmit length, as HCI LE Set Data Length does.
+    pub fn set_data_length(&mut self, transmit: LeDataLength) {
+        self.data_length.set_transmit(transmit);
+        self.queue_data_length_request();
+    }
+
+    /// The effective lengths after a change, once.
+    pub fn take_data_length_change(&mut self) -> Option<LeDataLengths> {
+        self.data_length.take_change()
+    }
+
+    fn queue_data_length_request(&mut self) {
+        if self.data_length_request.is_none()
+            && let Some(pdu) = self.data_length.queued_request()
+        {
+            self.data_length_request = Some(LeControlResponse { bytes: pdu, len: 9 });
         }
     }
 
@@ -378,7 +418,23 @@ impl LePeripheralControl {
                 {
                     self.local_version_request = LocalVersionRequest::None;
                     self.remote_version_result = Some(LeRemoteVersionResult::Unsupported);
+                } else if payload[1] == 0x14 {
+                    self.data_length.abandon();
                 }
+                return Ok(LePeripheralReceive::Control);
+            }
+            0x14 => {
+                let pdu = self
+                    .data_length
+                    .receive_request(&payload[1..])
+                    .map_err(|_| Error::MalformedPdu)?;
+                response.bytes = pdu;
+                response.len = 9;
+            }
+            0x15 => {
+                self.data_length
+                    .receive_response(&payload[1..])
+                    .map_err(|_| Error::MalformedPdu)?;
                 return Ok(LePeripheralReceive::Control);
             }
             0x0d => {
@@ -412,6 +468,8 @@ impl LePeripheralControl {
                     self.local_version_request = LocalVersionRequest::None;
                     self.remote_version_result =
                         Some(LeRemoteVersionResult::Rejected { reason: payload[2] });
+                } else if payload[1] == 0x14 {
+                    self.data_length.abandon();
                 }
                 return Ok(LePeripheralReceive::Control);
             }
@@ -485,6 +543,7 @@ impl LePeripheralControl {
     pub const fn local_procedure_pending(&self) -> bool {
         self.remote_feature_request_pending()
             || !matches!(self.local_version_request, LocalVersionRequest::None)
+            || self.data_length.local_request_pending()
     }
 
     pub const fn remote_version_request_available(&self) -> bool {
@@ -595,6 +654,11 @@ impl LePeripheralControl {
         matches!(self.local_version_request, LocalVersionRequest::Transmitted)
     }
 
+    /// Whether the local `LL_LENGTH_REQ` awaits the peer's response.
+    pub const fn local_data_length_request_transmitted(&self) -> bool {
+        self.data_length.local_request_transmitted()
+    }
+
     pub fn expire_local_procedure(&mut self) {
         if matches!(self.local_feature_request, LocalFeatureRequest::Transmitted) {
             self.local_feature_request = LocalFeatureRequest::None;
@@ -602,6 +666,8 @@ impl LePeripheralControl {
         } else if matches!(self.local_version_request, LocalVersionRequest::Transmitted) {
             self.local_version_request = LocalVersionRequest::None;
             self.remote_version_result = Some(LeRemoteVersionResult::ResponseTimeout);
+        } else {
+            self.data_length.abandon();
         }
     }
 
@@ -622,15 +688,26 @@ impl LePeripheralControl {
             None => match self.responses[0].as_ref() {
                 Some(response) => Some(response),
                 None if matches!(self.local_feature_request, LocalFeatureRequest::Queued) => {
+                    const FEATURES: [u8; 8] = le_peripheral_supported_features();
                     const REQUEST: LeControlResponse = LeControlResponse {
-                        bytes: [0x0e, 1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0],
+                        bytes: [
+                            0x0e,
+                            FEATURES[0],
+                            FEATURES[1],
+                            FEATURES[2],
+                            FEATURES[3],
+                            FEATURES[4],
+                            FEATURES[5],
+                            FEATURES[6],
+                            FEATURES[7],
+                        ],
                         len: 9,
                     };
                     Some(&REQUEST)
                 }
                 None => match &self.local_version_request {
                     LocalVersionRequest::Queued(request) => Some(request),
-                    _ => None,
+                    _ => self.data_length_request.as_ref(),
                 },
             },
         }
@@ -732,6 +809,8 @@ impl LePeripheralControl {
         } else if matches!(self.local_version_request, LocalVersionRequest::Queued(_)) {
             self.local_version_request = LocalVersionRequest::Transmitted;
             self.version_queued = true;
+        } else if self.data_length_request.take().is_some() {
+            self.data_length.request_enqueued();
         }
     }
 }
@@ -754,7 +833,17 @@ mod tests {
         ll.receive(&FEATURE_REQ, None).unwrap();
         assert_eq!(
             ll.pending_response().unwrap().as_bytes(),
-            [9, 1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0]
+            [
+                9,
+                1 | (1 << 3) | (1 << 4) | (1 << 5),
+                1 << 6,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ]
         );
         // Pending survives arbitrary reads while the controller queue is busy.
         assert_eq!(ll.pending_response().unwrap().as_bytes()[0], 9);
@@ -821,7 +910,17 @@ mod tests {
         assert_eq!(ll.activate_remote_feature_request(), None);
         assert_eq!(
             ll.pending_response().unwrap().as_bytes(),
-            [0x0e, 1 | (1 << 3) | (1 << 4), 1 << 6, 0, 0, 0, 0, 0, 0]
+            [
+                0x0e,
+                1 | (1 << 3) | (1 << 4) | (1 << 5),
+                1 << 6,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ]
         );
         ll.response_enqueued();
         assert!(ll.local_feature_request_transmitted());
@@ -1208,5 +1307,66 @@ mod tests {
         ll.receive(&request, version).unwrap();
         ll.response_enqueued();
         assert_eq!(ll.pending_response().unwrap().as_bytes()[0], 12);
+    }
+
+    const LENGTH_REQ: [u8; 11] = [3, 9, 0x14, 251, 0, 0x48, 8, 251, 0, 0x48, 8];
+
+    #[test]
+    fn a_peer_length_request_is_answered_and_changes_the_receive_length() {
+        let mut ll = LePeripheralControl::new();
+        assert_eq!(ll.data_lengths(), LeDataLengths::MINIMUM);
+        assert_eq!(
+            ll.receive(&LENGTH_REQ, None),
+            Ok(LePeripheralReceive::Control)
+        );
+        assert_eq!(
+            ll.pending_response().unwrap().as_bytes(),
+            [0x15, 251, 0, 0x48, 8, 27, 0, 0x48, 1]
+        );
+        let change = ll.take_data_length_change().unwrap();
+        assert_eq!(change.receive, LeDataLength::SUPPORTED_MAXIMUM);
+        assert_eq!(change.transmit, LeDataLength::MINIMUM);
+        assert!(!ll.local_procedure_pending());
+        // A truncated request ends the connection as malformed.
+        assert_eq!(
+            ll.receive(&[3, 8, 0x14, 251, 0, 0x48, 8, 251, 0, 0x48], None),
+            Err(LePeripheralControlError::MalformedPdu)
+        );
+    }
+
+    #[test]
+    fn an_extended_connection_requests_its_length_after_other_responses() {
+        let mut ll = LePeripheralControl::new().with_data_length(LeDataLength::SUPPORTED_MAXIMUM);
+        assert!(ll.local_procedure_pending());
+        ll.receive(&FEATURE_REQ, None).unwrap();
+        assert_eq!(ll.pending_response().unwrap().as_bytes()[0], 9);
+        ll.response_enqueued();
+        assert_eq!(
+            ll.pending_response().unwrap().as_bytes(),
+            [0x14, 251, 0, 0x48, 8, 251, 0, 0x48, 8]
+        );
+        ll.response_enqueued();
+        assert!(ll.pending_response().is_none());
+        assert!(ll.local_data_length_request_transmitted());
+        ll.receive(&[3, 9, 0x15, 200, 0, 0x48, 8, 100, 0, 0x48, 8], None)
+            .unwrap();
+        assert!(!ll.local_procedure_pending());
+        let lengths = ll.data_lengths();
+        assert_eq!(lengths.transmit.octets(), 200);
+        assert_eq!(lengths.receive.octets(), 100);
+    }
+
+    #[test]
+    fn a_peer_without_the_procedure_ends_the_local_request() {
+        for refusal in [&[3, 2, 0x07, 0x14][..], &[3, 3, 0x11, 0x14, 0x1a][..]] {
+            let mut ll =
+                LePeripheralControl::new().with_data_length(LeDataLength::SUPPORTED_MAXIMUM);
+            ll.response_enqueued();
+            assert!(ll.local_data_length_request_transmitted());
+            ll.receive(refusal, None).unwrap();
+            assert!(!ll.local_procedure_pending());
+            assert_eq!(ll.data_lengths(), LeDataLengths::MINIMUM);
+            assert_eq!(ll.take_data_length_change(), None);
+        }
     }
 }

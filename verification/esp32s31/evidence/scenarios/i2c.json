@@ -117,7 +117,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211",
-      "sha256": "5b80eb968071b84b3314eee6fcc54267b59b012de0605cc46ccb0b18a7434a33"
+      "sha256": "28922f488b52cea1259e66e5d730a3c0e2bccfbc60e9e9026b4f92d29f9de1e2"
     },
     {
       "path": "crates/runtime/esp32s31/phy",

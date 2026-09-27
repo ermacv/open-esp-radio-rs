@@ -15,6 +15,9 @@ fn fixture() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     fs::create_dir_all(root.join("hil/schema")).unwrap();
+    // The wrapper links every chip's local runs into the shared store; the
+    // fixture has no chip profile and keeps the store inside the fixture.
+    fs::create_dir_all(root.join("platform")).unwrap();
     fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
     fs::write(
         root.join("hil/schema/observer-inputs.json"),
@@ -51,6 +54,7 @@ fn wrapper(root: &Path) -> Command {
         .arg(root)
         .arg("hil")
         .env("CARGO", root.join("cargo"))
+        .env("OER_HIL_STORE", root.join("store"))
         .env("FIXTURE_ROOT", root);
     command
 }

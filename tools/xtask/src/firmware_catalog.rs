@@ -179,12 +179,8 @@ pub fn flash(
     let entries = entries(&ctx.root)?;
     let entry = entry(&entries, image)?;
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
-    let devices = arbiter.devices()?;
-    let mac = oer_hil_arbiter::board_mac(&devices, board)?;
-    if let Some(chip) = devices
-        .iter()
-        .find(|device| device.mac == mac)
-        .and_then(|device| device.chip.as_deref())
+    let Board { mac, port, chip } = resolve_board(&arbiter, board)?;
+    if let Some(chip) = chip
         && chip != entry.chip
     {
         return Err(format!(
@@ -193,11 +189,6 @@ pub fn flash(
         )
         .into());
     }
-    let port = oer_hil_arbiter::attached_ports()
-        .into_iter()
-        .find(|port| port.mac.as_deref() == Some(mac.as_str()))
-        .map(|port| PathBuf::from(port.port))
-        .ok_or_else(|| format!("board `{board}` ({mac}) is not attached"))?;
     let built = build(ctx, image)?;
     let files =
         flash_files(&vendor_firmware::output(&ctx.root, &entry.project(&ctx.root)).join("build"))?;
@@ -255,8 +246,32 @@ pub fn flash(
     Ok(())
 }
 
+/// An attached board of the stand.
+pub struct Board {
+    pub mac: String,
+    pub port: PathBuf,
+    /// Its chip, when registered.
+    pub chip: Option<String>,
+}
+
+/// The attached board `board` names: a registered name or a MAC.
+pub fn resolve_board(arbiter: &oer_hil_arbiter::Arbiter, board: &str) -> Result<Board> {
+    let devices = arbiter.devices()?;
+    let mac = oer_hil_arbiter::board_mac(&devices, board)?;
+    let chip = devices
+        .iter()
+        .find(|device| device.mac == mac)
+        .and_then(|device| device.chip.clone());
+    let port = oer_hil_arbiter::attached_ports()
+        .into_iter()
+        .find(|port| port.mac.as_deref() == Some(mac.as_str()))
+        .map(|port| PathBuf::from(port.port))
+        .ok_or_else(|| format!("board `{board}` ({mac}) is not attached"))?;
+    Ok(Board { mac, port, chip })
+}
+
 /// The repository commit and whether `directory` differs from it.
-fn source_revision(root: &Path, directory: &Path) -> (Option<String>, Option<bool>) {
+pub(crate) fn source_revision(root: &Path, directory: &Path) -> (Option<String>, Option<bool>) {
     let git = |args: &[&str]| {
         Command::new("git")
             .arg("-C")

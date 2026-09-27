@@ -65,6 +65,17 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("board") => return board(ctx, &options, &args[1..]),
         Some("devices") => return devices(&args[1..]),
         Some("firmware") => return firmware(ctx, &options, &args[1..]),
+        Some("flash") => {
+            let request = oer_hil_arbiter::Request {
+                owner: options.owner(ctx),
+                work: String::new(),
+                budget: options.budget,
+                short: options.short,
+                scenarios: Vec::new(),
+                claims: Vec::new(),
+            };
+            return crate::hil_flash::run(ctx, request, &args[1..]);
+        }
         Some("runs") => return runs(ctx, &options, &args[1..]),
         _ => {}
     }
@@ -127,6 +138,9 @@ Stand commands (shared by every checkout of this user):
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
   cargo hil firmware flash IMAGE --board NAME|MAC   flash under a lease of that board, journaled
+  cargo hil flash --board NAME|MAC [--image NAME] [--monitor 30s [--until TEXT]] [--air exclusive] ELF
+                                      flash an ELF for the board's chip under a lease of that board,
+                                      journal it, capture the console for a bounded time
 
 Lease options, before any HIL command or after `lease`:
   --owner NAME     default: enclosing lease owner, else the checkout directory name

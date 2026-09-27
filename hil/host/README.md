@@ -109,6 +109,21 @@ cargo hil lease --board c5 --budget 5m -- idf.py -p <port> flash
 cargo hil --owner phy lease --budget 20m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
 
+`flash --board NAME|MAC ELF` is the manual cycle for images outside the
+runner and the ESP-IDF catalog, such as a new chip's first no_std images. It
+derives the application image with `espflash save-image` before queueing,
+leases only that board (and the air, shared unless `--air exclusive`), lets
+`espflash` write the ESP-IDF bootloader, partition table and application for
+the board's registered chip, and journals the image under `--image` or the
+ELF's file name. `--monitor 30s` then captures the console into
+`target/hil/flash/<mac>/console-*.log` for at most that long; with
+`--until TEXT` it ends at the first line containing TEXT and fails when none
+does. The lease ends with the capture, so an open monitor never holds a board.
+
+```console
+cargo hil --budget 3m flash --board c5 --monitor 30s --until READY target/.../app.elf
+```
+
 `dashboard` serves a page on the loopback interface (`--port` changes the
 port) that refreshes every two seconds: holders with their budget used, the
 queue with expected starts, every board's port and last flash, the newest runs

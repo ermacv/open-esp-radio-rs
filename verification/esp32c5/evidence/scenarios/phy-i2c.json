@@ -1,41 +1,45 @@
 {
-  "schema": 8,
+  "schema": 9,
   "command": "vendor-scenario",
   "target": "esp32c5",
   "scenario": "phy-i2c",
   "inputs": {
     "input-0": "dbf33c418c8d408d4005c849d12a1432deea82e2e5e57de3c8ddf914d104fffb",
     "input-1": "49693d745eb4b4e6e6c77be4f5213765d545d8c7a1d9742a8a619bf596c4e27a",
-    "input-2": "8f9b0679925c5c663b8bf5584304f3498b44e703c6e2dd02a08a24db01056b77"
+    "input-2": "95f025a0a3a9bb08cf63057e83e95d67450e96282517aee3b75c40731337b138"
   },
   "sources": [
     {
-      "path": "crates/hardware/esp32c5/hal",
-      "sha256": "9272820755f9e02d9ef863b7637ff4bd0e7800bbeac6091c2ede09ae25c28bd7"
+      "path": "crates/hardware/esp32c5/hal/src/analog.rs",
+      "sha256": "35c44795b5f5f29d57063f9b348c4571ca1bcd86e7b87cf6d0a1ffb01b5866eb"
     },
     {
-      "path": "crates/hardware/esp32c5/pac",
-      "sha256": "b37e0829478002c4cb700858aca2232f507436daeb8892edbaae05fcbbe626e3"
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "sha256": "78ad4808bcff73bd8c93e0f94ec85001962c8dca44a72c58f7cc57f9774d1cc4"
     },
     {
-      "path": "crates/hardware/esp32c5/pac/raw",
-      "sha256": "29b8c1d3048aa8eed6c368daac5c5eb8d5bae7797eff23b084deccf97e72fc84"
+      "path": "crates/hardware/esp32c5/pac/src/generated.rs",
+      "sha256": "e11a62db68523ee1ec38d730f352c0c3930a91033bb2b264c26960a1c55e91a3"
     },
     {
-      "path": "crates/hardware/ieee802154/engine",
-      "sha256": "6860f8dfede265647150ddb4b157175168ad0ed39d3a8f9b0ae9f50d206a8415"
+      "path": "crates/hardware/esp32c5/pac/src/ownership.rs",
+      "sha256": "bc2b5b00effc0d642730633ad1f133f2b397f0b177ddaa5dcddeee68c83e859c"
     },
     {
-      "path": "crates/hardware/radio/analog",
-      "sha256": "263153272cdf0580d331286330b6b915ad514f1d0389ba4101910943321886df"
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "sha256": "4dd0b9a10c9449bf2a6e02cf70e225c562cfbe307d213484e429136e1d9ec0f8"
     },
     {
-      "path": "crates/hardware/radio/clock",
-      "sha256": "5b77237fcdeec669cde55faf7b513fd874e520cf151716a4df01eec3a04acd8f"
+      "path": "crates/hardware/esp32c5/pac/src/phy/radio.rs",
+      "sha256": "fcf4eeeb12cbb74826a26f1d44708af84abc08eda06b7f203de6e0042a470a12"
     },
     {
-      "path": "crates/protocols/ieee802154",
-      "sha256": "141f507843834282cefedc51e223882820cfa668b3d04c4a5d6635f0e570e8c4"
+      "path": "crates/hardware/radio/analog/src/lib.rs",
+      "sha256": "61698705137a2388ab86420b3c4b37d43373ff998525076c5ca80f563d016ccf"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "sha256": "4e062fad6c8b59464e2cab74c89664598ac9d61e43404c8e2cb3a6d8ad015b26"
     },
     {
       "path": "tools/blobray/crates/analysis",
@@ -43,7 +47,7 @@
     },
     {
       "path": "tools/blobray/crates/application",
-      "sha256": "9c0e98405d41143e9d183f8dc4141d31e353837ee2a29d32ff9af55cf068a786"
+      "sha256": "bf210c0f8277a40f698558f240b5f9d2ebdadc318a3bbf4e3122f94311b47cf6"
     },
     {
       "path": "tools/blobray/crates/artifacts",
@@ -74,6 +78,14 @@
       "sha256": "eacb4cce32b1afa8158d2894b16afe89cbd870da0544f3bb39e161fbb389ab2d"
     },
     {
+      "path": "verification/esp32c5/probes/Cargo.lock",
+      "sha256": "116bef5974d82d1e7efaed93f6951984071a8b2624b00550386ac774c939fb12"
+    },
+    {
+      "path": "verification/esp32c5/probes/Cargo.toml",
+      "sha256": "361474a0d29c20201ffad33c8e4e1e2e8822d60a4d9cab2f858806bd5824a005"
+    },
+    {
       "path": "verification/esp32c5/probes/radio/elf",
       "sha256": "5a925d1421925515d59c13aeaba6137b258d87a782b0b2184db72ef20ce59f30"
     },
@@ -95,13 +107,17 @@
     },
     {
       "path": "verification/harness/scenarios",
-      "sha256": "68470633448e5c97182c2985e36d2ec2fb7112cf2eed6c84b28e10c030bfcd5e"
+      "sha256": "14213805f7db86ec64a954b840e4c1a84af2b5f75c91814e8d402af31f7b3f31"
     },
     {
       "path": "verification/schema",
-      "sha256": "554c247bda8dcb3126f56e2bda1855d97291378b76c5fad851e303a322963ebf"
+      "sha256": "0d0f7eea6b4efe7d2198b416d773a3c6e8fa66007bf9a7e21b99e0c18cb7ffd1"
     }
   ],
+  "dependence": {
+    "read-data": "414cb03b80a417f613d484960c622c253d2c897aaa9d02e14e97f0067cb129b2",
+    "fallback": null
+  },
   "entries": [
     {
       "suite": "phy-i2c",

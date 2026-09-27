@@ -20,7 +20,7 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Shard format.
-pub const SCHEMA: u32 = 8;
+pub const SCHEMA: u32 = 9;
 /// Producer command recorded in every shard.
 pub const COMMAND: &str = "vendor-scenario";
 /// Extension of a shard file; its stem is the scenario name.
@@ -40,10 +40,16 @@ pub struct Index {
     /// SHA-256 of each authenticated input the scenario captured, by session
     /// input index, including the production probe ELF.
     pub inputs: BTreeMap<String, String>,
-    /// Directory digests every verdict depends on: the production crates of
-    /// the scenario's probe image, the probes, the scenario code and the
-    /// Blobray engine.
+    /// Digests of the sources every verdict depends on, sorted by path and
+    /// unique: each production file the scenario's executions ran or whose
+    /// named data they read, and whole directories for the probes, the
+    /// scenario code, the Blobray engine and the shared schema, plus the
+    /// toolchain file. A shard whose executions could not be attributed to
+    /// files lists its probe's whole production closure instead
+    /// ([`Dependence::fallback`]).
     pub sources: Vec<SourceDigest>,
+    /// The staleness layers beyond `sources`.
+    pub dependence: Dependence,
     pub entries: Vec<Entry>,
     /// Uncovered vendor locations of the scenario's claimed root closures
     /// that no reviewed decision excludes and no claim of this scenario whose
@@ -62,6 +68,32 @@ pub struct Index {
     /// Persistent vendor bytes a claim's cases write without comparing them
     /// and no reviewed decision covers, coalesced by data symbol, ascending.
     pub unprojected: Vec<StateRange>,
+}
+
+/// What a shard's verdicts depend on beyond its source digests.
+/// [`Index::is_current`] checks the source digests only, without a build;
+/// `read_data` changes only with the probe data the executions read, which
+/// only a rerun recomputes (`cargo xtask evidence --check`), so a constant
+/// edited in a file the executions did not run is caught there.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Dependence {
+    /// SHA-256 of the probe data the executions read, by content.
+    pub read_data: String,
+    /// Why `sources` holds the probe's whole production closure rather than
+    /// the executed files, when it does.
+    pub fallback: Option<String>,
+}
+
+impl Dependence {
+    /// A shard whose sources are its whole source closure for `reason`,
+    /// with no probe data read.
+    pub fn whole_closure(reason: &str) -> Self {
+        Self {
+            read_data: format!("{:x}", Sha256::new().finalize()),
+            fallback: Some(reason.into()),
+        }
+    }
 }
 
 /// Persistent vendor bytes a claim's compared cases wrote: those every
@@ -237,6 +269,21 @@ pub fn digest_directory(root: &Path, relative: &Path) -> Result<String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
+/// SHA-256 of the source at `relative`: a file's bytes, or every file of
+/// a directory ([`digest_directory`]).
+pub fn digest_source(root: &Path, relative: &Path) -> Result<String> {
+    let path = root.join(relative);
+    if path.is_file() {
+        let bytes = fs::read(&path)?;
+        let mut hash = Sha256::new();
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(&bytes);
+        Ok(format!("{:x}", hash.finalize()))
+    } else {
+        digest_directory(root, relative)
+    }
+}
+
 impl Index {
     /// A well-formed index for `target`: supported schema and producer,
     /// valid digests, unique entries and only MATCH verdicts.
@@ -271,6 +318,8 @@ impl Index {
                 .sources
                 .iter()
                 .any(|s| !valid(&s.sha256) || !is_relative(&s.path))
+            || self.sources.windows(2).any(|w| w[0].path >= w[1].path)
+            || !valid(&self.dependence.read_data)
             || self.inputs.values().any(|v| !valid(v))
         {
             return Err("scenario evidence index has invalid digests".into());
@@ -353,7 +402,7 @@ impl Index {
     /// Every recorded source directory still has its recorded digest.
     pub fn is_current(&self, root: &Path) -> bool {
         self.sources.iter().all(|source| {
-            digest_directory(root, &source.path).is_ok_and(|digest| digest == source.sha256)
+            digest_source(root, &source.path).is_ok_and(|digest| digest == source.sha256)
         })
     }
 }

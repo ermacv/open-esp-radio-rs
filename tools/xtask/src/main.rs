@@ -75,6 +75,11 @@ enum Task {
         /// Ignored output root of the scenario runs.
         #[arg(long, default_value = "target/blobray-research/evidence")]
         output: std::path::PathBuf,
+        /// Rerun every scenario into the output root and fail unless each
+        /// committed shard equals its rerun, without rewriting any: catches
+        /// probe data edits the source digests cannot see.
+        #[arg(long)]
+        check: bool,
         /// Scenarios to rewrite; every stale shard when empty.
         scenarios: Vec<String>,
     },
@@ -201,8 +206,12 @@ fn run() -> Result<std::process::ExitCode> {
             linker,
             limit_mode,
             output,
+            check,
             scenarios,
         } => {
+            if check {
+                return oer_xtask::evidence::check(&ctx, &chip, linker, limit_mode, output);
+            }
             return oer_xtask::evidence::run(&ctx, &chip, scenarios, linker, limit_mode, output);
         }
         Task::VendorProvenance {

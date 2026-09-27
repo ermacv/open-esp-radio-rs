@@ -239,6 +239,7 @@ pub(crate) fn native_shard(
             sha256: scenario_evidence::digest_directory(root, &path).unwrap(),
             path,
         }],
+        dependence: scenario_evidence::Dependence::whole_closure("test"),
         entries: roots
             .iter()
             .map(|(suite, source, symbol)| scenario_evidence::Entry {

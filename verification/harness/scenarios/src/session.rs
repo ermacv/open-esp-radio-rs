@@ -59,6 +59,8 @@ pub struct Claims {
     pub unprojected: std::collections::BTreeSet<(String, String, crate::state::Byte)>,
     /// SHA-256 of every input the session captured, by session input index.
     pub inputs: BTreeMap<String, String>,
+    /// What the claims' executions depend on in the production probe.
+    pub dependencies: crate::dependencies::Dependencies,
 }
 
 /// Production PHY lines of the claims of one scenario.
@@ -1034,7 +1036,14 @@ impl Session {
             .iter()
             .flat_map(|a| a.observed.executed.iter().copied())
             .collect();
+        let reads: std::collections::BTreeSet<(u32, u8)> = self
+            .artifacts
+            .iter()
+            .flat_map(|a| a.observed.reads.iter().copied())
+            .collect();
         let root = crate::observation::root()?;
+        let dependencies =
+            crate::dependencies::of(&self.inputs[PROBE_INPUT], &executed, &reads, &root)?;
         let mut lines = ClaimLines {
             map: crate::observation::LineMap::new(&self.inputs[PROBE_INPUT], &executed, &root)?,
             root,
@@ -1093,6 +1102,7 @@ impl Session {
                 .enumerate()
                 .map(|(index, bytes)| (format!("input-{index}"), crate::harness::sha256(bytes)))
                 .collect(),
+            dependencies,
         })
     }
 

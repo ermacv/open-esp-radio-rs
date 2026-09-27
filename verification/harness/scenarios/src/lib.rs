@@ -8,6 +8,7 @@
 pub mod artifacts;
 pub mod chip;
 pub mod coverage;
+pub mod dependencies;
 pub mod evidence;
 pub mod harness;
 pub mod leaf;

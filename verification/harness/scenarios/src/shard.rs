@@ -22,6 +22,11 @@ pub struct ProbeImages {
 const TOOL_MANIFEST: &str = "tools/blobray/Cargo.toml";
 /// Shared schema sources the scenarios include by path.
 const SCHEMA_SOURCES: &str = "verification/schema";
+/// Production crates, which shards track by executed file.
+const PRODUCTION_CRATES: &str = "crates";
+/// The pinned toolchain, and the lock file beside a probe manifest.
+const TOOLCHAIN: &str = "rust-toolchain.toml";
+const LOCK_FILE: &str = "Cargo.lock";
 
 /// Path packages in the resolved dependency closure of `package`.
 fn path_closure(
@@ -104,16 +109,38 @@ pub fn shard(
                 production.display()
             )
         })?;
-    let mut directories = path_closure(&root, probes.manifest, package, Some(probes.target))?;
-    directories.extend(path_closure(&root, TOOL_MANIFEST, tool_package, None)?);
-    directories.push(PathBuf::from(SCHEMA_SOURCES));
-    directories.sort();
-    directories.dedup();
-    let sources = directories
+    // Production crates are tracked by the files the executions ran; the
+    // probes, the scenario code, the engine, the schema and the toolchain
+    // invalidate every shard.
+    let closure = path_closure(&root, probes.manifest, package, Some(probes.target))?;
+    let (production_crates, mut global): (Vec<PathBuf>, Vec<PathBuf>) = closure
+        .into_iter()
+        .partition(|path| path.starts_with(PRODUCTION_CRATES));
+    global.extend(path_closure(&root, TOOL_MANIFEST, tool_package, None)?);
+    global.push(PathBuf::from(SCHEMA_SOURCES));
+    global.push(PathBuf::from(TOOLCHAIN));
+    let manifest = Path::new(probes.manifest);
+    global.push(manifest.to_path_buf());
+    global.push(manifest.with_file_name(LOCK_FILE));
+    let dependencies = &claims.dependencies;
+    let production: Vec<PathBuf> = if dependencies.fallback.is_some() {
+        production_crates
+    } else {
+        dependencies
+            .files
+            .iter()
+            .filter(|file| !global.iter().any(|directory| file.starts_with(directory)))
+            .cloned()
+            .collect()
+    };
+    let mut paths: Vec<PathBuf> = global.into_iter().chain(production).collect();
+    paths.sort();
+    paths.dedup();
+    let sources = paths
         .into_iter()
         .map(|path| {
             Ok(evidence_index::SourceDigest {
-                sha256: evidence_index::digest_directory(&root, &path)?,
+                sha256: evidence_index::digest_source(&root, &path)?,
                 path,
             })
         })
@@ -138,6 +165,10 @@ pub fn shard(
         scenario: scenario.into(),
         inputs: claims.inputs.clone(),
         sources,
+        dependence: evidence_index::Dependence {
+            read_data: dependencies.read_data.clone(),
+            fallback: dependencies.fallback.clone(),
+        },
         entries: claims.entries.clone(),
         untriaged: coverage::uncovered_everywhere(&claims.closures, claims.untriaged.clone())
             .into_iter()

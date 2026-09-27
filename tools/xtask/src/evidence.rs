@@ -102,8 +102,102 @@ pub fn run(
         println!("every evidence shard is current");
         return Ok(ExitCode::SUCCESS);
     }
-    let linker = resolve(&linker)?;
     println!("regenerating evidence shards: {}", selected.join(", "));
+    regenerate(
+        ctx,
+        chip,
+        selected,
+        &ctx.root.join(directory),
+        &resolve(&linker)?,
+        &limit_mode,
+        &output,
+    )
+}
+
+/// Rerun every Blobray scenario shard of `chip` into `output` and fail
+/// unless each equals the committed shard. Stand shards run on hardware
+/// and are not rerun.
+pub fn check(
+    ctx: &Context,
+    chip: &str,
+    linker: PathBuf,
+    limit_mode: String,
+    output: PathBuf,
+) -> Result<ExitCode> {
+    let directory = ctx.root.join(directory(&ctx.root, chip)?);
+    let mut committed = vec![];
+    for entry in std::fs::read_dir(&directory)? {
+        let path = entry?.path();
+        let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if path.extension().and_then(|e| e.to_str()) == Some(scenario_evidence::SHARD_EXTENSION)
+            && !STANDS.iter().any(|s| s.chip == chip && s.scenario == name)
+        {
+            committed.push(name.to_owned());
+        }
+    }
+    committed.sort();
+    let rerun = ctx.root.join(&output).join(CHECK_INDEX);
+    if rerun.exists() {
+        std::fs::remove_dir_all(&rerun)?;
+    }
+    std::fs::create_dir_all(&rerun)?;
+    let code = regenerate(
+        ctx,
+        chip,
+        committed.clone(),
+        &rerun,
+        &resolve(&linker)?,
+        &limit_mode,
+        &output,
+    )?;
+    if code != ExitCode::SUCCESS {
+        return Ok(code);
+    }
+    let differing: Vec<&String> = committed
+        .iter()
+        .filter(|name| {
+            let file = format!("{name}.{}", scenario_evidence::SHARD_EXTENSION);
+            let read = |dir: &Path| {
+                std::fs::read_to_string(dir.join(&file))
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<scenario_evidence::Index>(&text).ok())
+            };
+            match (read(&directory), read(&rerun)) {
+                (Some(committed), Some(rerun)) => committed != rerun,
+                _ => true,
+            }
+        })
+        .collect();
+    if differing.is_empty() {
+        println!("every rerun evidence shard equals its committed shard");
+        Ok(ExitCode::SUCCESS)
+    } else {
+        let names: Vec<&str> = differing.iter().map(|s| s.as_str()).collect();
+        eprintln!(
+            "evidence shards differ from their rerun: {}; regenerate them with `cargo xtask evidence --chip {chip} {}`",
+            names.join(", "),
+            names.join(" ")
+        );
+        Ok(ExitCode::FAILURE)
+    }
+}
+
+/// Directory below the output root a check reruns its shards into.
+const CHECK_INDEX: &str = "check-index";
+
+/// Rerun `selected` scenarios of `chip`, writing their shards into `index`.
+fn regenerate(
+    ctx: &Context,
+    chip: &str,
+    selected: Vec<String>,
+    index: &Path,
+    linker: &Path,
+    limit_mode: &str,
+    output: &Path,
+) -> Result<ExitCode> {
+    let directory = index;
     let (stands, selected): (Vec<String>, Vec<String>) = selected
         .into_iter()
         .partition(|name| STANDS.iter().any(|s| s.chip == chip && s.scenario == name));
@@ -135,11 +229,11 @@ pub fn run(
             "--production".into(),
             radio.clone().into(),
             "--linker".into(),
-            linker.clone().into(),
+            linker.as_os_str().to_owned(),
             "--output".into(),
             output.join(&scenario).into(),
             "--limit-mode".into(),
-            limit_mode.clone().into(),
+            limit_mode.into(),
             "--index".into(),
             ctx.root.join(directory).into(),
         ];
@@ -225,6 +319,7 @@ fn stand_shard(ctx: &Context, chip: &str, stand: &Stand) -> Result<scenario_evid
         scenario: stand.scenario.into(),
         inputs,
         sources,
+        dependence: scenario_evidence::Dependence::whole_closure(STAND_CLOSURE),
         entries,
         untriaged: vec![],
         functions: vec![],
@@ -235,6 +330,10 @@ fn stand_shard(ctx: &Context, chip: &str, stand: &Stand) -> Result<scenario_evid
     shard.validate(chip)?;
     Ok(shard)
 }
+
+/// Why a stand shard tracks its whole source closure.
+const STAND_CLOSURE: &str =
+    "a stand scenario runs on hardware, outside the executions files attribute";
 
 /// Directories of the path packages `manifest`'s package depends on,
 /// including itself, relative to the repository root.

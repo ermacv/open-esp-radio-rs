@@ -1,5 +1,5 @@
 {
-  "schema": 8,
+  "schema": 9,
   "command": "vendor-scenario",
   "target": "esp32s31",
   "scenario": "ieee802154-host",
@@ -73,9 +73,13 @@
     },
     {
       "path": "verification/schema",
-      "sha256": "554c247bda8dcb3126f56e2bda1855d97291378b76c5fad851e303a322963ebf"
+      "sha256": "0d0f7eea6b4efe7d2198b416d773a3c6e8fa66007bf9a7e21b99e0c18cb7ffd1"
     }
   ],
+  "dependence": {
+    "read-data": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fallback": "a stand scenario runs on hardware, outside the executions files attribute"
+  },
   "entries": [
     {
       "suite": "ieee802154-host",

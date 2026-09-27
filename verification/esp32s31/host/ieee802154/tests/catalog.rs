@@ -251,3 +251,32 @@ fn a_secured_enhanced_ack_is_armed_before_it_is_published() {
         ],
     );
 }
+
+/// `esp_ieee802154_disable` runs `ieee802154_mac_deinit` first, which frees
+/// the source-132 interrupt before BTBB, the PHY client and the modem clock
+/// are released, and writes no MAC register, even with a reception running
+/// (esp_ieee802154.c `esp_ieee802154_disable`, esp_ieee802154_dev.c
+/// `ieee802154_mac_deinit`). `esp_ieee802154_enable` allocates it last in
+/// `ieee802154_mac_init` (see `enable_follows_the_public_order_and_mac_init`).
+/// The composition mirrors both: it binds the route after the runtime is
+/// installed and quiesces it first on stop.
+#[test]
+fn disable_frees_the_route_before_the_shared_resources_without_mac_writes() {
+    let trace = trace("enable-disable");
+    let received = trace
+        .iter()
+        .position(|line| line == "return esp_ieee802154_receive = 0")
+        .expect("the reception started");
+    let disable: Vec<&str> = trace[received + 1..].iter().map(String::as_str).collect();
+    assert_eq!(
+        disable,
+        [
+            "ext esp_phy_modem_deinit(0x2)",
+            "ext esp_intr_free()",
+            "ext esp_btbb_disable()",
+            "ext esp_phy_disable(0x4)",
+            "ext modem_clock_module_disable(0x7)",
+            "return esp_ieee802154_disable = 0",
+        ]
+    );
+}

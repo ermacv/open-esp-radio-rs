@@ -41,7 +41,7 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "366444d254d520f0d00bc9cfafe5e6b1a9e14b8d8407f92a9a1b43dc60c56591"
+      "sha256": "345a46569bee5fc1aa15279081237822a9400d4d929a58a681fd38919ad51e49"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -69,7 +69,7 @@
     },
     {
       "path": "verification/esp32s31/host/ieee802154",
-      "sha256": "904369fc9fbd09a902f98efbecd887cec04f709044793e81e23fd9857ef8af3a"
+      "sha256": "cdedf926a867ce76b6c75e13636657dfbcfbf2ca3b297dd0a9cae85810bbc264"
     },
     {
       "path": "verification/schema",
@@ -81,6 +81,15 @@
       "suite": "ieee802154-host",
       "source": "esp-idf",
       "symbol": "enable",
+      "production": "oer_ieee802154_engine::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "enable-disable",
       "production": "oer_ieee802154_engine::engine",
       "verdict": "match",
       "cases": 1,

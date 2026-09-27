@@ -613,6 +613,10 @@ fn enable() -> Vec<Step> {
     vec![Step::Enable]
 }
 
+fn enable_disable() -> Vec<Step> {
+    vec![Step::Enable, Step::Receive, Step::Disable]
+}
+
 fn transmit_without_ack() -> Vec<Step> {
     vec![
         Step::Enable,
@@ -730,6 +734,11 @@ pub const SCENARIOS: &[Scenario] = &[
         name: "enable",
         inputs: no_inputs,
         steps: enable,
+    },
+    Scenario {
+        name: "enable-disable",
+        inputs: no_inputs,
+        steps: enable_disable,
     },
     Scenario {
         name: "receive-abort-reasons",

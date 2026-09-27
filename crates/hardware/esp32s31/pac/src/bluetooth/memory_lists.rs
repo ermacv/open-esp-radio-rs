@@ -113,7 +113,8 @@ impl BluetoothMemoryListPointerImage {
 impl BluetoothTaskRegisters {
     /// Finish the reviewed initial RX-list reset after current/next publication.
     ///
-    /// Current `61.o:r_sym_ble_HL6xpyhopnPTnSDqTURd` clears CONTROL_20,
+    /// Pinned `memMgmt_4.o:r_sym_memMgmt_zJpaiu5wcM3sURVaC4Za`
+    /// (`r_ble_lll_mmgmt_reset_rxlink`) clears CONTROL_20,
     /// then freshly reads and writes back the whole current-pointer register.
     /// The second operation preserves any intervening hardware update. Its
     /// broader control/rotation meaning remains unassigned. Selector three
@@ -145,9 +146,9 @@ impl BluetoothTaskRegisters {
 
     /// Program one controller receive-list pointer.
     ///
-    /// SOURCE: complete ESP32-S31 `libble_app.a` `ble_phy.c` member `72.o`
-    /// symbols `r_sym_ble_LboRu27EaU8MV8Q7UUfZ` and
-    /// `r_sym_ble_ZzrExMrn8EDiTFI7PENK`. Their complete bodies are
+    /// SOURCE: complete pinned ESP32-S31 `libble_app.a` `ble_phy.c` member
+    /// `ble_70.o` symbols `r_sym_ble_jhaN9KOsH0u0RgIu2DI9` and
+    /// `r_sym_ble_95olV4pLl0ue84SnuzXf`. Their complete bodies are
     /// instruction-identical to named same-chip
     /// `r_ble_phy_global_curr_rxptr_set` and
     /// `r_ble_phy_global_next_rxptr_set`. Selector values one through three

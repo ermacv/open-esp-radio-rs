@@ -23,18 +23,15 @@ impl DtmRxRssi {
 
 /// Validated result word consumed by the reviewed ESP32-S31 DTM RX callback.
 ///
-/// Complete current linked body
-/// `ble-controller:r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` reads this word at returned
-/// packet-buffer offset `+0x0c`. It accepts the word only when its low 24 bits
-/// are zero and copies the high byte from offset `+0x0f` into DTM state.
-/// Dead-stripped raw-archive body
-/// `r_sym_ble_PptSRbXfefQwMVyO5jxP` independently corroborates that positional
-/// transform but is not its linked effect authority. This controller-memory
-/// projection assigns no meaning to the individual low result bits. Current
-/// `esp_ble_get_dtm_rx_rssi` tail-calls
-/// `r_sym_ble_CLEB51J8jgSOcX50XteR`, whose complete body returns that same DTM
-/// state byte with a signed load. This closes the high-byte role as RSSI while
-/// leaving the low-bit failure meanings and physical unit unresolved.
+/// Complete pinned body `libble_app.a[dtm_4.o]::sym_dtm_ikQ7xyHA5qBHWlaqAjZu`
+/// reads this word at returned packet-buffer offset `+0x0c`. It accepts the
+/// word only when its low 24 bits are zero and copies the high byte from
+/// offset `+0x0f` into DTM state. This controller-memory projection assigns no
+/// meaning to the individual low result bits. `esp_ble_get_dtm_rx_rssi`
+/// reaches `sym_dtm_JMPstxdIRcEVY1YJeXkA` through two tail calls, and that
+/// complete body returns the same DTM state byte with a signed load. This
+/// closes the high-byte role as RSSI while leaving the low-bit failure
+/// meanings and physical unit unresolved.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DtmRxResultProjection(DtmRxRssi);
 

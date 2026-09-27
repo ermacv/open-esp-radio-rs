@@ -78,13 +78,10 @@ fn a_connected_wifi_leaves_the_timer_disarmed_at_the_last_phase() {
     // A connected Wi-Fi does not restart on its own; it restarts per beacon.
     assert_eq!(executor.set_status_bits(CoexStatusType::Ble, 1), None);
     let mut change = executor.restart();
-    loop {
-        match change.timer {
-            CoexPhaseTimer::Arm { generation, .. } => match executor.expire(generation) {
-                CoexExpiry::Changed(next) => change = next,
-                other => panic!("an armed phase steps: {other:?}"),
-            },
-            CoexPhaseTimer::Disarm => break,
+    while let CoexPhaseTimer::Arm { generation, .. } = change.timer {
+        match executor.expire(generation) {
+            CoexExpiry::Changed(next) => change = next,
+            other => panic!("an armed phase steps: {other:?}"),
         }
     }
     assert!(!executor.armed());

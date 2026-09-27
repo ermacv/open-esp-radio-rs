@@ -477,3 +477,13 @@ fn flexible_period_is_kept_without_changing_phase_durations() {
     let mut plain = scanning_beside_ble();
     assert_eq!(plain.set_status_bits(CoexStatusType::Ble, 1), first);
 }
+
+#[test]
+fn only_the_other_radios_status_counts_for_a_radio() {
+    let wifi_only = words([wifi_status::SCAN, 0, 0, 0, 0]);
+    assert!(!wifi_only.others_publish(CoexStatusType::Wifi));
+    assert!(wifi_only.others_publish(CoexStatusType::Ble));
+    let with_ieee802154 = words([wifi_status::SCAN, 0, 0, 0, 1]);
+    assert!(with_ieee802154.others_publish(CoexStatusType::Wifi));
+    assert!(!words([0; 5]).others_publish(CoexStatusType::Ieee802154));
+}

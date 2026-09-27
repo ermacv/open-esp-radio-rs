@@ -97,6 +97,17 @@ pub enum CoexStatusType {
     Ieee802154,
 }
 
+impl CoexStatusType {
+    /// Every radio, in the bit order of `coex_schm_status_bitmap_get`.
+    pub const ALL: [Self; 5] = [
+        Self::Wifi,
+        Self::Ble,
+        Self::Bt,
+        Self::ExternalCoex,
+        Self::Ieee802154,
+    ];
+}
+
 /// Wi-Fi status bits as the vendor Wi-Fi library publishes them. Only the
 /// bits the scheme selection and the phase gating test are named.
 pub mod wifi_status {
@@ -139,6 +150,21 @@ impl CoexStatusWords {
             CoexStatusType::ExternalCoex => &mut self.external_coex,
             CoexStatusType::Ieee802154 => &mut self.ieee802154,
         }
+    }
+
+    /// Whether a radio other than `radio` publishes status: the
+    /// `coex_schm_status_bitmap_get` test of `coex_status_get` with the
+    /// radio's own bit masked out.
+    pub const fn others_publish(&self, radio: CoexStatusType) -> bool {
+        let mut index = 0;
+        while index < CoexStatusType::ALL.len() {
+            let other = CoexStatusType::ALL[index];
+            if other as u8 != radio as u8 && self.word(other) != 0 {
+                return true;
+            }
+            index += 1;
+        }
+        false
     }
 
     /// `coex_schm_is_loop_allowed`: the phases loop only while at least two

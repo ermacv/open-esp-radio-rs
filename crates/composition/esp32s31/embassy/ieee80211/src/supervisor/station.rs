@@ -1922,14 +1922,38 @@ pub(crate) async fn run_connected<'state, 'security>(
                     "exit",
                     _runner.services().hardware().sta_receive_policy_snapshot(),
                 );
+                let statistics = _runner
+                    .services()
+                    .hardware()
+                    .register_access()
+                    .try_receive_statistics_snapshot()
+                    .expect("diagnostics snapshot must not overlap another MMIO transaction");
+                // Short lines: the console truncates long ones.
+                let primary = statistics.primary;
                 diagnostics_event!(
-                    "open-radio: connected exit RX statistics: {:?}",
-                    _runner
-                        .services()
-                        .hardware()
-                        .register_access()
-                        .try_receive_statistics_snapshot()
-                        .expect("diagnostics snapshot must not overlap another MMIO transaction"),
+                    "open-radio: connected exit RX mpdu={} end={} data_success={} other_unicast={} fcs_error={} abort={} signal_field={} power_drop={}",
+                    primary.mpdu_count,
+                    primary.end,
+                    primary.data_success,
+                    primary.other_unicast,
+                    primary.fcs_error,
+                    primary.abort,
+                    primary.signal_field,
+                    primary.power_drop_error,
+                );
+                diagnostics_event!(
+                    "open-radio: connected exit RX buffer_full={} fifo_overflow={} last_unmatched={} bt_block={} ack_irq={} rts_irq={}",
+                    primary.buffer_full,
+                    primary.fifo_overflow,
+                    primary.last_unmatched_error,
+                    primary.bt_block_error,
+                    primary.ack_interrupt,
+                    primary.rts_interrupt,
+                );
+                diagnostics_event!("open-radio: connected exit RX hang={:?}", statistics.hang,);
+                diagnostics_event!(
+                    "open-radio: connected exit RX decode={:?}",
+                    statistics.decode_errors,
                 );
                 diagnostics_event!(
                     "open-radio: connected exit RX DMA: {:?}",

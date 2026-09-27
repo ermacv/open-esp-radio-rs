@@ -44,7 +44,9 @@ use oer_esp32s31_phy::{
     state::client::PhyModemClient,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
-use oer_esp32s31_radio_runtime::{RadioGuard, RadioPhyError, RadioSystem};
+use oer_esp32s31_radio_runtime::{
+    Ieee802154WakeError, Ieee802154WakeFailure, RadioGuard, RadioPhyError, RadioSystem,
+};
 use oer_ieee802154::{AcceptedCommand, RadioCommand};
 
 use crate::maintenance::{
@@ -587,23 +589,23 @@ impl Ieee802154System {
         let Some(Route::Awake(route)) = self.route.take() else {
             unreachable!("RF was open under the admission");
         };
-        let last = match route.suspend_rf(guard.lease()) {
-            Ok((asleep, last)) => {
-                self.route = Some(Route::Asleep(asleep));
-                last
+        let suspended = {
+            let suspended = core::pin::pin!(guard.suspend_ieee802154(route));
+            suspended.await
+        };
+        match suspended {
+            Ok(asleep) => {
+                self.route = Some(Route::Asleep(asleep.route));
+                asleep.rf_closed.map_err(Ieee802154RfError::Close)?;
+                Ok(true)
             }
             Err(failure) => {
                 let error = failure.error();
                 self.route = Some(Route::Awake(failure.into_route()));
                 RUNTIME.open_rf_admission();
-                return Err(Ieee802154RfError::PhyClient(error));
+                Err(Ieee802154RfError::PhyClient(error))
             }
-        };
-        if last {
-            let closed = core::pin::pin!(guard.close_phy_if_idle());
-            closed.await.map_err(Ieee802154RfError::Close)?;
         }
-        Ok(true)
     }
 
     /// `IEEE802154_RF_ENABLE`: wake closed RF, rejoin the RF clients, track
@@ -622,24 +624,24 @@ impl Ieee802154System {
             return Ok(());
         }
         let mut guard = radio.lock().await;
-        {
-            let prepared = core::pin::pin!(guard.prepare_phy());
-            // The domain stayed registered while asleep, so preparation only
-            // wakes RF; there is no registration report to keep.
-            let _woken = prepared.await.map_err(Ieee802154RfError::Wake)?;
-        }
         let Some(Route::Asleep(route)) = self.route.take() else {
             unreachable!("the client was asleep");
         };
-        let acquired = match route.resume_rf(guard.lease(), &mut EmbassyPhyTime) {
+        let resumed = {
+            let resumed = core::pin::pin!(guard.resume_ieee802154(route));
+            resumed.await
+        };
+        let acquired = match resumed {
             Ok((awake, acquired)) => {
                 self.route = Some(Route::Awake(awake));
                 acquired
             }
-            Err(failure) => {
-                let error = failure.error();
-                self.route = Some(Route::Asleep(failure.into_route()));
-                return Err(Ieee802154RfError::PhyClient(error));
+            Err(Ieee802154WakeFailure { error, route }) => {
+                self.route = Some(Route::Asleep(route));
+                return Err(match error {
+                    Ieee802154WakeError::Phy(error) => Ieee802154RfError::Wake(error),
+                    Ieee802154WakeError::Client(error) => Ieee802154RfError::PhyClient(error),
+                });
             }
         };
         RUNTIME.open_rf_admission();

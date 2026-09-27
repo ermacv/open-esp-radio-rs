@@ -78,9 +78,12 @@ pub(crate) enum CliCommand {
         #[command(subcommand)]
         command: ReportCommand,
     },
-    /// Build, flash and execute one catalog scenario.
+    /// Build, flash and execute catalog scenarios in one run under one stand
+    /// lease. Images are built before the run waits for the stand.
     Run {
-        scenario: String,
+        /// Scenarios in execution order within each image class.
+        #[arg(required = true, num_args = 1..)]
+        scenarios: Vec<String>,
         /// Explicit nonignored untracked source file; repeat for each included file.
         #[arg(
             long = "source-include",
@@ -91,7 +94,8 @@ pub(crate) enum CliCommand {
         /// Standalone AP: RR or deficit with the same HT/OFDM24 response-envelope model (3000-us quantum).
         #[arg(long, value_enum)]
         ap_scheduler: Option<ApScheduler>,
-        /// Use the scenario's image class from a sealed earlier HIL run.
+        /// Use the scenarios' image class from a sealed earlier HIL run; every
+        /// selected scenario must use that class.
         #[arg(long, value_name = "RUN_ID")]
         firmware_from: Option<String>,
         /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.

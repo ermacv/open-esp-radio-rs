@@ -269,20 +269,22 @@ pub(crate) fn run() -> Result<()> {
             }
         },
         CliCommand::Run {
-            scenario: id,
+            scenarios,
             source_include,
             ap_scheduler,
             firmware_from,
             network,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
-            let mut selected = catalog.get(&id)?.clone();
-            preflight::configure_run_selection(
-                &mut selected,
-                ap_scheduler.map(Into::into),
-                firmware_from.is_some(),
-                network,
-            )?;
+            let mut selected = orchestration::named_scenarios(&catalog, &scenarios)?;
+            for scenario in &mut selected {
+                preflight::configure_run_selection(
+                    scenario,
+                    ap_scheduler.map(Into::into),
+                    firmware_from.is_some(),
+                    network,
+                )?;
+            }
             let snapshot = if firmware_from.is_none() {
                 Some(image::snapshot::capture(&root, &source_include)?)
             } else {
@@ -290,32 +292,32 @@ pub(crate) fn run() -> Result<()> {
             };
             let firmware = match firmware_from {
                 Some(run_id) => {
+                    let class = orchestration::single_image_class(&selected)?;
                     RunFirmware::Replay(Box::new(hil_core::evidence::verify::archived_firmware(
-                        &root,
-                        "esp32s31",
-                        &run_id,
-                        selected.image(),
+                        &root, "esp32s31", &run_id, class,
                     )?))
                 }
                 None => RunFirmware::BuildCurrent(network),
             };
             let lab = lab::config::LabConfig::load(&lab_path)?;
-            let required = selected.requirements();
+            let selected = selected.iter().collect::<Vec<_>>();
+            let required = requirements(&selected);
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
+            let invocation = orchestration::Invocation {
+                arguments: invocation,
+                snapshot,
+            };
             // Orchestration builds the images, then leases the stand.
-            orchestration::run_one(
-                &root,
-                &lab,
-                &catalog,
-                &selected,
-                firmware,
-                orchestration::Invocation {
-                    arguments: invocation,
-                    snapshot,
-                },
-            )
+            match selected.as_slice() {
+                [single] => {
+                    orchestration::run_one(&root, &lab, &catalog, single, firmware, invocation)
+                }
+                _ => {
+                    orchestration::run_many(&root, &lab, &catalog, &selected, firmware, invocation)
+                }
+            }
         }
         CliCommand::RunAll {
             tag,

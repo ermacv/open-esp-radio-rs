@@ -115,6 +115,85 @@ pub(crate) fn run_one(
     finish_run(session, results)
 }
 
+/// Execute several explicitly named scenarios as one run: the images are
+/// built first, then one stand lease covers every flash and scenario.
+pub(crate) fn run_many(
+    root: &Path,
+    lab: &LabConfig,
+    catalog: &Catalog,
+    selected: &[&Scenario],
+    firmware: RunFirmware,
+    invocation: Invocation,
+) -> Result<()> {
+    let mut session = start_run(
+        root,
+        lab,
+        catalog,
+        selected,
+        scenarios_description(selected),
+        Some(firmware.plan()),
+        invocation,
+    )?;
+    let prebuilt = match &firmware {
+        RunFirmware::BuildCurrent(network) => prebuild(&mut session, lab, selected, *network)?,
+        RunFirmware::Replay(_) => Vec::new(),
+    };
+    let _fixture = lease_stand(&mut session, lab, selected)?;
+    let results = {
+        let mut operations = LiveSuite {
+            root,
+            lab,
+            firmware: FirmwarePreparation::Selected(&firmware),
+            prebuilt,
+        };
+        execute_selected(&mut session, &mut operations, selected)?
+    };
+    finish_run(session, results)
+}
+
+/// The named catalog scenarios, in order; each may be named once.
+pub(crate) fn named_scenarios(catalog: &Catalog, ids: &[String]) -> Result<Vec<Scenario>> {
+    ids.iter()
+        .enumerate()
+        .map(|(index, id)| {
+            if ids[..index].contains(id) {
+                return Err(format!("scenario `{id}` is selected twice").into());
+            }
+            catalog.get(id).cloned()
+        })
+        .collect()
+}
+
+/// The one image class a replayed firmware must serve.
+pub(crate) fn single_image_class(selected: &[Scenario]) -> Result<ImageClass> {
+    let first = selected.first().ok_or("no scenario selected")?;
+    match selected
+        .iter()
+        .find(|scenario| scenario.image() != first.image())
+    {
+        Some(other) => Err(format!(
+            "--firmware-from replays one image class; `{}` uses `{}`, `{}` uses `{}`",
+            first.id(),
+            first.image().id(),
+            other.id(),
+            other.image().id()
+        )
+        .into()),
+        None => Ok(first.image()),
+    }
+}
+
+pub(crate) fn scenarios_description(selected: &[&Scenario]) -> String {
+    format!(
+        "scenarios: {}",
+        selected
+            .iter()
+            .map(|scenario| scenario.id())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
 /// Build the current-source image of every class with a scenario whose
 /// configuration preconditions hold. Building needs no hardware, so it runs
 /// before the stand is leased; flashing and execution follow under the lease.

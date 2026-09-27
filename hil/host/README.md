@@ -93,9 +93,15 @@ images before it queues, so the lease covers flashing and execution only.
 ```console
 cargo hil queue                       # holder, queue with expected starts, board state
 cargo hil --budget 10m run <scenario> # one run, one lease
-cargo hil --owner phy lease --budget 40m -- sh -c 'cargo hil run a && cargo hil run b'
+cargo hil --budget 30m run a b c      # one run of three scenarios, one lease
+cargo hil --owner phy lease --budget 40m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
 
+`run` accepts several scenarios: it builds every needed image class before
+queueing and executes all scenarios in one run bundle under one lease, in the
+given order within each image class. With `--firmware-from` every named
+scenario must use the replayed image class. Prefer it to a shell loop under
+`lease`, where each nested run builds while the stand is held.
 `lease` runs one command under one lease; every `cargo hil` command inside it
 joins that lease, so no other owner can flash between the runs of a series. The
 lease options precede the HIL command, or follow `lease`:

@@ -338,3 +338,27 @@ fn run_all_selection_has_one_ordered_image_plan_and_requirement_union() {
         );
     }
 }
+
+#[test]
+fn named_scenarios_keep_their_order_and_replay_needs_one_image_class() {
+    let catalog = catalog();
+    let [first, second] = two_same_image(&catalog);
+    let ids = [second.id().to_owned(), first.id().to_owned()];
+    let selected = named_scenarios(&catalog, &ids).unwrap();
+    assert_eq!(selected[0].id(), second.id());
+    assert_eq!(single_image_class(&selected).unwrap(), first.image());
+    let refs = selected.iter().collect::<Vec<_>>();
+    assert_eq!(
+        scenarios_description(&refs),
+        format!("scenarios: {}, {}", second.id(), first.id())
+    );
+    assert!(named_scenarios(&catalog, &[ids[0].clone(), ids[0].clone()]).is_err());
+    assert!(named_scenarios(&catalog, &[String::from("no-such-scenario")]).is_err());
+    let other = catalog
+        .all()
+        .iter()
+        .find(|scenario| scenario.image() != first.image())
+        .unwrap();
+    let mixed = named_scenarios(&catalog, &[first.id().to_owned(), other.id().to_owned()]).unwrap();
+    assert!(single_image_class(&mixed).is_err());
+}

@@ -80,7 +80,7 @@ open-radio-hil = [
 # joint Wi-Fi/Bluetooth coexistence scenarios through the Wi-Fi console.
 wifi-ble-coex = [
     "open-radio-hil",
-    "oer-esp32s31-ieee80211-system/diagnostics",
+    "driver-observation",
     "dep:oer-esp32s31-hal",
     "dep:oer-bluetooth-controller",
     "dep:oer-bluetooth-hci",

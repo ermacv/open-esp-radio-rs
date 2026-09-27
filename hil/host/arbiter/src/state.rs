@@ -54,6 +54,9 @@ impl Claim {
 
 impl std::fmt::Display for Claim {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(range) = crate::spectrum::Spectrum::parse(&self.resource) {
+            return range.fmt(f);
+        }
         match self.mode {
             Mode::Exclusive => f.write_str(&self.resource),
             Mode::Shared => write!(f, "{} (shared)", self.resource),
@@ -82,22 +85,47 @@ pub(crate) fn normalize(claims: &[Claim]) -> Vec<Claim> {
     normalized
 }
 
-/// Whether two sets of claims cannot be held at once.
+/// Whether two sets of claims cannot be held at once. When both carry
+/// frequency ranges, the ranges order their radio use and the coarse air
+/// claim is left to arbiters without ranges.
 pub(crate) fn conflict(a: &[Claim], b: &[Claim]) -> bool {
+    use crate::spectrum::{is_range, ranges};
     let whole = |claims: &[Claim]| claims.iter().any(|claim| claim.resource == STAND);
-    whole(a)
-        || whole(b)
-        || a.iter().any(|x| {
-            b.iter().any(|y| {
-                x.resource == y.resource && (x.mode == Mode::Exclusive || y.mode == Mode::Exclusive)
-            })
+    if whole(a) || whole(b) {
+        return true;
+    }
+    let (a_ranges, b_ranges) = (ranges(a), ranges(b));
+    let by_ranges = !a_ranges.is_empty() && !b_ranges.is_empty();
+    if by_ranges
+        && a_ranges
+            .iter()
+            .any(|x| b_ranges.iter().any(|y| x.conflicts(y)))
+    {
+        return true;
+    }
+    a.iter().any(|x| {
+        b.iter().any(|y| {
+            x.resource == y.resource
+                && !is_range(&x.resource)
+                && !(by_ranges && x.resource == AIR)
+                && (x.mode == Mode::Exclusive || y.mode == Mode::Exclusive)
         })
+    })
 }
 
 /// Whether a lease holding `outer` already holds everything in `inner`.
 pub(crate) fn covers(outer: &[Claim], inner: &[Claim]) -> bool {
+    use crate::spectrum::Spectrum;
+    let held_ranges = crate::spectrum::ranges(outer);
     outer.iter().any(|claim| claim.resource == STAND)
         || inner.iter().all(|wanted| {
+            if let Some(range) = Spectrum::parse(&wanted.resource) {
+                // An exclusive coarse air claim holds every range.
+                return held_ranges.iter().any(|held| held.covers(&range))
+                    || outer
+                        .iter()
+                        .any(|held| held.resource == AIR && held.mode == Mode::Exclusive);
+            }
             wanted.resource != STAND
                 && outer.iter().any(|held| {
                     held.resource == wanted.resource
@@ -226,6 +254,38 @@ mod tests {
         );
         assert!(conflict(&s31, &s31), "one board has one holder");
         assert!(conflict(&[Claim::stand()], &c5));
+    }
+
+    #[test]
+    fn ranges_order_radio_use_between_new_leases_and_the_air_claim_for_old_ones() {
+        use crate::spectrum::{BAND_2G4, BAND_5G, Emits, Need, Spectrum};
+        use Mode::{Exclusive, Shared};
+        let with = |board: &str, range: Spectrum| {
+            let mut claims = vec![Claim::board(board)];
+            claims.extend(range.claims());
+            normalize(&claims)
+        };
+        let calibration = with("a", Spectrum::new(BAND_2G4, Need::Strict, Emits::Normal));
+        let five = with("b", Spectrum::new(BAND_5G, Need::Tolerant, Emits::Normal));
+        let peer = with("d", Spectrum::ieee802154(15, Need::Tolerant, Emits::Normal));
+        assert!(
+            !conflict(&calibration, &five),
+            "disjoint bands run together"
+        );
+        assert!(
+            conflict(&calibration, &peer),
+            "a strict band excludes a transmitter in it"
+        );
+        assert!(!conflict(&five, &peer));
+        // A lease from a checkout without ranges claims only the air.
+        let old_shared = claims(&[("board:c", Exclusive), (AIR, Shared)]);
+        let old_exclusive = claims(&[("board:c", Exclusive), (AIR, Exclusive)]);
+        assert!(
+            conflict(&calibration, &old_shared),
+            "strict holds the air exclusively"
+        );
+        assert!(!conflict(&five, &old_shared));
+        assert!(conflict(&five, &old_exclusive));
         assert!(!conflict(
             &claims(&[("x", Shared)]),
             &claims(&[("y", Exclusive)])

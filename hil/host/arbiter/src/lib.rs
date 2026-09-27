@@ -22,6 +22,7 @@ mod history;
 mod notify;
 mod process;
 mod queue;
+pub mod spectrum;
 mod state;
 mod status;
 mod store;

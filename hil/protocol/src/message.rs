@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 180;
+pub const PROTOCOL_VERSION: u16 = 181;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -110,6 +110,9 @@ pub struct FeatureCapabilities {
     /// Destructive checkpoints in actual PHY maintenance; diagnostic only.
     #[serde(default)]
     pub phy_fault_injection: bool,
+    /// Read-only windows of the radio-PHY register image.
+    #[serde(default)]
+    pub phy_register_image: bool,
     pub bluetooth_dtm: bool,
     pub udp: bool,
     pub tcp: bool,
@@ -579,6 +582,8 @@ pub enum Command {
     /// Take Wi-Fi off the shared radio and bring it up again from
     /// role-neutral ownership.
     RestartRadio,
+    /// Read a window of the radio-PHY register image without effect.
+    PhyRegisterImage(crate::PhyRegisterImageRequest),
 }
 
 impl WireBody for Command {
@@ -1164,6 +1169,8 @@ pub enum Event {
     StartupArtifact(StartupArtifactChunk),
     /// Reliable completion of an idle Wi-Fi restart on the shared radio.
     WifiRadioRestarted(WifiRadioRestartEvidence),
+    /// Correlated response to [`Command::PhyRegisterImage`].
+    PhyRegisterImage(crate::PhyRegisterImageWords),
 }
 
 impl WireBody for Event {

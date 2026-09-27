@@ -1761,6 +1761,7 @@ pub async fn run(
         None => radio,
     };
     let radio = SHARED_RADIO.init(radio);
+    phy_register_image::install(radio);
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
     spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task must allocate once"));
     #[cfg(feature = "wifi-ble-coex")]
@@ -2547,3 +2548,4 @@ async fn wifi_role_task(
 
 #[cfg(feature = "driver-observation")]
 mod phy_diagnostics;
+pub(crate) mod phy_register_image;

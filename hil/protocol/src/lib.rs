@@ -17,9 +17,13 @@ pub use bluetooth_secure_gatt::{
 mod system;
 pub use system::{BootEvidence, ResetReason, WatchdogTestMode};
 mod phy_fault;
+mod phy_register_image;
 pub use phy_fault::{
     PhyFaultCommand, PhyFaultEvidence, PhyFaultMode, PhyFaultPhase, PhyTrackingCommand,
     PhyTrackingEvidence,
+};
+pub use phy_register_image::{
+    PHY_REGISTER_IMAGE_WORDS, PhyRegisterImageRequest, PhyRegisterImageWords,
 };
 mod framing;
 #[cfg(feature = "async-io")]

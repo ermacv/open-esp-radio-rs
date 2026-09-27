@@ -278,6 +278,24 @@ impl SerialCapture {
         Ok((capabilities, startup_artifact_status))
     }
 
+    /// Read a window of the target's radio-PHY register image.
+    pub fn read_phy_register_image(
+        &self,
+        request: oer_hil_protocol::PhyRegisterImageRequest,
+        timeout: Duration,
+    ) -> Result<oer_hil_protocol::PhyRegisterImageWords> {
+        match self
+            .send_command(0, Command::PhyRegisterImage(request), timeout)?
+            .body
+        {
+            Event::PhyRegisterImage(words) => Ok(words),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected a register image read: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid register image response".into()),
+        }
+    }
+
     pub fn query_operation_status(&self, timeout: Duration) -> Result<OperationStatus> {
         match self.send_command(0, Command::GetStatus, timeout)?.body {
             Event::OperationStatus(status) => Ok(status),

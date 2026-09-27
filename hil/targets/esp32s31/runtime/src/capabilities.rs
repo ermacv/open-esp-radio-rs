@@ -23,6 +23,10 @@ pub const fn hil_capabilities() -> Capabilities {
             bluetooth_watchdog_reset: false,
             system_watchdog: false,
             phy_fault_injection: cfg!(feature = "phy-fault-injection"),
+            phy_register_image: cfg!(all(
+                feature = "open-radio-hil",
+                not(feature = "memory-benchmark")
+            )),
             udp: !cfg!(feature = "memory-benchmark"),
             tcp: !cfg!(feature = "memory-benchmark"),
             rx: !cfg!(feature = "memory-benchmark"),

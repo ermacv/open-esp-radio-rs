@@ -1005,6 +1005,28 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         queue_event_reliably(session_id, request_id, response).await;
                     }
+                    Command::PhyRegisterImage(request) => {
+                        let response = if session_id != 0 {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else {
+                            #[cfg(all(
+                                feature = "open-radio-hil",
+                                not(feature = "memory-benchmark")
+                            ))]
+                            {
+                                crate::product_hil::phy_register_image::read(request).await
+                            }
+                            #[cfg(not(all(
+                                feature = "open-radio-hil",
+                                not(feature = "memory-benchmark")
+                            )))]
+                            {
+                                let _ = request;
+                                Event::Rejected(RejectReason::Unsupported)
+                            }
+                        };
+                        queue_event_reliably(session_id, request_id, response).await;
+                    }
                     Command::PhyFault(control) => {
                         let response = if session_id == 0 {
                             crate::phy_fault::control(control)

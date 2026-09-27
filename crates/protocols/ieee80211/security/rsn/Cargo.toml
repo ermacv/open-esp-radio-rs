@@ -16,6 +16,7 @@ pbkdf2 = { version = "0.12.2", default-features = false, features = ["hmac"] }
 sha1 = { version = "0.10.7", default-features = false }
 sha2 = { version = "0.10.9", default-features = false }
 cmac = { version = "0.7.2", default-features = false }
+p256 = { version = "0.13.2", default-features = false, features = ["arithmetic", "expose-field"] }
 subtle = { version = "2.6.1", default-features = false }
 zeroize = { version = "1.9.0", default-features = false, features = ["derive"] }
 

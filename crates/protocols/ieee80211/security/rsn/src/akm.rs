@@ -10,7 +10,6 @@ use cmac::Cmac;
 use hmac::{Hmac, Mac};
 use oer_ieee80211_mac::security::rsn::ieee_suite;
 use sha1::Sha1;
-use sha2::Sha256;
 use zeroize::Zeroize;
 
 use crate::{RSN_KCK_LEN, RSN_PTK_LEN};
@@ -146,28 +145,10 @@ fn prf_sha1(pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
     ptk
 }
 
-/// IEEE 802.11 KDF-SHA-256-384 with the pairwise expansion label: HMAC-SHA-256
-/// over a little-endian block counter from one, the label, the context and
-/// the little-endian output length in bits.
+/// IEEE 802.11 KDF-SHA-256-384 with the pairwise expansion label.
 fn kdf_sha256(pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
-    const OUTPUT_BITS: u16 = (RSN_PTK_LEN * 8) as u16;
     let mut ptk = [0; RSN_PTK_LEN];
-    let mut written = 0;
-    let mut counter = 1_u16;
-    while written < ptk.len() {
-        let mut mac =
-            Hmac::<Sha256>::new_from_slice(pmk).expect("PMK length is always accepted by HMAC");
-        mac.update(&counter.to_le_bytes());
-        mac.update(PTK_EXPANSION_LABEL);
-        mac.update(context);
-        mac.update(&OUTPUT_BITS.to_le_bytes());
-        let mut block = mac.finalize().into_bytes();
-        let count = core::cmp::min(block.len(), ptk.len() - written);
-        ptk[written..written + count].copy_from_slice(&block[..count]);
-        block.zeroize();
-        written += count;
-        counter += 1;
-    }
+    crate::kdf::kdf_sha256(pmk, PTK_EXPANSION_LABEL, context, &mut ptk);
     ptk
 }
 

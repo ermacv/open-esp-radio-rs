@@ -2067,6 +2067,7 @@ dependencies = [
  "cmac",
  "hmac",
  "oer-ieee80211-mac",
+ "p256",
  "pbkdf2",
  "sha1",
  "sha2",

@@ -345,8 +345,8 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
 
 #[unsafe(link_section = ".rtc_fast.persistent")]
 #[unsafe(no_mangle)]
-static OER_RESET_TRACE: [core::sync::atomic::AtomicU32; 4] =
-    [const { core::sync::atomic::AtomicU32::new(0) }; 4];
+static OER_RESET_TRACE: [core::sync::atomic::AtomicU32; 6] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 6];
 
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
@@ -356,6 +356,8 @@ extern "C" fn runtime_main() -> ! {
             Some(r) => r as u32,
             None => 0xff,
         };
+        OER_RESET_TRACE[4].store(OER_RESET_TRACE[5].load(SeqCst), SeqCst);
+        OER_RESET_TRACE[5].store(OER_RESET_TRACE[0].load(SeqCst), SeqCst);
         OER_RESET_TRACE[0].store(OER_RESET_TRACE[1].load(SeqCst), SeqCst);
         OER_RESET_TRACE[1].store(0xb000_0000 | reason, SeqCst);
     }
@@ -374,7 +376,7 @@ extern "C" fn runtime_main() -> ! {
         };
         unsafe {
             ets_printf(
-                c"OER_TRACE wake=%x runtime=%x reset_prev=%x reset_now=%x panic=%x mepc=%x\r\n"
+                c"OER_TRACE wake=%x runtime=%x reset_prev=%x reset_now=%x panic=%x mepc=%x older=%x %x\r\n"
                     .as_ptr(),
                 wake,
                 runtime,
@@ -382,6 +384,8 @@ extern "C" fn runtime_main() -> ! {
                 OER_RESET_TRACE[1].load(SeqCst),
                 OER_RESET_TRACE[2].load(SeqCst),
                 OER_RESET_TRACE[3].load(SeqCst),
+                OER_RESET_TRACE[4].load(SeqCst),
+                OER_RESET_TRACE[5].load(SeqCst),
             )
         };
     }

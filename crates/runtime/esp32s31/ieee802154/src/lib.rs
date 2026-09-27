@@ -1,5 +1,5 @@
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 
 //! Executor-independent IEEE 802.15.4 radio runtime for the ESP32-S31.
@@ -613,13 +613,17 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
                 events: &self.events,
                 lost: &self.lost,
             };
+            trace(0x8001);
             let accepted = installed
                 .radio
                 .submit(&mut installed.hardware, command, &mut sink);
+            trace(0x8002);
             Ok((accepted, installed.radio.take_delay()))
         });
         let (accepted, backoff) = submitted?;
+        trace(0x8003);
         self.start_backoff(backoff);
+        trace(0x8004);
         accepted.map_err(Ieee802154RuntimeError::Rejected)
     }
 
@@ -781,3 +785,11 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
 
 #[cfg(test)]
 mod tests;
+
+#[allow(unsafe_code)]
+fn trace(value: u32) {
+    unsafe extern "C" {
+        static OER_RUNTIME_TRACE: core::sync::atomic::AtomicU32;
+    }
+    unsafe { OER_RUNTIME_TRACE.store(value, core::sync::atomic::Ordering::SeqCst) };
+}

@@ -1,4 +1,5 @@
-//! Station authentication, disconnect and action frame codecs.
+//! Station authentication, disconnect, deauthentication and action frame
+//! codecs.
 
 use super::*;
 
@@ -52,25 +53,46 @@ pub struct StaDisconnect {
     pub reason_code: u16,
 }
 
-/// One unprotected STA-originated Action management frame.
+/// Management subtype of a frame this station originates after association.
 ///
-/// BlockAck negotiation uses this common 24-byte management header followed
-/// by the nine-byte action body owned by the MAC BlockAck state machine.
+/// An Action frame carries a category-led body; a Deauthentication carries
+/// its two-byte reason code. Both are robust under management frame
+/// protection except the Action categories the standard exempts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaManagementSubtype {
+    Action,
+    Deauthentication,
+}
+
+impl StaManagementSubtype {
+    const fn frame_control(self) -> u16 {
+        match self {
+            Self::Action => ACTION_FRAME_CONTROL,
+            Self::Deauthentication => DEAUTHENTICATION_FRAME_CONTROL,
+        }
+    }
+}
+
+/// One unprotected STA-originated management frame.
+///
+/// BlockAck negotiation sends an Action whose nine-byte body the MAC
+/// BlockAck state machine owns; a leaving station sends a Deauthentication
+/// with its reason code.
 ///
 /// `SOURCE[PROMOTED_RX_AMPDU]`: reviewed promoted ADDBA response builder,
 /// where the same header was constructed around
-/// `rx_ampdu::write_successful_addba_response`; the frame-control subtype is
-/// the IEEE 802.11 Action management subtype also parsed by
-/// `libnet80211.a`.
+/// `rx_ampdu::write_successful_addba_response`; the frame-control subtypes
+/// are the IEEE 802.11 management subtypes also parsed by `libnet80211.a`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StaActionFrame<'a> {
+pub struct StaManagementFrame<'a> {
+    pub subtype: StaManagementSubtype,
     pub source: [u8; 6],
     pub bssid: [u8; 6],
     pub sequence_number: SequenceNumber,
     pub body: &'a [u8],
 }
 
-impl StaActionFrame<'_> {
+impl StaManagementFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
         validate_peer(self.bssid)?;
         let required = MANAGEMENT_HEADER_LEN.checked_add(self.body.len()).ok_or(
@@ -86,7 +108,7 @@ impl StaActionFrame<'_> {
         frame.fill(0);
         write_management_header(
             frame,
-            ACTION_FRAME_CONTROL,
+            self.subtype.frame_control(),
             self.bssid,
             self.source,
             self.bssid,
@@ -97,8 +119,8 @@ impl StaActionFrame<'_> {
     }
 }
 
-/// One robust STA-originated Action management frame under the pairwise
-/// key of an association that protects its management frames.
+/// One robust STA-originated management frame under the pairwise key of an
+/// association that protects its management frames.
 ///
 /// The frame carries the Protected bit and the CCMP header; hardware appends
 /// the MIC, as for protected data. The vendor protects a robust management
@@ -107,7 +129,8 @@ impl StaActionFrame<'_> {
 /// SOURCE: complete pinned `libnet80211.a[ieee80211_crypto.o]::
 /// ieee80211_crypto_encap` and `[ieee80211_crypto_ccmp.o]::ccmp_encap`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StaProtectedActionFrame<'a> {
+pub struct StaProtectedManagementFrame<'a> {
+    pub subtype: StaManagementSubtype,
     pub source: [u8; 6],
     pub bssid: [u8; 6],
     pub sequence_number: SequenceNumber,
@@ -115,7 +138,7 @@ pub struct StaProtectedActionFrame<'a> {
     pub body: &'a [u8],
 }
 
-impl StaProtectedActionFrame<'_> {
+impl StaProtectedManagementFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
         validate_peer(self.bssid)?;
         let body_start = MANAGEMENT_HEADER_LEN + CCMP_HEADER_LEN;
@@ -133,7 +156,7 @@ impl StaProtectedActionFrame<'_> {
         frame.fill(0);
         write_management_header(
             frame,
-            ACTION_FRAME_CONTROL | PROTECTED_FRAME,
+            self.subtype.frame_control() | PROTECTED_FRAME,
             self.bssid,
             self.source,
             self.bssid,

@@ -97,8 +97,9 @@ pub use data::{
 pub use management::{
     OpenAuthenticationRequest, OpenAuthenticationResponse, SAE_AUTHENTICATION_ALGORITHM,
     SAE_COMMIT_TRANSACTION, SAE_CONFIRM_TRANSACTION, SaeAuthentication, SaeAuthenticationFrame,
-    StaActionFrame, StaDisconnect, StaDisconnectKind, StaProtectedActionFrame,
-    parse_open_authentication_response, parse_sae_authentication, parse_sta_disconnect,
+    StaDisconnect, StaDisconnectKind, StaManagementFrame, StaManagementSubtype,
+    StaProtectedManagementFrame, parse_open_authentication_response, parse_sae_authentication,
+    parse_sta_disconnect,
 };
 pub use security::{SelectedAkm, SelectedRsn, StaSecurityError, select_association_rsn};
 

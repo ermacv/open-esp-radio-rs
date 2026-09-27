@@ -97,7 +97,8 @@ fn encodes_open_authentication_request() {
 fn encodes_sta_action_frame_around_owned_body() {
     let body = [3, 1, 7, 0, 0, 0x02, 0x04, 0, 0];
     let mut output = [0xa5; 40];
-    let length = StaActionFrame {
+    let length = StaManagementFrame {
+        subtype: StaManagementSubtype::Action,
         source: LOCAL,
         bssid: BSSID,
         sequence_number: seq(0x123),
@@ -120,7 +121,8 @@ fn encodes_protected_action_frame_with_its_ccmp_header() {
     let body = [8, 1, 0x12, 0x34];
     let ccmp_header = [5, 0, 0, 0x20, 0, 0, 0, 0];
     let mut output = [0xa5; 40];
-    let length = StaProtectedActionFrame {
+    let length = StaProtectedManagementFrame {
+        subtype: StaManagementSubtype::Action,
         source: LOCAL,
         bssid: BSSID,
         sequence_number: seq(0x123),
@@ -138,6 +140,46 @@ fn encodes_protected_action_frame_with_its_ccmp_header() {
     assert_eq!(&output[24..32], &ccmp_header);
     assert_eq!(&output[32..36], &body);
     assert_eq!(output[36], 0xa5);
+}
+
+#[test]
+fn a_deauthentication_carries_its_reason_plain_or_protected() {
+    let reason = 3_u16.to_le_bytes();
+    let mut output = [0xa5; 40];
+    let length = StaManagementFrame {
+        subtype: StaManagementSubtype::Deauthentication,
+        source: LOCAL,
+        bssid: BSSID,
+        sequence_number: seq(0x10),
+        body: &reason,
+    }
+    .encode(&mut output)
+    .unwrap();
+    assert_eq!(length, 26);
+    assert_eq!(
+        parse_sta_disconnect(&output[..length], LOCAL, BSSID),
+        None,
+        "the station's own Deauthentication is not addressed to it"
+    );
+    assert_eq!(&output[0..2], &[0xc0, 0]);
+    assert_eq!(&output[4..10], &BSSID);
+    assert_eq!(&output[24..26], &reason);
+
+    let ccmp_header = [5, 0, 0, 0x20, 0, 0, 0, 0];
+    let length = StaProtectedManagementFrame {
+        subtype: StaManagementSubtype::Deauthentication,
+        source: LOCAL,
+        bssid: BSSID,
+        sequence_number: seq(0x11),
+        ccmp_header,
+        body: &reason,
+    }
+    .encode(&mut output)
+    .unwrap();
+    assert_eq!(length, 34);
+    assert_eq!(&output[0..2], &[0xc0, 0x40]);
+    assert_eq!(&output[24..32], &ccmp_header);
+    assert_eq!(&output[32..34], &reason);
 }
 
 #[test]

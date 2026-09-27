@@ -1121,6 +1121,21 @@ fn require_full_range(operation: &str, field: &FieldInfo, width: u32) -> Result<
     Ok(())
 }
 
+/// Register properties of `register` after device and peripheral defaults.
+pub(crate) fn merged_properties(
+    device: &Device,
+    peripheral: &svd_rs::Peripheral,
+    register: &svd_rs::Register,
+) -> RegisterProperties {
+    merge_properties(
+        merge_properties(
+            device.default_register_properties,
+            peripheral.default_register_properties,
+        ),
+        register.properties,
+    )
+}
+
 const fn merge_properties(
     parent: RegisterProperties,
     child: RegisterProperties,

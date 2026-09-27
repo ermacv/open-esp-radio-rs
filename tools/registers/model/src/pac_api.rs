@@ -49,6 +49,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub register_image_writes: Vec<RegisterImageWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub partition_image_reads: Vec<PartitionImageRead>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zero_based_field_writes: Vec<ZeroBasedFieldWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sampled_bit_zero_writes: Vec<SampledBitZeroWrite>,
@@ -374,6 +376,18 @@ pub struct RegisterImageWrite {
     pub exposure: PacApiExposure,
     pub sources: Vec<String>,
 }
+/// Read-only observation of every readable register of one ownership
+/// partition, by index, for hardware cross-checks of calibrated state.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PartitionImageRead {
+    pub name: String,
+    /// Ownership partition type whose readable registers are observed.
+    pub partition: String,
+    pub exposure: PacApiExposure,
+    pub sources: Vec<String>,
+}
+
 /// One complete ordinary-register image captured into a reviewed opaque or
 /// otherwise full-width value domain.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -542,6 +556,7 @@ impl PacApiPack {
         validate_operations("w1c-register-snapshot", &self.w1c_register_snapshots)?;
         validate_operations("register-image-read", &self.register_image_reads)?;
         validate_operations("register-image-write", &self.register_image_writes)?;
+        self.validate_partition_image_reads()?;
         validate_operations("zero-based-field-write", &self.zero_based_field_writes)?;
         validate_operations("sampled-bit-zero-write", &self.sampled_bit_zero_writes)?;
         validate_operations("zero-register-write", &self.zero_register_writes)?;
@@ -985,6 +1000,33 @@ impl PacApiPack {
         Ok(())
     }
 
+    fn validate_partition_image_reads(&self) -> Result<()> {
+        let mut names = BTreeSet::new();
+        for operation in &self.partition_image_reads {
+            if !is_lower_snake_case(&operation.name)
+                || is_rust_keyword(&operation.name)
+                || !names.insert(operation.name.as_str())
+            {
+                return Err(Error::message(format!(
+                    "PAC API partition-image-read name {:?} is not a unique lower snake case Rust name",
+                    operation.name
+                )));
+            }
+            if !self
+                .ownership_partitions
+                .iter()
+                .any(|partition| partition.name == operation.partition)
+            {
+                return Err(Error::message(format!(
+                    "PAC API partition-image-read {:?} names unknown ownership partition {:?}",
+                    operation.name, operation.partition
+                )));
+            }
+            validate_sources("partition-image-read", &operation.name, &operation.sources)?;
+        }
+        Ok(())
+    }
+
     fn validate_ownership_partitions(&self) -> Result<()> {
         let mut names = BTreeSet::new();
         let mut members = BTreeSet::new();
@@ -1092,6 +1134,7 @@ impl PacApiPack {
             + self.w1c_register_snapshots.len()
             + self.register_image_reads.len()
             + self.register_image_writes.len()
+            + self.partition_image_reads.len()
             + self.zero_based_field_writes.len()
             + self.sampled_bit_zero_writes.len()
             + self.zero_register_writes.len()
@@ -1167,6 +1210,11 @@ impl PacApiPack {
                     .chain(self.w1c_register_snapshots.iter().map(Operation::sources))
                     .chain(self.register_image_reads.iter().map(Operation::sources))
                     .chain(self.register_image_writes.iter().map(Operation::sources))
+                    .chain(
+                        self.partition_image_reads
+                            .iter()
+                            .map(|operation| operation.sources.as_slice()),
+                    )
                     .chain(self.zero_based_field_writes.iter().map(Operation::sources))
                     .chain(self.sampled_bit_zero_writes.iter().map(Operation::sources))
                     .chain(self.zero_register_writes.iter().map(Operation::sources))
@@ -1690,10 +1738,10 @@ fn is_rust_keyword(value: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn empty_pack() -> PacApiPack {
+    pub(crate) fn empty_pack() -> PacApiPack {
         PacApiPack {
             schema: 5,
             options: PacApiOptions::default(),
@@ -1715,6 +1763,7 @@ mod tests {
             w1c_register_snapshots: Vec::new(),
             register_image_reads: Vec::new(),
             register_image_writes: Vec::new(),
+            partition_image_reads: Vec::new(),
             zero_based_field_writes: Vec::new(),
             sampled_bit_zero_writes: Vec::new(),
             zero_register_writes: Vec::new(),

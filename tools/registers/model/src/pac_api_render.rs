@@ -395,6 +395,7 @@ impl PacApiPack {
                 index,
             ));
         }
+        output.push_str(&self.render_partition_image_bridges());
         Ok(output)
     }
 
@@ -491,6 +492,7 @@ impl PacApiPack {
         output.push_str(&self.render_w1c_register_snapshots(&device)?);
         output.push_str(&self.render_register_image_reads(&device)?);
         output.push_str(&self.render_register_image_writes(&device)?);
+        output.push_str(&self.render_partition_image_reads(&device)?);
         output.push_str(&self.render_zero_based_field_writes(&device)?);
         output.push_str(&self.render_sampled_bit_zero_writes());
         output.push_str(&self.render_zero_register_writes(&device)?);
@@ -1830,7 +1832,7 @@ fn remove_dimension_placeholder(value: &str) -> String {
     value.replace("[%s]", "").replace("%s", "")
 }
 
-fn member_binding_name(value: &str) -> String {
+pub(crate) fn member_binding_name(value: &str) -> String {
     remove_dimension_placeholder(value).to_ascii_lowercase()
 }
 

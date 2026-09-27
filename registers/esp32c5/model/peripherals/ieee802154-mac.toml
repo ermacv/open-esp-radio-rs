@@ -246,6 +246,12 @@ bitWidth = 7
 minimum = 0
 maximum = 0x7f
 
+[[peripherals.registers.register.fields]]
+name = "UNCLASSIFIED_7"
+description = "Implemented read-write bit above the seven-bit frequency code; the public struct declares it reserved and no vendor accessor writes it."
+bitOffset = 7
+bitWidth = 1
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1521,6 +1527,13 @@ sources = [
 provenance = "imported"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "IEEE802154_MAC.CHANNEL.UNCLASSIFIED_7"
+sources = ["HIL_OPEN_C5_REGISTER_PROBE_2026_09_27"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TX_POWER"

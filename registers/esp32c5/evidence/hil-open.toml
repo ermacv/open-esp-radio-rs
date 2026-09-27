@@ -1,0 +1,6 @@
+# Reviewed register evidence: hil open.
+schema = 1
+
+[[sources]]
+id = "HIL_OPEN_C5_REGISTER_PROBE_2026_09_27"
+description = "ESP32-C5 v1.0 board (stand board esp32c5, MAC 38:44:BE:AA:25:64) on 2026-09-27, verification/esp32c5/hardware/register-probe at repository commit 8afaaec7c, flashed and captured by `cargo hil flash` at cdc277aa5; console log sha256 c8a6e59e38c83e80d4faf56a0171e92861b43a39d77fcde88718dfaa4547e212. After opening the IEEE 802.15.4 MAC clocks, a read-modify-write of all ones read back CHANNEL 0x000000ff, TX_POWER 0x0000001f, EVENT_ENABLE 0x00001fff and COEX_PTI 0x000001ff. This establishes which bits of those words are implemented and read-write; it assigns no meaning to CHANNEL bit 7, which the public struct declares reserved."

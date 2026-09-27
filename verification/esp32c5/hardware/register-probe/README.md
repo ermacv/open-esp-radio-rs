@@ -10,7 +10,7 @@ declares and `DIFF` otherwise. The MAC stays idle; no command is issued.
 
 | Register | Expected implemented bits |
 | --- | --- |
-| `CHANNEL` | frequency code 6:0 |
+| `CHANNEL` | frequency code 6:0 and the unclassified bit 7 |
 | `TX_POWER` | power code 4:0 |
 | `EVENT_ENABLE` | thirteen events 12:0 |
 | `COEX_PTI` | TX/RX PTI 3:0, ACK PTI 7:4, bit 8 |
@@ -26,3 +26,8 @@ cargo hil flash --board esp32c5 --image esp32c5-register-probe \
 
 The image boots through the ESP-IDF second-stage bootloader that `espflash`
 writes and uses esp-hal's standard linker script.
+
+The first run on the stand's ESP32-C5 v1.0 (2026-09-27) matched every width
+the struct declares except `CHANNEL`, whose bit 7 is also implemented; the
+register model records that bit as unclassified with this observation as its
+evidence.

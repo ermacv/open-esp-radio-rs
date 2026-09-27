@@ -1841,11 +1841,20 @@ pub mod ieee802154_mac {
         pub type FrequencyCodeR = crate::FieldReader;
         #[doc = "Field `FREQUENCY_CODE` writer - Seven-bit code read and written by ieee802154_ll_get_freq/set_freq; this register model does not equate it to an IEEE channel number."]
         pub type FrequencyCodeW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
+        #[doc = "Field `UNCLASSIFIED_7` reader - Implemented read-write bit above the seven-bit frequency code; the public struct declares it reserved and no vendor accessor writes it."]
+        pub type Unclassified7R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_7` writer - Implemented read-write bit above the seven-bit frequency code; the public struct declares it reserved and no vendor accessor writes it."]
+        pub type Unclassified7W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:6 - Seven-bit code read and written by ieee802154_ll_get_freq/set_freq; this register model does not equate it to an IEEE channel number."]
             #[inline(always)]
             pub fn frequency_code(&self) -> FrequencyCodeR {
                 FrequencyCodeR::new((self.bits & 0x7f) as u8)
+            }
+            #[doc = "Bit 7 - Implemented read-write bit above the seven-bit frequency code; the public struct declares it reserved and no vendor accessor writes it."]
+            #[inline(always)]
+            pub fn unclassified_7(&self) -> Unclassified7R {
+                Unclassified7R::new(((self.bits >> 7) & 1) != 0)
             }
         }
         impl W {
@@ -1853,6 +1862,11 @@ pub mod ieee802154_mac {
             #[inline(always)]
             pub fn frequency_code(&mut self) -> FrequencyCodeW<'_, ChannelSpec> {
                 FrequencyCodeW::new(self, 0)
+            }
+            #[doc = "Bit 7 - Implemented read-write bit above the seven-bit frequency code; the public struct declares it reserved and no vendor accessor writes it."]
+            #[inline(always)]
+            pub fn unclassified_7(&mut self) -> Unclassified7W<'_, ChannelSpec> {
+                Unclassified7W::new(self, 7)
             }
         }
         #[doc = "Selected primary frequency code. Other multi-channel and frequency-hop controls declared by the struct are not used by the public common LL and remain absent.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

@@ -265,6 +265,12 @@
                 </range>
               </writeConstraint>
             </field>
+            <field>
+              <name>UNCLASSIFIED_7</name>
+              <description>Implemented read-write bit above the seven-bit frequency code; the public struct declares it reserved and no vendor accessor writes it.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
           </fields>
         </register>
         <register>

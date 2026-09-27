@@ -9,6 +9,7 @@ evidence = [
     "../evidence/policy.toml",
     "../evidence/platform.toml",
     "../evidence/vendor-radio-libraries.toml",
+    "../evidence/hil-open.toml",
 ]
 
 [applicability]

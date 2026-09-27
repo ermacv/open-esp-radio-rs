@@ -11,9 +11,9 @@ use oer_hil_protocol::{
     Ieee802154AirTxOutcome, Ieee802154SessionAck, Ieee802154SessionAssessRequest,
     Ieee802154SessionAssessment, Ieee802154SessionConfig, Ieee802154SessionFrame,
     Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest,
-    Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
-    Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
-    ieee802154_frame_crc32c,
+    Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionRecentRssi,
+    Ieee802154SessionResult, Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest,
+    Ieee802154SessionTxMode, ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, EnergyScanRequest, FrameAddress, FrameView, Interface,
@@ -274,6 +274,20 @@ impl Session {
         };
         assessment.result = Ieee802154SessionResult::Done;
         assessment
+    }
+
+    /// The live RSSI of the most recent baseband reception.
+    pub(super) fn recent_rssi(&self) -> Ieee802154SessionRecentRssi {
+        match self.runtime.recent_rssi() {
+            Ok(rssi_dbm) => Ieee802154SessionRecentRssi {
+                result: Ieee802154SessionResult::Done,
+                rssi_dbm,
+            },
+            Err(_) => Ieee802154SessionRecentRssi {
+                result: Ieee802154SessionResult::CommandRejected,
+                rssi_dbm: 0,
+            },
+        }
     }
 
     pub(super) fn pending(&mut self, request: Ieee802154SessionPendingRequest) -> bool {

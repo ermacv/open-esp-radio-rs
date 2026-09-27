@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 187;
+pub const PROTOCOL_VERSION: u16 = 188;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -553,6 +553,9 @@ pub enum Command {
     /// Stop the session's client and start it again, as between the air
     /// check's cycles, then apply the session configuration and receive.
     RestartIeee802154SessionRadio,
+    /// Read the live RSSI of the most recent baseband reception
+    /// (`esp_ieee802154_get_recent_rssi`).
+    ReadIeee802154SessionRecentRssi,
     /// Start OpenThread over the composed client and join the dataset's
     /// network.
     StartIeee802154Thread(Ieee802154ThreadStartRequest),
@@ -1158,6 +1161,8 @@ pub enum Event {
     Ieee802154SessionAssessed(Ieee802154SessionAssessment),
     /// Correlated result of [`Command::RestartIeee802154SessionRadio`].
     Ieee802154SessionRadioRestarted(Ieee802154SessionRestartEvidence),
+    /// Correlated result of [`Command::ReadIeee802154SessionRecentRssi`].
+    Ieee802154SessionRecentRssi(Ieee802154SessionRecentRssi),
     /// Correlated result of [`Command::StartIeee802154Thread`].
     Ieee802154ThreadStarted(Ieee802154SessionResult),
     /// Correlated result of [`Command::QueryIeee802154Thread`].

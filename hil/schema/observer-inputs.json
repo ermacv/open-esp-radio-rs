@@ -70,6 +70,7 @@
     "ieee802154/peer-exchange": false,
     "ieee802154/background-maintenance": true,
     "ieee802154/channel-energy": false,
+    "ieee802154/live-rssi": false,
     "ieee802154/thread-exchange": false,
     "ieee802154/route-probe": false
   },

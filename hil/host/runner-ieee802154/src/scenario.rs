@@ -21,6 +21,7 @@ pub enum Ieee802154Scenario {
     PeerExchange(PeerExchange),
     BackgroundMaintenance(BackgroundMaintenance),
     ChannelEnergy(ChannelEnergy),
+    LiveRssi(LiveRssi),
     ThreadExchange(ThreadExchange),
     RouteProbe(RouteProbe),
 }
@@ -46,6 +47,21 @@ pub struct ChannelEnergy {
     /// Assessments per step.
     pub samples: u8,
     pub energy_scan_micros: u32,
+}
+
+/// The live RSSI read against the reference peer's frames at two transmit
+/// powers.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LiveRssi {
+    pub boots: u8,
+    pub channel: u8,
+    /// Frames per power.
+    pub frames: u8,
+    /// The peer's transmit power of the strong series, in dBm.
+    pub high_power_dbm: i8,
+    /// The peer's transmit power of the weak series, in dBm.
+    pub low_power_dbm: i8,
 }
 
 /// A catalog image of the reference peer board.
@@ -188,6 +204,20 @@ impl Ieee802154Scenario {
                 }
                 Ok(())
             }
+            Self::LiveRssi(live) => {
+                bounded(live.boots, 1, 20, "boots")?;
+                bounded(live.channel, 11, 26, "channel")?;
+                bounded(
+                    live.frames,
+                    1,
+                    oer_hil_protocol::IEEE802154_SESSION_RECORDED_FRAMES as u8,
+                    "frames",
+                )?;
+                if live.high_power_dbm <= live.low_power_dbm {
+                    return Err("the strong series' power is not above the weak one's".into());
+                }
+                Ok(())
+            }
             Self::RouteProbe(probe) => {
                 bounded(probe.boots, 1, 20, "boots")?;
                 let request = oer_hil_protocol::Ieee802154RouteProbeRequest {
@@ -226,7 +256,7 @@ impl Ieee802154Scenario {
     /// scenario uses the peer.
     pub fn peer_image(&self) -> Option<PeerImage> {
         match self {
-            Self::PeerExchange(_) | Self::ChannelEnergy(_) => Some(PeerImage {
+            Self::PeerExchange(_) | Self::ChannelEnergy(_) | Self::LiveRssi(_) => Some(PeerImage {
                 name: crate::peer::PEER_IMAGE,
                 reflash: crate::peer::PEER_REFLASH,
             }),
@@ -250,7 +280,8 @@ impl Ieee802154Scenario {
             Self::AirCheck(_)
             | Self::PeerExchange(_)
             | Self::BackgroundMaintenance(_)
-            | Self::ChannelEnergy(_) => ImageClass::DiagnosticIeee802154Radio,
+            | Self::ChannelEnergy(_)
+            | Self::LiveRssi(_) => ImageClass::DiagnosticIeee802154Radio,
             Self::ThreadExchange(_) => ImageClass::DiagnosticIeee802154Thread,
         });
         plan.requirements.ieee802154_peer = self.peer_image().is_some();
@@ -312,6 +343,17 @@ impl Ieee802154Scenario {
                     far_channel: energy.far_channel,
                     samples: energy.samples,
                     energy_scan_micros: energy.energy_scan_micros,
+                },
+                output,
+                context,
+            ),
+            Self::LiveRssi(live) => ieee802154::live_rssi::run(
+                ieee802154::live_rssi::Config {
+                    boots: live.boots,
+                    channel: live.channel,
+                    frames: live.frames,
+                    high_power_dbm: live.high_power_dbm,
+                    low_power_dbm: live.low_power_dbm,
                 },
                 output,
                 context,
@@ -383,6 +425,23 @@ mod tests {
             let scenario: Ieee802154Scenario =
                 toml::from_str(&table.replace("frames = 4", invalid)).unwrap();
             assert!(scenario.validate().is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn the_live_rssi_cell_needs_the_peer_and_a_power_step() {
+        let table = "kind = 'live-rssi'\nboots = 1\nchannel = 15\nframes = 8\nhigh_power_dbm = 20\nlow_power_dbm = -15";
+        let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
+        scenario.validate().unwrap();
+        let plan = scenario.plan();
+        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
+        assert!(plan.requirements.ieee802154_peer);
+        for invalid in ["channel = 27", "frames = 0", "low_power_dbm = 20"] {
+            let key = invalid.split(' ').next().unwrap();
+            let original = table.lines().find(|line| line.starts_with(key)).unwrap();
+            let scenario: Ieee802154Scenario =
+                toml::from_str(&table.replace(original, invalid)).unwrap();
+            assert!(scenario.validate().is_err(), "{invalid} was accepted");
         }
     }
 

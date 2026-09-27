@@ -21,7 +21,7 @@ use oer_hil_protocol::{
     Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
     Ieee802154RouteProbeEvidence, Ieee802154RouteProbeRequest, Ieee802154SessionAssessRequest,
     Ieee802154SessionAssessment, Ieee802154SessionConfig, Ieee802154SessionPendingRequest,
-    Ieee802154SessionPhyMaintenance, Ieee802154SessionReceiveEvidence,
+    Ieee802154SessionPhyMaintenance, Ieee802154SessionReceiveEvidence, Ieee802154SessionRecentRssi,
     Ieee802154SessionRestartEvidence, Ieee802154SessionResult, Ieee802154SessionStopEvidence,
     Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest,
     Ieee802154ThreadReceiveEvidence, Ieee802154ThreadSendRequest, Ieee802154ThreadStartRequest,

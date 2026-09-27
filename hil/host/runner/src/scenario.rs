@@ -55,6 +55,9 @@ impl Family {
             Self::Ieee802154(Ieee802154::BackgroundMaintenance(scenario)) => {
                 vec![range(channel(scenario.channel))]
             }
+            Self::Ieee802154(Ieee802154::LiveRssi(scenario)) => {
+                vec![range(channel(scenario.channel))]
+            }
             Self::Ieee802154(Ieee802154::ChannelEnergy(scenario)) => vec![
                 range(channel(scenario.channel)),
                 range(channel(scenario.far_channel)),

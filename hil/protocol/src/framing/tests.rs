@@ -1617,6 +1617,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
             energy_scan_micros: 1_000_000,
         }),
         Command::RestartIeee802154SessionRadio,
+        Command::ReadIeee802154SessionRecentRssi,
     ] {
         round_trip(Envelope::new(7, 3, 9, 2, command));
     }
@@ -1665,6 +1666,10 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         Event::Ieee802154SessionRadioRestarted(crate::Ieee802154SessionRestartEvidence {
             result: crate::Ieee802154SessionResult::StopFailed,
             rf_closed: true,
+        }),
+        Event::Ieee802154SessionRecentRssi(crate::Ieee802154SessionRecentRssi {
+            result: crate::Ieee802154SessionResult::Done,
+            rssi_dbm: i8::MIN,
         }),
         Event::Ieee802154SessionAssessed(crate::Ieee802154SessionAssessment {
             result: crate::Ieee802154SessionResult::Done,

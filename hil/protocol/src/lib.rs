@@ -85,7 +85,7 @@ pub use message::{
     Ieee802154SessionCoexistence, Ieee802154SessionConfig, Ieee802154SessionFrame,
     Ieee802154SessionMaintenanceCounts, Ieee802154SessionMaintenancePolicy,
     Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
-    Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame,
+    Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionRecentRssi,
     Ieee802154SessionRestartEvidence, Ieee802154SessionResult, Ieee802154SessionStopEvidence,
     Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
     Ieee802154ThreadDatagram, Ieee802154ThreadDataset, Ieee802154ThreadPayload,

@@ -1415,6 +1415,25 @@ impl SerialCapture {
         }
     }
 
+    /// Read the live RSSI of the most recent baseband reception in the
+    /// running session.
+    pub fn read_ieee802154_session_recent_rssi(
+        &self,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionRecentRssi> {
+        match self
+            .send_command(0, Command::ReadIeee802154SessionRecentRssi, timeout)?
+            .body
+        {
+            Event::Ieee802154SessionRecentRssi(evidence) => Ok(evidence),
+            Event::Rejected(reason) => Err(format!(
+                "device rejected the IEEE 802.15.4 session RSSI read: {reason:?}"
+            )
+            .into()),
+            _ => Err("device returned an invalid IEEE 802.15.4 session RSSI read".into()),
+        }
+    }
+
     /// Scan the energy on one channel and assess it once in the running
     /// session.
     pub fn assess_ieee802154_session_channel(

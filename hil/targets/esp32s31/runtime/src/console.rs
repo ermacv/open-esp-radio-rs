@@ -354,6 +354,9 @@ pub enum Ieee802154SessionCommand {
     Restart {
         request_id: u32,
     },
+    RecentRssi {
+        request_id: u32,
+    },
 }
 
 /// The next command of the running IEEE 802.15.4 session.
@@ -1791,6 +1794,23 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             session_id,
                             request_id,
                             Ieee802154SessionCommand::Restart { request_id },
+                        )
+                        .await;
+                        #[cfg(not(feature = "ieee802154-radio"))]
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
+                    Command::ReadIeee802154SessionRecentRssi => {
+                        #[cfg(feature = "ieee802154-radio")]
+                        admit_ieee802154_session_command(
+                            ieee802154_session_open,
+                            session_id,
+                            request_id,
+                            Ieee802154SessionCommand::RecentRssi { request_id },
                         )
                         .await;
                         #[cfg(not(feature = "ieee802154-radio"))]

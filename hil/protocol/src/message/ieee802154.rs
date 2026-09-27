@@ -646,6 +646,14 @@ pub struct Ieee802154SessionRestartEvidence {
     pub rf_closed: bool,
 }
 
+/// The live RSSI a running session read.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionRecentRssi {
+    pub result: Ieee802154SessionResult,
+    /// The signed RSSI in dBm of the most recent baseband reception.
+    pub rssi_dbm: i8,
+}
+
 /// Outcome of one PHY maintenance request in a session.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Ieee802154SessionPhyMaintenance {

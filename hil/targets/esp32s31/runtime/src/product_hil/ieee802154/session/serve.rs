@@ -147,6 +147,11 @@ async fn serve(
                 )
                 .await;
             }
+            Ieee802154SessionCommand::RecentRssi { request_id } => {
+                let read = session.recent_rssi();
+                publish_event_reliably(0, request_id, HilEvent::Ieee802154SessionRecentRssi(read))
+                    .await;
+            }
             Ieee802154SessionCommand::Restart { request_id } => {
                 if restartable {
                     return Served::Restart(request_id);

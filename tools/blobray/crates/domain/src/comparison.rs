@@ -65,109 +65,159 @@ impl ComparisonRelation {
         self.calls || self.reviewed_calls.is_some()
     }
     pub fn validate(&self, vendor: &Invocation, replacement: &Invocation) -> Result<()> {
-        let bad = || {
-            Error::new(
-                ErrorCode::InvalidRequest,
-                "invalid selected comparison relation",
-            )
+        let require = |condition: bool, detail: &str| {
+            if condition {
+                Ok(())
+            } else {
+                Err(Error::new(
+                    ErrorCode::InvalidRequest,
+                    format!("invalid comparison relation: {detail}"),
+                ))
+            }
         };
-        if self.memory.len() > MAX_MEMORY_SELECTIONS
-            || (!self.returns.low
-                && !self.returns.high
-                && !self.events.mmio_read
-                && !self.events.mmio_write
-                && !self.events.fence
-                && !self.events.delay
-                && !self.events.timeline.any()
-                && self.memory.is_empty()
-                && !self.observes_calls()
-                && self.projection.is_none())
-        {
-            return Err(bad());
-        }
-        if self.effects.is_some()
-            && !(self.events.mmio_read
-                && self.events.mmio_write
-                && self.events.fence
-                && self.events.delay)
-        {
-            return Err(bad());
-        }
-        if !vendor.observe_timeline.contains(self.events.timeline)
-            || !replacement.observe_timeline.contains(self.events.timeline)
-        {
-            return Err(bad());
-        }
-        if (self.returns.low || self.returns.high)
-            && (!matches!(vendor.goal, ExecutionGoal::Return)
-                || !matches!(replacement.goal, ExecutionGoal::Return))
-        {
-            return Err(bad());
-        }
-        if self.calls
-            && (vendor.observe_calls.is_none() || vendor.observe_calls != replacement.observe_calls)
-        {
-            return Err(bad());
-        }
+        require(
+            self.memory.len() <= MAX_MEMORY_SELECTIONS,
+            &format!("more than {MAX_MEMORY_SELECTIONS} memory pairs"),
+        )?;
+        require(
+            self.returns.low
+                || self.returns.high
+                || self.events.mmio_read
+                || self.events.mmio_write
+                || self.events.fence
+                || self.events.delay
+                || self.events.timeline.any()
+                || !self.memory.is_empty()
+                || self.observes_calls()
+                || self.projection.is_some(),
+            "it compares nothing: select returns, an event channel, memory, calls or a projection",
+        )?;
+        require(
+            self.effects.is_none()
+                || (self.events.mmio_read
+                    && self.events.mmio_write
+                    && self.events.fence
+                    && self.events.delay),
+            "an effect contract needs every concrete effect channel: MMIO reads and writes, fences and delays",
+        )?;
+        require(
+            vendor.observe_timeline.contains(self.events.timeline)
+                && replacement.observe_timeline.contains(self.events.timeline),
+            "a compared timeline channel is not observed by both invocations",
+        )?;
+        require(
+            !(self.returns.low || self.returns.high)
+                || (matches!(vendor.goal, ExecutionGoal::Return)
+                    && matches!(replacement.goal, ExecutionGoal::Return)),
+            "compared returns need a return goal on both sides",
+        )?;
+        require(
+            !self.calls
+                || (vendor.observe_calls.is_some()
+                    && vendor.observe_calls == replacement.observe_calls),
+            "compared calls need the same call capture on both sides",
+        )?;
         if let Some(r) = &self.reviewed_calls {
-            if self.calls
-                || vendor.observe_calls.is_none()
-                || replacement.observe_calls.is_none()
-                || r.pairs.is_empty()
-                || r.pairs.len() > MAX_CALL_PAIRS
-                || r.pairs
+            require(!self.calls, "reviewed call pairs exclude exact calls")?;
+            require(
+                vendor.observe_calls.is_some() && replacement.observe_calls.is_some(),
+                "reviewed call pairs need a call capture on both sides",
+            )?;
+            require(
+                !r.pairs.is_empty() && r.pairs.len() <= MAX_CALL_PAIRS,
+                &format!("reviewed call pairs must number 1..={MAX_CALL_PAIRS}"),
+            )?;
+            require(
+                !r.pairs
                     .iter()
                     .enumerate()
-                    .any(|(i, p)| r.pairs[..i].contains(p))
-            {
-                return Err(bad());
-            }
-            if r.unlisted == UnlistedCalls::Exact
-                && vendor.observe_calls != replacement.observe_calls
-            {
-                return Err(bad());
-            }
+                    .any(|(i, p)| r.pairs[..i].contains(p)),
+                "a reviewed call pair repeats",
+            )?;
+            require(
+                r.unlisted != UnlistedCalls::Exact
+                    || vendor.observe_calls == replacement.observe_calls,
+                "exact unlisted calls need the same call capture on both sides",
+            )?;
         }
         for (i, pair) in self.memory.iter().enumerate() {
             let (Some(a), Some(b)) = (
                 vendor.observe_memory.get(pair.vendor as usize),
                 replacement.observe_memory.get(pair.replacement as usize),
             ) else {
-                return Err(bad());
+                return require(
+                    false,
+                    &format!(
+                        "memory pair {i} names selection {} / {} that the invocations do not observe",
+                        pair.vendor, pair.replacement
+                    ),
+                );
             };
-            if a.length != b.length
-                || self.memory[..i]
+            require(
+                a.length == b.length,
+                &format!(
+                    "memory pair {i} pairs `{}` ({} bytes) with `{}` ({} bytes)",
+                    a.name, a.length, b.name, b.length
+                ),
+            )?;
+            require(
+                !self.memory[..i]
                     .iter()
-                    .any(|p| p.vendor == pair.vendor || p.replacement == pair.replacement)
-            {
-                return Err(bad());
-            }
+                    .any(|p| p.vendor == pair.vendor || p.replacement == pair.replacement),
+                &format!("memory pair {i} reuses a selection of an earlier pair"),
+            )?;
         }
         Ok(())
     }
 }
 impl Invocation {
     pub fn validate_memory_selection(&self) -> Result<()> {
-        let bad = || Error::new(ErrorCode::InvalidRequest, "invalid final-memory selection");
+        let bad = |detail: String| {
+            Err(Error::new(
+                ErrorCode::InvalidRequest,
+                format!("invalid final-memory selection: {detail}"),
+            ))
+        };
         if self.observe_memory.len() > MAX_MEMORY_SELECTIONS {
-            return Err(bad());
+            return bad(format!(
+                "{} selections exceed {MAX_MEMORY_SELECTIONS}",
+                self.observe_memory.len()
+            ));
         }
         let mut total = 0u64;
         for (i, s) in self.observe_memory.iter().enumerate() {
             total += u64::from(s.length);
-            if s.name.trim().is_empty()
-                || s.name.len() > 128
-                || !s.name.is_ascii()
-                || s.length == 0
+            if s.name.trim().is_empty() || s.name.len() > 128 || !s.name.is_ascii() {
+                return bad(format!(
+                    "selection {i} name `{}` is not a short ASCII name",
+                    s.name
+                ));
+            }
+            if s.length == 0
                 || u64::from(s.address) + u64::from(s.length) >= u64::from(u32::MAX - 1)
-                || total > u64::from(MAX_OBSERVED_MEMORY_BYTES)
-                || self.observe_memory[..i].iter().any(|p| {
-                    p.name == s.name
-                        || (u64::from(s.address) < u64::from(p.address) + u64::from(p.length)
-                            && u64::from(p.address) < u64::from(s.address) + u64::from(s.length))
-                })
             {
-                return Err(bad());
+                return bad(format!(
+                    "selection `{}` at {:#x}+{:#x} is empty or leaves the address space",
+                    s.name, s.address, s.length
+                ));
+            }
+            if total > u64::from(MAX_OBSERVED_MEMORY_BYTES) {
+                return bad(format!(
+                    "selections exceed {MAX_OBSERVED_MEMORY_BYTES} observed bytes at `{}`",
+                    s.name
+                ));
+            }
+            if let Some(p) = self.observe_memory[..i].iter().find(|p| p.name == s.name) {
+                return bad(format!("selection name `{}` repeats", p.name));
+            }
+            if let Some(p) = self.observe_memory[..i].iter().find(|p| {
+                u64::from(s.address) < u64::from(p.address) + u64::from(p.length)
+                    && u64::from(p.address) < u64::from(s.address) + u64::from(s.length)
+            }) {
+                return bad(format!(
+                    "selections `{}` at {:#x}+{:#x} and `{}` at {:#x}+{:#x} overlap",
+                    p.name, p.address, p.length, s.name, s.address, s.length
+                ));
             }
         }
         Ok(())

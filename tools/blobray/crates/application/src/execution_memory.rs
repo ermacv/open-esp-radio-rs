@@ -1,6 +1,6 @@
 //! Operation-owned mutable memory. All regions and event capacity die with the session.
 use crate::*;
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RegionKind {
     Image,
     Table(RegionLifetime),
@@ -336,13 +336,17 @@ impl<'a> Session<'a> {
         if end >= u64::from(u32::MAX - 1) || bytes.len() > length {
             return Err(Error::new(
                 ErrorCode::InvalidRequest,
-                "invalid session region",
+                format!(
+                    "invalid session region {address:#x}+{length:#x}: it leaves the address space \
+                     or its {} initial bytes exceed it",
+                    bytes.len()
+                ),
             ));
         }
         if self.devices.overlaps(address, length as u64, c)? {
             return Err(Error::new(
                 ErrorCode::Conflict,
-                "memory region overlaps a live device",
+                format!("memory region {address:#x}+{length:#x} overlaps a live device model"),
             ));
         }
         for binding in self
@@ -356,7 +360,10 @@ impl<'a> Session<'a> {
             {
                 return Err(Error::new(
                     ErrorCode::Conflict,
-                    "new memory overlaps live call boundary",
+                    format!(
+                        "memory region {address:#x}+{length:#x} overlaps the live call boundary at {:#x}",
+                        binding.address
+                    ),
                 ));
             }
         }
@@ -367,7 +374,14 @@ impl<'a> Session<'a> {
             {
                 return Err(Error::new(
                     ErrorCode::Conflict,
-                    "session memory regions overlap",
+                    format!(
+                        "{kind:?} memory region {address:#x}+{length:#x} overlaps the session's \
+                         {:?} region {:#x}+{:#x}; an image segment is shared by every case of \
+                         both targets",
+                        region.kind,
+                        region.address,
+                        region.bytes.len()
+                    ),
                 ));
             }
         }

@@ -523,147 +523,237 @@ pub trait Executor {
         control: &mut dyn RunControl,
     ) -> Result<(ExecutionStop, u64)>;
 }
+/// An invalid execution request that names the violated condition.
+fn require(condition: bool, detail: impl FnOnce() -> String) -> Result<()> {
+    if condition {
+        Ok(())
+    } else {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            format!("invalid execution request: {}", detail()),
+        ))
+    }
+}
 impl ExecutionRequest {
     pub fn validate(&self) -> Result<()> {
-        let bad = || {
-            Error::new(
-                ErrorCode::InvalidRequest,
-                "invalid execution request or capacity",
+        require(self.schema == EXECUTION_SCHEMA, || {
+            format!("schema {} is not {EXECUTION_SCHEMA}", self.schema)
+        })?;
+        require(!self.cases.is_empty(), || "no cases".into())?;
+        require(self.cases.len() <= MAX_EXECUTION_CASES, || {
+            format!("{} cases exceed {MAX_EXECUTION_CASES}", self.cases.len())
+        })?;
+        require(self.cases[0].reset == SessionReset::Cold, || {
+            format!(
+                "the first case `{}` is not a cold reset",
+                self.cases[0].name
             )
-        };
-        if self.schema != EXECUTION_SCHEMA
-            || self.cases.is_empty()
-            || self
-                .cases
-                .first()
-                .is_some_and(|case| case.reset != SessionReset::Cold)
-            || self.cases.len() > MAX_EXECUTION_CASES
-            || self.max_events == 0
-            || self.max_events > MAX_EXECUTION_EVENTS
-            || self.replacement.is_some() != self.binding.is_some()
-        {
-            return Err(bad());
-        }
-        for target in std::iter::once(&self.vendor).chain(&self.replacement) {
-            if target.companions.len() > 64 {
-                return Err(bad());
-            }
+        })?;
+        require(
+            self.max_events != 0 && self.max_events <= MAX_EXECUTION_EVENTS,
+            || {
+                format!(
+                    "max_events {} is outside 1..={MAX_EXECUTION_EVENTS}",
+                    self.max_events
+                )
+            },
+        )?;
+        require(self.replacement.is_some() == self.binding.is_some(), || {
+            "a replacement target and its binding must be given together".into()
+        })?;
+        for (side, target) in [
+            ("vendor", Some(&self.vendor)),
+            ("replacement", self.replacement.as_ref()),
+        ] {
+            let Some(target) = target else { continue };
+            require(target.companions.len() <= 64, || {
+                format!(
+                    "the {side} target has {} companions, more than 64",
+                    target.companions.len()
+                )
+            })?;
             target.stack.validate()?;
-            if target.stack.length < 16
-                || (u64::from(target.stack.address) + u64::from(target.stack.length)) % 16 != 0
-            {
-                return Err(bad());
-            }
+            require(
+                target.stack.length >= 16
+                    && (u64::from(target.stack.address) + u64::from(target.stack.length)) % 16 == 0,
+                || {
+                    format!(
+                        "the {side} stack is shorter than 16 bytes or its top is not 16-byte aligned"
+                    )
+                },
+            )?;
         }
         for case in &self.cases {
-            if case.name.is_empty()
-                || case.name.len() > 256
-                || case.replacement.is_some() != self.replacement.is_some()
-            {
-                return Err(bad());
-            }
+            let name = &case.name;
+            require(!name.is_empty() && name.len() <= 256, || {
+                format!("case name `{name}` is empty or longer than 256 bytes")
+            })?;
+            require(
+                case.replacement.is_some() == self.replacement.is_some(),
+                || format!("case `{name}` and the request disagree on a replacement side"),
+            )?;
             match (&case.relation, &case.replacement) {
                 (Some(relation), Some(other)) => relation.validate(&case.vendor, other)?,
                 (None, None) => {}
-                _ => return Err(bad()),
+                (Some(_), None) => {
+                    return require(false, || {
+                        format!("case `{name}` has a relation but no replacement to compare")
+                    });
+                }
+                (None, Some(_)) => {
+                    return require(false, || {
+                        format!(
+                            "case `{name}` has a replacement but no relation; a paired case compares"
+                        )
+                    });
+                }
             }
             // A vendor symbol goal may pair with a replacement return: a
             // prefix comparison of every vendor effect before the boundary
             // with the complete replacement, which compares no return or call.
-            if let Some(other) = &case.replacement
-                && std::mem::discriminant(&case.vendor.goal) != std::mem::discriminant(&other.goal)
-                && !(matches!(
-                    case.vendor.goal,
-                    ExecutionGoal::ObserveCall { .. } | ExecutionGoal::ReachSymbol { .. }
-                ) && other.goal == ExecutionGoal::Return
-                    && case
-                        .relation
-                        .as_ref()
-                        .is_some_and(|r| !r.returns.low && !r.returns.high && !r.observes_calls()))
-            {
-                return Err(bad());
+            if let Some(other) = &case.replacement {
+                require(
+                    std::mem::discriminant(&case.vendor.goal)
+                        == std::mem::discriminant(&other.goal)
+                        || (matches!(
+                            case.vendor.goal,
+                            ExecutionGoal::ObserveCall { .. } | ExecutionGoal::ReachSymbol { .. }
+                        ) && other.goal == ExecutionGoal::Return
+                            && case.relation.as_ref().is_some_and(|r| {
+                                !r.returns.low && !r.returns.high && !r.observes_calls()
+                            })),
+                    || format!("case `{name}` pairs goals that cannot be compared"),
+                )?;
             }
-            for (input, target) in std::iter::once((&case.vendor, &self.vendor))
-                .chain(case.replacement.as_ref().zip(self.replacement.as_ref()))
+            for (side, input, target) in std::iter::once(("vendor", &case.vendor, &self.vendor))
+                .chain(
+                    case.replacement
+                        .as_ref()
+                        .zip(self.replacement.as_ref())
+                        .map(|(input, target)| ("replacement", input, target)),
+                )
             {
-                if input.entry & 1 != 0 || input.entry >= u32::MAX - 1 {
-                    return Err(bad());
-                }
+                require(input.entry & 1 == 0 && input.entry < u32::MAX - 1, || {
+                    format!(
+                        "case `{name}` {side} entry {:#x} is odd or out of range",
+                        input.entry
+                    )
+                })?;
                 match &input.goal {
                     ExecutionGoal::Return => {}
                     ExecutionGoal::ObserveDequeue { service, .. } => {
-                        if service.trim().is_empty() || service.len() > 128 || !service.is_ascii() {
-                            return Err(bad());
-                        }
+                        require(
+                            !service.trim().is_empty()
+                                && service.len() <= 128
+                                && service.is_ascii(),
+                            || {
+                                format!(
+                                    "case `{name}` {side} dequeue service `{service}` is not a short ASCII name"
+                                )
+                            },
+                        )?;
                     }
                     ExecutionGoal::ReachSymbol { target: point }
                     | ExecutionGoal::ObserveCall { target: point, .. } => {
-                        if point.symbol.object.location != ObjectLocation::Standalone
-                            || (point.source != target.source
-                                && !matches!(&point.source,
-                                FunctionSource::Input { input } if target.companions.contains(input)))
-                        {
-                            return Err(bad());
-                        }
+                        require(
+                            point.symbol.object.location == ObjectLocation::Standalone
+                                && (point.source == target.source
+                                    || matches!(&point.source,
+                                    FunctionSource::Input { input } if target.companions.contains(input))),
+                            || {
+                                format!(
+                                    "case `{name}` {side} goal symbol is not in the target or its companions"
+                                )
+                            },
+                        )?;
                     }
                 }
                 input.entry_stack(&target.stack)?;
-                input.validate_memory_selection()?;
+                input.validate_memory_selection().map_err(|e| {
+                    Error::new(e.code, format!("case `{name}` {side}: {}", e.message))
+                })?;
                 if let Some(capture) = &input.observe_calls {
                     capture.validate()?;
                 }
-                if input.services.len() > MAX_FIFO_SERVICES {
-                    return Err(bad());
-                }
+                require(input.services.len() <= MAX_FIFO_SERVICES, || {
+                    format!("case `{name}` {side} has more than {MAX_FIFO_SERVICES} services")
+                })?;
                 for (index, service) in input.services.iter().enumerate() {
                     service.validate()?;
-                    if input.services[..index]
-                        .iter()
-                        .any(|s| s.id == service.id || s.handle == service.handle)
-                    {
-                        return Err(bad());
-                    }
+                    require(
+                        !input.services[..index]
+                            .iter()
+                            .any(|s| s.id == service.id || s.handle == service.handle),
+                        || {
+                            format!(
+                                "case `{name}` {side} repeats service `{}` or its handle",
+                                service.id
+                            )
+                        },
+                    )?;
                 }
-                if input.memory.len() > 128 || input.models.len() > MAX_DEVICE_MODELS {
-                    return Err(bad());
-                }
+                require(input.memory.len() <= 128, || {
+                    format!(
+                        "case `{name}` {side} declares {} memory regions, more than 128",
+                        input.memory.len()
+                    )
+                })?;
+                require(input.models.len() <= MAX_DEVICE_MODELS, || {
+                    format!(
+                        "case `{name}` {side} declares {} device models, more than {MAX_DEVICE_MODELS}",
+                        input.models.len()
+                    )
+                })?;
                 for (index, region) in input.memory.iter().enumerate() {
                     let seed = &region.seed;
                     seed.validate()?;
-                    if input.memory[..index].iter().any(|r| {
+                    if let Some(other) = input.memory[..index].iter().find(|r| {
                         let s = &r.seed;
                         u64::from(s.address) < u64::from(seed.address) + u64::from(seed.length)
                             && u64::from(seed.address) < u64::from(s.address) + u64::from(s.length)
                     }) {
-                        return Err(bad());
+                        return require(false, || {
+                            format!(
+                                "case `{name}` {side} memory regions {:#x}+{:#x} and {:#x}+{:#x} overlap",
+                                other.seed.address, other.seed.length, seed.address, seed.length
+                            )
+                        });
                     }
                 }
-                if input.tables.len() > MAX_RUNTIME_TABLES {
-                    return Err(bad());
-                }
+                require(input.tables.len() <= MAX_RUNTIME_TABLES, || {
+                    format!(
+                        "case `{name}` {side} has more than {MAX_RUNTIME_TABLES} runtime tables"
+                    )
+                })?;
                 for (i, table) in input.tables.iter().enumerate() {
                     table.validate()?;
-                    if input.tables[..i].iter().any(|t| t.id == table.id) {
-                        return Err(bad());
-                    }
+                    require(!input.tables[..i].iter().any(|t| t.id == table.id), || {
+                        format!("case `{name}` {side} repeats runtime table `{}`", table.id)
+                    })?;
                 }
-                if input.calls.len() > MAX_CALL_MODELS {
-                    return Err(bad());
-                }
+                require(input.calls.len() <= MAX_CALL_MODELS, || {
+                    format!("case `{name}` {side} has more than {MAX_CALL_MODELS} call models")
+                })?;
                 for (index, call) in input.calls.iter().enumerate() {
                     call.validate()?;
-                    if input.calls[..index]
-                        .iter()
-                        .any(|m| m.id == call.id || m.binding.address == call.binding.address)
-                    {
-                        return Err(bad());
-                    }
+                    require(
+                        !input.calls[..index]
+                            .iter()
+                            .any(|m| m.id == call.id || m.binding.address == call.binding.address),
+                        || {
+                            format!(
+                                "case `{name}` {side} repeats call model `{}` or its address {:#x}",
+                                call.id, call.binding.address
+                            )
+                        },
+                    )?;
                 }
                 for (index, model) in input.models.iter().enumerate() {
                     model.validate()?;
-                    if input.models[..index].iter().any(|m| m.id == model.id) {
-                        return Err(bad());
-                    }
+                    require(
+                        !input.models[..index].iter().any(|m| m.id == model.id),
+                        || format!("case `{name}` {side} repeats device model `{}`", model.id),
+                    )?;
                 }
             }
         }
@@ -907,5 +997,186 @@ mod coverage_tests {
             ExecutionCoverage::default().split(),
             vec![ExecutionCoverage::default()]
         );
+    }
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    fn invocation() -> Invocation {
+        Invocation {
+            observe_calls: None,
+            observe_timeline: TimelineCapture::default(),
+            observe_memory: vec![],
+            goal: ExecutionGoal::Return,
+            entry: 0x1000,
+            arguments: vec![Some(0); 8],
+            memory: vec![],
+            models: vec![],
+            calls: vec![],
+            tables: vec![],
+            services: vec![],
+        }
+    }
+
+    fn request() -> ExecutionRequest {
+        let target = ExecutionTarget {
+            revision: ArtifactId::of_bytes(b"validation fixture")
+                .as_str()
+                .parse()
+                .unwrap(),
+            source: FunctionSource::Input { input: 0 },
+            companions: vec![],
+            abi: CallAbi::RiscvInteger,
+            stack: MemorySeed {
+                address: 0x8000,
+                length: 4096,
+                fill: None,
+                bytes: vec![],
+            },
+        };
+        ExecutionRequest {
+            schema: EXECUTION_SCHEMA,
+            vendor: target.clone(),
+            replacement: Some(target),
+            binding: Some(CompiledBinding::SharedCore),
+            cases: vec![ExecutionCase {
+                relation: Some(ComparisonRelation {
+                    effects: None,
+                    projection: None,
+                    calls: false,
+                    reviewed_calls: None,
+                    returns: ReturnWords {
+                        low: true,
+                        high: false,
+                    },
+                    events: EventChannels {
+                        timeline: TimelineCapture::default(),
+                        mmio_read: true,
+                        mmio_write: true,
+                        fence: true,
+                        delay: true,
+                    },
+                    memory: vec![],
+                }),
+                reset: SessionReset::Cold,
+                stack_fill: None,
+                name: "case".into(),
+                vendor: invocation(),
+                replacement: Some(invocation()),
+            }],
+            max_events: 16,
+        }
+    }
+
+    fn rejected(request: ExecutionRequest) -> String {
+        let error = request.validate().expect_err("the request is invalid");
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+        error.message
+    }
+
+    fn region(address: u32, length: u32) -> ExecutionRegion {
+        ExecutionRegion {
+            seed: MemorySeed {
+                address,
+                length,
+                fill: None,
+                bytes: vec![],
+            },
+            lifetime: RegionLifetime::Phase,
+        }
+    }
+
+    fn selection(name: &str, address: u32, length: u32) -> MemorySelection {
+        MemorySelection {
+            name: name.into(),
+            address,
+            length,
+        }
+    }
+
+    #[test]
+    fn the_fixture_is_valid() {
+        request().validate().unwrap();
+    }
+
+    #[test]
+    fn every_request_error_names_its_condition() {
+        let mut r = request();
+        r.cases[0].reset = SessionReset::Warm;
+        assert!(rejected(r).contains("first case `case` is not a cold reset"));
+
+        let mut r = request();
+        r.max_events = 0;
+        assert!(rejected(r).contains("max_events 0"));
+
+        let mut r = request();
+        r.binding = None;
+        assert!(rejected(r).contains("binding must be given together"));
+
+        let mut r = request();
+        r.cases[0].relation = None;
+        assert!(rejected(r).contains("has a replacement but no relation"));
+
+        let mut r = request();
+        r.cases[0].vendor.entry = 0x1001;
+        assert!(rejected(r).contains("vendor entry 0x1001 is odd"));
+
+        let mut r = request();
+        r.cases[0].replacement.as_mut().unwrap().memory =
+            vec![region(0x3000, 0x20), region(0x3010, 0x20)];
+        assert!(
+            rejected(r).contains("replacement memory regions 0x3000+0x20 and 0x3010+0x20 overlap")
+        );
+
+        let mut r = request();
+        r.cases[0].vendor.observe_memory =
+            vec![selection("a", 0x3000, 4), selection("a", 0x3010, 4)];
+        let message = rejected(r);
+        assert!(message.contains("case `case` vendor"), "{message}");
+        assert!(message.contains("selection name `a` repeats"), "{message}");
+
+        let mut r = request();
+        r.cases[0].vendor.observe_memory =
+            vec![selection("a", 0x3000, 8), selection("b", 0x3004, 4)];
+        assert!(rejected(r).contains("`a` at 0x3000+0x8 and `b` at 0x3004+0x4 overlap"));
+    }
+
+    #[test]
+    fn every_relation_error_names_its_condition() {
+        let mut r = request();
+        r.cases[0].relation.as_mut().unwrap().returns.low = false;
+        r.cases[0].relation.as_mut().unwrap().events = EventChannels {
+            timeline: TimelineCapture::default(),
+            mmio_read: false,
+            mmio_write: false,
+            fence: false,
+            delay: false,
+        };
+        assert!(rejected(r).contains("it compares nothing"));
+
+        let mut r = request();
+        r.cases[0].relation.as_mut().unwrap().memory = vec![MemoryPair {
+            vendor: 0,
+            replacement: 0,
+        }];
+        assert!(rejected(r).contains("memory pair 0 names selection 0 / 0"));
+
+        let mut r = request();
+        r.cases[0].vendor.observe_memory = vec![selection("v", 0x3000, 4)];
+        r.cases[0].replacement.as_mut().unwrap().observe_memory = vec![selection("p", 0x3000, 8)];
+        r.cases[0].relation.as_mut().unwrap().memory = vec![MemoryPair {
+            vendor: 0,
+            replacement: 0,
+        }];
+        assert!(rejected(r).contains("pairs `v` (4 bytes) with `p` (8 bytes)"));
+
+        let mut r = request();
+        r.cases[0].vendor.goal = ExecutionGoal::ObserveDequeue {
+            service: "fifo".into(),
+            value: None,
+        };
+        assert!(rejected(r).contains("compared returns need a return goal on both sides"));
     }
 }

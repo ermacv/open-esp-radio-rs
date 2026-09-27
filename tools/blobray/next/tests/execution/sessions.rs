@@ -191,7 +191,16 @@ fn phase_ram_expires_and_redeclaration_uses_new_seed_without_changing_session_ow
     bad.cases[1].vendor.memory.push(region);
     bad.cases[1].replacement = Some(bad.cases[1].vendor.clone());
     let failed = f.run(bad, budget());
-    assert_eq!(failed.error.unwrap().code, ErrorCode::Conflict);
+    let error = failed.error.unwrap();
+    assert_eq!(error.code, ErrorCode::Conflict);
+    // The conflict names both regions and the kind of the existing one.
+    assert!(
+        error
+            .message
+            .contains("overlaps the session's Ram(Session) region"),
+        "{}",
+        error.message
+    );
     assert!(failed.execution.is_none());
     assert_eq!(f.read(&saved)["summary"]["manifest"]["verdict"], "MATCH");
 }

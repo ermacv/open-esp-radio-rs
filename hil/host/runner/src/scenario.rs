@@ -21,6 +21,7 @@ pub(crate) enum Family {
     Bluetooth(hil_bluetooth::scenario::BluetoothScenario),
     System(hil_system::scenario::SystemScenario),
     Ieee802154(hil_ieee802154::scenario::Ieee802154Scenario),
+    Coexistence(crate::coexistence::CoexistenceScenario),
 }
 
 pub(crate) type Scenario = hil_core::scenario::Scenario<Family>;
@@ -33,6 +34,7 @@ impl ScenarioFamily for Family {
             Self::Bluetooth(scenario) => scenario.validate(),
             Self::System(scenario) => scenario.validate(),
             Self::Ieee802154(scenario) => scenario.validate(),
+            Self::Coexistence(scenario) => scenario.validate(),
         }
     }
 
@@ -42,6 +44,7 @@ impl ScenarioFamily for Family {
             Self::Bluetooth(scenario) => scenario.plan(),
             Self::System(scenario) => scenario.plan(),
             Self::Ieee802154(scenario) => scenario.plan(),
+            Self::Coexistence(scenario) => scenario.plan(),
         }
     }
 }
@@ -58,6 +61,7 @@ impl Family {
             Self::Bluetooth(scenario) => scenario.run(output, context),
             Self::System(scenario) => scenario.run(output, context),
             Self::Ieee802154(scenario) => scenario.run(output, context),
+            Self::Coexistence(scenario) => scenario.run(output, context),
         }
     }
 }

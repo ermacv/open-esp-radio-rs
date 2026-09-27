@@ -2,6 +2,7 @@
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 mod cli;
+mod coexistence;
 mod command;
 mod execution;
 mod fixture;

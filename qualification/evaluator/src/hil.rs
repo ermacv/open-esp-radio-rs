@@ -303,7 +303,7 @@ const fn one_repetition() -> u8 {
 /// table names its image and a tagged workload, the others are tagged
 /// workloads themselves.
 pub(crate) fn has_one_family(document: &serde_json::Value) -> bool {
-    let tables = ["wifi", "bluetooth", "system", "ieee802154"]
+    let tables = ["wifi", "bluetooth", "system", "ieee802154", "coexistence"]
         .into_iter()
         .filter_map(|family| Some((family, document.get(family)?)))
         .collect::<Vec<_>>();
@@ -312,6 +312,9 @@ pub(crate) fn has_one_family(document: &serde_json::Value) -> bool {
     };
     if *family == "wifi" {
         table["image"].is_string() && table["workload"]["kind"].is_string()
+    } else if *family == "coexistence" {
+        // The joint workload is untagged: its table is the workload itself.
+        table["phy"].is_string()
     } else {
         table["kind"].is_string()
     }

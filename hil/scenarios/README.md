@@ -1,10 +1,10 @@
 # Versioned scenario catalog
 
-Folders identify the workload domain: system, IEEE 802.15.4, Bluetooth and
-IEEE 802.11 station/access-point/roles/monitor. Scenario IDs are stable across
-folder moves. Tags select overlapping diagnostic, characterization and
-qualification uses; they do not assign ownership or make a hardware-readiness
-claim.
+Folders identify the workload domain: system, IEEE 802.15.4, Bluetooth,
+IEEE 802.11 station/access-point/roles/monitor and radio coexistence.
+Scenario IDs are stable across folder moves. Tags select overlapping
+diagnostic, characterization and qualification uses; they do not assign
+ownership or make a hardware-readiness claim.
 
 ## Document shape
 
@@ -18,7 +18,7 @@ repetitions = 3                 # default 1
 transfer = "identical-image"    # default unchanged-functional-contract
 tags = ["he20"]
 
-[wifi]                          # or [bluetooth], [system], [ieee802154]
+[wifi]                          # or [bluetooth], [system], [ieee802154], [coexistence]
 image = "correctness"
 
 [wifi.workload]
@@ -38,6 +38,11 @@ The family owns every executable value:
   implies the firmware image. A Bluetooth workload that runs with or without
   automatic PHY maintenance selects the image through a typed field
   (`active_maintenance`, `exercise` or `phy_maintenance`).
+- `[coexistence]` runs the joint Wi-Fi/Bluetooth LE image: the Linux adapter
+  connects to the GATT application, then the host offers station UDP while an
+  ATT echo load runs over the Bluetooth connection for the same interval. It
+  requires the station fixture and the Bluetooth adapter, and publishes
+  `coexistence.wifi.rx-rate` and `coexistence.bluetooth.echoes`.
 - `[wifi]` selects the image and an optional `[wifi.datapath]` initialization
   (placement, checksum, TX-buffer and RX-continuation diagnostics). Each
   workload variant carries its own link expectation, observers, fixture

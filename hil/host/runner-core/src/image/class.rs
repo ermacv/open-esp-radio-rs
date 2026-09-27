@@ -14,6 +14,9 @@ pub enum ImageClass {
     BootSmoke,
     Performance,
     Correctness,
+    /// The performance Wi-Fi image with the Bluetooth LE GATT application
+    /// running beside it on the shared radio.
+    WifiBleCoex,
     DiagnosticMacIrq,
     DiagnosticTxWait,
     DiagnosticTaskResidence,
@@ -47,7 +50,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -57,6 +60,7 @@ impl ImageClass {
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
+        Self::WifiBleCoex,
         Self::DiagnosticMacIrq,
         Self::DiagnosticTxWait,
         Self::DiagnosticTaskResidence,
@@ -83,6 +87,7 @@ impl ImageClass {
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "performance",
             Self::Correctness => "correctness",
+            Self::WifiBleCoex => "wifi-ble-coex",
             Self::DiagnosticMacIrq => "diagnostic-mac-irq",
             Self::DiagnosticTxWait => "diagnostic-tx-wait",
             Self::DiagnosticTaskResidence => "diagnostic-task-residence",
@@ -119,6 +124,7 @@ impl ImageClass {
             }
             Self::BootSmoke => "boot-smoke,psram-task-stack,code-psram,profile-psram-data",
             Self::Performance => "open-radio-hil,psram-task-stack,code-psram,profile-psram-data",
+            Self::WifiBleCoex => "wifi-ble-coex,psram-task-stack,code-psram,profile-psram-data",
             Self::DiagnosticRxOwnership => {
                 "open-radio-hil,rx-ownership-telemetry,psram-task-stack,code-psram,profile-psram-data"
             }
@@ -175,6 +181,7 @@ impl ImageClass {
             | Self::BootSmoke
             | Self::Performance
             | Self::Correctness
+            | Self::WifiBleCoex
             | Self::DiagnosticMacIrq
             | Self::DiagnosticTxWait
             | Self::DiagnosticTaskResidence
@@ -211,6 +218,7 @@ impl ImageClass {
                 | Self::BluetoothWatchdogReset
                 | Self::BootSmoke
                 | Self::Performance
+                | Self::WifiBleCoex
                 | Self::DiagnosticRxOwnership
                 | Self::DiagnosticTaskResidence
                 | Self::DiagnosticTxArchitecture
@@ -225,6 +233,7 @@ impl ImageClass {
             self,
             Self::Correctness
                 | Self::Performance
+                | Self::WifiBleCoex
                 | Self::DiagnosticMacIrq
                 | Self::DiagnosticTxWait
                 | Self::DiagnosticTaskResidence

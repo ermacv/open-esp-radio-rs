@@ -61,6 +61,10 @@ impl ManagementFrameProtection {
         }
     }
 
+    pub const fn is_disabled(&self) -> bool {
+        matches!(self, Self::Disabled)
+    }
+
     /// Whether a station capable of protection negotiates it with this
     /// access point.
     pub const fn negotiated(self) -> bool {

@@ -76,7 +76,10 @@ pub struct LinkExpectation {
     pub guard_interval: HtGuardIntervalExpectation,
     /// Management frame protection the station fixture offers; the station
     /// must negotiate it whenever it is offered.
-    #[serde(default)]
+    #[serde(
+        default,
+        skip_serializing_if = "ManagementFrameProtection::is_disabled"
+    )]
     pub management_frame_protection: ManagementFrameProtection,
 }
 

@@ -120,3 +120,19 @@ fn catalog_rejects_symlink_in_supplied_path_ancestors() {
     std::os::unix::fs::symlink(&outside.0, tree.0.join("alias")).unwrap();
     assert!(ScenarioCatalog::load(&tree.0, Path::new("alias/catalog")).is_err());
 }
+
+#[test]
+fn a_joint_coexistence_table_is_one_family() {
+    let tree = Tree::new();
+    tree.write(
+        "coexistence/joint.toml",
+        "schema = 5\nid = \"joint\"\ndescription = \"joint\"\n\n[coexistence]\nphy = \"ht20\"\nduration_seconds = 12\n",
+    );
+    let catalog = ScenarioCatalog::load(&tree.0, Path::new("catalog")).unwrap();
+    assert!(catalog.repetitions.contains_key("joint"));
+    tree.write(
+        "coexistence/both.toml",
+        "schema = 5\nid = \"both\"\ndescription = \"both\"\n\n[coexistence]\nphy = \"ht20\"\n\n[system]\nkind = \"boot-smoke\"\n",
+    );
+    assert!(ScenarioCatalog::load(&tree.0, Path::new("catalog")).is_err());
+}

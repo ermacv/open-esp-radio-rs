@@ -36,6 +36,38 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// Production execution modify (`r_btdm_sched_execution_modify`) of one
+    /// hardware list, stepped until it leaves `Pending`. The return value is
+    /// the disposition (zero ready, one rejected, `u32::MAX` invalid index).
+    pub fn open_ble_scheduler_trace_execution_modify(index: u32, list_deletion: u32) -> u32 {
+        // SAFETY: the comparison image models the list ownership of the
+        // admission and performs no later radio operation.
+        unsafe {
+            oer_esp32s31_bluetooth::validation::run_scheduler_execution_modify(
+                index as u8,
+                list_deletion != 0,
+            )
+        }
+        .unwrap_or(u32::MAX)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Production execution lock (`r_btdm_sched_execution_lock`) of one item
+    /// on one hardware list, observed until it leaves `Pending`. The return
+    /// value is the disposition (zero retained, one reconcile, two
+    /// unsupported, `u32::MAX` invalid input).
+    pub fn open_ble_scheduler_trace_execution_lock(address: u32, index: u32) -> u32 {
+        // SAFETY: the comparison image models the merge-selected item and
+        // list serialization and performs no later radio operation.
+        unsafe {
+            oer_esp32s31_bluetooth::validation::run_scheduler_execution_lock(address, index as u8)
+        }
+        .unwrap_or(u32::MAX)
+    }
+}
+
+oer_probe_macros::probe! {
     /// The diagnostic scheduler-BUSY sample that opens the production
     /// scheduler stop sequence; the vendor side stops at its following log.
     pub fn open_ble_scheduler_stop_busy_trace_r_btdm_sched_stop() {

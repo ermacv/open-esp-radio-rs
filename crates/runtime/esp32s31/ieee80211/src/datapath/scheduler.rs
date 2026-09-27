@@ -17,6 +17,29 @@ where
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
+    /// Record which RX wake the loop retained when a role exits; a role exit
+    /// such as beacon loss can be caused by RX starvation.
+    #[cfg(feature = "diagnostics")]
+    #[cold]
+    #[inline(never)]
+    fn log_role_exit_rx_state(&self) {
+        log::info!(
+            "open-radio: DATAPATH role exit rx_progress={:?} rx_signaled={} rx_capacity={} \
+             moderated={} recycled_probe={:?} deficit={} rx_work={} network_tx_queue={} \
+             prepared_tx={}",
+            self.rx_progress,
+            self.irq.rx_signaled(),
+            self.irq.rx_capacity_signaled(),
+            self.irq.is_rx_moderation_active(),
+            self.recycled_rx_probe_deadline()
+                .map(|deadline| deadline.as_micros()),
+            self.rx_frame_deficit,
+            self.services.has_rx_work(),
+            self.network_tx_queue_len(),
+            self.services.has_prepared_tx(),
+        );
+    }
+
     /// Drive a finite control-only exchange while network admission stays shut.
     /// RX, IRQ and terminal TX deadlines use the ordinary owner path. The
     /// caller must retain this future through completion once TX has started;
@@ -242,6 +265,8 @@ where
                         continue;
                     }
                     DatapathControlProgress::Exit(exit) => {
+                        #[cfg(feature = "diagnostics")]
+                        self.log_role_exit_rx_state();
                         self.cancel_prepared_network_tx()?;
                         self.prepared_tx_interface = None;
                         self.set_scope_link_state(oer_network_interface::LinkState::Down);

@@ -182,6 +182,13 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         self.rx.signaled()
     }
 
+    /// Whether a staging-capacity wake is pending.
+    #[cfg(feature = "diagnostics")]
+    #[inline]
+    pub fn rx_capacity_signaled(&self) -> bool {
+        self.rx_capacity.signaled()
+    }
+
     /// Whether the TX bottom half has durable pending work.
     #[inline]
     pub fn tx_signaled(&self) -> bool {

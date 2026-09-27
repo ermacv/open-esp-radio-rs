@@ -29,6 +29,7 @@ mod pac_bindings;
 mod partition_image;
 mod register_evidence;
 mod register_lints;
+mod shared;
 
 pub use pac_api::{
     BitwiseComposedDomain, BitwiseComposedDomainArgument, BitwiseComposedValueType, BoundedDomain,
@@ -45,6 +46,9 @@ pub use register_evidence::{
     RegisterEvidenceCatalog, RegisterEvidenceRange, RegisterEvidenceSet, RegisterEvidenceSource,
 };
 pub use register_lints::RegisterLintPack;
+pub use shared::{
+    RegisterLibrary, RegisterLibraryManifest, SharedFragmentReference, SharedPeripheral,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -131,7 +135,11 @@ pub struct RegisterModelManifest {
     #[serde(default = "default_address_space")]
     pub address_space: String,
     pub device: ModelDevice,
+    #[serde(default)]
     pub fragments: Vec<String>,
+    /// Library layouts this chip places at its own base addresses.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared_fragments: Vec<SharedFragmentReference>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -201,6 +209,7 @@ pub struct RegisterModel {
     device: Device,
     review: Vec<ReviewAnnotation>,
     reviewed_register_facts: Vec<EffectiveAssertion>,
+    shared_peripherals: BTreeMap<String, SharedPeripheral>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -238,7 +247,7 @@ impl RegisterModel {
                 document.get("schema").and_then(toml_edit::Item::span),
             ));
         }
-        if manifest.fragments.is_empty() {
+        if manifest.fragments.is_empty() && manifest.shared_fragments.is_empty() {
             return Err(Error::manifest_span(
                 "register model manifest",
                 path,
@@ -262,6 +271,9 @@ impl RegisterModel {
                 ));
             }
             paths.push(base.join(relative));
+        }
+        for reference in &manifest.shared_fragments {
+            paths.extend(shared::placed_fragment_inputs(path, reference)?);
         }
         Ok(paths)
     }
@@ -296,7 +308,7 @@ impl RegisterModel {
                 document.get("schema").and_then(toml_edit::Item::span),
             ));
         }
-        if manifest.fragments.is_empty() {
+        if manifest.fragments.is_empty() && manifest.shared_fragments.is_empty() {
             return Err(Error::manifest_span(
                 "register model manifest",
                 path,
@@ -363,6 +375,14 @@ impl RegisterModel {
             peripherals.extend(fragment.peripherals.iter().cloned());
             fragments.push(fragment);
         }
+        let mut shared_peripherals = BTreeMap::new();
+        for reference in &manifest.shared_fragments {
+            let (fragment, members) =
+                shared::load_placed_fragment(path, reference, &mut loaded_inputs)?;
+            peripherals.extend(fragment.peripherals.iter().cloned());
+            fragments.push(fragment);
+            shared_peripherals.extend(members);
+        }
         validate_peripheral_names(&peripherals)
             .map_err(|error| Error::manifest("register model", path, error))?;
         validate_review_annotations(&fragments)
@@ -382,6 +402,7 @@ impl RegisterModel {
             device,
             review,
             reviewed_register_facts: Vec::new(),
+            shared_peripherals,
         };
         model
             .register_identities()
@@ -518,6 +539,11 @@ impl RegisterModel {
     /// provenance of descriptions, access, field and write-semantics claims.
     pub fn reviewed_register_facts(&self) -> &[EffectiveAssertion] {
         &self.reviewed_register_facts
+    }
+
+    /// Peripherals whose layout comes from a register library, by name.
+    pub fn shared_peripherals(&self) -> &BTreeMap<String, SharedPeripheral> {
+        &self.shared_peripherals
     }
 
     /// Stable chip identifier used by typed reviewed register assertions.
@@ -1682,7 +1708,7 @@ fn default_svd_schema_location() -> String {
     "CMSIS-SVD.xsd".to_owned()
 }
 
-fn validate_relative_fragment(value: &str) -> Result<()> {
+pub(crate) fn validate_relative_fragment(value: &str) -> Result<()> {
     let path = PathBuf::from(value);
     if path.is_absolute()
         || path
@@ -1696,7 +1722,7 @@ fn validate_relative_fragment(value: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_peripheral_names(peripherals: &[Peripheral]) -> Result<()> {
+pub(crate) fn validate_peripheral_names(peripherals: &[Peripheral]) -> Result<()> {
     let mut names = BTreeSet::new();
     for peripheral in peripherals {
         if !names.insert(peripheral.name.as_str()) {
@@ -1709,7 +1735,7 @@ fn validate_peripheral_names(peripherals: &[Peripheral]) -> Result<()> {
     Ok(())
 }
 
-fn build_device(metadata: &ModelDevice, peripherals: Vec<Peripheral>) -> Result<Device> {
+pub(crate) fn build_device(metadata: &ModelDevice, peripherals: Vec<Peripheral>) -> Result<Device> {
     Ok(Device::builder()
         .name(metadata.name.clone())
         .vendor(metadata.vendor.clone())
@@ -1996,6 +2022,99 @@ mod tests {
         .unwrap();
         let model = RegisterModel::load(&manifest).unwrap();
         (directory, model)
+    }
+
+    /// A chip directory `chip/` and a library `lib/`, with the chip placing
+    /// the library's `RADIO` layout.
+    fn shared_fixture(name: &str, layout_extra: &str, placement: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "open-radio-register-shared-{}-{name}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("chip")).unwrap();
+        fs::create_dir_all(root.join("lib")).unwrap();
+        fs::write(
+            root.join("lib/library.toml"),
+            "schema = 1\nname = \"fixture\"\ncrate-name = \"fixture_pac_raw\"\nfragments = [\"radio.toml\"]\n\n[device]\nname = \"layouts\"\nversion = \"1\"\ndescription = \"layouts\"\naddress-unit-bits = 8\nwidth = 32\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("lib/radio.toml"),
+            format!(
+                "schema = 2\n\n[[peripherals]]\nname = \"RADIO\"\n{layout_extra}\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"STATUS\"\naddressOffset = 4\nsize = 32\naccess = \"read-write\"\n\n[[peripherals.registers.register.fields]]\nname = \"FLAG\"\nbitOffset = 3\nbitWidth = 1\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            root.join("chip/radio.review.toml"),
+            "schema = 1\n\n[[review]]\nentity = \"RADIO.STATUS\"\nsources = [\"fixture\"]\nprovenance = \"derived\"\naccuracy = \"exact\"\ncompleteness = \"partial\"\n",
+        )
+        .unwrap();
+        let manifest = root.join("chip/device.toml");
+        fs::write(
+            &manifest,
+            format!(
+                "schema = 3\nchip = \"fixture-chip\"\naddress-space = \"cpu\"\n\n[[shared-fragments]]\nlibrary = \"../lib/library.toml\"\nfragment = \"radio.toml\"\nreview = \"radio.review.toml\"\nplacement = {{ {placement} }}\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n"
+            ),
+        )
+        .unwrap();
+        manifest
+    }
+
+    #[test]
+    fn a_chip_places_a_library_layout_with_its_own_reviews() {
+        let manifest = shared_fixture("placed", "", "RADIO = 0x2000");
+        let model = RegisterModel::load(&manifest).unwrap();
+        let radio = &model.device.peripherals[0];
+        assert_eq!(radio.base_address, 0x2000);
+        assert_eq!(
+            model.shared_peripherals().get("RADIO"),
+            Some(&SharedPeripheral {
+                library: "fixture".into(),
+                crate_name: "fixture_pac_raw".into(),
+            })
+        );
+        assert_eq!(model.review.len(), 1);
+        assert_eq!(model.review[0].entity, "RADIO.STATUS");
+        let inputs = RegisterModel::input_paths(&manifest).unwrap();
+        assert!(inputs.iter().any(|path| path.ends_with("lib/radio.toml")));
+        assert!(
+            inputs
+                .iter()
+                .any(|path| path.ends_with("chip/radio.review.toml"))
+        );
+    }
+
+    #[test]
+    fn layouts_carry_neither_placement_nor_reviews() {
+        let based = shared_fixture("based", "baseAddress = 0x10\n", "RADIO = 0x2000");
+        let error = RegisterModel::load(&based).unwrap_err().to_string();
+        assert!(error.contains("has a baseAddress"), "{error}");
+
+        let reviewed = shared_fixture("reviewed", "", "RADIO = 0x2000");
+        let layout = reviewed
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("lib/radio.toml");
+        let mut text = fs::read_to_string(&layout).unwrap();
+        text.push_str("\n[[review]]\nentity = \"RADIO\"\nsources = [\"fixture\"]\n");
+        fs::write(&layout, text).unwrap();
+        let error = RegisterModel::load(&reviewed).unwrap_err().to_string();
+        assert!(error.contains("carries reviews"), "{error}");
+    }
+
+    #[test]
+    fn a_placement_names_exactly_the_layout_peripherals() {
+        let missing = shared_fixture("missing", "", "OTHER = 0x2000");
+        let error = RegisterModel::load(&missing).unwrap_err().to_string();
+        assert!(error.contains("places no peripheral \"RADIO\""), "{error}");
+
+        let extra = shared_fixture("extra", "", "RADIO = 0x2000, OTHER = 0x3000");
+        let error = RegisterModel::load(&extra).unwrap_err().to_string();
+        assert!(error.contains("does not declare"), "{error}");
     }
 
     fn knowledge(assertions: &str) -> ReviewKnowledge {

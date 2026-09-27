@@ -115,6 +115,7 @@ impl ModelDraft {
             device: built,
             review: vec![],
             reviewed_register_facts: vec![],
+            shared_peripherals: BTreeMap::new(),
         };
         model.register_identities()?;
         Ok(Self {
@@ -125,6 +126,7 @@ impl ModelDraft {
                 address_space,
                 device,
                 fragments: vec!["peripherals.toml".into()],
+                shared_fragments: vec![],
             })?,
             fragment: toml_edit::ser::to_string_pretty(&RegisterModelFragment {
                 schema: 2,

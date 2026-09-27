@@ -10,6 +10,8 @@ use std::{
 
 mod drafts;
 mod host;
+mod library;
+mod shared_blocks;
 pub use drafts::{import_svd, initialize_model};
 mod memory;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -54,13 +56,43 @@ struct Ownership {
     owned_ranges: Vec<String>,
 }
 
+/// One validated publication: a chip's register project, or a register
+/// library of layouts shared between chips.
+pub enum Publication {
+    Chip(Box<ChipPublication>),
+    Library(Box<library::LibraryPublication>),
+}
+impl Publication {
+    /// Load a publication manifest; a manifest naming a `library` publishes a
+    /// register library, any other one a chip's register project.
+    pub fn load(path: &Path) -> Result<Self> {
+        let text = fs::read_to_string(path)?;
+        let document = text.parse::<toml_edit::DocumentMut>()?;
+        if document.contains_key("library") {
+            Ok(Self::Library(Box::new(library::LibraryPublication::load(
+                path,
+            )?)))
+        } else {
+            Ok(Self::Chip(Box::new(ChipPublication::load(path)?)))
+        }
+    }
+
+    /// Prepare every output before checking or replacing any destination.
+    pub fn generate(&self, check: bool) -> Result<()> {
+        match self {
+            Self::Chip(publication) => publication.generate(check),
+            Self::Library(publication) => publication.generate(check),
+        }
+    }
+}
+
 /// Owns validated model, policy and output destinations. Rendering never reloads inputs.
-pub struct Publication {
+pub struct ChipPublication {
     model: RegisterModel,
     api: PacApiPack,
     outputs: Outputs,
 }
-impl Publication {
+impl ChipPublication {
     /// Load explicitly selected source documents. Artifact-specific assertions cannot
     /// be authenticated by this source-only tool: no binary identities are invented.
     pub fn load(path: &Path) -> Result<Self> {
@@ -103,6 +135,16 @@ impl Publication {
                 ),
         )?;
         evidence.validate_references("PAC API", api.source_ids())?;
+        if let Some(peripheral) = api
+            .operation_peripherals()
+            .into_iter()
+            .find(|peripheral| model.shared_peripherals().contains_key(*peripheral))
+        {
+            return Err(format!(
+                "PAC API defines a transaction on {peripheral}, whose layout a register library owns; define it in the library's API"
+            )
+            .into());
+        }
         let memory = memory::Memory::load(&base.join(&m.memory))?;
         let ownership: Ownership =
             toml_edit::de::from_str(&fs::read_to_string(base.join(&m.ownership))?)?;
@@ -171,6 +213,8 @@ impl Publication {
         if self.api.options.allow_clippy_empty_docs {
             raw.insert_str(0, "#![allow(clippy::empty_docs)]\n");
         }
+        let mut raw =
+            shared_blocks::reexport_library_blocks(&raw, self.model.shared_peripherals())?;
         raw.push_str(&self.api.render_rust(&svd)?);
         let raw = host::format(&raw, &self.outputs.edition)?;
         let api = host::format(&self.api.render_facade_rust()?, &self.outputs.edition)?;

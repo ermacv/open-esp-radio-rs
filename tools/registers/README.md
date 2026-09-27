@@ -55,6 +55,19 @@ are prepared before replacement; each file is replaced atomically, but a failure
 between replacements reports an incomplete batch. Rerun generation to finish;
 there is no claim of atomicity across four directories.
 
+A device manifest may also place layouts of a register library through
+`[[shared-fragments]]` entries (library manifest, layout fragment, the chip's
+review file and a base address per peripheral). A library layout has no
+`baseAddress` and no reviews; the loader rejects either, and a placement must
+name exactly the layout's peripherals. A publication manifest that names a
+`library` instead of a `model` publishes that library: svd2rust renders its
+layouts at placeholder bases, the tool keeps only the register modules, makes
+each peripheral alias the bare `RegisterBlock` and appends the library API's
+transactions. It writes the raw crate and API bridges, but no SVD or binding
+index, since a library has no addresses. A chip that places a library layout
+re-exports the library's module from its raw PAC and may not define
+transactions on that peripheral. See [`registers/ieee80211`](../../registers/ieee80211/README.md).
+
 The schema-1 manifest selects model, sparse reviewed assertions, applicability,
 memory map, ownership policy, API/lint packs, evidence catalogs and output paths.
 Paths are relative to that manifest. No configuration is inferred from a vendor

@@ -1247,6 +1247,41 @@ impl PacApiPack {
             .collect()
     }
 
+    /// Peripherals targeted by the pack's register transactions.
+    ///
+    /// Partition image reads name an ownership partition instead of a
+    /// peripheral and are not listed.
+    pub fn operation_peripherals(&self) -> BTreeSet<&str> {
+        let mut peripherals = BTreeSet::new();
+        macro_rules! collect {
+            ($($operations:ident),* $(,)?) => {
+                $(peripherals.extend(self.$operations.iter().map(Operation::peripheral));)*
+            };
+        }
+        collect!(
+            interrupt_snapshots,
+            full_register_writes,
+            full_register_reads,
+            field_reads,
+            field_snapshot_reads,
+            fixed_register_writes,
+            fixed_register_images,
+            fixed_register_sequences,
+            w1c_register_snapshots,
+            register_image_reads,
+            register_image_writes,
+            zero_based_field_writes,
+            sampled_bit_zero_writes,
+            zero_register_writes,
+            masked_register_modifies,
+            field_or_modifies,
+            field_replace_modifies,
+            field_argument_modifies,
+            indexed_bit_set_modifies,
+        );
+        peripherals
+    }
+
     fn validate_domains(&self) -> Result<()> {
         let mut domain_names = BTreeSet::new();
         for domain in &self.flag_domains {

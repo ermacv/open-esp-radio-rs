@@ -14,12 +14,13 @@ the repository does not provision ESP-IDF. From this directory:
 . ~/.espressif/v6.1/esp-idf/export.sh
 idf.py set-target esp32c5
 idf.py build
-idf.py -p /dev/ttyUSB0 flash
+idf.py -p /dev/ttyACM1 flash
 ```
 
-The console is the default UART. To use the USB Serial/JTAG port instead,
-select it under *Component config → ESP System Settings → Channel for console
-output*; the application follows that choice.
+The console is the USB Serial/JTAG port, through which the HIL stand reaches
+the peer (`sdkconfig.defaults`). To use a UART instead, select it under
+*Component config → ESP System Settings → Channel for console output*; the
+application follows that choice.
 
 Name the peer's board or serial port in the `[ieee802154_peer]` table of the
 lab configuration. The board is shared with other consumers, so flash it under

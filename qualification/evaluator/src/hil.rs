@@ -394,15 +394,10 @@ impl HilEvidenceIndex {
         repository: &RepositoryState,
     ) -> Result<Self> {
         let current_observer = observer::Current::load(root);
-        // The checkout's run directory, usually a link to the store shared by
-        // every checkout of this user, and that store itself: a checkout that
-        // has not joined the store yet reads both, each run once.
+        // The checkout's run directory, which `cargo hil` links to the store
+        // shared by every checkout of this user. The evaluator reads only
+        // this path: a temporary or foreign root never pulls in that store.
         let mut directories = vec![root.join(runs)];
-        if let Some(shared) = shared_runs(target).filter(|shared| shared.is_dir())
-            && fs::canonicalize(&directories[0]).ok() != fs::canonicalize(&shared).ok()
-        {
-            directories.push(shared);
-        }
         directories.retain(|directory| directory.exists());
         if directories.is_empty() {
             return Ok(Self {
@@ -1048,28 +1043,6 @@ fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         && !value.ends_with('-')
         && !value.contains("--")
-}
-
-/// The HIL run store shared by every checkout: `$OER_HIL_STORE/<target>/runs`
-/// or the user's data directory, as `cargo hil` links it.
-///
-/// Tests never read it: their temporary checkouts would otherwise evaluate the
-/// user's whole store.
-fn shared_runs(target: &str) -> Option<PathBuf> {
-    if cfg!(test) {
-        return None;
-    }
-    let root = match std::env::var_os("OER_HIL_STORE").filter(|value| !value.is_empty()) {
-        Some(root) => PathBuf::from(root),
-        None => std::env::var_os("XDG_DATA_HOME")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
-            })?
-            .join("open-esp-radio/hil"),
-    };
-    Some(root.join(target).join("runs"))
 }
 
 fn sha256_file(path: &Path) -> Result<String> {

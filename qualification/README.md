@@ -472,8 +472,9 @@ does not establish that a failure was resolved.
 
 A run bundle stays in ignored output, in the run store every checkout of the
 user shares (see [find and compare runs](../hil/host/README.md#find-and-compare-runs)),
-and qualifies only for a checkout whose sources it binds. When a checkout has
-no `target/hil/<target>/runs` yet, the evaluator reads the shared store.
+and qualifies only for a checkout whose sources it binds. The evaluator reads
+the store only through the checkout's `target/hil/<target>/runs` link, which
+any `cargo hil` command creates.
 Digests of sealed files are remembered in the user's cache per file identity
 and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
 --hil-target TARGET)` records

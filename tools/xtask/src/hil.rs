@@ -49,6 +49,7 @@ pub fn prepare(ctx: &Context) -> Result<(std::path::PathBuf, std::path::PathBuf)
 }
 
 pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
+    use_shared_store(ctx)?;
     let (options, args) = LeaseOptions::split(args)?;
     let args = args.as_slice();
     match args.first().and_then(|argument| argument.to_str()) {
@@ -61,7 +62,6 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("runs") => return runs(ctx, &options, &args[1..]),
         _ => {}
     }
-    use_shared_store(ctx)?;
     let (runner, receipt_path) = prepare(ctx)?;
     if hands_off_terminal(args) {
         // Fixture installation ends in a foreground sudo handoff. A supervised

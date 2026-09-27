@@ -19,7 +19,7 @@ description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe:
 
 [[sources]]
 id = "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"
-description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe: components/hal/esp32s31/include/hal/modem_lpcon_ll.h sha256 5e6ce588f2e029aa3b895b57b0cfdad25efeacfc3cea835cdc320bcd06d5608f and components/hal/esp32s31/modem_clock_hal.c sha256 53c1f8c25b86cbb8eff5d06633615dde605763310fa97bcd3261e9bd84cce56e. Each Bluetooth RTC-timer low-power clock accessor writes one LP_TIMER_CONF field (the four source selectors and the divider) or the CLK_CONF timer gate; modem_clock_hal_deselect_all_ble_rtc_timer_lpclk_source clears the slow-oscillator, fast-oscillator, 32-kHz crystal and main-crystal selectors in that order."
+description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe: components/hal/esp32s31/include/hal/modem_lpcon_ll.h sha256 5e6ce588f2e029aa3b895b57b0cfdad25efeacfc3cea835cdc320bcd06d5608f and components/hal/esp32s31/modem_clock_hal.c sha256 53c1f8c25b86cbb8eff5d06633615dde605763310fa97bcd3261e9bd84cce56e. Each Bluetooth RTC-timer low-power clock accessor writes one LP_TIMER_CONF field (the four source selectors and the divider) or the CLK_CONF timer gate; modem_clock_hal_deselect_all_ble_rtc_timer_lpclk_source clears the slow-oscillator, fast-oscillator, 32-kHz crystal and XTAL selectors in that order."
 
 [[sources]]
 id = "ESP_RADIO_7F914782_S31_WIFI_CLOCKS"

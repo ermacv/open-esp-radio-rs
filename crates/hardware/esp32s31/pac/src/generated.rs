@@ -182,15 +182,60 @@ impl LpTsensPowerEnable {
     }
 }
 
-/// The sole receive-on delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 initialization transaction.
+/// The sole transmit-on delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 MAC initialization (ieee802154_txon_delay_set).
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ieee802154TxOnDelay {
+    /// Literal ten-bit TXON_DELAY image written by ieee802154_txon_delay_set.
+    Delay45 = 0x0000002d,
+}
+
+impl Ieee802154TxOnDelay {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole transmit-off delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 MAC initialization (ieee802154_txon_delay_set).
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ieee802154TxOffDelay {
+    /// Literal six-bit TXOFF_DELAY image written by ieee802154_txon_delay_set.
+    Delay5 = 0x00000005,
+}
+
+impl Ieee802154TxOffDelay {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole receive-on delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 MAC initialization (ieee802154_txon_delay_set).
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Ieee802154RxOnDelay {
-    /// Literal eleven-bit RXON_DELAY image written immediately after the shared transmit-on delay override.
+    /// Literal eleven-bit RXON_DELAY image written by ieee802154_txon_delay_set.
     Delay50 = 0x00000032,
 }
 
 impl Ieee802154RxOnDelay {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole transmit/receive turnaround delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 MAC initialization (ieee802154_txon_delay_set).
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ieee802154TxRxSwitchDelay {
+    /// Literal ten-bit TXRX_SWITCH_DELAY image written by ieee802154_txon_delay_set.
+    Delay117 = 0x00000075,
+}
+
+impl Ieee802154TxRxSwitchDelay {
     /// Numeric image for diagnostics and the private raw-PAC bridge.
     pub const fn bits(self) -> u32 {
         self as u32
@@ -2993,6 +3038,24 @@ pub(crate) fn override_ieee802154_shared_tx_on_delay(
     );
 }
 
+/// Typed bridge for the reviewed `set_ieee802154_tx_on_delay` masked transaction.
+#[inline]
+pub(crate) fn set_ieee802154_tx_on_delay(
+    registers: &crate::svd::Ieee802154Mac,
+    value: Ieee802154TxOnDelay,
+) {
+    crate::svd::masked_register_modify::set_ieee802154_tx_on_delay(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_tx_off_delay` masked transaction.
+#[inline]
+pub(crate) fn set_ieee802154_tx_off_delay(
+    registers: &crate::svd::Ieee802154Mac,
+    value: Ieee802154TxOffDelay,
+) {
+    crate::svd::masked_register_modify::set_ieee802154_tx_off_delay(registers, value.bits());
+}
+
 /// Typed bridge for the reviewed `set_ieee802154_rx_on_delay` masked transaction.
 #[inline]
 pub(crate) fn set_ieee802154_rx_on_delay(
@@ -3000,6 +3063,15 @@ pub(crate) fn set_ieee802154_rx_on_delay(
     value: Ieee802154RxOnDelay,
 ) {
     crate::svd::masked_register_modify::set_ieee802154_rx_on_delay(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_txrx_switch_delay` masked transaction.
+#[inline]
+pub(crate) fn set_ieee802154_txrx_switch_delay(
+    registers: &crate::svd::Ieee802154Mac,
+    value: Ieee802154TxRxSwitchDelay,
+) {
+    crate::svd::masked_register_modify::set_ieee802154_txrx_switch_delay(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `publish_pbus_force_test` masked transaction.

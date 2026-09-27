@@ -153,10 +153,12 @@ order:
      `MIDDLE = 2` and the TX/RX setter for the idle scene (`IDLE = 4` by the
      public default configuration);
    - otherwise assign `PTI = 3` and `HW_ACK_PTI = 3` directly.
-8. Call opaque `ieee802154_txon_delay_set()`. Its recovered effect is the
-   shared auxiliary transmit-on delay, applied through the arbiter after the
-   BTBB acquisition, and `RXON_DELAY = 50`, which the open MAC foundation
-   writes and reads back.
+8. Call closed `ieee802154_txon_delay_set()` of libbtbb. Its recovered
+   effect is four preserving MAC field writes, in order `TXON_DELAY = 45`,
+   `RXON_DELAY = 50`, `TXRX_SWITCH_DELAY = 117` and `TXOFF_DELAY = 5`, which
+   the open MAC foundation writes and reads back. It does not touch the
+   shared baseband; the arbiter's `join_ieee802154` still overrides the
+   shared auxiliary transmit-on delay, a write the pinned body does not make.
 9. Clear the software RX-buffer queue and set the software state to idle.
 10. Allocate the IRQ and initialize sleep/retention support.
 

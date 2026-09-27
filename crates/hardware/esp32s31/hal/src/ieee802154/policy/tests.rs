@@ -196,7 +196,7 @@ fn every_checkpoint_fails_closed_and_preserves_the_owner() {
         Ieee802154MacPolicyCheckpoint::EdSampleAverage,
         Ieee802154MacPolicyCheckpoint::TxrxPtiDisabled,
         Ieee802154MacPolicyCheckpoint::AckPtiDisabled,
-        Ieee802154MacPolicyCheckpoint::RxOnDelayApplied,
+        Ieee802154MacPolicyCheckpoint::TxOnDelayApplied,
         Ieee802154MacPolicyCheckpoint::Channel,
         Ieee802154MacPolicyCheckpoint::CcaMode,
         Ieee802154MacPolicyCheckpoint::CcaThreshold,
@@ -224,7 +224,7 @@ fn every_checkpoint_fails_closed_and_preserves_the_owner() {
                     | Ieee802154MacPolicyCheckpoint::EdSampleAverage
                     | Ieee802154MacPolicyCheckpoint::TxrxPtiDisabled
                     | Ieee802154MacPolicyCheckpoint::AckPtiDisabled
-                    | Ieee802154MacPolicyCheckpoint::RxOnDelayApplied
+                    | Ieee802154MacPolicyCheckpoint::TxOnDelayApplied
             )
         );
         let mut snapshot = valid;
@@ -283,7 +283,7 @@ fn every_checkpoint_fails_closed_and_preserves_the_owner() {
                 Ieee802154Pti::new(COEX_DISABLED_PTI - 1).expect("five-bit PTI"),
                 true,
             ),
-            Ieee802154MacPolicyCheckpoint::RxOnDelayApplied => Ieee802154FoundationSnapshot::new(
+            Ieee802154MacPolicyCheckpoint::TxOnDelayApplied => Ieee802154FoundationSnapshot::new(
                 true,
                 true,
                 true,
@@ -301,7 +301,7 @@ fn every_checkpoint_fails_closed_and_preserves_the_owner() {
             | Ieee802154MacPolicyCheckpoint::EdSampleAverage
             | Ieee802154MacPolicyCheckpoint::TxrxPtiDisabled
             | Ieee802154MacPolicyCheckpoint::AckPtiDisabled
-            | Ieee802154MacPolicyCheckpoint::RxOnDelayApplied => {}
+            | Ieee802154MacPolicyCheckpoint::TxOnDelayApplied => {}
             Ieee802154MacPolicyCheckpoint::Channel => snapshot.frequency_code ^= 1,
             Ieee802154MacPolicyCheckpoint::CcaMode => {
                 snapshot.cca_mode = Ieee802154CcaMode::Carrier

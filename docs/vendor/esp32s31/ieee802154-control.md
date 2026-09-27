@@ -240,7 +240,8 @@ postconditions:
 - RF wakeup and tracking depend on opaque `phy_wakeup_init()`,
   `phy_track_pll_init()`, and `phy_track_pll()` effects;
 - MAC initialization calls closed `ieee802154_txon_delay_set()`, whose
-  recovered effects are the shared transmit-on delay and `RXON_DELAY`;
+  recovered effects are the MAC `TXON_DELAY`, `RXON_DELAY`,
+  `TXRX_SWITCH_DELAY` and `TXOFF_DELAY` fields;
 - TX policy uses the level set of closed `bt_bb_get_tx_pwr_table()`, recovered
   as `Ieee802154TxPowerLevels::ESP32S31`.
 

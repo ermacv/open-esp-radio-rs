@@ -17,7 +17,7 @@ enum Operation {
     SetEdSampleAverage,
     SetTxrxPti(u8),
     SetAckPti(u8),
-    RxOnDelay,
+    TxOnDelay,
     DeviceFence,
 }
 
@@ -114,8 +114,8 @@ impl Ieee802154LifecycleBackend for FakeBackend {
         self.operations.push(Operation::SetAckPti(pti.value()));
     }
 
-    fn apply_rx_on_delay(&mut self) {
-        self.operations.push(Operation::RxOnDelay);
+    fn apply_txon_delay(&mut self) {
+        self.operations.push(Operation::TxOnDelay);
     }
 
     fn order_device_accesses(&mut self) {
@@ -154,7 +154,7 @@ fn exact_sequence_reaches_only_foundation_configured() {
             Operation::SetEdSampleAverage,
             Operation::SetTxrxPti(COEX_DISABLED_PTI),
             Operation::SetAckPti(COEX_DISABLED_PTI),
-            Operation::RxOnDelay,
+            Operation::TxOnDelay,
             Operation::DeviceFence,
         ]
     );
@@ -249,7 +249,7 @@ fn foundation_requires_the_receive_on_delay() {
     };
     assert_eq!(
         failure.error().checkpoint,
-        Ieee802154FoundationCheckpoint::RxOnDelayApplied
+        Ieee802154FoundationCheckpoint::TxOnDelayApplied
     );
 }
 

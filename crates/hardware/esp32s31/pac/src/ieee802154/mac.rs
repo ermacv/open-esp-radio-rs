@@ -1416,7 +1416,7 @@ pub struct Ieee802154FoundationSnapshot {
     ed_uses_average: bool,
     txrx_pti: Ieee802154Pti,
     ack_pti: Ieee802154Pti,
-    rx_on_delay_applied: bool,
+    txon_delay_applied: bool,
 }
 
 /// Readback of the static, interrupt-masked MAC policy subset.
@@ -1572,7 +1572,7 @@ impl Ieee802154FoundationSnapshot {
         ed_uses_average: bool,
         txrx_pti: Ieee802154Pti,
         ack_pti: Ieee802154Pti,
-        rx_on_delay_applied: bool,
+        txon_delay_applied: bool,
     ) -> Self {
         Self {
             events_masked,
@@ -1581,13 +1581,14 @@ impl Ieee802154FoundationSnapshot {
             ed_uses_average,
             txrx_pti,
             ack_pti,
-            rx_on_delay_applied,
+            txon_delay_applied,
         }
     }
 
-    /// Whether `RXON_DELAY` holds the vendor MAC-initialization value.
-    pub const fn rx_on_delay_applied(self) -> bool {
-        self.rx_on_delay_applied
+    /// Whether `TXON_DELAY`, `TXOFF_DELAY`, `RXON_DELAY` and
+    /// `TXRX_SWITCH_DELAY` hold the vendor MAC-initialization values.
+    pub const fn txon_delay_applied(self) -> bool {
+        self.txon_delay_applied
     }
 
     pub const fn events_masked(self) -> bool {
@@ -2091,9 +2092,10 @@ impl Ieee802154PolledRegisterLease<'_> {
         self.task.registers.select_average_ed_sampling();
     }
 
-    /// Apply the vendor MAC-initialization `RXON_DELAY` of 50.
-    pub fn apply_rx_on_delay(&mut self) {
-        self.task.registers.set_rx_on_delay_50();
+    /// Apply the vendor MAC-initialization delays of
+    /// `ieee802154_txon_delay_set`.
+    pub fn apply_txon_delay(&mut self) {
+        self.task.registers.set_txon_delay();
     }
 
     /// Select one closed finite-operation `EVENT_ENABLE` state.
@@ -2158,7 +2160,7 @@ impl Ieee802154PolledRegisterLease<'_> {
             ed_uses_average: readback.ed_uses_average(),
             txrx_pti: Ieee802154Pti(readback.txrx_pti()),
             ack_pti: Ieee802154Pti(readback.ack_pti()),
-            rx_on_delay_applied: readback.rx_on_delay_applied(),
+            txon_delay_applied: readback.txon_delay_applied(),
         }
     }
 

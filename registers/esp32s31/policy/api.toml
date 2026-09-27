@@ -313,14 +313,44 @@ description = "Bit twenty-two set by complete ROM phy_set_tsens_power_."
 sources = ["ROM_REV0_PHY_TSENS", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 
 [[enum-domains]]
+name = "Ieee802154TxOnDelay"
+description = "The sole transmit-on delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 MAC initialization (ieee802154_txon_delay_set)."
+
+[[enum-domains.values]]
+name = "Delay45"
+value = 45
+description = "Literal ten-bit TXON_DELAY image written by ieee802154_txon_delay_set."
+sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
+
+[[enum-domains]]
+name = "Ieee802154TxOffDelay"
+description = "The sole transmit-off delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 MAC initialization (ieee802154_txon_delay_set)."
+
+[[enum-domains.values]]
+name = "Delay5"
+value = 5
+description = "Literal six-bit TXOFF_DELAY image written by ieee802154_txon_delay_set."
+sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
+
+[[enum-domains]]
 name = "Ieee802154RxOnDelay"
-description = "The sole receive-on delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 initialization transaction."
+description = "The sole receive-on delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 MAC initialization (ieee802154_txon_delay_set)."
 
 [[enum-domains.values]]
 name = "Delay50"
 value = 50
-description = "Literal eleven-bit RXON_DELAY image written immediately after the shared transmit-on delay override."
-sources = ["ESP_RADIO_7F914782_S31_IEEE802154_INIT", "ESP_RADIO_7F914782_S31_IEEE802154_HAL"]
+description = "Literal eleven-bit RXON_DELAY image written by ieee802154_txon_delay_set."
+sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
+
+[[enum-domains]]
+name = "Ieee802154TxRxSwitchDelay"
+description = "The sole transmit/receive turnaround delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 MAC initialization (ieee802154_txon_delay_set)."
+
+[[enum-domains.values]]
+name = "Delay117"
+value = 117
+description = "Literal ten-bit TXRX_SWITCH_DELAY image written by ieee802154_txon_delay_set."
+sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
 
 [[bounded-domains]]
 name = "MacPti"
@@ -3089,6 +3119,28 @@ exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT", "ESP_RADIO_7F914782_S31_IEEE802154_INIT"]
 
 [[masked-register-modifies]]
+name = "set_ieee802154_tx_on_delay"
+peripheral = "IEEE802154_MAC"
+register = "TXON_DELAY"
+domain = "Ieee802154TxOnDelay"
+preserve-mask = 0xfffffc00
+input-mask = 0x000003ff
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
+
+[[masked-register-modifies]]
+name = "set_ieee802154_tx_off_delay"
+peripheral = "IEEE802154_MAC"
+register = "TXOFF_DELAY"
+domain = "Ieee802154TxOffDelay"
+preserve-mask = 0xffffffc0
+input-mask = 0x0000003f
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
+
+[[masked-register-modifies]]
 name = "set_ieee802154_rx_on_delay"
 peripheral = "IEEE802154_MAC"
 register = "RXON_DELAY"
@@ -3097,11 +3149,18 @@ preserve-mask = 0xfffff800
 input-mask = 0x000007ff
 set-mask = 0x00000000
 exposure = "facade"
-sources = [
-    "ESP_RADIO_7F914782_S31_IEEE802154_INIT",
-    "ESP_RADIO_7F914782_S31_IEEE802154_HAL",
-    "ESP_PACS_AAA5C2EA_S31_IEEE802154_RXON_DELAY",
-]
+sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
+
+[[masked-register-modifies]]
+name = "set_ieee802154_txrx_switch_delay"
+peripheral = "IEEE802154_MAC"
+register = "TXRX_SWITCH_DELAY"
+domain = "Ieee802154TxRxSwitchDelay"
+preserve-mask = 0xfffffc00
+input-mask = 0x000003ff
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
 
 [[masked-register-modifies]]
 name = "publish_pbus_force_test"

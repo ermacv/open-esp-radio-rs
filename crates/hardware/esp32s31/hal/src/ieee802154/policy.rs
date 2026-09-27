@@ -349,7 +349,7 @@ pub enum Ieee802154MacPolicyCheckpoint {
     /// ACK coexistence PTI no longer reads as disabled.
     AckPtiDisabled,
     /// The receive-on delay no longer reads as the MAC-initialization value.
-    RxOnDelayApplied,
+    TxOnDelayApplied,
     /// Channel frequency-code readback mismatched.
     Channel,
     /// CCA-mode readback mismatched.
@@ -392,7 +392,7 @@ impl Ieee802154MacPolicyCheckpoint {
                 | Self::EdSampleAverage
                 | Self::TxrxPtiDisabled
                 | Self::AckPtiDisabled
-                | Self::RxOnDelayApplied
+                | Self::TxOnDelayApplied
         )
     }
 }
@@ -601,8 +601,8 @@ fn verify_foundation_readback(
         foundation.ack_pti().value() == COEX_DISABLED_PTI,
     )?;
     verify(
-        Ieee802154MacPolicyCheckpoint::RxOnDelayApplied,
-        foundation.rx_on_delay_applied(),
+        Ieee802154MacPolicyCheckpoint::TxOnDelayApplied,
+        foundation.txon_delay_applied(),
     )?;
 
     Ok(())

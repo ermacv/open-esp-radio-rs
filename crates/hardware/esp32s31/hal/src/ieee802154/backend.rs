@@ -76,7 +76,7 @@ pub(crate) trait Ieee802154RegisterBackend {
     fn select_average_ed_sampling(&mut self);
 
     /// Apply the vendor MAC-initialization receive-on delay.
-    fn apply_rx_on_delay(&mut self);
+    fn apply_txon_delay(&mut self);
 
     /// Replace only the opaque eight-bit MAC frequency-code field.
     fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode);
@@ -132,8 +132,8 @@ impl Ieee802154RegisterBackend for Ieee802154PolledRegisterLease<'_> {
         Ieee802154PolledRegisterLease::select_average_ed_sampling(self);
     }
 
-    fn apply_rx_on_delay(&mut self) {
-        Ieee802154PolledRegisterLease::apply_rx_on_delay(self);
+    fn apply_txon_delay(&mut self) {
+        Ieee802154PolledRegisterLease::apply_txon_delay(self);
     }
 
     fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
@@ -552,8 +552,8 @@ impl<B: Ieee802154RegisterBackend> Ieee802154Hal<B> {
         self.backend.select_average_ed_sampling();
     }
 
-    pub(crate) fn apply_rx_on_delay(&mut self) {
-        self.backend.apply_rx_on_delay();
+    pub(crate) fn apply_txon_delay(&mut self) {
+        self.backend.apply_txon_delay();
     }
 
     pub(crate) fn set_txrx_pti(&mut self, pti: Ieee802154Pti) {

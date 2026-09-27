@@ -116,7 +116,7 @@ pub(crate) trait Ieee802154LifecycleBackend {
     fn set_ack_pti(&mut self, pti: Ieee802154Pti);
 
     /// Apply the vendor MAC-initialization receive-on delay.
-    fn apply_rx_on_delay(&mut self);
+    fn apply_txon_delay(&mut self);
 
     /// Order completed foundation writes before publishing the next typestate.
     fn order_device_accesses(&mut self);
@@ -146,7 +146,7 @@ pub enum Ieee802154FoundationCheckpoint {
     EdSampleAverage,
     TxrxPtiDisabled,
     AckPtiDisabled,
-    RxOnDelayApplied,
+    TxOnDelayApplied,
 }
 
 /// One failed semantic readback. Register images never escape the backend.
@@ -342,7 +342,7 @@ where
             .expect("reviewed coexistence-disabled PTI fits five bits");
         self.backend.set_txrx_pti(disabled_pti);
         self.backend.set_ack_pti(disabled_pti);
-        self.backend.apply_rx_on_delay();
+        self.backend.apply_txon_delay();
         self.backend.order_device_accesses();
 
         if let Err(error) = verify_foundation_snapshot(self.backend.foundation_snapshot()) {
@@ -400,8 +400,8 @@ fn verify_foundation_snapshot(
         snapshot.ack_pti().value() == COEX_DISABLED_PTI,
     )?;
     verify(
-        Ieee802154FoundationCheckpoint::RxOnDelayApplied,
-        snapshot.rx_on_delay_applied(),
+        Ieee802154FoundationCheckpoint::TxOnDelayApplied,
+        snapshot.txon_delay_applied(),
     )
 }
 

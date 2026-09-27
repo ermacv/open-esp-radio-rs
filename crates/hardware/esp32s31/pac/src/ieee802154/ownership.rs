@@ -407,12 +407,12 @@ pub struct FoundationReadback {
     ed_uses_average: bool,
     txrx_pti: u8,
     ack_pti: u8,
-    rx_on_delay_applied: bool,
+    txon_delay_applied: bool,
 }
 
 impl FoundationReadback {
-    pub const fn rx_on_delay_applied(self) -> bool {
-        self.rx_on_delay_applied
+    pub const fn txon_delay_applied(self) -> bool {
+        self.txon_delay_applied
     }
 
     pub const fn events_masked(self) -> bool {
@@ -439,9 +439,6 @@ impl FoundationReadback {
         self.ack_pti
     }
 }
-
-/// `RXON_DELAY` written by the vendor `ieee802154_txon_delay_set`.
-const RX_ON_DELAY: u16 = 50;
 
 /// Closed classification of `EVENT_ENABLE` for one finite ED/CCA operation.
 #[doc(hidden)]
@@ -1213,7 +1210,10 @@ impl TaskRegisters {
         let tx_abort_enable = self.registers.tx_abort_enable().read();
         let ed_config = self.registers.ed_config().read();
         let coex_pti = self.registers.coex_pti().read();
+        let tx_on_delay = self.registers.txon_delay().read();
+        let tx_off_delay = self.registers.txoff_delay().read();
         let rx_on_delay = self.registers.rxon_delay().read();
+        let txrx_switch_delay = self.registers.txrx_switch_delay().read();
         FoundationReadback {
             events_masked: Ieee802154EventReadback::from_event_enable(&event_enable).is_clear(),
             rx_aborts_masked: rx_abort_enable.events().is_none(),
@@ -1221,7 +1221,14 @@ impl TaskRegisters {
             ed_uses_average: ed_config.ed_sample_mode().is_average(),
             txrx_pti: coex_pti.txrx_pti().bits(),
             ack_pti: coex_pti.ack_pti().bits(),
-            rx_on_delay_applied: rx_on_delay.rxon_delay().bits() == RX_ON_DELAY,
+            txon_delay_applied: u32::from(tx_on_delay.txon_delay().bits())
+                == crate::generated::Ieee802154TxOnDelay::Delay45.bits()
+                && u32::from(tx_off_delay.txoff_delay().bits())
+                    == crate::generated::Ieee802154TxOffDelay::Delay5.bits()
+                && u32::from(rx_on_delay.rxon_delay().bits())
+                    == crate::generated::Ieee802154RxOnDelay::Delay50.bits()
+                && u32::from(txrx_switch_delay.txrx_switch_delay().bits())
+                    == crate::generated::Ieee802154TxRxSwitchDelay::Delay117.bits(),
         }
     }
 
@@ -1292,12 +1299,25 @@ impl TaskRegisters {
         }
     }
 
-    /// Apply the sole source-confirmed RXON delay image used by IEEE timing.
+    /// `ieee802154_txon_delay_set`: the MAC transmit-on, receive-on,
+    /// turnaround and transmit-off delays, in the vendor order.
     #[doc(hidden)]
-    pub fn set_rx_on_delay_50(&mut self) {
-        crate::svd::masked_register_modify::set_ieee802154_rx_on_delay(
+    pub fn set_txon_delay(&mut self) {
+        crate::generated::set_ieee802154_tx_on_delay(
             &self.registers,
-            u32::from(RX_ON_DELAY),
+            crate::generated::Ieee802154TxOnDelay::Delay45,
+        );
+        crate::generated::set_ieee802154_rx_on_delay(
+            &self.registers,
+            crate::generated::Ieee802154RxOnDelay::Delay50,
+        );
+        crate::generated::set_ieee802154_txrx_switch_delay(
+            &self.registers,
+            crate::generated::Ieee802154TxRxSwitchDelay::Delay117,
+        );
+        crate::generated::set_ieee802154_tx_off_delay(
+            &self.registers,
+            crate::generated::Ieee802154TxOffDelay::Delay5,
         );
     }
 

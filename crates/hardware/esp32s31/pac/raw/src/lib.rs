@@ -53596,9 +53596,13 @@ pub mod ieee802154_mac {
         tx_dma_address: TxDmaAddress,
         _reserved25: [u8; 0x0c],
         rx_dma_address: RxDmaAddress,
-        _reserved26: [u8; 0x2c],
+        _reserved26: [u8; 0x20],
+        txon_delay: TxonDelay,
+        _reserved27: [u8; 0x04],
+        txoff_delay: TxoffDelay,
         rxon_delay: RxonDelay,
-        _reserved27: [u8; 0x14],
+        txrx_switch_delay: TxrxSwitchDelay,
+        _reserved30: [u8; 0x10],
         security_control: SecurityControl,
         security_address_low: SecurityAddressLow,
         security_address_high: SecurityAddressHigh,
@@ -53918,10 +53922,25 @@ pub mod ieee802154_mac {
         pub const fn rx_dma_address(&self) -> &RxDmaAddress {
             &self.rx_dma_address
         }
-        #[doc = "0x110 - Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC."]
+        #[doc = "0x104 - Transmit-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 45 is reviewed; Physical units remain outside the PAC."]
+        #[inline(always)]
+        pub const fn txon_delay(&self) -> &TxonDelay {
+            &self.txon_delay
+        }
+        #[doc = "0x10c - Transmit-off delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 5 is reviewed; Physical units remain outside the PAC."]
+        #[inline(always)]
+        pub const fn txoff_delay(&self) -> &TxoffDelay {
+            &self.txoff_delay
+        }
+        #[doc = "0x110 - Receive-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 50 is reviewed; Physical units remain outside the PAC."]
         #[inline(always)]
         pub const fn rxon_delay(&self) -> &RxonDelay {
             &self.rxon_delay
+        }
+        #[doc = "0x114 - Transmit/receive turnaround delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 117 is reviewed; Physical units remain outside the PAC."]
+        #[inline(always)]
+        pub const fn txrx_switch_delay(&self) -> &TxrxSwitchDelay {
+            &self.txrx_switch_delay
         }
         #[doc = "0x128 - Transmit-security enable and payload-offset fields used by the public common LL."]
         #[inline(always)]
@@ -56321,34 +56340,112 @@ pub mod ieee802154_mac {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "RXON_DELAY (rw) register accessor: Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`rxon_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rxon_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rxon_delay`] module"]
+    #[doc = "TXON_DELAY (rw) register accessor: Transmit-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 45 is reviewed; Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`txon_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`txon_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@txon_delay`] module"]
+    #[doc(alias = "TXON_DELAY")]
+    pub type TxonDelay = crate::Reg<txon_delay::TxonDelaySpec>;
+    #[doc = "Transmit-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 45 is reviewed; Physical units remain outside the PAC."]
+    pub mod txon_delay {
+        #[doc = "Register `TXON_DELAY` reader"]
+        pub type R = crate::R<TxonDelaySpec>;
+        #[doc = "Register `TXON_DELAY` writer"]
+        pub type W = crate::W<TxonDelaySpec>;
+        #[doc = "Field `TXON_DELAY` reader - Ten-bit preserving field written with literal 45 by ieee802154_txon_delay_set."]
+        pub type TxonDelayR = crate::FieldReader<u16>;
+        #[doc = "Field `TXON_DELAY` writer - Ten-bit preserving field written with literal 45 by ieee802154_txon_delay_set."]
+        pub type TxonDelayW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:9 - Ten-bit preserving field written with literal 45 by ieee802154_txon_delay_set."]
+            #[inline(always)]
+            pub fn txon_delay(&self) -> TxonDelayR {
+                TxonDelayR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:9 - Ten-bit preserving field written with literal 45 by ieee802154_txon_delay_set."]
+            #[inline(always)]
+            pub fn txon_delay(&mut self) -> TxonDelayW<'_, TxonDelaySpec> {
+                TxonDelayW::new(self, 0)
+            }
+        }
+        #[doc = "Transmit-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 45 is reviewed; Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`txon_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`txon_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxonDelaySpec;
+        impl crate::RegisterSpec for TxonDelaySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`txon_delay::R`](R) reader structure"]
+        impl crate::Readable for TxonDelaySpec {}
+        #[doc = "`write(|w| ..)` method takes [`txon_delay::W`](W) writer structure"]
+        impl crate::Writable for TxonDelaySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TXOFF_DELAY (rw) register accessor: Transmit-off delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 5 is reviewed; Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`txoff_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`txoff_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@txoff_delay`] module"]
+    #[doc(alias = "TXOFF_DELAY")]
+    pub type TxoffDelay = crate::Reg<txoff_delay::TxoffDelaySpec>;
+    #[doc = "Transmit-off delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 5 is reviewed; Physical units remain outside the PAC."]
+    pub mod txoff_delay {
+        #[doc = "Register `TXOFF_DELAY` reader"]
+        pub type R = crate::R<TxoffDelaySpec>;
+        #[doc = "Register `TXOFF_DELAY` writer"]
+        pub type W = crate::W<TxoffDelaySpec>;
+        #[doc = "Field `TXOFF_DELAY` reader - Six-bit preserving field written with literal 5 by ieee802154_txon_delay_set."]
+        pub type TxoffDelayR = crate::FieldReader;
+        #[doc = "Field `TXOFF_DELAY` writer - Six-bit preserving field written with literal 5 by ieee802154_txon_delay_set."]
+        pub type TxoffDelayW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:5 - Six-bit preserving field written with literal 5 by ieee802154_txon_delay_set."]
+            #[inline(always)]
+            pub fn txoff_delay(&self) -> TxoffDelayR {
+                TxoffDelayR::new((self.bits & 0x3f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - Six-bit preserving field written with literal 5 by ieee802154_txon_delay_set."]
+            #[inline(always)]
+            pub fn txoff_delay(&mut self) -> TxoffDelayW<'_, TxoffDelaySpec> {
+                TxoffDelayW::new(self, 0)
+            }
+        }
+        #[doc = "Transmit-off delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 5 is reviewed; Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`txoff_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`txoff_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxoffDelaySpec;
+        impl crate::RegisterSpec for TxoffDelaySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`txoff_delay::R`](R) reader structure"]
+        impl crate::Readable for TxoffDelaySpec {}
+        #[doc = "`write(|w| ..)` method takes [`txoff_delay::W`](W) writer structure"]
+        impl crate::Writable for TxoffDelaySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RXON_DELAY (rw) register accessor: Receive-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 50 is reviewed; Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`rxon_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rxon_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rxon_delay`] module"]
     #[doc(alias = "RXON_DELAY")]
     pub type RxonDelay = crate::Reg<rxon_delay::RxonDelaySpec>;
-    #[doc = "Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC."]
+    #[doc = "Receive-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 50 is reviewed; Physical units remain outside the PAC."]
     pub mod rxon_delay {
         #[doc = "Register `RXON_DELAY` reader"]
         pub type R = crate::R<RxonDelaySpec>;
         #[doc = "Register `RXON_DELAY` writer"]
         pub type W = crate::W<RxonDelaySpec>;
-        #[doc = "Field `RXON_DELAY` reader - Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override."]
+        #[doc = "Field `RXON_DELAY` reader - Eleven-bit preserving field written with literal 50 by ieee802154_txon_delay_set."]
         pub type RxonDelayR = crate::FieldReader<u16>;
-        #[doc = "Field `RXON_DELAY` writer - Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override."]
+        #[doc = "Field `RXON_DELAY` writer - Eleven-bit preserving field written with literal 50 by ieee802154_txon_delay_set."]
         pub type RxonDelayW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:10 - Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override."]
+            #[doc = "Bits 0:10 - Eleven-bit preserving field written with literal 50 by ieee802154_txon_delay_set."]
             #[inline(always)]
             pub fn rxon_delay(&self) -> RxonDelayR {
                 RxonDelayR::new((self.bits & 0x07ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 0:10 - Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override."]
+            #[doc = "Bits 0:10 - Eleven-bit preserving field written with literal 50 by ieee802154_txon_delay_set."]
             #[inline(always)]
             pub fn rxon_delay(&mut self) -> RxonDelayW<'_, RxonDelaySpec> {
                 RxonDelayW::new(self, 0)
             }
         }
-        #[doc = "Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`rxon_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rxon_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Receive-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 50 is reviewed; Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`rxon_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rxon_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxonDelaySpec;
         impl crate::RegisterSpec for RxonDelaySpec {
             type Ux = u32;
@@ -56357,6 +56454,45 @@ pub mod ieee802154_mac {
         impl crate::Readable for RxonDelaySpec {}
         #[doc = "`write(|w| ..)` method takes [`rxon_delay::W`](W) writer structure"]
         impl crate::Writable for RxonDelaySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TXRX_SWITCH_DELAY (rw) register accessor: Transmit/receive turnaround delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 117 is reviewed; Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`txrx_switch_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`txrx_switch_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@txrx_switch_delay`] module"]
+    #[doc(alias = "TXRX_SWITCH_DELAY")]
+    pub type TxrxSwitchDelay = crate::Reg<txrx_switch_delay::TxrxSwitchDelaySpec>;
+    #[doc = "Transmit/receive turnaround delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 117 is reviewed; Physical units remain outside the PAC."]
+    pub mod txrx_switch_delay {
+        #[doc = "Register `TXRX_SWITCH_DELAY` reader"]
+        pub type R = crate::R<TxrxSwitchDelaySpec>;
+        #[doc = "Register `TXRX_SWITCH_DELAY` writer"]
+        pub type W = crate::W<TxrxSwitchDelaySpec>;
+        #[doc = "Field `TXRX_SWITCH_DELAY` reader - Ten-bit preserving field written with literal 117 by ieee802154_txon_delay_set."]
+        pub type TxrxSwitchDelayR = crate::FieldReader<u16>;
+        #[doc = "Field `TXRX_SWITCH_DELAY` writer - Ten-bit preserving field written with literal 117 by ieee802154_txon_delay_set."]
+        pub type TxrxSwitchDelayW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:9 - Ten-bit preserving field written with literal 117 by ieee802154_txon_delay_set."]
+            #[inline(always)]
+            pub fn txrx_switch_delay(&self) -> TxrxSwitchDelayR {
+                TxrxSwitchDelayR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:9 - Ten-bit preserving field written with literal 117 by ieee802154_txon_delay_set."]
+            #[inline(always)]
+            pub fn txrx_switch_delay(&mut self) -> TxrxSwitchDelayW<'_, TxrxSwitchDelaySpec> {
+                TxrxSwitchDelayW::new(self, 0)
+            }
+        }
+        #[doc = "Transmit/receive turnaround delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 117 is reviewed; Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`txrx_switch_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`txrx_switch_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxrxSwitchDelaySpec;
+        impl crate::RegisterSpec for TxrxSwitchDelaySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`txrx_switch_delay::R`](R) reader structure"]
+        impl crate::Readable for TxrxSwitchDelaySpec {}
+        #[doc = "`write(|w| ..)` method takes [`txrx_switch_delay::W`](W) writer structure"]
+        impl crate::Writable for TxrxSwitchDelaySpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -63870,11 +64006,44 @@ pub mod masked_register_modify {
         });
     }
 
+    /// Preserve mask 0xfffffc00, accept input mask 0x000003ff, and set 0x00000000 in IEEE802154_MAC.TXON_DELAY.
+    #[inline]
+    pub fn set_ieee802154_tx_on_delay(registers: &crate::Ieee802154Mac, input: u32) {
+        registers.txon_delay().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffc00) | (input & 0x000003ff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xffffffc0, accept input mask 0x0000003f, and set 0x00000000 in IEEE802154_MAC.TXOFF_DELAY.
+    #[inline]
+    pub fn set_ieee802154_tx_off_delay(registers: &crate::Ieee802154Mac, input: u32) {
+        registers.txoff_delay().modify(|reader, writer| {
+            let image = (reader.bits() & 0xffffffc0) | (input & 0x0000003f);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
     /// Preserve mask 0xfffff800, accept input mask 0x000007ff, and set 0x00000000 in IEEE802154_MAC.RXON_DELAY.
     #[inline]
     pub fn set_ieee802154_rx_on_delay(registers: &crate::Ieee802154Mac, input: u32) {
         registers.rxon_delay().modify(|reader, writer| {
             let image = (reader.bits() & 0xfffff800) | (input & 0x000007ff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffc00, accept input mask 0x000003ff, and set 0x00000000 in IEEE802154_MAC.TXRX_SWITCH_DELAY.
+    #[inline]
+    pub fn set_ieee802154_txrx_switch_delay(registers: &crate::Ieee802154Mac, input: u32) {
+        registers.txrx_switch_delay().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffc00) | (input & 0x000003ff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

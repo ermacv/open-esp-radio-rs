@@ -102,8 +102,8 @@ impl Ieee802154LifecycleBackend for Ieee802154Mac {
         self.mac_hal().set_ack_pti(pti);
     }
 
-    fn apply_rx_on_delay(&mut self) {
-        self.mac_hal().apply_rx_on_delay();
+    fn apply_txon_delay(&mut self) {
+        self.mac_hal().apply_txon_delay();
     }
 
     fn order_device_accesses(&mut self) {

@@ -23729,21 +23729,84 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           </fields>
         </register>
         <register>
+          <name>TXON_DELAY</name>
+          <description>Transmit-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 45 is reviewed; Physical units remain outside the PAC.</description>
+          <addressOffset>0x104</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>TXON_DELAY</name>
+              <description>Ten-bit preserving field written with literal 45 by ieee802154_txon_delay_set.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>10</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1023</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>TXOFF_DELAY</name>
+          <description>Transmit-off delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 5 is reviewed; Physical units remain outside the PAC.</description>
+          <addressOffset>0x10C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>TXOFF_DELAY</name>
+              <description>Six-bit preserving field written with literal 5 by ieee802154_txon_delay_set.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
           <name>RXON_DELAY</name>
-          <description>Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC.</description>
+          <description>Receive-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 50 is reviewed; Physical units remain outside the PAC.</description>
           <addressOffset>0x110</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>RXON_DELAY</name>
-              <description>Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override.</description>
+              <description>Eleven-bit preserving field written with literal 50 by ieee802154_txon_delay_set.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
                 <range>
                   <minimum>0</minimum>
                   <maximum>2047</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>TXRX_SWITCH_DELAY</name>
+          <description>Transmit/receive turnaround delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 117 is reviewed; Physical units remain outside the PAC.</description>
+          <addressOffset>0x114</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>TXRX_SWITCH_DELAY</name>
+              <description>Ten-bit preserving field written with literal 117 by ieee802154_txon_delay_set.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>10</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1023</maximum>
                 </range>
               </writeConstraint>
             </field>

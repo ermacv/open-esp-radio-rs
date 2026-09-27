@@ -10506,6 +10506,42 @@ bit-width = 32
 access = "write-only"
 
 [[registers]]
+address = 537932036
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.TXON_DELAY"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "txon_delay"
+
+[[registers.fields]]
+svd-name = "TXON_DELAY"
+method = "txon_delay"
+bit-offset = 0
+bit-width = 10
+access = "read-write"
+
+[[registers]]
+address = 537932044
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.TXOFF_DELAY"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "txoff_delay"
+
+[[registers.fields]]
+svd-name = "TXOFF_DELAY"
+method = "txoff_delay"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers]]
 address = 537932048
 width = 32
 access = "read-write"
@@ -10521,6 +10557,24 @@ svd-name = "RXON_DELAY"
 method = "rxon_delay"
 bit-offset = 0
 bit-width = 11
+access = "read-write"
+
+[[registers]]
+address = 537932052
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.TXRX_SWITCH_DELAY"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "txrx_switch_delay"
+
+[[registers.fields]]
+svd-name = "TXRX_SWITCH_DELAY"
+method = "txrx_switch_delay"
+bit-offset = 0
+bit-width = 10
 access = "read-write"
 
 [[registers]]

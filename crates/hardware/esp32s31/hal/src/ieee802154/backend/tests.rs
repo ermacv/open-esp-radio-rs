@@ -23,7 +23,7 @@ enum Operation {
     MaskRxAborts,
     MaskTxAborts,
     AverageEdSampling,
-    RxOnDelay,
+    TxOnDelay,
     FrequencyCode(u8),
     CcaMode(u8),
     CcaThreshold(i8),
@@ -96,8 +96,8 @@ impl Ieee802154RegisterBackend for FakeRegisters {
         self.operations.push(Operation::AverageEdSampling);
     }
 
-    fn apply_rx_on_delay(&mut self) {
-        self.operations.push(Operation::RxOnDelay);
+    fn apply_txon_delay(&mut self) {
+        self.operations.push(Operation::TxOnDelay);
     }
 
     fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
@@ -159,7 +159,7 @@ fn typed_operations_reach_the_backend_without_register_images() {
     hal.mask_all_rx_aborts();
     hal.mask_all_tx_aborts();
     hal.select_average_ed_sampling();
-    hal.apply_rx_on_delay();
+    hal.apply_txon_delay();
     hal.set_frequency_code(Ieee802154FrequencyCode::new(15));
     hal.set_cca_mode(Ieee802154CcaMode::CarrierAndEnergyDetection);
     hal.set_cca_threshold_code(-67);
@@ -184,7 +184,7 @@ fn typed_operations_reach_the_backend_without_register_images() {
             Operation::MaskRxAborts,
             Operation::MaskTxAborts,
             Operation::AverageEdSampling,
-            Operation::RxOnDelay,
+            Operation::TxOnDelay,
             Operation::FrequencyCode(15),
             Operation::CcaMode(3),
             Operation::CcaThreshold(-67),

@@ -86,6 +86,10 @@ id = "BLOB_LIBBTBB_SHARED_RX_INIT"
 description = "libbtbb.a sha256 9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895; complete named zb_rx_v0_0_set body, size 0xf0. It is called unconditionally by complete bt_bb_v2_init_cmplx and again by complete bt_bb_v2_rx_set. Its ordered fresh-read RMW operations prove the exact disjoint masks and finite images recorded at 0x20102C10..0x20102C34. The historical function prefix is retained only as call-identity evidence: the physical words remain in the protocol-neutral shared-radio owner and no Zigbee-only or BLE-only hardware semantics are inferred."
 
 [[sources]]
+id = "BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"
+description = "libbtbb.a sha256 9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895; complete bt_bb_v2.o ieee802154_txon_delay_set body, size 0x46, which ESP-IDF 7b9cc1ac ieee802154_mac_init calls. It performs four ordered fresh-read RMW operations on the IEEE 802.15.4 MAC block and no other access: 0x20103104 bits 9:0 become 45, 0x20103110 bits 10:0 become 50, 0x20103114 bits 9:0 become 117 and 0x2010310c bits 5:0 become 5, each preserving every other bit. It does not call bt_bb_set_zb_tx_on_delay and does not access the shared baseband."
+
+[[sources]]
 id = "BLOB_LIBBTBB_SHARED_TX_TIMING_INIT"
 description = "libbtbb.a sha256 9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895; complete named bt_bb_set_zb_tx_on_delay body, size 0x32. Complete bt_bb_v2_init_cmplx calls it unconditionally with argument 60. The leaf performs one fresh-read RMW at 0x20102010, replacing bits 16:26 with ((argument - 10) << 3) while preserving every other bit. The historical function name is evidence for the call boundary, not a claim of exclusive Zigbee ownership; the physical word is retained by the shared-radio partition."
 

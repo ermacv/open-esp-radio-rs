@@ -233,7 +233,7 @@ fn observation_sources(
         root,
         run,
         &subject.firmware,
-        subject.observer.as_ref(),
+        subject.observer.as_deref(),
         &|provenance| image_packages(root, provenance),
     )
 }
@@ -518,7 +518,7 @@ pub(crate) fn observers(index: &HilEvidenceIndex) -> Vec<&Value> {
         .values()
         .flatten()
         .filter(|o| !o.source_bound && o.exclusions.is_empty() && o.outcome == Outcome::Passed)
-        .filter_map(|o| o.subject.as_ref()?.observer.as_ref())
+        .filter_map(|o| o.subject.as_ref()?.observer.as_deref())
         .collect()
 }
 

@@ -846,7 +846,7 @@ fn observer_dependency_manifest_detects_features_but_ignores_dev_only_inputs() {
         )
     };
     lock();
-    let mut proof = source.subject.as_ref().unwrap().observer.clone().unwrap();
+    let mut proof = (*source.subject.as_ref().unwrap().observer.clone().unwrap()).clone();
     proof["build"]["resolved"] = crate::hil::tests::prepare_observer(root);
     for path in ["hil/host/wire/Cargo.toml", "hil/host/wire/src/lib.rs"] {
         proof["build"]["inputs"][path] = json!(sha256_file(&root.join(path)).unwrap());

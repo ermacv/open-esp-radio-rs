@@ -942,15 +942,66 @@ fn produces_runs(args: &[OsString]) -> bool {
 /// evidence shards, with the observer receipt the runs were produced under.
 /// Failed scenarios record nothing, so this also runs after a failing suite.
 fn record_evidence(ctx: &Context, receipt: &std::path::Path) -> Result<()> {
-    let status = ctx
-        .command("cargo")
+    // Every checkout's runs share one store, so recording evidence reads all
+    // of them. One recording at a time on the host, each in a memory-capped
+    // scope, keeps simultaneous runs of several agents from exhausting it.
+    let lock_path = evidence_lock_path()?;
+    std::fs::create_dir_all(lock_path.parent().ok_or("lock path has no parent")?)?;
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)?;
+    if fs2::FileExt::try_lock_exclusive(&lock).is_err() {
+        eprintln!("hil: waiting for another checkout's evidence recording");
+        fs2::FileExt::lock_exclusive(&lock)?;
+    }
+    let mut command = if std::process::Command::new("systemd-run")
+        .args(["--user", "--scope", "-q", "--", "true"])
+        .status()
+        .is_ok_and(|status| status.success())
+    {
+        let mut capped = ctx.command("systemd-run");
+        capped.args([
+            "--user",
+            "--scope",
+            "-q",
+            "-p",
+            EVIDENCE_MEMORY_MAX,
+            "-p",
+            "MemorySwapMax=0",
+            "--",
+            "cargo",
+        ]);
+        capped
+    } else {
+        ctx.command("cargo")
+    };
+    let status = command
         .args(["qualification", "hil-evidence", "--hil-target", HIL_TARGET])
         .env("OER_OBSERVER_RECEIPT", receipt)
         .status()?;
     if !status.success() {
-        return Err("recording the HIL evidence shards failed".into());
+        return Err(format!(
+            "recording the HIL evidence shards failed (it runs under {EVIDENCE_MEMORY_MAX})"
+        )
+        .into());
     }
     Ok(())
+}
+
+/// Memory limit of one evidence recording.
+const EVIDENCE_MEMORY_MAX: &str = "MemoryMax=6G";
+
+fn evidence_lock_path() -> Result<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".cache"))
+        })
+        .ok_or("HOME is required to locate the evidence lock")?;
+    Ok(base.join("open-esp-radio/qualification/hil-evidence.lock"))
 }
 
 /// Commands that need the terminal's foreground process group.

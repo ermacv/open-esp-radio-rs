@@ -305,7 +305,7 @@ pub(super) fn assess(
         observation
             .subject
             .as_ref()
-            .and_then(|s| s.observer.as_ref())
+            .and_then(|s| s.observer.as_deref())
     }) else {
         return Ok(Compatibility::IdentityDiffers);
     };

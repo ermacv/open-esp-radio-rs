@@ -25,13 +25,33 @@ pub(super) struct FirmwareIdentity {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(super) struct ObservationSubject {
-    pub(super) observer: Option<serde_json::Value>,
+    /// Shared between observations with the same proof: every run carries
+    /// the runner's proof of several megabytes, and most runs share one.
+    pub(super) observer: Option<std::sync::Arc<serde_json::Value>>,
     pub(super) repository: RepositoryProvenance,
     /// Images recorded in this completion boundary; no missing association is inferred.
     pub(super) firmware: Vec<FirmwareIdentity>,
     pub(super) procedure: Option<FileIdentity>,
     fixture: Option<FileIdentity>,
     pub(super) source_snapshot_manifest: Option<FileIdentity>,
+}
+
+/// One shared copy of each distinct observer proof.
+fn intern_observer(proof: &serde_json::Value) -> Result<std::sync::Arc<serde_json::Value>> {
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex, OnceLock},
+    };
+    static PROOFS: OnceLock<Mutex<HashMap<[u8; 32], Arc<serde_json::Value>>>> = OnceLock::new();
+    let key: [u8; 32] = Sha256::digest(serde_json::to_vec(proof)?).into();
+    let mut proofs = PROOFS
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| "observer proof cache poisoned")?;
+    Ok(proofs
+        .entry(key)
+        .or_insert_with(|| Arc::new(proof.clone()))
+        .clone())
 }
 
 impl ObservationSubject {
@@ -47,7 +67,8 @@ impl ObservationSubject {
             .as_ref()
             .and_then(|r| r.get("observer"))
             .filter(|v| !v.is_null())
-            .cloned();
+            .map(intern_observer)
+            .transpose()?;
         Ok(subject)
     }
     pub(super) fn from_parts(

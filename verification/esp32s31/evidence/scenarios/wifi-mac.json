@@ -189,7 +189,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "efa1548bbaa64eb9e8654e6b3be55623f96980b99dc94cbd3e9ca30ff2771592"
+      "sha256": "be0b6e55d86ded0269bec56596f03477a473ea1edd537ef4e079f05f99625159"
     },
     {
       "path": "verification/harness/codegen",
@@ -1189,8 +1189,8 @@
           "total": 282
         },
         "open": 21,
-        "excluded": 20,
-        "untriaged": 420
+        "excluded": 214,
+        "untriaged": 226
       },
       "observation": {
         "executed": 84,
@@ -1223,8 +1223,8 @@
           "total": 282
         },
         "open": 21,
-        "excluded": 20,
-        "untriaged": 470
+        "excluded": 210,
+        "untriaged": 280
       },
       "observation": {
         "executed": 73,
@@ -1245,20 +1245,22 @@
       "symbol": "hal_mac_tx_set_ppdu",
       "production": "open_libpp_tx_trace_hal_mac_tx_set_he_ppdu",
       "verdict": "match",
-      "cases": 320,
-      "reviews": [],
+      "cases": 808,
+      "reviews": [
+        "512db2a5b7e91aa59fd69567b626bb90189a965464d184db037f6ab9d1315b16"
+      ],
       "coverage": {
         "blocks": {
-          "reached": 82,
+          "reached": 88,
           "total": 281
         },
         "directions": {
-          "reached": 53,
+          "reached": 57,
           "total": 282
         },
         "open": 21,
-        "excluded": 12,
-        "untriaged": 437
+        "excluded": 193,
+        "untriaged": 246
       },
       "observation": {
         "executed": 90,
@@ -1359,8 +1361,8 @@
           "total": 2064
         },
         "open": 113,
-        "excluded": 180,
-        "untriaged": 4002
+        "excluded": 456,
+        "untriaged": 3726
       },
       "observation": {
         "executed": 2,
@@ -1461,8 +1463,8 @@
           "total": 2038
         },
         "open": 113,
-        "excluded": 122,
-        "untriaged": 3907
+        "excluded": 398,
+        "untriaged": 3631
       },
       "observation": {
         "executed": 10,
@@ -1495,8 +1497,8 @@
           "total": 2094
         },
         "open": 113,
-        "excluded": 122,
-        "untriaged": 3975
+        "excluded": 398,
+        "untriaged": 3699
       },
       "observation": {
         "executed": 10,
@@ -1529,8 +1531,8 @@
           "total": 2122
         },
         "open": 113,
-        "excluded": 152,
-        "untriaged": 4012
+        "excluded": 428,
+        "untriaged": 3736
       },
       "observation": {
         "executed": 17,
@@ -1563,8 +1565,8 @@
           "total": 1744
         },
         "open": 109,
-        "excluded": 128,
-        "untriaged": 3383
+        "excluded": 404,
+        "untriaged": 3107
       },
       "observation": {
         "executed": 23,
@@ -2148,511 +2150,6 @@
       "kind": "block"
     },
     {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 38,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 38,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 42,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 58,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 58,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 62,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 74,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 74,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 78,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 78,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 78,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 82,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 120,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 130,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 130,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 132,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 132,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 132,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 136,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 166,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 172,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 214,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 214,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 216,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 218,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 218,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 220,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_clr_mplen_bitmap",
-      "offset": 408,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 36,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 36,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 40,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 54,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 116,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 116,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 120,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 124,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 124,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 128,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 150,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 150,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 154,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 188,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 200,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 200,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 202,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 206,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 206,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 210,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 230,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 230,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 232,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 266,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 270,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 270,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 274,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 276,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 276,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 280,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 290,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 290,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 294,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 314,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 352,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 358,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 358,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 362,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 366,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 366,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 370,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 374,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 374,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 378,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 392,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 392,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 396,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 418,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 418,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 418,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 420,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 430,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 430,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 432,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 436,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 436,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 440,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 444,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 444,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 448,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 462,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 462,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 466,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 488,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 498,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 498,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 502,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 516,
-      "kind": "taken"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 516,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 520,
-      "kind": "block"
-    },
-    {
-      "function": "dbg_hal_check_set_mplen_bitmap",
-      "offset": 598,
-      "kind": "block"
-    },
-    {
       "function": "dbg_read_tx_ppdu",
       "offset": 0,
       "kind": "block"
@@ -3113,71 +2610,6 @@
       "kind": "block"
     },
     {
-      "function": "hal_he_get_bss_color",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 4,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 4,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 6,
-      "kind": "block"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 14,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 14,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 16,
-      "kind": "block"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 18,
-      "kind": "block"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 24,
-      "kind": "block"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 26,
-      "kind": "block"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 36,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 36,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_he_get_bss_color",
-      "offset": 38,
-      "kind": "block"
-    },
-    {
       "function": "hal_he_get_mplen_addr_end",
       "offset": 0,
       "kind": "block"
@@ -3423,16 +2855,6 @@
       "kind": "block"
     },
     {
-      "function": "hal_he_set_htc",
-      "offset": 28,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_he_set_htc",
-      "offset": 30,
-      "kind": "block"
-    },
-    {
       "function": "hal_mac_deinit",
       "offset": 0,
       "kind": "block"
@@ -3573,11 +2995,6 @@
       "kind": "block"
     },
     {
-      "function": "hal_mac_fill_hwtxop",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
       "function": "hal_mac_get_txq_pmd",
       "offset": 0,
       "kind": "block"
@@ -3585,246 +3002,6 @@
     {
       "function": "hal_mac_init",
       "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 48,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 48,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 52,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 84,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 84,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 88,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 88,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 88,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 92,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 126,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 130,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 130,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 134,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 138,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 138,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 142,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 144,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 144,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 146,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 148,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 178,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 188,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 188,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 192,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 192,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 192,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 196,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 218,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 230,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 230,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 234,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 240,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 240,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 244,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 244,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 244,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 248,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 252,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 252,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 256,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 290,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 354,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 368,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 368,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 372,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 374,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_clr_mplen",
-      "offset": 398,
       "kind": "block"
     },
     {
@@ -3926,61 +3103,6 @@
       "function": "hal_mac_tx_is_cbw40",
       "offset": 0,
       "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 32,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 40,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 44,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 54,
-      "kind": "taken"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 54,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 58,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 92,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 94,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 234,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 236,
-      "kind": "block"
-    },
-    {
-      "function": "hal_mac_tx_set_ppdu",
-      "offset": 426,
-      "kind": "taken"
     },
     {
       "function": "hal_now",
@@ -7219,87 +6341,7 @@
     },
     {
       "function": "mac_tx_set_hesig",
-      "offset": 34,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 36,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 44,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 44,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 46,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 166,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 212,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 214,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_hesig",
       "offset": 402,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 544,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 548,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 736,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 738,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 740,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 740,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 744,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_hesig",
-      "offset": 786,
       "kind": "taken"
     },
     {
@@ -7356,216 +6398,6 @@
       "function": "mac_tx_set_len",
       "offset": 170,
       "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 60,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 60,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 62,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 72,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 122,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 122,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 126,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 130,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 130,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 134,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 136,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 136,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 138,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 140,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 198,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 198,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 202,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 238,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 244,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 244,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 248,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 248,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 248,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 252,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 262,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 262,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 266,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 302,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 366,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 378,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 378,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 382,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 426,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 464,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 654,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 654,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 658,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 658,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 658,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 662,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_mplen",
-      "offset": 698,
-      "kind": "block"
     },
     {
       "function": "mac_tx_set_plcp0",
@@ -7736,156 +6568,6 @@
       "function": "mac_tx_set_pti",
       "offset": 68,
       "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 46,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 48,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 160,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 164,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 164,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 168,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 172,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 172,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 176,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 210,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_tb",
-      "offset": 280,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 48,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 52,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 124,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 124,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 126,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 132,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 158,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 158,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 162,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 170,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 178,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 178,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 178,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 198,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 208,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 220,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 236,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 236,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_txop_q",
-      "offset": 240,
-      "kind": "block"
     },
     {
       "function": "memset",

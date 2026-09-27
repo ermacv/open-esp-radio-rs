@@ -11,6 +11,116 @@ use crate::coverage::{Decision, Place};
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "diagnostic logging of `hal_mac_tx_set_ppdu` and `mac_tx_set_hesig` that \
+            publishes no register: an unexpected rate context, a misaligned frame buffer, an \
+            entry class other than one and an aggregation flag without several descriptors; \
+            both continue into the compared publication",
+        places: &[
+            Place::Range {
+                function: "hal_mac_tx_set_ppdu",
+                start: 0x20,
+                end: 0x54,
+            },
+            Place::Range {
+                function: "hal_mac_tx_set_ppdu",
+                start: 0x5c,
+                end: 0x80,
+            },
+            Place::Range {
+                function: "mac_tx_set_hesig",
+                start: 0x220,
+                end: 0x27e,
+            },
+            Place::Range {
+                function: "mac_tx_set_hesig",
+                start: 0x2e0,
+                end: 0x30a,
+            },
+        ],
+    },
+    Decision {
+        reason: "`mac_tx_set_hesig` without a rate context: it logs and publishes no HE-SIG; \
+            production cannot build an HE program without its rate",
+        places: &[Place::Range {
+            function: "mac_tx_set_hesig",
+            start: 0x22,
+            end: 0x80,
+        }],
+    },
+    Decision {
+        reason: "a non-HE rate code in `mac_tx_set_hesig`, which only HE descriptors reach; \
+            every production HE rate maps to a code of at least 0x1a",
+        places: &[Place::Range {
+            function: "mac_tx_set_hesig",
+            start: 0xa6,
+            end: 0xaa,
+        }],
+    },
+    Decision {
+        reason: "TXOP holding: the descriptor's TXOP request raises the queue's PTI TXOP bit, \
+            and `mac_tx_set_txop_q` programs a granted TXOP slot; production holds no TXOP \
+            and clears that bit for every SU PPDU (reviewed with the Wi-Fi owner)",
+        places: &[
+            Place::Range {
+                function: "hal_mac_tx_set_ppdu",
+                start: 0xea,
+                end: 0xfe,
+            },
+            Place::Function("mac_tx_set_txop_q"),
+            Place::Function("hal_mac_fill_hwtxop"),
+        ],
+    },
+    Decision {
+        reason: "a software HE-Control image: the driver never supplies one, so the hardware \
+            BSR path stays selected and `mac_tx_set_tb` is reached (reviewed with the Wi-Fi \
+            owner)",
+        places: &[
+            Place::Range {
+                function: "hal_mac_tx_set_ppdu",
+                start: 0x1aa,
+                end: 0x1ae,
+            },
+            Place::Range {
+                function: "mac_tx_set_hesig",
+                start: 0x312,
+                end: 0x316,
+            },
+            Place::Range {
+                function: "hal_he_set_htc",
+                start: 0x1c,
+                end: 0x20,
+            },
+        ],
+    },
+    Decision {
+        reason: "HE trigger-based preparation: production keeps HE-TB fail-closed and \
+            transmits HE SU only, so the MPDU-length links, their bitmap checks and the \
+            TB-flow configuration are not used (reviewed with the Wi-Fi owner)",
+        places: &[
+            Place::Function("mac_tx_set_tb"),
+            Place::Function("mac_tx_set_mplen"),
+            Place::Function("hal_mac_tx_clr_mplen"),
+            Place::Function("dbg_hal_check_set_mplen_bitmap"),
+            Place::Function("dbg_hal_check_clr_mplen_bitmap"),
+        ],
+    },
+    Decision {
+        reason: "the BSS color of an interface other than the station: the access point \
+            transmits no HE (reviewed with the Wi-Fi owner)",
+        places: &[
+            Place::Range {
+                function: "hal_he_get_bss_color",
+                start: 0x4,
+                end: 0x6,
+            },
+            Place::Range {
+                function: "hal_he_get_bss_color",
+                start: 0x1a,
+                end: 0x30,
+            },
+        ],
+    },
+    Decision {
         reason: "the OS-adapter critical section `wDev_AppendRxBlocks` enters and leaves \
             through `g_osi_funcs_p`, answered as quiet calls; production serializes the RX \
             ring through its single owner",

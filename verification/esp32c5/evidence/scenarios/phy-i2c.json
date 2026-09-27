@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "dbf33c418c8d408d4005c849d12a1432deea82e2e5e57de3c8ddf914d104fffb",
     "input-1": "49693d745eb4b4e6e6c77be4f5213765d545d8c7a1d9742a8a619bf596c4e27a",
-    "input-2": "95f025a0a3a9bb08cf63057e83e95d67450e96282517aee3b75c40731337b138"
+    "input-2": "6d5c49e2d7e96104b6b12782a14b041764d2edc4e00eb07190ba16de16e85054"
   },
   "sources": [
     {
@@ -15,7 +15,7 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "sha256": "78ad4808bcff73bd8c93e0f94ec85001962c8dca44a72c58f7cc57f9774d1cc4"
+      "sha256": "45be21d8ffe8fcd1943bca159a2d61674869e9740de018026b65ab2021883e24"
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/generated.rs",
@@ -23,7 +23,7 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/ownership.rs",
-      "sha256": "bc2b5b00effc0d642730633ad1f133f2b397f0b177ddaa5dcddeee68c83e859c"
+      "sha256": "5c5c110928ddbd0c9dcc5c3d61c4cc3e2c2451f3c553c1d4a1b85ce0ebb6ebe1"
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
@@ -1483,519 +1483,519 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8165
+      "line": 11465
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8273
+      "line": 11625
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8391
+      "line": 11743
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8397
+      "line": 11749
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8403
+      "line": 11755
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8599
+      "line": 11951
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8612
+      "line": 11964
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8625
+      "line": 11977
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8638
+      "line": 11990
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8651
+      "line": 12003
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8870
+      "line": 12222
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8873
+      "line": 12225
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8894
+      "line": 12246
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8899
+      "line": 12251
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8901
+      "line": 12253
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8903
+      "line": 12255
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8924
+      "line": 12276
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8929
+      "line": 12281
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8931
+      "line": 12283
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 8933
+      "line": 12285
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9069
+      "line": 12421
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9085
+      "line": 12437
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9092
+      "line": 12444
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9098
+      "line": 12450
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9105
+      "line": 12457
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9111
+      "line": 12463
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9118
+      "line": 12470
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9124
+      "line": 12476
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9144
+      "line": 12496
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9151
+      "line": 12503
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9159
+      "line": 12511
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9165
+      "line": 12517
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9187
+      "line": 12539
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9193
+      "line": 12545
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9202
+      "line": 12554
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9208
+      "line": 12560
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9215
+      "line": 12567
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9225
+      "line": 12577
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9234
+      "line": 12586
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9242
+      "line": 12594
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9262
+      "line": 12614
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9268
+      "line": 12620
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9277
+      "line": 12629
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9284
+      "line": 12636
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9305
+      "line": 12657
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9313
+      "line": 12665
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9320
+      "line": 12672
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9328
+      "line": 12680
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9335
+      "line": 12687
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9341
+      "line": 12693
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9348
+      "line": 12700
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9354
+      "line": 12706
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9361
+      "line": 12713
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9367
+      "line": 12719
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9471
+      "line": 12823
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9475
+      "line": 12827
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9482
+      "line": 12834
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9486
+      "line": 12838
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9493
+      "line": 12845
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9497
+      "line": 12849
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9504
+      "line": 12856
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9507
+      "line": 12859
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9514
+      "line": 12866
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9517
+      "line": 12869
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9524
+      "line": 12876
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9527
+      "line": 12879
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9534
+      "line": 12886
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9537
+      "line": 12889
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9544
+      "line": 12896
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9547
+      "line": 12899
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9554
+      "line": 12906
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9557
+      "line": 12909
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9566
+      "line": 12918
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9571
+      "line": 12923
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9580
+      "line": 12932
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9583
+      "line": 12935
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9592
+      "line": 12944
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9598
+      "line": 12950
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9607
+      "line": 12959
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9611
+      "line": 12963
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9618
+      "line": 12970
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9622
+      "line": 12974
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9640
+      "line": 12992
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9647
+      "line": 12999
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9655
+      "line": 13007
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9661
+      "line": 13013
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9668
+      "line": 13020
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9672
+      "line": 13024
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9679
+      "line": 13031
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9682
+      "line": 13034
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9689
+      "line": 13041
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9692
+      "line": 13044
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9710
+      "line": 13062
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9714
+      "line": 13066
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9721
+      "line": 13073
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9725
+      "line": 13077
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9732
+      "line": 13084
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9739
+      "line": 13091
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9747
+      "line": 13099
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9753
+      "line": 13105
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9761
+      "line": 13113
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9764
+      "line": 13116
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9771
+      "line": 13123
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9774
+      "line": 13126
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9781
+      "line": 13133
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9784
+      "line": 13136
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9793
+      "line": 13145
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9799
+      "line": 13151
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9817
+      "line": 13169
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9821
+      "line": 13173
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9828
+      "line": 13180
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9831
+      "line": 13183
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9838
+      "line": 13190
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9841
+      "line": 13193
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9848
+      "line": 13200
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9852
+      "line": 13204
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9859
+      "line": 13211
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9862
+      "line": 13214
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9869
+      "line": 13221
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9872
+      "line": 13224
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9879
+      "line": 13231
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9884
+      "line": 13236
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9888
+      "line": 13240
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9895
+      "line": 13247
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9899
+      "line": 13251
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9906
+      "line": 13258
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9910
+      "line": 13262
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9917
+      "line": 13269
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 9921
+      "line": 13273
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/generated.rs",
@@ -2219,7 +2219,7 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/ownership.rs",
-      "line": 72
+      "line": 93
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",

@@ -440,17 +440,80 @@ const PPDU_HE_CANONICAL_MCS: usize = 2;
 const PPDU_HE_CANONICAL_GI_LTF: usize = 3;
 const PPDU_HE_CANONICAL_FORMAT: usize = 6;
 const PPDU_HE_CANONICAL_DESCRIPTORS: usize = 8;
-/// Every HE SU rate: MCS, GI/LTF code (bits 8..10) and A-MPDU (bit 16).
-const PPDU_HE_STATES: [u32; 80] = {
-    let mut states = [0; 80];
+/// HE SU case-state bits beyond the MCS (bits 0..8) and GI/LTF code (bits
+/// 8..10): A-MPDU, BCC instead of LDPC, dual-carrier modulation and the
+/// interface's hardware BSS color.
+const PPDU_HE_STATE_AGGREGATE: u32 = 1 << 16;
+const PPDU_HE_STATE_BCC: u32 = 1 << 17;
+const PPDU_HE_STATE_DCM: u32 = 1 << 18;
+const PPDU_HE_STATE_BSS_COLOR: u32 = 1 << 19;
+/// With the BSS-color flag, the interface's color register disabled: the
+/// vendor then signals color zero.
+const PPDU_HE_STATE_BSS_COLOR_DISABLED: u32 = 1 << 20;
+/// HE rates the sequence of GI/LTF codes and formats covers.
+const PPDU_HE_RATES: usize = 80;
+/// The MCS indices production admits with dual-carrier modulation.
+const PPDU_HE_DCM_MCS: [u32; 4] = [0, 1, 3, 4];
+/// The MCS of the BSS-color states.
+const PPDU_HE_BSS_COLOR_MCS: u32 = 7;
+/// Every HE SU rate with LDPC and with BCC; every DCM rate; and one MCS
+/// with the hardware BSS color, enabled over every GI/LTF code and format
+/// and disabled for both formats.
+const PPDU_HE_STATES: [u32; 2 * PPDU_HE_RATES + 8 * PPDU_HE_DCM_MCS.len() + 10] = {
+    let mut states = [0; 2 * PPDU_HE_RATES + 8 * PPDU_HE_DCM_MCS.len() + 10];
     let mut i = 0;
-    while i < states.len() {
-        let i32 = i as u32;
-        states[i] = (i32 % 10) | ((i32 / 10 % 4) << 8) | ((i32 / 40) << 16);
+    while i < 2 * PPDU_HE_RATES {
+        let rate = (i % PPDU_HE_RATES) as u32;
+        let bcc = if i < PPDU_HE_RATES {
+            0
+        } else {
+            PPDU_HE_STATE_BCC
+        };
+        states[i] =
+            (rate % 10) | ((rate / 10 % 4) << 8) | ((rate / 40) * PPDU_HE_STATE_AGGREGATE) | bcc;
         i += 1;
     }
+    let mut j = 0;
+    while j < 8 * PPDU_HE_DCM_MCS.len() {
+        let variant = (j / PPDU_HE_DCM_MCS.len()) as u32;
+        states[i] = PPDU_HE_DCM_MCS[j % PPDU_HE_DCM_MCS.len()]
+            | ((variant % 4) << 8)
+            | ((variant / 4) * PPDU_HE_STATE_AGGREGATE)
+            | PPDU_HE_STATE_DCM;
+        i += 1;
+        j += 1;
+    }
+    let mut k = 0;
+    while k < 8 {
+        let variant = k as u32;
+        states[i] = PPDU_HE_BSS_COLOR_MCS
+            | ((variant % 4) << 8)
+            | ((variant / 4) * PPDU_HE_STATE_AGGREGATE)
+            | PPDU_HE_STATE_BSS_COLOR;
+        i += 1;
+        k += 1;
+    }
+    states[i] = PPDU_HE_BSS_COLOR_MCS | PPDU_HE_STATE_BSS_COLOR | PPDU_HE_STATE_BSS_COLOR_DISABLED;
+    states[i + 1] = states[i] | PPDU_HE_STATE_AGGREGATE;
     states
 };
+/// HT-object word 12 (0x30), whose bit 15 selects dual-carrier modulation
+/// and bit 19 the interface's hardware BSS color in `mac_tx_set_hesig`.
+const PPDU_HE_FLAGS_WORD: usize = 12;
+const PPDU_HE_FLAG_DCM: u32 = 1 << 15;
+const PPDU_HE_FLAG_BSS_COLOR: u32 = 1 << 19;
+/// `hal_he_get_bss_color` of the station interface: the register whose bit
+/// 27 enables the color in bits 21..27, and the color of the states.
+const PPDU_HE_BSS_COLOR_REGISTER: u32 = 0x2010_4020;
+const PPDU_HE_BSS_COLOR_ENABLE: u32 = 1 << 27;
+const PPDU_HE_BSS_COLOR_SHIFT: u32 = 21;
+const PPDU_HE_BSS_COLOR: u32 = 0x2a;
+/// `esp_wifi_cert_tx_bcc`: one selects BCC, anything else LDPC.
+const PPDU_HE_CERT_BCC: u32 = 1;
+/// Canonical word indices of the HE coding and BSS color.
+const PPDU_HE_CANONICAL_LDPC: usize = 4;
+const PPDU_HE_CANONICAL_DCM: usize = 5;
+const PPDU_HE_CANONICAL_BSS_COLOR: usize = 9;
 /// First HT rate-control code of each guard interval.
 const PPDU_HT_LONG_GI_CODE: u32 = 0x10;
 const PPDU_HT_SHORT_GI_CODE: u32 = 0x1a;
@@ -598,10 +661,14 @@ enum Frame {
     Legacy {
         group: bool,
     },
-    /// An HE SU PPDU with its GI/LTF code.
+    /// An HE SU PPDU with its GI/LTF code, BCC instead of LDPC, dual-carrier
+    /// modulation, and the interface's hardware BSS color, enabled or not.
     He {
         aggregate: bool,
         gi_ltf: u32,
+        bcc: bool,
+        dcm: bool,
+        bss_color: Option<bool>,
     },
 }
 
@@ -610,12 +677,22 @@ fn he_ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
     let [_, _, _, state] = words_in else {
         unreachable!("PPDU words: program, auxiliary, power table, state")
     };
-    let (mcs, gi_ltf, aggregate) = (state & 0xff, state >> 8 & 0xff, state >> 16 & 1);
+    let (mcs, gi_ltf) = (state & 0xff, state >> 8 & 0xff);
+    let aggregate = u32::from(state & PPDU_HE_STATE_AGGREGATE != 0);
+    let bcc = state & PPDU_HE_STATE_BCC != 0;
+    let dcm = state & PPDU_HE_STATE_DCM != 0;
+    let bss_color = state & PPDU_HE_STATE_BSS_COLOR != 0;
+    let color_enabled = state & PPDU_HE_STATE_BSS_COLOR_DISABLED == 0;
     let mut canonical = PPDU_HE_CANONICAL;
     canonical[PPDU_HE_CANONICAL_MCS] = mcs;
     canonical[PPDU_HE_CANONICAL_GI_LTF] = gi_ltf;
     canonical[PPDU_HE_CANONICAL_FORMAT] = aggregate;
     canonical[PPDU_HE_CANONICAL_DESCRIPTORS] = 1 + aggregate;
+    canonical[PPDU_HE_CANONICAL_LDPC] = u32::from(!bcc);
+    canonical[PPDU_HE_CANONICAL_DCM] = u32::from(dcm);
+    if bss_color && color_enabled {
+        canonical[PPDU_HE_CANONICAL_BSS_COLOR] = PPDU_HE_BSS_COLOR;
+    }
     ppdu_objects(
         vendor_side,
         PPDU_HE_CODE + mcs,
@@ -623,6 +700,9 @@ fn he_ppdu_abi(words_in: &[u32], vendor_side: &Vendor<'_>) -> Result<Objects> {
         Frame::He {
             aggregate: aggregate == 1,
             gi_ltf,
+            bcc,
+            dcm,
+            bss_color: bss_color.then_some(color_enabled),
         },
         words(&canonical),
     )
@@ -662,7 +742,21 @@ fn ppdu_objects(
                 if let Frame::Legacy { group: true } = frame {
                     values[0] |= PPDU_GROUP_RECEIVER;
                 }
-                if let Frame::He { aggregate, gi_ltf } = frame {
+                if let Frame::He {
+                    aggregate,
+                    gi_ltf,
+                    dcm,
+                    bss_color,
+                    ..
+                } = frame
+                {
+                    values[PPDU_HE_FLAGS_WORD] &= !(PPDU_HE_FLAG_DCM | PPDU_HE_FLAG_BSS_COLOR);
+                    if dcm {
+                        values[PPDU_HE_FLAGS_WORD] |= PPDU_HE_FLAG_DCM;
+                    }
+                    if bss_color.is_some() {
+                        values[PPDU_HE_FLAGS_WORD] |= PPDU_HE_FLAG_BSS_COLOR;
+                    }
                     values[0] &= !PPDU_AGGREGATE_BITS;
                     values[0] |= PPDU_HE_SU;
                     values[PPDU_HE_TID_WORD] = PPDU_HE_NON_TB_TID;
@@ -706,8 +800,17 @@ fn ppdu_objects(
     table[PPDU_COEX_PTI_CLAMP_SLOT..].copy_from_slice(&PPDU_COEX_PTI_CLAMP.to_le_bytes());
     // `mac_tx_set_hesig` reads the certification BCC override from ROM
     // `.bss`, zero unless certification code sets it: LDPC.
-    if matches!(frame, Frame::He { .. }) {
-        vendor.push((rom("esp_wifi_cert_tx_bcc")?, vec![0; 4]));
+    let mut registers = vec![];
+    if let Frame::He { bcc, bss_color, .. } = frame {
+        let cert = if bcc { PPDU_HE_CERT_BCC } else { 0 };
+        vendor.push((rom("esp_wifi_cert_tx_bcc")?, cert.to_le_bytes().to_vec()));
+        if let Some(enabled) = bss_color {
+            let enable = if enabled { PPDU_HE_BSS_COLOR_ENABLE } else { 0 };
+            registers.push((
+                PPDU_HE_BSS_COLOR_REGISTER,
+                enable | PPDU_HE_BSS_COLOR << PPDU_HE_BSS_COLOR_SHIFT,
+            ));
+        }
     }
     if buffer {
         vendor.push((
@@ -756,6 +859,7 @@ fn ppdu_objects(
         ],
         calls: vec![clamp],
         compared: vec![],
+        registers,
         ..Default::default()
     })
 }
@@ -1200,15 +1304,23 @@ pub const LEAVES: &[Leaf] = &[
     ),
     stated(
         objects(
-            leaf(
-                "hal_mac_tx_set_ppdu",
-                "open_libpp_tx_trace_hal_mac_tx_set_he_ppdu",
-                &[
-                    ("program_address", Domain::Words(&[INPUT])),
-                    ("_vendor_auxiliary", Domain::Words(&[PPDU_AUXILIARY])),
-                    ("power_table", Domain::Words(&[PPDU_POWER_COPY])),
-                ],
-                false,
+            vendor_reads(
+                leaf(
+                    "hal_mac_tx_set_ppdu",
+                    "open_libpp_tx_trace_hal_mac_tx_set_he_ppdu",
+                    &[
+                        ("program_address", Domain::Words(&[INPUT])),
+                        ("_vendor_auxiliary", Domain::Words(&[PPDU_AUXILIARY])),
+                        ("power_table", Domain::Words(&[PPDU_POWER_COPY])),
+                    ],
+                    false,
+                ),
+                &[(
+                    PPDU_HE_BSS_COLOR_REGISTER,
+                    "the vendor reads the station's BSS color from the MAC register \
+                        `hal_he_get_bss_color` samples; production publishes the color its \
+                        association owner holds",
+                )],
             ),
             he_ppdu_abi,
         ),

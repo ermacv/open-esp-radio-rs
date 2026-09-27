@@ -92,7 +92,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "8ebc840468a7af0e5b81d058340485f9527618b724b67f51733e6bed25b32cb3"
+      "sha256": "1f41b411c24f37c14b04645f188b1db6a6ec21015e4bfc214b5d4901dc429e5d"
     },
     {
       "path": "verification/harness/codegen",

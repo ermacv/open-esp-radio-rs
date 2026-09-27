@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "eed3d5741e24d500bc43e292d1fec23fa6bdd0431f36b4cf65dec8047de548c1",
+    "input-2": "bbbd491bf4986461afdba6f38db1103832be3e2cf5dd366c3a01960230bfdc92",
     "input-3": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a"
   },
   "sources": [
@@ -160,11 +160,11 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library",
-      "sha256": "dfa0f4bfac158ce6ba6be4a3d311b73864d7004ec6028db307fd7292bde8901a"
+      "sha256": "95378ffdc278163e04a0f0771e2f32e5bb2d9502c301eafcba2120828bfe9527"
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "8ebc840468a7af0e5b81d058340485f9527618b724b67f51733e6bed25b32cb3"
+      "sha256": "1f41b411c24f37c14b04645f188b1db6a6ec21015e4bfc214b5d4901dc429e5d"
     },
     {
       "path": "verification/harness/codegen",

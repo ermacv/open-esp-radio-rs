@@ -3,7 +3,9 @@
 //! Keep ABI conversion and isolated platform construction here. Operation
 //! ordering belongs to the production driver function being traced.
 
-use crate::calibration_projection::{CALIBRATION_WORDS, snapshot_calibration, snapshot_committed};
+use crate::calibration_projection::{
+    CALIBRATION_WORDS, PARENT_WORDS, snapshot_calibration, snapshot_committed, snapshot_parent,
+};
 use core::future::{Future, ready};
 
 struct ProductionTraceDelay;
@@ -802,24 +804,9 @@ oer_probe_macros::probe! {
             }
         };
         snapshot_calibration(&state, (&mut output[..CALIBRATION_WORDS]).try_into().unwrap());
-        let power = state.tx_power_tracking_parameters(true);
         let parent = &mut output[CALIBRATION_WORDS..];
-        parent[..4].copy_from_slice(&[
-            power.previous_tracking_temperature as u16,
-            power.previous_tracking_gain_base as i16 as u16,
-            power.wifi_gain_base as i16 as u16,
-            power.bluetooth_ieee802154_gain_base as i16 as u16,
-        ]);
-        parent[4] = state.channel_parameters().tx_gain_adjustment as i16 as u16;
-        use oer_esp32s31_phy::tracking::i2c::PhyWifiI2cTrackingBand;
-        parent[5] = match state.wifi_i2c_tracking_parameters().previous_band {
-            PhyWifiI2cTrackingBand::Nominal => 0,
-            PhyWifiI2cTrackingBand::Cold => 1,
-            PhyWifiI2cTrackingBand::Elevated => 2,
-            PhyWifiI2cTrackingBand::Hot => 3,
-        };
-        parent[6] = validation::rfpll_reference_temperature(&state) as u16;
-        snapshot_committed(&state, progress, (&mut parent[7..]).try_into().unwrap());
+        snapshot_parent(&state, (&mut parent[..PARENT_WORDS]).try_into().unwrap());
+        snapshot_committed(&state, progress, (&mut parent[PARENT_WORDS..]).try_into().unwrap());
         status
     }
 }

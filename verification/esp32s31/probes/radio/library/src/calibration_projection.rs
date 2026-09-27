@@ -77,3 +77,29 @@ pub fn snapshot_calibration(
         *destination = *source;
     }
 }
+
+/// Words of [`snapshot_parent`].
+pub const PARENT_WORDS: usize = 7;
+
+/// The parent root's retained power, gain and RFPLL words: the power
+/// tracking temperature and gain cache, the Wi-Fi and Bluetooth gain bases,
+/// the retained gain adjustment, the Wi-Fi I2C tracking band and the RFPLL
+/// reference temperature.
+pub fn snapshot_parent(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; PARENT_WORDS]) {
+    use oer_esp32s31_phy::tracking::i2c::PhyWifiI2cTrackingBand;
+    let power = state.tx_power_tracking_parameters(true);
+    output[..4].copy_from_slice(&[
+        power.previous_tracking_temperature as u16,
+        power.previous_tracking_gain_base as i16 as u16,
+        power.wifi_gain_base as i16 as u16,
+        power.bluetooth_ieee802154_gain_base as i16 as u16,
+    ]);
+    output[4] = state.channel_parameters().tx_gain_adjustment as i16 as u16;
+    output[5] = match state.wifi_i2c_tracking_parameters().previous_band {
+        PhyWifiI2cTrackingBand::Nominal => 0,
+        PhyWifiI2cTrackingBand::Cold => 1,
+        PhyWifiI2cTrackingBand::Elevated => 2,
+        PhyWifiI2cTrackingBand::Hot => 3,
+    };
+    output[6] = oer_esp32s31_phy::validation::rfpll_reference_temperature(state) as u16;
+}

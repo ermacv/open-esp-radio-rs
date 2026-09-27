@@ -15,8 +15,8 @@ use crate::i2c::returned_low;
 use crate::layout::*;
 use crate::phy::committed::{
     CALIBRATION, CALIBRATION_BYTES, COMMITTED_BYTES, COMMON_REFERENCE, CURRENT_TEMPERATURE,
-    OutputField, PARAMETER_BANDWIDTH, PARAMETER_CHANNEL, SENSOR_INDEX, SHARED_LAST_INDEX,
-    TRANSMIT_REFERENCE, WIFI_LAST_INDEX, committed, field,
+    GAIN_ADJUSTMENT, I2C_BAND, OutputField, PARAMETER_BANDWIDTH, PARAMETER_CHANNEL, PARENT,
+    SENSOR_INDEX, SHARED_LAST_INDEX, TRANSMIT_REFERENCE, WIFI_LAST_INDEX, committed,
 };
 use crate::phy::{
     PhyImage, PhyOptions, Right, delay_calls, image_layout, phy_sdk_input, select, start_session,
@@ -53,7 +53,6 @@ const THRESHOLD_OVERRIDE: usize = 432;
 const RFPLL_ENABLED: usize = 10;
 const POWER_ENABLED: usize = 11;
 const TONE_CLEAR: usize = 427;
-const GAIN_ADJUSTMENT: usize = 434;
 /// Sensor index of a fresh production state: DAC 15, the third sensor window.
 const INITIAL_SENSOR_INDEX: u8 = 2;
 /// Initial retained values the children consume.
@@ -86,22 +85,6 @@ fn rx_sample(fill: u8) -> i32 {
 /// skips calibration tracking.
 const TRACKING_INHIBIT: usize = 0x195;
 const CALIBRATION_TRACKING_DISABLED: usize = 0x192;
-
-/// `phy_param` byte of the vendor Wi-Fi I2C tracking band: 0 nominal, 1 cold,
-/// 2 elevated, 3 hot.
-const I2C_BAND: usize = 77;
-
-/// Wi-Fi and BT gain bases, retained adjustment, I2C band code and the RFPLL
-/// reference. Signed bytes occupy the low byte of an output word.
-const PARENT: [OutputField; 7] = [
-    field("power-temperature", 4, 154, 2, 1),
-    field("shared-cache", 290, 156, 1, 1),
-    field("wifi-gain-base", 291, 158, 1, 1),
-    field("bluetooth-gain-base", 292, 160, 1, 1),
-    field("gain-adjustment", GAIN_ADJUSTMENT, 162, 1, 1),
-    field("i2c-band", I2C_BAND, 164, 1, 1),
-    field("rfpll-reference", 304, 166, 2, 1),
-];
 
 /// Which root and production entry a case family compares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

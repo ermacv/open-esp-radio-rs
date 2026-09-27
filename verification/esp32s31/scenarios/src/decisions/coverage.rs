@@ -11,6 +11,48 @@ use crate::coverage::{Decision, Place};
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "the MU-EDCA minimum exponent a success restores for a frame whose descriptor \
+            selects MU EDCA: production neither negotiates nor applies the MU-EDCA parameter \
+            set (`is_use_muedca` is zero for it) and always restores the ordinary minimum \
+            (reviewed with the Wi-Fi owner)",
+        places: &[
+            Place::Range {
+                function: "lmacProcessShortFrameSuccess",
+                start: 0x1e,
+                end: 0x24,
+            },
+            Place::Range {
+                function: "lmacProcessLongFrameSuccess",
+                start: 0x1e,
+                end: 0x24,
+            },
+        ],
+    },
+    Decision {
+        reason: "TXOP bursting: `lmacProcessTxSuccess` completes a held TXOP slot through \
+            `lmacProcessTxopQComplete`; production holds no TXOP slot and runs every \
+            transaction as its own exchange (reviewed with the Wi-Fi owner)",
+        places: &[
+            Place::Range {
+                function: "lmacProcessTxSuccess",
+                start: 0x48,
+                end: 0x58,
+            },
+            Place::Function("lmacProcessTxopQComplete"),
+        ],
+    },
+    Decision {
+        reason: "a per-frame RTS length threshold in the transmit descriptor: production has \
+            none, only the BSS length and HE TXOP-duration rules; after a success it only \
+            chooses which queue short or long counter the vendor resets, and the compared \
+            contention exponent is the same on both paths (reviewed with the Wi-Fi owner)",
+        places: &[Place::Range {
+            function: "lmacIsLongFrame",
+            start: 0x16,
+            end: 0x18,
+        }],
+    },
+    Decision {
         reason: "`rcGetRate` modes the production ordinary retry owner does not have: the \
             descriptor rate bypass, a missing rate context and a context-fixed rate; \
             production always selects from its owned initial rate",

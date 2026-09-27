@@ -169,7 +169,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "85f8839dbbd552dc86b1945072ecbd9535a8902c543e5b60e0766923b2046a3c"
+      "sha256": "1e132e089e3196afaa7a45a80e1d1668ada4022a7a4f5468ca7f77bfee4dc82f"
     },
     {
       "path": "verification/harness/codegen",
@@ -1339,8 +1339,8 @@
           "total": 2064
         },
         "open": 113,
-        "excluded": 152,
-        "untriaged": 4030
+        "excluded": 180,
+        "untriaged": 4002
       },
       "observation": {
         "executed": 2,
@@ -1441,8 +1441,8 @@
           "total": 2038
         },
         "open": 113,
-        "excluded": 121,
-        "untriaged": 3908
+        "excluded": 122,
+        "untriaged": 3907
       },
       "observation": {
         "executed": 10,
@@ -1475,8 +1475,8 @@
           "total": 2094
         },
         "open": 113,
-        "excluded": 121,
-        "untriaged": 3976
+        "excluded": 122,
+        "untriaged": 3975
       },
       "observation": {
         "executed": 10,
@@ -1509,8 +1509,8 @@
           "total": 2122
         },
         "open": 113,
-        "excluded": 121,
-        "untriaged": 4043
+        "excluded": 152,
+        "untriaged": 4012
       },
       "observation": {
         "executed": 17,
@@ -1543,8 +1543,8 @@
           "total": 1744
         },
         "open": 109,
-        "excluded": 95,
-        "untriaged": 3416
+        "excluded": 128,
+        "untriaged": 3383
       },
       "observation": {
         "executed": 23,
@@ -5022,11 +5022,6 @@
       "kind": "block"
     },
     {
-      "function": "lmacIsLongFrame",
-      "offset": 22,
-      "kind": "fallthrough"
-    },
-    {
       "function": "lmacMSDUAged",
       "offset": 0,
       "kind": "block"
@@ -5159,16 +5154,6 @@
     {
       "function": "lmacProcessCtsTimeout",
       "offset": 16,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
-      "offset": 30,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
-      "offset": 32,
       "kind": "block"
     },
     {
@@ -5470,16 +5455,6 @@
       "function": "lmacProcessLongRetryFail",
       "offset": 582,
       "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
-      "offset": 30,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
-      "offset": 32,
-      "kind": "block"
     },
     {
       "function": "lmacProcessShortRetryFail",
@@ -5819,146 +5794,6 @@
     {
       "function": "lmacProcessTxError",
       "offset": 234,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxSuccess",
-      "offset": 72,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessTxSuccess",
-      "offset": 76,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 62,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 62,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 66,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 96,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 96,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 96,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 100,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 104,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 140,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 140,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 142,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 146,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 146,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 150,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 184,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 188,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 188,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 190,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 212,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 212,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 214,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 220,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 234,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 256,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessTxopQComplete",
-      "offset": 282,
       "kind": "block"
     },
     {

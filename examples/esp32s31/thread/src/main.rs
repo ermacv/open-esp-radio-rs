@@ -171,11 +171,7 @@ async fn thread_task(
     .expect("OpenThread must initialize once");
     let thread_radio = OpenThreadRadio::new(
         system.runtime(),
-        OpenThreadRadioDefaults {
-            tx_power_dbm: 20,
-            cca_threshold_dbm: -75,
-            receive_sensitivity_dbm: -100,
-        },
+        OpenThreadRadioDefaults::ESP_IDF,
     );
     spawner.spawn(openthread_task(ot.clone(), thread_radio).expect("OpenThread task storage"));
     spawner.spawn(role_task(ot.clone(), system, radio).expect("role task storage"));

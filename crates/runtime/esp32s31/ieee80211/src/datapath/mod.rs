@@ -30,9 +30,9 @@ pub mod network;
 pub mod owned;
 pub mod rx;
 pub mod services;
-pub mod stop;
 pub(crate) mod software_tx_queue;
 mod sram_tx;
+pub mod stop;
 pub mod tx;
 pub(crate) mod tx_performance;
 

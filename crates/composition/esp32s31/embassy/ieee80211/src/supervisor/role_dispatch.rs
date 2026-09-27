@@ -388,13 +388,13 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         }
                     };
                     let mut observer = NoopPhyTargetObserver;
-                    if let Err(error) = await_stack_boundary!(
-                        task.switch_channel::<EmbassyPhyTime, _, _, _>(
+                    if let Err(error) =
+                        await_stack_boundary!(task.switch_channel::<EmbassyPhyTime, _, _, _>(
                             self.radio,
                             channel,
                             &mut observer
-                        ),
-                    ) {
+                        ),)
+                    {
                         let faulted = ProductionWifiFault::MonitorChannel {
                             _error: error,
                             _task: task,

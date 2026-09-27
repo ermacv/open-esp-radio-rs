@@ -4,7 +4,6 @@
 //! decoding remains in the MAC crate, while the semantic MMIO operations are
 //! defined by [`crate::rx_dma::RxDma`].
 
-
 #[cfg(target_pointer_width = "32")]
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::{AtomicU8, Ordering};

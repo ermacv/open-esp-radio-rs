@@ -84,8 +84,8 @@ pub use reclaim::{
 };
 
 pub use resources::{
-    StationDmaResources, StationRadioResources, StationRuntimeParts,
-    StationRuntimeResources, StationStorageResources,
+    StationDmaResources, StationRadioResources, StationRuntimeParts, StationRuntimeResources,
+    StationStorageResources,
 };
 
 pub use runtime::{

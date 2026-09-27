@@ -9,9 +9,8 @@ use embassy_sync::{
 
 use oer_radio::wifi::{
     AccessPointRequest, MonitorRequest, RadioController, StationAccessPointRequest, StationRequest,
-    WifiIdle, WifiRadioRestartReport, WifiScanFailure,
-    WifiScanReport, WifiScanRequest, WifiStartFailure, WifiStartResult, WifiStopReport,
-    WifiSupervisorPort,
+    WifiIdle, WifiRadioRestartReport, WifiScanFailure, WifiScanReport, WifiScanRequest,
+    WifiStartFailure, WifiStartResult, WifiStopReport, WifiSupervisorPort,
 };
 
 use super::message::{

@@ -2,8 +2,8 @@
 
 use oer_radio::wifi::{
     AccessPointRequest, MonitorRequest, StationAccessPointRequest, StationRequest,
-    WifiRadioRestartReport, WifiScanFailure, WifiScanReport,
-    WifiScanRequest, WifiStartResult, WifiStopReport,
+    WifiRadioRestartReport, WifiScanFailure, WifiScanReport, WifiScanRequest, WifiStartResult,
+    WifiStopReport,
 };
 
 /// Request transported to the sole owner-holding radio-supervisor task.

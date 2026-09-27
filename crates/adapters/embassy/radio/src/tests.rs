@@ -20,9 +20,9 @@ use {
 use oer_radio::wifi::{
     MonitorCapturePolicy, MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy,
     StationSecurity, WIFI_SCAN_RESULT_CAPACITY, WifiMacAddress, WifiMonitorConfig,
-    WifiRadioRestartRf, WifiScanReport, WifiScanRequest, WifiScanResult,
-    WifiServicePlanningError, WifiServiceRequest, WifiSsid, WifiStartFailure, WifiStartReport,
-    WifiStationConfig, WifiStopReport, WifiSupervisorConfiguration, WifiSupervisorPort,
+    WifiRadioRestartRf, WifiScanReport, WifiScanRequest, WifiScanResult, WifiServicePlanningError,
+    WifiServiceRequest, WifiSsid, WifiStartFailure, WifiStartReport, WifiStationConfig,
+    WifiStopReport, WifiSupervisorConfiguration, WifiSupervisorPort,
 };
 
 use super::*;

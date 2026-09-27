@@ -15,15 +15,14 @@ use esp_hal::{interrupt::InterruptHandler, system::Cpu};
 use oer_esp32s31_hal::{
     ieee80211::arena::{RadioAccess, RadioOwnerArenaError},
     owner::{
-        ConnectedStaInterruptPrepared, MacInterruptRegisters,
-        MacInterruptSetup, MacPowerInterruptRegisters, RadioRuntimeOwner,
+        ConnectedStaInterruptPrepared, MacInterruptRegisters, MacInterruptSetup,
+        MacPowerInterruptRegisters, RadioRuntimeOwner,
     },
     types::{MacInterruptMask, MacPowerInterruptObservation, MacPowerWakeCause},
 };
 
 use oer_esp32s31_ieee80211_mac::irq::{
-    IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq,
-    handle_power_irq,
+    IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq, handle_power_irq,
 };
 
 static MAC_INTERRUPT_REGISTERS: Mutex<RefCell<Option<MacInterruptRegisters>>> =

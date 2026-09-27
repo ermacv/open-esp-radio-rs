@@ -22,7 +22,6 @@ use super::{
     MacInterruptEpochQuiesceError, MacInterruptEpochStateError,
 };
 
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RouteError {
     Activation,

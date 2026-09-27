@@ -89,7 +89,9 @@ where
         let (mut hardware, phy) = access
             .try_channel_hal_with_attachment(platform, lease)
             .map_err(|_| {
-                ConcurrentWifiChannelError::Failed(PhyTargetPortError::HardwareCapabilityUnavailable)
+                ConcurrentWifiChannelError::Failed(
+                    PhyTargetPortError::HardwareCapabilityUnavailable,
+                )
             })?;
         switch_concurrent_wifi_channel::<D, _, _>(
             phy,

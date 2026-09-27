@@ -270,6 +270,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin/espflash
             target
+            !target/vendor
             tools/blobray/target
           key: images-${{ runner.os }}-${{ env.ESPFLASH_VERSION }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: images-${{ runner.os }}-${{ env.ESPFLASH_VERSION }}-
@@ -286,3 +287,23 @@ jobs:
       - name: Fetch every workspace
         run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
       - run: cargo xtask check images
+      # The pinned public vendor inputs of the evidence reruns, verified
+      # against their SHA-256 on every fetch; a failed fetch fails the job.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: target/vendor
+          key: vendor-${{ hashFiles('verification/*/artifacts.toml') }}
+      - name: Fetch the pinned vendor inputs
+        run: |
+          cargo xtask vendor-fetch esp32s31
+          cargo xtask vendor-fetch esp32c5
+      # Rerun every host evidence scenario and fail unless each committed
+      # shard equals its rerun. The probes link with the toolchain's lld in
+      # its GNU flavour.
+      - name: Check the committed evidence shards
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          linker="$(rustc --print sysroot)/lib/rustlib/$host/bin/gcc-ld/ld.lld"
+          for chip in esp32s31 esp32c5; do
+            cargo xtask evidence --chip "$chip" --check --linker "$linker" --limit-mode watchdog
+          done

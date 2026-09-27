@@ -9,7 +9,10 @@
 //!
 //! Bring-up order: activate the HAL interrupt owner, install the runtime,
 //! then `bind`. Teardown reverses it: `BoundEspHalIeee802154InterruptRoute::quiesce`,
-//! uninstall the runtime, then deactivate the HAL interrupt owner.
+//! uninstall the runtime, then deactivate the HAL interrupt owner. This is
+//! ESP-IDF's order: `ieee802154_mac_init` allocates the route last with
+//! `esp_intr_alloc(132, 0)`, the lowest free level of 1 to 3 on the calling
+//! core, and `ieee802154_mac_deinit` frees it first.
 
 #![no_std]
 #![cfg(feature = "esp32s31")]

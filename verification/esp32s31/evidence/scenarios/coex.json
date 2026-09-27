@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "bd22ff4480932623b57108113d0f9457fa5438fb8e2e185ccfd6327fc85904f7"
+    "input-2": "549ca4128dcc79a0c1282156f3705626855a22a0713fd655622ede036324991a"
   },
   "sources": [
     {
@@ -27,7 +27,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
-      "sha256": "6723e6acebaf932d899556c7dfccc237294b8c654783457f06e04703b771cb21"
+      "sha256": "06b4b9eac056eacfeac987b75e5f89a93a36e07e3e53145d6da771760b0071d7"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211",
@@ -55,7 +55,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "166681a875371a9fcbe142ecb72f0a1dbd774ffb43ce423c08466af4a0b96701"
+      "sha256": "514aab9f7b256d124c4f2f9da6f8a4876e1cc5bde1afee40aa4927775d51f23d"
     },
     {
       "path": "crates/memory",
@@ -111,7 +111,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/radio",
-      "sha256": "3937c1868d7f499c8c0bb529a94b8de579edb5076d51c060516a83ead9033510"
+      "sha256": "31e230a1b6035c27251f1fd517d69688327362e12bd42289b46367c0351f1bce"
     },
     {
       "path": "crates/runtime/ieee80211",
@@ -2021,23 +2021,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 580
+      "line": 606
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 590
+      "line": 616
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 591
+      "line": 617
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 597
+      "line": 623
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 598
+      "line": 624
     }
   ],
   "observed": [
@@ -2051,15 +2051,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 135
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 137
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 138
+      "line": 146
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
@@ -2071,59 +2063,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 150
+      "line": 174
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 151
+      "line": 175
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 159
+      "line": 176
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 168
+      "line": 177
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 169
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 171
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 173
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 179
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 182
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 183
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 184
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 186
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 189
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 192
+      "line": 185
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
@@ -2139,15 +2095,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 198
+      "line": 199
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 211
+      "line": 205
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 213
+      "line": 208
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 209
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 210
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 212
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
@@ -2155,115 +2123,135 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 228
+      "line": 218
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 257
+      "line": 220
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 280
+      "line": 221
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 281
+      "line": 223
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 319
+      "line": 224
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 320
+      "line": 237
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 325
+      "line": 239
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 326
+      "line": 241
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 347
+      "line": 254
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 354
+      "line": 283
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 360
+      "line": 306
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 362
+      "line": 307
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 364
+      "line": 345
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 366
+      "line": 346
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 372
+      "line": 351
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 455
+      "line": 352
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 465
+      "line": 373
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 479
+      "line": 380
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 530
+      "line": 386
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 531
+      "line": 388
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 534
+      "line": 390
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 535
+      "line": 392
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 536
+      "line": 398
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 545
+      "line": 481
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 546
+      "line": 491
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 549
+      "line": 505
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 550
+      "line": 556
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 570
+      "line": 557
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 560
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 561
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 562
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 571
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 572
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
@@ -2275,43 +2263,55 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 578
+      "line": 596
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 579
+      "line": 601
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 584
+      "line": 602
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 585
+      "line": 604
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 586
+      "line": 605
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 588
+      "line": 610
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 589
+      "line": 611
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 592
+      "line": 612
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 594
+      "line": 614
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
-      "line": 600
+      "line": 615
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 618
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 620
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 626
     }
   ],
   "unprojected": []

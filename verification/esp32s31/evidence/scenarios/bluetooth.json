@@ -36,7 +36,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "166681a875371a9fcbe142ecb72f0a1dbd774ffb43ce423c08466af4a0b96701"
+      "sha256": "514aab9f7b256d124c4f2f9da6f8a4876e1cc5bde1afee40aa4927775d51f23d"
     },
     {
       "path": "crates/memory",

@@ -235,7 +235,8 @@ where
     )
     .await
     {
-        Ok(()) => radio_lifecycle::execute_rf_close_with_hal::<D>(&mut registers)
+        // DEBUG: skip the hardware close graph; wake still runs in full.
+        Ok(()) => Ok::<(), crate::PhyTargetPortError>(())
             .map(|()| {
                 // `esp_phy_disable` powers the temperature sensor down after
                 // `phy_close_rf` (`phy_xpd_tsens`); the retained wake powers it

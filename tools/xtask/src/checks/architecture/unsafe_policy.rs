@@ -33,6 +33,7 @@ const PAC_CONSUMERS: &[&str] = &[
     "oer-esp32s31-hal",
     "oer-esp32c5-pac-raw",
     "oer-esp32c5-pac",
+    "oer-esp32c5-hal",
 ];
 /// The crate-root attribute that states each production library's unsafe
 /// policy. Rustc and Clippy enforce it in every build; this check keeps the

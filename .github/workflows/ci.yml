@@ -242,7 +242,7 @@ jobs:
       - run: cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
       - run: cargo registers validate --manifest registers/esp32c5/publication/registers.toml
       - run: cargo registers generate --manifest registers/esp32c5/publication/registers.toml --check
-      - run: cargo build --locked -p oer-esp32c5-pac --target riscv32imac-unknown-none-elf
+      - run: cargo build --locked -p oer-esp32c5-pac -p oer-esp32c5-hal --target riscv32imac-unknown-none-elf
       - run: cargo xtask check phy --chip esp32s31
 
   # Both final HIL application images, their placement/stack audits and the

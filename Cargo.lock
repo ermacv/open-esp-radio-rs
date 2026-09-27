@@ -2499,6 +2499,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32c5-hal"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32c5-pac",
+ "oer-ieee802154-engine",
+]
+
+[[package]]
 name = "oer-esp32c5-pac"
 version = "0.1.0"
 dependencies = [

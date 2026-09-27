@@ -2,9 +2,9 @@
 //!
 //! The epoch starts from the HAL's clocked Bluetooth client, which proves
 //! common radio power, the Bluetooth module clocks, the released controller
-//! resets and the low-power timer clock. [`separate_interrupt_owner`] splits
+//! resets and the low-power timer clock. `separate_interrupt_owner` splits
 //! it into the task-side [`TaskResources`] and the inactive
-//! [`InterruptBankOwner`]; [`TaskResources::shut_down`] resets the stopped
+//! `InterruptBankOwner`; `TaskResources::shut_down` resets the stopped
 //! Controller and returns the clocked client.
 
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]

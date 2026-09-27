@@ -2,11 +2,11 @@
 //!
 //! The composition first stops the radio runtime, drains the source-127
 //! task and removes the CPU routes; it then recovers the interrupt output and
-//! the ready timer owner from stable ISR storage. [`retire`] releases the
+//! the ready timer owner from stable ISR storage. [`retire`](crate::shutdown::retire) releases the
 //! Controller output and leaves the shared PHY domain and BTBB, as the
 //! vendor Controller disable runs `esp_phy_disable(PHY_MODEM_BT)` before its
 //! deinit; the radio system then closes RF if Bluetooth was the last client.
-//! [`ControllerRetired::shut_down`] finally resets the Controller domains and
+//! [`ControllerRetired::shut_down`](crate::shutdown::ControllerRetired::shut_down) finally resets the Controller domains and
 //! returns the clocked client with the BLE PHY allocations, which no hardware
 //! references after the reset.
 

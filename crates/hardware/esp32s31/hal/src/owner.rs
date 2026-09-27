@@ -380,7 +380,7 @@ pub(crate) fn phy_parts_mut(
 /// Opaque task-side owner of the running Wi-Fi MAC partition.
 ///
 /// A clocked Wi-Fi client becomes this owner after cold MAC setup
-/// ([`WifiClocked::into_running`]). It holds the Wi-Fi MAC registers only:
+/// ([`WifiClocked::into_running`](crate::ieee80211::client::WifiClocked::into_running)). It holds the Wi-Fi MAC registers only:
 /// the Wi-Fi hot path needs no arbiter lease, and every operation that
 /// touches shared radio registers borrows them from the lease. It can move
 /// between lifecycle owners and the runtime arena, but exposes no PAC owner,

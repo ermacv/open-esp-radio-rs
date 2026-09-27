@@ -23,7 +23,7 @@ use crate::{low_power::ControllerLowPowerHardwareInitialized, resources::TaskRes
 /// reference on the shared BTBB baseband.
 ///
 /// The BLE PHY engine is initialized from this state. Its membership stays
-/// with the Controller until [`leave_phy`] at shutdown.
+/// with the Controller until `leave_phy` at shutdown.
 #[must_use = "the joined Controller retains its PHY membership"]
 pub struct ControllerPhyJoined<'cells, const MODEM_TIMER_CAPACITY: usize> {
     pub(crate) controller: ControllerLowPowerHardwareInitialized<'cells, MODEM_TIMER_CAPACITY>,

@@ -309,6 +309,10 @@ fn contained(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Repository directories whose untracked files are recorded outputs, which a
+/// snapshot neither requires nor archives.
+const EVIDENCE_OUTPUTS: &[&str] = &["hil/evidence"];
+
 fn select(name: &str, root: &Path) -> Result<Selection> {
     let top = String::from_utf8(git(root, &["rev-parse", "--show-toplevel"])?)?;
     if Path::new(top.trim()).canonicalize()? != root.canonicalize()? {
@@ -318,10 +322,16 @@ fn select(name: &str, root: &Path) -> Result<Selection> {
         .trim()
         .to_owned();
     let tracked = paths(&git(root, &["ls-files", "--cached", "-z"])?)?;
-    let untracked = paths(&git(
+    let mut untracked = paths(&git(
         root,
         &["ls-files", "--others", "--exclude-standard", "-z"],
     )?)?;
+    // Recorded evidence shards are outputs of earlier runs, not build inputs.
+    untracked.retain(|path| {
+        !EVIDENCE_OUTPUTS
+            .iter()
+            .any(|output| path.starts_with(output))
+    });
     let dirty = !git(
         root,
         &["status", "--porcelain=v1", "--untracked-files=normal"],
@@ -373,7 +383,9 @@ fn capture_roots(
         .collect::<Vec<_>>();
     if !unresolved.is_empty() {
         return Err(format!(
-            "source snapshot blocked: explicitly include or resolve these untracked files:\n{}",
+            "source snapshot blocked by untracked files, which a build could read. For each \
+             one, commit it, add it to this run with `--source-include <path>` (another \
+             source: `--source-include <role>:<path>`), or remove or ignore it:\n{}",
             unresolved.join("\n")
         )
         .into());

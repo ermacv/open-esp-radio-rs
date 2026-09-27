@@ -42,6 +42,32 @@ fn repository() -> tempfile::TempDir {
 }
 
 #[test]
+fn untracked_evidence_shards_neither_block_nor_enter_a_snapshot() {
+    let root = repository();
+    let output = tempfile::tempdir().unwrap();
+    let target = output.path().join("snapshots");
+    fs::create_dir_all(root.path().join("hil/evidence/esp32s31")).unwrap();
+    fs::write(root.path().join("hil/evidence/esp32s31/station.json"), "{}").unwrap();
+    fs::write(root.path().join("new.rs"), "pub fn new() {}\n").unwrap();
+    let roots = vec![("repository".into(), root.path().to_owned())];
+    let error = capture_roots(&roots, &[], &target)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("--source-include <path>"), "{error}");
+    assert!(!error.contains("station.json"), "{error}");
+    let snapshot = capture_roots(&roots, &["new.rs".into()], &target).unwrap();
+    let mut archive =
+        tar::Archive::new(fs::File::open(snapshot.directory.join("sources.tar")).unwrap());
+    assert!(!archive.entries().unwrap().any(|e| {
+        e.unwrap()
+            .path()
+            .unwrap()
+            .starts_with("repository/hil/evidence")
+    }));
+}
+
+#[test]
 fn untracked_selection_is_explicit_complete_and_does_not_archive_secrets() {
     let root = repository();
     let output = tempfile::tempdir().unwrap();

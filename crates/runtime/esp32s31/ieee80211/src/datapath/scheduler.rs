@@ -372,8 +372,8 @@ where
             // collection-deadline calculation here creates an avoidable air
             // gap on every saturated BA transaction.
             // A station in power save holds its network frames: they stay
-            // queued, and the idle wait below ignores their readiness until a
-            // control input admits them again.
+            // queued, and once control has offered them the idle wait below
+            // ignores their readiness until a control input admits them.
             let network_admitted = self.services.control_admits_network_tx();
             if network_admitted
                 && let Some((interface, admitted)) = self.prepared_network_tx_candidate()?
@@ -554,6 +554,11 @@ where
             let network = &self.network;
             let interfaces = self.interfaces;
             let prepared_tx_interface = self.prepared_tx_interface;
+            // Held network frames stay queued, but a frame that control has
+            // not yet offered must still wake the loop: a station in power
+            // save wakes for queued traffic only once control offers it.
+            let network_wakes =
+                network_admitted || self.services.control_required_before_network_tx();
             #[cfg(feature = "diagnostics")]
             crate::diagnostics::runner_await::mark(
                 crate::diagnostics::runner_await::RunnerAwait::Idle,
@@ -561,7 +566,7 @@ where
             match select(
                 stop.as_mut(),
                 select3(wait_rx, self.services.wait_control_ready(), async {
-                    if !network_admitted {
+                    if !network_wakes {
                         core::future::pending::<()>().await;
                     }
                     if let Some(interface) = prepared_tx_interface {

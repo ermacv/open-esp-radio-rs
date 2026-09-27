@@ -494,3 +494,125 @@ fn control_that_never_consumes_its_input_cannot_starve_a_sibling_task() {
     assert!(sibling_ran.get());
     assert_eq!(runner.services.steps, CONTROL_PROGRESS_BUDGET);
 }
+
+/// A dozing station: it holds network frames and must see each one once, to
+/// offer it to power management.
+struct DozingStation<'a> {
+    offered: bool,
+    control_steps: &'a core::cell::Cell<u32>,
+}
+
+impl<S: SoftwareTxFrame + 'static, P: MaterializedTxFrame + 'static> DatapathServices<S, P>
+    for DozingStation<'_>
+{
+    type Error = ();
+    type Exit = ();
+
+    async fn service_rx(
+        &mut self,
+        _: &mut dyn DatapathNetworkRxSet,
+        _: DatapathRxServiceContext,
+    ) -> Result<DatapathRxProgress, ()> {
+        Ok(DatapathRxProgress::Drained)
+    }
+
+    async fn start_tx<'a, I>(&'a mut self, _: S, _: &'a I) -> Result<WifiTxProgress, ()>
+    where
+        S: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P> + 'a,
+    {
+        panic!("a dozing station publishes no held frame")
+    }
+
+    async fn wait_tx_deadline(&mut self) {
+        core::future::pending().await
+    }
+
+    async fn service_tx(&mut self, _: WifiTxWake) -> Result<WifiTxProgress, ()> {
+        Ok(WifiTxProgress::Complete)
+    }
+
+    fn control_admits_network_tx(&self) -> bool {
+        false
+    }
+
+    fn control_required_before_network_tx(&self) -> bool {
+        !self.offered
+    }
+
+    async fn service_control(
+        &mut self,
+        context: DatapathControlContext,
+    ) -> Result<DatapathControlProgress<()>, ()> {
+        self.control_steps.set(self.control_steps.get() + 1);
+        if context.network_tx_pending {
+            self.offered = true;
+        }
+        Ok(DatapathControlProgress::Idle)
+    }
+
+    fn has_prepared_tx(&self) -> bool {
+        false
+    }
+
+    fn start_prepared_tx<I>(&mut self, _: &I) -> Result<WifiTxProgress, ()>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P>,
+    {
+        panic!("a dozing station prepares no TX")
+    }
+
+    fn cancel_prepared_tx<I>(&mut self, _: &I) -> Result<(), ()>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P>,
+    {
+        Ok(())
+    }
+
+    fn service_stop(&mut self) -> Result<DatapathStopProgress, ()> {
+        Ok(DatapathStopProgress::Stopped)
+    }
+}
+
+#[test]
+fn a_frame_queued_while_the_station_dozes_wakes_control_once() {
+    let storage = Box::leak(Box::new(PacketPoolStorage::<2>::new()));
+    let allocator = Box::leak(Box::new(PacketPool::new(storage))).allocator();
+    let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));
+    let interface = NetworkInterfaceId::new(0);
+    let (mut device, owned) = endpoint.split(interface, [2, 0, 0, 0, 0, 1], allocator);
+    let resources = Box::leak(Box::new(
+        PinnedTxResources::<NoopRawMutex, 64, 16, 8, 1>::new(),
+    ));
+    let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
+    let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
+    network.set_link_state(interface, LinkState::Up);
+    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let control_steps = core::cell::Cell::new(0);
+    let mut runner = DatapathRunner::new(
+        &irq,
+        network,
+        interface,
+        DozingStation {
+            offered: false,
+            control_steps: &control_steps,
+        },
+    );
+    let mut cx = Context::from_waker(Waker::noop());
+    {
+        let mut run = core::pin::pin!(runner.run());
+        assert!(run.as_mut().poll(&mut cx).is_pending());
+        let idle_steps = control_steps.get();
+        let mut frame = allocator.try_alloc().unwrap();
+        frame.set_len(15);
+        frame.fill(0);
+        frame[..6].fill(4);
+        device.transmit(frame).unwrap();
+        // The queued frame reaches control once; the held frame then no
+        // longer wakes the loop.
+        assert!(run.as_mut().poll(&mut cx).is_pending());
+        assert!(run.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(control_steps.get(), idle_steps + 1);
+    }
+    assert!(runner.services.offered);
+}

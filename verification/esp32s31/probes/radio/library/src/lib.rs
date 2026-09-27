@@ -441,6 +441,15 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// Compiled production-path probe for the complete
+    /// `coex_hw_timer_freq_set(selector, divisor)` transaction, returning its
+    /// acceptance as the vendor's one or zero.
+    pub fn open_coex_trace_timer_freq_set(selector: u32, divisor: u32) -> u32 {
+        u32::from(oer_esp32s31_coex::validation::set_timer_clock(selector, divisor))
+    }
+}
+
+oer_probe_macros::probe! {
     /// Compiled production-path probe for the complete `coex_hw_timer_set`
     /// transaction. The public vendor ABI is `(index, client, pti, latency,
     /// duration)`; notably, duration is written to the primary word before

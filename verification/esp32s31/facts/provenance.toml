@@ -1231,6 +1231,12 @@ code = "87ee7840edb576da77368336cdab9c6220876c7444e66260fc9b41473a55785f"
 [[function]]
 artifact = "libcoexist"
 member = "coexist_core.o"
+symbol = "coex_core_pre_init"
+code = "f63a1f518b4a4457f25deed3d292f5d315e477413a70417589af451643fc0683"
+
+[[function]]
+artifact = "libcoexist"
+member = "coexist_core.o"
 symbol = "coex_core_pti_get"
 code = "662cb352efebfc1f99349b0876bc309185b766ff271be349ace2cd70ebb2d782"
 
@@ -1269,6 +1275,12 @@ artifact = "libcoexist"
 member = "coexist_hw.o"
 symbol = "coex_hw_timer_force"
 code = "fd42999eef5ed54c2b49aea2c5674a0e9b56724dd71e492380a8c3f758233c2f"
+
+[[function]]
+artifact = "libcoexist"
+member = "coexist_hw.o"
+symbol = "coex_hw_timer_freq_set"
+code = "4f5457dbd226bf10f3491b6cf581e2ca4cba3ff2a9a102fc0c4c69ffe50fd75a"
 
 [[function]]
 artifact = "libcoexist"

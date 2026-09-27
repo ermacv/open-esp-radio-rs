@@ -137,6 +137,19 @@ fn timer_set_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
     })
 }
 
+/// `coex_hw_timer_freq_set`: the arguments pass unchanged over the case's
+/// clock word.
+fn freq_set_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    let [selector, divisor, clock] = *words else {
+        unreachable!("clock words: selector, divisor, clock")
+    };
+    Ok(Objects {
+        vendor_words: vec![selector, divisor],
+        registers: vec![(CLOCK_SELECTOR, clock)],
+        ..Default::default()
+    })
+}
+
 /// `coex_core_request`: the vendor maps the request kind itself.
 fn request_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
     let [client, event, latency, duration, real_chip, selector] = *words else {
@@ -354,6 +367,28 @@ pub const LEAVES: &[Leaf] = &[
                 ("event", Domain::Words(DRIVER_EVENTS_AND_INVALID)),
             ],
             true,
+        ),
+        RELEASE_FENCES,
+    ),
+    // The timer clock `coex_core_pre_init` selects (4 over 50 on silicon, 8
+    // over 1 otherwise), every selector's lowest accepted and rejected
+    // divisor, a non-one-hot selector and a divisor past the twelve-bit field.
+    // A rejected selection is refused before the lease.
+    released_when_leased(
+        stated(
+            objects(
+                leaf(
+                    "coex_hw_timer_freq_set",
+                    "open_coex_trace_timer_freq_set",
+                    &[
+                        ("selector", Domain::Words(&[1, 2, 3, 4, 8])),
+                        ("divisor", Domain::Words(&[1, 2, 3, 39, 40, 49, 50, 4_097])),
+                    ],
+                    true,
+                ),
+                freq_set_abi,
+            ),
+            CLOCK_SELECTIONS,
         ),
         RELEASE_FENCES,
     ),

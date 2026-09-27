@@ -1,7 +1,7 @@
 //! Bounded default-profile disposition for one NRT source-133 interrupt.
 //!
-//! The pinned default Controller lifecycle has no consumer registered for the
-//! NRT callback manager. Its complete hard-handler effect is therefore the
+//! The pinned Controller archives define no subscriber of the NRT ISR's
+//! linker-assembled broker table. Its complete hard-handler effect is therefore the
 //! restricted PAC sample/sample/acknowledge/acknowledge transaction. This
 //! module retains only an acknowledged token without assigning Link-Layer
 //! names or publishing synthetic work.

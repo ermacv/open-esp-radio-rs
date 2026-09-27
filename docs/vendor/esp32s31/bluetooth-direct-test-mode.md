@@ -324,7 +324,7 @@ guard remains 40; neither 40 nor 46 alone is margin.
 
 Current member `64.o` wrapper `r_sym_ble_4QeP6vZAoSzLLHdFgwD0` calls
 `r_sym_bt_Ceh2khbCcopEBybBO6Z5` and converts its result through
-`r_sym_ble_3ISuZaEAZjklAjtGLFxW`. Named same-chip roles are
+`r_sym_sched_TYdJzWTeOAsagss1aIFj`. Named same-chip roles are
 `r_btdm_sleep_enable_now` followed by `r_sched_timer_convertTimeToUs`. The null
 or disabled sleep-environment branch performs no RF MMIO and obtains a fresh
 controller tick; the sleep-enabled branch first crosses still-open wake helpers
@@ -822,7 +822,7 @@ The always-awake time-read prefix is exact. Complete
 comparison names that function `r_btdm_sleep_timer_ticks_get`; it also maps
 the two conversion helpers below without importing a reference address or
 ABI claim. Complete
-`r_sym_ble_3ISuZaEAZjklAjtGLFxW` converts the delta from an owned raw-tick
+`r_sym_sched_TYdJzWTeOAsagss1aIFj` converts the delta from an owned raw-tick
 anchor into the BLE scheduler's microsecond epoch, handling either side of the
 anchor and rounding the negative side by one when a discarded remainder is
 nonzero. The complete config setter

@@ -54,7 +54,7 @@ inputs. The table below records only the distilled control and MMIO facts.
 | `r_sym_bt_QsLKLOCC2pct4rL8uFBN` | 130 bytes | Same-chip named `r_btdm_recycle_process_dequeued_sch`: clear the dequeued link image, recover its link-state pointer and invoke the item-specific recycle callback stored at `item+0x58`. |
 | `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` / `r_sym_ble_T40PqM3CeultOGiVkAp0` | 136 / 186 bytes | Default manager-0 selector-6 consumer and its scheduler action. Selector 6 walks active BLE scheduler transactions/list entries and asserts on an inconsistent `item+0x38` state. |
 | `r_sym_ble_zrorswmoCrQoX5oTeECu` / `r_sym_ble_3wftOXafF5ZkxLriL8L3` / `r_sym_ble_q4hMJ7XLGGCzxwmAKSge` | 62 / 188 / 102 bytes | Default manager-0 selector-4 consumer. It checks BLE scheduler/current-item state and, for a false publication when the predicate holds, retries a scheduler operation while it returns `-2`, increasing the delay in steps of 100. |
-| `r_sym_ble_ywjh0f9yjTBeI7XgS5da` | 74 bytes | NRT ISR: raw sample at `0x2010_1340/1348`, shared W1C acknowledgement and selector `0x8000_0000`. |
+| `r_sym_nrtIsr_kgxM2CJfVperrlVjmB4B` | 70 bytes (10c5077) | NRT ISR: raw sample at `0x2010_1340/1348`, shared W1C acknowledgement, then entry zero of the linker-assembled `_nrtIsr_linear_broker_flash` table with the two-word snapshot. No pinned archive member subscribes to that table, so the dispatch has no callback. |
 
 ## Exact primary suffix
 
@@ -218,12 +218,13 @@ required by the scheduler-list consumer.
 
 ## NRT default-lifecycle contract
 
-The NRT ISR belongs to callback-manager ID `0x4003` and synchronously dispatches
-selector `0x8000_0000` after raw sample/sample/ack/ack. Complete relocation and
-caller review across the pinned BLE, common and classic Controller archives
-found no registration into manager `0x4003`; the manager is initialized with
-an empty list in the default lifecycle. Other managers do have concrete
-registrations, so absence here is not inferred merely from stripped names.
+The NRT ISR dispatches entry zero of the `_nrtIsr_linear_broker_flash` table
+synchronously after raw sample/sample/ack/ack. The linker assembles that table
+from `__sublinear__F_nrtIsr_linear_broker_flash` descriptors. No member of the
+pinned BLE, common or classic Controller archives defines one, while the other
+broker tables do have subscribers, so the absence is not inferred merely from
+stripped names. The dispatch therefore reaches no callback in the pinned
+controller.
 
 This establishes an acknowledge-only NRT path for the pinned default software
 lifecycle, not a silicon guarantee that source 133 can be removed or that its

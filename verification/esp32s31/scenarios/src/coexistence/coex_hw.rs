@@ -3,8 +3,8 @@
 //! `wifi-mac` leaf machinery.
 use crate::harness::Result;
 use crate::mac::{
-    Domain, Leaf, Objects, Suite, Vendor, leaf, objects, released, released_when_leased, stated,
-    vendor_reads,
+    Domain, Leaf, Objects, Suite, Vendor, in_archive, leaf, objects, released,
+    released_when_leased, stated, vendor_reads,
 };
 use blobray_domain::{
     CallBinding, CallBoundary, CallDeclaration, CallRepetition, CallResponse, RegionLifetime,
@@ -185,6 +185,9 @@ const fn output(length: u32) -> Domain {
 /// register transaction.
 const RELEASE_FENCES: u32 = 1;
 
+/// Session input of `libbtbb.a`, the suite's second archive.
+const BTBB_INPUT: u64 = 4;
+
 /// Every compared coexistence leaf.
 pub const LEAVES: &[Leaf] = &[
     released(
@@ -362,12 +365,22 @@ pub const LEAVES: &[Leaf] = &[
         &[("pti", Domain::Words(PTIS))],
         false,
     ),
+    // The IEEE 802.15.4 MAC TX-on, TX-off and TX/RX switch delays.
+    in_archive(
+        leaf(
+            "ieee802154_txon_delay_set",
+            "open_ieee802154_btbb_trace_txon_delay",
+            &[],
+            true,
+        ),
+        BTBB_INPUT,
+    ),
 ];
 
 /// The coexistence hardware suite.
 pub const COEX_HW: Suite = Suite {
     title: "Coexistence hardware leaf comparison",
-    archives: &["libcoexist"],
+    archives: &["libcoexist", "libbtbb"],
     leaves: LEAVES,
     wifi: false,
     // ESP-IDF glue the request's invalid-kind assertion reaches; the compared

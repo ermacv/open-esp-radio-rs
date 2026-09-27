@@ -48,7 +48,7 @@ fn cancellation_during_unprivileged_build_never_reaches_sudo_apply() {
 
     let mut command = Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"));
     command
-        .args(["fixture", "install", "--provider", "linux-net"])
+        .args(["fixture", "install", "--provider", "linux-bluetooth"])
         .env("CARGO", cargo)
         .env(
             "PATH",

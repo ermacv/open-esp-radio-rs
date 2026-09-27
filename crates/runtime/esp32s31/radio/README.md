@@ -69,7 +69,10 @@ protocol compositions are clients of the system:
   to Wi-Fi (`RadioSystem::wifi_coex_preemption_end`). The schedule's period,
   interval, flexible period and phases are read through
   `RadioGuard::coex_schedule`; `RadioGuard::coex_active_for` answers
-  `coex_status_get` for one radio.
+  `coex_status_get` for one radio. `enable_ieee802154_coex` and
+  `disable_ieee802154_coex` are ESP-IDF's `esp_coex_wifi_i154_enable` and its
+  reverse: IEEE 802.15.4 enables coexistence and publishes its schedule
+  status; its MAC priorities follow its own operation scenes.
 
 The Wi-Fi, Bluetooth and IEEE 802.15.4 compositions are all clients of the
 system.

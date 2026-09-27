@@ -41,6 +41,11 @@ use oer_esp32s31_phy::{
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 
+/// The IEEE 802.15.4 schedule status bit of the pinned libcoexist
+/// `esp_coex_ieee802154_status_enable` and `_disable`
+/// (`coex_schm_status_bit_set/clear(4, 1)`).
+const IEEE802154_COEX_STATUS: u16 = 0x01;
+
 /// Retry period while another holder owns the arbiter lease.
 const LEASE_RETRY_MICROS: u64 = 100;
 
@@ -854,6 +859,27 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
                 .schedule()
                 .status()
                 .others_publish(radio)
+    }
+
+    /// Enter IEEE 802.15.4 into coexistence, as ESP-IDF's
+    /// `esp_coex_wifi_i154_enable` does: enable coexistence for the radio
+    /// ([`Self::enable_coex`]) and publish its schedule status, the bit
+    /// `esp_coex_ieee802154_status_enable` sets.
+    pub fn enable_ieee802154_coex(&mut self) {
+        self.enable_coex();
+        self.set_coex_status_bits(CoexStatusType::Ieee802154, IEEE802154_COEX_STATUS);
+    }
+
+    /// Withdraw IEEE 802.15.4's schedule status, the bit
+    /// `esp_coex_ieee802154_status_disable` clears, and disable coexistence
+    /// for the radio ([`Self::disable_coex`]).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::disable_coex`].
+    pub fn disable_ieee802154_coex(&mut self) -> Result<(), CoexError> {
+        self.clear_coex_status_bits(CoexStatusType::Ieee802154, IEEE802154_COEX_STATUS);
+        self.disable_coex()
     }
 
     /// Record the Wi-Fi channel, as `coex_wifi_channel_set` does, and wake

@@ -257,9 +257,9 @@ scope-and-limitations = "No connected-runtime producer or consumer implements th
 id = "coex-coexistence-policy-and-scheduler-ieee-802-15-4-operation-priorities"
 section = "coex-coexistence-policy-and-scheduler"
 title = "IEEE 802.15.4 operation priorities"
-status = "fail-closed"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the shared table, as `coex_ieee802154_pti_get` does. The [static MAC policy](../../hal/src/ieee802154/policy.rs) still requires TX/RX and ACK PTI disabled, as the vendor build without software coexistence does; no operation-dependent scene lifecycle publishes the levels."
+scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the shared table, as `coex_ieee802154_pti_get` does. The [MAC scenes](../../hal/src/ieee802154/coex.rs) follow `ieee802154_set_txrx_pti` of ESP-IDF `7b9cc1ac`: the ACK PTI takes the middle level at MAC initialization, the TX/RX PTI the idle level, and each transmission, reception, energy detection and CCA switches it to its scene's level. The composition publishes the vendor default levels resolved from the table at start or at `update_coexistence`; a later change of the shared table is not re-read at each scene, and the OpenThread role-dependent TX/RX level is not applied."
 packages = ["oer-esp32s31-hal"]
 
 [[items]]
@@ -342,7 +342,7 @@ section = "coex-protocol-integration-and-lifetime"
 title = "Wi-Fi + IEEE 802.15.4 coexistence"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "No complete joint-radio runtime exists; the IEEE MAC keeps PTI disabled."
+scope-and-limitations = "The radio runtime's `enable_ieee802154_coex` enters IEEE 802.15.4 into the schedule as `esp_coex_wifi_i154_enable` does, and the IEEE MAC publishes its scene priorities; no composition runs Wi-Fi and IEEE 802.15.4 together yet."
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-ble-ieee-802-15-4-coexistence"

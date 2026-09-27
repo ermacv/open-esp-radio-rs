@@ -20,8 +20,8 @@ board journal.
 
 The arbiter reports board changes but never restores board state. A board is
 identified by the USB serial number of its port, which Espressif USB
-Serial/JTAG ports set to the chip's MAC address. The runner registers the DUT
-as `esp32s31`; other chips are registered by `cargo hil devices set` or a
+Serial/JTAG ports set to the chip's MAC address. The runner registers the
+board it flashes as `esp32s31` when its chip is unknown; other chips are registered by `cargo hil devices set` or a
 recorded flash with `--chip`.
 
 Checkouts of different versions share the directory. Readers ignore journal
@@ -38,7 +38,7 @@ Every change happens under `arbiter.lock`:
 | `state.json` | Schema 1: queue tickets and the holder, each with PID and kernel start time |
 | `history.jsonl` | Completed leases: owner, work, duration, budget, `released`, `budget-exceeded` or `abandoned` |
 | `board.jsonl` | Flashes and startup-artifact uploads and writes, with owner, checkout and board MAC |
-| `devices.json` | Schema 1: board MAC to chip, role and name |
+| `devices.json` | Schema 1: board MAC to chip and name; boards have no fixed role |
 
 Each transaction first removes tickets and holders whose process no longer
 exists; the start time prevents a recycled PID from keeping a lease alive. The

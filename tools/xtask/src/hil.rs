@@ -418,32 +418,19 @@ fn devices(args: &[OsString]) -> Result<std::process::ExitCode> {
     }
     #[derive(clap::Subcommand)]
     enum DevicesCommand {
-        /// Register or change a board's chip, role and name.
+        /// Register or change a board's chip and name.
         Set {
             mac: String,
             #[arg(long)]
             chip: Option<String>,
-            #[arg(long)]
-            role: Option<String>,
             #[arg(long)]
             name: Option<String>,
         },
     }
     let cli = DevicesCli::try_parse_from(args)?;
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
-    if let Some(DevicesCommand::Set {
-        mac,
-        chip,
-        role,
-        name,
-    }) = cli.command
-    {
-        let device = arbiter.set_device(oer_hil_arbiter::Device {
-            mac,
-            chip,
-            role,
-            name,
-        })?;
+    if let Some(DevicesCommand::Set { mac, chip, name }) = cli.command {
+        let device = arbiter.set_device(oer_hil_arbiter::Device { mac, chip, name })?;
         println!("{} {}", device.mac, device.label());
         return Ok(std::process::ExitCode::SUCCESS);
     }

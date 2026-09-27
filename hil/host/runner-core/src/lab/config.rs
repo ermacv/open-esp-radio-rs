@@ -65,8 +65,11 @@ struct RawBluetoothConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawIeee802154PeerConfig {
-    id: String,
-    serial: PathBuf,
+    /// Defaults to `board`.
+    id: Option<String>,
+    serial: Option<PathBuf>,
+    /// A registered board name or MAC, resolved to its attached port.
+    board: Option<String>,
 }
 
 /// The IEEE 802.15.4 reference peer: a stable identity and its serial port.
@@ -86,7 +89,9 @@ struct RawLabIdentity {
 #[serde(deny_unknown_fields)]
 struct RawDeviceConfig {
     id: String,
-    serial: PathBuf,
+    serial: Option<PathBuf>,
+    /// A registered board name or MAC, resolved to its attached port.
+    board: Option<String>,
     startup_artifact: Option<PathBuf>,
 }
 
@@ -240,12 +245,99 @@ pub struct ExternalConfig {
     pub phys: Vec<PhyExpectation>,
 }
 
+/// `$XDG_CONFIG_HOME/open-esp-radio/lab.toml`, or `~/.config/...`.
+pub fn host_config_path() -> Result<PathBuf> {
+    let base = match std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+        Some(base) => PathBuf::from(base),
+        None => PathBuf::from(
+            std::env::var_os("HOME").ok_or("HOME is required to locate the host lab config")?,
+        )
+        .join(".config"),
+    };
+    Ok(base.join("open-esp-radio/lab.toml"))
+}
+
+/// A section's serial port: an explicit `serial`, or the attached port of
+/// its `board`.
+fn board_port(
+    section: &str,
+    serial: Option<PathBuf>,
+    board: Option<&str>,
+    chip: Option<&str>,
+    resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
+) -> Result<PathBuf> {
+    match (serial, board) {
+        (Some(serial), None) if !serial.as_os_str().is_empty() => Ok(serial),
+        (Some(_), None) => Err(format!("HIL lab config [{section}] has an empty serial").into()),
+        (None, Some(board)) => resolve(board, chip),
+        (Some(_), Some(_)) => {
+            Err(format!("HIL lab config [{section}] names both serial and board").into())
+        }
+        (None, None) => Err(format!("HIL lab config [{section}] needs serial or board").into()),
+    }
+}
+
+/// Resolve a registered board name or MAC to its attached port, requiring
+/// `chip` when the registry knows the board's chip.
+fn resolve_board(board: &str, chip: Option<&str>) -> Result<PathBuf> {
+    let devices = oer_hil_arbiter::Arbiter::open()?.devices()?;
+    let mac = match devices
+        .iter()
+        .find(|device| device.name.as_deref() == Some(board))
+    {
+        Some(device) => device.mac.clone(),
+        None => oer_hil_arbiter::normalize_mac(board).map_err(|_| {
+            format!(
+                "board `{board}` is neither a registered name nor a MAC; see `cargo hil devices`"
+            )
+        })?,
+    };
+    if let (Some(required), Some(known)) = (
+        chip,
+        devices
+            .iter()
+            .find(|device| device.mac == mac)
+            .and_then(|device| device.chip.as_deref()),
+    ) && required != known
+    {
+        return Err(format!("board `{board}` is an {known}; this role needs an {required}").into());
+    }
+    oer_hil_arbiter::attached_ports()
+        .into_iter()
+        .find(|port| port.mac.as_deref() == Some(mac.as_str()))
+        .map(|port| PathBuf::from(port.port))
+        .ok_or_else(|| format!("board `{board}` ({mac}) is not attached").into())
+}
+
 impl LabConfig {
+    /// This checkout's `hil/local.toml` when present, otherwise the host's
+    /// shared lab configuration, which every checkout reads.
     pub fn default_path() -> Result<PathBuf> {
-        Ok(repository_root()?.join("hil/local.toml"))
+        let local = repository_root()?.join("hil/local.toml");
+        let host = host_config_path()?;
+        if local.exists() {
+            if host.exists() {
+                eprintln!(
+                    "hil: {} overrides the host lab config {}",
+                    local.display(),
+                    host.display()
+                );
+            }
+            return Ok(local);
+        }
+        Ok(host)
     }
 
     pub fn load(path: &Path) -> Result<Self> {
+        Self::load_resolving(path, &resolve_board)
+    }
+
+    /// Load with `resolve` mapping a `board` reference and its required chip
+    /// to the board's serial port.
+    pub(crate) fn load_resolving(
+        path: &Path,
+        resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
+    ) -> Result<Self> {
         require_private_permissions(path)?;
         let source = fs::read_to_string(path)
             .map_err(|error| format!("cannot read HIL lab config `{}`: {error}", path.display()))?;
@@ -265,9 +357,14 @@ impl LabConfig {
         }
         validate_identifier("lab.id", &raw.lab.id)?;
         validate_identifier("device.id", &raw.device.id)?;
-        if raw.device.serial.as_os_str().is_empty() {
-            return Err("HIL lab config defines an empty serial device".into());
-        }
+        // The runner builds ESP32-S31 firmware for its device under test.
+        let device_serial = board_port(
+            "device",
+            raw.device.serial.take(),
+            raw.device.board.as_deref(),
+            Some("esp32s31"),
+            resolve,
+        )?;
         if raw.station.ssid.is_empty() || raw.station.ssid.len() > 32 {
             return Err("HIL station SSID must contain 1..=32 bytes".into());
         }
@@ -430,20 +527,30 @@ impl LabConfig {
                 .transpose()?,
             ieee802154_peer: raw
                 .ieee802154_peer
-                .map(|config| {
-                    if config.id.trim().is_empty() {
-                        Err("IEEE 802.15.4 peer id is empty")
-                    } else {
-                        Ok(Ieee802154PeerConfig {
-                            id: config.id,
-                            serial: config.serial,
-                        })
+                .map(|config| -> Result<_> {
+                    let id = config
+                        .id
+                        .clone()
+                        .or_else(|| config.board.clone())
+                        .unwrap_or_default();
+                    if id.trim().is_empty() {
+                        return Err("IEEE 802.15.4 peer id is empty".into());
                     }
+                    Ok(Ieee802154PeerConfig {
+                        id,
+                        serial: board_port(
+                            "ieee802154_peer",
+                            config.serial,
+                            config.board.as_deref(),
+                            None,
+                            resolve,
+                        )?,
+                    })
                 })
                 .transpose()?,
             device: DeviceConfig {
                 id: raw.device.id,
-                serial: raw.device.serial,
+                serial: device_serial,
                 startup_artifact,
             },
             station,

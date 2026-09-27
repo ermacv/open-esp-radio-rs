@@ -173,12 +173,11 @@ mod tests {
         let devices = [crate::Device {
             mac: "38:44:BE:AA:25:64".into(),
             chip: Some("esp32c5".into()),
-            role: Some("peer".into()),
             name: None,
         }];
         assert_eq!(
             device_label(Some("38:44:BE:AA:25:64"), &devices),
-            "38:44:BE:AA:25:64 (esp32c5, peer)"
+            "38:44:BE:AA:25:64 (esp32c5)"
         );
         assert_eq!(device_label(Some("AA"), &devices), "AA");
         assert_eq!(device_label(None, &devices), "unidentified board");

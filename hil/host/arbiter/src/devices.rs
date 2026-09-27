@@ -9,31 +9,23 @@ use crate::Arbiter;
 
 const REGISTRY_SCHEMA: u32 = 1;
 
-/// A registered board. Unset fields are unknown.
+/// A registered board. Unset fields are unknown. Boards have no fixed role:
+/// a scenario or other consumer chooses which board it uses in which role.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Device {
     /// USB serial number, the chip's MAC address for USB Serial/JTAG.
     pub mac: String,
     pub chip: Option<String>,
-    /// For example `dut` or `peer`.
-    pub role: Option<String>,
     pub name: Option<String>,
 }
 
 impl Device {
-    /// `name (chip, role)`, or the MAC when nothing else is known.
+    /// `name (chip)`, or the MAC when nothing else is known.
     pub fn label(&self) -> String {
-        let details = [self.chip.as_deref(), self.role.as_deref()]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join(", ");
         let name = self.name.as_deref().unwrap_or(&self.mac);
-        if details.is_empty() {
-            name.to_owned()
-        } else {
-            format!("{name} ({details})")
+        match &self.chip {
+            Some(chip) => format!("{name} ({chip})"),
+            None => name.to_owned(),
         }
     }
 }
@@ -122,7 +114,6 @@ impl Arbiter {
             let device = &mut registry.devices[index];
             for (field, value) in [
                 (&mut device.chip, update.chip),
-                (&mut device.role, update.role),
                 (&mut device.name, update.name),
             ] {
                 if value.is_some() && (overwrite || field.is_none()) {
@@ -203,7 +194,6 @@ mod tests {
             .register_device(Device {
                 mac: "30:ed:a0:f3:f6:d0".into(),
                 chip: Some("esp32s31".into()),
-                role: Some("dut".into()),
                 name: None,
             })
             .unwrap();
@@ -212,21 +202,20 @@ mod tests {
                 mac: "30:ED:A0:F3:F6:D0".into(),
                 chip: Some("other".into()),
                 name: Some("s31".into()),
-                ..Device::default()
             })
             .unwrap();
         assert_eq!(device.chip.as_deref(), Some("esp32s31"));
-        assert_eq!(device.label(), "s31 (esp32s31, dut)");
+        assert_eq!(device.label(), "s31 (esp32s31)");
         arbiter
             .set_device(Device {
                 mac: "30:ED:A0:F3:F6:D0".into(),
-                role: Some("spare".into()),
-                ..Device::default()
+                chip: Some("esp32c5".into()),
+                name: None,
             })
             .unwrap();
         let devices = arbiter.devices().unwrap();
         assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].role.as_deref(), Some("spare"));
+        assert_eq!(devices[0].chip.as_deref(), Some("esp32c5"));
         assert_eq!(devices[0].name.as_deref(), Some("s31"));
     }
 }

@@ -202,3 +202,55 @@ fn the_ieee802154_peer_is_optional_and_needs_an_identity() {
     anonymous["ieee802154_peer"]["id"] = toml::Value::String(String::from(" "));
     assert!(load(&anonymous).is_err());
 }
+
+#[test]
+fn devices_are_named_by_serial_port_or_by_registered_board() {
+    use std::io::Write;
+    let raw: toml::Value =
+        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    let resolve = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
+        match (board, chip) {
+            ("s31", Some("esp32s31")) => Ok("/dev/ttyACM0".into()),
+            ("c5", None) => Ok("/dev/ttyACM1".into()),
+            _ => Err(format!("unexpected {board} {chip:?}").into()),
+        }
+    };
+    let load = |value: &toml::Value| {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(toml::to_string(value).unwrap().as_bytes())
+            .unwrap();
+        LabConfig::load_resolving(file.path(), &resolve)
+    };
+    let mut boards = raw.clone();
+    let device = boards["device"].as_table_mut().unwrap();
+    device.remove("serial");
+    device.insert("board".into(), "s31".into());
+    let peer = boards["ieee802154_peer"].as_table_mut().unwrap();
+    peer.remove("serial");
+    peer.remove("id");
+    peer.insert("board".into(), "c5".into());
+    let lab = load(&boards).unwrap();
+    assert_eq!(lab.device.serial, std::path::PathBuf::from("/dev/ttyACM0"));
+    assert_eq!(
+        lab.ieee802154_peer,
+        Some(Ieee802154PeerConfig {
+            id: String::from("c5"),
+            serial: std::path::PathBuf::from("/dev/ttyACM1"),
+        })
+    );
+    let mut both = boards.clone();
+    both["device"]
+        .as_table_mut()
+        .unwrap()
+        .insert("serial".into(), "/dev/ttyACM0".into());
+    assert!(load(&both).is_err());
+    let mut neither = boards.clone();
+    neither["device"].as_table_mut().unwrap().remove("board");
+    assert!(load(&neither).is_err());
+    let mut unknown = boards;
+    unknown["device"]["board"] = "c5".into();
+    assert!(
+        load(&unknown).is_err(),
+        "the device must resolve as an esp32s31"
+    );
+}

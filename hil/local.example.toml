@@ -1,4 +1,6 @@
-# Copy to hil/local.toml and chmod 0600. The local file is never committed.
+# Copy to ~/.config/open-esp-radio/lab.toml (shared by every checkout of this
+# user) and chmod 0600. A checkout's hil/local.toml, never committed, replaces
+# the shared file for that checkout.
 
 [lab]
 # Stable physical cell identity recorded in every immutable run manifest.
@@ -7,8 +9,11 @@ id = "berlin-esp32s31-01"
 [device]
 # Stable DUT identity; do not use a transient /dev path as the identity.
 id = "esp32s31-qfn80-01"
+# The ESP32-S31 the runner uses: a serial port, or instead
+# `board = "NAME-or-MAC"` from `cargo hil devices`, resolved to its port.
 serial = "/dev/ttyACM0"
-# Optional opaque calibration/startup state persisted by the HIL runner.
+# Optional opaque calibration/startup state persisted by the HIL runner; a
+# relative path belongs to each checkout.
 startup_artifact = "target/hil/esp32s31/startup-artifact.bin"
 
 # Optional, used only by Bluetooth workloads.
@@ -16,7 +21,8 @@ startup_artifact = "target/hil/esp32s31/startup-artifact.bin"
 adapter = "hci0"
 
 # Optional, used only by IEEE 802.15.4 peer workloads: the ESP32-C5 flashed
-# with hil/peers/esp32c5-ieee802154. Prefer a stable /dev/serial/by-id path.
+# with hil/peers/esp32c5-ieee802154. Prefer a stable /dev/serial/by-id path,
+# or `board = "NAME-or-MAC"` instead of serial; `id` then defaults to it.
 [ieee802154_peer]
 id = "esp32c5-peer-01"
 serial = "/dev/ttyUSB0"

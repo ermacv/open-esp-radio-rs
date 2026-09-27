@@ -149,9 +149,9 @@ impl std::fmt::Display for FixtureBusy {
 
 impl std::error::Error for FixtureBusy {}
 
-/// Journal a change of the DUT at `port`. The runner targets the ESP32-S31,
-/// so an unregistered DUT is registered with that chip. Failure is reported
-/// and never fails the run.
+/// Journal a change of the board the runner uses at `port`. The runner
+/// builds ESP32-S31 firmware, so a board without a known chip is registered
+/// as one. Failure is reported and never fails the run.
 pub fn record_board(port: &Path, kind: oer_hil_arbiter::BoardEventKind) {
     let result = oer_hil_arbiter::Arbiter::open().and_then(|arbiter| {
         let device = oer_hil_arbiter::port_mac(port);
@@ -159,7 +159,6 @@ pub fn record_board(port: &Path, kind: oer_hil_arbiter::BoardEventKind) {
             arbiter.register_device(oer_hil_arbiter::Device {
                 mac: mac.clone(),
                 chip: Some(String::from("esp32s31")),
-                role: Some(String::from("dut")),
                 name: None,
             })?;
         }

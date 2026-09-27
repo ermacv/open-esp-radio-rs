@@ -60,13 +60,18 @@ visible. Source compatibility is still checked per workload.
 Run the host interface through the workspace alias:
 
 ```console
-cp hil/local.example.toml hil/local.toml
-chmod 0600 hil/local.toml
+mkdir -p ~/.config/open-esp-radio
+cp hil/local.example.toml ~/.config/open-esp-radio/lab.toml
+chmod 0600 ~/.config/open-esp-radio/lab.toml
 cargo hil doctor
 ```
 
-`hil/local.toml` is the only source for the stable lab-cell and DUT identities,
-serial device, STA/AP credentials and addresses, startup artifact and OpenWrt
+The lab configuration is `~/.config/open-esp-radio/lab.toml` (or under
+`$XDG_CONFIG_HOME`), shared by every checkout of this user. A checkout's
+`hil/local.toml` replaces it for that checkout, with a notice; `--lab-config`
+names another file. The lab configuration is the only source for the stable
+lab-cell and DUT identities, serial devices or board references (a name or MAC
+from `cargo hil devices`), STA/AP credentials and addresses, startup artifact and OpenWrt
 fixture. It is ignored by Git; scenarios contain no lab secrets or
 machine-specific paths. The identities are written into every run manifest so
 results from different cells and boards cannot be silently mixed.
@@ -126,22 +131,25 @@ the notification for an agent. The user receives desktop notifications through
 `notify-send` when a waiting owner is granted the stand, when the stand becomes
 free, and when a lease exceeds its budget; `OER_HIL_NOTIFY=0` disables them.
 
-The stand holds several boards: the ESP32-S31 DUT and peers such as an
-ESP32-C5 that scenarios may flash with their own firmware. Each board is
+The stand holds several equal boards, currently an ESP32-S31 and an ESP32-C5.
+No board has a fixed role: a scenario or other consumer chooses which board it
+uses as its device under test or as a peer, and may flash its own firmware.
+The lab configuration names the boards the runner uses. Each board is
 identified by the MAC address its USB Serial/JTAG port reports as USB serial
 number, independent of `/dev/ttyACM*` numbering. Every board is part of the
-stand: flash and use a peer only under a lease.
+stand: flash and use any board only under a lease.
 
 ```console
 cargo hil devices                     # boards: label, port, last firmware
-cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --role peer --name c5-peer
+cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --name c5
 cargo hil lease --flashed ieee802154-peer --application build/peer.bin \
     --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \
     --chip esp32c5 -- idf.py -p /dev/ttyACM1 flash
 cargo hil board flashed --image NAME --sha256 HASH --device MAC   # inside a lease
 ```
 
-The runner records its own DUT flashes and registers the DUT as `esp32s31`.
+The runner records its own flashes and registers the board it flashes as
+`esp32s31` when its chip is unknown.
 Any other flash (a peer, a vendor image, a manual `espflash`) is recorded
 with `lease --flashed`, which journals it only when the command succeeds, or
 with `board flashed`. Name the board with `--port` or `--device`, and the

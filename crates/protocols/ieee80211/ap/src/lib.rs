@@ -12,6 +12,7 @@
 extern crate std;
 
 pub mod limits;
+pub mod sae;
 pub mod service;
 
 pub use service::{

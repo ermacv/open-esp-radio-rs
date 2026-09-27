@@ -1529,6 +1529,10 @@ impl PhyState {
             WifiCalibrationStatus::RX_GAIN_TABLES,
             cache.snapshot.wifi.rx_gain_tables_initialized,
         );
+        // The snapshot is captured after registration, whose temperature
+        // step restarts TX-power tracking from the TX-power reference
+        // (`apply_register_temperature_outcome`, as `phy_get_temp_init`).
+        state.common.tracking_temperature = state.common.power_reference_temperature;
         Ok(state)
     }
 

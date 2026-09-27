@@ -193,8 +193,14 @@ mod tests {
         bluetooth.tx_dc_calibrated = true;
         bluetooth.tx_power_calibrated = true;
         bluetooth.tx_dco[1] = [18, 19, 20, 21];
+        common.power_reference_temperature = 26;
         let state = super::retained_calibration_state(snapshot).unwrap();
         assert_eq!(super::calibration_snapshot(&state), snapshot);
+        // Registration restarts TX-power tracking from the power reference.
+        assert_eq!(
+            state.tx_power_tracking_parameters(true).previous_tracking_temperature,
+            26
+        );
     }
 
     #[test]

@@ -21,6 +21,24 @@ impl WifiRadioRegisters {
         );
     }
 
+    /// Set the hardware beacon receive window and time.
+    ///
+    /// SOURCE: complete pinned `libpp.a[hal_coex.o]::hal_set_rx_beacon_time`
+    /// replaces bits 15:0 at `0x2010_d854` with the window, then bits 7:0 at
+    /// `0x2010_d8a0` with bits 15:8 of the time.
+    pub fn set_rx_beacon_time(&mut self, window_micros: u16, time_micros: u32) {
+        self.peripherals
+            .wifi_mac
+            .wifi_mac_rtc_timer_update
+            .rx_beacon_time_low()
+            .modify(|_, w| w.value().set(window_micros));
+        self.peripherals
+            .wifi_mac
+            .wifi_mac_coex_runtime
+            .rx_beacon_time_high()
+            .modify(|_, w| w.value().set((time_micros >> 8) as u8));
+    }
+
     /// Set the reviewed receive-beacon clear request without exposing the
     /// remaining unknown request bits.
     ///

@@ -33,26 +33,43 @@ bitWidth = 3
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "TX_BLOCK_STOP_REQUEST"
-description = "Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."
+name = "TX_BLOCK_STOP_REQUEST_LOW"
+description = "Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."
 bitOffset = 16
-bitWidth = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "POWER_SAVE_TX_BLOCK"
+description = "Bits 19:17 of the stop-request bits. The vendor power manager sets all three to block the TX queues when its coexistence slice ends and clears them to unblock; its retention mask keeps them out of the MAC deinit and init requests while an associated station runs power management."
+bitOffset = 17
+bitWidth = 3
 
 [peripherals.registers.register.fields.writeConstraint]
 useEnumeratedValues = true
 
 [[peripherals.registers.register.fields.enumeratedValues]]
-usage = "write"
+name = "PowerSaveTxBlock"
+usage = "read-write"
 
 [[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "RUN_ALL"
-description = "Clear every no-power-save TX block stop request."
+name = "RUN"
+description = "The TX queues run."
 value = 0
 
 [[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "STOP_ALL"
-description = "Request every no-power-save TX block to stop before retuning."
-value = 255
+name = "BLOCKED"
+description = "The TX queues are blocked."
+value = 7
+
+[[peripherals.registers.register.fields]]
+name = "TX_BLOCK_STOP_REQUEST_HIGH"
+description = "Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."
+bitOffset = 20
+bitWidth = 4
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
 
 [[peripherals.registers.register.fields]]
 name = "HIGH_CONTROL_UNKNOWN"
@@ -74,6 +91,7 @@ entity = "WIFI_MAC_CONTROL.CONTROL"
 sources = [
     "OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER",
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
+    "BLOB_LIBPP_PM_TX_BLOCK_20260927",
 ]
 provenance = "reviewed"
 accuracy = "exact"
@@ -97,7 +115,21 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_CONTROL.CONTROL.TX_BLOCK_STOP_REQUEST"
+entity = "WIFI_MAC_CONTROL.CONTROL.TX_BLOCK_STOP_REQUEST_LOW"
+sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_CONTROL.CONTROL.POWER_SAVE_TX_BLOCK"
+sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH", "BLOB_LIBPP_PM_TX_BLOCK_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_CONTROL.CONTROL.TX_BLOCK_STOP_REQUEST_HIGH"
 sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
 provenance = "observed"
 accuracy = "exact"

@@ -526,6 +526,17 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().clear_rx_beacon_pti();
     }
 
+    /// Publish the hardware beacon receive window and time.
+    pub fn set_rx_beacon_time(&mut self, window_micros: u16, time_micros: u32) {
+        self.pac_mut()
+            .set_rx_beacon_time(window_micros, time_micros);
+    }
+
+    /// Block or unblock the TX queues for station power management.
+    pub fn set_power_save_tx_block(&mut self, blocked: bool) {
+        self.pac_mut().set_power_save_tx_block(blocked);
+    }
+
     /// Publish the complete two-edge individual-TWT PTI transaction.
     pub fn set_itwt_pti(&mut self, argument_is_zero: bool, shared: MacPti) {
         self.pac_mut().set_itwt_pti(argument_is_zero, shared);

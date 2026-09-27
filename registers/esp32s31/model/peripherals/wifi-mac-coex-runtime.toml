@@ -36,6 +36,10 @@ name = "VALUE"
 bitOffset = 0
 bitWidth = 8
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]

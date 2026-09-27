@@ -19951,10 +19951,24 @@ bit-width = 3
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "TX_BLOCK_STOP_REQUEST"
-method = "tx_block_stop_request"
+svd-name = "TX_BLOCK_STOP_REQUEST_LOW"
+method = "tx_block_stop_request_low"
 bit-offset = 16
-bit-width = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POWER_SAVE_TX_BLOCK"
+method = "power_save_tx_block"
+bit-offset = 17
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_BLOCK_STOP_REQUEST_HIGH"
+method = "tx_block_stop_request_high"
+bit-offset = 20
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]

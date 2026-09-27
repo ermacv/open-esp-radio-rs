@@ -17108,66 +17108,74 @@ pub mod wifi_mac_control {
         pub type NoRetentionStopRequestW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `ACTIVE_STATE` reader - Three-bit activity state polled until zero before PHY retuning. hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."]
         pub type ActiveStateR = crate::FieldReader;
-        #[doc = "Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."]
+        #[doc = "Field `TX_BLOCK_STOP_REQUEST_LOW` reader - Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+        pub type TxBlockStopRequestLowR = crate::BitReader;
+        #[doc = "Field `TX_BLOCK_STOP_REQUEST_LOW` writer - Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+        pub type TxBlockStopRequestLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Bits 19:17 of the stop-request bits. The vendor power manager sets all three to block the TX queues when its coexistence slice ends and clears them to unblock; its retention mask keeps them out of the MAC deinit and init requests while an associated station runs power management."]
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(u8)]
-        pub enum TxBlockStopRequest {
-            #[doc = "0: Clear every no-power-save TX block stop request."]
-            RunAll = 0,
-            #[doc = "255: Request every no-power-save TX block to stop before retuning."]
-            StopAll = 255,
+        pub enum PowerSaveTxBlock {
+            #[doc = "0: The TX queues run."]
+            Run = 0,
+            #[doc = "7: The TX queues are blocked."]
+            Blocked = 7,
         }
-        impl From<TxBlockStopRequest> for u8 {
+        impl From<PowerSaveTxBlock> for u8 {
             #[inline(always)]
-            fn from(variant: TxBlockStopRequest) -> Self {
+            fn from(variant: PowerSaveTxBlock) -> Self {
                 variant as _
             }
         }
-        impl crate::FieldSpec for TxBlockStopRequest {
+        impl crate::FieldSpec for PowerSaveTxBlock {
             type Ux = u8;
         }
-        impl crate::IsEnum for TxBlockStopRequest {}
-        #[doc = "Field `TX_BLOCK_STOP_REQUEST` reader - Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."]
-        pub type TxBlockStopRequestR = crate::FieldReader<TxBlockStopRequest>;
-        impl TxBlockStopRequestR {
+        impl crate::IsEnum for PowerSaveTxBlock {}
+        #[doc = "Field `POWER_SAVE_TX_BLOCK` reader - Bits 19:17 of the stop-request bits. The vendor power manager sets all three to block the TX queues when its coexistence slice ends and clears them to unblock; its retention mask keeps them out of the MAC deinit and init requests while an associated station runs power management."]
+        pub type PowerSaveTxBlockR = crate::FieldReader<PowerSaveTxBlock>;
+        impl PowerSaveTxBlockR {
             #[doc = "Get enumerated values variant"]
             #[inline(always)]
-            pub const fn variant(&self) -> Option<TxBlockStopRequest> {
+            pub const fn variant(&self) -> Option<PowerSaveTxBlock> {
                 match self.bits {
-                    0 => Some(TxBlockStopRequest::RunAll),
-                    255 => Some(TxBlockStopRequest::StopAll),
+                    0 => Some(PowerSaveTxBlock::Run),
+                    7 => Some(PowerSaveTxBlock::Blocked),
                     _ => None,
                 }
             }
-            #[doc = "Clear every no-power-save TX block stop request."]
+            #[doc = "The TX queues run."]
             #[inline(always)]
-            pub fn is_run_all(&self) -> bool {
-                *self == TxBlockStopRequest::RunAll
+            pub fn is_run(&self) -> bool {
+                *self == PowerSaveTxBlock::Run
             }
-            #[doc = "Request every no-power-save TX block to stop before retuning."]
+            #[doc = "The TX queues are blocked."]
             #[inline(always)]
-            pub fn is_stop_all(&self) -> bool {
-                *self == TxBlockStopRequest::StopAll
+            pub fn is_blocked(&self) -> bool {
+                *self == PowerSaveTxBlock::Blocked
             }
         }
-        #[doc = "Field `TX_BLOCK_STOP_REQUEST` writer - Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."]
-        pub type TxBlockStopRequestW<'a, REG> = crate::FieldWriter<'a, REG, 8, TxBlockStopRequest>;
-        impl<'a, REG> TxBlockStopRequestW<'a, REG>
+        #[doc = "Field `POWER_SAVE_TX_BLOCK` writer - Bits 19:17 of the stop-request bits. The vendor power manager sets all three to block the TX queues when its coexistence slice ends and clears them to unblock; its retention mask keeps them out of the MAC deinit and init requests while an associated station runs power management."]
+        pub type PowerSaveTxBlockW<'a, REG> = crate::FieldWriter<'a, REG, 3, PowerSaveTxBlock>;
+        impl<'a, REG> PowerSaveTxBlockW<'a, REG>
         where
             REG: crate::Writable + crate::RegisterSpec,
             REG::Ux: From<u8>,
         {
-            #[doc = "Clear every no-power-save TX block stop request."]
+            #[doc = "The TX queues run."]
             #[inline(always)]
-            pub fn run_all(self) -> &'a mut crate::W<REG> {
-                self.variant(TxBlockStopRequest::RunAll)
+            pub fn run(self) -> &'a mut crate::W<REG> {
+                self.variant(PowerSaveTxBlock::Run)
             }
-            #[doc = "Request every no-power-save TX block to stop before retuning."]
+            #[doc = "The TX queues are blocked."]
             #[inline(always)]
-            pub fn stop_all(self) -> &'a mut crate::W<REG> {
-                self.variant(TxBlockStopRequest::StopAll)
+            pub fn blocked(self) -> &'a mut crate::W<REG> {
+                self.variant(PowerSaveTxBlock::Blocked)
             }
         }
+        #[doc = "Field `TX_BLOCK_STOP_REQUEST_HIGH` reader - Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+        pub type TxBlockStopRequestHighR = crate::FieldReader;
+        #[doc = "Field `TX_BLOCK_STOP_REQUEST_HIGH` writer - Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+        pub type TxBlockStopRequestHighW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `HIGH_CONTROL_UNKNOWN` reader - "]
         pub type HighControlUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_CONTROL_UNKNOWN` writer - "]
@@ -17188,10 +17196,20 @@ pub mod wifi_mac_control {
             pub fn active_state(&self) -> ActiveStateR {
                 ActiveStateR::new(((self.bits >> 13) & 7) as u8)
             }
-            #[doc = "Bits 16:23 - Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."]
+            #[doc = "Bit 16 - Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
             #[inline(always)]
-            pub fn tx_block_stop_request(&self) -> TxBlockStopRequestR {
-                TxBlockStopRequestR::new(((self.bits >> 16) & 0xff) as u8)
+            pub fn tx_block_stop_request_low(&self) -> TxBlockStopRequestLowR {
+                TxBlockStopRequestLowR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bits 17:19 - Bits 19:17 of the stop-request bits. The vendor power manager sets all three to block the TX queues when its coexistence slice ends and clears them to unblock; its retention mask keeps them out of the MAC deinit and init requests while an associated station runs power management."]
+            #[inline(always)]
+            pub fn power_save_tx_block(&self) -> PowerSaveTxBlockR {
+                PowerSaveTxBlockR::new(((self.bits >> 17) & 7) as u8)
+            }
+            #[doc = "Bits 20:23 - Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+            #[inline(always)]
+            pub fn tx_block_stop_request_high(&self) -> TxBlockStopRequestHighR {
+                TxBlockStopRequestHighR::new(((self.bits >> 20) & 0x0f) as u8)
             }
             #[doc = "Bits 24:31"]
             #[inline(always)]
@@ -17212,10 +17230,22 @@ pub mod wifi_mac_control {
             ) -> NoRetentionStopRequestW<'_, ControlSpec> {
                 NoRetentionStopRequestW::new(self, 12)
             }
-            #[doc = "Bits 16:23 - Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."]
+            #[doc = "Bit 16 - Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
             #[inline(always)]
-            pub fn tx_block_stop_request(&mut self) -> TxBlockStopRequestW<'_, ControlSpec> {
-                TxBlockStopRequestW::new(self, 16)
+            pub fn tx_block_stop_request_low(&mut self) -> TxBlockStopRequestLowW<'_, ControlSpec> {
+                TxBlockStopRequestLowW::new(self, 16)
+            }
+            #[doc = "Bits 17:19 - Bits 19:17 of the stop-request bits. The vendor power manager sets all three to block the TX queues when its coexistence slice ends and clears them to unblock; its retention mask keeps them out of the MAC deinit and init requests while an associated station runs power management."]
+            #[inline(always)]
+            pub fn power_save_tx_block(&mut self) -> PowerSaveTxBlockW<'_, ControlSpec> {
+                PowerSaveTxBlockW::new(self, 17)
+            }
+            #[doc = "Bits 20:23 - Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+            #[inline(always)]
+            pub fn tx_block_stop_request_high(
+                &mut self,
+            ) -> TxBlockStopRequestHighW<'_, ControlSpec> {
+                TxBlockStopRequestHighW::new(self, 20)
             }
             #[doc = "Bits 24:31"]
             #[inline(always)]
@@ -31434,7 +31464,7 @@ pub mod wifi_mac_coex_runtime {
         #[doc = "Field `VALUE` reader - "]
         pub type ValueR = crate::FieldReader;
         #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]

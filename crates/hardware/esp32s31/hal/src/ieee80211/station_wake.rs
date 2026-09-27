@@ -260,6 +260,12 @@ impl<'registers> StationWakeHal<'registers> {
         Ok(())
     }
 
+    /// Replace the station TBTT lead and the wake lead beside it.
+    pub fn set_station_tbtt_ahead(&mut self, ahead_micros: u16, wake_ahead_micros: u16) {
+        let (registers, _) = self.registers.parts_mut();
+        registers.set_station_tbtt_ahead(ahead_micros, wake_ahead_micros);
+    }
+
     /// Stop the station TBTT schedule. Stopping an idle schedule is a no-op
     /// on the vendor disable leaf and leaves it idle.
     pub fn stop_station_tbtt(&mut self) {

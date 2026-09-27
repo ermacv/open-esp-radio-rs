@@ -16,9 +16,33 @@ impl WifiRadioRegisters {
         control.modify(|_, w| {
             w.no_retention_stop_request()
                 .set_bit()
-                .tx_block_stop_request()
-                .stop_all()
+                .tx_block_stop_request_low()
+                .set_bit()
+                .power_save_tx_block()
+                .blocked()
+                .tx_block_stop_request_high()
+                .set(0xF)
         });
+        device_fence();
+    }
+
+    /// Block or unblock the TX queues for station power management.
+    ///
+    /// SOURCE: complete pinned `libpp.a[pm.o]::pm_coex_go_to_sleep` and
+    /// `pm_coex_schm_process` set bits 19:17 at `0x2010_4cac`, and
+    /// `hal_pm_unblock_txq` clears them, each through one fresh-read RMW.
+    pub fn set_power_save_tx_block(&mut self, blocked: bool) {
+        self.peripherals
+            .wifi_mac
+            .wifi_mac_control
+            .control()
+            .modify(|_, w| {
+                if blocked {
+                    w.power_save_tx_block().blocked()
+                } else {
+                    w.power_save_tx_block().run()
+                }
+            });
         device_fence();
     }
 
@@ -39,8 +63,12 @@ impl WifiRadioRegisters {
         control.modify(|_, w| {
             w.no_retention_stop_request()
                 .clear_bit()
-                .tx_block_stop_request()
-                .run_all()
+                .tx_block_stop_request_low()
+                .clear_bit()
+                .power_save_tx_block()
+                .run()
+                .tx_block_stop_request_high()
+                .set(0)
         });
         device_fence();
     }

@@ -6886,26 +6886,45 @@
               <access>read-only</access>
             </field>
             <field>
-              <name>TX_BLOCK_STOP_REQUEST</name>
-              <description>Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init.</description>
+              <name>TX_BLOCK_STOP_REQUEST_LOW</name>
+              <description>Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask.</description>
               <bitOffset>16</bitOffset>
-              <bitWidth>8</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>POWER_SAVE_TX_BLOCK</name>
+              <description>Bits 19:17 of the stop-request bits. The vendor power manager sets all three to block the TX queues when its coexistence slice ends and clears them to unblock; its retention mask keeps them out of the MAC deinit and init requests while an associated station runs power management.</description>
+              <bitOffset>17</bitOffset>
+              <bitWidth>3</bitWidth>
               <writeConstraint>
                 <useEnumeratedValues>true</useEnumeratedValues>
               </writeConstraint>
               <enumeratedValues>
-                <usage>write</usage>
+                <name>PowerSaveTxBlock</name>
+                <usage>read-write</usage>
                 <enumeratedValue>
-                  <name>RUN_ALL</name>
-                  <description>Clear every no-power-save TX block stop request.</description>
+                  <name>RUN</name>
+                  <description>The TX queues run.</description>
                   <value>0</value>
                 </enumeratedValue>
                 <enumeratedValue>
-                  <name>STOP_ALL</name>
-                  <description>Request every no-power-save TX block to stop before retuning.</description>
-                  <value>255</value>
+                  <name>BLOCKED</name>
+                  <description>The TX queues are blocked.</description>
+                  <value>7</value>
                 </enumeratedValue>
               </enumeratedValues>
+            </field>
+            <field>
+              <name>TX_BLOCK_STOP_REQUEST_HIGH</name>
+              <description>Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>HIGH_CONTROL_UNKNOWN</name>
@@ -13412,6 +13431,12 @@
               <name>VALUE</name>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

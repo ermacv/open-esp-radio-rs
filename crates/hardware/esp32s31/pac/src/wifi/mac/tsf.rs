@@ -174,6 +174,20 @@ impl WifiRadioRegisters {
         device_fence();
     }
 
+    /// Replace the station TBTT lead and the light-sleep wake lead beside it.
+    ///
+    /// SOURCE: complete pinned `libpp.a[pm.o]::pm_update_params` calls
+    /// `hal_set_sta_tbtt_ahead_time`, which replaces bits 15:0 at
+    /// `0x2010_d858`, then `hal_set_sta_light_sleep_wake_ahead_time`, which
+    /// replaces bits 31:16 at `0x2010_d840`.
+    pub fn set_station_tbtt_ahead(&mut self, ahead_micros: u16, wake_ahead_micros: u16) {
+        let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
+        rtc.sta_tsf_control()
+            .modify(|_, w| w.sta_tbtt_ahead_time().set(ahead_micros));
+        rtc.sta_light_sleep_wake_ahead()
+            .modify(|_, w| w.time().set(wake_ahead_micros));
+    }
+
     /// Replace the station TBTT interval, as the vendor does when the
     /// coexistence period changes.
     ///

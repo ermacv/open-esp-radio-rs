@@ -23,6 +23,8 @@
 #include "esp_vfs_eventfd.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "hal/pmu_types.h"
+#include "modem/modem_lpcon_struct.h"
 #include "nvs_flash.h"
 #include "openthread/dataset.h"
 #include "openthread/dataset_ftd.h"
@@ -32,6 +34,16 @@
 #include "openthread/thread.h"
 #include "openthread/udp.h"
 #include "sdkconfig.h"
+
+/* ESP-IDF enables the analog I2C master clock in the PMU's MODEM state as well
+ * as ACTIVE. That map survives a USB Serial/JTAG (RTS) reset of the HP system,
+ * after which the esp32c5 rev 1.0 ROM boots into UART/SDIO download with USB
+ * dead. The peer never enters the MODEM state (it uses no power management),
+ * so keep the ROM's ACTIVE-only map, as the IEEE 802.15.4 peer does. */
+static void keep_rom_i2c_master_clock_map(void)
+{
+    MODEM_LPCON.clk_conf_power_st.clk_i2c_mst_st_map = BIT(PMU_HP_ICG_MODEM_CODE_ACTIVE);
+}
 
 #define PROTOCOL_VERSION 1
 #define LINE_CAPACITY 320
@@ -279,6 +291,7 @@ static void console_init(void)
 void app_main(void)
 {
     /* The OpenThread task queue and the radio driver each use an eventfd. */
+    keep_rom_i2c_master_clock_map();
     esp_vfs_eventfd_config_t eventfd_config = { .max_fds = 3 };
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -297,6 +310,8 @@ void app_main(void)
         },
     };
     ESP_ERROR_CHECK(esp_openthread_start(&config));
+    /* OpenThread enabled the radio while it started. */
+    keep_rom_i2c_master_clock_map();
     printf("@READY protocol=%d target=%s stack=openthread\n", PROTOCOL_VERSION,
            CONFIG_IDF_TARGET);
     fflush(stdout);

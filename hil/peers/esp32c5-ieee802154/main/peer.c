@@ -23,12 +23,10 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 
-#ifdef OER_PEER_ENABLE_BISECT
-#include "esp_phy_init.h"
-#include "esp_private/esp_modem_clock.h"
-#endif
+#if CONFIG_IDF_TARGET_ESP32C5
 #include "hal/pmu_types.h"
 #include "modem/modem_lpcon_struct.h"
+#endif
 
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
 #include "driver/usb_serial_jtag.h"
@@ -42,10 +40,14 @@
  * as ACTIVE. That map survives a USB Serial/JTAG (RTS) reset of the HP system,
  * after which the esp32c5 rev 1.0 ROM boots into UART/SDIO download with USB
  * dead. The peer never enters the MODEM state, so keep the ROM's ACTIVE-only
- * map; the radio enable path does not rewrite it, but reassert it anyway. */
+ * map; the radio enable path does not rewrite it, but reassert it anyway.
+ * The ESP32-S31 vendor reference builds the same file and keeps ESP-IDF's
+ * own map. */
 static void keep_rom_i2c_master_clock_map(void)
 {
+#if CONFIG_IDF_TARGET_ESP32C5
     MODEM_LPCON.clk_conf_power_st.clk_i2c_mst_st_map = BIT(PMU_HP_ICG_MODEM_CODE_ACTIVE);
+#endif
 }
 
 
@@ -452,31 +454,6 @@ static void command_ed(char **argv, int argc)
     reply(esp_ieee802154_energy_detect(duration), "ED");
 }
 
-#ifdef OER_PEER_ENABLE_BISECT
-/* The enable-bisect image splits esp_ieee802154_enable into its steps, in
- * its order: the MAC's modem clock, the PHY for IEEE 802.15.4, then BTBB.
- * ON runs the whole enable afterwards. */
-static bool dispatch_bisect(char **argv, int argc)
-{
-    if (argc != 1) {
-        return false;
-    }
-    if (strcmp(argv[0], "MCLK") == 0) {
-        modem_clock_module_enable(PERIPH_IEEE802154_MODULE);
-        reply(ESP_OK, "MCLK");
-    } else if (strcmp(argv[0], "PHY") == 0) {
-        esp_phy_enable(PHY_MODEM_IEEE802154);
-        reply(ESP_OK, "PHY");
-    } else if (strcmp(argv[0], "BTBB") == 0) {
-        esp_btbb_enable();
-        reply(ESP_OK, "BTBB");
-    } else {
-        return false;
-    }
-    return true;
-}
-#endif
-
 static void dispatch(char *line)
 {
     char *argv[8];
@@ -487,11 +464,6 @@ static void dispatch(char *line)
     if (argc == 0) {
         return;
     }
-#ifdef OER_PEER_ENABLE_BISECT
-    if (dispatch_bisect(argv, argc)) {
-        return;
-    }
-#endif
     if (strcmp(argv[0], "CFG") == 0) {
         command_cfg(argv, argc);
     } else if (strcmp(argv[0], "RX") == 0 && argc == 1) {
@@ -541,14 +513,8 @@ void app_main(void)
     s_events = xQueueCreate(EVENT_QUEUE_DEPTH, sizeof(peer_event_t));
     configASSERT(s_events != NULL);
     console_init();
-#ifdef OER_PEER_ENABLE_BISECT
-    /* The console is up; the radio stays off until the host enables it. */
-    printf("@BOOT enable-deferred\n");
-    fflush(stdout);
-#else
     ESP_ERROR_CHECK(esp_ieee802154_enable());
     keep_rom_i2c_master_clock_map();
-#endif
     xTaskCreate(event_task, "peer_events", 4096, NULL, 5, NULL);
     printf("@READY protocol=%d target=%s\n", PROTOCOL_VERSION, CONFIG_IDF_TARGET);
     fflush(stdout);

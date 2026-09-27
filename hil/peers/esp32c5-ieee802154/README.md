@@ -31,16 +31,17 @@ cache inside the lease. `doctor` and `fixture check` do not flash: they report
 the other image and who flashed it. A board without a recorded flash is
 accepted; the peer's `@READY` handshake then decides.
 
-### Never reset a running peer through USB
+### USB Serial/JTAG resets
 
-A USB Serial/JTAG reset (RTS) of the ESP32-C5 while this application runs,
-with its radio on or off (after `OFF`), leaves the chip in ROM download
-(`boot:0x0`) with a dead USB until the board's RST button is pressed; ESP-IDF
-master and v6.1 behave alike. The runner therefore never resets the peer: it
-opens the console without passing through the reset state and takes the
-running peer over with `SYNC`. Flashing another image over a running peer
-through USB hangs the board in the same way; the
-[Thread peer](../esp32c5-openthread/README.md) shares this limit.
+ESP-IDF's modem clock init enables the analog I2C master clock in the PMU's
+MODEM state as well as ACTIVE (`MODEM_LPCON` `clk_i2c_mst_st_map` 0x4 → 0x6).
+That map lives in the LP domain and survives the HP-system reset a USB
+Serial/JTAG (RTS) pulse triggers, after which the ESP32-C5 rev 1.0 ROM boots
+into UART/SDIO download with USB dead until the RST button. The peer never
+enters the MODEM state, so on the ESP32-C5 it restores the ROM's ACTIVE-only
+map at start and after each radio enable, and USB resets and flashes over it
+work. The runner still takes a running peer over with `SYNC` instead of a
+reset.
 
 ## Line protocol
 
@@ -85,21 +86,3 @@ Events, printed when the driver reports them:
 
 Driver callbacks run in interrupt context; the application copies each
 report into a bounded queue and prints it from a task.
-
-## Enable bisection
-
-The `ieee802154-peer-enable-bisect` catalog image
-([project](../esp32c5-ieee802154-enable-bisect)) builds the same
-application with the radio enable deferred: after the console is up it prints
-`@BOOT enable-deferred` and `@READY` without calling `esp_ieee802154_enable`.
-Three more commands then run the steps of that enable in its order, so a fault
-can be placed at one step; `ON` runs the whole enable afterwards.
-
-| Command | Step |
-| --- | --- |
-| `MCLK` | `modem_clock_module_enable(PERIPH_IEEE802154_MODULE)`, the MAC's modem clock. |
-| `PHY` | `esp_phy_enable(PHY_MODEM_IEEE802154)`, the shared PHY and RF. |
-| `BTBB` | `esp_btbb_enable()`, the baseband. |
-
-Build or flash it like the peer:
-`cargo hil firmware flash ieee802154-peer-enable-bisect --board esp32c5`.

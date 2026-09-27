@@ -19,6 +19,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Record of one project build, next to its `build/` directory.
+const BUILD_RECORD: &str = "build.json";
 /// Build root, relative to the repository root.
 const OUTPUT: &str = "target/vendor-firmware";
 /// Pinned source id of the ESP-IDF tree.
@@ -330,6 +332,13 @@ pub fn run(ctx: &Context, chip: &str, project: Option<&str>) -> Result<()> {
 /// `artifacts.toml` of `pins`, each for its own target chip, and write their
 /// `build.json`. An image linking an archive named like a pinned artifact but
 /// differing from it is refused.
+/// The ESP-IDF revision of the previous build in `output`, if any.
+fn built_revision(output: &Path) -> Option<String> {
+    let record: Build =
+        serde_json::from_slice(&std::fs::read(output.join(BUILD_RECORD)).ok()?).ok()?;
+    Some(record.idf_revision)
+}
+
 pub fn build(ctx: &Context, pins: &str, projects: &[Project]) -> Result<Vec<Build>> {
     let pins = vendor_fetch::git_pins(ctx, pins)?;
     let (tree, overrides) = prepare_tree(&ctx.root, &pins)?;
@@ -341,6 +350,12 @@ pub fn build(ctx: &Context, pins: &str, projects: &[Project]) -> Result<Vec<Buil
         let tools = install_tools(&ctx.root, &tree, chip, &revision)?;
         let output = output(&ctx.root, project);
         let build = output.join("build");
+        // A build configured by another ESP-IDF tree cannot be reused: CMake
+        // rejects its cache, and the generated sdkconfig follows that tree.
+        if built_revision(&output).is_some_and(|built| built != revision) {
+            std::fs::remove_dir_all(&build)?;
+            std::fs::remove_file(output.join("sdkconfig"))?;
+        }
         std::fs::create_dir_all(&output)?;
         // `--preview`: the pinned IDF lists the chip as a preview target.
         bash(
@@ -382,7 +397,7 @@ idf.py --preview -C "$OER_PROJECT" -B "$OER_BUILD" -DIDF_TARGET="$OER_CHIP" -DSD
         };
         let mut bytes = serde_json::to_vec_pretty(&record)?;
         bytes.push(b'\n');
-        std::fs::write(output.join("build.json"), bytes)?;
+        std::fs::write(output.join(BUILD_RECORD), bytes)?;
         builds.push(record);
     }
     Ok(builds)
@@ -436,6 +451,27 @@ mod tests {
             normalize("https://github.com/espressif/esp-phy-lib/"),
             "https://github.com/espressif/esp-phy-lib"
         );
+    }
+
+    #[test]
+    fn a_previous_build_reports_its_idf_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        assert_eq!(built_revision(directory.path()), None);
+        let record = Build {
+            chip: "esp32s31".into(),
+            project: "calibration".into(),
+            idf_revision: "abc".into(),
+            overrides: vec![],
+            application: String::new(),
+            application_sha256: String::new(),
+            elf: String::new(),
+        };
+        std::fs::write(
+            directory.path().join(BUILD_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(built_revision(directory.path()).as_deref(), Some("abc"));
     }
 
     #[test]

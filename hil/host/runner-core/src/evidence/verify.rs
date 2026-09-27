@@ -51,6 +51,17 @@ pub fn verify(root: &Path, target: &str, run_id: Option<&str>) -> Result<Verific
     verify_at(&root.join("target/hil").join(target), target, run_id)
 }
 
+/// The run directory below `target_directory`. A checkout links it to the
+/// run store shared by every checkout; the link itself is followed, while
+/// links inside bundles stay refused.
+fn runs_directory(target_directory: &Path) -> Result<std::path::PathBuf> {
+    let runs = target_directory.join("runs");
+    if fs::symlink_metadata(&runs).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Ok(fs::canonicalize(&runs)?);
+    }
+    Ok(runs)
+}
+
 pub fn archived_firmware(
     root: &Path,
     target: &str,
@@ -58,11 +69,7 @@ pub fn archived_firmware(
     image: crate::image::ImageClass,
 ) -> Result<ArchivedFirmware> {
     verify(root, target, Some(run_id))?;
-    let run_directory = root
-        .join("target/hil")
-        .join(target)
-        .join("runs")
-        .join(run_id);
+    let run_directory = runs_directory(&root.join("target/hil").join(target))?.join(run_id);
     let manifest: RunManifest = read_json(&run_directory.join("manifest.json"))?;
     let artifact = manifest
         .firmware
@@ -98,7 +105,7 @@ pub fn verify_at(
     target: &str,
     run_id: Option<&str>,
 ) -> Result<VerificationCompletion> {
-    let runs_directory = target_directory.join("runs");
+    let runs_directory = runs_directory(target_directory)?;
     let run_directories = select_run_directories(&runs_directory, run_id)?;
     let mut attachments = 0;
     let mut firmware_artifacts = 0;

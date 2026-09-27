@@ -486,3 +486,20 @@ fn rejects_tampered_derived_report() {
     assert!(error.to_string().contains("sealed file inventory"));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn the_runs_link_to_the_shared_store_is_followed() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = directory.path().join("store/runs");
+    fs::create_dir_all(&store).unwrap();
+    let target = directory.path().join("checkout/target/hil/esp32s31");
+    fs::create_dir_all(&target).unwrap();
+    std::os::unix::fs::symlink(&store, target.join("runs")).unwrap();
+    assert_eq!(
+        runs_directory(&target).unwrap(),
+        fs::canonicalize(&store).unwrap()
+    );
+    let plain = directory.path().join("plain");
+    fs::create_dir_all(plain.join("runs")).unwrap();
+    assert_eq!(runs_directory(&plain).unwrap(), plain.join("runs"));
+}

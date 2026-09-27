@@ -140,10 +140,12 @@ depends-on = [
 vendor-anchors = [
   "docs/vendor/esp32s31/ieee802154-lifecycle.md",
 ]
+hil-requirements = [
+  { scenario = "ieee802154-channel-energy", minimum-repetitions = 1 },
+]
 gaps = [
   { axis = "implementation", id = "shared-pll-rf-retune-and-tracking-lifetime-composition-missing" },
   { axis = "vendor", id = "rf-client-btbb-and-channel-composed-trace-missing" },
-  { axis = "hil", id = "calibrated-ed-and-channel-retune-cell-missing" },
   { axis = "async", id = "rf-transition-executor-contract-missing" },
 ]
 source-fact-refs = [

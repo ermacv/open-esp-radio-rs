@@ -9,9 +9,12 @@ on:
 permissions:
   contents: read
 
+# A pull request needs only its newest commit. On main, several sessions push
+# every few minutes, so cancelling would leave no run finished: a started run
+# completes, and GitHub keeps only the newest push pending behind it.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_INCREMENTAL: '0'

@@ -65,7 +65,7 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
 pub static OER_WAKE_TRACE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 #[allow(unsafe_code)]
-const WAKE_EXECUTE: core::ops::RangeInclusive<u32> = 26..=32;
+const WAKE_EXECUTE: core::ops::RangeInclusive<u32> = 1..=36;
 
 #[allow(unsafe_code)]
 pub fn wake_trace(value: u32) {
@@ -390,13 +390,19 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
 
     for _ in 0..RF_OPERATION_LIMIT {
         let PhyRfWakeAction::Execute(operation) = transition.action() else {
+            // DEBUG: leave TX cap as the ordinary channel programming does.
+            write_i2c_direct(
+                registers,
+                crate::analog::i2c::analog_registers::TX_CAPACITOR_BANKS,
+                crate::channel::debug_tx_cap_value(channel, channel_parameters.tx_capacitance),
+            )?;
             wake_trace(0x2fff);
             return Ok(());
         };
         step += 1;
         wake_trace(0x2000 | step);
         // DEBUG bisection: execute only the steps in WAKE_EXECUTE.
-        if !WAKE_EXECUTE.contains(&step) && !matches!(step, 1 | 2 | 3 | 6 | 33 | 34 | 35 | 36) {
+        if !WAKE_EXECUTE.contains(&step) {
             transition
                 .advance(PhyRfWakeCompletion::executed(operation))
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;

@@ -432,6 +432,10 @@ const fn normalized_channel(channel_or_frequency: u16) -> u16 {
     }
 }
 
+pub(crate) const fn debug_tx_cap_value(channel: u16, capacitance: [u8; 6]) -> u8 {
+    tx_cap_value(channel, capacitance)
+}
+
 const fn tx_cap_value(channel: u16, capacitance: [u8; 6]) -> u8 {
     let selected = if channel <= 3 {
         capacitance[0]

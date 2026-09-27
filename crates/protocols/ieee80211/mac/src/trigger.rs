@@ -458,16 +458,19 @@ pub struct TriggerFrame<'a> {
 impl<'a> TriggerFrame<'a> {
     /// Iterate over bounded User Info fields without allocation.
     ///
-    /// SOURCE\[BLOB_LIBNET80211_TEST_RX_PARSE_TRIG]: complete
-    /// `libnet80211.a[test_rx_trig.o]::esp_test_rx_parse_trig`
-    /// (size `0x1d6`) advances Basic users by six bytes, MU-BAR users by
-    /// nine, BFRP/MU-RTS/BSRP/BQRP users by five and treats NFRP as one
-    /// terminal five-byte user. Its instruction-exact padding test requires
-    /// both AID12 `0xfff` and RU allocation `0x7f`.
+    /// IEEE Std 802.11ax-2021 9.3.1.22 defines a five-byte User Info field
+    /// followed by the type's Trigger Dependent User Info: one byte for
+    /// Basic, the four-byte BAR Control and BAR Information for MU-BAR, and
+    /// none for BFRP, MU-RTS, BSRP and BQRP; an NFRP Trigger carries one
+    /// five-byte User Info. The optional Padding field starts with AID12
+    /// `4095` and is all ones, so this iterator stops at a field whose AID12
+    /// is `0xfff` and RU allocation is `0x7f`. Complete pinned
+    /// `libpp.a[hal_debug.o]::{dbg_dump_trig_basic_dependent,
+    /// dbg_dump_trig_mubar_dependent, dbg_dump_trig_nfrp_user}` decode the
+    /// same per-type suffixes.
     ///
-    /// The vendor test traps for Groupcast MU-BAR and has no bounded layout
-    /// for reserved Trigger types. This iterator reports those layouts as an
-    /// error instead of guessing or reproducing the trap.
+    /// Groupcast MU-BAR and reserved Trigger types have no layout this
+    /// iterator admits; it reports them as an error instead of guessing.
     pub const fn users(&self) -> TriggerUserIterator<'a> {
         TriggerUserIterator::new(self.common.trigger_type, self.user_info_and_padding)
     }

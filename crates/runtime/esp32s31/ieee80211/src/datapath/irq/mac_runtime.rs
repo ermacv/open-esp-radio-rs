@@ -15,7 +15,7 @@ use oer_esp32s31_ieee80211_mac::irq::{IrqSink, IrqState, IrqWork, next_irq_work}
 /// worker latch. Descriptor and completion rings remain the durable source of
 /// multiplicity.
 ///
-/// SOURCE: complete `libpp.a[datapath.o]::wDev_ProcessFiq` services
+/// SOURCE: complete `libpp.a[wdev.o]::wDev_ProcessFiq` services
 /// `RX_SUCCESS` before `TX_COMPLETE`, `TX_TIMEOUT` and `COLLISION`. Complete
 /// `libpp.a[pp.o]::{pp_post,ppTask}` coalesces the corresponding
 /// worker wake while the descriptor/completion state remains hardware-owned.

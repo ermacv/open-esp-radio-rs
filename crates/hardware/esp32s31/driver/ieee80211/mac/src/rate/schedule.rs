@@ -241,9 +241,14 @@ pub fn schedule_publication_limit(schedule: RateScheduleRef) -> u8 {
 /// `failed_attempts < cumulative_count`. Returning `None` means that the
 /// record's complete retry budget has been consumed.
 ///
-/// SOURCE: complete `libpp.a[trc.o]::rcGetRate` (`0xd0` bytes),
-/// especially the bounded four-iteration loop at offsets `0x7c..0xce`;
-/// cross-checked against `SOURCE[PROMOTED_LMAC_TX]`.
+/// SOURCE: complete pinned `libpp.a[trc.o]::rcGetRate` (`0xf6` bytes),
+/// especially the bounded four-iteration loop at offsets `0xa8..0xf4`;
+/// cross-checked against `SOURCE[PROMOTED_LMAC_TX]`. After the loop the
+/// pinned body replaces a selected code of `0x24` or above with `0x10` when
+/// descriptor byte `+0x32` bit zero marks an HT-Control MPDU (set only by
+/// `ieee80211_encap_esfbuf_htc`). No record this driver selects through the
+/// loop holds such a code together with that flag, so the rewrite never
+/// applies here.
 pub fn schedule_rate_after_failures(schedule: RateScheduleRef, failed_attempts: u8) -> Option<u8> {
     let record = schedule_bytes(schedule);
     let mut cumulative = 0_u8;

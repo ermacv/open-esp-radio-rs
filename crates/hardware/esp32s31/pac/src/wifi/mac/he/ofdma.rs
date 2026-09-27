@@ -846,7 +846,7 @@ impl WifiRadioRegisters {
     /// SOURCE: complete pinned `libpp.a[hal_debug.o]`
     /// `dbg_read_ax_diag`, size `0x466`, and its exact `WDEVAXDIAG0` and
     /// `WDEVAXDIAG3` format strings. Complete
-    /// `libpp.a[wdev.o]::wDev_ProcessRxSucData`, size `0x6a0`, only
+    /// `libpp.a[wdev.o]::wDev_ProcessRxSucData`, size `0x6ca`, only
     /// logs the result of `is_ndpa_to_dut`; it does not call a software
     /// feedback producer. These diagnostic bits therefore observe the
     /// hardware sequence configured by `hal_init_bf`.

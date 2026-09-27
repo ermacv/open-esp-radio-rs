@@ -130,7 +130,10 @@ pub const EVENT_KNOWN_MASK: u32 = 0x0f;
 /// This is deliberately not an arbitrary bit mask. Complete
 /// `libpp.a[wdev.o]::wDev_ProcessFiq` handles RX success before TX
 /// completion, TX timeout and collision when one interrupt snapshot contains
-/// several causes. Those leaves publish separate `ppTask` queue entries, and
+/// several causes. The pinned body routes RX success to
+/// `lmacProcessModemStateRxBeacon` instead while power raw-signal bits 21:22
+/// are set; those belong to MAC modem-state sleep, which this driver never
+/// enables. Those leaves publish separate `ppTask` queue entries, and
 /// complete `libpp.a[pp.o]::ppTask` consumes one entry before
 /// receiving the next. An executor port must therefore be able to retain that
 /// ordering instead of merging RX and TX into one indistinguishable wakeup.

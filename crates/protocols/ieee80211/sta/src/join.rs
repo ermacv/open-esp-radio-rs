@@ -31,8 +31,8 @@ mod test_support;
 /// Vendor state timer used by ordinary Authentication and Association.
 ///
 /// SOURCE: complete `libnet80211.a[ieee80211_sta.o]::
-/// ieee80211_sta_new_state`, ordinary non-mesh auth branch `.L347` and
-/// association branch `.L353`, both arm their software timer with immediate
+/// ieee80211_sta_new_state`, ordinary non-mesh auth branch `.L350` and
+/// association branch `.L356`, both arm their software timer with immediate
 /// `0x3e8`.
 pub const STA_RESPONSE_TIMEOUT_MS: u32 = 1_000;
 

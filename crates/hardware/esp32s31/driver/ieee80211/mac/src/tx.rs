@@ -1858,7 +1858,7 @@ impl HeRate {
     /// DCM has a separate producer and is rejected here instead of being
     /// silently combined with the ordinary Dot11Ax table.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::rcGetRate`, size `0xd0`,
+    /// SOURCE: complete pinned `libpp.a[trc.o]::rcGetRate`, size `0xf6`,
     /// and the pinned `rcUpdatePhyMode` mapping represented by the Rust-owned
     /// [`RateScheduleKind::Dot11Ax`] arena.
     pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<TxPhyRate> {
@@ -2257,11 +2257,9 @@ pub enum HeTriggerScheduledRateError {
 impl HeTriggerScheduledRate {
     /// Select this station from a complete, possibly multi-user Trigger.
     ///
-    /// SOURCE: complete `libnet80211.a[test_rx_trig.o]::
-    /// esp_test_rx_parse_trig` (size `0x1d6`) supplies the type-dependent,
-    /// allocation-free User Info iteration and its joint AID12/RU padding
-    /// sentinel. Complete `esp_test_cal_tx_tb` then supplies the scheduled
-    /// user's RU/rate calculation consumed by [`Self::new`].
+    /// [`TriggerFrame::users`] supplies the type-dependent, allocation-free
+    /// User Info iteration and its joint AID12/RU padding sentinel;
+    /// [`Self::new`] then derives the scheduled user's RU and rate.
     ///
     /// The entire iterator is consumed before returning. A malformed trailing
     /// user or a duplicate assignment therefore cannot be hidden by placing a
@@ -2300,13 +2298,14 @@ impl HeTriggerScheduledRate {
 
     /// Admit the Trigger user assigned to this 1T1R HE20 station.
     ///
-    /// SOURCE: complete `libpp.a[hal_debug.o]::
-    /// dbg_dump_trig_common_info`, `dbg_dump_trig_user_ss`, complete
-    /// `libpp.a[hal_utilities.o]::ru2str`, and complete
-    /// `libnet80211.a[test_rx_trig.o]::esp_test_cal_tx_tb`
-    /// (size `0xa44`). The calculation body derives RU class from the same
-    /// raw allocation, indexes coding/MCS and GI tables, and uses the
-    /// scheduled user's spatial-stream allocation.
+    /// SOURCE: complete pinned `libpp.a[hal_debug.o]::
+    /// dbg_dump_trig_common_info` and `dbg_dump_trig_user_ss`, and complete
+    /// `libpp.a[hal_utilities.o]::ru2str`, which decode the UL bandwidth,
+    /// GI/LTF, RU allocation, UL HE-MCS, UL FEC, DCM and spatial-stream
+    /// fields. IEEE Std 802.11ax-2021 9.3.1.22 and 27.3.2 define their
+    /// meaning: the RU class follows from the raw allocation, and the rate
+    /// from the scheduled user's MCS, coding, GI and spatial-stream
+    /// allocation.
     ///
     /// Wider bandwidths, non-NSS1 assignments and unsupported DCM/MCS
     /// combinations fail before they can become a transmit rate. AID zero

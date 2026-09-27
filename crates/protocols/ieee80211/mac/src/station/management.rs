@@ -130,8 +130,8 @@ pub fn parse_open_authentication_response(
 /// relationship with a Deauthentication frame.
 ///
 /// SOURCE: complete
-/// `libnet80211.a[ieee80211_sta.o]::sta_recv_mgmt`: branches `.L723`
-/// (Disassociation) and `.L729` (Deauthentication) read the reason code at
+/// `libnet80211.a[ieee80211_sta.o]::sta_recv_mgmt`: branches `.L731`
+/// (Disassociation) and `.L737` (Deauthentication) read the reason code at
 /// management-body offset zero (`frame + 24`) and immediately call
 /// `ieee80211_sta_new_state(g_ic, 0, (reason << 8) | subtype)`.
 pub fn parse_sta_disconnect(frame: &[u8], local: [u8; 6], bssid: [u8; 6]) -> Option<StaDisconnect> {

@@ -1,12 +1,19 @@
-//! The arbiter, its shared resources and the periodic tracking timer.
+//! The arbiter, its shared resources, the periodic tracking timer and the
+//! coexistence schedule's phase timer.
 
 use core::{future::Future, task::Poll};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     mutex::{Mutex, MutexGuard},
+    signal::Signal,
 };
 
 use embassy_time::Timer;
+use oer_esp32s31_coex::{
+    CoexArbiterPorts, CoexClientRequest, CoexCore, CoexError, CoexEventId, CoexExpiry, CoexPhase,
+    CoexPhaseChange, CoexPhaseTimer, CoexSchedule, CoexScheduleExecutor, CoexStatusType,
+    CoexTimerIndex,
+};
 use oer_esp32s31_hal::{
     root::{ConcurrentPartitions, RadioHardware},
     shared_radio::{PlatformClockProvider, SharedRadio, SharedRadioLease},
@@ -37,6 +44,40 @@ pub struct RadioResources<P, C> {
     pub clocks: C,
     /// The retained cache the first registration validates and replays.
     retained_cache: Option<PhyCalibrationCache>,
+    /// The coexistence request policy on the arbiter's timer bank.
+    coex: CoexCore,
+    /// The coexistence schedule and its phase timer state.
+    schedule: CoexScheduleExecutor,
+}
+
+/// The coexistence schedule's wake-ups: its phase-timer command and the
+/// phase events of the two radios the vendor schedule notifies.
+struct CoexSignals {
+    timer: Signal<CriticalSectionRawMutex, CoexPhaseTimer>,
+    wifi: Signal<CriticalSectionRawMutex, CoexPhase>,
+    bluetooth: Signal<CriticalSectionRawMutex, CoexPhase>,
+}
+
+impl CoexSignals {
+    const fn new() -> Self {
+        Self {
+            timer: Signal::new(),
+            wifi: Signal::new(),
+            bluetooth: Signal::new(),
+        }
+    }
+
+    /// Program the phase timer and notify Wi-Fi, then Bluetooth, as the
+    /// vendor phase change does after its schedule lock.
+    fn publish(&self, change: CoexPhaseChange) {
+        self.timer.signal(change.timer);
+        if change.step.notify_wifi {
+            self.wifi.signal(change.step.phase);
+        }
+        if change.step.notify_bluetooth {
+            self.bluetooth.signal(change.step.phase);
+        }
+    }
 }
 
 /// The shared radio: the arbiter with its PHY domain and the platform
@@ -46,6 +87,7 @@ pub struct RadioSystem<P, C> {
     /// Taken only while the arbiter lease is held, so taking it never waits.
     resources: Mutex<CriticalSectionRawMutex, RadioResources<P, C>>,
     identity: PhyCalibrationIdentity,
+    coex: CoexSignals,
 }
 
 /// The arbiter lease together with the platform resources.
@@ -56,6 +98,7 @@ pub struct RadioGuard<'radio, P, C> {
     resources: MutexGuard<'radio, CriticalSectionRawMutex, RadioResources<P, C>>,
     lease: SharedRadioLease<'radio, ConcurrentPhy>,
     identity: PhyCalibrationIdentity,
+    coex: &'radio CoexSignals,
 }
 
 /// How [`RadioGuard::prepare_phy`] made the shared PHY ready.
@@ -144,8 +187,11 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
                     platform,
                     clocks,
                     retained_cache: None,
+                    coex: CoexCore::new(),
+                    schedule: CoexScheduleExecutor::new(),
                 }),
                 identity,
+                coex: CoexSignals::new(),
             },
             partitions,
         )
@@ -177,6 +223,7 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
             resources,
             lease,
             identity: self.identity,
+            coex: &self.coex,
         }
     }
 
@@ -281,6 +328,88 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
             }
         }
     }
+
+    /// The next coexistence phase that notifies Wi-Fi, as the vendor phase
+    /// change calls Wi-Fi's phase handler. A phase published while nobody
+    /// waits is kept until the next wait; a later one replaces it.
+    pub async fn wifi_coex_phase(&self) -> CoexPhase {
+        self.coex.wifi.wait().await
+    }
+
+    /// The next coexistence phase that notifies Bluetooth, after Wi-Fi's.
+    /// Unread phases are replaced as in [`Self::wifi_coex_phase`].
+    pub async fn bluetooth_coex_phase(&self) -> CoexPhase {
+        self.coex.bluetooth.wait().await
+    }
+
+    /// The coexistence schedule's phase timer, the vendor `esp_timer` whose
+    /// callback runs `coex_schm_timeout_process`. Run it for the lifetime of
+    /// the radio, for example as its own task.
+    ///
+    /// A phase change under [`RadioGuard`] programs the timer; its expiry
+    /// steps the schedule under the arbiter lease and publishes the next
+    /// phase. An expiry overtaken by a later phase change steps nothing.
+    ///
+    /// # Cancellation
+    ///
+    /// Cancelling it stops the phases where they are; an expiry that has
+    /// taken the lease completes its step first.
+    pub async fn run_coex_schedule(&self) -> ! {
+        self.run_coex_schedule_until(core::future::pending()).await;
+        unreachable!("a pending stop never completes")
+    }
+
+    /// [`Self::run_coex_schedule`] that ends when `stop` completes. `stop` is
+    /// polled only while the timer waits.
+    pub async fn run_coex_schedule_until(&self, stop: impl Future<Output = ()>) {
+        let mut stop = core::pin::pin!(stop);
+        let mut timer = CoexPhaseTimer::Disarm;
+        loop {
+            let generation = match timer {
+                CoexPhaseTimer::Disarm => None,
+                CoexPhaseTimer::Arm { generation, .. } => Some(generation),
+            };
+            let mut expiry = match timer {
+                CoexPhaseTimer::Arm { micros, .. } => Some(Timer::after_micros(u64::from(micros))),
+                CoexPhaseTimer::Disarm => None,
+            };
+            let mut command = core::pin::pin!(self.coex.timer.wait());
+            let event = core::future::poll_fn(|context| {
+                if stop.as_mut().poll(context).is_ready() {
+                    return Poll::Ready(CoexTimerEvent::Stop);
+                }
+                if let Poll::Ready(next) = command.as_mut().poll(context) {
+                    return Poll::Ready(CoexTimerEvent::Command(next));
+                }
+                if let Some(expiry) = expiry.as_mut()
+                    && core::pin::Pin::new(expiry).poll(context).is_ready()
+                {
+                    return Poll::Ready(CoexTimerEvent::Expired);
+                }
+                Poll::Pending
+            })
+            .await;
+            timer = match event {
+                CoexTimerEvent::Stop => return,
+                CoexTimerEvent::Command(next) => next,
+                CoexTimerEvent::Expired => {
+                    if let Some(generation) = generation {
+                        // A phase change publishes its own timer command,
+                        // which the next iteration reads.
+                        self.lock().await.expire_coex_phase(generation);
+                    }
+                    CoexPhaseTimer::Disarm
+                }
+            };
+        }
+    }
+}
+
+/// What woke the coexistence phase timer.
+enum CoexTimerEvent {
+    Stop,
+    Command(CoexPhaseTimer),
+    Expired,
 }
 
 impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
@@ -318,6 +447,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
             platform,
             clocks,
             retained_cache,
+            ..
         } = &mut *self.resources;
         let lease = &mut self.lease;
         if lease.attachment().rf_closed() {
@@ -474,5 +604,114 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
             NoopPhyTargetObserver,
         )
         .await
+    }
+
+    /// Enable coexistence requests, as `coex_enable` does.
+    pub fn enable_coex(&mut self) {
+        self.resources.coex.enable();
+    }
+
+    /// Withdraw every programmed coexistence request and disable requests,
+    /// as `coex_disable` does.
+    ///
+    /// # Errors
+    ///
+    /// A timer could not be disabled; the core keeps it as uncertain.
+    pub fn disable_coex(&mut self) -> Result<(), CoexError> {
+        let ports = CoexArbiterPorts::new(&mut self.lease);
+        let (mut timer, _) = ports.ports();
+        self.resources.coex.disable(&mut timer)
+    }
+
+    /// Program a Wi-Fi coexistence request, as `coex_wifi_request` does,
+    /// on the event's timer with the arbiter's current event priority.
+    ///
+    /// # Errors
+    ///
+    /// Requests are disabled, the event has no policy timer, a failed request
+    /// awaits cleanup, or the clock or a timer write failed.
+    pub fn request_wifi_coex(
+        &mut self,
+        request: CoexClientRequest,
+    ) -> Result<CoexTimerIndex, CoexError> {
+        let ports = CoexArbiterPorts::new(&mut self.lease);
+        let (mut timer, mut clock) = ports.ports();
+        self.resources
+            .coex
+            .request_wifi(&mut timer, &mut clock, request)
+    }
+
+    /// Program a Bluetooth coexistence request, as `coex_bt_request` does.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::request_wifi_coex`].
+    pub fn request_bluetooth_coex(
+        &mut self,
+        request: CoexClientRequest,
+    ) -> Result<CoexTimerIndex, CoexError> {
+        let ports = CoexArbiterPorts::new(&mut self.lease);
+        let (mut timer, mut clock) = ports.ports();
+        self.resources
+            .coex
+            .request_bluetooth(&mut timer, &mut clock, request)
+    }
+
+    /// Withdraw the request of `event` by disabling its timer, as
+    /// `coex_wifi_release` and `coex_bt_release` do.
+    ///
+    /// # Errors
+    ///
+    /// The event has no policy timer, or the timer write failed.
+    pub fn release_coex(&mut self, event: CoexEventId) -> Result<CoexTimerIndex, CoexError> {
+        let ports = CoexArbiterPorts::new(&mut self.lease);
+        let (mut timer, _) = ports.ports();
+        self.resources.coex.release(&mut timer, event)
+    }
+
+    /// The coexistence schedule: the radios' status, the selected scheme
+    /// and the current phase.
+    pub fn coex_schedule(&self) -> &CoexSchedule {
+        self.resources.schedule.schedule()
+    }
+
+    /// Publish coexistence status bits of one radio, as
+    /// `coex_schm_status_bit_set` does. When the change restarts the
+    /// phases, the first phase is published and the phase timer programmed.
+    pub fn set_coex_status_bits(&mut self, kind: CoexStatusType, bits: u16) {
+        if let Some(change) = self.resources.schedule.set_status_bits(kind, bits) {
+            self.coex.publish(change);
+        }
+    }
+
+    /// Withdraw coexistence status bits, as `coex_schm_status_bit_clear`
+    /// does. The phase and its timer stay as they are.
+    pub fn clear_coex_status_bits(&mut self, kind: CoexStatusType, bits: u16) {
+        self.resources.schedule.clear_status_bits(kind, bits);
+    }
+
+    /// Set the schedule interval, as `coex_schm_interval_set` does; Wi-Fi
+    /// sets it from its beacon interval. It takes effect at the next phase.
+    pub fn set_coex_interval(&mut self, interval: u32) {
+        self.resources.schedule.set_interval(interval);
+    }
+
+    /// Set the flexible period, as `coex_schm_flexible_period_set` does.
+    pub fn set_coex_flexible_period(&mut self, period: u8) {
+        self.resources.schedule.set_flexible_period(period);
+    }
+
+    /// Begin the phases again at phase 0, as `coex_schm_process_restart`
+    /// does; a connected Wi-Fi restarts them at each beacon.
+    pub fn restart_coex_phases(&mut self) {
+        let change = self.resources.schedule.restart();
+        self.coex.publish(change);
+    }
+
+    /// Step the schedule for an expiry of the phase timer of `generation`.
+    fn expire_coex_phase(&mut self, generation: u32) {
+        if let CoexExpiry::Changed(change) = self.resources.schedule.expire(generation) {
+            self.coex.publish(change);
+        }
     }
 }

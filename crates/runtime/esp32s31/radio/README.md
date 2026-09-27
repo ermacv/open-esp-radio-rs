@@ -44,12 +44,24 @@ protocol compositions are clients of the system:
   sleep only with modem retention and tickless idle, so a composition
   enables it explicitly.
 
+- Coexistence: `RadioGuard::enable_coex`, `disable_coex`,
+  `request_wifi_coex`, `request_bluetooth_coex` and `release_coex` are the
+  vendor `coex_enable`/`coex_disable` and request/release calls on the
+  arbiter's timer bank. `RadioGuard::set_coex_status_bits`,
+  `clear_coex_status_bits`, `set_coex_interval` and `restart_coex_phases`
+  drive the recovered time-slice schedule (`RadioGuard::coex_schedule`).
+  `RadioSystem::run_coex_schedule` is its phase timer: run it for the
+  lifetime of the radio. Each phase change publishes the phase to
+  `RadioSystem::wifi_coex_phase` and `bluetooth_coex_phase`, which keep only
+  the latest unread phase.
+
 The Wi-Fi, Bluetooth and IEEE 802.15.4 compositions are all clients of the
 system.
 
 ## Limits
 
-Persisting the calibration cache across resets is the caller's policy, and
-the system does not compose coexistence policy. There is no modem retention or light
+Persisting the calibration cache across resets is the caller's policy. No
+protocol publishes its coexistence status or reacts to phases yet, so the
+schedule stays at its all-default scheme. There is no modem retention or light
 sleep: RF close keeps the registration and calibration, nothing else. A tracking failure
 leaves the domain poisoned; the chip must be reset.

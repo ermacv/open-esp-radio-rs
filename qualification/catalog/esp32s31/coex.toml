@@ -186,7 +186,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "Scheduler state"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "[Schedule](src/schedule.rs) holds the `coex_schm_env` state of esp-coex-lib `c758e7b5`: the five status words, the selected scheme, the phase index, the interval and the flexible period. It is executor-neutral state; no runtime owner arms its phase timer yet."
+scope-and-limitations = "[Schedule](src/schedule.rs) holds the `coex_schm_env` state of esp-coex-lib `c758e7b5`: the five status words, the selected scheme, the phase index, the interval and the flexible period. It is executor-neutral state; `CoexScheduleExecutor` adds its phase timer as generation-checked commands, and the radio runtime arms that timer."
 packages = ["oer-esp32s31-coex"]
 
 [[items]]
@@ -203,7 +203,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "Executable phase transitions"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. No runtime timer delivers these steps yet."
+scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. The radio runtime's `RadioSystem::run_coex_schedule` delivers these steps on its phase timer and publishes the notified phases; no protocol publishes status to it or reacts to its phases yet."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-scheme-selection"
@@ -235,7 +235,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "Wi-Fi / BT / BLE time slices"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The schedule model computes each phase's slice as period times interval times share. No executable slice scheduler runs it, and no radio reacts to its notifications yet."
+scope-and-limitations = "The schedule model computes each phase's slice as period times interval times share, and the radio runtime times the slices. No radio publishes its status or reacts to its notifications yet."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ble-advertising-dynamic-priority"

@@ -347,6 +347,49 @@ oer_probe_macros::probe! {
     }
 }
 
+/// A lease on a fresh validation arbiter, kept for the whole entry: the
+/// vendor leaves hold no arbiter, so its release fence is not compared.
+fn grant_protect_lease(
+    radio: &mut oer_esp32s31_hal::shared_radio::SharedRadio<()>,
+) -> core::mem::ManuallyDrop<oer_esp32s31_hal::shared_radio::SharedRadioLease<'_, ()>> {
+    core::mem::ManuallyDrop::new(radio.lease_for_validation())
+}
+
+/// The vendor status of a grant-protect edge: zero, as `coex_core_request`
+/// and `coex_core_release` return for event 48.
+fn grant_protect_status(result: Result<(), oer_esp32s31_hal::coex::PhyGrantProtectError>) -> u32 {
+    match result {
+        Ok(()) => 0,
+        Err(_) => u32::MAX,
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_acquire_grant_protect`: the arbiter's
+    /// `coex_core_request(2, 48, 0, 0)` on timer 5, client field 0. Zero
+    /// timing arguments take no clock sample.
+    pub fn open_coex_trace_phy_acquire_grant_protect() -> u32 {
+        let mut radio = oer_esp32s31_hal::root::RadioHardware::for_validation()
+            .into_concurrent(())
+            .0;
+        let mut lease = grant_protect_lease(&mut radio);
+        grant_protect_status(lease.acquire_phy_grant_protect())
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_release_grant_protect`: the arbiter's `coex_core_release(2, 48)`,
+    /// which disables timer 5, from a programmed request.
+    pub fn open_coex_trace_phy_release_grant_protect() -> u32 {
+        let mut radio = oer_esp32s31_hal::root::RadioHardware::for_validation()
+            .into_concurrent(())
+            .0;
+        radio.hold_phy_grant_protect_for_validation();
+        let mut lease = grant_protect_lease(&mut radio);
+        grant_protect_status(lease.release_phy_grant_protect())
+    }
+}
+
 oer_probe_macros::probe! {
     /// Complete register projection of `coex_core_request` under the reviewed
     /// Rust lifecycle precondition that the COEX owner is enabled.

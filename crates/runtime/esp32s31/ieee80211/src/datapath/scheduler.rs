@@ -15,6 +15,41 @@ pub(crate) struct ControlProgressBudget {
     unyielded: u32,
 }
 
+/// Scheduler branches taken, reported once per second: 0-4 stop path
+/// (drain, control More, control TX, stop More, stop TX), 5-6 control More
+/// and TX, 7 prepared network TX, 8 software RX, 9 recycled RX probe, 10 RX
+/// interrupt, 11 prepared successor, 12 empty network queue, 13 network TX,
+/// 14 idle RX wake, 15 idle control wake.
+#[cfg(feature = "diagnostics")]
+struct LoopTrace {
+    hits: [u32; 16],
+    since: Instant,
+}
+
+#[cfg(feature = "diagnostics")]
+impl LoopTrace {
+    fn new() -> Self {
+        Self {
+            hits: [0; 16],
+            since: Instant::now(),
+        }
+    }
+
+    fn hit(&mut self, branch: usize) {
+        self.hits[branch] = self.hits[branch].saturating_add(1);
+    }
+
+    fn report(&mut self) {
+        if self.since.elapsed() < embassy_time::Duration::from_secs(1) {
+            return;
+        }
+        if self.hits.iter().any(|hits| *hits != 0) {
+            log::info!("open-radio: DATAPATH loop branches {:?}", self.hits);
+        }
+        *self = Self::new();
+    }
+}
+
 impl ControlProgressBudget {
     pub(crate) async fn rerun(&mut self) {
         self.unyielded += 1;
@@ -142,8 +177,12 @@ where
         let mut stopping = false;
         let mut budget = ControlProgressBudget::default();
         #[cfg(feature = "diagnostics")]
+        let mut trace = LoopTrace::new();
+        #[cfg(feature = "diagnostics")]
         let mut stop_iterations = 0_u8;
         loop {
+            #[cfg(feature = "diagnostics")]
+            trace.report();
             #[cfg(feature = "task-poll-telemetry")]
             let mut core0_scheduler_cycles = Core0RxSchedulerCycleProfile::begin();
             #[cfg(any(feature = "diagnostics", test))]
@@ -190,6 +229,8 @@ where
                 // for shutdown control.
                 if self.active_tx_interface.is_some() {
                     self.drain_active_tx().await?;
+                    #[cfg(feature = "diagnostics")]
+                    trace.hit(0);
                     continue;
                 }
                 self.cancel_prepared_network_tx()?;
@@ -202,6 +243,8 @@ where
                     {
                         DatapathControlProgress::More => {
                             budget.rerun().await;
+                            #[cfg(feature = "diagnostics")]
+                            trace.hit(1);
                             continue;
                         }
                         DatapathControlProgress::TxPending => {
@@ -210,6 +253,8 @@ where
                                 DatapathTxOrigin::Control,
                             );
                             self.drive_active_tx(false).await?;
+                            #[cfg(feature = "diagnostics")]
+                            trace.hit(2);
                             continue;
                         }
                         DatapathControlProgress::Exit(exit) => {
@@ -222,6 +267,8 @@ where
                 match self.services.service_stop()? {
                     DatapathStopProgress::More => {
                         budget.rerun().await;
+                        #[cfg(feature = "diagnostics")]
+                        trace.hit(3);
                         continue;
                     }
                     DatapathStopProgress::TxPending => {
@@ -230,6 +277,8 @@ where
                             DatapathTxOrigin::Control,
                         );
                         self.drive_active_tx(false).await?;
+                        #[cfg(feature = "diagnostics")]
+                        trace.hit(4);
                         continue;
                     }
                     DatapathStopProgress::Stopped => {
@@ -287,6 +336,8 @@ where
                     DatapathControlProgress::More => {
                         self.control_ready_latched = true;
                         budget.rerun().await;
+                        #[cfg(feature = "diagnostics")]
+                        trace.hit(5);
                         continue;
                     }
                     DatapathControlProgress::TxPending => {
@@ -295,6 +346,8 @@ where
                             DatapathTxOrigin::Control,
                         );
                         self.drive_active_tx(true).await?;
+                        #[cfg(feature = "diagnostics")]
+                        trace.hit(6);
                         continue;
                     }
                     DatapathControlProgress::Exit(exit) => {
@@ -322,6 +375,8 @@ where
                 && let Some((interface, admitted)) = self.prepared_network_tx_candidate()?
             {
                 self.start_prepared_network_tx(interface, admitted).await?;
+                #[cfg(feature = "diagnostics")]
+                trace.hit(7);
                 continue;
             }
             #[cfg(feature = "task-poll-telemetry")]
@@ -341,6 +396,8 @@ where
             if self.services.has_rx_work() && !(network_tx_pending && self.network_turn_owed()) {
                 #[cfg(feature = "task-poll-telemetry")]
                 core0_scheduler_cycles.finish(Core0RxSchedulerPath::Software);
+                #[cfg(feature = "diagnostics")]
+                trace.hit(8);
                 self.service_rx().await?;
                 continue;
             }
@@ -355,6 +412,8 @@ where
                 self.clear_recycled_rx_probe_deadline();
                 #[cfg(feature = "task-poll-telemetry")]
                 core0_scheduler_cycles.finish(Core0RxSchedulerPath::Software);
+                #[cfg(feature = "diagnostics")]
+                trace.hit(9);
                 self.service_rx().await?;
                 continue;
             }
@@ -380,6 +439,8 @@ where
                 self.irq.wait_rx().await;
                 #[cfg(feature = "task-poll-telemetry")]
                 core0_scheduler_cycles.finish(Core0RxSchedulerPath::Irq);
+                #[cfg(feature = "diagnostics")]
+                trace.hit(10);
                 self.service_rx().await?;
                 continue;
             }
@@ -412,11 +473,15 @@ where
                         if self.services.prepared_tx_start_ready() {
                             let admitted = self.services.prepared_tx_frame_count().max(1);
                             self.start_prepared_network_tx(interface, admitted).await?;
+                            #[cfg(feature = "diagnostics")]
+                            trace.hit(11);
                             continue;
                         }
                     }
 
                     let Some(frame) = self.try_receive_network_tx() else {
+                        #[cfg(feature = "diagnostics")]
+                        trace.hit(12);
                         continue;
                     };
                     let interface = self.tx_interface_for(&frame);
@@ -440,6 +505,8 @@ where
                         // the complete successor this transaction left.
                         self.drive_active_tx(true).await?;
                     }
+                    #[cfg(feature = "diagnostics")]
+                    trace.hit(13);
                     continue;
                 }
             }
@@ -511,9 +578,13 @@ where
                 Either::Second(Either3::First(())) => {
                     #[cfg(feature = "task-poll-telemetry")]
                     core0_scheduler_cycles.finish(Core0RxSchedulerPath::Select);
+                    #[cfg(feature = "diagnostics")]
+                    trace.hit(14);
                     self.service_rx().await?
                 }
                 Either::Second(Either3::Second(())) => {
+                    #[cfg(feature = "diagnostics")]
+                    trace.hit(15);
                     self.control_ready_latched = true;
                 }
                 Either::Second(Either3::Third(())) => {}

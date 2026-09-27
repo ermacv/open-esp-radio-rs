@@ -1,8 +1,11 @@
 //! Finding, explaining, comparing and pruning the shared store's HIL runs.
 //!
-//! These commands read sealed bundles as loosely typed JSON, so bundles of
-//! older runner versions stay readable; they never decide qualification,
-//! which remains the independent evaluator's. Pins and the prune rule keep
+//! Bundles are read as JSON documents, but their vocabulary (run state,
+//! outcomes, failure kinds, measurement units, thresholds and verdicts) is
+//! parsed into the shared `oer_hil_schema::run` types: a value outside it
+//! makes the bundle unreadable here instead of silently matching nothing.
+//! These commands never decide qualification, which remains the independent
+//! evaluator's. Pins and the prune rule keep
 //! what agents cite, replay and compare.
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -10,9 +13,46 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use oer_hil_schema::run::{
+    FailureKind, MeasurementUnit, MeasurementVerdict, Outcome, RunState, Threshold,
+};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::Result;
+
+/// A run's state as recorded, or `Abandoned` when it is recorded as running
+/// but its runner is gone.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum State {
+    Running,
+    Completed,
+    Interrupted,
+    Abandoned,
+}
+
+impl State {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Interrupted => "interrupted",
+            Self::Abandoned => "abandoned",
+        }
+    }
+
+    /// A completed or interrupted bundle can no longer change.
+    pub const fn is_sealed(self) -> bool {
+        matches!(self, Self::Completed | Self::Interrupted)
+    }
+}
+
+impl std::fmt::Display for State {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.id())
+    }
+}
 
 /// One sealed or interrupted run, summarized.
 #[derive(Clone, Debug)]
@@ -20,8 +60,9 @@ pub struct Run {
     pub id: String,
     pub directory: PathBuf,
     pub started_millis: u64,
-    pub state: String,
-    pub outcome: Option<String>,
+    pub state: State,
+    /// The suite outcome; `None` when the run has no suite result.
+    pub outcome: Option<Outcome>,
     pub commit: Option<String>,
     pub dirty: bool,
     /// Checkout the runner ran from, from its observer path.
@@ -40,15 +81,15 @@ pub struct Run {
 pub struct ScenarioRun {
     pub id: String,
     pub image: String,
-    pub outcome: String,
+    pub outcome: Outcome,
     pub repetitions: Vec<Repetition>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Repetition {
     pub number: u64,
-    pub outcome: String,
-    pub failure: Option<(String, String)>,
+    pub outcome: Outcome,
+    pub failure: Option<(FailureKind, String)>,
     pub measurements: Vec<Measurement>,
     pub directory: Option<String>,
 }
@@ -57,13 +98,24 @@ pub struct Repetition {
 pub struct Measurement {
     pub name: String,
     pub value: Option<f64>,
-    pub unit: String,
-    pub threshold: Option<Value>,
-    pub verdict: Option<String>,
+    pub unit: MeasurementUnit,
+    pub threshold: Option<Threshold>,
+    pub verdict: Option<MeasurementVerdict>,
 }
 
 fn text(value: &Value) -> Option<String> {
     value.as_str().map(str::to_owned)
+}
+
+/// `value` as a schema type; `None` when it is absent or not of that type.
+fn typed<T: DeserializeOwned>(value: &Value) -> Option<T> {
+    serde_json::from_value(value.clone()).ok()
+}
+
+/// The run's status for display and selection: its suite outcome, or its
+/// state when it has none.
+pub fn status(run: &Run) -> &'static str {
+    run.outcome.map_or(run.state.id(), Outcome::id)
 }
 
 fn read(path: &Path) -> Option<Value> {
@@ -103,56 +155,72 @@ pub fn load(directory: &Path) -> Option<Run> {
         .and_then(|suite| suite["scenarios"].as_array().cloned())
         .unwrap_or_default()
         .iter()
-        .map(|scenario| ScenarioRun {
-            id: text(&scenario["scenario"]).unwrap_or_default(),
-            image: text(&scenario["image"]).unwrap_or_default(),
-            outcome: text(&scenario["outcome"]).unwrap_or_default(),
-            repetitions: scenario["repetitions"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|repetition| Repetition {
-                    number: repetition["repetition"].as_u64().unwrap_or_default(),
-                    outcome: text(&repetition["outcome"]).unwrap_or_default(),
-                    failure: repetition["failure"].as_object().map(|failure| {
-                        (
-                            failure.get("kind").and_then(text).unwrap_or_default(),
-                            failure.get("message").and_then(text).unwrap_or_default(),
-                        )
-                    }),
-                    measurements: repetition["measurements"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .map(|measurement| Measurement {
-                            name: text(&measurement["name"]).unwrap_or_default(),
-                            value: measurement["value"].as_f64(),
-                            unit: text(&measurement["unit"]).unwrap_or_default(),
-                            threshold: Some(measurement["threshold"].clone())
-                                .filter(|threshold| !threshold.is_null()),
-                            verdict: text(&measurement["verdict"]),
+        .map(|scenario| {
+            Some(ScenarioRun {
+                id: text(&scenario["scenario"])?,
+                image: text(&scenario["image"]).unwrap_or_default(),
+                outcome: typed(&scenario["outcome"])?,
+                repetitions: scenario["repetitions"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|repetition| {
+                        Some(Repetition {
+                            number: repetition["repetition"].as_u64().unwrap_or_default(),
+                            outcome: typed(&repetition["outcome"])?,
+                            failure: match &repetition["failure"] {
+                                Value::Null => None,
+                                failure => Some((
+                                    typed(&failure["kind"])?,
+                                    failure.get("message").and_then(text).unwrap_or_default(),
+                                )),
+                            },
+                            measurements: repetition["measurements"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .map(|measurement| {
+                                    Some(Measurement {
+                                        name: text(&measurement["name"])?,
+                                        value: measurement["value"].as_f64(),
+                                        unit: typed(&measurement["unit"])?,
+                                        threshold: match &measurement["threshold"] {
+                                            Value::Null => None,
+                                            threshold => Some(typed(threshold)?),
+                                        },
+                                        verdict: match &measurement["verdict"] {
+                                            Value::Null => None,
+                                            verdict => Some(typed(verdict)?),
+                                        },
+                                    })
+                                })
+                                .collect::<Option<_>>()?,
+                            directory: text(&repetition["artifact_directory"]),
                         })
-                        .collect(),
-                    directory: text(&repetition["artifact_directory"]),
-                })
-                .collect(),
+                    })
+                    .collect::<Option<_>>()?,
+            })
         })
-        .collect();
+        .collect::<Option<Vec<_>>>()?;
+    let recorded: RunState = typed(&manifest["state"])?;
+    let state = match recorded {
+        RunState::Running if !runner_alive(directory, started_millis(&manifest)) => {
+            State::Abandoned
+        }
+        RunState::Running => State::Running,
+        RunState::Completed => State::Completed,
+        RunState::Interrupted => State::Interrupted,
+    };
     Some(Run {
         id: text(&manifest["run_id"])
             .or_else(|| Some(directory.file_name()?.to_string_lossy().into_owned()))?,
         directory: directory.to_owned(),
         started_millis: started_millis(&manifest),
-        state: text(&manifest["state"])
-            .map(|state| {
-                if state == "running" && !runner_alive(directory, started_millis(&manifest)) {
-                    String::from("abandoned")
-                } else {
-                    state
-                }
-            })
-            .unwrap_or_default(),
-        outcome: suite.as_ref().and_then(|suite| text(&suite["outcome"])),
+        state,
+        outcome: match suite.as_ref().map(|suite| &suite["outcome"]) {
+            None | Some(Value::Null) => None,
+            Some(outcome) => Some(typed(outcome)?),
+        },
         commit: text(&manifest["repository"]["commit"]),
         dirty: manifest["repository"]["dirty"]
             .as_bool()
@@ -273,8 +341,8 @@ impl Filter {
                     Some(scenario) => run
                         .scenarios
                         .iter()
-                        .any(|s| &s.id == scenario && &s.outcome == wanted),
-                    None => run.outcome.as_deref().unwrap_or(&run.state) == wanted,
+                        .any(|s| &s.id == scenario && s.outcome.id() == wanted),
+                    None => status(run) == wanted,
                 })
         };
         scenario(run)
@@ -340,7 +408,7 @@ pub fn list_line(run: &Run) -> String {
         "{} {} {:<10} {:<22} {:<10} [{}] {}",
         run.id,
         date(run.started_millis),
-        run.outcome.as_deref().unwrap_or(&run.state),
+        status(run),
         run.checkout.as_deref().unwrap_or("?"),
         short(&run.commit, run.dirty),
         images,
@@ -358,7 +426,7 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
         date(run.started_millis),
         run.checkout.as_deref().unwrap_or("?"),
         short(&run.commit, run.dirty),
-        run.outcome.as_deref().unwrap_or(&run.state)
+        status(run)
     );
     if run.scenarios.is_empty() {
         text.push_str(&format!(
@@ -368,7 +436,7 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
         ));
     }
     for scenario in &run.scenarios {
-        if scenario.outcome == "passed" {
+        if scenario.outcome.is_passed() {
             text.push_str(&format!("  {} [{}]: passed\n", scenario.id, scenario.image));
             continue;
         }
@@ -377,24 +445,22 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
             scenario.id, scenario.image, scenario.outcome
         ));
         for repetition in &scenario.repetitions {
-            if repetition.outcome == "passed" {
+            if repetition.outcome.is_passed() {
                 continue;
             }
             let missed = repetition
                 .measurements
                 .iter()
-                .filter(|m| {
-                    m.verdict
-                        .as_deref()
-                        .is_some_and(|v| v != "passed" && v != "pass")
-                })
+                .filter(|m| m.verdict.is_some_and(|verdict| !verdict.is_passed()))
                 .collect::<Vec<_>>();
             let cause = match (&repetition.failure, missed.is_empty()) {
                 (_, false) => "criterion: measured values missed their acceptance criteria",
-                (Some((kind, _)), true) if kind == "infrastructure" => "infrastructure fault",
-                (Some((kind, _)), true) if kind == "precondition" => "precondition not met",
-                (Some((kind, _)), true) if kind.starts_with("image") => "image build or flash",
-                (Some(_), true) => "scenario failure",
+                (Some((FailureKind::Infrastructure, _)), true) => "infrastructure fault",
+                (Some((FailureKind::Precondition, _)), true) => "precondition not met",
+                (Some((FailureKind::ImageBuild | FailureKind::ImageFlash, _)), true) => {
+                    "image build or flash"
+                }
+                (Some((FailureKind::Scenario, _)), true) => "scenario failure",
                 (None, true) => "no recorded failure",
             };
             text.push_str(&format!(
@@ -416,7 +482,13 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
                         .threshold
                         .as_ref()
                         .map_or_else(|| String::from("—"), ToString::to_string),
-                    measurement.verdict.as_deref().unwrap_or("—")
+                    measurement
+                        .verdict
+                        .map_or("—", |verdict| if verdict.is_passed() {
+                            "passed"
+                        } else {
+                            "failed"
+                        })
                 ));
             }
             let Some(directory) = &repetition.directory else {
@@ -472,9 +544,11 @@ fn means(run: &Run, scenario: &str) -> BTreeMap<String, (f64, String)> {
         .flat_map(|r| &r.measurements)
     {
         if let Some(value) = measurement.value {
-            let entry =
-                sums.entry(measurement.name.clone())
-                    .or_insert((0.0, 0, measurement.unit.clone()));
+            let entry = sums.entry(measurement.name.clone()).or_insert((
+                0.0,
+                0,
+                measurement.unit.to_string(),
+            ));
             entry.0 += value;
             entry.1 += 1;
         }
@@ -490,10 +564,10 @@ pub fn compare(a: &Run, b: &Run, filter: Option<&str>) -> String {
         "A {} {} {}\nB {} {} {}\n",
         a.id,
         short(&a.commit, a.dirty),
-        a.outcome.as_deref().unwrap_or(&a.state),
+        status(a),
         b.id,
         short(&b.commit, b.dirty),
-        b.outcome.as_deref().unwrap_or(&b.state)
+        status(b)
     );
     let scenarios = a
         .scenarios
@@ -509,8 +583,7 @@ pub fn compare(a: &Run, b: &Run, filter: Option<&str>) -> String {
             run.scenarios
                 .iter()
                 .find(|s| s.id == scenario)
-                .map(|s| s.outcome.clone())
-                .unwrap_or_default()
+                .map_or("—", |s| s.outcome.id())
         };
         text.push_str(&format!(
             "{scenario}: A {} ({} repetitions), B {} ({} repetitions)\n",
@@ -653,9 +726,9 @@ pub fn retained(
                 run.id.clone(),
                 format!("younger than {} days", rule.keep_days),
             );
-        } else if run.state == "running" {
+        } else if run.state == State::Running {
             keep.insert(run.id.clone(), String::from("in progress"));
-        } else if run.outcome.is_none() && run.state != "abandoned" {
+        } else if run.outcome.is_none() && run.state != State::Abandoned {
             keep.insert(run.id.clone(), String::from("incomplete"));
         }
         for source in &run.replayed {
@@ -668,7 +741,7 @@ pub fn retained(
     for run in runs.iter().rev() {
         for scenario in &run.scenarios {
             let key = (scenario.id.clone(), scenario.image.clone());
-            if scenario.outcome == "passed" {
+            if scenario.outcome.is_passed() {
                 passed.entry(key).or_insert(run.id.clone());
             } else {
                 failed.entry(key).or_default().push(run);
@@ -787,10 +860,10 @@ mod tests {
         // This test process started before the run.
         assert_eq!(
             running(&format!("{now}-{:08x}", std::process::id())),
-            "running"
+            State::Running
         );
         // No process has PID 0xfffffffe.
-        assert_eq!(running(&format!("{now}-fffffffe")), "abandoned");
+        assert_eq!(running(&format!("{now}-fffffffe")), State::Abandoned);
     }
 
     fn bundle(runs: &Path, id: &str, started: u64, outcome: &str, replay: Option<&str>) {
@@ -824,8 +897,10 @@ mod tests {
                     "artifact_directory": "scenarios/s/repetition-001",
                     "failure": failed.then(|| serde_json::json!({"kind": "scenario", "message": "burst missing"})),
                     "measurements": [
-                        {"name": "rx.mbps", "value": if failed { 10.0 } else { 20.0 }, "unit": "Mbit/s",
-                         "threshold": {"min": 15.0}, "verdict": if failed { "failed" } else { "passed" }}
+                        {"name": "rx.mbps", "value": if failed { 10_000_000 } else { 20_000_000 },
+                         "unit": "bits-per-second",
+                         "threshold": {"comparison": "at-least", "value": 15_000_000},
+                         "verdict": if failed { "failed" } else { "passed" }}
                     ]
                 }]
             }]})
@@ -869,7 +944,10 @@ mod tests {
         );
         let why = why(&runs[1], 2);
         assert!(why.contains("criterion"), "{why}");
-        assert!(why.contains("missed rx.mbps: 10 Mbit/s"), "{why}");
+        assert!(
+            why.contains("missed rx.mbps: 10000000 bit/s (criterion >= 15000000"),
+            "{why}"
+        );
         assert!(why.contains("| panic: x··"), "{why}");
         assert!(!why.contains("| boot"), "{why}");
         let compared = compare(&runs[0], &runs[1], Some("rx"));

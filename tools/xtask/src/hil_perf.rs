@@ -16,9 +16,11 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use oer_hil_schema::run::{Comparison, MeasurementUnit, Threshold};
+
 use crate::{
     Result,
-    hil_runs::{self, Run},
+    hil_runs::{self, Run, State},
 };
 
 /// Which way a gated measurement improves.
@@ -30,12 +32,14 @@ pub enum Better {
 }
 
 impl Better {
-    fn from_threshold(threshold: &Value) -> Option<(Self, f64)> {
-        let value = threshold["value"].as_f64()?;
-        match threshold["comparison"].as_str()? {
-            "at-least" | "greater-than" => Some((Self::Higher, value)),
-            "at-most" | "less-than" => Some((Self::Lower, value)),
-            _ => None,
+    /// The direction an `at-least` or `at-most` gate prefers; an `exactly`
+    /// gate is a correctness check, not a performance figure.
+    fn from_threshold(threshold: &Threshold) -> Option<(Self, f64)> {
+        let value = threshold.value as f64;
+        match threshold.comparison {
+            Comparison::AtLeast => Some((Self::Higher, value)),
+            Comparison::AtMost => Some((Self::Lower, value)),
+            Comparison::Exactly => None,
         }
     }
 }
@@ -45,7 +49,7 @@ impl Better {
 pub struct Sample {
     pub scenario: String,
     pub measurement: String,
-    pub unit: String,
+    pub unit: MeasurementUnit,
     pub better: Better,
     pub threshold: f64,
     pub values: Vec<f64>,
@@ -96,7 +100,7 @@ pub fn samples(run: &Run) -> Vec<Sample> {
                 .or_insert_with(|| Sample {
                     scenario: scenario.id.clone(),
                     measurement: measurement.name.clone(),
-                    unit: measurement.unit.clone(),
+                    unit: measurement.unit,
                     better,
                     threshold: limit,
                     values: Vec::new(),
@@ -114,7 +118,7 @@ pub struct RunSummary {
     pub version: u32,
     pub id: String,
     pub started_millis: u64,
-    pub state: String,
+    pub state: State,
     pub commit: Option<String>,
     pub dirty: bool,
     pub networks: Vec<String>,
@@ -123,14 +127,14 @@ pub struct RunSummary {
 
 /// Bumped whenever [`RunSummary`] or [`samples`] changes meaning, so cached
 /// summaries are recomputed.
-const SUMMARY_VERSION: u32 = 1;
+const SUMMARY_VERSION: u32 = 2;
 
 pub fn summary(run: &Run) -> RunSummary {
     RunSummary {
         version: SUMMARY_VERSION,
         id: run.id.clone(),
         started_millis: run.started_millis,
-        state: run.state.clone(),
+        state: run.state,
         commit: run.commit.clone(),
         dirty: run.dirty,
         networks: networks(run),
@@ -173,7 +177,7 @@ pub struct Baseline {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BaselineMeasurement {
-    pub unit: String,
+    pub unit: MeasurementUnit,
     pub better: Better,
     pub spread: Spread,
 }
@@ -213,7 +217,7 @@ pub fn set_baseline(
     if run.dirty || run.commit.is_none() {
         return Err(format!("run {} was not built from a clean commit", run.id).into());
     }
-    if run.state != "completed" {
+    if run.state != State::Completed {
         return Err(format!("run {} is {}, not completed", run.id, run.state).into());
     }
     let mut by_scenario: BTreeMap<String, BTreeMap<String, BaselineMeasurement>> = BTreeMap::new();
@@ -294,15 +298,15 @@ fn short(commit: &Option<String>) -> String {
 }
 
 /// Display factor and unit for a measured unit and magnitude.
-fn scale(magnitude: f64, unit: &str) -> (f64, String) {
+fn scale(magnitude: f64, unit: MeasurementUnit) -> (f64, String) {
     match unit {
-        "bits-per-second" => (1e6, "Mbit/s".into()),
-        "microseconds" if magnitude.abs() >= 1000.0 => (1000.0, "ms".into()),
-        _ => (1.0, unit.into()),
+        MeasurementUnit::BitsPerSecond => (1e6, "Mbit/s".into()),
+        MeasurementUnit::Microseconds if magnitude.abs() >= 1000.0 => (1000.0, "ms".into()),
+        unit => (1.0, unit.to_string()),
     }
 }
 
-fn format_spread(spread: &Spread, unit: &str) -> String {
+fn format_spread(spread: &Spread, unit: MeasurementUnit) -> String {
     let (factor, unit) = scale(spread.mean, unit);
     format!(
         "{:.2}±{:.2} {unit} (n={})",
@@ -368,7 +372,7 @@ pub fn report(
             Better::Higher => "higher is better",
             Better::Lower => "lower is better",
         };
-        let (factor, unit) = scale(first.threshold, &first.unit);
+        let (factor, unit) = scale(first.threshold, first.unit);
         text.push_str(&format!(
             "{scenario} {name} — gate {:.2} {unit}, {direction}\n",
             first.threshold / factor
@@ -381,7 +385,7 @@ pub fn report(
                 "  baseline {} {}: {} — {}\n",
                 short(&baseline.commit),
                 baseline.run,
-                format_spread(&measurement.spread, &measurement.unit),
+                format_spread(&measurement.spread, measurement.unit),
                 baseline.reason
             ));
         } else {
@@ -410,7 +414,7 @@ pub fn report(
             };
             text.push_str(&format!(
                 "  {commit:<10} {}{verdict}{gate}  [{run_ids}]\n",
-                format_spread(&spread, &sample.unit)
+                format_spread(&spread, sample.unit)
             ));
         }
     }
@@ -431,8 +435,8 @@ pub fn regressions(run: &RunSummary, baselines: &BTreeMap<String, Baseline>) -> 
                     "{} {}: {} against baseline {} {}",
                     sample.scenario,
                     sample.measurement,
-                    format_spread(&spread, &sample.unit),
-                    format_spread(&reference.spread, &reference.unit),
+                    format_spread(&spread, sample.unit),
+                    format_spread(&reference.spread, reference.unit),
                     baseline.run
                 )
             })
@@ -476,9 +480,7 @@ pub fn summaries_since(
                     continue;
                 };
                 let computed = summary(&run);
-                // A completed or interrupted bundle is sealed; a running one
-                // can still change.
-                if matches!(computed.state.as_str(), "completed" | "interrupted") {
+                if computed.state.is_sealed() {
                     let mut file = tempfile::NamedTempFile::new_in(cache)?;
                     serde_json::to_writer(&mut file, &computed)?;
                     file.persist(&cached)?;
@@ -496,14 +498,15 @@ pub fn summaries_since(
 mod tests {
     use super::*;
     use crate::hil_runs::{Measurement, Repetition, ScenarioRun};
+    use oer_hil_schema::run::{MeasurementVerdict, Outcome};
 
     fn run(id: &str, commit: &str, dirty: bool, values: &[f64]) -> Run {
         Run {
             id: id.into(),
             directory: PathBuf::from("/nonexistent"),
             started_millis: 1,
-            state: "completed".into(),
-            outcome: Some("passed".into()),
+            state: State::Completed,
+            outcome: Some(Outcome::Passed),
             commit: Some(commit.into()),
             dirty,
             checkout: None,
@@ -512,28 +515,29 @@ mod tests {
             scenarios: vec![ScenarioRun {
                 id: "udp-tx".into(),
                 image: "performance".into(),
-                outcome: "passed".into(),
+                outcome: Outcome::Passed,
                 repetitions: values
                     .iter()
                     .enumerate()
                     .map(|(number, value)| Repetition {
                         number: number as u64 + 1,
-                        outcome: "passed".into(),
+                        outcome: Outcome::Passed,
                         failure: None,
                         measurements: vec![
                             Measurement {
                                 name: "udp.tx.host-rate".into(),
                                 value: Some(*value),
-                                unit: "bits-per-second".into(),
-                                threshold: Some(
-                                    serde_json::json!({"comparison": "at-least", "value": 100e6}),
-                                ),
-                                verdict: Some("passed".into()),
+                                unit: MeasurementUnit::BitsPerSecond,
+                                threshold: Some(Threshold {
+                                    comparison: Comparison::AtLeast,
+                                    value: 100_000_000,
+                                }),
+                                verdict: Some(MeasurementVerdict::Passed),
                             },
                             Measurement {
                                 name: "ungated".into(),
                                 value: Some(1.0),
-                                unit: "count".into(),
+                                unit: MeasurementUnit::Count,
                                 threshold: None,
                                 verdict: None,
                             },
@@ -553,16 +557,21 @@ mod tests {
         assert_eq!(samples.len(), 1);
         assert_eq!(samples[0].better, Better::Higher);
         assert_eq!(samples[0].values, [115e6, 116e6]);
+        let gate = |comparison| Threshold {
+            comparison,
+            value: 3,
+        };
         assert_eq!(
-            Better::from_threshold(&serde_json::json!({"comparison": "at-most", "value": 3})),
+            Better::from_threshold(&gate(Comparison::AtMost)),
             Some((Better::Lower, 3.0))
         );
+        assert_eq!(Better::from_threshold(&gate(Comparison::Exactly)), None);
     }
 
     #[test]
     fn a_change_is_judged_against_the_baseline_noise_in_the_better_direction() {
         let baseline = BaselineMeasurement {
-            unit: "bits-per-second".into(),
+            unit: MeasurementUnit::BitsPerSecond,
             better: Better::Higher,
             spread: Spread::of(&[115e6, 116e6, 117e6]).unwrap(),
         };

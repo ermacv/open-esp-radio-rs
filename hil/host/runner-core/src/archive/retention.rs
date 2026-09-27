@@ -1,6 +1,7 @@
 //! Read-only retention candidates. This is not garbage collection or integrity
 //! verification: declarations are inspected without hashing multi-GB bundles.
 use crate::Result;
+use oer_hil_schema::run::{Outcome, RunState};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -32,7 +33,7 @@ struct Run {
 struct Manifest {
     schema: u16,
     run_id: String,
-    state: String,
+    state: RunState,
     firmware: Vec<Firmware>,
 }
 #[derive(Deserialize)]
@@ -47,7 +48,7 @@ struct Replay {
 struct Suite {
     schema: u16,
     run_id: String,
-    outcome: String,
+    outcome: Outcome,
     started_unix_millis: u64,
     scenarios: Vec<Scenario>,
 }
@@ -112,7 +113,7 @@ pub(super) fn inspect(root: &Path, keep: &[String]) -> Result<Report> {
                     referenced.insert(replay.source_run_id);
                 }
             }
-            if manifest.state != "completed" {
+            if manifest.state != RunState::Completed {
                 run.keep_reasons.insert("active-or-incomplete".into());
                 return Ok(());
             }
@@ -126,7 +127,7 @@ pub(super) fn inspect(root: &Path, keep: &[String]) -> Result<Report> {
             {
                 return Err("unknown sealed metadata identity/schema or empty suite".into());
             }
-            if suite.outcome != "passed" {
+            if !suite.outcome.is_passed() {
                 run.keep_reasons.insert("non-passing-experiment".into());
             }
             let mut bytes = 0u64;
@@ -146,7 +147,7 @@ pub(super) fn inspect(root: &Path, keep: &[String]) -> Result<Report> {
                 }
             }
             run.logical_bytes = Some(bytes);
-            if suite.outcome == "passed" {
+            if suite.outcome.is_passed() {
                 for scenario in suite.scenarios {
                     let candidate = (suite.started_unix_millis, id.clone());
                     let selected = latest

@@ -8,52 +8,9 @@ use crate::image::ImageClass;
 
 pub const RUN_SCHEMA: u16 = 2;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum RunState {
-    Running,
-    Completed,
-    Interrupted,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Outcome {
-    Passed,
-    Failed,
-    Broken,
-    Skipped,
-    Blocked,
-    Interrupted,
-}
-
-impl Outcome {
-    pub const fn is_passed(self) -> bool {
-        matches!(self, Self::Passed)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum FailureKind {
-    Scenario,
-    Precondition,
-    ImageBuild,
-    ImageFlash,
-    Infrastructure,
-}
-
-impl FailureKind {
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Scenario => "scenario",
-            Self::Precondition => "precondition",
-            Self::ImageBuild => "image-build",
-            Self::ImageFlash => "image-flash",
-            Self::Infrastructure => "infrastructure",
-        }
-    }
-}
+pub use oer_hil_schema::run::{
+    Comparison, FailureKind, MeasurementUnit, MeasurementVerdict, Outcome, RunState, Threshold,
+};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Failure {
@@ -76,59 +33,6 @@ pub struct Attachment {
     pub media_type: String,
     pub size_bytes: u64,
     pub sha256: String,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum MeasurementUnit {
-    Count,
-    Bytes,
-    BitsPerSecond,
-    Microseconds,
-    BasisPoints,
-}
-
-impl MeasurementUnit {
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Count => "count",
-            Self::Bytes => "bytes",
-            Self::BitsPerSecond => "bit/s",
-            Self::Microseconds => "us",
-            Self::BasisPoints => "bp",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Comparison {
-    AtLeast,
-    AtMost,
-    Exactly,
-}
-
-impl Comparison {
-    pub const fn symbol(self) -> &'static str {
-        match self {
-            Self::AtLeast => "&gt;=",
-            Self::AtMost => "&lt;=",
-            Self::Exactly => "=",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct Threshold {
-    pub comparison: Comparison,
-    pub value: u64,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum MeasurementVerdict {
-    Passed,
-    Failed,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -1,0 +1,193 @@
+//! The vocabulary of a sealed HIL run: its state, outcomes, failure kinds and
+//! gated measurements.
+//!
+//! The runner writes these values into run bundles; every reader (repository
+//! tools, retention, the evaluator) parses them into these types instead of
+//! comparing strings, so a renamed or new value fails to parse rather than
+//! silently falling through a string comparison.
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunState {
+    Running,
+    Completed,
+    Interrupted,
+}
+
+impl RunState {
+    /// The serialized name.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Interrupted => "interrupted",
+        }
+    }
+
+    /// A completed or interrupted bundle is sealed and can no longer change.
+    pub const fn is_sealed(self) -> bool {
+        !matches!(self, Self::Running)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Outcome {
+    Passed,
+    Failed,
+    Broken,
+    Skipped,
+    Blocked,
+    Interrupted,
+}
+
+impl Outcome {
+    /// The serialized name.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Passed => "passed",
+            Self::Failed => "failed",
+            Self::Broken => "broken",
+            Self::Skipped => "skipped",
+            Self::Blocked => "blocked",
+            Self::Interrupted => "interrupted",
+        }
+    }
+
+    pub const fn is_passed(self) -> bool {
+        matches!(self, Self::Passed)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FailureKind {
+    Scenario,
+    Precondition,
+    ImageBuild,
+    ImageFlash,
+    Infrastructure,
+}
+
+impl FailureKind {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Scenario => "scenario",
+            Self::Precondition => "precondition",
+            Self::ImageBuild => "image-build",
+            Self::ImageFlash => "image-flash",
+            Self::Infrastructure => "infrastructure",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MeasurementUnit {
+    Count,
+    Bytes,
+    BitsPerSecond,
+    Microseconds,
+    BasisPoints,
+}
+
+impl MeasurementUnit {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::Bytes => "bytes",
+            Self::BitsPerSecond => "bit/s",
+            Self::Microseconds => "us",
+            Self::BasisPoints => "bp",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Comparison {
+    AtLeast,
+    AtMost,
+    Exactly,
+}
+
+impl Comparison {
+    pub const fn symbol(self) -> &'static str {
+        match self {
+            Self::AtLeast => "&gt;=",
+            Self::AtMost => "&lt;=",
+            Self::Exactly => "=",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct Threshold {
+    pub comparison: Comparison,
+    pub value: u64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MeasurementVerdict {
+    Passed,
+    Failed,
+}
+
+macro_rules! display_by_id {
+    ($($type:ty),*) => {
+        $(impl core::fmt::Display for $type {
+            fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str(self.id())
+            }
+        })*
+    };
+}
+
+display_by_id!(RunState, Outcome, FailureKind, MeasurementUnit);
+
+impl MeasurementVerdict {
+    pub const fn is_passed(self) -> bool {
+        matches!(self, Self::Passed)
+    }
+}
+
+impl core::fmt::Display for Threshold {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let comparison = match self.comparison {
+            Comparison::AtLeast => ">=",
+            Comparison::AtMost => "<=",
+            Comparison::Exactly => "=",
+        };
+        write!(formatter, "{comparison} {}", self.value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_names_are_the_serialized_names() {
+        for state in [
+            RunState::Running,
+            RunState::Completed,
+            RunState::Interrupted,
+        ] {
+            assert_eq!(serde_json::to_value(state).unwrap(), state.id());
+        }
+        for outcome in [
+            Outcome::Passed,
+            Outcome::Failed,
+            Outcome::Broken,
+            Outcome::Skipped,
+            Outcome::Blocked,
+            Outcome::Interrupted,
+        ] {
+            assert_eq!(serde_json::to_value(outcome).unwrap(), outcome.to_string());
+        }
+        assert!(serde_json::from_value::<Outcome>("sealed".into()).is_err());
+    }
+}

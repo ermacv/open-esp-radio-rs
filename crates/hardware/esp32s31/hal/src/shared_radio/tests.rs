@@ -282,3 +282,23 @@ fn the_phy_grant_protect_request_cannot_be_withdrawn_before_it_is_programmed() {
     drop(lease);
     assert!(radio.into_parts().is_ok());
 }
+
+#[test]
+fn a_held_validation_grant_protect_is_owned_by_the_lease() {
+    let mut radio = arbiter();
+    {
+        let mut lease = radio.lease_for_validation();
+        assert!(!lease.phy_grant_protected());
+        assert_eq!(
+            lease.release_phy_grant_protect(),
+            Err(PhyGrantProtectError::NotProtected)
+        );
+    }
+    radio.hold_phy_grant_protect_for_validation();
+    let mut lease = radio.lease_for_validation();
+    assert!(lease.phy_grant_protected());
+    assert_eq!(
+        lease.acquire_phy_grant_protect(),
+        Err(PhyGrantProtectError::AlreadyProtected)
+    );
+}

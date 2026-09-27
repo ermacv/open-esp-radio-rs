@@ -387,6 +387,14 @@ impl<T> SharedRadio<T> {
         self.state.get_mut().btbb_clients |= client_bit(client);
     }
 
+    /// Record a programmed PHY grant-protect request without register
+    /// access, so a validation image can compare the release alone.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn hold_phy_grant_protect_for_validation(&mut self) {
+        self.state.get_mut().phy_grant_protected = true;
+    }
+
     #[cfg(test)]
     pub(crate) fn hold_common_power_for_test(&mut self, client: RadioClient) {
         self.state.get_mut().power.hold_for_test(client);

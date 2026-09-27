@@ -1152,9 +1152,11 @@ const SNAPSHOT_BLOCKS: [u8; 9] = [0x61, 0x62, 0x63, 0x66, 0x67, 0x69, 0x6a, 0x6b
 const SNAPSHOT_IMAGE: usize = 209;
 const SNAPSHOT_WORDS: usize = 4 + SNAPSHOT_IMAGE + SNAPSHOT_BLOCKS.len() * 16 + 2000;
 
+#[allow(unsafe_code)]
 #[unsafe(link_section = ".rtc_fast.persistent")]
 #[unsafe(no_mangle)]
 static mut OER_SNAPSHOT: [[u32; SNAPSHOT_WORDS]; 3] = [[0; SNAPSHOT_WORDS]; 3];
+#[allow(unsafe_code)]
 #[unsafe(link_section = ".rtc_fast.persistent")]
 #[unsafe(no_mangle)]
 static OER_SNAPSHOT_SEQ: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);

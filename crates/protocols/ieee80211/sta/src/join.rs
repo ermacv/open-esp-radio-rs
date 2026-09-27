@@ -24,6 +24,7 @@ use self::authentication::{
 
 pub mod association;
 pub mod authentication;
+pub mod sae;
 
 #[cfg(test)]
 mod test_support;

@@ -1678,6 +1678,7 @@ name = "oer-ieee80211-sta"
 version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
+ "oer-ieee80211-rsn",
 ]
 
 [[package]]

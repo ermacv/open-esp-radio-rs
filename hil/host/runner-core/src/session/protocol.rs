@@ -240,6 +240,15 @@ impl SerialCapture {
         .map(|_| ())
     }
 
+    /// Establish the typed link and run role-neutral initialization,
+    /// exchanging the configured startup artifact, without starting a role.
+    pub fn prepare_startup(
+        &self,
+        target: Target<'_>,
+    ) -> Result<(Capabilities, Option<StartupArtifactStatus>)> {
+        self.prepare_protocol(target)
+    }
+
     /// Initialize and submit a real station start without assuming that an AP
     /// exists. The caller must observe its lifecycle and terminal outcome.
     pub fn begin_station_attempt(

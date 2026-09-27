@@ -8,9 +8,9 @@ enum Step {
     ClearInput,
 }
 
-pub(super) fn reset_usb_serial_jtag(
-    serial: &mut dyn serialport::SerialPort,
-) -> serialport::Result<()> {
+/// Reset the chip behind a USB-Serial/JTAG port and discard what the old
+/// boot sent, so the next read starts with the new boot.
+pub fn reset_usb_serial_jtag(serial: &mut dyn serialport::SerialPort) -> serialport::Result<()> {
     sequence(
         |step| match step {
             Step::Dtr(level) => serial.write_data_terminal_ready(level),

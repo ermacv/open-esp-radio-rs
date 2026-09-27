@@ -84,7 +84,15 @@ pub fn flash_replayed(
     flash_application(root, application, &output, port)
 }
 
-fn flash_application(root: &Path, application: &Path, output: &Path, port: &Path) -> Result<()> {
+/// Write the HIL partition table, `application` into `ota_0` and an
+/// `ota_0` selector, then reset; `output` receives the encoded table and
+/// selector.
+pub fn flash_application(
+    root: &Path,
+    application: &Path,
+    output: &Path,
+    port: &Path,
+) -> Result<()> {
     fs::create_dir_all(output)?;
     let partition_csv = root.join("platform/esp32s31/partitions/applications.csv");
     let partition_bin = output.join("partitions.bin");

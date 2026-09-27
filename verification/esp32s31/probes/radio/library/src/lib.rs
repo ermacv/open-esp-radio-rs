@@ -256,11 +256,10 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    /// `ieee802154_txon_delay_set` of libbtbb: the shared-radio lease's IEEE
-    /// 802.15.4 transmit-on delay override, with IEEE 802.15.4 holding BTBB.
-    /// Zero, or `u32::MAX` when the lease refuses it.
+    /// `ieee802154_txon_delay_set` of libbtbb: the IEEE 802.15.4 MAC
+    /// timing delays of the MAC foundation. Always zero.
     pub fn open_ieee802154_btbb_trace_txon_delay() -> u32 {
-        oer_esp32s31_hal::ieee802154::coex_trace::override_tx_on_delay()
+        oer_esp32s31_hal::ieee802154::coex_trace::set_txon_delay()
     }
 }
 

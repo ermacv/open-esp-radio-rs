@@ -1171,7 +1171,11 @@ fn snapshot() {
     let phy = registers.radio_phy_mut();
     let mut at = 4;
     for index in 0..SNAPSHOT_IMAGE {
-        slot[at] = phy.register_image(index).unwrap_or(0xdead_beef);
+        slot[at] = if matches!(index, 118 | 175 | 176 | 177) {
+            0xdead_0000
+        } else {
+            phy.register_image(index).unwrap_or(0xdead_beef)
+        };
         at += 1;
     }
     for block in SNAPSHOT_BLOCKS {

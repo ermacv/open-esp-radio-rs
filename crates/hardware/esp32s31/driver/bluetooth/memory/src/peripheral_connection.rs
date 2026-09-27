@@ -128,6 +128,12 @@ const SCHEDULER_ITEM_CONNECTION_CLASS: u32 = 3 << 8;
 const SCHEDULER_ITEM_CONTEXT_READY: u32 = 1 << 31;
 const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK: u32 = 0x0000_7fff;
+/// SOURCE: pinned `libble_app.a` first-event `r_sym_ble_tPr7egUaNHmqfcieCA5O`
+/// (`r_ble_lll_conn_slave_new`) and recurring `r_sym_ble_rsCCyH2B22gdYkN4LOOJ`
+/// (`ble_lll_conn_reschedule_event`) write the link-state priority nibble into
+/// item `+0x18` bits 3:0 and a fixed 7 into bits 7:4.
+const SCHEDULER_ITEM_CONNECTION_PRIORITY_HIGH_NIBBLE: u32 = 0x70;
+const SCHEDULER_ITEM_PRIORITY_NIBBLE_MASK: u32 = 0x0f;
 const SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE: u32 = 0x000f_0000;
 const SCHEDULER_ITEM_RECEIVE_WAIT_LONG_MODE: u32 = 0x001f_0000;
 const SCHEDULER_ITEM_RECEIVE_WAIT_ZERO_IMAGE: u32 = 1;
@@ -330,8 +336,8 @@ impl ItemStorage {
             (self.words[SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY].get()
                 & !SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK)
                 | (u32::from(channel.frequency_image()) << 8)
-                | priority
-                | (priority << 4),
+                | (priority & SCHEDULER_ITEM_PRIORITY_NIBBLE_MASK)
+                | SCHEDULER_ITEM_CONNECTION_PRIORITY_HIGH_NIBBLE,
         );
     }
 

@@ -172,10 +172,13 @@ pool is an open ownership choice, not proof of equivalence to the vendor's
 persistent global buffer rotation; the shared hardware cursor contract is
 described in [the RX-list reference](bluetooth-passive-scanning.md).
 
-The priority is not an application-supplied integer. The first-event transform
-maps its priority input to 13 and its common-radio policy input to 3; this was
-reviewed on the earlier `7f20740` archive and is not yet re-established on the
-pinned body. These scalars are reviewed chip policy inside the backend.
+The priority is not an application-supplied integer. The pinned
+`r_ble_lll_conn_reset_link_state` stores byte `+0x27` of the private options
+plus nine, or 15 when that byte exceeds five, as link-state priority `+0x60`;
+the default byte is 4, so the first event carries priority 13. It copies byte
+`+0x2b`, whose default is 3, into the common-radio policy. The first-event and
+recurring bodies both write that priority nibble to item `+0x18` bits 3:0 and
+a fixed 7 to bits 7:4; the open codec does the same. These scalars are reviewed chip policy inside the backend.
 The channel-frequency mapping is the ordinary LE data-channel ordering around
 the three primary advertising-channel positions; the portable LL still sees
 only a validated data-channel index. Likewise, signed dBm, interval and a

@@ -11,7 +11,8 @@ use super::{
     PeripheralConnectionSchedulerWindow, PeripheralConnectionStorage,
     PeripheralConnectionTransmitPduKind, SCHEDULER_ITEM_ALLOCATION_NUMBER,
     SCHEDULER_ITEM_CAPTURE_AVAILABLE, SCHEDULER_ITEM_CAPTURED_ANCHOR,
-    SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES, SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION,
+    SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY, SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES,
+    SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION,
 };
 use crate::{
     ConnectionCoexistencePriorities, DirectionFindingWorkspaceLink,
@@ -458,4 +459,27 @@ fn a_recurring_event_keeps_the_power_the_first_event_stored() {
     pool.prepare_recurring_event(&instance, recurring_event(1_000))
         .unwrap();
     assert_eq!(power(&pool, &instance), first);
+}
+
+#[test]
+fn an_item_carries_the_event_priority_beside_a_fixed_high_nibble() {
+    let mut pool = pool();
+    let instance = active(&mut pool);
+    let priority_byte =
+        |pool: &Pool| item_word(pool, &instance, SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY) & 0xff;
+    let first = priority_byte(&pool);
+    pool.prepare_recurring_event(&instance, recurring_event(1_000))
+        .unwrap();
+    let recurring = priority_byte(&pool);
+    assert_eq!(
+        first & 0x0f,
+        u32::from(PeripheralConnectionSchedulerPriority::FIRST_EVENT.value())
+    );
+    assert_eq!(
+        recurring & 0x0f,
+        u32::from(PeripheralConnectionSchedulerPriority::RECURRING_BASELINE.value())
+    );
+    // The high nibble does not follow the priority.
+    assert_ne!(first & 0x0f, recurring & 0x0f);
+    assert_eq!(first & 0xf0, recurring & 0xf0);
 }

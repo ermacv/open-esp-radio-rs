@@ -4,6 +4,7 @@
 //! attempted. This module binds that edge to the polling control-TX owner and
 //! retains the exact descriptor across successful and passive-fallback paths.
 
+use crate::connection_coex::{ConnectionFrame, ConnectionFrameCoex};
 use crate::{
     control_tx::{ControlTransmitter, ControlTxError},
     scan::ActiveProbeOutcome,
@@ -153,14 +154,19 @@ where
         self.state.begin_scan();
     }
 
-    pub async fn transmit_probe_request<H: TxHardware>(
+    /// Send one Probe Request when active probing remains available, after
+    /// its per-frame coexistence request.
+    pub async fn transmit_probe_request<H: TxHardware, C: ConnectionFrameCoex>(
         &mut self,
         hardware: &mut H,
         request: ScanProbeRequest<'_>,
+        coex: &mut C,
     ) -> Result<ScanProbeReport, ControlTxError> {
         if !self.state.active_probe_available() {
             return Ok(ScanProbeReport::PassiveWithoutAttempt);
         }
+        // A Probe Request only requests the air; its priorities stay.
+        let _ = coex.connection_frame(ConnectionFrame::ProbeRequest).await;
         let ScanProbeRequest {
             source,
             sequence_number,

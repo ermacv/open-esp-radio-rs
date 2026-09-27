@@ -6,18 +6,27 @@ use {
 use oer_ieee80211_sta::request::StationListenInterval;
 
 /// Driver resources borrowed for one join runner lifetime.
-pub struct StaJoinRadio<'hardware, 'transmit, H, R, T> {
+pub struct StaJoinRadio<'hardware, 'transmit, H, R, T, C> {
     pub(super) hardware: &'hardware mut H,
     pub(super) receive: R,
     pub(super) transmit: &'transmit mut T,
+    /// The per-frame coexistence requests of Authentication and
+    /// Association Requests.
+    pub(super) coex: C,
 }
 
-impl<'hardware, 'transmit, H, R, T> StaJoinRadio<'hardware, 'transmit, H, R, T> {
-    pub const fn new(hardware: &'hardware mut H, receive: R, transmit: &'transmit mut T) -> Self {
+impl<'hardware, 'transmit, H, R, T, C> StaJoinRadio<'hardware, 'transmit, H, R, T, C> {
+    pub const fn new(
+        hardware: &'hardware mut H,
+        receive: R,
+        transmit: &'transmit mut T,
+        coex: C,
+    ) -> Self {
         Self {
             hardware,
             receive,
             transmit,
+            coex,
         }
     }
 }

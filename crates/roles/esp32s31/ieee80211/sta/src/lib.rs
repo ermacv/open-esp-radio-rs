@@ -17,6 +17,7 @@ pub mod attempt;
 pub mod connected;
 pub mod connected_control;
 pub mod connected_rx;
+pub mod connection_coex;
 pub mod control_tx;
 pub mod ftm;
 pub mod join;

@@ -55,6 +55,8 @@ use oer_ieee80211_softmac::{
 
 pub use crate::single_mpdu_tx::ConnectedTxHandoff;
 
+use crate::connection_coex::ReconnectFramePriority;
+
 pub use oer_esp32s31_ieee80211::ordinary_tx::WifiTxResources;
 
 // SOURCE: complete `libnet80211.a[ieee80211_output.o]` passes
@@ -76,6 +78,19 @@ struct Publication {
     descriptor_capacity: Option<u32>,
     scheduler_priority: u8,
     packet_priority: u8,
+    priority_count: u16,
+}
+
+impl Publication {
+    /// Carry the reconnect policy's priorities instead of the ordinary ones.
+    const fn under(mut self, reconnect: Option<ReconnectFramePriority>) -> Self {
+        if let Some(reconnect) = reconnect {
+            self.scheduler_priority = reconnect.scheduler;
+            self.packet_priority = reconnect.packet;
+            self.priority_count = ReconnectFramePriority::COUNT;
+        }
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -368,6 +383,7 @@ where
                 descriptor_capacity,
                 scheduler_priority: MANAGEMENT_SCHEDULER_PRIORITY,
                 packet_priority: MANAGEMENT_PACKET_PRIORITY,
+                priority_count: 1,
             },
         )
         .await
@@ -377,17 +393,20 @@ where
         &mut self,
         hardware: &mut H,
         request: OpenAuthenticationRequest,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> Result<TxCompletion, ControlTxError> {
         let frame_length = request
             .encode(&mut self.ordinary.buffer_mut()?[TX_METADATA_SIZE..])
             .map_err(ControlTxError::StationEncode)?;
-        self.transmit_management_voice(hardware, frame_length).await
+        self.transmit_management_voice(hardware, frame_length, reconnect)
+            .await
     }
 
     pub async fn transmit_association<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         request: AssociationRequest<'_>,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> Result<TxCompletion, ControlTxError> {
         let frame_length = request
             .encode(
@@ -395,13 +414,15 @@ where
                 &crate::profile::ASSOCIATION_CAPABILITIES,
             )
             .map_err(ControlTxError::AssociationEncode)?;
-        self.transmit_management_voice(hardware, frame_length).await
+        self.transmit_management_voice(hardware, frame_length, reconnect)
+            .await
     }
 
     pub async fn transmit_unprotected_data<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         frame: StaDataFrame<'_>,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> Result<TxCompletion, ControlTxError> {
         let frame_length = frame
             .encode(&mut self.ordinary.buffer_mut()?[TX_METADATA_SIZE..])
@@ -418,7 +439,9 @@ where
                 descriptor_capacity: None,
                 scheduler_priority: LegacyTxQueue::Voice.vendor_data_scheduler_priority(),
                 packet_priority: LegacyTxQueue::Voice.vendor_data_packet_priority(),
-            },
+                priority_count: 1,
+            }
+            .under(reconnect),
         )
         .await
     }
@@ -430,6 +453,7 @@ where
         queue: LegacyTxQueue,
         rate: TxPhyRate,
         hardware_key_selector: u8,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> Result<TxCompletion, ControlTxError> {
         let frame_length = frame
             .encode(&mut self.ordinary.buffer_mut()?[TX_METADATA_SIZE..])
@@ -446,7 +470,9 @@ where
                 descriptor_capacity: None,
                 scheduler_priority: queue.vendor_data_scheduler_priority(),
                 packet_priority: queue.vendor_data_packet_priority(),
-            },
+                priority_count: 1,
+            }
+            .under(reconnect),
         )
         .await
     }
@@ -482,6 +508,7 @@ where
         &mut self,
         hardware: &mut H,
         frame_length: usize,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> Result<TxCompletion, ControlTxError> {
         self.transmit_prepared(
             hardware,
@@ -495,7 +522,9 @@ where
                 descriptor_capacity: None,
                 scheduler_priority: MANAGEMENT_SCHEDULER_PRIORITY,
                 packet_priority: MANAGEMENT_PACKET_PRIORITY,
-            },
+                priority_count: 1,
+            }
+            .under(reconnect),
         )
         .await
     }
@@ -522,6 +551,7 @@ where
                 interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                 scheduler_priority: publication.scheduler_priority,
                 packet_priority: publication.packet_priority,
+                priority_count: publication.priority_count,
             },
         )?;
         loop {
@@ -569,16 +599,18 @@ where
         &'a mut self,
         hardware: &'a mut H,
         request: OpenAuthenticationRequest,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        Self::transmit_open_authentication(self, hardware, request)
+        Self::transmit_open_authentication(self, hardware, request, reconnect)
     }
 
     fn transmit_association<'a>(
         &'a mut self,
         hardware: &'a mut H,
         request: AssociationRequest<'a>,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        Self::transmit_association(self, hardware, request)
+        Self::transmit_association(self, hardware, request, reconnect)
     }
 }
 
@@ -620,8 +652,9 @@ where
         &'a mut self,
         hardware: &'a mut H,
         frame: StaDataFrame<'a>,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        self.transmit_unprotected_data(hardware, frame)
+        self.transmit_unprotected_data(hardware, frame, reconnect)
     }
 
     fn transmit_protected<'a>(
@@ -631,8 +664,16 @@ where
         queue: LegacyTxQueue,
         rate: TxPhyRate,
         hardware_key_selector: u8,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        self.transmit_protected_data(hardware, frame, queue, rate, hardware_key_selector)
+        self.transmit_protected_data(
+            hardware,
+            frame,
+            queue,
+            rate,
+            hardware_key_selector,
+            reconnect,
+        )
     }
 }
 

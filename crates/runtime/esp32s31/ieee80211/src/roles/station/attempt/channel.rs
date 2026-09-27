@@ -3,7 +3,9 @@ use super::*;
 use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
 use oer_esp32s31_phy::ConcurrentWifiChannelError;
 
-use crate::roles::radio_channel::RadioChannel;
+use oer_esp32s31_ieee80211_sta::connection_coex::ConnectionFrameCoex;
+
+use crate::roles::radio_channel::{RadioChannel, RadioConnectionCoex};
 
 /// Channel-switch capability accepted by the concrete attempt owner.
 pub trait StaAttemptChannel<H> {
@@ -16,9 +18,14 @@ pub trait StaAttemptChannel<H> {
 
     /// Publish the station's activity to the coexistence schedule.
     fn publish_coex_activity(&self, activity: WifiCoexActivity) -> impl Future<Output = ()> + '_;
+
+    /// The per-frame coexistence requests of the station's connection frames.
+    type Coex: ConnectionFrameCoex;
+
+    fn connection_coex(&self) -> Self::Coex;
 }
 
-impl<P, C, O, D> StaAttemptChannel<RadioRuntimeOwner> for RadioChannel<'_, P, C, O, D>
+impl<'radio, P, C, O, D> StaAttemptChannel<RadioRuntimeOwner> for RadioChannel<'radio, P, C, O, D>
 where
     C: PlatformClockProvider,
     O: PhyTargetObserver,
@@ -36,10 +43,16 @@ where
     fn publish_coex_activity(&self, activity: WifiCoexActivity) -> impl Future<Output = ()> + '_ {
         RadioChannel::publish_coex_activity(self, activity)
     }
+
+    type Coex = RadioConnectionCoex<'radio, P, C>;
+
+    fn connection_coex(&self) -> Self::Coex {
+        RadioChannel::connection_coex(self)
+    }
 }
 
-impl<'arena, P, C, O, D> StaAttemptChannel<CooperativeRadioHardware<'arena>>
-    for RadioChannel<'_, P, C, O, D>
+impl<'arena, 'radio, P, C, O, D> StaAttemptChannel<CooperativeRadioHardware<'arena>>
+    for RadioChannel<'radio, P, C, O, D>
 where
     C: PlatformClockProvider,
     O: PhyTargetObserver,
@@ -58,5 +71,11 @@ where
 
     fn publish_coex_activity(&self, activity: WifiCoexActivity) -> impl Future<Output = ()> + '_ {
         RadioChannel::publish_coex_activity(self, activity)
+    }
+
+    type Coex = RadioConnectionCoex<'radio, P, C>;
+
+    fn connection_coex(&self) -> Self::Coex {
+        RadioChannel::connection_coex(self)
     }
 }

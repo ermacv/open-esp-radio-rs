@@ -8,6 +8,7 @@
 //! descriptor without importing board fixtures, credentials or diagnostics.
 
 use core::future::Future;
+use oer_esp32s31_ieee80211_sta::connection_coex::ConnectionFrameCoex;
 
 use crate::{
     datapath::rx::{frontier::RxFrontierError, hardware::RxDmaObservationDelay},
@@ -49,6 +50,11 @@ pub trait ScanPhyPort<H> {
         channel: u8,
         requested_dwell_millis: u16,
     ) -> impl Future<Output = Result<u16, Self::Error>> + 'a;
+
+    /// The per-frame coexistence requests of the scan's Probe Requests.
+    type Coex: ConnectionFrameCoex;
+
+    fn connection_coex(&self) -> Self::Coex;
 }
 
 /// RX-ring capability retained across every finite running-scan channel.
@@ -82,10 +88,11 @@ pub trait ScanTransmitPort<H> {
 
     fn begin_scan(&mut self);
 
-    fn transmit_probe_request<'a>(
+    fn transmit_probe_request<'a, C: ConnectionFrameCoex + 'a>(
         &'a mut self,
         hardware: &'a mut H,
         request: ScanProbeRequest<'a>,
+        coex: &'a mut C,
     ) -> impl Future<Output = Result<ScanProbeReport, Self::Error>> + 'a;
 }
 

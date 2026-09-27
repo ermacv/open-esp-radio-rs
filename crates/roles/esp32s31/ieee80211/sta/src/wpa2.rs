@@ -9,6 +9,7 @@ use core::future::Future;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::connected_rx::{StaCcmpRxReplayEpoch, StaCcmpRxReplayError};
+use crate::connection_coex::{ConnectionFrame, ConnectionFrameCoex, ReconnectFramePriority};
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::{
@@ -53,6 +54,7 @@ pub trait HandshakeTransmit<H> {
         &'a mut self,
         hardware: &'a mut H,
         frame: StaDataFrame<'a>,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a;
 
     fn transmit_protected<'a>(
@@ -62,6 +64,7 @@ pub trait HandshakeTransmit<H> {
         queue: LegacyTxQueue,
         rate: TxPhyRate,
         hardware_key_selector: u8,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a;
 }
 
@@ -118,18 +121,25 @@ pub struct Wpa2HandshakeTelemetry {
 }
 
 /// PAC/RX/TX owners borrowed for one handshake runner lifetime.
-pub struct Wpa2HandshakeRadio<'hardware, 'transmit, H, R, T> {
+pub struct Wpa2HandshakeRadio<'hardware, 'transmit, H, R, T, C> {
     hardware: &'hardware mut H,
     receive: R,
     transmit: &'transmit mut T,
+    coex: C,
 }
 
-impl<'hardware, 'transmit, H, R, T> Wpa2HandshakeRadio<'hardware, 'transmit, H, R, T> {
-    pub const fn new(hardware: &'hardware mut H, receive: R, transmit: &'transmit mut T) -> Self {
+impl<'hardware, 'transmit, H, R, T, C> Wpa2HandshakeRadio<'hardware, 'transmit, H, R, T, C> {
+    pub const fn new(
+        hardware: &'hardware mut H,
+        receive: R,
+        transmit: &'transmit mut T,
+        coex: C,
+    ) -> Self {
         Self {
             hardware,
             receive,
             transmit,
+            coex,
         }
     }
 }
@@ -146,18 +156,18 @@ impl<'scratch> Wpa2HandshakeStorage<'scratch> {
 }
 
 /// Complete production port for WPA2 Message 1/2/3 exchange.
-pub struct Wpa2HandshakePort<'hardware, 'transmit, 'scratch, H, R, T> {
-    radio: Wpa2HandshakeRadio<'hardware, 'transmit, H, R, T>,
+pub struct Wpa2HandshakePort<'hardware, 'transmit, 'scratch, H, R, T, C> {
+    radio: Wpa2HandshakeRadio<'hardware, 'transmit, H, R, T, C>,
     storage: Wpa2HandshakeStorage<'scratch>,
     station: Wpa2Station,
     telemetry: Wpa2HandshakeTelemetry,
 }
 
-impl<'hardware, 'transmit, 'scratch, H, R, T>
-    Wpa2HandshakePort<'hardware, 'transmit, 'scratch, H, R, T>
+impl<'hardware, 'transmit, 'scratch, H, R, T, C>
+    Wpa2HandshakePort<'hardware, 'transmit, 'scratch, H, R, T, C>
 {
     pub fn new(
-        radio: Wpa2HandshakeRadio<'hardware, 'transmit, H, R, T>,
+        radio: Wpa2HandshakeRadio<'hardware, 'transmit, H, R, T, C>,
         storage: Wpa2HandshakeStorage<'scratch>,
         station: Wpa2Station,
     ) -> Self {
@@ -178,8 +188,9 @@ impl<'hardware, 'transmit, 'scratch, H, R, T>
     }
 }
 
-impl<H, R, T> RsnHandshakeBackend for Wpa2HandshakePort<'_, '_, '_, H, R, T>
+impl<H, R, T, C> RsnHandshakeBackend for Wpa2HandshakePort<'_, '_, '_, H, R, T, C>
 where
+    C: ConnectionFrameCoex,
     R: Wpa2Receive<H>,
     T: HandshakeTransmit<H>,
 {
@@ -212,6 +223,11 @@ where
         frame: &'a RsnTxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
         sequence_number: SequenceNumber,
     ) -> Result<(), Self::Error> {
+        let reconnect = self
+            .radio
+            .coex
+            .connection_frame(ConnectionFrame::Eapol)
+            .await;
         self.radio
             .transmit
             .transmit_unprotected(
@@ -224,6 +240,7 @@ where
                     ether_type: 0x888e,
                     payload: frame.as_bytes(),
                 },
+                reconnect,
             )
             .await
             .map_err(Wpa2HandshakePortError::Transmit)?;
@@ -280,14 +297,19 @@ pub struct Wpa2KeyPortParts<'hardware, 'transmit, 'sequence, H, T> {
 }
 
 /// Hardware and ordinary-TX owners borrowed by key publication.
-pub struct Wpa2KeyRadio<'hardware, 'transmit, H, T> {
+pub struct Wpa2KeyRadio<'hardware, 'transmit, H, T, C> {
     hardware: &'hardware mut H,
     transmit: &'transmit mut T,
+    coex: C,
 }
 
-impl<'hardware, 'transmit, H, T> Wpa2KeyRadio<'hardware, 'transmit, H, T> {
-    pub const fn new(hardware: &'hardware mut H, transmit: &'transmit mut T) -> Self {
-        Self { hardware, transmit }
+impl<'hardware, 'transmit, H, T, C> Wpa2KeyRadio<'hardware, 'transmit, H, T, C> {
+    pub const fn new(hardware: &'hardware mut H, transmit: &'transmit mut T, coex: C) -> Self {
+        Self {
+            hardware,
+            transmit,
+            coex,
+        }
     }
 }
 
@@ -316,15 +338,17 @@ impl<'sequence> Wpa2KeySession<'sequence> {
 }
 
 /// Complete production port for atomic PTK/GTK publication and Message 4.
-pub struct Wpa2KeyPort<'hardware, 'transmit, 'sequence, H, T> {
-    radio: Wpa2KeyRadio<'hardware, 'transmit, H, T>,
+pub struct Wpa2KeyPort<'hardware, 'transmit, 'sequence, H, T, C> {
+    radio: Wpa2KeyRadio<'hardware, 'transmit, H, T, C>,
     session: Wpa2KeySession<'sequence>,
     completion: Option<TxCompletion>,
 }
 
-impl<'hardware, 'transmit, 'sequence, H, T> Wpa2KeyPort<'hardware, 'transmit, 'sequence, H, T> {
+impl<'hardware, 'transmit, 'sequence, H, T, C>
+    Wpa2KeyPort<'hardware, 'transmit, 'sequence, H, T, C>
+{
     pub const fn new(
-        radio: Wpa2KeyRadio<'hardware, 'transmit, H, T>,
+        radio: Wpa2KeyRadio<'hardware, 'transmit, H, T, C>,
         session: Wpa2KeySession<'sequence>,
     ) -> Self {
         Self {
@@ -348,8 +372,9 @@ impl<'hardware, 'transmit, 'sequence, H, T> Wpa2KeyPort<'hardware, 'transmit, 's
     }
 }
 
-impl<H, T> RsnKeyInstallBackend for Wpa2KeyPort<'_, '_, '_, H, T>
+impl<H, T, C> RsnKeyInstallBackend for Wpa2KeyPort<'_, '_, '_, H, T, C>
 where
+    C: ConnectionFrameCoex,
     H: CcmpKeyHardware,
     T: HandshakeTransmit<H>,
 {
@@ -406,6 +431,11 @@ where
         frame: &'a RsnTxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
         keys: &'a mut Self::InstalledKeys,
     ) -> Result<(), Self::Error> {
+        let reconnect = self
+            .radio
+            .coex
+            .connection_frame(ConnectionFrame::Eapol)
+            .await;
         let completion = match self.session.message4_protection {
             Wpa2Message4Protection::Unprotected => {
                 self.radio
@@ -420,6 +450,7 @@ where
                             ether_type: 0x888e,
                             payload: frame.as_bytes(),
                         },
+                        reconnect,
                     )
                     .await
             }
@@ -450,6 +481,7 @@ where
                         LegacyTxQueue::Voice,
                         TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
                         keys.pairwise.hardware_index(),
+                        reconnect,
                     )
                     .await
             }

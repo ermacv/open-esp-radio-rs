@@ -6,11 +6,16 @@
 //! retune records the channel for coexistence, as the vendor
 //! `ieee80211_update_channel` calls `coex_wifi_channel_set`.
 
-use oer_esp32s31_coex::CoexStatusType;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use oer_esp32s31_coex::{CoexClientRequest, CoexEventDurations, CoexEventId, CoexStatusType};
 use oer_esp32s31_hal::{
     ieee80211::arena::RadioAccess, owner::RadioRuntimeOwner, shared_radio::PlatformClockProvider,
 };
 use oer_esp32s31_ieee80211::coex::{WifiCoexActivity, WifiCoexChannel, shared_scan_dwell_millis};
+use oer_esp32s31_ieee80211_sta::connection_coex::{
+    ConnectionFrame, ConnectionFrameCoex, ReconnectFramePriority,
+};
 use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
 use oer_esp32s31_radio_runtime::{CoexWifiChannel, RadioGuard, RadioSystem};
 
@@ -107,6 +112,11 @@ where
         u16::try_from(dwell).unwrap_or(u16::MAX)
     }
 
+    /// The per-frame coexistence requests of this Wi-Fi's connection frames.
+    pub const fn connection_coex(&self) -> RadioConnectionCoex<'radio, P, C> {
+        RadioConnectionCoex { radio: self.radio }
+    }
+
     /// Return the observer once the role no longer retunes.
     pub fn into_observer(self) -> O {
         self.phy.into_observer()
@@ -153,4 +163,101 @@ pub(crate) fn apply_coex_status<P, C: PlatformClockProvider>(
     guard.set_coex_status_bits(CoexStatusType::Wifi, update.status);
     guard.set_coex_interval(update.interval);
     update.restart_when_shared
+}
+
+/// The vendor coexistence reconnect policy of Wi-Fi (`g_pm` byte 1069,
+/// inverted): on after a station lost its association while another radio
+/// shared the air, off again when the next association starts power
+/// management.
+///
+/// SOURCE: complete pinned `libpp.a[pm_coex.o]::pm_coex_reconnect_policy`
+/// and `pm_coex_set_reconnect_policy`; `libnet80211.a[ieee80211_sta.o]::
+/// ieee80211_sta_new_state` calls the latter when the station leaves its
+/// connected state, and `libpp.a[pm.o]::pm_start` turns the policy off.
+pub struct WifiReconnectPolicy {
+    active: AtomicBool,
+}
+
+static WIFI_RECONNECT_POLICY: WifiReconnectPolicy = WifiReconnectPolicy {
+    active: AtomicBool::new(false),
+};
+
+impl WifiReconnectPolicy {
+    /// Wi-Fi's one policy, as the vendor keeps it in its power manager.
+    pub fn get() -> &'static Self {
+        &WIFI_RECONNECT_POLICY
+    }
+
+    pub fn active(&self) -> bool {
+        self.active.load(Ordering::Acquire)
+    }
+
+    /// A station lost its association: turn the policy on while another
+    /// radio shares the air.
+    pub async fn association_lost<P, C: PlatformClockProvider>(&self, radio: &RadioSystem<P, C>) {
+        if radio.lock().await.coex_active_for(CoexStatusType::Wifi) {
+            self.active.store(true, Ordering::Release);
+        }
+    }
+
+    /// An association started power management.
+    pub fn association_started(&self) {
+        self.active.store(false, Ordering::Release);
+    }
+}
+
+/// The per-frame coexistence requests of Wi-Fi's connection frames.
+pub struct RadioConnectionCoex<'radio, P, C> {
+    radio: &'radio RadioSystem<P, C>,
+}
+
+impl<P, C> Clone for RadioConnectionCoex<'_, P, C> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<P, C> Copy for RadioConnectionCoex<'_, P, C> {}
+
+impl<P, C: PlatformClockProvider> ConnectionFrameCoex for RadioConnectionCoex<'_, P, C> {
+    /// `pp_coex_tx_request` for one connection frame. The vendor also
+    /// requests event 45 for every Probe Request on the 5 GHz band, which
+    /// this 2.4 GHz radio has no channel of. A rejected request changes
+    /// nothing, as the vendor ignores its result.
+    async fn connection_frame(&mut self, frame: ConnectionFrame) -> Option<ReconnectFramePriority> {
+        const PROBE_EVENT: u8 = 45;
+        const CONNECTION_EVENT: u8 = 46;
+        const SLICE_EVENT: u8 = 1;
+        if !WifiReconnectPolicy::get().active() {
+            return None;
+        }
+        let event = CoexEventId::new(match frame {
+            ConnectionFrame::ProbeRequest => PROBE_EVENT,
+            ConnectionFrame::Authentication
+            | ConnectionFrame::Association
+            | ConnectionFrame::Eapol => CONNECTION_EVENT,
+        })
+        .expect("the reconnect events are vendor events");
+        let duration = CoexEventDurations::reviewed_vendor()
+            .duration(event)
+            .expect("the reconnect events have reviewed durations");
+        let mut guard = self.radio.lock().await;
+        let _ = guard.request_wifi_coex(CoexClientRequest {
+            event,
+            latency: 0,
+            duration,
+        });
+        if frame == ConnectionFrame::ProbeRequest {
+            return None;
+        }
+        let packet = guard.lease().coex_pti(event).value();
+        let slice = guard
+            .lease()
+            .coex_pti(CoexEventId::new(SLICE_EVENT).expect("the slice event is a vendor event"))
+            .value();
+        Some(ReconnectFramePriority {
+            packet,
+            scheduler: packet.min(slice),
+        })
+    }
 }

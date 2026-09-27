@@ -225,6 +225,10 @@ pub struct OrdinaryTxPlan {
     pub interface: OrdinaryTxInterface,
     pub scheduler_priority: u8,
     pub packet_priority: u8,
+    /// The priority count `mac_tx_set_pti` publishes beside the packet
+    /// priority: one for every frame, 4000 for a connection frame under the
+    /// coexistence reconnect policy.
+    pub priority_count: u16,
 }
 
 struct ActiveTx {
@@ -238,6 +242,7 @@ struct ActiveTx {
     hardware_key_selector: u8,
     scheduler_priority: u8,
     packet_priority: u8,
+    priority_count: u16,
     receiver: TxReceiver,
     /// Protection selected for the current publication.
     protection: TxProtectionDecision,
@@ -571,6 +576,7 @@ where
             hardware_key_selector: plan.hardware_key_selector,
             scheduler_priority: plan.scheduler_priority,
             packet_priority: plan.packet_priority,
+            priority_count: plan.priority_count,
             receiver,
             protection: TxProtectionDecision::UNPROTECTED,
             completion_timeout_us: plan.exchange.publication_timeout_micros,
@@ -951,7 +957,7 @@ where
                 config.contention_window = contention_window;
                 config.scheduler_priority = active.scheduler_priority;
                 config.pti = active.packet_priority;
-                config.pti_count = 1;
+                config.pti_count = active.priority_count;
                 config.group_receiver = active.receiver == TxReceiver::Group;
                 config.hardware_key_selector = active.hardware_key_selector;
                 config.interface = active.route.mac_interface();
@@ -981,7 +987,7 @@ where
                 config.contention_window = contention_window;
                 config.scheduler_priority = active.scheduler_priority;
                 config.pti = active.packet_priority;
-                config.pti_count = 1;
+                config.pti_count = active.priority_count;
                 config.hardware_key_selector = active.hardware_key_selector;
                 config.interface = active.route.mac_interface();
                 self.slot
@@ -1013,7 +1019,7 @@ where
                 config.contention_window = contention_window;
                 config.scheduler_priority = active.scheduler_priority;
                 config.pti = active.packet_priority;
-                config.pti_count = 1;
+                config.pti_count = active.priority_count;
                 config.hardware_key_selector = active.hardware_key_selector;
                 config.interface = active.route.mac_interface();
                 self.slot

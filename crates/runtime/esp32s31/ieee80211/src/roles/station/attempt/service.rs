@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::roles::radio_channel::WifiReconnectPolicy;
+
 impl<
     'hardware,
     'transmit,
@@ -127,7 +129,7 @@ where
         owner
             .channel
             .publish_coex_activity(WifiCoexActivity::Connecting {
-                reconnecting: false,
+                reconnecting: WifiReconnectPolicy::get().active(),
             })
             .await;
         let receive = owner.receive.take().ok_or_else(|| {
@@ -140,6 +142,7 @@ where
                 &mut *owner.hardware,
                 StaJoinRx::new(receive, owner.rx_storage),
                 &mut *owner.transmit,
+                owner.channel.connection_coex(),
             ),
             StaJoinStorage::new(owner.frame, J::default()),
             StaJoinStation::new(
@@ -179,7 +182,7 @@ where
         owner
             .channel
             .publish_coex_activity(WifiCoexActivity::Connecting {
-                reconnecting: false,
+                reconnecting: WifiReconnectPolicy::get().active(),
             })
             .await;
         let receive = owner.receive.take().ok_or_else(|| {
@@ -192,6 +195,7 @@ where
                 &mut *owner.hardware,
                 StaJoinRx::new(receive, owner.rx_storage),
                 &mut *owner.transmit,
+                owner.channel.connection_coex(),
             ),
             StaJoinStorage::new(owner.frame, J::default()),
             StaJoinStation::new(
@@ -272,7 +276,7 @@ where
         owner
             .channel
             .publish_coex_activity(WifiCoexActivity::Connecting {
-                reconnecting: false,
+                reconnecting: WifiReconnectPolicy::get().active(),
             })
             .await;
         let selected_rsn = select_wpa2_psk_rsn(&owner.station.access_point).map_err(|error| {
@@ -292,6 +296,7 @@ where
                 &mut *owner.hardware,
                 Wpa2Rx::new(receive, owner.rx_storage, station),
                 &mut *owner.transmit,
+                owner.channel.connection_coex(),
             ),
             Wpa2HandshakeStorage::new(owner.frame),
             station,
@@ -361,7 +366,11 @@ where
             ))
         })?;
         let port = Wpa2KeyPort::new(
-            Wpa2KeyRadio::new(&mut *owner.hardware, &mut *owner.transmit),
+            Wpa2KeyRadio::new(
+                &mut *owner.hardware,
+                &mut *owner.transmit,
+                owner.channel.connection_coex(),
+            ),
             Wpa2KeySession::new(
                 Wpa2Station::new(link.station_address, link.bssid),
                 link.peer_qos,

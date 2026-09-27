@@ -1,4 +1,5 @@
 use super::*;
+use oer_esp32s31_ieee80211_sta::connection_coex::ConnectionFrameCoex;
 impl<
     'storage,
     'pool,
@@ -77,11 +78,12 @@ where
         Self::begin_scan(self);
     }
 
-    fn transmit_probe_request<'a>(
+    fn transmit_probe_request<'a, C: ConnectionFrameCoex + 'a>(
         &'a mut self,
         hardware: &'a mut H,
         request: ScanProbeRequest<'a>,
+        coex: &'a mut C,
     ) -> impl Future<Output = Result<ScanProbeReport, Self::Error>> + 'a {
-        Self::transmit_probe_request(self, hardware, request)
+        Self::transmit_probe_request(self, hardware, request, coex)
     }
 }

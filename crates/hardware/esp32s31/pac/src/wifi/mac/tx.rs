@@ -218,6 +218,10 @@ impl MacLegacyTxProgram {
         self.parameters.packet_priority
     }
 
+    pub const fn priority_count(self) -> u16 {
+        self.parameters.priority_count
+    }
+
     pub const fn signal(self) -> u16 {
         self.parameters.signal
     }

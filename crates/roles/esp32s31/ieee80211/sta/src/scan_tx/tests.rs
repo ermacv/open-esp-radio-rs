@@ -17,7 +17,23 @@ use oer_esp32s31_ieee80211_mac::tx::{
     HardwareOwnedTxDma, PreparedTxDma, TxSlot, runtime::WifiTxRuntimePolicy,
 };
 
+use crate::connection_coex::{ConnectionFrame, ConnectionFrameCoex};
+
 use super::*;
+
+/// Records the connection frames that requested the air.
+#[derive(Default)]
+struct Coex(std::vec::Vec<ConnectionFrame>);
+
+impl ConnectionFrameCoex for Coex {
+    fn connection_frame(
+        &mut self,
+        frame: ConnectionFrame,
+    ) -> impl Future<Output = Option<crate::connection_coex::ReconnectFramePriority>> + '_ {
+        self.0.push(frame);
+        ready(None)
+    }
+}
 
 #[derive(Default)]
 struct ScanTxHardware {
@@ -156,8 +172,11 @@ fn running_scan_tx_returns_the_control_owner_after_a_probe() {
     let mut tx = running_scan_tx(slot.as_mut());
     tx.begin_scan();
 
-    let report = block_on(tx.transmit_probe_request(&mut hardware, scan_probe_request()))
-        .expect("completed running probe");
+    let mut coex = Coex::default();
+    let report =
+        block_on(tx.transmit_probe_request(&mut hardware, scan_probe_request(), &mut coex))
+            .expect("completed running probe");
+    assert_eq!(coex.0, [ConnectionFrame::ProbeRequest]);
     assert!(matches!(report, ScanProbeReport::Transmitted(_)));
     let (mut control, summary) = tx.into_parts();
     assert_eq!(summary.completions, 1);
@@ -191,12 +210,16 @@ fn failed_running_probe_disables_further_active_attempts() {
     let mut tx = running_scan_tx(slot.as_mut());
     tx.begin_scan();
 
-    let first = block_on(tx.transmit_probe_request(&mut hardware, scan_probe_request()))
+    let mut coex = Coex::default();
+    let first = block_on(tx.transmit_probe_request(&mut hardware, scan_probe_request(), &mut coex))
         .expect("nonzero completion is a safe passive fallback");
     assert!(matches!(first, ScanProbeReport::PassiveAfterCompletion(_)));
-    let second = block_on(tx.transmit_probe_request(&mut hardware, scan_probe_request()))
-        .expect("disabled active probe remains passive");
+    let second =
+        block_on(tx.transmit_probe_request(&mut hardware, scan_probe_request(), &mut coex))
+            .expect("disabled active probe remains passive");
     assert_eq!(second, ScanProbeReport::PassiveWithoutAttempt);
+    // Only the probe that reached the air requested it.
+    assert_eq!(coex.0, [ConnectionFrame::ProbeRequest]);
     assert_eq!(hardware.publications, 1);
 
     let (_control, summary) = tx.into_parts();

@@ -18,10 +18,10 @@ use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObser
 
 use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 
-use crate::roles::radio_channel::RadioChannel;
+use crate::roles::radio_channel::{RadioChannel, RadioConnectionCoex};
 
-impl<'arena, P, C, O, D> ScanPhyPort<CooperativeRadioHardware<'arena>>
-    for RadioChannel<'_, P, C, O, D>
+impl<'arena, 'radio, P, C, O, D> ScanPhyPort<CooperativeRadioHardware<'arena>>
+    for RadioChannel<'radio, P, C, O, D>
 where
     C: PlatformClockProvider,
     O: PhyTargetObserver,
@@ -41,9 +41,15 @@ where
             .await?;
         Ok(dwell_millis)
     }
+
+    type Coex = RadioConnectionCoex<'radio, P, C>;
+
+    fn connection_coex(&self) -> Self::Coex {
+        RadioChannel::connection_coex(self)
+    }
 }
 
-impl<P, C, O, D> ScanPhyPort<RadioRuntimeOwner> for RadioChannel<'_, P, C, O, D>
+impl<'radio, P, C, O, D> ScanPhyPort<RadioRuntimeOwner> for RadioChannel<'radio, P, C, O, D>
 where
     C: PlatformClockProvider,
     O: PhyTargetObserver,
@@ -60,6 +66,12 @@ where
         let dwell_millis = self.enter_scan_channel(requested_dwell_millis).await;
         RadioChannel::switch_channel(self, u16::from(channel), 0, hardware).await?;
         Ok(dwell_millis)
+    }
+
+    type Coex = RadioConnectionCoex<'radio, P, C>;
+
+    fn connection_coex(&self) -> Self::Coex {
+        RadioChannel::connection_coex(self)
     }
 }
 

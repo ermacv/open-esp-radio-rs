@@ -8,6 +8,7 @@
 use core::future::Future;
 
 use crate::association::{StaAssociationProfile, StaAssociationProfileError};
+use crate::connection_coex::ReconnectFramePriority;
 
 use oer_esp32s31_ieee80211::tx::WifiTxPowerProfile;
 
@@ -47,12 +48,14 @@ pub trait StaJoinTransmit<H> {
         &'a mut self,
         hardware: &'a mut H,
         request: OpenAuthenticationRequest,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a;
 
     fn transmit_association<'a>(
         &'a mut self,
         hardware: &'a mut H,
         request: AssociationRequest<'a>,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a;
 }
 

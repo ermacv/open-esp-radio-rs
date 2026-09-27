@@ -365,6 +365,7 @@ where
                 interface: OrdinaryTxInterface::AccessPoint,
                 scheduler_priority: queue.vendor_data_scheduler_priority(),
                 packet_priority: queue.vendor_data_packet_priority(),
+                priority_count: 1,
             },
         )?)
     }

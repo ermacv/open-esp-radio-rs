@@ -41,6 +41,7 @@ use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
 };
 
+use oer_esp32s31_ieee80211_runtime::roles::radio_channel::WifiReconnectPolicy;
 use oer_esp32s31_ieee80211_runtime::roles::station::epoch::StoppedStaRx;
 use oer_esp32s31_ieee80211_runtime::roles::station::power::{
     StationPowerLink, StationRf, finish_station_power, read_power_coex, run_station_power_agent,
@@ -1692,6 +1693,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         let mut guard = radio.lock().await;
         STATION_POWER_LINK.bind(read_power_coex(&mut guard))
     };
+    WifiReconnectPolicy::get().association_started();
     let drivers = match ConnectedStaPort::compose(
         plan,
         hardware,
@@ -1868,6 +1870,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     // datapath returned; perform them before the radio resources leave.
     let power_stop = finish_station_power(&STATION_POWER_LINK, radio, &mut station_rf).await;
     let rf_asleep = station_rf.asleep();
+    WifiReconnectPolicy::get().association_lost(radio).await;
     if let Err(failure) = power_stop {
         diagnostics_event!("open-radio: station power agent failed at stop: {failure:?}");
     }

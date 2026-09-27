@@ -1,4 +1,7 @@
 use core::future::{Future, ready};
+use oer_esp32s31_ieee80211_sta::connection_coex::{
+    ConnectionFrame, ConnectionFrameCoex, ReconnectFramePriority,
+};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxPowerProfile};
@@ -69,8 +72,8 @@ fn he_access_point() -> ScanRecord {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Action {
     Start,
-    Authentication(SequenceNumber),
-    Association(SequenceNumber, u16, PhyMode),
+    Authentication(SequenceNumber, Option<ReconnectFramePriority>),
+    Association(SequenceNumber, u16, PhyMode, Option<ReconnectFramePriority>),
     Service,
     Stop,
     AuthenticationObserved,
@@ -130,10 +133,11 @@ impl StaJoinTransmit<Hardware> for Transmit {
         &'a mut self,
         hardware: &'a mut Hardware,
         request: OpenAuthenticationRequest,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
         hardware
             .actions
-            .push(Action::Authentication(request.sequence_number));
+            .push(Action::Authentication(request.sequence_number, reconnect));
         ready(Ok(completion()))
     }
 
@@ -141,11 +145,13 @@ impl StaJoinTransmit<Hardware> for Transmit {
         &'a mut self,
         hardware: &'a mut Hardware,
         request: AssociationRequest<'a>,
+        reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
         hardware.actions.push(Action::Association(
             request.sequence_number,
             request.listen_interval,
             request.phy,
+            reconnect,
         ));
         ready(Ok(completion()))
     }
@@ -167,6 +173,24 @@ impl StaJoinObserver for Observer<'_> {
     }
 }
 
+/// The reconnect policy is on: every connection frame requests the air.
+struct Reconnecting<'a>(&'a core::cell::RefCell<Vec<ConnectionFrame>>);
+
+const RECONNECT: ReconnectFramePriority = ReconnectFramePriority {
+    packet: 10,
+    scheduler: 5,
+};
+
+impl ConnectionFrameCoex for Reconnecting<'_> {
+    fn connection_frame(
+        &mut self,
+        frame: ConnectionFrame,
+    ) -> impl Future<Output = Option<ReconnectFramePriority>> + '_ {
+        self.0.borrow_mut().push(frame);
+        ready(Some(RECONNECT))
+    }
+}
+
 struct Ignore;
 
 impl StaJoinRxObserver for Ignore {
@@ -181,7 +205,13 @@ fn port_orders_driver_edges_and_keeps_diagnostics_external() {
     let mut diagnostic_hardware = Hardware::default();
     let mut transmit = Transmit;
     let mut frame = [0; 128];
-    let radio = StaJoinRadio::new(&mut hardware, Receive, &mut transmit);
+    let requests = core::cell::RefCell::new(Vec::new());
+    let radio = StaJoinRadio::new(
+        &mut hardware,
+        Receive,
+        &mut transmit,
+        Reconnecting(&requests),
+    );
     let storage = StaJoinStorage::new(&mut frame, Observer(&mut diagnostic_hardware));
     let station = StaJoinStation::new(LOCAL, he_access_point(), Preference::PreferHe20);
     let mut port = StaJoinPort::new(radio, storage, station);
@@ -210,10 +240,22 @@ fn port_orders_driver_edges_and_keeps_diagnostics_external() {
         hardware.actions,
         [
             Action::Start,
-            Action::Authentication(SequenceNumber::new(7).unwrap()),
-            Action::Association(SequenceNumber::new(8).unwrap(), 3, PhyMode::He20),
+            Action::Authentication(SequenceNumber::new(7).unwrap(), Some(RECONNECT)),
+            Action::Association(
+                SequenceNumber::new(8).unwrap(),
+                3,
+                PhyMode::He20,
+                Some(RECONNECT)
+            ),
             Action::Service,
             Action::Stop,
+        ]
+    );
+    assert_eq!(
+        *requests.borrow(),
+        [
+            ConnectionFrame::Authentication,
+            ConnectionFrame::Association
         ]
     );
     assert_eq!(

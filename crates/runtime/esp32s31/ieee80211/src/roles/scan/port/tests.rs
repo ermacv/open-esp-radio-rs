@@ -3,6 +3,9 @@ use core::{
     pin::pin,
     task::{Context, Poll},
 };
+use oer_esp32s31_ieee80211_sta::connection_coex::{
+    ConnectionFrame, ConnectionFrameCoex, ReconnectFramePriority,
+};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_sta::scan::{StaScanBackend, StaScanConfig};
@@ -70,6 +73,23 @@ impl ScanPhyPort<Hardware> for Phy {
     ) -> impl Future<Output = Result<u16, Self::Error>> + 'a {
         hardware.actions.push(Action::Switch(channel));
         ready(Ok(requested_dwell_millis))
+    }
+    type Coex = NoCoex;
+
+    fn connection_coex(&self) -> Self::Coex {
+        NoCoex
+    }
+}
+
+/// Coexistence without the reconnect policy: nothing is requested.
+struct NoCoex;
+
+impl ConnectionFrameCoex for NoCoex {
+    fn connection_frame(
+        &mut self,
+        _frame: ConnectionFrame,
+    ) -> impl Future<Output = Option<ReconnectFramePriority>> + '_ {
+        ready(None)
     }
 }
 
@@ -140,10 +160,11 @@ impl ScanTransmitPort<Hardware> for Transmit {
 
     fn begin_scan(&mut self) {}
 
-    fn transmit_probe_request<'a>(
+    fn transmit_probe_request<'a, C: ConnectionFrameCoex + 'a>(
         &'a mut self,
         hardware: &'a mut Hardware,
         request: ScanProbeRequest<'a>,
+        _coex: &'a mut C,
     ) -> impl Future<Output = Result<ScanProbeReport, Self::Error>> + 'a {
         hardware
             .actions

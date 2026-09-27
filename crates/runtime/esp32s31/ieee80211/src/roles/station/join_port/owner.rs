@@ -5,18 +5,18 @@ use oer_esp32s31_ieee80211_mac::init::{
 use super::{StaJoinRadio, StaJoinStation, StaJoinStorage};
 
 /// Complete production ESP32-S31 STA join port.
-pub struct StaJoinPort<'hardware, 'transmit, 'scratch, H, R, T, O> {
-    pub(super) radio: StaJoinRadio<'hardware, 'transmit, H, R, T>,
+pub struct StaJoinPort<'hardware, 'transmit, 'scratch, H, R, T, C, O> {
+    pub(super) radio: StaJoinRadio<'hardware, 'transmit, H, R, T, C>,
     pub(super) storage: StaJoinStorage<'scratch, O>,
     pub(super) station: StaJoinStation,
 }
 
 #[cfg_attr(test, allow(dead_code))]
-impl<'hardware, 'transmit, 'scratch, H, R, T, O>
-    StaJoinPort<'hardware, 'transmit, 'scratch, H, R, T, O>
+impl<'hardware, 'transmit, 'scratch, H, R, T, C, O>
+    StaJoinPort<'hardware, 'transmit, 'scratch, H, R, T, C, O>
 {
     pub const fn new(
-        radio: StaJoinRadio<'hardware, 'transmit, H, R, T>,
+        radio: StaJoinRadio<'hardware, 'transmit, H, R, T, C>,
         storage: StaJoinStorage<'scratch, O>,
         station: StaJoinStation,
     ) -> Self {

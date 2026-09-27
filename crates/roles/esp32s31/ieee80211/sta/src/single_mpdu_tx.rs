@@ -565,6 +565,7 @@ where
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: queue.vendor_data_scheduler_priority(),
                     packet_priority: queue.vendor_data_packet_priority(),
+                    priority_count: 1,
                 },
             )
             .map_err(Into::into)
@@ -673,6 +674,7 @@ where
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: queue.vendor_data_scheduler_priority(),
                     packet_priority: queue.vendor_data_packet_priority(),
+                    priority_count: 1,
                 },
             )
             .map_err(Into::into)
@@ -732,6 +734,7 @@ where
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::Voice.vendor_data_scheduler_priority(),
                     packet_priority: LegacyTxQueue::Voice.vendor_data_packet_priority(),
+                    priority_count: 1,
                 },
             )
             .map_err(Into::into)
@@ -783,6 +786,7 @@ where
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: config.scheduler_priority,
                     packet_priority: config.packet_priority,
+                    priority_count: 1,
                 },
             )
             .map_err(Into::into)
@@ -938,6 +942,7 @@ where
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
                     packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
+                    priority_count: 1,
                 },
             )
             .map_err(Into::into)
@@ -987,6 +992,7 @@ where
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
                     packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
+                    priority_count: 1,
                 },
             )
             .map_err(Into::into)

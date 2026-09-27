@@ -7,6 +7,7 @@ use core::future::Future;
 
 use oer_esp32s31_ieee80211_sta::{
     association::esp32s31_sta_association_profile,
+    connection_coex::{ConnectionFrame, ConnectionFrameCoex},
     join::{StaJoinObserver, StaJoinPortError, StaJoinReceive, StaJoinTransmit},
 };
 
@@ -19,8 +20,9 @@ use oer_ieee80211_sta::join::{
 
 use super::StaJoinPort;
 
-impl<H, R, T, O> StaJoinBackend for StaJoinPort<'_, '_, '_, H, R, T, O>
+impl<H, R, T, C, O> StaJoinBackend for StaJoinPort<'_, '_, '_, H, R, T, C, O>
 where
+    C: ConnectionFrameCoex,
     R: StaJoinReceive<H>,
     T: StaJoinTransmit<H>,
     O: StaJoinObserver,
@@ -51,6 +53,11 @@ where
         attempt: StaAuthenticationAttempt,
     ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
+            let reconnect = self
+                .radio
+                .coex
+                .connection_frame(ConnectionFrame::Authentication)
+                .await;
             let completion = self
                 .radio
                 .transmit
@@ -61,6 +68,7 @@ where
                         bssid: self.station.access_point.bssid,
                         sequence_number: attempt.sequence_number,
                     },
+                    reconnect,
                 )
                 .await
                 .map_err(StaJoinPortError::Transmit)?;
@@ -81,6 +89,11 @@ where
             )
             .map_err(StaJoinPortError::AssociationProfile)?;
             self.storage.observer.association_profile_selected(profile);
+            let reconnect = self
+                .radio
+                .coex
+                .connection_frame(ConnectionFrame::Association)
+                .await;
             let completion = self
                 .radio
                 .transmit
@@ -96,6 +109,7 @@ where
                         power_capability: profile.power_capability,
                         he_ul_mu_power: profile.he_ul_mu_power,
                     },
+                    reconnect,
                 )
                 .await
                 .map_err(StaJoinPortError::Transmit)?;

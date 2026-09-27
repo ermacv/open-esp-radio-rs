@@ -88,9 +88,10 @@ where
             descriptor_capacity: self.station.descriptor_capacity,
         };
         async move {
+            let mut coex = self.radio.phy.connection_coex();
             self.radio
                 .tx
-                .transmit_probe_request(&mut self.radio.hardware, request)
+                .transmit_probe_request(&mut self.radio.hardware, request, &mut coex)
                 .await
                 .map(ScanProbeReport::outcome)
                 .map_err(ScanPortError::Transmit)

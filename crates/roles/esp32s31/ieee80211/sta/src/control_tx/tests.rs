@@ -4,6 +4,8 @@ use core::{
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
+use crate::connection_coex::ReconnectFramePriority;
+
 use oer_esp32s31_hal::types::{
     MacKeyInstallOutcome, MacLegacyRate, MacLegacyTxProgram, MacTxCompletionObservation,
     MacTxControlFrame, MacTxDetachOutcome, MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
@@ -172,6 +174,7 @@ fn authentication_is_encoded_and_completed_by_the_shared_owner() {
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
             sequence_number: SequenceNumber::new(7).unwrap(),
         },
+        None,
     ));
 
     assert!(matches!(result, Ok(completion) if completion.status() == 0));
@@ -218,6 +221,7 @@ fn erp_protected_eapol_data_publishes_cts_to_self_with_the_control_rate_power() 
         LegacyTxQueue::Voice,
         TxPhyRate::Legacy(LegacyRate::Ofdm24M),
         1,
+        None,
     ));
     assert!(result.is_ok());
     assert_eq!(hardware.publications, 1);
@@ -250,6 +254,7 @@ fn ack_timeout_reuses_sequence_and_marks_the_retry_bit() {
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
             sequence_number: SequenceNumber::new(11).unwrap(),
         },
+        None,
     ));
 
     assert!(result.is_ok());
@@ -282,12 +287,43 @@ fn eapol_uses_the_recovered_voice_data_priority() {
             ether_type: 0x888e,
             payload: &[1, 2, 3, 4],
         },
+        None,
     ));
 
     assert!(result.is_ok());
     let (_, program) = hardware.legacy.expect("EAPOL publication");
     assert_eq!(program.scheduler_priority(), 3);
     assert_eq!(program.packet_priority(), 3);
+}
+
+#[test]
+fn a_reconnecting_station_publishes_connection_frames_at_event_46_priority() {
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        completions: [Some(completion(0)), None],
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut());
+
+    let result = crate::test_support::block_on(tx.transmit_open_authentication(
+        &mut hardware,
+        OpenAuthenticationRequest {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            sequence_number: SequenceNumber::new(7).unwrap(),
+        },
+        Some(ReconnectFramePriority {
+            packet: 10,
+            scheduler: 5,
+        }),
+    ));
+
+    assert!(result.is_ok());
+    let (_, program) = hardware.legacy.expect("management publication");
+    assert_eq!(program.packet_priority(), 10);
+    assert_eq!(program.scheduler_priority(), 5);
+    assert_eq!(program.priority_count(), ReconnectFramePriority::COUNT);
 }
 
 #[test]
@@ -307,6 +343,7 @@ fn missing_hardware_timeout_edge_quarantines_without_drop_panic() {
                 bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
                 sequence_number: SequenceNumber::new(13).unwrap(),
             },
+            None,
         ));
 
         assert_eq!(
@@ -400,6 +437,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
                 interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                 scheduler_priority: 1,
                 packet_priority: 1,
+                priority_count: 1,
             },
         )
         .unwrap();

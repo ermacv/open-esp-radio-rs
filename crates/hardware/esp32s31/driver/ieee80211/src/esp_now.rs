@@ -565,6 +565,7 @@ where
                 interface: OrdinaryTxInterface::Station,
                 scheduler_priority: 1,
                 packet_priority: 1,
+                priority_count: 1,
             },
             retry_rate_policy,
         )

@@ -392,6 +392,8 @@ struct Env {
     notes: Vec<Note>,
     enhanced_ack: Option<Vec<u8>>,
     enhanced_ack_key: Option<[u8; 16]>,
+    /// A byte the upper layer rewrites at the SFD: image offset and value.
+    sfd_edit: Option<(usize, u8)>,
 }
 
 impl Ieee802154Environment for Env {
@@ -422,7 +424,10 @@ impl Ieee802154Environment for Env {
     fn transmit_failed(&mut self, frame: &[u8; FRAME_SIZE], error: Ieee802154TxError) {
         self.notes.push(Note::TransmitFailed(psdu(frame), error));
     }
-    fn transmit_sfd_done(&mut self, _frame: &[u8; FRAME_SIZE]) {
+    fn transmit_sfd_done(&mut self, frame: &mut [u8; FRAME_SIZE]) {
+        if let Some((offset, value)) = self.sfd_edit {
+            frame[offset] = value;
+        }
         self.notes.push(Note::TransmitSfd);
     }
     fn energy_detect_done(&mut self, power: i8) {
@@ -1211,4 +1216,20 @@ fn transmit_security_is_armed_for_one_transmission() {
     bench.transmit(&secured, false);
     bench.interrupt(&[Ieee802154Event::TxDone]);
     assert!(bench.hw.calls.contains(&Call::SetTransmitSecurity(false)));
+}
+
+/// The upper layer edits the transmitted frame at its SFD, as ESP-IDF's
+/// OpenThread port writes the CSL phase; the edit reaches the DMA frame.
+#[test]
+fn an_sfd_edit_reaches_the_transmitted_frame() {
+    let mut bench = Bench::enabled();
+    bench.env.sfd_edit = Some((10, 0x5a));
+    bench.transmit(&DATA_NO_ACK, false);
+    let address = bench.tx_address();
+    assert_eq!(bench.engine.model_dma_read(address).unwrap()[10], 0xbb);
+    bench.interrupt(&[Ieee802154Event::TxSfdDone]);
+    let image = bench.engine.model_dma_read(address).unwrap();
+    assert_eq!(image[10], 0x5a);
+    assert_eq!(image[..10], DATA_NO_ACK[..10]);
+    assert_eq!(bench.take_notes(), [Note::TransmitSfd]);
 }

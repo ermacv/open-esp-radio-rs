@@ -25,8 +25,9 @@ use oer_ieee802154::{
 };
 
 use super::{
-    Ieee802154EnhancedAckGenerator, Ieee802154EventsLost, Ieee802154Platform, Ieee802154RadioEvent,
-    Ieee802154RfCloseError, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
+    Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154EventsLost, Ieee802154Platform,
+    Ieee802154RadioEvent, Ieee802154RfCloseError, Ieee802154Runtime, Ieee802154RuntimeError,
+    Ieee802154RuntimeParts,
 };
 
 static LEVELS: [i8; 1] = [0];
@@ -591,4 +592,24 @@ fn closed_rf_admission_refuses_commands_that_need_rf() {
             channel: channel(11),
         })
         .unwrap();
+}
+
+/// The runtime lends the radio clock and the CSL state of the installed
+/// radio, and neither without one.
+#[test]
+fn the_clock_and_csl_state_belong_to_the_installed_radio() {
+    let runtime = Runtime::<4>::new();
+    assert_eq!(runtime.clock(), Err(Ieee802154RuntimeError::NotInstalled));
+    let runtime = enabled::<4>();
+    let clock = runtime.clock().unwrap();
+    assert_eq!(clock(), (PLATFORM.now_micros)());
+    runtime
+        .with_csl(|csl| {
+            *csl = Ieee802154Csl {
+                period: 100,
+                sample_time: 5_000,
+            }
+        })
+        .unwrap();
+    assert_eq!(runtime.with_csl(|csl| csl.period), Ok(100));
 }

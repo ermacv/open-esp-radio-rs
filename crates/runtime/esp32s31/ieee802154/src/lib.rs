@@ -46,7 +46,7 @@ use oer_ieee802154::{
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
-    IEEE802154_ENHANCED_ACK_IE_CAPACITY, IEEE802154_RADIO_CAPABILITIES,
+    IEEE802154_ENHANCED_ACK_IE_CAPACITY, IEEE802154_RADIO_CAPABILITIES, Ieee802154Csl,
     Ieee802154EnhancedAckGenerator, Ieee802154EnhancedAckIeTooLong, Ieee802154Platform,
 };
 
@@ -546,6 +546,30 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     /// No radio is installed.
     pub fn now(&self) -> Result<RadioTimestamp, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| radio.now())
+    }
+
+    /// The radio clock as a function (`otPlatRadioGetNow`), for callers
+    /// that read it without the runtime's lock.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn clock(&self) -> Result<fn() -> u64, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.clock())
+    }
+
+    /// Change the radio's CSL receiver state (`otPlatRadioEnableCsl`,
+    /// `otPlatRadioUpdateCslSampleTime`); the interrupt handler reads it
+    /// under the same lock.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn with_csl<T>(
+        &self,
+        change: impl FnOnce(&mut Ieee802154Csl) -> T,
+    ) -> Result<T, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| change(radio.csl()))
     }
 
     /// Admit and start one portable command.

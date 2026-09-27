@@ -54,6 +54,26 @@ impl DmaFrame {
         unsafe { self.0.get().write_volatile(frame) }
     }
 
+    /// Write the bytes of `image` that differ from `original` into the
+    /// frame the MAC is transmitting, one volatile byte each, as the
+    /// vendor's `esp_ieee802154_transmit_sfd_done` callback edits the frame
+    /// in place at its SFD.
+    #[allow(
+        unsafe_code,
+        reason = "volatile byte writes into a live DMA frame never form a reference to it"
+    )]
+    pub(crate) fn patch(&self, original: &[u8; FRAME_SIZE], image: &[u8; FRAME_SIZE]) {
+        let base = self.0.get().cast::<u8>();
+        for (index, (&old, &new)) in original.iter().zip(image).enumerate() {
+            if old != new {
+                // SAFETY: `index` is below `FRAME_SIZE`, so the byte lies
+                // inside this live, aligned `UnsafeCell`; the MAC reads the
+                // frame's later bytes after its SFD, as in the vendor driver.
+                unsafe { base.add(index).write_volatile(new) }
+            }
+        }
+    }
+
     /// Clear bit 7 of the PHR byte, as the vendor receive path does.
     #[allow(
         unsafe_code,

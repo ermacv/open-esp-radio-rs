@@ -359,6 +359,44 @@ impl<'image> PhrFrame<'image> {
         }
     }
 
+    /// The image offset of the descriptor of the first header IE with
+    /// element `id`, as OpenThread's `Frame::GetHeaderIe` finds it: the
+    /// header IEs of a 2015 frame that has them follow its auxiliary
+    /// security header, up to a header termination IE or the payload.
+    pub const fn header_ie(self, id: u8) -> Option<u8> {
+        if !matches!(self.version(), FrameVersion::V2015) || !self.ie_present() {
+            return None;
+        }
+        let Some(mut offset) = self.security_header_offset() else {
+            return None;
+        };
+        if self.security_enabled() {
+            match self.security_field_len() {
+                Some(length) => offset += length,
+                None => return None,
+            }
+        }
+        let end = self.length() as u16;
+        let mut index = offset as u16;
+        while index + IE_HEADER_LEN as u16 + FCS_SIZE as u16 <= end {
+            let (Some(low), Some(high)) = (self.byte(index as u8), self.byte(index as u8 + 1))
+            else {
+                return None;
+            };
+            let descriptor = (high as u16) << 8 | low as u16;
+            let element = ((descriptor & IE_HEADER_ID_MASK) >> 7) as u8;
+            if element == id {
+                return Some(index as u8);
+            }
+            // Header termination IEs end the header IEs.
+            if element == 0x7e || element == 0x7f {
+                return None;
+            }
+            index += IE_HEADER_LEN as u16 + (descriptor & IE_SUBFIELD_LEN_MASK);
+        }
+        None
+    }
+
     /// Offset of the byte after the auxiliary security header and header IEs.
     const fn mac_payload_offset(self) -> Option<u8> {
         let Some(mut offset) = self.security_header_offset() else {

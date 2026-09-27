@@ -107,3 +107,18 @@ fn only_secured_frames_are_written() {
     assert_eq!(security.apply(&mut implicit), Some(KeyIdMode::Implicit));
     assert_eq!(implicit[15], 0, "mode 0 carries no key index");
 }
+
+/// A CSL receiver's retransmission takes a new counter and keeps its key
+/// index (`!mIsARetx || s_csl_period > 0`).
+#[test]
+fn csl_retransmissions_take_a_new_counter() {
+    let mut keys = MacKeys::new(3, [1; 16], [2; 16], [3; 16], 7);
+    let retry = keys.transmit_security_with_csl(true, true);
+    assert_eq!((retry.frame_counter, retry.key_id), (Some(7), None));
+    let first = keys.transmit_security_with_csl(false, true);
+    assert_eq!((first.frame_counter, first.key_id), (Some(8), Some(3)));
+    assert_eq!(
+        keys.transmit_security_with_csl(true, false).frame_counter,
+        None
+    );
+}

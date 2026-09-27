@@ -23,6 +23,8 @@ extern crate std;
 
 /// Bounded IEEE 802.15.4 MAC byte representations.
 pub mod mac {
+    /// Coordinated Sampled Listening IE and phase.
+    pub mod csl;
     /// Unslotted CSMA-CA backoff.
     pub mod csma;
     /// Enhanced acknowledgement of IEEE 802.15.4-2015 frames.
@@ -42,6 +44,7 @@ pub mod mac {
 /// Hardware-independent radio command/event and state contracts.
 pub mod radio;
 
+pub use mac::csl::{CSL_IE_ID, CSL_IE_TEMPLATE, CSL_UNIT_MICROS, csl_phase, write_csl_ie};
 pub use mac::csma::CsmaCa;
 pub use mac::enhanced_ack::{
     EnhancedAck, EnhancedAckError, EnhancedAckSecurity, KeyIdMode, generate_enhanced_ack,

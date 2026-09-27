@@ -100,6 +100,17 @@ received frame as the vendor receive path ends it, or at once for a window
 that had already ended. Another operation replaces the window, after which
 the radio sleeps.
 
+A CSL receiver sets its period and next sample time with
+`Ieee802154SystemRuntime::with_csl` (`otPlatRadioEnableCsl`,
+`otPlatRadioUpdateCslSampleTime`). With a period, the radio answers 2015
+frames with enhanced ACKs that carry a CSL IE, writes the period and the
+phase to the next sample time into the CSL IE of every frame it sends when
+the frame's SFD goes out - the engine writes the changed bytes into the
+frame the MAC is sending, as ESP-IDF's OpenThread port edits it in place -
+and secures retransmissions with a new frame counter. The runtime lends the
+radio clock as a function (`Ieee802154SystemRuntime::clock`) for callers
+that read it without the lock.
+
 The shared radio is a software-coexistence build, so the MAC takes part in
 coexistence as the vendor driver does with `CONFIG_ESP_COEX_SW_COEXIST_ENABLE`:
 `start` reads the arbiter's coexistence table once and the engine publishes

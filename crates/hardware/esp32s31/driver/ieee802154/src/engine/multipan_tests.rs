@@ -41,7 +41,7 @@ impl Ieee802154Environment for Received {
     fn receive_sfd_done(&mut self) {}
     fn transmit_done(&mut self, _: &[u8; FRAME_SIZE], _: Option<Ieee802154ReceivedAck<'_>>) {}
     fn transmit_failed(&mut self, _: &[u8; FRAME_SIZE], _: Ieee802154TxError) {}
-    fn transmit_sfd_done(&mut self, _: &[u8; FRAME_SIZE]) {}
+    fn transmit_sfd_done(&mut self, _: &mut [u8; FRAME_SIZE]) {}
     fn energy_detect_done(&mut self, _: i8) {}
     fn cca_done(&mut self, _: bool) {}
     fn ed_failed(&mut self, _: Ieee802154RxStatus) {}

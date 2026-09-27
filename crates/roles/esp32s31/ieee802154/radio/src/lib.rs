@@ -30,11 +30,12 @@ use oer_esp32s31_ieee802154::engine::{
     Ieee802154TxError,
 };
 use oer_ieee802154::{
-    AcceptedCommand, AppliedSecurity, AttemptFailure, Channel, CommandError, Configuration, CsmaCa,
-    FcsStatus, FramePending, FrameRetries, FrameVersion, FrameView, KeyIdMode, MacKeys, PhrFrame,
-    RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine,
-    RadioTimestamp, ReceivedFrame, RequestId, RestingState, RetryStart, RxMetadata, SecurityStatus,
-    SentAcknowledgement, TxMode, TxSecurity, TxStatus, generate_enhanced_ack,
+    AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, Channel, CommandError,
+    Configuration, CsmaCa, FcsStatus, FramePending, FrameRetries, FrameVersion, FrameView,
+    KeyIdMode, MacKeys, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent, RadioFault,
+    RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId, RestingState,
+    RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TxMode, TxSecurity, TxStatus,
+    csl_phase, generate_enhanced_ack, write_csl_ie,
 };
 
 /// The portable capabilities the role implements.
@@ -57,6 +58,22 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
 /// Header IE bytes an enhanced ACK carries at most (OpenThread
 /// `OT_ACK_IE_MAX_SIZE`).
 pub const IEEE802154_ENHANCED_ACK_IE_CAPACITY: usize = 16;
+
+/// The CSL receiver state of ESP-IDF's OpenThread port (`s_csl_period`,
+/// `s_csl_sample_time`; `otPlatRadioEnableCsl`,
+/// `otPlatRadioUpdateCslSampleTime`).
+///
+/// With a period, generated enhanced ACKs carry a CSL IE, every frame the
+/// radio sends gets the period and the phase to the next sample time
+/// written into its CSL IE when its SFD goes out, and retransmissions take
+/// a new frame counter.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Ieee802154Csl {
+    /// The CSL period in units of ten symbols; zero disables CSL.
+    pub period: u16,
+    /// The next sample time, in the low 32 bits of the radio clock.
+    pub sample_time: u32,
+}
 
 /// The header IEs exceed [`IEEE802154_ENHANCED_ACK_IE_CAPACITY`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -126,7 +143,17 @@ impl Ieee802154EnhancedAckGenerator {
         else {
             return Ieee802154EnhancedAck::Refused;
         };
-        let header_ies = &self.header_ies[..self.header_ies_len];
+        // The port's generator puts the CSL IE template before the other IEs.
+        let mut ies = [0; CSL_IE_TEMPLATE.len() + IEEE802154_ENHANCED_ACK_IE_CAPACITY];
+        let mut ies_len = 0;
+        if security.csl.period != 0 {
+            ies[..CSL_IE_TEMPLATE.len()].copy_from_slice(&CSL_IE_TEMPLATE);
+            ies_len = CSL_IE_TEMPLATE.len();
+        }
+        ies[ies_len..ies_len + self.header_ies_len]
+            .copy_from_slice(&self.header_ies[..self.header_ies_len]);
+        ies_len += self.header_ies_len;
+        let header_ies = &ies[..ies_len];
         let Ok(mut generated) = generate_enhanced_ack(received, info.pending, header_ies) else {
             return Ieee802154EnhancedAck::Refused;
         };
@@ -287,7 +314,8 @@ impl Transmission {
             // extended address read for key identifier mode 1.
             let retransmission =
                 self.tx_security == TxSecurity::Retransmission || self.retries.retries() > 0;
-            let security = keys.transmit_security(retransmission);
+            let csl = env.security.csl.period != 0;
+            let security = keys.transmit_security_with_csl(retransmission, csl);
             let length = usize::from(self.image[0]) + 1;
             let mode = security.apply(&mut self.image[..length]);
             if mode == Some(KeyIdMode::Index) {
@@ -362,7 +390,7 @@ struct Collector<'role> {
     notifications: [Option<Notification>; NOTIFICATIONS],
 }
 
-/// The security state the radio keeps for the stack, as ESP-IDF's
+/// The security and CSL state the radio keeps for the stack, as ESP-IDF's
 /// OpenThread port keeps it in its statics.
 #[derive(Default)]
 struct RadioSecurity {
@@ -374,6 +402,8 @@ struct RadioSecurity {
     /// The security of the enhanced ACK generated since the last received
     /// frame (`s_with_security_enh_ack`).
     enhanced_ack: Option<AppliedSecurity>,
+    /// The CSL receiver state.
+    csl: Ieee802154Csl,
 }
 
 type Notifications = [Option<Notification>; NOTIFICATIONS];
@@ -437,7 +467,17 @@ impl Ieee802154Environment for Collector<'_> {
         self.push(Notification::TransmitFailed(error));
     }
 
-    fn transmit_sfd_done(&mut self, _frame: &[u8; FRAME_SIZE]) {}
+    /// `ot_radio_transmit_sfd_done`: with CSL, the CSL IE of the frame or
+    /// enhanced ACK going out gets the period and the phase to the next
+    /// sample time, from the radio clock at its SFD.
+    fn transmit_sfd_done(&mut self, frame: &mut [u8; FRAME_SIZE]) {
+        let csl = self.security.csl;
+        let now = (self.platform.now_micros)() as u32;
+        if let Some(phase) = csl_phase(now, csl.sample_time, csl.period) {
+            let length = usize::from(frame[0] & 0x7f) + 1;
+            write_csl_ie(&mut frame[..length], csl.period, phase);
+        }
+    }
 
     fn energy_detect_done(&mut self, power: i8) {
         self.push(Notification::EnergyDetected(power));
@@ -594,6 +634,10 @@ impl<'storage> Ieee802154Radio<'storage> {
                 keys: None,
                 address: [0; 8],
                 enhanced_ack: None,
+                csl: Ieee802154Csl {
+                    period: 0,
+                    sample_time: 0,
+                },
             },
         }
     }
@@ -621,6 +665,17 @@ impl<'storage> Ieee802154Radio<'storage> {
     /// scheduled operations and receive timestamps.
     pub fn now(&self) -> RadioTimestamp {
         RadioTimestamp::from_micros((self.platform.now_micros)())
+    }
+
+    /// The radio clock as a function, for callers that read it without the
+    /// radio (OpenThread's `otPlatRadioGetNow`).
+    pub const fn clock(&self) -> fn() -> u64 {
+        self.platform.now_micros
+    }
+
+    /// The CSL receiver state ([`Ieee802154Csl`]).
+    pub fn csl(&mut self) -> &mut Ieee802154Csl {
+        &mut self.security.csl
     }
 
     /// The enhanced-ACK generator; `None` refuses every enhanced ACK.

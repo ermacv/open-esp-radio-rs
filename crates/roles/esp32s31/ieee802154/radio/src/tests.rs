@@ -15,14 +15,14 @@ use oer_esp32s31_hal::ieee802154::{
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154State};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
-    AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FramePending,
-    FrameView, MacKeys, RadioCommand, RadioEvent, RadioState, RadioTimestamp, RequestId,
-    RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest, TxSecurity,
-    TxStatus,
+    AppliedSecurity, CSL_IE_TEMPLATE, Channel, CommandError, Configuration, EnergyScanRequest,
+    FramePending, FrameView, MacKeys, RadioCommand, RadioEvent, RadioState, RadioTimestamp,
+    RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest,
+    TxSecurity, TxStatus, csl_phase,
 };
 
 use super::{
-    IEEE802154_ENHANCED_ACK_IE_CAPACITY, Ieee802154EnhancedAckGenerator,
+    IEEE802154_ENHANCED_ACK_IE_CAPACITY, Ieee802154Csl, Ieee802154EnhancedAckGenerator,
     Ieee802154EnhancedAckIeTooLong, Ieee802154Platform, Ieee802154Radio, Ieee802154RadioSink,
 };
 
@@ -1057,4 +1057,76 @@ fn a_scheduled_transmission_can_assess_the_channel() {
 fn the_radio_clock_is_the_platform_clock() {
     let bench = Bench::enabled();
     assert_eq!(bench.radio.now(), RadioTimestamp::from_micros(42));
+}
+
+/// A 2015 data frame requesting an ACK, without security.
+const PLAIN_2015: [u8; 10] = [0x61, 0xa8, 0x11, 0x34, 0x12, 0x01, 0x00, 0x02, 0x00, 0xaa];
+
+/// The CSL period and sample time of the CSL tests: 100 units (16 ms),
+/// sampling at 5000 us; the bench clock reads 42 us.
+const CSL: Ieee802154Csl = Ieee802154Csl {
+    period: 100,
+    sample_time: 5_000,
+};
+
+/// The CSL IE content of `image`: phase and period.
+fn csl_content(image: &[u8]) -> [u16; 2] {
+    let at = image
+        .windows(2)
+        .position(|pair| pair == [0x04, 0x0d])
+        .expect("the frame carries a CSL IE")
+        + 2;
+    [
+        u16::from_le_bytes([image[at], image[at + 1]]),
+        u16::from_le_bytes([image[at + 2], image[at + 3]]),
+    ]
+}
+
+/// With CSL, the enhanced ACK carries the port's CSL IE template, filled
+/// with the period and phase when its SFD goes out.
+#[test]
+fn a_csl_receiver_acknowledges_with_a_csl_ie() {
+    let mut bench = Bench::receiving();
+    *bench.radio.enhanced_ack() = Some(Ieee802154EnhancedAckGenerator::new());
+    *bench.radio.csl() = CSL;
+    bench.deliver(&PLAIN_2015);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert_eq!(csl_content(&bench.transmit_image()), [0, 0]);
+    bench.interrupt(&[Ieee802154Event::TxSfdDone]);
+    let phase = csl_phase(42, CSL.sample_time, CSL.period).unwrap();
+    assert_eq!(csl_content(&bench.transmit_image()), [phase, CSL.period]);
+
+    // Without CSL the ACK has no IE.
+    let mut bench = Bench::receiving();
+    *bench.radio.enhanced_ack() = Some(Ieee802154EnhancedAckGenerator::new());
+    bench.deliver(&PLAIN_2015);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert!(
+        !bench
+            .transmit_image()
+            .windows(2)
+            .any(|pair| pair == [0x04, 0x0d])
+    );
+}
+
+/// A frame the stack prepared with a CSL IE gets the period and phase at
+/// its SFD; a CSL retransmission takes a new frame counter.
+#[test]
+fn a_csl_receiver_fills_its_frames_and_secures_retries_anew() {
+    // 2015 data frame, IE present, secured at ENC-MIC-32 in key identifier
+    // mode 1, a CSL IE template, a termination IE, a payload byte and MIC.
+    let mut frame = std::vec![0x69, 0xaa, 0x11, 0x34, 0x12, 0x01, 0x00, 0x02, 0x00];
+    frame.extend_from_slice(&[0x0d, 55, 0, 0, 0, 3]);
+    frame.extend_from_slice(&CSL_IE_TEMPLATE);
+    frame.extend_from_slice(&[0x00, 0x3f, 0xaa, 0, 0, 0, 0]);
+
+    let mut bench = Bench::enabled();
+    *bench.radio.mac_keys() = Some(MacKeys::new(4, [1; 16], [2; 16], [3; 16], 100));
+    *bench.radio.csl() = CSL;
+    bench.transmit_secured(&frame, TxSecurity::Retransmission);
+    // The retransmission took counter 100 and kept key index 3.
+    assert_eq!(bench.transmitted_security(), ([100, 0, 0, 0], 3));
+    bench.interrupt(&[Ieee802154Event::TxSfdDone]);
+    let phase = csl_phase(42, CSL.sample_time, CSL.period).unwrap();
+    assert_eq!(csl_content(&bench.transmit_image()), [phase, CSL.period]);
 }

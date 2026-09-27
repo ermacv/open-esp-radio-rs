@@ -208,8 +208,11 @@ pub trait Ieee802154Environment {
     fn transmit_done(&mut self, frame: &[u8; FRAME_SIZE], ack: Option<Ieee802154ReceivedAck<'_>>);
     /// `esp_ieee802154_transmit_failed`.
     fn transmit_failed(&mut self, frame: &[u8; FRAME_SIZE], error: Ieee802154TxError);
-    /// `esp_ieee802154_transmit_sfd_done`.
-    fn transmit_sfd_done(&mut self, frame: &[u8; FRAME_SIZE]);
+    /// `esp_ieee802154_transmit_sfd_done`: the frame whose SFD went out,
+    /// which the upper layer may still edit in place, as ESP-IDF's
+    /// OpenThread port writes the CSL IE phase; the engine writes the
+    /// changed bytes back into the transmitted frame.
+    fn transmit_sfd_done(&mut self, frame: &mut [u8; FRAME_SIZE]);
     /// `esp_ieee802154_energy_detect_done` in dBm.
     fn energy_detect_done(&mut self, power: i8);
     /// `esp_ieee802154_cca_done`.
@@ -941,8 +944,10 @@ impl<'storage> Ieee802154Engine<'storage> {
                     | Ieee802154State::TxEnhAck
                     | Ieee802154State::TxAck
             ));
-            let frame = self.tx_frame().read();
-            cx.env.transmit_sfd_done(&frame);
+            let original = self.tx_frame().read();
+            let mut frame = original;
+            cx.env.transmit_sfd_done(&mut frame);
+            self.tx_frame().patch(&original, &frame);
             events = events.difference(Ieee802154Event::TxSfdDone.mask());
         }
         if events.contains(Ieee802154Event::TxDone) {

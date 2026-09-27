@@ -191,8 +191,20 @@ impl MacKeys {
     /// attempt of a first transmission is a transmit of its own and takes a
     /// new counter.
     pub fn transmit_security(&mut self, retransmission: bool) -> TransmitSecurity {
+        self.transmit_security_with_csl(retransmission, false)
+    }
+
+    /// [`Self::transmit_security`] of a CSL receiver: with `csl`, a
+    /// retransmission takes a new frame counter too, as the port does while
+    /// its CSL period is set, since the frame's CSL IE phase changes; it
+    /// keeps its key index either way.
+    pub fn transmit_security_with_csl(
+        &mut self,
+        retransmission: bool,
+        csl: bool,
+    ) -> TransmitSecurity {
         TransmitSecurity {
-            frame_counter: (!retransmission).then(|| self.take_frame_counter()),
+            frame_counter: (!retransmission || csl).then(|| self.take_frame_counter()),
             key_id: (!retransmission).then_some(self.key_id),
             key: self.current,
         }

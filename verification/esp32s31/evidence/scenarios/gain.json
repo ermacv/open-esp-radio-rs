@@ -80,7 +80,7 @@
     },
     {
       "path": "tools/blobray/crates/application",
-      "sha256": "bf210c0f8277a40f698558f240b5f9d2ebdadc318a3bbf4e3122f94311b47cf6"
+      "sha256": "12c7ceeec71c4c6964b99c6fd96ff456dd5cbedc93ce240ff15ca9ce22309fb2"
     },
     {
       "path": "tools/blobray/crates/artifacts",
@@ -88,7 +88,7 @@
     },
     {
       "path": "tools/blobray/crates/domain",
-      "sha256": "b80c8e42758d5c2b0c37751185f7b50280f13d52b3aae014496973fdd35fad3b"
+      "sha256": "cfbfafc2989084f601ee09c9ddc4676ae481ad1926556ed656d3b3b0b748fb0a"
     },
     {
       "path": "tools/blobray/crates/knowledge",
@@ -108,7 +108,7 @@
     },
     {
       "path": "tools/blobray/next",
-      "sha256": "eacb4cce32b1afa8158d2894b16afe89cbd870da0544f3bb39e161fbb389ab2d"
+      "sha256": "6bacdb8e4667d162fab17808ffa6bda4a53a5656e833c60576d3556ce509f716"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",

@@ -1344,6 +1344,12 @@ code = "5af8d19bf265dc215a47aba26e7f06300bf803a75bb07077fe28432b9bda3ee9"
 
 [[function]]
 artifact = "libnet80211"
+member = "ieee80211.o"
+symbol = "ieee80211_recv_sa_query_resp"
+code = "87434affc8653669f9e6430c74bfd45ed5dffe84edd9eaee9503c35ae5b9a11d"
+
+[[function]]
+artifact = "libnet80211"
 member = "ieee80211_action.o"
 symbol = "ieee80211_send_action"
 code = "048e57c04daefe447bc7314081872d0d44c8d80547fc79071e4d40a719a9168d"
@@ -1365,6 +1371,18 @@ artifact = "libnet80211"
 member = "ieee80211_api.o"
 symbol = "esp_wifi_internal_set_partial_ru_max_tx_pwr"
 code = "b0c66878d4340ffe71c93c455923f35a91b0ac52ba3e2798a0f4e6e98ba675df"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_crypto.o"
+symbol = "ieee80211_crypto_encap"
+code = "7de583bfcf3f96f7ae53972aef94d6338368b2c956f748db18829ed2e834a0ab"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_crypto_ccmp.o"
+symbol = "ccmp_encap"
+code = "697fc19b5fc7c6c1fbbedb461e8f45473e6985b4f0d751c32f655759ce911214"
 
 [[function]]
 artifact = "libnet80211"
@@ -1467,6 +1485,12 @@ artifact = "libnet80211"
 member = "ieee80211_ht.o"
 symbol = "ieee80211_update_channel"
 code = "87f4afb8a771959fbb19c00ad85367aa106a209995a9f4e144838e2d2ef03b19"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_input.o"
+symbol = "ieee80211_parse_rsn"
+code = "17e65359f373432d452f37db4ca9bb61c91192516aef214d3576d89925df6124"
 
 [[function]]
 artifact = "libnet80211"
@@ -1585,8 +1609,44 @@ code = "88052b326595cfd63e4105c06b396ab44868723410ada84f221b5676233dc829"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_sta.o"
+symbol = "sta_bip_check"
+code = "26c4fd6f526be163d9f728c54a14a74a30f9a84eefbd1ef5975d22d2854955da"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
+symbol = "sta_input"
+code = "920a9120e90b18155fd00f3e7d02862544f7560f88e1cb0cc0ff1f85768a1246"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
 symbol = "sta_recv_mgmt"
 code = "070e0565d8e09ec2d9ccc0015ca45f9b5de3cdc0edbd15fe7633bf8d466cc0d8"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
+symbol = "sta_sa_query_process_timeout"
+code = "7c2139cfd2a25043338c3a31f253dab9d50c3de4a04fd0f971b40b08c313b7be"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
+symbol = "sta_sa_query_timeout"
+code = "7dcc18dbf0ae78798db2b92c96b04d8913113858aa920b7af3cdca413f434761"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
+symbol = "sta_try_sa_query"
+code = "985da19ebd9251e5284ce91d0c6b4f4ecf76c62bb1bf7f921ab580d45b1b11f3"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
+symbol = "sta_try_sa_query_process"
+code = "54aa547f67604149b60b319d298604194d0f7f89cf5d5b58a7b7972169a15f89"
 
 [[function]]
 artifact = "libnet80211"
@@ -4183,6 +4243,12 @@ code = "d56f77a5613fb6c2991a177c545e19f3152ed3838a629e42828cdec827ec8257"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "ieee80211_crypto_encap"
+code = "9f96acf738d626abdf57a11876a5765f71c5b0b14646a6d738eb8bdc1cfd05e5"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "ieee80211_encap_esfbuf"
 code = "7f56fc6fa40a36284e89ebc427b4c3a92400d77fbc861ae0621061dba03ec67f"
 
@@ -5373,6 +5439,12 @@ artifact = "rom"
 member = ""
 symbol = "rx11NRate2AMPDULimit"
 code = "149ea800c627c77e60f1f33e580975dc2ffadefee3cf68f52df068cf29fb19dc"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "sta_input"
+code = "ebeac87b2f6a7be50c9cd3b561c12fe2d17f4f0de02e904886f80632d85575ce"
 
 [[function]]
 artifact = "rom"

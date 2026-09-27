@@ -445,6 +445,7 @@ impl<
     /// Run this on one task for the whole powered epoch. Between passes the
     /// lock is free for requests.
     pub async fn run(&self) -> BluetoothRuntimeFault<H::StartError> {
+        let mut budget = ContinueBudget::new();
         loop {
             let pass = {
                 let mut installed = self.installed.lock().await;
@@ -474,11 +475,13 @@ impl<
                 }
             };
             match pass {
-                Pass::Continue => {}
+                Pass::Continue => budget.spend().await,
                 Pass::Recheck => {
+                    budget.refill();
                     select(self.work.wait(), Timer::after(HARDWARE_RECHECK)).await;
                 }
                 Pass::Idle => {
+                    budget.refill();
                     select(self.work.wait(), Timer::after(TIME_REFRESH)).await;
                 }
             }
@@ -787,6 +790,37 @@ fn drain_finished_lists<
 
 /// Take one controller-time sample, draining a request a cancelled caller
 /// abandoned first.
+/// Consecutive passes the runner may continue before it yields.
+const CONTINUE_BUDGET: u8 = 16;
+
+/// Bounds how long the runner keeps the executor without awaiting.
+///
+/// A pass that continues does not await, and its time sample awaits only
+/// while the latch is pending. After a fixed number of such passes the
+/// runner yields once, so sibling tasks on the same executor always make
+/// progress.
+struct ContinueBudget(u8);
+
+impl ContinueBudget {
+    const fn new() -> Self {
+        Self(CONTINUE_BUDGET)
+    }
+
+    /// Account one continued pass and yield when the budget is spent.
+    async fn spend(&mut self) {
+        self.0 -= 1;
+        if self.0 == 0 {
+            self.refill();
+            embassy_futures::yield_now().await;
+        }
+    }
+
+    /// Start a new budget after the runner awaited.
+    fn refill(&mut self) {
+        self.0 = CONTINUE_BUDGET;
+    }
+}
+
 async fn sample_time(
     hardware: &mut impl BluetoothRadioHardware,
 ) -> Result<ControllerTimeSample, BluetoothTimeError> {
@@ -817,3 +851,6 @@ async fn sample_time(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -32,6 +32,43 @@ impl<'storage> ApEngine<'storage> {
         .encode(output)?)
     }
 
+    /// Record `peer`'s accepted SAE exchange, ending the pairwise-key epoch
+    /// of an earlier association as a new Open System authentication does.
+    /// Returns the status its slot allows.
+    pub fn accept_sae<H: ApRuntimeHardware>(
+        &mut self,
+        hardware: &mut H,
+        peer: [u8; 6],
+        pmk: Pmk,
+        pmkid: [u8; AP_PMKID_LEN],
+        now_micros: u64,
+    ) -> Result<u16, ApEngineError> {
+        if self.service.peer_status(peer).is_some() {
+            self.security.clear_peer(hardware, peer)?;
+        }
+        Ok(self
+            .service
+            .authenticate_sae(peer, pmk, pmkid, now_micros)?)
+    }
+
+    /// Encode one reply of the SAE responder.
+    pub fn encode_sae_reply(
+        &mut self,
+        reply: &ApSaeReply,
+        output: &mut [u8],
+    ) -> Result<usize, ApEngineError> {
+        let sequence = self.service.next_management_sequence();
+        Ok(write_sae_authentication(
+            output,
+            self.service.address(),
+            reply.peer,
+            reply.transaction,
+            reply.status,
+            reply.body(),
+            sequence,
+        )?)
+    }
+
     pub fn handle_management<H: ApRuntimeHardware>(
         &mut self,
         hardware: &mut H,
@@ -135,7 +172,25 @@ impl<'storage> ApEngine<'storage> {
             }
             // A BSS without SAE ignores SAE authentication as it ignores
             // every other algorithm it does not offer.
-            ApManagementRequest::SaeAuthentication { .. } => Ok(ApManagementOutcome::Ignored),
+            ApManagementRequest::SaeAuthentication {
+                peer,
+                transaction,
+                status,
+                body,
+            } => {
+                if self.service.security_policy() != ApSecurityPolicy::Wpa3Personal
+                    || body.len() > output.len()
+                {
+                    return Ok(ApManagementOutcome::Ignored);
+                }
+                output[..body.len()].copy_from_slice(body);
+                Ok(ApManagementOutcome::SaeAuthentication {
+                    peer,
+                    transaction,
+                    status,
+                    len: body.len(),
+                })
+            }
             ApManagementRequest::Association {
                 peer,
                 security,

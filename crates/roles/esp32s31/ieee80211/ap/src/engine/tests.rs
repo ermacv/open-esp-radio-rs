@@ -741,3 +741,141 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
     let updated = engine.prepare_beacon(102_400).unwrap();
     assert_eq!(protection_fields(updated), (0x07, 0x03));
 }
+
+#[test]
+fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
+    use oer_ieee80211_mac::station::{SaeAuthenticationFrame, parse_sae_authentication};
+
+    let ap = [2, 0, 0, 0, 0, 1];
+    let peer = [2, 0, 0, 0, 0, 2];
+    let ssid = WifiSsid::new(b"ap").unwrap();
+    let mut hardware = Hardware::default();
+    let mut commit = [0; 128];
+    let commit_len = SaeAuthenticationFrame {
+        source: peer,
+        bssid: ap,
+        sequence_number: SequenceNumber::ZERO,
+        transaction: 1,
+        status_code: 126,
+        body: &[0x13, 0, 0xab],
+    }
+    .encode(&mut commit)
+    .unwrap();
+
+    let mut beacon = [0; AP_BEACON_CAPACITY];
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
+    let mut pairwise = ApPairwiseKeyStorage::new();
+    let wpa3 = AccessPointService::new_wpa3(
+        ap,
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        oer_ieee80211_rsn::frames::RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
+        oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
+        oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
+        &mut peers,
+    );
+    let mut engine = ApEngine::start(
+        &mut hardware,
+        wpa3,
+        &mut beacon,
+        &mut pairwise,
+        &ssid,
+        WifiChannel::mhz20(6).unwrap(),
+        100,
+        2,
+    )
+    .unwrap_or_else(|_| panic!("AP start"));
+    let mut output = [0; 160];
+    assert_eq!(
+        engine
+            .handle_management(
+                &mut hardware,
+                &commit[..commit_len],
+                [1; 32],
+                7,
+                1,
+                &mut output
+            )
+            .unwrap(),
+        ApManagementOutcome::SaeAuthentication {
+            peer,
+            transaction: 1,
+            status: 126,
+            len: 3,
+        }
+    );
+    assert_eq!(output[..3], [0x13, 0, 0xab]);
+    assert_eq!(
+        engine.accept_sae(&mut hardware, peer, Pmk::from_bytes([3; 32]), [4; 16], 2),
+        Ok(oer_ieee80211_ap::AP_STATUS_SUCCESS)
+    );
+    assert_eq!(
+        engine.peer_status(peer).map(|status| status.phase),
+        Some(ApPeerPhase::Authenticated)
+    );
+
+    let mut station = [2_u8; 160];
+    let reply = {
+        let mut responder = oer_ieee80211_ap::sae::ApSaeResponder::new(
+            ap,
+            oer_ieee80211_ap::sae::ApSaeCredential::derive(
+                b"ap",
+                oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
+            ),
+        );
+        struct Fixed;
+        impl oer_ieee80211_ap::sae::ApSaeRandom for Fixed {
+            fn fill(&mut self, bytes: &mut [u8]) {
+                bytes.fill(0x42);
+            }
+        }
+        let output = responder.receive(
+            oer_ieee80211_ap::sae::ApSaeFrame {
+                peer,
+                transaction: 1,
+                status: 0,
+                body: &[20, 0],
+            },
+            0,
+            0,
+            &mut Fixed,
+        );
+        *output
+            .replies()
+            .next()
+            .expect("a refused group is answered")
+    };
+    let reply_len = engine.encode_sae_reply(&reply, &mut station).unwrap();
+    let parsed = parse_sae_authentication(&station[..reply_len], peer, ap).unwrap();
+    assert_eq!((parsed.transaction, parsed.status_code), (1, 77));
+    assert_eq!(parsed.body, [20, 0]);
+    let _stopped = engine.stop(&mut hardware);
+
+    let mut beacon = [0; AP_BEACON_CAPACITY];
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
+    let mut pairwise = ApPairwiseKeyStorage::new();
+    let mut engine = ApEngine::start(
+        &mut hardware,
+        service(ap, &mut peers),
+        &mut beacon,
+        &mut pairwise,
+        &ssid,
+        WifiChannel::mhz20(6).unwrap(),
+        100,
+        2,
+    )
+    .unwrap_or_else(|_| panic!("AP start"));
+    assert_eq!(
+        engine
+            .handle_management(
+                &mut hardware,
+                &commit[..commit_len],
+                [1; 32],
+                7,
+                1,
+                &mut output
+            )
+            .unwrap(),
+        ApManagementOutcome::Ignored
+    );
+    let _stopped = engine.stop(&mut hardware);
+}

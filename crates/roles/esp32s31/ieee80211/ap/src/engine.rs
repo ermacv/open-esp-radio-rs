@@ -33,13 +33,14 @@ use oer_ieee80211_mac::{
         ApUnprotectedDataFrame, EncodedApFrame, observe_ap_power_save_for_access_point,
         parse_ap_management_request, write_ap_peer_disconnect,
         write_ht_association_response_frame_for_security, write_open_authentication_response,
+        write_sae_authentication,
     },
     beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, dtim, write_ht_beacon},
     block_ack::{OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckResponse},
     ccmp::{CcmpKeyId, CcmpReplayLane},
     channel::WifiChannel,
     data::{IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN},
-    security::WifiSecurityMode,
+    security::{ApSecurityPolicy, WifiSecurityMode},
     ssid::WifiSsid,
 };
 
@@ -48,9 +49,10 @@ use oer_ieee80211_ap::{
     ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition, ApMlmeAction,
     ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus,
     ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    pmksa::AP_PMKID_LEN, sae::ApSaeReply,
 };
 
-use oer_ieee80211_rsn::{OwnedEapolFrame, frames::RsnTxFrame};
+use oer_ieee80211_rsn::{OwnedEapolFrame, Pmk, frames::RsnTxFrame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApEngineError {
@@ -145,8 +147,21 @@ pub struct ApEngineStartFailure<'storage> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApManagementOutcome {
     Ignored,
-    Response { len: usize, begin_wpa2: bool },
-    PeerRemoved { peer: [u8; 6] },
+    Response {
+        len: usize,
+        begin_wpa2: bool,
+    },
+    PeerRemoved {
+        peer: [u8; 6],
+    },
+    /// An SAE Authentication frame for the SAE responder, which runs outside
+    /// the radio loop; its body is the first `len` octets of the output.
+    SaeAuthentication {
+        peer: [u8; 6],
+        transaction: u16,
+        status: u16,
+        len: usize,
+    },
 }
 
 pub enum ApWpa2Outcome<const N: usize> {

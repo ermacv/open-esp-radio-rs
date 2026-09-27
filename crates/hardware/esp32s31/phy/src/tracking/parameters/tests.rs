@@ -382,6 +382,12 @@ fn skipped_calibration_commits_without_hardware_or_reference_changes() {
             next_dac: 15,
         },
     );
+    state.apply_rx_gain_init_outcome(crate::rx::gain::PhyRxGainInitOutcome {
+        dc: None,
+        generated_tables: true,
+        wifi_last_index: 69,
+        shared_last_index: 75,
+    });
     state.apply_temperature_outcome(crate::analog::temperature::PhyTemperatureOutcome {
         temperature: 50,
         sensor_index: 2,

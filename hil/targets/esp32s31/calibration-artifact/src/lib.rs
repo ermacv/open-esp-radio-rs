@@ -35,6 +35,7 @@ struct Common {
     rfpll_reference_temperature: i16,
     rxcal_reference_temperature: i16,
     txcal_reference_temperature: i16,
+    power_reference_temperature: i16,
     sensor_index: u8,
     crystal_selector: u8,
     rc_result: u8,

@@ -138,6 +138,20 @@ fn calibration_tracking_references_are_semantic_and_commit_per_branch() {
             next_dac: 15,
         },
     );
+    // A cold registration commits the common reference with its RX-gain
+    // tables, not at its temperature step.
+    assert_eq!(
+        state
+            .calibration_tracking_parameters(None)
+            .common_reference_temperature,
+        0
+    );
+    state.apply_rx_gain_init_outcome(crate::rx::gain::PhyRxGainInitOutcome {
+        dc: None,
+        generated_tables: true,
+        wifi_last_index: 69,
+        shared_last_index: 75,
+    });
     let initial = state.calibration_tracking_parameters(None);
     assert_eq!(initial.common_reference_temperature, 20);
     assert_eq!(initial.transmit_reference_temperature, 20);
@@ -603,6 +617,33 @@ fn generated_rx_gain_tables_commit_the_latest_temperature_as_common_reference() 
         ..outcome
     });
     assert_eq!(state.common.calibration_tracking_temperature, 27);
+}
+
+#[test]
+fn registration_restarts_power_tracking_from_the_power_reference() {
+    let temperature = |temperature| PhyTemperatureOutcome {
+        temperature,
+        sensor_index: 2,
+        next_dac: 15,
+    };
+    let mut state = PhyState::new(PhyConfig::production());
+    state.apply_register_temperature_outcome(PhyRegisterTemperatureControl::FULL, temperature(23));
+    let power = state.tx_power_tracking_parameters(false);
+    assert_eq!(power.reference_temperature, 23);
+    assert_eq!(power.previous_tracking_temperature, 23);
+
+    // A registration after the TX-power calibration keeps the reference and
+    // restarts tracking from it, whatever the sample.
+    state.common.tracking_temperature = 40;
+    state
+        .wifi
+        .calibration
+        .set(WifiCalibrationStatus::TX_POWER, true);
+    let control = state.register_temperature_control();
+    state.apply_register_temperature_outcome(control, temperature(30));
+    let power = state.tx_power_tracking_parameters(false);
+    assert_eq!(power.reference_temperature, 23);
+    assert_eq!(power.previous_tracking_temperature, 23);
 }
 
 #[test]

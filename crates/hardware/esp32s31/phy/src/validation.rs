@@ -175,6 +175,7 @@ mod tests {
         common.rfpll_reference_temperature = 29;
         common.rxcal_reference_temperature = 28;
         common.txcal_reference_temperature = 27;
+        common.power_reference_temperature = 26;
         common.rc_calibrated = true;
         common.dcode = [1, 2, 3, 4, 5, 6, 7, 8];
         common.xtal_duty = [9, 10, 11];

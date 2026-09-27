@@ -101,6 +101,11 @@ impl PhyI2cAddress {
         Some(Self::recovered(block, register))
     }
 
+    /// Debug: any register of a known block.
+    pub const fn debug(block: u8, register: u8) -> Self {
+        Self::recovered(block, register)
+    }
+
     const fn recovered(block: u8, register: u8) -> Self {
         Self {
             block: PhyI2cBlock::recovered(block),

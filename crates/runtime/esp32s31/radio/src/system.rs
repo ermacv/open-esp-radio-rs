@@ -1124,6 +1124,7 @@ static TRANSMIT_ARMED: core::sync::atomic::AtomicBool = core::sync::atomic::Atom
 pub extern "C" fn oer_debug_before_transmit() {
     if TRANSMIT_ARMED.swap(false, core::sync::atomic::Ordering::SeqCst) {
         runtime_trace(0x7a7a);
+        snapshot();
         oer_debug_park();
     }
 }
@@ -1135,4 +1136,69 @@ pub extern "C" fn oer_debug_before_transmit() {
 pub extern "C" fn oer_debug_park() {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
     core::hint::black_box(());
+}
+
+const SNAPSHOT_RANGES: [(usize, usize); 8] = [
+    (0x2010_0000, 1024),
+    (0x2010_2000, 64),
+    (0x2010_2800, 576),
+    (0x2010_9c00, 64),
+    (0x2010_f000, 64),
+    (0x2010_f400, 64),
+    (0x2010_f800, 16),
+    (0x2070_4000, 128),
+];
+const SNAPSHOT_BLOCKS: [u8; 9] = [0x61, 0x62, 0x63, 0x66, 0x67, 0x69, 0x6a, 0x6b, 0x6d];
+const SNAPSHOT_IMAGE: usize = 209;
+const SNAPSHOT_WORDS: usize = 4 + SNAPSHOT_IMAGE + SNAPSHOT_BLOCKS.len() * 16 + 2000;
+
+#[unsafe(link_section = ".rtc_fast.persistent")]
+#[unsafe(no_mangle)]
+static mut OER_SNAPSHOT: [[u32; SNAPSHOT_WORDS]; 3] = [[0; SNAPSHOT_WORDS]; 3];
+#[unsafe(link_section = ".rtc_fast.persistent")]
+#[unsafe(no_mangle)]
+static OER_SNAPSHOT_SEQ: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+#[allow(unsafe_code)]
+fn snapshot() {
+    use core::sync::atomic::Ordering::SeqCst;
+    let seq = OER_SNAPSHOT_SEQ.load(SeqCst).wrapping_add(1);
+    OER_SNAPSHOT_SEQ.store(seq, SeqCst);
+    let slot = unsafe { &mut (*(&raw mut OER_SNAPSHOT))[(seq % 3) as usize] };
+    slot[0] = 0x5eed_0000;
+    slot[1] = seq;
+    let mut registers = oer_esp32s31_pac::validation::shared_radio_registers();
+    let phy = registers.radio_phy_mut();
+    let mut at = 4;
+    for index in 0..SNAPSHOT_IMAGE {
+        slot[at] = phy.register_image(index).unwrap_or(0xdead_beef);
+        at += 1;
+    }
+    for block in SNAPSHOT_BLOCKS {
+        for register in 0..64u8 {
+            let address = oer_esp32s31_pac::phy::i2c::PhyI2cAddress::debug(block, register);
+            let mut polls = 0;
+            while phy.try_start_phy_i2c_read(address).is_err() && polls < 10_000 {
+                polls += 1;
+            }
+            let value = loop {
+                match phy.try_finish_phy_i2c_read(address) {
+                    Ok(value) => break value,
+                    Err(_) if polls < 20_000 => polls += 1,
+                    Err(_) => break 0xee,
+                }
+            };
+            let word = at + usize::from(register / 4);
+            slot[word] = (slot[word] & !(0xff << (8 * (register % 4)))) | (u32::from(value) << (8 * (register % 4)));
+        }
+        at += 16;
+    }
+    for (base, words) in SNAPSHOT_RANGES {
+        for word in 0..words {
+            slot[at] = unsafe { core::ptr::read_volatile((base + 4 * word) as *const u32) };
+            at += 1;
+        }
+    }
+    slot[2] = at as u32;
+    slot[3] = 0x5eed_ffff;
 }

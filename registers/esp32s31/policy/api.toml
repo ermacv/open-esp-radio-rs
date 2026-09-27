@@ -89,6 +89,7 @@ peripherals = [
     "PHY_BRX_RECOVERED_GAPS",
     "PHY_BTAGC_RECOVERED",
     "PHY_CLOCK_ORACLE",
+    "PHY_COLD_DEADLINE_ORACLE",
     "PHY_FECTRL_RECOVERED",
     "PHY_FEDATA_RECOVERED",
     "PHY_FEDATA_WIFI_RECOVERED",
@@ -105,14 +106,6 @@ peripherals = [
     "PHY_NRX_RECOVERED_GAPS",
     "PHY_PBUS",
     "PHY_RX_DCO_ORACLE",
-]
-
-[[ownership-partitions]]
-name = "MacTimeCounterPeripherals"
-member = "mac_time_counter"
-description = "Read-only free-running MAC microsecond counter that the PHY samples for its SDM deadline and Wi-Fi reads for its coexistence slices; reads have no effect, so the PAC splits it into one reader per owner."
-peripherals = [
-    "PHY_COLD_DEADLINE_ORACLE",
 ]
 
 [[ownership-partitions]]

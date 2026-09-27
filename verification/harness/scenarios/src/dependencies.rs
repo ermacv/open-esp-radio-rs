@@ -119,22 +119,39 @@ fn merge(reads: &BTreeSet<(u32, u8)>) -> Vec<(u64, u64)> {
 }
 
 /// The repository files of `executed` instructions, whose source paths
-/// `locate` returns, and the first instruction without any source line.
+/// `locate` returns, and the first instruction without any source line that
+/// `declared` does not place in a probe declaration.
 fn attribute(
     executed: &[u32],
     root: &Path,
     mut locate: impl FnMut(u32) -> Result<Vec<PathBuf>>,
+    declared: impl Fn(u32) -> bool,
 ) -> Result<(BTreeSet<PathBuf>, Option<u32>)> {
     let mut files = BTreeSet::new();
     let mut unattributed = None;
     for &pc in executed {
         let paths = locate(pc)?;
-        if paths.is_empty() {
+        if paths.is_empty() && !declared(pc) {
             unattributed.get_or_insert(pc);
         }
         files.extend(paths.iter().filter_map(|path| relative(path, root)));
     }
     Ok((files, unattributed))
+}
+
+/// The address ranges of the functions the image's probe catalog declares.
+fn declared_ranges(file: &object::File<'_>) -> Result<Vec<(u64, u64)>> {
+    let Some(section) = file.section_by_name(oer_probe_codegen::SECTION) else {
+        return Ok(vec![]);
+    };
+    let catalog: oer_probe_codegen::Catalog = serde_json::from_slice(section.data()?)?;
+    let names: BTreeSet<&str> = catalog.entries.iter().map(|e| e.symbol.as_str()).collect();
+    Ok(file
+        .symbols()
+        .filter(|s| s.kind() == SymbolKind::Text && s.size() > 0)
+        .filter(|s| s.name().is_ok_and(|n| names.contains(n)))
+        .map(|s| (s.address(), s.address() + s.size()))
+        .collect())
 }
 
 /// SHA-256 of `regions` as a sorted multiset: each length-prefixed.
@@ -181,22 +198,36 @@ pub fn of(
                 .any(|(s, e)| *s <= u64::from(*pc) && u64::from(*pc) < *e)
         })
         .collect();
-    let (files, unattributed) = attribute(&probe, &root, |pc| {
-        let mut paths = vec![];
-        let mut frames = context
-            .find_frames(u64::from(pc))
-            .skip_all_loads()
-            .map_err(|e| invalid(format!("debug information at {pc:#x}: {e}")))?;
-        while let Some(frame) = frames
-            .next()
-            .map_err(|e| invalid(format!("debug information at {pc:#x}: {e}")))?
-        {
-            if let Some(path) = frame.location.and_then(|l| l.file) {
-                paths.push(PathBuf::from(path));
+    // A probe declaration, such as a naked assembly entry, may carry no
+    // line information; the probe crates are in the evidence's global
+    // group, so its instructions need no file of their own.
+    let declared = declared_ranges(&file)?;
+    let in_declaration = |pc: u32| {
+        declared
+            .iter()
+            .any(|(s, e)| *s <= u64::from(pc) && u64::from(pc) < *e)
+    };
+    let (files, unattributed) = attribute(
+        &probe,
+        &root,
+        |pc| {
+            let mut paths = vec![];
+            let mut frames = context
+                .find_frames(u64::from(pc))
+                .skip_all_loads()
+                .map_err(|e| invalid(format!("debug information at {pc:#x}: {e}")))?;
+            while let Some(frame) = frames
+                .next()
+                .map_err(|e| invalid(format!("debug information at {pc:#x}: {e}")))?
+            {
+                if let Some(path) = frame.location.and_then(|l| l.file) {
+                    paths.push(PathBuf::from(path));
+                }
             }
-        }
-        Ok(paths)
-    })?;
+            Ok(paths)
+        },
+        in_declaration,
+    )?;
     result.files = files;
     if let Some(pc) = unattributed {
         fallback(format!("executed instruction {pc:#x} has no source line"));
@@ -275,17 +306,23 @@ mod tests {
         let root = root.path().canonicalize().unwrap();
         std::fs::create_dir_all(root.join("crates/a")).unwrap();
         std::fs::write(root.join("crates/a/lib.rs"), "").unwrap();
-        let (files, unattributed) = attribute(&[0x10, 0x14, 0x18], &root, |pc| {
+        let locate = |pc| {
             Ok(match pc {
                 0x10 => vec![root.join("crates/a/lib.rs")],
                 // A registry crate outside the repository.
                 0x14 => vec![PathBuf::from("/cargo/registry/core/src/lib.rs")],
                 _ => vec![],
             })
-        })
-        .unwrap();
+        };
+        let (files, unattributed) =
+            attribute(&[0x10, 0x14, 0x18, 0x1c], &root, locate, |_| false).unwrap();
         assert_eq!(files, BTreeSet::from([PathBuf::from("crates/a/lib.rs")]));
         assert_eq!(unattributed, Some(0x18));
+        // A line-less probe declaration (a naked entry) is the probe
+        // crates', which the global group covers.
+        let (_, unattributed) =
+            attribute(&[0x10, 0x18, 0x1c], &root, locate, |pc| pc == 0x18).unwrap();
+        assert_eq!(unattributed, Some(0x1c));
     }
 
     #[test]

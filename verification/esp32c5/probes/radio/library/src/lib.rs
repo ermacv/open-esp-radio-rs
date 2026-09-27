@@ -158,3 +158,75 @@ oer_probe_macros::probe! {
         })
     }
 }
+
+/// Parallel-sequence polls before a probe reports an exhausted schedule:
+/// select, 44 pairs of one start and two idle observations, restore.
+const MAXIMUM_PARALLEL_ACTIONS: u32 = 4 * 64;
+
+oer_probe_macros::probe! {
+    /// `phy_i2c_paral_write(block0, reg0, data0, block1, reg1, data1, flag)`:
+    /// both commands published, host 0 then host 1 polled idle. Production
+    /// publishes without the start bit, so only `flag == 0` is accepted.
+    pub fn open_phy_i2c_trace_phy_i2c_paral_write(block0: u32, reg0: u32, data0: u32, block1: u32, reg1: u32, data1: u32, flag: u32) -> u32 {
+        let byte = |value: u32| u8::try_from(value).ok();
+        let (Some(b0), Some(r0), Some(d0), Some(b1), Some(r1), Some(d1)) =
+            (byte(block0), byte(reg0), byte(data0), byte(block1), byte(reg1), byte(data1))
+        else {
+            return INVALID_ARGUMENT;
+        };
+        if flag != 0 {
+            return INVALID_ARGUMENT;
+        }
+        with_bus(|bus| {
+            use oer_radio_analog::{ParallelAnalogBus, ParallelHost};
+            bus.start_pair(oer_esp32c5_pac::PhyI2cParallelWrite::new((b0, r0, d0), (b1, r1, d1)));
+            for host in [ParallelHost::First, ParallelHost::Second] {
+                let mut polls = 0;
+                while bus.is_busy(host) {
+                    polls += 1;
+                    if polls == MAXIMUM_ACTIONS {
+                        return EXHAUSTED;
+                    }
+                }
+            }
+            0
+        })
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_i2c_init1()` over the `phy_param` image at `parameters`: the
+    /// production parallel initialization with the fields the vendor reads.
+    ///
+    /// The caller supplies a readable 1080-byte parameter image.
+    pub fn open_phy_i2c_trace_phy_i2c_init1(parameters: u32) -> u32 {
+        let byte = |offset: usize| {
+            // SAFETY: the harness supplies a readable parameter image of the
+            // vendor `phy_param` size at `parameters`.
+            unsafe { core::ptr::read_volatile((parameters as usize + offset) as *const u8) }
+        };
+        let halfword = |offset: usize| u16::from(byte(offset)) | (u16::from(byte(offset + 1)) << 8);
+        let inputs = oer_esp32c5_pac::PhyI2cInitializationInputs {
+            parameter_f5: byte(0xf5),
+            parameter_f6: byte(0xf6),
+            parameter_f7: byte(0xf7),
+            parameter_f8: byte(0xf8),
+            parameter_f9: byte(0xf9),
+            parameter_fa: byte(0xfa),
+            parameter_fb: byte(0xfb),
+            parameter_fc: byte(0xfc),
+            parameter_410: byte(0x410),
+            parameter_412: byte(0x412),
+            parameter_416: halfword(0x416),
+        };
+        with_bus(|bus| {
+            let mut sequence = oer_esp32c5_hal::analog::initialization(inputs);
+            for _ in 0..MAXIMUM_PARALLEL_ACTIONS {
+                if sequence.poll(bus) == Step::Ready(()) {
+                    return 0;
+                }
+            }
+            EXHAUSTED
+        })
+    }
+}

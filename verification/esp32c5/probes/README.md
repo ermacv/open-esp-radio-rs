@@ -26,8 +26,12 @@ I2C entry is named `open_phy_i2c_trace_<vendor function>` and takes that
 | `phy_chip_i2c_writeReg(block, host_id, reg_add, data)` | `AnalogI2c` start and completion of a write |
 | `phy_i2c_readReg_Mask(block, host_id, reg_add, msb, lsb)` | `oer_radio_analog::FieldRead` over `AnalogI2c` |
 | `phy_i2c_writeReg_Mask(block, host_id, reg_add, msb, lsb, data)` | `oer_radio_analog::FieldWrite` over `AnalogI2c` |
+| `phy_i2c_paral_write(block0, reg0, data0, block1, reg1, data1, flag)` | `AnalogI2c` parallel pair, then each host polled idle; only `flag == 0` |
+| `phy_i2c_init1(parameters)` | `oer_esp32c5_hal::analog::initialization` over the `phy_param` image at `parameters` |
 
-Like the vendor leaves, the entries ignore `host_id` and derive the host from
+The vendor `phy_i2c_init1` takes no argument and reads `phy_param`; its
+entry takes the address of a 1080-byte parameter image instead. Like the
+vendor leaves, the entries ignore `host_id` and derive the host from
 the block. They return `0x10000` for a block outside the libphy tables, a
 field outside one byte, data wider than a byte or, for a field write, data
 wider than the field; and `0x10001` when 64 bus actions do not complete the

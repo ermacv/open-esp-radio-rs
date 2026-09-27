@@ -352,6 +352,31 @@ extern "C" fn runtime_main() -> ! {
         OER_RESET_TRACE[1].store(0xb000_0000 | reason, SeqCst);
     }
     unsafe { ets_install_usb_printf() };
+    {
+        use core::sync::atomic::Ordering::SeqCst;
+        unsafe extern "C" {
+            static OER_WAKE_TRACE: u32;
+            static OER_RUNTIME_TRACE: u32;
+        }
+        let (wake, runtime) = unsafe {
+            (
+                core::ptr::read_volatile(&raw const OER_WAKE_TRACE),
+                core::ptr::read_volatile(&raw const OER_RUNTIME_TRACE),
+            )
+        };
+        unsafe {
+            ets_printf(
+                c"OER_TRACE wake=%x runtime=%x reset_prev=%x reset_now=%x panic=%x mepc=%x\r\n"
+                    .as_ptr(),
+                wake,
+                runtime,
+                OER_RESET_TRACE[0].load(SeqCst),
+                OER_RESET_TRACE[1].load(SeqCst),
+                OER_RESET_TRACE[2].load(SeqCst),
+                OER_RESET_TRACE[3].load(SeqCst),
+            )
+        };
+    }
     print(c"OPEN_RADIO_HIL runtime=START profile=");
     print(PROFILE_NAME);
     print(c"\r\n");

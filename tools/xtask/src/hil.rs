@@ -58,8 +58,10 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("board") => return board(ctx, &options, &args[1..]),
         Some("devices") => return devices(&args[1..]),
         Some("firmware") => return firmware(ctx, &options, &args[1..]),
+        Some("runs") => return runs(ctx, &options, &args[1..]),
         _ => {}
     }
+    use_shared_store(ctx)?;
     let (runner, receipt_path) = prepare(ctx)?;
     if hands_off_terminal(args) {
         // Fixture installation ends in a foreground sudo handoff. A supervised
@@ -106,6 +108,12 @@ Stand commands (shared by every checkout of this user):
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
   cargo hil devices [--json]          boards: name, chip, port, last firmware
   cargo hil devices set MAC [--chip CHIP] [--name NAME]
+  cargo hil runs list [--scenario S] [--outcome O] [--commit C] [--image I] [--since 3d]
+  cargo hil runs why RUN              why a run did not pass: failure, missed criteria, log tail
+  cargo hil runs compare A B [--measurement TEXT]   measurement means side by side
+  cargo hil runs history SCENARIO [--measurement TEXT]
+  cargo hil runs pin RUN --reason TEXT | unpin RUN
+  cargo hil runs prune [--days 30] [--keep-failed 5] [--apply]
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
   cargo hil firmware flash IMAGE --board NAME|MAC   flash under a lease of that board, journaled
@@ -495,6 +503,202 @@ fn board(
     Ok(std::process::ExitCode::SUCCESS)
 }
 
+/// `cargo hil runs list|why|compare|history|pin|unpin|prune` over the shared
+/// run store.
+fn runs(
+    ctx: &Context,
+    options: &LeaseOptions,
+    args: &[OsString],
+) -> Result<std::process::ExitCode> {
+    use crate::hil_runs;
+    use clap::Parser as _;
+    #[derive(clap::Parser)]
+    #[command(name = "cargo hil runs", no_binary_name = true)]
+    enum RunsCli {
+        /// Runs of every checkout, newest last.
+        List {
+            #[arg(long)]
+            scenario: Option<String>,
+            /// passed, failed, broken, blocked, interrupted; with --scenario,
+            /// that scenario's outcome.
+            #[arg(long)]
+            outcome: Option<String>,
+            /// Commit prefix.
+            #[arg(long)]
+            commit: Option<String>,
+            /// Image class or application SHA-256 prefix.
+            #[arg(long)]
+            image: Option<String>,
+            /// Checkout directory name.
+            #[arg(long)]
+            checkout: Option<String>,
+            /// Only runs this recent, e.g. 3d or 12h.
+            #[arg(long, value_parser = parse_budget)]
+            since: Option<std::time::Duration>,
+            #[arg(long, default_value_t = 30)]
+            limit: usize,
+        },
+        /// Why a run did not pass.
+        Why {
+            run: String,
+            /// Lines of each failed repetition's uart.log.
+            #[arg(long, default_value_t = 15)]
+            tail: usize,
+        },
+        /// Measurement means of two runs side by side.
+        Compare {
+            a: String,
+            b: String,
+            /// Only measurements whose name contains this text.
+            #[arg(long)]
+            measurement: Option<String>,
+        },
+        /// A scenario's outcomes and measurements across runs.
+        History {
+            scenario: String,
+            #[arg(long)]
+            measurement: Option<String>,
+            #[arg(long, default_value_t = 30)]
+            limit: usize,
+        },
+        /// Keep a run from pruning, e.g. an A/B baseline.
+        Pin {
+            run: String,
+            #[arg(long)]
+            reason: String,
+        },
+        Unpin {
+            run: String,
+        },
+        /// List, or with --apply delete, runs no rule keeps.
+        Prune {
+            #[arg(long, default_value_t = 30)]
+            days: u64,
+            #[arg(long, default_value_t = 5)]
+            keep_failed: usize,
+            #[arg(long)]
+            apply: bool,
+        },
+    }
+    let local = ctx.root.join("target/hil").join(HIL_TARGET).join("runs");
+    let directory = if local.exists() {
+        local
+    } else {
+        crate::hil_store::shared_runs(HIL_TARGET)?
+    };
+    let store = crate::hil_store::shared_runs(HIL_TARGET)?
+        .parent()
+        .ok_or("the run store has no parent")?
+        .to_owned();
+    let all = hil_runs::all(&directory)?;
+    let find = |id: &str| {
+        all.iter()
+            .find(|run| run.id == id)
+            .ok_or_else(|| format!("no run {id} in {}", directory.display()))
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis() as u64;
+    match RunsCli::try_parse_from(args)? {
+        RunsCli::List {
+            scenario,
+            outcome,
+            commit,
+            image,
+            checkout,
+            since,
+            limit,
+        } => {
+            let filter = hil_runs::Filter {
+                scenario,
+                outcome,
+                commit,
+                image,
+                checkout,
+                since_millis: since.map(|since| now.saturating_sub(since.as_millis() as u64)),
+            };
+            let matching = all
+                .iter()
+                .filter(|run| filter.matches(run))
+                .collect::<Vec<_>>();
+            for run in &matching[matching.len().saturating_sub(limit)..] {
+                println!("{}", hil_runs::list_line(run));
+            }
+        }
+        RunsCli::Why { run, tail } => print!("{}", hil_runs::why(find(&run)?, tail)),
+        RunsCli::Compare { a, b, measurement } => print!(
+            "{}",
+            hil_runs::compare(find(&a)?, find(&b)?, measurement.as_deref())
+        ),
+        RunsCli::History {
+            scenario,
+            measurement,
+            limit,
+        } => {
+            let containing = all
+                .iter()
+                .filter(|run| run.scenarios.iter().any(|s| s.id == scenario))
+                .cloned()
+                .collect::<Vec<_>>();
+            let start = containing.len().saturating_sub(limit);
+            print!(
+                "{}",
+                hil_runs::history(&containing[start..], &scenario, measurement.as_deref())
+            );
+        }
+        RunsCli::Pin { run, reason } => {
+            find(&run)?;
+            hil_runs::set_pin(
+                &store,
+                &run,
+                Some(
+                    serde_json::json!({"by": options.owner(ctx), "reason": reason, "unix_millis": now}),
+                ),
+            )?;
+        }
+        RunsCli::Unpin { run } => hil_runs::set_pin(&store, &run, None)?,
+        RunsCli::Prune {
+            days,
+            keep_failed,
+            apply,
+        } => {
+            let pinned = hil_runs::pins(&store).into_keys().collect();
+            let keep = hil_runs::retained(
+                &all,
+                &hil_runs::Retention {
+                    keep_days: days,
+                    keep_failed,
+                },
+                now,
+                &pinned,
+                &hil_runs::cited_by_shards(&ctx.root),
+            );
+            let mut freed = 0;
+            let mut removed = 0;
+            for run in all.iter().filter(|run| !keep.contains_key(&run.id)) {
+                let bytes = hil_runs::exclusive_bytes(&run.directory);
+                freed += bytes;
+                removed += 1;
+                if apply {
+                    std::fs::remove_dir_all(&run.directory)?;
+                    println!("deleted {} ({} MiB)", run.id, bytes >> 20);
+                } else {
+                    println!("would delete {}", hil_runs::list_line(run));
+                }
+            }
+            println!(
+                "{} {removed} of {} runs, {} MiB held only by them; {} kept{}",
+                if apply { "deleted" } else { "would delete" },
+                all.len(),
+                freed >> 20,
+                keep.len(),
+                if apply { "" } else { "; add --apply to delete" }
+            );
+        }
+    }
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
 /// `cargo hil firmware list | build IMAGE | flash IMAGE --board BOARD`.
 fn firmware(
     ctx: &Context,
@@ -583,6 +787,22 @@ fn devices(args: &[OsString]) -> Result<std::process::ExitCode> {
         }
     }
     Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// Make this checkout's run directory the shared store, migrating its runs.
+fn use_shared_store(ctx: &Context) -> Result<()> {
+    let local = ctx.root.join("target/hil").join(HIL_TARGET).join("runs");
+    match crate::hil_store::link_runs(&local, &crate::hil_store::shared_runs(HIL_TARGET)?)? {
+        crate::hil_store::Linked::Migrated { runs, kept } => eprintln!(
+            "hil: moved {runs} runs into the shared store; the old directory is {}",
+            kept.display()
+        ),
+        crate::hil_store::Linked::Deferred { active } => eprintln!(
+            "hil: run {active} is in progress; this checkout joins the shared store later"
+        ),
+        crate::hil_store::Linked::Existing | crate::hil_store::Linked::Created => {}
+    }
+    Ok(())
 }
 
 /// The HIL target the runner executes on.

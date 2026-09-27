@@ -470,8 +470,12 @@ build after validating an explicit engineering conclusion and its bindings.
 Original outcomes and exclusions remain visible; a commit change or another PASS
 does not establish that a failure was resolved.
 
-A run bundle stays in ignored output and qualifies only for the checkout it
-was produced from. `cargo qualification hil-evidence (--manifest PATH |
+A run bundle stays in ignored output, in the run store every checkout of the
+user shares (see [find and compare runs](../hil/host/README.md#find-and-compare-runs)),
+and qualifies only for a checkout whose sources it binds. When a checkout has
+no `target/hil/<target>/runs` yet, the evaluator reads the shared store.
+Digests of sealed files are remembered in the user's cache per file identity
+and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
 --hil-target TARGET)` records
 the latest qualifying observation of every scenario as a tracked shard in the
 program's `[hil] evidence` directory (`hil/evidence/esp32s31`). A shard holds

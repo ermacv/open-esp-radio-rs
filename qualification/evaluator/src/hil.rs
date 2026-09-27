@@ -394,7 +394,14 @@ impl HilEvidenceIndex {
         repository: &RepositoryState,
     ) -> Result<Self> {
         let current_observer = observer::Current::load(root);
-        let directory = root.join(runs);
+        let mut directory = root.join(runs);
+        // A checkout whose runner never linked its run directory still reads
+        // the store shared by every checkout of this user.
+        if !directory.try_exists()?
+            && let Some(shared) = shared_runs(target).filter(|shared| shared.is_dir())
+        {
+            directory = shared;
+        }
         if !directory.try_exists()? {
             return Ok(Self {
                 summary: HilEvidenceSummary {
@@ -1026,6 +1033,22 @@ fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         && !value.ends_with('-')
         && !value.contains("--")
+}
+
+/// The HIL run store shared by every checkout: `$OER_HIL_STORE/<target>/runs`
+/// or the user's data directory, as `cargo hil` links it.
+fn shared_runs(target: &str) -> Option<PathBuf> {
+    let root = match std::env::var_os("OER_HIL_STORE").filter(|value| !value.is_empty()) {
+        Some(root) => PathBuf::from(root),
+        None => std::env::var_os("XDG_DATA_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
+            })?
+            .join("open-esp-radio/hil"),
+    };
+    Some(root.join(target).join("runs"))
 }
 
 fn sha256_file(path: &Path) -> Result<String> {

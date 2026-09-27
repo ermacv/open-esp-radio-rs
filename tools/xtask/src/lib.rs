@@ -15,6 +15,8 @@ pub mod firmware;
 pub mod firmware_catalog;
 pub mod graph;
 pub mod hil;
+pub mod hil_runs;
+pub mod hil_store;
 pub mod paths;
 pub mod process;
 pub mod vendor_diff;

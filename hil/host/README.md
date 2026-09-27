@@ -205,6 +205,43 @@ default owner is the checkout directory name. A checkout without the arbiter
 still fails fast on the fixture locks and bypasses the queue; a granted holder
 waits for such a process to finish.
 
+## Find and compare runs
+
+Every checkout's `target/hil/esp32s31/runs` is a link to one store shared by
+all checkouts of this user, `~/.local/share/open-esp-radio/hil/esp32s31/runs`
+(`$XDG_DATA_HOME`, or `$OER_HIL_STORE/<target>/runs`). `cargo hil` creates the
+link; a checkout that still has its own run directory is migrated on its next
+`cargo hil` command by hard-linking every file into the store, and the old
+directory stays as `runs.before-shared-store`. A run in progress defers the
+migration. Qualification reads the store from any checkout and still decides
+per bundle whether it applies to that checkout's sources.
+
+```console
+cargo hil runs list --scenario station-reconnect --outcome failed --since 7d
+cargo hil runs why <run-id>
+cargo hil runs compare <run-a> <run-b> --measurement mbps
+cargo hil runs history <scenario> --measurement mbps
+cargo hil runs pin <run-id> --reason "A/B baseline"
+cargo hil runs prune                  # list what the rule would delete
+cargo hil runs prune --apply
+```
+
+`list` shows each run's time, outcome, checkout, commit (`+` when dirty),
+images and scenario outcomes, filtered by scenario, outcome, commit prefix,
+image class or digest prefix, checkout and age. `why` names, per failed
+repetition, the recorded failure, the measurements that missed their
+criteria (a criterion miss, unlike a fault), cleanup failures, the artifact
+directory and the end of `uart.log`. `compare` and `history` use per-scenario
+means of numeric measurements over repetitions. These views never decide
+qualification.
+
+`prune` keeps pinned runs, runs cited by committed evidence shards, runs whose
+firmware another run replayed, runs younger than `--days` (30), incomplete
+runs, the latest pass and the `--keep-failed` (5) newest failures of every
+scenario and image class. Without `--apply` it only lists the other runs and
+the bytes only they hold; hard-linked firmware shared with kept runs is not
+counted. Pins live in the store's `pins.json`.
+
 ## Build and run
 
 `cargo hil plan <scenario> --out target/hil/plan.json` prepares an executable

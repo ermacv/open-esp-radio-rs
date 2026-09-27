@@ -32,6 +32,9 @@ struct Manifest {
     pins: String,
     #[serde(default)]
     kind: Kind,
+    /// Why the image must not be flashed now; flashing it is refused.
+    #[serde(default)]
+    hold: Option<String>,
 }
 
 /// What an entry provides.
@@ -51,6 +54,8 @@ pub struct Entry {
     pub chip: String,
     pub pins: String,
     pub kind: Kind,
+    /// Why the image must not be flashed now.
+    pub hold: Option<String>,
     /// Project directory, relative to the repository root.
     pub directory: PathBuf,
 }
@@ -95,6 +100,7 @@ pub fn entries(root: &Path) -> Result<Vec<Entry>> {
             chip: manifest.chip,
             pins: manifest.pins,
             kind: manifest.kind,
+            hold: manifest.hold,
             directory: directory.strip_prefix(root)?.to_owned(),
         });
     }
@@ -153,8 +159,12 @@ pub fn list(ctx: &Context) -> Result<()> {
                 )
             },
         );
+        let held = entry
+            .hold
+            .as_deref()
+            .map_or_else(String::new, |reason| format!(" HELD: {reason}"));
         println!(
-            "{:<24} {:<10} {:<48} {built}",
+            "{:<24} {:<10} {:<48} {built}{held}",
             entry.image,
             entry.chip,
             entry.directory.display()
@@ -237,6 +247,13 @@ pub fn flash(
     let entry = entry(&entries, image)?;
     if entry.kind == Kind::Bootloader {
         return Err(format!("`{image}` is a bootloader; every flash writes it").into());
+    }
+    if let Some(reason) = &entry.hold {
+        return Err(format!(
+            "`{image}` is held and not flashed: {reason} ({}/firmware.toml)",
+            entry.directory.display()
+        )
+        .into());
     }
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let Board { mac, port, chip } = resolve_board(&arbiter, board)?;
@@ -379,6 +396,7 @@ mod tests {
                     chip: "esp32c5".into(),
                     pins: "esp32s31".into(),
                     kind: Kind::Image,
+                    hold: None,
                     directory: "hil/peers/esp32c5-ieee802154".into(),
                 },
                 Entry {
@@ -386,6 +404,7 @@ mod tests {
                     chip: "esp32s31".into(),
                     pins: "esp32s31".into(),
                     kind: Kind::Image,
+                    hold: None,
                     directory: "verification/esp32s31/hil-vendor/calibration".into(),
                 },
             ]
@@ -415,6 +434,37 @@ mod tests {
                 .iter()
                 .any(|entry| entry.kind == Kind::Bootloader && entry.chip == "esp32c5"),
             "esp32c5 has a project bootloader"
+        );
+    }
+
+    #[test]
+    fn a_held_image_is_refused_before_any_board_is_touched() {
+        let root = tempfile::tempdir().unwrap();
+        project(
+            root.path(),
+            "hil/peers/held",
+            "image = \"held-peer\"\nchip = \"esp32c5\"\npins = \"esp32s31\"\nhold = \"wedges USB\"\n",
+        );
+        let entries = entries(root.path()).unwrap();
+        assert_eq!(entries[0].hold.as_deref(), Some("wedges USB"));
+        let ctx = Context {
+            root: root.path().to_owned(),
+            cargo: "cargo".into(),
+        };
+        let request = oer_hil_arbiter::Request {
+            owner: "test".into(),
+            work: "flash".into(),
+            budget: None,
+            short: false,
+            scenarios: Vec::new(),
+            claims: Vec::new(),
+        };
+        let error = flash(&ctx, "held-peer", "esp32c5", request)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("held") && error.contains("wedges USB"),
+            "{error}"
         );
     }
 

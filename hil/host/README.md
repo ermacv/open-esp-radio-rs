@@ -225,7 +225,10 @@ Tracked ESP-IDF firmware forms one catalog: every project with a
 vendor references in `verification/<chip>/hil-vendor/<project>/` and each
 chip's second-stage bootloader in `hil/bootloaders/<chip>/` (`kind =
 "bootloader"`), which `cargo hil flash` writes to every board of that chip.
-A bootloader entry is never flashed on its own. The
+A bootloader entry is never flashed on its own. `hold = "REASON"` in a
+manifest refuses every flash of that image, including a run's automatic peer
+restore, which then blocks its scenarios with the reason; `firmware list`
+shows it. The
 manifest names the image as the board journal records it, the target chip and
 the chip whose `artifacts.toml` pins the one ESP-IDF revision and vendor
 archives every image builds against. Builds are reproducible

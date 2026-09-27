@@ -504,6 +504,62 @@ impl ManifestDocument {
     }
 }
 
+/// Directory of the qualification programs, relative to the repository root.
+const PROGRAMS: &str = "qualification/targets";
+
+/// A program whose `[hil]` section names `target`; every such program must
+/// name the same run and evidence directories, so any one records the same
+/// shards.
+pub(crate) fn hil_program(root: &Path, target: &str) -> Result<PathBuf> {
+    #[derive(Deserialize)]
+    struct Program {
+        hil: Option<serde_json::Value>,
+    }
+    let mut found: Option<(
+        PathBuf,
+        Option<serde_json::Value>,
+        Option<serde_json::Value>,
+    )> = None;
+    let mut stack = vec![PathBuf::from(PROGRAMS)];
+    let mut programs = vec![];
+    while let Some(directory) = stack.pop() {
+        for entry in fs::read_dir(root.join(&directory))? {
+            let entry = entry?;
+            let path = directory.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "toml") {
+                programs.push(path);
+            }
+        }
+    }
+    programs.sort();
+    for path in programs {
+        let program: Program = toml_edit::de::from_str(&fs::read_to_string(root.join(&path))?)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let Some(hil) = program.hil else { continue };
+        if hil.get("target").and_then(|v| v.as_str()) != Some(target) {
+            continue;
+        }
+        let (runs, evidence) = (hil.get("runs").cloned(), hil.get("evidence").cloned());
+        match &found {
+            None => found = Some((path, runs, evidence)),
+            Some((first, r, e)) if *r != runs || *e != evidence => {
+                return Err(format!(
+                    "{} and {} name different HIL run or evidence directories for {target}",
+                    first.display(),
+                    path.display()
+                )
+                .into());
+            }
+            Some(_) => {}
+        }
+    }
+    found
+        .map(|(path, ..)| path)
+        .ok_or_else(|| format!("no qualification program names HIL target {target}").into())
+}
+
 impl ValidatedProgram {
     pub(super) fn catalog(&self) -> &CatalogView {
         &self.document.catalog

@@ -74,7 +74,37 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .env("OER_OBSERVER_RECEIPT", &receipt_path),
         std::time::Duration::from_secs(300),
     )?;
-    Ok(exit_code(child.wait_forwarding_cancellation()?))
+    let status = child.wait_forwarding_cancellation()?;
+    if produces_runs(args) {
+        record_evidence(ctx, &receipt_path)?;
+    }
+    Ok(exit_code(status))
+}
+
+/// The HIL target the runner executes on.
+const HIL_TARGET: &str = "esp32s31";
+
+/// Commands that execute scenarios and write run bundles.
+fn produces_runs(args: &[OsString]) -> bool {
+    matches!(
+        args.first().and_then(|a| a.to_str()),
+        Some("run" | "run-all" | "run-plan")
+    ) && !args.iter().any(|arg| arg == "--check")
+}
+
+/// Record the observations that qualify on this checkout as tracked HIL
+/// evidence shards, with the observer receipt the runs were produced under.
+/// Failed scenarios record nothing, so this also runs after a failing suite.
+fn record_evidence(ctx: &Context, receipt: &std::path::Path) -> Result<()> {
+    let status = ctx
+        .command("cargo")
+        .args(["qualification", "hil-evidence", "--hil-target", HIL_TARGET])
+        .env("OER_OBSERVER_RECEIPT", receipt)
+        .status()?;
+    if !status.success() {
+        return Err("recording the HIL evidence shards failed".into());
+    }
+    Ok(())
 }
 
 /// Commands that need the terminal's foreground process group.
@@ -109,6 +139,17 @@ mod tests {
             .wait_forwarding_cancellation()
             .unwrap();
         assert_eq!(exit_code(status), std::process::ExitCode::from(37));
+    }
+
+    #[test]
+    fn only_executing_commands_record_evidence() {
+        let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
+        assert!(produces_runs(&args(&["run", "boot-smoke"])));
+        assert!(produces_runs(&args(&["run-all", "--tag", "wifi"])));
+        assert!(produces_runs(&args(&["run-plan", "plan.json"])));
+        assert!(!produces_runs(&args(&["run-plan", "plan.json", "--check"])));
+        assert!(!produces_runs(&args(&["plan", "--scenario", "x"])));
+        assert!(!produces_runs(&args(&["doctor"])));
     }
 
     #[test]

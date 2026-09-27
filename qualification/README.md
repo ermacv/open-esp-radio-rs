@@ -471,7 +471,8 @@ Original outcomes and exclusions remain visible; a commit change or another PASS
 does not establish that a failure was resolved.
 
 A run bundle stays in ignored output and qualifies only for the checkout it
-was produced from. `cargo qualification hil-evidence --manifest PATH` records
+was produced from. `cargo qualification hil-evidence (--manifest PATH |
+--hil-target TARGET)` records
 the latest qualifying observation of every scenario as a tracked shard in the
 program's `[hil] evidence` directory (`hil/evidence/esp32s31`). A shard holds
 the observation's outcome, repetitions, measurements and failures, the run's
@@ -484,8 +485,10 @@ input registry. The evaluator reads shards next to run bundles. A shard whose
 recorded sources all match the checkout supports its scenario whatever else the
 repository changed, and those digests stand for the observer's identity; a
 changed source makes it stale until the scenario runs again and is recorded.
-Run the command on the lab machine right after a run qualifies, and commit the
-shards. `INPUT` reports `hil-shards` and `hil-current-shards`.
+`cargo xtask hil` runs it after every command that executes scenarios, with
+the observer receipt of the run; `--hil-target` selects the programs naming
+that HIL target, which must agree on their run and evidence directories.
+Commit the shards. `INPUT` reports `hil-shards` and `hil-current-shards`.
 
 The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
 Qualification independently checks `integrity.json`, every indexed file hash,

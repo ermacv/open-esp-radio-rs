@@ -99,11 +99,15 @@ replay/deadline policy do not require vendor equivalence.
 
 Vendor evidence comes from the typed vendor scenarios in
 [`verification/vendor/projects/esp32s31/scenarios`](../verification/vendor/projects/esp32s31/scenarios).
-`vendor-scenario all --index <path>` runs every PHY comparison scenario under one
-budget and, only when all of them pass with no unmet obligation, writes the
-native evidence index
-`verification/vendor/projects/esp32s31/evidence/scenario-evidence.json`
-([schema](../verification/vendor/schema/scenario-evidence.rs)). It records:
+The native evidence index is the directory
+`verification/vendor/projects/esp32s31/evidence/scenarios`
+([schema](../verification/vendor/schema/scenario-evidence.rs)), one shard per
+scenario named after it. `vendor-scenario <scenario> --index <directory>`
+writes that scenario's shard when it passes with no unmet obligation;
+`vendor-scenario all --index <directory>` runs every scenario under one budget
+and, only when all of them pass, writes every shard. A scenario run rewrites
+only its own shard, so work on different scenarios does not touch the same
+file. Each shard records:
 
 - one entry per claimed vendor root: scenario (`suite`), vendor source
   (`archive` or `rom`), root symbol, compiled production entry, the number of
@@ -124,39 +128,50 @@ native evidence index
   those comparisons wrote (Blobray written ranges), the bytes every writing
   case compares through a projection field, memory pair or write timeline,
   and how many of the rest a reviewed decision covers or remain untriaged;
-- every untriaged uncovered location of the claimed closures that no claim
-  whose closure contains its function reaches, by vendor function, offset
+- every untriaged uncovered location of the scenario's claimed closures that
+  no claim of the scenario whose closure contains its function reaches, by
+  vendor function, offset
   and kind (block, taken or fallthrough direction, or a transfer site the
   closure leaves open: an indirect transfer followed only to its executed
   targets, so that other targets such as further jump-table arms are outside
   the closure, or an unresolved transfer);
-- every executed production hardware line that no scenario's compared observations
-  depend on and no reviewed decision covers, by path and line;
+- the functions of the scenario's claimed closures;
+- every production hardware line the scenario executed without its compared
+  observations depending on it and that no reviewed decision covers, and every
+  line they do depend on, by path and line;
 - every persistent vendor byte a claim's cases write without comparing it and
   no reviewed decision covers, coalesced by data symbol and offset; a byte
   outside every sized data symbol is named by the address of the nearest
   symbol below it;
-- SHA-256 identities of the authenticated private inputs and the production
-  probe ELF;
-- directory digests of every source the verdicts depend on: the probe ELF's
-  resolved path-dependency closure (production crates and probes), the
-  scenario package, the shared schema and the Blobray engine.
+- SHA-256 identities of every input the scenario captured, including the
+  production probe ELF;
+- directory digests of every source the verdicts depend on: the resolved
+  path-dependency closure of the probe ELF the scenario compared (production
+  crates and probes), the scenario package, the shared schema and the Blobray
+  engine.
 
-The index carries identities and verdicts only, never vendor bytes.
-Qualification reads the index named by the program's `[verification]
-evidence-index` (catalogs name it in `[validation] evidence-index`), checks
-schema, producer command and chip target, requires every entry to be a MATCH
+Two views span scenarios and are derived from all shards together: a location
+is untriaged when some scenario lists it and every scenario whose closures
+contain its function lists it too, and a line is unobserved when some
+scenario lists it and no scenario observes it. The index carries identities
+and verdicts only, never vendor bytes.
+Qualification reads the index directory named by the program's
+`[verification] evidence-index` (catalogs name it in `[validation]
+evidence-index`), checks each shard's schema, producer command, chip target
+and scenario name, requires every entry to belong to its shard's scenario and
+to be a MATCH
 claim with compared cases whose coverage accounts for every uncovered location,
 whose observation counts account for every executed line and whose state
 counts account for every written byte, and recomputes every recorded directory
 digest. Coverage, observation and state are reported, not readiness gates: they
 show which vendor behavior the comparisons never exercised, which executed
 production lines they cannot notice and which vendor state they never compare. Any
-change to those sources makes the whole index stale: stale evidence supports
-no claim until the scenarios run again. An absent index means no vendor
-evidence is available: affected capabilities remain unqualified while status
-and HIL planning still work. An unreadable, malformed or inconsistent existing
-index remains an error.
+change to a shard's sources makes that shard stale: its evidence supports no
+claim until its scenario runs again, while shards whose sources are unchanged
+stay current. An absent index directory means no vendor evidence is
+available: affected capabilities remain unqualified while status and HIL
+planning still work. An unreadable, malformed or inconsistent existing shard,
+or a file in the directory that is not a shard, remains an error.
 
 The qualification manifest names vendor roots and explicit evidence rows:
 

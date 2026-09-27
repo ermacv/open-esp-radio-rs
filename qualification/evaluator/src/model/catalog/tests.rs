@@ -467,8 +467,11 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     let wifi_root = ("wifi-suite", "archive", "wifi_root");
     let wrong_source = ("base-suite", "rom", "base_root");
     let stale = |entries: &[(&str, &str, &str)]| NativeEvidence {
-        current: false,
-        ..native_evidence(&root.path, entries)
+        shards: native_evidence(&root.path, entries)
+            .shards
+            .into_iter()
+            .map(|(shard, _)| (shard, false))
+            .collect(),
     };
     let cases = [
         (

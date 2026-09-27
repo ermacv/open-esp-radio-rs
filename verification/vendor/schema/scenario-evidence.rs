@@ -1,7 +1,14 @@
 //! Native vendor-comparison evidence index: typed-scenario verdicts per vendor
-//! root, and the source digests that keep them current. The scenario runner
-//! produces it after every scenario passed; qualification consumes it. The
-//! index carries identities and verdicts only, never vendor bytes.
+//! root, and the source digests that keep them current. The index is a
+//! directory of shards, one per scenario, so each scenario run rewrites only
+//! its own file. A scenario writes its shard after it passed; qualification
+//! consumes the directory. Shards carry identities and verdicts only, never
+//! vendor bytes.
+//!
+//! Some facts span scenarios: a vendor location is untriaged only when no
+//! claim of any scenario covers it, and a production line is unobserved only
+//! when no scenario observes it. Each shard therefore keeps the scenario-local
+//! sets from which [`Evidence`] derives those cross-scenario views exactly.
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -12,10 +19,12 @@ use std::{
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Index format.
-pub const SCHEMA: u32 = 6;
-/// Producer command recorded in every index.
-pub const COMMAND: &str = "vendor-scenario all";
+/// Shard format.
+pub const SCHEMA: u32 = 7;
+/// Producer command recorded in every shard.
+pub const COMMAND: &str = "vendor-scenario";
+/// Extension of a shard file; its stem is the scenario name.
+pub const SHARD_EXTENSION: &str = "json";
 /// The only verdict an entry carries: a claim exists only when its root
 /// compared with MATCH in every comparison of the run that selects it.
 pub const MATCH: &str = "match";
@@ -26,19 +35,30 @@ pub struct Index {
     pub schema: u32,
     pub command: String,
     pub target: String,
-    /// SHA-256 of each authenticated private input and of the production probe ELF.
+    /// The scenario whose claims this shard holds; the file stem.
+    pub scenario: String,
+    /// SHA-256 of each authenticated input the scenario captured, by session
+    /// input index, including the production probe ELF.
     pub inputs: BTreeMap<String, String>,
-    /// Directory digests every verdict depends on: production crates, probes,
-    /// scenario code and the Blobray engine.
+    /// Directory digests every verdict depends on: the production crates of
+    /// the scenario's probe image, the probes, the scenario code and the
+    /// Blobray engine.
     pub sources: Vec<SourceDigest>,
     pub entries: Vec<Entry>,
-    /// Uncovered vendor locations of claimed root closures that no reviewed
-    /// decision excludes yet and no claim whose closure contains their
-    /// function covers, ascending and unique.
+    /// Uncovered vendor locations of the scenario's claimed root closures
+    /// that no reviewed decision excludes and no claim of this scenario whose
+    /// closure contains their function covers, ascending and unique.
     pub untriaged: Vec<Location>,
-    /// Executed production hardware source lines that no compared observation
-    /// depends on and no reviewed decision covers yet, ascending and unique.
+    /// Every vendor function the scenario's claimed closures contain,
+    /// ascending and unique: another scenario's untriaged location in one of
+    /// them is covered unless it is untriaged here too.
+    pub functions: Vec<String>,
+    /// Production hardware source lines the scenario executed without
+    /// observing them and no reviewed decision covers, ascending and unique.
     pub unobserved: Vec<SourceLine>,
+    /// Production hardware source lines the scenario observed, ascending and
+    /// unique.
+    pub observed: Vec<SourceLine>,
     /// Persistent vendor bytes a claim's cases write without comparing them
     /// and no reviewed decision covers, coalesced by data symbol, ascending.
     pub unprojected: Vec<StateRange>,
@@ -219,8 +239,24 @@ impl Index {
                     .bytes()
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         };
-        if self.schema != SCHEMA || self.command != COMMAND || self.target != target {
-            return Err("unsupported scenario evidence index".into());
+        if self.schema != SCHEMA
+            || self.command != COMMAND
+            || self.target != target
+            || !is_relative(Path::new(&self.scenario))
+            || self.scenario.contains('.')
+        {
+            return Err("unsupported scenario evidence shard".into());
+        }
+        if self.entries.iter().any(|e| e.suite != self.scenario) {
+            return Err(format!("shard {} holds another scenario's entry", self.scenario).into());
+        }
+        if self.functions.windows(2).any(|w| w[0] >= w[1]) {
+            return Err("closure functions are not ascending and unique".into());
+        }
+        if self.observed.windows(2).any(|w| w[0] >= w[1])
+            || self.observed.iter().any(|l| !is_relative(&l.path))
+        {
+            return Err("observed lines are not relative, ascending and unique".into());
         }
         if self.sources.is_empty()
             || self
@@ -309,6 +345,81 @@ impl Index {
         self.sources.iter().all(|source| {
             digest_directory(root, &source.path).is_ok_and(|digest| digest == source.sha256)
         })
+    }
+}
+
+/// Every shard of an index directory with whether its sources are current.
+/// A missing directory holds no shard.
+pub struct Evidence {
+    pub shards: Vec<(Index, bool)>,
+}
+
+impl Evidence {
+    /// Load and validate every shard of `directory` below `root`.
+    pub fn load(root: &Path, directory: &Path, target: &str) -> Result<Self> {
+        let mut shards = vec![];
+        let entries = match fs::read_dir(root.join(directory)) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self { shards });
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let mut paths = entries
+            .map(|entry| Ok(entry?.path()))
+            .collect::<Result<Vec<_>>>()?;
+        paths.sort();
+        for path in paths {
+            if path.extension().and_then(|e| e.to_str()) != Some(SHARD_EXTENSION) {
+                return Err(format!("unexpected evidence file {}", path.display()).into());
+            }
+            let shard: Index = serde_json::from_str(&fs::read_to_string(&path)?)?;
+            shard
+                .validate(target)
+                .map_err(|error| format!("evidence shard {}: {error}", path.display()))?;
+            if path.file_stem().and_then(|s| s.to_str()) != Some(shard.scenario.as_str()) {
+                return Err(
+                    format!("evidence shard {} names another scenario", path.display()).into(),
+                );
+            }
+            let current = shard.is_current(root);
+            shards.push((shard, current));
+        }
+        Ok(Self { shards })
+    }
+
+    /// Untriaged locations no scenario covers: untriaged in some shard and
+    /// in every shard whose closures contain their function.
+    pub fn untriaged(&self) -> Vec<Location> {
+        let mut all: Vec<Location> = self
+            .shards
+            .iter()
+            .flat_map(|(s, _)| s.untriaged.iter().cloned())
+            .filter(|location| {
+                self.shards.iter().all(|(s, _)| {
+                    s.functions.binary_search(&location.function).is_err()
+                        || s.untriaged.binary_search(location).is_ok()
+                })
+            })
+            .collect();
+        all.sort();
+        all.dedup();
+        all
+    }
+
+    /// Lines some scenario executed without observing and no scenario
+    /// observes.
+    pub fn unobserved(&self) -> Vec<SourceLine> {
+        let observed: std::collections::BTreeSet<&SourceLine> =
+            self.shards.iter().flat_map(|(s, _)| &s.observed).collect();
+        let lines: std::collections::BTreeSet<SourceLine> = self
+            .shards
+            .iter()
+            .flat_map(|(s, _)| &s.unobserved)
+            .filter(|l| !observed.contains(l))
+            .cloned()
+            .collect();
+        lines.into_iter().collect()
     }
 }
 

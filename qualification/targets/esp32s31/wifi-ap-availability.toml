@@ -5,7 +5,7 @@ catalogs = ["qualification/catalog/esp32s31/wifi-phy.toml"]
 catalog-capabilities = ["station-ap-loss-recovery", "station-initial-ap-absence"]
 
 [verification]
-evidence-index = "verification/vendor/projects/esp32s31/evidence/scenario-evidence.json"
+evidence-index = "verification/vendor/projects/esp32s31/evidence/scenarios"
 
 [hil]
 target = "esp32s31"

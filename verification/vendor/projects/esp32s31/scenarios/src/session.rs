@@ -58,6 +58,8 @@ pub struct Claims {
     /// Vendor bytes a claim's cases write without comparing them, with the
     /// claim's vendor root and production entry.
     pub unprojected: std::collections::BTreeSet<(String, String, crate::state::Byte)>,
+    /// SHA-256 of every input the session captured, by session input index.
+    pub inputs: BTreeMap<String, String>,
 }
 
 /// Production PHY lines of the claims of one scenario.
@@ -1012,6 +1014,12 @@ impl Session {
             closures: observed.closures,
             lines: lines.lines,
             unprojected: lines.unprojected,
+            inputs: self
+                .inputs
+                .iter()
+                .enumerate()
+                .map(|(index, bytes)| (format!("input-{index}"), crate::harness::sha256(bytes)))
+                .collect(),
         })
     }
 

@@ -1,4 +1,8 @@
 #[path = "../../../verification/vendor/schema/scenario-evidence.rs"]
+#[allow(
+    dead_code,
+    reason = "the scenario runner derives the cross-scenario views; qualification reads verdicts"
+)]
 pub(crate) mod scenario_evidence;
 use sha2::Sha256;
 use std::{
@@ -511,7 +515,7 @@ impl ValidatedProgram {
         let scenario_catalog = ScenarioCatalog::load(root, &document.hil.catalog)?;
         let hil_index = HilEvidenceIndex::load(root, &document.hil.runs, &hil_target, &repository)?;
         let evidence_inputs = EvidenceInputs {
-            verification_entries: evidence.index.entries.len(),
+            verification_entries: evidence.entries(),
             verification_current_release_entries: evidence.current_entries(),
             hil: hil_index.summary().clone(),
             vendor_evidence_index: document.verification.evidence_index.clone(),
@@ -1129,68 +1133,46 @@ fn validate_dependencies(capabilities: &BTreeMap<String, Capability>) -> Result<
     Ok(())
 }
 
-/// The native scenario evidence index and whether its sources are current.
-/// A missing index supports no claim.
+/// The shards of the native scenario evidence index, each with whether its
+/// sources are current. A missing index directory supports no claim.
 pub(crate) struct NativeEvidence {
-    pub(crate) index: scenario_evidence::Index,
-    pub(crate) current: bool,
+    pub(crate) shards: Vec<(scenario_evidence::Index, bool)>,
 }
 
 impl NativeEvidence {
     fn load(root: &Path, path: &Path, target: &str) -> Result<Self> {
-        let index = match fs::read_to_string(root.join(path)) {
-            Ok(input) => {
-                let index: scenario_evidence::Index = serde_json::from_str(&input)?;
-                index.validate(target).map_err(|error| {
-                    format!("scenario evidence index {}: {error}", path.display())
-                })?;
-                index
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Self {
-                    index: scenario_evidence::Index {
-                        schema: scenario_evidence::SCHEMA,
-                        command: scenario_evidence::COMMAND.into(),
-                        target: target.into(),
-                        inputs: BTreeMap::new(),
-                        sources: vec![],
-                        entries: vec![],
-                        untriaged: vec![],
-                        unobserved: vec![],
-                        unprojected: vec![],
-                    },
-                    current: false,
-                });
-            }
-            Err(error) => {
-                return Err(format!(
-                    "cannot read scenario evidence index {}: {error}",
-                    path.display()
-                )
-                .into());
-            }
-        };
-        let current = index.is_current(root);
-        Ok(Self { index, current })
+        let evidence = scenario_evidence::Evidence::load(root, path, target).map_err(|error| {
+            format!("scenario evidence index {}: {error}", path.display())
+        })?;
+        Ok(Self {
+            shards: evidence.shards,
+        })
     }
 
-    /// A current index holds a MATCH entry for the referenced suite and root.
+    /// The referenced suite's shard is current and holds a MATCH entry for
+    /// the root.
     fn supports(&self, reference: &VendorEvidenceRef) -> bool {
-        self.current
-            && self.index.entries.iter().any(|entry| {
-                entry.suite == reference.suite
-                    && entry.source == reference.source
-                    && entry.symbol == reference.symbol
-                    && entry.verdict == scenario_evidence::MATCH
-            })
+        self.shards.iter().any(|(shard, current)| {
+            *current
+                && shard.scenario == reference.suite
+                && shard.entries.iter().any(|entry| {
+                    entry.source == reference.source
+                        && entry.symbol == reference.symbol
+                        && entry.verdict == scenario_evidence::MATCH
+                })
+        })
+    }
+
+    fn entries(&self) -> usize {
+        self.shards.iter().map(|(shard, _)| shard.entries.len()).sum()
     }
 
     fn current_entries(&self) -> usize {
-        if self.current {
-            self.index.entries.len()
-        } else {
-            0
-        }
+        self.shards
+            .iter()
+            .filter(|(_, current)| *current)
+            .map(|(shard, _)| shard.entries.len())
+            .sum()
     }
 }
 

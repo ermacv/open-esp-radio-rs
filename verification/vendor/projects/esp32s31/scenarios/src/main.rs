@@ -1,6 +1,6 @@
 //! Run one authenticated ESP32-S31 vendor-comparison scenario.
 use clap::{Parser, Subcommand};
-use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Entry, Index};
+use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Index};
 use oer_esp32s31_vendor_scenarios::{
     ble, calibration_leaves, calibration_prefix, channel, coex, coverage,
     gain::{Gain, Options},
@@ -83,9 +83,6 @@ enum Scenario {
         /// Authenticated `libcoexist.a` (coexistence schedule).
         #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("libcoexist"))]
         libcoexist: PathBuf,
-        /// Write the native evidence index qualification reads.
-        #[arg(long)]
-        index: Option<PathBuf>,
     },
     /// Bluetooth LE controller leaves of the pinned Bluetooth archives
     /// against the compiled Bluetooth probe image.
@@ -194,6 +191,10 @@ struct Common {
     /// The probe is not rebuilt; a failing scenario kills the mutant.
     #[arg(long = "patch", value_parser = parse_patch)]
     patches: Vec<blobray_application::in_process::ImagePatch>,
+    /// Write the scenario's shard of the native evidence index qualification
+    /// reads into this directory; `all` writes every scenario's shard.
+    #[arg(long)]
+    index: Option<PathBuf>,
 }
 
 /// `ADDRESS:ORIGINAL:REPLACEMENT`, the bytes as hexadecimal strings.
@@ -257,8 +258,36 @@ fn check_patches(
 }
 
 /// Exit code of one scenario.
-fn single(outcome: Result<Outcome>) -> Result<ExitCode> {
-    Ok(outcome?.0)
+/// Where one scenario's evidence shard goes: its name, the index directory
+/// if one was requested, and the production probe image it compared.
+struct Shard {
+    scenario: &'static str,
+    index: Option<PathBuf>,
+    production: PathBuf,
+}
+
+impl Shard {
+    fn of(scenario: &'static str, common: &Common) -> Self {
+        Self {
+            scenario,
+            index: common.index.clone(),
+            production: common.production.clone(),
+        }
+    }
+}
+
+/// Run one scenario and, when it passed and an index directory was given,
+/// write its shard.
+fn single(shard: Shard, outcome: Result<Outcome>) -> Result<ExitCode> {
+    let (code, claims) = outcome?;
+    if let Some(directory) = &shard.index {
+        if code != ExitCode::SUCCESS {
+            return Ok(code);
+        }
+        let index = evidence::shard(shard.scenario, &shard.production, &claims)?;
+        evidence::write(directory, &index)?;
+    }
+    Ok(code)
 }
 
 /// Evidence entries and untriaged coverage of one scenario, alongside its
@@ -669,11 +698,6 @@ mod evidence {
 
     pub use oer_esp32s31_vendor_scenarios::observation::root;
 
-    fn sha256(path: &Path) -> Result<String> {
-        use sha2::{Digest, Sha256};
-        Ok(format!("{:x}", Sha256::digest(std::fs::read(path)?)))
-    }
-
     /// Path packages in the resolved dependency closure of `package`.
     fn path_closure(
         root: &Path,
@@ -733,44 +757,22 @@ mod evidence {
         Ok(directories.into_iter().collect())
     }
 
-    pub fn index(
-        common: &Common,
-        optional: &[&PathBuf; 7],
-        entries: Vec<Entry>,
-        untriaged: Vec<evidence_index::Location>,
-        unobserved: Vec<evidence_index::SourceLine>,
-        unprojected: Vec<evidence_index::StateRange>,
-    ) -> Result<Index> {
+    /// The shard of `scenario`'s claims against the probe image at
+    /// `production`: the sources are the image package's path closure, the
+    /// scenario code and engine, and the shared schema.
+    pub fn shard(scenario: &str, production: &Path, claims: &session::Claims) -> Result<Index> {
         let root = root()?;
-        let mut inputs = std::collections::BTreeMap::new();
-        for (role, path) in [
-            ("archive", &common.library),
-            ("rom", &common.rom),
-            ("production", &common.production),
-            ("sdk", optional[0]),
-            ("phy-sdk", optional[1]),
-            ("rftest", optional[2]),
-            ("libpp", optional[3]),
-            ("libnet80211", optional[4]),
-            ("bluetooth-production", optional[5]),
-            ("libcoexist", optional[6]),
-        ] {
-            inputs.insert(role.to_owned(), sha256(path)?);
-        }
-        for id in ble::BLUETOOTH.archives {
-            inputs.insert(
-                (*id).to_owned(),
-                sha256(&oer_esp32s31_vendor_scenarios::artifacts::default_path(id))?,
-            );
-        }
-        let mut directories =
-            path_closure(&root, PROBES_MANIFEST, PROBES_PACKAGE, Some(PROBES_TARGET))?;
-        directories.extend(path_closure(
-            &root,
-            PROBES_MANIFEST,
-            BLUETOOTH_PROBES_PACKAGE,
-            Some(PROBES_TARGET),
-        )?);
+        let package = production
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| [PROBES_PACKAGE, BLUETOOTH_PROBES_PACKAGE].contains(n))
+            .ok_or_else(|| {
+                format!(
+                    "{} is not a probe image the index knows the sources of",
+                    production.display()
+                )
+            })?;
+        let mut directories = path_closure(&root, PROBES_MANIFEST, package, Some(PROBES_TARGET))?;
         directories.extend(path_closure(&root, TOOL_MANIFEST, TOOL_PACKAGE, None)?);
         directories.push(PathBuf::from(SCHEMA_SOURCES));
         directories.sort();
@@ -784,19 +786,65 @@ mod evidence {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
+        let line = |(path, line): (PathBuf, u32)| evidence_index::SourceLine { path, line };
+        let mut observation = observation::Sources::default();
+        let (_, unobserved) =
+            observation.classify(&root, observation::DECISIONS, &claims.lines.unobserved())?;
+        let mut unprojected = std::collections::BTreeSet::new();
+        for (vendor, production, byte) in &claims.unprojected {
+            let (_, untriaged) = state::classify(
+                state::DECISIONS,
+                (vendor, production),
+                &std::collections::BTreeSet::from([byte.clone()]),
+            );
+            unprojected.extend(untriaged);
+        }
         let index = Index {
             schema: evidence_index::SCHEMA,
             command: evidence_index::COMMAND.into(),
             target: TARGET.into(),
-            inputs,
+            scenario: scenario.into(),
+            inputs: claims.inputs.clone(),
             sources,
-            entries,
-            untriaged,
-            unobserved,
-            unprojected,
+            entries: claims.entries.clone(),
+            untriaged: coverage::uncovered_everywhere(&claims.closures, claims.untriaged.clone())
+                .into_iter()
+                .collect(),
+            functions: claims
+                .closures
+                .iter()
+                .flat_map(|c| c.functions.iter().cloned())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            unobserved: unobserved.into_iter().map(line).collect(),
+            observed: claims.lines.observed.iter().cloned().map(line).collect(),
+            unprojected: state::ranges(&unprojected)
+                .into_iter()
+                .map(|(symbol, offset, length)| evidence_index::StateRange {
+                    symbol,
+                    offset,
+                    length,
+                })
+                .collect(),
         };
         index.validate(TARGET)?;
         Ok(index)
+    }
+
+    /// Write `index` as its scenario's shard of the index at `directory`.
+    pub fn write(directory: &Path, index: &Index) -> Result<()> {
+        std::fs::create_dir_all(directory)?;
+        let path = directory.join(format!(
+            "{}.{}",
+            index.scenario,
+            evidence_index::SHARD_EXTENSION
+        ));
+        let mut bytes = serde_json::to_vec_pretty(index)?;
+        bytes.push(b'\n');
+        std::fs::write(&path, bytes)?;
+        println!("evidence shard {}", path.display());
+        Ok(())
     }
 }
 
@@ -812,7 +860,7 @@ struct AllInputs {
 }
 
 /// Run every PHY comparison scenario; each must pass with no unmet obligation.
-fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<ExitCode> {
+fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
     let AllInputs {
         sdk,
         phy_sdk,
@@ -823,7 +871,7 @@ fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<Exit
         libcoexist,
     } = inputs;
     if !common.patches.is_empty() {
-        if index.is_some() {
+        if common.index.is_some() {
             return Err("a point-mutant run writes no evidence index".into());
         }
         check_patches(&common.production, &common.patches)?;
@@ -912,8 +960,7 @@ fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<Exit
             .collect()
     });
     let mut elapsed = vec![];
-    let mut entries = vec![];
-    let mut untriaged = std::collections::BTreeSet::new();
+    let mut passed = vec![];
     let mut closures = vec![];
     let mut lines = observation::Lines::default();
     let mut unprojected = std::collections::BTreeSet::new();
@@ -922,11 +969,10 @@ fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<Exit
         elapsed.push((name, seconds));
         match outcome {
             Ok((code, claims)) if code == ExitCode::SUCCESS => {
-                entries.extend(claims.entries);
-                untriaged.extend(claims.untriaged);
-                closures.extend(claims.closures);
+                closures.extend(claims.closures.iter().cloned());
                 lines.extend(&claims.lines);
-                unprojected.extend(claims.unprojected);
+                unprojected.extend(claims.unprojected.iter().cloned());
+                passed.push((name, claims));
             }
             Ok((code, _)) => {
                 println!("scenario {name} did not pass");
@@ -990,39 +1036,15 @@ fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<Exit
         "{reviewed_state} unprojected vendor state bytes reviewed, {} untriaged",
         unprojected.len()
     );
-    if let Some(path) = index {
-        let index = evidence::index(
-            &common,
-            &[
-                &sdk,
-                &phy_sdk,
-                &rftest,
-                &libpp,
-                &libnet80211,
-                &bluetooth_production,
-                &libcoexist,
-            ],
-            entries,
-            coverage::uncovered_everywhere(&closures, untriaged)
-                .into_iter()
-                .collect(),
-            unobserved
-                .into_iter()
-                .map(|(path, line)| evidence_index::SourceLine { path, line })
-                .collect(),
-            state::ranges(&unprojected)
-                .into_iter()
-                .map(|(symbol, offset, length)| evidence_index::StateRange {
-                    symbol,
-                    offset,
-                    length,
-                })
-                .collect(),
-        )?;
-        let mut bytes = serde_json::to_vec_pretty(&index)?;
-        bytes.push(b'\n');
-        std::fs::write(&path, bytes)?;
-        println!("evidence index {}", path.display());
+    if let Some(directory) = &common.index {
+        for (name, claims) in &passed {
+            let production = if *name == "bluetooth" {
+                &bluetooth_production
+            } else {
+                &common.production
+            };
+            evidence::write(directory, &evidence::shard(name, production, claims)?)?;
+        }
     }
     println!("all PHY comparison scenarios passed");
     Ok(ExitCode::SUCCESS)
@@ -1030,23 +1052,50 @@ fn all(common: Common, inputs: AllInputs, index: Option<PathBuf>) -> Result<Exit
 
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
-        Scenario::Gain { common, rftest } => single(gain(common, rftest)),
-        Scenario::Channel { common } => single(channel(common)),
-        Scenario::Coex { common, libcoexist } => single(coex(common, libcoexist)),
-        Scenario::RxGain { common, phy_sdk } => single(rx_gain(common, phy_sdk)),
-        Scenario::TxDc { common, phy_sdk } => single(tx_dc(common, phy_sdk)),
-        Scenario::Tracking { common, phy_sdk } => single(tracking(common, phy_sdk)),
+        Scenario::Gain { common, rftest } => {
+            let shard = Shard::of("gain", &common);
+            single(shard, gain(common, rftest))
+        }
+        Scenario::Channel { common } => {
+            let shard = Shard::of("channel", &common);
+            single(shard, channel(common))
+        }
+        Scenario::Coex { common, libcoexist } => {
+            let shard = Shard::of("coex", &common);
+            single(shard, coex(common, libcoexist))
+        }
+        Scenario::RxGain { common, phy_sdk } => {
+            let shard = Shard::of("rx-gain", &common);
+            single(shard, rx_gain(common, phy_sdk))
+        }
+        Scenario::TxDc { common, phy_sdk } => {
+            let shard = Shard::of("tx-dc", &common);
+            single(shard, tx_dc(common, phy_sdk))
+        }
+        Scenario::Tracking { common, phy_sdk } => {
+            let shard = Shard::of("tracking", &common);
+            single(shard, tracking(common, phy_sdk))
+        }
         Scenario::WifiMac {
             common,
             libpp,
             libnet80211,
             phy_sdk,
-        } => single(wifi_mac(common, libpp, libnet80211, phy_sdk)),
+        } => {
+            let shard = Shard::of("wifi-mac", &common);
+            single(shard, wifi_mac(common, libpp, libnet80211, phy_sdk))
+        }
         Scenario::Bluetooth {
             common,
             bluetooth_production,
             phy_sdk,
-        } => single(bluetooth(common, bluetooth_production, phy_sdk)),
+        } => {
+            let shard = Shard {
+                production: bluetooth_production.clone(),
+                ..Shard::of("bluetooth", &common)
+            };
+            single(shard, bluetooth(common, bluetooth_production, phy_sdk))
+        }
         Scenario::All {
             common,
             sdk,
@@ -1056,7 +1105,6 @@ fn main() -> ExitCode {
             libnet80211,
             bluetooth_production,
             libcoexist,
-            index,
         } => all(
             common,
             AllInputs {
@@ -1068,7 +1116,6 @@ fn main() -> ExitCode {
                 bluetooth_production,
                 libcoexist,
             },
-            index,
         ),
         Scenario::Research {
             binary,
@@ -1096,7 +1143,10 @@ fn main() -> ExitCode {
             common,
             sdk,
             phy_sdk,
-        } => single(i2c(common, sdk, phy_sdk)),
+        } => {
+            let shard = Shard::of("i2c", &common);
+            single(shard, i2c(common, sdk, phy_sdk))
+        }
     };
     result.unwrap_or_else(|error| {
         eprintln!("error: {error}");

@@ -3,7 +3,7 @@ id = "esp32s31-bluetooth-products"
 imports = ["qualification/catalog/esp32s31/bluetooth.toml"]
 
 [validation]
-evidence-index = "verification/vendor/projects/esp32s31/evidence/scenario-evidence.json"
+evidence-index = "verification/vendor/projects/esp32s31/evidence/scenarios"
 hil-catalog = "hil/scenarios"
 
 [[capabilities]]

@@ -202,8 +202,28 @@ pub(crate) fn fixture_root(name: &str) -> Fixture {
 }
 
 /// A current native index over `root/production` holding MATCH entries for
-/// `(suite, source, symbol)` roots.
+/// `(suite, source, symbol)` roots, one shard per suite.
 pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> NativeEvidence {
+    let suites: BTreeSet<&str> = roots.iter().map(|(suite, ..)| *suite).collect();
+    let shards = suites
+        .into_iter()
+        .map(|suite| {
+            let own: Vec<_> = roots.iter().filter(|r| r.0 == suite).copied().collect();
+            let shard = native_shard(root, suite, &own);
+            let current = shard.is_current(root);
+            (shard, current)
+        })
+        .collect();
+    NativeEvidence { shards }
+}
+
+/// A current shard of `suite` over `root/production` holding MATCH entries
+/// for its `(suite, source, symbol)` roots.
+pub(crate) fn native_shard(
+    root: &Path,
+    suite: &str,
+    roots: &[(&str, &str, &str)],
+) -> scenario_evidence::Index {
     let path = PathBuf::from("production");
     if !root.join(&path).exists() {
         fs::create_dir_all(root.join("production/src")).unwrap();
@@ -213,6 +233,7 @@ pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> Nati
         schema: scenario_evidence::SCHEMA,
         command: scenario_evidence::COMMAND.into(),
         target: "test-radio".into(),
+        scenario: suite.into(),
         inputs: BTreeMap::new(),
         sources: vec![scenario_evidence::SourceDigest {
             sha256: scenario_evidence::digest_directory(root, &path).unwrap(),
@@ -256,12 +277,13 @@ pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> Nati
             })
             .collect(),
         untriaged: vec![],
+        functions: vec![],
         unobserved: vec![],
+        observed: vec![],
         unprojected: vec![],
     };
     index.validate("test-radio").unwrap();
-    let current = index.is_current(root);
-    NativeEvidence { index, current }
+    index
 }
 
 #[test]
@@ -274,76 +296,168 @@ fn native_index_supports_only_current_match_entries_of_the_referenced_suite() {
         source: "archive".into(),
         symbol: "set_channel".into(),
     };
-    assert!(evidence.current && evidence.supports(&reference));
+    assert!(evidence.supports(&reference));
     assert_eq!(evidence.current_entries(), 1);
     let other_suite = VendorEvidenceRef {
         suite: "unrelated".into(),
         ..reference.clone()
     };
     assert!(!evidence.supports(&other_suite));
-    // A changed production source makes the whole index stale.
+    // A changed production source makes the shard stale.
     fs::write(
         root.join("production/src/lib.rs"),
         b"changed-production-input",
     )
     .unwrap();
-    let stale = native_evidence_reloaded(root, evidence.index);
-    assert!(!stale.current && !stale.supports(&reference));
+    let shard = evidence.shards[0].0.clone();
+    let stale = reloaded(root, &shard);
+    assert!(!stale.supports(&reference));
     assert_eq!(stale.current_entries(), 0);
+    assert_eq!(stale.entries(), 1);
     // A new file in a digested directory is also a change.
     fs::write(root.join("production/src/lib.rs"), b"production-input").unwrap();
-    assert!(native_evidence_reloaded(root, stale.index.clone()).current);
+    assert!(reloaded(root, &shard).supports(&reference));
     // Documentation establishes no verdict.
     fs::write(root.join("production/README.md"), b"notes").unwrap();
-    assert!(native_evidence_reloaded(root, stale.index.clone()).current);
+    assert!(reloaded(root, &shard).supports(&reference));
     fs::write(root.join("production/src/new.rs"), b"").unwrap();
-    assert!(!native_evidence_reloaded(root, stale.index).current);
+    assert!(!reloaded(root, &shard).supports(&reference));
 }
 
-fn native_evidence_reloaded(root: &Path, index: scenario_evidence::Index) -> NativeEvidence {
-    let current = index.is_current(root);
-    NativeEvidence { index, current }
+fn reloaded(root: &Path, shard: &scenario_evidence::Index) -> NativeEvidence {
+    NativeEvidence {
+        shards: vec![(shard.clone(), shard.is_current(root))],
+    }
+}
+
+#[test]
+fn a_stale_shard_leaves_other_scenarios_current() {
+    let fixture = fixture_root("shards");
+    let root = &fixture.0;
+    fs::create_dir_all(root.join("other/src")).unwrap();
+    fs::write(root.join("other/src/lib.rs"), b"other-input").unwrap();
+    let mut other = native_shard(root, "other", &[("other", "archive", "other_root")]);
+    other.sources = vec![scenario_evidence::SourceDigest {
+        sha256: scenario_evidence::digest_directory(root, Path::new("other")).unwrap(),
+        path: PathBuf::from("other"),
+    }];
+    let radio = native_shard(root, "radio", &[("radio", "archive", "set_channel")]);
+    let directory = Path::new("shards");
+    fs::create_dir_all(root.join(directory)).unwrap();
+    for shard in [&radio, &other] {
+        fs::write(
+            root.join(directory)
+                .join(format!("{}.{}", shard.scenario, scenario_evidence::SHARD_EXTENSION)),
+            serde_json::to_vec(shard).unwrap(),
+        )
+        .unwrap();
+    }
+    fs::write(root.join("production/src/lib.rs"), b"changed").unwrap();
+    let evidence = NativeEvidence::load(root, directory, "test-radio").unwrap();
+    let supported = |suite: &str, symbol: &str| {
+        evidence.supports(&VendorEvidenceRef {
+            suite: suite.into(),
+            source: "archive".into(),
+            symbol: symbol.into(),
+        })
+    };
+    assert!(!supported("radio", "set_channel"));
+    assert!(supported("other", "other_root"));
+    assert_eq!(evidence.current_entries(), 1);
+}
+
+#[test]
+fn cross_scenario_views_follow_every_shard() {
+    let fixture = fixture_root("views");
+    let root = &fixture.0;
+    let location = |function: &str| scenario_evidence::Location {
+        function: function.into(),
+        offset: 4,
+        kind: scenario_evidence::LocationKind::Block,
+    };
+    let line = |line| scenario_evidence::SourceLine {
+        path: PathBuf::from("production/src/lib.rs"),
+        line,
+    };
+    let mut first = native_shard(root, "first", &[]);
+    first.untriaged = vec![location("shared"), location("solo")];
+    first.functions = vec!["shared".into(), "solo".into()];
+    first.unobserved = vec![line(1), line(2)];
+    let mut second = native_shard(root, "second", &[]);
+    second.functions = vec!["shared".into()];
+    second.observed = vec![line(2)];
+    let evidence = scenario_evidence::Evidence {
+        shards: vec![(first.clone(), true), (second.clone(), true)],
+    };
+    // The second scenario's closure covers the shared location.
+    assert_eq!(evidence.untriaged(), vec![location("solo")]);
+    // The second scenario observes line 2.
+    assert_eq!(evidence.unobserved(), vec![line(1)]);
+    second.untriaged = vec![location("shared")];
+    let evidence = scenario_evidence::Evidence {
+        shards: vec![(first, true), (second, true)],
+    };
+    assert_eq!(
+        evidence.untriaged(),
+        vec![location("shared"), location("solo")]
+    );
 }
 
 #[test]
 fn corrupt_unsupported_and_non_match_native_indexes_fail_closed() {
     let fixture = fixture_root("invalid");
     let root = &fixture.0;
-    let path = Path::new("index.json");
+    let directory = Path::new("index");
     // Absent evidence supports nothing, but is not an error.
-    let absent = NativeEvidence::load(root, path, "test-radio").unwrap();
-    assert!(!absent.current && absent.index.entries.is_empty());
-    fs::write(root.join(path), "{not-json").unwrap();
-    assert!(NativeEvidence::load(root, path, "test-radio").is_err());
-    let valid = native_evidence(root, &[("radio", "archive", "set_channel")]).index;
+    let absent = NativeEvidence::load(root, directory, "test-radio").unwrap();
+    assert!(absent.shards.is_empty());
+    fs::create_dir_all(root.join(directory)).unwrap();
+    let path = directory.join("radio.json");
+    fs::write(root.join(&path), "{not-json").unwrap();
+    assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
+    let valid = native_shard(root, "radio", &[("radio", "archive", "set_channel")]);
     let write = |index: &scenario_evidence::Index| {
-        fs::write(root.join(path), serde_json::to_vec(index).unwrap()).unwrap();
+        fs::write(root.join(&path), serde_json::to_vec(index).unwrap()).unwrap();
     };
     write(&valid);
-    assert!(
-        NativeEvidence::load(root, path, "test-radio")
+    assert_eq!(
+        NativeEvidence::load(root, directory, "test-radio")
             .unwrap()
-            .current
+            .current_entries(),
+        1
     );
-    assert!(NativeEvidence::load(root, path, "other-radio").is_err());
+    assert!(NativeEvidence::load(root, directory, "other-radio").is_err());
     let mut changed = valid.clone();
     changed.command = "project verify vendor evidence index".into();
     write(&changed);
-    assert!(NativeEvidence::load(root, path, "test-radio").is_err());
+    assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
     for verdict in ["diff", "incomplete"] {
         let mut changed = valid.clone();
         changed.entries[0].verdict = verdict.into();
         write(&changed);
-        assert!(NativeEvidence::load(root, path, "test-radio").is_err());
+        assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
     }
     let mut repeated = valid.clone();
     repeated.entries.push(repeated.entries[0].clone());
     write(&repeated);
-    assert!(NativeEvidence::load(root, path, "test-radio").is_err());
+    assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
     let mut escaping = valid.clone();
     escaping.sources[0].path = PathBuf::from("../outside");
     write(&escaping);
-    assert!(NativeEvidence::load(root, path, "test-radio").is_err());
+    assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
+    // A shard holds only its own scenario's entries, under its own name.
+    let mut foreign = valid.clone();
+    foreign.entries[0].suite = "other".into();
+    write(&foreign);
+    assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
+    let mut renamed = valid.clone();
+    renamed.scenario = "other".into();
+    renamed.entries.clear();
+    write(&renamed);
+    assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
+    write(&valid);
+    fs::write(root.join(directory).join("notes.txt"), "").unwrap();
+    assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
 }
 
 // Called with independently sealed archived observations by the review tests.
@@ -354,20 +468,7 @@ pub(crate) fn assert_reviewed_hil(
     catalog: &ScenarioCatalog,
 ) {
     let declarations = BTreeMap::from([(document.id.clone(), document.clone())]);
-    let evidence = NativeEvidence {
-        index: scenario_evidence::Index {
-            schema: scenario_evidence::SCHEMA,
-            command: scenario_evidence::COMMAND.into(),
-            target: "test-radio".into(),
-            inputs: BTreeMap::new(),
-            sources: vec![],
-            entries: vec![],
-            untriaged: vec![],
-            unobserved: vec![],
-            unprojected: vec![],
-        },
-        current: false,
-    };
+    let evidence = NativeEvidence { shards: vec![] };
     let context = EvaluationContext {
         root,
         evidence: &evidence,
@@ -390,9 +491,9 @@ pub(crate) fn assert_reviewed_hil(
 #[test]
 fn native_index_coverage_must_account_for_every_uncovered_location() {
     let fixture = fixture_root("coverage");
-    let evidence = native_evidence(&fixture.0, &[("radio", "archive", "set_channel")]);
+    let evidence = native_shard(&fixture.0, "radio", &[("radio", "archive", "set_channel")]);
     let rejected = |mutate: &dyn Fn(&mut scenario_evidence::Index)| {
-        let mut index = evidence.index.clone();
+        let mut index = evidence.clone();
         mutate(&mut index);
         index.validate("test-radio").is_err()
     };
@@ -401,7 +502,7 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
     // An uncovered block neither excluded nor untriaged.
     assert!(rejected(&|i| i.entries[0].coverage.blocks.total = 2));
     // A claim's untriaged location another claim covers is not listed.
-    let mut covered = evidence.index.clone();
+    let mut covered = evidence.clone();
     covered.entries[0].coverage.blocks.total = 2;
     covered.entries[0].coverage.untriaged = 1;
     covered.validate("test-radio").unwrap();
@@ -410,7 +511,7 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
         offset,
         kind: scenario_evidence::LocationKind::Block,
     };
-    let mut listed = evidence.index.clone();
+    let mut listed = evidence.clone();
     listed.entries[0].coverage.blocks.total = 2;
     listed.entries[0].coverage.untriaged = 1;
     listed.untriaged = vec![location(4)];
@@ -420,7 +521,7 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
     assert!(listed.validate("test-radio").is_err());
     // An open transfer site must be excluded or untriaged like a block.
     assert!(rejected(&|i| i.entries[0].coverage.open = 1));
-    let mut open = evidence.index.clone();
+    let mut open = evidence.clone();
     open.entries[0].coverage.open = 1;
     open.entries[0].coverage.untriaged = 1;
     open.untriaged = vec![scenario_evidence::Location {
@@ -434,9 +535,9 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
 #[test]
 fn native_index_state_must_account_for_every_written_byte() {
     let fixture = fixture_root("state");
-    let evidence = native_evidence(&fixture.0, &[("radio", "archive", "set_channel")]);
+    let evidence = native_shard(&fixture.0, "radio", &[("radio", "archive", "set_channel")]);
     // A written byte neither compared, reviewed nor untriaged.
-    let mut index = evidence.index.clone();
+    let mut index = evidence.clone();
     index.entries[0].state.written = 2;
     assert!(index.validate("test-radio").is_err());
     let range = |offset, length| scenario_evidence::StateRange {
@@ -444,7 +545,7 @@ fn native_index_state_must_account_for_every_written_byte() {
         offset,
         length,
     };
-    let mut listed = evidence.index.clone();
+    let mut listed = evidence.clone();
     listed.entries[0].state.written = 2;
     listed.entries[0].state.untriaged = 1;
     listed.unprojected = vec![range(0x16, 1), range(0x11e, 1)];
@@ -463,9 +564,9 @@ fn native_index_state_must_account_for_every_written_byte() {
 #[test]
 fn native_index_observation_must_account_for_every_executed_line() {
     let fixture = fixture_root("observation");
-    let evidence = native_evidence(&fixture.0, &[("radio", "archive", "set_channel")]);
+    let evidence = native_shard(&fixture.0, "radio", &[("radio", "archive", "set_channel")]);
     let rejected = |mutate: &dyn Fn(&mut scenario_evidence::Index)| {
-        let mut index = evidence.index.clone();
+        let mut index = evidence.clone();
         mutate(&mut index);
         index.validate("test-radio").is_err()
     };
@@ -475,7 +576,7 @@ fn native_index_observation_must_account_for_every_executed_line() {
         path: "production/src/lib.rs".into(),
         line,
     };
-    let mut listed = evidence.index.clone();
+    let mut listed = evidence.clone();
     listed.entries[0].observation.executed = 2;
     listed.entries[0].observation.untriaged = 1;
     listed.unobserved = vec![line(3)];

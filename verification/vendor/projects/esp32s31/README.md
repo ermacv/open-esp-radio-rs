@@ -51,12 +51,14 @@ are the measurement authority, not this documentation.
 `rx-gain`, `tx-dc`, `tracking`, `wifi-mac`, `bluetooth`, `coex`) under one budget, each in its own
 directory below `--output`. It requires every optional input, so no obligation
 is left unmet, stops at the first failure and prints each scenario's duration.
-With `--index <path>` it then writes the native evidence index qualification
-reads: every claimed vendor root with its production entry, compared cases and
-retained executions, the input identities and the digests of the sources the
-verdicts depend on. Regenerate
-`evidence/scenario-evidence.json` after any production, probe, scenario or
-Blobray change; until then qualification treats the index as stale. See
+With `--index <directory>` it then writes every scenario's shard of the
+native evidence index qualification reads: every claimed vendor root with its
+production entry, compared cases and retained executions, the input
+identities and the digests of the sources the verdicts depend on. Every
+scenario subcommand takes the same `--index` and writes only its own shard.
+Regenerate the shards below `evidence/scenarios/` after any production, probe,
+scenario or Blobray change they depend on; until then qualification treats
+those shards as stale. See
 [vendor verification](../../../../docs/verification-and-qualification.md#vendor-verification-path).
 
 ```console
@@ -64,7 +66,7 @@ cargo xtask vendor-scenario all \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --bluetooth-production target/verification/esp32s31-bluetooth-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-bluetooth-elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog \
-  --index verification/vendor/projects/esp32s31/evidence/scenario-evidence.json
+  --index verification/vendor/projects/esp32s31/evidence/scenarios
 ```
 
 ## Captured I2C command-memory comparison

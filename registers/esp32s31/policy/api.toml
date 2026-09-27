@@ -4040,6 +4040,22 @@ field = "SELECTION"
 variant = "SCHEDULER_STATUS"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC"]
 
+[[fixed-register-writes]]
+name = "select_bluetooth_scheduler_execution_modify_progress_diagnostic"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "DIAGNOSTIC_SELECT"
+field = "SELECTION"
+variant = "EXECUTION_MODIFY_PROGRESS"
+sources = ["BLOB_LIBBTDM_SCHEDULER_EXECUTION_MODIFY"]
+
+[[fixed-register-writes]]
+name = "select_bluetooth_scheduler_execution_modify_settle_diagnostic"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "DIAGNOSTIC_SELECT"
+field = "SELECTION"
+variant = "EXECUTION_MODIFY_SETTLE"
+sources = ["BLOB_LIBBTDM_SCHEDULER_EXECUTION_MODIFY"]
+
 [[field-snapshot-reads]]
 name = "observe_bluetooth_diagnostic_value"
 peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"

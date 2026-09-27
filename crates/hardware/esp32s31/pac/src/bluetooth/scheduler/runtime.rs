@@ -340,9 +340,17 @@ trait BluetoothSchedulerInterruptControl {
     fn clear_scheduler_reference(&mut self);
 }
 
+/// The complete selector images the scheduler transactions publish.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DiagnosticSelector {
+    SchedulerStatus,
+    ExecutionModifyProgress,
+    ExecutionModifySettle,
+}
+
 /// Selector and value accesses of the MAC diagnostic pair.
 trait BluetoothDiagnosticControl {
-    fn select_scheduler_status(&mut self);
+    fn select(&mut self, selector: DiagnosticSelector);
     fn read_diagnostic_value(&mut self) -> DiagnosticValue;
 }
 
@@ -363,14 +371,36 @@ struct DiagnosticValue {
 /// retry is unbounded and no fence separates the selector write from the
 /// reads.
 fn execute_scheduler_status_sample(control: &mut impl BluetoothDiagnosticControl) -> bool {
-    control.select_scheduler_status();
-    let accepted = loop {
+    control.select(DiagnosticSelector::SchedulerStatus);
+    stable_diagnostic_value(control).value_0_bit_7
+}
+
+/// Read the selected value until two consecutive complete reads are equal.
+fn stable_diagnostic_value(control: &mut impl BluetoothDiagnosticControl) -> DiagnosticValue {
+    loop {
         let first = control.read_diagnostic_value();
         if first == control.read_diagnostic_value() {
             break first;
         }
-    };
-    accepted.value_0_bit_7
+    }
+}
+
+/// Whether execution modify must repeat its request: with the progress
+/// selector, lane-zero bits 2:0 hold 2, or hold 3 while lane-one bits 5:4
+/// hold 1 (complete-word bits 13:12 of the vendor comparison).
+const fn execution_modify_repeats(value: DiagnosticValue) -> bool {
+    let state = value.value_0_low_7 & 0x7;
+    state == 2 || (state == 3 && (value.value_1 >> 4) & 0x3 == 1)
+}
+
+/// Whether execution modify settled: with the settle selector, the complete
+/// value differs from 9.
+const fn execution_modify_settled(value: DiagnosticValue) -> bool {
+    !(value.value_0_low_7 == 9
+        && !value.value_0_bit_7
+        && value.value_1 == 0
+        && value.value_2 == 0
+        && value.value_3 == 0)
 }
 
 struct HardwareDiagnosticControl<'a> {
@@ -378,10 +408,24 @@ struct HardwareDiagnosticControl<'a> {
 }
 
 impl BluetoothDiagnosticControl for HardwareDiagnosticControl<'_> {
-    fn select_scheduler_status(&mut self) {
-        crate::svd::fixed_register_write::select_bluetooth_scheduler_status_diagnostic(
-            self.registers,
-        );
+    fn select(&mut self, selector: DiagnosticSelector) {
+        match selector {
+            DiagnosticSelector::SchedulerStatus => {
+                crate::svd::fixed_register_write::select_bluetooth_scheduler_status_diagnostic(
+                    self.registers,
+                );
+            }
+            DiagnosticSelector::ExecutionModifyProgress => {
+                crate::svd::fixed_register_write::select_bluetooth_scheduler_execution_modify_progress_diagnostic(
+                    self.registers,
+                );
+            }
+            DiagnosticSelector::ExecutionModifySettle => {
+                crate::svd::fixed_register_write::select_bluetooth_scheduler_execution_modify_settle_diagnostic(
+                    self.registers,
+                );
+            }
+        }
     }
 
     fn read_diagnostic_value(&mut self) -> DiagnosticValue {
@@ -402,6 +446,41 @@ pub(crate) fn sample_scheduler_busy(
     registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
 ) -> bool {
     execute_scheduler_status_sample(&mut HardwareDiagnosticControl { registers })
+}
+
+/// Select the execution-modify progress signal, as the vendor does before it
+/// publishes the request.
+pub(crate) fn select_execution_modify_progress(
+    registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
+) {
+    HardwareDiagnosticControl { registers }.select(DiagnosticSelector::ExecutionModifyProgress);
+}
+
+/// Read the already selected progress signal and report whether execution
+/// modify must repeat its request.
+pub(crate) fn sample_execution_modify_repeats(
+    registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
+) -> bool {
+    execution_modify_repeats(stable_diagnostic_value(&mut HardwareDiagnosticControl {
+        registers,
+    }))
+}
+
+/// Select the execution-modify settle signal.
+pub(crate) fn select_execution_modify_settle(
+    registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
+) {
+    HardwareDiagnosticControl { registers }.select(DiagnosticSelector::ExecutionModifySettle);
+}
+
+/// Read the already selected settle signal and report whether execution
+/// modify settled.
+pub(crate) fn sample_execution_modify_settled(
+    registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
+) -> bool {
+    execution_modify_settled(stable_diagnostic_value(&mut HardwareDiagnosticControl {
+        registers,
+    }))
 }
 
 #[derive(Clone, Copy)]

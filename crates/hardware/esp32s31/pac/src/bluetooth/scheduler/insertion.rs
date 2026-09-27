@@ -77,7 +77,8 @@ pub struct BluetoothSchedulerExecutionModifyPublished {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use = "pending work must return to the executor; terminal work must advance insertion"]
 pub enum BluetoothSchedulerExecutionModifyDisposition {
-    /// Hardware remains busy and command-one status has not become ready.
+    /// The request waits for idle engines, a conflict to clear, command-one
+    /// readiness or the settle signal.
     Pending,
     /// Command one reached its accepted reconciliation edge.
     Ready,
@@ -232,20 +233,6 @@ fn execute_execution_lock_observation(
     }
 }
 
-fn execute_execution_modify_observation(
-    control: &mut impl BluetoothSchedulerInsertionExecutionObservationControl,
-    scheduler: BluetoothSchedulerBusyObservation,
-) -> BluetoothSchedulerExecutionModifyDisposition {
-    if scheduler.is_busy() && !control.observe_execution_modify_ready() {
-        return BluetoothSchedulerExecutionModifyDisposition::Pending;
-    }
-    if control.observe_execution_modify_rejected() {
-        BluetoothSchedulerExecutionModifyDisposition::HardwareRejected
-    } else {
-        BluetoothSchedulerExecutionModifyDisposition::Ready
-    }
-}
-
 impl BluetoothTaskRegisters {
     /// Publish command zero and return after its trailing device fence.
     ///
@@ -329,19 +316,67 @@ impl BluetoothTaskRegisters {
         execute_execution_modify_list_deletion_publication(&mut control, index)
     }
 
-    /// Perform one finite command-one observation in the reviewed
-    /// short-circuit order.
-    ///
-    /// While the scheduler is busy, a clear ready field returns immediately
-    /// without reading the terminal rejection field.
-    pub fn observe_scheduler_execution_modify(
+    /// Select the execution-modify progress signal of the diagnostic pair.
+    #[doc(hidden)]
+    pub fn select_scheduler_execution_modify_progress(
         &mut self,
-        scheduler: BluetoothSchedulerBusyObservation,
-    ) -> BluetoothSchedulerExecutionModifyDisposition {
-        let mut control = HardwareBluetoothSchedulerInsertionExecutionControl {
+        interrupts: &mut crate::BluetoothInterruptRegisters,
+    ) {
+        super::runtime::select_execution_modify_progress(
+            &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
+        );
+    }
+
+    /// Read the selected progress signal: whether execution modify must
+    /// repeat its request.
+    #[doc(hidden)]
+    pub fn scheduler_execution_modify_repeats(
+        &mut self,
+        interrupts: &mut crate::BluetoothInterruptRegisters,
+    ) -> bool {
+        super::runtime::sample_execution_modify_repeats(
+            &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
+        )
+    }
+
+    /// Select the execution-modify settle signal of the diagnostic pair.
+    #[doc(hidden)]
+    pub fn select_scheduler_execution_modify_settle(
+        &mut self,
+        interrupts: &mut crate::BluetoothInterruptRegisters,
+    ) {
+        super::runtime::select_execution_modify_settle(
+            &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
+        );
+    }
+
+    /// Read the selected settle signal: whether execution modify settled.
+    #[doc(hidden)]
+    pub fn scheduler_execution_modify_settled(
+        &mut self,
+        interrupts: &mut crate::BluetoothInterruptRegisters,
+    ) -> bool {
+        super::runtime::sample_execution_modify_settled(
+            &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
+        )
+    }
+
+    /// Read command-one ready status 17.
+    #[doc(hidden)]
+    pub fn scheduler_execution_modify_ready(&mut self) -> bool {
+        HardwareBluetoothSchedulerInsertionExecutionControl {
             registers: &self.bluetooth.bluetooth_controller_core,
-        };
-        execute_execution_modify_observation(&mut control, scheduler)
+        }
+        .observe_execution_modify_ready()
+    }
+
+    /// Read command-one status 19, which the vendor asserts is clear.
+    #[doc(hidden)]
+    pub fn scheduler_execution_modify_rejected(&mut self) -> bool {
+        HardwareBluetoothSchedulerInsertionExecutionControl {
+            registers: &self.bluetooth.bluetooth_controller_core,
+        }
+        .observe_execution_modify_rejected()
     }
 }
 

@@ -5,7 +5,7 @@ use oer_esp32s31_bluetooth_memory::ControllerSramLinkAddress;
 use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerCancellationIndexed, BluetoothSchedulerCancellationRequested,
     BluetoothSchedulerCancellationSourceAcknowledged, BluetoothSchedulerExecutionLockPublished,
-    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyPublished,
+    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModify,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerInsertionCommand,
     BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyPublished,
@@ -25,7 +25,7 @@ pub(crate) enum HalPublications {}
 
 impl SchedulerPublications for HalPublications {
     type Lock = BluetoothSchedulerExecutionLockPublished;
-    type Modify = BluetoothSchedulerExecutionModifyPublished;
+    type Modify = BluetoothSchedulerExecutionModify;
     type LockModify = BluetoothSchedulerLockModifyPublished;
     type Indexed = BluetoothSchedulerCancellationIndexed;
     type Acknowledged = BluetoothSchedulerCancellationSourceAcknowledged;
@@ -82,26 +82,18 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
     fn publish_execution_modify(
         &mut self,
         list_deletion: bool,
-    ) -> BluetoothSchedulerExecutionModifyPublished {
+    ) -> BluetoothSchedulerExecutionModify {
         // SAFETY: the executor owns list zero's reconciliation or deletion
         // until it releases execution modify.
         unsafe {
-            if list_deletion {
-                self.controller
-                    .publish_scheduler_execution_modify_list_deletion(LIST)
-            } else {
-                self.controller.publish_scheduler_execution_modify(LIST)
-            }
+            self.controller
+                .admit_scheduler_execution_modify(LIST, list_deletion)
         }
     }
 
-    fn release_execution_modify(&mut self, _modify: BluetoothSchedulerExecutionModifyPublished) {
-        // SAFETY: the consumed proof is the command this clear ends, and the
-        // task runtime serializes the command word.
-        let _cleared = unsafe {
-            self.controller
-                .clear_scheduler_insertion_command_start(BluetoothSchedulerInsertionCommand::One)
-        };
+    fn release_execution_modify(&mut self, modify: BluetoothSchedulerExecutionModify) {
+        self.controller
+            .clear_scheduler_execution_modify_start(modify);
     }
 
     fn publish_lock_modify(
@@ -178,9 +170,23 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
     fn observe(
         &mut self,
         wait: SchedulerWait,
+        modify: Option<&mut BluetoothSchedulerExecutionModify>,
         cancellation: Option<&mut BluetoothSchedulerCancellationRequested>,
         skip: Option<&BluetoothSchedulerSkipPublished>,
     ) -> Result<SchedulerObservation, SchedulerHardwareError> {
+        if wait == SchedulerWait::ExecutionModify {
+            // The request samples BUSY and the diagnostic pair itself, in
+            // the vendor order of its current phase.
+            let modify = modify.ok_or(SchedulerHardwareError::NotAwaiting(wait))?;
+            let controller = &mut *self.controller;
+            let disposition = self
+                .storage
+                .with_interrupt_registers(modify, |interrupts, modify| {
+                    controller.step_scheduler_execution_modify(interrupts, modify)
+                })
+                .map_err(|_| SchedulerHardwareError::InterruptOwnerUnavailable)?;
+            return Ok(SchedulerObservation::ExecutionModify(disposition));
+        }
         if wait == SchedulerWait::LockModify {
             let interrupt = self
                 .storage
@@ -200,9 +206,6 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
         Ok(match (wait, cancellation, skip) {
             (SchedulerWait::ExecutionLock, _, _) => SchedulerObservation::ExecutionLock(
                 self.controller.observe_scheduler_execution_lock(busy),
-            ),
-            (SchedulerWait::ExecutionModify, _, _) => SchedulerObservation::ExecutionModify(
-                self.controller.observe_scheduler_execution_modify(busy),
             ),
             (SchedulerWait::Cancellation, Some(requested), _) => {
                 SchedulerObservation::Cancellation(

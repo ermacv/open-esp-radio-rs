@@ -19592,6 +19592,16 @@ controller partition prevents either owner from manufacturing an MMIO alias.
                   <description>Lane zero selects the scheduler status signal; lanes one to three select signal zero.</description>
                   <value>56</value>
                 </enumeratedValue>
+                <enumeratedValue>
+                  <name>EXECUTION_MODIFY_PROGRESS</name>
+                  <description>Lane zero selects signal 1 and lane one signal 12. Execution modify repeats its request while lane-zero bits 2:0 hold 2, or hold 3 with lane-one bits 5:4 equal to 1.</description>
+                  <value>3073</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>EXECUTION_MODIFY_SETTLE</name>
+                  <description>Lane zero selects signal 7; lanes one to three select signal zero. Execution modify completes once the complete value differs from 9.</description>
+                  <value>7</value>
+                </enumeratedValue>
               </enumeratedValues>
             </field>
           </fields>

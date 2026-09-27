@@ -33,6 +33,7 @@ use crate::{
 };
 
 mod controller_time;
+mod scheduler_execution_modify;
 mod scheduler_stop;
 mod shutdown;
 #[cfg(feature = "validation-probes")]
@@ -43,6 +44,7 @@ pub use controller_time::{
     BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchRequest,
     BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
 };
+pub use scheduler_execution_modify::BluetoothSchedulerExecutionModify;
 pub use scheduler_stop::{BluetoothSchedulerStop, BluetoothSchedulerStopStep};
 pub use shutdown::{BluetoothControllerReset, BluetoothShutdownError, BluetoothShutdownFailure};
 
@@ -1592,59 +1594,54 @@ impl ControllerHal<'_> {
         self.registers.observe_scheduler_execution_lock(scheduler)
     }
 
-    /// Publish the insertion-begin execution-modify command through the
-    /// restricted PAC.
+    /// Admit one execution modify of `index`, in list-deletion mode when
+    /// `list_deletion`. Nothing is written until its first step.
     ///
     /// # Safety
     ///
-    /// The caller must retain the insertion reconciliation epoch and
-    /// exclusive ownership of `index` through insertion-end.
+    /// The caller must own insertion reconciliation or the deletion of
+    /// `index` and exclusive list ownership until it clears command-one
+    /// START through [`Self::clear_scheduler_execution_modify_start`].
     #[doc(hidden)]
     #[allow(
         unsafe_code,
-        reason = "the caller retains insertion reconciliation and list serialization"
+        reason = "the caller retains insertion reconciliation or list deletion and list serialization"
     )]
-    pub unsafe fn publish_scheduler_execution_modify(
+    pub unsafe fn admit_scheduler_execution_modify(
         &mut self,
         index: BluetoothSchedulerHardwareListIndex,
-    ) -> BluetoothSchedulerExecutionModifyPublished {
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the PAC transaction's prerequisites.
-        unsafe { self.registers.publish_scheduler_execution_modify(index) }
+        list_deletion: bool,
+    ) -> BluetoothSchedulerExecutionModify {
+        BluetoothSchedulerExecutionModify::new(index, list_deletion)
     }
 
-    /// Publish execution modify with its list-deletion mode bit through the
-    /// restricted PAC. Its observation and START clear are shared with
-    /// insertion.
-    ///
-    /// # Safety
-    ///
-    /// The caller must own the deletion of `index` and exclusive list
-    /// ownership until it clears command-one START.
-    #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "the caller retains list deletion and list serialization"
-    )]
-    pub unsafe fn publish_scheduler_execution_modify_list_deletion(
+    /// Advance one finite execution-modify step under interrupt
+    /// serialization: the engine-idle preamble, publication, the progress
+    /// and completion waits, the settle wait and a repeated request after a
+    /// conflict. Pending retains the request; the caller owns its deadline.
+    pub fn step_scheduler_execution_modify(
         &mut self,
-        index: BluetoothSchedulerHardwareListIndex,
-    ) -> BluetoothSchedulerExecutionModifyPublished {
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the PAC transaction's prerequisites.
-        unsafe {
-            self.registers
-                .publish_scheduler_execution_modify_list_deletion(index)
-        }
-    }
-
-    /// Perform one finite typed command-one observation in its reviewed
-    /// short-circuit order.
-    pub fn observe_scheduler_execution_modify(
-        &mut self,
-        scheduler: BluetoothSchedulerBusyObservation,
+        interrupts: &mut InterruptRegistersOwner,
+        modify: &mut BluetoothSchedulerExecutionModify,
     ) -> BluetoothSchedulerExecutionModifyDisposition {
-        self.registers.observe_scheduler_execution_modify(scheduler)
+        scheduler_execution_modify::step_hardware(self.registers, &mut interrupts.registers, modify)
+    }
+
+    /// Clear command-one START of a finished execution modify.
+    pub fn clear_scheduler_execution_modify_start(
+        &mut self,
+        mut modify: BluetoothSchedulerExecutionModify,
+    ) {
+        if modify.take_published().is_some() {
+            // SAFETY: the consumed request is the published command this
+            // clear ends, and the task runtime serializes the command word.
+            #[allow(unsafe_code, reason = "the consumed request proves the command")]
+            let _cleared = unsafe {
+                self.registers.clear_scheduler_insertion_command_start(
+                    BluetoothSchedulerInsertionCommand::One,
+                )
+            };
+        }
     }
 
     /// Publish one scheduler skip request through the restricted PAC.

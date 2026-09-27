@@ -239,7 +239,11 @@ insertion end. The registers are:
   clear, asserting after 9999 iterations, and waits until the complete value
   of diagnostic selector 7 differs from 9. A marked retry clears START and
   starts over; otherwise it leaves the critical section and asserts that
-  bit 19 is clear;
+  bit 19 is clear. The open HAL runs the same attempt as finite steps under
+  interrupt serialization: it publishes nothing until the engines are idle,
+  selects the progress signal again when an observation resumes after
+  another sample moved the selector, and reports bit 19 as a hardware
+  rejection;
 - `0x2010_1218` lock-modify request: bit 31 START and bits 19:0 compressed
   item, after the list index is written to the low nibble of `0x2010_136c`.
   Bits 30:27 return a result.

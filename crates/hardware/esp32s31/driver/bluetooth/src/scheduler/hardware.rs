@@ -74,6 +74,7 @@ pub(crate) trait SchedulerHardwareBackend {
     fn observe(
         &mut self,
         wait: SchedulerWait,
+        modify: Option<&mut Modify<Self>>,
         cancellation: Option<&mut Cancellation<Self>>,
         skip: Option<&Skip<Self>>,
     ) -> Result<SchedulerObservation, SchedulerHardwareError>;
@@ -234,7 +235,12 @@ impl<P: SchedulerPublications> SchedulerHardware<P> {
         if !awaiting {
             return Err(SchedulerHardwareError::NotAwaiting(wait));
         }
-        let observation = backend.observe(wait, self.cancellation.as_mut(), self.skip.as_ref())?;
+        let observation = backend.observe(
+            wait,
+            self.modify.as_mut(),
+            self.cancellation.as_mut(),
+            self.skip.as_ref(),
+        )?;
         if let SchedulerObservation::LockModify(observed) = observation
             && !observed.wait_active()
         {

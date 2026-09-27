@@ -5,11 +5,11 @@ use super::{
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerInterruptControl,
     BluetoothSchedulerSoftwareListRemovalControl, BluetoothSchedulerSoftwareListRemovalDisposition,
     BluetoothSchedulerSoftwareListRemovalInterruptStep,
-    BluetoothSchedulerSoftwareListRemovalRecheckControl, DiagnosticValue,
+    BluetoothSchedulerSoftwareListRemovalRecheckControl, DiagnosticSelector, DiagnosticValue,
     SchedulerStateObservation, execute_clear_scheduler_reference, execute_finished_list_transfer,
     execute_reference_gate_observation, execute_scheduler_status_sample,
     execute_software_list_removal_finish, execute_software_list_removal_recheck,
-    execute_work_observation,
+    execute_work_observation, execution_modify_repeats, execution_modify_settled,
 };
 
 #[test]
@@ -307,6 +307,7 @@ fn busy_scheduler_cannot_authorize_task_side_command_reads() {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DiagnosticOperation {
     SelectSchedulerStatus,
+    Select(DiagnosticSelector),
     ReadValue,
 }
 
@@ -316,9 +317,11 @@ struct DiagnosticRecorder {
 }
 
 impl BluetoothDiagnosticControl for DiagnosticRecorder {
-    fn select_scheduler_status(&mut self) {
-        self.operations
-            .push(DiagnosticOperation::SelectSchedulerStatus);
+    fn select(&mut self, selector: DiagnosticSelector) {
+        self.operations.push(match selector {
+            DiagnosticSelector::SchedulerStatus => DiagnosticOperation::SelectSchedulerStatus,
+            other => DiagnosticOperation::Select(other),
+        });
     }
 
     fn read_diagnostic_value(&mut self) -> DiagnosticValue {
@@ -383,4 +386,39 @@ fn scheduler_status_sample_rereads_both_values_until_a_pair_is_equal() {
             .count(),
         1
     );
+}
+
+const fn raw(lane_0: u8, lane_1: u8) -> DiagnosticValue {
+    DiagnosticValue {
+        value_0_low_7: lane_0 & 0x7f,
+        value_0_bit_7: lane_0 & 0x80 != 0,
+        value_1: lane_1,
+        value_2: 0,
+        value_3: 0,
+    }
+}
+
+#[test]
+fn execution_modify_repeats_in_state_two_or_state_three_with_lane_one_marked() {
+    assert!(execution_modify_repeats(raw(2, 0)));
+    assert!(execution_modify_repeats(raw(0x0a, 0xff)));
+    assert!(execution_modify_repeats(raw(3, 0x10)));
+    assert!(execution_modify_repeats(raw(3, 0xdf)));
+    assert!(!execution_modify_repeats(raw(3, 0x20)));
+    assert!(!execution_modify_repeats(raw(3, 0)));
+    for state in [0, 1, 4, 5, 6, 7] {
+        assert!(!execution_modify_repeats(raw(state, 0x10)));
+    }
+}
+
+#[test]
+fn execution_modify_settles_once_the_complete_value_differs_from_nine() {
+    assert!(!execution_modify_settled(raw(9, 0)));
+    assert!(execution_modify_settled(raw(8, 0)));
+    assert!(execution_modify_settled(raw(0x89, 0)));
+    assert!(execution_modify_settled(raw(9, 1)));
+    assert!(execution_modify_settled(DiagnosticValue {
+        value_3: 1,
+        ..raw(9, 0)
+    }));
 }

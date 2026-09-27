@@ -46156,6 +46156,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub enum Selection {
             #[doc = "56: Lane zero selects the scheduler status signal; lanes one to three select signal zero."]
             SchedulerStatus = 56,
+            #[doc = "3073: Lane zero selects signal 1 and lane one signal 12. Execution modify repeats its request while lane-zero bits 2:0 hold 2, or hold 3 with lane-one bits 5:4 equal to 1."]
+            ExecutionModifyProgress = 3073,
+            #[doc = "7: Lane zero selects signal 7; lanes one to three select signal zero. Execution modify completes once the complete value differs from 9."]
+            ExecutionModifySettle = 7,
         }
         impl From<Selection> for u32 {
             #[inline(always)]
@@ -46178,6 +46182,16 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             #[inline(always)]
             pub fn scheduler_status(self) -> &'a mut crate::W<REG> {
                 self.variant(Selection::SchedulerStatus)
+            }
+            #[doc = "Lane zero selects signal 1 and lane one signal 12. Execution modify repeats its request while lane-zero bits 2:0 hold 2, or hold 3 with lane-one bits 5:4 equal to 1."]
+            #[inline(always)]
+            pub fn execution_modify_progress(self) -> &'a mut crate::W<REG> {
+                self.variant(Selection::ExecutionModifyProgress)
+            }
+            #[doc = "Lane zero selects signal 7; lanes one to three select signal zero. Execution modify completes once the complete value differs from 9."]
+            #[inline(always)]
+            pub fn execution_modify_settle(self) -> &'a mut crate::W<REG> {
+                self.variant(Selection::ExecutionModifySettle)
             }
         }
         impl W {
@@ -61079,6 +61093,34 @@ pub mod fixed_register_write {
             registers
                 .diagnostic_select()
                 .write_with_zero(|writer| writer.selection().scheduler_status());
+        }
+    }
+
+    /// Write the `EXECUTION_MODIFY_PROGRESS` variant to every bit of `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`DIAGNOSTIC_SELECT`.
+    #[inline]
+    pub fn select_bluetooth_scheduler_execution_modify_progress_diagnostic(
+        registers: &crate::BluetoothSchedulerInterruptRuntime,
+    ) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .diagnostic_select()
+                .write_with_zero(|writer| writer.selection().execution_modify_progress());
+        }
+    }
+
+    /// Write the `EXECUTION_MODIFY_SETTLE` variant to every bit of `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`DIAGNOSTIC_SELECT`.
+    #[inline]
+    pub fn select_bluetooth_scheduler_execution_modify_settle_diagnostic(
+        registers: &crate::BluetoothSchedulerInterruptRuntime,
+    ) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .diagnostic_select()
+                .write_with_zero(|writer| writer.selection().execution_modify_settle());
         }
     }
 }

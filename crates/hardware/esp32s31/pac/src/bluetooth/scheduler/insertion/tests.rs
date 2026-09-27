@@ -2,10 +2,10 @@ use std::vec::Vec;
 
 use super::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockRequest,
-    BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerInsertionExecutionControl,
+    BluetoothSchedulerInsertionExecutionControl,
     BluetoothSchedulerInsertionExecutionObservationControl, execute_execution_lock_observation,
     execute_execution_lock_publication, execute_execution_modify_list_deletion_publication,
-    execute_execution_modify_observation, execute_execution_modify_publication,
+    execute_execution_modify_publication,
 };
 use crate::{
     BluetoothControllerSramAddress, BluetoothSchedulerBusyObservation,
@@ -135,38 +135,6 @@ fn execution_lock_preserves_idle_ready_and_result_short_circuits() {
             "result {result}"
         );
     }
-}
-
-#[test]
-fn execution_modify_reads_rejection_only_on_a_terminal_edge() {
-    let mut recorder = ObservationRecorder::new();
-    assert_eq!(
-        execute_execution_modify_observation(&mut recorder, scheduler(true)),
-        BluetoothSchedulerExecutionModifyDisposition::Pending
-    );
-    assert_eq!(recorder.operations, [ObservationOperation::ModifyReady]);
-
-    recorder.operations.clear();
-    assert_eq!(
-        execute_execution_modify_observation(&mut recorder, scheduler(false)),
-        BluetoothSchedulerExecutionModifyDisposition::Ready
-    );
-    assert_eq!(recorder.operations, [ObservationOperation::ModifyRejected]);
-
-    recorder.operations.clear();
-    recorder.modify_ready = true;
-    recorder.modify_rejected = true;
-    assert_eq!(
-        execute_execution_modify_observation(&mut recorder, scheduler(true)),
-        BluetoothSchedulerExecutionModifyDisposition::HardwareRejected
-    );
-    assert_eq!(
-        recorder.operations,
-        [
-            ObservationOperation::ModifyReady,
-            ObservationOperation::ModifyRejected,
-        ]
-    );
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

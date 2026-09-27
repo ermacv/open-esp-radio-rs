@@ -90,6 +90,16 @@ name = "SCHEDULER_STATUS"
 description = "Lane zero selects the scheduler status signal; lanes one to three select signal zero."
 value = 0x38
 
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "EXECUTION_MODIFY_PROGRESS"
+description = "Lane zero selects signal 1 and lane one signal 12. Execution modify repeats its request while lane-zero bits 2:0 hold 2, or hold 3 with lane-one bits 5:4 equal to 1."
+value = 0xC01
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "EXECUTION_MODIFY_SETTLE"
+description = "Lane zero selects signal 7; lanes one to three select signal zero. Execution modify completes once the complete value differs from 9."
+value = 0x7
+
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "DIAGNOSTIC_VALUE"
@@ -196,14 +206,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_SELECT"
-sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP", "BLOB_LIBBTDM_SCHEDULER_EXECUTION_MODIFY"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_SELECT.SELECTION"
-sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP", "BLOB_LIBBTDM_SCHEDULER_EXECUTION_MODIFY"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"

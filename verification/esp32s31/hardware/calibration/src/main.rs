@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 mod capture;
 mod compare;
+mod peer;
 mod production;
 mod registers;
 mod vendor;

@@ -72,7 +72,8 @@ pub fn analog_address(block: u8, register: u8) -> u32 {
     u32::from_be_bytes([0, 0, block, register])
 }
 
-fn analog_parts(address: u32) -> (u8, u8) {
+/// The block and register of an analog [`Register`] address.
+pub fn analog_parts(address: u32) -> (u8, u8) {
     let [_, _, block, register] = address.to_be_bytes();
     (block, register)
 }

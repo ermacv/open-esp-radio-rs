@@ -34,6 +34,8 @@ const TOLERANCES: &str = "tolerances.toml";
 /// root.
 const SUMMARY: &str = "verification/esp32s31/evidence/hardware/calibration.json";
 const RESTART_SUMMARY: &str = "verification/esp32s31/evidence/hardware/calibration-restart.json";
+/// Summary of an IEEE 802.15.4 point, a diagnostic beside its captures.
+const DIAGNOSTIC_SUMMARY: &str = "summary.json";
 const SECONDS_PER_DAY: u64 = 86_400;
 /// Extension of the captured production artifacts.
 const ARTIFACT_EXTENSION: &str = "bin";
@@ -480,6 +482,9 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         arguments.captures.join(crate::capture::RECORD),
     )?)?;
     let tolerances = reviews.at(capture.lifecycle)?;
+    // The IEEE 802.15.4 reference firmware reports no calibration objects:
+    // those points compare register state only.
+    let calibrated = !capture.lifecycle.ieee802154();
     let vendor = numbered(&arguments.captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
         .iter()
         .map(|path| {
@@ -489,6 +494,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
                 .ok_or_else(|| format!("{} lacks {VENDOR_OBJECT}", path.display()).into())
         })
         .collect::<Result<Vec<_>>>()?;
+    let vendor = if calibrated { vendor } else { vec![] };
     let texts = |prefix: &str, extension: &str| -> Result<Vec<String>> {
         numbered(&arguments.captures, prefix, extension)?
             .iter()
@@ -513,10 +519,11 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         .iter()
         .map(|path| production::output(&std::fs::read(path)?))
         .collect::<Result<Vec<_>>>()?;
-    if vendor.is_empty() || production.is_empty() {
+    if calibrated && (vendor.is_empty() || production.is_empty()) {
         return Err("the captures hold no vendor or no production calibration".into());
     }
-    let length = vendor[0].len();
+    let fields = if calibrated { fields } else { vec![] };
+    let length = vendor.first().map_or(0, Vec::len);
     if vendor.iter().any(|bytes| bytes.len() != length) {
         return Err(format!("{VENDOR_OBJECT} captures differ in length").into());
     }
@@ -529,7 +536,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
                 reason: review.reason.clone(),
             })
         })
-        .chain(std::iter::once(Excluded {
+        .chain(calibrated.then(|| Excluded {
             name: TRACKING_PROGRESS_FIELD,
             reason: "counts tracking work, not calibration".into(),
         }))
@@ -585,6 +592,9 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         .unwrap_or_else(|| match capture.lifecycle {
             Lifecycle::Cold => root.join(SUMMARY),
             Lifecycle::Restart => root.join(RESTART_SUMMARY),
+            Lifecycle::Ieee802154 | Lifecycle::Ieee802154Restart => {
+                arguments.captures.join(DIAGNOSTIC_SUMMARY)
+            }
         });
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;

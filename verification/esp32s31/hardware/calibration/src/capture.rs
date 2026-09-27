@@ -55,7 +55,38 @@ pub enum Lifecycle {
     Cold,
     /// After one further Wi-Fi radio restart: RF closed and woken.
     Restart,
+    /// After the IEEE 802.15.4 radio is configured and receives, before
+    /// any transmission.
+    Ieee802154,
+    /// As `Ieee802154`, after one IEEE 802.15.4 disable and enable (the
+    /// vendor driver's OFF and ON, production's session stop and start).
+    Ieee802154Restart,
 }
+
+impl Lifecycle {
+    /// Whether the IEEE 802.15.4 radio, rather than Wi-Fi, holds the PHY.
+    pub fn ieee802154(self) -> bool {
+        matches!(self, Self::Ieee802154 | Self::Ieee802154Restart)
+    }
+
+    /// The vendor firmware project and HIL image class of the point.
+    fn images(self) -> (&'static str, &'static str) {
+        if self.ieee802154() {
+            (IEEE802154_VENDOR_PROJECT, IEEE802154_PRODUCTION_IMAGE)
+        } else {
+            (CALIBRATION_VENDOR_PROJECT, CALIBRATION_PRODUCTION_IMAGE)
+        }
+    }
+}
+
+/// Vendor firmware projects of `verification/esp32s31/hil-vendor` and HIL
+/// image classes of the Wi-Fi and IEEE 802.15.4 points.
+const CALIBRATION_VENDOR_PROJECT: &str = "calibration";
+const CALIBRATION_PRODUCTION_IMAGE: &str = "correctness";
+const IEEE802154_VENDOR_PROJECT: &str = "ieee802154-reference";
+const IEEE802154_PRODUCTION_IMAGE: &str = "diagnostic-ieee802154-radio";
+/// Longest wait for one IEEE 802.15.4 session command of production.
+const SESSION_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -77,12 +108,14 @@ pub struct Arguments {
     /// Cold boots per side, alternating vendor and production.
     #[arg(long, default_value_t = 10)]
     boots: u32,
-    /// Vendor firmware project of `verification/esp32s31/hil-vendor`.
-    #[arg(long, default_value = "calibration")]
-    vendor_project: String,
-    /// HIL image class whose cold calibration is compared.
-    #[arg(long, default_value = "correctness")]
-    production_image: String,
+    /// Vendor firmware project of `verification/esp32s31/hil-vendor`; the
+    /// lifecycle point's own by default.
+    #[arg(long)]
+    vendor_project: Option<String>,
+    /// HIL image class whose calibration is compared; the lifecycle point's
+    /// own by default.
+    #[arg(long)]
+    production_image: Option<String>,
     /// Lifecycle point at which the registers are read.
     #[arg(long, value_enum, default_value_t = Lifecycle::Cold)]
     lifecycle: Lifecycle,
@@ -145,13 +178,19 @@ fn journal(root: &Path, image: &str, application: &Path, port: &Path) -> Result<
     Ok(())
 }
 
-/// The console of one reset vendor boot, up to its closed report, and the
-/// open port the firmware keeps answering on.
-fn vendor_boot(port: &Path) -> Result<(String, Box<dyn serialport::SerialPort>)> {
+/// The console port of the board, just reset.
+fn reset_console(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
     let mut serial = serialport::new(port.to_string_lossy(), BAUD_RATE)
         .timeout(READ_TIMEOUT)
         .open()?;
     oer_hil_runner_core::session::reset::reset_usb_serial_jtag(&mut *serial)?;
+    Ok(serial)
+}
+
+/// The console of one reset vendor boot, up to its closed report, and the
+/// open port the firmware keeps answering on.
+fn vendor_boot(port: &Path) -> Result<(String, Box<dyn serialport::SerialPort>)> {
+    let mut serial = reset_console(port)?;
     let started = Instant::now();
     let mut console = Vec::new();
     let mut buffer = [0; 1024];
@@ -270,15 +309,30 @@ fn production_boot(
     lab.device.startup_artifact = Some(artifact.to_owned());
     let capture = SerialCapture::start_with_reset(&lab.device.serial, output)?;
     let result = (|| {
-        let (_, status) = capture.prepare_startup(Target {
-            lab: &lab,
-            settings: Settings::default(),
-        })?;
+        // The IEEE 802.15.4 session replaces the image's own initialization:
+        // it is admitted only before it, and publishes no startup artifact.
+        let status = if lifecycle.ieee802154() {
+            capture.request_capabilities(SESSION_TIMEOUT)?;
+            None
+        } else {
+            let (_, status) = capture.prepare_startup(Target {
+                lab: &lab,
+                settings: Settings::default(),
+            })?;
+            status
+        };
         if lifecycle == Lifecycle::Restart {
             let evidence = capture
                 .wait_wifi_radio_restart(capture.request_radio_restart()?, RESTART_TIMEOUT)?;
             if evidence.rf != oer_hil_protocol::WifiRadioRestartRf::ClosedAndWoken {
                 return Err(format!("the production restart kept RF open: {evidence:?}").into());
+            }
+        }
+        if lifecycle.ieee802154() {
+            ieee802154_session(&capture)?;
+            if lifecycle == Lifecycle::Ieee802154Restart {
+                capture.stop_ieee802154_session(SESSION_TIMEOUT)?;
+                ieee802154_session(&capture)?;
             }
         }
         let mut replies = String::new();
@@ -309,6 +363,9 @@ fn production_boot(
         Ok((status, (replies, analog_replies)))
     })();
     let (status, replies) = capture.finish_with(result)?;
+    if lifecycle.ieee802154() {
+        return Ok(replies);
+    }
     let status = status.ok_or("the production image published no startup artifact")?;
     if status.disposition != oer_hil_protocol::StartupArtifactDisposition::Created {
         return Err(format!(
@@ -318,6 +375,27 @@ fn production_boot(
         .into());
     }
     Ok(replies)
+}
+
+/// Start production's IEEE 802.15.4 session on the reference firmware's
+/// channel and receive; the session's default PIB transmits at the same
+/// power.
+fn ieee802154_session(capture: &SerialCapture) -> Result<()> {
+    capture.start_ieee802154_session(
+        oer_hil_protocol::Ieee802154SessionConfig {
+            channel: crate::peer::CHANNEL,
+            pan_id: crate::peer::PAN_ID,
+            short_address: crate::peer::SHORT_ADDRESS,
+            extended_address: crate::peer::EXTENDED_ADDRESS,
+            promiscuous: false,
+            maintenance_policy: oer_hil_protocol::Ieee802154SessionMaintenancePolicy::Vendor,
+            background_maintenance: false,
+            enhanced_ack: false,
+            wifi_coexistence: false,
+        },
+        SESSION_TIMEOUT,
+    )?;
+    capture.receive_ieee802154_session()
 }
 
 /// Requests covering the ascending `indices` in runs of at most one reply.
@@ -348,12 +426,21 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     };
     let lab = LabConfig::load(&lab_path)?;
     let port = lab.device.serial.clone();
+    let (vendor_project, production_image) = arguments.lifecycle.images();
+    let vendor_project = arguments
+        .vendor_project
+        .as_deref()
+        .unwrap_or(vendor_project);
+    let production_image = arguments
+        .production_image
+        .as_deref()
+        .unwrap_or(production_image);
     let vendor_build: VendorBuild = serde_json::from_slice(&std::fs::read(
         root.join(VENDOR_FIRMWARE)
-            .join(&arguments.vendor_project)
+            .join(vendor_project)
             .join("build.json"),
     )?)?;
-    let (production, production_sha256) = build_production(&root, &arguments.production_image)?;
+    let (production, production_sha256) = build_production(&root, production_image)?;
     // The image's bootstrap ELF, from which the runner restores the HIL
     // bootloader on every production flash.
     let production_bootstrap =
@@ -371,7 +458,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
 
     // Vendor and production boots alternate, so both sides see the same
     // board temperature drift.
-    let journal_name = format!("{JOURNAL_PREFIX}{}", arguments.vendor_project);
+    let journal_name = format!("{JOURNAL_PREFIX}{vendor_project}");
     for boot in 1..=arguments.boots {
         oer_hil_runner_core::device::flash_application(
             &root,
@@ -382,27 +469,37 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             &port,
         )?;
         journal(&root, &journal_name, &vendor_build.application, &port)?;
-        let (console, mut serial) = vendor_boot(&port)?;
-        let mut replies = String::new();
-        if arguments.lifecycle == Lifecycle::Restart {
-            vendor_restart(&mut *serial, &mut replies)?;
-        }
-        vendor_registers(
-            &mut *serial,
-            Space::Mmio,
-            &registers,
-            arguments.lifecycle,
-            &mut replies,
-        )?;
-        let mut analog_replies = String::new();
-        vendor_registers(
-            &mut *serial,
-            Space::Analog,
-            &analog,
-            arguments.lifecycle,
-            &mut analog_replies,
-        )?;
-        drop(serial);
+        let (console, replies, analog_replies) = if arguments.lifecycle.ieee802154() {
+            let mut peer = crate::peer::Peer::boot(
+                reset_console(&port)?,
+                arguments.lifecycle == Lifecycle::Ieee802154Restart,
+            )?;
+            let replies = peer.registers(Space::Mmio, &registers)?;
+            let analog_replies = peer.registers(Space::Analog, &analog)?;
+            (peer.console, replies, analog_replies)
+        } else {
+            let (console, mut serial) = vendor_boot(&port)?;
+            let mut replies = String::new();
+            if arguments.lifecycle == Lifecycle::Restart {
+                vendor_restart(&mut *serial, &mut replies)?;
+            }
+            vendor_registers(
+                &mut *serial,
+                Space::Mmio,
+                &registers,
+                arguments.lifecycle,
+                &mut replies,
+            )?;
+            let mut analog_replies = String::new();
+            vendor_registers(
+                &mut *serial,
+                Space::Analog,
+                &analog,
+                arguments.lifecycle,
+                &mut analog_replies,
+            )?;
+            (console, replies, analog_replies)
+        };
         let stem = format!("{VENDOR_PREFIX}{boot:02}");
         std::fs::write(output.join(format!("{stem}.{CONSOLE_EXTENSION}")), console)?;
         std::fs::write(
@@ -426,7 +523,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             &output.join("flash-production"),
             &port,
         )?;
-        journal(&root, &arguments.production_image, &production, &port)?;
+        journal(&root, production_image, &production, &port)?;
         let answered = vendor::registers(&replies)?;
         let readable: Vec<usize> = registers
             .iter()
@@ -462,7 +559,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         lifecycle: arguments.lifecycle,
         vendor_application_sha256: vendor_build.application_sha256,
         vendor_idf_revision: vendor_build.idf_revision,
-        production_image: arguments.production_image.clone(),
+        production_image: production_image.to_owned(),
         production_application_sha256: production_sha256,
     };
     let mut bytes = serde_json::to_vec_pretty(&record)?;

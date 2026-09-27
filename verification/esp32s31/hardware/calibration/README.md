@@ -42,6 +42,17 @@ steps:
    vendor boot of the round read, and the whole analog image (HIL
    `PhyAnalogImage`, one production analog-I2C read per register).
 
+`--lifecycle ieee802154` and `ieee802154-restart` read the registers with
+the IEEE 802.15.4 radio instead of Wi-Fi holding the PHY. The vendor side is
+the [IEEE 802.15.4 reference firmware](../../hil-vendor/ieee802154-reference)
+configured on channel 15 at 21 dBm and receiving, after one driver disable
+and enable for the restart point, read through its `PEEK` and `ANALOG`
+commands; a read that resets or hangs the chip is recorded as unreadable
+after a board reset. Production runs the `diagnostic-ieee802154-radio`
+image's IEEE 802.15.4 session on the same channel. These points compare
+register state only and write their summary beside their captures. The
+production image must serve the register images during the session.
+
 `--lifecycle` selects when both sides report their registers. `cold`, the
 default, reads them after the cold calibration and the Wi-Fi bring-up.
 `restart` first restarts the Wi-Fi radio once: the vendor firmware stops

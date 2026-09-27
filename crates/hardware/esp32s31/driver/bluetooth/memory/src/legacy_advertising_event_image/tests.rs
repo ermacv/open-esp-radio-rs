@@ -1,6 +1,6 @@
 use super::{
-    LegacyAdvertisingLinkStateWords, LegacyAdvertisingOwnAddress, LegacyAdvertisingPrimaryChannel,
-    LegacyAdvertisingSchedulerItemWords,
+    LegacyAdvertisingItemPosition, LegacyAdvertisingLinkStateWords, LegacyAdvertisingOwnAddress,
+    LegacyAdvertisingPrimaryChannel, LegacyAdvertisingSchedulerItemWords,
 };
 use crate::{ControllerSramLinkAddress, LeTxPower};
 
@@ -56,7 +56,7 @@ fn an_item_carries_the_power_its_link_state_was_reset_with() {
         let item = zero_item().prepare_event_item(
             link_state,
             LegacyAdvertisingPrimaryChannel::Channel37,
-            None,
+            LegacyAdvertisingItemPosition::First,
             10,
             20,
         );
@@ -72,4 +72,37 @@ fn the_power_leaves_the_rate_word_untouched() {
     // Only the power byte of the priority word differs.
     assert_eq!(low.word_60 & 0xff, high.word_60 & 0xff);
     assert_ne!(low.word_60, high.word_60);
+}
+
+#[test]
+fn only_a_follower_may_start_as_soon_as_its_predecessor_ends() {
+    let link_state = reset(0);
+    let prepare = |position| {
+        LegacyAdvertisingSchedulerItemWords {
+            word_00: 0xffff_ffff,
+            ..zero_item()
+        }
+        .prepare_event_item(
+            link_state,
+            LegacyAdvertisingPrimaryChannel::Channel38,
+            position,
+            10,
+            20,
+        )
+        .word_00
+    };
+    let first = prepare(LegacyAdvertisingItemPosition::First);
+    let follower = prepare(LegacyAdvertisingItemPosition::Follower);
+    // From an item that carried every flag, one flag separates them: the
+    // first item clears it and the follower keeps it.
+    assert_eq!((first ^ follower).count_ones(), 1);
+    assert_eq!(follower & !first, first ^ follower);
+    assert_eq!(
+        LegacyAdvertisingItemPosition::of(0),
+        LegacyAdvertisingItemPosition::First
+    );
+    assert_eq!(
+        LegacyAdvertisingItemPosition::of(2),
+        LegacyAdvertisingItemPosition::Follower
+    );
 }

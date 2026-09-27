@@ -96,8 +96,10 @@ projection from the prepared PDU and a signed dBm request. This includes the
 terminal TX-header link, absent RX link, shared rounded-power conversion,
 primary-advertising Access Address and CRC preset, public/direct-random address
 branches and the reviewed standalone option byte. The option value is not a
-guessed bit meaning: same-chip `priv_config_opts_ro` is 46 bytes and its exact
-byte at `+0x29` is `3`, matching the current body's six-bit copy. Reset creates
+guessed bit meaning: the reset body copies six bits of byte `+0x2b` of the
+private options, which `r_priv_sdk_config_options_init` copies from the
+`0x48`-byte default `sym_controller_jqcSm1kAtUzAMoyGlaKq`, whose byte there
+is `3`. Reset creates
 a separate non-publishable typestate; cancellation clears the packet and
 rebuilds the allocation graph before returning it to the portable owner.
 
@@ -143,9 +145,11 @@ frequency integer crosses into the controller/LL layer. Before this mutation,
 the radio role admits the event against one fresh Controller-time sample and
 the executor's list mirror: each channel reserves one channel spacing from its
 anchor minus the preparation lead, and an overlap is rejected instead of
-displaced. Rejection leaves the configured set unchanged. The codec leaves
-item `+0x00` bit 22 clear on every item, including the followers the vendor
-marks; each follower therefore starts at its own programmed anchor.
+displaced. Rejection leaves the configured set unchanged. Like the vendor,
+the codec clears item `+0x00` bit 22 on the first item and sets it on every
+follower, so channels 38 and 39 may start as soon as the previous channel's
+item ends, never later than their programmed anchors. The executor still
+inserts each item by its own reserved window.
 
 ## Reviewed response-capable memory profile
 
@@ -194,12 +198,14 @@ events and returns processed buffers through `r_ble_lll_append_rx_buffer`.
 The fixed pool's hardware rotation and retirement are not qualified by its
 host model or by scheduler-item completion alone.
 
-The scheduler-window body adds the halfword at private configuration-table
-offset `+0x2c`, whose current and named tables both contain `4`, to the LE 1M
-primary-PDU duration when response capability is present. This is retained as
-an opaque four-microsecond response-capable scheduler tail reserve. The
-evidence does not identify it as an inter-frame space, receive window or scan
-response airtime. The receive allocator prepares the non-scanning receive
+When response capability is present, the scheduler-window body adds the
+halfword at `+0x2c` of the public Controller configuration that
+`r_sdkconfig_get_opts` returns to the LE 1M primary-PDU airtime. That field is
+`esp_bt_ctrl_le_config_t::ble_ll_sched_adv_max_usecs`, 852 microseconds by
+default (`BLE_LL_SCHED_ADV_MAX_USECS_N`). Its directed branch uses
+`ble_ll_sched_direct_adv_max_usecs` at `+0x2a` instead. The open radio does not
+derive the item length from this field: each channel reserves the channel
+spacing the portable Link Layer plans. The receive allocator prepares the non-scanning receive
 class and supplies the selected primary-channel count to vendor memory
 management. The memory typestate lowers one scheduler item per selected
 primary channel, as for non-connectable advertising; every item shares the

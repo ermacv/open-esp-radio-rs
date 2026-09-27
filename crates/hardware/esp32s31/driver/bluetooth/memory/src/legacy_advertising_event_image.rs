@@ -27,6 +27,9 @@ const OPTIONS_IMAGE_MASK: u32 = 0x3f00_0000;
 const REVIEWED_STANDALONE_OPTIONS: u32 = 3 << 24;
 
 const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
+/// Item `+0x00` bit 22, which the scanner's earliest-available start also
+/// selects: the item may start as soon as its predecessor ends.
+const SCHEDULER_ITEM_CHAINED_START: u32 = 1 << 22;
 const SCHEDULER_ITEM_FREQUENCY_MASK: u32 = 0x0000_7f00;
 const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 
@@ -231,19 +234,44 @@ pub(super) struct LegacyAdvertisingSchedulerItemWords {
     pub(super) word_4c: u32,
 }
 
+/// Position of one channel item within its advertising event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LegacyAdvertisingItemPosition {
+    /// The first selected channel, which starts at its programmed anchor.
+    First,
+    /// A later selected channel, which may start once its predecessor ends.
+    Follower,
+}
+
+impl LegacyAdvertisingItemPosition {
+    pub(super) const fn of(index: usize) -> Self {
+        if index == 0 {
+            Self::First
+        } else {
+            Self::Follower
+        }
+    }
+}
+
 impl LegacyAdvertisingSchedulerItemWords {
     /// Lower one accepted LE 1M channel item into the private layout.
+    ///
+    /// SOURCE: pinned `libble_app.a[ble_2.o]::r_sym_ble_GlcyfUkkhUzGUt8un0d8`
+    /// (`r_ble_lll_adv_sched_first_pri_event`) clears item `+0x00` bit 22 on
+    /// the first item; `r_sym_ble_eNifqLwR78cnxeKb1y6t`, which chains the
+    /// remaining primary channels, sets it on every legacy follower.
     pub(super) const fn prepare_event_item(
         mut self,
         link_state: LegacyAdvertisingLinkStateWords,
         channel: LegacyAdvertisingPrimaryChannel,
-        successor: Option<ControllerSramLinkAddress>,
+        position: LegacyAdvertisingItemPosition,
         raw_start: u32,
         raw_end: u32,
     ) -> Self {
-        self.word_00 &= !SCHEDULER_ITEM_HARDWARE_NEXT_MASK;
-        if let Some(successor) = successor {
-            self.word_00 |= successor.compressed_image();
+        // The executor links the items; each carries only its own window.
+        self.word_00 &= !(SCHEDULER_ITEM_HARDWARE_NEXT_MASK | SCHEDULER_ITEM_CHAINED_START);
+        if matches!(position, LegacyAdvertisingItemPosition::Follower) {
+            self.word_00 |= SCHEDULER_ITEM_CHAINED_START;
         }
         self.word_04 |= 0x8000_0000;
         self.word_14 =

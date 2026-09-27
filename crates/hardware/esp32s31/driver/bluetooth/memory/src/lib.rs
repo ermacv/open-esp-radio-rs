@@ -74,8 +74,7 @@ pub use connectable_advertising::{
     LegacyConnectableAdvIndPacketInput, LegacyConnectableAdvertisingError,
     LegacyConnectableAdvertisingMemoryInput, LegacyConnectableAdvertisingOwnAddress,
     LegacyConnectableAdvertisingPduFitError, LegacyConnectableAdvertisingPool,
-    LegacyConnectableAdvertisingPostAnchorDuration, LegacyConnectableAdvertisingStorage,
-    LegacyConnectableScanResponsePacketInput,
+    LegacyConnectableAdvertisingStorage, LegacyConnectableScanResponsePacketInput,
 };
 
 #[cfg(not(target_arch = "riscv32"))]

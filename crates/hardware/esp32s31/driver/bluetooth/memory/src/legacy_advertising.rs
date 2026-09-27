@@ -18,7 +18,8 @@ use crate::{
         LeTxPacketPrepareError, LeTxPacketPreparedLength,
     },
     legacy_advertising_event_image::{
-        LegacyAdvertisingLinkStateWords, LegacyAdvertisingOwnAddress, LegacyAdvertisingPduError,
+        LegacyAdvertisingItemPosition, LegacyAdvertisingLinkStateWords,
+        LegacyAdvertisingOwnAddress, LegacyAdvertisingPduError,
         LegacyAdvertisingPrimaryChannelPlan, LegacyAdvertisingSchedulerItemWords,
     },
     legacy_advertising_tx_packet::LegacyAdvertisingTxPacketStorage,
@@ -453,11 +454,13 @@ impl<const N: usize> LegacyAdvertisingPool<N> {
                 .channel(index)
                 .expect("a validated channel plan contains every active position");
             let item = &cpu.graph.items[index];
-            // The executor links the items; each carries only its own window.
-            item.write_reviewed_words(
-                item.reviewed_words()
-                    .prepare_event_item(link_state, channel, None, start, end),
-            );
+            item.write_reviewed_words(item.reviewed_words().prepare_event_item(
+                link_state,
+                channel,
+                LegacyAdvertisingItemPosition::of(index),
+                start,
+                end,
+            ));
             item.words[SCHEDULER_ITEM_COEX_PRIORITIES_OFFSET].set(
                 (item.words[SCHEDULER_ITEM_COEX_PRIORITIES_OFFSET].get() & !LANES_MASK)
                     | lanes_image(&coexistence.lanes),

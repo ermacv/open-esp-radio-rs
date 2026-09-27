@@ -23,8 +23,9 @@ use crate::{
         BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY, LegacyAdvertisingEvent,
     },
     legacy_advertising_event_image::{
-        LegacyAdvertisingLinkStateWords, LegacyAdvertisingOwnAddress,
-        LegacyAdvertisingPrimaryChannelPlan, LegacyAdvertisingSchedulerItemWords,
+        LegacyAdvertisingItemPosition, LegacyAdvertisingLinkStateWords,
+        LegacyAdvertisingOwnAddress, LegacyAdvertisingPrimaryChannelPlan,
+        LegacyAdvertisingSchedulerItemWords,
     },
     legacy_advertising_tx_packet::LegacyAdvertisingTxPacketStorage,
     rx_memory_list::RxMemoryListClass,
@@ -88,9 +89,6 @@ const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x0060_0000;
 // Complete common allocator applied to the standalone module default.
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0xffdf_7fff;
-
-const LE_1M_FIXED_PACKET_MICROS: u32 = 80;
-const VENDOR_RESPONSE_CAPABLE_ITEM_TAIL_MICROS: u32 = 4;
 
 /// Why an encoded advertising PDU cannot fit this S31 allocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -209,31 +207,6 @@ impl<'a> LegacyConnectableAdvertisingMemoryInput<'a> {
             scan_response,
             own_address,
         }
-    }
-}
-
-/// Vendor-derived duration after the nominal advertising anchor.
-///
-/// The duration contains the ADV_IND LE 1M airtime and the opaque four-
-/// microsecond response-capable item tail. It excludes the scheduler
-/// preparation lead, so it is not the complete `END - START` reservation and
-/// does not claim that the RF response window has ended.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LegacyConnectableAdvertisingPostAnchorDuration(u32);
-
-impl LegacyConnectableAdvertisingPostAnchorDuration {
-    /// Post-anchor duration in microseconds before controller-epoch projection.
-    pub const fn as_micros(self) -> u32 {
-        self.0
-    }
-
-    const fn for_payload(payload_length: u8) -> Self {
-        Self(
-            (payload_length as u32)
-                .wrapping_mul(8)
-                .wrapping_add(LE_1M_FIXED_PACKET_MICROS)
-                .wrapping_add(VENDOR_RESPONSE_CAPABLE_ITEM_TAIL_MICROS),
-        )
     }
 }
 
@@ -615,11 +588,13 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
                 .channel(index)
                 .expect("a validated channel plan contains every active position");
             let item = &graph.items[index];
-            // The executor links the items; each carries only its own window.
-            item.write_reviewed_words(
-                item.reviewed_words()
-                    .prepare_event_item(link_state, channel, None, start, end),
-            );
+            item.write_reviewed_words(item.reviewed_words().prepare_event_item(
+                link_state,
+                channel,
+                LegacyAdvertisingItemPosition::of(index),
+                start,
+                end,
+            ));
             // Common r_btdm_sched_calc_seq_time projection.
             item.header().set_sequence(start, end, raw_sequence_lead);
             item.words[SCHEDULER_ITEM_COEX_PRIORITIES].set(
@@ -692,17 +667,6 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
             graph
                 .scan_response_packet
                 .prepared_pdu(prepared.scan_response)
-        })
-    }
-
-    pub fn post_anchor_duration(
-        &self,
-        instance: &SchedulerRoleInstance,
-    ) -> Option<LegacyConnectableAdvertisingPostAnchorDuration> {
-        self.prepared(instance).map(|(_, prepared)| {
-            LegacyConnectableAdvertisingPostAnchorDuration::for_payload(
-                prepared.adv_ind.payload_bytes(),
-            )
         })
     }
 

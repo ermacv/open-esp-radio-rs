@@ -93,10 +93,6 @@ fn preparation_chains_both_pdus_and_joins_the_non_scanning_chain() {
         pool.scan_response_pdu(&instance),
         Some(&SCAN_RESPONSE_PDU[..])
     );
-    assert_eq!(
-        pool.post_anchor_duration(&instance).unwrap().as_micros(),
-        9 * 8 + 80 + 4
-    );
 
     let (graph, binding, state) = pool.shared(&instance).unwrap();
     let words = &graph.link_state.words;

@@ -44,6 +44,9 @@ const CONSOLE_TAIL_CHARS: usize = 2000;
 /// Extensions of the per-boot vendor consoles and register replies.
 pub const CONSOLE_EXTENSION: &str = "log";
 pub const REGISTER_EXTENSION: &str = "registers";
+/// Vendor window reads, and the qualifier of the reads after a transmission.
+const WINDOW_EXTENSION: &str = "windows";
+const TRANSMITTED: &str = "transmitted";
 pub const ANALOG_EXTENSION: &str = "analog";
 
 /// Lifecycle point at which both sides report their state.
@@ -96,8 +99,12 @@ pub struct Capture {
     pub lifecycle: Lifecycle,
     pub vendor_application_sha256: String,
     pub vendor_idf_revision: String,
-    pub production_image: String,
-    pub production_application_sha256: String,
+    /// The production image class and digest; absent for a vendor-only
+    /// capture.
+    #[serde(default)]
+    pub production_image: Option<String>,
+    #[serde(default)]
+    pub production_application_sha256: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -119,6 +126,20 @@ pub struct Arguments {
     /// Lifecycle point at which the registers are read.
     #[arg(long, value_enum, default_value_t = Lifecycle::Cold)]
     lifecycle: Lifecycle,
+    /// Further device windows the vendor reference firmware reads with
+    /// `PEEK` at an IEEE 802.15.4 point, as `ADDRESS:WORDS` (hexadecimal
+    /// address, decimal word count), recorded in `vendor-NN.windows`.
+    /// Production publishes only its register partition, so the windows are
+    /// a vendor-side investigation, not a comparison.
+    #[arg(long = "vendor-window", value_parser = parse_window)]
+    vendor_windows: Vec<(u32, u32)>,
+    /// After the reads, transmit one frame on the vendor side and read its
+    /// analog image and windows again (`vendor-NN.transmitted.*`).
+    #[arg(long)]
+    vendor_transmit: bool,
+    /// Boot only the vendor firmware.
+    #[arg(long)]
+    vendor_only: bool,
     #[arg(long)]
     lab_config: Option<PathBuf>,
 }
@@ -425,8 +446,41 @@ fn windows(indices: &[usize]) -> Vec<oer_hil_protocol::PhyRegisterImageRequest> 
     windows
 }
 
+/// `ADDRESS:WORDS` of one vendor window.
+fn parse_window(text: &str) -> std::result::Result<(u32, u32), String> {
+    let (address, words) = text
+        .split_once(':')
+        .ok_or_else(|| format!("{text}: expected ADDRESS:WORDS"))?;
+    let address = u32::from_str_radix(address.trim_start_matches("0x"), 16)
+        .map_err(|error| format!("{address}: {error}"))?;
+    let words: u32 = words.parse().map_err(|error| format!("{words}: {error}"))?;
+    if address % 4 != 0 || words == 0 {
+        return Err(format!(
+            "{text}: a word-aligned address and at least one word"
+        ));
+    }
+    Ok((address, words))
+}
+
+/// The registers of vendor `windows`, one per word.
+fn window_registers(windows: &[(u32, u32)]) -> Vec<Register> {
+    windows
+        .iter()
+        .flat_map(|&(address, words)| (0..words).map(move |word| address + 4 * word))
+        .map(|address| Register {
+            name: format!("window.{address:08x}"),
+            address,
+        })
+        .collect()
+}
+
 pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let root = repository_root().canonicalize()?;
+    let investigates = !arguments.vendor_windows.is_empty() || arguments.vendor_transmit;
+    if investigates && !arguments.lifecycle.ieee802154() {
+        return Err("vendor windows and transmission need an IEEE 802.15.4 point".into());
+    }
+    let windows = window_registers(&arguments.vendor_windows);
     let lab_path = match &arguments.lab_config {
         Some(path) => path.clone(),
         None => LabConfig::default_path()?,
@@ -447,11 +501,17 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             .join(vendor_project)
             .join("build.json"),
     )?)?;
-    let (production, production_sha256) = build_production(&root, production_image)?;
+    let built = if arguments.vendor_only {
+        None
+    } else {
+        Some(build_production(&root, production_image)?)
+    };
     // The image's bootstrap ELF, from which the runner restores the HIL
     // bootloader on every production flash.
-    let production_bootstrap =
-        Some(production.with_file_name(BOOTSTRAP_ELF)).filter(|path| path.is_file());
+    let production_bootstrap = built
+        .as_ref()
+        .map(|(production, _)| production.with_file_name(BOOTSTRAP_ELF))
+        .filter(|path| path.is_file());
     let registers = crate::registers::partition(&root, crate::registers::PARTITION)?;
     let analog = crate::registers::analog(&root, crate::registers::ANALOG_DOMAIN)?;
     if let Some(parent) = arguments.output.parent() {
@@ -483,6 +543,26 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             )?;
             let replies = peer.registers(Space::Mmio, &registers)?;
             let analog_replies = peer.registers(Space::Analog, &analog)?;
+            let stem = output.join(format!("{VENDOR_PREFIX}{boot:02}"));
+            if !windows.is_empty() {
+                let lines = peer.registers(Space::Mmio, &windows)?;
+                std::fs::write(stem.with_extension(WINDOW_EXTENSION), lines)?;
+            }
+            if arguments.vendor_transmit {
+                peer.transmit()?;
+                let analog = peer.registers(Space::Analog, &analog)?;
+                std::fs::write(
+                    stem.with_extension(format!("{TRANSMITTED}.{ANALOG_EXTENSION}")),
+                    analog,
+                )?;
+                if !windows.is_empty() {
+                    let lines = peer.registers(Space::Mmio, &windows)?;
+                    std::fs::write(
+                        stem.with_extension(format!("{TRANSMITTED}.{WINDOW_EXTENSION}")),
+                        lines,
+                    )?;
+                }
+            }
             (peer.console, replies, analog_replies)
         } else {
             let (console, mut serial) = vendor_boot(&port)?;
@@ -522,15 +602,18 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             registers.len(),
             analog.len()
         );
+        let Some((production, _)) = &built else {
+            continue;
+        };
 
         oer_hil_runner_core::device::flash_application(
             &root,
-            &production,
+            production,
             production_bootstrap.as_deref(),
             &output.join("flash-production"),
             &port,
         )?;
-        journal(&root, production_image, &production, &port)?;
+        journal(&root, production_image, production, &port)?;
         let answered = vendor::registers(&replies)?;
         let readable: Vec<usize> = registers
             .iter()
@@ -566,8 +649,8 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         lifecycle: arguments.lifecycle,
         vendor_application_sha256: vendor_build.application_sha256,
         vendor_idf_revision: vendor_build.idf_revision,
-        production_image: production_image.to_owned(),
-        production_application_sha256: production_sha256,
+        production_image: built.as_ref().map(|_| production_image.to_owned()),
+        production_application_sha256: built.map(|(_, sha256)| sha256),
     };
     let mut bytes = serde_json::to_vec_pretty(&record)?;
     bytes.push(b'\n');
@@ -578,6 +661,16 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vendor_windows_parse_into_word_registers() {
+        assert_eq!(parse_window("2010fc00:2"), Ok((0x2010_fc00, 2)));
+        assert!(parse_window("2010fc02:2").is_err());
+        assert!(parse_window("2010fc00").is_err());
+        let registers = window_registers(&[(0x2010_fc00, 2), (0x2010_08b8, 1)]);
+        let addresses: Vec<u32> = registers.iter().map(|r| r.address).collect();
+        assert_eq!(addresses, [0x2010_fc00, 0x2010_fc04, 0x2010_08b8]);
+    }
 
     #[test]
     fn readable_indices_group_into_reply_windows() {

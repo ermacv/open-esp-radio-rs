@@ -578,8 +578,12 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         vendor_application_sha256: capture.vendor_application_sha256,
         vendor_idf_revision: capture.vendor_idf_revision,
         vendor_captures: vendor.len(),
-        production_image: capture.production_image,
-        production_application_sha256: capture.production_application_sha256,
+        production_image: capture
+            .production_image
+            .ok_or("a vendor-only capture has no production side to compare")?,
+        production_application_sha256: capture
+            .production_application_sha256
+            .ok_or("a vendor-only capture has no production side to compare")?,
         production_captures: production.len(),
         fields: summaries,
         excluded,

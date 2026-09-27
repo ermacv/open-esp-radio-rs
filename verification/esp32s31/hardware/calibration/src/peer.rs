@@ -24,6 +24,28 @@ pub const PAN_ID: u16 = 0x1234;
 pub const SHORT_ADDRESS: u16 = 0x0001;
 pub const EXTENDED_ADDRESS: [u8; 8] = [0x02, 0x4f, 0x45, 0x52, 0x00, 0x00, 0x00, 0x01];
 
+/// The frame a transmitting point sends: a data frame without an
+/// acknowledgement request (frame control 0x8841), sequence zero, from the
+/// configured short address to the broadcast address of the configured PAN,
+/// with a one-byte payload.
+const TRANSMIT_FRAME_CONTROL: u16 = 0x8841;
+const BROADCAST: u16 = 0xffff;
+const TRANSMIT_PAYLOAD: u8 = 0;
+
+fn transmit_command() -> String {
+    let bytes: Vec<u8> = TRANSMIT_FRAME_CONTROL
+        .to_le_bytes()
+        .into_iter()
+        .chain([0])
+        .chain(PAN_ID.to_le_bytes())
+        .chain(BROADCAST.to_le_bytes())
+        .chain(SHORT_ADDRESS.to_le_bytes())
+        .chain([TRANSMIT_PAYLOAD])
+        .collect();
+    let frame: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    format!("TX 0 {frame}\n")
+}
+
 fn configuration() -> String {
     let extended: String = EXTENDED_ADDRESS
         .iter()
@@ -78,6 +100,25 @@ impl Peer {
             self.wait(|console| ok_lines(console, &name) > done, &name)?;
         }
         Ok(())
+    }
+
+    /// Transmit one frame without CCA and wait for its completion.
+    pub fn transmit(&mut self) -> Result<()> {
+        let done = transmissions(&self.console);
+        self.serial.write_all(transmit_command().as_bytes())?;
+        self.wait(
+            |console| transmissions(console) > done,
+            "transmit completion",
+        )?;
+        match complete_lines(&self.console)
+            .filter(|l| l.starts_with("@TXDONE") || l.starts_with("@TXFAIL"))
+            .last()
+        {
+            Some(line) if line.starts_with("@TXFAIL") => {
+                Err(format!("the reference firmware failed to transmit: {line}").into())
+            }
+            _ => Ok(()),
+        }
     }
 
     fn read_some(&mut self) -> Result<()> {
@@ -171,6 +212,12 @@ fn ready_lines(console: &str) -> usize {
         .count()
 }
 
+fn transmissions(console: &str) -> usize {
+    complete_lines(console)
+        .filter(|l| l.starts_with("@TXDONE") || l.starts_with("@TXFAIL"))
+        .count()
+}
+
 fn ok_lines(console: &str, command: &str) -> usize {
     let expected = format!("@OK {command}");
     complete_lines(console).filter(|l| *l == expected).count()
@@ -219,5 +266,7 @@ mod tests {
         assert_eq!(ready_lines(console), 1);
         assert_eq!(ok_lines(console, "CFG"), 1);
         assert!(configuration().starts_with("CFG 15 1234 0001 024f4552"));
+        assert_eq!(transmit_command(), "TX 0 4188003412ffff010000\n");
+        assert_eq!(transmissions("@TXDONE ack=-\n@TXFAIL 3\n@TXDONE"), 2);
     }
 }

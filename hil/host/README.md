@@ -105,7 +105,7 @@ cargo hil queue                       # holders, queue with expected starts, boa
 cargo hil dashboard                   # the same, live, with recent runs: http://127.0.0.1:8765
 cargo hil --budget 10m run <scenario> # one run, one lease
 cargo hil --budget 15m run a b c      # one run of three scenarios, one lease
-cargo hil lease --board c5 --budget 5m -- idf.py -p <port> flash
+cargo hil lease --board esp32c5 --budget 5m -- idf.py -p <port> flash
 cargo hil --owner phy lease --budget 20m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
 
@@ -121,7 +121,7 @@ ELF's file name. `--monitor 30s` then captures the console into
 does. The lease ends with the capture, so an open monitor never holds a board.
 
 ```console
-cargo hil --budget 3m flash --board c5 --monitor 30s --until READY target/.../app.elf
+cargo hil --budget 3m flash --board esp32c5 --monitor 30s --until READY target/.../app.elf
 ```
 
 `dashboard` serves a page on the loopback interface (`--port` changes the
@@ -179,9 +179,15 @@ identified by the MAC address its USB Serial/JTAG port reports as USB serial
 number, independent of `/dev/ttyACM*` numbering. Every board is part of the
 stand: flash and use any board only under a lease.
 
+A board is named by its full chip name (`esp32s31`, `esp32c5`). Wherever a
+board is expected (`--board`, `board =` in the lab configuration), its
+registered name, its MAC, or its chip when it is the only registered board of
+that chip selects it; a chip with several registered boards is refused with
+their names.
+
 ```console
 cargo hil devices                     # boards: label, port, last firmware
-cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --name c5
+cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --name esp32c5
 cargo hil lease --flashed ieee802154-peer --application build/peer.bin \
     --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \
     --chip esp32c5 -- idf.py -p /dev/ttyACM1 flash
@@ -199,7 +205,7 @@ archives every image builds against. Builds are reproducible
 ```console
 cargo hil firmware list
 cargo hil firmware build ieee802154-peer
-cargo hil --budget 5m firmware flash ieee802154-peer --board c5
+cargo hil --budget 5m firmware flash ieee802154-peer --board esp32c5
 ```
 
 `firmware flash` builds the image, leases only the named board with the air

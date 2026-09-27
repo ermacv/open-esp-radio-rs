@@ -249,7 +249,7 @@ mod tests {
         use clap::Parser as _;
         let cli = FlashCli::try_parse_from([
             "--board",
-            "c5",
+            "esp32c5",
             "--monitor",
             "30s",
             "--until",
@@ -257,9 +257,9 @@ mod tests {
             "app.elf",
         ])
         .unwrap();
-        assert_eq!(cli.board, "c5");
+        assert_eq!(cli.board, "esp32c5");
         assert_eq!(cli.elf, Path::new("app.elf"));
         assert_eq!(cli.air, oer_hil_arbiter::Mode::Shared);
-        assert!(FlashCli::try_parse_from(["--board", "c5", "--until", "X", "a.elf"]).is_err());
+        assert!(FlashCli::try_parse_from(["--board", "esp32c5", "--until", "X", "a.elf"]).is_err());
     }
 }

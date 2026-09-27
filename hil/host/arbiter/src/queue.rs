@@ -112,21 +112,21 @@ mod tests {
     #[test]
     fn disjoint_requests_proceed_while_conflicting_ones_keep_arrival_order() {
         let state = State {
-            holders: vec![holder(ticket(1, false, 300, board("s31")))],
+            holders: vec![holder(ticket(1, false, 300, board("esp32s31")))],
             queue: vec![
-                ticket(2, false, 60, board("s31")),
-                ticket(3, false, 60, board("c5")),
+                ticket(2, false, 60, board("esp32s31")),
+                ticket(3, false, 60, board("esp32c5")),
                 ticket(
                     4,
                     false,
                     60,
-                    vec![Claim::board("c5"), Claim::exclusive(AIR)],
+                    vec![Claim::board("esp32c5"), Claim::exclusive(AIR)],
                 ),
             ],
             ..State::default()
         };
-        assert_eq!(grantable(&state, 2), None, "s31 is held");
-        assert_eq!(grantable(&state, 3), Some(false), "c5 is free");
+        assert_eq!(grantable(&state, 2), None, "esp32s31 is held");
+        assert_eq!(grantable(&state, 3), Some(false), "esp32c5 is free");
         assert_eq!(
             grantable(&state, 4),
             None,
@@ -139,8 +139,8 @@ mod tests {
     fn a_short_ticket_passes_earlier_conflicting_ones_once() {
         let mut state = State {
             queue: vec![
-                ticket(1, false, 600, board("s31")),
-                ticket(2, true, 60, board("s31")),
+                ticket(1, false, 600, board("esp32s31")),
+                ticket(2, true, 60, board("esp32s31")),
             ],
             holders: vec![],
             ..State::default()
@@ -155,11 +155,11 @@ mod tests {
     #[test]
     fn expected_starts_count_only_conflicting_work() {
         let state = State {
-            holders: vec![holder(ticket(9, false, 300, board("s31")))],
+            holders: vec![holder(ticket(9, false, 300, board("esp32s31")))],
             queue: vec![
-                ticket(1, false, 600, board("s31")),
-                ticket(2, false, 60, board("c5")),
-                ticket(3, false, 60, board("s31")),
+                ticket(1, false, 600, board("esp32s31")),
+                ticket(2, false, 60, board("esp32c5")),
+                ticket(3, false, 60, board("esp32s31")),
             ],
             ..State::default()
         };

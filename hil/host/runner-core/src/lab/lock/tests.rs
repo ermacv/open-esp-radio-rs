@@ -185,9 +185,9 @@ fn a_board_is_refused_only_when_its_newest_flash_is_another_image() {
             origin: String::from("test"),
         },
     };
-    assert!(board_image_matches(None, "c5", "peer", "reflash").is_ok());
-    assert!(board_image_matches(Some(&flash("peer")), "c5", "peer", "reflash").is_ok());
-    let error = board_image_matches(Some(&flash("ble-peer")), "c5", "peer", "reflash")
+    assert!(board_image_matches(None, "esp32c5", "peer", "reflash").is_ok());
+    assert!(board_image_matches(Some(&flash("peer")), "esp32c5", "peer", "reflash").is_ok());
+    let error = board_image_matches(Some(&flash("ble-peer")), "esp32c5", "peer", "reflash")
         .unwrap_err()
         .to_string();
     assert!(error.contains("`ble-peer` flashed by bluetooth"), "{error}");

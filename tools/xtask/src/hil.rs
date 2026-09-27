@@ -1018,11 +1018,11 @@ mod tests {
         let devices = [oer_hil_arbiter::Device {
             mac: "38:44:BE:AA:25:64".into(),
             chip: None,
-            name: Some("c5".into()),
+            name: Some("esp32c5".into()),
         }];
         assert_eq!(lease_claims(&[], None, &devices).unwrap(), [Claim::stand()]);
         assert_eq!(
-            lease_claims(&["c5".into()], None, &devices).unwrap(),
+            lease_claims(&["esp32c5".into()], None, &devices).unwrap(),
             [Claim::board("38:44:BE:AA:25:64"), Claim::shared(AIR)]
         );
         assert_eq!(

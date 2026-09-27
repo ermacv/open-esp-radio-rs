@@ -216,9 +216,9 @@ mod tests {
     #[test]
     fn claims_conflict_on_exclusive_use_and_on_the_whole_stand() {
         use Mode::{Exclusive, Shared};
-        let s31 = claims(&[("board:s31", Exclusive), (AIR, Shared)]);
-        let c5 = claims(&[("board:c5", Exclusive), (AIR, Shared)]);
-        let rf = claims(&[("board:c5", Exclusive), (AIR, Exclusive)]);
+        let s31 = claims(&[("board:esp32s31", Exclusive), (AIR, Shared)]);
+        let c5 = claims(&[("board:esp32c5", Exclusive), (AIR, Shared)]);
+        let rf = claims(&[("board:esp32c5", Exclusive), (AIR, Exclusive)]);
         assert!(!conflict(&s31, &c5), "different boards share the air");
         assert!(
             conflict(&s31, &rf),

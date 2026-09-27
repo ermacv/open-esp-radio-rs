@@ -20,12 +20,13 @@ pub struct Device {
 }
 
 impl Device {
-    /// `name (chip)`, or the MAC when nothing else is known.
+    /// `name (chip)`, the name alone when it is the chip, or the MAC when
+    /// nothing else is known.
     pub fn label(&self) -> String {
         let name = self.name.as_deref().unwrap_or(&self.mac);
         match &self.chip {
-            Some(chip) => format!("{name} ({chip})"),
-            None => name.to_owned(),
+            Some(chip) if chip != name => format!("{name} ({chip})"),
+            _ => name.to_owned(),
         }
     }
 }
@@ -65,20 +66,38 @@ pub fn attached_ports() -> Vec<AttachedPort> {
         .collect()
 }
 
-/// The MAC of a board named by its registered name or by its MAC.
+/// The MAC of a board named by its registered name, by its chip when it is
+/// the only registered board of that chip, or by its MAC.
 pub fn board_mac(devices: &[Device], board: &str) -> crate::Result<String> {
-    match devices
+    if let Some(device) = devices
         .iter()
         .find(|device| device.name.as_deref() == Some(board))
     {
-        Some(device) => Ok(device.mac.clone()),
-        None => normalize_mac(board).map_err(|_| {
-            format!(
-                "board `{board}` is neither a registered name nor a MAC; see `cargo hil devices`"
-            )
-            .into()
-        }),
+        return Ok(device.mac.clone());
     }
+    let of_chip = devices
+        .iter()
+        .filter(|device| device.chip.as_deref() == Some(board))
+        .collect::<Vec<_>>();
+    match of_chip.as_slice() {
+        [device] => return Ok(device.mac.clone()),
+        [] => {}
+        several => {
+            let names = several
+                .iter()
+                .map(|device| device.name.as_deref().unwrap_or(&device.mac))
+                .collect::<Vec<_>>();
+            return Err(format!(
+                "several {board} boards are registered ({}); name one of them",
+                names.join(", ")
+            )
+            .into());
+        }
+    }
+    normalize_mac(board).map_err(|_| {
+        format!("board `{board}` is neither a registered name, a chip nor a MAC; see `cargo hil devices`")
+            .into()
+    })
 }
 
 /// The registered label of the board with `mac`, or the MAC.
@@ -212,9 +231,23 @@ mod tests {
         let devices = [Device {
             mac: "38:44:BE:AA:25:64".into(),
             chip: None,
-            name: Some("c5".into()),
+            name: Some("esp32c5".into()),
         }];
-        assert_eq!(board_mac(&devices, "c5").unwrap(), "38:44:BE:AA:25:64");
+        assert_eq!(board_mac(&devices, "esp32c5").unwrap(), "38:44:BE:AA:25:64");
+        // A chip names its only registered board, never one of several.
+        let chip_only = |name: Option<&str>, mac: &str| Device {
+            mac: mac.into(),
+            chip: Some("esp32h2".into()),
+            name: name.map(Into::into),
+        };
+        let one = [chip_only(None, "AA:AA:AA:AA:AA:01")];
+        assert_eq!(board_mac(&one, "esp32h2").unwrap(), "AA:AA:AA:AA:AA:01");
+        let two = [
+            chip_only(Some("esp32h2-dut"), "AA:AA:AA:AA:AA:01"),
+            chip_only(Some("esp32h2-peer"), "AA:AA:AA:AA:AA:02"),
+        ];
+        let error = board_mac(&two, "esp32h2").unwrap_err().to_string();
+        assert!(error.contains("esp32h2-dut, esp32h2-peer"), "{error}");
         assert_eq!(
             board_mac(&devices, "30:ed:a0:f3:f6:d0").unwrap(),
             "30:ED:A0:F3:F6:D0"
@@ -237,11 +270,11 @@ mod tests {
             .register_device(Device {
                 mac: "30:ED:A0:F3:F6:D0".into(),
                 chip: Some("other".into()),
-                name: Some("s31".into()),
+                name: Some("esp32s31".into()),
             })
             .unwrap();
         assert_eq!(device.chip.as_deref(), Some("esp32s31"));
-        assert_eq!(device.label(), "s31 (esp32s31)");
+        assert_eq!(device.label(), "esp32s31");
         arbiter
             .set_device(Device {
                 mac: "30:ED:A0:F3:F6:D0".into(),
@@ -252,6 +285,6 @@ mod tests {
         let devices = arbiter.devices().unwrap();
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].chip.as_deref(), Some("esp32c5"));
-        assert_eq!(devices[0].name.as_deref(), Some("s31"));
+        assert_eq!(devices[0].name.as_deref(), Some("esp32s31"));
     }
 }

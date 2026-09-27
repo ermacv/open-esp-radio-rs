@@ -121,23 +121,23 @@ fn a_nested_command_may_use_only_what_the_enclosing_lease_holds() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
     let grant = arbiter
-        .acquire_within(&on_board("s31", request("phy", "series")), None)
+        .acquire_within(&on_board("esp32s31", request("phy", "series")), None)
         .unwrap();
     let token = grant.environment()[0].1.clone();
-    let inside = on_board("s31", request("phy", "run a"));
+    let inside = on_board("esp32s31", request("phy", "run a"));
     assert!(
         arbiter
             .acquire_within(&inside, Some(token.clone()))
             .unwrap()
             .is_nested()
     );
-    let other_board = on_board("c5", request("phy", "run b"));
+    let other_board = on_board("esp32c5", request("phy", "run b"));
     let error = arbiter
         .acquire_within(&other_board, Some(token))
         .err()
         .unwrap()
         .to_string();
-    assert!(error.contains("board:c5"), "{error}");
+    assert!(error.contains("board:esp32c5"), "{error}");
 }
 
 #[test]
@@ -151,17 +151,17 @@ fn leases_on_different_boards_are_held_at_once() {
             7,
             "wifi",
             identity,
-            vec![Claim::board("s31"), Claim::shared(AIR)],
+            vec![Claim::board("esp32s31"), Claim::shared(AIR)],
         ),
     );
     let grant = arbiter
-        .acquire_within(&on_board("c5", request("802154", "peer")), None)
+        .acquire_within(&on_board("esp32c5", request("802154", "peer")), None)
         .unwrap();
     assert_eq!(state(&arbiter).holders.len(), 2);
     drop(grant);
     // Exclusive air waits for every radio user.
     let rf = Request {
-        claims: vec![Claim::board("c5"), Claim::exclusive(AIR)],
+        claims: vec![Claim::board("esp32c5"), Claim::exclusive(AIR)],
         ..request("phy", "rf")
     };
     let waiter = {
@@ -286,7 +286,7 @@ fn divisible_work_is_asked_to_yield_only_while_it_blocks_a_waiter() {
         .acquire_within(
             &Request {
                 budget: Some(Duration::from_secs(2)),
-                ..on_board("s31", request("phy", "series"))
+                ..on_board("esp32s31", request("phy", "series"))
             },
             None,
         )
@@ -298,9 +298,9 @@ fn divisible_work_is_asked_to_yield_only_while_it_blocks_a_waiter() {
         &arbiter,
         ticket(
             50,
-            "c5",
+            "esp32c5",
             identity,
-            vec![Claim::board("c5"), Claim::shared(AIR)],
+            vec![Claim::board("esp32c5"), Claim::shared(AIR)],
         ),
     );
     std::thread::sleep(Duration::from_millis(2300).saturating_sub(granted.elapsed()));
@@ -308,7 +308,7 @@ fn divisible_work_is_asked_to_yield_only_while_it_blocks_a_waiter() {
     assert!(!grant.blocks_waiters());
     arbiter
         .transaction(|state| {
-            state.queue[0].claims = normalize(&[Claim::board("s31")]);
+            state.queue[0].claims = normalize(&[Claim::board("esp32s31")]);
             Ok(())
         })
         .unwrap();
@@ -338,11 +338,11 @@ fn status_and_board_report_the_latest_state() {
     let (holder, identity) = other_process();
     hold(
         &arbiter,
-        ticket(4, "802154", identity, vec![Claim::board("c5")]),
+        ticket(4, "802154", identity, vec![Claim::board("esp32c5")]),
     );
     let status = arbiter.status().unwrap();
     assert_eq!(status.holders[0].owner, "802154");
-    assert_eq!(status.holders[0].claims, "board:c5");
+    assert_eq!(status.holders[0].claims, "board:esp32c5");
     assert_eq!(status.startup_artifacts.len(), 1);
     assert!(
         status
@@ -402,7 +402,7 @@ fn hold_supervised_lease(directory: std::ffi::OsString) {
         .acquire_within(
             &Request {
                 budget: Some(Duration::from_secs(1)),
-                ..on_board("s31", request("phy", "hung"))
+                ..on_board("esp32s31", request("phy", "hung"))
             },
             None,
         )
@@ -441,7 +441,7 @@ fn indivisible_work_is_preempted_at_its_budget_when_others_wait() {
         |arbiter| {
             queue(
                 arbiter,
-                ticket(1000, "wifi", identity, vec![Claim::board("s31")]),
+                ticket(1000, "wifi", identity, vec![Claim::board("esp32s31")]),
             )
         },
     );
@@ -475,7 +475,7 @@ fn a_new_request_waits_for_live_leases_of_the_previous_schema() {
         let arbiter = arbiter.clone();
         std::thread::spawn(move || {
             arbiter
-                .acquire_within(&on_board("c5", request("802154", "peer")), None)
+                .acquire_within(&on_board("esp32c5", request("802154", "peer")), None)
                 .is_ok()
         })
     };

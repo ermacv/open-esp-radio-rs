@@ -1,6 +1,7 @@
 //! The translations between OpenThread's radio values and the portable
 //! IEEE 802.15.4 contract.
 
+use oer_esp32s31_hal::{coex::Ieee802154CoexLevel, ieee802154::coex::Ieee802154CoexConfig};
 use oer_ieee802154::{
     AppliedSecurity, AutoPendingMode, Configuration, FrameAddress, MAX_MAC_FRAME_LEN, MacKeys,
     SentAcknowledgement, TxSecurity, TxStatus,
@@ -225,6 +226,25 @@ pub fn pending_changes(
         apply(Configuration::AddPendingAddress(extended_pending_address(
             extended,
         )));
+    }
+}
+
+/// The scene levels after an OpenThread role change, as ESP-IDF's
+/// `handle_ot_role_change` sets them with software coexistence: immediate
+/// transmission and reception at the low level while the device keeps its
+/// receiver on when idle, at the middle level for a sleepy device; the
+/// other levels stay.
+pub const fn role_coex_config(
+    current: Ieee802154CoexConfig,
+    rx_on_when_idle: bool,
+) -> Ieee802154CoexConfig {
+    Ieee802154CoexConfig {
+        txrx: if rx_on_when_idle {
+            Ieee802154CoexLevel::Low
+        } else {
+            Ieee802154CoexLevel::Middle
+        },
+        ..current
     }
 }
 

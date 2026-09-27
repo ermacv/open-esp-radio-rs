@@ -5,9 +5,9 @@ use oer_ieee802154::{
 
 use super::{
     PORT_INITIAL_KEYS, TransmitFailure, csl_period, extended_address, extended_pending_address,
-    pending_changes, pending_mode, psdu_mac, radio_time, scan_micros, sent_ack_security,
-    set_frame_counter, set_mac_keys, short_pending_address, transmit_failure, tx_security,
-    write_applied_security, write_psdu,
+    pending_changes, pending_mode, psdu_mac, radio_time, role_coex_config, scan_micros,
+    sent_ack_security, set_frame_counter, set_mac_keys, short_pending_address, transmit_failure,
+    tx_security, write_applied_security, write_psdu,
 };
 
 #[test]
@@ -185,4 +185,27 @@ fn pending_changes_follow_the_table_entry_by_entry() {
     let mut none = 0;
     pending_changes(&[1], &[1], &[5], &[5], |_| none += 1);
     assert_eq!(none, 0);
+}
+
+/// A role change sets the TX/RX level from the link mode and keeps the
+/// others, as `handle_ot_role_change` does.
+#[test]
+fn role_changes_set_the_txrx_level_from_the_link_mode() {
+    use oer_esp32s31_hal::{coex::Ieee802154CoexLevel, ieee802154::coex::Ieee802154CoexConfig};
+    let current = Ieee802154CoexConfig {
+        idle: Ieee802154CoexLevel::Idle,
+        txrx: Ieee802154CoexLevel::High,
+        txrx_at: Ieee802154CoexLevel::High,
+    };
+    assert_eq!(
+        role_coex_config(current, true),
+        Ieee802154CoexConfig {
+            txrx: Ieee802154CoexLevel::Low,
+            ..current
+        }
+    );
+    assert_eq!(
+        role_coex_config(current, false).txrx,
+        Ieee802154CoexLevel::Middle
+    );
 }

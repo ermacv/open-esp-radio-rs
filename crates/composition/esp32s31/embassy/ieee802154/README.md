@@ -127,6 +127,8 @@ coexistence as the vendor driver does with `CONFIG_ESP_COEX_SW_COEXIST_ENABLE`:
 `start` reads the arbiter's coexistence table once and the engine publishes
 the ACK priority at the middle level and the TX/RX priority of each scene
 (idle, low for transmission and reception, middle for timed operations).
+`Ieee802154System::coex_config` returns the levels in use
+(`esp_ieee802154_get_coex_config`), and
 `Ieee802154System::update_coexistence` reads the table again, optionally with
 other scene levels (`esp_ieee802154_set_coex_config`); a changed table does
 not reach the MAC until it is called. Stopping the client returns both

@@ -260,6 +260,9 @@ pub struct Ieee802154System {
     /// Bound except while PHY maintenance holds the MAC paused, or after a
     /// failed rebind.
     bound: Option<BoundEspHalIeee802154InterruptRoute>,
+    /// The scene levels the MAC's priorities were resolved with
+    /// (`s_coex_config`).
+    coex_config: Ieee802154CoexConfig,
 }
 
 /// Why PHY maintenance failed.
@@ -488,6 +491,7 @@ pub async fn start<P, C: PlatformClockProvider>(
             route: Some(Route::Awake(route)),
             rf_policy: Ieee802154RfPolicy::AlwaysOn,
             bound: Some(bound),
+            coex_config: Ieee802154CoexConfig::VENDOR,
         }),
         Err(error) => {
             let parts = RUNTIME
@@ -699,12 +703,20 @@ impl Ieee802154System {
     ///
     /// The runtime holds no radio.
     pub async fn update_coexistence<P, C: PlatformClockProvider>(
-        &self,
+        &mut self,
         radio: &RadioSystem<P, C>,
         config: Ieee802154CoexConfig,
     ) -> Result<(), Ieee802154RuntimeError> {
         let mut guard = radio.lock().await;
-        RUNTIME.set_coexistence(coexistence(guard.lease(), config))
+        RUNTIME.set_coexistence(coexistence(guard.lease(), config))?;
+        self.coex_config = config;
+        Ok(())
+    }
+
+    /// The scene levels the MAC's priorities were last resolved with
+    /// (`esp_ieee802154_get_coex_config`): the vendor default after start.
+    pub const fn coex_config(&self) -> Ieee802154CoexConfig {
+        self.coex_config
     }
 
     /// Run one shared PHY tracking tick under the domain's maintenance
@@ -888,6 +900,7 @@ impl Ieee802154System {
             route,
             rf_policy,
             bound,
+            coex_config,
         } = self;
         if let Some(bound) = bound
             && let Err((error, bound)) = bound.quiesce()
@@ -898,6 +911,7 @@ impl Ieee802154System {
                     route,
                     rf_policy,
                     bound: Some(bound),
+                    coex_config,
                 }),
             });
         }

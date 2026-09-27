@@ -484,6 +484,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32c5-vendor-scenarios"
+version = "0.1.0"
+dependencies = [
+ "blobray-application",
+ "blobray-domain",
+ "clap",
+ "oer-vendor-scenario-engine",
+]
+
+[[package]]
 name = "oer-esp32s31-vendor-scenarios"
 version = "0.1.0"
 dependencies = [

@@ -11,6 +11,7 @@ members = [
     "crates/store",
     "crates/verification",
     "next",
+    "../../verification/esp32c5/scenarios",
     "../../verification/esp32s31/scenarios",
     "../../verification/harness/scenarios",
 ]

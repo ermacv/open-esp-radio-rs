@@ -550,6 +550,13 @@ cargo hil fixture install --provider linux-net
 cargo hil fixture install --provider linux-bluetooth
 ```
 
+Installation queues on the stand like a run, claiming only
+`fixture-software:<provider>` exclusively: it waits for the runs using that
+provider and later runs of the provider wait for it. Runs claim it shared and
+take the software lease only once granted, so a queued run never blocks an
+installation. Preparation happens before queueing; `sudo` prompts only once
+the claim is granted.
+
 Bluetooth policy admits only named adapters. It defaults to the dedicated
 `hci0`; repeat `--adapter hciN` to install a sorted finite allow-list. Reinstall
 with the adapters selected by the private lab configuration before using

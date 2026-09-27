@@ -222,6 +222,27 @@ fn a_run_claims_its_boards_fixtures_and_the_air() {
     assert_eq!(claims_of(&lab, &without_device), [Claim::shared(AIR)]);
 }
 
+#[test]
+fn a_run_shares_its_fixture_software_with_other_runs_but_not_an_installation() {
+    use oer_hil_arbiter::Claim;
+    let lab = crate::lab::config::LabConfig::for_test();
+    let required = crate::lab::requirements::Requirements {
+        bluetooth_adapter: true,
+        ..Default::default()
+    };
+    let claims = claims_of(
+        &lab,
+        &LeaseRequest {
+            device: false,
+            ..LeaseRequest::device(required)
+        },
+    );
+    let software =
+        crate::fixture::software::resource(oer_hil_fixture_install::Provider::LinuxBluetooth);
+    assert!(claims.contains(&Claim::shared(&software)), "{claims:?}");
+    assert!(!claims.contains(&Claim::exclusive(&software)));
+}
+
 fn claims_of(
     lab: &crate::lab::config::LabConfig,
     request: &LeaseRequest,

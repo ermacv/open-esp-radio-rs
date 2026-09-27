@@ -82,9 +82,7 @@ pub(crate) fn run() -> Result<()> {
             let catalog = Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
-            let required = selected.requirements();
-            let _software =
-                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            // The stand's lease takes the fixture software once granted.
             crate::execution::fixture_check::check_without_device(&root, &lab, selected)
         }
         CliCommand::Doctor(selection) => {
@@ -137,10 +135,9 @@ pub(crate) fn run() -> Result<()> {
             let snapshot = image::snapshot::capture(&root, &source_include)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = requirements(&selected);
-            let _software =
-                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
-            // Orchestration builds the images, then leases the stand.
+            // Orchestration builds the images, then leases the stand and
+            // the fixture software.
             orchestration::run_all(
                 &root,
                 &lab,
@@ -302,14 +299,13 @@ pub(crate) fn run() -> Result<()> {
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let selected = selected.iter().collect::<Vec<_>>();
             let required = requirements(&selected);
-            let _software =
-                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             let invocation = orchestration::Invocation {
                 arguments: invocation,
                 snapshot,
             };
-            // Orchestration builds the images, then leases the stand.
+            // Orchestration builds the images, then leases the stand and
+            // the fixture software.
             match selected.as_slice() {
                 [single] => {
                     orchestration::run_one(&root, &lab, &catalog, single, firmware, invocation)
@@ -333,10 +329,9 @@ pub(crate) fn run() -> Result<()> {
             .resolve(&catalog)?;
             let snapshot = image::snapshot::capture(&root, &source_include)?;
             let required = requirements(&selected);
-            let _software =
-                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
-            // Orchestration builds the images, then leases the stand.
+            // Orchestration builds the images, then leases the stand and
+            // the fixture software.
             orchestration::run_all(
                 &root,
                 &lab,

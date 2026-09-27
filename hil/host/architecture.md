@@ -46,6 +46,11 @@ selector, receipt and selected artifact under the shared lease. Fixed finite
 launchers perform this admission and bind a concrete generation before direct
 network, probe or Bluetooth helper execution; they neither recover nor install.
 These locks never acquire a device or replace the physical fixture leases below.
+The stand's arbiter orders both sides: a run claims
+`fixture-software:<provider>` shared and takes the software lease only once
+granted, and `cargo hil fixture install` claims it exclusively before `sudo`.
+An installation therefore waits only for runs using its provider, never for a
+queued run, and runs queued after it wait for the new generation.
 
 The runner entry point in `runner/src/main.rs` registers the executable's build
 identity with `runner-core`, then maps the top-level result to the process exit

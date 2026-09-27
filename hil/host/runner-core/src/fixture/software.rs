@@ -1,4 +1,10 @@
 //! Shared software-generation ownership across one fixture operation or HIL run.
+//!
+//! A provider's installed software is also a stand resource,
+//! `fixture-software:<provider>`: runs claim it shared and an installation
+//! claims it exclusively, so an installation queues behind the runs using the
+//! provider and later runs queue behind it. Runs take the software lease only
+//! once the stand granted their claims, never while they wait.
 
 use oer_hil_fixture_install::{OperationalLease, Provider};
 
@@ -13,27 +19,14 @@ impl SoftwareLease {
         lab: &crate::lab::config::LabConfig,
         required: crate::lab::requirements::Requirements,
     ) -> Result<Self> {
-        let mut providers = Vec::new();
-        if required.bluetooth_adapter {
-            providers.push(Provider::LinuxBluetooth);
-        }
-        if required.local_radio()
-            || (required.station_network
-                && matches!(
-                    lab.station_fixture,
-                    crate::lab::config::StationFixtureConfig::LocalLinux(_)
-                ))
-        {
-            providers.push(Provider::LinuxNet);
-        }
-        Self::acquire(providers)
+        Self::acquire(providers(lab, required))
     }
 
     pub fn acquire_one(provider: Provider) -> Result<Self> {
         Self::acquire([provider])
     }
 
-    fn acquire(providers: impl IntoIterator<Item = Provider>) -> Result<Self> {
+    pub(crate) fn acquire(providers: impl IntoIterator<Item = Provider>) -> Result<Self> {
         #[cfg(target_os = "linux")]
         {
             let mut providers = providers.into_iter().collect::<Vec<_>>();
@@ -55,4 +48,41 @@ impl SoftwareLease {
             })
         }
     }
+}
+
+/// The fixture software providers `required` runs on.
+pub fn providers(
+    lab: &crate::lab::config::LabConfig,
+    required: crate::lab::requirements::Requirements,
+) -> Vec<Provider> {
+    let mut providers = Vec::new();
+    if required.bluetooth_adapter {
+        providers.push(Provider::LinuxBluetooth);
+    }
+    if required.local_radio()
+        || (required.station_network
+            && matches!(
+                lab.station_fixture,
+                crate::lab::config::StationFixtureConfig::LocalLinux(_)
+            ))
+    {
+        providers.push(Provider::LinuxNet);
+    }
+    providers
+}
+
+/// The stand resource of `provider`'s installed software.
+pub fn resource(provider: Provider) -> String {
+    format!("fixture-software:{}", provider.as_str())
+}
+
+/// Wait in the stand's queue until no run uses `provider`, for installing it.
+/// The grant keeps later runs of the provider queued until it is dropped.
+pub fn install_grant(provider: Provider) -> Result<oer_hil_arbiter::Grant> {
+    let mut request = oer_hil_arbiter::Request::from_environment(format!(
+        "fixture install --provider {}",
+        provider.as_str()
+    ))?;
+    request.claims = vec![oer_hil_arbiter::Claim::exclusive(resource(provider))];
+    oer_hil_arbiter::Arbiter::open()?.acquire(&request)
 }

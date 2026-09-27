@@ -18,7 +18,6 @@ pub(crate) fn run(
     }
     #[cfg(target_os = "linux")]
     {
-        use std::os::unix::process::CommandExt as _;
         require_unprivileged(rustix::process::geteuid().as_raw())?;
         // All downloads, patching and compilation happen without root, before
         // the installer takes terminal control for its narrow system writes.
@@ -55,19 +54,32 @@ pub(crate) fn run(
         oer_process::run(&mut build)?;
         let operator = current_operator()?;
         let bundle = prepare(root, provider, &operator, &plan.allowed_bluetooth_adapters)?;
-        // This is a terminal handoff, not a supervised background workload.
-        // exec preserves the foreground process group and standard streams so
-        // sudo owns password echo, input and job control. No HIL owners have
-        // been acquired; sudo also becomes the command's exit-status authority.
-        let error = Command::new("sudo")
+        // Queue behind the runs using the provider; runs queued later wait
+        // for the installation. Nothing supervises this lease: the operator
+        // may take a while to answer sudo, and a partial installation is
+        // worse than a late one.
+        eprintln!(
+            "hil-arbiter: queueing for {}",
+            hil_core::fixture::software::resource(provider)
+        );
+        let grant = hil_core::fixture::software::install_grant(provider)?;
+        // sudo runs in this foreground process group with the terminal's
+        // standard streams, so it owns password echo, input and job control,
+        // and its exit status is the command's.
+        let status = Command::new("sudo")
             .arg(
                 root.join("target/hil/fixture-build/debug")
                     .join(INSTALLER_BINARY),
             )
             .args(["--provider", provider.as_str(), "--bundle"])
             .arg(bundle)
-            .exec();
-        Err(format!("cannot start the Linux fixture installer: {error}").into())
+            .status()
+            .map_err(|error| format!("cannot start the Linux fixture installer: {error}"))?;
+        drop(grant);
+        if !status.success() {
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        Ok(())
     }
     #[cfg(not(target_os = "linux"))]
     {

@@ -19,6 +19,8 @@ pub use oer_hil_arbiter::Mode as AirMode;
 pub struct FixtureLock {
     _device: Option<oer_esp32s31_firmware::device::DeviceLease>,
     _resources: Vec<ResourceLease>,
+    /// Keeps the fixture software from being reinstalled during the lease.
+    _software: Option<crate::fixture::software::SoftwareLease>,
     // Declared last so the fixture locks are released before the stand's
     // lease that ordered them.
     grant: Option<oer_hil_arbiter::Grant>,
@@ -90,6 +92,11 @@ impl FixtureLock {
             request.divisible,
         )?;
         let mut owner = wait_for_fixture(|| Self::lock_now(lab, &keys, request.device))?;
+        // Taken only once granted: a queued run must not block an
+        // installation queued before it.
+        owner._software = Some(crate::fixture::software::SoftwareLease::acquire(
+            crate::fixture::software::providers(lab, request.required),
+        )?);
         owner.grant = Some(grant);
         owner.request = Some(request);
         Ok(owner)
@@ -147,6 +154,7 @@ impl FixtureLock {
         Ok(Self {
             _device: device,
             _resources: resources,
+            _software: None,
             grant: None,
             request: None,
         })
@@ -199,6 +207,11 @@ fn claims(
         keys.iter()
             .filter(|key| !key.starts_with("ieee802154-peer:"))
             .map(Claim::exclusive),
+    );
+    claims.extend(
+        crate::fixture::software::providers(lab, request.required)
+            .into_iter()
+            .map(|provider| Claim::shared(crate::fixture::software::resource(provider))),
     );
     claims.push(Claim {
         resource: oer_hil_arbiter::AIR.to_owned(),

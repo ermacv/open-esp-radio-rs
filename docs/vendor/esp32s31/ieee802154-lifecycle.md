@@ -162,6 +162,25 @@ order:
 9. Clear the software RX-buffer queue and set the software state to idle.
 10. Allocate the IRQ and initialize sleep/retention support.
 
+A build with external coexistence (`CONFIG_ESP_COEX_EXTERNAL_COEXIST_ENABLE`)
+then calls `esp_coex_ieee802154_force_rx_enable(true)`, and `ieee802154_mac_deinit`
+calls it with `false` before freeing the IRQ; its operations also enter the
+external-coexistence TX and RX stages. On the pinned ESP32-S31 libcoexist
+(`esp32s31/libcoexist.a` sha256
+`13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147`; members
+`coexist_api.o` sha256
+`2fef142ce7fcbd837f67989d48e8b2a9b8acb67b2decd4daef0463b8ed648118` and
+`coexist_hw.o` sha256
+`a7771f1930dc23b790c4e1c1e41c4e4208db1956777eb06d6f5bee8f1770fd71`) both
+stage entry points are a bare `ret`, as the reviewed fact
+`BLOB_LIBCOEX_IEEE802154_HANDOFF` records. `esp_coex_ieee802154_force_rx_enable`
+calls `hal_set_IEEE802154_force_rx_enable`, which replaces `CTRL_CFG` bits
+31:26 with the argument at bit 26 (`FORCE_RX_ENB`), clearing the four
+multi-PAN interface enables and `RX_DONE_TRIGGER_IDLE`, and tail-calls
+`hal_set_IEEE802154_coex_delay(8)`, which replaces `COEX_ARB_DELAY` (bits
+23:16) with 8. The port has no external-coexistence owner, so neither write is
+made; they belong with external coexistence in the coexistence driver.
+
 The abort-enable operations are OR assignments. The selected bits above are
 proven to be set, but this source set does not document reset images for those
 registers, so equality to those masks must not be claimed without an additional

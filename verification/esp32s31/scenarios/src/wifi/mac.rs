@@ -213,9 +213,18 @@ impl Vendor<'_> {
         (self.resolve)(name)
     }
 
+    /// The address of a symbol or uniquely named input section of the
+    /// linked image.
+    pub(crate) fn image_symbol(&self, name: &str) -> Result<u32> {
+        self.image
+            .get(name)
+            .copied()
+            .ok_or_else(|| invalid(format!("the linked image does not place {name}")))
+    }
+
     /// The boundary of a call model answering `name`: captured code when the
     /// linked image defines it, an unmapped address otherwise.
-    fn boundary(&self, name: &str) -> CallBoundary {
+    pub(crate) fn boundary(&self, name: &str) -> CallBoundary {
         call_boundary(self.image, name)
     }
 }
@@ -1096,7 +1105,9 @@ fn compared_bytes(objects: &[(u32, Vec<u8>)], compared: &[(u32, u32)]) -> Result
 }
 
 /// Addresses of the named symbols of the linked image, including the
-/// absolute companion definitions.
+/// absolute companion definitions, and of the input sections its link map
+/// places by section name: a local object without a symbol, such as a
+/// static byte in `.bss.<name>`, is addressed by its section.
 fn image_symbols(elf: &std::path::Path) -> Result<BTreeMap<String, u32>> {
     use object::{Object, ObjectSymbol};
     let bytes = std::fs::read(elf)?;
@@ -1108,6 +1119,11 @@ fn image_symbols(elf: &std::path::Path) -> Result<BTreeMap<String, u32>> {
             && !symbol.is_undefined()
         {
             symbols.entry(name.to_owned()).or_insert(address);
+        }
+    }
+    if let Ok(map) = std::fs::read_to_string(elf.with_file_name(crate::state::LINK_MAP)) {
+        for section in crate::state::link_map_sections(&map) {
+            symbols.entry(section.name).or_insert(section.address);
         }
     }
     Ok(symbols)

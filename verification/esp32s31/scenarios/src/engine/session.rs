@@ -140,6 +140,9 @@ pub fn path_arg(path: &Path) -> OsString {
     path.as_os_str().to_owned()
 }
 
+/// The linked image file of a run's `image` directory.
+const IMAGE_ELF: &str = "image.elf";
+
 /// Name of the project snapshot stored with the session setup entry.
 const PROJECT_SNAPSHOT: &str = "project";
 
@@ -520,12 +523,17 @@ impl Session {
                 "linker": crate::harness::sha256(&fs::read(linker)?),
                 "entry": entry,
                 "candidates": candidates,
+                // The entry holds the image and its link map, which names
+                // the input sections of section-local objects.
+                "files": [IMAGE_ELF, crate::state::LINK_MAP],
             }),
         )?;
-        let exported = self.run.join("image/image.elf");
+        let exported = self.run.join("image").join(IMAGE_ELF);
+        let map = self.run.join("image").join(crate::state::LINK_MAP);
         if let Some(linked) = key.load::<LinkedImage>()? {
             fs::create_dir_all(self.run.join("image"))?;
-            fs::copy(key.file("image.elf"), &exported)?;
+            fs::copy(key.file(IMAGE_ELF), &exported)?;
+            fs::copy(key.file(crate::state::LINK_MAP), &map)?;
             self.images
                 .borrow_mut()
                 .insert(linked.image.clone(), fs::read(&exported)?);
@@ -540,7 +548,10 @@ impl Session {
         }
         self.ensure_project()?;
         let linked = self.link_uncached(request, linker, entry, candidates)?;
-        key.store(&linked, &[("image.elf", &exported)])?;
+        key.store(
+            &linked,
+            &[(IMAGE_ELF, &exported), (crate::state::LINK_MAP, &map)],
+        )?;
         Ok(linked)
     }
 
@@ -935,7 +946,10 @@ impl Session {
             instructions.state.extend(&o.state);
         }
         // Vendor state the pair's cases write without comparing it.
-        let symbols = crate::state::Symbols::of(&executables)?;
+        let sections = std::fs::read_to_string(self.run.join("image").join(crate::state::LINK_MAP))
+            .map(|map| crate::state::link_map_sections(&map))
+            .unwrap_or_default();
+        let symbols = crate::state::Symbols::of(&executables)?.with_sections(&sections);
         let (mut written, mut unprojected) = (
             std::collections::BTreeSet::new(),
             std::collections::BTreeSet::new(),

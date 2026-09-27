@@ -43,6 +43,54 @@ pub struct Byte {
     pub offset: u32,
 }
 
+/// Link map written next to a linked image.
+pub const LINK_MAP: &str = "link.map";
+
+/// One input section of a link map.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Section {
+    pub name: String,
+    pub address: u32,
+    pub size: u32,
+}
+
+/// The input sections of a link map
+/// (`<vma> <lma> <size> <align> <object>:(<section>)`) whose name no other
+/// input section shares.
+pub fn link_map_sections(map: &str) -> Vec<Section> {
+    let mut sections: BTreeMap<String, Option<(u32, u32)>> = BTreeMap::new();
+    for line in map.lines() {
+        let columns: Vec<&str> = line.split_whitespace().collect();
+        let [address, _, size, _, input] = columns[..] else {
+            continue;
+        };
+        let (Some(name), Ok(address), Ok(size)) = (
+            input
+                .split_once(":(")
+                .and_then(|(_, section)| section.strip_suffix(')')),
+            u32::from_str_radix(address, 16),
+            u32::from_str_radix(size, 16),
+        ) else {
+            continue;
+        };
+        sections
+            .entry(name.to_owned())
+            .and_modify(|entry| *entry = None)
+            .or_insert(Some((address, size)));
+    }
+    sections
+        .into_iter()
+        .filter_map(|(name, placed)| {
+            let (address, size) = placed?;
+            Some(Section {
+                name,
+                address,
+                size,
+            })
+        })
+        .collect()
+}
+
 /// Sized data symbols of the vendor executables, by address.
 #[derive(Default)]
 pub struct Symbols {
@@ -76,6 +124,17 @@ impl Symbols {
             }
         }
         Ok(Self { ranges, anchors })
+    }
+
+    /// Also name bytes by the linked image's input sections that no sized
+    /// data symbol starts, such as a static byte in `.bss.<name>`.
+    pub fn with_sections(mut self, sections: &[Section]) -> Self {
+        for section in sections.iter().filter(|s| s.size > 0) {
+            self.ranges
+                .entry(section.address)
+                .or_insert((section.size, section.name.clone()));
+        }
+        self
     }
 
     pub fn name(&self, address: u32) -> Byte {
@@ -244,6 +303,32 @@ pub fn ranges(bytes: &BTreeSet<Byte>) -> Vec<(String, u32, u32)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn link_map_sections_with_unique_names_name_their_bytes() {
+        let map = "200000ac 200000ac        8     4 .bss\n\
+                   200000ac 200000ac        1     1         i0-m10.o:(.bss.flag)\n\
+                   200000ac 200000ac        0     1                 .LANCHOR0\n\
+                   20000074 20000074       35     4         i0-m10.o:(.dram1.1)\n\
+                   20000080 20000080       35     4         i0-m11.o:(.dram1.1)\n";
+        let sections = link_map_sections(map);
+        assert_eq!(
+            sections,
+            [Section {
+                name: ".bss.flag".into(),
+                address: 0x2000_00ac,
+                size: 1
+            }]
+        );
+        let symbols = Symbols::default().with_sections(&sections);
+        assert_eq!(
+            symbols.name(0x2000_00ac),
+            Byte {
+                symbol: ".bss.flag".into(),
+                offset: 0
+            }
+        );
+    }
+
     use super::*;
 
     fn byte(symbol: &str, offset: u32) -> Byte {

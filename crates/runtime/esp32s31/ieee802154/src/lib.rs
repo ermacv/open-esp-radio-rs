@@ -625,6 +625,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
                 .radio
                 .submit(&mut installed.hardware, command, &mut sink);
             trace(0x8002);
+            snapshot_etm();
             Ok((accepted, installed.radio.take_delay()))
         });
         let (accepted, backoff) = submitted?;
@@ -799,4 +800,16 @@ fn trace(value: u32) {
         fn runtime_trace(value: u32);
     }
     unsafe { runtime_trace(value) };
+}
+
+#[allow(unsafe_code)]
+fn snapshot_etm() {
+    let read = |address: usize| unsafe { core::ptr::read_volatile(address as *const u32) };
+    trace(0xe0e0_e0e0);
+    trace(read(0x2010_8800));
+    trace(read(0x2010_880c));
+    trace(read(0x2010_8810));
+    trace(read(0x2010_30a8));
+    trace(read(0x2010_30ac));
+    trace(read(0x2010_3084));
 }

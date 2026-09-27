@@ -43,6 +43,7 @@ pub(in crate::product_hil) async fn run_air_check(
     request: Ieee802154AirCheckRequest,
 ) -> Ieee802154AirCheckEvidence {
     let mut evidence = Ieee802154AirCheckEvidence::default();
+    trace(0xa000);
     let Ok(channel) = Channel::new(request.channel) else {
         return evidence;
     };
@@ -50,6 +51,7 @@ pub(in crate::product_hil) async fn run_air_check(
         return evidence;
     };
     for index in 0..usize::from(request.cycles) {
+        trace(0xa100 | index as u32);
         let started = {
             let started = core::pin::pin!(client.start(parked));
             started.await
@@ -58,7 +60,9 @@ pub(in crate::product_hil) async fn run_air_check(
             evidence.stop = Ieee802154AirCheckStop::StartFailed;
             return evidence;
         };
+        trace(0xa200 | index as u32);
         let outcome = run_cycle(&system, channel, request, &mut evidence.cycles[index]).await;
+        trace(0xa300);
         let stopped = {
             let stopped = core::pin::pin!(client.stop(system));
             stopped.await
@@ -68,6 +72,7 @@ pub(in crate::product_hil) async fn run_air_check(
             return evidence;
         };
         parked = stopped;
+        trace(0xa400);
         if let Err(Stop(stop)) = outcome {
             evidence.stop = stop;
             return evidence;
@@ -97,6 +102,7 @@ async fn run_cycle(
             .map_err(|_| Stop(Ieee802154AirCheckStop::CommandRejected))
     };
     submit(RadioCommand::Enable { id: id() })?;
+    trace(0xb001);
 
     submit(RadioCommand::EnergyScan(EnergyScanRequest {
         id: id(),
@@ -111,6 +117,7 @@ async fn run_cycle(
         _ => return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
     };
 
+    trace(0xb002);
     submit(RadioCommand::ClearChannelAssessment { id: id(), channel })?;
     cycle.cca = match next_event(system).await? {
         Ieee802154RadioEvent::ClearChannelAssessmentDone { idle: true, .. } => {
@@ -125,6 +132,7 @@ async fn run_cycle(
         _ => return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
     };
 
+    trace(0xb003);
     let frame =
         FrameView::new(&FRAME).map_err(|_| Stop(Ieee802154AirCheckStop::UnsupportedSetup))?;
     let requested_at_micros = now_micros();
@@ -139,7 +147,9 @@ async fn run_cycle(
         interface: Interface::PRIMARY,
         time_sync: None,
     }))?;
+    trace(0xb004);
     cycle.direct = transmitted(system, requested_at_micros).await?;
+    trace(0xb005);
 
     for scheduled in &mut cycle.scheduled {
         let at = now_micros() + u64::from(request.scheduled_lead_micros);
@@ -157,9 +167,12 @@ async fn run_cycle(
             interface: Interface::PRIMARY,
             time_sync: None,
         }))?;
+        trace(0xb006);
         *scheduled = transmitted(system, at).await?;
+        trace(0xb007);
     }
 
+    trace(0xb008);
     submit(RadioCommand::Configure {
         id: id(),
         configuration: Configuration::Promiscuous(true),
@@ -268,4 +281,17 @@ async fn transmitted(
         requested_at_micros,
         done_at_micros: now_micros(),
     })
+}
+
+/// Debug: a ring of the last air-check steps that survives a reset.
+#[allow(unsafe_code, reason = "debug trace in retained memory")]
+fn trace(value: u32) {
+    use core::sync::atomic::{AtomicU32, Ordering::SeqCst};
+    #[allow(unsafe_code, reason = "debug trace in retained memory")]
+    #[unsafe(link_section = ".rtc_fast.persistent")]
+    #[unsafe(no_mangle)]
+    static OER_TRACE_RING: [AtomicU32; 65] = [const { AtomicU32::new(0) }; 65];
+    let index = OER_TRACE_RING[64].load(SeqCst) % 64;
+    OER_TRACE_RING[index as usize].store(value, SeqCst);
+    OER_TRACE_RING[64].store(index + 1, SeqCst);
 }

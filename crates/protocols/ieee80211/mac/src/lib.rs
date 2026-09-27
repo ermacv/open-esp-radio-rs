@@ -22,6 +22,7 @@ pub mod ftm;
 pub mod he;
 pub mod ht;
 pub mod management;
+pub mod management_protection;
 pub mod ndpa;
 pub mod protection;
 pub mod scan;

@@ -4,7 +4,6 @@ use crate::modem::syscon::ModemSysconPowerBaseline;
 const BASELINE: PlatformPllSourceBaseline = PlatformPllSourceBaseline {
     ref_160m_clock_enabled: true,
     modem_apb_clock_enabled: false,
-    modem_reset_asserted: true,
     modem_source_clock_enabled: true,
     modem_pll_selected: false,
     modem_pll_clock_enabled: false,

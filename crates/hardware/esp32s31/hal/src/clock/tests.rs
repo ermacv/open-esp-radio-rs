@@ -2,6 +2,8 @@ use std::vec::Vec;
 
 use oer_esp32s31_pac::{SharedModemClockGate, WifiPowerBaseline, WifiPowerRestoreReadback};
 
+use crate::power::PowerEntry;
+
 use super::{
     ClockPort, CommonRadioPower, CommonRadioPowerError, PowerEpoch, RadioClient, SharedClockLeases,
     WifiPowerRestoreCheckpoint,
@@ -11,7 +13,7 @@ use super::{
 enum Operation {
     SetGate(SharedModemClockGate, bool),
     RestorePower(WifiPowerBaseline),
-    PowerSequence,
+    PowerSequence(PowerEntry),
 }
 
 struct Port {
@@ -63,8 +65,9 @@ impl ClockPort for Port {
     fn run_common_power_sequence(
         &mut self,
         leases: &mut SharedClockLeases,
+        entry: PowerEntry,
     ) -> Result<(), crate::power::PowerError> {
-        self.operations.push(Operation::PowerSequence);
+        self.operations.push(Operation::PowerSequence(entry));
         if let Some(error) = self.power_sequence_failure {
             return Err(error);
         }
@@ -152,7 +155,7 @@ fn only_the_first_client_runs_the_power_sequence() {
     assert_eq!(
         port.operations,
         [
-            Operation::PowerSequence,
+            Operation::PowerSequence(PowerEntry::FirstSinceBoot),
             Operation::SetGate(SharedModemClockGate::PhyI2cMaster, true),
         ]
     );
@@ -218,4 +221,48 @@ fn a_failed_restore_keeps_the_last_client_for_retry() {
     assert!(power.holds(RadioClient::Wifi));
     port.power_readback = Ok(());
     assert_eq!(power.exit(&mut port, RadioClient::Wifi), Ok(()));
+}
+
+#[test]
+fn power_up_after_every_client_left_keeps_the_wifi_resets() {
+    let mut port = Port::new();
+    let mut power = CommonRadioPower::default();
+
+    assert_eq!(power.enter(&mut port, RadioClient::Ieee802154), Ok(()));
+    assert_eq!(power.exit(&mut port, RadioClient::Ieee802154), Ok(()));
+    assert_eq!(power.enter(&mut port, RadioClient::Ieee802154), Ok(()));
+    let sequences: Vec<_> = port
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            Operation::PowerSequence(entry) => Some(*entry),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sequences,
+        [PowerEntry::FirstSinceBoot, PowerEntry::Repeated],
+    );
+}
+
+#[test]
+fn a_failed_first_power_up_still_pulses_the_wifi_resets_on_retry() {
+    let mut port = Port::new();
+    port.power_sequence_failure = Some(crate::power::PowerError {
+        checkpoint: crate::power::PowerCheckpoint::ResetReleased,
+        expected: true,
+        observed: false,
+    });
+    let mut power = CommonRadioPower::default();
+    assert!(power.enter(&mut port, RadioClient::Wifi).is_err());
+    port.power_sequence_failure = None;
+    assert_eq!(power.enter(&mut port, RadioClient::Wifi), Ok(()));
+    assert!(matches!(
+        port.operations.as_slice(),
+        [
+            Operation::PowerSequence(PowerEntry::FirstSinceBoot),
+            Operation::PowerSequence(PowerEntry::FirstSinceBoot),
+            ..
+        ]
+    ));
 }

@@ -27,6 +27,7 @@ pub(crate) trait ClockPort {
     fn run_common_power_sequence(
         &mut self,
         leases: &mut SharedClockLeases,
+        entry: crate::power::PowerEntry,
     ) -> Result<(), crate::power::PowerError>;
 }
 
@@ -49,8 +50,9 @@ impl ClockPort for RadioPhyRegisters {
     fn run_common_power_sequence(
         &mut self,
         leases: &mut SharedClockLeases,
+        entry: crate::power::PowerEntry,
     ) -> Result<(), crate::power::PowerError> {
-        crate::power::execute_owned(&mut crate::power::RoutePower { phy: self, leases })
+        crate::power::execute_owned(&mut crate::power::RoutePower { phy: self, leases }, entry)
     }
 }
 
@@ -135,10 +137,13 @@ pub enum CommonRadioPowerError {
 
 /// Common modem/PHY power shared by concurrently running clients.
 ///
-/// The power sequence pulses the Wi-Fi baseband and MAC resets, so it runs
-/// once, for the first client; a later client must not repeat it while
-/// another protocol runs. The cold-power baseline is captured before that
-/// first edge and restored after the last client leaves. Refcounted modem
+/// The power sequence runs once, for the first client; a later client must
+/// not repeat it while another protocol runs. Only the first power-up since
+/// boot pulses the Wi-Fi baseband and MAC resets: after every client left,
+/// a new first client runs the sequence without that pulse, so the retained
+/// PHY configuration in the Wi-Fi MAC register window survives. The
+/// cold-power clock baseline is captured before the first edge and restored
+/// after the last client leaves; the reset lines are not part of it. Refcounted modem
 /// clock dependencies such as coexistence belong to the shared modem clock
 /// planner, not to this membership.
 #[derive(Default)]
@@ -146,6 +151,9 @@ pub(crate) struct CommonRadioPower {
     clients: u8,
     leases: SharedClockLeases,
     power: PowerEpoch,
+    /// The Wi-Fi baseband and MAC resets were pulsed by a successful
+    /// power-up since boot.
+    wifi_resets_pulsed: bool,
 }
 
 impl CommonRadioPower {
@@ -178,8 +186,14 @@ impl CommonRadioPower {
         }
         if self.clients == 0 {
             self.power.prepare(port);
-            port.run_common_power_sequence(&mut self.leases)
+            let entry = if self.wifi_resets_pulsed {
+                crate::power::PowerEntry::Repeated
+            } else {
+                crate::power::PowerEntry::FirstSinceBoot
+            };
+            port.run_common_power_sequence(&mut self.leases, entry)
                 .map_err(CommonRadioPowerError::Power)?;
+            self.wifi_resets_pulsed = true;
         }
         self.clients |= client.bit();
         Ok(())

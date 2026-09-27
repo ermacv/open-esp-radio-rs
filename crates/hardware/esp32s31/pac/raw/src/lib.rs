@@ -74281,12 +74281,11 @@ pub mod field_replace_modify {
 /// Safe, SVD-declared multi-argument field-replacement transactions.
 pub mod field_argument_modify {
 
-    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields `[apb_clock_enabled -> MODEM_APB_CLK_EN, reset_asserted -> MODEM_RST_EN, source_clock_enabled -> MODEM_CLK_EN, pll_selected -> MODEM_CLK_SOURCE_SEL, pll_clock_enabled -> MODEM_PLL_CLK_EN, xtal_clock_enabled -> MODEM_XTAL_CLK_EN]` from independently typed arguments while preserving every other bit.
+    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields `[apb_clock_enabled -> MODEM_APB_CLK_EN, source_clock_enabled -> MODEM_CLK_EN, pll_selected -> MODEM_CLK_SOURCE_SEL, pll_clock_enabled -> MODEM_PLL_CLK_EN, xtal_clock_enabled -> MODEM_XTAL_CLK_EN]` from independently typed arguments while preserving every other bit.
     #[inline]
     pub fn restore_modem_source_clocks(
         registers: &crate::HpSysClkrstRadio,
         apb_clock_enabled: bool,
-        reset_asserted: bool,
         source_clock_enabled: bool,
         pll_selected: bool,
         pll_clock_enabled: bool,
@@ -74298,8 +74297,6 @@ pub mod field_argument_modify {
             writer
                 .modem_apb_clk_en()
                 .bit(apb_clock_enabled)
-                .modem_rst_en()
-                .bit(reset_asserted)
                 .modem_clk_en()
                 .bit(source_clock_enabled)
                 .modem_clk_source_sel()
@@ -74308,24 +74305,6 @@ pub mod field_argument_modify {
                 .bit(pll_clock_enabled)
                 .modem_xtal_clk_en()
                 .bit(xtal_clock_enabled)
-        });
-    }
-
-    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[wifi_baseband_asserted -> RST_WIFIBB, wifi_mac_asserted -> RST_WIFIMAC]` from independently typed arguments while preserving every other bit.
-    #[inline]
-    pub fn restore_wifi_modem_resets(
-        registers: &crate::ModemSysconRadio,
-        wifi_baseband_asserted: bool,
-        wifi_mac_asserted: bool,
-    ) {
-        registers.modem_rst_conf().modify(|_, writer| {
-            // SAFETY: generator validation proves every typed argument fits its named SVD field;
-            // no whole-register image crosses this API.
-            writer
-                .rst_wifibb()
-                .bit(wifi_baseband_asserted)
-                .rst_wifimac()
-                .bit(wifi_mac_asserted)
         });
     }
 

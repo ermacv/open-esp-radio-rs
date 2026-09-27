@@ -136,12 +136,32 @@ pub struct PowerError {
     pub observed: bool,
 }
 
-pub(crate) fn execute_owned(registers: &mut impl PowerSequenceBackend) -> Result<(), PowerError> {
+/// Whether a power-up is the first since boot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PowerEntry {
+    /// The first power-up pulses the Wi-Fi baseband and MAC resets.
+    FirstSinceBoot,
+    /// A later power-up after every client left keeps the Wi-Fi MAC
+    /// register window, which holds retained PHY configuration such as the
+    /// analog-I2C TX rate that only cold calibration writes.
+    Repeated,
+}
+
+pub(crate) fn execute_owned(
+    registers: &mut impl PowerSequenceBackend,
+    entry: PowerEntry,
+) -> Result<(), PowerError> {
     // Keep the operation order here: it is a lifecycle property recovered
     // from the qualified S31 esp-hal clock implementation, not a
-    // property of the register layout.
-    registers.set_wifi_baseband_and_mac_reset(true);
-    registers.set_wifi_baseband_and_mac_reset(false);
+    // property of the register layout. ESP-IDF resets the Wi-Fi MAC only
+    // when Wi-Fi initializes, and its PHY enable/disable never does, so a
+    // repeated power-up leaves that pulse out. The baseband-only pulse
+    // stays: ESP-IDF's modem clock repeats it on every Wi-Fi baseband clock
+    // enable.
+    if entry == PowerEntry::FirstSinceBoot {
+        registers.set_wifi_baseband_and_mac_reset(true);
+        registers.set_wifi_baseband_and_mac_reset(false);
+    }
     registers.select_hp_active_modem_icg();
     registers.apply_modem_icg_selection();
     registers.apply_sleep_icg_selection();

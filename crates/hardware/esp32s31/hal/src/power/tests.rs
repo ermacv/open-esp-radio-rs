@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, vec::Vec};
 
 use oer_esp32s31_pac::{PlatformClockPowerObservation, SharedModemClockObservation};
 
-use super::{PowerCheckpoint, PowerError, PowerSequenceBackend, execute_owned};
+use super::{PowerCheckpoint, PowerEntry, PowerError, PowerSequenceBackend, execute_owned};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
@@ -141,7 +141,10 @@ impl PowerSequenceBackend for FakeShared {
 fn exact_semantic_sequence_is_finite_and_ordered() {
     let operations = Rc::new(RefCell::new(Vec::new()));
     let mut shared = FakeShared::ready(operations.clone());
-    assert_eq!(execute_owned(&mut shared), Ok(()));
+    assert_eq!(
+        execute_owned(&mut shared, PowerEntry::FirstSinceBoot),
+        Ok(())
+    );
     assert_eq!(
         operations.borrow().as_slice(),
         [
@@ -171,7 +174,7 @@ fn failed_semantic_readback_names_the_exact_checkpoint() {
     shared.platform.modem_source_clocks_configured = false;
 
     assert_eq!(
-        execute_owned(&mut shared),
+        execute_owned(&mut shared, PowerEntry::FirstSinceBoot),
         Err(PowerError {
             checkpoint: PowerCheckpoint::ModemClockSource,
             expected: true,
@@ -215,7 +218,7 @@ fn power_sequence_retains_the_i2c_lease_on_success_and_each_readback_failure() {
                 PowerCheckpoint::I2cClock => &mut shared.observation.phy_i2c_master_clock_enabled,
             } = false;
         }
-        let result = super::execute_owned(&mut shared);
+        let result = super::execute_owned(&mut shared, PowerEntry::FirstSinceBoot);
         assert_eq!(
             result,
             failed.map_or(Ok(()), |checkpoint| Err(PowerError {
@@ -243,4 +246,19 @@ fn power_sequence_retains_the_i2c_lease_on_success_and_each_readback_failure() {
             .unwrap();
         assert!(reset < clocks && clocks < source);
     }
+}
+
+#[test]
+fn repeated_power_up_leaves_out_only_the_wifi_mac_reset_pulse() {
+    let operations = Rc::new(RefCell::new(Vec::new()));
+    let mut shared = FakeShared::ready(operations.clone());
+    assert_eq!(execute_owned(&mut shared, PowerEntry::Repeated), Ok(()));
+    let operations = operations.borrow();
+    assert!(!operations.contains(&Operation::ResetWifi(true)));
+    assert_eq!(
+        operations.as_slice().first(),
+        Some(&Operation::SelectHpActiveIcg)
+    );
+    assert!(operations.contains(&Operation::ResetBaseband(true)));
+    assert!(operations.contains(&Operation::ResetBaseband(false)));
 }

@@ -17,11 +17,13 @@ pub struct PlatformClockPowerObservation {
 }
 
 /// Opaque readback of the upstream PLL-source fields a route may change.
+///
+/// The modem reset is not part of it: the first power-up since boot releases
+/// it and nothing reasserts it, as ESP-IDF's PHY enable/disable never does.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PlatformPllSourceBaseline {
     ref_160m_clock_enabled: bool,
     modem_apb_clock_enabled: bool,
-    modem_reset_asserted: bool,
     modem_source_clock_enabled: bool,
     modem_pll_selected: bool,
     modem_pll_clock_enabled: bool,
@@ -29,27 +31,25 @@ pub struct PlatformPllSourceBaseline {
 }
 
 impl PlatformPllSourceBaseline {
-    const BIT_COUNT: u32 = 7;
+    const BIT_COUNT: u32 = 6;
 
     fn bits(self) -> u32 {
         u32::from(self.ref_160m_clock_enabled)
             | (u32::from(self.modem_apb_clock_enabled) << 1)
-            | (u32::from(self.modem_reset_asserted) << 2)
-            | (u32::from(self.modem_source_clock_enabled) << 3)
-            | (u32::from(self.modem_pll_selected) << 4)
-            | (u32::from(self.modem_pll_clock_enabled) << 5)
-            | (u32::from(self.modem_xtal_clock_enabled) << 6)
+            | (u32::from(self.modem_source_clock_enabled) << 2)
+            | (u32::from(self.modem_pll_selected) << 3)
+            | (u32::from(self.modem_pll_clock_enabled) << 4)
+            | (u32::from(self.modem_xtal_clock_enabled) << 5)
     }
 
     fn from_bits(bits: u32) -> Self {
         Self {
             ref_160m_clock_enabled: bits & (1 << 0) != 0,
             modem_apb_clock_enabled: bits & (1 << 1) != 0,
-            modem_reset_asserted: bits & (1 << 2) != 0,
-            modem_source_clock_enabled: bits & (1 << 3) != 0,
-            modem_pll_selected: bits & (1 << 4) != 0,
-            modem_pll_clock_enabled: bits & (1 << 5) != 0,
-            modem_xtal_clock_enabled: bits & (1 << 6) != 0,
+            modem_source_clock_enabled: bits & (1 << 2) != 0,
+            modem_pll_selected: bits & (1 << 3) != 0,
+            modem_pll_clock_enabled: bits & (1 << 4) != 0,
+            modem_xtal_clock_enabled: bits & (1 << 5) != 0,
         }
     }
 }
@@ -236,7 +236,7 @@ impl RadioPhyRegisters {
         );
         let (
             modem_apb_clock_enabled,
-            modem_reset_asserted,
+            _modem_reset_asserted,
             modem_source_clock_enabled,
             modem_pll_selected,
             modem_pll_clock_enabled,
@@ -247,7 +247,6 @@ impl RadioPhyRegisters {
         PlatformPllSourceBaseline {
             ref_160m_clock_enabled,
             modem_apb_clock_enabled,
-            modem_reset_asserted,
             modem_source_clock_enabled,
             modem_pll_selected,
             modem_pll_clock_enabled,
@@ -270,7 +269,6 @@ impl RadioPhyRegisters {
         crate::generated::restore_modem_source_clocks(
             &self.peripherals.hp_sys_clkrst_radio,
             baseline.modem_apb_clock_enabled,
-            baseline.modem_reset_asserted,
             baseline.modem_source_clock_enabled,
             baseline.modem_pll_selected,
             baseline.modem_pll_clock_enabled,

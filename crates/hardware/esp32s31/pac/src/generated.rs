@@ -8418,7 +8418,6 @@ pub(crate) fn clear_bluetooth_scheduler_cancellation_control(
 pub(crate) fn restore_modem_source_clocks(
     registers: &crate::svd::HpSysClkrstRadio,
     apb_clock_enabled: bool,
-    reset_asserted: bool,
     source_clock_enabled: bool,
     pll_selected: bool,
     pll_clock_enabled: bool,
@@ -8427,25 +8426,10 @@ pub(crate) fn restore_modem_source_clocks(
     crate::svd::field_argument_modify::restore_modem_source_clocks(
         registers,
         apb_clock_enabled,
-        reset_asserted,
         source_clock_enabled,
         pll_selected,
         pll_clock_enabled,
         xtal_clock_enabled,
-    );
-}
-
-/// Typed bridge for the reviewed `restore_wifi_modem_resets` multi-argument field-replacement transaction.
-#[inline]
-pub(crate) fn restore_wifi_modem_resets(
-    registers: &crate::svd::ModemSysconRadio,
-    wifi_baseband_asserted: bool,
-    wifi_mac_asserted: bool,
-) {
-    crate::svd::field_argument_modify::restore_wifi_modem_resets(
-        registers,
-        wifi_baseband_asserted,
-        wifi_mac_asserted,
     );
 }
 

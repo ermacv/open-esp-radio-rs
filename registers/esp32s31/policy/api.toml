@@ -6668,7 +6668,6 @@ peripheral = "HP_SYS_CLKRST_RADIO"
 register = "MODEM_CONF"
 arguments = [
     { name = "apb_clock_enabled", field = "MODEM_APB_CLK_EN" },
-    { name = "reset_asserted", field = "MODEM_RST_EN" },
     { name = "source_clock_enabled", field = "MODEM_CLK_EN" },
     { name = "pll_selected", field = "MODEM_CLK_SOURCE_SEL" },
     { name = "pll_clock_enabled", field = "MODEM_PLL_CLK_EN" },
@@ -6885,17 +6884,6 @@ peripheral = "MODEM_SYSCON_RADIO"
 register = "MODEM_RST_CONF"
 fields = [{ field = "RST_WIFIBB", source-bit-offset = 0 }]
 domain = "ModemSysconResetState"
-exposure = "facade"
-sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
-
-[[field-argument-modifies]]
-name = "restore_wifi_modem_resets"
-peripheral = "MODEM_SYSCON_RADIO"
-register = "MODEM_RST_CONF"
-arguments = [
-    { name = "wifi_baseband_asserted", field = "RST_WIFIBB" },
-    { name = "wifi_mac_asserted", field = "RST_WIFIMAC" },
-]
 exposure = "facade"
 sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
 

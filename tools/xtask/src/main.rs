@@ -107,6 +107,12 @@ enum Task {
 
 #[derive(Subcommand)]
 enum Check {
+    /// Before a push: format, Clippy, tests and API documentation for what
+    /// this checkout changed against the merge base with BASE.
+    Changed {
+        #[arg(long, default_value = "origin/main")]
+        base: String,
+    },
     Metadata,
     Architecture,
     /// Audit the resolved dependency graph of every network profile.
@@ -207,6 +213,7 @@ fn run() -> Result<std::process::ExitCode> {
         } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline),
         Task::Doc => oer_xtask::doc::run(&ctx),
         Task::Check { check } => match check {
+            Check::Changed { base } => checks::changed::run(&ctx, &base),
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::Architecture => checks::architecture::run(&ctx),
             Check::Network => checks::network::run(&ctx),

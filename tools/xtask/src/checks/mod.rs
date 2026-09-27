@@ -1,6 +1,7 @@
 //! Repository policies, separate from process and Cargo graph mechanics.
 
 pub mod architecture;
+pub mod changed;
 pub mod docs;
 pub mod images;
 pub mod metadata;

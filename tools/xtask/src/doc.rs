@@ -81,7 +81,7 @@ pub fn groups(manifest: &Path, metadata: &cargo_metadata::Metadata) -> Result<Ve
     Ok(groups.into_values().collect())
 }
 
-fn command(ctx: &Context, subcommand: &str, group: &Group) -> std::process::Command {
+pub fn command(ctx: &Context, subcommand: &str, group: &Group) -> std::process::Command {
     let mut command = ctx.cargo();
     let mut flags = std::env::var("RUSTDOCFLAGS").unwrap_or_default();
     flags.push_str(" -D warnings");

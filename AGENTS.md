@@ -64,6 +64,13 @@ cargo clippy --workspace --all-targets
 cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.toml
 ```
 
+Before every push to `main`, run `cargo xtask check changed`: it formats every
+workspace a changed file belongs to, runs workspace Clippy, and tests and
+documents the changed root packages, plus the docs and metadata checks when
+prose or manifests changed. Other workspaces (HIL target, examples) still need
+their own target build. If `main` CI turns red after a push, fixing it comes
+before other work.
+
 Use `cargo xtask check docs` for Markdown/catalog changes and `cargo xtask doc`
 for API changes: it runs `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`
 for every package's `[package.metadata.docs.rs]` target and features, plus

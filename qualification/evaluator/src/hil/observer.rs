@@ -543,11 +543,19 @@ mod tests {
             let workload = build_inputs::workload(document).unwrap();
             let kind = workload.as_str();
             let packages = family(kind);
-            assert_eq!(
-                packages.len(),
-                1,
-                "{kind} selects exactly one family: {packages:?}"
-            );
+            if kind == build_inputs::COEXISTENCE_WORKLOAD {
+                assert_eq!(
+                    packages,
+                    ["oer-hil-runner-ieee80211", "oer-hil-runner-bluetooth"],
+                    "the joint workload selects both radio families"
+                );
+            } else {
+                assert_eq!(
+                    packages.len(),
+                    1,
+                    "{kind} selects exactly one family: {packages:?}"
+                );
+            }
             assert!(
                 build_inputs::dependencies(&registry, kind)
                     .unwrap()

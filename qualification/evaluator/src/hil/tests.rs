@@ -502,7 +502,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         serde_json::from_str(include_str!("../../../../hil/schema/observer-inputs.json")).unwrap();
     fs::write(
         root.join("hil/schema/observer-inputs.json"),
-        serde_json::to_vec(&json!({"schema":4,"data":["observer.rs"],"timing":registry["timing"],"dependencies":{"common":[],"wifi":[],"bluetooth":[],"system":[],"ieee802154":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
+        serde_json::to_vec(&json!({"schema":4,"data":["observer.rs"],"timing":registry["timing"],"dependencies":{"common":[],"wifi":[],"bluetooth":[],"system":[],"ieee802154":[],"coexistence":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
             .unwrap(),
     )
     .unwrap();

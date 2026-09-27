@@ -112,6 +112,10 @@ pub fn check_registry_schema(registry: &Value) -> Result<()> {
 
 /// The `<family>/<kind>` identity of a schema-5 scenario document.
 pub fn workload(document: &Value) -> Option<String> {
+    // The joint table is one untagged workload over both radio families.
+    if document.get("coexistence").is_some() {
+        return Some(COEXISTENCE_WORKLOAD.to_owned());
+    }
     ["wifi", "bluetooth", "system", "ieee802154"]
         .into_iter()
         .find_map(|family| {
@@ -124,6 +128,9 @@ pub fn workload(document: &Value) -> Option<String> {
             Some(format!("{family}/{}", kind.as_str()?))
         })
 }
+
+/// The workload identity of a `[coexistence]` scenario.
+pub const COEXISTENCE_WORKLOAD: &str = "coexistence/wifi-bluetooth";
 
 /// Every workload identity the registry classifies.
 pub fn workloads(registry: &Value) -> Result<Vec<String>> {

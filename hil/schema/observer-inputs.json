@@ -29,9 +29,14 @@
     ],
     "ieee802154": [
       "oer-hil-runner-ieee802154"
+    ],
+    "coexistence": [
+      "oer-hil-runner-ieee80211",
+      "oer-hil-runner-bluetooth"
     ]
   },
   "timing": {
+    "coexistence/wifi-bluetooth": true,
     "wifi/station-udp": true,
     "wifi/station-tcp": true,
     "wifi/station-icmp": false,

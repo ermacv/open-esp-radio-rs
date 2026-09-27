@@ -133,6 +133,9 @@ impl<'storage> ApEngine<'storage> {
                     begin_wpa2: false,
                 })
             }
+            // A BSS without SAE ignores SAE authentication as it ignores
+            // every other algorithm it does not offer.
+            ApManagementRequest::SaeAuthentication { .. } => Ok(ApManagementOutcome::Ignored),
             ApManagementRequest::Association {
                 peer,
                 security,
@@ -169,7 +172,7 @@ impl<'storage> ApEngine<'storage> {
                         sequence,
                         self.channel,
                         peer_status.ht,
-                        self.service.security_mode(),
+                        self.service.security_policy(),
                         self.required_protection(),
                     )?;
                     #[cfg(any(feature = "diagnostics", test))]
@@ -223,7 +226,7 @@ impl<'storage> ApEngine<'storage> {
                     sequence,
                     self.channel,
                     ht_capabilities,
-                    self.service.security_mode(),
+                    self.service.security_policy(),
                     self.required_protection(),
                 )?;
                 if association_id.is_some() {

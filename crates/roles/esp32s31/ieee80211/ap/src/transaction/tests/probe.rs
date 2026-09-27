@@ -18,7 +18,7 @@ fn probe_terminal_hardware_error_is_not_classified_as_a_missing_ack() {
 fn exercise_probe_completion(status: u8) {
     let ap = [2, 0, 0, 0, 0, 1];
     let mut hardware = Hardware::default();
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     let engine = ApEngine::start(

@@ -19,7 +19,7 @@ use oer_esp32s31_ieee80211_runtime::{
 use oer_esp32s31_ieee80211_mac::rx::PUBLIC_HEADER_SIZE;
 
 use oer_ieee80211_mac::{
-    beacon::WPA2_BEACON_CAPACITY, extensions::espressif::esp_now::ESP_NOW_V2_MAX_MPDU_LEN,
+    beacon::AP_BEACON_CAPACITY, extensions::espressif::esp_now::ESP_NOW_V2_MAX_MPDU_LEN,
     scan::ScanTable,
 };
 
@@ -162,7 +162,7 @@ pub struct DefaultWifiMemory<M: RawMutex> {
     claimed: AtomicBool,
     rx_dma: ConstStaticCell<DefaultRxDmaStorage>,
     tx_dma: ConstStaticCell<TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>>,
-    ap_beacon: ConstStaticCell<[u8; WPA2_BEACON_CAPACITY]>,
+    ap_beacon: ConstStaticCell<[u8; AP_BEACON_CAPACITY]>,
     scan_frame: ConstStaticCell<[u8; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY]>,
     station_control: ConstStaticCell<StationControlResources<M>>,
 }
@@ -173,7 +173,7 @@ impl<M: RawMutex> DefaultWifiMemory<M> {
             claimed: AtomicBool::new(false),
             rx_dma: ConstStaticCell::new(DefaultRxDmaStorage::new()),
             tx_dma: ConstStaticCell::new(TxDmaStorage::new()),
-            ap_beacon: ConstStaticCell::new([0; WPA2_BEACON_CAPACITY]),
+            ap_beacon: ConstStaticCell::new([0; AP_BEACON_CAPACITY]),
             scan_frame: ConstStaticCell::new([0; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY]),
             station_control: ConstStaticCell::new(StationControlResources::new()),
         }
@@ -230,7 +230,7 @@ pub struct DefaultWifiMemoryLease<M: RawMutex + 'static> {
     pub rx_dma: &'static mut DefaultRxDmaStorage,
     pub tx_dma: &'static mut TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>,
     pub scan_table: &'static mut DefaultScanTable,
-    pub ap_beacon: &'static mut [u8; WPA2_BEACON_CAPACITY],
+    pub ap_beacon: &'static mut [u8; AP_BEACON_CAPACITY],
     pub scan_frame: &'static mut [u8; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY],
     pub station_control: &'static StationControlResources<M>,
 }

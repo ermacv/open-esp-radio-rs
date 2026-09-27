@@ -15,9 +15,7 @@ pub use crate::limits::{
 };
 
 use oer_ieee80211_mac::ap::{ApAssociationSecurityObservation, ApPowerSaveObservation};
-use oer_ieee80211_mac::beacon::{
-    TimAssociationId, TimBitmapError, TimVirtualBitmap, WPA2_PERSONAL_CCMP_PSK_RSN_IE,
-};
+use oer_ieee80211_mac::beacon::{TimAssociationId, TimBitmapError, TimVirtualBitmap};
 use oer_ieee80211_mac::block_ack::{
     AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckConfig,
     TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
@@ -26,7 +24,7 @@ use oer_ieee80211_mac::ht::HtPeerCapabilities;
 use oer_ieee80211_mac::protection::{
     ApBssProtection, ErpProtection, HtOperationProtection, HtProtectionMode,
 };
-use oer_ieee80211_mac::security::WifiSecurityMode;
+use oer_ieee80211_mac::security::{ApSecurityPolicy, WifiSecurityMode};
 use oer_ieee80211_rsn::{
     Akm, AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
@@ -690,11 +688,16 @@ impl<'peers> AccessPointService<'peers> {
         }
     }
 
-    pub const fn security_mode(&self) -> WifiSecurityMode {
+    /// The security this BSS offers.
+    pub const fn security_policy(&self) -> ApSecurityPolicy {
         match &self.security {
-            AccessPointSecurityMaterial::Open => WifiSecurityMode::Open,
-            AccessPointSecurityMaterial::Wpa2Personal { .. } => WifiSecurityMode::Wpa2Personal,
+            AccessPointSecurityMaterial::Open => ApSecurityPolicy::Open,
+            AccessPointSecurityMaterial::Wpa2Personal { .. } => ApSecurityPolicy::Wpa2Personal,
         }
+    }
+
+    pub const fn security_mode(&self) -> WifiSecurityMode {
+        self.security_policy().link_mode()
     }
 
     pub const fn address(&self) -> [u8; 6] {

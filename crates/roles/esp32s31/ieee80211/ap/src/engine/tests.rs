@@ -77,7 +77,7 @@ fn service(
 fn active_epoch_owns_policy_group_key_management_and_stop_frontier() {
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let ssid = WifiSsid::new(b"ap").unwrap();
@@ -136,7 +136,7 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
     ];
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let ssid = WifiSsid::new(b"ap").unwrap();
@@ -291,7 +291,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     const SNONCE: [u8; 32] = [8; 32];
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let ssid = WifiSsid::new(b"ap").unwrap();
@@ -587,7 +587,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
 fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut service = AccessPointService::new_open(
@@ -683,7 +683,7 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
     ];
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let ssid = WifiSsid::new(b"ap").unwrap();

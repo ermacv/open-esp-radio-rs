@@ -14,8 +14,9 @@ use crate::{
         ht_operation_ie, ht_peer_capabilities,
     },
     protection::ApBssProtection,
-    security::WifiSecurityMode,
+    security::{ApSecurityPolicy, WifiSecurityMode},
     sequence::SequenceNumber,
+    station::SAE_AUTHENTICATION_ALGORITHM,
     station_power_save::STA_NULL_DATA_FRAME_LEN,
 };
 
@@ -31,6 +32,7 @@ pub const AP_PEER_DISCONNECT_LEN: usize = MANAGEMENT_HEADER_LEN + 2;
 pub const AP_ASSOCIATION_RESPONSE_LEN: usize = 24 + AP_ASSOCIATION_RESPONSE_BODY_LEN;
 
 const MANAGEMENT_HEADER_LEN: usize = 24;
+const OPEN_SYSTEM_AUTHENTICATION_ALGORITHM: u16 = 0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApAssociationResponseError {
@@ -518,6 +520,14 @@ pub enum ApManagementRequest<'a> {
     OpenAuthentication {
         peer: [u8; 6],
     },
+    /// An SAE Authentication frame: a Commit (transaction 1) or a Confirm
+    /// (transaction 2) with its status and the body after the status.
+    SaeAuthentication {
+        peer: [u8; 6],
+        transaction: u16,
+        status: u16,
+        body: &'a [u8],
+    },
     Association {
         peer: [u8; 6],
         security: ApAssociationSecurityObservation<'a>,
@@ -605,8 +615,17 @@ pub fn parse_ap_management_request<'a>(
             let algorithm = u16::from_le_bytes([body[0], body[1]]);
             let transaction = u16::from_le_bytes([body[2], body[3]]);
             let status = u16::from_le_bytes([body[4], body[5]]);
-            (algorithm == 0 && transaction == 1 && status == 0)
-                .then_some(ApManagementRequest::OpenAuthentication { peer })
+            match algorithm {
+                OPEN_SYSTEM_AUTHENTICATION_ALGORITHM => (transaction == 1 && status == 0)
+                    .then_some(ApManagementRequest::OpenAuthentication { peer }),
+                SAE_AUTHENTICATION_ALGORITHM => Some(ApManagementRequest::SaeAuthentication {
+                    peer,
+                    transaction,
+                    status,
+                    body: &frame[30..],
+                }),
+                _ => None,
+            }
         }
         0 => {
             let fixed = frame.get(24..28)?;
@@ -775,6 +794,31 @@ pub fn write_open_authentication_response(
     Ok(AP_AUTHENTICATION_RESPONSE_LEN)
 }
 
+/// Encode one SAE Authentication frame to `peer`: a Commit or Confirm, or
+/// the refusal of one, whose `body` follows the status.
+pub fn write_sae_authentication(
+    output: &mut [u8],
+    access_point: [u8; 6],
+    peer: [u8; 6],
+    transaction: u16,
+    status: u16,
+    body: &[u8],
+    management_sequence: SequenceNumber,
+) -> Result<usize, ApAssociationResponseError> {
+    let required = AP_AUTHENTICATION_RESPONSE_LEN + body.len();
+    if output.len() < required {
+        return Err(ApAssociationResponseError::OutputTooSmall { required });
+    }
+    let frame = &mut output[..required];
+    frame.fill(0);
+    write_management_header(frame, 0x00b0, access_point, peer, management_sequence);
+    frame[24..26].copy_from_slice(&SAE_AUTHENTICATION_ALGORITHM.to_le_bytes());
+    frame[26..28].copy_from_slice(&transaction.to_le_bytes());
+    frame[28..30].copy_from_slice(&status.to_le_bytes());
+    frame[AP_AUTHENTICATION_RESPONSE_LEN..].copy_from_slice(body);
+    Ok(required)
+}
+
 /// Encode an association response with capability privacy matching the exact
 /// AP mode and the BSS's current protection.
 #[expect(
@@ -791,7 +835,7 @@ pub fn write_ht_association_response_frame_for_security(
     management_sequence: SequenceNumber,
     channel: WifiChannel,
     peer_ht: Option<HtPeerCapabilities>,
-    security: WifiSecurityMode,
+    security: ApSecurityPolicy,
     protection: ApBssProtection,
 ) -> Result<usize, ApAssociationResponseError> {
     if output.len() < AP_ASSOCIATION_RESPONSE_LEN {
@@ -814,8 +858,8 @@ pub fn write_ht_association_response_frame_for_security(
         peer_ht,
         protection,
     )?;
-    if security == WifiSecurityMode::Open {
-        body[..2].copy_from_slice(&profile.capabilities(security).to_le_bytes());
+    if security == ApSecurityPolicy::Open {
+        body[..2].copy_from_slice(&profile.capabilities(security.link_mode()).to_le_bytes());
     }
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }

@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn static_storage_owns_beacon_dtim_and_next_deadline() {
-    let mut storage = [0; WPA2_BEACON_CAPACITY];
+    let mut storage = [0; AP_BEACON_CAPACITY];
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut beacon = ApBeacon::new(
         &mut storage,
@@ -14,6 +14,7 @@ fn static_storage_owns_beacon_dtim_and_next_deadline() {
         100,
         2,
         SequenceNumber::new(3).unwrap(),
+        ApSecurityPolicy::Wpa2Personal,
     )
     .unwrap();
     assert!(beacon.publication_due(102_400));
@@ -45,7 +46,7 @@ fn static_storage_owns_beacon_dtim_and_next_deadline() {
 
 #[test]
 fn late_publication_does_not_move_the_absolute_tbtt_schedule() {
-    let mut storage = [0; WPA2_BEACON_CAPACITY];
+    let mut storage = [0; AP_BEACON_CAPACITY];
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut beacon = ApBeacon::new(
         &mut storage,
@@ -55,6 +56,7 @@ fn late_publication_does_not_move_the_absolute_tbtt_schedule() {
         100,
         2,
         SequenceNumber::new(3).unwrap(),
+        ApSecurityPolicy::Wpa2Personal,
     )
     .unwrap();
 

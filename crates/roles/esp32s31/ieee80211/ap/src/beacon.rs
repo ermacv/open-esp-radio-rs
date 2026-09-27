@@ -6,18 +6,18 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_ieee80211_mac::{
     beacon::{
-        ApBeaconBuildError, ApBeaconProtectionError, TimPartialVirtualBitmap, WPA2_BEACON_CAPACITY,
+        AP_BEACON_CAPACITY, ApBeaconBuildError, ApBeaconProtectionError, TimPartialVirtualBitmap,
         stamp, update_bss_protection, write_ht_beacon, write_tim_partial_virtual_bitmap,
     },
     channel::WifiChannel,
     protection::ApBssProtection,
-    security::WifiSecurityMode,
+    security::ApSecurityPolicy,
     ssid::WifiSsid,
     tbtt::next_tbtt_delay,
 };
 
 pub struct ApBeacon<'storage> {
-    storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
+    storage: &'storage mut [u8; AP_BEACON_CAPACITY],
     len: usize,
     interval_micros: u32,
     /// Absolute wrapping TBTT following the most recently published beacon.
@@ -44,13 +44,14 @@ impl<'storage> ApBeacon<'storage> {
     }
 
     pub fn new(
-        storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
+        storage: &'storage mut [u8; AP_BEACON_CAPACITY],
         access_point: [u8; 6],
         ssid: &WifiSsid,
         channel: WifiChannel,
         beacon_interval_tu: u16,
         dtim_period: u8,
         management_sequence: SequenceNumber,
+        security: ApSecurityPolicy,
     ) -> Result<Self, ApBeaconBuildError> {
         let len = write_ht_beacon(
             &crate::profile::ADVERTISEMENT,
@@ -61,7 +62,7 @@ impl<'storage> ApBeacon<'storage> {
             beacon_interval_tu,
             dtim_period,
             management_sequence,
-            WifiSecurityMode::Wpa2Personal,
+            security,
             ApBssProtection::default(),
         )?;
         Ok(Self {
@@ -73,7 +74,7 @@ impl<'storage> ApBeacon<'storage> {
     }
 
     pub(crate) const fn from_initialized(
-        storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
+        storage: &'storage mut [u8; AP_BEACON_CAPACITY],
         len: usize,
         beacon_interval_tu: u16,
     ) -> Self {
@@ -158,7 +159,7 @@ impl<'storage> ApBeacon<'storage> {
         (lateness / self.interval_micros, lateness)
     }
 
-    pub fn into_storage(self) -> &'storage mut [u8; WPA2_BEACON_CAPACITY] {
+    pub fn into_storage(self) -> &'storage mut [u8; AP_BEACON_CAPACITY] {
         self.storage
     }
 }

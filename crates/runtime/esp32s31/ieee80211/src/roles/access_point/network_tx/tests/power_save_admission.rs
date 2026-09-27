@@ -10,7 +10,7 @@ use oer_esp32s31_ieee80211_ap::{protocol::*, security::ApPairwiseKeyStorage};
 
 use oer_ieee80211_mac::{
     ap::{ApAssociationSecurityObservation, ApPowerSaveObservation},
-    beacon::WPA2_BEACON_CAPACITY,
+    beacon::AP_BEACON_CAPACITY,
     channel::WifiChannel,
     ssid::WifiSsid,
 };
@@ -91,7 +91,7 @@ fn exercise_retention(destination: impl Fn(usize) -> u8) {
             .observe_power_save(ApPowerSaveObservation::Sleeping { peer }, 2)
             .unwrap();
     }
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut keys = ApPairwiseKeyStorage::new();
     let mut engine = ApEngine::start(
         &mut Hardware,

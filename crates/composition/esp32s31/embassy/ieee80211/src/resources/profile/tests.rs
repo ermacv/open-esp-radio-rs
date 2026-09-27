@@ -50,7 +50,7 @@ fn default_station_memory_is_acquired_as_one_owner_graph() {
         ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT
     );
     assert_eq!(lease.scan_frame.len(), ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY);
-    assert_eq!(lease.ap_beacon.len(), WPA2_BEACON_CAPACITY);
+    assert_eq!(lease.ap_beacon.len(), AP_BEACON_CAPACITY);
     assert!(matches!(
         MEMORY.claim(&SCAN),
         Err(DefaultWifiMemoryError::InUse)

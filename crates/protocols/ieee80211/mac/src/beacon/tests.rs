@@ -2,16 +2,20 @@ use crate::ap::profile::tests::TEST_ADVERTISEMENT;
 use crate::sequence::seq;
 
 use super::{
-    ApBeaconBuildError, ApBeaconProtectionError, WPA2_BEACON_CAPACITY,
-    WPA2_PERSONAL_CCMP_PSK_RSN_IE, dtim, stamp, update_bss_protection, write_ht_beacon,
-    write_tim_partial_virtual_bitmap,
+    AP_BEACON_CAPACITY, ApBeaconBuildError, ApBeaconProtectionError, dtim, stamp,
+    update_bss_protection, write_ht_beacon, write_tim_partial_virtual_bitmap,
 };
 use crate::{
     channel::{WifiChannel, WifiChannelWidth},
     ht::HtDuplicateMcs32,
     protection::{ApBssProtection, ErpProtection, HtOperationProtection, HtProtectionMode},
-    security::WifiSecurityMode,
+    scan::parse_management,
+    security::{
+        AP_SAE_H2E_RSNX_ELEMENT, AP_WPA2_PERSONAL_RSN_ELEMENT, AP_WPA3_PERSONAL_RSN_ELEMENT,
+        ApSecurityPolicy, StaSecurityPolicy,
+    },
     ssid::WifiSsid,
+    station::{SelectedAkm, select_association_rsn},
 };
 
 fn beacon() -> [u8; 44] {
@@ -45,10 +49,49 @@ fn executor_tsf_drives_dtim_and_group_indication() {
 }
 
 #[test]
+fn a_wpa3_beacon_offers_sae_with_protected_management_frames() {
+    let ap = [0x02, 0, 0, 0, 0, 1];
+    let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
+    let mut bytes = [0; AP_BEACON_CAPACITY];
+    let len = write_ht_beacon(
+        &TEST_ADVERTISEMENT,
+        &mut bytes,
+        ap,
+        &ssid,
+        WifiChannel::mhz20(6).unwrap(),
+        100,
+        2,
+        seq(1),
+        ApSecurityPolicy::Wpa3Personal,
+        ApBssProtection::default(),
+    )
+    .unwrap();
+    let beacon = &bytes[..len];
+    assert_ne!(u16::from_le_bytes([beacon[34], beacon[35]]) & 0x0010, 0);
+    assert!(
+        beacon
+            .windows(AP_WPA3_PERSONAL_RSN_ELEMENT.len())
+            .any(|window| window == AP_WPA3_PERSONAL_RSN_ELEMENT)
+    );
+    assert!(beacon.ends_with(&AP_SAE_H2E_RSNX_ELEMENT));
+
+    let record = parse_management(beacon, 6, -40).unwrap();
+    let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal).unwrap();
+    assert_eq!(selected.akm(), SelectedAkm::Sae { h2e: true });
+    assert!(selected.management_protection());
+    assert_eq!(
+        select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal)
+            .unwrap()
+            .akm(),
+        SelectedAkm::Sae { h2e: true }
+    );
+}
+
+#[test]
 fn builds_the_bounded_wpa2_ht20_beacon() {
     let ap = [0x02, 0, 0, 0, 0, 1];
     let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
-    let mut bytes = [0; WPA2_BEACON_CAPACITY];
+    let mut bytes = [0; AP_BEACON_CAPACITY];
     let len = write_ht_beacon(
         &TEST_ADVERTISEMENT,
         &mut bytes,
@@ -58,7 +101,7 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
         100,
         2,
         seq(0x0abc),
-        WifiSecurityMode::Wpa2Personal,
+        ApSecurityPolicy::Wpa2Personal,
         ApBssProtection::default(),
     )
     .unwrap();
@@ -73,7 +116,7 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
     assert!(
         bytes[..len]
             .windows(22)
-            .any(|window| window == WPA2_PERSONAL_CCMP_PSK_RSN_IE)
+            .any(|window| window == AP_WPA2_PERSONAL_RSN_ELEMENT)
     );
     assert!(bytes[..len].windows(3).any(|window| window == [3, 1, 6]));
     assert!(bytes[..len].windows(2).any(|window| window == [45, 26]));
@@ -83,7 +126,7 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
 #[test]
 fn ht40_beacon_advertises_the_validated_secondary_channel() {
     let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
-    let mut bytes = [0; WPA2_BEACON_CAPACITY];
+    let mut bytes = [0; AP_BEACON_CAPACITY];
     let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
     let len = write_ht_beacon(
         &TEST_ADVERTISEMENT,
@@ -94,7 +137,7 @@ fn ht40_beacon_advertises_the_validated_secondary_channel() {
         100,
         2,
         seq(0),
-        WifiSecurityMode::Wpa2Personal,
+        ApSecurityPolicy::Wpa2Personal,
         ApBssProtection::default(),
     )
     .unwrap();
@@ -128,7 +171,7 @@ fn ht40_beacon_advertises_the_validated_secondary_channel() {
 #[test]
 fn rejects_unrepresentable_beacon_policy_before_mutation() {
     let ssid = WifiSsid::new(b"ap").unwrap();
-    let mut bytes = [0xaa; WPA2_BEACON_CAPACITY];
+    let mut bytes = [0xaa; AP_BEACON_CAPACITY];
     assert_eq!(
         write_ht_beacon(
             &TEST_ADVERTISEMENT,
@@ -139,7 +182,7 @@ fn rejects_unrepresentable_beacon_policy_before_mutation() {
             100,
             2,
             seq(0),
-            WifiSecurityMode::Wpa2Personal,
+            ApSecurityPolicy::Wpa2Personal,
             ApBssProtection::default(),
         ),
         Err(ApBeaconBuildError::InvalidPrimaryChannel)
@@ -149,7 +192,7 @@ fn rejects_unrepresentable_beacon_policy_before_mutation() {
 
 #[test]
 fn protection_update_rewrites_only_erp_and_ht_operation_after_tim_growth() {
-    let mut bytes = [0; WPA2_BEACON_CAPACITY];
+    let mut bytes = [0; AP_BEACON_CAPACITY];
     let len = write_ht_beacon(
         &TEST_ADVERTISEMENT,
         &mut bytes,
@@ -159,7 +202,7 @@ fn protection_update_rewrites_only_erp_and_ht_operation_after_tim_growth() {
         100,
         2,
         seq(0),
-        WifiSecurityMode::Open,
+        ApSecurityPolicy::Open,
         ApBssProtection::default(),
     )
     .unwrap();

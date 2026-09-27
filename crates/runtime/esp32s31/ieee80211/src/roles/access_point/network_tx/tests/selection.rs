@@ -8,7 +8,7 @@ use oer_embassy_net_owned::{NetworkInterfaceId, OwnedEndpointResources};
 
 use oer_esp32s31_ieee80211_ap::{protocol::*, security::ApPairwiseKeyStorage};
 
-use oer_ieee80211_mac::{beacon::WPA2_BEACON_CAPACITY, channel::WifiChannel, ssid::WifiSsid};
+use oer_ieee80211_mac::{beacon::AP_BEACON_CAPACITY, channel::WifiChannel, ssid::WifiSsid};
 
 use std::boxed::Box;
 
@@ -31,7 +31,7 @@ fn ap_selection_leaves_more_than_an_arena_of_other_peer_owners_at_the_source() {
         AccessPointInactiveTimeout::default(),
         &mut peers,
     );
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut keys = ApPairwiseKeyStorage::new();
     let mut engine = ApEngine::start(
         &mut Hardware,

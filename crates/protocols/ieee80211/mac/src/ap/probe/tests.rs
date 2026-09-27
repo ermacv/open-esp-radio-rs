@@ -65,9 +65,13 @@ fn rejects_foreign_addresses_and_malformed_or_ambiguous_requests() {
 #[test]
 fn response_preserves_advertisement_without_tim_or_beacon_mutation() {
     use crate::{
-        beacon::write_ht_beacon, channel::WifiChannel, security::WifiSecurityMode, ssid::WifiSsid,
+        beacon::write_ht_beacon, channel::WifiChannel, security::ApSecurityPolicy, ssid::WifiSsid,
     };
-    for security in [WifiSecurityMode::Open, WifiSecurityMode::Wpa2Personal] {
+    for security in [
+        ApSecurityPolicy::Open,
+        ApSecurityPolicy::Wpa2Personal,
+        ApSecurityPolicy::Wpa3Personal,
+    ] {
         let mut beacon = [0; 256];
         let len = write_ht_beacon(
             &TEST_ADVERTISEMENT,

@@ -34,7 +34,7 @@ use oer_ieee80211_mac::{
         parse_ap_management_request, write_ap_peer_disconnect,
         write_ht_association_response_frame_for_security, write_open_authentication_response,
     },
-    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, dtim, write_ht_beacon},
+    beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, dtim, write_ht_beacon},
     block_ack::{OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckResponse},
     ccmp::{CcmpKeyId, CcmpReplayLane},
     channel::WifiChannel,
@@ -137,7 +137,7 @@ pub struct ApBeaconPublication<'frame> {
 
 pub struct ApEngineStartFailure<'storage> {
     pub service: AccessPointService<'storage>,
-    pub beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
+    pub beacon_storage: &'storage mut [u8; AP_BEACON_CAPACITY],
     pub pairwise_storage: &'storage mut ApPairwiseKeyStorage,
     pub error: ApEngineError,
 }
@@ -233,7 +233,7 @@ struct ApRxPeerBinding {
 
 pub struct ApEngineStop<'storage> {
     pub service: AccessPointService<'storage>,
-    pub beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
+    pub beacon_storage: &'storage mut [u8; AP_BEACON_CAPACITY],
     pub pairwise_storage: &'storage mut ApPairwiseKeyStorage,
     pub security: ApSecurityStopReport,
 }
@@ -413,7 +413,7 @@ impl<'storage> ApEngine<'storage> {
     pub fn start<H: ApRuntimeHardware>(
         hardware: &mut H,
         service: AccessPointService<'storage>,
-        beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
+        beacon_storage: &'storage mut [u8; AP_BEACON_CAPACITY],
         pairwise_storage: &'storage mut ApPairwiseKeyStorage,
         ssid: &WifiSsid,
         channel: WifiChannel,
@@ -431,7 +431,7 @@ impl<'storage> ApEngine<'storage> {
             beacon_interval_tu,
             dtim_period,
             SequenceNumber::ZERO,
-            security_mode,
+            service.security_policy(),
             advertised_protection,
         ) {
             Ok(len) => len,

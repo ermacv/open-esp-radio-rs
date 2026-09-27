@@ -3,9 +3,9 @@ const TEST_HT_CAPABILITIES: oer_ieee80211_mac::ht::HtLocalCapabilities =
 
 use super::*;
 use oer_ieee80211_mac::{
-    beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE,
     channel::WifiChannel,
     ht::{ht_capability_ie, ht_peer_capabilities},
+    security::AP_WPA2_PERSONAL_RSN_ELEMENT,
 };
 use oer_ieee80211_rsn::{
     EapolKeyMessage, OwnedEapolFrame, PtkContext, RsnInterface,
@@ -626,7 +626,7 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     assert!(
         parse_gtk_key_data(
             plaintext.as_bytes(),
-            &WPA2_PERSONAL_CCMP_PSK_RSN_IE,
+            &AP_WPA2_PERSONAL_RSN_ELEMENT,
             &[],
             false
         )

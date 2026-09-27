@@ -60,7 +60,7 @@ pub(super) fn with_authorized_ap_capabilities(
     use oer_esp32s31_ieee80211_ap::{protocol::*, security::ApPairwiseKeyStorage};
 
     use oer_ieee80211_mac::{
-        ap::ApAssociationSecurityObservation, beacon::WPA2_BEACON_CAPACITY, channel::WifiChannel,
+        ap::ApAssociationSecurityObservation, beacon::AP_BEACON_CAPACITY, channel::WifiChannel,
         ssid::WifiSsid,
     };
     let mut peers = AccessPointPeerStorage::new();
@@ -98,7 +98,7 @@ pub(super) fn with_authorized_ap_capabilities(
             )
             .unwrap();
     }
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut keys = ApPairwiseKeyStorage::new();
     let engine = super::super::ApEngine::start(
         &mut Hardware,

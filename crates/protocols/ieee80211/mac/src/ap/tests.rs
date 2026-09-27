@@ -447,6 +447,56 @@ fn ps_poll_owns_peer_and_association_id() {
 }
 
 #[test]
+fn sae_authentication_frames_cross_between_station_and_access_point() {
+    use crate::station::{SaeAuthenticationFrame, parse_sae_authentication};
+
+    let access_point = [2, 0, 0, 0, 0, 1];
+    let peer = [2, 0, 0, 0, 0, 2];
+    let commit = [0x13, 0, 0xaa, 0xbb];
+    let mut request = [0_u8; 64];
+    let len = SaeAuthenticationFrame {
+        source: peer,
+        bssid: access_point,
+        sequence_number: seq(1),
+        transaction: 1,
+        status_code: 126,
+        body: &commit,
+    }
+    .encode(&mut request)
+    .unwrap();
+    assert_eq!(
+        parse_ap_management_request(&TEST_ADVERTISEMENT, &request[..len], access_point),
+        Some(ApManagementRequest::SaeAuthentication {
+            peer,
+            transaction: 1,
+            status: 126,
+            body: &commit,
+        })
+    );
+
+    let confirm = [1, 0, 0xcc];
+    let mut response = [0_u8; 64];
+    let len = write_sae_authentication(&mut response, access_point, peer, 2, 0, &confirm, seq(2))
+        .unwrap();
+    let parsed = parse_sae_authentication(&response[..len], peer, access_point).unwrap();
+    assert_eq!(parsed.transaction, 2);
+    assert_eq!(parsed.status_code, 0);
+    assert_eq!(parsed.body, confirm);
+    assert_eq!(
+        write_sae_authentication(
+            &mut response[..32],
+            access_point,
+            peer,
+            2,
+            0,
+            &confirm,
+            seq(2)
+        ),
+        Err(ApAssociationResponseError::OutputTooSmall { required: 33 })
+    );
+}
+
+#[test]
 fn parses_only_requests_for_the_owned_bssid() {
     let access_point = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
@@ -576,7 +626,7 @@ fn complete_response_encoders_own_addresses_sequence_and_status() {
         seq(8),
         WifiChannel::mhz20(6).unwrap(),
         None,
-        WifiSecurityMode::Wpa2Personal,
+        ApSecurityPolicy::Wpa2Personal,
         ApBssProtection::default(),
     )
     .unwrap();

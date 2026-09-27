@@ -10,25 +10,17 @@ use crate::{
     channel::WifiChannel,
     ht::{ht_capability_ie, ht_operation_ie},
     protection::ApBssProtection,
-    security::WifiSecurityMode,
+    security::ApSecurityPolicy,
     sequence::SequenceNumber,
     ssid::WifiSsid,
 };
 
-pub const WPA2_BEACON_CAPACITY: usize = 256;
+pub const AP_BEACON_CAPACITY: usize = 256;
 pub const TIM_MAX_ASSOCIATION_ID: u16 = 2_007;
 pub const TIM_MAX_VIRTUAL_BITMAP_OCTETS: usize = 251;
 
 const MANAGEMENT_HEADER_LEN: usize = 24;
 const BEACON_FIXED_BODY_LEN: usize = 12;
-/// Exact RSN IE advertised by the initial WPA2-Personal AP profile.
-///
-/// The authenticator repeats this byte-for-byte in EAPOL Message 3. Keeping
-/// one public value prevents the beacon and security transaction from
-/// acquiring independent copies of the same protocol contract.
-pub const WPA2_PERSONAL_CCMP_PSK_RSN_IE: [u8; 22] = [
-    0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
-];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApBeaconBuildError {
     InvalidPrimaryChannel,
@@ -171,7 +163,7 @@ pub fn write_ht_beacon(
     beacon_interval_tu: u16,
     dtim_period: u8,
     management_sequence: SequenceNumber,
-    security: WifiSecurityMode,
+    security: ApSecurityPolicy,
     protection: ApBssProtection,
 ) -> Result<usize, ApBeaconBuildError> {
     if !(1..=13).contains(&channel.primary()) {
@@ -184,10 +176,8 @@ pub fn write_ht_beacon(
     let wmm_parameter_ie = profile.wmm.element();
     let ht_capability = ht_capability_ie(profile.ht, channel);
     let ht_operation = ht_operation_ie(channel, protection.ht);
-    let rsn = match security {
-        WifiSecurityMode::Open => &[][..],
-        WifiSecurityMode::Wpa2Personal => &WPA2_PERSONAL_CCMP_PSK_RSN_IE,
-    };
+    let rsn = security.rsn_element();
+    let rsnx = security.rsnx_element();
     let required = MANAGEMENT_HEADER_LEN
         + BEACON_FIXED_BODY_LEN
         + 2
@@ -202,7 +192,8 @@ pub fn write_ht_beacon(
         + profile.legacy_rates.extended().len()
         + wmm_parameter_ie.len()
         + ht_capability.len()
-        + ht_operation.len();
+        + ht_operation.len()
+        + rsnx.len();
     if output.len() < required {
         return Err(ApBeaconBuildError::OutputTooSmall { required });
     }
@@ -215,7 +206,7 @@ pub fn write_ht_beacon(
     frame[16..22].copy_from_slice(&access_point);
     frame[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
     frame[32..34].copy_from_slice(&beacon_interval_tu.to_le_bytes());
-    let capabilities = profile.capabilities(security);
+    let capabilities = profile.capabilities(security.link_mode());
     frame[34..36].copy_from_slice(&capabilities.to_le_bytes());
 
     let mut offset = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;
@@ -244,6 +235,9 @@ pub fn write_ht_beacon(
     copy_record(frame, &mut offset, &wmm_parameter_ie);
     copy_record(frame, &mut offset, &ht_capability);
     copy_record(frame, &mut offset, &ht_operation);
+    if !rsnx.is_empty() {
+        copy_record(frame, &mut offset, rsnx);
+    }
     debug_assert_eq!(offset, required);
     Ok(required)
 }

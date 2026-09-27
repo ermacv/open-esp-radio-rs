@@ -17,7 +17,7 @@ use oer_esp32s31_ieee80211_mac::{
 };
 
 use oer_ieee80211_mac::{
-    ap::ApAssociationSecurityObservation, beacon::WPA2_BEACON_CAPACITY, channel::WifiChannel,
+    ap::ApAssociationSecurityObservation, beacon::AP_BEACON_CAPACITY, channel::WifiChannel,
     ssid::WifiSsid,
 };
 
@@ -131,7 +131,7 @@ impl WifiTxTimer for Timer {
 fn unschedulable_beacon_reports_preparation_failure_without_publication() {
     let ap = [2, 0, 0, 0, 0, 1];
     let mut hardware = Hardware::default();
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     // A zero beacon interval has no next TBTT, so the retained beacon cannot
@@ -180,7 +180,7 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
 fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
     let ap = [2, 0, 0, 0, 0, 1];
     let mut hardware = Hardware::default();
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     let engine = ApEngine::start(
@@ -240,7 +240,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
     let target = [2, 0, 0, 0, 0, 2];
     let legacy = [2, 0, 0, 0, 0, 3];
     let mut hardware = Hardware::default();
-    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     let mut service = AccessPointService::new_open(

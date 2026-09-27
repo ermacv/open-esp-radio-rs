@@ -364,7 +364,7 @@ impl<'peers> AccessPointService<'peers> {
         }
 
         let (_, gtk) = self.wpa2_material()?;
-        let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
+        let authenticator_rsn = OwnedRsnIe::<64>::try_copy(self.security_policy().rsn_element())?;
         let plain = RsnPlainKeyData::<RSN_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let action = self
@@ -407,7 +407,7 @@ impl<'peers> AccessPointService<'peers> {
             .as_ref()
             .ok_or(ApWpa2Error::MissingPairwiseKey)?;
         let (_, gtk) = self.wpa2_material()?;
-        let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
+        let authenticator_rsn = OwnedRsnIe::<64>::try_copy(self.security_policy().rsn_element())?;
         let plain = RsnPlainKeyData::<RSN_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let response =

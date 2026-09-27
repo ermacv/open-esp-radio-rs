@@ -159,7 +159,7 @@ pub(super) enum ProductionAccessPointTeardownFault {
 pub(super) struct ProductionAccessPointResources {
     pub(super) tx_storage: &'static mut ProductionAccessPointTxStorage,
     pub(super) address: [u8; 6],
-    pub(super) beacon: &'static mut [u8; oer_ieee80211_mac::beacon::WPA2_BEACON_CAPACITY],
+    pub(super) beacon: &'static mut [u8; oer_ieee80211_mac::beacon::AP_BEACON_CAPACITY],
     pub(super) rx_frame: &'static mut [u8],
     pub(super) tx_frame: &'static mut [u8],
     pub(super) peer_storage: &'static mut oer_ieee80211_ap::AccessPointPeerStorage,

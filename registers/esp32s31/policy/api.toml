@@ -2160,6 +2160,16 @@ sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
 ]
 
+[[fixed-register-images]]
+name = "disable_bluetooth_phy_etm_channel2"
+peripheral = "MODEM_ETM"
+register = "CHANNEL_ENABLE_CLEAR"
+value = 0x00000004
+sources = [
+    "BLOB_LIBBLE_DTM_PHY_ETM_RELEASE",
+    "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
+]
+
 [[fixed-register-sequences]]
 name = "route_bluetooth_phy_etm_channel2"
 peripheral = "MODEM_ETM"

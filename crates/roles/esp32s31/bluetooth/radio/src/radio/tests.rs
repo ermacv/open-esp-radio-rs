@@ -541,7 +541,7 @@ fn a_test_receiver_reports_before_its_end() {
         radio.request(RadioRequest::EndTest, &mut sink),
         Err(RequestError::Busy)
     );
-    let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
+    let RadioStep::StartTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("the test starts")
     };
     execute_all(&radio, 0);
@@ -577,7 +577,7 @@ fn cancelling_a_running_test_stops_the_scheduler_instead_of_skipping_it() {
             &mut sink,
         )
         .unwrap();
-    let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
+    let RadioStep::StartTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("the test starts")
     };
     radio
@@ -610,6 +610,44 @@ fn cancelling_a_running_test_stops_the_scheduler_instead_of_skipping_it() {
 }
 
 #[test]
+fn a_test_disables_the_phy_route_and_its_end_restores_it() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    radio
+        .request(
+            RadioRequest::TestReceive(TestReceive {
+                id: EventId::new(4),
+                channel: TestChannel::new(19).unwrap(),
+                phy: TestPhy::Le1M,
+                window: window(10_000, 1_000),
+                recurring: false,
+                tx_power: TxPower::from_dbm(0),
+            }),
+            &mut sink,
+        )
+        .unwrap();
+    let RadioStep::StartTest(_) = radio.drive(view(false), &mut sink) else {
+        panic!("a test event starts with the route disabled")
+    };
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    // The route stays disabled while the test holds its instance.
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::Idle
+    ));
+    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::RestorePhyRoute
+    ));
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::Idle
+    ));
+}
+
+#[test]
 fn a_test_event_stops_a_busy_scheduler_and_starts_as_the_list_head() {
     let mut radio = radio();
     let mut sink = Sink::default();
@@ -638,7 +676,7 @@ fn a_test_event_stops_a_busy_scheduler_and_starts_as_the_list_head() {
     radio
         .resume(&ControllerTimeSample::for_validation(0))
         .unwrap();
-    let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
+    let RadioStep::StartTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("the stopped scheduler starts at the test event")
     };
     assert!(sink.0.is_empty());

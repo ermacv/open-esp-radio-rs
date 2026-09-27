@@ -159,8 +159,14 @@ branch. Test End calls `r_ble_phy_init` (`r_sym_ble_r39KCENxd4X4fI1qTGp9`),
 which marks the PHY for reinitialization and thereby restores the route.
 
 This repository gives channels zero and one to IEEE 802.15.4 and runs the BLE
-PHY route on channel two (see the modem ETM PAC). The open DTM path does not
-yet release a channel per event.
+PHY route on channel two (see the modem ETM PAC), so it follows the vendor
+semantically rather than by channel number. Every test event disables channel
+two through `MODEM_ETM.CHANNEL_ENABLE_CLEAR` immediately before the list head
+is published and the scheduler runs; releasing the test instance at Test End
+routes and enables channel two again. Channel one has no counterpart because
+the open implementation has no CTE route. The vendor also disables its
+channels before its scheduler stop, while here the stop, when needed, happens
+first; the two operations touch disjoint hardware.
 
 ## Allocation
 

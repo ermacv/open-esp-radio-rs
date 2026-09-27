@@ -1,7 +1,6 @@
 use super::{
     DtmLinkStateReviewedWords, DtmReceiverEventPhase, DtmRole, DtmSchedulerItemEventType,
-    DtmSchedulerItemReviewedWords, DtmSchedulerReceiverPhy, DtmSchedulerTransmitterPhy,
-    LeTxPower,
+    DtmSchedulerItemReviewedWords, DtmSchedulerReceiverPhy, DtmSchedulerTransmitterPhy, LeTxPower,
 };
 use crate::le_phy_packet::{LeAccessAddress, LeCrcInit};
 

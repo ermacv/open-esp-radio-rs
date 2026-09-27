@@ -285,8 +285,8 @@ impl DtmLinkStateReviewedWords {
         self.profile_word_14 = self.profile_word_14.select_direct_test_mode();
         let halfword_30 = ((self.word_30 as u16) & 0xc100) | 0x1e00;
         self.word_30 = (self.word_30 & 0xffff_0000) | halfword_30 as u32;
-        self.word_60 = (self.word_60 & !LINK_STATE_POWER_BYTE_MASK)
-            | ((default_tx_power.index() as u32) << 8);
+        self.word_60 =
+            (self.word_60 & !LINK_STATE_POWER_BYTE_MASK) | ((default_tx_power.index() as u32) << 8);
         if matches!(role, DtmRole::Receiver) {
             self.word_34 = 0;
         }

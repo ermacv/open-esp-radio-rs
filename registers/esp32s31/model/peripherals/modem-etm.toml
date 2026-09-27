@@ -130,6 +130,12 @@ bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
+name = "CH2"
+description = "Writing 1 disables channel 2."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
 name = "CH4"
 description = "Writing 1 disables channel 4."
 bitOffset = 4

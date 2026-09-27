@@ -86,6 +86,12 @@ pub trait BluetoothRadioHardware {
     /// Sample the scheduler work state, then the head of list zero.
     fn observe(&mut self) -> Result<SchedulerHardwareView, SchedulerHardwareError>;
 
+    /// Disable the BLE PHY ETM route before a Direct Test Mode event.
+    fn disable_phy_etm_route(&mut self);
+
+    /// Route and enable the BLE PHY ETM channel again after a test.
+    fn restore_phy_etm_route(&mut self);
+
     /// Publish the insertion's head and start the idle scheduler.
     fn start(
         &mut self,
@@ -224,6 +230,14 @@ mod live {
 
         fn observe(&mut self) -> Result<SchedulerHardwareView, SchedulerHardwareError> {
             self.task.observe_scheduler_hardware(self.storage)
+        }
+
+        fn disable_phy_etm_route(&mut self) {
+            self.task.disable_ble_phy_etm_route();
+        }
+
+        fn restore_phy_etm_route(&mut self) {
+            self.task.restore_ble_phy_etm_route();
         }
 
         fn start(

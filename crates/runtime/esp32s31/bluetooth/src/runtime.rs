@@ -709,6 +709,18 @@ impl<
                     .map_err(BluetoothRuntimeFault::Start)?;
                 Ok(Pass::Continue)
             }
+            RadioStep::StartTest(insertion) => {
+                installed.hardware.disable_phy_etm_route();
+                installed
+                    .hardware
+                    .start(&installed.radio.item_space(), insertion)
+                    .map_err(BluetoothRuntimeFault::Start)?;
+                Ok(Pass::Continue)
+            }
+            RadioStep::RestorePhyRoute => {
+                installed.hardware.restore_phy_etm_route();
+                Ok(Pass::Continue)
+            }
             RadioStep::Transaction(step) => {
                 installed
                     .hardware

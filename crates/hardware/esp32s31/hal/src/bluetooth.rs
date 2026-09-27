@@ -1482,6 +1482,17 @@ impl ControllerHal<'_> {
         unsafe { self.registers.publish_scan_start() }
     }
 
+    /// Disable the BLE PHY ETM route for one Direct Test Mode event without
+    /// CTE, as the pinned DTM event bodies do.
+    pub fn disable_ble_phy_etm_route(&mut self) {
+        self.registers.disable_ble_phy_etm_route();
+    }
+
+    /// Route and enable the BLE PHY ETM channel again after a test.
+    pub fn restore_ble_phy_etm_route(&mut self) {
+        self.registers.restore_ble_phy_etm_route();
+    }
+
     /// Remove every published scheduler hardware-list head.
     ///
     /// This is only the reviewed controller-initialization prefix. It does not

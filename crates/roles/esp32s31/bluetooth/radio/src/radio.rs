@@ -90,6 +90,12 @@ pub enum RadioStep<const ITEMS: usize> {
     Idle,
     /// The scheduler is idle: publish this head and start the scheduler.
     Start(SchedulerIdleInsertion),
+    /// The scheduler is idle and the head is a Direct Test Mode event:
+    /// disable the BLE PHY ETM route, then publish the head and start the
+    /// scheduler.
+    StartTest(SchedulerIdleInsertion),
+    /// A test ended: route and enable the BLE PHY ETM channel again.
+    RestorePhyRoute,
     /// Perform the actions of a list transaction and deliver the awaited
     /// observation to [`BluetoothRadio::advance`].
     Transaction(SchedulerStep<SchedulerItemId, ITEMS>),
@@ -247,6 +253,10 @@ pub struct BluetoothRadio<
     /// The test instance already carried an event, so the next one is a
     /// recurring event.
     dtm_recurring: bool,
+    /// A test event disabled the BLE PHY ETM route.
+    phy_route_disabled: bool,
+    /// A test ended while the route was disabled; the next drive restores it.
+    phy_route_restore: bool,
     clock: RadioClock,
     timing: RadioTiming,
     policy: SchedulerTimingPolicy,
@@ -296,6 +306,8 @@ impl<
             connections: [const { None }; CONNECTIONS],
             dtm: None,
             dtm_recurring: false,
+            phy_route_disabled: false,
+            phy_route_restore: false,
             clock: RadioClock {
                 now: u64::from(epoch.project_without_reanchor(sample)),
                 epoch,
@@ -421,6 +433,9 @@ impl<
         if self.faulted || self.inserting.is_some() {
             return RadioStep::Idle;
         }
+        if core::mem::take(&mut self.phy_route_restore) {
+            return RadioStep::RestorePhyRoute;
+        }
         let mut cancelled = [None; ITEMS];
         let mut count = 0;
         for (id, _) in self.executor.list().iter() {
@@ -479,11 +494,19 @@ impl<
                     Err(_) => break,
                 }
             }
+            let mut test = false;
             for id in inserted.into_iter().flatten() {
                 self.pop_pending();
                 self.mark_listed(id);
+                test |= id.kind() == SchedulerRoleKind::DirectTestMode;
             }
             return match head {
+                // The vendor event bodies disable the route on every test
+                // event without CTE (`r_sym_ble_YpJTETFGhduIAMkkBKjc`).
+                Some(head) if test => {
+                    self.phy_route_disabled = true;
+                    RadioStep::StartTest(head)
+                }
                 Some(head) => RadioStep::Start(head),
                 None => RadioStep::Idle,
             };
@@ -1520,7 +1543,12 @@ impl<
                 Err(RequestError::Busy)
             }
             Some(slot) => match self.memory.dtm.release(slot.instance) {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    // Vendor Test End reinitializes the PHY, which routes
+                    // the channel again (`r_ble_phy_init`).
+                    self.phy_route_restore = core::mem::take(&mut self.phy_route_disabled);
+                    Ok(())
+                }
                 Err(failure) => {
                     self.dtm = Some(Slot {
                         instance: failure.instance,

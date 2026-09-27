@@ -21,7 +21,9 @@ pub struct Ieee802154EtmChannels {
 ///
 /// The pinned BLE PHY initialization routes modem event 8 to task 20 on a
 /// channel it reserves. The vendor library uses channel zero, which
-/// IEEE 802.15.4 owns here; the same route runs on this Bluetooth channel.
+/// IEEE 802.15.4 owns here; the same route runs on this Bluetooth channel,
+/// and Direct Test Mode disables and restores it as the vendor does its
+/// channel zero.
 #[must_use = "dropping the ETM channel loses its register authority"]
 pub struct BluetoothPhyEtmChannel {
     registers: svd::ModemEtm,
@@ -32,6 +34,12 @@ impl BluetoothPhyEtmChannel {
     pub(crate) fn route_and_enable(&self) {
         crate::svd::fixed_register_sequence::route_bluetooth_phy_etm_channel2(&self.registers);
         crate::svd::fixed_register_image::enable_bluetooth_phy_etm_channel2(&self.registers);
+    }
+
+    /// Disable channel two, as a Direct Test Mode event without CTE
+    /// disables the vendor channel carrying this route.
+    pub(crate) fn disable(&self) {
+        crate::svd::fixed_register_image::disable_bluetooth_phy_etm_channel2(&self.registers);
     }
 }
 
@@ -45,8 +53,8 @@ pub struct BluetoothEtmChannels {
 ///
 /// # Safety invariant
 ///
-/// The duplicated handles live in [`BluetoothPhyEtmChannel`], whose only
-/// operation writes channel two's event, task and enable-set bit, and in
+/// The duplicated handles live in [`BluetoothPhyEtmChannel`], whose
+/// operations write channel two's event, task and enable-set and clear bits, and in
 /// [`BluetoothEtmChannels`], whose only operation is the generated channel
 /// four-to-seven sequence; [`Ieee802154EtmChannels`] writes only channel zero
 /// and one words and bits. The capabilities are never reunited, so the

@@ -39021,6 +39021,13 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
+svd-name = "CH2"
+method = "ch2"
+bit-offset = 2
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
 svd-name = "CH4"
 method = "ch4"
 bit-offset = 4

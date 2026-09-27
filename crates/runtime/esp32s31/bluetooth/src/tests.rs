@@ -156,6 +156,10 @@ impl BluetoothRadioHardware for Model {
         })
     }
 
+    fn disable_phy_etm_route(&mut self) {}
+
+    fn restore_phy_etm_route(&mut self) {}
+
     fn start(
         &mut self,
         items: &SchedulerItemSpace<'_>,

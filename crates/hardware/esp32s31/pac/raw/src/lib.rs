@@ -58134,6 +58134,8 @@ pub mod modem_etm {
         pub type Ch0W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CH1` writer - Writing 1 disables channel 1."]
         pub type Ch1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CH2` writer - Writing 1 disables channel 2."]
+        pub type Ch2W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CH4` writer - Writing 1 disables channel 4."]
         pub type Ch4W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CH5` writer - Writing 1 disables channel 5."]
@@ -58152,6 +58154,11 @@ pub mod modem_etm {
             #[inline(always)]
             pub fn ch1(&mut self) -> Ch1W<'_, ChannelEnableClearSpec> {
                 Ch1W::new(self, 1)
+            }
+            #[doc = "Bit 2 - Writing 1 disables channel 2."]
+            #[inline(always)]
+            pub fn ch2(&mut self) -> Ch2W<'_, ChannelEnableClearSpec> {
+                Ch2W::new(self, 2)
             }
             #[doc = "Bit 4 - Writing 1 disables channel 4."]
             #[inline(always)]
@@ -61399,6 +61406,19 @@ pub mod fixed_register_image {
         unsafe {
             registers
                 .channel_enable_set()
+                .write_with_zero(|writer| writer.bits(0x00000004));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000004` to `MODEM_ETM`.`CHANNEL_ENABLE_CLEAR`.
+    #[inline]
+    pub fn disable_bluetooth_phy_etm_channel2(registers: &crate::ModemEtm) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .channel_enable_clear()
                 .write_with_zero(|writer| writer.bits(0x00000004));
         }
     }

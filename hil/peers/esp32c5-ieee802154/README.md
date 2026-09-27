@@ -51,6 +51,9 @@ Each command is answered by `@OK <command>` or `@ERR <command> <reason>`.
 | `RX` | Enter receive mode. |
 | `SLEEP` | Leave receive mode. |
 | `TX <cca> <mac>` | Transmit the MAC bytes (without FCS) given in hex, after a CCA when `cca` is `1`. The frame's own acknowledgement-request bit selects whether an ACK is awaited. |
+| `TXAT <delay_us> <mac>` | Transmit without CCA `delay_us` (at most 1000000) microseconds from now through `esp_ieee802154_transmit_at` on the `esp_timer` clock. |
+| `BURST <mac>` | Transmit the MAC bytes back to back without CCA until `BURST STOP`; the ends of these transmissions are counted, not reported. |
+| `BURST STOP` | Stop the burst, wait for its last transmission and print `@BURST sent=<n> failed=<n>` before the reply. |
 | `PENDING <mode>` | Set the automatic frame-pending mode: `0` disabled, `1` enabled, `2` enhanced, `3` Zigbee. |
 | `PENDING ADD <short>` | Add a short address (big-endian hex) to the pending table. |
 | `PENDING CLEAR` | Clear the short-address pending table. |

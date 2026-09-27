@@ -7,6 +7,7 @@
  */
 
 #include <ctype.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,6 +17,7 @@
 #include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_ieee802154.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -64,6 +66,16 @@ typedef struct {
 
 static QueueHandle_t s_events;
 static uint8_t s_tx_frame[1 + MAX_PSDU];
+
+/* A burst repeats one frame back to back: the event task starts the next
+ * transmission when the previous one ends, and counts the ends instead of
+ * printing them. `s_burst_in_flight` marks a transmission the burst owns, so
+ * the one that ends after BURST STOP is counted, not reported. */
+static uint8_t s_burst_frame[1 + MAX_PSDU];
+static atomic_bool s_burst_active;
+static atomic_bool s_burst_in_flight;
+static atomic_uint s_burst_sent;
+static atomic_uint s_burst_failed;
 
 static void copy_frame(peer_event_t *event, const uint8_t *frame)
 {
@@ -133,11 +145,34 @@ static void print_hex(const uint8_t *bytes, uint8_t length)
     }
 }
 
+/* Count the end of a burst transmission and start the next one while the
+ * burst runs. Returns false for a transmission the burst does not own. */
+static bool burst_transmission_ended(bool sent)
+{
+    if (!atomic_exchange(&s_burst_in_flight, false)) {
+        return false;
+    }
+    atomic_fetch_add(sent ? &s_burst_sent : &s_burst_failed, 1);
+    if (atomic_load(&s_burst_active)) {
+        atomic_store(&s_burst_in_flight, true);
+        if (esp_ieee802154_transmit(s_burst_frame, false) != ESP_OK) {
+            atomic_store(&s_burst_in_flight, false);
+            atomic_store(&s_burst_active, false);
+            atomic_fetch_add(&s_burst_failed, 1);
+        }
+    }
+    return true;
+}
+
 static void event_task(void *arg)
 {
     peer_event_t event;
     for (;;) {
         if (xQueueReceive(s_events, &event, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if ((event.kind == EVENT_TX_DONE || event.kind == EVENT_TX_FAILED)
+            && burst_transmission_ended(event.kind == EVENT_TX_DONE)) {
             continue;
         }
         switch (event.kind) {
@@ -283,6 +318,69 @@ static void command_tx(char **argv, int argc)
     reply(esp_ieee802154_transmit(s_tx_frame, cca != 0), "TX");
 }
 
+/* TXAT <delay_us> <MAC bytes as hex, without FCS>
+ *
+ * Transmit without CCA once `delay_us` microseconds have passed, through
+ * esp_ieee802154_transmit_at on the esp_timer clock, as ESP-IDF's
+ * OpenThread port schedules a delayed transmission. */
+static void command_txat(char **argv, int argc)
+{
+    uint32_t delay;
+    size_t digits = argc == 3 ? strlen(argv[2]) : 0;
+    size_t length = digits / 2;
+    if (argc != 3 || !parse_u32(argv[1], &delay, 1000000) || digits % 2 != 0 || length == 0
+        || length + FCS_LEN > MAX_PSDU || !decode_hex(argv[2], &s_tx_frame[1], length)) {
+        reply(ESP_ERR_INVALID_ARG, "TXAT");
+        return;
+    }
+    s_tx_frame[0] = (uint8_t)(length + FCS_LEN);
+    uint32_t at = (uint32_t)esp_timer_get_time() + delay;
+    reply(esp_ieee802154_transmit_at(s_tx_frame, false, at), "TXAT");
+}
+
+/* BURST <MAC bytes as hex, without FCS> | BURST STOP
+ *
+ * Start transmitting the frame back to back without CCA until BURST STOP,
+ * which waits for the last transmission and reports
+ * `@BURST sent=<n> failed=<n>` before its reply. */
+static void command_burst(char **argv, int argc)
+{
+    if (argc == 2 && strcmp(argv[1], "STOP") == 0) {
+        if (!atomic_exchange(&s_burst_active, false) && !atomic_load(&s_burst_in_flight)) {
+            reply(ESP_ERR_INVALID_STATE, "BURST");
+            return;
+        }
+        /* One frame lasts at most 4.3 ms; its end reaches the event task. */
+        for (int wait = 0; wait < 50 && atomic_load(&s_burst_in_flight); wait++) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        bool drained = !atomic_load(&s_burst_in_flight);
+        printf("@BURST sent=%u failed=%u\n", atomic_load(&s_burst_sent),
+               atomic_load(&s_burst_failed));
+        reply(drained ? ESP_OK : ESP_ERR_TIMEOUT, "BURST");
+        return;
+    }
+    size_t digits = argc == 2 ? strlen(argv[1]) : 0;
+    size_t length = digits / 2;
+    if (argc != 2 || digits % 2 != 0 || length == 0 || length + FCS_LEN > MAX_PSDU
+        || atomic_load(&s_burst_active) || atomic_load(&s_burst_in_flight)
+        || !decode_hex(argv[1], &s_burst_frame[1], length)) {
+        reply(ESP_ERR_INVALID_ARG, "BURST");
+        return;
+    }
+    s_burst_frame[0] = (uint8_t)(length + FCS_LEN);
+    atomic_store(&s_burst_sent, 0);
+    atomic_store(&s_burst_failed, 0);
+    atomic_store(&s_burst_active, true);
+    atomic_store(&s_burst_in_flight, true);
+    esp_err_t error = esp_ieee802154_transmit(s_burst_frame, false);
+    if (error != ESP_OK) {
+        atomic_store(&s_burst_in_flight, false);
+        atomic_store(&s_burst_active, false);
+    }
+    reply(error, "BURST");
+}
+
 /* PENDING <mode 0..3> | PENDING ADD <short:4hex> | PENDING CLEAR */
 static void command_pending(char **argv, int argc)
 {
@@ -360,6 +458,10 @@ static void dispatch(char *line)
         reply(esp_ieee802154_sleep(), "SLEEP");
     } else if (strcmp(argv[0], "TX") == 0) {
         command_tx(argv, argc);
+    } else if (strcmp(argv[0], "BURST") == 0) {
+        command_burst(argv, argc);
+    } else if (strcmp(argv[0], "TXAT") == 0) {
+        command_txat(argv, argc);
     } else if (strcmp(argv[0], "PENDING") == 0) {
         command_pending(argv, argc);
     } else if (strcmp(argv[0], "ED") == 0) {

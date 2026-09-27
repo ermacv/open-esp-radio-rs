@@ -105,7 +105,9 @@ async fn monitor_task(
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
     spawner.spawn(tracking_task(radio).expect("PHY tracking task storage is available once"));
-    spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task storage is available once"));
+    spawner.spawn(
+        coex_schedule_task(radio).expect("coexistence schedule task storage is available once"),
+    );
     let ConcurrentPartitions {
         wifi: partition, ..
     } = partitions;

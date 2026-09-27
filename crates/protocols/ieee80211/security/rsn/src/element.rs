@@ -96,14 +96,15 @@ pub fn validate_rsn_element(bytes: &[u8]) -> Result<ValidatedRsnElement, RsnElem
     if !rsn.pairwise_ciphers().contains(ieee_suite(RSN_CIPHER_CCMP)) {
         return Err(RsnElementError::UnsupportedPairwiseCipher);
     }
+    let capabilities = rsn.capabilities().unwrap_or(0);
+    let capable = capabilities & RSN_CAPABILITY_MFPC != 0;
+    // SAE requires management frame protection.
     let akm = rsn
         .akm_suites()
         .iter()
-        .find_map(Akm::from_suite_selector)
+        .filter_map(Akm::from_suite_selector)
+        .find(|akm| capable || *akm != Akm::Sae)
         .ok_or(RsnElementError::UnsupportedAkm)?;
-
-    let capabilities = rsn.capabilities().unwrap_or(0);
-    let capable = capabilities & RSN_CAPABILITY_MFPC != 0;
     // Required protection without the capability is contradictory, and so
     // is a group management cipher of a party that protects nothing.
     if capabilities & RSN_CAPABILITY_MFPR != 0 && !capable {

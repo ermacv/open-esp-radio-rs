@@ -29,6 +29,10 @@ pub enum Akm {
     /// AES-128-CMAC MIC (key descriptor version 3), as protected management
     /// frames select.
     PskSha256,
+    /// `00-0F-AC:8`, SAE: the PMK comes from the SAE exchange; the SHA-256
+    /// key derivation function and AES-128-CMAC MIC under the AKM-defined
+    /// key descriptor version 0.
+    Sae,
 }
 
 impl Akm {
@@ -37,6 +41,7 @@ impl Akm {
         match selector {
             [0x00, 0x0f, 0xac, 2] => Some(Self::Psk),
             [0x00, 0x0f, 0xac, 6] => Some(Self::PskSha256),
+            [0x00, 0x0f, 0xac, 8] => Some(Self::Sae),
             _ => None,
         }
     }
@@ -45,6 +50,7 @@ impl Akm {
         let type_ = match self {
             Self::Psk => 2,
             Self::PskSha256 => 6,
+            Self::Sae => 8,
         };
         ieee_suite(type_)
     }
@@ -54,6 +60,7 @@ impl Akm {
         match self {
             Self::Psk => 2,
             Self::PskSha256 => 3,
+            Self::Sae => 0,
         }
     }
 
@@ -61,7 +68,7 @@ impl Akm {
     pub(crate) fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
         match self {
             Self::Psk => prf_sha1(pmk, context),
-            Self::PskSha256 => kdf_sha256(pmk, context),
+            Self::PskSha256 | Self::Sae => kdf_sha256(pmk, context),
         }
     }
 
@@ -70,7 +77,7 @@ impl Akm {
             Self::Psk => EapolMic::HmacSha1(
                 Hmac::<Sha1>::new_from_slice(kck).expect("KCK length is always accepted by HMAC"),
             ),
-            Self::PskSha256 => EapolMic::AesCmac(
+            Self::PskSha256 | Self::Sae => EapolMic::AesCmac(
                 Cmac::<Aes128>::new_from_slice(kck).expect("a 16-byte KCK is an AES-128 key"),
             ),
         }
@@ -167,8 +174,9 @@ mod tests {
             Akm::from_suite_selector([0x00, 0x0f, 0xac, 6]),
             Some(Akm::PskSha256)
         );
-        // SAE is a recognizable selector but not implemented.
-        assert_eq!(Akm::from_suite_selector([0x00, 0x0f, 0xac, 8]), None);
+        // FT-SAE and SAE-EXT-KEY stay unsupported.
+        assert_eq!(Akm::from_suite_selector([0x00, 0x0f, 0xac, 9]), None);
+        assert_eq!(Akm::from_suite_selector([0x00, 0x0f, 0xac, 24]), None);
         assert_eq!(Akm::from_suite_selector([0x00, 0x50, 0xf2, 2]), None);
     }
 
@@ -210,5 +218,26 @@ mod tests {
                 0xe9, 0xb4
             ]
         );
+    }
+
+    #[test]
+    fn sae_keys_like_psk_sha256_under_the_akm_defined_descriptor() {
+        assert_eq!(
+            Akm::from_suite_selector([0x00, 0x0f, 0xac, 8]),
+            Some(Akm::Sae)
+        );
+        assert_eq!(Akm::Sae.suite_selector(), [0x00, 0x0f, 0xac, 8]);
+        assert_eq!(Akm::Sae.key_descriptor_version(), 0);
+        let pmk: [u8; 32] = core::array::from_fn(|index| index as u8);
+        let context: [u8; 76] = core::array::from_fn(|index| 100 + index as u8);
+        assert_eq!(
+            Akm::Sae.expand_ptk(&pmk, &context),
+            Akm::PskSha256.expand_ptk(&pmk, &context)
+        );
+        let mut sae = Akm::Sae.mic(&[7; RSN_KCK_LEN]);
+        sae.update(b"eapol-frame-bytes");
+        let mut psk_sha256 = Akm::PskSha256.mic(&[7; RSN_KCK_LEN]);
+        psk_sha256.update(b"eapol-frame-bytes");
+        assert_eq!(sae.finalize(), psk_sha256.finalize());
     }
 }

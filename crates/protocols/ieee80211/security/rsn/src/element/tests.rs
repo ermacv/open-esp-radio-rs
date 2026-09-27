@@ -25,10 +25,11 @@ fn accepts_wpa2_psk_ccmp_and_optional_mfpc() {
 
 #[test]
 fn selects_the_first_supported_suite_of_a_transition_akm_list() {
-    // SAE (8) then PSK (2): SAE is recognized by selector but not implemented.
-    let mut ie = [0_u8; 24];
+    // SAE (8) then PSK (2) from a capable access point: the first listed
+    // supported suite.
+    let mut ie = [0_u8; 26];
     ie[0] = 0x30;
-    ie[1] = 22;
+    ie[1] = 24;
     ie[2..4].copy_from_slice(&1_u16.to_le_bytes());
     ie[4..8].copy_from_slice(&[0x00, 0x0f, 0xac, 4]);
     ie[8..10].copy_from_slice(&1_u16.to_le_bytes());
@@ -36,6 +37,14 @@ fn selects_the_first_supported_suite_of_a_transition_akm_list() {
     ie[14..16].copy_from_slice(&2_u16.to_le_bytes());
     ie[16..20].copy_from_slice(&[0x00, 0x0f, 0xac, 8]);
     ie[20..24].copy_from_slice(&[0x00, 0x0f, 0xac, 2]);
+    ie[24..26].copy_from_slice(&(1_u16 << 7).to_le_bytes());
+    assert_eq!(validate_rsn_element(&ie).unwrap().akm(), Akm::Sae);
+    // SAE needs management frame protection.
+    ie[24] = 0;
+    assert_eq!(validate_rsn_element(&ie).unwrap().akm(), Akm::Psk);
+    // FT-SAE (9) is skipped for PSK.
+    ie[24] = 1 << 7;
+    ie[19] = 9;
     assert_eq!(validate_rsn_element(&ie).unwrap().akm(), Akm::Psk);
 }
 
@@ -45,9 +54,14 @@ fn rejects_non_ccmp_non_psk_and_required_pmf() {
         validate_rsn_element(&rsn(2, 2, 0)),
         Err(RsnElementError::UnsupportedPairwiseCipher)
     );
+    // SAE without management frame protection.
     assert_eq!(
         validate_rsn_element(&rsn(4, 8, 0)),
         Err(RsnElementError::UnsupportedAkm)
+    );
+    assert_eq!(
+        validate_rsn_element(&rsn(4, 8, 1 << 7)).map(|element| element.akm()),
+        Ok(Akm::Sae)
     );
     // MFPR without MFPC.
     assert_eq!(

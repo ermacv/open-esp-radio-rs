@@ -40,6 +40,33 @@ reason = "Wi-Fi per-gain RX DC codes and the phy_rxdc_fine_cal pairs"
 [fields.shared-rx-dc]
 reason = "shared RX DC codes"
 
+[fields.power-temperature]
+signed = true
+reason = "temperature the TX power calibration commits as its power tracking reference"
+
+[fields.shared-cache]
+signed = true
+reason = "gain base the power tracking retains as its previous result"
+
+[fields.wifi-gain-base]
+signed = true
+reason = "Wi-Fi TX gain base the power calibration commits"
+
+[fields.bluetooth-gain-base]
+signed = true
+reason = "Bluetooth and IEEE 802.15.4 TX gain base the power calibration commits"
+
+[fields.gain-adjustment]
+signed = true
+reason = "retained TX gain adjustment"
+
+[fields.i2c-band]
+reason = "Wi-Fi I2C tracking band the calibration temperature selects"
+
+[fields.rfpll-reference]
+signed = true
+reason = "temperature the RFPLL calibration commits as its tracking reference"
+
 [fields.dcode]
 reason = "DCODE calibration codes"
 

@@ -12,7 +12,8 @@
 //! no compared field are rejected.
 use crate::capture::{Capture, PRODUCTION_PREFIX, VENDOR_PREFIX};
 use crate::committed::{
-    CALIBRATION, CALIBRATION_BYTES, OutputField, TRACKING_PROGRESS_FIELD, VENDOR_OBJECT, committed,
+    CALIBRATION, CALIBRATION_BYTES, OutputField, PARENT, PARENT_BYTES, TRACKING_PROGRESS_FIELD,
+    VENDOR_OBJECT, committed,
 };
 use crate::{Result, production, repository_root, vendor};
 use serde::{Deserialize, Serialize};
@@ -115,12 +116,14 @@ struct FieldSummary {
     production: Vec<[i64; 2]>,
 }
 
-/// The fields the cross-check compares: the relation without its tracking
-/// progress, which counts tracking work rather than calibration.
+/// The fields the cross-check compares: the parent root's relation without
+/// its tracking progress, which counts tracking work rather than
+/// calibration.
 fn fields() -> Vec<OutputField> {
     CALIBRATION
         .into_iter()
-        .chain(committed(CALIBRATION_BYTES))
+        .chain(PARENT)
+        .chain(committed(CALIBRATION_BYTES + PARENT_BYTES))
         .filter(|f| f.name != TRACKING_PROGRESS_FIELD)
         .collect()
 }
@@ -441,6 +444,9 @@ mod tests {
     #[test]
     fn the_progress_counter_is_not_compared() {
         assert!(fields().iter().all(|f| f.name != TRACKING_PROGRESS_FIELD));
-        assert_eq!(fields().len(), CALIBRATION.len() + committed(0).len() - 1);
+        assert_eq!(
+            fields().len(),
+            CALIBRATION.len() + PARENT.len() + committed(0).len() - 1
+        );
     }
 }

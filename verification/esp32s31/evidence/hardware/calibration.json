@@ -1,66 +1,56 @@
 {
-  "schema": 1,
+  "schema": 2,
   "date": "2026-09-27",
-  "verdict": "incomplete",
+  "verdict": "diff",
   "vendor-object": "phy_param",
   "vendor-application-sha256": "c886aefe8ec0d3dcaf820abd0bea0acf7affa891346958a5062c2daa8fbbc254",
   "vendor-idf-revision": "7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe",
-  "vendor-captures": 3,
+  "vendor-captures": 10,
   "production-image": "correctness",
-  "production-application-sha256": "c409ed65788d1d3b75ca951a7109f77a7b4107ce7a6fb541f6b549dd982bf616",
-  "production-captures": 3,
+  "production-application-sha256": "c53a989cc3404e1351aab4661745dbe72fe9badd016701ea2995adf1bc4048f6",
+  "production-captures": 10,
   "fields": [
     {
-      "name": "current-temperature",
-      "verdict": "incomplete",
-      "vendor": [
-        [
-          23,
-          24
-        ]
-      ],
-      "production": [
-        [
-          25,
-          26
-        ]
-      ]
-    },
-    {
       "name": "common-reference",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 3,
+      "reason": "temperature the common calibration commits as its tracking reference",
       "vendor": [
         [
-          27,
+          24,
           27
         ]
       ],
       "production": [
         [
-          25,
-          26
+          24,
+          25
         ]
       ]
     },
     {
       "name": "transmit-reference",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 2,
+      "reason": "temperature the TX calibration commits as its tracking reference",
       "vendor": [
         [
-          23,
-          24
+          21,
+          23
         ]
       ],
       "production": [
         [
-          25,
-          26
+          24,
+          25
         ]
       ]
     },
     {
       "name": "channel",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "channel the calibration ran on",
       "vendor": [
         [
           11,
@@ -76,7 +66,9 @@
     },
     {
       "name": "bandwidth",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "bandwidth the calibration ran with",
       "vendor": [
         [
           0,
@@ -92,22 +84,40 @@
     },
     {
       "name": "wifi-dc-rows",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 4,
+      "reason": "Wi-Fi TX DC calibration codes",
       "vendor": [
         [
-          244,
-          244
+          243,
+          245
         ],
         [
-          266,
+          265,
           267
         ],
         [
-          258,
+          257,
           259
         ],
         [
           254,
+          256
+        ],
+        [
+          243,
+          246
+        ],
+        [
+          263,
+          265
+        ],
+        [
+          256,
+          260
+        ],
+        [
+          253,
           255
         ],
         [
@@ -115,104 +125,90 @@
           245
         ],
         [
-          264,
-          264
+          260,
+          262
         ],
         [
           258,
           259
         ],
         [
-          254,
-          254
+          253,
+          256
+        ]
+      ],
+      "production": [
+        [
+          243,
+          245
         ],
         [
-          245,
+          263,
+          266
+        ],
+        [
+          257,
+          259
+        ],
+        [
+          254,
+          256
+        ],
+        [
+          244,
           246
         ],
         [
-          261,
-          263
+          262,
+          264
+        ],
+        [
+          257,
+          259
+        ],
+        [
+          254,
+          256
+        ],
+        [
+          244,
+          245
+        ],
+        [
+          259,
+          262
         ],
         [
           257,
           258
         ],
         [
-          253,
-          255
-        ]
-      ],
-      "production": [
-        [
-          244,
-          245
-        ],
-        [
-          264,
-          266
-        ],
-        [
-          258,
-          259
-        ],
-        [
           254,
-          256
-        ],
-        [
-          244,
-          245
-        ],
-        [
-          261,
-          264
-        ],
-        [
-          258,
-          259
-        ],
-        [
-          254,
-          256
-        ],
-        [
-          245,
-          245
-        ],
-        [
-          261,
-          261
-        ],
-        [
-          258,
-          259
-        ],
-        [
-          255,
-          255
+          257
         ]
       ]
     },
     {
       "name": "bluetooth-dc-rows",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 10,
+      "reason": "Bluetooth TX DC calibration codes",
       "vendor": [
         [
           260,
-          261
+          260
         ],
         [
-          259,
+          258,
           259
         ],
         [
-          253,
-          258
+          257,
+          259
         ],
         [
-          252,
-          252
+          251,
+          256
         ],
         [
           259,
@@ -223,11 +219,11 @@
           258
         ],
         [
-          253,
-          260
+          251,
+          259
         ],
         [
-          253,
+          252,
           254
         ],
         [
@@ -239,185 +235,73 @@
           258
         ],
         [
-          256,
-          257
+          255,
+          258
         ],
         [
           248,
-          257
+          258
         ]
       ],
       "production": [
         [
           260,
-          260
+          261
         ],
         [
           258,
-          258
-        ],
-        [
-          257,
-          258
-        ],
-        [
-          256,
-          258
-        ],
-        [
-          259,
-          260
-        ],
-        [
-          257,
-          258
-        ],
-        [
-          253,
-          260
+          259
         ],
         [
           252,
-          259
+          258
+        ],
+        [
+          251,
+          257
         ],
         [
           259,
-          259
+          260
         ],
         [
           258,
           258
         ],
         [
-          256,
+          252,
+          261
+        ],
+        [
+          252,
+          254
+        ],
+        [
+          259,
+          260
+        ],
+        [
+          257,
+          258
+        ],
+        [
+          248,
           257
         ],
         [
           248,
-          248
+          257
         ]
       ]
     },
     {
       "name": "wifi-rx-dc",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 17,
+      "reason": "Wi-Fi per-gain RX DC codes and the phy_rxdc_fine_cal pairs",
       "vendor": [
         [
-          261,
-          262
-        ],
-        [
-          304,
-          304
-        ],
-        [
-          261,
-          262
-        ],
-        [
-          304,
-          304
-        ],
-        [
-          260,
-          260
-        ],
-        [
-          302,
-          303
-        ],
-        [
           259,
-          260
-        ],
-        [
-          304,
-          304
-        ],
-        [
-          261,
-          261
-        ],
-        [
-          303,
-          304
-        ],
-        [
-          262,
-          262
-        ],
-        [
-          303,
-          304
-        ],
-        [
-          262,
-          263
-        ],
-        [
-          301,
-          301
-        ],
-        [
-          261,
-          262
-        ],
-        [
-          303,
-          303
-        ],
-        [
-          277,
-          277
-        ],
-        [
-          246,
-          246
-        ],
-        [
-          277,
-          277
-        ],
-        [
-          246,
-          246
-        ],
-        [
-          277,
-          277
-        ],
-        [
-          246,
-          246
-        ],
-        [
-          266,
-          273
-        ],
-        [
-          246,
-          250
-        ],
-        [
-          263,
-          268
-        ],
-        [
-          250,
-          253
-        ]
-      ],
-      "production": [
-        [
-          260,
-          261
-        ],
-        [
-          303,
-          304
-        ],
-        [
-          261,
           262
         ],
         [
@@ -426,14 +310,22 @@
         ],
         [
           259,
-          260
+          262
         ],
         [
-          302,
+          303,
+          305
+        ],
+        [
+          259,
+          262
+        ],
+        [
+          303,
           303
         ],
         [
-          260,
+          258,
           260
         ],
         [
@@ -441,8 +333,16 @@
           305
         ],
         [
-          261,
-          261
+          260,
+          262
+        ],
+        [
+          303,
+          305
+        ],
+        [
+          259,
+          262
         ],
         [
           303,
@@ -453,15 +353,113 @@
           262
         ],
         [
+          300,
+          302
+        ],
+        [
+          259,
+          261
+        ],
+        [
           303,
+          304
+        ],
+        [
+          276,
+          279
+        ],
+        [
+          246,
+          248
+        ],
+        [
+          276,
+          279
+        ],
+        [
+          246,
+          248
+        ],
+        [
+          276,
+          279
+        ],
+        [
+          246,
+          248
+        ],
+        [
+          267,
+          278
+        ],
+        [
+          247,
+          255
+        ],
+        [
+          258,
+          275
+        ],
+        [
+          252,
+          259
+        ]
+      ],
+      "production": [
+        [
+          260,
+          262
+        ],
+        [
+          303,
+          304
+        ],
+        [
+          259,
+          262
+        ],
+        [
+          303,
+          304
+        ],
+        [
+          259,
+          260
+        ],
+        [
+          302,
           303
+        ],
+        [
+          258,
+          262
+        ],
+        [
+          303,
+          305
+        ],
+        [
+          260,
+          262
+        ],
+        [
+          303,
+          304
+        ],
+        [
+          260,
+          262
+        ],
+        [
+          303,
+          304
         ],
         [
           261,
           262
         ],
         [
-          301,
+          300,
           302
         ],
         [
@@ -473,50 +471,52 @@
           304
         ],
         [
-          277,
+          275,
           279
         ],
         [
           246,
-          248
+          249
         ],
         [
-          277,
+          275,
           279
         ],
         [
           246,
-          248
+          249
         ],
         [
-          277,
-          285
+          275,
+          279
         ],
         [
           246,
-          248
+          249
         ],
         [
-          272,
-          278
+          265,
+          279
         ],
         [
-          250,
-          256
+          246,
+          257
         ],
         [
-          268,
-          274
+          258,
+          271
         ],
         [
-          255,
-          260
+          251,
+          262
         ]
       ]
     },
     {
       "name": "shared-rx-dc",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 2,
+      "reason": "shared RX DC codes",
       "vendor": [
         [
           242,
@@ -532,7 +532,7 @@
         ],
         [
           288,
-          288
+          289
         ],
         [
           242,
@@ -540,15 +540,15 @@
         ],
         [
           288,
-          288
+          289
         ],
         [
-          242,
-          242
+          241,
+          243
         ],
         [
           288,
-          288
+          289
         ],
         [
           242,
@@ -572,15 +572,7 @@
         ],
         [
           288,
-          288
-        ],
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
+          289
         ],
         [
           242,
@@ -591,20 +583,28 @@
           289
         ],
         [
-          228,
-          231
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          229,
+          230
         ],
         [
           282,
-          282
+          283
         ],
         [
-          259,
+          258,
           259
         ],
         [
-          297,
-          303
+          302,
+          304
         ]
       ],
       "production": [
@@ -626,14 +626,6 @@
         ],
         [
           242,
-          242
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          242,
           243
         ],
         [
@@ -679,6 +671,14 @@
         [
           288,
           288
+        ],
+        [
+          241,
+          243
+        ],
+        [
+          288,
+          289
         ],
         [
           229,
@@ -689,18 +689,146 @@
           283
         ],
         [
-          259,
-          259
+          257,
+          261
         ],
         [
-          303,
-          303
+          302,
+          304
+        ]
+      ]
+    },
+    {
+      "name": "power-temperature",
+      "verdict": "diff",
+      "margin": 2,
+      "reason": "temperature the TX power calibration commits as its power tracking reference",
+      "vendor": [
+        [
+          21,
+          23
+        ]
+      ],
+      "production": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "name": "shared-cache",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "gain base the power tracking retains as its previous result",
+      "vendor": [
+        [
+          0,
+          0
+        ]
+      ],
+      "production": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "name": "wifi-gain-base",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "Wi-Fi TX gain base the power calibration commits",
+      "vendor": [
+        [
+          0,
+          0
+        ]
+      ],
+      "production": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "name": "bluetooth-gain-base",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "Bluetooth and IEEE 802.15.4 TX gain base the power calibration commits",
+      "vendor": [
+        [
+          0,
+          0
+        ]
+      ],
+      "production": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "name": "gain-adjustment",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "retained TX gain adjustment",
+      "vendor": [
+        [
+          0,
+          0
+        ]
+      ],
+      "production": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "name": "i2c-band",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "Wi-Fi I2C tracking band the calibration temperature selects",
+      "vendor": [
+        [
+          0,
+          0
+        ]
+      ],
+      "production": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "name": "rfpll-reference",
+      "verdict": "match",
+      "margin": 2,
+      "reason": "temperature the RFPLL calibration commits as its tracking reference",
+      "vendor": [
+        [
+          21,
+          23
+        ]
+      ],
+      "production": [
+        [
+          24,
+          25
         ]
       ]
     },
     {
       "name": "dcode",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "DCODE calibration codes",
       "vendor": [
         [
           63,
@@ -772,15 +900,21 @@
     },
     {
       "name": "calibration-status",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 0,
+      "mask": [
+        128,
+        2
+      ],
+      "reason": "the relation models the RX-gain DC (0x80 of the first byte) and RX-gain table (0x02 of the second) completion bits; the vendor's other status bits are outside it",
       "vendor": [
         [
-          168,
-          168
+          128,
+          128
         ],
         [
-          210,
-          210
+          2,
+          2
         ]
       ],
       "production": [
@@ -796,7 +930,9 @@
     },
     {
       "name": "rx-table-last-indices",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "shared and Wi-Fi RX-gain table last indices",
       "vendor": [
         [
           75,
@@ -820,7 +956,9 @@
     },
     {
       "name": "sensor-index",
-      "verdict": "incomplete",
+      "verdict": "match",
+      "margin": 0,
+      "reason": "temperature sensor window the calibration selected",
       "vendor": [
         [
           2,
@@ -836,11 +974,22 @@
     }
   ],
   "excluded": [
-    "tracking-progress"
+    {
+      "name": "current-temperature",
+      "reason": "the latest sensor sample follows the board temperature at each boot, not a calibration result"
+    },
+    {
+      "name": "tracking-progress",
+      "reason": "counts tracking work, not calibration"
+    }
   ],
   "uncovered": [
     [
       2,
+      4
+    ],
+    [
+      6,
       22
     ],
     [
@@ -849,6 +998,10 @@
     ],
     [
       74,
+      77
+    ],
+    [
+      78,
       164
     ],
     [
@@ -864,7 +1017,11 @@
       287
     ],
     [
-      290,
+      293,
+      304
+    ],
+    [
+      306,
       334
     ],
     [
@@ -877,6 +1034,10 @@
     ],
     [
       425,
+      434
+    ],
+    [
+      435,
       436
     ],
     [

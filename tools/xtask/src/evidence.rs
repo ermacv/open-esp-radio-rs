@@ -138,7 +138,8 @@ pub fn check(
         }
     }
     committed.sort();
-    let rerun = ctx.root.join(&output).join(CHECK_INDEX);
+    // Per chip, so checks of different chips keep their reruns apart.
+    let rerun = ctx.root.join(&output).join(CHECK_INDEX).join(chip);
     if rerun.exists() {
         std::fs::remove_dir_all(&rerun)?;
     }
@@ -184,7 +185,7 @@ pub fn check(
     }
 }
 
-/// Directory below the output root a check reruns its shards into.
+/// Directory below the output root a check reruns each chip's shards into.
 const CHECK_INDEX: &str = "check-index";
 
 /// Rerun `selected` scenarios of `chip`, writing their shards into `index`.

@@ -215,7 +215,7 @@ hil-requirements = [
 ]
 gaps = [
   { axis = "implementation", id = "joint-phy-maintenance-with-other-clients-missing" },
-  { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
+  { axis = "vendor", id = "complete-rx-tx-state-machine-trace-missing" },
   { axis = "async", id = "bounded-async-evidence-missing" },
 ]
 source-fact-refs = [

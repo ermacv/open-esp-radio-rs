@@ -6,6 +6,25 @@ pub const BOOTLOADER_OFFSET: u32 = 0x2000;
 pub const PARTITION_TABLE_OFFSET: u32 = 0x8000;
 pub const OTA_SELECTOR_OFFSET: u32 = 0xd000;
 pub const OTA_0_OFFSET: u32 = 0x1_0000;
+/// Size of `ota_0` in `platform/esp32s31/partitions/applications.csv`, the
+/// partition every application image is encoded for.
+pub const OTA_0_BYTES: u32 = 0x40_0000;
+/// Share of `ota_0` from which image encoding warns that the partition is
+/// nearly full, before an image stops fitting.
+pub const OTA_0_WARNING_PERCENT: u64 = 90;
+
+/// A warning when an application image of `bytes` fills at least
+/// [`OTA_0_WARNING_PERCENT`] of `ota_0`.
+pub fn ota_0_budget_warning(bytes: u64) -> Option<String> {
+    let capacity = u64::from(OTA_0_BYTES);
+    let percent = bytes * 100 / capacity;
+    (percent >= OTA_0_WARNING_PERCENT).then(|| {
+        format!(
+            "application image uses {percent}% of ota_0 ({bytes} of {capacity} bytes); \
+             reduce code size before it stops fitting"
+        )
+    })
+}
 const OTA_DATA_SIZE: usize = 0x2000;
 
 /// Extract a complete ROM image from an espflash merged container. Validate

@@ -172,6 +172,9 @@ pub fn audit_application_image(path: &Path) -> Result<()> {
     {
         return Err("ESP application image has an invalid app descriptor or MMU page size".into());
     }
+    if let Some(warning) = crate::flash::ota_0_budget_warning(bytes.len() as u64) {
+        eprintln!("warning: {}: {warning}", path.display());
+    }
     Ok(())
 }
 

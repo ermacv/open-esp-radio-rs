@@ -54,3 +54,28 @@ fn rom_extraction_rejects_qio_corruption_and_out_of_bounds_segments() {
     assert!(rom_bootloader(&truncated).is_err());
     assert!(rom_bootloader(&[]).is_err());
 }
+
+#[test]
+fn ota_0_size_matches_the_partition_table_and_warns_near_full() {
+    let table = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../platform/esp32s31/partitions/applications.csv"),
+    )
+    .unwrap();
+    let row = table
+        .lines()
+        .find(|line| line.starts_with("ota_0,"))
+        .expect("ota_0 row");
+    let fields = row.split(',').map(str::trim).collect::<Vec<_>>();
+    assert_eq!(
+        u32::from_str_radix(&fields[3][2..], 16).unwrap(),
+        OTA_0_OFFSET
+    );
+    assert_eq!(
+        u32::from_str_radix(&fields[4][2..], 16).unwrap(),
+        OTA_0_BYTES
+    );
+    let capacity = u64::from(OTA_0_BYTES);
+    assert!(ota_0_budget_warning(capacity * 89 / 100).is_none());
+    assert!(ota_0_budget_warning(capacity.div_ceil(100) * 90).is_some());
+}

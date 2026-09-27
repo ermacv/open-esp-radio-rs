@@ -198,7 +198,9 @@ mod tests {
         assert_eq!(super::calibration_snapshot(&state), snapshot);
         // Registration restarts TX-power tracking from the power reference.
         assert_eq!(
-            state.tx_power_tracking_parameters(true).previous_tracking_temperature,
+            state
+                .tx_power_tracking_parameters(true)
+                .previous_tracking_temperature,
             26
         );
     }

@@ -46,6 +46,21 @@ pub struct OpenThreadRadioDefaults {
     pub receive_sensitivity_dbm: i8,
 }
 
+impl OpenThreadRadioDefaults {
+    /// The figures ESP-IDF's OpenThread port reports on the ESP32-S31: the
+    /// transmit power `ieee802154_pib_init` gives every channel, the highest
+    /// BTBB provider level (`esp_ieee802154_get_txpower`); the Kconfig default
+    /// `CONFIG_IEEE802154_CCA_THRESHOLD` of -75 dBm
+    /// (`esp_ieee802154_get_cca_threshold`); and `IEEE802154_RX_SENSITIVITY`
+    /// of the ESP32-S31 `ieee802154_ll.h`
+    /// (`esp_ieee802154_get_receive_sensitivity`).
+    pub const ESP_IDF: Self = Self {
+        tx_power_dbm: oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS.highest_dbm(),
+        cca_threshold_dbm: -75,
+        receive_sensitivity_dbm: oer_ieee802154_engine::engine::RECEIVE_SENSITIVITY_DBM,
+    };
+}
+
 /// The ESP32-S31 IEEE 802.15.4 runtime as an OpenThread radio.
 ///
 /// Frames that arrive while a transmission or energy scan runs wait in a

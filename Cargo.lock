@@ -2854,6 +2854,7 @@ dependencies = [
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee802154-runtime",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
  "openthread",
 ]
 

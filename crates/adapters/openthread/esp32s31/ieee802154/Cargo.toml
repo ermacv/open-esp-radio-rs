@@ -12,6 +12,7 @@ embassy-sync = "0.8.0"
 heapless = "0.9.3"
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-esp32s31-ieee802154-runtime = { path = "../../../../runtime/esp32s31/ieee802154" }
+oer-ieee802154-engine = { path = "../../../../hardware/ieee802154/engine" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
 
 # OpenThread is built from source for the chip target only; host builds of

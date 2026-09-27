@@ -130,7 +130,9 @@ and operation starts do with `esp_phy_disable` and `esp_phy_enable`: it
 leaves the shared PHY's RF clients while BTBB stays taken, RF closes after
 the last client, and waking restores the calibration without running it
 again. Both go through the radio system's `RadioGuard::suspend_ieee802154`
-and `RadioGuard::resume_ieee802154`. Commands then go through `Ieee802154System::submit`, which opens RF
+and `RadioGuard::resume_ieee802154`, as `start` and `stop` join and leave
+the shared PHY through `RadioGuard::join_ieee802154`,
+`RadioGuard::leave_ieee802154` and `RadioGuard::leave_suspended_ieee802154`. Commands then go through `Ieee802154System::submit`, which opens RF
 first, and events through `Ieee802154System::next_event`, which closes RF
 before waiting when an event left the radio asleep; the runtime refuses
 commands that need RF while it is closed. Tracking due at the wake runs

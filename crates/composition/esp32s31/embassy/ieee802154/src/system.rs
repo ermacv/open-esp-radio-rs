@@ -37,15 +37,15 @@ use oer_esp32s31_phy::{
     ieee802154_client::{
         Ieee802154PhyClientError, Ieee802154PhyMembership, Ieee802154PhySuspended,
         RegisteredIeee802154Operational, RegisteredIeee802154OperationalRoute,
-        RegisteredIeee802154SuspendedRoute, join_ieee802154, leave_ieee802154,
-        leave_suspended_ieee802154,
+        RegisteredIeee802154SuspendedRoute, leave_ieee802154,
     },
     maintain_concurrent_phy,
     state::client::PhyModemClient,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_esp32s31_radio_runtime::{
-    Ieee802154WakeError, Ieee802154WakeFailure, RadioGuard, RadioPhyError, RadioSystem,
+    Ieee802154JoinError, Ieee802154WakeError, Ieee802154WakeFailure, RadioGuard, RadioPhyError,
+    RadioSystem,
 };
 use oer_ieee802154::{AcceptedCommand, RadioCommand};
 
@@ -366,36 +366,28 @@ pub async fn start<P, C: PlatformClockProvider>(
         }
     };
 
-    if let Err(error) = guard.prepare_phy().await {
-        if error.started() {
+    let joined = {
+        let joined = core::pin::pin!(guard.join_ieee802154(&clocked));
+        joined.await
+    };
+    let (membership, acquired) = match joined {
+        Ok(joined) => joined,
+        Err(Ieee802154JoinError::Phy(error)) if error.started() => {
             return Err(fail_stop(
                 Ieee802154StartError::Phy(error),
                 FailStopOwner::Clocked(clocked),
             ));
         }
-        let (lease, _, clocks) = guard.parts();
-        return Err(unwind_clocked(
-            lease,
-            clocks,
-            clocked,
-            engine,
-            Ieee802154StartError::Phy(error),
-        ));
-    }
-    let (lease, platform, clocks) = guard.parts();
-
-    let (membership, acquired) = match join_ieee802154(lease, &clocked, &mut EmbassyPhyTime) {
-        Ok(joined) => joined,
         Err(error) => {
-            return Err(unwind_clocked(
-                lease,
-                clocks,
-                clocked,
-                engine,
-                Ieee802154StartError::PhyClient(error),
-            ));
+            let error = match error {
+                Ieee802154JoinError::Phy(error) => Ieee802154StartError::Phy(error),
+                Ieee802154JoinError::Client(error) => Ieee802154StartError::PhyClient(error),
+            };
+            let (lease, _, clocks) = guard.parts();
+            return Err(unwind_clocked(lease, clocks, clocked, engine, error));
         }
     };
+    let (lease, platform, clocks) = guard.parts();
     if acquired == ConcurrentAcquire::TrackingDue {
         let issued_at = Instant::now().as_micros();
         let tracked = match clocked.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
@@ -915,7 +907,7 @@ impl Ieee802154System {
         let engine = parts.engine;
         let (mut task, interrupts) = parts.hardware.into_parts();
         let interrupts = interrupts.deactivate(&mut task);
-        let (mut guard, clocked) = match route.expect("a running system has a route") {
+        let (mut guard, clocked, left) = match route.expect("a running system has a route") {
             Route::Awake(route) => {
                 let (foundation, membership) = match route.into_foundation(task, interrupts) {
                     Ok(parts) => parts,
@@ -930,8 +922,12 @@ impl Ieee802154System {
                 };
                 let clocked = foundation.into_clocked();
                 let mut guard = radio.lock().await;
-                match leave_ieee802154(guard.lease(), &clocked, membership) {
-                    Ok(_last) => {}
+                let left = {
+                    let left = core::pin::pin!(guard.leave_ieee802154(&clocked, membership));
+                    left.await
+                };
+                match left {
+                    Ok(left) => (guard, clocked, left),
                     Err(failure) => {
                         let error = Ieee802154StopError::PhyClient(failure.error());
                         return Err(stop_fail_stop(
@@ -940,7 +936,6 @@ impl Ieee802154System {
                         ));
                     }
                 }
-                (guard, clocked)
             }
             Route::Asleep(route) => {
                 let (foundation, suspended) = match route.into_foundation(task, interrupts) {
@@ -959,20 +954,26 @@ impl Ieee802154System {
                 };
                 let clocked = foundation.into_clocked();
                 let mut guard = radio.lock().await;
-                if let Err(failure) = leave_suspended_ieee802154(guard.lease(), &clocked, suspended)
-                {
-                    let error = Ieee802154StopError::PhyClient(failure.error());
-                    return Err(stop_fail_stop(
-                        error,
-                        FailStopOwner::Suspended(clocked, failure.into_suspended()),
-                    ));
+                let left = {
+                    let left =
+                        core::pin::pin!(guard.leave_suspended_ieee802154(&clocked, suspended));
+                    left.await
+                };
+                match left {
+                    Ok(left) => (guard, clocked, left),
+                    Err(failure) => {
+                        let error = Ieee802154StopError::PhyClient(failure.error());
+                        return Err(stop_fail_stop(
+                            error,
+                            FailStopOwner::Suspended(clocked, failure.into_suspended()),
+                        ));
+                    }
                 }
-                (guard, clocked)
             }
         };
-        // RF closes after the last client; it is already closed, or stays
+        // RF closed after the last client; it was already closed, or stays
         // open for another client, otherwise.
-        if let Err(error) = guard.close_phy_if_idle().await {
+        if let Err(error) = left.rf_closed {
             return Err(stop_fail_stop(
                 Ieee802154StopError::PhyClose(error),
                 FailStopOwner::Clocked(clocked),

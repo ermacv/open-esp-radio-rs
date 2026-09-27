@@ -15,13 +15,20 @@ use oer_esp32s31_hal::{
     coex::{CoexPtiTable, Ieee802154CoexLevel},
     ieee802154::coex::{Ieee802154CoexConfig, resolve_priorities},
 };
+use oer_ieee802154::FrameAddress;
 #[cfg(feature = "sw-coex")]
 use oer_ieee802154_engine::coex::Ieee802154Coexistence;
+use oer_ieee802154_engine::engine::{
+    FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
+    Ieee802154Environment, Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot,
+    Ieee802154TxError,
+};
+use oer_ieee802154_engine::pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults};
 use oer_ieee802154_engine::{
     channel::Ieee802154Channel,
     coex::CoexPti,
     ll::{Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154Timer},
-    tx_power::{Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels},
+    tx_power::Ieee802154ResolvedTxPower,
     types::{
         Ieee802154CcaMode, Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel,
         Ieee802154EtmRoute, Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservation,
@@ -30,15 +37,6 @@ use oer_ieee802154_engine::{
         Ieee802154TxAbortEnableSet, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
     },
 };
-use oer_ieee802154_engine::engine::{
-    FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
-    Ieee802154Environment, Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot,
-    Ieee802154TxError,
-};
-use oer_ieee802154_engine::pib::{
-    AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults,
-};
-use oer_ieee802154::FrameAddress;
 
 use crate::{
     record::{Argument, LlModel, Record},
@@ -770,10 +768,6 @@ fn interface(index: u8) -> Result<Ieee802154MultipanIndex, &'static str> {
     Ieee802154MultipanIndex::new(index).ok_or("interface outside the four contexts")
 }
 
-/// The stand has no BTBB power table; the vendor then resolves every request
-/// to power index zero, which a one-level provider reproduces.
-static LEVELS: [i8; 1] = [0];
-
 /// A coexistence table in which level `n` (`ieee802154_coex_event_t`) has
 /// priority `n`, so every priority the engine publishes names the level the
 /// vendor driver chose. How libcoexist maps a level to a priority is not
@@ -803,7 +797,9 @@ fn level_table() -> CoexPtiTable {
 /// own yet, or a model input the engine vocabulary cannot represent.
 pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
-    let levels = Ieee802154TxPowerLevels::new(&LEVELS).map_err(|error| format!("{error:?}"))?;
+    // The recovered ESP32-S31 BTBB level set, which the vendor side reads
+    // through `bt_bb_get_tx_pwr_table` (`crate::record`).
+    let levels = oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS;
     let defaults = Ieee802154PibDefaults::default();
     #[cfg(not(feature = "multipan"))]
     let mut engine = Ieee802154Engine::new(buffers, levels, defaults);
@@ -818,9 +814,10 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
     // The stand's software-coexistence build uses the driver's default
     // scene levels.
     #[cfg(feature = "sw-coex")]
-    engine.set_coexistence(Ieee802154Coexistence::Software(
-        resolve_priorities(Ieee802154CoexConfig::VENDOR, &level_table()),
-    ));
+    engine.set_coexistence(Ieee802154Coexistence::Software(resolve_priorities(
+        Ieee802154CoexConfig::VENDOR,
+        &level_table(),
+    )));
     let shared = Rc::new(RefCell::new(Shared {
         model: LlModel::new((scenario.inputs)()),
         records: Vec::new(),
@@ -856,6 +853,12 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
                 engine.pib().set_cca_mode(mode);
             }
             Step::SetCcaThreshold(threshold) => engine.pib().set_cca_threshold(threshold),
+            Step::SetTxPower(power) => engine.pib().set_power(power),
+            Step::SetPowerWithChannel { channel, power } => {
+                if let Ok(channel) = Ieee802154Channel::new(channel) {
+                    engine.pib().set_power_for_channel(channel, power);
+                }
+            }
             Step::SetPendingMode(mode) => {
                 let mode = pending_mode_of(mode).ok_or("pending mode outside the vendor enum")?;
                 engine

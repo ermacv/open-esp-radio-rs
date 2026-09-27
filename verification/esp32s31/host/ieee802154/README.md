@@ -22,6 +22,7 @@ The stand replaces only the boundaries the driver does not own:
 | Every `ieee802154_ll_*` register accessor | Generated from the real `ieee802154_common_ll.h`: the vendor types and constants stay, each accessor records its name and arguments |
 | Direct `REG_READ`/`REG_WRITE` (the ETM helpers) | Recorded register reads and writes |
 | PHY, BTBB, coexistence, modem clocks, `ieee802154_txon_delay_set`, `bt_bb_get_cur_rx_info` | Recorded calls ([`shim/src/host.c`](shim/src/host.c)) |
+| `bt_bb_get_tx_pwr_table` | The recovered ESP32-S31 level set ([`src/record.rs`](src/record.rs)) |
 | `esp_intr_alloc` | Records the allocation and captures the handler that scenarios invoke |
 | `esp_timer_get_time`, the driver spinlock, `assert` | Recorded; a failed assertion becomes a trace record |
 | Application callbacks (`esp_ieee802154_receive_done`, ...) | Recorded with their frame bytes and frame information |
@@ -68,8 +69,11 @@ getters on both sides answer from one shared value model. Calls that leave
 the driver (clocks, PHY, BTBB, interrupt allocation, time, critical sections)
 are not compared. A vendor assertion, or a step the engine does not own, is
 `INCOMPLETE`. Address, extended-address and key arguments are compared by
-content. The stand has no BTBB power table, so both sides resolve power
-to index zero. The tests require `MATCH` for every catalog scenario.
+content. Both sides resolve transmit power against the ESP32-S31 BTBB level
+set recovered from the vendor library (`TX_POWER_LEVELS_DBM`): the stand
+provides it as the driver's `bt_bb_get_tx_pwr_table`, and the engine uses the
+HAL's `ESP32S31_TX_POWER_LEVELS`. The tests require `MATCH` for every catalog
+scenario.
 
 `cargo xtask evidence --chip esp32s31 ieee802154-host` runs `compare` for every catalog
 scenario and, only when all of them MATCH, writes the stand's evidence shard

@@ -399,6 +399,55 @@ fn sleep_after_receive() -> Vec<Step> {
     vec![Step::Enable, Step::Receive, Step::Sleep, Step::Sleep]
 }
 
+/// One transmission without acknowledgement, which publishes the pending PIB
+/// and with it the resolved power index.
+fn transmit_once() -> [Step; 2] {
+    [
+        Step::Transmit {
+            frame: data_frame(false),
+            cca: false,
+        },
+        Step::Interrupt {
+            events: event::TX_DONE,
+            rx_abort: 0,
+            tx_abort: 0,
+        },
+    ]
+}
+
+/// Transmit-power resolution against the recovered ESP32-S31 level set
+/// (-24 to 21 dBm in 3 dB steps): the default highest level, a request below
+/// the lowest level, between two levels, on a level and above the highest,
+/// then a per-channel power on the current channel, one on another channel,
+/// a change to that channel, and a per-channel power outside the channels.
+fn transmit_power_levels() -> Vec<Step> {
+    let mut steps = vec![Step::Enable];
+    steps.extend(transmit_once());
+    for power in [-30, 1, -3, 30] {
+        steps.push(Step::SetTxPower(power));
+        steps.extend(transmit_once());
+    }
+    steps.push(Step::SetChannel(20));
+    steps.push(Step::SetPowerWithChannel {
+        channel: 20,
+        power: 5,
+    });
+    steps.extend(transmit_once());
+    steps.push(Step::SetPowerWithChannel {
+        channel: 11,
+        power: -24,
+    });
+    steps.extend(transmit_once());
+    steps.push(Step::SetChannel(11));
+    steps.extend(transmit_once());
+    steps.push(Step::SetPowerWithChannel {
+        channel: 27,
+        power: 0,
+    });
+    steps.extend(transmit_once());
+    steps
+}
+
 fn enable() -> Vec<Step> {
     vec![Step::Enable]
 }
@@ -520,6 +569,11 @@ pub const SCENARIOS: &[Scenario] = &[
         name: "enable",
         inputs: no_inputs,
         steps: enable,
+    },
+    Scenario {
+        name: "transmit-power-levels",
+        inputs: no_inputs,
+        steps: transmit_power_levels,
     },
     Scenario {
         name: "transmit-without-ack",

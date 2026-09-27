@@ -36,6 +36,10 @@ pub enum Step {
     SetCcaThreshold(i8),
     /// `esp_ieee802154_set_ack_timeout` in microseconds.
     SetAckTimeout(u32),
+    /// `esp_ieee802154_set_txpower` in dBm: the power of every channel.
+    SetTxPower(i8),
+    /// `esp_ieee802154_set_power_with_channel` in dBm.
+    SetPowerWithChannel { channel: u8, power: i8 },
     /// `esp_ieee802154_get_panid`, `get_short_address`,
     /// `get_extended_address` and `get_ack_timeout`, in that order.
     GetIdentity,
@@ -132,6 +136,8 @@ unsafe extern "C" {
     fn esp_ieee802154_set_cca_mode(mode: u32) -> i32;
     fn esp_ieee802154_set_cca_threshold(threshold: i8) -> i32;
     fn esp_ieee802154_set_ack_timeout(timeout: u32) -> i32;
+    fn esp_ieee802154_set_txpower(power: i8) -> i32;
+    fn esp_ieee802154_set_power_with_channel(channel: u8, power: i8) -> i32;
     fn esp_ieee802154_get_panid() -> u16;
     fn esp_ieee802154_get_short_address() -> u16;
     fn esp_ieee802154_get_extended_address(address: *mut u8) -> i32;
@@ -220,6 +226,14 @@ fn run_step(step: Step, last_rx: &mut Option<usize>) {
             Step::SetAckTimeout(timeout) => returned(
                 "esp_ieee802154_set_ack_timeout",
                 esp_ieee802154_set_ack_timeout(timeout),
+            ),
+            Step::SetTxPower(power) => returned(
+                "esp_ieee802154_set_txpower",
+                esp_ieee802154_set_txpower(power),
+            ),
+            Step::SetPowerWithChannel { channel, power } => returned(
+                "esp_ieee802154_set_power_with_channel",
+                esp_ieee802154_set_power_with_channel(channel, power),
             ),
             Step::GetIdentity => {
                 esp_ieee802154_get_panid();

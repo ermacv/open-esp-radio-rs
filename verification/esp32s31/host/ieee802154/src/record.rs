@@ -325,6 +325,20 @@ pub const COEX_PRIORITY_CALLS: [&str; 2] = [
     "esp_coex_ieee802154_ack_pti_set",
 ];
 
+/// The ESP32-S31 BTBB provider's transmit-power level set, which the driver
+/// reads through its weak `bt_bb_get_tx_pwr_table`. The stand supplies the
+/// level set recovered from the vendor library, the one the production engine
+/// resolves against.
+#[unsafe(no_mangle)]
+extern "C" fn bt_bb_get_tx_pwr_table(length: *mut u8) -> *const i8 {
+    let levels = &oer_esp32s31_hal::phy::baseband::TX_POWER_LEVELS_DBM;
+    if !length.is_null() {
+        // SAFETY: the driver passes a pointer to its local `uint8_t length`.
+        unsafe { length.write(levels.len() as u8) };
+    }
+    levels.as_ptr()
+}
+
 /// Record one LL or external call and return the modelled value.
 #[unsafe(no_mangle)]
 extern "C" fn oer_host_record(

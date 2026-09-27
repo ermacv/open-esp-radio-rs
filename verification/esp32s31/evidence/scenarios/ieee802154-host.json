@@ -69,7 +69,7 @@
     },
     {
       "path": "verification/esp32s31/host/ieee802154",
-      "sha256": "4cc2263e0d2e1151b25857c6b08342f0d05d644be99688eb699e6a791ae6a7e9"
+      "sha256": "ef0939087e57c90ddadd283927bc3d87145e49f450aa27d7718e83249de1c3a6"
     },
     {
       "path": "verification/schema",
@@ -81,6 +81,15 @@
       "suite": "ieee802154-host",
       "source": "esp-idf",
       "symbol": "enable",
+      "production": "oer_ieee802154_engine::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-power-levels",
       "production": "oer_ieee802154_engine::engine",
       "verdict": "match",
       "cases": 1,

@@ -124,7 +124,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil lease [OPTIONS] -- CMD    run CMD under one lease; nested cargo hil joins it
       --board NAME|MAC                boards CMD uses (repeatable)
       --stand                         claim the whole stand instead; blocks every other owner
-      --air shared|exclusive          radio environment; exclusive for RF measurements
+      --air shared|exclusive|none     radio environment; exclusive for RF measurements, none without radio
       --flashed IMAGE (--application FILE | --sha256 HASH) (--port PORT | --device MAC)
       [--chip CHIP] [--commit REV]    journal CMD's flash when it succeeds
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
@@ -258,11 +258,16 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
 /// Exit status of a lease command terminated at twice its budget.
 const BUDGET_EXCEEDED_EXIT: u8 = 124;
 
-fn parse_air(text: &str) -> std::result::Result<oer_hil_arbiter::Mode, String> {
+/// How a lease command uses the radio environment; `None` claims no air.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct AirArg(Option<oer_hil_arbiter::Mode>);
+
+fn parse_air(text: &str) -> std::result::Result<AirArg, String> {
     match text {
-        "shared" => Ok(oer_hil_arbiter::Mode::Shared),
-        "exclusive" => Ok(oer_hil_arbiter::Mode::Exclusive),
-        _ => Err(String::from("use `shared` or `exclusive`")),
+        "shared" => Ok(AirArg(Some(oer_hil_arbiter::Mode::Shared))),
+        "exclusive" => Ok(AirArg(Some(oer_hil_arbiter::Mode::Exclusive))),
+        "none" => Ok(AirArg(None)),
+        _ => Err(String::from("use `shared`, `exclusive` or `none`")),
     }
 }
 
@@ -270,7 +275,7 @@ fn parse_air(text: &str) -> std::result::Result<oer_hil_arbiter::Mode, String> {
 /// stand when it names neither.
 fn lease_claims(
     boards: &[String],
-    air: Option<oer_hil_arbiter::Mode>,
+    air: Option<AirArg>,
     stand: bool,
     devices: &[oer_hil_arbiter::Device],
 ) -> Result<Vec<oer_hil_arbiter::Claim>> {
@@ -296,10 +301,16 @@ fn lease_claims(
             )?))
         })
         .collect::<Result<Vec<_>>>()?;
-    claims.push(oer_hil_arbiter::Claim {
-        resource: oer_hil_arbiter::AIR.to_owned(),
-        mode: air.unwrap_or(oer_hil_arbiter::Mode::Shared),
-    });
+    // Boards use the air shared unless told otherwise.
+    if let Some(mode) = air.map_or(Some(oer_hil_arbiter::Mode::Shared), |AirArg(mode)| mode) {
+        claims.push(oer_hil_arbiter::Claim {
+            resource: oer_hil_arbiter::AIR.to_owned(),
+            mode,
+        });
+    }
+    if claims.is_empty() {
+        return Err("--air none needs --board: the lease would claim nothing".into());
+    }
     Ok(claims)
 }
 
@@ -332,9 +343,10 @@ struct LeaseCli {
     #[arg(long)]
     stand: bool,
     /// How the command uses the radio environment: `shared` (default with
-    /// boards) or `exclusive` for RF measurements.
+    /// boards), `exclusive` for RF measurements, or `none` for work that
+    /// never enables a radio, which then runs beside an exclusive air lease.
     #[arg(long, value_parser = parse_air)]
-    air: Option<oer_hil_arbiter::Mode>,
+    air: Option<AirArg>,
     /// Journal a flash that COMMAND performs when it succeeds.
     #[command(flatten)]
     flashed: FlashedArgs,
@@ -1051,10 +1063,15 @@ mod tests {
             [Claim::board("38:44:BE:AA:25:64"), Claim::shared(AIR)]
         );
         assert_eq!(
-            lease_claims(&[], Some(Mode::Exclusive), false, &devices).unwrap(),
+            lease_claims(&[], Some(AirArg(Some(Mode::Exclusive))), false, &devices).unwrap(),
             [Claim::exclusive(AIR)]
         );
         assert!(lease_claims(&["s3".into()], None, false, &devices).is_err());
+        assert_eq!(
+            lease_claims(&["esp32c5".into()], Some(AirArg(None)), false, &devices).unwrap(),
+            [Claim::board("38:44:BE:AA:25:64")]
+        );
+        assert!(lease_claims(&[], Some(AirArg(None)), false, &devices).is_err());
     }
 
     #[test]

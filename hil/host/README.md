@@ -115,9 +115,13 @@ derives the application image with `espflash save-image` before queueing,
 leases only that board and the air (shared; `--air exclusive` for RF
 measurements; `--air none` for an image that never enables the radio, which
 then runs beside an exclusive air lease), lets
-`espflash` write the ESP-IDF bootloader, partition table and application for
-the board's registered chip, and journals the image under `--image` or the
-ELF's file name. `--monitor 30s` then captures the console into
+`espflash` write the chip's project bootloader, the partition table and the
+application for the board's registered chip, and journals the image under
+`--image` or the ELF's file name together with the bootloader digest. It then
+resets the board into the application with the RTS line, the boot strap
+released: `espflash`'s own reset and monitor connect to the ROM loader first
+and leave an esp32c5 in download mode. `--monitor 30s` captures the console,
+read from the port itself, into
 `target/hil/flash/<mac>/console-*.log` for at most that long; with
 `--until TEXT` it ends at the first line containing TEXT and fails when none
 does. The lease ends with the capture, so an open monitor never holds a board.
@@ -217,8 +221,11 @@ cargo hil board flashed --image NAME --sha256 HASH --device MAC   # inside a lea
 ```
 
 Tracked ESP-IDF firmware forms one catalog: every project with a
-`firmware.toml` beside its `CMakeLists.txt`, peers in `hil/peers/<project>/`
-and vendor references in `verification/<chip>/hil-vendor/<project>/`. The
+`firmware.toml` beside its `CMakeLists.txt`, peers in `hil/peers/<project>/`,
+vendor references in `verification/<chip>/hil-vendor/<project>/` and each
+chip's second-stage bootloader in `hil/bootloaders/<chip>/` (`kind =
+"bootloader"`), which `cargo hil flash` writes to every board of that chip.
+A bootloader entry is never flashed on its own. The
 manifest names the image as the board journal records it, the target chip and
 the chip whose `artifacts.toml` pins the one ESP-IDF revision and vendor
 archives every image builds against. Builds are reproducible

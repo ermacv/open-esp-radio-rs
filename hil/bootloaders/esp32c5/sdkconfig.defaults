@@ -1,0 +1,7 @@
+CONFIG_IDF_TARGET="esp32c5"
+# The stand's esp32c5 boards carry 16 MB of flash read in DIO mode.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+# Equal sources give an equal image, so the board journal identifies it.
+CONFIG_APP_REPRODUCIBLE_BUILD=y

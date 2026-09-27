@@ -3,16 +3,17 @@
 //!
 //! This is the manual cycle for images outside the HIL runner and the
 //! ESP-IDF catalog, such as a chip's first no_std images. `espflash` writes
-//! the ESP-IDF second-stage bootloader, partition table and application for
-//! the board's registered chip. The journal records the application image
-//! `espflash save-image` derives from the ELF, so another owner sees what the
-//! board carries. The console capture ends at its deadline or at an expected
+//! the chip's project bootloader from the catalog (`hil/bootloaders/<chip>`,
+//! built against the pinned ESP-IDF), the partition table and the
+//! application for the board's registered chip. The journal records the
+//! application image `espflash save-image` derives from the ELF and the
+//! bootloader's digest, so another owner sees what the board carries. The console capture ends at its deadline or at an expected
 //! line, never with the lease, so the board is released promptly.
 use std::{
     ffi::OsString,
-    io::{BufRead as _, Write as _},
+    io::Write as _,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     sync::mpsc,
     time::{Duration, Instant},
 };
@@ -91,7 +92,9 @@ pub fn run(
         .join(board.mac.replace(':', ""));
     std::fs::create_dir_all(&output)?;
 
-    // Derive the application image before queueing.
+    // Build the chip's project bootloader and derive the application image
+    // before queueing.
+    let (bootloader, bootloader_sha256) = crate::firmware_catalog::bootloader(ctx, &chip)?;
     let application = output.join("application.bin");
     crate::process::run(
         Command::new(espflash())
@@ -115,8 +118,18 @@ pub fn run(
     let _device = oer_esp32s31_firmware::device::DeviceLease::acquire(&board.port)?;
     crate::process::run(
         Command::new(espflash())
-            .args(["flash", "--non-interactive", "--chip", &chip, "--port"])
+            .args([
+                "flash",
+                "--non-interactive",
+                "--chip",
+                &chip,
+                "--after",
+                "no-reset",
+                "--port",
+            ])
             .arg(&board.port)
+            .arg("--bootloader")
+            .arg(&bootloader)
             .arg(&elf),
     )?;
     let (commit, dirty) = crate::firmware_catalog::source_revision(&ctx.root, Path::new("."));
@@ -128,23 +141,22 @@ pub fn run(
             application_sha256,
             commit,
             dirty,
-            origin: format!("cargo hil flash {}", elf.display()),
+            origin: format!(
+                "cargo hil flash {}, bootloader {}",
+                elf.display(),
+                &bootloader_sha256[..12]
+            ),
         },
     )?;
     eprintln!("hil-arbiter: recorded {image} on {}", board.mac);
 
+    let serial = reset_into_application(&board.port)?;
     let Some(duration) = monitor else {
         return Ok(std::process::ExitCode::SUCCESS);
     };
     let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
     let log = output.join(format!("console-{}.log", started.as_millis()));
-    let mut console = Command::new(espflash());
-    console
-        .args(["monitor", "--non-interactive", "--chip", &chip, "--port"])
-        .arg(&board.port)
-        .arg("--elf")
-        .arg(&elf);
-    let seen = capture(console, duration, cli.until.as_deref(), &log)?;
+    let seen = capture(serial_lines(serial), duration, cli.until.as_deref(), &log)?;
     eprintln!("hil: console log {}", log.display());
     Ok(match (cli.until, seen) {
         (Some(text), false) => {
@@ -162,63 +174,102 @@ fn espflash() -> OsString {
     std::env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into())
 }
 
-/// Copy `command`'s output lines to the terminal and `log` until `duration`
-/// passes or a line contains `until`; returns whether it did. The command is
-/// then terminated.
+/// Reset the board at `port` into its flashed application: RTS pulses the
+/// chip's reset while DTR keeps the boot strap released. `espflash`'s own
+/// reset after connecting leaves an esp32c5 in its ROM download mode.
+fn reset_into_application(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
+    let mut serial = serialport::new(port.to_string_lossy(), 115_200)
+        .timeout(Duration::from_millis(200))
+        .open()?;
+    serial.write_data_terminal_ready(false)?;
+    serial.write_request_to_send(true)?;
+    std::thread::sleep(Duration::from_millis(200));
+    serial.write_request_to_send(false)?;
+    Ok(serial)
+}
+
+/// The lines `serial` receives, until the receiver is dropped.
+fn serial_lines(mut serial: Box<dyn serialport::SerialPort>) -> mpsc::Receiver<Vec<u8>> {
+    let (lines, received) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut pending = Vec::new();
+        let mut buffer = [0; 4096];
+        loop {
+            match serial.read(&mut buffer) {
+                Ok(0) => {}
+                Ok(read) => pending.extend_from_slice(&buffer[..read]),
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(_) => return,
+            }
+            while let Some(end) = pending.iter().position(|&byte| byte == b'\n') {
+                let mut line = pending.drain(..=end).collect::<Vec<_>>();
+                line.pop();
+                if line.last() == Some(&b'\r') {
+                    line.pop();
+                }
+                if lines.send(line).is_err() {
+                    return;
+                }
+            }
+            // A dropped receiver is noticed at the next line; stop polling an
+            // idle console once nobody listens.
+            if lines.send(Vec::new()).is_err() {
+                return;
+            }
+        }
+    });
+    received
+}
+
+/// Copy `lines` to the terminal and `log` until `duration` passes or a line
+/// contains `until`; returns whether it did. Empty messages only keep the
+/// source alive and are not lines.
 fn capture(
-    mut command: Command,
+    lines: mpsc::Receiver<Vec<u8>>,
     duration: Duration,
     until: Option<&str>,
     log: &Path,
 ) -> Result<bool> {
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()?;
-    let stdout = child.stdout.take().ok_or("the console has no output")?;
-    let (lines, received) = mpsc::channel();
-    std::thread::spawn(move || {
-        for line in std::io::BufReader::new(stdout).split(b'\n') {
-            let Ok(line) = line else { break };
-            if lines.send(line).is_err() {
-                break;
-            }
-        }
-    });
     let mut file = std::fs::File::create(log)?;
     let deadline = Instant::now() + duration;
-    let mut seen = false;
     while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
-        match received.recv_timeout(remaining) {
+        match lines.recv_timeout(remaining) {
+            Ok(line) if line.is_empty() => {}
             Ok(line) => {
                 file.write_all(&line)?;
                 file.write_all(b"\n")?;
                 let text = String::from_utf8_lossy(&line);
                 println!("{text}");
                 if until.is_some_and(|until| text.contains(until)) {
-                    seen = true;
-                    break;
+                    return Ok(true);
                 }
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => break,
-            // The console exited on its own.
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                break;
+            }
         }
     }
-    let _ = child.kill();
-    let _ = child.wait();
-    Ok(seen)
+    Ok(false)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn printer(lines: &str, then_sleep: &str) -> Command {
-        let mut command = Command::new("sh");
-        command.args(["-c", &format!("printf '{lines}'; sleep {then_sleep}")]);
-        command
+    fn lines(text: &[&str], keep_open: Duration) -> mpsc::Receiver<Vec<u8>> {
+        let (sender, received) = mpsc::channel();
+        let text = text
+            .iter()
+            .map(|line| line.as_bytes().to_vec())
+            .collect::<Vec<_>>();
+        std::thread::spawn(move || {
+            for line in text {
+                sender.send(Vec::new()).unwrap();
+                sender.send(line).unwrap();
+            }
+            std::thread::sleep(keep_open);
+        });
+        received
     }
 
     #[test]
@@ -227,7 +278,7 @@ mod tests {
         let log = directory.path().join("console.log");
         let started = Instant::now();
         let seen = capture(
-            printer("boot\\nREADY 1\\nlater\\n", "30"),
+            lines(&["boot", "READY 1", "later"], Duration::from_secs(30)),
             Duration::from_secs(20),
             Some("READY"),
             &log,
@@ -239,7 +290,7 @@ mod tests {
 
         let started = Instant::now();
         let seen = capture(
-            printer("boot\\n", "30"),
+            lines(&["boot"], Duration::from_secs(30)),
             Duration::from_millis(300),
             Some("READY"),
             &log,

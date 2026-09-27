@@ -1,8 +1,10 @@
 //! The catalog of tracked ESP-IDF firmware the stand's boards run.
 //!
 //! Every ESP-IDF project with a `firmware.toml` beside its `CMakeLists.txt`
-//! is an entry: peers in `hil/peers/<project>/` and vendor references in
-//! `verification/<chip>/hil-vendor/<project>/`. The manifest names the image
+//! is an entry: peers in `hil/peers/<project>/`, vendor references in
+//! `verification/<chip>/hil-vendor/<project>/` and each chip's second-stage
+//! bootloader in `hil/bootloaders/<chip>/`, which every flash of the stand
+//! writes to a board of that chip. The manifest names the image
 //! (its name in the board journal), the target chip and the chip whose
 //! `artifacts.toml` pins the ESP-IDF; every entry builds against that one pin
 //! through [`crate::vendor_firmware`]. Flashing leases only the named board
@@ -28,6 +30,19 @@ struct Manifest {
     chip: String,
     /// Chip whose `artifacts.toml` pins the ESP-IDF and vendor archives.
     pins: String,
+    #[serde(default)]
+    kind: Kind,
+}
+
+/// What an entry provides.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Kind {
+    /// An application image flashed as a whole.
+    #[default]
+    Image,
+    /// The chip's second-stage bootloader, written with other images.
+    Bootloader,
 }
 
 #[derive(Debug, PartialEq)]
@@ -35,6 +50,7 @@ pub struct Entry {
     pub image: String,
     pub chip: String,
     pub pins: String,
+    pub kind: Kind,
     /// Project directory, relative to the repository root.
     pub directory: PathBuf,
 }
@@ -56,6 +72,7 @@ impl Entry {
 /// Every catalog entry below `root`, by image name.
 pub fn entries(root: &Path) -> Result<Vec<Entry>> {
     let mut directories = subdirectories(&root.join("hil/peers"))?;
+    directories.extend(subdirectories(&root.join("hil/bootloaders"))?);
     for chip in subdirectories(&root.join("verification"))? {
         directories.extend(subdirectories(&chip.join("hil-vendor"))?);
     }
@@ -77,6 +94,7 @@ pub fn entries(root: &Path) -> Result<Vec<Entry>> {
             image: manifest.image,
             chip: manifest.chip,
             pins: manifest.pins,
+            kind: manifest.kind,
             directory: directory.strip_prefix(root)?.to_owned(),
         });
     }
@@ -122,7 +140,18 @@ pub fn list(ctx: &Context) -> Result<()> {
         .and_then(|bytes| serde_json::from_slice::<vendor_firmware::Build>(&bytes).ok())
         .map_or_else(
             || String::from("not built"),
-            |build| format!("built {}", &build.application_sha256[..12]),
+            |build| {
+                let digest = match entry.kind {
+                    Kind::Image => Some(build.application_sha256),
+                    Kind::Bootloader => {
+                        crate::vendor_fetch::sha256(&bootloader_path(ctx, &entry)).ok()
+                    }
+                };
+                digest.map_or_else(
+                    || String::from("not built"),
+                    |digest| format!("built {}", &digest[..12]),
+                )
+            },
         );
         println!(
             "{:<24} {:<10} {:<48} {built}",
@@ -141,11 +170,39 @@ pub fn build(ctx: &Context, image: &str) -> Result<vendor_firmware::Build> {
     let build = vendor_firmware::build(ctx, &entry.pins, &[entry.project(&ctx.root)])?
         .pop()
         .ok_or("the build produced no image")?;
-    println!(
-        "{:<24} {} {}",
-        entry.image, build.application_sha256, build.application
-    );
+    let (digest, path) = match entry.kind {
+        Kind::Image => (build.application_sha256.clone(), build.application.clone()),
+        Kind::Bootloader => {
+            let path = bootloader_path(ctx, entry);
+            (
+                crate::vendor_fetch::sha256(&path)?,
+                path.display().to_string(),
+            )
+        }
+    };
+    println!("{:<24} {digest} {path}", entry.image);
     Ok(build)
+}
+
+fn bootloader_path(ctx: &Context, entry: &Entry) -> PathBuf {
+    vendor_firmware::output(&ctx.root, &entry.project(&ctx.root))
+        .join("build/bootloader/bootloader.bin")
+}
+
+/// The project second-stage bootloader of `chip`, built against the pinned
+/// ESP-IDF, and its SHA-256.
+pub fn bootloader(ctx: &Context, chip: &str) -> Result<(PathBuf, String)> {
+    let entries = entries(&ctx.root)?;
+    let entry = entries
+        .iter()
+        .find(|entry| entry.kind == Kind::Bootloader && entry.chip == chip)
+        .ok_or_else(|| {
+            format!("no project bootloader for {chip}; add hil/bootloaders/{chip} to the catalog")
+        })?;
+    build(ctx, &entry.image)?;
+    let path = bootloader_path(ctx, entry);
+    let sha256 = crate::vendor_fetch::sha256(&path)?;
+    Ok((path, sha256))
 }
 
 /// The files `idf.py flash` writes, by address, from the build's
@@ -178,6 +235,9 @@ pub fn flash(
 ) -> Result<()> {
     let entries = entries(&ctx.root)?;
     let entry = entry(&entries, image)?;
+    if entry.kind == Kind::Bootloader {
+        return Err(format!("`{image}` is a bootloader; every flash writes it").into());
+    }
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let Board { mac, port, chip } = resolve_board(&arbiter, board)?;
     if let Some(chip) = chip
@@ -321,12 +381,14 @@ mod tests {
                     image: "ieee802154-peer".into(),
                     chip: "esp32c5".into(),
                     pins: "esp32s31".into(),
+                    kind: Kind::Image,
                     directory: "hil/peers/esp32c5-ieee802154".into(),
                 },
                 Entry {
                     image: "vendor-calibration".into(),
                     chip: "esp32s31".into(),
                     pins: "esp32s31".into(),
+                    kind: Kind::Image,
                     directory: "verification/esp32s31/hil-vendor/calibration".into(),
                 },
             ]
@@ -351,6 +413,12 @@ mod tests {
         for image in ["ieee802154-peer", "vendor-calibration"] {
             assert!(entries.iter().any(|entry| entry.image == image), "{image}");
         }
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.kind == Kind::Bootloader && entry.chip == "esp32c5"),
+            "esp32c5 has a project bootloader"
+        );
     }
 
     #[test]

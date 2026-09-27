@@ -1127,7 +1127,7 @@ fn ieee802154_catalog_migration_preserves_program_and_full_source_inventory() {
         .iter()
         .filter(|item| sections.contains(item.section.as_str()) && item.source_fact.is_some())
         .count();
-    assert_eq!((source_rows, projections), (42, 2));
+    assert_eq!((source_rows, projections), (43, 2));
     assert_eq!(
         catalog
             .items

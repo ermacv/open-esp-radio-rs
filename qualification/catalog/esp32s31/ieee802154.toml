@@ -603,6 +603,15 @@ level = "composed-product"
 scope-and-limitations = "OpenThread owns CSL scheduling and synchronization; the radio serves it as ESP-IDF's OpenThread port does. The [portable CSL module](../../../../protocols/ieee802154/src/mac/csl.rs) ports the CSL IE template, OpenThread's CSL IE write and the port's phase; the role puts the IE into enhanced ACKs, writes period and phase into every CSL IE it sends at the frame's SFD through the engine, and secures retransmissions anew. The [OpenThread adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) maps CSL windows to scheduled receive windows and delayed frames to scheduled transmissions over the fork's csl feature. No peer has exchanged CSL frames with the device; on-air CSL is not qualified."
 
 [[items]]
+id = "ieee802154-timing-network-time-sync"
+section = "ieee802154-timing"
+title = "Thread network time synchronization (Time IE)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "OpenThread owns time synchronization; the radio fills a transmitted frame's Time IE as ESP-IDF's OpenThread port does at the SFD: the [portable Time IE write](../../../../protocols/ieee802154/src/mac/time_sync.rs) puts the time sync sequence and the radio clock plus the network time offset into it, and the role writes it for the request's Time IE (`TIME_SYNC`) and never into an enhanced ACK. The [OpenThread adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) passes OpenThread's Time IE over the fork's time-sync feature, whose `otPlatTimeGet` reads the same radio clock. No peer has synchronized with the device; on-air time synchronization is not qualified."
+packages = ["oer-ieee802154", "oer-esp32s31-ieee802154-radio", "oer-esp32s31-ieee802154-openthread"]
+
+[[items]]
 id = "ieee802154-security-power-and-coexistence-hardware-tx-security"
 section = "ieee802154-security-power-and-coexistence"
 title = "Hardware TX security"

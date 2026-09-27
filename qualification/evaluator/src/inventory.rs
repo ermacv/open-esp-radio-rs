@@ -962,7 +962,7 @@ scope-and-limitations = "No composition"
         assert!(rendered.contains("| ieee802154 | HOST-ONLY | 3 |"));
         assert!(
             rendered
-                .contains("Displayed rows: 44. Unique source facts: 44. Explicit projections: 2.")
+                .contains("Displayed rows: 45. Unique source facts: 45. Explicit projections: 2.")
         );
         assert!(rendered.contains("- Canonical source fact: `ieee802154-registered-timing-entry`"));
         assert!(rendered.contains("- Canonical source fact: `ieee802154-mac-operation-subset`"));

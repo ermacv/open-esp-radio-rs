@@ -28,9 +28,9 @@ pub const DECISIONS: &[Decision] = &[
         reason: "device-ordering fences the MAC and power event clears, the ordinary \
             transmit publication and the Bluetooth leaves declared `ordered` (baseband v2 \
             initialization, BLE PHY register initialization, NRT interrupt acknowledge, \
-            memory-list pointers, scheduler list heads) add around their register edge: each \
-            reviewed contract requires exactly that many, counted but not paired with a \
-            vendor effect",
+            memory-list pointers, scheduler list heads) add around their register edge are \
+            Rust-side additions, not vendor edges: each reviewed contract requires exactly \
+            that many, counted but not paired with a vendor effect",
         places: &[
             (
                 "pac/raw/src/lib.rs",
@@ -403,5 +403,39 @@ pub const DECISIONS: &[Decision] = &[
             calibration that uses the parameters and the retained-state rebuild write them \
             first",
         places: &[("phy/src/state.rs", "filter_dcap: [0; 5],")],
+    },
+    Decision {
+        reason: "end of the low-power clock deselect wrapper, where the validation lease \
+            drops: its release is software ownership whose release fence the leaf counts; \
+            the deselect register writes are compared by the leaf",
+        places: &[("hal/src/bluetooth/validation.rs", "}")],
+    },
+    Decision {
+        reason: "production-only software flag of the selected Bluetooth low-power clock, \
+            which refuses a second select; the select register writes are compared, and the \
+            vendor's own source record is reviewed as unprojected state",
+        places: &[(
+            "hal/src/shared_radio.rs",
+            "state.bluetooth_low_power_clock = true;",
+        )],
+    },
+    Decision {
+        reason: "derived copy and equality of a scheduler diagnostic sample: a sample is \
+            accepted when two consecutive reads are equal, and with the modeled stable value \
+            the first pair is; the compared diagnostic reads and their count carry the \
+            behavior",
+        places: &[(
+            "pac/src/bluetooth/scheduler/runtime.rs",
+            "#[derive(Clone, Copy, Debug, Eq, PartialEq)]",
+        )],
+    },
+    Decision {
+        reason: "construction of the BLE PHY fixture's shared-radio register owner: no \
+            register effect, and the fixture holds it to its end, so only final state \
+            depends on it; the compared transaction is `initialize_ble_phy_registers`",
+        places: &[(
+            "pac/src/validation.rs",
+            "let mut shared = shared_radio_registers();",
+        )],
     },
 ];

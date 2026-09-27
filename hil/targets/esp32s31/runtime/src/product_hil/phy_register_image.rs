@@ -1,25 +1,33 @@
 //! Windows of the production radio-PHY register image and analog image.
 //!
-//! The product task installs the shared radio once it owns it; each request
-//! then reads a window of the published `RadioPhyPeripherals` image or of
-//! the analog image under the radio lease, which serializes it with PHY
-//! tracking and radio work.
+//! Every open-radio HIL image places its one shared radio through [`adopt`],
+//! so no image can own a radio this reader cannot see. Each request then
+//! reads a window of the published `RadioPhyPeripherals` image or of the
+//! analog image under the radio lease, which serializes it with PHY tracking
+//! and radio work.
 
 use embassy_sync::once_lock::OnceLock;
 use oer_hil_protocol::{
     Event, PHY_REGISTER_IMAGE_WORDS, PhyAnalogImageBytes, PhyRegisterImageRequest,
     PhyRegisterImageWords, RejectReason,
 };
+use static_cell::StaticCell;
 
 /// Busy-host polls one analog read may take; a read completes within a
 /// few polls, so exhausting them reports a stuck analog host.
 const ANALOG_READ_POLLS: u32 = 10_000;
 
+/// Storage of the image's one shared radio.
+static STORAGE: StaticCell<super::SharedRadio> = StaticCell::new();
 static RADIO: OnceLock<&'static super::SharedRadio> = OnceLock::new();
 
-/// Make the product's shared radio observable.
-pub(crate) fn install(radio: &'static super::SharedRadio) {
+/// Place the image's shared radio for the rest of the process and make it
+/// observable. Radio hardware has one owner, so a second call cannot occur;
+/// it panics in `StaticCell::init`.
+pub(crate) fn adopt(radio: super::SharedRadio) -> &'static super::SharedRadio {
+    let radio: &'static super::SharedRadio = STORAGE.init(radio);
     let _ = RADIO.init(radio);
+    radio
 }
 
 /// Read the requested window, or reject a window outside the image or

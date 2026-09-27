@@ -2,8 +2,6 @@
 
 use core::pin::pin;
 
-use static_cell::StaticCell;
-
 use esp_hal::{efuse, time::Instant};
 use oer_esp32s31_hal::root::RadioHardware;
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
@@ -33,11 +31,9 @@ fn calibration_identity() -> PhyCalibrationIdentity {
 
 type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
 
-static RADIO: StaticCell<Radio> = StaticCell::new();
-
 /// The concurrently split radio and the IEEE 802.15.4 client's owners. The
-/// images are terminal: the radio stays split. The radio is published to
-/// the PHY register-image reader, which reads it under its lease.
+/// images are terminal: the radio stays split. The radio is placed by the
+/// PHY register-image reader, which reads it under its lease.
 pub(super) struct Client {
     pub(super) radio: &'static Radio,
     pub(super) defaults: Ieee802154PibDefaults,
@@ -53,8 +49,7 @@ impl Client {
             EspHalRadioClocks::new(),
             calibration_identity(),
         );
-        let radio: &'static Radio = RADIO.init(radio);
-        crate::product_hil::phy_register_image::install(radio);
+        let radio: &'static Radio = crate::product_hil::phy_register_image::adopt(radio);
         let defaults = Ieee802154PibDefaults::default();
         let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)?;
         Some((Self { radio, defaults }, parked))

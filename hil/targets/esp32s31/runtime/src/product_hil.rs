@@ -1539,8 +1539,6 @@ pub(crate) struct RadioPlatforms {
 
 type SharedRadio = oer_esp32s31_ieee80211_system::SharedRadio;
 
-static SHARED_RADIO: StaticCell<SharedRadio> = StaticCell::new();
-
 pub async fn run(
     spawner: Spawner,
     _secondary_core_spawner: SendSpawner,
@@ -1782,8 +1780,7 @@ pub async fn run(
         Some(cache) => radio.with_calibration_cache(cache),
         None => radio,
     };
-    let radio = SHARED_RADIO.init(radio);
-    phy_register_image::install(radio);
+    let radio = phy_register_image::adopt(radio);
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
     spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task must allocate once"));
     #[cfg(feature = "wifi-ble-coex")]

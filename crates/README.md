@@ -37,6 +37,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `roles/esp32s31/ieee802154/radio/` | Executor-free IEEE 802.15.4 radio role: the portable radio contract over the ported MAC engine |
 | `roles/esp32s31/bluetooth/radio/` | Executor-free Bluetooth LE radio role: the portable LE radio contract over the scheduler executor and the role instance pools |
 | `hardware/ieee802154/engine/` | Chip-neutral IEEE 802.15.4 MAC engine ported from the public ESP-IDF driver, over the `Ieee802154LowLevel` interface each chip's HAL implements |
+| `hardware/radio/analog/` | Chip-neutral non-blocking analog register bus contract of the Espressif PHY and its polled field transactions (`phy_i2c_readReg_Mask`, `phy_i2c_writeReg_Mask`) |
 | `hardware/radio/clock/` | Chip-neutral shared modem clock reference-count planner of ESP-IDF `modem_clock.c`, over the dependency table and edge executor each chip's HAL supplies |
 | `hardware/esp32s31/driver/{bluetooth,coex}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; `ieee802154/` keeps only the ESP32-S31 IEEE 802.15.4 capability page |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |

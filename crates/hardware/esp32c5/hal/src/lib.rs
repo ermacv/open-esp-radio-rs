@@ -12,6 +12,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod analog;
 pub mod coex;
 pub mod ieee802154;
 pub mod modem_clock;

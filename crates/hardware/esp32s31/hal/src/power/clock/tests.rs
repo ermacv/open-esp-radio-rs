@@ -1,608 +1,149 @@
+//! The ESP32-S31 table through the chip-neutral planner: each module emits
+//! its vendor dependency edges, lowest first, at refcount boundaries.
+
 use std::vec::Vec;
+
+use oer_radio_clock::{DependencySet, execute_acquire, execute_release, table_is_consistent};
 
 use super::*;
 
 /// The IEEE 802.15.4 module set, low bit first.
-const ALL_ACQUIRE_EDGES: [ModemClockAcquireEdge; 7] = [
-    ModemClockAcquireEdge::Pll160AndModemSource,
-    ModemClockAcquireEdge::Coexistence,
-    ModemClockAcquireEdge::WifiBb80x1,
-    ModemClockAcquireEdge::Etm,
-    ModemClockAcquireEdge::BtApbAndSecurity,
-    ModemClockAcquireEdge::BtIeee802154CommonBaseband,
-    ModemClockAcquireEdge::Ieee802154ApbAndMac,
+const IEEE802154_EDGES: [Dependency; 7] = [
+    Dependency::Pll160AndModemSource,
+    Dependency::Coexistence,
+    Dependency::WifiBb80x1,
+    Dependency::Etm,
+    Dependency::BtApbAndSecurity,
+    Dependency::BtIeee802154CommonBaseband,
+    Dependency::Ieee802154ApbAndMac,
 ];
 
-/// The IEEE 802.15.4 module set, low bit first.
-const ALL_RELEASE_EDGES: [ModemClockReleaseEdge; 7] = [
-    ModemClockReleaseEdge::Pll160AndModemSource,
-    ModemClockReleaseEdge::Coexistence,
-    ModemClockReleaseEdge::WifiBb80x1,
-    ModemClockReleaseEdge::Etm,
-    ModemClockReleaseEdge::BtApbAndSecurity,
-    ModemClockReleaseEdge::BtIeee802154CommonBaseband,
-    ModemClockReleaseEdge::Ieee802154ApbAndMac,
-];
-
-/// Counts after `count` IEEE 802.15.4 leases and nothing else.
-fn ieee802154_counts(count: u16) -> [u16; DEPENDENCY_COUNT] {
-    let mut counts = [0; DEPENDENCY_COUNT];
-    for dependency in Dependency::LOW_BIT_FIRST {
-        if ModemClockModule::Ieee802154
-            .dependencies()
-            .contains(dependency)
-        {
-            counts[dependency.index()] = count;
-        }
-    }
-    counts
-}
-
-/// Counts with exactly the listed dependencies set.
-fn counts_of(counts: &[(Dependency, u16)]) -> [u16; DEPENDENCY_COUNT] {
-    let mut all = [0; DEPENDENCY_COUNT];
-    for (dependency, count) in counts {
-        all[dependency.index()] = *count;
-    }
-    all
-}
-
-fn finish_acquire<'identity>(
-    mut prepared: PreparedModemClockAcquire<'identity>,
+fn acquire<'identity>(
+    planner: ModemClockPlanner<'identity>,
+    dependencies: DependencySet<Dependency>,
 ) -> (
     ModemClockPlanner<'identity>,
     ModemClockLease<'identity>,
-    Vec<ModemClockAcquireEdge>,
+    Vec<Dependency>,
 ) {
     let mut edges = Vec::new();
-    loop {
-        match prepared.advance() {
-            ModemClockAcquireStep::Physical(pending) => {
-                edges.push(pending.edge());
-                prepared = pending.complete();
-            }
-            ModemClockAcquireStep::CommitReady(ready) => {
-                let (planner, lease) = ready.commit();
-                return (planner, lease, edges);
-            }
-        }
-    }
+    let prepared = planner
+        .prepare_acquire(dependencies)
+        .unwrap_or_else(|_| panic!("managed baseline"));
+    let (planner, lease) = execute_acquire(prepared, |dependency| {
+        edges.push(dependency);
+        Ok::<(), ()>(())
+    })
+    .unwrap_or_else(|_| panic!("every edge performed"));
+    (planner, lease, edges)
 }
 
-fn finish_release<'planner, 'lease>(
-    mut prepared: PreparedModemClockRelease<'planner, 'lease>,
-) -> (ModemClockPlanner<'planner>, Vec<ModemClockReleaseEdge>) {
+fn release<'planner>(
+    planner: ModemClockPlanner<'planner>,
+    lease: ModemClockLease<'_>,
+) -> (ModemClockPlanner<'planner>, Vec<Dependency>) {
     let mut edges = Vec::new();
-    loop {
-        match prepared.advance() {
-            ModemClockReleaseStep::Physical(pending) => {
-                edges.push(pending.edge());
-                prepared = pending.complete();
-            }
-            ModemClockReleaseStep::CommitReady(ready) => {
-                return (ready.commit(), edges);
-            }
-        }
-    }
-}
-
-fn duplicate_for_adversarial_test<'identity>(
-    lease: &ModemClockLease<'identity>,
-) -> ModemClockLease<'identity> {
-    ModemClockLease {
-        identity: lease.identity,
-        slot: lease.slot,
-        generation: lease.generation,
-        dependencies: lease.dependencies,
-    }
-}
-
-#[test]
-fn exact_ieee_set_uses_low_bit_first_order_for_acquire_and_release() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
     let prepared = planner
-        .prepare_ieee802154_acquire()
-        .expect("known zero baseline");
-    let (planner, lease, acquire_edges) = finish_acquire(prepared);
-    assert_eq!(acquire_edges, ALL_ACQUIRE_EDGES);
-    assert_eq!(planner.counts, ieee802154_counts(1));
-
-    let release = planner.prepare_release(lease).expect("valid exact lease");
-    let (planner, release_edges) = finish_release(release);
-    assert_eq!(release_edges, ALL_RELEASE_EDGES);
-    assert_eq!(planner.counts, ieee802154_counts(0));
+        .prepare_release(lease)
+        .unwrap_or_else(|_| panic!("exact lease"));
+    let planner = execute_release(prepared, |dependency| {
+        edges.push(dependency);
+        Ok::<(), ()>(())
+    })
+    .unwrap_or_else(|_| panic!("every edge performed"));
+    (planner, edges)
 }
 
 #[test]
-fn overlapping_leases_emit_only_zero_one_and_one_zero_boundaries() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let (planner, first, first_edges) = finish_acquire(
-        planner
-            .prepare_ieee802154_acquire()
-            .expect("first acquisition"),
-    );
-    let (planner, second, second_edges) = finish_acquire(
-        planner
-            .prepare_ieee802154_acquire()
-            .expect("overlapping acquisition"),
-    );
-    assert_eq!(first_edges, ALL_ACQUIRE_EDGES);
-    assert!(second_edges.is_empty());
-    assert_eq!(planner.counts, ieee802154_counts(2));
-
-    let (planner, first_release_edges) = finish_release(
-        planner
-            .prepare_release(first)
-            .expect("first overlapping release"),
-    );
-    assert!(first_release_edges.is_empty());
-    assert_eq!(planner.counts, ieee802154_counts(1));
-
-    let (planner, last_release_edges) = finish_release(
-        planner
-            .prepare_release(second)
-            .expect("last overlapping release"),
-    );
-    assert_eq!(last_release_edges, ALL_RELEASE_EDGES);
-    assert_eq!(planner.counts, ieee802154_counts(0));
+fn the_table_is_consistent() {
+    assert!(table_is_consistent::<Dependency>());
 }
 
 #[test]
-fn local_lease_capacity_fails_closed_and_preserves_all_owners() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let mut planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let mut leases = Vec::new();
-
-    for _ in 0..MAX_ACTIVE_LEASES {
-        let prepared = planner
-            .prepare_ieee802154_acquire()
-            .expect("one slot remains");
-        let (next_planner, lease, _) = finish_acquire(prepared);
-        planner = next_planner;
-        leases.push(lease);
-    }
-
-    let failure = match planner.prepare_ieee802154_acquire() {
-        Ok(_) => panic!("the local fixed-capacity table must reject a seventeenth lease"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        ModemClockAcquirePreparationError::LeaseCapacityReached
-    );
-    let mut planner = failure.into_planner();
-    assert_eq!(planner.counts, ieee802154_counts(MAX_ACTIVE_LEASES as u16));
-    assert_eq!(
-        planner.slots.iter().filter(|slot| slot.active).count(),
-        MAX_ACTIVE_LEASES
-    );
-
-    for lease in leases {
-        let prepared = planner.prepare_release(lease).expect("exact live lease");
-        let (next_planner, _) = finish_release(prepared);
-        planner = next_planner;
-    }
-    assert_eq!(planner.counts, ieee802154_counts(0));
-    assert!(planner.slots.iter().all(|slot| !slot.active));
-}
-
-#[test]
-fn exhausted_slot_generation_fails_closed_without_count_changes() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let mut planner = ModemClockPlanner::managed_for_test(&mut identity);
-    planner.slots[0].generation = u64::MAX;
-
-    let failure = match planner.prepare_ieee802154_acquire() {
-        Ok(_) => panic!("an exhausted slot generation must not be reused"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        ModemClockAcquirePreparationError::LeaseGenerationExhausted
-    );
-    let planner = failure.into_planner();
-    assert_eq!(planner.counts, ieee802154_counts(0));
-    assert_eq!(planner.slots[0].generation, u64::MAX);
-    assert!(planner.slots.iter().all(|slot| !slot.active));
-}
-
-#[test]
-fn partial_dependency_overlap_preserves_order_and_independent_counts() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let first_set = DependencySet::from_dependencies(&[
-        Dependency::Pll160AndModemSource,
-        Dependency::WifiBb80x1,
-        Dependency::BtIeee802154CommonBaseband,
-    ]);
-    let second_set = DependencySet::from_dependencies(&[
-        Dependency::WifiBb80x1,
-        Dependency::Etm,
-        Dependency::BtIeee802154CommonBaseband,
-    ]);
-
-    let (planner, first, first_edges) =
-        finish_acquire(planner.prepare_acquire(first_set).expect("first set"));
-    assert_eq!(
-        first_edges,
-        [
-            ModemClockAcquireEdge::Pll160AndModemSource,
-            ModemClockAcquireEdge::WifiBb80x1,
-            ModemClockAcquireEdge::BtIeee802154CommonBaseband,
-        ]
-    );
-
-    let (planner, second, second_edges) =
-        finish_acquire(planner.prepare_acquire(second_set).expect("second set"));
-    assert_eq!(second_edges, [ModemClockAcquireEdge::Etm]);
-    assert_eq!(
-        planner.counts,
-        counts_of(&[
-            (Dependency::Pll160AndModemSource, 1),
-            (Dependency::WifiBb80x1, 2),
-            (Dependency::Etm, 1),
-            (Dependency::BtIeee802154CommonBaseband, 2),
-        ])
-    );
-
-    let (planner, first_release) =
-        finish_release(planner.prepare_release(first).expect("first release"));
-    assert_eq!(first_release, [ModemClockReleaseEdge::Pll160AndModemSource]);
-    assert_eq!(
-        planner.counts,
-        counts_of(&[
-            (Dependency::WifiBb80x1, 1),
-            (Dependency::Etm, 1),
-            (Dependency::BtIeee802154CommonBaseband, 1),
-        ])
-    );
-
-    let (planner, second_release) =
-        finish_release(planner.prepare_release(second).expect("second release"));
-    assert_eq!(
-        second_release,
-        [
-            ModemClockReleaseEdge::WifiBb80x1,
-            ModemClockReleaseEdge::Etm,
-            ModemClockReleaseEdge::BtIeee802154CommonBaseband,
-        ]
-    );
-    assert_eq!(planner.counts, ieee802154_counts(0));
-}
-
-#[test]
-fn preparation_and_commit_are_transactionally_separate() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let prepared = planner
-        .prepare_ieee802154_acquire()
-        .expect("managed baseline");
-    assert_eq!(prepared.planner.counts, ieee802154_counts(0));
-    assert!(prepared.planner.slots.iter().all(|slot| !slot.active));
-
-    let pending = match prepared.advance() {
-        ModemClockAcquireStep::Physical(pending) => pending,
-        ModemClockAcquireStep::CommitReady(_) => panic!("fresh acquire needs edges"),
-    };
-    assert_eq!(pending.edge(), ModemClockAcquireEdge::Pll160AndModemSource);
-    assert_eq!(pending.transaction.planner.counts, ieee802154_counts(0));
-
-    let poisoned = pending.fail();
-    assert_eq!(poisoned.completed_edges(), 0);
-    assert_eq!(poisoned.edge(), ModemClockAcquireEdge::Pll160AndModemSource);
-    let pending = poisoned.reexpose_for_test();
-    assert_eq!(pending.transaction.planner.counts, ieee802154_counts(0));
-
-    let (planner, _lease, edges) = finish_acquire(pending.complete());
-    assert_eq!(edges, ALL_ACQUIRE_EDGES[1..]);
-    assert_eq!(planner.counts, ieee802154_counts(1));
-}
-
-#[test]
-fn release_failure_is_poisoned_and_keeps_counts_and_lease_until_commit() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let (planner, lease, _) = finish_acquire(
-        planner
-            .prepare_ieee802154_acquire()
-            .expect("managed baseline"),
-    );
-    let prepared = planner.prepare_release(lease).expect("valid lease");
-    assert_eq!(prepared.planner.counts, ieee802154_counts(1));
-    assert!(prepared.planner.slots[usize::from(prepared.lease.slot)].active);
-
-    let pending = match prepared.advance() {
-        ModemClockReleaseStep::Physical(pending) => pending,
-        ModemClockReleaseStep::CommitReady(_) => panic!("last release needs edges"),
-    };
-    let poisoned = pending.fail();
-    assert_eq!(poisoned.completed_edges(), 0);
-    assert_eq!(poisoned.edge(), ModemClockReleaseEdge::Pll160AndModemSource);
-    let pending = poisoned.reexpose_for_test();
-    assert_eq!(pending.transaction.planner.counts, ieee802154_counts(1));
-    assert!(pending.transaction.planner.slots[usize::from(pending.transaction.lease.slot)].active);
-
-    let (planner, edges) = finish_release(pending.complete());
-    assert_eq!(edges, ALL_RELEASE_EDGES[1..]);
-    assert_eq!(planner.counts, ieee802154_counts(0));
-}
-
-#[test]
-fn source_refcount_boundary_accepts_max_then_rejects_overflow() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let mut planner = ModemClockPlanner::managed_for_test(&mut identity);
-    planner.counts[Dependency::WifiBb80x1.index()] = MAX_REFCOUNT - 1;
-    let identity_address = planner.identity as *const _;
-
-    let prepared = planner
-        .prepare_ieee802154_acquire()
-        .expect("MAX_REFCOUNT - 1 may advance to the source maximum");
-    let (planner, _lease, edges) = finish_acquire(prepared);
-    assert!(!edges.contains(&ModemClockAcquireEdge::WifiBb80x1));
-    assert_eq!(planner.counts[Dependency::WifiBb80x1.index()], MAX_REFCOUNT);
-
-    let failure = match planner.prepare_ieee802154_acquire() {
-        Ok(_) => panic!("MAX_REFCOUNT must not exceed the source contract"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        ModemClockAcquirePreparationError::RefcountOverflow(ModemClockAcquireEdge::WifiBb80x1)
-    );
-    let planner = failure.into_planner();
-    assert_eq!(planner.identity as *const _, identity_address);
-    assert_eq!(planner.counts[Dependency::WifiBb80x1.index()], MAX_REFCOUNT);
-    assert_eq!(planner.slots.iter().filter(|slot| slot.active).count(), 1);
-}
-
-#[test]
-fn underflow_fails_transactionally_and_returns_both_opaque_owners() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let (mut planner, lease, _) = finish_acquire(
-        planner
-            .prepare_ieee802154_acquire()
-            .expect("managed baseline"),
-    );
-    planner.counts[Dependency::Etm.index()] = 0;
-    let lease_slot = lease.slot;
-
-    let failure = match planner.prepare_release(lease) {
-        Ok(_) => panic!("underflow must fail"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        ModemClockReleasePreparationError::RefcountUnderflow(ModemClockReleaseEdge::Etm)
-    );
-    let (planner, lease) = failure.into_owners();
-    assert_eq!(lease.slot, lease_slot);
-    assert_eq!(planner.counts[Dependency::Etm.index()], 0);
-    assert!(planner.slots[usize::from(lease.slot)].active);
-}
-
-#[test]
-fn duplicate_and_stale_leases_are_rejected_without_owner_loss() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let (planner, first, _) = finish_acquire(
-        planner
-            .prepare_ieee802154_acquire()
-            .expect("first acquisition"),
-    );
-    let duplicate = duplicate_for_adversarial_test(&first);
-    let stale = duplicate_for_adversarial_test(&first);
-    let (planner, _) = finish_release(planner.prepare_release(first).expect("first release"));
-
-    let duplicate_failure = match planner.prepare_release(duplicate) {
-        Ok(_) => panic!("duplicate release must fail"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        duplicate_failure.error(),
-        ModemClockReleasePreparationError::DuplicateRelease
-    );
-    let (planner, duplicate) = duplicate_failure.into_owners();
-    assert_eq!(planner.counts, ieee802154_counts(0));
-    drop(duplicate);
-
-    let (planner, current, _) = finish_acquire(
-        planner
-            .prepare_ieee802154_acquire()
-            .expect("slot generation advances"),
-    );
-    let stale_failure = match planner.prepare_release(stale) {
-        Ok(_) => panic!("stale generation must fail"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        stale_failure.error(),
-        ModemClockReleasePreparationError::StaleLease
-    );
-    let (planner, stale) = stale_failure.into_owners();
-    assert_eq!(planner.counts, ieee802154_counts(1));
-    drop(stale);
-
-    let (planner, edges) = finish_release(planner.prepare_release(current).expect("current lease"));
-    assert_eq!(edges, ALL_RELEASE_EDGES);
-    assert_eq!(planner.counts, ieee802154_counts(0));
-}
-
-#[test]
-fn cross_manager_lease_is_rejected_and_both_epochs_are_retained() {
-    let mut first_identity = ModemClockPlannerIdentity::new();
-    let mut second_identity = ModemClockPlannerIdentity::new();
-    let first_planner = ModemClockPlanner::managed_for_test(&mut first_identity);
-    let second_planner = ModemClockPlanner::managed_for_test(&mut second_identity);
-    let (first_planner, lease, _) = finish_acquire(
-        first_planner
-            .prepare_ieee802154_acquire()
-            .expect("first manager"),
-    );
-
-    let failure = match second_planner.prepare_release(lease) {
-        Ok(_) => panic!("cross-manager lease must fail"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        ModemClockReleasePreparationError::CrossManagerLease
-    );
-    let (second_planner, lease) = failure.into_owners();
-    assert_eq!(second_planner.counts, ieee802154_counts(0));
-    assert_eq!(first_planner.counts, ieee802154_counts(1));
-    assert!(!ptr::eq(second_planner.identity, lease.identity));
-
-    let (first_planner, edges) = finish_release(
-        first_planner
-            .prepare_release(lease)
-            .expect("original manager accepts exact lease"),
-    );
-    assert_eq!(edges, ALL_RELEASE_EDGES);
-    assert_eq!(first_planner.counts, ieee802154_counts(0));
-}
-
-#[test]
-fn externally_retained_baseline_cannot_issue_acquire_or_release_plans() {
-    let mut external_identity = ModemClockPlannerIdentity::new();
-    let external = ModemClockPlanner::externally_retained(&mut external_identity);
-    let failure = match external.prepare_ieee802154_acquire() {
-        Ok(_) => panic!("unknown baseline cannot plan acquisition"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        ModemClockAcquirePreparationError::UnknownBaseline
-    );
-    let external = failure.into_planner();
-    assert_eq!(external.baseline, Baseline::ExternallyRetained);
-    assert_eq!(external.counts, ieee802154_counts(0));
-
-    let mut managed_identity = ModemClockPlannerIdentity::new();
-    let managed = ModemClockPlanner::managed_for_test(&mut managed_identity);
-    let (managed, lease, _) = finish_acquire(
-        managed
-            .prepare_ieee802154_acquire()
-            .expect("test managed baseline"),
-    );
-
-    let failure = match external.prepare_release(lease) {
-        Ok(_) => panic!("unknown baseline cannot plan release"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        ModemClockReleasePreparationError::UnknownBaseline
-    );
-    let (external, lease) = failure.into_owners();
-    assert_eq!(external.baseline, Baseline::ExternallyRetained);
-
-    let (managed, edges) = finish_release(
-        managed
-            .prepare_release(lease)
-            .expect("managed owner retains release authority"),
-    );
-    assert_eq!(edges, ALL_RELEASE_EDGES);
-    assert_eq!(managed.counts, ieee802154_counts(0));
+fn the_ieee802154_set_is_acquired_and_released_low_bit_first() {
+    let identity = ModemClockPlannerIdentity::new();
+    let planner = ModemClockPlanner::managed(&identity);
+    let (planner, lease, edges) = acquire(planner, ModemClockModule::Ieee802154.dependencies());
+    assert_eq!(edges, IEEE802154_EDGES);
+    let (_planner, edges) = release(planner, lease);
+    assert_eq!(edges, IEEE802154_EDGES);
 }
 
 #[test]
 fn a_second_module_enables_only_its_missing_dependencies() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let (planner, wifi, _) = finish_acquire(
-        planner
-            .prepare_module_acquire(ModemClockModule::Wifi)
-            .expect("Wi-Fi"),
-    );
+    let identity = ModemClockPlannerIdentity::new();
+    let planner = ModemClockPlanner::managed(&identity);
+    let (planner, wifi, _) = acquire(planner, ModemClockModule::Wifi.dependencies());
     // Coexistence, the PLL source and the 80x1 clock are already on for Wi-Fi.
-    let (planner, bluetooth, edges) = finish_acquire(
-        planner
-            .prepare_module_acquire(ModemClockModule::Bluetooth)
-            .expect("Bluetooth"),
-    );
+    let (planner, bluetooth, edges) = acquire(planner, ModemClockModule::Bluetooth.dependencies());
     assert_eq!(
         edges,
         [
-            ModemClockAcquireEdge::Etm,
-            ModemClockAcquireEdge::BtMac,
-            ModemClockAcquireEdge::BtPeripheral,
-            ModemClockAcquireEdge::BtApbAndSecurity,
-            ModemClockAcquireEdge::BtIeee802154CommonBaseband,
+            Dependency::Etm,
+            Dependency::BtMac,
+            Dependency::BtPeripheral,
+            Dependency::BtApbAndSecurity,
+            Dependency::BtIeee802154CommonBaseband,
         ]
     );
     // Leaving Wi-Fi keeps every dependency Bluetooth still uses.
-    let (planner, edges) = finish_release(planner.prepare_release(wifi).expect("Wi-Fi release"));
+    let (planner, edges) = release(planner, wifi);
     assert_eq!(
         edges,
         [
-            ModemClockReleaseEdge::WifiApb,
-            ModemClockReleaseEdge::WifiBb44m,
-            ModemClockReleaseEdge::WifiMac,
-            ModemClockReleaseEdge::WifiBb,
+            Dependency::WifiApb,
+            Dependency::WifiBb44m,
+            Dependency::WifiMac,
+            Dependency::WifiBb,
         ]
     );
-    let (planner, _) = finish_release(
-        planner
-            .prepare_release(bluetooth)
-            .expect("Bluetooth release"),
+    let (_planner, edges) = release(planner, bluetooth);
+    assert_eq!(
+        edges,
+        [
+            Dependency::Pll160AndModemSource,
+            Dependency::Coexistence,
+            Dependency::WifiBb80x1,
+            Dependency::Etm,
+            Dependency::BtMac,
+            Dependency::BtPeripheral,
+            Dependency::BtApbAndSecurity,
+            Dependency::BtIeee802154CommonBaseband,
+        ]
     );
-    assert_eq!(planner.counts, [0; DEPENDENCY_COUNT]);
 }
 
 #[test]
 fn the_analog_i2c_master_edge_follows_every_module_request() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
-    let (planner, first, first_edges) = finish_acquire(
-        planner
-            .prepare_module_acquire(ModemClockModule::Phy)
-            .expect("PHY"),
-    );
-    assert!(first_edges.contains(&ModemClockAcquireEdge::AnalogI2cMaster));
-    let (planner, second, second_edges) = finish_acquire(
-        planner
-            .prepare_module_acquire(ModemClockModule::AnalogI2cMaster)
-            .expect("analog I2C"),
-    );
+    let identity = ModemClockPlannerIdentity::new();
+    let planner = ModemClockPlanner::managed(&identity);
+    let (planner, first, first_edges) = acquire(planner, ModemClockModule::Phy.dependencies());
+    assert!(first_edges.contains(&Dependency::AnalogI2cMaster));
+    let (planner, second, second_edges) =
+        acquire(planner, ModemClockModule::AnalogI2cMaster.dependencies());
     // The platform owner counts analog-I2C references, so each request
     // reaches it even while the dependency is already enabled.
-    assert_eq!(second_edges, [ModemClockAcquireEdge::AnalogI2cMaster]);
-    let (planner, released) =
-        finish_release(planner.prepare_release(second).expect("analog I2C release"));
-    assert_eq!(released, [ModemClockReleaseEdge::AnalogI2cMaster]);
-    let (_planner, released) = finish_release(planner.prepare_release(first).expect("PHY release"));
-    assert!(released.contains(&ModemClockReleaseEdge::AnalogI2cMaster));
+    assert_eq!(second_edges, [Dependency::AnalogI2cMaster]);
+    let (planner, released) = release(planner, second);
+    assert_eq!(released, [Dependency::AnalogI2cMaster]);
+    let (_planner, released) = release(planner, first);
+    assert!(released.contains(&Dependency::AnalogI2cMaster));
 }
 
 #[test]
 fn initialized_wifi_keeps_its_clocks_and_re_enables_them_on_the_next_request() {
-    let mut identity = ModemClockPlannerIdentity::new();
-    let mut planner = ModemClockPlanner::managed_for_test(&mut identity);
+    let identity = ModemClockPlannerIdentity::new();
+    let mut planner = ModemClockPlanner::managed(&identity);
     planner.set_wifi_initialized(true);
-    let (planner, wifi, _) = finish_acquire(
-        planner
-            .prepare_module_acquire(ModemClockModule::Wifi)
-            .expect("Wi-Fi"),
-    );
-    let (planner, released) = finish_release(planner.prepare_release(wifi).expect("release"));
+    let (planner, wifi, _) = acquire(planner, ModemClockModule::Wifi.dependencies());
+    let (planner, released) = release(planner, wifi);
     // Only the dependencies outside the Wi-Fi clock group are switched off.
     assert_eq!(
         released,
-        [
-            ModemClockReleaseEdge::Pll160AndModemSource,
-            ModemClockReleaseEdge::Coexistence,
-        ]
+        [Dependency::Pll160AndModemSource, Dependency::Coexistence]
     );
-    assert_eq!(planner.counts, [0; DEPENDENCY_COUNT]);
     // The next zero-to-one request enables them again, including the
     // baseband reset carried by the WifiBb edge.
-    let (_planner, _lease, edges) = finish_acquire(
-        planner
-            .prepare_module_acquire(ModemClockModule::Wifi)
-            .expect("Wi-Fi again"),
-    );
-    assert!(edges.contains(&ModemClockAcquireEdge::WifiBb));
+    let (_planner, _lease, edges) = acquire(planner, ModemClockModule::Wifi.dependencies());
+    assert!(edges.contains(&Dependency::WifiBb));
 }

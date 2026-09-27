@@ -1042,6 +1042,7 @@ dependencies = [
  "oer-esp32s31-pac",
  "oer-ieee802154-engine",
  "oer-memory",
+ "oer-radio-clock",
 ]
 
 [[package]]
@@ -1360,6 +1361,10 @@ dependencies = [
  "oer-probe-codegen",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "oer-radio-clock"
+version = "0.1.0"
 
 [[package]]
 name = "p256"

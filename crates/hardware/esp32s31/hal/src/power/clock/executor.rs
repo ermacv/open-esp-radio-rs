@@ -14,8 +14,7 @@
 use oer_esp32s31_pac::{ModemClockDevice, RadioPhyRegisters};
 
 use super::{
-    Dependency, ModemClockAcquireEdge, ModemClockAcquireStep, ModemClockLease, ModemClockPlanner,
-    ModemClockReleaseEdge, ModemClockReleaseStep, PoisonedModemClockAcquire,
+    Dependency, ModemClockLease, ModemClockPlanner, PoisonedModemClockAcquire,
     PoisonedModemClockRelease, PreparedModemClockAcquire, PreparedModemClockRelease,
 };
 
@@ -73,18 +72,18 @@ const fn modem_device(dependency: Dependency) -> Option<ModemClockDevice> {
 }
 
 fn perform_acquire(
-    edge: ModemClockAcquireEdge,
+    dependency: Dependency,
     port: &mut impl ModemClockPort,
     platform: &mut impl PlatformClockProvider,
 ) -> Result<(), PlatformClockError> {
-    match edge {
-        ModemClockAcquireEdge::Pll160AndModemSource => {
+    match dependency {
+        Dependency::Pll160AndModemSource => {
             platform.acquire_pll_f160m()?;
             port.configure_device(ModemClockDevice::PllSourceGate, true);
         }
-        ModemClockAcquireEdge::AnalogI2cMaster => platform.acquire_analog_i2c_clock()?,
+        Dependency::AnalogI2cMaster => platform.acquire_analog_i2c_clock()?,
         other => {
-            if let Some(device) = modem_device(other.dependency()) {
+            if let Some(device) = modem_device(other) {
                 port.configure_device(device, true);
             }
         }
@@ -93,18 +92,18 @@ fn perform_acquire(
 }
 
 fn perform_release(
-    edge: ModemClockReleaseEdge,
+    dependency: Dependency,
     port: &mut impl ModemClockPort,
     platform: &mut impl PlatformClockProvider,
 ) -> Result<(), PlatformClockError> {
-    match edge {
-        ModemClockReleaseEdge::Pll160AndModemSource => {
+    match dependency {
+        Dependency::Pll160AndModemSource => {
             port.configure_device(ModemClockDevice::PllSourceGate, false);
             platform.release_pll_f160m()?;
         }
-        ModemClockReleaseEdge::AnalogI2cMaster => platform.release_analog_i2c_clock()?,
+        Dependency::AnalogI2cMaster => platform.release_analog_i2c_clock()?,
         other => {
-            if let Some(device) = modem_device(other.dependency()) {
+            if let Some(device) = modem_device(other) {
                 port.configure_device(device, false);
             }
         }
@@ -122,24 +121,16 @@ fn perform_release(
     reason = "the poisoned transaction retains the planner without allocation"
 )]
 pub(crate) fn execute_acquire<'identity>(
-    mut prepared: PreparedModemClockAcquire<'identity>,
+    prepared: PreparedModemClockAcquire<'identity>,
     port: &mut impl ModemClockPort,
     platform: &mut impl PlatformClockProvider,
 ) -> Result<
     (ModemClockPlanner<'identity>, ModemClockLease<'identity>),
     PoisonedModemClockAcquire<'identity>,
 > {
-    loop {
-        match prepared.advance() {
-            ModemClockAcquireStep::Physical(pending) => {
-                if perform_acquire(pending.edge(), port, platform).is_err() {
-                    return Err(pending.fail());
-                }
-                prepared = pending.complete();
-            }
-            ModemClockAcquireStep::CommitReady(ready) => return Ok(ready.commit()),
-        }
-    }
+    oer_radio_clock::execute_acquire(prepared, |dependency| {
+        perform_acquire(dependency, port, platform)
+    })
 }
 
 /// Perform and commit one prepared release.
@@ -152,21 +143,13 @@ pub(crate) fn execute_acquire<'identity>(
     reason = "the poisoned transaction retains the planner and lease without allocation"
 )]
 pub(crate) fn execute_release<'planner, 'lease>(
-    mut prepared: PreparedModemClockRelease<'planner, 'lease>,
+    prepared: PreparedModemClockRelease<'planner, 'lease>,
     port: &mut impl ModemClockPort,
     platform: &mut impl PlatformClockProvider,
 ) -> Result<ModemClockPlanner<'planner>, PoisonedModemClockRelease<'planner, 'lease>> {
-    loop {
-        match prepared.advance() {
-            ModemClockReleaseStep::Physical(pending) => {
-                if perform_release(pending.edge(), port, platform).is_err() {
-                    return Err(pending.fail());
-                }
-                prepared = pending.complete();
-            }
-            ModemClockReleaseStep::CommitReady(ready) => return Ok(ready.commit()),
-        }
-    }
+    oer_radio_clock::execute_release(prepared, |dependency| {
+        perform_release(dependency, port, platform)
+    })
 }
 
 #[cfg(test)]

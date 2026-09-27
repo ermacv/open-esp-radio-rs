@@ -1482,6 +1482,7 @@ dependencies = [
  "oer-esp32s31-pac",
  "oer-ieee802154-engine",
  "oer-memory",
+ "oer-radio-clock",
 ]
 
 [[package]]
@@ -1643,6 +1644,10 @@ version = "0.1.0"
 
 [[package]]
 name = "oer-radio"
+version = "0.1.0"
+
+[[package]]
+name = "oer-radio-clock"
 version = "0.1.0"
 
 [[package]]

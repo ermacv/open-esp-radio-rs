@@ -16,6 +16,7 @@ ll-model = []
 oer-memory = { path = "../../../memory" }
 oer-esp32s31-pac = { path = "../pac" }
 oer-ieee802154-engine = { path = "../../ieee802154/engine" }
+oer-radio-clock = { path = "../../radio/clock" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

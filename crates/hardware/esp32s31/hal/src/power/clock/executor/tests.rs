@@ -62,10 +62,10 @@ impl PlatformClockProvider for Platform<'_> {
 #[test]
 fn the_pll_source_brackets_the_modem_gate_and_the_analog_clock_goes_to_the_platform() {
     let log = RefCell::new(Log::default());
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
+    let identity = ModemClockPlannerIdentity::new();
+    let planner = ModemClockPlanner::managed(&identity);
     let prepared = planner
-        .prepare_module_acquire(ModemClockModule::Phy)
+        .prepare_acquire(ModemClockModule::Phy.dependencies())
         .unwrap_or_else(|_| panic!("PHY"));
     let (planner, lease) = execute_acquire(prepared, &mut Port(&log), &mut Platform(&log))
         .unwrap_or_else(|_| panic!("acquire"));
@@ -106,15 +106,15 @@ fn a_refused_platform_request_poisons_the_transaction_before_the_gate() {
         refuse: Some(Operation::AcquirePll),
         ..Log::default()
     });
-    let mut identity = ModemClockPlannerIdentity::new();
-    let planner = ModemClockPlanner::managed_for_test(&mut identity);
+    let identity = ModemClockPlannerIdentity::new();
+    let planner = ModemClockPlanner::managed(&identity);
     let prepared = planner
-        .prepare_module_acquire(ModemClockModule::Coexistence)
+        .prepare_acquire(ModemClockModule::Coexistence.dependencies())
         .unwrap_or_else(|_| panic!("coexistence"));
     let Err(poisoned) = execute_acquire(prepared, &mut Port(&log), &mut Platform(&log)) else {
         panic!("a refused PLL request must poison the acquisition");
     };
-    assert_eq!(poisoned.edge(), ModemClockAcquireEdge::Pll160AndModemSource);
+    assert_eq!(poisoned.dependency(), Dependency::Pll160AndModemSource);
     // The modem gate was not opened without its upstream source.
     assert!(log.borrow().operations.is_empty());
 }

@@ -156,7 +156,7 @@ enum ModemClocks {
 impl ModemClocks {
     const fn new() -> Self {
         Self::Ready {
-            planner: ModemClockPlanner::for_concurrent_radio(&CONCURRENT_CLOCK_IDENTITY),
+            planner: ModemClockPlanner::managed(&CONCURRENT_CLOCK_IDENTITY),
             leases: [const { None }; CLOCK_SLOTS],
         }
     }
@@ -927,7 +927,7 @@ impl<T> SharedRadioLease<'_, T> {
             state.clocks = ModemClocks::Ready { planner, leases };
             return Err(ModemClockError::AlreadyEnabled);
         }
-        let prepared = match planner.prepare_module_acquire(module) {
+        let prepared = match planner.prepare_acquire(module.dependencies()) {
             Ok(prepared) => prepared,
             Err(failure) => {
                 state.clocks = ModemClocks::Ready {

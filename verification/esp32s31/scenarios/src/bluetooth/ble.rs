@@ -10,7 +10,7 @@
 use crate::harness::Result;
 use crate::mac::{
     Domain, Leaf, Objects, Replacement, Suite, Vendor, in_archive, leaf, objects, ordered, prefix,
-    quiet, released, replaced, stated, tail_prefix,
+    quiet, released, replaced, ruled, stated, tail_prefix,
 };
 use blobray_domain::ReadRun;
 
@@ -103,6 +103,172 @@ fn diagnostic_sample_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects>
         ..Default::default()
     })
 }
+
+/// The scheduler diagnostic selector the samples write, and the command
+/// and status words of the two scheduler command engines.
+const DIAGNOSTIC_SELECTOR: u32 = 0x2010_11e8;
+/// Diagnostic selectors: scheduler BUSY, execution-modify progress and
+/// execution-modify settle.
+const SELECT_BUSY: u32 = 0x38;
+const SELECT_PROGRESS: u32 = 0xc01;
+const SELECT_SETTLE: u32 = 0x7;
+/// Sample values: idle (BUSY bit seven clear), a progress lane zero of two
+/// (a conflicting state the vendor repeats on), and a settle of nine (not
+/// yet settled).
+const IDLE: u32 = 0;
+const PROGRESS_REPEAT: u32 = 2;
+/// Progress lane zero of three repeats only when lane one's bits five and
+/// four read one.
+const PROGRESS_LANE_ONE_REPEAT: u32 = 0x1003;
+const PROGRESS_LANE_ONE_PROCEEDS: u32 = 0x0003;
+const SETTLE_PENDING: u32 = 9;
+/// Reads of one agreeing sample pair.
+const PAIR: u32 = 2;
+
+/// Hardware lists and list-deletion flags the execution modify admits.
+const HARDWARE_LISTS: &[u32] = &[0, 7, 15];
+const LIST_DELETION: &[u32] = &[0, 1];
+/// Execution-modify states: a direct pass, a first progress sample the
+/// vendor repeats on (then a second attempt), a first settle sample of
+/// nine, and a progress lane zero of three that lane one makes repeat or
+/// proceed.
+const MODIFY_DIRECT: u32 = 0;
+const MODIFY_PROGRESS_REPEATS: u32 = 1;
+const MODIFY_SETTLE_WAITS: u32 = 2;
+const MODIFY_LANE_ONE_REPEATS: u32 = 3;
+const MODIFY_LANE_ONE_PROCEEDS: u32 = 4;
+const MODIFY_STATES: &[u32] = &[
+    MODIFY_DIRECT,
+    MODIFY_PROGRESS_REPEATS,
+    MODIFY_SETTLE_WAITS,
+    MODIFY_LANE_ONE_REPEATS,
+    MODIFY_LANE_ONE_PROCEEDS,
+];
+
+/// The multiplexed diagnostic port answering `sequences` of agreeing
+/// sample pairs per selector.
+fn diagnostic_port(sequences: &[(u32, &[u32])]) -> blobray_domain::DeviceDeclaration {
+    blobray_domain::DeviceDeclaration {
+        id: "scheduler-diagnostic".into(),
+        applicability: "the scheduler diagnostic multiplexer: agreeing pairs per selector".into(),
+        lifetime: blobray_domain::RegionLifetime::Phase,
+        behavior: blobray_domain::DeviceBehavior::SelectedSequence {
+            selector_address: DIAGNOSTIC_SELECTOR,
+            value_address: DIAGNOSTIC_VALUE,
+            width: 4,
+            sequences: sequences
+                .iter()
+                .map(|(selector, samples)| blobray_domain::SelectedRuns {
+                    selector: *selector,
+                    runs: samples
+                        .iter()
+                        .map(|value| ReadRun {
+                            value: *value,
+                            count: PAIR,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        },
+    }
+}
+
+/// `(index, list_deletion, state)`, the vendor taking the list's one-hot
+/// mask: the samples of every attempt. Each
+/// attempt samples BUSY in its preamble and its completion, progress until
+/// it does not repeat, and settle until it leaves nine.
+fn execution_modify_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    let [index, deletion, state] = *words else {
+        unreachable!("execution modify: index, deletion and state")
+    };
+    let port = match state {
+        MODIFY_DIRECT => diagnostic_port(&[
+            (SELECT_BUSY, &[IDLE, IDLE]),
+            (SELECT_PROGRESS, &[IDLE]),
+            (SELECT_SETTLE, &[IDLE]),
+        ]),
+        MODIFY_PROGRESS_REPEATS => diagnostic_port(&[
+            (SELECT_BUSY, &[IDLE, IDLE, IDLE, IDLE]),
+            (SELECT_PROGRESS, &[PROGRESS_REPEAT, IDLE, IDLE]),
+            (SELECT_SETTLE, &[IDLE, IDLE]),
+        ]),
+        MODIFY_LANE_ONE_REPEATS => diagnostic_port(&[
+            (SELECT_BUSY, &[IDLE, IDLE, IDLE, IDLE]),
+            (SELECT_PROGRESS, &[PROGRESS_LANE_ONE_REPEAT, IDLE, IDLE]),
+            (SELECT_SETTLE, &[IDLE, IDLE]),
+        ]),
+        MODIFY_LANE_ONE_PROCEEDS => diagnostic_port(&[
+            (SELECT_BUSY, &[IDLE, IDLE]),
+            (SELECT_PROGRESS, &[PROGRESS_LANE_ONE_PROCEEDS]),
+            (SELECT_SETTLE, &[IDLE]),
+        ]),
+        MODIFY_SETTLE_WAITS => diagnostic_port(&[
+            (SELECT_BUSY, &[IDLE, IDLE]),
+            (SELECT_PROGRESS, &[IDLE]),
+            (SELECT_SETTLE, &[SETTLE_PENDING, IDLE]),
+        ]),
+        _ => unreachable!("declared execution-modify state"),
+    };
+    // Every vendor caller passes the list as its one-hot mask.
+    Ok(Objects {
+        vendor_words: vec![1 << index, deletion],
+        devices: vec![port],
+        ..Default::default()
+    })
+}
+
+/// Selector writes are not paired one to one: production reselects its
+/// diagnostic signal at the start of every step it resumes after
+/// `Pending`, since the runtime's BUSY observations between steps select
+/// BUSY on the same selector, while the vendor holds one critical section
+/// across its polling loop and selects once. The multiplexed diagnostic
+/// model checks the selections instead: an undeclared selector is an issue,
+/// and every sample must read exactly the runs declared for the selector in
+/// force, so each side selects the right signal before each sample.
+fn execution_modify_rules() -> Vec<blobray_domain::EffectRule> {
+    vec![
+        crate::contracts::ignored(
+            "diagnostic-selections".into(),
+            blobray_domain::EffectPattern {
+                selector: blobray_domain::EffectSelector::MmioWrite {
+                    address: DIAGNOSTIC_SELECTOR,
+                    width: 4,
+                },
+                value: blobray_domain::EffectValue::Any,
+                followed_by: None,
+            },
+            MAX_SELECTIONS,
+            "the finite-step execution modify reselects its diagnostic signal after every \
+            Pending because interleaved BUSY observations select 0x38; the vendor holds a \
+            critical section across the polling loop; the diagnostic model checks every \
+            selection against the sample that follows",
+        ),
+        blobray_domain::EffectRule {
+            name: "publication-ordering-fences".into(),
+            vendor: None,
+            replacement: Some(blobray_domain::EffectPattern {
+                selector: blobray_domain::EffectSelector::Fence {
+                    predecessor: FULL_FENCE,
+                    successor: FULL_FENCE,
+                },
+                value: blobray_domain::EffectValue::Any,
+                followed_by: None,
+            }),
+            disposition: blobray_domain::EffectDisposition::Added,
+            min_occurrences: 1,
+            max_occurrences: MAX_ORDERING_FENCES,
+            reason: "production orders each command publication and START clear against the \
+            following device accesses; the vendor leaves ordering to its caller"
+                .into(),
+        },
+    ]
+}
+/// Full-fence predecessor and successor sets, and the fences of one case's
+/// at most two attempts, each a publication and a START clear.
+const FULL_FENCE: u8 = 0xf;
+const MAX_ORDERING_FENCES: u32 = 4;
+/// Selector writes one execution-modify case may perform per side.
+const MAX_SELECTIONS: u32 = 16;
 
 /// The baseband's `phy_param` gain byte, from the semantic words: the
 /// version flag and the byte.
@@ -312,6 +478,34 @@ pub const LEAVES: &[Leaf] = &[
         ),
         BTDM_COMMON_INPUT,
     ),
+    // The scheduler execution modify (`r_btdm_sched_execution_modify`),
+    // compared through its diagnostic samples. The execution lock
+    // (`r_btdm_sched_execution_lock`) is not compared
+    // yet: production publishes without the vendor's idle preamble.
+    in_archive(
+        ruled(
+            quiet(
+                stated(
+                    objects(
+                        leaf(
+                            "r_sym_bt_rPoPGH6BBYjZaunDU5FV",
+                            "open_ble_scheduler_trace_execution_modify",
+                            &[
+                                ("index", Domain::Words(HARDWARE_LISTS)),
+                                ("list_deletion", Domain::Words(LIST_DELETION)),
+                            ],
+                            false,
+                        ),
+                        execution_modify_abi,
+                    ),
+                    MODIFY_STATES,
+                ),
+                SCHEDULER_QUIET,
+            ),
+            execution_modify_rules,
+        ),
+        BTDM_COMMON_INPUT,
+    ),
     // Baseband v2 initialization with the version log answered without
     // effect, closed by the owner's device fence.
     in_archive(
@@ -410,6 +604,15 @@ pub const LEAVES: &[Leaf] = &[
         ),
         MODEM_CLOCK_QUIET,
     ),
+];
+
+/// Scheduler calls outside its register transaction: the logger, the
+/// critical section and the assertion the bounded loops never reach.
+const SCHEDULER_QUIET: &[&str] = &[
+    "wr_btdm_log_internal_x1",
+    "wr_btdm_osal_hw_enter_critical",
+    "wr_btdm_osal_hw_exit_critical",
+    "wr_btdm_compressed_assert_x2",
 ];
 
 /// Modem clock driver calls outside its register transaction. The FreeRTOS

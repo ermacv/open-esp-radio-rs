@@ -32,11 +32,6 @@ pub const DECISIONS: &[Decision] = &[
             Rust-side additions, not vendor edges: each reviewed contract requires exactly \
             that many, counted but not paired with a vendor effect",
         places: &[
-            (
-                "pac/raw/src/lib.rs",
-                "core::arch::asm!(\"fence iorw, iorw\")",
-            ),
-            ("pac/src/ownership.rs", "svd::device_access::fence();"),
             ("pac/src/wifi/mac/interrupt.rs", "device_fence();"),
             ("pac/src/wifi/mac/tx.rs", "device_fence();"),
             (
@@ -48,6 +43,10 @@ pub const DECISIONS: &[Decision] = &[
             ("pac/src/bluetooth/memory_lists.rs", "device_fence();"),
             ("pac/src/bluetooth/phy.rs", "device_fence();"),
             ("pac/src/bluetooth/scheduler.rs", "device_fence();"),
+            (
+                "pac/src/bluetooth/scheduler/insertion.rs",
+                "control.order_after_publication();",
+            ),
         ],
     },
     Decision {
@@ -427,5 +426,37 @@ pub const DECISIONS: &[Decision] = &[
             "pac/src/validation.rs",
             "let mut shared = shared_radio_registers();",
         )],
+    },
+    Decision {
+        reason: "execution-modify diagnostic selections, which the effect contract leaves \
+            unpaired because production reselects after every Pending: the multiplexed \
+            diagnostic model checks each of them, failing an undeclared selector and every \
+            sample that does not read exactly the runs of the selector in force",
+        places: &[
+            (
+                "hal/src/bluetooth/scheduler_execution_modify.rs",
+                "if !selected {",
+            ),
+            (
+                "hal/src/bluetooth/scheduler_execution_modify.rs",
+                "hw.select_progress();",
+            ),
+            (
+                "hal/src/bluetooth/scheduler_execution_modify.rs",
+                "hw.select_settle();",
+            ),
+            (
+                "hal/src/bluetooth/scheduler_execution_modify.rs",
+                ".select_scheduler_execution_modify_settle(self.interrupts);",
+            ),
+            (
+                "pac/src/bluetooth/scheduler/insertion.rs",
+                "super::runtime::select_execution_modify_settle(",
+            ),
+            (
+                "pac/src/bluetooth/scheduler/runtime.rs",
+                "HardwareDiagnosticControl { registers }.select(DiagnosticSelector::ExecutionModifySettle);",
+            ),
+        ],
     },
 ];

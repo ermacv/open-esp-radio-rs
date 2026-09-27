@@ -790,6 +790,9 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         let clients = self.resources.coex_clients.saturating_add(1);
         self.resources.coex_clients = clients;
         if clients == 1 {
+            // `coex_pre_init` selects the policy timers' clock before any
+            // radio can request the air.
+            CoexArbiterPorts::new(&mut self.lease).configure_timer_clock();
             self.resources.coex.enable();
         } else {
             self.coex.wifi_started.signal(());

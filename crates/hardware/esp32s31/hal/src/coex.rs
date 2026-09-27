@@ -312,6 +312,17 @@ impl<'registers> CoexTimerBank<'registers> {
         self.registers.unforce_coex_timer(timer.register());
     }
 
+    /// Select the clock the coexistence timers count, as complete
+    /// `coex_hw_timer_freq_set` does.
+    pub fn configure_timer_clock(
+        &mut self,
+        source: crate::types::CoexTimerClockSource,
+        divider_minus_one: crate::types::CoexTimerClockDividerMinusOne,
+    ) {
+        self.registers
+            .configure_coexistence_timer_clock(source, divider_minus_one);
+    }
+
     /// Sample the shared coexistence low-power clock selection once.
     ///
     /// Each call performs fresh reads; `None` reports an unreviewed encoding.

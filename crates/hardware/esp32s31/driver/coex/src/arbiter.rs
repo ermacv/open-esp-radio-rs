@@ -11,7 +11,10 @@ use core::cell::RefCell;
 use oer_esp32s31_hal::{
     coex::CoexPolicyTimer,
     shared_radio::SharedRadioLease,
-    types::{CoexTimerClientValue, CoexTimerPtiValue},
+    types::{
+        CoexTimerClientValue, CoexTimerClockDividerMinusOne, CoexTimerClockSource,
+        CoexTimerPtiValue,
+    },
 };
 
 use crate::{
@@ -75,6 +78,24 @@ impl<'lease, 'radio, T> CoexArbiterPorts<'lease, 'radio, T> {
             CoexArbiterTimer { ports: self },
             CoexArbiterClock { ports: self },
         )
+    }
+
+    /// Select the clock the policy timers count, as `coex_core_pre_init`
+    /// does before any request: the crystal divided by 50 on silicon, and
+    /// selector 8 undivided otherwise. Without a selected clock no request
+    /// can convert its duration.
+    ///
+    /// SOURCE: complete pinned `libcoexist.a[coexist_core.o]::
+    /// coex_core_pre_init` and `[coexist_hw.o]::coex_hw_timer_freq_set`.
+    pub fn configure_timer_clock(&self) {
+        let (source, divisor) = if self.real_chip {
+            (CoexTimerClockSource::Selector4, 50)
+        } else {
+            (CoexTimerClockSource::Selector8, 1)
+        };
+        let divider_minus_one = CoexTimerClockDividerMinusOne::new(divisor - 1)
+            .expect("the vendor timer clock divisor fits the divider field");
+        self.with_bank(|bank| bank.configure_timer_clock(source, divider_minus_one));
     }
 
     fn with_bank(&self, operation: impl FnOnce(&mut oer_esp32s31_hal::coex::CoexTimerBank<'_>)) {

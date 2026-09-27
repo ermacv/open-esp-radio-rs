@@ -11,6 +11,4 @@ crates/composition/**/Cargo.lock
 /hil/local.toml
 /hil/*.local.toml
 
-# Outputs of the removed legacy verification engine; nothing reads them.
-/verification/vendor/targets/
 

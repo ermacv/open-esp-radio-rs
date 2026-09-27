@@ -3395,6 +3395,7 @@ dependencies = [
  "oer-process",
  "pulldown-cmark",
  "rustc-demangle",
+ "serde",
  "serde_json",
  "serialport",
  "sha2",

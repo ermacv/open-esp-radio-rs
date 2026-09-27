@@ -111,8 +111,10 @@ file. Each shard records:
 
 - one entry per claimed vendor root: scenario (`suite`), vendor source
   (`archive` or `rom`), root symbol, compiled production entry, the number of
-  compared cases and the content digests of the effect contracts and output
-  projections those comparisons selected. Contracts and projections are typed
+  compared cases and the digests of the reviewed content of the effect
+  contracts and output projections those comparisons selected, which leave out
+  the endpoints naming one run's imported revision so that unchanged sources
+  reproduce every shard byte for byte. Contracts and projections are typed
   values in the scenario code, reviewed through git. A claim exists only when
   every case of the run comparing that exact root/entry pair is MATCH; an
   unsupported claim fails the run instead of being written. The run keeps only
@@ -172,6 +174,12 @@ stay current. An absent index directory means no vendor evidence is
 available: affected capabilities remain unqualified while status and HIL
 planning still work. An unreadable, malformed or inconsistent existing shard,
 or a file in the directory that is not a shard, remains an error.
+
+`cargo xtask evidence` rewrites every stale shard, or the shards of the
+scenarios it names. Git merges shards as binary files, so a conflicting merge
+keeps one side intact instead of inserting markers; the task then regenerates
+the shard from the scenarios. After a rebase that touched shards, run it and
+stage the result.
 
 The qualification manifest names vendor roots and explicit evidence rows:
 

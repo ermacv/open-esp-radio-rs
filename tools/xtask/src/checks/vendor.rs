@@ -31,6 +31,20 @@ const PROBES: [Probe; 3] = [
     },
 ];
 
+/// The built comparison ELF of the probe `package`.
+pub fn elf(context: &Context, package: &str) -> Result<std::path::PathBuf> {
+    let probe = PROBES
+        .iter()
+        .find(|p| p.package == package)
+        .ok_or_else(|| format!("no vendor probe package {package}"))?;
+    Ok(context
+        .root
+        .join(probe.target_directory)
+        .join(TARGET)
+        .join("release")
+        .join(probe.package))
+}
+
 pub fn run(context: &Context, chip: &str, list_roles: bool) -> Result<()> {
     if chip != "esp32s31" {
         return Err(format!("unsupported vendor-probe chip: {chip}").into());

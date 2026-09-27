@@ -53,6 +53,23 @@ enum Task {
         all: bool,
     },
     /// Record reviewed code fingerprints of cited vendor functions.
+    /// Rewrite the vendor evidence shards whose recorded sources changed, or
+    /// the named scenarios' shards. Resolves conflicting shards after a merge.
+    Evidence {
+        #[arg(long, default_value = "esp32s31")]
+        chip: String,
+        /// Linker the scenarios prepare images with.
+        #[arg(long, default_value = "ld.lld")]
+        linker: std::path::PathBuf,
+        /// Resource-limit mode of the scenario runs.
+        #[arg(long, default_value = "watchdog")]
+        limit_mode: String,
+        /// Ignored output root of the scenario runs.
+        #[arg(long, default_value = "target/blobray-research/evidence")]
+        output: std::path::PathBuf,
+        /// Scenarios to rewrite; every stale shard when empty.
+        scenarios: Vec<String>,
+    },
     VendorProvenance {
         #[arg(long, default_value = "esp32s31")]
         chip: String,
@@ -159,6 +176,15 @@ fn run() -> Result<std::process::ExitCode> {
             baseline,
             all,
         } => oer_xtask::vendor_diff::run(&ctx, &chip, old, new, baseline, all),
+        Task::Evidence {
+            chip,
+            linker,
+            limit_mode,
+            output,
+            scenarios,
+        } => {
+            return oer_xtask::evidence::run(&ctx, &chip, scenarios, linker, limit_mode, output);
+        }
         Task::VendorProvenance {
             chip,
             accept,

@@ -181,6 +181,7 @@ where
                     starting_sequence: completion.block_ack.block_ack.starting_sequence,
                     subframes: current_subframes,
                     missing_original_indices: active.retry.missing_original_indices(),
+                    block_ack_snr_db: completion.tx.ack_snr_sample(),
                 });
             }
             let republication = match decision {

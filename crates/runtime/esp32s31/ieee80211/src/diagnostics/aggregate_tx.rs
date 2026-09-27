@@ -121,6 +121,9 @@ pub enum AggregateTxObservation {
         /// Original aggregate positions absent from this completion; see
         /// `AmpduRetryState::missing_original_indices`.
         missing_original_indices: u32,
+        /// Signed SNR of the response that completed this publication, when
+        /// the completion status is successful.
+        block_ack_snr_db: Option<i8>,
     },
     /// Time spent sampling terminal hardware state, classifying BlockAck and
     /// detaching the completed queue, before releasing retained network

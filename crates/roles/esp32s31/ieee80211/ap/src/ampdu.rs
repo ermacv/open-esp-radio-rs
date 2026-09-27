@@ -175,6 +175,9 @@ pub struct ApAmpduCompletion {
     pub subframes: u8,
     /// Original aggregate positions absent from this completion.
     pub missing_original_indices: u32,
+    /// Signed SNR of the response that completed this publication; see
+    /// [`TxCompletion::ack_snr_sample`](oer_esp32s31_ieee80211_mac::tx::TxCompletion::ack_snr_sample).
+    pub block_ack_snr_db: Option<i8>,
     pub acknowledged: u8,
     pub aggregate_attempts: u8,
 }
@@ -425,6 +428,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             starting_sequence: completion.block_ack.block_ack.starting_sequence,
             subframes: current_subframes,
             missing_original_indices: retry.missing_original_indices(),
+            block_ack_snr_db: completion.tx.ack_snr_sample(),
             acknowledged: retry.acknowledged(),
             aggregate_attempts: retry.aggregate_attempts(),
         };

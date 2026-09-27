@@ -177,7 +177,7 @@ fn espflash() -> OsString {
 /// Reset the board at `port` into its flashed application: RTS pulses the
 /// chip's reset while DTR keeps the boot strap released. `espflash`'s own
 /// reset after connecting leaves an esp32c5 in its ROM download mode.
-fn reset_into_application(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
+pub(crate) fn reset_into_application(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
     let mut serial = serialport::new(port.to_string_lossy(), 115_200)
         .timeout(Duration::from_millis(200))
         .open()?;

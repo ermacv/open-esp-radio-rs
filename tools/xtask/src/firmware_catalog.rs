@@ -261,12 +261,7 @@ pub fn flash(
     };
     let _grant = arbiter.acquire(&request)?;
     let _device = oer_esp32s31_firmware::device::DeviceLease::acquire(&port)?;
-    for (index, (address, file)) in files.iter().enumerate() {
-        let after = if index + 1 == files.len() {
-            "hard-reset"
-        } else {
-            "no-reset"
-        };
+    for (address, file) in &files {
         let mut command =
             ctx.command(std::env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
         command
@@ -278,10 +273,12 @@ pub fn flash(
                 "--port",
             ])
             .arg(&port)
-            .args(["--after", after, address])
+            .args(["--after", "no-reset", address])
             .arg(file);
         crate::process::run(&mut command)?;
     }
+    // espflash's reset leaves an esp32c5 in its ROM download mode.
+    drop(crate::hil_flash::reset_into_application(&port)?);
     arbiter.register_device(oer_hil_arbiter::Device {
         mac: mac.clone(),
         chip: Some(entry.chip.clone()),

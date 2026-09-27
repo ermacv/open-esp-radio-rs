@@ -8,13 +8,11 @@ use crate::{
     sram_link::ControllerSramLinkAddress,
 };
 
-use oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime;
-
 pub(super) const BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS: usize = 0x84 / 4;
 const RX_HEAD_MASK: u32 = 0x000f_ffff;
-const ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
+const POWER_BYTE_MASK: u32 = 0x0000_ff00;
+const LINK_STATE_18_BIT_20: u32 = 1 << 20;
 const WORD_00: usize = 0;
-const WORD_04: usize = 1;
 const WORD_08: usize = 2;
 const WORD_0C: usize = 3;
 const WORD_14: usize = 5;
@@ -26,6 +24,7 @@ const WORD_34: usize = 13;
 const WORD_38: usize = 14;
 const WORD_48: usize = 18;
 const WORD_50: usize = 20;
+const WORD_60: usize = 24;
 const SCHEDULER_HARDWARE_CHAIN_ADJUSTED_START: u32 = 1 << 22;
 const SCHEDULER_HARDWARE_CHAIN_EVENT_READY: u32 = 1 << 23;
 const SCHEDULER_HARDWARE_CHAIN_TIMING_MASK: u32 =
@@ -97,27 +96,33 @@ pub enum PassiveScanStartSelection {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PassiveScanResetConfig {
     default_tx_power: LeTxPower,
-    controller_time: BluetoothControllerLatchedTime,
 }
 
 impl PassiveScanResetConfig {
     /// Construct the restricted passive LE 1M profile.
-    pub const fn le_1m_public_accept_all(
-        default_tx_power: LeTxPower,
-        controller_time: BluetoothControllerLatchedTime,
-    ) -> Self {
-        Self {
-            default_tx_power,
-            controller_time,
-        }
+    pub const fn le_1m_public_accept_all(default_tx_power: LeTxPower) -> Self {
+        Self { default_tx_power }
     }
 
     pub(super) const fn default_tx_power(self) -> LeTxPower {
         self.default_tx_power
     }
+}
 
-    pub(super) const fn controller_time(self) -> BluetoothControllerLatchedTime {
-        self.controller_time
+/// Raw controller-tick length of one scan window from its anchor to its end.
+///
+/// SOURCE: pinned `libble_app.a[ble_6.o]::r_sym_ble_M0sTWGzdUqAUyXoK849F`
+/// (`r_ble_lll_scan_restart`) stores
+/// `r_sched_timer_convertDiffToTicks(window end - start)` at link state
+/// `+0x34` for a finite window. The open scanner always schedules finite
+/// windows, so its events take that branch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PassiveScanWindowTicks(u32);
+
+impl PassiveScanWindowTicks {
+    /// Bind one raw window length.
+    pub const fn from_raw_ticks(ticks: u32) -> Self {
+        Self(ticks)
     }
 }
 
@@ -154,7 +159,6 @@ impl PassiveScanLinkStateImage {
 
         // All masks and positional images remain private to this SRAM codec.
         words[WORD_00] = 0x1ff0_0000;
-        words[WORD_04] = ((config.default_tx_power().index() as u32) << 23) & ROUNDED_POWER_MASK;
         words[WORD_08] = rx_head.apply(0x4ff0_0000);
         words[WORD_0C] = 0xa010_0000;
         words[WORD_14] = 0x0400_0000;
@@ -162,7 +166,10 @@ impl PassiveScanLinkStateImage {
         words[WORD_24] = 0x0110_0000;
         words[WORD_2C] = LeCrcInit::LE_PRESET.apply_to_controller_word(0);
         words[WORD_30] = 0x0000_1e00;
-        words[WORD_34] = config.controller_time().bits();
+        // SOURCE: pinned `r_sym_ble_KkAldzIlkQuEkNQp1g6q`
+        // (`r_ble_lll_scan_reset_link_state`) stores the zero tick difference
+        // at `+0x34` and the power index in byte `+0x61`, not in `+0x04`.
+        words[WORD_60] = (config.default_tx_power().index() as u32) << 8;
         words[WORD_38] = LeAccessAddress::PRIMARY_ADVERTISING.controller_image();
         words[WORD_48] = 0x0000_0200;
         words[WORD_50] = 0x0300_0000;
@@ -178,16 +185,17 @@ impl PassiveScanLinkStateImage {
         Self { words }
     }
 
-    pub(super) const fn with_controller_time(
-        mut self,
-        controller_time: BluetoothControllerLatchedTime,
-    ) -> Self {
-        self.words[WORD_34] = controller_time.bits();
+    /// Apply the restart's link-state writes for one finite window: the
+    /// window length at `+0x34` and a clear bit 20 of `+0x18`.
+    pub(super) const fn with_window(mut self, window: PassiveScanWindowTicks) -> Self {
+        self.words[WORD_34] = window.0;
+        self.words[WORD_18] &= !LINK_STATE_18_BIT_20;
         self
     }
 
-    const fn rounded_power(self) -> u32 {
-        (self.words[WORD_04] & ROUNDED_POWER_MASK) >> 23
+    /// The power index the event copies into the item.
+    const fn power_index(self) -> u32 {
+        (self.words[WORD_60] & POWER_BYTE_MASK) >> 8
     }
 
     #[cfg(test)]
@@ -206,7 +214,7 @@ impl PassiveScanLinkStateImage {
     }
 
     #[cfg(test)]
-    pub(super) const fn controller_time(self) -> u32 {
+    pub(super) const fn window_ticks(self) -> u32 {
         self.words[WORD_34]
     }
 }
@@ -241,7 +249,7 @@ impl PassiveScanSchedulerItemWords {
         self.word_00 |= SCHEDULER_HARDWARE_CHAIN_EVENT_READY;
         self.word_04 |= SCHEDULER_CONTEXT_EVENT_READY;
         self.word_14 =
-            (self.word_14 & !SCHEDULER_RATE_AND_POWER_MASK) | (link_state.rounded_power() << 20);
+            (self.word_14 & !SCHEDULER_RATE_AND_POWER_MASK) | (link_state.power_index() << 20);
         self.word_18 = (self.word_18 & !SCHEDULER_FREQUENCY_AND_KIND_MASK)
             | ((channel.frequency_image() as u32) << 8)
             | SCHEDULER_SCANNER_EVENT_KIND;

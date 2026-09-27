@@ -1,7 +1,5 @@
 use std::boxed::Box;
 
-use oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime;
-
 use super::{
     LINK_STATE_RX_CLASS_WORD, PassiveScanError, PassiveScanPool, PassiveScanStorage,
     SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD, SCHEDULER_ITEM_COEX_PRIORITIES_WORD,
@@ -46,7 +44,6 @@ fn chain(class: RxMemoryListClass) -> LeRxChain<2> {
 fn config() -> PassiveScanResetConfig {
     PassiveScanResetConfig::le_1m_public_accept_all(
         crate::LeTxPower::from_dbm(0).expect("provider level"),
-        BluetoothControllerLatchedTime::from_bits(0x1234_5678),
     )
 }
 
@@ -76,7 +73,7 @@ fn prepare(
         PassiveScanPrimaryChannel::Channel38,
         window(),
         PassiveScanStartSelection::Requested,
-        BluetoothControllerLatchedTime::from_bits(0x5555),
+        super::PassiveScanWindowTicks::from_raw_ticks(0x5555),
         priorities([4, 11, 0, 0]),
     )
     .unwrap()
@@ -93,7 +90,7 @@ fn the_reset_joins_the_scanning_chain() {
     assert!(image.retains_rx_head(PassiveScanRxHeadProjection::from_bound(chain.head_link())));
     assert_eq!(image.crc_init(), LeCrcInit::LE_PRESET);
     assert_eq!(image.access_address(), LeAccessAddress::PRIMARY_ADVERTISING);
-    assert_eq!(image.controller_time(), 0x1234_5678);
+    assert_eq!(image.window_ticks(), 0);
     assert_eq!(
         graph.link_state.words[LINK_STATE_RX_CLASS_WORD].get() >> 28,
         1
@@ -133,7 +130,7 @@ fn a_window_takes_the_free_head_and_finishing_returns_it() {
             graph.link_state.free_head(),
             binding.items[1].controller_address().address()
         );
-        assert_eq!(graph.link_state.image().controller_time(), 0x5555);
+        assert_eq!(graph.link_state.image().window_ticks(), 0x5555);
         // The window's item carries its coexistence lanes.
         assert_eq!(
             graph.items[2].words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD].get() & 0x000f_ffff,
@@ -194,7 +191,7 @@ fn a_non_scanning_chain_is_refused() {
             PassiveScanPrimaryChannel::Channel37,
             window(),
             PassiveScanStartSelection::Requested,
-            BluetoothControllerLatchedTime::from_bits(0),
+            super::PassiveScanWindowTicks::from_raw_ticks(0),
             priorities([15; 4]),
         ),
         Err(PassiveScanError::State)

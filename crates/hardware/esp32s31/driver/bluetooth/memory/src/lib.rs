@@ -131,7 +131,7 @@ pub use legacy_advertising::{
 
 pub use passive_scanning_event_image::{
     PassiveScanPrimaryChannel, PassiveScanResetConfig, PassiveScanSchedulerWindow,
-    PassiveScanStartSelection,
+    PassiveScanStartSelection, PassiveScanWindowTicks,
 };
 
 pub use passive_scanning::{

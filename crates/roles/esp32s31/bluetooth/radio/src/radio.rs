@@ -27,18 +27,17 @@ use oer_esp32s31_bluetooth_memory::{
     LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
     LegacyConnectableScanResponsePacketInput, PassiveScanPool, PassiveScanPrimaryChannel,
     PassiveScanResetConfig, PassiveScanSchedulerWindow, PassiveScanStartSelection,
-    PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
-    PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
-    PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
-    PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
-    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
-    PeripheralConnectionSchedulerWindow, PeripheralConnectionTransmitPduKind,
-    SchedulerItemCompletionStatus, SchedulerItemId, SchedulerItemSpace, SchedulerRoleInstance,
-    SchedulerRoleKind,
+    PassiveScanWindowTicks, PeripheralConnectionCapturedAnchorAvailability,
+    PeripheralConnectionDataChannel, PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent,
+    PeripheralConnectionIdentity, PeripheralConnectionPool, PeripheralConnectionReceiveTime,
+    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringEvent,
+    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
+    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionTransmitPduKind, SchedulerItemCompletionStatus, SchedulerItemId,
+    SchedulerItemSpace, SchedulerRoleInstance, SchedulerRoleKind,
 };
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothControllerLatchedTime, BluetoothControllerReset, BluetoothControllerTimeScale,
-    BluetoothSchedulerStopped,
+    BluetoothControllerReset, BluetoothControllerTimeScale, BluetoothSchedulerStopped,
 };
 use oer_esp32s31_hal::shared_radio::ClientQuiescence;
 
@@ -187,7 +186,6 @@ const fn connection_allowances(
 struct RadioClock {
     epoch: ControllerSchedulerEpoch,
     now: u64,
-    latched: u32,
 }
 
 impl RadioClock {
@@ -197,7 +195,6 @@ impl RadioClock {
         if delta > 0 {
             self.now += delta as u64;
         }
-        self.latched = sample.raw_ticks();
         self.epoch = self.epoch.reanchor(sample);
     }
 
@@ -311,7 +308,6 @@ impl<
             clock: RadioClock {
                 now: u64::from(epoch.project_without_reanchor(sample)),
                 epoch,
-                latched: sample.raw_ticks(),
             },
             timing: RadioTiming {
                 preparation_lead: RadioDuration::from_micros(config.preparation_lead_micros()),
@@ -1127,10 +1123,7 @@ impl<
         let index = free_slot(&self.scanners)?;
         let pool = &mut self.memory.scanners;
         let instance = pool.acquire().ok_or(RequestError::NoInstance)?;
-        let config = PassiveScanResetConfig::le_1m_public_accept_all(
-            tx_power,
-            BluetoothControllerLatchedTime::from_bits(self.clock.latched),
-        );
+        let config = PassiveScanResetConfig::le_1m_public_accept_all(tx_power);
         if pool
             .reset(&instance, &self.memory.scanning, config)
             .is_err()
@@ -1154,13 +1147,18 @@ impl<
         {
             return Err(RequestError::Busy);
         }
-        let window = self.reserve(
-            scan.window.start().as_micros(),
-            scan.window.duration().as_micros(),
-        )?;
+        let anchor = scan.window.start().as_micros();
+        let duration = scan.window.duration().as_micros();
+        let window = self.reserve(anchor, duration)?;
         self.free(window)?;
         self.check_capacity(1)?;
-        let latched = BluetoothControllerLatchedTime::from_bits(self.clock.latched);
+        // The pinned scan restart (`r_sym_ble_M0sTWGzdUqAUyXoK849F`) ends
+        // the item at most 32768 microseconds after the anchor and records
+        // the whole window length in the link state.
+        let item_end = self
+            .clock
+            .raw(anchor + u64::from(duration.min(SCAN_EVENT_MAX_MICROS)));
+        let window_ticks = PassiveScanWindowTicks::from_raw_ticks(self.clock.duration(duration));
         let slot = self.scanners[index]
             .as_mut()
             .expect("the scanner is configured");
@@ -1170,10 +1168,10 @@ impl<
             .prepare_event(
                 &slot.instance,
                 scan_channel(scan.channel),
-                PassiveScanSchedulerWindow::from_controller_ticks(window.start(), window.end())
+                PassiveScanSchedulerWindow::from_controller_ticks(window.start(), item_end)
                     .expect("admission checked the window"),
                 PassiveScanStartSelection::Requested,
-                latched,
+                window_ticks,
                 coexistence::passive_scan_priorities(self.coexistence),
             )
             .map_err(|_| RequestError::Unsupported)?;
@@ -1839,6 +1837,9 @@ fn drain_chain<const PACKETS: usize>(
         }
     }
 }
+
+/// Longest scanner item the pinned restart schedules, in microseconds.
+const SCAN_EVENT_MAX_MICROS: u32 = 0x8000;
 
 /// The provider level of `power`, refusing a request below the lowest one.
 fn le_tx_power(power: TxPower) -> Result<LeTxPower, RequestError> {

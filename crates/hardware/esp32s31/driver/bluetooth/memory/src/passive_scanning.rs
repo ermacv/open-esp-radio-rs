@@ -10,7 +10,6 @@
 
 #![forbid(unsafe_code)]
 
-use oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime;
 use vcell::VolatileCell;
 
 use crate::{
@@ -20,6 +19,7 @@ use crate::{
         BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, PassiveScanLinkStateImage,
         PassiveScanPrimaryChannel, PassiveScanResetConfig, PassiveScanRxHeadProjection,
         PassiveScanSchedulerItemWords, PassiveScanSchedulerWindow, PassiveScanStartSelection,
+        PassiveScanWindowTicks,
     },
     rx_memory_list::RxMemoryListClass,
     scheduler_context::SchedulerContextStorage,
@@ -334,7 +334,7 @@ impl<const N: usize> PassiveScanPool<N> {
         channel: PassiveScanPrimaryChannel,
         window: PassiveScanSchedulerWindow,
         start_selection: PassiveScanStartSelection,
-        controller_time: BluetoothControllerLatchedTime,
+        window_ticks: PassiveScanWindowTicks,
         coexistence: PassiveScanCoexistencePriorities,
     ) -> Result<PassiveScanEvent, PassiveScanError> {
         let cpu = self.cpu(instance).map_err(PassiveScanError::Pool)?;
@@ -359,7 +359,7 @@ impl<const N: usize> PassiveScanPool<N> {
             .find(|link| next_free != 0 && link.compressed_image() == next_free);
 
         let link_state = &cpu.graph.link_state;
-        link_state.install(link_state.image().with_controller_time(controller_time));
+        link_state.install(link_state.image().with_window(window_ticks));
         item.write_reviewed_words(item.reviewed_words().prepare_first_event(
             link_state.image(),
             channel,

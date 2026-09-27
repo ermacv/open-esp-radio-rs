@@ -121,6 +121,12 @@ code = "62b61bb36c82611087bd594b2c7489ee1887172c88492a6a004e6cfd1ad02cfe"
 [[function]]
 artifact = "libble_app"
 member = "ble_6.o"
+symbol = "r_sym_ble_KkAldzIlkQuEkNQp1g6q"
+code = "785ac0a0946abbd36b3bdbe5a9dc4e43fab31f3b56ae72636b824db5aa05a2dd"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_6.o"
 symbol = "r_sym_ble_M0sTWGzdUqAUyXoK849F"
 code = "03e9bd56a73d22b101d75d2eb14cb231ef4b949abec9ee79260c5d188937166e"
 

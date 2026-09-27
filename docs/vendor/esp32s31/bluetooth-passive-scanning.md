@@ -254,14 +254,15 @@ remaining hardware-consumed link-state projection is finite:
 - the high-half reset profile at `+0x00`, the mode words at `+0x0c`, `+0x14`
   and `+0x18`, the allocation profile at `+0x30`, and the standalone option
   image at `+0x50` are all written before scheduling;
-- the rounded default transmit-power projection is retained at `+0x04` even
-  though this role does not transmit;
+- the default transmit-power index is retained in byte `+0x61` even though
+  this role does not transmit (the pinned `r_ble_lll_scan_reset_link_state`,
+  `r_sym_ble_KkAldzIlkQuEkNQp1g6q`, no longer writes it into `+0x04`);
 - `+0x2c` receives the advertising CRC preset `0x555555`, while `+0x38`
   receives the primary advertising access address `0x8e89bed6`;
 - public own-address type and accept-all policy leave the privacy/filter
   selection at `+0x24` with an empty low-20-bit resolving-entry link;
-- the reset samples Controller time into `+0x34` and leaves the initiator-only
-  address, timeout and connection fields untouched.
+- the reset stores the zero tick difference in `+0x34` and leaves the
+  initiator-only address, timeout and connection fields untouched.
 
 The common sync helper is not an unresolved scanner MMIO operation. Its named
 role is `r_ble_lll_sync_set_scan_link_state`. When periodic sync is disabled,
@@ -294,7 +295,6 @@ This table is a reviewed SRAM-codec input, not a public descriptor ABI:
 | Link-state word | Restricted passive-1M image |
 | ---: | ---: |
 | `+0x00` | `0x1ff00000` |
-| `+0x04` | provider-table index of the default power in bits 27:23 |
 | `+0x08` | `0x4ff00000` plus the bound RX-head low-20-bit link |
 | `+0x0c` | `0xa0100000` |
 | `+0x14` | `0x04000000` |
@@ -302,10 +302,11 @@ This table is a reviewed SRAM-codec input, not a public descriptor ABI:
 | `+0x24` | `0x01100000`; the low-20-bit resolving entry remains zero |
 | `+0x2c` | `0x00555555` |
 | `+0x30` | `0x00001e00` |
-| `+0x34` | the freshly latched controller-time word |
+| `+0x34` | zero |
 | `+0x38` | `0x8e89bed6` |
 | `+0x48` | `0x00000200` for the reviewed standalone option profile |
 | `+0x50` | `0x03000000` for the reviewed standalone option profile |
+| `+0x60` | provider-table index of the default power in byte `+0x61` |
 
 All omitted words remain zero. The open memory layer publishes none of these
 integers: callers provide only a bound memory graph, signed default power and a
@@ -326,7 +327,13 @@ images 24 and 78; they do not require new MMIO operations.
 For the restricted passive path, the complete named body selects the RX event
 branch, clears both replicated rate lanes for LE 1M, binds the selected
 frequency, copies the link-state rounded-power projection, stores the bounded
-start/end ticks and updates the link-state controller-time observation. Its
+start/end ticks and records the window in the link state. The pinned
+`r_ble_lll_scan_restart` (`r_sym_ble_M0sTWGzdUqAUyXoK849F`) stores
+`r_sched_timer_convertDiffToTicks(window end - start)` at `+0x34`, clears
+bit 20 of `+0x18` and ends the item at most 32768 microseconds after the
+start; for a continuous scan it stores the difference `0x3fffffff` instead.
+The open scanner always schedules finite windows and follows the first
+branch. Its
 named `r_ble_lll_scan_get_earliest_start_time` result selects the sole
 adjusted-start item flag. The open codec accepts that semantic result rather
 than exposing the positional flag or reproducing the vendor timing policy.

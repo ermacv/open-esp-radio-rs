@@ -101,12 +101,25 @@ fn identifiers(text: &str, out: &mut BTreeSet<String>) {
         if c.is_ascii_alphanumeric() || c == '_' {
             word.push(c);
         } else {
-            if word.len() >= MINIMUM_NAME && !word.starts_with(|c: char| c.is_ascii_digit()) {
+            if word.len() >= MINIMUM_NAME
+                && !word.starts_with(|c: char| c.is_ascii_digit())
+                && is_code_name(&word)
+            {
                 out.insert(std::mem::take(&mut word));
             }
             word.clear();
         }
     }
+}
+
+/// Whether `word` has the shape of a code identifier rather than prose: an
+/// underscore, a digit, or an uppercase letter after the first. A plain
+/// lowercase word such as `main` or `abort` is prose even when a vendor
+/// symbol shares its name.
+fn is_code_name(word: &str) -> bool {
+    word.contains('_')
+        || word.chars().any(|c| c.is_ascii_digit())
+        || word.chars().skip(1).any(|c| c.is_ascii_uppercase())
 }
 
 fn is_comment(line: &str) -> bool {

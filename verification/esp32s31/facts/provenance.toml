@@ -3721,12 +3721,6 @@ code = "c2b7dbbe69ddfd51a0117114508f4ea6e6ba41fd0386ea92217c0607eea38ff6"
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "abort"
-code = "9b8ffab1705373939c5081a9c56a285e2bd252d30d695821454a078ceac4bfd9"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "coex_core_pti_get"
 code = "e46fcd5f6ad0c561ffdbdc1652d60482cb2605e18b2cdcbc82c5a6c7dcf8510d"
 
@@ -4155,12 +4149,6 @@ artifact = "rom"
 member = ""
 symbol = "mac_tx_set_txop_q"
 code = "b378c9ed3987451861b19f10bd500a3fc26246ac62125e84fd5649e14aca8cdc"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "memmove"
-code = "36906089499029764fee96882608bd75acc906901e5b44fef6d0bc5265f5755c"
 
 [[function]]
 artifact = "rom"

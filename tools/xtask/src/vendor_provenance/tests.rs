@@ -9,6 +9,9 @@ fn identifiers_skip_short_words_and_numbers() {
     );
     assert!(words.contains("rcGetRate"));
     assert!(words.contains("SOURCE"));
+    identifiers("the ROM main loop may abort ru2str", &mut words);
+    assert!(!words.contains("main") && !words.contains("abort"));
+    assert!(words.contains("ru2str"));
     assert!(!words.contains("of"));
     assert!(!words.contains("0xd0"));
 }

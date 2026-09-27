@@ -503,3 +503,43 @@ fn the_runs_link_to_the_shared_store_is_followed() {
     fs::create_dir_all(plain.join("runs")).unwrap();
     assert_eq!(runs_directory(&plain).unwrap(), plain.join("runs"));
 }
+
+#[test]
+fn a_referenced_observer_build_must_be_stored_under_its_digest() {
+    use oer_hil_schema::observer_store;
+    let (root, run) = fixture();
+    let store = root.join("target/hil/esp32s31");
+    let build = serde_json::json!({"schema": 2, "resolved": {"nodes": []}});
+    let embedded = serde_json::json!({
+        "schema": observer_store::EMBEDDED,
+        "executable_sha256": "e".repeat(64),
+        "build_sha256": observer_store::digest(&serde_json::to_vec(&build).unwrap()),
+        "build": build,
+    });
+    let reference = observer_store::detach(&embedded, &store).unwrap();
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(run.join("manifest.json")).unwrap()).unwrap();
+    manifest["runner"]["observer"] = reference.clone();
+    atomic_json(&run.join("manifest.json"), &manifest).unwrap();
+    write_integrity_index(&run, "run-1").unwrap();
+    verify(&root, "esp32s31", None).unwrap();
+
+    let file =
+        observer_store::path(&store, observer_store::build_digest(&reference).unwrap()).unwrap();
+    let stored = fs::read(&file).unwrap();
+    fs::remove_file(&file).unwrap();
+    assert!(verify(&root, "esp32s31", None).is_err(), "a missing build");
+    fs::write(&file, stored).unwrap();
+    fs::write(
+        store
+            .join("observers")
+            .join(format!("{}.json", "0".repeat(64))),
+        b"{}",
+    )
+    .unwrap();
+    assert!(
+        verify(&root, "esp32s31", None).is_err(),
+        "a build that does not hash to its name"
+    );
+    fs::remove_dir_all(root).unwrap();
+}

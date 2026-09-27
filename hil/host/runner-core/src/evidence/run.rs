@@ -115,7 +115,17 @@ impl RunSession {
             dirty: repository_source.dirty,
             workspace_sha256: repository_source.workspace_sha256.clone(),
         };
-        let runner = runner_provenance()?;
+        let mut runner = runner_provenance()?;
+        // The observer build is shared by the runs of one observer: it is
+        // stored once beside the runs directory, where that directory really
+        // is when it links to the shared store, and the manifest names it by
+        // digest.
+        if let Some(observer) = &runner.observer {
+            runner.observer = Some(oer_hil_schema::observer_store::detach(
+                observer,
+                &observer_directory(&runs)?,
+            )?);
+        }
         let events = OpenOptions::new()
             .create_new(true)
             .append(true)
@@ -371,6 +381,15 @@ fn runner_build() -> Result<RunnerBuild> {
         .get()
         .copied()
         .ok_or_else(|| "runner build identity is not registered".into())
+}
+
+/// The directory holding the observer builds of the runs in `runs`: the
+/// parent of the directory `runs` resolves to.
+pub fn observer_directory(runs: &Path) -> Result<PathBuf> {
+    Ok(fs::canonicalize(runs)?
+        .parent()
+        .ok_or("HIL runs directory has no parent")?
+        .to_owned())
 }
 
 pub fn runner_provenance() -> Result<RunnerProvenance> {

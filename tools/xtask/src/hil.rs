@@ -743,6 +743,12 @@ fn runs(
                     println!("would delete {}", hil_runs::list_line(run));
                 }
             }
+            if apply {
+                let observers = hil_runs::collect_observers(&directory)?;
+                if observers > 0 {
+                    println!("deleted {observers} observer builds no kept run names");
+                }
+            }
             println!(
                 "{} {removed} of {} runs, {} MiB held only by them; {} kept{}",
                 if apply { "deleted" } else { "would delete" },
@@ -952,6 +958,7 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
         removed += 1;
     }
     if removed > 0 {
+        hil_runs::collect_observers(&runs)?;
         eprintln!(
             "hil: pruned {removed} runs ({} MiB) no rule keeps; see `cargo hil runs prune`",
             freed >> 20

@@ -135,8 +135,10 @@ pub fn verify_at(
             attachments += validate_attachments(&run_directory, &suite)?;
         }
         validate_integrity_index(&run_directory, &manifest)?;
+        validate_observer(&runs_directory, &manifest)?;
         verified_run_ids.push(manifest.run_id);
     }
+    validate_observer_store(&runs_directory)?;
 
     Ok(VerificationCompletion {
         schema: RUN_SCHEMA,
@@ -147,6 +149,51 @@ pub fn verify_at(
         firmware_artifacts,
         verified_run_ids,
     })
+}
+
+/// A run's observer record: an embedded build hashes to its digest, and a
+/// referenced build is present in the store and hashes to its name.
+fn validate_observer(runs_directory: &Path, manifest: &RunManifest) -> Result<()> {
+    let Some(record) = manifest.observer() else {
+        return Ok(());
+    };
+    let directory = crate::evidence::run::observer_directory(runs_directory)?;
+    oer_hil_schema::observer_store::detach(record, &directory).map_err(|error| {
+        format!(
+            "HIL run `{}` has an invalid observer record: {error}",
+            manifest.run_id
+        )
+    })?;
+    Ok(())
+}
+
+/// Every stored observer build is named by the digest of its bytes.
+fn validate_observer_store(runs_directory: &Path) -> Result<()> {
+    use oer_hil_schema::observer_store;
+    let directory =
+        crate::evidence::run::observer_directory(runs_directory)?.join(observer_store::DIRECTORY);
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
+        let path = entry?.path();
+        let digest = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_suffix(".json"))
+            .filter(|name| observer_store::is_digest(name))
+            .ok_or_else(|| format!("unexpected observer store entry {}", path.display()))?;
+        if observer_store::digest(&fs::read(&path)?) != digest {
+            return Err(format!(
+                "observer build {} does not hash to its name",
+                path.display()
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 fn validate_lab_provenance(run_directory: &Path, manifest: &RunManifest) -> Result<()> {

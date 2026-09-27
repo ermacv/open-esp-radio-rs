@@ -74,6 +74,24 @@ pub fn link_runs(local: &Path, shared: &Path) -> Result<Linked> {
         merge(&entry.path(), &shared.join(entry.file_name()))?;
         runs += 1;
     }
+    // The observer builds those runs name live beside them.
+    let observers = |runs: &Path| {
+        runs.parent()
+            .map(|parent| parent.join(oer_hil_schema::observer_store::DIRECTORY))
+    };
+    if let (Some(from), Some(to)) = (observers(local), observers(shared))
+        && from.is_dir()
+    {
+        fs::create_dir_all(&to)?;
+        for entry in fs::read_dir(&from)? {
+            let entry = entry?;
+            let target = to.join(entry.file_name());
+            // Builds are named by their digest: an existing one is the same.
+            if !target.exists() {
+                fs::copy(entry.path(), target)?;
+            }
+        }
+    }
     let mut kept = local.with_file_name("runs.before-shared-store");
     if kept.exists() {
         kept = local.with_file_name(format!(

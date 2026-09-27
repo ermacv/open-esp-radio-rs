@@ -1,3 +1,6 @@
 # Generated vendor evidence shards: git keeps one side of a conflicting merge
 # intact, and `cargo xtask evidence` regenerates the stale shard.
 verification/*/evidence/scenarios/*.json merge=binary linguist-generated=true
+# Observer builds named by their SHA-256: one line of several megabytes that
+# `cargo xtask hil evidence` writes; a diff of one says nothing to review.
+hil/evidence/*/observers/*.json -diff linguist-generated=true

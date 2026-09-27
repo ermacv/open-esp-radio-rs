@@ -475,6 +475,14 @@ user shares (see [find and compare runs](../hil/host/README.md#find-and-compare-
 and qualifies only for a checkout whose sources it binds. The evaluator reads
 the store only through the checkout's `target/hil/<target>/runs` link, which
 any `cargo hil` command creates.
+The runner's observer proof names the build its executable was compiled from,
+several megabytes that most runs share. A run's manifest names that build by
+digest, and the build is stored once in `observers/<build_sha256>.json` next to
+the store's `runs` directory, as the exact bytes the digest is computed over.
+A shard does the same with `observers/` next to it in the evidence directory.
+The evaluator reads each build once and fails closed when it is missing or its
+bytes do not hash to its name. Runs sealed before the store existed embed their
+build and stay readable.
 Digests of sealed files are remembered in the user's cache per file identity
 and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
 --hil-target TARGET)` records

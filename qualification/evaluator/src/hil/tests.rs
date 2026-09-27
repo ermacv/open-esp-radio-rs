@@ -647,6 +647,17 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
     )
     .unwrap();
     assert_eq!(recorded, ["station-reconnect"]);
+    // The shard names its observer build, stored once beside it.
+    let shard: serde_json::Value =
+        read_json(&root.join("evidence/station-reconnect.json")).unwrap();
+    let observer = &shard["subject"]["observer"];
+    assert!(observer.get("build").is_none());
+    let build = oer_hil_schema::observer_store::path(
+        &root.join(evidence),
+        observer["build_sha256"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert!(build.is_file());
 
     // Without the run bundle and at another commit, the shard still
     // qualifies, with its measurements.
@@ -681,9 +692,109 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
             .is_none()
     );
 
-    // A shard names its own scenario, and only shards live in the directory.
+    // A shard whose observer build is missing fails closed.
     fs::write(root.join("firmware/src/lib.rs"), "one").unwrap();
+    let stored = fs::read(&build).unwrap();
+    fs::remove_file(&build).unwrap();
+    assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_err());
+    fs::write(&build, stored).unwrap();
+    assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_ok());
+
+    // A shard names its own scenario, and only shards live in the directory.
     fs::write(root.join("evidence/notes.txt"), "").unwrap();
     assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A run whose manifest names its observer build by digest, as runs do since
+/// the build moved into the store, evaluates exactly like one embedding it;
+/// a missing build or one that does not hash to its name fails closed.
+#[test]
+fn a_referenced_observer_build_evaluates_like_an_embedded_one() {
+    use oer_hil_schema::observer_store;
+    let root = std::env::temp_dir().join(format!(
+        "open-radio-qualification-hil-observer-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        fs::remove_dir_all(&root).unwrap();
+    }
+    let run = root.join("runs/run-1");
+    fs::create_dir_all(&run).unwrap();
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": 2, "run_id": "run-1", "target": "esp32s31", "state": "completed",
+            "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
+            "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        run.join("suite.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": 2, "run_id": "run-1", "target": "esp32s31", "outcome": "passed",
+            "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
+            "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
+                "blocked": 0, "interrupted": 0},
+            "scenarios": [{
+                "schema": 2, "scenario": "station-reconnect", "outcome": "passed",
+                "required_repetitions": 1,
+                "repetitions": [{"schema": 2, "repetition": 1, "outcome": "passed", "failure": null}],
+                "failure": null,
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    add_current_build(&root, &run);
+    seal(&run);
+    let requirement = HilRequirement {
+        scenario: "station-reconnect".to_owned(),
+        checks: vec![],
+        minimum_repetitions: 1,
+    };
+    let repository = RepositoryState {
+        commit: "abc123".to_owned(),
+        dirty: false,
+    };
+    let evaluate = || {
+        HilEvidenceIndex::load(
+            &root,
+            Path::new("runs"),
+            Path::new("evidence"),
+            "esp32s31",
+            &repository,
+        )
+        .map(|index| {
+            let evidence = index.evidence_for(&requirement, &ScenarioCatalog::default());
+            format!("{:?} {evidence:?}", index.summary())
+        })
+    };
+    let embedded = evaluate().unwrap();
+    assert!(embedded.contains("Some("), "the embedded run qualifies");
+
+    let mut manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
+    let reference = observer_store::detach(&manifest["runner"]["observer"], &root).unwrap();
+    manifest["runner"]["observer"] = reference.clone();
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    seal(&run);
+    let build =
+        observer_store::path(&root, observer_store::build_digest(&reference).unwrap()).unwrap();
+    let stored = fs::read(&build).unwrap();
+    fs::write(&build, b"{}").unwrap();
+    assert!(
+        evaluate().is_err(),
+        "a build that does not hash to its name"
+    );
+    fs::remove_file(&build).unwrap();
+    assert!(evaluate().is_err(), "a missing build");
+    fs::write(&build, stored).unwrap();
+    assert_eq!(evaluate().unwrap(), embedded);
     fs::remove_dir_all(root).unwrap();
 }

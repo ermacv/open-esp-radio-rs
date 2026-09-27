@@ -457,6 +457,16 @@ pub struct RunManifest {
     pub firmware: Vec<FirmwareArtifact>,
 }
 
+impl RunManifest {
+    /// The observer record of the runner that produced this run.
+    pub fn observer(&self) -> Option<&serde_json::Value> {
+        self.runner
+            .observer
+            .as_ref()
+            .filter(|record| !record.is_null())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(in crate::evidence) struct IntegrityFile {
     pub(in crate::evidence) path: PathBuf,

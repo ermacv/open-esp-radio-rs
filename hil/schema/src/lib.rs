@@ -9,6 +9,7 @@
 pub mod artifacts;
 pub mod cargo_inputs;
 pub mod observer;
+pub mod observer_store;
 pub mod scenario;
 
 // Producer operations run Cargo; evaluators read prepared descriptors instead.

@@ -330,7 +330,11 @@ firmware another run replayed, runs younger than `--days` (30), incomplete
 runs, the latest pass and the `--keep-failed` (5) newest failures of every
 scenario and image class. Run by hand without `--apply` it only lists the other runs and
 the bytes only they hold; hard-linked firmware shared with kept runs is not
-counted. Pins live in the store's `pins.json`.
+counted. Pins live in the store's `pins.json`. Pruning with `--apply`, and the
+automatic rule, also delete the observer builds in the store's `observers/`
+that no remaining run names and that were stored more than an hour ago; a
+starting run stores its build before its manifest names it. Run verification
+requires every build there to hash to its name.
 
 ## Build and run
 

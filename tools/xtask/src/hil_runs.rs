@@ -31,6 +31,9 @@ pub struct Run {
     /// Runs whose archived firmware this run replayed.
     pub replayed: Vec<String>,
     pub scenarios: Vec<ScenarioRun>,
+    /// Digest of the observer build the run names in the store, when it
+    /// refers to one instead of embedding it.
+    pub observer: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -158,6 +161,9 @@ pub fn load(directory: &Path) -> Option<Run> {
         images,
         replayed,
         scenarios,
+        observer: Some(&manifest["runner"]["observer"])
+            .filter(|record| record["schema"] == oer_hil_schema::observer_store::REFERENCED)
+            .and_then(|record| text(&record["build_sha256"])),
     })
 }
 
@@ -220,6 +226,26 @@ pub fn all(runs: &Path) -> Result<Vec<Run>> {
     }
     found.sort_by_key(|run| (run.started_millis, run.id.clone()));
     Ok(found)
+}
+
+/// How long a stored observer build no run names yet is kept: a starting
+/// run stores its build before its manifest names it.
+const OBSERVER_GRACE: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Remove the observer builds beside `runs` that none of its runs names;
+/// returns how many were removed.
+pub fn collect_observers(runs: &Path) -> Result<usize> {
+    let named = all(runs)?
+        .into_iter()
+        .filter_map(|run| run.observer)
+        .collect();
+    let canonical = fs::canonicalize(runs)?;
+    let store = canonical.parent().ok_or("the run store has no parent")?;
+    Ok(
+        oer_hil_schema::observer_store::collect_garbage(store, &named, OBSERVER_GRACE)
+            .map_err(|error| error.to_string())?
+            .len(),
+    )
 }
 
 /// Selection of `runs list`.
@@ -708,6 +734,38 @@ pub fn cited_by_shards(root: &Path) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observer_builds_no_run_names_are_collected_after_a_grace() {
+        use oer_hil_schema::observer_store;
+        use serde_json::json;
+        let store = tempfile::tempdir().unwrap();
+        let runs = store.path().join("runs");
+        let named = observer_store::store(store.path(), &json!({"named": true})).unwrap();
+        let orphan = observer_store::store(store.path(), &json!({"named": false})).unwrap();
+        let directory = runs.join("1000-a");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join("manifest.json"),
+            json!({"state": "completed", "started_at_unix_ms": 1,
+                "runner": {"observer": {"schema": 2, "build_sha256": named}}})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(collect_observers(&runs).unwrap(), 0, "stored just now");
+        let old = std::time::SystemTime::now() - 2 * OBSERVER_GRACE;
+        for sha256 in [&named, &orphan] {
+            fs::File::options()
+                .append(true)
+                .open(observer_store::path(store.path(), sha256).unwrap())
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+        }
+        assert_eq!(collect_observers(&runs).unwrap(), 1);
+        assert!(observer_store::load(store.path(), &named).is_ok());
+        assert!(observer_store::load(store.path(), &orphan).is_err());
+    }
 
     #[test]
     fn a_running_run_without_its_runner_is_abandoned() {

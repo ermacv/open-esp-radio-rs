@@ -9,11 +9,13 @@
 //! while those sources are unchanged, whatever else the repository changed.
 use super::*;
 use crate::model::scenario_evidence::{SourceDigest, digest_directory};
+use oer_hil_schema::observer_store;
 use serde::Serialize;
 use serde_json::Value;
 
 /// Shard format.
-const SCHEMA: u16 = 1;
+/// Schema 2 records the observer build by digest in `observers/`.
+const SCHEMA: u16 = 2;
 /// Extension of a shard file; its stem is the scenario identifier.
 const EXTENSION: &str = "json";
 
@@ -134,10 +136,13 @@ pub(super) fn load(root: &Path, directory: &Path, target: &str) -> Result<Vec<(S
     paths.sort();
     let mut shards = vec![];
     for path in paths {
+        if path.file_name() == Some(observer_store::DIRECTORY.as_ref()) && path.is_dir() {
+            continue;
+        }
         if path.extension().and_then(|e| e.to_str()) != Some(EXTENSION) {
             return Err(format!("unexpected HIL evidence file {}", path.display()).into());
         }
-        let shard: Shard = read_json(&path)?;
+        let mut shard: Shard = read_json(&path)?;
         if shard.schema != SCHEMA
             || shard.target != target
             || path.file_stem().and_then(|s| s.to_str()) != Some(shard.scenario.as_str())
@@ -151,6 +156,7 @@ pub(super) fn load(root: &Path, directory: &Path, target: &str) -> Result<Vec<(S
         {
             return Err(format!("invalid HIL evidence shard {}", path.display()).into());
         }
+        shard.subject.resolve_observer(&root.join(directory))?;
         let current = current(root, &shard.sources);
         shards.push((shard, current));
     }
@@ -500,6 +506,10 @@ pub(crate) fn distill(
                 None => digests(sources)?,
             },
         };
+        if let Some(observer) = &subject.observer {
+            observer_store::store(&root.join(directory), &observer["build"])
+                .map_err(|error| error.to_string())?;
+        }
         let mut bytes = serde_json::to_vec_pretty(&shard)?;
         bytes.push(b'\n');
         fs::write(
@@ -508,7 +518,26 @@ pub(crate) fn distill(
         )?;
         recorded.push(scenario.clone());
     }
+    collect_observers(&root.join(directory))?;
     Ok(recorded)
+}
+
+/// Remove the observer builds of `directory` that none of its shards names,
+/// so replacing or removing a shard leaves no orphaned build behind.
+fn collect_observers(directory: &Path) -> Result<()> {
+    let mut named = BTreeSet::new();
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) == Some(EXTENSION) {
+            let shard: Value = read_json(&path)?;
+            if let Some(digest) = shard["subject"]["observer"]["build_sha256"].as_str() {
+                named.insert(digest.to_owned());
+            }
+        }
+    }
+    observer_store::collect_garbage(directory, &named, std::time::Duration::ZERO)
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 /// Observer proofs of the qualifying run observations of `index`.

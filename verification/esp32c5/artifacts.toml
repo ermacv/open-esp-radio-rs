@@ -407,3 +407,21 @@ id = "esp-idf/components/soc/esp32c5/include/modem/reg_base.h"
 source = "esp-idf"
 path = "components/soc/esp32c5/include/modem/reg_base.h"
 sha256 = "b80d3594c383afaf2566820ed0ce729a1dccd8d8f36e5906665105fb15f5b17f"
+
+[[artifact]]
+id = "esp-idf/components/esp_hal_regi2c/esp32c5/include/hal/regi2c_ctrl_ll.h"
+source = "esp-idf"
+path = "components/esp_hal_regi2c/esp32c5/include/hal/regi2c_ctrl_ll.h"
+sha256 = "6ad4f6518468ab8cfdedcbaf493638dd5ed27c68bbd8e0359ecc7b7558ef3f10"
+
+[[artifact]]
+id = "esp-idf/components/esp_hal_regi2c/esp32c5/regi2c_impl.c"
+source = "esp-idf"
+path = "components/esp_hal_regi2c/esp32c5/regi2c_impl.c"
+sha256 = "e7b4d9be634d2ce2410fd3d8989af85c1045890c5da485dbd37a5616f1fb5bb5"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/include/modem/i2c_ana_mst_reg.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/include/modem/i2c_ana_mst_reg.h"
+sha256 = "ee3eaf9f6cb38f0e12d7d2d0de6a09df29a4ef1bcf17fe3b2e93ce2774a3961c"

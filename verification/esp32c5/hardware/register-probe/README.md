@@ -16,6 +16,12 @@ and checks that both lines read released. Finally it reads the four modem
 clock words through esp-pacs and checks that no bit outside the published
 fields changed.
 
+Last, it reads registers 0 to 15 of the analog blocks 0x66 (BBPLL), 0x6A
+(BIAS), 0x6D (DIG_REG) and 0x61 (ULP_CAL) through the production analog I2C
+owner (`oer_esp32c5_pac::PhyI2cRegisters`) and compares each byte with the
+ROM leaf `phy_chip_i2c_readReg_org`, called with the same block, read mask
+and host. A block whose read does not complete is `INCOMPLETE`.
+
 | Register | Expected implemented bits |
 | --- | --- |
 | `CHANNEL` | frequency code 6:0 and the unclassified bit 7 |
@@ -27,7 +33,7 @@ Build it here and flash it through the stand:
 
 ```console
 cargo build --release
-cargo hil flash --board esp32c5 --image esp32c5-register-probe \
+cargo hil flash --board esp32c5 --via jtag --image esp32c5-register-probe \
   --monitor 30s --until PROBE-DONE \
   target/riscv32imac-unknown-none-elf/release/oer-esp32c5-register-probe
 ```
@@ -39,4 +45,5 @@ The first run on the stand's ESP32-C5 v1.0 (2026-09-27) matched every width
 the struct declares except `CHANNEL`, whose bit 7 is also implemented; the
 register model records that bit as unclassified with this observation as its
 evidence. A second run the same day matched every modem clock device
-transition, the reset pulse and the preservation of the unpublished bits.
+transition, the reset pulse and the preservation of the unpublished bits, and
+a third run, flashed through JTAG, matched every analog register read.

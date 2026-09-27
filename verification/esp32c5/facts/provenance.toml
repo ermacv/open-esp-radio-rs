@@ -9,3 +9,105 @@ artifact = "libbtbb"
 member = "bt_bb_v2.o"
 symbol = "ieee802154_txon_delay_set"
 code = "7270adfbdfdd36efafb6c317fca779be09eeabba5624dbaf476b994464707a40"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_chip_i2c_readReg"
+code = "02828229645d252a68554f7a07e751123906367ee4bf9db411c3f8b6332e5ac1"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_chip_i2c_readReg_org"
+code = "fc8c375125df2c31f340fdb884bd6ddedf3ccc28ff1082b0f916b239f9d7f46d"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_chip_i2c_writeReg"
+code = "9cb7d8cd0c173fe2004e17c35eef7064570c77b2903b69f79b82a1482bda91f8"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_get_i2c_hostid_"
+code = "c4760d9e652c5d1f56706dec0ea13471041b0436e9c1635e3c626cf1701a0ba5"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_get_i2c_read_mask_"
+code = "ec26a444b845065fba2f651ae5ce1b7321afe979efa16ce31705d8e311c3abad"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_i2c_enter_critical"
+code = "be7b9b2e5febaef3ef3f45b57489b02bd25fc0673a3c8be300be8a779b725bfc"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_i2c_exit_critical"
+code = "be7b9b2e5febaef3ef3f45b57489b02bd25fc0673a3c8be300be8a779b725bfc"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_chip_i2c_readReg"
+code = "9a651e65812b7ef699151b0b842c5c357fca885a4e710b4442a51d66d147a1ad"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_chip_i2c_readReg_org"
+code = "f3d4c4392ab76c21ba4d118fa6750897f94e8dbbfc0bc30b36b96bbf788aa1af"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_chip_i2c_writeReg"
+code = "a49071af9677287a39e7521b6326f378b4ca9b312ca797e7fec2375fe7402ebf"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_get_i2c_hostid_"
+code = "244effdb6cfe61248503c936ca7c2839ab57bbed9045e375d3e3596f473f3db6"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_get_i2c_read_mask_"
+code = "236db2704f29d661f03f8e880a4389bec639133d3a5c49f1714be4ea92bc99d8"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_chip_i2c_readReg"
+code = "155b0a3e7c084b907b54d31206f450ff4af1df8f1b94063ca6027ef62652aed7"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_chip_i2c_readReg_org"
+code = "f3d4c4392ab76c21ba4d118fa6750897f94e8dbbfc0bc30b36b96bbf788aa1af"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_chip_i2c_writeReg"
+code = "644de5298e6ded36e5bb6d88f02315254d7133d310be045b6b06bd1154f93338"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_get_i2c_hostid_"
+code = "244effdb6cfe61248503c936ca7c2839ab57bbed9045e375d3e3596f473f3db6"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_get_i2c_read_mask_"
+code = "4185d40eb4889f2c41b6958c31fdcfa8ac3954eca4a1f8f6fcab334bf9806bc0"

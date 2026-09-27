@@ -9,6 +9,11 @@
 //! It then drives every modem clock device and the IEEE 802.15.4 MAC reset
 //! through the production PAC owner and checks each transition, and that the
 //! modem clock words keep every bit outside the transitioned fields.
+//!
+//! Finally it reads analog registers of the powered IEEE blocks through the
+//! production analog I2C owner and compares each byte with the ROM leaf
+//! `phy_chip_i2c_readReg_org`, called with the same block, read mask and
+//! host. The leaf is identical to the libphy one and reads no RAM table.
 
 #![no_std]
 #![no_main]
@@ -16,7 +21,10 @@
 use esp_backtrace as _;
 use esp_hal::main;
 use esp_println::println;
-use oer_esp32c5_pac::{ModemClockDevice, ModemClockRegisters, RadioPartitions};
+use oer_esp32c5_pac::{
+    ModemClockDevice, ModemClockRegisters, PhyI2cAddress, PhyI2cBlock, PhyI2cHost, PhyI2cRegisters,
+    RadioPartitions,
+};
 use oer_esp32c5_pac_raw::Ieee802154Mac;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -140,6 +148,82 @@ fn probe_modem_clock(clock: &mut ModemClockRegisters, failures: &mut u32) {
     }
 }
 
+/// ESP32-C5 rev 1.0 ROM `phy_chip_i2c_readReg_org(block, mask, host, reg)`.
+const ROM_PHY_CHIP_I2C_READREG_ORG: usize = 0x4000_754a;
+
+/// Blocks read: BBPLL, BIAS, DIG_REG and ULP_CAL of ESP-IDF's `regi2c`.
+const I2C_BLOCKS: [u8; 4] = [0x66, 0x6a, 0x6d, 0x61];
+/// Registers read in each block.
+const I2C_REGISTERS: u8 = 16;
+/// Busy polls before a read is reported incomplete.
+const I2C_POLLS: u32 = 100_000;
+
+fn pac_read(i2c: &mut PhyI2cRegisters, address: PhyI2cAddress) -> Option<u8> {
+    for _ in 0..I2C_POLLS {
+        if i2c.try_start_read(address).is_ok() {
+            for _ in 0..I2C_POLLS {
+                if let Ok(value) = i2c.try_finish_read(address) {
+                    return Some(value);
+                }
+            }
+            return None;
+        }
+    }
+    None
+}
+
+fn rom_read(address: PhyI2cAddress) -> u8 {
+    let block = address.block();
+    let mask = !block.read_mask_complement_low();
+    let host = match block.host() {
+        PhyI2cHost::Host0 => 0,
+        PhyI2cHost::Host1 => 1,
+    };
+    // SAFETY: the address is the ESP32-C5 rev 1.0 ROM leaf of this ABI; it
+    // touches only the analog I2C master, which the probe owns, and the PAC
+    // read just completed on the same host, so its busy poll terminates.
+    let leaf: extern "C" fn(u32, u32, u32, u32) -> u32 =
+        unsafe { core::mem::transmute(ROM_PHY_CHIP_I2C_READREG_ORG) };
+    leaf(
+        u32::from(block.code()),
+        mask,
+        host,
+        u32::from(address.register()),
+    ) as u8
+}
+
+fn probe_phy_i2c(i2c: &mut PhyI2cRegisters, failures: &mut u32) {
+    for code in I2C_BLOCKS {
+        let block = PhyI2cBlock::from_vendor_abi(code).expect("reviewed block");
+        let mut differences = 0;
+        let mut incomplete = false;
+        for register in 0..I2C_REGISTERS {
+            let address = PhyI2cAddress::new(block, register);
+            let Some(ours) = pac_read(i2c, address) else {
+                incomplete = true;
+                break;
+            };
+            let vendor = rom_read(address);
+            if ours != vendor {
+                differences += 1;
+                println!(
+                    "PROBE   block {code:#04x} reg {register}: ours {ours:#04x} rom {vendor:#04x}"
+                );
+            }
+        }
+        let verdict = if incomplete {
+            *failures += 1;
+            "INCOMPLETE"
+        } else if differences == 0 {
+            "MATCH"
+        } else {
+            *failures += 1;
+            "DIFF"
+        };
+        println!("PROBE {verdict} analog I2C block {code:#04x} registers 0..{I2C_REGISTERS}");
+    }
+}
+
 #[main]
 fn main() -> ! {
     let _peripherals = esp_hal::init(esp_hal::Config::default());
@@ -148,8 +232,15 @@ fn main() -> ! {
     let RadioPartitions {
         ieee802154: _ieee802154,
         mut modem_clock,
+        mut phy_i2c,
     } = RadioPartitions::take().expect("first radio partition acquisition");
     probe_modem_clock(&mut modem_clock, &mut failures);
+    check(
+        &mut failures,
+        "analog I2C master clock enabled by esp-hal",
+        modem_clock.analog_i2c_master_clock_enabled(),
+    );
+    probe_phy_i2c(&mut phy_i2c, &mut failures);
 
     // SAFETY: the probe is the sole user of the IEEE 802.15.4 MAC.
     let mac = unsafe { Ieee802154Mac::steal() };

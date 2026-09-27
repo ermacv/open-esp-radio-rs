@@ -24,6 +24,7 @@ use oer_esp32c5_pac_raw as svd;
 pub(crate) mod ieee802154;
 pub(crate) mod modem;
 pub(crate) mod ownership;
+pub(crate) mod phy;
 
 pub(crate) use ownership::device_fence;
 
@@ -56,3 +57,4 @@ pub use ownership::{
     Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154Partition,
     Ieee802154TaskRegisters, RadioPartitions,
 };
+pub use phy::i2c::{PhyI2cAccessError, PhyI2cAddress, PhyI2cBlock, PhyI2cHost, PhyI2cRegisters};

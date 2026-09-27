@@ -112,6 +112,12 @@ impl ModemClockRegisters {
         generated::set_ieee802154_apb_reset(syscon, ModemResetState::Released);
     }
 
+    /// Whether the analog register I2C master clock is enabled. The platform
+    /// owns that gate and its reference count.
+    pub fn analog_i2c_master_clock_enabled(&self) -> bool {
+        svd::field_read::observe_analog_i2c_master_clock(&self.peripherals.modem_lpcon_shared_clock)
+    }
+
     /// Sample both IEEE 802.15.4 reset lines.
     pub fn ieee802154_reset_observation(&self) -> Ieee802154ResetObservation {
         let (apb_asserted, mac_asserted) = svd::field_snapshot_read::observe_ieee802154_resets(

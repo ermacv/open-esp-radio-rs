@@ -23,6 +23,12 @@ member = "modem_clock"
 description = "Modem clock gates and MAC resets driven by the vendor modem clock devices; owned by the modem clock owner."
 peripherals = ["MODEM_SYSCON_RADIO", "MODEM_LPCON_SHARED_CLOCK"]
 
+[[ownership-partitions]]
+name = "PhyI2cPeripherals"
+member = "phy_i2c"
+description = "Analog register I2C master hosts, read mask and host selection driven by the PHY."
+peripherals = ["I2C_ANA_MST"]
+
 [[w1c-register-snapshots]]
 name = "ieee802154_event_status"
 peripheral = "IEEE802154_MAC"
@@ -576,3 +582,68 @@ peripheral = "MODEM_LPCON_SHARED_CLOCK"
 register = "CLK_CONF"
 field = "CLK_COEX_EN"
 sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_LPCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_host_map"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF2"
+fields = [{ field = "PHY_HOST_MAP", source-bit-offset = 0 }]
+value = 0x19c1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
+
+[[zero-based-field-writes]]
+name = "publish_phy_i2c_read_mask"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF1"
+fields = ["READ_MASK_COMPLEMENT_LOW", "READ_MASK_COMPLEMENT_HIGH"]
+sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
+
+[[zero-based-field-writes]]
+name = "publish_phy_i2c_host0_command"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL"
+fields = ["SLAVE_ADDR", "SLAVE_REG_ADDR", "DATA", "READ_WRITE", "START_OR_RESET"]
+sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
+
+[[field-reads]]
+name = "observe_phy_i2c_host0_busy"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL"
+field = "BUSY"
+sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
+
+[[field-reads]]
+name = "observe_phy_i2c_host0_data"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL"
+field = "DATA"
+sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
+
+[[zero-based-field-writes]]
+name = "publish_phy_i2c_host1_command"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL"
+fields = ["SLAVE_ADDR", "SLAVE_REG_ADDR", "DATA", "READ_WRITE", "START_OR_RESET"]
+sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
+
+[[field-reads]]
+name = "observe_phy_i2c_host1_busy"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL"
+field = "BUSY"
+sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
+
+[[field-reads]]
+name = "observe_phy_i2c_host1_data"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL"
+field = "DATA"
+sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
+
+[[field-reads]]
+name = "observe_analog_i2c_master_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+field = "CLK_I2C_MST_EN"
+sources = ["ESP_IDF_4D59230D_C5_I2C_ANA_MST", "ESP_IDF_4D59230D_C5_MODEM_LPCON_STRUCT"]

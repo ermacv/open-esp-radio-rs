@@ -1915,6 +1915,13 @@ bit-offset = 1
 bit-width = 1
 access = "read-write"
 
+[[registers.fields]]
+svd-name = "CLK_I2C_MST_EN"
+method = "clk_i2c_mst_en"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
 [[registers]]
 address = 1611329568
 width = 32
@@ -1931,4 +1938,153 @@ svd-name = "CLK_I2C_MST_ST_MAP"
 method = "clk_i2c_mst_st_map"
 bit-offset = 24
 bit-width = 4
+access = "read-write"
+
+[[registers]]
+address = 1611331584
+width = 32
+access = "read-write"
+identity = "I2C_ANA_MST.I2C0_CTRL"
+peripheral = "I2C_ANA_MST"
+peripheral-type = "I2cAnaMst"
+peripheral-module = "i2c_ana_mst"
+scope = []
+register-method = "i2c0_ctrl"
+
+[[registers.fields]]
+svd-name = "SLAVE_ADDR"
+method = "slave_addr"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLAVE_REG_ADDR"
+method = "slave_reg_addr"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DATA"
+method = "data"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "READ_WRITE"
+method = "read_write"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BUSY"
+method = "busy"
+bit-offset = 25
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "START_OR_RESET"
+method = "start_or_reset"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611331588
+width = 32
+access = "read-write"
+identity = "I2C_ANA_MST.I2C1_CTRL"
+peripheral = "I2C_ANA_MST"
+peripheral-type = "I2cAnaMst"
+peripheral-module = "i2c_ana_mst"
+scope = []
+register-method = "i2c1_ctrl"
+
+[[registers.fields]]
+svd-name = "SLAVE_ADDR"
+method = "slave_addr"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLAVE_REG_ADDR"
+method = "slave_reg_addr"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DATA"
+method = "data"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "READ_WRITE"
+method = "read_write"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BUSY"
+method = "busy"
+bit-offset = 25
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "START_OR_RESET"
+method = "start_or_reset"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611331612
+width = 32
+access = "read-write"
+identity = "I2C_ANA_MST.ANA_CONF1"
+peripheral = "I2C_ANA_MST"
+peripheral-type = "I2cAnaMst"
+peripheral-module = "i2c_ana_mst"
+scope = []
+register-method = "ana_conf1"
+
+[[registers.fields]]
+svd-name = "READ_MASK_COMPLEMENT_LOW"
+method = "read_mask_complement_low"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "READ_MASK_COMPLEMENT_HIGH"
+method = "read_mask_complement_high"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 1611331616
+width = 32
+access = "read-write"
+identity = "I2C_ANA_MST.ANA_CONF2"
+peripheral = "I2C_ANA_MST"
+peripheral-type = "I2cAnaMst"
+peripheral-module = "i2c_ana_mst"
+scope = []
+register-method = "ana_conf2"
+
+[[registers.fields]]
+svd-name = "PHY_HOST_MAP"
+method = "phy_host_map"
+bit-offset = 4
+bit-width = 13
 access = "read-write"

@@ -7,4 +7,5 @@ owned-ranges = [
     "modem-syscon-radio",
     "modem-lpcon-shared-clock",
     "modem-lpcon-clock-state-map",
+    "i2c-ana-mst-phy",
 ]

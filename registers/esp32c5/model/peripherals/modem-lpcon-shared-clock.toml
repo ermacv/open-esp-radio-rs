@@ -24,6 +24,12 @@ description = "Enable the coexistence clock."
 bitOffset = 1
 bitWidth = 1
 
+[[peripherals.registers.register.fields]]
+name = "CLK_I2C_MST_EN"
+description = "Enable the analog register I2C master clock; the platform keeps its reference count."
+bitOffset = 2
+bitWidth = 1
+
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "CLK_CONF_POWER_ST"

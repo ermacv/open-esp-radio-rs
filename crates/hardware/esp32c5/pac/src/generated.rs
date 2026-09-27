@@ -414,3 +414,9 @@ pub(crate) fn set_coexistence_clock(
 ) {
     crate::svd::field_replace_modify::set_coexistence_clock(registers, value.bits());
 }
+
+/// Typed bridge for the reviewed `configure_phy_i2c_host_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_host_map(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_host_map(registers);
+}

@@ -71,7 +71,7 @@ pub struct PeerExchange {
     pub frames: u8,
     /// Run the exchange with the device taking part in coexistence with
     /// Wi-Fi and the coexistence schedule running.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub wifi_coexistence: bool,
 }
 

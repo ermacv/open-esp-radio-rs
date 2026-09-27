@@ -1502,6 +1502,22 @@ impl PhyState {
         Ok(())
     }
 
+    /// The state retaining exactly `cache`: the replay restoration, with the
+    /// RX-gain table flag the replay deliberately clears kept as captured.
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn retained_calibration(
+        config: PhyConfig,
+        cache: &PhyCalibrationCache,
+    ) -> Result<Self, PhyCalibrationCacheError> {
+        let mut state = Self::new(config);
+        state.begin_cached_calibration(config, cache, cache.snapshot.identity)?;
+        state.wifi.calibration.set(
+            WifiCalibrationStatus::RX_GAIN_TABLES,
+            cache.snapshot.wifi.rx_gain_tables_initialized,
+        );
+        Ok(state)
+    }
+
     pub(crate) const fn calibration_snapshot(
         &self,
         identity: crate::calibration::registration::PhyCalibrationIdentity,

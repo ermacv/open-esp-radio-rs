@@ -139,6 +139,17 @@ pub fn calibration_snapshot(state: &crate::PhyState) -> crate::state::PhyCalibra
     })
 }
 
+/// A state retaining exactly `snapshot`, so a snapshot captured on hardware
+/// projects through the same state accessors the comparison probes read.
+/// Rejects snapshots a cold replay would reject.
+pub fn retained_calibration_state(
+    snapshot: crate::state::PhyCalibrationSnapshot,
+) -> Result<crate::PhyState, crate::state::PhyCalibrationCacheError> {
+    let cache = crate::state::PhyCalibrationCache::from_snapshot(snapshot)
+        .ok_or(crate::state::PhyCalibrationCacheError::SchemaMismatch)?;
+    crate::PhyState::retained_calibration(crate::state::PhyConfig::production(), &cache)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -147,6 +158,51 @@ mod tests {
         let codes = [1, 2, 3, 4, 5, 6, 7, 8];
         state.apply_dcode_outcome(crate::analog::dcode::PhyDcodeOutcome { codes });
         assert_eq!(super::calibration_snapshot(&state).common.dcode, codes);
+    }
+
+    #[test]
+    fn retained_calibration_state_keeps_every_snapshot_field() {
+        use crate::calibration::baseband::{
+            PHY_SHARED_RX_GAIN_LAST_INDEX, PHY_WIFI_RX_GAIN_LAST_INDEX,
+        };
+        let mut snapshot = super::calibration_snapshot(&crate::PhyState::default());
+        let (common, wifi, bluetooth) = (
+            &mut snapshot.common,
+            &mut snapshot.wifi,
+            &mut snapshot.bluetooth,
+        );
+        common.temperature = 31;
+        common.rfpll_reference_temperature = 29;
+        common.rxcal_reference_temperature = 28;
+        common.txcal_reference_temperature = 27;
+        common.rc_calibrated = true;
+        common.dcode = [1, 2, 3, 4, 5, 6, 7, 8];
+        common.xtal_duty = [9, 10, 11];
+        wifi.baseband_calibrated = true;
+        wifi.pwdet_calibrated = true;
+        wifi.tx_power_calibrated = true;
+        wifi.tx_iq_calibrated = true;
+        wifi.rx_gain_dc_calibrated = true;
+        wifi.rx_gain_tables_initialized = true;
+        wifi.wifi_rx_table_last_index = PHY_WIFI_RX_GAIN_LAST_INDEX;
+        wifi.shared_rx_table_last_index = PHY_SHARED_RX_GAIN_LAST_INDEX;
+        wifi.tx_dco[2] = [12, 13, 14, 15];
+        wifi.shared_index_dc[10] = [16, 17];
+        wifi.calibration_channel = 13;
+        bluetooth.tx_dc_calibrated = true;
+        bluetooth.tx_power_calibrated = true;
+        bluetooth.tx_dco[1] = [18, 19, 20, 21];
+        let state = super::retained_calibration_state(snapshot).unwrap();
+        assert_eq!(super::calibration_snapshot(&state), snapshot);
+    }
+
+    #[test]
+    fn retained_calibration_state_rejects_incomplete_calibration() {
+        let snapshot = super::calibration_snapshot(&crate::PhyState::default());
+        assert_eq!(
+            super::retained_calibration_state(snapshot).err(),
+            Some(crate::state::PhyCalibrationCacheError::IncompleteCalibration)
+        );
     }
 
     #[test]

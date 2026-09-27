@@ -76,6 +76,7 @@ pub static CHIP: Chip = Chip {
     manifest: "verification/esp32c5/artifacts.toml",
     manifest_text: include_str!("../../artifacts.toml"),
     hardware_scope: "crates/hardware/esp32c5",
+    shared_scopes: &["crates/hardware/ieee80211"],
     rom_input: ROM_INPUT,
     rom_symbols: &[],
     stack: STACK,

@@ -2,8 +2,9 @@
 //!
 //! Blobray reports which executed production instructions a compared
 //! observation depends on. Debug line information of the probe ELF maps them
-//! to production hardware source lines (PHY, HAL, PAC and MAC driver crates),
-//! including inlined frames: a line is
+//! to production hardware source lines (PHY, HAL, PAC and MAC driver crates
+//! of the chip, and the chip-neutral hardware crates it shares), including
+//! inlined frames: a line is
 //! observed when any of its executed instructions is. Every executed but
 //! unobserved line is either reviewed by a decision below, with its reason, or
 //! reported as untriaged in the evidence index. A decision that matches no
@@ -19,6 +20,26 @@ fn hardware_scope() -> &'static str {
     crate::chip().hardware_scope
 }
 
+/// Every production hardware source tree attributed to the installed chip:
+/// its own, then the chip-neutral ones it shares.
+fn scopes() -> impl Iterator<Item = &'static str> {
+    std::iter::once(hardware_scope()).chain(crate::chip().shared_scopes.iter().copied())
+}
+
+/// The repository path of a decision's file: below the chip's hardware
+/// scope, or below the repository root when it names a shared tree.
+fn decision_path(file: &str) -> PathBuf {
+    if crate::chip()
+        .shared_scopes
+        .iter()
+        .any(|scope| file.starts_with(scope))
+    {
+        PathBuf::from(file)
+    } else {
+        Path::new(hardware_scope()).join(file)
+    }
+}
+
 /// Repository root: this package lives three directories below it.
 pub fn root() -> Result<PathBuf> {
     Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -30,7 +51,8 @@ pub fn root() -> Result<PathBuf> {
 pub type SourceLine = (PathBuf, u32);
 
 /// A reviewed decision on executed lines no compared observation depends on.
-/// Each place is a file below the chip's hardware scope and a line's trimmed text, so the
+/// Each place is a file below the chip's hardware scope (or a path of a shared
+/// hardware tree from the repository root) and a line's trimmed text, so the
 /// decision survives unrelated line shifts.
 #[derive(Clone, Copy, Debug)]
 pub struct Decision {
@@ -82,7 +104,6 @@ impl LineMap {
         })?;
         let context = addr2line::Context::from_dwarf(dwarf)?;
         let root = root.canonicalize()?;
-        let scope = root.join(hardware_scope());
         let mut lines = BTreeMap::new();
         for pc in pcs {
             let mut located = vec![];
@@ -100,8 +121,13 @@ impl LineMap {
                 let (Some(path), Some(line)) = (location.file, location.line) else {
                     continue;
                 };
-                if let Ok(relative) = Path::new(path).strip_prefix(&scope) {
-                    located.push((Path::new(hardware_scope()).join(relative), line));
+                if let Some(file) = scopes().find_map(|scope| {
+                    Path::new(path)
+                        .strip_prefix(root.join(scope))
+                        .ok()
+                        .map(|relative| Path::new(scope).join(relative))
+                }) {
+                    located.push((file, line));
                 }
             }
             lines.insert(*pc, located);
@@ -166,9 +192,9 @@ impl Sources {
         for line in unobserved {
             let text = self.text(root, line)?;
             if decisions.iter().any(|d| {
-                d.places.iter().any(|(file, source)| {
-                    line.0 == Path::new(hardware_scope()).join(file) && text == *source
-                })
+                d.places
+                    .iter()
+                    .any(|(file, source)| line.0 == decision_path(file) && text == *source)
             }) {
                 reviewed.insert(line.clone());
             } else {
@@ -190,7 +216,7 @@ impl Sources {
             let text = self.text(root, line)?.to_owned();
             for decision in decisions {
                 for place in decision.places {
-                    if line.0 == Path::new(hardware_scope()).join(place.0) && text == place.1 {
+                    if line.0 == decision_path(place.0) && text == place.1 {
                         matched.insert(*place);
                     }
                 }
@@ -266,6 +292,16 @@ mod tests {
             sources
                 .check(root.path(), DECIDED, &BTreeSet::new())
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn decisions_name_shared_trees_from_the_repository_root() {
+        crate::install(&crate::chip::TEST);
+        assert_eq!(decision_path(PLACE), PathBuf::from(FILE));
+        assert_eq!(
+            decision_path("crates/hardware/shared-test/src/lib.rs"),
+            PathBuf::from("crates/hardware/shared-test/src/lib.rs")
         );
     }
 

@@ -16,6 +16,10 @@ pub struct Chip {
     /// Production hardware sources the observation analysis attributes
     /// executed lines to, relative to the repository root.
     pub hardware_scope: &'static str,
+    /// Chip-neutral production hardware sources the chip's probes compile,
+    /// such as the register blocks and transactions it shares with other
+    /// chips, relative to the repository root.
+    pub shared_scopes: &'static [&'static str],
     /// Session input index of the authenticated ROM ELF.
     pub rom_input: u64,
     /// ROM storage the scenarios address directly, as (symbol, address,
@@ -90,6 +94,7 @@ pub(crate) static TEST: Chip = Chip {
     manifest: "verification/test/artifacts.toml",
     manifest_text: "schema = 1\nsource = []\nartifact = []\n",
     hardware_scope: "crates/hardware/test",
+    shared_scopes: &["crates/hardware/shared-test"],
     rom_input: 1,
     rom_symbols: &[],
     stack: (0, 0),

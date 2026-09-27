@@ -30,6 +30,7 @@ pub static CHIP: oer_vendor_scenario_engine::Chip = oer_vendor_scenario_engine::
     manifest: "verification/esp32s31/artifacts.toml",
     manifest_text: include_str!("../../artifacts.toml"),
     hardware_scope: "crates/hardware/esp32s31",
+    shared_scopes: &["crates/hardware/ieee80211"],
     rom_input: layout::ROM_INPUT,
     rom_symbols: &layout::ROM_SYMBOLS,
     stack: (layout::STACK_ADDRESS, layout::STACK_BYTES),

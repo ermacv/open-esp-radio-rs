@@ -9,8 +9,31 @@
 pub enum WifiSecurityMode {
     /// IEEE 802.11 Open System with plaintext data and no RSN element.
     Open,
-    /// WPA2-Personal using RSN, PSK authentication and CCMP.
+    /// RSN with CCMP data protection under a personal key: WPA2-Personal
+    /// (PSK) or, for a station, WPA3-Personal (SAE).
     Wpa2Personal,
+}
+
+/// What one station request admits.
+///
+/// A personal request never downgrades: WPA2-Personal admits PSK or, as the
+/// vendor's WPA3-enabled station does, upgrades to SAE whenever the access
+/// point offers it; WPA3-Personal admits SAE only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaSecurityPolicy {
+    Open,
+    Wpa2Personal,
+    Wpa3Personal,
+}
+
+impl StaSecurityPolicy {
+    /// The data protection of the link.
+    pub const fn link_mode(self) -> WifiSecurityMode {
+        match self {
+            Self::Open => WifiSecurityMode::Open,
+            Self::Wpa2Personal | Self::Wpa3Personal => WifiSecurityMode::Wpa2Personal,
+        }
+    }
 }
 
 pub mod rsn;

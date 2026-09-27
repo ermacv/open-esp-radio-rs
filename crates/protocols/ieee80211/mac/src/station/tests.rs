@@ -1,6 +1,9 @@
 use super::association::PhyMode;
 use super::*;
-use crate::security::rsn::{RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR};
+use crate::security::{
+    StaSecurityPolicy,
+    rsn::{RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR},
+};
 use crate::sequence::seq;
 
 // A synthetic profile keeps framing/admission tests independent of any chip.
@@ -227,20 +230,64 @@ fn parses_only_disconnects_from_selected_access_point() {
 }
 
 #[test]
-fn mixed_wpa2_wpa3_ap_is_narrowed_to_wpa2_psk_ccmp_with_management_protection() {
+fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8], [0, 0x0f, 0xac, 2]], 0x80);
-    let selected = select_wpa2_psk_rsn(&record).unwrap();
-    assert_eq!(selected.as_bytes().len(), SELECTED_RSN_IE_LEN);
+    let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal).unwrap();
+    assert_eq!(selected.akm(), SelectedAkm::Sae { h2e: false });
+    assert_eq!(selected.as_bytes().len(), SELECTED_SECURITY_IES_CAPACITY);
     assert_eq!(&selected.as_bytes()[8..14], &[1, 0, 0, 0x0f, 0xac, 4]);
-    assert_eq!(&selected.as_bytes()[14..20], &[1, 0, 0, 0x0f, 0xac, 2]);
-    // SPP A-MSDU capable and, for a capable access point, MFPC.
-    assert_eq!(&selected.as_bytes()[20..22], &[0x80, 4]);
+    assert_eq!(&selected.as_bytes()[14..20], &[1, 0, 0, 0x0f, 0xac, 8]);
+    // SPP A-MSDU capable, MFPC and, under SAE, MFPR.
+    assert_eq!(&selected.as_bytes()[20..22], &[0xc0, 4]);
+    // The RSNXE announces hash to element.
+    assert_eq!(&selected.as_bytes()[22..], &[244, 1, 0x20]);
     assert!(selected.management_protection());
+    assert_eq!(
+        select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal)
+            .unwrap()
+            .akm(),
+        SelectedAkm::Sae { h2e: false }
+    );
+}
+
+#[test]
+fn the_access_point_rsnxe_selects_hash_to_element() {
+    let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8]], 0xc0);
+    record.rsnxe[..3].copy_from_slice(&[244, 1, 0x20]);
+    record.rsnxe_len = 3;
+    assert_eq!(
+        select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal)
+            .unwrap()
+            .akm(),
+        SelectedAkm::Sae { h2e: true }
+    );
+}
+
+#[test]
+fn sae_needs_management_frame_protection_and_wpa3_needs_sae() {
+    // SAE without MFPC falls back to PSK for a WPA2 request only.
+    let incapable = access_point_with_rsn(&[[0, 0x0f, 0xac, 8], [0, 0x0f, 0xac, 2]], 0);
+    let selected = select_association_rsn(&incapable, StaSecurityPolicy::Wpa2Personal).unwrap();
+    assert_eq!(selected.akm(), SelectedAkm::Psk);
+    assert_eq!(selected.as_bytes().len(), SELECTED_RSN_IE_LEN);
+    assert_eq!(
+        select_association_rsn(&incapable, StaSecurityPolicy::Wpa3Personal),
+        Err(StaSecurityError::UnsupportedAkm)
+    );
+    let psk_only = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0x80);
+    assert_eq!(
+        select_association_rsn(&psk_only, StaSecurityPolicy::Wpa3Personal),
+        Err(StaSecurityError::UnsupportedAkm)
+    );
 }
 
 #[test]
 fn an_access_point_without_mfpc_keeps_management_frames_unprotected() {
-    let selected = select_wpa2_psk_rsn(&access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0)).unwrap();
+    let selected = select_association_rsn(
+        &access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0),
+        StaSecurityPolicy::Wpa2Personal,
+    )
+    .unwrap();
     assert_eq!(&selected.as_bytes()[20..22], &[0, 4]);
     assert!(!selected.management_protection());
 }
@@ -249,7 +296,9 @@ fn an_access_point_without_mfpc_keeps_management_frames_unprotected() {
 fn psk_sha256_is_preferred_whenever_offered() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2], [0, 0x0f, 0xac, 6]], 0);
     assert_eq!(
-        &select_wpa2_psk_rsn(&record).unwrap().as_bytes()[14..20],
+        &select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal)
+            .unwrap()
+            .as_bytes()[14..20],
         &[1, 0, 0, 0x0f, 0xac, 6]
     );
 }
@@ -260,15 +309,15 @@ fn required_management_frame_protection_needs_capability() {
         &[[0, 0x0f, 0xac, 6]],
         RSN_CAPABILITY_MFPR | RSN_CAPABILITY_MFPC,
     );
-    let selected = select_wpa2_psk_rsn(&required).unwrap();
+    let selected = select_association_rsn(&required, StaSecurityPolicy::Wpa2Personal).unwrap();
     assert!(selected.management_protection());
     // The station stays capable only; it does not require protection.
     assert_eq!(&selected.as_bytes()[20..22], &[0x80, 4]);
     assert_eq!(
-        select_wpa2_psk_rsn(&access_point_with_rsn(
-            &[[0, 0x0f, 0xac, 2]],
-            RSN_CAPABILITY_MFPR
-        )),
+        select_association_rsn(
+            &access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], RSN_CAPABILITY_MFPR),
+            StaSecurityPolicy::Wpa2Personal
+        ),
         Err(StaSecurityError::MalformedRsn)
     );
 }
@@ -278,7 +327,7 @@ fn only_bip_cmac_128_protects_group_management_frames() {
     let mut gmac = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], RSN_CAPABILITY_MFPC);
     append_rsn_tail(&mut gmac, &[0, 0, 0x00, 0x0f, 0xac, 11]);
     assert_eq!(
-        select_wpa2_psk_rsn(&gmac),
+        select_association_rsn(&gmac, StaSecurityPolicy::Wpa2Personal),
         Err(StaSecurityError::UnsupportedGroupManagementCipher)
     );
 }
@@ -289,11 +338,13 @@ fn complete_optional_rsn_tails_are_consumed_exactly() {
     let mut pmkid_tail = [0x5a; 18];
     pmkid_tail[..2].copy_from_slice(&1_u16.to_le_bytes());
     append_rsn_tail(&mut with_pmkid, &pmkid_tail);
-    assert!(select_wpa2_psk_rsn(&with_pmkid).is_ok());
+    assert!(select_association_rsn(&with_pmkid, StaSecurityPolicy::Wpa2Personal).is_ok());
 
     let mut with_group_management = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 1 << 7);
     append_rsn_tail(&mut with_group_management, &[0, 0, 0x00, 0x0f, 0xac, 6]);
-    assert!(select_wpa2_psk_rsn(&with_group_management).is_ok());
+    assert!(
+        select_association_rsn(&with_group_management, StaSecurityPolicy::Wpa2Personal).is_ok()
+    );
 }
 
 #[test]
@@ -314,7 +365,7 @@ fn truncated_or_trailing_rsn_optional_fields_are_rejected() {
         let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
         append_rsn_tail(&mut record, tail);
         assert_eq!(
-            select_wpa2_psk_rsn(&record),
+            select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal),
             Err(StaSecurityError::MalformedRsn)
         );
     }
@@ -330,7 +381,7 @@ fn association_request_contains_selected_rsn() {
         sequence_number: seq(2),
         listen_interval: 1,
         phy: PhyMode::Legacy,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: StaSecurityPolicy::Wpa2Personal,
         power_capability: None,
         he_ul_mu_power: None,
     }
@@ -357,7 +408,7 @@ fn ht20_request_fails_closed_when_the_ap_did_not_advertise_ht() {
             sequence_number: seq(2),
             listen_interval: 1,
             phy: PhyMode::Ht20,
-            security: WifiSecurityMode::Wpa2Personal,
+            security: StaSecurityPolicy::Wpa2Personal,
             power_capability: None,
             he_ul_mu_power: None,
         }
@@ -380,7 +431,7 @@ fn association_encoder_uses_the_explicit_local_profile() {
         sequence_number: seq(2),
         listen_interval: 1,
         phy: PhyMode::Ht20,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: StaSecurityPolicy::Wpa2Personal,
         power_capability: None,
         he_ul_mu_power: None,
     }
@@ -825,13 +876,13 @@ fn open_ap_needs_no_security_ie() {
         ..ScanRecord::EMPTY
     };
     assert!(
-        select_association_rsn(&record, WifiSecurityMode::Open)
+        select_association_rsn(&record, StaSecurityPolicy::Open)
             .unwrap()
             .as_bytes()
             .is_empty()
     );
     assert_eq!(
-        select_wpa2_psk_rsn(&record),
+        select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal),
         Err(StaSecurityError::SecurityModeMismatch)
     );
 }

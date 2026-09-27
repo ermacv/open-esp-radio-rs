@@ -11,6 +11,7 @@
 use core::future::Future;
 
 use oer_ieee80211_mac::security::WifiSecurityMode;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::station::{AssociationResponse, StaSequenceCounter};
 
 use self::association::{
@@ -21,6 +22,7 @@ use self::authentication::{
     StaAuthenticationAttempt, StaAuthenticationEvent, StaAuthenticationFailure,
     StaAuthenticationRuntime, StaAuthenticationRuntimeError,
 };
+use self::sae::{StaSaeAuthentication, StaSaeEvent, StaSaeFailure, StaSaePmk, StaSaeTransmission};
 
 pub mod association;
 pub mod authentication;
@@ -81,6 +83,14 @@ pub trait StaJoinBackend {
         attempt: StaAssociationAttempt,
     ) -> impl Future<Output = Result<(), Self::Error>> + '_;
 
+    /// Publish one SAE Authentication frame with its own management
+    /// sequence number.
+    fn transmit_sae_authentication<'a>(
+        &'a mut self,
+        sequence_number: SequenceNumber,
+        transmission: &'a StaSaeTransmission,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a;
+
     fn service_receive<'a, O>(
         &'a mut self,
         observer: &'a mut O,
@@ -124,6 +134,7 @@ pub enum StaJoinError<E> {
     },
     InvalidAuthenticationEvent,
     InvalidAssociationEvent,
+    SaeFailed(StaSaeFailure),
 }
 
 struct AuthenticationObserver<'runtime> {
@@ -144,6 +155,26 @@ impl StaJoinRxObserver for AuthenticationObserver<'_> {
             Ok(StaAuthenticationEvent::Irrelevant) => StaJoinRxDirective::Continue,
             terminal => {
                 self.terminal = Some(terminal);
+                StaJoinRxDirective::Stop
+            }
+        }
+    }
+}
+
+struct SaeObserver<'exchange> {
+    exchange: &'exchange mut StaSaeAuthentication,
+    event: Option<StaSaeEvent>,
+}
+
+impl StaJoinRxObserver for SaeObserver<'_> {
+    fn observe_completed(&mut self, management_frame: Option<&[u8]>) -> StaJoinRxDirective {
+        let Some(frame) = management_frame else {
+            return StaJoinRxDirective::Continue;
+        };
+        match self.exchange.observe_management_frame(frame) {
+            StaSaeEvent::Irrelevant => StaJoinRxDirective::Continue,
+            event => {
+                self.event = Some(event);
                 StaJoinRxDirective::Stop
             }
         }
@@ -221,6 +252,72 @@ where
             .ok_or(StaJoinError::ClockOverflow)?;
         self.timer.wait_until_micros(deadline).await;
         Ok(())
+    }
+
+    /// Run one SAE Authentication exchange and return its PMK.
+    ///
+    /// RX is drained at every millisecond boundary; a frame the exchange
+    /// answers (the Confirm after the peer's Commit, or the Commit repeated
+    /// with an anti-clogging token) is sent before the next boundary.
+    pub async fn authenticate_sae(
+        &mut self,
+        mut exchange: StaSaeAuthentication,
+        sequence: &mut StaSequenceCounter,
+    ) -> Result<StaSaePmk, StaJoinError<B::Error>> {
+        self.backend
+            .start_receive()
+            .await
+            .map_err(StaJoinError::Backend)?;
+        let commit = exchange.commit();
+        if let Err(error) = self
+            .backend
+            .transmit_sae_authentication(sequence.take(), &commit)
+            .await
+        {
+            self.stop_receive().await?;
+            return Err(StaJoinError::Backend(error));
+        }
+        let started_micros = self.timer.now_micros();
+        let mut elapsed_ms = 0_u32;
+        loop {
+            elapsed_ms = elapsed_ms
+                .checked_add(1)
+                .ok_or(StaJoinError::ClockOverflow)?;
+            self.wait_boundary(started_micros, elapsed_ms).await?;
+            let mut observer = SaeObserver {
+                exchange: &mut exchange,
+                event: None,
+            };
+            if let Err(error) = self.backend.service_receive(&mut observer).await {
+                self.stop_receive().await?;
+                return Err(StaJoinError::Backend(error));
+            }
+            let event = match observer.event {
+                Some(event) => event,
+                None => exchange.finish_millisecond(),
+            };
+            match event {
+                StaSaeEvent::Irrelevant => {}
+                StaSaeEvent::Transmit(transmission) => {
+                    if let Err(error) = self
+                        .backend
+                        .transmit_sae_authentication(sequence.take(), &transmission)
+                        .await
+                    {
+                        self.stop_receive().await?;
+                        return Err(StaJoinError::Backend(error));
+                    }
+                }
+                StaSaeEvent::Authenticated(pmk) => {
+                    self.stop_receive().await?;
+                    return Ok(pmk);
+                }
+                StaSaeEvent::Failed(failure) => {
+                    self.stop_receive().await?;
+                    return Err(StaJoinError::SaeFailed(failure));
+                }
+            }
+        }
     }
 
     /// Run bounded Open Authentication.

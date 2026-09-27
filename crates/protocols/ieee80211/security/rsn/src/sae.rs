@@ -95,6 +95,43 @@ pub enum SaeError {
     ConfirmMismatch,
 }
 
+/// The longest SAE password: the vendor station profile's password field
+/// holds 63 octets.
+pub const SAE_PASSWORD_MAX_LEN: usize = 63;
+
+/// One SAE password, retained for the password element every attempt
+/// derives and cleared on drop. It cannot be formatted.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+pub struct SaePassword {
+    bytes: [u8; SAE_PASSWORD_MAX_LEN],
+    len: u8,
+}
+
+impl SaePassword {
+    /// A password of 1 to 63 octets.
+    pub fn new(password: &[u8]) -> Option<Self> {
+        if password.is_empty() || password.len() > SAE_PASSWORD_MAX_LEN {
+            return None;
+        }
+        let mut bytes = [0; SAE_PASSWORD_MAX_LEN];
+        bytes[..password.len()].copy_from_slice(password);
+        Some(Self {
+            bytes,
+            len: password.len() as u8,
+        })
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..usize::from(self.len)]
+    }
+}
+
+impl core::fmt::Debug for SaePassword {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("SaePassword(<redacted>)")
+    }
+}
+
 /// A password element: the generator both peers mask their commits with.
 #[derive(Clone, Copy, Debug)]
 pub struct SaePasswordElement(ProjectivePoint);

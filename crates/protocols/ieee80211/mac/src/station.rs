@@ -15,7 +15,7 @@ use crate::{
     he::{parse_he20_capabilities, parse_he20_operation},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
-    security::WifiSecurityMode,
+    security::{StaSecurityPolicy, WifiSecurityMode},
     sequence::SequenceNumber,
 };
 
@@ -34,6 +34,8 @@ const ASSOCIATION_FIXED_BODY_LEN: usize = 4;
 const ASSOCIATION_CAPABILITY_MASK: u16 = 0x0431;
 const SUPPORTED_RATES_ELEMENT_CAPACITY: usize = 8;
 const SELECTED_RSN_IE_LEN: usize = 22;
+/// The RSN element and, under SAE, an RSNXE of one capability octet.
+const SELECTED_SECURITY_IES_CAPACITY: usize = SELECTED_RSN_IE_LEN + 3;
 const HE_UL_MU_POWER_CAPABILITY_IE_LEN: usize = 14;
 const HE_UL_MU_POWER_CAPABILITY_EXTENSION_ID: u8 = 60;
 const POWER_CAPABILITY_IE_LEN: usize = 4;
@@ -98,7 +100,7 @@ pub use management::{
     StaActionFrame, StaDisconnect, StaDisconnectKind, StaProtectedActionFrame,
     parse_open_authentication_response, parse_sae_authentication, parse_sta_disconnect,
 };
-pub use security::{SelectedRsn, StaSecurityError, select_association_rsn, select_wpa2_psk_rsn};
+pub use security::{SelectedAkm, SelectedRsn, StaSecurityError, select_association_rsn};
 
 pub(crate) fn validate_peer(bssid: [u8; 6]) -> Result<(), StationFrameError> {
     if bssid == [0; 6] || bssid == [0xff; 6] || bssid[0] & 1 != 0 {

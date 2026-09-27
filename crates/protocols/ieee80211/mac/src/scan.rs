@@ -400,18 +400,19 @@ pub fn best_matching_ssid<'a>(records: &'a [ScanRecord], ssid: &[u8]) -> Option<
         .max_by_key(|record| record.rssi)
 }
 
-/// Select the strongest exact SSID and security match.
+/// Select the strongest exact SSID match that admits the station's security
+/// policy.
 pub fn best_matching_ssid_and_security<'a>(
     records: &'a [ScanRecord],
     ssid: &[u8],
-    security: WifiSecurityMode,
+    policy: crate::security::StaSecurityPolicy,
 ) -> Option<&'a ScanRecord> {
     records
         .iter()
         .filter(|record| {
             record.ssid_bytes() == ssid
                 && (1..=13).contains(&record.channel)
-                && record.matches_security(security)
+                && crate::station::select_association_rsn(record, policy).is_ok()
         })
         .max_by_key(|record| record.rssi)
 }

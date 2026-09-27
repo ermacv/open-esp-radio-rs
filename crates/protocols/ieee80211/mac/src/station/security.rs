@@ -1,9 +1,9 @@
-//! Exact Open/WPA2 association admission and selected RSN elements.
+//! Station association admission and the selected RSN elements.
 
 use super::*;
 
 use crate::security::rsn::{
-    RSN_AKM_PSK, RSN_AKM_PSK_SHA256, RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR,
+    RSN_AKM_PSK, RSN_AKM_PSK_SHA256, RSN_AKM_SAE, RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR,
     RSN_CAPABILITY_SPP_AMSDU_CAPABLE, RSN_CIPHER_BIP_CMAC_128, RSN_CIPHER_CCMP, RsnElement,
     RsnSyntaxError, ieee_suite,
 };
@@ -22,20 +22,38 @@ pub enum StaSecurityError {
     UnsupportedGroupManagementCipher,
 }
 
+/// The authentication a station association selected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectedAkm {
+    /// No RSN: an Open association.
+    Open,
+    /// PSK (`00-0F-AC:2`).
+    Psk,
+    /// PSK-SHA256 (`00-0F-AC:6`).
+    PskSha256,
+    /// SAE (`00-0F-AC:8`); `h2e` when the access point advertises hash to
+    /// element in its RSNXE.
+    Sae { h2e: bool },
+}
+
+/// The association request's RSN element and RSNXE.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SelectedRsn {
     length: u8,
-    bytes: [u8; SELECTED_RSN_IE_LEN],
+    bytes: [u8; SELECTED_SECURITY_IES_CAPACITY],
     management_protection: bool,
+    akm: SelectedAkm,
 }
 
 impl SelectedRsn {
-    const EMPTY: Self = Self {
+    const OPEN: Self = Self {
         length: 0,
-        bytes: [0; SELECTED_RSN_IE_LEN],
+        bytes: [0; SELECTED_SECURITY_IES_CAPACITY],
         management_protection: false,
+        akm: SelectedAkm::Open,
     };
 
+    /// The security elements of the association request.
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..usize::from(self.length)]
     }
@@ -44,22 +62,38 @@ impl SelectedRsn {
     pub const fn management_protection(&self) -> bool {
         self.management_protection
     }
+
+    pub const fn akm(&self) -> SelectedAkm {
+        self.akm
+    }
 }
 
-/// Select the WPA2-Personal RSN element of the association request.
+/// RSN Extension element identifier.
+const RSNXE_ELEMENT_ID: u8 = 244;
+/// RSNXE capability bit of SAE hash to element.
+const RSNXE_SAE_H2E: u8 = 1 << 5;
+
+/// Select the RSN element (and RSNXE) of a personal association.
 ///
-/// As the vendor's `ieee80211_parse_rsn` does, the station prefers
-/// PSK-SHA256 whenever the access point offers it, and protects management
-/// frames whenever the access point is capable of it: the vendor supplicant
-/// then sets MFPC in its own element (the configuration's `capable` is always
-/// set). Only the default group management cipher, BIP-CMAC-128, is
-/// implemented, so the element omits the Group Management Cipher Suite as the
-/// vendor supplicant does for the default.
+/// As the vendor's `ieee80211_parse_rsn` does, the station uses SAE whenever
+/// the access point offers it with management frame protection, then prefers
+/// PSK-SHA256 over PSK; [`StaSecurityPolicy::Wpa3Personal`] admits SAE only.
+/// The station protects management frames whenever the access point is
+/// capable of it: the vendor supplicant then sets MFPC in its own element
+/// (the configuration's `capable` is always set), and MFPR as well under SAE.
+/// Under SAE it adds an RSNXE announcing hash to element, as the vendor's
+/// default `sae_pwe_h2e` (both methods) makes `wpa_gen_rsnxe` do. Only the
+/// default group management cipher, BIP-CMAC-128, is implemented, so the
+/// element omits the Group Management Cipher Suite as the vendor supplicant
+/// does for the default.
 ///
 /// SOURCE: complete pinned `libnet80211.a[ieee80211_input.o]::
 /// ieee80211_parse_rsn` (AKM switch table `CSWTCH.76`, PMF flag
-/// `g_ic+0x210`); ESP-IDF `wpa_gen_wpa_ie_rsn`.
-pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, StaSecurityError> {
+/// `g_ic+0x210`); ESP-IDF `wpa_gen_wpa_ie_rsn` and `wpa_gen_rsnxe`.
+fn select_personal_rsn(
+    access_point: &ScanRecord,
+    policy: StaSecurityPolicy,
+) -> Result<SelectedRsn, StaSecurityError> {
     if !access_point.matches_security(WifiSecurityMode::Wpa2Personal) {
         return Err(StaSecurityError::SecurityModeMismatch);
     }
@@ -78,13 +112,6 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
     if !rsn.pairwise_ciphers().contains(ieee_suite(RSN_CIPHER_CCMP)) {
         return Err(StaSecurityError::UnsupportedPairwiseCipher);
     }
-    let akm = if rsn.akm_suites().contains(ieee_suite(RSN_AKM_PSK_SHA256)) {
-        RSN_AKM_PSK_SHA256
-    } else if rsn.akm_suites().contains(ieee_suite(RSN_AKM_PSK)) {
-        RSN_AKM_PSK
-    } else {
-        return Err(StaSecurityError::UnsupportedAkm);
-    };
     // An advertised PMKID list is ignored.
     let capabilities = rsn.capabilities().unwrap_or(0);
     let management_protection = capabilities & RSN_CAPABILITY_MFPC != 0;
@@ -100,21 +127,49 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
     {
         return Err(StaSecurityError::UnsupportedGroupManagementCipher);
     }
+    let sae = management_protection && rsn.akm_suites().contains(ieee_suite(RSN_AKM_SAE));
+    let akm = match policy {
+        _ if sae => SelectedAkm::Sae {
+            h2e: access_point
+                .rsnxe_bytes()
+                .get(2)
+                .is_some_and(|capabilities| capabilities & RSNXE_SAE_H2E != 0),
+        },
+        StaSecurityPolicy::Wpa3Personal | StaSecurityPolicy::Open => {
+            return Err(StaSecurityError::UnsupportedAkm);
+        }
+        StaSecurityPolicy::Wpa2Personal
+            if rsn.akm_suites().contains(ieee_suite(RSN_AKM_PSK_SHA256)) =>
+        {
+            SelectedAkm::PskSha256
+        }
+        StaSecurityPolicy::Wpa2Personal if rsn.akm_suites().contains(ieee_suite(RSN_AKM_PSK)) => {
+            SelectedAkm::Psk
+        }
+        StaSecurityPolicy::Wpa2Personal => return Err(StaSecurityError::UnsupportedAkm),
+    };
+    let akm_type = match akm {
+        SelectedAkm::Psk => RSN_AKM_PSK,
+        SelectedAkm::PskSha256 => RSN_AKM_PSK_SHA256,
+        SelectedAkm::Sae { .. } => RSN_AKM_SAE,
+        SelectedAkm::Open => unreachable!("a personal association selects an RSN AKM"),
+    };
 
     // The open STA owns protected A-MSDU construction and receive
     // decapsulation, so it retains the vendor SPP A-MSDU-capable contract.
     // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: frame 7624 carries RSN
     // Capabilities 0x0400 in the successful HE association request.
-    let station_capabilities = RSN_CAPABILITY_SPP_AMSDU_CAPABLE
-        | if management_protection {
-            RSN_CAPABILITY_MFPC
-        } else {
-            0
-        };
-    let mut selected = SelectedRsn::EMPTY;
-    selected.length = SELECTED_RSN_IE_LEN as u8;
+    let mut station_capabilities = RSN_CAPABILITY_SPP_AMSDU_CAPABLE;
+    if management_protection {
+        station_capabilities |= RSN_CAPABILITY_MFPC;
+    }
+    if matches!(akm, SelectedAkm::Sae { .. }) {
+        station_capabilities |= RSN_CAPABILITY_MFPR;
+    }
+    let mut selected = SelectedRsn::OPEN;
     selected.management_protection = management_protection;
-    selected.bytes.copy_from_slice(&[
+    selected.akm = akm;
+    selected.bytes[..SELECTED_RSN_IE_LEN].copy_from_slice(&[
         48,
         20,
         1,
@@ -134,25 +189,38 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
         0x00,
         0x0f,
         0xac,
-        akm,
+        akm_type,
         station_capabilities as u8,
         (station_capabilities >> 8) as u8,
     ]);
+    selected.length = SELECTED_RSN_IE_LEN as u8;
+    if matches!(akm, SelectedAkm::Sae { .. }) {
+        selected.bytes[SELECTED_RSN_IE_LEN..SELECTED_SECURITY_IES_CAPACITY].copy_from_slice(&[
+            RSNXE_ELEMENT_ID,
+            1,
+            RSNXE_SAE_H2E,
+        ]);
+        selected.length = SELECTED_SECURITY_IES_CAPACITY as u8;
+    }
     Ok(selected)
 }
 
-/// Select the association security IE for one exact requested mode.
+/// Select the association security elements for one station request.
 ///
-/// Open never accepts a Privacy/RSN/WPA advertisement. WPA2 never accepts an
-/// open or mixed WPA/WPA2 advertisement, and then validates the complete
-/// retained RSN suites before returning a source-owned RSN element.
+/// Open never accepts a Privacy/RSN/WPA advertisement. A personal request
+/// never accepts an open or mixed WPA/WPA2 advertisement, and then validates
+/// the complete retained RSN suites before returning source-owned elements.
 pub fn select_association_rsn(
     access_point: &ScanRecord,
-    security: WifiSecurityMode,
+    policy: StaSecurityPolicy,
 ) -> Result<SelectedRsn, StaSecurityError> {
-    match security {
-        WifiSecurityMode::Open if access_point.matches_security(security) => Ok(SelectedRsn::EMPTY),
-        WifiSecurityMode::Open => Err(StaSecurityError::SecurityModeMismatch),
-        WifiSecurityMode::Wpa2Personal => select_wpa2_psk_rsn(access_point),
+    match policy {
+        StaSecurityPolicy::Open if access_point.matches_security(WifiSecurityMode::Open) => {
+            Ok(SelectedRsn::OPEN)
+        }
+        StaSecurityPolicy::Open => Err(StaSecurityError::SecurityModeMismatch),
+        StaSecurityPolicy::Wpa2Personal | StaSecurityPolicy::Wpa3Personal => {
+            select_personal_rsn(access_point, policy)
+        }
     }
 }

@@ -33,6 +33,12 @@ struct Backend {
     association_attempt_count: usize,
     starts: u16,
     stops: u16,
+    /// The access point side of an SAE exchange, and the frames it sends
+    /// at the next receive service.
+    sae_access_point: Option<oer_ieee80211_rsn::sae::SaeCommit>,
+    sae_keys: Option<oer_ieee80211_rsn::sae::SaeKeys>,
+    sae_replies: std::vec::Vec<std::vec::Vec<u8>>,
+    sae_sequences: std::vec::Vec<SequenceNumber>,
 }
 
 impl Backend {
@@ -50,6 +56,10 @@ impl Backend {
             association_attempt_count: 0,
             starts: 0,
             stops: 0,
+            sae_access_point: None,
+            sae_keys: None,
+            sae_replies: std::vec::Vec::new(),
+            sae_sequences: std::vec::Vec::new(),
         }
     }
 }
@@ -100,6 +110,35 @@ impl StaJoinBackend for Backend {
         ready(Ok(()))
     }
 
+    fn transmit_sae_authentication<'a>(
+        &'a mut self,
+        sequence_number: SequenceNumber,
+        transmission: &'a StaSaeTransmission,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        use oer_ieee80211_rsn::sae::SaeCommitValues;
+        self.sae_sequences.push(sequence_number);
+        let Some(access_point) = self.sae_access_point.as_ref() else {
+            // A silent access point.
+            return ready(Ok(()));
+        };
+        let _ = self.sae_access_point.as_ref();
+        if transmission.transaction == 1 {
+            let station = SaeCommitValues::parse(transmission.body(), false).unwrap();
+            self.sae_keys = Some(access_point.process(station).unwrap());
+            let mut body = [0; oer_ieee80211_rsn::sae::SAE_COMMIT_LEN];
+            access_point
+                .values()
+                .encode(None, false, &mut body)
+                .unwrap();
+            self.sae_replies.push(sae_frame(1, &body));
+        } else {
+            let keys = self.sae_keys.as_ref().unwrap();
+            assert_eq!(keys.verify_peer_confirm(transmission.body()), Ok(1));
+            self.sae_replies.push(sae_frame(2, &keys.own_confirm(1)));
+        }
+        ready(Ok(()))
+    }
+
     fn service_receive<'a, O>(
         &'a mut self,
         observer: &'a mut O,
@@ -123,7 +162,12 @@ impl StaJoinBackend for Backend {
                         let _ = observer.observe_completed(Some(&association_response(0)));
                     }
                 }
-                Phase::Idle => {}
+                Phase::Idle => {
+                    if !self.sae_replies.is_empty() {
+                        let frame = self.sae_replies.remove(0);
+                        let _ = observer.observe_completed(Some(&frame));
+                    }
+                }
             }
             Ok(())
         };
@@ -282,4 +326,73 @@ fn association_response_on_exact_deadline_wins_before_timeout() {
     assert_eq!(runner.timer.now_micros, 1_000_000);
     assert!(runner.backend().receive_live);
     assert_eq!(runner.backend().stops, 0);
+}
+
+fn sae_frame(transaction: u16, body: &[u8]) -> std::vec::Vec<u8> {
+    let mut frame = std::vec![0_u8; 30];
+    frame[0] = 0xb0;
+    frame[4..10].copy_from_slice(&LOCAL);
+    frame[10..16].copy_from_slice(&BSSID);
+    frame[16..22].copy_from_slice(&BSSID);
+    frame[24..26].copy_from_slice(&3_u16.to_le_bytes());
+    frame[26..28].copy_from_slice(&transaction.to_le_bytes());
+    frame.extend_from_slice(body);
+    frame
+}
+
+#[test]
+fn an_sae_exchange_returns_the_access_point_pmk() {
+    use oer_ieee80211_rsn::sae::{SaeCommit, SaePasswordElement};
+    let commit = |local, peer, seed| {
+        SaeCommit::new(
+            SaePasswordElement::hunting_and_pecking(b"correct horse", local, peer).unwrap(),
+            [seed; 32],
+            [seed + 1; 32],
+        )
+        .unwrap()
+    };
+    let mut backend = Backend::new(None, None);
+    backend.sae_access_point = Some(commit(BSSID, LOCAL, 0x40));
+    let mut runner = StaJoinRunner::new(backend, TestTimer::default());
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x10).unwrap());
+    let pmk = block_on(runner.authenticate_sae(
+        StaSaeAuthentication::new(LOCAL, BSSID, commit(LOCAL, BSSID, 0x20), false),
+        &mut sequence,
+    ))
+    .unwrap();
+    let (backend, _) = runner.into_parts();
+    assert_eq!(pmk.pmk, backend.sae_keys.as_ref().unwrap().pmk);
+    // The commit and the confirm each take a sequence number.
+    assert_eq!(
+        backend.sae_sequences,
+        [
+            SequenceNumber::new(0x10).unwrap(),
+            SequenceNumber::new(0x11).unwrap()
+        ]
+    );
+    assert_eq!((backend.starts, backend.stops), (1, 1));
+}
+
+#[test]
+fn an_unanswered_sae_commit_times_out_after_four_seconds() {
+    use oer_ieee80211_rsn::sae::{SaeCommit, SaePasswordElement};
+    let commit = SaeCommit::new(
+        SaePasswordElement::hunting_and_pecking(b"correct horse", LOCAL, BSSID).unwrap(),
+        [0x20; 32],
+        [0x21; 32],
+    )
+    .unwrap();
+    let mut runner = StaJoinRunner::new(Backend::new(None, None), TestTimer::default());
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
+    let result = block_on(runner.authenticate_sae(
+        StaSaeAuthentication::new(LOCAL, BSSID, commit, false),
+        &mut sequence,
+    ));
+    assert_eq!(
+        result.err(),
+        Some(StaJoinError::SaeFailed(StaSaeFailure::Timeout))
+    );
+    let (backend, timer) = runner.into_parts();
+    assert_eq!(timer.now_micros, 4_000_000);
+    assert_eq!(backend.sae_sequences.len(), 1);
 }

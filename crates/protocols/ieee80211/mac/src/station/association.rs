@@ -162,8 +162,8 @@ pub struct AssociationRequest<'a> {
     pub sequence_number: SequenceNumber,
     pub listen_interval: u16,
     pub phy: PhyMode,
-    /// Exact BSS security selected by the station request.
-    pub security: WifiSecurityMode,
+    /// The station request's security policy.
+    pub security: StaSecurityPolicy,
     /// HE Power Capability derived from the same calibrated rate-16 power
     /// source used by the MAC. Non-HE modes must leave it absent.
     pub power_capability: Option<StaPowerCapability>,
@@ -288,7 +288,7 @@ impl AssociationRequest<'_> {
         // fail-closed if a record is ever assembled outside that path.
         let capability = ((self.access_point.capability_info & ASSOCIATION_CAPABILITY_MASK) | 1)
             & !0x0010
-            | match self.security {
+            | match self.security.link_mode() {
                 WifiSecurityMode::Open => 0,
                 WifiSecurityMode::Wpa2Personal => 0x0010,
             };

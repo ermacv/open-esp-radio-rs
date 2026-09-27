@@ -17,6 +17,8 @@ pub const RSN_CIPHER_CCMP: u8 = 4;
 pub const RSN_AKM_PSK: u8 = 2;
 /// `00-0F-AC:6`: PSK with SHA-256 key derivation.
 pub const RSN_AKM_PSK_SHA256: u8 = 6;
+/// `00-0F-AC:8`: SAE.
+pub const RSN_AKM_SAE: u8 = 8;
 /// `00-0F-AC:6`: BIP-CMAC-128, the default group management cipher.
 pub const RSN_CIPHER_BIP_CMAC_128: u8 = 6;
 /// RSN Capabilities: management frame protection required.

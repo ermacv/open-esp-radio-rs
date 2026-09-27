@@ -264,6 +264,40 @@ oer_probe_macros::probe! {
     }
 }
 
+/// The priority the shared coexistence table assigns an IEEE 802.15.4
+/// level (1 high, 2 middle, 3 low, 4 idle), as libcoexist's local
+/// `coex_ieee802154_pti_get` reads it.
+fn ieee802154_level_pti(level: u32) -> Option<u32> {
+    use oer_esp32s31_hal::coex::{CoexPtiTable, Ieee802154CoexLevel};
+    let level = match level {
+        1 => Ieee802154CoexLevel::High,
+        2 => Ieee802154CoexLevel::Middle,
+        3 => Ieee802154CoexLevel::Low,
+        4 => Ieee802154CoexLevel::Idle,
+        _ => return None,
+    };
+    Some(u32::from(CoexPtiTable::VENDOR.ieee802154_pti(level).value()))
+}
+
+oer_probe_macros::probe! {
+    /// `esp_coex_ieee802154_txrx_pti_set` of libcoexist: the level's
+    /// priority from the shared table, written as the TX/RX PTI. Levels
+    /// outside the four the vendor admits return `u32::MAX` without a write.
+    pub fn open_ieee802154_coex_trace_txrx_level(level: u32) -> u32 {
+        ieee802154_level_pti(level)
+            .map_or(u32::MAX, oer_esp32s31_hal::ieee802154::coex_trace::set_txrx_pti)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `esp_coex_ieee802154_ack_pti_set` of libcoexist: the level's priority
+    /// from the shared table, written as the ACK PTI.
+    pub fn open_ieee802154_coex_trace_ack_level(level: u32) -> u32 {
+        ieee802154_level_pti(level)
+            .map_or(u32::MAX, oer_esp32s31_hal::ieee802154::coex_trace::set_ack_pti)
+    }
+}
+
 oer_probe_macros::probe! {
     /// `hal_set_IEEE802154_TXRX_pti` of libcoexist: the IEEE 802.15.4 MAC
     /// owner's TX/RX PTI write. Zero, or `u32::MAX` without a write for a

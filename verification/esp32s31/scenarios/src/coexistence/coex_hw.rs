@@ -164,6 +164,13 @@ const GRANT_CLOCK_READ: &[(u32, &str)] = &[(
      word; production writes their zero tick images without sampling the clock",
 )];
 
+/// Coexistence priorities production admits (`CoexPti`: four bits); the
+/// vendor field is five bits wide, but no production priority exceeds 15.
+const PTIS: &[u32] = &events::<16>(None);
+/// IEEE 802.15.4 coexistence levels (`ieee802154_coex_event_t`): the vendor
+/// asserts on any other value.
+const IEEE802154_LEVELS: &[u32] = &[1, 2, 3, 4];
+
 /// A nullable output object of `length` bytes.
 const fn output(length: u32) -> Domain {
     Domain::Output {
@@ -328,6 +335,32 @@ pub const LEAVES: &[Leaf] = &[
             CLOCK_SELECTIONS,
         ),
         GRANT_CLOCK_READ,
+    ),
+    // IEEE 802.15.4 coexistence priorities.
+    // The level's priority comes from the local `coex_ieee802154_pti_get`.
+    leaf(
+        "esp_coex_ieee802154_txrx_pti_set",
+        "open_ieee802154_coex_trace_txrx_level",
+        &[("level", Domain::Words(IEEE802154_LEVELS))],
+        false,
+    ),
+    leaf(
+        "esp_coex_ieee802154_ack_pti_set",
+        "open_ieee802154_coex_trace_ack_level",
+        &[("level", Domain::Words(IEEE802154_LEVELS))],
+        false,
+    ),
+    leaf(
+        "hal_set_IEEE802154_TXRX_pti",
+        "open_ieee802154_coex_trace_txrx_pti",
+        &[("pti", Domain::Words(PTIS))],
+        false,
+    ),
+    leaf(
+        "hal_set_IEEE802154_ACK_pti",
+        "open_ieee802154_coex_trace_ack_pti",
+        &[("pti", Domain::Words(PTIS))],
+        false,
     ),
 ];
 

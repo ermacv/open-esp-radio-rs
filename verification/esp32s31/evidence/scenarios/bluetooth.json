@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "ee3409391eee29b5853c408a3d59f2a8d0cf4fb68c89386e9bc93a1b5218b686",
+    "input-2": "9f5a198bb3289bed733b9b266a598e4d4b30197aed9ac7978fbee986f06c3539",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "input-5": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
@@ -24,7 +24,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "9a09a476283acb1b609c67d7c93428116d67e1c3f02a6346524a594788e24429"
+      "sha256": "5d3056116b63ef86c18222017b52538044604204b1603be3d761205f8f60837d"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -92,7 +92,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "4fbd7ae72eba350fd73a3e6612478c580a885a800aa664289264b238e205b17e"
+      "sha256": "a7c3eb778045da27e59871bc533022b155608c5207b2c8b0f62fab6700917b4e"
     },
     {
       "path": "verification/harness/codegen",

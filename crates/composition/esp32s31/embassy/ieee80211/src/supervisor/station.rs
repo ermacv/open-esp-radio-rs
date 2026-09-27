@@ -1922,7 +1922,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                     "exit",
                     _runner.services().hardware().sta_receive_policy_snapshot(),
                 );
-                diagnostics_debug!(
+                diagnostics_event!(
                     "open-radio: connected exit RX statistics: {:?}",
                     _runner
                         .services()
@@ -1936,13 +1936,31 @@ pub(crate) async fn run_connected<'state, 'security>(
                     _runner.services().hardware().mac_rx_dma_snapshot(),
                 );
                 log_rx_ring_topology("exit", _runner.services().rx().dma());
+                // Short lines: the console truncates long ones.
                 diagnostics_event!(
-                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} hardware_beacon_frontier={:?} last_event={:?} stale_addba_responses={} last_stale_addba_token={:?} security={:?}",
+                    "open-radio: connected exit beacon lost={} observed={} deadline={:?} now={} last_tsf={:?}",
                     control.beacon_lost(),
                     beacon.map_or(0, |monitor| monitor.observed()),
                     beacon.and_then(|monitor| monitor.deadline_micros()),
-                    control.hardware_beacon_monitor_frontier(),
+                    embassy_time::Instant::now().as_micros(),
+                    beacon
+                        .and_then(|monitor| monitor.last_observation())
+                        .map(|observation| observation.timestamp_tsf),
+                );
+                diagnostics_event!(
+                    "open-radio: connected exit control last_event={:?}",
                     control.last_event(),
+                );
+                diagnostics_event!(
+                    "open-radio: connected exit control last_tx_failure={:?}",
+                    control.last_tx_failure(),
+                );
+                diagnostics_event!(
+                    "open-radio: connected exit hardware_beacon_frontier={:?}",
+                    control.hardware_beacon_monitor_frontier(),
+                );
+                diagnostics_event!(
+                    "open-radio: connected exit stale_addba_responses={} last_stale_addba_token={:?} security={:?}",
                     control.stale_tx_block_ack_responses(),
                     control.last_stale_tx_block_ack_token(),
                     control.wpa2_security().map(|security| security.evidence()),

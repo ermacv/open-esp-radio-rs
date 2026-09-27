@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HIL Stand</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #677085;
+  --line: #e2e5eb; --accent: #2f6fdb; --ok: #1f8a4c; --warn: #b7791f;
+  --bad: #c53030; --track: #edf0f4;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418; --panel: #1a1e24; --text: #e4e7ec; --muted: #8b93a3;
+    --line: #2a3039; --accent: #6ea0ff; --ok: #4cc38a; --warn: #e3b341;
+    --bad: #f47067; --track: #252b33;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+header {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 16px 20px 4px;
+}
+h1 { font-size: 20px; margin: 0; }
+#updated { color: var(--muted); font-size: 12px; }
+#updated.stale { color: var(--bad); }
+main {
+  display: grid; gap: 16px; padding: 12px 20px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+}
+section {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px 16px; min-width: 0;
+}
+section.wide { grid-column: 1 / -1; }
+h2 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: 0 0 10px;
+}
+.empty { color: var(--muted); }
+.item { padding: 8px 0; border-top: 1px solid var(--line); }
+.item:first-of-type { border-top: 0; padding-top: 0; }
+.row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.owner { font-weight: 600; }
+.id { color: var(--muted); font-variant-numeric: tabular-nums; }
+.work {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.claims { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.bar { height: 6px; background: var(--track); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+.bar > div { height: 100%; background: var(--accent); }
+.bar.over > div { background: var(--bad); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px 6px 0; border-top: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
+.pill {
+  display: inline-block; padding: 0 7px; border-radius: 9px; font-size: 12px;
+  border: 1px solid currentColor; white-space: nowrap;
+}
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.muted { color: var(--muted); }
+.scenarios { display: flex; flex-wrap: wrap; gap: 4px; }
+@media (max-width: 520px) {
+  header, main { padding-left: 16px; padding-right: 16px; }
+  main { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>HIL stand</h1>
+  <span id="updated">loading…</span>
+</header>
+<main>
+  <section><h2>Holding now</h2><div id="holders"></div></section>
+  <section><h2>Queue</h2><div id="queue"></div></section>
+  <section class="wide"><h2>Boards</h2><div id="devices"></div></section>
+  <section class="wide"><h2>Recent runs</h2><div id="runs"></div></section>
+  <section class="wide"><h2>Recent leases</h2><div id="leases"></div></section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+function duration(seconds) {
+  seconds = Math.max(0, Math.round(seconds));
+  if (seconds < 60) return seconds + "s";
+  const m = Math.floor(seconds / 60), s = seconds % 60;
+  if (m < 60) return m + "m" + (s ? String(s).padStart(2, "0") + "s" : "");
+  const h = Math.floor(m / 60);
+  return h + "h" + String(m % 60).padStart(2, "0") + "m";
+}
+function when(unix) {
+  const date = new Date(unix * 1000);
+  const today = new Date().toDateString() === date.toDateString();
+  return today
+    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function tone(outcome) {
+  switch (outcome) {
+    case "passed": case "released": case "Released": return "ok";
+    case "failed": case "broken": case "budget-exceeded": case "abandoned": return "bad";
+    case "blocked": case "interrupted": case "preempted": case "yielded": case "running": return "warn";
+    default: return "muted";
+  }
+}
+const pill = (text) => `<span class="pill ${tone(text)}">${esc(text)}</span>`;
+
+function holders(list) {
+  if (!list.length) return '<p class="empty">The stand is free.</p>';
+  return list.map((h) => {
+    const share = Math.min(100, (h.elapsed_secs / Math.max(1, h.budget_secs)) * 100);
+    return `<div class="item">
+      <div class="row"><span class="owner">${esc(h.owner)}</span><span class="id">#${h.id}</span>
+        <span class="meta${h.over_budget ? " bad" : ""}">${duration(h.elapsed_secs)} of ${duration(h.budget_secs)}</span></div>
+      <div class="work">${esc(h.work)}</div>
+      <div class="claims">${esc(h.claims)}</div>
+      <div class="bar${h.over_budget ? " over" : ""}"><div style="width:${share}%"></div></div>
+    </div>`;
+  }).join("");
+}
+
+function queue(list) {
+  if (!list.length) return '<p class="empty">Nobody is waiting.</p>';
+  return list.map((q, index) => `<div class="item">
+      <div class="row"><span class="id">${index + 1}.</span><span class="owner">${esc(q.owner)}</span>
+        <span class="id">#${q.id}</span>${q.short ? pill("short") : ""}
+        <span class="meta">starts in ~${duration(q.expected_start_secs)} · waited ${duration(q.waiting_secs)} · budget ${duration(q.budget_secs)}</span></div>
+      <div class="work">${esc(q.work)}</div>
+      <div class="claims">${esc(q.claims)}${q.ahead ? ` · ${q.ahead} conflicting ahead` : ""}</div>
+    </div>`).join("");
+}
+
+function devices(list) {
+  if (!list.length) return '<p class="empty">No boards known.</p>';
+  const rows = list.map((d) => {
+    const f = d.firmware;
+    const firmware = !f ? '<span class="muted">unknown</span>'
+      : f.kind === "flashed"
+        ? `<span class="work">${esc(f.image)}</span> <span class="muted">app ${esc(f.application_sha256.slice(0, 12))}</span>`
+        : `<span class="muted">${esc(f.kind)}</span>`;
+    const by = f ? `${esc(f.owner)} <span class="muted">${when(f.unix)}</span>` : "";
+    return `<tr><td><b>${esc(d.label)}</b><div class="claims">${esc(d.mac ?? "")}</div></td>
+      <td>${d.port ? esc(d.port) : '<span class="muted">not attached</span>'}</td>
+      <td>${firmware}</td><td>${by}</td></tr>`;
+  }).join("");
+  return `<div class="table-wrap"><table><tr><th>Board</th><th>Port</th><th>Firmware</th><th>Flashed by</th></tr>${rows}</table></div>`;
+}
+
+function runs(list) {
+  if (!list.length) return '<p class="empty">No runs in the shared store.</p>';
+  const rows = list.map((r) => {
+    const outcome = r.outcome ?? (r.state === "running" ? "running" : r.state);
+    const scenarios = r.scenarios.map((s) =>
+      `<span class="pill ${tone(s.outcome)}" title="${esc(s.outcome)}">${esc(s.id)}</span>`).join("");
+    return `<tr><td class="num">${when(r.started_millis / 1000)}</td><td>${pill(outcome)}</td>
+      <td><div class="scenarios">${scenarios || '<span class="muted">—</span>'}</div></td>
+      <td>${esc(r.checkout ?? "")}</td>
+      <td class="num">${esc(r.commit ?? "")}${r.dirty ? ' <span class="warn">dirty</span>' : ""}</td>
+      <td class="claims">${esc(r.id)}</td></tr>`;
+  }).join("");
+  return `<div class="table-wrap"><table><tr><th>Started</th><th>Outcome</th><th>Scenarios</th><th>Checkout</th><th>Commit</th><th>Run</th></tr>${rows}</table></div>`;
+}
+
+function leases(list) {
+  if (!list.length) return '<p class="empty">No leases yet.</p>';
+  const rows = list.map((l) => `<tr><td class="num">${when(l.granted_unix)}</td>
+      <td><b>${esc(l.owner)}</b> <span class="id">#${l.id}</span></td>
+      <td class="work">${esc(l.work)}</td>
+      <td class="num">${duration(l.released_unix - l.granted_unix)} of ${duration(l.budget_secs)}</td>
+      <td>${pill(l.outcome)}</td></tr>`).join("");
+  return `<div class="table-wrap"><table><tr><th>Granted</th><th>Owner</th><th>Work</th><th>Held</th><th>Outcome</th></tr>${rows}</table></div>`;
+}
+
+let last = 0;
+async function refresh() {
+  try {
+    const response = await fetch("status.json", { cache: "no-store" });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    $("holders").innerHTML = holders(data.holders);
+    $("queue").innerHTML = queue(data.queue);
+    $("devices").innerHTML = devices(data.devices);
+    $("runs").innerHTML = runs(data.runs);
+    $("leases").innerHTML = leases(data.leases);
+    last = Date.now();
+    document.title = `HIL Stand · ${data.holders.length} held, ${data.queue.length} waiting`;
+    $("updated").className = "";
+    $("updated").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (error) {
+    $("updated").className = "stale";
+    $("updated").textContent = "cannot reach cargo hil dashboard: " + error.message
+      + (last ? ` (last update ${new Date(last).toLocaleTimeString()})` : "");
+  }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

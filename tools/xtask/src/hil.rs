@@ -55,6 +55,12 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     match args.first().and_then(|argument| argument.to_str()) {
         None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
         Some("queue") => return queue(&args[1..]),
+        Some("dashboard") => {
+            return crate::hil_dashboard::serve(
+                &crate::hil_store::shared_runs(HIL_TARGET)?,
+                &args[1..],
+            );
+        }
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
         Some("devices") => return devices(&args[1..]),
@@ -103,6 +109,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
 const STAND_HELP: &str = "\
 Stand commands (shared by every checkout of this user):
   cargo hil queue [--json]            holders, queue with expected starts, boards, recent leases
+  cargo hil dashboard [--port 8765]   live page of the queue, boards, runs and leases on 127.0.0.1
   cargo hil lease [OPTIONS] -- CMD    run CMD under one lease; nested cargo hil joins it
       --board NAME|MAC                boards CMD uses (repeatable); none: the whole stand
       --air shared|exclusive          radio environment; exclusive for RF measurements

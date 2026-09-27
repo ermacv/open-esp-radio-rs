@@ -102,11 +102,18 @@ before it queues, so the lease covers flashing and execution only.
 
 ```console
 cargo hil queue                       # holders, queue with expected starts, board state
+cargo hil dashboard                   # the same, live, with recent runs: http://127.0.0.1:8765
 cargo hil --budget 10m run <scenario> # one run, one lease
 cargo hil --budget 15m run a b c      # one run of three scenarios, one lease
 cargo hil lease --board c5 --budget 5m -- idf.py -p <port> flash
 cargo hil --owner phy lease --budget 20m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
+
+`dashboard` serves a page on the loopback interface (`--port` changes the
+port) that refreshes every two seconds: holders with their budget used, the
+queue with expected starts, every board's port and last flash, the newest runs
+of the shared store and recent leases with their outcomes. It only reads the
+arbiter's state and run manifests; Ctrl+C stops it.
 
 `run` accepts several scenarios: it builds every needed image class before
 queueing and executes all scenarios in one run bundle under one lease, in the

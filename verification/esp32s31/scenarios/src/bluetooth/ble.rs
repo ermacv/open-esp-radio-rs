@@ -10,6 +10,7 @@
 use crate::harness::Result;
 use crate::mac::{
     Domain, Leaf, Objects, Replacement, Suite, Vendor, in_archive, leaf, objects, ordered, prefix,
+    tail_prefix,
     quiet, released, replaced,
 };
 
@@ -244,6 +245,21 @@ pub const LEAVES: &[Leaf] = &[
         ),
         BTDM_COMMON_INPUT,
     ),
+    // The diagnostic scheduler-BUSY sample opening the scheduler stop
+    // (`r_btdm_sched_stop`): its busy path next calls the logger and its idle
+    // path tail-calls it.
+    in_archive(
+        tail_prefix(
+            leaf(
+                "r_sym_bt_74l62ZLsZuXg67pPHSd7",
+                "open_ble_scheduler_stop_busy_trace_r_btdm_sched_stop",
+                &[],
+                false,
+            ),
+            "wr_btdm_log_internal_x0",
+        ),
+        BTDM_COMMON_INPUT,
+    ),
     // Baseband v2 initialization with the version log answered without
     // effect, closed by the owner's device fence.
     in_archive(
@@ -408,8 +424,8 @@ pub const BLUETOOTH: Suite = Suite {
     ],
     leaves: LEAVES,
     wifi: false,
-    // ESP-IDF linker-script broker tables, which the interrupt and scheduler
-    // reach only after their compared prefixes; the peripheral bases and ROM
+    // ESP-IDF linker-script broker tables, which the interrupt, the scheduler
+    // and its stop reach only after their compared prefixes; the peripheral bases and ROM
     // aliases the linker scripts provide and the firmware's writable-IRAM
     // error, log and I2C functions, which only modem clock driver paths the
     // compared cases never take reference; and the writable-IRAM FreeRTOS
@@ -417,6 +433,7 @@ pub const BLUETOOTH: Suite = Suite {
     absent: &[
         "_nrtIsr_linear_broker_flash",
         "_btdm_sched_linear_broker_flash",
+        "_btdm_sched_linear_broker_ram",
         "MODEM_SYSCON",
         "MODEM_LPCON",
         "LP_CLKRST",

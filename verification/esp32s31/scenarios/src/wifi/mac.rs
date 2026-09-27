@@ -141,6 +141,8 @@ pub struct Leaf {
     /// A bounded feature: the vendor side stops before calling this
     /// function, and only the prefix up to that call is compared.
     pub prefix_until: Option<&'static str>,
+    /// Whether a tail call of `prefix_until` also ends the vendor side.
+    pub prefix_tail: bool,
     /// Builds both sides' objects from the semantic probe words when the
     /// vendor reads its arguments from its own objects.
     pub vendor_abi: Option<VendorAbi>,
@@ -334,6 +336,7 @@ pub(crate) const fn leaf(
         release_optional: false,
         replacements: &[],
         prefix_until: None,
+        prefix_tail: false,
         vendor_abi: None,
         rom: false,
         archive: 0,
@@ -1121,6 +1124,15 @@ fn tx_error_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
 pub(crate) const fn prefix(leaf: Leaf, callee: &'static str) -> Leaf {
     Leaf {
         prefix_until: Some(callee),
+        ..leaf
+    }
+}
+
+/// A leaf compared only up to the vendor's call or tail call of `callee`.
+pub(crate) const fn tail_prefix(leaf: Leaf, callee: &'static str) -> Leaf {
+    Leaf {
+        prefix_until: Some(callee),
+        prefix_tail: true,
         ..leaf
     }
 }
@@ -2182,7 +2194,7 @@ impl Mac {
                                     callee,
                                 )?,
                             },
-                            include_tail: false,
+                            include_tail: leaf.prefix_tail,
                         };
                     }
                     let mut production = self.session.probes.invoke(

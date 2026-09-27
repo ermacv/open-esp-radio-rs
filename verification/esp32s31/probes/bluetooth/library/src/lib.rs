@@ -36,6 +36,14 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// The diagnostic scheduler-BUSY sample that opens the production
+    /// scheduler stop sequence; the vendor side stops at its following log.
+    pub fn open_ble_scheduler_stop_busy_trace_r_btdm_sched_stop() {
+        let _busy = oer_esp32s31_bluetooth::validation::sample_scheduler_stop_busy();
+    }
+}
+
+oer_probe_macros::probe! {
     /// Compiled production entry for the complete 50-operation BTDM controller
     /// HAL-init body under its exact standalone caller-derived profile.
     pub fn open_btdm_hal_init_trace_r_sym_bt_a_gdrujd2_mu_az_wyh75ba_r() {

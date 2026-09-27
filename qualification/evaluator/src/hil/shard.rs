@@ -27,6 +27,7 @@ const BUILD_FILES: &[&str] = &[
     "platform/esp32s31/Cargo.lock",
     "platform/esp32s31/partitions/applications.csv",
     "hil/schema/observer-inputs.json",
+    "rust-toolchain.toml",
 ];
 /// Workspaces whose path packages compose the firmware image.
 const FIRMWARE_WORKSPACES: &[&str] = &[
@@ -180,6 +181,15 @@ pub(crate) fn tracked_sources(root: &Path, observers: &[&Value]) -> Result<Vec<P
             paths.insert(directory.strip_prefix(&root_path)?.to_path_buf());
         }
     }
+    paths.extend(observer_directories(observers)?);
+    paths.extend(BUILD_FILES.iter().map(PathBuf::from));
+    paths.remove(Path::new(""));
+    Ok(paths.into_iter().collect())
+}
+
+/// The manifest directories of the observers' builds.
+fn observer_directories(observers: &[&Value]) -> Result<BTreeSet<PathBuf>> {
+    let mut paths = BTreeSet::new();
     for observer in observers {
         let manifests = observer["build"]["resolved"]["manifests"]
             .as_object()
@@ -192,13 +202,64 @@ pub(crate) fn tracked_sources(root: &Path, observers: &[&Value]) -> Result<Vec<P
             paths.insert(path.parent().map(Path::to_path_buf).unwrap_or_default());
         }
     }
+    Ok(paths)
+}
+
+/// The sources of one observation: the repository files its firmware was
+/// built from, which the run bundle records per image as
+/// `firmware/<image>/source-inputs.json`, its own observer's manifest
+/// directories and the build files. `None` when a firmware image records no
+/// inputs, such as a replay or an older bundle.
+fn observation_sources(observation: &ScenarioEvidence) -> Result<Option<Vec<PathBuf>>> {
+    let (Some(run), Some(subject)) = (&observation.run_directory, &observation.subject) else {
+        return Ok(None);
+    };
+    recorded_sources(run, &subject.firmware, subject.observer.as_ref())
+}
+
+fn recorded_sources(
+    run: &Path,
+    images: &[subject::FirmwareIdentity],
+    observer: Option<&Value>,
+) -> Result<Option<Vec<PathBuf>>> {
+    if images.is_empty() {
+        return Ok(None);
+    }
+    let mut paths = BTreeSet::new();
+    for firmware in images {
+        let Some(image) = firmware.image.as_deref().filter(|_| !firmware.replayed) else {
+            return Ok(None);
+        };
+        let Some(inputs) = read_optional_json::<Value>(
+            &run.join("firmware").join(image).join("source-inputs.json"),
+        )?
+        else {
+            return Ok(None);
+        };
+        if inputs["schema"] != 1 {
+            return Err(format!("{image}: unsupported source-inputs schema").into());
+        }
+        for file in inputs["files"]
+            .as_array()
+            .ok_or("source-inputs lists no files")?
+        {
+            let path = PathBuf::from(file.as_str().ok_or("source input is not a path")?);
+            if !safe_relative(&path) {
+                return Err(format!("unsafe source input {}", path.display()).into());
+            }
+            paths.insert(path);
+        }
+    }
+    let observers = observer.into_iter().collect::<Vec<_>>();
+    paths.extend(observer_directories(&observers)?);
     paths.extend(BUILD_FILES.iter().map(PathBuf::from));
     paths.remove(Path::new(""));
-    Ok(paths.into_iter().collect())
+    Ok(Some(paths.into_iter().collect()))
 }
 
 /// Record the latest qualifying observation of every scenario of `index` in
-/// `directory`, bound to the digests of `sources`. Returns the scenarios
+/// `directory`, bound to the digests of the sources its bundle records its
+/// firmware was built from, else to `sources`. Returns the scenarios
 /// recorded.
 pub(crate) fn distill(
     root: &Path,
@@ -207,15 +268,26 @@ pub(crate) fn distill(
     target: &str,
     sources: &[PathBuf],
 ) -> Result<Vec<String>> {
-    let digests = sources
-        .iter()
-        .map(|path| {
-            Ok(SourceDigest {
-                sha256: digest(root, path)?,
-                path: path.clone(),
+    let mut known = BTreeMap::<PathBuf, String>::new();
+    let mut digests = |paths: &[PathBuf]| -> Result<Vec<SourceDigest>> {
+        paths
+            .iter()
+            .map(|path| {
+                let sha256 = match known.get(path) {
+                    Some(sha256) => sha256.clone(),
+                    None => {
+                        let sha256 = digest(root, path)?;
+                        known.insert(path.clone(), sha256.clone());
+                        sha256
+                    }
+                };
+                Ok(SourceDigest {
+                    sha256,
+                    path: path.clone(),
+                })
             })
-        })
-        .collect::<Result<Vec<_>>>()?;
+            .collect()
+    };
     fs::create_dir_all(root.join(directory))?;
     let mut recorded = vec![];
     for (scenario, observations) in &index.scenarios {
@@ -265,7 +337,10 @@ pub(crate) fn distill(
             completion_seal: seal.clone(),
             subject: subject.clone(),
             procedure,
-            sources: digests.clone(),
+            sources: match observation_sources(observation)? {
+                Some(recorded) => digests(&recorded)?,
+                None => digests(sources)?,
+            },
         };
         let mut bytes = serde_json::to_vec_pretty(&shard)?;
         bytes.push(b'\n');
@@ -287,4 +362,71 @@ pub(crate) fn observers(index: &HilEvidenceIndex) -> Vec<&Value> {
         .filter(|o| !o.source_bound && o.exclusions.is_empty() && o.outcome == Outcome::Passed)
         .filter_map(|o| o.subject.as_ref()?.observer.as_ref())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn image(name: &str, replayed: bool) -> subject::FirmwareIdentity {
+        subject::FirmwareIdentity {
+            image: Some(name.to_owned()),
+            build_id: None,
+            application: None,
+            build_provenance: None,
+            replayed,
+        }
+    }
+
+    #[test]
+    fn a_shard_binds_the_files_its_images_were_built_from() {
+        let run = std::env::temp_dir().join(format!("oer-shard-sources-{}", std::process::id()));
+        let inputs = |image: &str, files: Value| {
+            fs::create_dir_all(run.join("firmware").join(image)).unwrap();
+            fs::write(
+                run.join("firmware").join(image).join("source-inputs.json"),
+                serde_json::to_vec(&json!({"schema": 1, "files": files})).unwrap(),
+            )
+            .unwrap();
+        };
+        inputs(
+            "correctness",
+            json!(["crates/radio/src/lib.rs", "platform/linker/link.x"]),
+        );
+        let observer = json!({"build": {"resolved": {"manifests": {
+            "hil/host/runner/Cargo.toml": {}
+        }}}});
+        let sources = recorded_sources(&run, &[image("correctness", false)], Some(&observer))
+            .unwrap()
+            .unwrap();
+        for expected in [
+            "crates/radio/src/lib.rs",
+            "platform/linker/link.x",
+            "hil/host/runner",
+            "rust-toolchain.toml",
+            "Cargo.lock",
+        ] {
+            assert!(
+                sources.contains(&PathBuf::from(expected)),
+                "{expected}: {sources:?}"
+            );
+        }
+        assert!(sources.windows(2).all(|w| w[0] < w[1]), "sorted and unique");
+        // A replay or an image without recorded inputs keeps the broad set.
+        assert!(
+            recorded_sources(&run, &[image("correctness", true)], None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            recorded_sources(&run, &[image("performance", false)], None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(recorded_sources(&run, &[], None).unwrap().is_none());
+        inputs("performance", json!(["../outside.rs"]));
+        assert!(recorded_sources(&run, &[image("performance", false)], None).is_err());
+        fs::remove_dir_all(run).unwrap();
+    }
 }

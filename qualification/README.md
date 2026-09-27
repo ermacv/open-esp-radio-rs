@@ -483,10 +483,17 @@ program's `[hil] evidence` directory (`hil/evidence/esp32s31`). A shard holds
 the observation's outcome, repetitions, measurements and failures, the run's
 completion seal, the observation subject (observer proof, firmware identity,
 repository provenance) and the executed scenario document, and the digests of
-the sources the firmware and observer were built from: the path packages of
-`hil/targets/esp32s31` and `platform/esp32s31`, the observer's manifest
-directories, and the lockfiles, stack policy, partition table and observer
-input registry. The evaluator reads shards next to run bundles. A shard whose
+the sources the firmware and observer were built from. The runner records, per
+image, the repository files its build read in the bundle's
+`firmware/<image>/source-inputs.json`: the sources Cargo's dep-info lists for
+the runtime and bootstrap binaries, the repository inputs their build scripts
+declare (linker scripts), and each compiled package's manifest and build
+script. A shard binds those files, its own observer's manifest directories and
+the lockfiles, stack policy, partition table, toolchain file and observer input
+registry, so a change in another radio's driver leaves it current. A replayed
+image or an older bundle without recorded inputs binds the path packages of
+`hil/targets/esp32s31` and `platform/esp32s31` and every qualifying observer
+instead. The evaluator reads shards next to run bundles. A shard whose
 recorded sources all match the checkout supports its scenario whatever else the
 repository changed, and those digests stand for the observer's identity; a
 changed source makes it stale until the scenario runs again and is recorded.

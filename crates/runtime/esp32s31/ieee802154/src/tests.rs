@@ -561,6 +561,38 @@ fn the_clock_and_csl_state_belong_to_the_installed_radio() {
     assert_eq!(runtime.with_csl(|csl| csl.period), Ok(100));
 }
 
+/// The runtime reads the hardware's live RSSI in any radio state, and only
+/// while a radio is installed.
+#[test]
+fn recent_rssi_reads_the_hardware_live() {
+    let runtime = Runtime::<4>::new();
+    assert_eq!(
+        runtime.recent_rssi(),
+        Err(Ieee802154RuntimeError::NotInstalled)
+    );
+    let runtime = enabled::<4>();
+    let set = |rssi: i8| {
+        runtime.installed.lock(|installed| {
+            installed
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .hardware
+                .recent_rssi = rssi;
+        });
+    };
+    set(-42);
+    assert_eq!(runtime.recent_rssi(), Ok(-42));
+    set(-87);
+    assert_eq!(runtime.recent_rssi(), Ok(-87));
+    runtime
+        .submit(RadioCommand::Sleep {
+            id: RequestId::new(2),
+        })
+        .unwrap();
+    assert_eq!(runtime.recent_rssi(), Ok(-87));
+}
+
 /// The runtime collects, lends and clears the engine's TX/RX statistics.
 #[test]
 fn txrx_statistics_are_collected_on_request() {

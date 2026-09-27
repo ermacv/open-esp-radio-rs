@@ -14,8 +14,8 @@ use oer_ieee802154::{
 };
 use openthread::{
     AckSecurity, Capabilities, Config, CslConfig, EnhAckProbingConfig, FrameCounterUpdate,
-    MacCapabilities, MacKeys, PsduMeta, Radio, RadioCaps, RadioClock, RadioErrorKind, SentAck,
-    SrcMatchConfig, TxFrame,
+    MacCapabilities, MacKeys, PsduMeta, Radio, RadioCaps, RadioClock, RadioErrorKind, RadioRssi,
+    SentAck, SrcMatchConfig, TxFrame,
 };
 
 use crate::frames::{
@@ -69,6 +69,8 @@ impl OpenThreadRadioDefaults {
 /// finishes in the runtime; the next operation first waits for its end.
 pub struct OpenThreadRadio<'r, 's, M: RawMutex, H, const EVENTS: usize, const QUEUE: usize> {
     runtime: &'r Ieee802154Runtime<'s, M, H, EVENTS>,
+    /// The composition's live RSSI read (`otPlatRadioGetRssi`).
+    rssi: RadioRssi,
     defaults: OpenThreadRadioDefaults,
     received: Deque<Ieee802154OwnedFrame, QUEUE>,
     /// An operation whose terminal event is still owed.
@@ -116,13 +118,17 @@ where
     M: RawMutex,
     H: Ieee802154LowLevel,
 {
-    /// Drive `runtime`, which the composition started.
+    /// Drive `runtime`, which the composition started. `rssi` reads the
+    /// runtime's live RSSI (`esp_ieee802154_get_recent_rssi`) for
+    /// OpenThread's synchronous `otPlatRadioGetRssi`.
     pub const fn new(
         runtime: &'r Ieee802154Runtime<'s, M, H, EVENTS>,
+        rssi: RadioRssi,
         defaults: OpenThreadRadioDefaults,
     ) -> Self {
         Self {
             runtime,
+            rssi,
             defaults,
             received: Deque::new(),
             pending: None,
@@ -514,6 +520,10 @@ where
 
     fn clock(&self) -> RadioClock {
         self.clock.unwrap_or(openthread::embassy_radio_clock)
+    }
+
+    fn rssi(&self) -> Option<RadioRssi> {
+        Some(self.rssi)
     }
 
     async fn receive_at(

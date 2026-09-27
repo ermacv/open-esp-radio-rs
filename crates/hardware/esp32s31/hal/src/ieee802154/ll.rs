@@ -25,8 +25,8 @@ use oer_esp32s31_pac::{
     Ieee802154TxPowerCode as PacTxPowerCode,
 };
 pub use oer_ieee802154_engine::ll::{
-    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154Timer, event_end_process,
-    mac_init_registers, sec_clear, set_txrx_pti, timer_fire_at,
+    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154RecentRssi, Ieee802154Timer,
+    event_end_process, mac_init_registers, sec_clear, set_txrx_pti, timer_fire_at,
 };
 use oer_ieee802154_engine::{
     channel::Ieee802154Channel,
@@ -281,6 +281,16 @@ impl Ieee802154MacOwners {
     /// is stopped and its interrupt route closed.
     pub fn task_mut(&mut self) -> &mut Ieee802154TaskOwner {
         &mut self.task
+    }
+}
+
+impl Ieee802154RecentRssi for Ieee802154MacOwners {
+    /// The low byte of the shared baseband's current receive information,
+    /// read live as the vendor does: it reflects the most recent baseband
+    /// reception, which may be Bluetooth's while Bluetooth shares the
+    /// baseband. Read side effects are unproven.
+    fn recent_rssi(&mut self) -> i8 {
+        self.task.lease().recent_rssi()
     }
 }
 

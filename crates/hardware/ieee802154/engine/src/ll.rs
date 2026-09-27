@@ -188,6 +188,17 @@ pub trait Ieee802154LowLevel {
     fn set_etm_route(&mut self, route: Ieee802154EtmRoute);
 }
 
+/// The live receive signal strength of chips whose owner reads it, as the
+/// driver's `ieee802154_get_recent_rssi` does (on the ESP32-S31 the low byte
+/// of the shared baseband's current receive information).
+///
+/// It is separate from [`Ieee802154LowLevel`]: it reads no MAC register, and
+/// a chip provides it only once its owner models the read.
+pub trait Ieee802154RecentRssi {
+    /// The signed RSSI in dBm of the most recent reception.
+    fn recent_rssi(&mut self) -> i8;
+}
+
 /// `ieee802154_etm_channel_clear`: disable `channel` only if it is enabled.
 pub fn etm_channel_clear<Ll: Ieee802154LowLevel + ?Sized>(
     ll: &mut Ll,

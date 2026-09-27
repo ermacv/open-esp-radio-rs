@@ -46,7 +46,9 @@ pub use oer_ieee802154_engine::engine::{
 };
 use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
 use oer_ieee802154_engine::{
-    coex::Ieee802154Coexistence, ll::Ieee802154LowLevel, types::Ieee802154MultipanIndex,
+    coex::Ieee802154Coexistence,
+    ll::{Ieee802154LowLevel, Ieee802154RecentRssi},
+    types::Ieee802154MultipanIndex,
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
@@ -299,6 +301,22 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, const EVENTS: usize> {
     backoff_until: Mutex<M, Cell<Option<Instant>>>,
     /// Raised when a delay starts, so an awaiting consumer rearms.
     backoff_started: Signal<M, ()>,
+}
+
+impl<'storage, M: RawMutex, H, const EVENTS: usize> Ieee802154Runtime<'storage, M, H, EVENTS>
+where
+    H: Ieee802154LowLevel + Ieee802154RecentRssi,
+{
+    /// The live RSSI in dBm of the most recent reception
+    /// (`esp_ieee802154_get_recent_rssi`, `otPlatRadioGetRssi`), read from
+    /// the hardware whatever the radio's state, as the vendor reads it.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn recent_rssi(&self) -> Result<i8, Ieee802154RuntimeError> {
+        self.with_radio(|_, hardware, _| hardware.recent_rssi())
+    }
 }
 
 impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize> Default

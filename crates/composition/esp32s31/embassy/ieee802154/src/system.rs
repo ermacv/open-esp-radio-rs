@@ -525,6 +525,14 @@ impl Ieee802154System {
         &RUNTIME
     }
 
+    /// The live RSSI read of [`Ieee802154SystemRuntime::recent_rssi`] as a
+    /// function, for synchronous callers that hold no system, such as
+    /// OpenThread's `otPlatRadioGetRssi`. It reads `None` while no radio is
+    /// installed.
+    pub fn recent_rssi_reader(&self) -> fn() -> Option<i8> {
+        || RUNTIME.recent_rssi().ok()
+    }
+
     /// Read the arbiter's coexistence table again and publish the scene
     /// levels of `config` (`esp_ieee802154_set_coex_config`). Call it after
     /// the table or the levels change; the TX/RX priority applies from the

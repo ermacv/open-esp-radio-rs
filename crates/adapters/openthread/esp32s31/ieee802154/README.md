@@ -25,7 +25,8 @@ Link Metrics subject (`Radio::set_enh_ack_probing`), and, with its
 
 ## Use
 
-Start the IEEE 802.15.4 composition, then hand its runtime to
+Start the IEEE 802.15.4 composition, then hand its runtime and its live
+RSSI reader (`Ieee802154System::recent_rssi_reader`) to
 `OpenThreadRadio::new` with the transmit power, CCA threshold and receive
 sensitivity to report, and give the radio to the `openthread` crate. The
 radio enables the runtime, installs the port's zeroed MAC keys and an
@@ -69,6 +70,12 @@ ACK's counter and key index and its frame-pending bit, as the port's
 receive information does. Unlike the port, which reports the counter after
 the one the ACK carried, the radio reports the one the ACK carried. The
 radio acknowledges no second short address.
+
+`otPlatRadioGetRssi` reads the runtime's live RSSI, as the port reads
+`esp_ieee802154_get_recent_rssi`: the low byte of the shared baseband's
+current receive information, of the most recent reception whichever
+protocol received it; OpenThread's invalid RSSI while no radio is
+installed.
 
 The radio clock is the runtime's (ESP-HAL's microsecond clock, the port's
 `esp_timer`); OpenThread's 32-bit radio times are taken as the nearest

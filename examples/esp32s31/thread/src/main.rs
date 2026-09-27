@@ -171,6 +171,7 @@ async fn thread_task(
     .expect("OpenThread must initialize once");
     let thread_radio = OpenThreadRadio::new(
         system.runtime(),
+        system.recent_rssi_reader(),
         OpenThreadRadioDefaults::ESP_IDF,
     );
     spawner.spawn(openthread_task(ot.clone(), thread_radio).expect("OpenThread task storage"));

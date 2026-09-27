@@ -4,7 +4,10 @@
 //! event image, abort reasons and measurement results the MAC would latch.
 //! The model knows nothing else about the hardware.
 
-use super::{COEX_DISABLED_PTI, Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154Timer};
+use super::{
+    COEX_DISABLED_PTI, Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154RecentRssi,
+    Ieee802154Timer,
+};
 use crate::{channel::*, coex::*, tx_power::*, types::*};
 
 /// The modelled MAC state; every field is public for the test to set or
@@ -21,6 +24,8 @@ pub struct Ieee802154LlModel {
     pub current_rx_frame: bool,
     /// Energy-detection result.
     pub ed_rss: i8,
+    /// The live RSSI [`Ieee802154RecentRssi::recent_rssi`] reads.
+    pub recent_rssi: i8,
     /// CCA result.
     pub cca_busy: bool,
     /// The last operation command.
@@ -77,6 +82,7 @@ impl Default for Ieee802154LlModel {
             tx_abort: Ieee802154TxAbortReasonObservation::Unclassified,
             current_rx_frame: false,
             ed_rss: 0,
+            recent_rssi: 0,
             cca_busy: false,
             command: None,
             rx_address: None,
@@ -310,4 +316,10 @@ impl Ieee802154LowLevel for Ieee802154LlModel {
         self.etm_enabled[etm_index(channel)] = true;
     }
     fn set_etm_route(&mut self, _route: Ieee802154EtmRoute) {}
+}
+
+impl Ieee802154RecentRssi for Ieee802154LlModel {
+    fn recent_rssi(&mut self) -> i8 {
+        self.recent_rssi
+    }
 }

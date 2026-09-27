@@ -88,7 +88,7 @@ defers every decision to a task cannot meet these deadlines.
 | `bt_bb_get_tx_pwr_table` | dBm-to-power-index table | HAL `ESP32S31_TX_POWER_LEVELS`, recovered from the provider |
 | `esp_coex_ieee802154_*` | PTI scenes, external-coexistence stages, coexistence break notice | PTI levels: HAL scene priorities read from the arbiter table, published by the driver engine; external-coexistence stages absent. The break notice has no effect on the pinned ESP32-S31 libcoexist (`esp_coex_ieee802154_coex_break_notify` tail-calls `hal_ieee802154_coex_break_notify`, a bare `ret`; reviewed fact `BLOB_LIBCOEX_IEEE802154_HANDOFF`), so the engine sends none; the provenance check follows that body |
 | `ieee802154_txon_delay_set` (called by `ieee802154_mac_init`) | MAC TX/RX timing delays | `TXON_DELAY`, `RXON_DELAY`, `TXRX_SWITCH_DELAY` and `TXOFF_DELAY` in the HAL MAC foundation; the shared auxiliary TX-on delay keeps the BTBB initialization value |
-| `bt_bb_get_cur_rx_info` | receive diagnostic | none |
+| `bt_bb_get_cur_rx_info` | receive diagnostic | the PAC's `Ieee802154BasebandRxInfo` capability reads its RSSI byte; the rest of the word stays unmodelled |
 | `modem_clock_module_*` | module clock, reset and MAC reset | arbiter modem clock planner; MAC reset in the HAL IEEE 802.15.4 lifecycle |
 | `sleep_retention_*`, `esp_phy_modem_init` | register retention across light sleep | none |
 
@@ -122,7 +122,7 @@ frame semantics belong to the protocol crate.
 | `esp_ieee802154_util.c` coexistence scenes, channel conversion | HAL, driver engine | implemented: scene levels with the default configuration, channel conversion |
 | `ieee802154_sleep`, `rf_enable` / `rf_disable`, sleep retention | driver engine, HAL and PHY | partial: engine sleep state; RF gating (off in the default build) and retention absent |
 | `esp_ieee802154_debug.c` | not ported: optional statistics | absent |
-| `esp_ieee802154.c` public API | driver engine, radio role over the portable contract | partial: PIB, identity, ACK-timeout, transmit-security, pending-table and operation entry points of interface zero; event callbacks are the engine environment; TX/RX statistics in the runtime, the coexistence configuration in the composition (`update_coexistence`, `coex_config`), the recent LQI in the engine. `esp_ieee802154_get_recent_rssi` (and the OpenThread port's `otPlatRadioGetRssi`) reads the live baseband receive information (`bt_bb_get_cur_rx_info`, BTBB `CURRENT_RX_INFO`) and is absent; the OpenThread adapter reports the last frame's RSSI instead |
+| `esp_ieee802154.c` public API | driver engine, radio role over the portable contract | partial: PIB, identity, ACK-timeout, transmit-security, pending-table and operation entry points of interface zero; event callbacks are the engine environment; TX/RX statistics in the runtime, the coexistence configuration in the composition (`update_coexistence`, `coex_config`), the recent LQI in the engine. `esp_ieee802154_get_recent_rssi` (and the OpenThread port's `otPlatRadioGetRssi`) is the runtime's `recent_rssi`, a live read of the low byte of the baseband receive information (`bt_bb_get_cur_rx_info`, BTBB `CURRENT_RX_INFO`) through a read-only capability carved out of the shared baseband; the OpenThread adapter answers `otPlatRadioGetRssi` with it |
 
 The masked foundation with serialized polled ED and CCA has no ESP-IDF
 counterpart. It is retained as a HIL diagnostic path only.

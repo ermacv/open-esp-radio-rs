@@ -77,6 +77,8 @@ pub struct ScanRecord {
     pub legacy_wpa: bool,
     pub information_elements_truncated: bool,
     pub capability_info: u16,
+    /// The access point's TSF when it sent this beacon or probe response.
+    pub timestamp: u64,
     pub beacon_interval_tu: u16,
     pub supported_rates: [u8; 8],
     pub supported_rates_len: u8,
@@ -114,6 +116,7 @@ impl ScanRecord {
         legacy_wpa: false,
         information_elements_truncated: false,
         capability_info: 0,
+        timestamp: 0,
         beacon_interval_tu: 0,
         supported_rates: [0; 8],
         supported_rates_len: 0,
@@ -428,6 +431,11 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
     record.bssid.copy_from_slice(&frame[16..22]);
     record.channel = fallback_channel;
     record.rssi = rssi;
+    record.timestamp = u64::from_le_bytes(
+        frame[24..32]
+            .try_into()
+            .expect("a management body has an eight-byte timestamp"),
+    );
     record.beacon_interval_tu = u16::from_le_bytes([frame[32], frame[33]]);
     record.capability_info = u16::from_le_bytes([frame[34], frame[35]]);
     record.privacy = record.capability_info & 0x0010 != 0;

@@ -37,6 +37,8 @@ fn parses_beacon_into_owned_bounded_record() {
     let mut frame = [0_u8; 64];
     frame[0] = 0x80;
     frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+    frame[24..32].copy_from_slice(&0x0123_4567_89ab_cdef_u64.to_le_bytes());
+    frame[32..34].copy_from_slice(&100_u16.to_le_bytes());
     frame[34] = 0x10;
     frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     frame[42..45].copy_from_slice(&[3, 1, 11]);
@@ -46,6 +48,8 @@ fn parses_beacon_into_owned_bounded_record() {
     assert_eq!(record.bssid, [1, 2, 3, 4, 5, 6]);
     assert_eq!(record.channel, 11);
     assert_eq!(record.rssi, -42);
+    assert_eq!(record.timestamp, 0x0123_4567_89ab_cdef);
+    assert_eq!(record.beacon_interval_tu, 100);
     assert!(record.privacy);
     assert!(record.rsn);
 }

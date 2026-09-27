@@ -8,27 +8,39 @@ always-awake operation, one non-connectable PDU on primary channels 37, 38 and
 
 ## Evidence and role map
 
-Current behavior comes only from the linked ESP32-S31 controller built from
-[`esp32s31-bt-lib@7f20740dd66ee774ffce5db0b55507892551aa31`](https://github.com/espressif/esp32s31-bt-lib/tree/7f20740dd66ee774ffce5db0b55507892551aa31).
-The public named archive at
-[`esp32s31-bt-lib@31c30949541a5d3abd4043a1cb66d55aa55577dd`](https://github.com/espressif/esp32s31-bt-lib/tree/31c30949541a5d3abd4043a1cb66d55aa55577dd)
-is used only to recover roles. Stable prologues, object offsets, call order and
-callee relationships establish these correspondences; old bodies do not
-supply current behavior or layout.
+- ESP32-S31 Controller archive
+  [`espressif/esp32s31-bt-lib@10c507788e9da0993709cf82e405c896561172d8`](https://github.com/espressif/esp32s31-bt-lib/tree/10c507788e9da0993709cf82e405c896561172d8),
+  `libble_app.a` SHA-256
+  `e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723`
+  and `libbtdm_common.a` SHA-256
+  `389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41`;
+- same-chip role-name reference only:
+  [`espressif/esp32s31-bt-lib@31c30949541a5d3abd4043a1cb66d55aa55577dd`](https://github.com/espressif/esp32s31-bt-lib/tree/31c30949541a5d3abd4043a1cb66d55aa55577dd),
+  whose unobfuscated names reach the pinned symbols through the reviewed
+  lineage in [`verification/esp32s31/facts/names/`](../../../verification/esp32s31/facts/names/).
 
-| Current linked body | Reviewed role |
+Every behavioral claim below comes from a complete pinned instruction body.
+Role names come from the lineage where it names the body; otherwise the call
+graph below the named role (its sole caller, callees and call order)
+establishes it. Old bodies supply no behavior or layout.
+
+| Pinned body | Reviewed role |
 | --- | --- |
-| `r_sym_ble_MrW1ZaJZqsHzi3wwRhsn` | build a legacy primary-channel PDU |
-| `r_sym_ble_c9Zmr2aWmPOsZoITHDe9` | checked legacy-PDU builder wrapper |
-| `r_sym_ble_fxKAT8in6cXLv0gLB2W5` | reset the advertising link-state graph |
-| `r_sym_ble_fiiv8hEPVagnOAVa7EM2` | reset an advertising role |
-| `r_sym_ble_cfILxLFIWftw22I0zQab` | allocate the private advertising graph |
-| `r_sym_ble_8UzoZYkzYu9MXbM1vyWN` | start an advertising role |
-| `r_sym_ble_grUssKu7oWAkmdueH0Od` | initialize the first-event delay |
-| `r_sym_ble_mqh4OXzoN59kvnkKFMA1` | schedule its first primary event |
-| `r_sym_ble_GESyjhFJ89FTdFkUqASV` | form one advertising scheduler window |
-| `r_sym_ble_77zgK6v8rbStzf0ReBjv` | schedule its next primary event |
-| `r_sym_ble_pfcv0QVYrNS6KoQetydw` | recycle a completed scheduler item |
+| `r_sym_ble_GMKJqD73JoiGMGSQZS6e` | `r_ble_lll_adv_legacy_pri_chan_pdu_make`: build a legacy primary-channel PDU |
+| `r_sym_ble_KRGYBIa2UPdfUO6rFP89` | `r_ble_lll_adv_legacy_pdu_make`: checked legacy-PDU builder |
+| `r_sym_ble_b3ZDeCz8LKJWE1p1nl50` | `r_ble_lll_adv_pri_chan_txbuf_alloc_and_make`: allocate and fill the TX chain |
+| `r_sym_ble_7lsXnox2LxrGG0FmY7qR` | `r_ble_lll_adv_reset_link_state`: reset the advertising link state |
+| `r_sym_ble_ouZL9YSCqJEyaSmJ2xJF` | `r_ble_lll_adv_reset`: reset an advertising role |
+| `r_sym_ble_BU65xm0Suu1ZxafP2o1R` | `r_ble_lll_adv_alloc_memory`: allocate the private advertising graph |
+| `r_sym_ble_jDCJzglWI0uBeh2sNaOW` | receive-buffer allocation, the sole RX allocator below `r_ble_lll_adv_alloc_memory` |
+| `r_sym_ble_0ByYfGTdjlqZTcq6wH2O` | advertising start, the sole caller of the allocation, reset and first-event bodies |
+| `r_sym_ble_JqJr96pi4W7h47ZTV2Z8` | scheduler-item allocation for the started role |
+| `r_sym_ble_5ZvxtGNXxB5HYDOl4nsn` | `r_ble_lll_adv_init`: initialize the first-event delay |
+| `r_sym_ble_GlcyfUkkhUzGUt8un0d8` | `r_ble_lll_adv_sched_first_pri_event`: schedule the first primary event |
+| `r_sym_ble_VJhDIFgEJhr4DAUSUJBU` | `r_ble_ll_adv_set_sched`: form one advertising scheduler window |
+| `r_sym_ble_eNifqLwR78cnxeKb1y6t` | chain the remaining primary channels of one event |
+| `r_sym_ble_bKWMq69wmtmvM3jpReNR` | `r_ble_lll_adv_sched_next_pri_event`: schedule the next primary event |
+| `r_sym_ble_Mbq9uRHiK6RiYjkK9zIv` | recycle a completed scheduler item, installed by the item allocation |
 
 The shared finished-list ingress and scheduler-list consumer are already
 reviewed in `bluetooth-interrupt-runtime.md`. The focused Blobray scope
@@ -70,13 +82,15 @@ The same archive's `r_ble_lll_adv_alloc_sch_items` establishes the separate
 common scheduler-context link, the scheduler-item-to-link-state link and the
 terminal first-item chain. `r_ble_lll_adv_start` independently stores that
 item as link-state scheduler head before calling
-`r_ble_lll_adv_sched_first_pri_event`. Current stripped allocation, start and
-first-event bodies retain those offsets and ordering. These allocation-time
+`r_ble_lll_adv_sched_first_pri_event`. The pinned start body calls the graph
+allocation, the link-state reset and the scheduler-item allocation in that
+order, and the first-event body takes its item from the link-state scheduler
+head at `+0x64`. These allocation-time
 links are one private memory-codec operation; no compressed image or SRAM
 field escapes to the controller or Link Layer.
 
-Complete current `r_sym_ble_fxKAT8in6cXLv0gLB2W5` and named
-`r_ble_lll_adv_reset_link_state` establish the next transition. The private
+The pinned `r_ble_lll_adv_reset_link_state` body
+(`r_sym_ble_7lsXnox2LxrGG0FmY7qR`) establishes the next transition. The private
 memory codec applies their restricted LE 1M, no-RX, no-CTE and no-privacy
 projection from the prepared PDU and a signed dBm request. This includes the
 terminal TX-header link, absent RX link, shared rounded-power conversion,
@@ -87,27 +101,41 @@ byte at `+0x29` is `3`, matching the current body's six-bit copy. Reset creates
 a separate non-publishable typestate; cancellation clears the packet and
 rebuilds the allocation graph before returning it to the portable owner.
 
-Complete current `r_sym_ble_mqh4OXzoN59kvnkKFMA1` and named
-`r_ble_lll_adv_sched_first_pri_event` close the first-event producer. Named
-`r_ble_lll_adv_init`, matching current `r_sym_ble_grUssKu7oWAkmdueH0Od`,
-initializes a 2000-microsecond first-event delay. The first event samples the
-always-awake radio path and scheduler time, adds the common 137-microsecond
-preparation lead, and forms the LE 1M duration as `payload_length * 8 + 80`.
-If the radio observation is later than the nominal start, it shifts start and
-end together and preserves duration. Both positions then pass through the
-retained scheduler epoch into raw controller time.
+The pinned `r_ble_lll_adv_sched_first_pri_event` body closes the
+first-event producer. `r_ble_lll_adv_init` stores a 2000-microsecond
+first-event delay. The first event selects the channel, binds the item to the
+link state at `+0x08` (to the separate channel-39 link state only when the
+option at controller-options `+0x62` bit 2 enables separate channel-39 power;
+the default disables it), clears item `+0x00` bit 22, writes the frequency
+into `+0x18` bits 14:8, sets `+0x04` bit 31 and clears the rate nibble in
+`+0x14` bits 31:28. It then samples the radio path and the scheduler time,
+adds the delay (through an identity helper) and the scheduler lead that
+`r_sym_sched_GEBmwfVsspx61ARDIjlz` returns, and lets `r_ble_ll_adv_set_sched`
+place the window: the item starts at the sampled time plus the delay and ends
+the lead plus the LE 1M airtime of the PDU later. If the radio observation is later than the start, it
+shifts start and end together and preserves duration. Both positions pass
+through the retained scheduler epoch into raw controller time. The priority
+nibble of link-state `+0x60`, one for a legacy set, fills both nibbles of
+item `+0x18` bits 7:0. The item then enters the list through
+`r_sched_txn_delayIfOverlap` (`r_sym_sched_r2iinWC2SzzEDZskjGMQ`), which
+displaces it past an overlap.
 
-Complete current `r_sym_ble_77zgK6v8rbStzf0ReBjv`, named
-`r_ble_lll_adv_sched_next_pri_event` and
-`r_ble_lll_adv_sched_remaining_pri_after` establish that selected primary
-channels are not resubmitted after an IRQ. Before the first `RUN`, the producer
-allocates every remaining selected channel, advances each follower start from
-the previous item end, adds the same item duration, and links items through the
-hardware successor field. The completed-queue link at item `+0x54` is a
-different software ownership link, not the execution chain.
+The first-event and `r_ble_lll_adv_sched_next_pri_event` bodies both end in
+`r_sym_ble_eNifqLwR78cnxeKb1y6t`, which establishes that selected primary
+channels are not resubmitted after an IRQ. Before the first `RUN`, it takes
+every remaining selected channel, advances each follower start from the
+previous item end, adds the same item duration and inserts the follower
+directly after its predecessor. Unlike the first item, a legacy follower sets
+item `+0x00` bit 22. With the default controller options, bit 1 of `+0x62`
+(delay channels 38 and 39 past a conflict) is clear, so a follower is not
+displaced. The completed-queue link at item `+0x54` is a different software
+ownership link, not the execution chain. The next event recomputes the
+rounded power into link-state `+0x61` and restarts from the configured
+interval; that recurrence belongs to the portable Link Layer here.
 
 The private SRAM codec therefore detaches the allocation-time scheduler head,
-lowers the canonical selected channels 37, 38, 39 into one 1--3 item chain,
+lowers the canonical selected channels 37, 38, 39 into 1--3 items that the
+executor inserts in order,
 selects the legacy LE 1M transmitter role, copies the reset link state's
 rounded power, installs contiguous accepted raw windows and clears bookkeeping
 for every active item. No link image, field mask, rounded-power image or
@@ -115,28 +143,16 @@ frequency integer crosses into the controller/LL layer. Before this mutation,
 the radio role admits the event against one fresh Controller-time sample and
 the executor's list mirror: each channel reserves one channel spacing from its
 anchor minus the preparation lead, and an overlap is rejected instead of
-displaced. Rejection leaves the configured set unchanged.
+displaced. Rejection leaves the configured set unchanged. The codec leaves
+item `+0x00` bit 22 clear on every item, including the followers the vendor
+marks; each follower therefore starts at its own programmed anchor.
 
 ## Reviewed response-capable memory profile
 
-The response-capable extension is derived from the same pinned current
-`libble_app.a` at commit `7f20740dd66ee774ffce5db0b55507892551aa31`,
-SHA-256
-`62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195`.
-The earlier same-chip archive at commit
-`31c30949541a5d3abd4043a1cb66d55aa55577dd`, SHA-256
-`ec10a20eaf869f7cd2300100fe54826980525911f8417206af5a0745a9f85f63`,
-supplies names only. Complete object-body comparison maps current member
-`50.o:r_sym_ble_fxKAT8in6cXLv0gLB2W5` to
-`r_ble_lll_adv_reset_link_state`,
-`50.o:r_sym_ble_6qbuM1ANzD8Y0VbSNKNu` to
-`r_ble_lll_adv_pri_chan_txbuf_alloc_and_make`, and
-`50.o:r_sym_ble_nNcQpcbAvd2WhGX0WkCA` to
-`r_ble_lll_adv_alloc_rxbuf`. The compared bodies are respectively 840, 442
-and 124 bytes and are byte-identical between those revisions. Current
-member `15.o:r_sym_ble_GESyjhFJ89FTdFkUqASV` is likewise the byte-identical
-180-byte `r_ble_ll_adv_set_sched` body. Current bytes, rather than the old
-names, own every layout and arithmetic fact below.
+The response-capable extension is derived from the pinned bodies in the role
+map above: the link-state reset, the TX-chain allocation, the receive-buffer
+allocation and `r_ble_ll_adv_set_sched`. Pinned bytes, rather than the
+lineage names, own every layout and arithmetic fact below.
 
 An `ADV_IND` event is a two-transmit-node graph, not the nonconnectable graph
 with an optional receive flag. The primary builder always allocates the first
@@ -147,11 +163,12 @@ data body still retains the second node. The reset body copies the primary
 TX header's successor into the compressed scan-response consumer.
 
 The controller TX allocation is not a contiguous on-air advertising PDU.
-Current `50.o:r_sym_ble_6qbuM1ANzD8Y0VbSNKNu` passes packet `+0x12` as the
-data destination and stores the builder's returned on-air payload length at
-`+0x11`. Current `50.o:r_sym_ble_MrW1ZaJZqsHzi3wwRhsn` copies only the
-advertising or scan-response data for the undirected path, while its returned
-length includes six additional address bytes. Hardware inserts `AdvA` from
+The pinned TX-chain allocation passes packet `+0x12` as the data destination
+and stores the builder's returned on-air payload length at `+0x11`. The
+pinned legacy primary-channel builder copies only the advertising or
+scan-response data for the undirected path, while its returned length includes
+six additional address bytes. For `ADV_IND` it sets the ChSel header bit when
+controller-options `+0x57` enables Channel Selection Algorithm #2. Hardware inserts `AdvA` from
 the selected address source. The open legacy TX codec therefore preserves
 the complete canonical PDU for CPU access, but omits `AdvA` from the controller
 data bytes and retains the on-air length. This applies to `ADV_NONCONN_IND`,
@@ -159,14 +176,14 @@ data bytes and retains the on-air length. This applies to `ADV_NONCONN_IND`,
 payload representation. Directed advertising is outside this projection.
 
 The global RX path depends on the inputs and ordering of several producers.
-`50.o:r_sym_ble_8UzoZYkzYu9MXbM1vyWN` allocates the role before resetting its
-link state. Its allocator reaches `r_ble_lll_adv_alloc_rxbuf`, which calls
-`49.o:r_sym_ble_N2bQ5jI8Lnppq1TkXRdA` with argument one. That branch clears
-the software RX head, tail and reserve. Consequently advertising reset leaves
-the compressed private RX consumer empty. The later memory-manager broker
-selects global non-scanning class two and snapshots the global head/tail into
-the software endpoints; `61.o:r_sym_ble_D3G2s4EUhwQF8UMS2GBp` does not write
-the compressed private consumer. The response-capable readiness predicate
+The pinned start body allocates the role before resetting its link state. Its
+allocator reaches the receive-buffer allocation, which clears the software RX
+head, tail and reserve at link-state `+0x68`, `+0x70` and `+0x78` on entry.
+Consequently advertising reset leaves the compressed private RX consumer
+empty. The later global RX-link update selects global non-scanning class two
+and snapshots the global head/tail into the software endpoints: its callee
+`r_sym_memMgmt_fklZTFbPfOGtnTfZVgMq` stores only link-state `+0x68`, `+0x70`
+and `+0x78` and does not write the compressed private consumer. The response-capable readiness predicate
 therefore requires the scan-response consumer, the retained global RX
 endpoints and an absent private RX consumer.
 
@@ -207,14 +224,15 @@ separate later boundaries rather than implied capabilities of this memory
 profile.
 
 The complete common allocation and pre-publication producers also participate
-in this graph. Current `61.o:r_sym_ble_UCGCRefyBslibNM003px`
-(`ble_lll_mmgmt_alloc_scheduler_item`) sets both allocation bits in item
-`+0x00` and installs the module-default projection at `+0x1c`. Advertising's
-`50.o:r_sym_ble_K5YOgB5aAyEAMEega18V` writes four five-bit radio-request
-priorities at item `+0x24`. With another radio on the antenna the open radio
-applies the vendor's dynamic priority control: `coexAdv.c.o_1.o`
-`r_sym_coexAdv_pNmEzY32xPoYRR8VuoXP` installs lanes `4, 0, 13, 13` for a
-legacy set from the default tables `04 04 04` and `0d 0d`, and
+in this graph. The pinned common scheduler-item allocator
+`r_sym_memMgmt_DJqpkHU8oAe5YxcQ1aHk` zeroes the item, sets both allocation
+bits (`+0x00` bits 21:20), clears byte `+0x18` and installs the module-default
+projection at `+0x1c`. The advertising scheduler-item allocation then calls
+`r_ble_lll_adv_coex_pti_init` (`r_sym_coexAdv_pNmEzY32xPoYRR8VuoXP`), which
+writes four five-bit radio-request priorities at item `+0x24`. With another
+radio on the antenna the open radio applies the vendor's dynamic priority
+control: that body installs lanes `4, 0, 13, 13` for a legacy set from the
+default tables `04 04 04` and `0d 0d`, and
 `r_sym_coexAdv_sLW7oGzvK2Nq64ivPWK2` replaces lane zero for every event
 from the legacy table `04 09 0b 03 02 01 28 00 50 00` at the event's level.
 The Controller core raises every third, second or single event for
@@ -222,9 +240,10 @@ intervals up to 25 ms, up to 50 ms and longer (`r_sym_coexAdv_VG7v...`,
 `r_sym_coexAdv_A5DX...`). Alone on the antenna, every lane requests 15;
 this equal standalone policy is a product choice.
 
-Current `61.o:r_sym_ble_lecwwE0KZNKhANvOphXa`
-(`ble_lll_mmgmt_update_global_rxlink`) selects non-scanning class two in
-link-state `+0x20`, matching selector two of the RX publication transaction.
+The pinned global RX-link update `r_sym_memMgmt_4xg1uFByb1OqQ8sR82yB` selects
+non-scanning class two in link-state `+0x20` bits 30:28, matching selector two
+of the RX publication transaction; its remaining state lives in the separate
+software RX-link object at link-state `+0x7c`.
 The reset body alone does not install this later memory-manager effect.
 The RX pointer publication also applies the separate common RX-list reset
 suffix described in [the RX-list contract](bluetooth-passive-scanning.md):
@@ -238,8 +257,9 @@ specified by Core 5.4, Vol 6, Part B, sections 2.3.3.1 and 4.5.8. An initiator
 supporting algorithm two may send ChSel one to an advertiser that sent ChSel
 zero; the resulting connection uses algorithm one. The portable admission
 retains the decoded request and separately initializes the negotiated selector.
-Current `17.o:r_sym_ble_yGsYADDrqjYziP9c5GNW` likewise tests the local
-algorithm-two configuration before interpreting the legacy request bit. Its
+The pinned `r_ble_ll_conn_slave_start` (`r_sym_ble_SVIOVPSLPVyCJcQuLud7`)
+likewise tests the local algorithm-two option at controller-options `+0x57`
+before interpreting the legacy request bit. Its
 disabled branch initializes algorithm-one hopping and continues connection
 setup rather than rejecting the request.
 

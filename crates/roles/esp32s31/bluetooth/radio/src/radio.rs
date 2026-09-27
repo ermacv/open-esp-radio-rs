@@ -1581,7 +1581,7 @@ impl<
             return Err(RequestError::UnknownEvent);
         };
         // The vendor ends a test by stopping the scheduler rather than
-        // cancelling its running event (`r_sym_ble_9DFKLYZzjaztWMiPU4NR`).
+        // cancelling its running event (`sym_dtm_NsbldBIeGraE2wg0AVy7`).
         if found.is_none() && owner.kind() == SchedulerRoleKind::DirectTestMode {
             self.stop_requested = true;
         }

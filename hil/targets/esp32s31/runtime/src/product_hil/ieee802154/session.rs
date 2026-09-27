@@ -36,9 +36,9 @@ use oer_hil_protocol::{
     Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
     RejectReason, ieee802154_frame_crc32c,
 };
-use oer_ieee802154::{Interface, 
-    AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, RadioCommand, RequestId,
-    TxMode, TxRequest, TxSecurity,
+use oer_ieee802154::{
+    AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, Interface, RadioCommand,
+    RequestId, TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, tx_outcome};

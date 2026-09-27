@@ -7,8 +7,10 @@
 
 use std::{
     collections::VecDeque,
+    fs,
     io::{ErrorKind, Read, Write},
     path::Path,
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -22,6 +24,8 @@ pub const PEER_IMAGE: &str = "ieee802154-peer";
 /// How to restore the peer firmware when another consumer replaced it.
 pub const PEER_REFLASH: &str =
     "restore it with `cargo hil firmware flash ieee802154-peer --board <peer board>`";
+/// File name of a boot's peer transcript in its artifact directory.
+pub const PEER_TRANSCRIPT: &str = "peer-transcript.log";
 const READY_TIMEOUT: Duration = Duration::from_secs(5);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -220,6 +224,79 @@ impl PeerLink for SerialLink {
     }
 }
 
+/// Every line exchanged with the peer, with its time since the link opened,
+/// shared by the link that records it and the workload that saves it.
+#[derive(Clone, Debug)]
+pub struct PeerTranscript {
+    started: Instant,
+    lines: Arc<Mutex<Vec<String>>>,
+}
+
+impl Default for PeerTranscript {
+    fn default() -> Self {
+        Self {
+            started: Instant::now(),
+            lines: Arc::default(),
+        }
+    }
+}
+
+impl PeerTranscript {
+    fn record(&self, direction: &str, line: &str) {
+        let millis = self.started.elapsed().as_millis();
+        let line = line.trim_end_matches(['\r', '\n']);
+        if let Ok(mut lines) = self.lines.lock() {
+            lines.push(format!("{millis:>8} {direction} {line}"));
+        }
+    }
+
+    /// The recorded lines: `>` sent to the peer, `<` received from it.
+    pub fn lines(&self) -> Vec<String> {
+        self.lines
+            .lock()
+            .map(|lines| lines.clone())
+            .unwrap_or_default()
+    }
+
+    /// Write the recorded lines to `path`.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut text = self.lines().join("\n");
+        text.push('\n');
+        fs::write(path, text)?;
+        Ok(())
+    }
+}
+
+/// A link that records every line it sends and receives.
+pub struct RecordingLink<L> {
+    link: L,
+    transcript: PeerTranscript,
+}
+
+impl<L> RecordingLink<L> {
+    pub fn new(link: L, transcript: PeerTranscript) -> Self {
+        Self { link, transcript }
+    }
+}
+
+impl<L: PeerLink> PeerLink for RecordingLink<L> {
+    fn send(&mut self, line: &str) -> Result<()> {
+        self.transcript.record(">", line);
+        self.link.send(line)
+    }
+
+    fn receive(&mut self, deadline: Instant) -> Result<Option<String>> {
+        let line = self.link.receive(deadline)?;
+        if let Some(line) = &line {
+            self.transcript.record("<", line);
+        }
+        Ok(line)
+    }
+}
+
 /// The reference peer.
 pub struct Peer<L> {
     link: L,
@@ -230,6 +307,15 @@ impl Peer<SerialLink> {
     /// Reset the peer on `path` and wait until it reports ready.
     pub fn open(path: &Path) -> Result<Self> {
         Self::start(SerialLink::open_with_reset(path)?)
+    }
+}
+
+impl Peer<RecordingLink<SerialLink>> {
+    /// Reset the peer on `path` and wait until it reports ready, recording
+    /// every line of the session, including the boot, into `transcript`.
+    pub fn open_recorded(path: &Path, transcript: &PeerTranscript) -> Result<Self> {
+        let link = RecordingLink::new(SerialLink::open_with_reset(path)?, transcript.clone());
+        Self::start(link)
     }
 }
 

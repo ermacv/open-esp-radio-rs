@@ -137,3 +137,26 @@ fn a_peer_of_another_protocol_is_refused() {
     assert!(Peer::start(ScriptedLink::new(&["@READY protocol=2"])).is_err());
     assert!(Peer::start(ScriptedLink::new(&["no ready line"])).is_err());
 }
+
+/// The recording link keeps every sent and received line, including the
+/// ready line, in order and with its direction.
+#[test]
+fn the_recording_link_keeps_the_whole_conversation() {
+    let transcript = PeerTranscript::default();
+    let link = RecordingLink::new(
+        ScriptedLink::new(&["boot noise", "@READY protocol=1", "@OK RX"]),
+        transcript.clone(),
+    );
+    let mut peer = Peer::start(link).unwrap();
+    peer.receive().unwrap();
+    // Each line starts with the milliseconds since the link opened.
+    let lines: Vec<String> = transcript
+        .lines()
+        .iter()
+        .map(|line| line.trim_start().split_once(' ').unwrap().1.to_owned())
+        .collect();
+    assert_eq!(
+        lines,
+        ["< boot noise", "< @READY protocol=1", "> RX", "< @OK RX"]
+    );
+}

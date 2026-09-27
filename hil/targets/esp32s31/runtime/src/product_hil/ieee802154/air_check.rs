@@ -17,9 +17,9 @@ use oer_hil_protocol::{
     Ieee802154AirCheckStop, Ieee802154AirCycle, Ieee802154AirEnergyOutcome, Ieee802154AirTransmit,
     Ieee802154AirWindow,
 };
-use oer_ieee802154::{Interface, 
-    Channel, Configuration, EnergyScanRequest, FrameView, RadioCommand, RadioTimestamp, RequestId,
-    ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
+use oer_ieee802154::{
+    Channel, Configuration, EnergyScanRequest, FrameView, Interface, RadioCommand, RadioTimestamp,
+    RequestId, ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, now_micros, tx_outcome};

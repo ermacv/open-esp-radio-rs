@@ -29,7 +29,7 @@ use super::peer_exchange::{
 };
 use crate::{
     Result,
-    peer::{Peer, PeerConfig, PeerLink},
+    peer::{PEER_TRANSCRIPT, Peer, PeerConfig, PeerLink, PeerTranscript},
 };
 
 const REPORT_NAME: &str = "ieee802154-rf-sleep.json";
@@ -79,10 +79,14 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     let mut reports = Vec::new();
     for boot in 1..=config.boots {
         let boot_output = output.join(format!("boot-{boot:03}"));
+        let transcript = PeerTranscript::default();
         let result = context.with_capture(&boot_output, |capture| {
-            let mut peer = Peer::open(&peer_config.serial)?;
+            let mut peer = Peer::open_recorded(&peer_config.serial, &transcript)?;
             session(capture, &mut peer, &config, boot)
         });
+        // What the peer saw tells a missing transmission from a missing
+        // acknowledgement.
+        transcript.save(&boot_output.join(PEER_TRANSCRIPT))?;
         match result {
             Ok(report) => reports.push(report),
             Err(error) => {

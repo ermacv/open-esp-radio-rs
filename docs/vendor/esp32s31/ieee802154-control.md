@@ -72,7 +72,13 @@ assigns this register W1C semantics. The generated PAC mirrors the source
 transaction with a non-replayable snapshot: the hard-IRQ owner samples the
 complete event field and selected abort/ED sidebands, then consumes that exact
 snapshot during acknowledgement. Same-bit arrival and level-line retrigger
-remain HIL qualification questions, not alternative access models.
+do not change that access model.
+The `ieee802154-route-probe` HIL cell answers both on the ESP32-S31 over the
+production owners and route adapter: a second arrival of an event whose bit
+is still latched is cleared with the first (the arrivals coalesce, as the
+vendor's snapshot-then-clear ISR also assumes), and an event latched after the
+ISR's snapshot retriggers the level-driven source-132 route once the snapshot
+is consumed.
 
 1. RX-abort phase one;
 2. RX SFD;
@@ -197,9 +203,9 @@ The reviewed target fact assigns W1C, the SVD publishes `oneToClear`, and the PA
 does not expose an ordinary RW modify operation or a caller-provided clear
 mask. Both the cold/polled path and the disjoint hard-IRQ owner acknowledge by
 consuming the exact complete snapshot they just sampled. This fixes the
-software access model, but does not prove that `STOP` is synchronous, that a
-same-bit arrival cannot be lost by W1C hardware, or that DMA is quiescent after
-the immediate source sequence.
+software access model, but does not prove that `STOP` is synchronous or that DMA
+is quiescent after the immediate source sequence. A same-bit arrival during
+the acknowledgement window is lost, which the route probe observed on hardware.
 
 ## 5. Timer1 callback context and the unhandled clock event
 

@@ -231,8 +231,10 @@ samples all event and selected sideband evidence before acknowledging the exact
 snapshot.
 The selected register fact retains its source and HIL provenance in
 `registers/esp32s31/evidence/` and `model/reviewed.toml`. Same-bit arrival and
-level-line retrigger are separate hardware claims. A selective clear observed
-under detached routes does not qualify active IRQ routing or `STOP`.
+level-line retrigger are separate hardware claims, which the
+`ieee802154-route-probe` cell settles: arrivals of one latched bit coalesce,
+and the active route retriggers for a later event. A selective clear observed
+under detached routes does not qualify `STOP`.
 
 ## RF lifecycle dependencies
 

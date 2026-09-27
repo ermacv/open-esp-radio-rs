@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "1138ba88733dffe6f0453498e0b45e7bd26a7bbea447f02d09f4bcbec5a7f8d6",
+    "input-2": "777920a664d5aabba35efb72e420869318545eec164c04e5e374be1c807574ca",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895"
   },
@@ -177,7 +177,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "cc1532d0c14f19c6a5ae8f519154935505604eef6a904cbd1c0814228a3be950"
+      "sha256": "4ee2bc7f65375e366d40798b803c71dda794f1984b786175774d668fc46511db"
     },
     {
       "path": "verification/harness/codegen",

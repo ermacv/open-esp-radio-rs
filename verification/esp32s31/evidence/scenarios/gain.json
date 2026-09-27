@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "66accde6a06b80bec32fb1397b0520d35257d6bdc6dfb65214ec5e51e237cbd9",
+    "input-2": "777920a664d5aabba35efb72e420869318545eec164c04e5e374be1c807574ca",
     "input-3": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a"
   },
   "sources": [
@@ -28,7 +28,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
-      "sha256": "77fcba717f966eadc051ff33537e992c62420086f70eaccaff91ecd990837f9f"
+      "sha256": "a63e70d5086b25565a950106a7a57f887bfe1d181ac3d3e3b9a230cafdce75a1"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211",
@@ -172,11 +172,11 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library",
-      "sha256": "95378ffdc278163e04a0f0771e2f32e5bb2d9502c301eafcba2120828bfe9527"
+      "sha256": "974580e2b4e83944ca0f17be04d49d423bc5394613877e60fcb1a55beeba96dc"
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "62267651aaacca1e19f6fd44aee57ab0491cc5b1f9cd151bef6f9adeb5706e9f"
+      "sha256": "4ee2bc7f65375e366d40798b803c71dda794f1984b786175774d668fc46511db"
     },
     {
       "path": "verification/harness/codegen",

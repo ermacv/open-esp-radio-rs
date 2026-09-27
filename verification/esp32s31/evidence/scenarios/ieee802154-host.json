@@ -41,19 +41,23 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "c00d4fd470b8968227dabccf73a5063195a5065330456fc69f86e8416c4fbe5e"
+      "sha256": "352faf878cdd11c890d20ed443016cb7f6791f8badd9088ccc67178618c4deca"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "47d4f8791897c3e5f1b5dfc781f0113c123e377c2b8b909f2f3561acadda66fd"
+      "sha256": "ce60d5c56382a0a583b406d1cfb1c53f5d36d6f70c9cb90d82b6a03deaab0b8e"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "617c4f2ea62ce9e57eeaf923b438fd34bcfc25b02380e5c08b9467d9e5ccf45b"
+      "sha256": "a704cf0c432a31812a0751485df2005dafd530b007e4b68a5a146c869562beb8"
     },
     {
       "path": "crates/hardware/ieee802154/engine",
       "sha256": "b580144a39a6ed3a8c5808544659bc857c591768ee1159bcafbc410cfdb2914c"
+    },
+    {
+      "path": "crates/hardware/radio/clock",
+      "sha256": "5b77237fcdeec669cde55faf7b513fd874e520cf151716a4df01eec3a04acd8f"
     },
     {
       "path": "crates/memory",
@@ -65,7 +69,7 @@
     },
     {
       "path": "verification/esp32s31/host/ieee802154",
-      "sha256": "57ce535336d76f92fb82d6407b5d738c679aef7d6c5f2fca6f2f2e69f5ba42aa"
+      "sha256": "4cc2263e0d2e1151b25857c6b08342f0d05d644be99688eb699e6a791ae6a7e9"
     },
     {
       "path": "verification/schema",

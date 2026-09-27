@@ -72,12 +72,7 @@ fn network_defaults_and_aliases_match_across_firmware_commands() {
         vec!["cargo-hil", "image", "flash", "performance"],
     ] {
         for (argument, expected) in [
-            (None, Integration::UpstreamXarxa),
-            (Some("upstream"), Integration::UpstreamXarxa),
-            (Some("upstream-xarxa"), Integration::UpstreamXarxa),
-            (Some("udp-backpressure"), Integration::PatchedXarxa),
-            (Some("patched-xarxa"), Integration::PatchedXarxa),
-            (Some("upstream-smoltcp"), Integration::UpstreamSmoltcp),
+            (None, Integration::OwnedXarxa),
             (Some("owned-xarxa"), Integration::OwnedXarxa),
         ] {
             let mut args = command.clone();
@@ -220,7 +215,7 @@ fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
             "run",
             "station-udp-tx-ceiling",
             "--network",
-            "patched-xarxa",
+            "owned-xarxa",
         ],
         vec![
             "cargo-hil",
@@ -228,9 +223,9 @@ fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
             "build",
             "performance",
             "--network",
-            "upstream-xarxa",
+            "owned-xarxa",
         ],
-        vec!["cargo-hil", "run-all", "--network", "patched-xarxa"],
+        vec!["cargo-hil", "run-all", "--network", "owned-xarxa"],
     ] {
         assert!(Cli::try_parse_from(args).is_ok());
     }
@@ -240,7 +235,7 @@ fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
             "run",
             "station-udp-tx-ceiling",
             "--network",
-            "patched-xarxa",
+            "owned-xarxa",
             "--firmware-from",
             "earlier-run"
         ])
@@ -438,5 +433,15 @@ fn archive_cli_does_not_require_lab_or_network_for_offline_commands() {
     // The private GitHub transport is gone; archives move offline only.
     for command in ["publish", "fetch"] {
         assert!(Cli::try_parse_from(["hil", "archive", command, "x", "--repo", "o/r"]).is_err());
+    }
+}
+
+#[test]
+fn removed_network_implementations_are_rejected() {
+    for removed in ["upstream-xarxa", "patched-xarxa", "upstream-smoltcp"] {
+        assert!(
+            Cli::try_parse_from(["cargo-hil", "run-all", "--network", removed]).is_err(),
+            "{removed}"
+        );
     }
 }

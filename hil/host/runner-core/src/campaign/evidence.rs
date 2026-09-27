@@ -229,12 +229,12 @@ mod tests {
             Action::Investigate,
             Action::Unsupported,
         ] {
-            let plan = Plan::from_selection(&catalog, binding(action), Integration::UpstreamXarxa)
-                .unwrap();
+            let plan =
+                Plan::from_selection(&catalog, binding(action), Integration::OwnedXarxa).unwrap();
             assert!(plan.resolve(&catalog).unwrap().0.is_empty());
         }
-        let plan = Plan::from_selection(&catalog, binding(Action::Run), Integration::UpstreamXarxa)
-            .unwrap();
+        let plan =
+            Plan::from_selection(&catalog, binding(Action::Run), Integration::OwnedXarxa).unwrap();
         assert_eq!(
             plan.resolve(&catalog)
                 .unwrap()
@@ -247,7 +247,7 @@ mod tests {
         let closed = Plan::from_selection(
             &catalog,
             binding(Action::Satisfied),
-            Integration::UpstreamXarxa,
+            Integration::OwnedXarxa,
         )
         .unwrap();
         assert!(closed.resolve(&catalog).unwrap().0.is_empty());
@@ -257,7 +257,7 @@ mod tests {
         let catalog = super::super::tests::catalog();
         let mut decision = binding(Action::Run);
         decision.selection.obligations[0].procedure_sha256 = "00".repeat(32);
-        assert!(Plan::from_selection(&catalog, decision, Integration::UpstreamXarxa).is_err());
+        assert!(Plan::from_selection(&catalog, decision, Integration::OwnedXarxa).is_err());
     }
     #[test]
     fn another_capability_cannot_hide_an_unsatisfied_obligation_for_the_same_scenario() {
@@ -267,7 +267,7 @@ mod tests {
         required.capability = "second".into();
         required.action = Action::Run;
         selection.selection.obligations.push(required);
-        let plan = Plan::from_selection(&catalog, selection, Integration::UpstreamXarxa).unwrap();
+        let plan = Plan::from_selection(&catalog, selection, Integration::OwnedXarxa).unwrap();
         assert_eq!(plan.resolve(&catalog).unwrap().0.len(), 1);
     }
 }

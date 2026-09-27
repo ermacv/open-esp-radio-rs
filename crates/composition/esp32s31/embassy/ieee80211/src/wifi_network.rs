@@ -2,16 +2,11 @@
 
 #[cfg(feature = "owned-network")]
 use embassy_net_owned as embassy_net;
-#[cfg(feature = "embassy-network")]
-use embassy_net_released as embassy_net;
 
 use crate::{WifiDevice, WifiStackResources};
 
 #[cfg(feature = "owned-network")]
 type NetworkRunner<'resources> = embassy_net::Runner<'resources>;
-#[cfg(feature = "embassy-network")]
-type NetworkRunner<'resources> =
-    embassy_net::Runner<'resources, crate::radio_resources::WifiNetworkDevice>;
 
 /// Eternal `embassy-net` execution obligation for one Wi-Fi device.
 pub struct WifiNetworkRunner<'resources> {
@@ -48,9 +43,6 @@ impl<'resources> WifiNetworkRunner<'resources> {
         );
         #[cfg(feature = "owned-network")]
         inner.set_poll_budget(embassy_net::PollBudget::new(32, 32));
-
-        #[cfg(feature = "embassy-network")]
-        let (stack, inner) = embassy_net::new(device.inner, config, resources, random_seed);
 
         (stack, Self { inner })
     }

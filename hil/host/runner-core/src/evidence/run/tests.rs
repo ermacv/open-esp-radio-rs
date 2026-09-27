@@ -446,11 +446,11 @@ fn firmware_record_archives_the_exact_application() {
     assert_eq!(provenance.subjects.len(), 4);
     assert_eq!(
         provenance.parameters.network.as_deref(),
-        Some("upstream-xarxa")
+        Some("owned-xarxa")
     );
     assert_eq!(
         provenance.parameters.runtime_features,
-        ImageClass::Correctness.build_features(crate::image::Integration::UpstreamXarxa)
+        ImageClass::Correctness.build_features(crate::image::Integration::OwnedXarxa)
     );
     for name in ["embedded-lock", "bootstrap-lock"] {
         assert!(provenance.files.iter().any(|file| file.name == name));
@@ -631,12 +631,9 @@ fn finish_writes_all_views_and_completes_manifest() {
 fn campaign_is_part_of_the_sealed_inventory() {
     let catalog = crate::scenario::test_family::catalog();
     let scenario = catalog.get("silence").unwrap();
-    let plan = crate::campaign::Plan::create(
-        &catalog,
-        &[scenario],
-        crate::image::Integration::UpstreamXarxa,
-    )
-    .unwrap();
+    let plan =
+        crate::campaign::Plan::create(&catalog, &[scenario], crate::image::Integration::OwnedXarxa)
+            .unwrap();
     let root = temporary_directory("campaign-seal");
     let session = integrated_session(&root);
     session.write_campaign(&plan).unwrap();
@@ -757,38 +754,29 @@ fn broken_or_interrupted_repetitions_can_retain_failed_measurements() {
 }
 
 #[test]
-fn provenance_retains_actual_network_selection_even_when_cargo_features_match() {
+fn provenance_records_the_network_implementation_and_its_feature() {
     use crate::image::Integration;
     let root = temporary_directory("build-selection");
     write_test_build_materials(&root);
-    let mut selections = std::collections::BTreeSet::new();
-    for network in [
-        Integration::UpstreamXarxa,
-        Integration::PatchedXarxa,
-        Integration::UpstreamSmoltcp,
-        Integration::OwnedXarxa,
-    ] {
-        let provenance = crate::evidence::build::create_provenance(
-            &root,
-            (ImageClass::Correctness, network),
-            "00".repeat(32),
-            vec![],
-            vec![],
-            vec![],
-            crate::evidence::build::BuildEnvironment::synthetic(),
-        )
-        .unwrap();
-        assert_eq!(provenance.parameters.network.as_deref(), Some(network.id()));
-        assert!(
-            provenance
-                .parameters
-                .runtime_features
-                .split(',')
-                .any(|feature| feature == network.feature())
-        );
-        selections.insert(serde_json::to_string(&provenance.parameters).unwrap());
-    }
-    assert_eq!(selections.len(), 4);
+    let network = Integration::OwnedXarxa;
+    let provenance = crate::evidence::build::create_provenance(
+        &root,
+        (ImageClass::Correctness, network),
+        "00".repeat(32),
+        vec![],
+        vec![],
+        vec![],
+        crate::evidence::build::BuildEnvironment::synthetic(),
+    )
+    .unwrap();
+    assert_eq!(provenance.parameters.network.as_deref(), Some(network.id()));
+    assert!(
+        provenance
+            .parameters
+            .runtime_features
+            .split(',')
+            .any(|feature| feature == network.feature())
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -870,7 +858,7 @@ fn test_artifacts(
     lock: &Path,
 ) -> crate::image::Artifacts {
     crate::image::Artifacts {
-        network: crate::image::Integration::UpstreamXarxa,
+        network: crate::image::Integration::OwnedXarxa,
         output: application.parent().unwrap().to_path_buf(),
         runtime_elf: runtime_elf.to_path_buf(),
         runtime_bin: runtime_bin.to_path_buf(),

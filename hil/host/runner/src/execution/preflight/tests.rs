@@ -6,7 +6,7 @@ fn catalog() -> crate::scenario::Catalog {
 }
 
 #[test]
-fn scheduler_compatibility_remains_a_selection_contract() {
+fn scheduler_selection_applies_only_to_standalone_access_points() {
     let catalog = catalog();
     let mut access_point = catalog
         .get("diagnostic-ap-mixed-tx-work")
@@ -15,36 +15,7 @@ fn scheduler_compatibility_remains_a_selection_contract() {
     assert!(
         configure_run_selection(
             &mut access_point,
-            Some(WifiApScheduler::DeficitHtResponse24),
-            false,
-            Integration::OwnedXarxa,
-        )
-        .is_ok()
-    );
-
-    let mut wrong_network = catalog
-        .get("diagnostic-ap-mixed-tx-work")
-        .expect("AP scenario")
-        .clone();
-    let error = configure_run_selection(
-        &mut wrong_network,
-        Some(WifiApScheduler::RrHtResponse24),
-        false,
-        Integration::UpstreamXarxa,
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("--network owned-xarxa"));
-
-    let mut replay = catalog
-        .get("diagnostic-ap-mixed-tx-work")
-        .expect("AP scenario")
-        .clone();
-    assert!(
-        configure_run_selection(
-            &mut replay,
-            Some(WifiApScheduler::RrHtResponse24),
-            true,
-            Integration::UpstreamXarxa,
+            Some(WifiApScheduler::DeficitHtResponse24)
         )
         .is_ok()
     );

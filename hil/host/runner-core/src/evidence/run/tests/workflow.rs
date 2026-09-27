@@ -193,7 +193,7 @@ source-paths = ["phy.rs"]
         &catalog,
         "program.toml".into(),
         Some("wifi".into()),
-        Integration::UpstreamXarxa,
+        Integration::OwnedXarxa,
     )
     .unwrap();
     assert_eq!(pending.resolve(&catalog).unwrap().0.len(), 1);
@@ -210,7 +210,7 @@ source-paths = ["phy.rs"]
     }
     write(root, "target/bootstrap.lock", "unchanged bootstrap lock");
     let artifacts = Artifacts {
-        network: Integration::UpstreamXarxa,
+        network: Integration::OwnedXarxa,
         output: output.clone(),
         application_image: output.join("application.bin"),
         runtime_elf: output.join("runtime.elf"),

@@ -156,26 +156,6 @@ fn observe_arp(
     }
 }
 
-/// Observe a borrowed Ethernet packet at the original stack's driver boundary.
-#[cfg(all(feature = "driver-observation", feature = "upstream-network"))]
-pub(crate) fn observe_stack_arp(
-    packet: &[u8],
-    stage: oer_hil_esp32s31_telemetry::arp_frontier::Stage,
-) {
-    if packet.len() < 14 || packet[12..14] != [8, 6] {
-        return;
-    }
-    observe_arp(
-        RxObservedEthernetFrame {
-            destination: packet[..6].try_into().expect("checked Ethernet header"),
-            source: packet[6..12].try_into().expect("checked Ethernet header"),
-            ether_type: 0x0806,
-            payload: &packet[14..],
-        },
-        stage,
-    );
-}
-
 #[cfg(feature = "driver-observation")]
 pub(crate) struct HilConnectedRxObserver {
     udp_port: u16,
@@ -321,7 +301,7 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
                 if let Some(tracker) = tracker.borrow_mut().as_mut() {
                     tracker.admitted(
                         sequence,
-                        event.qos_sequence.map(|qos| (qos.tid, qos.sequence)),
+                        event.qos_sequence.map(|qos| (qos.tid, qos.sequence.get())),
                     );
                 }
             });
@@ -355,7 +335,7 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
                 if let Some(tracker) = tracker.borrow_mut().as_mut() {
                     tracker.dropped(
                         sequence,
-                        event.qos_sequence.map(|qos| (qos.tid, qos.sequence)),
+                        event.qos_sequence.map(|qos| (qos.tid, qos.sequence.get())),
                         reason,
                     );
                 }

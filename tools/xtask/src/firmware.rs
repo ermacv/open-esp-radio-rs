@@ -55,9 +55,7 @@ pub fn build(
         .args(["--bin", binary])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
-    if network != Some(oer_esp32s31_firmware::network::Integration::PatchedXarxa) {
-        command.arg("--locked");
-    }
+    command.arg("--locked");
     runtime_lock.configure(&mut command);
     if let Some(network) = network {
         network.configure(&mut command, &ctx.root);
@@ -257,36 +255,6 @@ fn select_board(
         (Some(port), None) => Some(std::path::PathBuf::from(&port.port)),
         _ => None,
     }
-}
-
-/// Exercise the same blocked-send workload with an explicit quiescence requirement.
-pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
-    use oer_esp32s31_firmware::network::{BuildLock, Integration};
-    let network = Integration::PatchedXarxa;
-    let output = ctx.root.join("target/network-backpressure");
-    // The patched resolution stays in this copy; the root catalog is untouched.
-    let lock = BuildLock::prepare(&ctx.root, &output.join("lock"))?;
-    let mut command = ctx.cargo();
-    command.args([
-        "test",
-        "-p",
-        "oer-xarxa-upstream",
-        "--test",
-        "upstream_backpressure",
-    ]);
-    lock.configure(&mut command);
-    network.configure(&mut command, &ctx.root);
-    command.args([
-        "--",
-        "--ignored",
-        "--exact",
-        "blocked_send_quiesces_until_capacity_returns",
-        "--nocapture",
-    ]);
-    process::run(&mut command)?;
-    lock.validate(&ctx.root, network)?;
-    fs::copy(lock.path(), output.join("effective-Cargo.lock"))?;
-    Ok(())
 }
 
 #[cfg(test)]

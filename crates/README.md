@@ -22,7 +22,6 @@ Cargo package identities are independent of this directory hierarchy.
 | `oer/` | Thin public facade; reexports protocols, chip backends and selected compositions |
 | `radio/` | `wifi/` owns public requests, affine role lifecycle and the executor-free service port |
 | `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
-| `network/dependencies/` | Reviewed Cargo source selection for network stacks; no adapter code |
 | `network/interface/` | Stack-neutral interface, link and error values |
 | `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Frame/protocol code, MAC contracts, role policy and security |
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |
@@ -46,20 +45,15 @@ Cargo package identities are independent of this directory hierarchy.
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio port |
 | `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
-| `adapters/embassy-net/{owned,upstream}/`, `adapters/embassy-net/esp32s31/ieee80211-upstream/` | Owned-packet and released-interface network adapters; the chip bridge binds the released interface to Wi-Fi execution |
-| `adapters/xarxa/upstream/`, `adapters/xarxa/esp32s31/ieee80211-upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure; the chip bridge binds it to Wi-Fi execution |
+| `adapters/embassy-net/owned/` | Owned-packet network adapter over the pinned Embassy/Xarxa forks |
 | `../experiments/network-engine/` | Experimental synchronous network engine; no production package depends on it, and its host tests drive the STA TX owner |
 | `composition/esp32s31/embassy/{ieee80211,bluetooth,ieee802154,radio}/` | Static resources, one-time claims, final bindings and the concrete lifecycle runners; `radio` is the shared radio system (arbiter, PHY domain and periodic tracking); Bluetooth and IEEE 802.15.4 start and stop as its clients, and Bluetooth adds its HCI Controller over the radio runtime |
 
 `memory` owns backing stability, range proofs and affine handoff; chip DMA
 modules own hardware descriptors and controller transitions. `network/interface`
-is a dependency-free value boundary. The compatibility adapter uses the
-released Embassy token contract; the owned adapter uses the pinned Git
-Embassy/Xarxa contract and its maintained packet-pool extensions. The upstream
-Xarxa adapter uses the original global pool and driver API. Its ESP32-S31
-bridge lives in `adapters/xarxa/esp32s31/ieee80211-upstream` and the released
-Embassy bridge in `adapters/embassy-net/esp32s31/ieee80211-upstream`; all integrations
-share the existing radio scheduler and final SRAM allocator.
+is a dependency-free value boundary. The owned adapter, the only network
+integration, uses the pinned Git Embassy/Xarxa contract and its maintained
+packet-pool extensions over the radio scheduler and final SRAM allocator.
 `../experiments/network-engine` contains an experimental engine and physical materializer;
 no production package depends on it. Its host tests compose the STA TX owner
 through the runtime's `test-support` models. Product radio policy cannot

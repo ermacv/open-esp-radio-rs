@@ -123,20 +123,18 @@ cargo hil run <scenario-id> --firmware-from <run-id>
 cargo hil run-all [--tag qualification]
 ```
 
-The `network-comparison` tag selects the same five station workloads for each
-network implementation: bidirectional UDP at 65 + 65 Mbit/s, RX-only and
+The `network-comparison` tag selects five station workloads: bidirectional UDP at 65 + 65 Mbit/s, RX-only and
 TX-only at 130 Mbit/s, bidirectional UDP at 130 + 130 Mbit/s, and idle ping.
 Each scenario runs once and uses the task-residence image. UDP windows last
 12 seconds; idle ping sends 120 requests at 100 ms intervals. This is a quick
 comparison, not a repeatability or endurance qualification. Build, association,
-reset and cleanup time is additional. Run one implementation at a time:
+reset and cleanup time is additional:
 
 ```console
-cargo hil run-all --tag network-comparison --network patched-xarxa
+cargo hil run-all --tag network-comparison
 ```
 
-Select `upstream-xarxa`, `upstream-smoltcp` or `owned-xarxa` for the other
-compositions. The throughput criteria still apply under overload; a completed
+The throughput criteria still apply under overload; a completed
 measurement can fail its speed gate. Task residence is not full CPU utilization.
 
 The separate `ap-network-comparison` tag uses ESP as an HT40 AP with two
@@ -151,7 +149,7 @@ cycle and one 12-second UDP window:
 | TX with sparse peer | 130 Mbit/s to laptop; two datagrams every 100 ms to OpenWrt |
 
 ```console
-cargo hil run-all --tag ap-network-comparison --network patched-xarxa
+cargo hil run-all --tag ap-network-comparison
 ```
 
 The AP comparison checks per-peer progress, with an additional sparse-peer

@@ -10,7 +10,7 @@ fn selection_is_exactly_the_requested_scenarios() {
     let catalog = catalog();
     let throughput = catalog.get("throughput").unwrap();
     let silence = catalog.get("silence").unwrap();
-    let plan = Plan::create(&catalog, &[silence, throughput], Integration::UpstreamXarxa).unwrap();
+    let plan = Plan::create(&catalog, &[silence, throughput], Integration::OwnedXarxa).unwrap();
     let (selected, _) = plan.resolve(&catalog).unwrap();
     assert_eq!(
         selected.iter().map(|s| s.id()).collect::<Vec<_>>(),
@@ -24,7 +24,7 @@ fn selection_is_exactly_the_requested_scenarios() {
     assert!(plan.requirements.station_network);
     let roundtrip: Plan = serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
     assert_eq!(plan, roundtrip);
-    assert!(Plan::create(&catalog, &[silence, silence], Integration::UpstreamXarxa).is_err());
+    assert!(Plan::create(&catalog, &[silence, silence], Integration::OwnedXarxa).is_err());
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn named_check_selection_is_scoped_to_the_scenarios_that_publish_it() {
     let plan = Plan::create_for_checks(
         &catalog,
         &selected,
-        Integration::UpstreamXarxa,
+        Integration::OwnedXarxa,
         &["udp.rx.maximum-silence".into()],
     )
     .unwrap();
@@ -53,8 +53,7 @@ fn named_check_selection_is_scoped_to_the_scenarios_that_publish_it() {
         vec!["udp.rx.maximum-silence".into(), "not-a-check".into()],
     ] {
         assert!(
-            Plan::create_for_checks(&catalog, &selected, Integration::UpstreamXarxa, &checks)
-                .is_err()
+            Plan::create_for_checks(&catalog, &selected, Integration::OwnedXarxa, &checks).is_err()
         );
     }
 }
@@ -65,7 +64,7 @@ fn ordinary_selection_does_not_expand_and_modified_plans_fail_closed() {
     let plan = Plan::create(
         &catalog,
         &[catalog.get("boot-smoke").unwrap()],
-        Integration::UpstreamXarxa,
+        Integration::OwnedXarxa,
     )
     .unwrap();
     assert_eq!(plan.scenarios.len(), 1);
@@ -94,7 +93,7 @@ fn procedure_identity_ignores_annotations_but_tracks_execution() {
     let plan = Plan::create(
         &catalog,
         &[catalog.get("boot-smoke").unwrap()],
-        Integration::UpstreamXarxa,
+        Integration::OwnedXarxa,
     )
     .unwrap();
     let directory = tempfile::tempdir().unwrap();

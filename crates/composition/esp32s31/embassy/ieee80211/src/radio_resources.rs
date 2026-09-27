@@ -24,24 +24,15 @@ use crate::resources::profile::{
 use embassy_net_owned as embassy_net;
 #[cfg(feature = "owned-network")]
 use embassy_net_owned::{PacketBufAllocator, PacketPool, PacketPoolStorage};
-#[cfg(feature = "embassy-network")]
-use embassy_net_released as embassy_net;
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 #[cfg(feature = "owned-network")]
 use oer_embassy_net_owned::{OwnedEndpointResources, OwnedNetworkDevice, OwnedNetworkTxFrame};
-#[cfg(feature = "embassy-network")]
-use oer_embassy_net_upstream::{
-    Device as EmbassyNetworkDevice, FrameStorage as EmbassyFrameStorage,
-    Resources as EmbassyEndpointResources,
-};
 
 use oer_esp32s31_ieee80211_dma::tx_ampdu_storage::AmpduDmaStorage;
 #[cfg(feature = "owned-network")]
 use oer_esp32s31_ieee80211_runtime::datapath::owned::DualOwnedDatapathNetwork;
 
-#[cfg(feature = "embassy-network")]
-use oer_esp32s31_ieee80211_embassy_net_upstream::{DualEmbassyDatapathNetwork, EmbassyTxFrame};
 use oer_esp32s31_ieee80211_runtime::datapath::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxPool, PinnedTxResources,
     tx::resources::AggregateTxResources,
@@ -63,50 +54,12 @@ pub(super) const NETWORK_TX_HEADROOM: usize =
 const _: () = assert!(TX_AMPDU_METADATA_SIZE.is_multiple_of(core::mem::align_of::<u32>()));
 pub(super) const TX_AMPDU_BUFFER_SIZE: usize = 0;
 
-/// Complete-frame software horizon for the unchanged Embassy driver.
-///
-/// This is deliberately smaller than the optimized owner pool. Payload slots
-/// live in separate general-memory arenas and circulate through the hot
-/// channels as unique leases; the upstream track still publishes an
-/// explicit bounded-RAM/extra-copy envelope rather than pretending to be the
-/// fast path.
-#[cfg(feature = "embassy-network")]
-pub const ESP32S31_EMBASSY_NETWORK_QUEUE_DEPTH: usize = 16;
-
-#[cfg(feature = "embassy-network")]
-type EmbassyMonitor = oer_embassy_net_upstream::ResourceMonitor<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    ESP32S31_EMBASSY_NETWORK_QUEUE_DEPTH,
->;
-#[cfg(feature = "embassy-network")]
-static EMBASSY_MONITORS: crate::network_diagnostics::Monitors<EmbassyMonitor> =
-    crate::network_diagnostics::Monitors::new();
-
-/// Observe the selected endpoint's ownership even while radio service awaits capacity.
-#[cfg(feature = "embassy-network")]
-pub fn embassy_resources(
-    interface: crate::NetworkInterface,
-) -> Option<oer_embassy_net_upstream::ResourceSnapshot> {
-    EMBASSY_MONITORS.snapshot(interface, EmbassyMonitor::snapshot)
-}
-
 #[cfg(feature = "owned-network")]
 type NetworkResources = OwnedEndpointResources<
     CriticalSectionRawMutex,
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_OWNER_TX_QUEUE_DEPTH,
 >;
-#[cfg(feature = "embassy-network")]
-type NetworkResources = EmbassyEndpointResources<
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    ESP32S31_EMBASSY_NETWORK_QUEUE_DEPTH,
->;
-#[cfg(feature = "embassy-network")]
-type NetworkFrameStorage =
-    EmbassyFrameStorage<NETWORK_FRAME_CAPACITY, ESP32S31_EMBASSY_NETWORK_QUEUE_DEPTH>;
 type NetworkTxResources = PinnedTxResources<
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -139,13 +92,6 @@ pub(super) type RadioTxBacking = PinnedTxFrame<
 >;
 #[cfg(feature = "owned-network")]
 pub(super) type RadioNetworkTxBacking = OwnedNetworkTxFrame<'static, CriticalSectionRawMutex>;
-#[cfg(feature = "embassy-network")]
-pub(super) type RadioNetworkTxBacking = EmbassyTxFrame<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    ESP32S31_EMBASSY_NETWORK_QUEUE_DEPTH,
->;
 type RadioAmpduRetention = RetainedAmpduDmaStorage<RadioTxBacking, TX_AMPDU_FRAME_COUNT>;
 
 #[cfg(feature = "owned-network")]
@@ -154,13 +100,6 @@ pub type WifiNetworkDevice = OwnedNetworkDevice<
     CriticalSectionRawMutex,
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_OWNER_TX_QUEUE_DEPTH,
->;
-#[cfg(feature = "embassy-network")]
-pub type WifiNetworkDevice = EmbassyNetworkDevice<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    ESP32S31_EMBASSY_NETWORK_QUEUE_DEPTH,
 >;
 
 /// Application-side Wi-Fi device plus the general packet allocator consumed
@@ -171,13 +110,6 @@ pub struct WifiDevice {
     pub(crate) packet_allocator: PacketBufAllocator,
 }
 
-#[cfg(feature = "embassy-network")]
-impl WifiDevice {
-    /// Transfer the unique released Embassy device to application-owned stack composition.
-    pub fn into_embassy(self) -> WifiNetworkDevice {
-        self.inner
-    }
-}
 #[cfg(feature = "owned-network")]
 impl WifiDevice {
     /// Transfer the unique owned-packet device and its matching allocator together.
@@ -186,7 +118,6 @@ impl WifiDevice {
     }
 }
 
-#[cfg(not(feature = "upstream-network"))]
 impl WifiDevice {
     /// Select software IPv4/UDP validation for received packets.
     pub fn with_software_ipv4_udp_rx_checksum_validation(mut self, enabled: bool) -> Self {
@@ -220,8 +151,6 @@ impl WifiDevice {
 
 #[cfg(feature = "owned-network")]
 pub type WifiStackResources = embassy_net::StackResources<WifiNetworkDevice>;
-#[cfg(feature = "embassy-network")]
-pub type WifiStackResources = embassy_net::StackResources<16>;
 
 /// Permanent application-side devices for the two logical Wi-Fi interfaces.
 /// Each device owns independent IP/link/RX state while both publish into the
@@ -241,60 +170,16 @@ pub(super) type RadioNetworkRunner = DualOwnedDatapathNetwork<
     NETWORK_OWNER_TX_QUEUE_DEPTH,
     NETWORK_TX_QUEUE_DEPTH,
 >;
-#[cfg(feature = "embassy-network")]
-pub(super) type RadioNetworkRunner = DualEmbassyDatapathNetwork<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    ESP32S31_EMBASSY_NETWORK_QUEUE_DEPTH,
-    NETWORK_TX_QUEUE_DEPTH,
->;
 pub(super) type NetworkRunner = &'static mut RadioNetworkRunner;
 pub(super) type RadioAmpduStorage =
     AggregateTxResources<'static, RadioTxBacking, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
 pub type WifiNetworkResources = StationNetworkResources<(), NetworkRunner, ()>;
 pub(super) type RunningWifiNetwork = RunningStationNetwork<(), NetworkRunner>;
 
-#[cfg(not(feature = "upstream-network"))]
 static NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
     ConstStaticCell::new(NetworkResources::new());
-#[cfg(not(feature = "upstream-network"))]
 static ACCESS_POINT_NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
     ConstStaticCell::new(NetworkResources::new());
-#[cfg(feature = "embassy-network")]
-#[allow(
-    unsafe_code,
-    reason = "upstream payload storage is explicitly placed in the general PSRAM tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_embassy_station_rx")]
-static STATION_EMBASSY_RX_STORAGE: ConstStaticCell<NetworkFrameStorage> =
-    ConstStaticCell::new(NetworkFrameStorage::new());
-#[cfg(feature = "embassy-network")]
-#[allow(
-    unsafe_code,
-    reason = "upstream payload storage is explicitly placed in the general PSRAM tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_embassy_station_tx")]
-static STATION_EMBASSY_TX_STORAGE: ConstStaticCell<NetworkFrameStorage> =
-    ConstStaticCell::new(NetworkFrameStorage::new());
-#[cfg(feature = "embassy-network")]
-#[allow(
-    unsafe_code,
-    reason = "upstream payload storage is explicitly placed in the general PSRAM tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_embassy_ap_rx")]
-static ACCESS_POINT_EMBASSY_RX_STORAGE: ConstStaticCell<NetworkFrameStorage> =
-    ConstStaticCell::new(NetworkFrameStorage::new());
-#[cfg(feature = "embassy-network")]
-#[allow(
-    unsafe_code,
-    reason = "upstream payload storage is explicitly placed in the general PSRAM tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_embassy_ap_tx")]
-static ACCESS_POINT_EMBASSY_TX_STORAGE: ConstStaticCell<NetworkFrameStorage> =
-    ConstStaticCell::new(NetworkFrameStorage::new());
 static NETWORK_TX_RESOURCES: ConstStaticCell<NetworkTxResources> =
     ConstStaticCell::new(NetworkTxResources::new());
 static NETWORK_RUNNER: StaticCell<RadioNetworkRunner> = StaticCell::new();
@@ -536,52 +421,6 @@ pub(crate) fn initialize_network(
     )
 }
 
-#[cfg(feature = "embassy-network")]
-pub(crate) fn initialize_network(
-    station_address: [u8; 6],
-    access_point_address: [u8; 6],
-) -> (WifiDevices, WifiNetworkResources) {
-    let station_resources = NETWORK_RESOURCES.take();
-    let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
-    let station_interface =
-        oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID;
-    let access_point_interface =
-        oer_esp32s31_ieee80211_runtime::datapath::network::AP_NETWORK_INTERFACE_ID;
-    let (station_device, station_runner) = station_resources.split(
-        station_address,
-        STATION_EMBASSY_RX_STORAGE.take(),
-        STATION_EMBASSY_TX_STORAGE.take(),
-    );
-    let (access_point_device, access_point_runner) = access_point_resources.split(
-        access_point_address,
-        ACCESS_POINT_EMBASSY_RX_STORAGE.take(),
-        ACCESS_POINT_EMBASSY_TX_STORAGE.take(),
-    );
-    EMBASSY_MONITORS.initialize(
-        station_runner.resource_monitor(),
-        access_point_runner.resource_monitor(),
-    );
-    let runner = DualEmbassyDatapathNetwork::new(
-        station_interface,
-        station_runner,
-        access_point_interface,
-        access_point_runner,
-        initialize_physical_tx(),
-    );
-    let runner = NETWORK_RUNNER.init(runner);
-    (
-        WifiDevices {
-            station: WifiDevice {
-                inner: station_device,
-            },
-            access_point: WifiDevice {
-                inner: access_point_device,
-            },
-        },
-        WifiNetworkResources::Unstarted { device: (), runner },
-    )
-}
-
 pub(super) fn initialize_ampdu() -> Result<RadioAmpduStorage, HtAmpduTxError> {
     Ok(AggregateTxResources::pipelined(
         HtAmpduTxResources::pin_static(TX_AMPDU_STORAGE.take(), TX_AMPDU_DMA_STORAGE.take())?,
@@ -592,25 +431,4 @@ pub(super) fn initialize_ampdu() -> Result<RadioAmpduStorage, HtAmpduTxError> {
         )?,
         TX_AMPDU_STANDBY_RETENTION.take(),
     ))
-}
-
-#[cfg(feature = "upstream-network")]
-mod upstream;
-#[cfg(feature = "upstream-network")]
-use upstream::RadioNetworkRunner;
-#[cfg(feature = "upstream-network")]
-pub(crate) use upstream::initialize_network;
-#[cfg(feature = "upstream-network")]
-pub use upstream::{WifiNetworkDevice, rx_pool_drops};
-#[cfg(feature = "upstream-network")]
-pub(super) type RadioNetworkTxBacking =
-    oer_xarxa_upstream::TxFrame<'static, CriticalSectionRawMutex>;
-
-#[cfg(feature = "upstream-network")]
-impl WifiDevice {
-    /// Transfer the original Xarxa driver to the application's upstream stack.
-    /// The application owns stack storage, IP configuration and socket policy.
-    pub fn into_upstream(self) -> WifiNetworkDevice {
-        self.inner
-    }
 }

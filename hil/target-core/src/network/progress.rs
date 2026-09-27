@@ -84,7 +84,3 @@ pub async fn observe<F: core::future::Future>(future: F, counters: &Counters) ->
 // Each network stack's driver contract, counted at the same boundary.
 #[cfg(feature = "owned-network")]
 mod owned;
-#[cfg(feature = "embassy-network")]
-mod smoltcp;
-#[cfg(feature = "upstream-network")]
-mod xarxa;

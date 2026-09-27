@@ -281,12 +281,7 @@ pub(crate) fn run() -> Result<()> {
                 target.as_deref(),
             )?;
             for scenario in &mut selected {
-                preflight::configure_run_selection(
-                    scenario,
-                    ap_scheduler.map(Into::into),
-                    firmware_from.is_some(),
-                    network,
-                )?;
+                preflight::configure_run_selection(scenario, ap_scheduler.map(Into::into))?;
             }
             let snapshot = if firmware_from.is_none() {
                 Some(image::snapshot::capture(&root, &source_include)?)

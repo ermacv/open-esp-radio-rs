@@ -65,24 +65,9 @@ pub use oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::{
     AccessPointAirtimeConfiguration, AccessPointAirtimeSelection,
 };
 
-#[cfg(any(
-    all(feature = "owned-network", feature = "embassy-network"),
-    all(feature = "upstream-network", feature = "owned-network"),
-    all(feature = "upstream-network", feature = "embassy-network")
-))]
+#[cfg(not(feature = "owned-network"))]
 #[cfg(target_arch = "riscv32")]
-compile_error!(
-    "select exactly one network integration: upstream-network, owned-network or embassy-network"
-);
-#[cfg(not(any(
-    feature = "owned-network",
-    feature = "embassy-network",
-    feature = "upstream-network"
-)))]
-#[cfg(target_arch = "riscv32")]
-compile_error!(
-    "select exactly one network integration: upstream-network, owned-network or embassy-network"
-);
+compile_error!("owned Xarxa is the only network integration: enable the owned-network feature");
 
 #[cfg(feature = "diagnostics")]
 #[cfg(target_arch = "riscv32")]
@@ -136,7 +121,6 @@ mod status;
 #[cfg(target_arch = "riscv32")]
 mod supervisor;
 #[cfg(target_arch = "riscv32")]
-#[cfg(not(feature = "upstream-network"))]
 mod wifi_network;
 
 #[cfg(feature = "diagnostics")]
@@ -236,17 +220,11 @@ pub use oer_esp32s31_ieee80211_runtime::diagnostics::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
-#[cfg(not(feature = "upstream-network"))]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::WifiStackResources;
 #[cfg(feature = "tx-psram-dma-probe")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::configure_direct_psram_tx_dma_probe;
-#[cfg(all(feature = "embassy-network", target_arch = "riscv32"))]
-pub use radio_resources::embassy_resources;
-#[cfg(feature = "upstream-network")]
-#[cfg(target_arch = "riscv32")]
-pub use radio_resources::rx_pool_drops;
 #[cfg(feature = "tx-psram-dma-probe")]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::{
@@ -265,7 +243,6 @@ pub use supervisor::station::{DiagnosticRxStatistics, DiagnosticSnapshot, Diagno
 #[cfg(target_arch = "riscv32")]
 pub use supervisor::{SystemRunner, new};
 #[cfg(target_arch = "riscv32")]
-#[cfg(not(feature = "upstream-network"))]
 pub use wifi_network::WifiNetworkRunner;
 
 /// One low-overhead batch of Core0 connected-DATAPATH poll residence.

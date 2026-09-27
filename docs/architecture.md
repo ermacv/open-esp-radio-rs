@@ -75,7 +75,7 @@ Every package is named `oer-` followed by lowercase tokens in this order: an
 optional chip (`esp32s31`), the domain (`ieee80211`, `bluetooth`, `ieee802154`,
 `coex`, `radio`, `memory`, `network`, `hil`, `example`, …), an optional
 component (`mac`, `sta`, `rsn`, `runtime`, `system`, …) and, for adapters, the
-binding (`embassy`, `esp-hal`, `embassy-net-upstream`, `xarxa-upstream`). The
+binding (`embassy`, `esp-hal`, `embassy-net-owned`). The
 directory repeats the same tokens under its layer directory; grouping
 directories such as `driver/`, `security/`, `le/` or the binding directory of
 an adapter add structure without renaming. Wi-Fi is `ieee80211` in package and

@@ -7,11 +7,10 @@
 - [Wire and evidence contracts](../../protocol/README.md)
 
 This workspace selects the shared board boot and memory profile and owns Embassy
-executors, network stacks, UART transport and HIL workloads. `cargo hil image
-build/flash`, `run` and `run-all` accept `--network upstream-xarxa` (default),
-`patched-xarxa`, `upstream-smoltcp` or `owned-xarxa`. Effective dependency locks
-are archived beside each image. The [network implementation guide](../../../docs/network-implementations.md)
-explains the crates, source policy, memory and UDP admission differences.
+executors, the owned Xarxa/Embassy network stack, UART transport and HIL
+workloads. Effective dependency locks are archived beside each image. The
+[network implementation guide](../../../docs/network-implementations.md)
+explains the stack's crates and source policy.
 
 The Bluetooth images reach the radio only through HCI.
 `runtime/src/bluetooth.rs` splits the radio into the shared radio system,
@@ -118,7 +117,7 @@ and reconciliation of reservation counts and budgets, with no outstanding work
 at successful stop. A negative balance is permitted: it is modelled service
 debt, not leaked packet ownership. The raw typed records remain in `protocol.jsonl`.
 
-The released Embassy/smoltcp and owned Embassy/Xarxa compositions enable
+The owned Embassy/Xarxa composition enables
 `auto-icmp-echo-reply` explicitly for the HIL ping workload because these
 dependencies disable default features. Echo response is independent of DHCP,
 UDP/TCP sockets and the radio adapter.
@@ -326,13 +325,11 @@ and its persistent observation resources; its `traffic`, `ieee802154` and
 `rx_statistics` child owns RX counter deltas and wire-evidence conversion.
 `network` owns storage for the selected stack/driver, per-interface IPv4
 configuration and HIL-only checksum-cost policy. Shared socket workloads use
-backend-specific UDP and TCP bindings. UDP RX retains 16 datagrams: Xarxa
-selects this depth through its configuration feature, while smoltcp uses
-explicit metadata and byte rings. Xarxa packet-pool capacity remains a
+the stack's UDP and TCP bindings. UDP RX retains 16 datagrams: Xarxa
+selects this depth through its configuration feature. Xarxa packet-pool capacity remains a
 separate limit from the socket queue depth.
 TX pacing is a workload policy, not a claimed socket queue capacity. TCP buffer
-sizes remain application-owned. The upstream global packet pool uses its
-default capacity.
+sizes remain application-owned.
 
 `console` retains the coupled UART/session admission, logger serialization
 and emergency writer lifecycle. Its `radio` child supplies the product-facing

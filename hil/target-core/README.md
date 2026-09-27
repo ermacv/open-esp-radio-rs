@@ -13,12 +13,9 @@ compiled code the firmware links.
 | none | `console`, `memory_benchmark`, `network::progress`, `traffic` |
 | `bluetooth` | `bluetooth::{command_pump, security}` |
 | `secure-gatt` | `bluetooth_gatt::secure` |
-| `upstream-network` | `network::{checksum, ipv4, sockets}` on original Embassy and Xarxa |
-| `embassy-network` | `network::{embassy_ipv4, sockets}` on released `embassy-net` |
 | `owned-network` | `network::{embassy_ipv4, sockets}` on the owned Embassy and Xarxa fork |
 
-Select at most one network feature, as the runtime does; the crate fails to
-compile otherwise. Stack pins and features match the HIL target workspace, so
+Stack pins and features match the HIL target workspace, so
 host tests observe the stack configuration the firmware uses. The chip MIC-fault
 hooks and the HCI reply exchange stay in the runtime around
 `bluetooth::security`.
@@ -28,7 +25,5 @@ Run the tests for each configuration:
 ```console
 cargo test -p oer-hil-target-core
 cargo test -p oer-hil-target-core --features secure-gatt
-cargo test -p oer-hil-target-core --features upstream-network
-cargo test -p oer-hil-target-core --features embassy-network
 cargo test -p oer-hil-target-core --features owned-network
 ```

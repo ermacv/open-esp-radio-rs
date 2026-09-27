@@ -17,9 +17,6 @@ members = [
     "crates/network/interface",
     "crates/radio",
     "crates/adapters/embassy-net/owned",
-    "crates/adapters/embassy-net/upstream",
-    "crates/adapters/xarxa/upstream",
-    "crates/adapters/xarxa/esp32s31/ieee80211-upstream",
     "experiments/network-engine",
     "crates/runtime/bluetooth",
     "crates/runtime/ieee80211",
@@ -31,7 +28,6 @@ members = [
     "crates/runtime/esp32s31/ieee80211",
     "crates/runtime/esp32s31/phy",
     "crates/runtime/esp32s31/radio",
-    "crates/adapters/embassy-net/esp32s31/ieee80211-upstream",
     "crates/adapters/esp-hal/esp32s31/radio",
     "crates/adapters/esp-hal/esp32s31/ieee802154",
     "crates/composition/esp32s31/embassy/ieee802154",
@@ -157,7 +153,3 @@ embassy-futures = { version = "0.1.2", registry = "crates-io" }
 embassy-sync = { version = "0.8.0", registry = "crates-io" }
 embassy-time = { version = "0.5.1", registry = "crates-io" }
 
-# Share the official timer ABI between registry platform crates and upstream
-# Git Embassy in integration tests. No network implementation is substituted.
-[patch."https://github.com/embassy-rs/embassy"]
-embassy-time-driver = { version = "=0.2.2", registry = "crates-io" }

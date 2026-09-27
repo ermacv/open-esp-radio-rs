@@ -36,7 +36,7 @@ impl FinalImageClass {
 }
 
 const FINAL_IMAGE_PROFILE: &str = "psram-code-psram-data-psram-stack";
-const FINAL_IMAGE_NETWORK: &str = "upstream-xarxa";
+const FINAL_IMAGE_NETWORK: &str = "owned-xarxa";
 
 struct FinalImageBuild {
     class: FinalImageClass,

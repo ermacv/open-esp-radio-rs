@@ -54,7 +54,7 @@ From the repository root:
 
 ```console
 cargo xtask build firmware monitor
-cargo xtask build firmware station --no-default-features --features embassy-network
+cargo xtask build firmware station
 cargo xtask build firmware access-point --flash --monitor --port /dev/ttyACM0
 ```
 

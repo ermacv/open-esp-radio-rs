@@ -2,8 +2,8 @@
 
 ## RX DMA ownership measurements
 
-`cargo hil run tcp-rx-dma-ownership --network upstream-smoltcp` and
-`cargo hil run tcp-tx-dma-ownership --network upstream-smoltcp` select the
+`cargo hil run tcp-rx-dma-ownership` and
+`cargo hil run tcp-tx-dma-ownership` select the
 separate `diagnostic-rx-ownership` image. They use the HT40 split-core TCP
 workload and retain the ordinary throughput and stack checks. TCP TX measures
 RX allocation lifetimes for incoming peer traffic, not TX-buffer residence.

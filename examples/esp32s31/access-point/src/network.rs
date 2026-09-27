@@ -3,12 +3,3 @@
 mod owned;
 #[cfg(feature = "owned-network")]
 pub use owned::*;
-#[cfg(feature = "upstream-network")]
-mod upstream;
-#[cfg(feature = "upstream-network")]
-pub use upstream::*;
-
-#[cfg(feature = "embassy-network")]
-mod compat;
-#[cfg(feature = "embassy-network")]
-pub use compat::*;

@@ -7,15 +7,10 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [features]
-default = ["upstream-network"]
+default = ["owned-network"]
 owned-network = ["dep:embassy-net-owned", "oer/owned-xarxa"]
-upstream-network = ["dep:embassy-net-upstream", "oer/upstream-xarxa"]
-
-embassy-network = ["dep:embassy-net-released", "oer/embassy-smoltcp"]
 
 [dependencies]
-embassy-net-released = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"], optional = true }
-embassy-net-upstream = { package = "embassy-net", git = "https://github.com/embassy-rs/embassy", rev = "c0fdd08e94138105fba8be3133c4ced91afc30fc", default-features = false, features = ["medium-ethernet", "ipv4", "udp", "tcp-listener", "icmp-ping-reply"], optional = true }
 edge-dhcp = { version = "0.8.0", default-features = false }
 embassy-net-owned = { package = "embassy-net", optional = true, git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
 embassy-time = "0.5.1"
@@ -65,9 +60,6 @@ oer-esp32s31-platform-layout = { path = "../../../platform/esp32s31/layout", fea
 [dev-dependencies]
 embassy-time = { version = "0.5.1", features = ["std"] }
 critical-section = { version = "1.2.0", features = ["std"] }
-
-[patch."https://github.com/embassy-rs/embassy"]
-embassy-time-driver = { version = "=0.2.2", registry = "crates-io" }
 
 [package.metadata.open-radio]
 scope = "development"

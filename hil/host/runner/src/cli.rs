@@ -37,7 +37,7 @@ pub(crate) enum CliCommand {
         /// Save the executable plan. Planning never accesses the lab or DUT.
         #[arg(long)]
         out: Option<PathBuf>,
-        #[arg(long, default_value = "upstream-xarxa")]
+        #[arg(long, default_value = "owned-xarxa")]
         network: hil_core::image::Integration,
         /// Require every named check; controls are added only after this filter.
         #[arg(long = "proof")]
@@ -98,12 +98,8 @@ pub(crate) enum CliCommand {
         /// selected scenario must use that class.
         #[arg(long, value_name = "RUN_ID")]
         firmware_from: Option<String>,
-        /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
-        #[arg(
-            long,
-            default_value = "upstream-xarxa",
-            conflicts_with = "firmware_from"
-        )]
+        /// Network implementation: owned-xarxa, the only one.
+        #[arg(long, default_value = "owned-xarxa", conflicts_with = "firmware_from")]
         network: hil_core::image::Integration,
         /// Shell command run after the scenarios while the run still holds
         /// its stand lease, for example to read the board's reset reason.
@@ -121,8 +117,8 @@ pub(crate) enum CliCommand {
         /// Explicit nonignored untracked source file; repeat for each included file.
         #[arg(long = "source-include", value_name = "FILE")]
         source_include: Vec<String>,
-        /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
-        #[arg(long, default_value = "upstream-xarxa")]
+        /// Network implementation: owned-xarxa, the only one.
+        #[arg(long, default_value = "owned-xarxa")]
         network: hil_core::image::Integration,
         /// Select only scenarios carrying this tag. May be repeated.
         #[arg(long)]
@@ -205,8 +201,8 @@ pub(crate) enum ImageCommand {
         /// Build only from a verified source snapshot directory, not the live checkout.
         #[arg(long)]
         source_snapshot: Option<PathBuf>,
-        /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
-        #[arg(long, default_value = "upstream-xarxa")]
+        /// Network implementation: owned-xarxa, the only one.
+        #[arg(long, default_value = "owned-xarxa")]
         network: hil_core::image::Integration,
     },
     /// Build one clean commit in two different checkout roots and compare every firmware subject.
@@ -218,8 +214,8 @@ pub(crate) enum ImageCommand {
     },
     Flash {
         class: hil_core::image::ImageClass,
-        /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
-        #[arg(long, default_value = "upstream-xarxa")]
+        /// Network implementation: owned-xarxa, the only one.
+        #[arg(long, default_value = "owned-xarxa")]
         network: hil_core::image::Integration,
     },
     /// Verify and flash an exact application archived by an earlier HIL run.

@@ -31,11 +31,6 @@ impl FrozenSources {
         let esp_hal = override_path("esp-hal");
         let embassy = override_path("embassy");
         let xarxa = override_path("xarxa");
-        if network != crate::image::Integration::UpstreamXarxa
-            && (esp_hal.is_some() || embassy.is_some() || xarxa.is_some())
-        {
-            return Err("local dependency overrides are supported only with upstream-xarxa".into());
-        }
         let output = root
             .join("target/hil/esp32s31/snapshot-builds")
             .join(&self.snapshot.snapshot_id)

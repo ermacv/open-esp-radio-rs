@@ -194,7 +194,7 @@ pub fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -> Resul
     let left_artifacts = build_resolved(
         &left.path,
         class,
-        super::Integration::UpstreamXarxa,
+        super::Integration::OwnedXarxa,
         super::LocalOverrides::default(),
         super::BuildPlacement {
             output: Some(&output.join("build-a")),
@@ -207,7 +207,7 @@ pub fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -> Resul
     let right_artifacts = build_resolved(
         &right.path,
         class,
-        super::Integration::UpstreamXarxa,
+        super::Integration::OwnedXarxa,
         super::LocalOverrides::default(),
         super::BuildPlacement {
             output: Some(&output.join("build-directory-b")),

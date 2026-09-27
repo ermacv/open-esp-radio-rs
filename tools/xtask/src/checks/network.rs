@@ -4,64 +4,32 @@ use crate::{Context, Result, cargo, graph::Graph};
 use cargo_metadata::{DependencyKind, Package};
 use std::{collections::BTreeSet, path::Path};
 
-const NETWORK: &str = "oer-network-interface";
 const OWNED: &str = "oer-embassy-net-owned";
-const RELEASED_EMBASSY: &str = "oer-embassy-net-upstream";
-const BRIDGE: &str = "oer-esp32s31-ieee80211-embassy-net-upstream";
-const UPSTREAM: &str = "oer-xarxa-upstream";
-const UPSTREAM_BRIDGE: &str = "oer-esp32s31-ieee80211-xarxa-upstream";
-const XARXA_SOURCE: &str = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555";
-const EMBASSY_SOURCE: &str = "git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc#c0fdd08e94138105fba8be3133c4ced91afc30fc";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Boundary {
     Neutral,
-    ReleasedEmbassy,
     Owned,
     Research,
     Datapath,
     RadioCore,
-    ReleasedEmbassyBridge,
     OwnedProduct,
-    ReleasedEmbassyProduct,
-    Upstream,
-    UpstreamBridge,
-    UpstreamProduct,
-    UpstreamApplication,
 }
 impl Boundary {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Upstream => "upstream",
-            Self::UpstreamBridge => "upstream-bridge",
-            Self::UpstreamProduct => "upstream-product",
-            Self::UpstreamApplication => "upstream-application",
             Self::Neutral => "neutral",
-            Self::ReleasedEmbassy => "released-embassy",
             Self::Owned => "owned",
             Self::Research => "research",
             Self::Datapath => "datapath",
             Self::RadioCore => "radio-core",
-            Self::ReleasedEmbassyBridge => "released-embassy-bridge",
             Self::OwnedProduct => "owned-product",
-            Self::ReleasedEmbassyProduct => "released-embassy-product",
         }
     }
     fn product(self) -> bool {
-        matches!(
-            self,
-            Self::OwnedProduct
-                | Self::ReleasedEmbassyProduct
-                | Self::UpstreamProduct
-                | Self::UpstreamApplication
-        )
+        self == Self::OwnedProduct
     }
-}
-fn registry(p: &Package) -> bool {
-    p.source
-        .as_ref()
-        .is_some_and(|source| source.to_string().starts_with("registry+"))
 }
 fn official_registry(p: &Package) -> bool {
     p.source
@@ -93,16 +61,6 @@ fn pinned_git(p: &Package) -> bool {
     };
     revision == commit && commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
-fn upstream_source(p: &Package) -> bool {
-    let source = p.source.as_ref().map(|source| source.repr.as_str());
-    if xarxa_api(p.name.as_str()) {
-        source == Some(XARXA_SOURCE)
-    } else if network_api(p.name.as_str()) {
-        p.name == "embassy-net" && source == Some(EMBASSY_SOURCE)
-    } else {
-        official_registry(p) || source == Some(EMBASSY_SOURCE)
-    }
-}
 fn physical(p: &Package, root: &Path) -> bool {
     p.name.starts_with("oer-esp32s31")
         || p.manifest_path
@@ -131,16 +89,6 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             .is_some_and(|source| source.repr.starts_with("registry+"));
         let forbidden = match boundary {
             Boundary::Neutral => true,
-            Boundary::ReleasedEmbassy => {
-                (!released && name != NETWORK)
-                    || name == OWNED
-                    || xarxa_api(name)
-                    || (network_api(name)
-                        && !dependency
-                            .source
-                            .as_ref()
-                            .is_some_and(|source| source.is_crates_io()))
-            }
             Boundary::Owned => {
                 name.starts_with("oer-esp32s31")
                     || name == "oer-memory"
@@ -194,23 +142,6 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
         }
         Ok(())
     };
-    let released_driver = || -> Result<()> {
-        reject(
-            &|p| {
-                p.name == "embassy-net-driver"
-                    && (!official_registry(p) || p.version.to_string() != "0.2.0")
-            },
-            "requires released embassy-net-driver 0.2.0",
-        )?;
-        required(
-            &|p| {
-                p.name == "embassy-net-driver"
-                    && official_registry(p)
-                    && p.version.to_string() == "0.2.0"
-            },
-            "released embassy-net-driver 0.2.0",
-        )
-    };
     if matches!(boundary, Boundary::Owned | Boundary::OwnedProduct) {
         reject(
             &|p| owned_api(p) && !pinned_git(p),
@@ -222,60 +153,9 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             &|_| true,
             "neutral network values acquired a production dependency",
         )?,
-        Boundary::ReleasedEmbassy => {
-            reject(
-                &|p| !registry(p) && p.name != NETWORK,
-                "released Embassy adapter acquired a non-neutral dependency",
-            )?;
-            reject(
-                &optimized,
-                "released Embassy adapter requires official crates.io network APIs without owned contracts",
-            )?;
-            released_driver()?;
-        }
-        Boundary::Upstream
-        | Boundary::UpstreamBridge
-        | Boundary::UpstreamProduct
-        | Boundary::UpstreamApplication => {
-            reject(
-                &|p| matches!(p.name.as_str(), OWNED | RELEASED_EMBASSY | BRIDGE),
-                "upstream acquired a different network integration",
-            )?;
-            reject(
-                &|p| (owned_api(p) || p.name.starts_with("embassy-")) && !upstream_source(p),
-                "upstream requires the reviewed original network sources",
-            )?;
-            required(
-                &|p| p.name == "xarxa-driver" && upstream_source(p),
-                "original Xarxa driver",
-            )?;
-            if boundary == Boundary::Upstream {
-                reject(
-                    &|p| physical(p, repository),
-                    "upstream adapter acquired physical radio ownership",
-                )?;
-            }
-            if matches!(
-                boundary,
-                Boundary::UpstreamProduct | Boundary::UpstreamApplication
-            ) {
-                required(&|p| p.name == UPSTREAM, "upstream adapter")?;
-                required(&|p| p.name == UPSTREAM_BRIDGE, "upstream radio bridge")?;
-            }
-            if boundary == Boundary::UpstreamApplication {
-                required(
-                    &|p| p.name == "embassy-net" && upstream_source(p),
-                    "original Embassy network stack",
-                )?;
-                required(
-                    &|p| p.name == "xarxa" && upstream_source(p),
-                    "original Xarxa stack",
-                )?;
-            }
-        }
         Boundary::Owned => {
             reject(
-                &|p| p.name == "embassy-net-driver" && registry(p),
+                &|p| p.name == "embassy-net-driver" && official_registry(p),
                 "owned adapter acquired the released driver contract",
             )?;
             reject(
@@ -305,37 +185,11 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
                 )?;
             }
         }
-        Boundary::RadioCore
-        | Boundary::ReleasedEmbassyBridge
-        | Boundary::ReleasedEmbassyProduct => {
-            reject(
-                &optimized,
-                "released Embassy/radio core acquired the optimized network graph",
-            )?;
-            if boundary != Boundary::RadioCore {
-                released_driver()?;
-            }
-            if boundary == Boundary::ReleasedEmbassyProduct {
-                reject(
-                    &|p| network_api(p.name.as_str()) && !official_registry(p),
-                    "released Embassy product acquired a non-release Embassy network package",
-                )?;
-                required(
-                    &|p| p.name == RELEASED_EMBASSY,
-                    "released Embassy network adapter",
-                )?;
-                required(&|p| p.name == BRIDGE, "released Embassy radio bridge")?;
-                required(
-                    &|p| p.name == "embassy-net" && official_registry(p),
-                    "official crates.io embassy-net stack",
-                )?;
-            }
-        }
+        Boundary::RadioCore => reject(
+            &optimized,
+            "radio core acquired the optimized network graph",
+        )?,
         Boundary::OwnedProduct => {
-            reject(
-                &|p| matches!(p.name.as_str(), RELEASED_EMBASSY | BRIDGE),
-                "owned product acquired a released Embassy network leaf",
-            )?;
             required(&|p| p.name == OWNED, "owned network adapter")?;
             required(
                 &|p| p.name == "embassy-net-driver" && pinned_git(p),
@@ -357,24 +211,8 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
     }
     let features = &graph.node(&root).features;
     let has = |feature: &str| features.iter().any(|f| f.as_str() == feature);
-    if boundary.product() {
-        let expected = match boundary {
-            Boundary::OwnedProduct => "owned-network",
-            Boundary::ReleasedEmbassyProduct => "embassy-network",
-            Boundary::UpstreamProduct | Boundary::UpstreamApplication => "upstream-network",
-            _ => unreachable!(),
-        };
-        if !has(expected)
-            || ["owned-network", "embassy-network", "upstream-network"]
-                .into_iter()
-                .any(|feature| feature != expected && has(feature))
-        {
-            return Err(format!(
-                "{}: selected feature boundary is not exclusive",
-                boundary.name()
-            )
-            .into());
-        }
+    if boundary.product() && !has("owned-network") {
+        return Err(format!("{}: owned-network is not selected", boundary.name()).into());
     }
     if boundary == Boundary::RadioCore && has("owned-network") {
         return Err("radio-core: owned-network unexpectedly enabled".into());
@@ -387,28 +225,14 @@ pub struct Profile {
     pub manifest: &'static str,
     pub features: &'static [&'static str],
 }
-pub fn profiles() -> [Profile; 22] {
+pub fn profiles() -> [Profile; 10] {
     use Boundary::*;
     let product = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
     [
         Profile {
-            boundary: ReleasedEmbassyProduct,
-            manifest: "examples/esp32s31/access-point/Cargo.toml",
-            features: &["--no-default-features", "--features", "embassy-network"],
-        },
-        Profile {
             boundary: OwnedProduct,
             manifest: "examples/esp32s31/access-point/Cargo.toml",
             features: &["--no-default-features", "--features", "owned-network"],
-        },
-        Profile {
-            boundary: ReleasedEmbassyProduct,
-            manifest: "hil/targets/esp32s31/runtime/Cargo.toml",
-            features: &[
-                "--no-default-features",
-                "--features",
-                "open-radio-hil,embassy-network,code-psram,profile-psram-data,psram-task-stack",
-            ],
         },
         Profile {
             boundary: OwnedProduct,
@@ -420,47 +244,8 @@ pub fn profiles() -> [Profile; 22] {
             ],
         },
         Profile {
-            boundary: Upstream,
-            manifest: "crates/adapters/xarxa/upstream/Cargo.toml",
-            features: &[],
-        },
-        Profile {
-            boundary: UpstreamBridge,
-            manifest: "crates/adapters/xarxa/esp32s31/ieee80211-upstream/Cargo.toml",
-            features: &[],
-        },
-        Profile {
-            boundary: UpstreamProduct,
-            manifest: product,
-            features: &["--no-default-features", "--features", "upstream-network"],
-        },
-        Profile {
-            boundary: UpstreamApplication,
-            manifest: "examples/esp32s31/station/Cargo.toml",
-            features: &["--no-default-features", "--features", "upstream-network"],
-        },
-        Profile {
-            boundary: UpstreamApplication,
-            manifest: "examples/esp32s31/access-point/Cargo.toml",
-            features: &["--no-default-features", "--features", "upstream-network"],
-        },
-        Profile {
-            boundary: UpstreamApplication,
-            manifest: "hil/targets/esp32s31/runtime/Cargo.toml",
-            features: &[
-                "--no-default-features",
-                "--features",
-                "open-radio-hil,upstream-network,code-psram,profile-psram-data,psram-task-stack",
-            ],
-        },
-        Profile {
             boundary: Neutral,
             manifest: "crates/network/interface/Cargo.toml",
-            features: &[],
-        },
-        Profile {
-            boundary: ReleasedEmbassy,
-            manifest: "crates/adapters/embassy-net/upstream/Cargo.toml",
             features: &[],
         },
         Profile {
@@ -489,29 +274,14 @@ pub fn profiles() -> [Profile; 22] {
             features: &["--no-default-features"],
         },
         Profile {
-            boundary: ReleasedEmbassyBridge,
-            manifest: "crates/adapters/embassy-net/esp32s31/ieee80211-upstream/Cargo.toml",
-            features: &[],
-        },
-        Profile {
             boundary: OwnedProduct,
             manifest: product,
             features: &[],
-        },
-        Profile {
-            boundary: ReleasedEmbassyProduct,
-            manifest: product,
-            features: &["--no-default-features", "--features", "embassy-network"],
         },
         Profile {
             boundary: OwnedProduct,
             manifest: "examples/esp32s31/station/Cargo.toml",
             features: &["--no-default-features", "--features", "owned-network"],
-        },
-        Profile {
-            boundary: ReleasedEmbassyProduct,
-            manifest: "examples/esp32s31/station/Cargo.toml",
-            features: &["--no-default-features", "--features", "embassy-network"],
         },
     ]
 }

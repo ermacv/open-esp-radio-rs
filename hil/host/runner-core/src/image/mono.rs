@@ -103,7 +103,7 @@ pub fn capture(root: &Path, class: ImageClass) -> Result<()> {
     let built = build_resolved(
         root,
         class,
-        Integration::UpstreamXarxa,
+        Integration::OwnedXarxa,
         LocalOverrides::default(),
         BuildPlacement {
             output: Some(&directory),

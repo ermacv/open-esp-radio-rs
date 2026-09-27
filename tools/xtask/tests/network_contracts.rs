@@ -42,12 +42,9 @@ fn product() -> Fixture {
 api = { package = "embassy-net", path = "../stack" }
 device = { package = "embassy-net-driver", path = "../helper" }
 platform = { package = "esp-hal", path = "../crates/hardware/test-radio" }
-released-embassy = { package = "oer-embassy-net-upstream", path = "../released-embassy", optional = true }
-bridge = { package = "oer-esp32s31-ieee80211-embassy-net-upstream", path = "../bridge", optional = true }
 owned = { package = "oer-embassy-net-owned", path = "../owned", optional = true }
 [features]
-default = ["embassy-network"]
-embassy-network = ["dep:released-embassy", "dep:bridge"]
+default = ["owned-network"]
 owned-network = ["dep:owned"]
 "#,
     );
@@ -58,40 +55,13 @@ owned-network = ["dep:owned"]
     );
     fixture.package("stack", "embassy-net", "");
     fixture.package("crates/hardware/test-radio", "esp-hal", "");
-    fixture.package("released-embassy", "oer-embassy-net-upstream", "");
-    fixture.package("bridge", "oer-esp32s31-ieee80211-embassy-net-upstream", "");
     fixture.package("owned", "oer-embassy-net-owned", "");
     fixture
 }
 
 #[test]
-fn released_embassy_product_accepts_platform_forks_but_not_network_source_substitution() {
-    let fixture = product();
-    let mut metadata = fixture.metadata();
-    source(&mut metadata, "embassy-net", REGISTRY);
-    source(&mut metadata, "embassy-net-driver", REGISTRY);
-    source(&mut metadata, "esp-hal", PLATFORM);
-    audit(&fixture, metadata.clone(), Boundary::ReleasedEmbassyProduct).unwrap();
-    for name in ["embassy-net", "embassy-net-driver"] {
-        for replacement in [EMBASSY, "registry+https://example.invalid/private-index"] {
-            let mut changed = metadata.clone();
-            source(&mut changed, name, replacement);
-            let error = audit(&fixture, changed, Boundary::ReleasedEmbassyProduct)
-                .unwrap_err()
-                .to_string();
-            assert!(error.contains(name), "{error}");
-        }
-    }
-}
-
-#[test]
 fn owned_product_requires_one_pinned_embassy_contract_but_allows_platform_forks() {
     let fixture = product();
-    let manifest = std::fs::read_to_string(&fixture.manifest).unwrap().replace(
-        "default = [\"embassy-network\"]",
-        "default = [\"owned-network\"]",
-    );
-    std::fs::write(&fixture.manifest, manifest).unwrap();
     let mut metadata = fixture.metadata();
     source(&mut metadata, "embassy-net", EMBASSY);
     source(&mut metadata, "embassy-net-driver", EMBASSY);

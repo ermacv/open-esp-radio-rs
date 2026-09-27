@@ -440,10 +440,6 @@ fn build_selected(
     let local_esp_hal = local_esp_hal_override()?;
     let local_embassy = local_embassy_override()?;
     let local_xarxa = local_xarxa_override()?;
-    let overridden = local_esp_hal.is_some() || local_embassy.is_some() || local_xarxa.is_some();
-    if overridden && network != Integration::UpstreamXarxa {
-        return Err("local dependency overrides are supported only with upstream-xarxa".into());
-    }
     build_resolved(
         root,
         class,
@@ -584,7 +580,7 @@ fn build_resolved(
         .args(["--no-default-features", "--features", &runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
-    if !overridden && network != Integration::PatchedXarxa {
+    if !overridden {
         runtime.arg("--locked");
     }
     runtime_lock.configure(&mut runtime);

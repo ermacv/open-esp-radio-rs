@@ -88,19 +88,6 @@ pub(super) async fn run(
     let mut late_datagrams = 0_u64;
     let mut maximum_deadline_lateness = 0_u64;
     let mut task_poll_end = None;
-    #[cfg(any(feature = "upstream-network", feature = "embassy-network"))]
-    let interface = match session.config.network_interface {
-        oer_hil_protocol::WifiNetworkInterface::Station => {
-            oer_esp32s31_ieee80211_system::NetworkInterface::Station
-        }
-        oer_hil_protocol::WifiNetworkInterface::AccessPoint => {
-            oer_esp32s31_ieee80211_system::NetworkInterface::AccessPoint
-        }
-    };
-    #[cfg(feature = "upstream-network")]
-    let pool_drops_start = oer_esp32s31_ieee80211_system::rx_pool_drops(interface);
-    #[cfg(feature = "embassy-network")]
-    let resources_start = oer_esp32s31_ieee80211_system::embassy_resources(interface);
     loop {
         let now = Instant::now().as_micros();
         if now >= window.end() && task_poll_end.is_none() {
@@ -211,25 +198,6 @@ pub(super) async fn run(
             flow.evidence.rx_maximum_silence_micros = Some(silence.maximum_silence_micros);
         }
     }
-    #[cfg(feature = "embassy-network")]
-    runtime_log_reliably(format_args!(
-        "ORX_RESOURCES session={} interface={:?} start={:?} end={:?}",
-        session.session_id,
-        interface,
-        resources_start,
-        oer_esp32s31_ieee80211_system::embassy_resources(interface),
-    ))
-    .await;
-    #[cfg(feature = "upstream-network")]
-    runtime_log_reliably(format_args!(
-        "ORX_POOL session={} interface={:?} rx_pool_drops={:?}",
-        session.session_id,
-        interface,
-        oer_esp32s31_ieee80211_system::rx_pool_drops(interface)
-            .zip(pool_drops_start)
-            .map(|(end, start)| end.wrapping_sub(start)),
-    ))
-    .await;
     runtime_log_reliably(format_args!(
         "ORX_WINDOW session={} end=duration no_data={} start_us={} duration_us={} \
          first_delay_us={:?} terminal={} socket_errors={} unknown_packets={} \

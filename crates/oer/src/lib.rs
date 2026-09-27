@@ -55,29 +55,16 @@ pub mod chips {
 }
 
 /// Executor bindings of the portable service contracts.
-#[cfg(any(
-    feature = "upstream-xarxa",
-    feature = "owned-xarxa",
-    feature = "embassy-smoltcp"
-))]
+#[cfg(feature = "owned-xarxa")]
 pub mod embassy {
     pub use radio_embassy as radio;
 }
 
-#[cfg(any(
-    feature = "upstream-xarxa",
-    feature = "owned-xarxa",
-    feature = "embassy-smoltcp",
-    feature = "embassy-ieee802154"
-))]
+#[cfg(any(feature = "owned-xarxa", feature = "embassy-ieee802154"))]
 pub mod systems {
     pub mod esp32s31 {
         pub mod embassy {
-            #[cfg(any(
-                feature = "upstream-xarxa",
-                feature = "owned-xarxa",
-                feature = "embassy-smoltcp"
-            ))]
+            #[cfg(feature = "owned-xarxa")]
             pub use wifi_composition as wifi;
 
             /// The IEEE 802.15.4 client of the shared radio and, with

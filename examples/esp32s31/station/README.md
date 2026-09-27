@@ -16,29 +16,15 @@ cargo check --release
 
 ## Network selection
 
-The default is **upstream Xarxa**, matching HIL and the example builder. Use an
-explicit selection when comparing them; the
-[implementation guide](../../../docs/network-implementations.md) explains the
-crates, patches and shared Wi-Fi boundary.
-
-Build a complete image from the repository root:
+The example uses the owned Xarxa/Embassy stack (`owned-network`), the only
+network implementation; the
+[implementation guide](../../../docs/network-implementations.md) explains its
+crates and the shared Wi-Fi boundary. Build a complete image from the
+repository root:
 
 ```console
-cargo xtask build firmware station --network upstream-xarxa
-cargo xtask build firmware station --network patched-xarxa
-cargo xtask build firmware station --network upstream-smoltcp
-cargo xtask build firmware station --network owned-xarxa
+cargo xtask build firmware station
 ```
-
-The first two commands select the same `upstream-network` driver contract;
-only the second replaces the Xarxa stack source. `upstream-smoltcp` selects
-released Embassy + smoltcp through `embassy-network`; `owned-xarxa` selects the
-broader maintained forks through `owned-network`. Network Cargo features are
-mutually exclusive. For a direct
-type check from this example directory, use `cargo check --release
---no-default-features --features upstream-network` for original Xarxa or
-`--features embassy-network` in its place for smoltcp. Direct `cargo check` does
-not automatically apply the patched-Xarxa source override.
 
 ## Application behavior
 
@@ -74,8 +60,8 @@ or flashing. `cargo build` in this example produces only the stage-two ELF;
 flash the complete image through `xtask`. Hardware readiness still requires
 appropriate scenario evidence.
 
-See the [original Xarxa contract](../../../docs/wifi-egress.md#original-upstream-integration)
-for packet-pool exhaustion, RX scheduling and ownership limits.
+See the [Wi-Fi network integration](../../../docs/wifi-egress.md#owned-tx-path)
+for packet ownership, RX scheduling and admission limits.
 
 The connected radio is a finite lifecycle epoch rather than a terminal task.
 Peer loss or an application controller request returns the IRQ, staged-RX,

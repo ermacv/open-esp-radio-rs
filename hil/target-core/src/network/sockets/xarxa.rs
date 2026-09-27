@@ -1,8 +1,6 @@
 use super::*;
 #[cfg(feature = "owned-network")]
 pub const UDP_RX_QUEUE_DEPTH: usize = xarxa_owned::config::UDP_RX_QUEUE_COUNT;
-#[cfg(feature = "upstream-network")]
-pub const UDP_RX_QUEUE_DEPTH: usize = embassy_net::config::UDP_RX_QUEUE_COUNT;
 pub struct UdpStorage<const RX: usize, const TX: usize>;
 impl<const RX: usize, const TX: usize> Default for UdpStorage<RX, TX> {
     fn default() -> Self {
@@ -19,8 +17,6 @@ pub fn new_udp<'a, const RX: usize, const TX: usize>(
     stack: Stack<'a>,
     _storage: &'a mut UdpStorage<RX, TX>,
 ) -> UdpSocket<'a> {
-    #[cfg(feature = "upstream-network")]
-    return UdpSocket::new(stack).expect("HIL UDP socket capacity");
     #[cfg(feature = "owned-network")]
     UdpSocket::new(stack)
 }
@@ -31,9 +27,6 @@ pub async fn recv_from_with<R>(
     socket.recv_from_with(f).await
 }
 pub fn listen(stack: Stack<'_>, port: u16) -> embassy_net::tcp::TcpListener<'_> {
-    #[cfg(feature = "upstream-network")]
-    let mut listener =
-        embassy_net::tcp::TcpListener::new(stack).expect("HIL TCP listener capacity");
     #[cfg(feature = "owned-network")]
     let mut listener = embassy_net::tcp::TcpListener::new(stack);
     listener.listen(port).expect("HIL TCP port must be free");
@@ -43,8 +36,6 @@ pub async fn accept(
     listener: &mut embassy_net::tcp::TcpListener<'_>,
     socket: &mut TcpSocket<'_>,
 ) -> Result<(), embassy_net::tcp::AcceptError> {
-    #[cfg(feature = "upstream-network")]
-    return socket.accept(listener.accept().await?).await;
     #[cfg(feature = "owned-network")]
     listener.accept(socket).await
 }

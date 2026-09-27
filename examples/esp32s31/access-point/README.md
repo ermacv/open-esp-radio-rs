@@ -4,12 +4,9 @@ This example composes the public Wi-Fi integration with application-owned
 static IPv4, DHCP, UDP echo and TCP echo services. The radio driver owns DMA,
 interrupts, associations and WPA2 keys; it does not implement those IP services.
 
-The default is **upstream Xarxa**, matching HIL. `patched-xarxa` retains its
-driver contract with the minimal UDP patch. `upstream-smoltcp` uses released
-Embassy/smoltcp; `owned-xarxa` uses the broader maintained forks. All four
-compositions run the same application services.
-The [implementation guide](../../../docs/network-implementations.md) explains the
-crates, patches and shared Wi-Fi boundary.
+The example uses the owned Xarxa/Embassy stack, the only network
+implementation. The [implementation guide](../../../docs/network-implementations.md)
+explains its crates and the shared Wi-Fi boundary.
 
 The application requests WPA2-Personal on channel 6 with 20 MHz bandwidth and
 uses `192.168.4.1/24`. DHCP leases are drawn from `192.168.4.100..=114`; both
@@ -49,18 +46,10 @@ appropriate scenario evidence.
 
 ## Network implementation
 
-Use the same explicit choice as HIL when building from the repository root:
+Build a complete image from the repository root:
 
 ```console
-cargo xtask build firmware access-point --network upstream-xarxa
-cargo xtask build firmware access-point --network patched-xarxa
-cargo xtask build firmware access-point --network upstream-smoltcp
-cargo xtask build firmware access-point --network owned-xarxa
+cargo xtask build firmware access-point
 ```
 
-The first two choices use the original Embassy wrapper and the upstream driver contract.
-The [source selection](../../../crates/network/dependencies/README.md)
-changes only the pinned Xarxa stack. The builder checks dependency pins, archives
-the effective locks and restores the tracked upstream catalog. Without
-`--network`, the example selects `upstream-xarxa`. Direct Cargo builds
-can select `--no-default-features --features upstream-network` for the control.
+The builder checks dependency pins and archives the effective locks.

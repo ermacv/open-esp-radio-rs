@@ -181,11 +181,7 @@ fn disabled_optional_declaration_still_violates_leaf_boundary() {
     let data = f.metadata();
     let graph = Graph::from_value(data.clone()).unwrap();
     assert_eq!(graph.reachable(&graph.root(&f.manifest).unwrap()).len(), 1);
-    for boundary in [
-        Boundary::Neutral,
-        Boundary::ReleasedEmbassy,
-        Boundary::Owned,
-    ] {
+    for boundary in [Boundary::Neutral, Boundary::Owned] {
         assert!(
             audit(&f, data.clone(), boundary)
                 .unwrap_err()
@@ -274,51 +270,6 @@ fn isolated_resolution_rejects_origin_pin_drift() {
             .contains("drifted from origin lock")
     );
     assert_eq!(before, fs::read(f.root().join("Cargo.lock")).unwrap());
-}
-#[test]
-fn released_driver_requires_registry_source_and_version() {
-    let f = Fixture::new();
-    f.package(
-        "adapter",
-        "network-adapter-fixture",
-        "[dependencies]\napi = { package = \"packet-helper\", path = \"../helper\" }\n",
-    );
-    let mut data = f.metadata();
-    let id = root_id(&f, &data);
-    let registry = "registry+https://github.com/rust-lang/crates.io-index";
-    let p = data["packages"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|p| p["name"] == "packet-helper")
-        .unwrap();
-    p["name"] = json!("embassy-net-driver");
-    p["version"] = json!("0.2.0");
-    p["source"] = json!(registry);
-    let declaration = &mut data["packages"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|p| p["id"] == id)
-        .unwrap()["dependencies"][0];
-    declaration["name"] = json!("embassy-net-driver");
-    declaration["source"] = json!(registry);
-    audit(&f, data.clone(), Boundary::ReleasedEmbassy).unwrap();
-    for (source, version) in [
-        ("git+https://example.invalid/driver#fork", "0.2.0"),
-        (registry, "0.3.0"),
-    ] {
-        let mut changed = data.clone();
-        let p = changed["packages"]
-            .as_array_mut()
-            .unwrap()
-            .iter_mut()
-            .find(|p| p["name"] == "embassy-net-driver")
-            .unwrap();
-        p["source"] = json!(source);
-        p["version"] = json!(version);
-        assert!(audit(&f, changed, Boundary::ReleasedEmbassy).is_err());
-    }
 }
 #[test]
 fn malformed_cargo_output_fails_at_the_executable_boundary() {

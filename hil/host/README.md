@@ -385,11 +385,8 @@ Changed scenario settings require a new plan. Hardware-dependent preflight and
 cleanup remain mandatory for every execution.
 
 `cargo hil run <scenario>` builds and flashes the required image before the
-scenario. Select `--network upstream-xarxa` (default), `patched-xarxa`,
-`upstream-smoltcp` or `owned-xarxa` to choose the stack implementation. The same choice
-is available for station and access-point examples through `cargo xtask build
-firmware <example> --network …`; see the
-[implementation guide](../../docs/network-implementations.md).
+scenario with the owned Xarxa/Embassy network stack, the only network
+implementation; see the [implementation guide](../../docs/network-implementations.md).
 `cargo hil image build performance` and `cargo hil image build correctness`
 perform the same final stack/move, placement, source-graph and packed-image
 checks without flashing or loading private lab configuration. Each successful

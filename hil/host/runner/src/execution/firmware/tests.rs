@@ -27,7 +27,7 @@ fn build_inputs(root: &Path) -> Artifacts {
         write(&root.join(relative), bytes);
     }
     Artifacts {
-        network: Integration::UpstreamXarxa,
+        network: Integration::OwnedXarxa,
         output: root.join("build"),
         runtime_elf: root.join("build/runtime.elf"),
         runtime_bin: root.join("build/runtime.bin"),
@@ -111,17 +111,10 @@ fn flash_failure_is_typed_after_archival() {
 
 #[test]
 fn current_build_has_the_canonical_firmware_plan_identity() {
-    for integration in [
-        Integration::UpstreamXarxa,
-        Integration::PatchedXarxa,
-        Integration::UpstreamSmoltcp,
-        Integration::OwnedXarxa,
-    ] {
-        assert!(matches!(
-            RunFirmware::BuildCurrent(integration).plan(),
-            PlannedFirmware::BuildCurrent
-        ));
-    }
+    assert!(matches!(
+        RunFirmware::BuildCurrent(Integration::OwnedXarxa).plan(),
+        PlannedFirmware::BuildCurrent
+    ));
 }
 
 #[test]

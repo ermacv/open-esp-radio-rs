@@ -1,3 +1,0 @@
-# A source-compatible stack composition; the driver and Embassy remain original.
-[patch."https://github.com/embassy-rs/xarxa"]
-xarxa = { git = "https://github.com/ermacv/xarxa", rev = "bbf4a670f5c673ba11fbb6b1a4c3a1dbac0cc7a7" }

@@ -22,9 +22,7 @@ esp32s31-bluetooth = ["esp32s31", "bluetooth", "dep:chip-bluetooth"]
 esp32s31-ieee802154 = ["esp32s31", "ieee802154", "dep:chip-ieee802154"]
 embassy-ieee802154 = ["esp32s31-ieee802154", "dep:ieee802154-composition"]
 openthread = ["embassy-ieee802154", "dep:ieee802154-openthread"]
-upstream-xarxa = ["esp32s31-wifi", "dep:radio-embassy", "dep:wifi-composition", "wifi-composition/upstream-network"]
 owned-xarxa = ["esp32s31-wifi", "dep:radio-embassy", "dep:wifi-composition", "wifi-composition/owned-network"]
-embassy-smoltcp = ["esp32s31-wifi", "dep:radio-embassy", "dep:wifi-composition", "wifi-composition/embassy-network"]
 
 [package.metadata.open-radio]
 scope = "production"
@@ -43,10 +41,8 @@ supported-feature-profiles = [
     "esp32s31-ieee802154",
     "embassy-ieee802154",
     "openthread",
-    "upstream-xarxa",
     "owned-xarxa",
-    "embassy-smoltcp",
-    "upstream-xarxa,esp32s31-bluetooth",
+    "owned-xarxa,esp32s31-bluetooth",
 ]
 
 [dependencies]

@@ -1,65 +1,52 @@
-# Network implementations and why they coexist
+# Network implementation
 
-This document explains which IP-stack implementation an application selects,
-why the repository retains each contract, and what that choice changes at the
-Wi-Fi boundary. [Wi-Fi network integration](wifi-egress.md) defines packet
-ownership and radio execution; component READMEs describe their own APIs.
+This document describes the IP stack the Wi-Fi composition uses and what it
+changes at the Wi-Fi boundary. [Wi-Fi network integration](wifi-egress.md)
+defines packet ownership and radio execution; component READMEs describe their
+own APIs.
 
-## Current choices
+## The owned Xarxa/Embassy stack
 
-| Implementation | Purpose | Selection and availability |
-| --- | --- | --- |
-| **Upstream Xarxa + original Embassy** | An unmodified, reproducible reference for the Xarxa contract; applications can use the original APIs and measurements expose their actual limitations | `--network upstream-xarxa` in HIL and station/AP example builds |
-| **Patched Xarxa + original Embassy** | Source-compatible UDP wake and ARP response backpressure corrections, with the same driver and application contract as the reference | `--network patched-xarxa` in HIL and station/AP example builds |
-| **Upstream Embassy + smoltcp** | Embassy with released network crates and their token-based driver API; an independent stack contract for comparison | `--network upstream-smoltcp` in HIL and station/AP example builds; `embassy-network` in the product |
-| **Owned Xarxa/Embassy** | Explicit RX/TX packet pools and packet-owner handoff through a maintained, broader patchset | `--network owned-xarxa` in HIL and station/AP example builds; `owned-network` remains the product library default |
-| **Research engine** | Bounded synchronous protocol work and deferred packet construction | A library with host tests; no selectable native HIL or example composition |
+The repository has one network implementation: **owned Xarxa/Embassy**. It is
+the default of the product library, the examples and every HIL image.
 
-Names identify both the stack and its source policy. `upstream` alone cannot
-distinguish the two original network implementations. The original Git Embassy
-revision used with Xarxa and the published `embassy-net` 0.9.1 release use
-different network internals and APIs despite sharing a crate name/version.
-The [published Embassy reference](https://docs.rs/embassy-net/0.9.1/embassy_net/)
-describes its smoltcp integration. Manifests and effective lockfiles identify
-the exact sources used by a build.
+| Selection | Value |
+| --- | --- |
+| Product Cargo feature | `owned-network` (default of `oer-esp32s31-ieee80211-system`) |
+| Facade feature | `owned-xarxa` |
+| Firmware and HIL selector | `--network owned-xarxa` (the default and only value) |
+| Adapter | `oer-embassy-net-owned` |
 
-The source policy here concerns **network dependencies**. The ESP32-S31
-`esp-hal` and PAC hardware forks are shared platform dependencies; choosing an
-upstream network stack does not remove those hardware dependencies.
+| Crate | Source |
+| --- | --- |
+| `embassy-net`, `embassy-net-driver` | The [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91) |
+| `xarxa` | The [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc) |
+| `xarxa-driver` and its packet pool | [The driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) |
 
-## Libraries, crates and source identity
+These Git revisions are reviewed pins, not tracking branches. Dependency
+aliases such as `embassy-net-owned` in application manifests name the package
+`embassy-net`; the alias helps Rust source identify the contract and is not a
+separate published crate. `cargo xtask check network` rejects any other network
+stack source in the product, example and HIL graphs.
 
-Embassy is a collection of crates. `embassy-executor` runs async tasks;
-`embassy-time` supplies async time; `embassy-net` wraps the IP stack. Selecting
-network sources does not select a different executor or PHY timer. Xarxa and
-smoltcp implement IP/transport protocols, while this repository supplies their
-radio-facing adapters and the underlying IEEE 802.11 driver.
+The forks expose explicit RX/TX packet pools, packet-owner handoff to the
+driver, credit-return wakes, bounded polling and construction in resource
+storage. The UDP send path gates a device-blocked wake on the current route's
+capacity. Pool retry policy is not redesigned, and RX capacity is not reserved
+separately from the shared pool.
 
-| Composition | External network crates and source | Repository adapter |
-| --- | --- | --- |
-| Upstream Xarxa | `embassy-net` from [original Embassy](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net); `xarxa` and `xarxa-driver` from [original Xarxa](https://github.com/embassy-rs/xarxa/tree/14c369bbcbe8ee7167488ac9c9e18be059d83555) | `oer-xarxa-upstream` |
-| Patched Xarxa | Same Embassy and `xarxa-driver`; only `xarxa` comes from the [backpressure patch](https://github.com/ermacv/xarxa/tree/bbf4a670f5c673ba11fbb6b1a4c3a1dbac0cc7a7) | Same `oer-xarxa-upstream` |
-| Embassy + smoltcp | Registry `embassy-net` 0.9.1, `embassy-net-driver` 0.2.0 and transitive `smoltcp` | `oer-embassy-net-upstream` |
-| Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91); `xarxa` from the [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc), retaining `xarxa-driver` and its pool at [the driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `oer-embassy-net-owned` |
+The upstream Xarxa, minimally patched Xarxa and released Embassy/smoltcp
+integrations were removed so that every build and measurement exercises the
+stack the product ships. Archived HIL runs keep their recorded network names;
+new builds reject them.
 
-The original and owned Git revisions are reviewed pins, not tracking branches
-or a promise of compatibility with every later upstream revision. Dependency
-aliases such as `embassy-net-upstream`, `embassy-net-owned` and
-`embassy-net-released` in application manifests all name the package `embassy-net`;
-the alias helps Rust source distinguish contracts and is not a separate
-published crate. Optional inactive forks can remain in `Cargo.lock`. The
-selected normal/build dependency graph determines what a firmware uses.
-
-The product crate
-[`oer-esp32s31-ieee80211-system`](../crates/composition/esp32s31/embassy/ieee80211/README.md)
-selects adapters and static resources. Its chip-specific bridges are
-`oer-esp32s31-ieee80211-xarxa-upstream` and
-`oer-esp32s31-ieee80211-embassy-net-upstream`; the shared radio runner is
+The [product composition](../crates/composition/esp32s31/embassy/ieee80211/README.md)
+selects the adapter and static resources; the shared radio runner is
 `oer-esp32s31-ieee80211-runtime`. The [network source map](../crates/network/README.md)
 and [driver map](../crates/README.md) locate these packages. Applications own
-sockets and IP policy; adapter crates do not acquire independent PHY/DMA owners.
+sockets and IP policy; the adapter does not acquire independent PHY/DMA owners.
 
-## Why the repository contains patches
+## Platform source overrides
 
 Cargo's `[patch]` is a source-selection mechanism; it does not necessarily mean
 that library code has been modified. The [Cargo reference](https://doc.rust-lang.org/cargo/reference/overriding-dependencies.html#the-patch-section)
@@ -67,9 +54,6 @@ defines workspace-root overrides and their transitive application.
 
 | Source selection | Reason and scope |
 | --- | --- |
-| Minimal Xarxa fork | Change UDP wakeups when a routed device is full; preserve the original stack/driver API and packet pool |
-| Owned Embassy/Xarxa forks | Expose explicit packet pools, credit-return wakes, bounded polling and construction in resource storage; this is a broader contract, not the minimal UDP patch |
-| Original Embassy `embassy-time-driver` mapped to registry `=0.2.2` | Share one official timer ABI with the platform; the selected implementation is unmodified |
 | Owned Embassy support crates mapped to registry | Reuse released `embassy-futures`, `embassy-sync` and `embassy-time` alongside the maintained network crates |
 | `esp-hal` family fork | Supply S31 radio ownership, clock/time, memory startup and interrupt handoff support required by the platform |
 | `esp-pacs` fork (`esp32s31` package) | Publish missing Wi-Fi, Bluetooth and IEEE 802.15.4 interrupt sources through the generated platform PAC |
@@ -78,233 +62,61 @@ Hardware pins and their exact responsibilities are owned by the
 [esp-hal dependency boundary](../crates/adapters/esp-hal/esp32s31/README.md#dependency-boundary)
 and [platform manifest](../platform/esp32s31/Cargo.toml). This platform PAC is
 separate from this repository's [radio PAC](../crates/hardware/esp32s31/pac/README.md).
-An upstream network selection therefore means unmodified **network** sources,
-not that the complete firmware contains no forks.
 
-## Why keep original and patched Xarxa
+HIL image builds accept local checkouts of `esp-hal`, the owned Embassy fork and
+the owned Xarxa fork as dependency overrides; the
+[HIL target guide](../hil/targets/esp32s31/README.md) describes them.
 
-The original composition establishes what the public contract can do without
-network-source modifications. It is useful both to consumers who want that
-contract and as a control for testing whether a patch addresses a specific
-limitation. Retaining it avoids treating a measured improvement as an
-assumption about every upstream workload.
+## Workloads
 
-The patched composition corrects device backpressure handling in Xarxa. A UDP send
-blocked by a full device records its destination; stack polling resolves the
-current route and wakes that sender when the selected interface can transmit,
-or when routing fails so the caller can observe the error. This prevents a
-full TX queue from sustaining the original sender/runner wakeup loop. An
-unrelated ready interface does not release the wait. Binding, closing or
-starting another send clears it; the existing driver capacity notification
-schedules the stack when TX space returns.
+Station composes DHCP and UDP echo on port 4321. AP composes a DHCP server and
+UDP/TCP echo services on port 7. HIL UDP/TCP RX, TX and bidirectional workloads
+share one session protocol, pacing, timeouts, payload validation and result
+reporting. TCP starts accepting before HIL publishes `SessionReady`, including
+when the stack enters listen state on the first poll of `accept()`; the same
+accept future is retained through readiness publication and connection
+completion.
 
-ARP responses reuse the received packet owner instead of allocating a second
-pool slot. A four-entry per-interface queue retains responses until the driver
-accepts them; duplicate peer/local-address requests coalesce. New distinct
-requests beyond that bound are dropped explicitly. RX processing continues,
-while pending replies receive TX credit before new socket packets. Link down,
-interface removal and configuration changes release queued replies. Other
-immediate control protocols retain their original behavior.
+A UDP send completes after the stack hands its packet to the driver or queues it
+for neighbor resolution. Host delivery and terminal drain therefore matter when
+reading TX results; an API completion alone is not delivery on air. HIL requests
+16 queued RX datagrams; Xarxa retains packet owners through its pool rather than
+per-socket byte rings.
 
-The [patch composition](../crates/network/dependencies/README.md)
-retains the exact original `xarxa-driver`, packet pool and Embassy wrapper.
-Its published source revision is selected by
-[xarxa-patched.toml](../crates/network/dependencies/xarxa-patched.toml).
-The builder rejects unexpected changes to the other dependency pins. The
-patch is compatible with the original crates/socket APIs; it is not the
-broader `owned-network` fork and does not establish that all resource waits
-are efficient. Pool exhaustion and raw sockets retain upstream retry behavior.
-The original pool has no public release event, including for buffers dropped
-by application code outside the driver.
+The task-poll image observes the owned driver contract: Xarxa exposes separate
+readiness and fallible owner-publication operations. Source support and
+packaged firmware do not establish that every scenario or performance gate
+passes; run bundles and qualification retain that authority.
 
-The owned composition also gates device-blocked UDP wakes on the current
-route's capacity. Its Embassy pin selects that correction while retaining the
-owned packet allocator and driver source identity. This fixes the device wait;
-it does not redesign pool retry policy or reserve RX capacity in the original
-shared-pool composition.
+## Multi-peer AP egress
 
-## What changes in the Wi-Fi driver
+An AP serving two stations is the central workload for the owned TX boundary.
+Interleaved destinations require peer/TID selection before scarce SRAM
+admission so that one peer's frames can form an A-MPDU. The owned adapter
+classifies complete packets into Ethernet-destination queues over one shared
+owner pool. The AP selects a destination before removing aggregate members,
+leaving other destinations at the source. The adapter does not ask Xarxa to
+construct a packet for a selected peer: pool capacity and the packets the stack
+publishes limit its choices. Inside a selected destination, it round-robins
+classified TCP/UDP FIFOs while preserving each flow's order. Readiness counts
+the whole destination so different flows can fill the same aggregate. This
+covers TID 0; classification limits, fragment handling and memory ownership are
+described in the [egress contract](wifi-egress.md#owned-tx-path). Power-save
+retention and failed physical-admission rollback remain radio-owned.
 
-For **upstream-xarxa versus patched-xarxa**, the following are shared:
-
-- the `upstream-network` Cargo feature and product composition;
-- the Xarxa driver adapter, radio bridge, packet types, pool and queue depths;
-- the physical Wi-Fi runner, scheduling rules and SRAM admission;
-- IEEE 802.11 state machines, rate/retry policy and Block-Ack handling;
-- PHY initialization/calibration, MMIO access, DMA and interrupt handling.
-
-Only Xarxa's UDP wait state and wake policy differ. Different wake and packet
-arrival timing can affect observed scheduling and throughput, but the choice
-does not enable an alternative Wi-Fi driver implementation. Compiled firmware
-is different because the selected stack code is different.
-
-For **Embassy + smoltcp versus Xarxa**, the shared boundary is lower:
-
-```mermaid
-flowchart TD
-    UX[Upstream Xarxa + original Embassy] --> XA[Xarxa packet-owner adapter]
-    PX[Patched Xarxa + same Embassy] --> XA
-    SM[Released Embassy + smoltcp] --> TA[Embassy RX/TX token adapter]
-    XA --> WIFI[Shared IEEE 802.11 runner and physical scheduler]
-    TA --> WIFI
-    WIFI --> HW[MAC, DMA, PHY and PAC]
-```
-
-The smoltcp composition uses the released Embassy RX/TX token contract,
-complete-frame staging and different stack/socket storage. It therefore can
-have different copying costs, buffer budgets and backpressure behavior while
-using the same physical radio implementation. Shared radio source does not
-imply identical adapter costs or identical compiled binaries. The
-[Embassy boundary](wifi-egress.md#embassy-and-rx) describes these
-ownership differences.
-
-## Selecting an implemented composition
-
-From the repository root:
-
-```console
-cargo hil image build performance --network upstream-xarxa
-cargo hil run udp-tx-ht40-task-poll-diagnostic --network patched-xarxa
-cargo xtask build firmware station --network upstream-xarxa
-cargo xtask build firmware access-point --network patched-xarxa
-cargo xtask build firmware station --network upstream-smoltcp
-cargo xtask build firmware access-point --network owned-xarxa
-```
-
-HIL, the example builder, and direct station/AP Cargo builds default to
-`upstream-xarxa`. All four implementations use the same `--network` spelling
-in HIL `image build/flash`, `run`, `run-all`, and example builds.
-
-| Build selection | Product Cargo feature | Additional source override |
-| --- | --- | --- |
-| `upstream-xarxa` | `upstream-network` | None |
-| `patched-xarxa` | `upstream-network` | Pinned minimal Xarxa patch |
-| `upstream-smoltcp` | `embassy-network` | None |
-| `owned-xarxa` | `owned-network` | Maintained sources declared in manifests |
-
-The product **library** retains its existing `owned-network` Cargo default;
-consumers choosing another contract must use `default-features = false` and
-select one feature. CLI selectors describe a complete firmware composition,
-whereas library features describe the adapter contract.
-
-Example builds also accept the corresponding `--no-default-features --features`
-spelling. The builder resolves that to the same implementation identity and
-rejects conflicting network selections. Bundle directories and `network.txt`
-record the resolved name, including when no `--network` was supplied. The
-monitor example has no IP-stack selection.
-
-Aliases `upstream` and `udp-backpressure` remain accepted for `upstream-xarxa`
-and `patched-xarxa`. New image reports use canonical names. `cargo hil image
-verify-rebuild` currently checks the original Xarxa composition only. Archived
-runs retain their recorded command and firmware identity; replay cannot select
-another implementation. HIL local dependency overrides are supported only
-with `upstream-xarxa`.
-
-## Shared workloads and different admission boundaries
-
-Station composes DHCP and UDP echo on port 4321 for all four implementations.
-AP composes the same DHCP server and UDP/TCP echo services on port 7. HIL shares
-its UDP/TCP RX, TX and bidirectional workload code, session protocol, pacing,
-timeouts, payload validation and result reporting across implementations.
-Backend modules only compose stacks, configure IPv4 and adapt socket APIs.
-TCP starts accepting before HIL publishes `SessionReady`, including when the
-stack enters listen state on the first poll of `accept()`. The same accept
-future is retained through readiness publication and connection completion.
-
-The original and patched Xarxa UDP send can complete after handing its packet
-to the driver or queueing it inside the stack for neighbor resolution.
-Released Embassy/smoltcp send completes when a datagram
-enters the socket byte ring. Host delivery and terminal drain therefore matter
-when comparing TX results; an API completion alone is not delivery on air.
-
-The ESP32-S31 original and patched Xarxa composition bounds each TX queue to
-8 owners while retaining RX depth 16. With the default global pool of 16,
-one queued TX direction therefore cannot consume the entire pool needed by
-RX publication. Selected TX frames keep their owner until materialization/drop;
-sockets and the other logical interface also share the pool. This queue budget
-is not an exclusive RX reservation and does not bound unresolved-neighbor
-owners held inside Xarxa.
-
-The upstream global pool and unresolved-neighbor queue both default to 16
-packet owners. A burst to an unresolved peer can fill that pool before its
-ARP reply arrives. This adapter also allocates RX packets from the same pool,
-so it can then reject the reply with `PoolExhausted`. The stack cannot resolve
-the peer from a reply it never receives. The minimal wakeup patch retains this
-resource dependency. Applications must account for neighbor-resolution and RX
-headroom together; changing retry wakeups alone does not reserve RX memory.
-The adapter's [resource contract](../crates/adapters/xarxa/upstream/README.md)
-describes allocation failures and ownership.
-
-The Embassy/smoltcp `receive()` contract requires a free TX slot to return
-an RX/reply-token pair. With no TX slots, the stack cannot drain RX. The
-standalone Embassy radio sink therefore attempts each RX publication
-once and drops the new frame if its bounded storage is full. It never awaits
-network capacity while holding the radio owner needed to materialize TX and
-return software slots. Queued frames retain their owners and order; ordinary
-and A-MSDU/reorder publication use the same admission policy. The resource
-monitor counts full-storage publication refusals as `rx_queue_full`.
-
-This is an explicit overload loss policy, not a guarantee of lossless RX or
-a reserved reply pool. It preserves the unchanged upstream token contract
-without additional payload storage. Same-channel role services can instead
-retain bounded pending output and return backpressure to outer TX arbitration.
-This dependency is distinct from unresolved-neighbor packets blocking a socket
-TX queue.
-
-HIL requests 16 queued RX datagrams in each stack. smoltcp retains 16 metadata
-entries and 16 × 1472 bytes in each workload's active UDP direction, in PSRAM;
-RX-only sockets have no TX byte ring, and TX-only sockets have no RX byte ring.
-Xarxa retains packet owners through its pool instead. Both roles use the same
-TCP receive/transmit buffer sizes, declared in the HIL traffic resource module.
-Equal workload settings do not imply equal total memory use or copy costs.
-
-The task-poll image observes the selected driver contract. For smoltcp, packet
-transfers are counted when RX/TX tokens are consumed, not when they are offered;
-TX token publication is infallible, so its rejected-publication count is zero.
-Xarxa exposes separate readiness and fallible owner-publication operations.
-These API differences must be considered when comparing diagnostic counters.
-Source support and packaged firmware do not establish that every scenario or
-performance gate passes; run bundles and qualification retain that authority.
-
-## What a comparison establishes
-
-An AP serving two stations is the central workload for evaluating the owned
-TX boundary. Interleaved destinations require peer/TID selection before scarce
-SRAM admission so that one peer's frames can form an A-MPDU. The current owned
-adapter classifies complete packets into Ethernet-destination queues over one
-shared owner pool. The AP selects a destination before removing aggregate
-members, leaving other destinations at the source. FIFO-only Embassy
-sources retain bounded radio-side regrouping. Owned still does not ask Xarxa
-to construct a packet for a selected peer: pool capacity and the packets the
-stack publishes limit its choices. Inside a selected destination, the owned
-adapter round-robins classified TCP/UDP FIFOs while preserving each flow's
-order. Readiness still counts the whole destination so different flows can
-fill the same aggregate. This currently covers TID 0; classification limits,
-fragment handling and memory ownership are described in the
-[egress contract](wifi-egress.md#owned-tx-path). Power-save retention and failed
-physical-admission rollback remain radio-owned.
-
-Transport flows within a destination use round-robin. The outer AP destination
-selector also defaults to round-robin; an explicitly enabled experimental
-mode selects peers using modelled airtime deficits. It reserves preparation
-budgets and settles terminal publication work with a caller-supplied cost model.
-The [egress contract](wifi-egress.md) describes its ownership and limits; the
-[HIL target guide](../hil/targets/esp32s31/README.md) documents the comparable
-RR/deficit modes. This does not establish measured airtime fairness. Comparing
-equal throughput or aggregate counts cannot demonstrate equal airtime,
-especially when peers use different rates or retries. AP evidence must
-distinguish per-peer aggregate fill, delivered traffic, service gaps and airtime
-cost; station-only throughput and task-residence measurements cannot establish
-that the broader owned contract solves multi-peer scheduling.
+The outer AP destination selector defaults to round-robin; an explicitly enabled
+experimental mode selects peers using modelled airtime deficits. It reserves
+preparation budgets and settles terminal publication work with a
+caller-supplied cost model. The [egress contract](wifi-egress.md) describes its
+ownership and limits; the [HIL target guide](../hil/targets/esp32s31/README.md)
+documents the RR/deficit modes. This does not establish measured airtime
+fairness: equal throughput or aggregate counts cannot demonstrate equal airtime
+when peers use different rates or retries. AP evidence must distinguish per-peer
+aggregate fill, delivered traffic, service gaps and airtime cost.
 
 Compare identical roles, channel/bandwidth, traffic shape, executor placement
-and diagnostic image class. Report actual buffer budgets and copying
-boundaries when adapter contracts differ. Throughput, packet loss, pending
-polls, task residence, stack headroom and memory use answer different questions;
-fewer polls alone are not a measurement of total CPU utilization.
-
-The deterministic backpressure regression checks quiescence and recovery with
-the actual production adapter. HIL measures the composed firmware; readiness
-remains the [qualification](verification-and-qualification.md) authority.
-Results belong in run bundles and commit descriptions, not in this current
-architecture reference.
+and diagnostic image class. Throughput, packet loss, pending polls, task
+residence, stack headroom and memory use answer different questions; fewer
+polls alone are not a measurement of total CPU utilization. Readiness remains
+the [qualification](verification-and-qualification.md) authority. Results belong
+in run bundles and commit descriptions, not in this architecture reference.

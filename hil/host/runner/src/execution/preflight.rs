@@ -10,7 +10,7 @@ use crate::{
     scenario::{Family, Scenario},
 };
 use hil_core::{
-    evidence::run::Failure, image, image::ImageClass, image::Integration, lab::config::LabConfig,
+    evidence::run::Failure, image, image::ImageClass, lab::config::LabConfig,
     session::SerialCapture,
 };
 use hil_wifi::scenario::WifiWorkload;
@@ -18,8 +18,6 @@ use hil_wifi::scenario::WifiWorkload;
 pub(crate) fn configure_run_selection(
     selected: &mut Scenario,
     ap_scheduler: Option<WifiApScheduler>,
-    replay: bool,
-    network: Integration,
 ) -> Result<()> {
     if let Some(policy) = ap_scheduler {
         let Family::Wifi(wifi) = &mut selected.family else {
@@ -31,14 +29,6 @@ pub(crate) fn configure_run_selection(
         access_point.scheduler = policy;
     }
     selected.validate()?;
-    if selected.plan().settings.ap_scheduler != WifiApScheduler::Disabled
-        && !replay
-        && network != Integration::OwnedXarxa
-    {
-        return Err(
-            "--ap-scheduler requires --network owned-xarxa or a compatible archived image".into(),
-        );
-    }
     Ok(())
 }
 

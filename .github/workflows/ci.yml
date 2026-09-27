@@ -90,7 +90,7 @@ jobs:
       # stack, so each configuration is a separate test run.
       - name: HIL target core configurations
         run: |
-          for features in secure-gatt upstream-network embassy-network owned-network; do
+          for features in secure-gatt owned-network; do
             cargo test --locked --no-fail-fast -p oer-hil-target-core --features "$features"
           done
 
@@ -162,20 +162,11 @@ jobs:
           restore-keys: network-profiles-${{ runner.os }}-
       - name: HIL runtime
         run: |
-          for network in embassy-network owned-network upstream-network; do
-            echo "::group::$network"
-            cargo check --locked --manifest-path hil/targets/esp32s31/runtime/Cargo.toml --target "$TARGET" \
-              --no-default-features --features "open-radio-hil,$network,code-psram,profile-psram-data,psram-task-stack"
-            echo "::endgroup::"
-          done
+          cargo check --locked --manifest-path hil/targets/esp32s31/runtime/Cargo.toml --target "$TARGET" \
+            --no-default-features --features "open-radio-hil,owned-network,code-psram,profile-psram-data,psram-task-stack"
       - name: Wi-Fi composition
         run: |
-          for network in upstream-network embassy-network; do
-            echo "::group::$network"
-            cargo check --locked --manifest-path crates/composition/esp32s31/embassy/ieee80211/Cargo.toml --target "$TARGET" \
-              --no-default-features --features "$network"
-            echo "::endgroup::"
-          done
+          cargo check --locked --manifest-path crates/composition/esp32s31/embassy/ieee80211/Cargo.toml --target "$TARGET"
 
   # Each example is its own workspace; run Cargo from its directory so its
   # `.cargo/config.toml` selects the chip target. Every feature profile an
@@ -188,12 +179,12 @@ jobs:
       matrix:
         include:
           - example: esp32s31/access-point
-            profiles: default owned-network embassy-network
+            profiles: default
             host-tests: true
           - example: esp32s31/monitor
             profiles: default
           - example: esp32s31/station
-            profiles: default embassy-network owned-network
+            profiles: default
           - example: esp32s31/thread
             profiles: default
     defaults:

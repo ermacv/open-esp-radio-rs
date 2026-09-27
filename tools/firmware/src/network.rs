@@ -9,71 +9,54 @@ use std::{
     str::FromStr,
 };
 
-const CONFIG: &str = "crates/network/dependencies/xarxa-patched.toml";
-const UPSTREAM: &str = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555";
-
+/// The network implementation a firmware links. Owned Xarxa/Embassy is the
+/// only one: the maintained owner-transfer forks declared in the manifests.
+/// The type remains so that artifacts keep recording which stack they carry.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Integration {
     #[default]
-    UpstreamXarxa,
-    PatchedXarxa,
-    UpstreamSmoltcp,
     OwnedXarxa,
 }
 impl Integration {
     pub const fn id(self) -> &'static str {
         match self {
-            Self::UpstreamXarxa => "upstream-xarxa",
-            Self::PatchedXarxa => "patched-xarxa",
-            Self::UpstreamSmoltcp => "upstream-smoltcp",
             Self::OwnedXarxa => "owned-xarxa",
         }
     }
     pub const fn feature(self) -> &'static str {
         match self {
-            Self::UpstreamXarxa | Self::PatchedXarxa => "upstream-network",
-            Self::UpstreamSmoltcp => "embassy-network",
             Self::OwnedXarxa => "owned-network",
         }
     }
 
-    /// Resolve legacy feature selection without hiding the effective stack in artifacts.
+    /// Resolve the example's selection; the Cargo feature and `--network`
+    /// can name only the owned stack.
     pub fn for_example(explicit: Option<Self>, features: &[String]) -> Result<Self> {
-        let mut selected = explicit;
         for feature in features {
-            let candidate = match feature.as_str() {
-                "upstream-network" => Self::UpstreamXarxa,
-                "embassy-network" => Self::UpstreamSmoltcp,
-                "owned-network" => Self::OwnedXarxa,
-                _ => continue,
-            };
-            if let Some(current) = selected {
-                if current.feature() != candidate.feature() {
-                    return Err("select exactly one network implementation; --network conflicts with the network Cargo feature".into());
-                }
-            } else {
-                selected = Some(candidate);
+            if feature.ends_with("-network") && feature != Self::OwnedXarxa.feature() {
+                return Err(format!(
+                    "network feature `{feature}` was removed; owned-network is the only network implementation"
+                )
+                .into());
             }
         }
-        Ok(selected.unwrap_or_default())
+        Ok(explicit.unwrap_or_default())
     }
 
-    pub fn configure(self, command: &mut Command, root: &Path) {
-        if self == Self::PatchedXarxa {
-            command.arg("--config").arg(root.join(CONFIG));
-        }
-    }
+    /// No source override: the owned stack's pins live in the manifests.
+    pub fn configure(self, _command: &mut Command, _root: &Path) {}
 }
 impl FromStr for Integration {
     type Err = String;
     fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
         match value {
-            "upstream-xarxa" | "upstream" => Ok(Self::UpstreamXarxa),
-            "patched-xarxa" | "udp-backpressure" => Ok(Self::PatchedXarxa),
-            "upstream-smoltcp" => Ok(Self::UpstreamSmoltcp),
             "owned-xarxa" => Ok(Self::OwnedXarxa),
+            "upstream-xarxa" | "upstream" | "patched-xarxa" | "udp-backpressure"
+            | "upstream-smoltcp" => Err(format!(
+                "network integration `{value}` was removed; owned-xarxa is the only network implementation"
+            )),
             _ => Err(format!(
-                "unknown network integration `{value}` (expected upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa)"
+                "unknown network integration `{value}` (expected owned-xarxa)"
             )),
         }
     }
@@ -141,24 +124,11 @@ impl BuildLock {
             .arg(format!("resolver.lockfile-path={path}"));
     }
 
-    /// Check that the network selection changed only its expected pins.
-    pub fn validate(&self, root: &Path, integration: Integration) -> Result<()> {
-        let config: toml::Value = toml::from_str(&fs::read_to_string(root.join(CONFIG))?)?;
-        let spec = &config["patch"]["https://github.com/embassy-rs/xarxa"]["xarxa"];
-        let git = spec["git"]
-            .as_str()
-            .ok_or("missing patched Xarxa repository")?;
-        let rev = spec["rev"]
-            .as_str()
-            .ok_or("missing patched Xarxa revision")?;
-        if rev.len() != 40 || !rev.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err("Xarxa must be pinned to a full revision".into());
-        }
+    /// Check that the build resolved exactly the committed pins.
+    pub fn validate(&self, _root: &Path, _integration: Integration) -> Result<()> {
         validate_identities(
             identities(&fs::read(&self.committed)?)?,
             identities(&fs::read(&self.path)?)?,
-            integration,
-            &format!("git+{git}?rev={rev}#{rev}"),
         )
     }
 }
@@ -184,24 +154,10 @@ fn identities(bytes: &[u8]) -> Result<BTreeSet<Identity>> {
         })
         .collect()
 }
-fn validate_identities(
-    mut expected: BTreeSet<Identity>,
-    actual: BTreeSet<Identity>,
-    integration: Integration,
-    patched: &str,
-) -> Result<()> {
-    if integration == Integration::PatchedXarxa {
-        let entry = expected
-            .iter()
-            .find(|(n, _, s)| n == "xarxa" && s.as_deref() == Some(UPSTREAM))
-            .cloned()
-            .ok_or("patched-xarxa requires the original upstream Xarxa composition")?;
-        expected.remove(&entry);
-        expected.insert((entry.0, entry.1, Some(patched.to_owned())));
-    }
+fn validate_identities(expected: BTreeSet<Identity>, actual: BTreeSet<Identity>) -> Result<()> {
     if expected != actual {
         return Err(format!(
-            "network selection changed unexpected dependency pins: removed {:?}; added {:?}",
+            "the build changed dependency pins: removed {:?}; added {:?}",
             expected.difference(&actual).collect::<Vec<_>>(),
             actual.difference(&expected).collect::<Vec<_>>()
         )

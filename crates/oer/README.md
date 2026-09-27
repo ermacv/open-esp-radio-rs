@@ -21,7 +21,7 @@ Chip selection and protocol backends are separate:
 | `esp32s31` | `chips::esp32s31::hal`; no Wi-Fi STA/AP or Bluetooth driver selection |
 | `esp32s31-wifi` | Wi-Fi protocols and `chips::esp32s31::driver::ieee80211::{mac,sta,ap}` |
 | `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth`: the hardware engine |
-| `upstream-xarxa`, `owned-xarxa` or `embassy-smoltcp` | Wi-Fi backend, `embassy::radio` service mailbox and `systems::esp32s31::embassy::wifi` with the selected network stack |
+| `owned-xarxa` | Wi-Fi backend, `embassy::radio` service mailbox and `systems::esp32s31::embassy::wifi` with the owned Xarxa/Embassy network stack |
 | `esp32s31-ieee802154` | IEEE 802.15.4 contracts and `chips::esp32s31::driver::ieee802154`: the MAC engine |
 | `embassy-ieee802154` | The engine and `systems::esp32s31::embassy::ieee802154`: the IEEE 802.15.4 client of the shared radio with its construction inputs |
 | `openthread` | The client and `systems::esp32s31::embassy::ieee802154::openthread`: the OpenThread radio adapter |
@@ -38,13 +38,12 @@ engine.
 Cargo features are additive: another dependency enabling `wifi` on the same
 facade also enables portable Wi-Fi in the final feature union.
 
-For a ready ESP32-S31 Embassy Wi-Fi composition, select one of
-`upstream-xarxa`, `owned-xarxa`, or `embassy-smoltcp`. The composition is exposed
+For a ready ESP32-S31 Embassy Wi-Fi composition, select `owned-xarxa`, the
+only network integration. The composition is exposed
 at `systems::esp32s31::embassy::wifi`, together with every input needed to
 construct it; the [station](../../examples/esp32s31/station/),
 [access-point](../../examples/esp32s31/access-point/) and
-[monitor](../../examples/esp32s31/monitor/) examples use only this path. Network profiles are alternatives and
-are checked separately. Stack dependencies and patch ownership are described
+[monitor](../../examples/esp32s31/monitor/) examples use only this path. Stack dependencies and patch ownership are described
 in [network implementations](../../docs/network-implementations.md).
 
 `composition/` owns the source-level binding of components; `systems::` exposes

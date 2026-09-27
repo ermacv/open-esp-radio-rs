@@ -2,22 +2,8 @@
 #![no_std]
 #![recursion_limit = "256"]
 
-#[cfg(any(
-    all(feature = "owned-network", feature = "embassy-network"),
-    all(feature = "upstream-network", feature = "owned-network"),
-    all(feature = "upstream-network", feature = "embassy-network")
-))]
-compile_error!(
-    "select exactly one network integration: upstream-network, owned-network or embassy-network"
-);
-#[cfg(not(any(
-    feature = "owned-network",
-    feature = "embassy-network",
-    feature = "upstream-network"
-)))]
-compile_error!(
-    "select exactly one network integration: upstream-network, owned-network or embassy-network"
-);
+#[cfg(not(feature = "owned-network"))]
+compile_error!("owned Xarxa is the only network integration: enable the owned-network feature");
 
 use core::num::NonZeroU16;
 
@@ -25,10 +11,6 @@ use embassy_executor::Spawner;
 
 #[cfg(feature = "owned-network")]
 use embassy_net_owned as embassy_net;
-#[cfg(feature = "embassy-network")]
-use embassy_net_released as embassy_net;
-#[cfg(feature = "upstream-network")]
-use embassy_net_upstream as embassy_net;
 
 use esp_backtrace as _;
 
@@ -168,7 +150,9 @@ async fn station_task(
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
     spawner.spawn(tracking_task(radio).expect("PHY tracking task storage is available once"));
-    spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task storage is available once"));
+    spawner.spawn(
+        coex_schedule_task(radio).expect("coexistence schedule task storage is available once"),
+    );
     let ConcurrentPartitions {
         wifi: partition, ..
     } = partitions;

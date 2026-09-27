@@ -1,4 +1,4 @@
-//! Released smoltcp and maintained owned-packet Embassy composition.
+//! Owned-packet Xarxa/Embassy network composition.
 #[cfg(feature = "task-poll-telemetry")]
 use super::{observation, progress};
 
@@ -13,10 +13,6 @@ type Device = progress::Device<WifiNetworkDevice>;
 type Device = WifiNetworkDevice;
 #[cfg(feature = "owned-network")]
 pub(crate) type Runner<'a> = embassy_net::Runner<'a>;
-#[cfg(feature = "embassy-network")]
-pub(crate) type Runner<'a> = embassy_net::Runner<'a, Device>;
-#[cfg(feature = "embassy-network")]
-pub(crate) type Resources = embassy_net::StackResources<16>;
 #[cfg(feature = "owned-network")]
 pub(crate) type Resources = embassy_net::StackResources<Device>;
 
@@ -36,16 +32,12 @@ pub(crate) fn new(
         .with_software_ipv4_udp_tx_checksum_generation(
             settings.tx_udp_checksum == WifiTxUdpChecksumPolicy::Software,
         );
-    #[cfg(feature = "embassy-network")]
-    let device = device.into_embassy();
     #[cfg(feature = "owned-network")]
     let (device, allocator) = device.into_owned();
     #[cfg(feature = "task-poll-telemetry")]
     let device = progress::Device::new(device, observation::counters(_role));
     let mut config = Config::default();
     config.ipv4 = ipv4::config(settings.ipv4);
-    #[cfg(feature = "embassy-network")]
-    let (stack, runner) = embassy_net::new(device, config, resources, settings.seed);
     #[cfg(feature = "owned-network")]
     let (stack, mut runner) = embassy_net::new(device, config, resources, settings.seed, allocator);
     #[cfg(feature = "owned-network")]

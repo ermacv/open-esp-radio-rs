@@ -122,8 +122,6 @@ enum Check {
     Architecture,
     /// Audit the resolved dependency graph of every network profile.
     Network,
-    /// Check the pinned minimal Xarxa patch with the original Embassy and driver.
-    NetworkBackpressure,
     /// Check local Markdown links and the static qualification catalogs.
     Docs,
     /// Build the PHY library for the chip target and audit its artifact and graph.
@@ -158,7 +156,7 @@ enum Build {
         features: Vec<String>,
         #[arg(long)]
         no_default_features: bool,
-        /// Network implementation: upstream-xarxa (default), patched-xarxa, upstream-smoltcp or owned-xarxa.
+        /// Network implementation: owned-xarxa, the only one.
         #[arg(long)]
         network: Option<oer_esp32s31_firmware::network::Integration>,
     },
@@ -226,7 +224,6 @@ fn run() -> Result<std::process::ExitCode> {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::Architecture => checks::architecture::run(&ctx),
             Check::Network => checks::network::run(&ctx),
-            Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Docs => checks::docs::run(&ctx),
             Check::Phy { chip } => checks::phy::run(&ctx, &chip),
             Check::Images => checks::images::run(&ctx),

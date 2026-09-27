@@ -4,13 +4,12 @@
 use oer_esp32s31_bluetooth_memory::ControllerSramLinkAddress;
 use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerCancellationIndexed, BluetoothSchedulerCancellationRequested,
-    BluetoothSchedulerCancellationSourceAcknowledged, BluetoothSchedulerExecutionLockPublished,
+    BluetoothSchedulerCancellationSourceAcknowledged, BluetoothSchedulerExecutionLock,
     BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModify,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerInsertionCommand,
-    BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyPublished,
-    BluetoothSchedulerLockModifyRequest, BluetoothSchedulerSkipPublished,
-    BluetoothSchedulerSkipRequest, ControllerHal,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerLockModifyObservation,
+    BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
+    BluetoothSchedulerSkipPublished, BluetoothSchedulerSkipRequest, ControllerHal,
 };
 
 use super::{
@@ -24,7 +23,7 @@ const LIST: BluetoothSchedulerHardwareListIndex = BluetoothSchedulerHardwareList
 pub(crate) enum HalPublications {}
 
 impl SchedulerPublications for HalPublications {
-    type Lock = BluetoothSchedulerExecutionLockPublished;
+    type Lock = BluetoothSchedulerExecutionLock;
     type Modify = BluetoothSchedulerExecutionModify;
     type LockModify = BluetoothSchedulerLockModifyPublished;
     type Indexed = BluetoothSchedulerCancellationIndexed;
@@ -60,23 +59,18 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
     fn publish_execution_lock(
         &mut self,
         at: ControllerSramLinkAddress,
-    ) -> BluetoothSchedulerExecutionLockPublished {
+    ) -> BluetoothSchedulerExecutionLock {
         // SAFETY: `at` names a submitted item in 'static pool storage, and
         // the executor keeps it listed until the lock is released.
         unsafe {
-            self.controller.publish_scheduler_execution_lock(
+            self.controller.admit_scheduler_execution_lock(
                 BluetoothSchedulerExecutionLockRequest::new(at.controller_address(), LIST),
             )
         }
     }
 
-    fn release_execution_lock(&mut self, _lock: BluetoothSchedulerExecutionLockPublished) {
-        // SAFETY: the consumed proof is the insertion result this clear ends,
-        // and the task runtime serializes the command word.
-        let _cleared = unsafe {
-            self.controller
-                .clear_scheduler_insertion_command_start(BluetoothSchedulerInsertionCommand::Zero)
-        };
+    fn release_execution_lock(&mut self, lock: BluetoothSchedulerExecutionLock) {
+        self.controller.clear_scheduler_execution_lock_start(lock);
     }
 
     fn publish_execution_modify(
@@ -170,10 +164,24 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
     fn observe(
         &mut self,
         wait: SchedulerWait,
+        lock: Option<&mut BluetoothSchedulerExecutionLock>,
         modify: Option<&mut BluetoothSchedulerExecutionModify>,
         cancellation: Option<&mut BluetoothSchedulerCancellationRequested>,
         skip: Option<&BluetoothSchedulerSkipPublished>,
     ) -> Result<SchedulerObservation, SchedulerHardwareError> {
+        if wait == SchedulerWait::ExecutionLock {
+            // The request runs the engine-idle preamble, publishes command
+            // zero and samples BUSY itself, in the vendor order.
+            let lock = lock.ok_or(SchedulerHardwareError::NotAwaiting(wait))?;
+            let controller = &mut *self.controller;
+            let disposition = self
+                .storage
+                .with_interrupt_registers(lock, |interrupts, lock| {
+                    controller.step_scheduler_execution_lock(interrupts, lock)
+                })
+                .map_err(|_| SchedulerHardwareError::InterruptOwnerUnavailable)?;
+            return Ok(SchedulerObservation::ExecutionLock(disposition));
+        }
         if wait == SchedulerWait::ExecutionModify {
             // The request samples BUSY and the diagnostic pair itself, in
             // the vendor order of its current phase.
@@ -204,9 +212,6 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
             .with_interrupt_registers((), |interrupts, ()| interrupts.capture_scheduler_busy())
             .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?;
         Ok(match (wait, cancellation, skip) {
-            (SchedulerWait::ExecutionLock, _, _) => SchedulerObservation::ExecutionLock(
-                self.controller.observe_scheduler_execution_lock(busy),
-            ),
             (SchedulerWait::Cancellation, Some(requested), _) => {
                 SchedulerObservation::Cancellation(
                     self.controller

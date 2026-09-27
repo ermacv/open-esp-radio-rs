@@ -97,6 +97,7 @@ impl SchedulerHardwareBackend for Recorder {
     fn observe(
         &mut self,
         wait: SchedulerWait,
+        _lock: Option<&mut ()>,
         _modify: Option<&mut ()>,
         _cancellation: Option<&mut ()>,
         _skip: Option<&()>,

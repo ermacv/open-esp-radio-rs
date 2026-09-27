@@ -228,7 +228,10 @@ insertion end. The registers are:
 - `0x2010_1254` execution lock: bit 31 START, bits 23:20 list index, bits
   19:0 compressed item. Bit 24 reports completion. Bits 29:27 are the result:
   0 locks, 2, 5, 6 and 7 fail, and 1, 3 and 4 are treated as impossible.
-  Bit 26 reports the lock engine idle;
+  Bit 26 reports the lock engine idle. Execution lock first runs the same
+  engine-idle preamble as execution modify, then publishes the command and
+  samples BUSY until the scheduler is idle or bit 24 is set; the open HAL
+  runs it as finite steps that publish nothing until the engines are idle;
 - `0x2010_1258` execution modify: bit 31 START, bit 16 a mode flag, bits 15:0
   the list mask. Bit 17 reports completion and bit 19 is treated as impossible.
   Bit 18 reports the modify engine idle. Execution modify runs in the hardware

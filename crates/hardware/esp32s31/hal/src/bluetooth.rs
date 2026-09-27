@@ -33,6 +33,7 @@ use crate::{
 };
 
 mod controller_time;
+mod scheduler_execution_lock;
 mod scheduler_execution_modify;
 mod scheduler_stop;
 mod shutdown;
@@ -44,6 +45,7 @@ pub use controller_time::{
     BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchRequest,
     BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
 };
+pub use scheduler_execution_lock::BluetoothSchedulerExecutionLock;
 pub use scheduler_execution_modify::BluetoothSchedulerExecutionModify;
 pub use scheduler_stop::{BluetoothSchedulerStop, BluetoothSchedulerStopStep};
 pub use shutdown::{BluetoothControllerReset, BluetoothShutdownError, BluetoothShutdownFailure};
@@ -64,12 +66,11 @@ pub use oer_esp32s31_pac::{
     BluetoothSchedulerCancellationDisposition, BluetoothSchedulerCancellationIndexed,
     BluetoothSchedulerCancellationReleased, BluetoothSchedulerCancellationRequested,
     BluetoothSchedulerCancellationSourceAcknowledged, BluetoothSchedulerExecutionLockDisposition,
-    BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
-    BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
-    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
-    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
+    BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListHeadRetirementObservation, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
@@ -1574,35 +1575,45 @@ impl ControllerHal<'_> {
         }
     }
 
-    /// Publish the insertion-begin execution-lock command through the
-    /// restricted PAC.
+    /// Admit one execution lock of the merge-selected item. Nothing is
+    /// written until its first step.
     ///
     /// # Safety
     ///
     /// The request must identify the exact merge-selected initialized item.
     /// The caller must retain that pinned item and exclusive list ownership
-    /// through the complete insertion transaction.
+    /// through the complete insertion transaction and clear command-zero
+    /// START through [`Self::clear_scheduler_execution_lock_start`].
     #[doc(hidden)]
     #[allow(
         unsafe_code,
         reason = "the caller retains merge-selected item lifetime and list serialization"
     )]
-    pub unsafe fn publish_scheduler_execution_lock(
+    pub unsafe fn admit_scheduler_execution_lock(
         &mut self,
         request: BluetoothSchedulerExecutionLockRequest,
-    ) -> BluetoothSchedulerExecutionLockPublished {
-        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
-        // which states the PAC transaction's prerequisites.
-        unsafe { self.registers.publish_scheduler_execution_lock(request) }
+    ) -> BluetoothSchedulerExecutionLock {
+        BluetoothSchedulerExecutionLock::new(request)
     }
 
-    /// Perform one finite typed command-zero observation in its reviewed
-    /// short-circuit order.
-    pub fn observe_scheduler_execution_lock(
+    /// Advance one finite execution-lock step under interrupt serialization:
+    /// the engine-idle preamble, publication of command zero and one
+    /// observation of it. Pending retains the request; the caller owns its
+    /// deadline.
+    pub fn step_scheduler_execution_lock(
         &mut self,
-        scheduler: BluetoothSchedulerBusyObservation,
+        interrupts: &mut InterruptRegistersOwner,
+        lock: &mut BluetoothSchedulerExecutionLock,
     ) -> BluetoothSchedulerExecutionLockDisposition {
-        self.registers.observe_scheduler_execution_lock(scheduler)
+        scheduler_execution_lock::step_hardware(self.registers, &mut interrupts.registers, lock)
+    }
+
+    /// Clear command-zero START of a finished execution lock.
+    pub fn clear_scheduler_execution_lock_start(
+        &mut self,
+        mut lock: BluetoothSchedulerExecutionLock,
+    ) {
+        scheduler_execution_lock::clear_start(self.registers, &mut lock);
     }
 
     /// Admit one execution modify of `index`, in list-deletion mode when

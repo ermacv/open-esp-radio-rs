@@ -74,6 +74,7 @@ pub(crate) trait SchedulerHardwareBackend {
     fn observe(
         &mut self,
         wait: SchedulerWait,
+        lock: Option<&mut Lock<Self>>,
         modify: Option<&mut Modify<Self>>,
         cancellation: Option<&mut Cancellation<Self>>,
         skip: Option<&Skip<Self>>,
@@ -237,6 +238,7 @@ impl<P: SchedulerPublications> SchedulerHardware<P> {
         }
         let observation = backend.observe(
             wait,
+            self.lock.as_mut(),
             self.modify.as_mut(),
             self.cancellation.as_mut(),
             self.skip.as_ref(),

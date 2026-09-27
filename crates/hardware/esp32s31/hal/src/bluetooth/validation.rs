@@ -170,9 +170,9 @@ pub unsafe fn run_scheduler_execution_modify(index: u8, list_deletion: bool) -> 
     Some(result)
 }
 
-/// Publish the production execution lock of `address` on hardware list
-/// `index` and observe it until it leaves `Pending`, on isolated validation
-/// owners.
+/// Run the production execution lock of `address` on hardware list `index`
+/// — engine-idle preamble, publication and observation — until it leaves
+/// `Pending`, on isolated validation owners.
 ///
 /// Returns `None` for an index outside `0..16` or an address outside the
 /// controller SRAM window, otherwise the disposition: zero retained, one
@@ -196,21 +196,18 @@ pub unsafe fn run_scheduler_execution_lock(address: u32, index: u8) -> Option<u3
     let (controller, timer, bank) = partitions.bluetooth.into_parts();
     let mut task = oer_esp32s31_pac::BluetoothTaskRegisters::new(controller);
     let mut interrupts = oer_esp32s31_pac::validation::bluetooth_interrupt_registers();
-    // SAFETY: forwarded unchanged from this function's `# Safety` contract.
-    let published = unsafe {
-        task.publish_scheduler_execution_lock(
-            oer_esp32s31_pac::BluetoothSchedulerExecutionLockRequest::new(address, index),
-        )
-    };
+    let mut lock = super::BluetoothSchedulerExecutionLock::new(
+        oer_esp32s31_pac::BluetoothSchedulerExecutionLockRequest::new(address, index),
+    );
     let result = loop {
-        let busy = interrupts.capture_scheduler_busy();
-        match task.observe_scheduler_execution_lock(busy) {
+        match super::scheduler_execution_lock::step_hardware(&mut task, &mut interrupts, &mut lock)
+        {
             Disposition::Pending => {}
             Disposition::ExecutionLockRetained => break 0,
             Disposition::ReconcileCurrentHead => break 1,
             Disposition::UnsupportedHardwareResult => break 2,
         }
     };
-    let _retained = (task, interrupts, timer, bank, published);
+    let _retained = (task, interrupts, timer, bank, lock);
     Some(result)
 }

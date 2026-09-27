@@ -15,7 +15,7 @@ use oer_esp32s31_coex::{
     CoexTimerIndex,
 };
 use oer_esp32s31_hal::{
-    ieee80211::client::WifiClocked,
+    ieee80211::client::WifiClocksOn,
     ieee802154::Ieee802154Clocked,
     root::{ConcurrentPartitions, RadioHardware},
     shared_radio::{PlatformClockProvider, SharedRadio, SharedRadioLease},
@@ -1017,10 +1017,10 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     /// Once polled, drive this future to a terminal result.
     pub async fn suspend_wifi(
         &mut self,
-        clocked: &WifiClocked,
+        clocks: &WifiClocksOn,
         membership: WifiPhyMembership,
     ) -> Result<WifiAsleep, WifiPhyLeaveFailure> {
-        let (suspended, last) = suspend_wifi(self.lease(), clocked, membership)?;
+        let (suspended, last) = suspend_wifi(self.lease(), clocks, membership)?;
         let rf_closed = if last {
             self.close_phy_if_idle().await
         } else {
@@ -1047,7 +1047,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     /// Once polled, drive this future to a terminal result.
     pub async fn resume_wifi(
         &mut self,
-        clocked: &WifiClocked,
+        clocks: &WifiClocksOn,
         suspended: WifiPhySuspended,
     ) -> Result<(WifiPhyMembership, ConcurrentAcquire), WifiWakeFailure> {
         if let Err(error) = self.prepare_phy().await {
@@ -1056,7 +1056,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
                 suspended,
             });
         }
-        resume_wifi(self.lease(), clocked, suspended, &mut EmbassyPhyTime).map_err(|failure| {
+        resume_wifi(self.lease(), clocks, suspended, &mut EmbassyPhyTime).map_err(|failure| {
             WifiWakeFailure {
                 error: WifiWakeError::Client(failure.error()),
                 suspended: failure.into_suspended(),

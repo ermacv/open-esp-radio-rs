@@ -13,7 +13,10 @@
 
 use core::fmt;
 
-use oer_esp32s31_hal::{ieee80211::client::WifiClocked, shared_radio::SharedRadioLease};
+use oer_esp32s31_hal::{
+    ieee80211::client::{WifiClocked, WifiClocksOn},
+    shared_radio::SharedRadioLease,
+};
 
 use crate::{
     concurrent::{
@@ -178,13 +181,22 @@ impl fmt::Debug for WifiPhySuspendedFailure {
 /// # Errors
 ///
 /// As [`leave_wifi`]; the membership is returned.
+///
+/// A running role proves its clocks with the [`WifiClocksOn`] its clocked
+/// client handed out beside the runtime epoch.
 pub fn suspend_wifi(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocked: &WifiClocked,
+    clocks: &WifiClocksOn,
     membership: WifiPhyMembership,
 ) -> Result<(WifiPhySuspended, bool), WifiPhyLeaveFailure> {
-    let last = leave_wifi(lease, clocked, membership)?;
-    Ok((WifiPhySuspended { _private: () }, last))
+    let _ = clocks;
+    match release_client(lease, PhyModemClient::Wifi) {
+        Ok(last) => {
+            let WifiPhyMembership { _private: () } = membership;
+            Ok((WifiPhySuspended { _private: () }, last))
+        }
+        Err(error) => Err(WifiPhyLeaveFailure { membership, error }),
+    }
 }
 
 /// Wake Wi-Fi's RF: the vendor modem wake's `wifi_rf_phy_enable`, which is
@@ -197,14 +209,15 @@ pub fn suspend_wifi(
 /// As [`join_wifi`]; the suspended client is returned.
 pub fn resume_wifi(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocked: &WifiClocked,
+    clocks: &WifiClocksOn,
     suspended: WifiPhySuspended,
     clock: &mut impl PhyPllTrackClock,
 ) -> Result<(WifiPhyMembership, ConcurrentAcquire), WifiPhySuspendedFailure> {
-    match join_wifi(lease, clocked, clock) {
-        Ok(joined) => {
+    let _ = clocks;
+    match acquire_client(lease, PhyModemClient::Wifi, clock) {
+        Ok(acquired) => {
             let WifiPhySuspended { _private: () } = suspended;
-            Ok(joined)
+            Ok((WifiPhyMembership { _private: () }, acquired))
         }
         Err(error) => Err(WifiPhySuspendedFailure { suspended, error }),
     }

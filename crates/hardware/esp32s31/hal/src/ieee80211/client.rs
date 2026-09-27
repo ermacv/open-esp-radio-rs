@@ -61,6 +61,25 @@ pub struct WifiClocked {
     registers: WifiClientRegisters,
     initialized: bool,
     station_wake: StationWakeState,
+    clocks: WifiClocksOn,
+}
+
+/// Proof that the Wi-Fi module clocks are enabled.
+///
+/// A [`WifiClocked`] client holds it, and hands it out beside its running
+/// epoch in [`WifiClocked::into_running`]; the clocks can be disabled only
+/// after [`WifiClocked::from_running`] took it back. A running role
+/// therefore proves its clocks to the shared PHY while its registers and
+/// interrupt setup belong to its datapath.
+///
+/// ```compile_fail
+/// use oer_esp32s31_hal::ieee80211::client::WifiClocksOn;
+/// fn requires_clone<T: Clone>() {}
+/// requires_clone::<WifiClocksOn>();
+/// ```
+#[must_use = "the proof returns to its clocked Wi-Fi client"]
+pub struct WifiClocksOn {
+    _private: (),
 }
 
 /// Failed Wi-Fi lifecycle transition retaining the unchanged owner.
@@ -165,6 +184,7 @@ impl WifiPowered {
                 registers: self.registers,
                 initialized: false,
                 station_wake: StationWakeState::default(),
+                clocks: WifiClocksOn { _private: () },
             }),
             Err(error) => Err(WifiTransitionFailure { owner: self, error }),
         }
@@ -198,7 +218,13 @@ impl WifiClocked {
             registers: cold.registers,
             initialized: false,
             station_wake: StationWakeState::default(),
+            clocks: WifiClocksOn { _private: () },
         }
+    }
+
+    /// The proof that this client's clocks are enabled.
+    pub const fn clocks_on(&self) -> &WifiClocksOn {
+        &self.clocks
     }
 
     /// Whether Wi-Fi is marked initialized.
@@ -268,13 +294,21 @@ impl WifiClocked {
     }
 
     /// Complete the one-way transition after cold MAC setup: the task-side
-    /// runtime owner and the MAC interrupt setup, which keeps MAC interrupts
-    /// masked until its activation. This performs no MMIO.
-    pub fn into_running(self) -> (RadioRuntimeOwner, crate::owner::MacInterruptSetup) {
+    /// runtime owner, the MAC interrupt setup, which keeps MAC interrupts
+    /// masked until its activation, and the proof that the clocks stay on.
+    /// This performs no MMIO.
+    pub fn into_running(
+        self,
+    ) -> (
+        RadioRuntimeOwner,
+        crate::owner::MacInterruptSetup,
+        WifiClocksOn,
+    ) {
         let WifiClientRegisters { mac, interrupts } = self.registers;
         (
             RadioRuntimeOwner::from_clocked(mac, self.station_wake, self.initialized),
             crate::owner::MacInterruptSetup { inner: interrupts },
+            self.clocks,
         )
     }
 
@@ -286,6 +320,7 @@ impl WifiClocked {
     pub fn from_running(
         runtime: RadioRuntimeOwner,
         interrupts: crate::owner::MacInterruptSetup,
+        clocks: WifiClocksOn,
     ) -> Self {
         let (mac, station_wake, initialized) = runtime.into_clocked_parts();
         Self {
@@ -295,6 +330,7 @@ impl WifiClocked {
             },
             initialized,
             station_wake,
+            clocks,
         }
     }
 
@@ -312,9 +348,12 @@ impl WifiClocked {
         platform: &mut impl PlatformClockProvider,
     ) -> Result<WifiPowered, WifiTransitionFailure<Self, ModemClockError>> {
         match lease.disable_modem_clocks(&self.registers.mac, platform) {
-            Ok(()) => Ok(WifiPowered {
-                registers: self.registers,
-            }),
+            Ok(()) => {
+                let WifiClocksOn { _private: () } = self.clocks;
+                Ok(WifiPowered {
+                    registers: self.registers,
+                })
+            }
             Err(error) => Err(WifiTransitionFailure { owner: self, error }),
         }
     }

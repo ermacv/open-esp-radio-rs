@@ -85,7 +85,7 @@ fn a_suspended_wifi_leaves_the_domain_and_resumes_as_a_client() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     let (membership, _) = join_wifi(&mut lease, &clocked, &mut Clock(0))
         .unwrap_or_else(|error| panic!("join failed: {error:?}"));
-    let (suspended, last) = suspend_wifi(&mut lease, &clocked, membership)
+    let (suspended, last) = suspend_wifi(&mut lease, clocked.clocks_on(), membership)
         .unwrap_or_else(|failure| panic!("suspend failed: {failure:?}"));
     assert!(last, "Wi-Fi was the only client");
     assert!(
@@ -94,8 +94,9 @@ fn a_suspended_wifi_leaves_the_domain_and_resumes_as_a_client() {
             .client_snapshot()
             .is_some_and(|clients| !clients.contains(PhyModemClient::Wifi))
     );
-    let (membership, acquired) = resume_wifi(&mut lease, &clocked, suspended, &mut Clock(0))
-        .unwrap_or_else(|failure| panic!("resume failed: {failure:?}"));
+    let (membership, acquired) =
+        resume_wifi(&mut lease, clocked.clocks_on(), suspended, &mut Clock(0))
+            .unwrap_or_else(|failure| panic!("resume failed: {failure:?}"));
     assert_eq!(acquired, ConcurrentAcquire::Settled);
     assert!(
         lease
@@ -103,7 +104,7 @@ fn a_suspended_wifi_leaves_the_domain_and_resumes_as_a_client() {
             .client_snapshot()
             .is_some_and(|clients| clients.contains(PhyModemClient::Wifi))
     );
-    let (suspended, _) = suspend_wifi(&mut lease, &clocked, membership)
+    let (suspended, _) = suspend_wifi(&mut lease, clocked.clocks_on(), membership)
         .unwrap_or_else(|failure| panic!("second suspend failed: {failure:?}"));
     leave_suspended_wifi(suspended);
 }
@@ -116,12 +117,12 @@ fn a_rejected_resume_returns_the_suspended_client() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     let (membership, _) = join_wifi(&mut lease, &clocked, &mut Clock(0))
         .unwrap_or_else(|error| panic!("join failed: {error:?}"));
-    let (suspended, _) = suspend_wifi(&mut lease, &clocked, membership)
+    let (suspended, _) = suspend_wifi(&mut lease, clocked.clocks_on(), membership)
         .unwrap_or_else(|failure| panic!("suspend failed: {failure:?}"));
     // Another membership holds the client bit, so the resume is rejected.
     let (other, _) = join_wifi(&mut lease, &clocked, &mut Clock(0))
         .unwrap_or_else(|error| panic!("join failed: {error:?}"));
-    let failure = resume_wifi(&mut lease, &clocked, suspended, &mut Clock(0))
+    let failure = resume_wifi(&mut lease, clocked.clocks_on(), suspended, &mut Clock(0))
         .err()
         .unwrap_or_else(|| panic!("a held client bit rejects the resume"));
     assert!(matches!(failure.error(), ConcurrentPhyError::Acquire(_)));

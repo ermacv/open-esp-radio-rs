@@ -15,8 +15,8 @@ fn a_cold_client_returns_its_partition() {
 fn a_running_epoch_reunites_with_its_clocked_client() {
     let (_radio, partitions) = RadioHardware::for_validation().into_concurrent(());
     let clocked = super::WifiClocked::for_validation(WifiCold::from_partition(partitions.wifi));
-    let (runtime, interrupts) = clocked.into_running();
-    let clocked = super::WifiClocked::from_running(runtime, interrupts);
+    let (runtime, interrupts, clocks) = clocked.into_running();
+    let clocked = super::WifiClocked::from_running(runtime, interrupts, clocks);
     assert!(!clocked.initialized());
 }
 
@@ -26,7 +26,7 @@ fn a_running_epoch_reunites_with_its_clocked_client() {
 fn the_runtime_channel_capability_borrows_the_lease() {
     let (radio, partitions) = RadioHardware::for_validation().into_concurrent(());
     let clocked = super::WifiClocked::for_validation(WifiCold::from_partition(partitions.wifi));
-    let (mut runtime, _interrupts) = clocked.into_running();
+    let (mut runtime, _interrupts, _clocks) = clocked.into_running();
     let mut lease = radio
         .try_acquire()
         .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));

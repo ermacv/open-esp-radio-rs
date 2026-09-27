@@ -10,7 +10,7 @@ use super::*;
 /// A running Wi-Fi client over a validation split, beside its arbiter.
 fn running() -> (SharedRadio<()>, RadioRuntimeOwner, MacInterruptSetup) {
     let (shared, partitions) = RadioHardware::for_validation().into_concurrent(());
-    let (owner, interrupts) =
+    let (owner, interrupts, _clocks) =
         WifiClocked::for_validation(WifiCold::from_partition(partitions.wifi)).into_running();
     (shared, owner, interrupts)
 }

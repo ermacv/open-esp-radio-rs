@@ -3,7 +3,7 @@
 use crate::mac_start::{WifiMacReady, WifiMacStartReport};
 
 use oer_esp32s31_hal::{
-    ieee80211::client::{WifiClocked, WifiPowered},
+    ieee80211::client::{WifiClocked, WifiClocksOn, WifiPowered},
     owner::{MacInterruptSetup, RadioRuntimeOwner},
     root::WifiPartition,
     shared_radio::{
@@ -13,8 +13,12 @@ use oer_esp32s31_hal::{
 };
 
 use oer_esp32s31_phy::{
-    concurrent::{ConcurrentPhy, ConcurrentPhyError},
-    wifi_client::{WifiPhyMembership, leave_wifi, set_wifi_rx},
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
+    state::client::PhyPllTrackClock,
+    wifi_client::{
+        WifiPhyMembership, WifiPhySuspended, leave_suspended_wifi, leave_wifi, resume_wifi,
+        set_wifi_rx, suspend_wifi,
+    },
 };
 
 use oer_esp32s31_ieee80211_mac::sta_ap_registers::disable_all_role_receive_registers;
@@ -26,6 +30,23 @@ use oer_ieee80211_mac::channel::WifiChannel;
 pub struct WifiRuntimeTransitionReport {
     /// Mask published by the common MAC initializer before task-side routing.
     pub cold_interrupt_mask: MacInterruptEnableState,
+}
+
+/// Wi-Fi's place in the shared PHY domain.
+pub enum WifiPhyClient {
+    /// Wi-Fi is a PHY client; RF is available to its MAC.
+    Member(WifiPhyMembership),
+    /// Wi-Fi's RF sleeps for modem sleep; it keeps its registration.
+    Suspended(WifiPhySuspended),
+}
+
+/// Why Wi-Fi's RF did not change its sleep state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiRfSleepError {
+    /// The RF already sleeps, or is already awake.
+    State,
+    /// The shared PHY domain rejected the change.
+    Phy(ConcurrentPhyError),
 }
 
 /// Common stopped Wi-Fi owner after cold MAC initialization.
@@ -42,7 +63,8 @@ pub struct WifiStopped<W> {
     platform: W,
     registers: RadioRuntimeOwner,
     interrupt_setup: MacInterruptSetup,
-    membership: WifiPhyMembership,
+    clocks: WifiClocksOn,
+    phy: WifiPhyClient,
     start_report: WifiMacStartReport,
     transition_report: WifiRuntimeTransitionReport,
     current_channel: WifiChannel,
@@ -131,7 +153,8 @@ impl<W> WifiStopped<W> {
             platform,
             registers,
             interrupt_setup,
-            membership,
+            clocks: clocks_on,
+            phy,
             start_report,
             transition_report,
             current_channel,
@@ -146,7 +169,8 @@ impl<W> WifiStopped<W> {
                         platform,
                         registers: failure.registers,
                         interrupt_setup: failure.interrupts,
-                        membership,
+                        clocks: clocks_on,
+                        phy,
                         start_report,
                         transition_report,
                         current_channel,
@@ -154,27 +178,38 @@ impl<W> WifiStopped<W> {
                 });
             }
         };
-        let mut clocked = WifiClocked::from_running(registers, interrupt_setup);
-        set_wifi_rx(lease, &membership, false);
-        let last_phy_client = match leave_wifi(lease, &clocked, membership) {
-            Ok(last) => last,
-            Err(failure) => {
-                let error = WifiReleaseError::Phy(failure.error());
-                let membership = failure.into_membership();
-                set_wifi_rx(lease, &membership, true);
-                let (registers, interrupt_setup) = clocked.into_running();
-                return Err(WifiReleaseFailure {
-                    error,
-                    frontier: WifiReleaseFrontier::Stopped(Self {
-                        platform,
-                        registers,
-                        interrupt_setup,
-                        membership,
-                        start_report,
-                        transition_report,
-                        current_channel,
-                    }),
-                });
+        let mut clocked = WifiClocked::from_running(registers, interrupt_setup, clocks_on);
+        let last_phy_client = match phy {
+            // Modem sleep already left the PHY client set and cleared the
+            // Wi-Fi receive path; only its token ends.
+            WifiPhyClient::Suspended(suspended) => {
+                leave_suspended_wifi(suspended);
+                false
+            }
+            WifiPhyClient::Member(membership) => {
+                set_wifi_rx(lease, &membership, false);
+                match leave_wifi(lease, &clocked, membership) {
+                    Ok(last) => last,
+                    Err(failure) => {
+                        let error = WifiReleaseError::Phy(failure.error());
+                        let membership = failure.into_membership();
+                        set_wifi_rx(lease, &membership, true);
+                        let (registers, interrupt_setup, clocks_on) = clocked.into_running();
+                        return Err(WifiReleaseFailure {
+                            error,
+                            frontier: WifiReleaseFrontier::Stopped(Self {
+                                platform,
+                                registers,
+                                interrupt_setup,
+                                clocks: clocks_on,
+                                phy: WifiPhyClient::Member(membership),
+                                start_report,
+                                transition_report,
+                                current_channel,
+                            }),
+                        });
+                    }
+                }
             }
         };
         if let Err(error) = clocked.set_initialized(lease, false) {
@@ -224,7 +259,8 @@ impl<W> WifiStopped<W> {
             registers: self.registers,
             interrupt_setup: self.interrupt_setup,
             context: WifiRuntimeContext {
-                membership: self.membership,
+                clocks: self.clocks,
+                phy: Some(self.phy),
                 start_report: self.start_report,
                 transition_report: self.transition_report,
                 current_channel: self.current_channel,
@@ -254,16 +290,92 @@ pub struct WifiRuntimeParts<W> {
 /// route returns the exact [`MacInterruptSetup`].
 #[doc(hidden)]
 pub struct WifiRuntimeContext {
-    membership: WifiPhyMembership,
+    clocks: WifiClocksOn,
+    /// Always present outside the PHY transitions below, which restore it
+    /// before they return.
+    phy: Option<WifiPhyClient>,
     start_report: WifiMacStartReport,
     transition_report: WifiRuntimeTransitionReport,
     current_channel: WifiChannel,
 }
 
 impl WifiRuntimeContext {
-    /// The Wi-Fi client's membership in the shared PHY domain.
-    pub const fn membership(&self) -> &WifiPhyMembership {
-        &self.membership
+    /// Whether Wi-Fi's RF sleeps for modem sleep.
+    pub const fn rf_asleep(&self) -> bool {
+        matches!(self.phy, Some(WifiPhyClient::Suspended(_)))
+    }
+
+    /// Put Wi-Fi's RF to sleep, as the vendor modem sleep's
+    /// `wifi_rf_phy_disable` does: clear the Wi-Fi receive path, then leave
+    /// the PHY client set, keeping the registration and calibration.
+    /// Returns whether Wi-Fi was the last client; the radio system then
+    /// closes RF.
+    ///
+    /// # Errors
+    ///
+    /// The RF sleeps already, or the domain rejected the release; the
+    /// receive path is restored and nothing changed.
+    pub fn suspend_rf(
+        &mut self,
+        lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    ) -> Result<bool, WifiRfSleepError> {
+        let membership = match self.phy.take() {
+            Some(WifiPhyClient::Member(membership)) => membership,
+            other => {
+                self.phy = other;
+                return Err(WifiRfSleepError::State);
+            }
+        };
+        set_wifi_rx(lease, &membership, false);
+        match suspend_wifi(lease, &self.clocks, membership) {
+            Ok((suspended, last)) => {
+                self.phy = Some(WifiPhyClient::Suspended(suspended));
+                Ok(last)
+            }
+            Err(failure) => {
+                let error = failure.error();
+                let membership = failure.into_membership();
+                set_wifi_rx(lease, &membership, true);
+                self.phy = Some(WifiPhyClient::Member(membership));
+                Err(WifiRfSleepError::Phy(error))
+            }
+        }
+    }
+
+    /// Wake Wi-Fi's RF, as the vendor modem wake's `wifi_rf_phy_enable`
+    /// does: re-enter the PHY client set, then enable the Wi-Fi receive
+    /// path. The radio system must have woken closed RF first. A returned
+    /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
+    /// tracking before the MAC uses RF.
+    ///
+    /// # Errors
+    ///
+    /// The RF is awake already, or the domain rejected the client; nothing
+    /// changed.
+    pub fn resume_rf(
+        &mut self,
+        lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+        clock: &mut impl PhyPllTrackClock,
+    ) -> Result<ConcurrentAcquire, WifiRfSleepError> {
+        let suspended = match self.phy.take() {
+            Some(WifiPhyClient::Suspended(suspended)) => suspended,
+            other => {
+                self.phy = other;
+                return Err(WifiRfSleepError::State);
+            }
+        };
+        match resume_wifi(lease, &self.clocks, suspended, clock) {
+            Ok((membership, acquired)) => {
+                set_wifi_rx(lease, &membership, true);
+                self.phy = Some(WifiPhyClient::Member(membership));
+                Ok(acquired)
+            }
+            Err(failure) => {
+                let error = failure.error();
+                self.phy = Some(WifiPhyClient::Suspended(failure.into_suspended()));
+                Err(WifiRfSleepError::Phy(error))
+            }
+        }
     }
 
     pub const fn current_channel(&self) -> WifiChannel {
@@ -286,7 +398,10 @@ impl WifiRuntimeContext {
             platform,
             registers,
             interrupt_setup,
-            membership: self.membership,
+            clocks: self.clocks,
+            phy: self
+                .phy
+                .expect("the PHY transitions restore the client before they return"),
             start_report: self.start_report,
             transition_report: self.transition_report,
             current_channel: self.current_channel,
@@ -324,6 +439,11 @@ impl<W> WifiRoleOwner<W> {
 
     pub fn set_current_channel(&mut self, channel: WifiChannel) {
         self.context.set_current_channel(channel);
+    }
+
+    /// The role's common Wi-Fi state, for its RF sleep and wake.
+    pub fn context_mut(&mut self) -> &mut WifiRuntimeContext {
+        &mut self.context
     }
 
     /// Split the role-neutral logical owner from the platform value while a
@@ -404,7 +524,7 @@ pub fn enter_esp32s31_wifi_runtime<W>(mac: WifiMacReady<W>) -> WifiStopped<W> {
         ..
     } = mac;
     let cold_interrupt_mask = clocked.close_cold_interrupt_phase();
-    let (mut registers, interrupt_setup) = clocked.into_running();
+    let (mut registers, interrupt_setup, clocks) = clocked.into_running();
     // Cold `wifi_set_rx_policy(0)` first publishes both interface addresses,
     // then disables their receive policies. Our cold address transaction is
     // already complete; finish that exact role-neutral suffix before exposing
@@ -422,7 +542,8 @@ pub fn enter_esp32s31_wifi_runtime<W>(mac: WifiMacReady<W>) -> WifiStopped<W> {
         platform,
         registers,
         interrupt_setup,
-        membership,
+        clocks,
+        phy: WifiPhyClient::Member(membership),
         start_report,
         transition_report: WifiRuntimeTransitionReport {
             cold_interrupt_mask,

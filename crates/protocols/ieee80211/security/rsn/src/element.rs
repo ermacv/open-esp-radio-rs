@@ -5,7 +5,8 @@
 //! chip node pointers are deliberately outside this crate.
 
 use oer_ieee80211_mac::security::rsn::{
-    RSN_CAPABILITY_MFPR, RSN_CIPHER_CCMP, RsnElement, RsnSyntaxError, ieee_suite,
+    RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR, RSN_CIPHER_BIP_CMAC_128, RSN_CIPHER_CCMP, RsnElement,
+    RsnSyntaxError, ieee_suite,
 };
 
 use crate::{
@@ -21,8 +22,24 @@ pub enum RsnElementError {
     UnsupportedGroupCipher,
     UnsupportedPairwiseCipher,
     UnsupportedAkm,
-    ManagementFrameProtectionUnsupported,
+    UnsupportedGroupManagementCipher,
     PmkidCachingUnsupported,
+}
+
+/// The management frame protection an RSN element advertises.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ManagementFrameProtection {
+    /// MFPC: the party protects management frames when its peer does.
+    pub capable: bool,
+    /// MFPR: the party associates only with protected management frames.
+    pub required: bool,
+}
+
+impl ManagementFrameProtection {
+    /// Protection is in effect when both parties are capable.
+    pub const fn negotiated(self, peer: Self) -> bool {
+        self.capable && peer.capable
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,6 +61,13 @@ impl ValidatedRsnElement {
 
     pub const fn capabilities(&self) -> u16 {
         self.capabilities
+    }
+
+    pub const fn management_frame_protection(&self) -> ManagementFrameProtection {
+        ManagementFrameProtection {
+            capable: self.capabilities & RSN_CAPABILITY_MFPC != 0,
+            required: self.capabilities & RSN_CAPABILITY_MFPR != 0,
+        }
     }
 
     pub fn into_owned(self) -> OwnedRsnIe {
@@ -79,16 +103,20 @@ pub fn validate_rsn_element(bytes: &[u8]) -> Result<ValidatedRsnElement, RsnElem
         .ok_or(RsnElementError::UnsupportedAkm)?;
 
     let capabilities = rsn.capabilities().unwrap_or(0);
-    if capabilities & RSN_CAPABILITY_MFPR != 0 {
-        return Err(RsnElementError::ManagementFrameProtectionUnsupported);
+    let capable = capabilities & RSN_CAPABILITY_MFPC != 0;
+    // Required protection without the capability is contradictory, and so
+    // is a group management cipher of a party that protects nothing.
+    if capabilities & RSN_CAPABILITY_MFPR != 0 && !capable {
+        return Err(RsnElementError::Malformed);
     }
     if rsn.pmkid_count().is_some_and(|count| count != 0) {
         return Err(RsnElementError::PmkidCachingUnsupported);
     }
-    // Without PMF negotiation this profile defines no Group Management
-    // Cipher Suite in an association element.
-    if rsn.group_management_cipher().is_some() {
-        return Err(RsnElementError::Malformed);
+    match rsn.group_management_cipher() {
+        None => {}
+        Some(_) if !capable => return Err(RsnElementError::Malformed),
+        Some(cipher) if cipher == ieee_suite(RSN_CIPHER_BIP_CMAC_128) => {}
+        Some(_) => return Err(RsnElementError::UnsupportedGroupManagementCipher),
     }
     Ok(ValidatedRsnElement {
         owned,

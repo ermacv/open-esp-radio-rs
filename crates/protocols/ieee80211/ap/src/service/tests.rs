@@ -623,7 +623,15 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     assert!(message3.key_frame().verify_mic(&ptk));
     let plaintext = software_aes128_key_unwrap(ptk.kek(), message3.key_frame().key_data())
         .expect("AP wrapped its Message 3 key data");
-    assert!(parse_gtk_key_data(plaintext.as_bytes(), &WPA2_PERSONAL_CCMP_PSK_RSN_IE, &[],).is_ok());
+    assert!(
+        parse_gtk_key_data(
+            plaintext.as_bytes(),
+            &WPA2_PERSONAL_CCMP_PSK_RSN_IE,
+            &[],
+            false
+        )
+        .is_ok()
+    );
     assert_eq!(service.next_wpa2_retry_deadline(), None);
     service
         .observe_wpa2_transmit(PEER, false, true, 2_000_000)
@@ -640,7 +648,7 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     assert!(retried_message3.retransmission());
     assert_eq!(retried_message3.as_bytes(), message3.as_bytes());
     assert!(matches!(
-        parse_gtk_key_data(plaintext.as_bytes(), &SUPPLICANT_RSN, &[]),
+        parse_gtk_key_data(plaintext.as_bytes(), &SUPPLICANT_RSN, &[], false),
         Err(RsnFrameError::RsnIeMismatch)
     ));
 

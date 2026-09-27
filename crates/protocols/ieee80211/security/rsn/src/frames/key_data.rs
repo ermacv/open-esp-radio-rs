@@ -34,6 +34,53 @@ impl RsnGtk {
     }
 }
 
+/// Integrity group temporal key of protected management frames, from an
+/// IGTK KDE: its key identifier (4 or 5), the IGTK packet number the next
+/// BIP frame must exceed, and the BIP-CMAC-128 key.
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct RsnIgtk {
+    key_id: u8,
+    packet_number: [u8; RSN_IPN_LEN],
+    key: [u8; RSN_IGTK_LEN],
+}
+
+impl RsnIgtk {
+    pub fn new(
+        key_id: u8,
+        packet_number: [u8; RSN_IPN_LEN],
+        key: [u8; RSN_IGTK_LEN],
+    ) -> Result<Self, RsnFrameError> {
+        if !(4..=5).contains(&key_id) {
+            return Err(RsnFrameError::InvalidKeyId);
+        }
+        Ok(Self {
+            key_id,
+            packet_number,
+            key,
+        })
+    }
+
+    pub const fn key_id(&self) -> u8 {
+        self.key_id
+    }
+
+    /// The IPN, as its little-endian six bytes.
+    pub const fn packet_number(&self) -> [u8; RSN_IPN_LEN] {
+        self.packet_number
+    }
+
+    pub const fn key(&self) -> &[u8; RSN_IGTK_LEN] {
+        &self.key
+    }
+}
+
+/// The group keys one key-data body delivers: the GTK, and the IGTK when
+/// the association protects its management frames.
+pub struct RsnGroupKeys {
+    pub gtk: RsnGtk,
+    pub igtk: Option<RsnIgtk>,
+}
+
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RsnPlainKeyData<const N: usize = RSN_PLAIN_KEY_DATA_CAPACITY> {
     len: usize,
@@ -83,15 +130,57 @@ impl<const N: usize> RsnPlainKeyData<N> {
     }
 }
 
+/// Which elements beside the group-key KDEs a key-data body carries.
+enum KeyDataContext<'a> {
+    /// Pairwise Message 3: a copy of the association RSN IE and RSNXE.
+    Message3 {
+        expected_rsn_ie: &'a [u8],
+        expected_rsnxe: &'a [u8],
+    },
+    /// Group Message 1: only the group-key KDEs.
+    GroupMessage1,
+}
+
+/// Parse the decrypted key-data body of pairwise Message 3. With
+/// `management_protection`, the IGTK KDE is required; without it, refused.
 pub fn parse_gtk_key_data(
     bytes: &[u8],
     expected_rsn_ie: &[u8],
     expected_rsnxe: &[u8],
-) -> Result<RsnGtk, RsnFrameError> {
+    management_protection: bool,
+) -> Result<RsnGroupKeys, RsnFrameError> {
+    parse_key_data(
+        bytes,
+        KeyDataContext::Message3 {
+            expected_rsn_ie,
+            expected_rsnxe,
+        },
+        management_protection,
+    )
+}
+
+/// Parse the encrypted key-data body of a connected-state Group Message 1.
+///
+/// Unlike pairwise Message 3, a group rekey carries its group-key KDEs
+/// without a copy of the association RSN IEs. Only those KDEs and key-wrap
+/// padding are accepted; unrelated elements fail closed.
+pub fn parse_group_gtk_key_data(
+    bytes: &[u8],
+    management_protection: bool,
+) -> Result<RsnGroupKeys, RsnFrameError> {
+    parse_key_data(bytes, KeyDataContext::GroupMessage1, management_protection)
+}
+
+fn parse_key_data(
+    bytes: &[u8],
+    context: KeyDataContext<'_>,
+    management_protection: bool,
+) -> Result<RsnGroupKeys, RsnFrameError> {
     let mut offset = 0;
     let mut saw_rsn = false;
     let mut saw_rsnxe = false;
     let mut gtk = None;
+    let mut igtk = None;
 
     while offset < bytes.len() {
         let remaining = &bytes[offset..];
@@ -108,99 +197,84 @@ pub fn parse_gtk_key_data(
             return Err(RsnFrameError::MalformedKeyData);
         }
         let element = &remaining[..element_len];
-        match element[0] {
-            RSN_ELEMENT_ID => {
+        match (element[0], &context) {
+            (
+                RSN_ELEMENT_ID,
+                KeyDataContext::Message3 {
+                    expected_rsn_ie, ..
+                },
+            ) => {
                 if saw_rsn {
                     return Err(RsnFrameError::DuplicateRsnIe);
                 }
-                if element != expected_rsn_ie {
+                if element != *expected_rsn_ie {
                     return Err(RsnFrameError::RsnIeMismatch);
                 }
                 saw_rsn = true;
             }
-            RSNXE_ELEMENT_ID => {
+            (RSNXE_ELEMENT_ID, KeyDataContext::Message3 { expected_rsnxe, .. }) => {
                 if saw_rsnxe {
                     return Err(RsnFrameError::DuplicateRsnxe);
                 }
                 if expected_rsnxe.is_empty() {
                     return Err(RsnFrameError::UnexpectedRsnxe);
                 }
-                if element != expected_rsnxe {
+                if element != *expected_rsnxe {
                     return Err(RsnFrameError::RsnxeMismatch);
                 }
                 saw_rsnxe = true;
             }
-            VENDOR_ELEMENT_ID => {
-                if element.len() != 24
-                    || element[2..5] != RSN_OUI
-                    || element[5] != GTK_KDE_TYPE
-                    || element[7] != 0
-                    || element[6] & !0x07 != 0
-                {
-                    return Err(RsnFrameError::UnsupportedKeyData);
+            (VENDOR_ELEMENT_ID, _) if element.len() >= 6 && element[2..5] == RSN_OUI => {
+                match element[5] {
+                    GTK_KDE_TYPE => {
+                        if element.len() != 24 || element[7] != 0 || element[6] & !0x07 != 0 {
+                            return Err(RsnFrameError::UnsupportedKeyData);
+                        }
+                        if gtk.is_some() {
+                            return Err(RsnFrameError::DuplicateGtk);
+                        }
+                        let mut key = [0; RSN_GTK_LEN];
+                        key.copy_from_slice(&element[8..24]);
+                        gtk = Some(RsnGtk::new(element[6] & 0x03, element[6] & 0x04 != 0, key)?);
+                    }
+                    IGTK_KDE_TYPE => {
+                        if !management_protection {
+                            return Err(RsnFrameError::UnexpectedIgtk);
+                        }
+                        if element.len() != IGTK_KDE_LEN {
+                            return Err(RsnFrameError::UnsupportedKeyData);
+                        }
+                        if igtk.is_some() {
+                            return Err(RsnFrameError::DuplicateIgtk);
+                        }
+                        let key_id = u16::from_le_bytes([element[6], element[7]]);
+                        let mut packet_number = [0; RSN_IPN_LEN];
+                        packet_number.copy_from_slice(&element[8..14]);
+                        let mut key = [0; RSN_IGTK_LEN];
+                        key.copy_from_slice(&element[14..30]);
+                        let key_id =
+                            u8::try_from(key_id).map_err(|_| RsnFrameError::InvalidKeyId)?;
+                        igtk = Some(RsnIgtk::new(key_id, packet_number, key)?);
+                    }
+                    _ => return Err(RsnFrameError::UnsupportedKeyData),
                 }
-                if gtk.is_some() {
-                    return Err(RsnFrameError::DuplicateGtk);
-                }
-                let mut key = [0; RSN_GTK_LEN];
-                key.copy_from_slice(&element[8..24]);
-                gtk = Some(RsnGtk::new(element[6] & 0x03, element[6] & 0x04 != 0, key)?);
             }
             _ => return Err(RsnFrameError::UnsupportedKeyData),
         }
         offset += element_len;
     }
 
-    if !saw_rsn {
-        return Err(RsnFrameError::MissingRsnIe);
+    if let KeyDataContext::Message3 { expected_rsnxe, .. } = context {
+        if !saw_rsn {
+            return Err(RsnFrameError::MissingRsnIe);
+        }
+        if !expected_rsnxe.is_empty() && !saw_rsnxe {
+            return Err(RsnFrameError::MissingRsnxe);
+        }
     }
-    if !expected_rsnxe.is_empty() && !saw_rsnxe {
-        return Err(RsnFrameError::MissingRsnxe);
+    let gtk = gtk.ok_or(RsnFrameError::MissingGtk)?;
+    if management_protection && igtk.is_none() {
+        return Err(RsnFrameError::MissingIgtk);
     }
-    gtk.ok_or(RsnFrameError::MissingGtk)
-}
-
-/// Parse the encrypted key-data body of a connected-state Group Message 1.
-///
-/// Unlike pairwise Message 3, a group rekey carries a GTK KDE without a copy
-/// of the association RSN IEs. Only the recovered RSN GTK KDE and key-wrap
-/// padding are accepted; unrelated elements fail closed.
-pub fn parse_group_gtk_key_data(bytes: &[u8]) -> Result<RsnGtk, RsnFrameError> {
-    let mut offset = 0;
-    let mut gtk = None;
-    while offset < bytes.len() {
-        let remaining = &bytes[offset..];
-        if remaining.iter().all(|byte| *byte == 0)
-            || (remaining[0] == VENDOR_ELEMENT_ID && remaining[1..].iter().all(|byte| *byte == 0))
-        {
-            break;
-        }
-        if remaining.len() < 2 {
-            return Err(RsnFrameError::MalformedKeyData);
-        }
-        let element_len = remaining[1] as usize + 2;
-        if element_len > remaining.len() {
-            return Err(RsnFrameError::MalformedKeyData);
-        }
-        let element = &remaining[..element_len];
-        if element[0] != VENDOR_ELEMENT_ID
-            || element.len() != 24
-            || element[2..5] != RSN_OUI
-            || element[5] != GTK_KDE_TYPE
-            || element[7] != 0
-            || element[6] & !0x07 != 0
-            || gtk.is_some()
-        {
-            return Err(if gtk.is_some() {
-                RsnFrameError::DuplicateGtk
-            } else {
-                RsnFrameError::UnsupportedKeyData
-            });
-        }
-        let mut key = [0; RSN_GTK_LEN];
-        key.copy_from_slice(&element[8..24]);
-        gtk = Some(RsnGtk::new(element[6] & 0x03, element[6] & 0x04 != 0, key)?);
-        offset += element_len;
-    }
-    gtk.ok_or(RsnFrameError::MissingGtk)
+    Ok(RsnGroupKeys { gtk, igtk })
 }

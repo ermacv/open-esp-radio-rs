@@ -41,6 +41,11 @@ impl<'peers> AccessPointService<'peers> {
             return None;
         }
         let rsn = validate_rsn_element(security.rsn_ie?).ok()?;
+        // The access point protects no management frames, so it refuses a
+        // station that associates only with protection.
+        if rsn.management_frame_protection().required {
+            return None;
+        }
         let ies = OwnedAssociationSecurityIes::try_copy(rsn.owned(), security.rsnxe.unwrap_or(&[]))
             .ok()?;
         Some((rsn.akm(), ies))

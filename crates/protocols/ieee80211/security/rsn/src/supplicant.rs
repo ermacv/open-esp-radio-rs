@@ -12,8 +12,8 @@ use crate::{
     aes::AsyncRsnKeyUnwrap,
     element::{RsnElementError, validate_rsn_element},
     frames::{
-        OwnedAssociationSecurityIes, OwnedRsnIe, RsnFrameError, RsnTxFrame, build_sta_action_frame,
-        parse_group_gtk_key_data, parse_gtk_key_data,
+        OwnedAssociationSecurityIes, OwnedRsnIe, RsnFrameError, RsnGroupKeys, RsnIgtk, RsnTxFrame,
+        build_sta_action_frame, parse_group_gtk_key_data, parse_gtk_key_data,
     },
     keys::RsnKeyInstall,
     state::{RsnStaAction, RsnStaPhase, RsnStaState, RsnStateError, RsnTransmit},
@@ -147,6 +147,7 @@ pub struct RsnStaKeyInstallRequest {
     plain_key_data_len: usize,
     pairwise: RsnKeyInstall,
     group: RsnKeyInstall,
+    igtk: Option<RsnIgtk>,
 }
 
 impl RsnStaKeyInstallRequest {
@@ -168,6 +169,11 @@ impl RsnStaKeyInstallRequest {
 
     pub const fn group(&self) -> &RsnKeyInstall {
         &self.group
+    }
+
+    /// The IGTK of an association that protects its management frames.
+    pub const fn igtk(&self) -> Option<&RsnIgtk> {
+        self.igtk.as_ref()
     }
 }
 
@@ -210,6 +216,7 @@ pub struct RsnGroupKeyInstallRequest<const N: usize> {
     replay_counter: u64,
     commitment: RsnCompletedGroupMessage1,
     group: RsnKeyInstall,
+    igtk: Option<RsnIgtk>,
     response: RsnTxFrame<N>,
 }
 
@@ -220,6 +227,11 @@ impl<const N: usize> RsnGroupKeyInstallRequest<N> {
 
     pub const fn group(&self) -> &RsnKeyInstall {
         &self.group
+    }
+
+    /// The IGTK of an association that protects its management frames.
+    pub const fn igtk(&self) -> Option<&RsnIgtk> {
+        self.igtk.as_ref()
     }
 }
 
@@ -326,6 +338,7 @@ pub struct RsnConnectedSupplicant {
     completed_group_message1: Option<RsnCompletedGroupMessage1>,
     pending: Option<(u32, u64)>,
     next_ticket: u32,
+    management_protection: bool,
 }
 
 impl RsnConnectedSupplicant {
@@ -451,9 +464,12 @@ impl RsnConnectedSupplicant {
             .unwrap_key_data(self.key_encryption.as_bytes(), key.key_data())
             .await
             .map_err(RsnConnectedProcessError::KeyUnwrap)?;
-        let gtk = parse_group_gtk_key_data(plain.as_bytes()).map_err(|error| {
-            RsnConnectedProcessError::Supplicant(RsnConnectedSupplicantError::Frame(error))
-        })?;
+        let RsnGroupKeys { gtk, igtk } =
+            parse_group_gtk_key_data(plain.as_bytes(), self.management_protection).map_err(
+                |error| {
+                    RsnConnectedProcessError::Supplicant(RsnConnectedSupplicantError::Frame(error))
+                },
+            )?;
         let group = RsnKeyInstall::group(RsnInterface::Station, &gtk, *key.key_receive_sequence());
         let response = RsnTxFrame::group_message2(
             self.key_confirmation.akm(),
@@ -473,6 +489,7 @@ impl RsnConnectedSupplicant {
                 replay_counter,
                 commitment: RsnCompletedGroupMessage1::capture(key),
                 group,
+                igtk,
                 response,
             },
         ))
@@ -503,6 +520,8 @@ pub struct RsnStaSupplicant {
     completed_message3: Option<RsnCompletedMessage3>,
     association_security_ies: OwnedAssociationSecurityIes,
     authenticator_security_ies: OwnedAssociationSecurityIes,
+    /// Both RSN elements advertise MFPC: management frames are protected.
+    management_protection: bool,
 }
 
 impl RsnStaSupplicant {
@@ -518,9 +537,14 @@ impl RsnStaSupplicant {
             OwnedAssociationSecurityIes::try_copy_bytes(association_security_ies)
                 .map_err(RsnStaSupplicantError::Frame)?;
         // The station's own Association RSN element names the negotiated suite.
-        let akm = validate_rsn_element(association_security_ies.rsn_ie())
-            .map_err(RsnStaSupplicantError::Element)?
-            .akm();
+        let own = validate_rsn_element(association_security_ies.rsn_ie())
+            .map_err(RsnStaSupplicantError::Element)?;
+        let akm = own.akm();
+        let management_protection = own.management_frame_protection().negotiated(
+            validate_rsn_element(authenticator_rsn_ie)
+                .map_err(RsnStaSupplicantError::Element)?
+                .management_frame_protection(),
+        );
         let state = RsnStaState::new(akm, local, authenticator, supplicant_nonce)
             .map_err(RsnStaSupplicantError::State)?;
         let authenticator_rsn_ie =
@@ -535,7 +559,13 @@ impl RsnStaSupplicant {
             completed_message3: None,
             association_security_ies,
             authenticator_security_ies,
+            management_protection,
         })
+    }
+
+    /// Whether the association protects its management frames.
+    pub const fn management_protection(&self) -> bool {
+        self.management_protection
     }
 
     pub const fn phase(&self) -> RsnStaPhase {
@@ -561,6 +591,7 @@ impl RsnStaSupplicant {
             completed_group_message1: None,
             pending: None,
             next_ticket: 1,
+            management_protection: self.management_protection,
         })
     }
 
@@ -688,12 +719,13 @@ impl RsnStaSupplicant {
         let key_receive_sequence = *key.key_receive_sequence();
         let plain_key_data = plain_key_data.unwrap_or_else(|| key.key_data());
         let plain_key_data_len = plain_key_data.len();
-        let gtk = match parse_gtk_key_data(
+        let RsnGroupKeys { gtk, igtk } = match parse_gtk_key_data(
             plain_key_data,
             self.authenticator_security_ies.rsn_ie(),
             self.authenticator_security_ies.rsnxe(),
+            self.management_protection,
         ) {
-            Ok(gtk) => gtk,
+            Ok(keys) => keys,
             Err(error) => {
                 self.state
                     .complete_key_install::<N>(ticket, false)
@@ -717,6 +749,7 @@ impl RsnStaSupplicant {
                 plain_key_data_len,
                 pairwise,
                 group,
+                igtk,
             },
         ))
     }

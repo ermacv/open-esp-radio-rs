@@ -8,15 +8,18 @@
 //! station/authenticator four-way-handshake state machines and joins station
 //! PTK/MIC/key-data processing to typed key-install requests. The negotiated
 //! [`Akm`] selects the key descriptor version, pairwise key expansion and
-//! EAPOL-Key MIC; everything else is shared. PSK (`00-0F-AC:2`) is the only
-//! implemented suite. Platform MAC crates remain responsible only for
-//! executing key-install and transmit requests.
+//! EAPOL-Key MIC; everything else is shared. PSK (`00-0F-AC:2`) and
+//! PSK-SHA256 (`00-0F-AC:6`) are implemented. With management frame
+//! protection negotiated, group keys carry the IGTK and [`bip`] verifies
+//! group-addressed robust management frames. Platform MAC crates remain
+//! responsible only for executing key-install and transmit requests.
 
 #[cfg(test)]
 extern crate std;
 
 pub mod aes;
 pub mod akm;
+pub mod bip;
 pub mod element;
 pub mod frames;
 pub mod keys;

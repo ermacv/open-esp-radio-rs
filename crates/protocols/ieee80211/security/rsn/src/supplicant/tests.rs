@@ -95,6 +95,7 @@ fn connected(ptk: Ptk) -> RsnConnectedSupplicant {
         completed_group_message1: None,
         pending: None,
         next_ticket: 1,
+        management_protection: false,
     }
 }
 

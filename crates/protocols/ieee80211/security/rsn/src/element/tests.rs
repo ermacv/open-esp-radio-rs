@@ -49,9 +49,10 @@ fn rejects_non_ccmp_non_psk_and_required_pmf() {
         validate_rsn_element(&rsn(4, 8, 0)),
         Err(RsnElementError::UnsupportedAkm)
     );
+    // MFPR without MFPC.
     assert_eq!(
         validate_rsn_element(&rsn(4, 2, 1 << 6)),
-        Err(RsnElementError::ManagementFrameProtectionUnsupported)
+        Err(RsnElementError::Malformed)
     );
 }
 
@@ -91,10 +92,45 @@ fn malformed_elements_are_rejected_before_policy() {
 }
 
 #[test]
-fn group_management_cipher_is_rejected_without_pmf() {
+fn reports_the_advertised_management_frame_protection() {
+    let required = validate_rsn_element(&rsn(4, 6, (1 << 7) | (1 << 6))).unwrap();
+    assert_eq!(required.akm(), Akm::PskSha256);
+    assert_eq!(
+        required.management_frame_protection(),
+        ManagementFrameProtection {
+            capable: true,
+            required: true
+        }
+    );
+    let none = validate_rsn_element(&rsn(4, 2, 0)).unwrap();
+    assert!(!none.management_frame_protection().capable);
+    assert!(
+        !none
+            .management_frame_protection()
+            .negotiated(required.management_frame_protection())
+    );
+    assert!(
+        required
+            .management_frame_protection()
+            .negotiated(required.management_frame_protection())
+    );
+}
+
+#[test]
+fn accepts_only_bip_cmac_128_as_group_management_cipher() {
     let mut ie = [0_u8; 28];
     ie[..22].copy_from_slice(&rsn(4, 2, 1 << 7));
     ie[1] = 26;
+    ie[22..24].copy_from_slice(&0_u16.to_le_bytes());
     ie[24..28].copy_from_slice(&[0x00, 0x0f, 0xac, 6]);
+    assert!(validate_rsn_element(&ie).is_ok());
+    ie[27] = 11;
+    assert_eq!(
+        validate_rsn_element(&ie),
+        Err(RsnElementError::UnsupportedGroupManagementCipher)
+    );
+    // A group management cipher without MFPC.
+    ie[20..22].copy_from_slice(&0_u16.to_le_bytes());
+    ie[27] = 6;
     assert_eq!(validate_rsn_element(&ie), Err(RsnElementError::Malformed));
 }

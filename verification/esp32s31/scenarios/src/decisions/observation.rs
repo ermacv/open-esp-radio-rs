@@ -337,11 +337,15 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
-        reason: "`CoexCore` bookkeeping of a released timer, its active request and its \
-            uncertain bit: vendor `coex_core_release` keeps no such state, and the probe's \
-            fresh core is discarded after the compared disable, whose register effects and \
-            return compare",
+        reason: "`CoexCore` bookkeeping of a requested or released timer, its active request \
+            and its uncertain bit: vendor `coex_core_request` and `coex_core_release` keep no \
+            such state, and the probe's fresh core is discarded after the compared timer \
+            program or disable, whose register effects and return compare",
         places: &[
+            (
+                "driver/coex/src/core.rs",
+                "self.active[usize::from(index.value())] = Some(CoexRequest { client, request });",
+            ),
             (
                 "driver/coex/src/core.rs",
                 "self.uncertain_timers |= timer_bit(index);",
@@ -355,19 +359,6 @@ pub const DECISIONS: &[Decision] = &[
                 "self.uncertain_timers &= !timer_bit(index);",
             ),
             ("driver/coex/src/core.rs", "1 << index.value()"),
-        ],
-    },
-    Decision {
-        reason: "release of the probe's validation lease of the radio arbiter: its held flag \
-            belongs to the production arbiter, which the vendor serializes with a critical \
-            section instead, and the lease-release fence it orders is compared as a reviewed \
-            effect",
-        places: &[
-            (
-                "hal/src/shared_radio.rs",
-                "self.radio.held.store(false, Ordering::Release);",
-            ),
-            ("driver/coex/src/validation.rs", "}"),
         ],
     },
     Decision {

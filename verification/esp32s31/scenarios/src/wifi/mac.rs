@@ -31,6 +31,8 @@ const PHY_SDK_INPUT: u64 = 3;
 const NET80211_INPUT: u64 = 4;
 /// Radio register fills: all clear, all set and two alternating patterns.
 pub const LEAF_FILLS: [u8; 4] = [0x00, 0xff, 0x5a, 0xa5];
+/// Reads of one vendor-only register a leaf case may perform.
+const VENDOR_ONLY_READS: u32 = 16;
 /// Guest events one leaf case may record.
 const LEAF_EVENTS: u32 = 1 << 10;
 /// Logical transmit queues the production HAL admits.
@@ -138,6 +140,9 @@ pub struct Leaf {
     /// Reviewed word writes production performs in place of vendor writes,
     /// each exactly once.
     pub replacements: &'static [Replacement],
+    /// Registers the vendor reads for values production does not need,
+    /// with their reason: production may omit those reads.
+    pub vendor_reads: &'static [(u32, &'static str)],
     /// A bounded feature: the vendor side stops before calling this
     /// function, and only the prefix up to that call is compared.
     pub prefix_until: Option<&'static str>,
@@ -181,6 +186,10 @@ pub struct Objects {
     /// setup phases copy them in with the captured ROM `memcpy`, and the
     /// compared phase keeps them warm.
     pub image: Vec<(u32, Vec<u8>)>,
+    /// Register models both sides share, as (address, initial word): exact
+    /// registers within the radio aperture whose initial value the case
+    /// selects instead of the fill pattern.
+    pub registers: Vec<(u32, u32)>,
 }
 
 /// Builds a case's objects from the semantic probe words, followed by the
@@ -335,6 +344,7 @@ pub(crate) const fn leaf(
         release_fences: 0,
         release_optional: false,
         replacements: &[],
+        vendor_reads: &[],
         prefix_until: None,
         prefix_tail: false,
         vendor_abi: None,
@@ -422,6 +432,15 @@ pub struct Replacement {
 pub(crate) const fn replaced(leaf: Leaf, replacements: &'static [Replacement]) -> Leaf {
     Leaf {
         replacements,
+        ..leaf
+    }
+}
+
+/// A leaf whose vendor reads `registers` for values production does not
+/// need; production may omit each read.
+pub(crate) const fn vendor_reads(leaf: Leaf, registers: &'static [(u32, &'static str)]) -> Leaf {
+    Leaf {
+        vendor_reads: registers,
         ..leaf
     }
 }
@@ -1915,6 +1934,25 @@ impl Mac {
                 reason: replacement.reason.into(),
             })
             .collect();
+        for (address, reason) in leaf.vendor_reads {
+            let read = EffectPattern {
+                selector: EffectSelector::MmioRead {
+                    address: *address,
+                    width: 4,
+                },
+                value: EffectValue::Any,
+                followed_by: None,
+            };
+            rules.push(EffectRule {
+                name: format!("vendor-only-read-{address:08x}"),
+                vendor: Some(read),
+                replacement: Some(read),
+                disposition: EffectDisposition::Omitted,
+                min_occurrences: 0,
+                max_occurrences: VENDOR_ONLY_READS,
+                reason: (*reason).into(),
+            });
+        }
         if leaf.release_fences != 0 {
             rules.push(EffectRule {
                 name: "lease-release-fence".into(),
@@ -1996,6 +2034,7 @@ impl Mac {
         let effects = if leaf.ordering_fences != 0
             || leaf.release_fences != 0
             || !leaf.replacements.is_empty()
+            || !leaf.vendor_reads.is_empty()
         {
             Some(self.ordering_contract(leaf)?)
         } else {
@@ -2099,6 +2138,7 @@ impl Mac {
                     compared,
                     initial,
                     image,
+                    registers,
                 ) = match leaf.vendor_abi {
                     Some(abi) => {
                         let mut semantic = words.clone();
@@ -2121,6 +2161,7 @@ impl Mac {
                             objects.compared,
                             initial,
                             objects.image,
+                            objects.registers,
                         )
                     }
                     None => (
@@ -2131,7 +2172,21 @@ impl Mac {
                         vec![],
                         vec![],
                         vec![],
+                        vec![],
                     ),
+                };
+                // Exact register models take precedence over the aperture.
+                let devices = |fill: u8| {
+                    let mut devices = vec![];
+                    if !registers.is_empty() {
+                        devices.push(crate::layout::register_bank(
+                            "case-registers",
+                            "registers whose initial value the case selects",
+                            registers.clone(),
+                        ));
+                    }
+                    devices.push(radio_aperture(fill));
+                    devices
                 };
                 let initial = [vec![OUTPUT_FILL; output.unwrap_or(0) as usize], initial].concat();
                 let compared: Vec<_> = compared
@@ -2146,7 +2201,7 @@ impl Mac {
                         self.vendor_entry(leaf)?,
                         &vendor_words,
                         vendor_memory.clone(),
-                        vec![radio_aperture(fill)],
+                        devices(fill),
                         observed.clone(),
                     );
                     vendor.calls = vendor_calls.clone();
@@ -2200,7 +2255,7 @@ impl Mac {
                     let mut production = self.session.probes.invoke(
                         leaf.probe,
                         arguments.clone(),
-                        vec![radio_aperture(fill)],
+                        devices(fill),
                         observed.clone(),
                     )?;
                     if let Some(select) = leaf.dispatch {

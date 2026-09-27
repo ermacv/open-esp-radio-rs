@@ -51,6 +51,11 @@ pub fn prepare(ctx: &Context) -> Result<(std::path::PathBuf, std::path::PathBuf)
 pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     use_shared_store(ctx)?;
     let (options, args) = LeaseOptions::split(args)?;
+    let record_forced = args.iter().any(|arg| arg == RECORD_EVIDENCE);
+    let args = args
+        .into_iter()
+        .filter(|arg| arg != RECORD_EVIDENCE)
+        .collect::<Vec<_>>();
     let args = args.as_slice();
     match args.first().and_then(|argument| argument.to_str()) {
         None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
@@ -100,6 +105,9 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     }
     // Cleanup scopes in the runner have 30-second budgets and may unwind
     // multiple owned fixtures. This is a shutdown allowance, never a run timeout.
+    let invoked_millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis() as u64;
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         ctx.command(&runner)
             .args(args)
@@ -109,7 +117,20 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     )?;
     let status = child.wait_forwarding_cancellation()?;
     if produces_runs(args) {
-        record_evidence(ctx, &receipt_path)?;
+        let created = runs_created_since(ctx, invoked_millis)?;
+        match evidence_skip_reason(
+            record_forced,
+            args.iter().any(|arg| {
+                arg.to_str()
+                    .is_some_and(|arg| arg.starts_with("--source-include"))
+            }),
+            &created,
+        ) {
+            None => record_evidence(ctx, &receipt_path)?,
+            Some(reason) => eprintln!(
+                "hil: HIL evidence not recorded: {reason}; pass {RECORD_EVIDENCE} to record it"
+            ),
+        }
         if let Err(error) = prune_automatically(ctx) {
             eprintln!("hil: automatic pruning of the run store failed: {error}");
         }
@@ -1177,6 +1198,63 @@ fn use_shared_store(ctx: &Context) -> Result<()> {
 /// The HIL target the runner executes on.
 const HIL_TARGET: &str = "esp32s31";
 
+/// Forces recording HIL evidence after a run that would otherwise skip it.
+const RECORD_EVIDENCE: &str = "--record-evidence";
+
+/// Whether each run this checkout's runner started at or after
+/// `since_millis` was built from a dirty tree.
+fn runs_created_since(ctx: &Context, since_millis: u64) -> Result<Vec<bool>> {
+    let store = crate::hil_store::shared_runs(HIL_TARGET)?;
+    let checkout = ctx.root.join("target");
+    let mut created = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&store) else {
+        return Ok(created);
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(started) = name.split('-').next().and_then(|m| m.parse::<u64>().ok()) else {
+            continue;
+        };
+        if started < since_millis {
+            continue;
+        }
+        let Some(manifest) = std::fs::read(entry.path().join("manifest.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        else {
+            continue;
+        };
+        let ours = manifest["invocation"][0]
+            .as_str()
+            .is_some_and(|runner| std::path::Path::new(runner).starts_with(&checkout));
+        if ours {
+            created.push(manifest["repository"]["dirty"].as_bool().unwrap_or(true));
+        }
+    }
+    Ok(created)
+}
+
+/// Why a finished invocation records no evidence: it created no run, a run
+/// came from a dirty tree, or sources were added with `--source-include`.
+/// Such runs are experiments; `--record-evidence` records them anyway.
+fn evidence_skip_reason(
+    forced: bool,
+    source_include: bool,
+    created_dirty: &[bool],
+) -> Option<&'static str> {
+    if created_dirty.is_empty() {
+        Some("the runner created no run")
+    } else if forced {
+        None
+    } else if created_dirty.iter().any(|dirty| *dirty) {
+        Some("the run was built from a dirty tree")
+    } else if source_include {
+        Some("the run included untracked sources")
+    } else {
+        None
+    }
+}
+
 /// Commands that execute scenarios and write run bundles.
 fn produces_runs(args: &[OsString]) -> bool {
     matches!(
@@ -1275,6 +1353,21 @@ pub(crate) fn exit_code(status: std::process::ExitStatus) -> std::process::ExitC
 
 #[cfg(test)]
 mod tests {
+    use super::evidence_skip_reason;
+
+    #[test]
+    fn evidence_is_recorded_only_for_clean_runs_unless_forced() {
+        assert_eq!(evidence_skip_reason(false, false, &[false]), None);
+        assert!(evidence_skip_reason(false, false, &[]).is_some());
+        assert!(
+            evidence_skip_reason(true, false, &[]).is_some(),
+            "no run, nothing to record"
+        );
+        assert!(evidence_skip_reason(false, false, &[false, true]).is_some());
+        assert!(evidence_skip_reason(false, true, &[false]).is_some());
+        assert_eq!(evidence_skip_reason(true, true, &[true]), None);
+    }
+
     use super::*;
     #[test]
     fn forwards_nonzero_runner_status() {

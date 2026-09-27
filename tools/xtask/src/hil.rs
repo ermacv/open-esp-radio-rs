@@ -96,8 +96,10 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
 /// Stand commands handled here, printed before the runner's own help.
 const STAND_HELP: &str = "\
 Stand commands (shared by every checkout of this user):
-  cargo hil queue [--json]            holder, queue with expected starts, boards, recent leases
-  cargo hil lease [OPTIONS] -- CMD    run CMD under one stand lease; nested cargo hil joins it
+  cargo hil queue [--json]            holders, queue with expected starts, boards, recent leases
+  cargo hil lease [OPTIONS] -- CMD    run CMD under one lease; nested cargo hil joins it
+      --board NAME|MAC                boards CMD uses (repeatable); none: the whole stand
+      --air shared|exclusive          radio environment; exclusive for RF measurements
       --flashed IMAGE (--application FILE | --sha256 HASH) (--port PORT | --device MAC)
       [--chip CHIP] [--commit REV]    journal CMD's flash when it succeeds
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
@@ -107,7 +109,14 @@ Stand commands (shared by every checkout of this user):
 Lease options, before any HIL command or after `lease`:
   --owner NAME     default: enclosing lease owner, else the checkout directory name
   --budget DUR     90s, 15m, 1h30m; default: history of the same work or scenarios, else 15m
-  --short          budget of at most 2m, granted ahead of the queue head
+  --short          budget of at most 2m, granted ahead of earlier conflicting requests
+
+Leases on different boards run in parallel. Choose a budget you expect to
+use: once it is spent and a waiting request needs the same resources, a run
+of several scenarios yields after its current scenario and queues again, and
+a single scenario or lease command is stopped (lease exit status 75). At
+twice the budget work is stopped regardless (lease exit status 124).
+Scenarios tagged `air-exclusive` claim the air exclusively.
 
 Runner commands (`cargo hil run A B C` runs several scenarios under one lease):";
 
@@ -209,6 +218,43 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
 /// Exit status of a lease command terminated at twice its budget.
 const BUDGET_EXCEEDED_EXIT: u8 = 124;
 
+fn parse_air(text: &str) -> std::result::Result<oer_hil_arbiter::Mode, String> {
+    match text {
+        "shared" => Ok(oer_hil_arbiter::Mode::Shared),
+        "exclusive" => Ok(oer_hil_arbiter::Mode::Exclusive),
+        _ => Err(String::from("use `shared` or `exclusive`")),
+    }
+}
+
+/// The resources of a lease command: its boards and the air, or the whole
+/// stand when it names neither.
+fn lease_claims(
+    boards: &[String],
+    air: Option<oer_hil_arbiter::Mode>,
+    devices: &[oer_hil_arbiter::Device],
+) -> Result<Vec<oer_hil_arbiter::Claim>> {
+    if boards.is_empty() && air.is_none() {
+        return Ok(vec![oer_hil_arbiter::Claim::stand()]);
+    }
+    let mut claims = boards
+        .iter()
+        .map(|board| {
+            Ok(oer_hil_arbiter::Claim::board(&oer_hil_arbiter::board_mac(
+                devices, board,
+            )?))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    claims.push(oer_hil_arbiter::Claim {
+        resource: oer_hil_arbiter::AIR.to_owned(),
+        mode: air.unwrap_or(oer_hil_arbiter::Mode::Shared),
+    });
+    Ok(claims)
+}
+
+/// Exit status of a lease command terminated at its budget because waiting
+/// requests needed its resources; run it again to queue behind them.
+const PREEMPTED_EXIT: u8 = 75;
+
 fn parse_budget(text: &str) -> std::result::Result<std::time::Duration, String> {
     oer_hil_arbiter::parse_duration(text).map_err(|error| error.to_string())
 }
@@ -226,6 +272,14 @@ struct LeaseCli {
     /// A budget of at most two minutes, granted ahead of the queue head.
     #[arg(long)]
     short: bool,
+    /// A board the command uses, by registered name or MAC; repeatable.
+    /// Without boards or --air the lease claims the whole stand.
+    #[arg(long = "board", value_name = "NAME|MAC")]
+    boards: Vec<String>,
+    /// How the command uses the radio environment: `shared` (default with
+    /// boards) or `exclusive` for RF measurements.
+    #[arg(long, value_parser = parse_air)]
+    air: Option<oer_hil_arbiter::Mode>,
     /// Journal a flash that COMMAND performs when it succeeds.
     #[command(flatten)]
     flashed: FlashedArgs,
@@ -335,14 +389,15 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
         .map(|argument| argument.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ");
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let request = oer_hil_arbiter::Request {
         owner: options.owner(ctx),
         work,
         budget: options.budget,
         short: options.short,
         scenarios: Vec::new(),
+        claims: lease_claims(&cli.boards, cli.air, &arbiter.devices()?)?,
     };
-    let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let grant = arbiter.acquire(&request)?;
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         ctx.command(program)
@@ -366,8 +421,10 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
     Ok(code)
 }
 
-/// Warn at the budget and terminate the command group at twice the budget.
-/// Returns the exit code and whether the command succeeded.
+/// Supervise an indivisible command: at its budget it is reported, and it is
+/// terminated as soon as a waiting request needs its resources; at twice the
+/// budget it is terminated regardless. Returns the exit code and whether the
+/// command succeeded.
 fn supervise(
     grant: &oer_hil_arbiter::Grant,
     child: &mut oer_process::owned::Child,
@@ -378,6 +435,7 @@ fn supervise(
     };
     let started = std::time::Instant::now();
     let mut warned = false;
+    let mut checked = started;
     loop {
         if let Some(status) = child.try_wait()? {
             return Ok(finished(status));
@@ -395,6 +453,14 @@ fn supervise(
             grant.mark_budget_exceeded();
             child.kill()?;
             return Ok((std::process::ExitCode::from(BUDGET_EXCEEDED_EXIT), false));
+        }
+        if warned && checked.elapsed() >= std::time::Duration::from_millis(500) {
+            checked = std::time::Instant::now();
+            if grant.blocks_waiters() {
+                grant.mark_preempted();
+                child.kill()?;
+                return Ok((std::process::ExitCode::from(PREEMPTED_EXIT), false));
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
@@ -585,6 +651,7 @@ mod tests {
                 budget: Some(std::time::Duration::from_secs(1)),
                 short: false,
                 scenarios: Vec::new(),
+                claims: Vec::new(),
             })
             .unwrap();
         let started = std::time::Instant::now();
@@ -602,6 +669,81 @@ mod tests {
             arbiter.history().unwrap()[0].outcome,
             oer_hil_arbiter::LeaseOutcome::BudgetExceeded
         );
+    }
+
+    #[test]
+    fn a_lease_claims_its_boards_and_the_air_or_else_the_whole_stand() {
+        use oer_hil_arbiter::{AIR, Claim, Mode};
+        let devices = [oer_hil_arbiter::Device {
+            mac: "38:44:BE:AA:25:64".into(),
+            chip: None,
+            name: Some("c5".into()),
+        }];
+        assert_eq!(lease_claims(&[], None, &devices).unwrap(), [Claim::stand()]);
+        assert_eq!(
+            lease_claims(&["c5".into()], None, &devices).unwrap(),
+            [Claim::board("38:44:BE:AA:25:64"), Claim::shared(AIR)]
+        );
+        assert_eq!(
+            lease_claims(&[], Some(Mode::Exclusive), &devices).unwrap(),
+            [Claim::exclusive(AIR)]
+        );
+        assert!(lease_claims(&["s3".into()], None, &devices).is_err());
+    }
+
+    #[test]
+    fn a_lease_command_is_preempted_at_its_budget_when_others_wait() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = oer_hil_arbiter::Arbiter::at(directory.path()).unwrap();
+        let grant = arbiter
+            .acquire(&oer_hil_arbiter::Request {
+                owner: "test".into(),
+                work: "sleep".into(),
+                budget: Some(std::time::Duration::from_secs(1)),
+                short: false,
+                scenarios: Vec::new(),
+                claims: vec![oer_hil_arbiter::Claim::board("AA")],
+            })
+            .unwrap();
+        let mut waiter = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "hil::tests::queue_behind_board_aa", "--ignored"])
+            .env(oer_hil_arbiter::DIRECTORY_ENV, directory.path())
+            .spawn()
+            .unwrap();
+        let started = std::time::Instant::now();
+        let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
+            Command::new("sleep").arg("60"),
+            std::time::Duration::from_secs(1),
+        )
+        .unwrap();
+        let (code, succeeded) = supervise(&grant, &mut child).unwrap();
+        assert!(!succeeded);
+        assert_eq!(code, std::process::ExitCode::from(PREEMPTED_EXIT));
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        drop(grant);
+        assert!(waiter.wait().unwrap().success());
+        assert_eq!(
+            arbiter.history().unwrap()[0].outcome,
+            oer_hil_arbiter::LeaseOutcome::Preempted
+        );
+    }
+
+    /// Helper process for the preemption test: waits for board AA.
+    #[test]
+    #[ignore = "run by a_lease_command_is_preempted_at_its_budget_when_others_wait"]
+    fn queue_behind_board_aa() {
+        let arbiter = oer_hil_arbiter::Arbiter::open().unwrap();
+        let grant = arbiter
+            .acquire(&oer_hil_arbiter::Request {
+                owner: "waiter".into(),
+                work: "wait".into(),
+                budget: Some(std::time::Duration::from_secs(60)),
+                short: false,
+                scenarios: Vec::new(),
+                claims: vec![oer_hil_arbiter::Claim::board("AA")],
+            })
+            .unwrap();
+        drop(grant);
     }
 
     #[test]

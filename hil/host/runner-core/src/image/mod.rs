@@ -388,6 +388,7 @@ fn sha256_file(path: &Path) -> Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
+#[derive(Clone)]
 pub struct Artifacts {
     pub network: Integration,
     pub output: PathBuf,

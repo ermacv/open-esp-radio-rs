@@ -12,14 +12,45 @@ use oer_process::CommandExt as _;
 
 use crate::Result;
 
+/// How a lease uses the shared radio environment.
+pub use oer_hil_arbiter::Mode as AirMode;
+
 /// Holds exclusive fixture ownership until the hardware command returns.
 pub struct FixtureLock {
-    _cell: ResourceLease,
     _device: Option<oer_esp32s31_firmware::device::DeviceLease>,
     _resources: Vec<ResourceLease>,
     // Declared last so the fixture locks are released before the stand's
     // lease that ordered them.
-    _grant: Option<oer_hil_arbiter::Grant>,
+    grant: Option<oer_hil_arbiter::Grant>,
+    /// What to request again after yielding.
+    request: Option<LeaseRequest>,
+}
+
+/// How a run leases the stand.
+#[derive(Clone, Debug)]
+pub struct LeaseRequest {
+    pub required: super::requirements::Requirements,
+    /// Named in the lease so their durations estimate later budgets.
+    pub scenarios: Vec<String>,
+    /// Exclusive for scenarios measuring the radio environment.
+    pub air: oer_hil_arbiter::Mode,
+    /// Work with boundaries yields there once over budget while others wait;
+    /// indivisible work is terminated at its budget instead.
+    pub divisible: bool,
+    /// Whether the lease includes the device under test.
+    pub device: bool,
+}
+
+impl LeaseRequest {
+    pub fn device(required: super::requirements::Requirements) -> Self {
+        Self {
+            required,
+            scenarios: Vec::new(),
+            air: oer_hil_arbiter::Mode::Shared,
+            divisible: false,
+            device: true,
+        }
+    }
 }
 
 impl FixtureLock {
@@ -27,75 +58,97 @@ impl FixtureLock {
         Self::acquire_for(lab, super::requirements::Requirements::default())
     }
 
-    /// Wait for the stand's lease, then take the device and fixture locks.
+    /// Wait for the stand's lease on the device and `required` fixtures,
+    /// then take their locks.
     pub fn acquire_for(
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<Self> {
-        Self::acquire_for_scenarios(lab, required, &[])
-    }
-
-    /// [`Self::acquire_for`] for a run of `scenarios`, whose durations then
-    /// estimate later budgets.
-    pub fn acquire_for_scenarios(
-        lab: &super::config::LabConfig,
-        required: super::requirements::Requirements,
-        scenarios: &[String],
-    ) -> Result<Self> {
-        let grant = acquire_stand(scenarios)?;
-        let mut owner = wait_for_fixture(|| Self::lock_now(lab, required, true))?;
-        owner._grant = Some(grant);
-        Ok(owner)
+        Self::lease(lab, LeaseRequest::device(required))
     }
 
     pub fn acquire_without_device(
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<Self> {
-        let grant = acquire_stand(&[])?;
-        let mut owner = wait_for_fixture(|| Self::lock_now(lab, required, false))?;
-        owner._grant = Some(grant);
+        Self::lease(
+            lab,
+            LeaseRequest {
+                device: false,
+                ..LeaseRequest::device(required)
+            },
+        )
+    }
+
+    /// Wait for the stand's lease described by `request`, then take the
+    /// device and fixture locks.
+    pub fn lease(lab: &super::config::LabConfig, request: LeaseRequest) -> Result<Self> {
+        let keys = resource_keys(lab, request.required)?;
+        let grant = acquire_stand(
+            claims(lab, &request, &keys),
+            &request.scenarios,
+            request.divisible,
+        )?;
+        let mut owner = wait_for_fixture(|| Self::lock_now(lab, &keys, request.device))?;
+        owner.grant = Some(grant);
+        owner.request = Some(request);
         Ok(owner)
     }
 
-    /// Check that the stand and fixture are free now, without queueing.
+    /// Whether the stand asks this over-budget lease to yield to waiting
+    /// requests at its next boundary.
+    pub fn yield_requested(&self) -> bool {
+        self.grant
+            .as_ref()
+            .is_some_and(oer_hil_arbiter::Grant::yield_requested)
+    }
+
+    /// Release the lease, queue again behind the waiting requests and return
+    /// the new lease. The boards' state is unknown afterwards.
+    pub fn requeue(self, lab: &super::config::LabConfig) -> Result<Self> {
+        let request = self
+            .request
+            .clone()
+            .ok_or("only a queued lease can yield")?;
+        if let Some(grant) = &self.grant {
+            grant.mark_yielded();
+        }
+        drop(self);
+        Self::lease(lab, request)
+    }
+
+    /// Check that the device and fixture are free now, without queueing.
     pub fn probe_for(
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<()> {
-        if let Some(holder) = oer_hil_arbiter::Arbiter::open()?.status()?.holder
-            && holder.pid != std::process::id()
+        let keys = resource_keys(lab, required)?;
+        let claims = claims(lab, &LeaseRequest::device(required), &keys);
+        if let Some(holder) = oer_hil_arbiter::Arbiter::open()?
+            .conflicting_holders(&claims)?
+            .into_iter()
+            .find(|holder| holder.pid != std::process::id())
         {
             return Err(format!(
-                "HIL stand is leased by {} for `{}` (pid {})",
-                holder.owner, holder.work, holder.pid
+                "HIL stand is leased by {} for `{}` on {} (pid {})",
+                holder.owner, holder.work, holder.claims, holder.pid
             )
             .into());
         }
-        Self::lock_now(lab, required, true).map(drop)
+        Self::lock_now(lab, &keys, true).map(drop)
     }
 
-    fn lock_now(
-        lab: &super::config::LabConfig,
-        required: super::requirements::Requirements,
-        device: bool,
-    ) -> Result<Self> {
+    fn lock_now(lab: &super::config::LabConfig, keys: &[String], device: bool) -> Result<Self> {
         let device = device
             .then(|| oer_esp32s31_firmware::device::DeviceLease::acquire(&lab.device.serial))
             .transpose()?;
-        use sha2::{Digest, Sha256};
-        let directory = oer_esp32s31_firmware::device::lease_directory()?.join(format!(
-            "cell-{:x}",
-            Sha256::digest(lab.cell_id().as_bytes())
-        ));
-        let cell = ResourceLease::acquire_directory(&directory)?;
         let root = oer_esp32s31_firmware::device::lease_directory()?;
-        let resources = Self::acquire_resources(&root, resource_keys(lab, required)?)?;
+        let resources = Self::acquire_resources(&root, keys.to_vec())?;
         Ok(Self {
-            _cell: cell,
             _device: device,
             _resources: resources,
-            _grant: None,
+            grant: None,
+            request: None,
         })
     }
 
@@ -114,15 +167,60 @@ impl FixtureLock {
     }
 }
 
-/// Wait in the stand's queue. The lease is described by this runner's
-/// arguments; the environment supplies owner, budget and short-lease choice.
-/// A lease of its own terminates this process at twice its budget.
-pub fn acquire_stand(scenarios: &[String]) -> Result<oer_hil_arbiter::Grant> {
+/// A board's identity in claims: its MAC, or the canonical port without one.
+pub fn board_identity(port: &Path) -> String {
+    oer_hil_arbiter::port_mac(port).unwrap_or_else(|| {
+        fs::canonicalize(port)
+            .unwrap_or_else(|_| port.to_owned())
+            .display()
+            .to_string()
+    })
+}
+
+/// The stand resources of a lease: its boards, fixtures and the air.
+fn claims(
+    lab: &super::config::LabConfig,
+    request: &LeaseRequest,
+    keys: &[String],
+) -> Vec<oer_hil_arbiter::Claim> {
+    use oer_hil_arbiter::Claim;
+    let mut claims = Vec::new();
+    if request.device {
+        claims.push(Claim::board(&board_identity(&lab.device.serial)));
+    }
+    if let Some(peer) = lab
+        .ieee802154_peer
+        .as_ref()
+        .filter(|_| request.required.ieee802154_peer)
+    {
+        claims.push(Claim::board(&board_identity(&peer.serial)));
+    }
+    claims.extend(
+        keys.iter()
+            .filter(|key| !key.starts_with("ieee802154-peer:"))
+            .map(Claim::exclusive),
+    );
+    claims.push(Claim {
+        resource: oer_hil_arbiter::AIR.to_owned(),
+        mode: request.air,
+    });
+    claims
+}
+
+/// Wait in the stand's queue for `claims`. The lease is described by this
+/// runner's arguments; the environment supplies owner, budget and
+/// short-lease choice. The lease supervises this process.
+pub fn acquire_stand(
+    claims: Vec<oer_hil_arbiter::Claim>,
+    scenarios: &[String],
+    divisible: bool,
+) -> Result<oer_hil_arbiter::Grant> {
     let work = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
     let mut request = oer_hil_arbiter::Request::from_environment(work)?;
     request.scenarios = scenarios.to_vec();
+    request.claims = claims;
     let mut grant = oer_hil_arbiter::Arbiter::open()?.acquire(&request)?;
-    grant.terminate_self_on_overrun();
+    grant.supervise_self(divisible);
     Ok(grant)
 }
 
@@ -442,11 +540,17 @@ pub fn acquire_bluetooth(
     adapter: oer_hil_fixture::bluetooth::model::Adapter,
 ) -> Result<BluetoothLease> {
     use sha2::{Digest, Sha256};
-    let grant = acquire_stand(&[])?;
-    let directory = oer_esp32s31_firmware::device::lease_directory()?.join(format!(
-        "resource-{:x}",
-        Sha256::digest(bluetooth_key(adapter)?.as_bytes())
-    ));
+    let key = bluetooth_key(adapter)?;
+    let grant = acquire_stand(
+        vec![
+            oer_hil_arbiter::Claim::exclusive(&key),
+            oer_hil_arbiter::Claim::shared(oer_hil_arbiter::AIR),
+        ],
+        &[],
+        false,
+    )?;
+    let directory = oer_esp32s31_firmware::device::lease_directory()?
+        .join(format!("resource-{:x}", Sha256::digest(key.as_bytes())));
     Ok(BluetoothLease {
         _resource: wait_for_fixture(|| ResourceLease::acquire_directory(&directory))?,
         _grant: grant,

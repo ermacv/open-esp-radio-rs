@@ -281,17 +281,7 @@ fn board_port(
 /// `chip` when the registry knows the board's chip.
 fn resolve_board(board: &str, chip: Option<&str>) -> Result<PathBuf> {
     let devices = oer_hil_arbiter::Arbiter::open()?.devices()?;
-    let mac = match devices
-        .iter()
-        .find(|device| device.name.as_deref() == Some(board))
-    {
-        Some(device) => device.mac.clone(),
-        None => oer_hil_arbiter::normalize_mac(board).map_err(|_| {
-            format!(
-                "board `{board}` is neither a registered name nor a MAC; see `cargo hil devices`"
-            )
-        })?,
-    };
+    let mac = oer_hil_arbiter::board_mac(&devices, board)?;
     if let (Some(required), Some(known)) = (
         chip,
         devices

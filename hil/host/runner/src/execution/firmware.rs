@@ -94,11 +94,24 @@ pub(crate) fn flash_built(
     built: Built,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
-    let artifacts = match built {
-        Built::Archived(artifacts) => artifacts,
-        Built::Failed(failure) => return Ok(Some(failure)),
-    };
-    let failure = flash_archived_build(class, &artifacts, session, |artifacts| {
+    match built {
+        Built::Archived(artifacts) => {
+            flash_archived_artifacts(root, lab, class, &artifacts, session)
+        }
+        Built::Failed(failure) => Ok(Some(failure)),
+    }
+}
+
+/// Flash an image this run already archived, again after the stand's lease
+/// was yielded and the board may carry other firmware.
+pub(crate) fn flash_archived_artifacts(
+    root: &Path,
+    lab: &LabConfig,
+    class: ImageClass,
+    artifacts: &Artifacts,
+    session: &mut RunSession,
+) -> Result<Option<Failure>> {
+    let failure = flash_archived_build(class, artifacts, session, |artifacts| {
         device::flash(root, artifacts, &lab.device.serial)
     })?;
     if failure.is_none() {
@@ -113,6 +126,44 @@ pub(crate) fn flash_built(
         );
     }
     Ok(failure)
+}
+
+/// Flash a replayed image again after the stand's lease was yielded.
+pub(crate) fn reflash_replayed(
+    root: &Path,
+    lab: &LabConfig,
+    archived: &ArchivedFirmware,
+    session: &mut RunSession,
+) -> Result<Option<Failure>> {
+    session.record_event("image-flash-started", None, Some(archived.image), None)?;
+    if let Err(error) = device::flash_archived(root, archived, &lab.device.serial) {
+        oer_process::check_cancelled()?;
+        session.record_event(
+            "image-flash-failed",
+            None,
+            Some(archived.image),
+            Some(Outcome::Broken),
+        )?;
+        return Ok(Some(Failure::new(
+            FailureKind::ImageFlash,
+            error.to_string(),
+        )));
+    }
+    session.record_event(
+        "image-flash-finished",
+        None,
+        Some(archived.image),
+        Some(Outcome::Passed),
+    )?;
+    hil_core::lab::lock::record_flash(
+        &lab.device.serial,
+        archived.image.id(),
+        &archived.application_path,
+        None,
+        None,
+        format!("run {} replaying run {}", session.id(), archived.run_id),
+    );
+    Ok(None)
 }
 
 #[cfg(test)]

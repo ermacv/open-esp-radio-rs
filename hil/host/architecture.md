@@ -71,7 +71,7 @@ claim an earlier physical action:
 | --- | --- |
 | 1. Selection and plan | CLI/catalog code resolves typed scenarios. `RunSession` creates a unique directory and writes `plan.json`. |
 | 2. Firmware archive | `image` builds every selected class whose scenarios meet their configuration preconditions, before the stand is leased. `RunSession::record_firmware` stores the subjects and returns the run-local `firmware/<class>/application.bin`. An explicit replay source is validated by `evidence::verify` under the lease. |
-| 3. Leases and lab provenance | The runner waits for the stand's [arbiter](arbiter/README.md) lease. The lab guard then acquires the cooperative cell, serial, local-wiphy and managed-OpenWrt leases required by that selection; these are local user-account locks, not distributed reservations. While they are held, `lab::provenance` records the secret-free topology before any flash. |
+| 3. Leases and lab provenance | The runner waits for the [arbiter](arbiter/README.md) lease on the boards, fixtures and air the selection claims. The lab guard then acquires the cooperative serial, local-wiphy and managed-OpenWrt leases required by that selection; these are local user-account locks, not distributed reservations. While they are held, `lab::provenance` records the secret-free topology before any flash. |
 | 4. Flash | `device` gives `espflash` that archived application path together with the recorded bootstrap/partition images. The workload never flashes a different build-tree copy. |
 | 5. Repetitions | `fixture::prepared` owns peer/host preparation; `session` owns serial reset, raw `uart.bin`, decoded protocol and target-health state; a workload owns its child processes and typed observations. Primary failures remain distinct from infrastructure failures. |
 | 6. Cleanup and attachment indexing | Each repetition enters a cleanup scope before fixture preparation. Cleanup/restoration finishes before attachments and `result.json` are collected. `cleanup.json` preserves every attempted restoration and its failure independently of the workload result. |
@@ -369,25 +369,25 @@ Routine commands have a 120-second deadline; image commands allow 30 minutes;
 packet captures use their configured duration plus shutdown allowance. Remote
 process lifetimes additionally depend on the OpenWrt scripts' timeouts and traps.
 
-HIL cell leases and serial-device leases live in the user's host cache, outside
+Serial-device and fixture leases live in the user's host cache, outside
 individual checkouts. Serial leases are shared with `cargo xtask build firmware <example> --flash`
 and use USB identity when available, otherwise the canonical device path.
 A run additionally leases every required local wiphy and the managed OpenWrt
-host boot. Local client/monitor interfaces sharing a radio conflict even across
-cell IDs. The remote boot identity makes different SSH aliases and radio
+host boot. Local client/monitor interfaces sharing a radio conflict. The remote boot identity makes different SSH aliases and radio
 interfaces on one OpenWrt host conflict; the whole host is reserved because
 client setup also changes firewall state. A remote reboot invalidates that
 fixture epoch. These are cooperative locks between runners on this host and
 user account, not distributed reservations across separate laboratory hosts.
-External unmanaged APs have no discovered physical identity and rely on a
-consistent cell ID. Build/flash-only commands and device inspection acquire no
+External unmanaged APs have no discovered physical identity and are not
+claimed. Build/flash-only commands and device inspection acquire no
 AP or laptop-radio resources.
 
 The [stand arbiter](arbiter/README.md) orders these locks. Every command that
-takes them first waits for the host-wide lease of the stand; the locks remain
-the final exclusion, and a granted holder waits for any lock still held by a
-process outside the queue. A run holds the lease from its first flash to its
-end, not while it builds.
+takes them first waits for a host-wide lease on the resources it claims; the
+locks remain the final exclusion, and a granted holder waits for any lock
+still held by a process outside the queue. A run holds the lease from its
+first flash to its end, not while it builds; a run of several scenarios may
+yield it between scenarios and flashes its image again after the next grant.
 
 A session unwound by a runner error is marked interrupted in the manifest.
 Each UART capture owns its output directory before opening or resetting the

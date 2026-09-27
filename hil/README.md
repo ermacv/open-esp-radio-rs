@@ -68,8 +68,8 @@ effects. “Without a DUT” does not mean “without host or peer-adapter chang
 
 The runner resolves the catalog plan and builds the current-source images into
 the new run directory. It then waits for the stand's lease from the
-[arbiter](host/arbiter/README.md), acquires cooperative cell/serial/fixture
-leases and captures secret-free lab provenance while the fixture lock is held.
+[arbiter](host/arbiter/README.md) on the boards, fixtures and air it claims,
+acquires cooperative serial/fixture leases and captures secret-free lab provenance while the fixture lock is held.
 It imports replayed firmware and flashes the archived `application.bin`, not an
 unrecorded build output. Each repetition
 owns its process, UART and fixture resources; partial observations survive

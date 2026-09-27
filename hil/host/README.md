@@ -88,18 +88,24 @@ leases that port for the scenario and resets the peer before each use.
 
 ## Share the stand
 
-Every checkout of this user shares one physical stand through the
-[arbiter](arbiter/README.md). Hardware commands (`run`, `run-all`, `run-plan`,
+Every checkout of this user shares the stand through the
+[arbiter](arbiter/README.md). A lease claims the resources its work uses:
+boards by MAC, fixtures such as the laptop radio, the OpenWrt host or the
+Bluetooth adapter, and the air, shared by all radio work and exclusive for
+scenarios tagged `air-exclusive` that measure the radio environment. Leases
+whose claims do not conflict run in parallel; conflicting requests are served
+in arrival order. Hardware commands (`run`, `run-all`, `run-plan`,
 `image flash`, `image replay`, `device status`, `fixture check`, the Bluetooth
-fixture commands and `cargo xtask build firmware <example> --flash`) wait in
-its FIFO queue instead of failing when the stand is busy. A run builds its
-images before it queues, so the lease covers flashing and execution only.
+fixture commands and `cargo xtask build firmware <example> --flash`) wait for
+their claims instead of failing when they are busy. A run builds its images
+before it queues, so the lease covers flashing and execution only.
 
 ```console
-cargo hil queue                       # holder, queue with expected starts, board state
+cargo hil queue                       # holders, queue with expected starts, board state
 cargo hil --budget 10m run <scenario> # one run, one lease
-cargo hil --budget 30m run a b c      # one run of three scenarios, one lease
-cargo hil --owner phy lease --budget 40m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
+cargo hil --budget 15m run a b c      # one run of three scenarios, one lease
+cargo hil lease --board c5 --budget 5m -- idf.py -p <port> flash
+cargo hil --owner phy lease --budget 20m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
 
 `run` accepts several scenarios: it builds every needed image class before
@@ -108,28 +114,40 @@ given order within each image class. With `--firmware-from` every named
 scenario must use the replayed image class. Prefer it to a shell loop under
 `lease`, where each nested run builds while the stand is held.
 `lease` runs one command under one lease; every `cargo hil` command inside it
-joins that lease, so no other owner can flash between the runs of a series. The
-lease options precede the HIL command, or follow `lease`:
+joins that lease when the lease already holds what it needs, so no other owner
+can flash between the runs of a series. `--board NAME|MAC` (repeatable) and
+`--air shared|exclusive` name what the command uses; without them the lease
+claims the whole stand. The lease options precede the HIL command, or follow
+`lease`:
 
 | Option | Meaning |
 | --- | --- |
 | `--owner NAME` | Who holds the lease; defaults to an enclosing lease's owner, then the checkout directory name |
 | `--budget DURATION` | `90s`, `15m`, `1h30m`; defaults to the longest of the last five completed leases of the same command, else the sum of that over the run's scenarios from earlier single-scenario runs, otherwise 15 minutes |
-| `--short` | A budget of at most two minutes; granted ahead of the queue head, at most once in a row |
+| `--short` | A budget of at most two minutes; granted ahead of earlier conflicting requests, never twice in a row |
 
 The environment variables `OER_HIL_OWNER`, `OER_HIL_BUDGET` and `OER_HIL_SHORT=1`
-carry the same choices. At its budget a lease is reported over budget; at twice
-its budget its process group receives `SIGTERM`, which runs the ordinary
-cancellation and fixture cleanup, and `SIGKILL` five minutes later. A `lease`
-terminated this way exits with status 124. `cargo xtask build firmware --flash
---monitor` holds a lease without a budget watchdog for its interactive monitor.
-A top-level run records its evidence shards after its lease is released.
-`cargo hil doctor` reports a busy stand without queueing.
+carry the same choices.
+
+Choose a budget you expect to use, not a ceiling: the budget is a slot, and
+when it is spent the lease gives way to waiting requests that need its
+resources. A run of several scenarios finishes its current scenario, releases
+the lease, queues again behind them and continues its remaining scenarios in
+the same run bundle after flashing its image again. A single scenario and a
+`lease` command have no such boundary: they are stopped with `SIGTERM`, which
+runs the ordinary cancellation and fixture cleanup, and a `lease` stopped
+this way exits with status 75. While nobody waits, over-budget work
+continues; at twice its budget it is stopped regardless (`lease` exit status
+124), and `SIGKILL` follows five minutes after `SIGTERM`.
+`cargo xtask build firmware --flash --monitor` holds a lease without a budget
+watchdog for its interactive monitor. A top-level run records its evidence
+shards after its lease is released. `cargo hil doctor` reports conflicting
+holders without queueing.
 
 A command started in the background returns when its lease ends; its exit is
 the notification for an agent. The user receives desktop notifications through
-`notify-send` when a waiting owner is granted the stand, when the stand becomes
-free, and when a lease exceeds its budget; `OER_HIL_NOTIFY=0` disables them.
+`notify-send` when a waiting owner is granted a lease, when the stand becomes
+free, and when a lease exceeds its budget or is stopped for waiting requests; `OER_HIL_NOTIFY=0` disables them.
 
 The stand holds several equal boards, currently an ESP32-S31 and an ESP32-C5.
 No board has a fixed role: a scenario or other consumer chooses which board it

@@ -193,3 +193,38 @@ fn a_board_is_refused_only_when_its_newest_flash_is_another_image() {
     assert!(error.contains("`ble-peer` flashed by bluetooth"), "{error}");
     assert!(error.ends_with("reflash"), "{error}");
 }
+
+#[test]
+fn a_run_claims_its_boards_fixtures_and_the_air() {
+    use oer_hil_arbiter::{AIR, Claim};
+    let lab = crate::lab::config::LabConfig::for_test();
+    let request = LeaseRequest {
+        air: AirMode::Exclusive,
+        ..LeaseRequest::device(Default::default())
+    };
+    let keys = [
+        String::from("openwrt-host-boot:x"),
+        String::from("ieee802154-peer:/dev/ttyACM9"),
+    ];
+    let claims = claims(&lab, &request, &keys);
+    assert_eq!(
+        claims,
+        [
+            Claim::board(&board_identity(&lab.device.serial)),
+            Claim::exclusive("openwrt-host-boot:x"),
+            Claim::exclusive(AIR),
+        ]
+    );
+    let without_device = LeaseRequest {
+        device: false,
+        ..LeaseRequest::device(Default::default())
+    };
+    assert_eq!(claims_of(&lab, &without_device), [Claim::shared(AIR)]);
+}
+
+fn claims_of(
+    lab: &crate::lab::config::LabConfig,
+    request: &LeaseRequest,
+) -> Vec<oer_hil_arbiter::Claim> {
+    claims(lab, request, &[])
+}

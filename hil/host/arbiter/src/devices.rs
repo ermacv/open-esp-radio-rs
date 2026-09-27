@@ -65,6 +65,22 @@ pub fn attached_ports() -> Vec<AttachedPort> {
         .collect()
 }
 
+/// The MAC of a board named by its registered name or by its MAC.
+pub fn board_mac(devices: &[Device], board: &str) -> crate::Result<String> {
+    match devices
+        .iter()
+        .find(|device| device.name.as_deref() == Some(board))
+    {
+        Some(device) => Ok(device.mac.clone()),
+        None => normalize_mac(board).map_err(|_| {
+            format!(
+                "board `{board}` is neither a registered name nor a MAC; see `cargo hil devices`"
+            )
+            .into()
+        }),
+    }
+}
+
 /// The registered label of the board with `mac`, or the MAC.
 pub fn device_label(devices: &[Device], mac: &str) -> String {
     crate::board::device_label(Some(mac), devices)
@@ -189,6 +205,21 @@ mod tests {
         for invalid in ["", "38:44", "zz:44:be:aa:25:64", "/dev/ttyACM0"] {
             assert!(normalize_mac(invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn boards_are_named_by_registered_name_or_mac() {
+        let devices = [Device {
+            mac: "38:44:BE:AA:25:64".into(),
+            chip: None,
+            name: Some("c5".into()),
+        }];
+        assert_eq!(board_mac(&devices, "c5").unwrap(), "38:44:BE:AA:25:64");
+        assert_eq!(
+            board_mac(&devices, "30:ed:a0:f3:f6:d0").unwrap(),
+            "30:ED:A0:F3:F6:D0"
+        );
+        assert!(board_mac(&devices, "s3").is_err());
     }
 
     #[test]

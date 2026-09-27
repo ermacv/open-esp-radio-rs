@@ -65,13 +65,15 @@ pub(crate) fn run_all(
         session.write_campaign(plan)?;
     }
     let prebuilt = prebuild(&mut session, lab, selected, network)?;
-    let _fixture = lease_stand(&mut session, lab, selected)?;
+    let lease = lease_stand(&mut session, lab, selected)?;
     let results = {
         let mut operations = LiveSuite {
             root,
             lab,
             firmware: FirmwarePreparation::BuildCurrent(network),
             prebuilt,
+            lease: Some(lease),
+            flashed: None,
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
@@ -102,13 +104,15 @@ pub(crate) fn run_one(
         }
         RunFirmware::Replay(_) => Vec::new(),
     };
-    let _fixture = lease_stand(&mut session, lab, &selected_entries)?;
+    let lease = lease_stand(&mut session, lab, &selected_entries)?;
     let results = {
         let mut operations = LiveSuite {
             root,
             lab,
             firmware: FirmwarePreparation::Selected(&firmware),
             prebuilt,
+            lease: Some(lease),
+            flashed: None,
         };
         execute_one(&mut session, &mut operations, selected)?
     };
@@ -138,13 +142,15 @@ pub(crate) fn run_many(
         RunFirmware::BuildCurrent(network) => prebuild(&mut session, lab, selected, *network)?,
         RunFirmware::Replay(_) => Vec::new(),
     };
-    let _fixture = lease_stand(&mut session, lab, selected)?;
+    let lease = lease_stand(&mut session, lab, selected)?;
     let results = {
         let mut operations = LiveSuite {
             root,
             lab,
             firmware: FirmwarePreparation::Selected(&firmware),
             prebuilt,
+            lease: Some(lease),
+            flashed: None,
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
@@ -217,6 +223,36 @@ fn prebuild(
     Ok(built)
 }
 
+/// Tag of scenarios that measure the radio environment: they claim the air
+/// exclusively, so no other radio work runs on the stand meanwhile.
+pub(crate) const AIR_EXCLUSIVE_TAG: &str = "air-exclusive";
+
+/// The stand lease of a run: its boards and fixtures, the air exclusively
+/// when a scenario measures it, and yielding at scenario boundaries when the
+/// run has several scenarios.
+pub(crate) fn lease_request(selected: &[&Scenario]) -> hil_core::lab::lock::LeaseRequest {
+    hil_core::lab::lock::LeaseRequest {
+        required: requirements(selected),
+        scenarios: selected
+            .iter()
+            .map(|scenario| scenario.id().to_owned())
+            .collect(),
+        air: if selected.iter().any(|scenario| {
+            scenario
+                .header
+                .tags
+                .iter()
+                .any(|tag| tag == AIR_EXCLUSIVE_TAG)
+        }) {
+            hil_core::lab::lock::AirMode::Exclusive
+        } else {
+            hil_core::lab::lock::AirMode::Shared
+        },
+        divisible: selected.len() > 1,
+        device: true,
+    }
+}
+
 /// Wait for the stand, then observe the leased fixture.
 fn lease_stand(
     session: &mut RunSession,
@@ -224,15 +260,7 @@ fn lease_stand(
     selected: &[&Scenario],
 ) -> Result<hil_core::lab::lock::FixtureLock> {
     session.record_event("stand-lease-requested", None, None, None)?;
-    let scenarios = selected
-        .iter()
-        .map(|scenario| scenario.id().to_owned())
-        .collect::<Vec<_>>();
-    let fixture = hil_core::lab::lock::FixtureLock::acquire_for_scenarios(
-        lab,
-        requirements(selected),
-        &scenarios,
-    )?;
+    let fixture = hil_core::lab::lock::FixtureLock::lease(lab, lease_request(selected))?;
     session.record_event("stand-lease-granted", None, None, None)?;
     let lab_provenance =
         hil_core::lab::provenance::LabProvenance::capture(lab, requirements(selected))?;
@@ -252,6 +280,9 @@ struct LiveSuite<'a> {
     firmware: FirmwarePreparation<'a>,
     /// Images built before the lease; a class without one is prepared whole.
     prebuilt: Vec<(ImageClass, firmware::Built)>,
+    lease: Option<hil_core::lab::lock::FixtureLock>,
+    /// The class on the device and, when built by this run, its archive.
+    flashed: Option<(ImageClass, Option<Box<hil_core::image::Artifacts>>)>,
 }
 
 trait SuiteEffects {
@@ -267,6 +298,16 @@ trait SuiteEffects {
         scenario: &Scenario,
         session: &RunSession,
     ) -> Result<ScenarioResult>;
+    /// A boundary between steps of divisible work. An over-budget lease that
+    /// blocks waiting requests yields here and queues again; the image of
+    /// `class` is then flashed again before the next scenario.
+    fn yield_point(
+        &mut self,
+        _class: Option<ImageClass>,
+        _session: &mut RunSession,
+    ) -> Result<Option<Failure>> {
+        Ok(None)
+    }
 }
 
 impl SuiteEffects for LiveSuite<'_> {
@@ -283,18 +324,30 @@ impl SuiteEffects for LiveSuite<'_> {
         class: ImageClass,
         session: &mut RunSession,
     ) -> Result<Option<Failure>> {
-        if let Some(index) = self.prebuilt.iter().position(|(built, _)| *built == class) {
-            let (_, built) = self.prebuilt.remove(index);
-            return firmware::flash_built(self.root, self.lab, class, built, session);
-        }
-        match self.firmware {
-            FirmwarePreparation::BuildCurrent(network) => {
-                firmware::prepare_image(self.root, self.lab, class, network, session)
-            }
-            FirmwarePreparation::Selected(firmware) => {
-                firmware::prepare_run_image(self.root, self.lab, class, firmware, session)
-            }
-        }
+        let (failure, archive) =
+            if let Some(index) = self.prebuilt.iter().position(|(built, _)| *built == class) {
+                let (_, built) = self.prebuilt.remove(index);
+                let archive = match &built {
+                    firmware::Built::Archived(artifacts) => Some(artifacts.clone()),
+                    firmware::Built::Failed(_) => None,
+                };
+                (
+                    firmware::flash_built(self.root, self.lab, class, built, session)?,
+                    archive,
+                )
+            } else {
+                let failure = match self.firmware {
+                    FirmwarePreparation::BuildCurrent(network) => {
+                        firmware::prepare_image(self.root, self.lab, class, network, session)?
+                    }
+                    FirmwarePreparation::Selected(firmware) => {
+                        firmware::prepare_run_image(self.root, self.lab, class, firmware, session)?
+                    }
+                };
+                (failure, None)
+            };
+        self.flashed = failure.is_none().then_some((class, archive));
+        Ok(failure)
     }
 
     fn execute_scenario(
@@ -303,6 +356,48 @@ impl SuiteEffects for LiveSuite<'_> {
         session: &RunSession,
     ) -> Result<ScenarioResult> {
         run_scenario(self.lab, scenario, session)
+    }
+
+    fn yield_point(
+        &mut self,
+        class: Option<ImageClass>,
+        session: &mut RunSession,
+    ) -> Result<Option<Failure>> {
+        if !self
+            .lease
+            .as_ref()
+            .is_some_and(hil_core::lab::lock::FixtureLock::yield_requested)
+        {
+            return Ok(None);
+        }
+        session.record_event("stand-lease-yielded", None, class, None)?;
+        let lease = self.lease.take().ok_or("the run holds no stand lease")?;
+        self.lease = Some(lease.requeue(self.lab)?);
+        session.record_event("stand-lease-granted", None, class, None)?;
+        let Some(class) = class else {
+            return Ok(None);
+        };
+        // Other owners may have flashed the board meanwhile.
+        match self.flashed.take() {
+            Some((flashed, Some(artifacts))) if flashed == class => {
+                let failure = firmware::flash_archived_artifacts(
+                    self.root, self.lab, class, &artifacts, session,
+                )?;
+                self.flashed = failure.is_none().then_some((class, Some(artifacts)));
+                Ok(failure)
+            }
+            Some((flashed, None)) if flashed == class => {
+                let failure = match self.firmware {
+                    FirmwarePreparation::Selected(RunFirmware::Replay(archived)) => {
+                        firmware::reflash_replayed(self.root, self.lab, archived, session)?
+                    }
+                    _ => return self.prepare_image(class, session),
+                };
+                self.flashed = failure.is_none().then_some((class, None));
+                Ok(failure)
+            }
+            _ => self.prepare_image(class, session),
+        }
     }
 }
 
@@ -331,6 +426,7 @@ fn execute_selected(
         if executable.is_empty() {
             continue;
         }
+        effects.yield_point(None, session)?;
         if let Some(failure) = effects.prepare_image(class, session)? {
             for scenario in executable {
                 session.record_event(
@@ -343,8 +439,20 @@ fn execute_selected(
             }
             continue;
         }
-        for scenario in executable {
+        for (index, scenario) in executable.into_iter().enumerate() {
             effects.check_cancelled()?;
+            if index > 0
+                && let Some(failure) = effects.yield_point(Some(class), session)?
+            {
+                session.record_event(
+                    "scenario-blocked",
+                    Some(scenario.id()),
+                    Some(class),
+                    Some(Outcome::Blocked),
+                )?;
+                results.push(write_blocked_scenario(session, scenario, failure)?);
+                continue;
+            }
             session.record_event("scenario-started", Some(scenario.id()), Some(class), None)?;
             let result = effects.execute_scenario(scenario, session)?;
             session.seal_scenario(scenario, &result)?;

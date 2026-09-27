@@ -53,6 +53,8 @@ struct FakeSuite {
     preflight_failures: BTreeSet<String>,
     cancel_on_check: Option<usize>,
     checks: usize,
+    /// Failure returned by the reflash after a yield before a scenario.
+    yield_failure: Option<FailureKind>,
 }
 
 impl SuiteEffects for FakeSuite {
@@ -92,6 +94,20 @@ impl SuiteEffects for FakeSuite {
     ) -> Result<ScenarioResult> {
         self.log.push(format!("execute:{}", scenario.id()));
         Ok(passed(scenario))
+    }
+
+    fn yield_point(
+        &mut self,
+        class: Option<ImageClass>,
+        _session: &mut RunSession,
+    ) -> Result<Option<Failure>> {
+        self.log.push(format!(
+            "yield:{}",
+            class.map_or("before-image", ImageClass::id)
+        ));
+        Ok(class
+            .and(self.yield_failure)
+            .map(|kind| Failure::new(kind, "injected reflash failure")))
     }
 }
 
@@ -361,4 +377,68 @@ fn named_scenarios_keep_their_order_and_replay_needs_one_image_class() {
         .unwrap();
     let mixed = named_scenarios(&catalog, &[first.id().to_owned(), other.id().to_owned()]).unwrap();
     assert!(single_image_class(&mixed).is_err());
+}
+
+#[test]
+fn a_series_offers_to_yield_before_each_image_and_between_scenarios() {
+    let catalog = catalog();
+    let selected = two_same_image(&catalog);
+    let root = tempfile::tempdir().unwrap();
+    let mut session = session(root.path());
+    let mut fake = FakeSuite::default();
+    execute_selected(&mut session, &mut fake, &selected).unwrap();
+    let steps = fake
+        .log
+        .iter()
+        .filter(|entry| !entry.starts_with("cancel-check") && !entry.starts_with("preflight"))
+        .cloned()
+        .collect::<Vec<_>>();
+    let class = selected[0].image().id();
+    assert_eq!(
+        steps,
+        [
+            String::from("yield:before-image"),
+            format!("prepare:{class}"),
+            format!("execute:{}", selected[0].id()),
+            format!("yield:{class}"),
+            format!("execute:{}", selected[1].id()),
+        ]
+    );
+}
+
+#[test]
+fn a_failed_reflash_after_yielding_blocks_only_the_next_scenario() {
+    let catalog = catalog();
+    let selected = two_same_image(&catalog);
+    let root = tempfile::tempdir().unwrap();
+    let mut session = session(root.path());
+    let mut fake = FakeSuite {
+        yield_failure: Some(FailureKind::ImageFlash),
+        ..FakeSuite::default()
+    };
+    let results = execute_selected(&mut session, &mut fake, &selected).unwrap();
+    assert_eq!(results[0].outcome, Outcome::Passed);
+    assert_eq!(results[1].outcome, Outcome::Blocked);
+}
+
+#[test]
+fn a_series_yields_and_an_air_measurement_claims_the_air_exclusively() {
+    let catalog = catalog();
+    let [first, second] = two_same_image(&catalog);
+    assert!(!lease_request(&[first]).divisible);
+    let series = lease_request(&[first, second]);
+    assert!(series.divisible);
+    assert_eq!(series.scenarios, [first.id(), second.id()]);
+    let mut measured = first.clone();
+    measured.header.tags.push(AIR_EXCLUSIVE_TAG.to_owned());
+    let shared = if first.header.tags.iter().any(|tag| tag == AIR_EXCLUSIVE_TAG) {
+        hil_core::lab::lock::AirMode::Exclusive
+    } else {
+        hil_core::lab::lock::AirMode::Shared
+    };
+    assert_eq!(lease_request(&[first]).air, shared);
+    assert_eq!(
+        lease_request(&[&measured, second]).air,
+        hil_core::lab::lock::AirMode::Exclusive
+    );
 }

@@ -15,8 +15,9 @@ const RECENT_LEASES: usize = 5;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
-    pub holder: Option<HolderStatus>,
-    /// In expected grant order.
+    /// Leases held now; leases on disjoint resources run in parallel.
+    pub holders: Vec<HolderStatus>,
+    /// In arrival order.
     pub queue: Vec<QueuedStatus>,
     /// Registered, attached or journaled boards.
     pub devices: Vec<DeviceStatus>,
@@ -45,6 +46,7 @@ pub struct HolderStatus {
     pub budget_secs: u64,
     pub budget_source: BudgetSource,
     pub over_budget: bool,
+    pub claims: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -57,17 +59,39 @@ pub struct QueuedStatus {
     pub waiting_secs: u64,
     pub budget_secs: u64,
     pub budget_source: BudgetSource,
+    /// Earlier waiting requests that conflict with this one.
+    pub ahead: usize,
     pub expected_start_secs: u64,
+    pub claims: String,
 }
 
 impl Arbiter {
+    /// Holders whose claims conflict with `claims`.
+    pub fn conflicting_holders(&self, claims: &[crate::Claim]) -> crate::Result<Vec<HolderStatus>> {
+        let claims = crate::state::normalize(claims);
+        let conflicting = self.transaction(|state| {
+            Ok(state
+                .holders
+                .iter()
+                .filter(|holder| crate::state::conflict(&holder.ticket.claims, &claims))
+                .map(|holder| holder.ticket.id)
+                .collect::<Vec<_>>())
+        })?;
+        Ok(self
+            .status()?
+            .holders
+            .into_iter()
+            .filter(|holder| conflicting.contains(&holder.id))
+            .collect())
+    }
+
     pub fn status(&self) -> crate::Result<Status> {
         let now = crate::unix_now();
         let state = self.transaction(|state| Ok(state.clone()))?;
         let starts = queue::expected_starts(&state, now);
         let queue = starts
             .iter()
-            .filter_map(|(id, start)| {
+            .filter_map(|(id, ahead, start)| {
                 let ticket = state.queue.iter().find(|ticket| ticket.id == *id)?;
                 Some(QueuedStatus {
                     id: ticket.id,
@@ -78,7 +102,9 @@ impl Arbiter {
                     waiting_secs: now.saturating_sub(ticket.enqueued_unix),
                     budget_secs: ticket.budget_secs,
                     budget_source: ticket.budget_source,
+                    ahead: *ahead,
                     expected_start_secs: *start,
+                    claims: crate::grant::describe_claims(&ticket.claims),
                 })
             })
             .collect();
@@ -119,16 +145,21 @@ impl Arbiter {
             .collect();
         let history = self.history()?;
         Ok(Status {
-            holder: state.holder.map(|holder| HolderStatus {
-                id: holder.ticket.id,
-                owner: holder.ticket.owner,
-                work: holder.ticket.work,
-                pid: holder.ticket.process.pid,
-                elapsed_secs: now.saturating_sub(holder.granted_unix),
-                budget_secs: holder.ticket.budget_secs,
-                budget_source: holder.ticket.budget_source,
-                over_budget: holder.over_budget,
-            }),
+            holders: state
+                .holders
+                .into_iter()
+                .map(|holder| HolderStatus {
+                    id: holder.ticket.id,
+                    owner: holder.ticket.owner,
+                    work: holder.ticket.work,
+                    pid: holder.ticket.process.pid,
+                    elapsed_secs: now.saturating_sub(holder.granted_unix),
+                    budget_secs: holder.ticket.budget_secs,
+                    budget_source: holder.ticket.budget_source,
+                    over_budget: holder.over_budget,
+                    claims: crate::grant::describe_claims(&holder.ticket.claims),
+                })
+                .collect(),
             queue,
             devices,
             startup_artifacts: startup_artifacts.into_iter().cloned().collect(),
@@ -144,13 +175,17 @@ fn duration(seconds: u64) -> String {
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut text = String::new();
-        match &self.holder {
-            Some(holder) => writeln!(
+        if self.holders.is_empty() {
+            writeln!(text, "held:    free")?;
+        }
+        for holder in &self.holders {
+            writeln!(
                 text,
-                "held:    #{} {} `{}` pid {}, {} of budget {}{}",
+                "held:    #{} {} `{}` on {} pid {}, {} of budget {}{}",
                 holder.id,
                 holder.owner,
                 holder.work,
+                holder.claims,
                 holder.pid,
                 duration(holder.elapsed_secs),
                 duration(holder.budget_secs),
@@ -159,22 +194,24 @@ impl std::fmt::Display for Status {
                 } else {
                     ""
                 }
-            ),
-            None => writeln!(text, "held:    free"),
-        }?;
+            )?;
+        }
         if self.queue.is_empty() {
             writeln!(text, "queue:   empty")?;
         }
         for (position, entry) in self.queue.iter().enumerate() {
             writeln!(
                 text,
-                "queue {}: #{} {} `{}`{} pid {}, waiting {}, budget {} ({}), start in ~{}",
+                "queue {}: #{} {} `{}`{} on {} pid {}, behind {}, waiting {}, budget {} ({}), \
+                 start in ~{}",
                 position + 1,
                 entry.id,
                 entry.owner,
                 entry.work,
                 if entry.short { " [short]" } else { "" },
+                entry.claims,
                 entry.pid,
+                entry.ahead,
                 duration(entry.waiting_secs),
                 duration(entry.budget_secs),
                 entry.budget_source,

@@ -16,6 +16,10 @@ pub enum LeaseOutcome {
     BudgetExceeded,
     /// The holder exited without releasing; another process reaped it.
     Abandoned,
+    /// Terminated at its budget because waiting requests needed its resources.
+    Preempted,
+    /// Released at a boundary after its budget to queue its remaining work.
+    Yielded,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

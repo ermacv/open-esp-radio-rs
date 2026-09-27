@@ -54,6 +54,15 @@ traffic phases, counting `repetitions` times workload `cycles`, and no
 itself, tagged `soak` or `thermal`, are exempt. A catalog test enforces this
 budget.
 
+## Stand claims
+
+A run claims the boards and fixtures its scenarios require and shares the air
+with other radio work on the stand. A scenario that measures the radio
+environment, such as RF levels, airtime or interference, carries the tag
+`air-exclusive`; its run then claims the air exclusively, so no other radio
+work runs meanwhile. Tags are excluded from scenario digests, so adding the tag
+does not invalidate recorded evidence.
+
 ## Named checks
 
 Named checks are derived from implemented workload behavior and explicit

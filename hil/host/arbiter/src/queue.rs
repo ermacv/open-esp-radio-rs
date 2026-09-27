@@ -1,43 +1,85 @@
-//! Grant order and waiting-time estimates.
+//! Grant order and waiting-time estimates over conflicting claims.
+//!
+//! Requests are served in arrival order among those that conflict: a ticket
+//! is granted once no holder and no earlier waiting ticket conflicts with it.
+//! Tickets that claim disjoint resources proceed in parallel. A short ticket
+//! may pass earlier conflicting tickets, but never two grants in a row.
 
-use crate::state::{State, Ticket};
+use crate::state::{State, Ticket, conflict};
 
-/// The ticket granted next, and whether it jumps ahead of the head. A short
-/// ticket may jump once; the head is served before any further jump.
-pub(crate) fn next_index(queue: &[Ticket], head_next: bool) -> Option<(usize, bool)> {
-    if queue.is_empty() {
+/// Whether the ticket `id` can be granted now, and whether that grant jumps
+/// ahead of earlier conflicting tickets.
+pub(crate) fn grantable(state: &State, id: u64) -> Option<bool> {
+    let index = state.queue.iter().position(|ticket| ticket.id == id)?;
+    let ticket = &state.queue[index];
+    if state
+        .holders
+        .iter()
+        .any(|holder| conflict(&holder.ticket.claims, &ticket.claims))
+    {
         return None;
     }
-    if !head_next && let Some(index) = queue.iter().skip(1).position(|ticket| ticket.short) {
-        return Some((index + 1, true));
+    let behind = state.queue[..index]
+        .iter()
+        .any(|earlier| conflict(&earlier.claims, &ticket.claims));
+    match (behind, ticket.short && !state.jumped) {
+        (false, _) => Some(false),
+        (true, true) => Some(true),
+        (true, false) => None,
     }
-    Some((0, false))
 }
 
-/// Seconds until each queued ticket is expected to be granted, in grant order,
-/// assuming every lease uses its budget.
-pub(crate) fn expected_starts(state: &State, now: u64) -> Vec<(u64, u64)> {
-    let mut offset = state.holder.as_ref().map_or(0, |holder| {
-        (holder.granted_unix + holder.ticket.budget_secs).saturating_sub(now)
-    });
-    let mut queue = state.queue.clone();
-    let mut head_next = state.head_next;
-    let mut starts = Vec::with_capacity(queue.len());
-    while let Some((index, jumped)) = next_index(&queue, head_next) {
-        let ticket = queue.remove(index);
-        starts.push((ticket.id, offset));
-        offset += ticket.budget_secs;
-        head_next = jumped;
-    }
-    starts
+/// Whether a waiting ticket conflicts with the claims of holder `id`.
+pub(crate) fn blocks_waiters(state: &State, id: u64) -> bool {
+    state
+        .holders
+        .iter()
+        .find(|holder| holder.ticket.id == id)
+        .is_some_and(|holder| {
+            state
+                .queue
+                .iter()
+                .any(|ticket| conflict(&ticket.claims, &holder.ticket.claims))
+        })
+}
+
+/// Earlier conflicting tickets and the expected wait in seconds of every
+/// queued ticket, assuming every lease uses its budget.
+pub(crate) fn expected_starts(state: &State, now: u64) -> Vec<(u64, usize, u64)> {
+    let remaining = |ticket: &Ticket| {
+        state
+            .holders
+            .iter()
+            .filter(|holder| conflict(&holder.ticket.claims, &ticket.claims))
+            .map(|holder| (holder.granted_unix + holder.ticket.budget_secs).saturating_sub(now))
+            .max()
+            .unwrap_or(0)
+    };
+    state
+        .queue
+        .iter()
+        .enumerate()
+        .map(|(index, ticket)| {
+            let ahead = state.queue[..index]
+                .iter()
+                .filter(|earlier| conflict(&earlier.claims, &ticket.claims))
+                .collect::<Vec<_>>();
+            let queued = ahead.iter().map(|earlier| earlier.budget_secs).sum::<u64>();
+            (ticket.id, ahead.len(), remaining(ticket) + queued)
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{budget::BudgetSource, process::ProcessIdentity, state::Holder};
+    use crate::{
+        budget::BudgetSource,
+        process::ProcessIdentity,
+        state::{AIR, Claim, Holder},
+    };
 
-    pub(crate) fn ticket(id: u64, short: bool, budget_secs: u64) -> Ticket {
+    pub(crate) fn ticket(id: u64, short: bool, budget_secs: u64, claims: Vec<Claim>) -> Ticket {
         Ticket {
             id,
             owner: format!("owner-{id}"),
@@ -50,42 +92,80 @@ mod tests {
                 start_ticks: 1,
             },
             enqueued_unix: id,
+            claims,
+        }
+    }
+
+    fn board(name: &str) -> Vec<Claim> {
+        vec![Claim::board(name), Claim::shared(AIR)]
+    }
+
+    fn holder(ticket: Ticket) -> Holder {
+        Holder {
+            ticket,
+            token: "t".into(),
+            granted_unix: 1000,
+            over_budget: false,
         }
     }
 
     #[test]
-    fn queue_is_fifo_except_one_short_jump_in_a_row() {
-        let queue = [
-            ticket(1, false, 60),
-            ticket(2, true, 60),
-            ticket(3, true, 60),
-        ];
-        assert_eq!(next_index(&queue, false), Some((1, true)));
-        assert_eq!(next_index(&queue, true), Some((0, false)));
-        assert_eq!(next_index(&queue[..1], false), Some((0, false)));
-        assert_eq!(next_index(&[ticket(1, true, 60)], false), Some((0, false)));
-        assert_eq!(next_index(&[], false), None);
+    fn disjoint_requests_proceed_while_conflicting_ones_keep_arrival_order() {
+        let state = State {
+            holders: vec![holder(ticket(1, false, 300, board("s31")))],
+            queue: vec![
+                ticket(2, false, 60, board("s31")),
+                ticket(3, false, 60, board("c5")),
+                ticket(
+                    4,
+                    false,
+                    60,
+                    vec![Claim::board("c5"), Claim::exclusive(AIR)],
+                ),
+            ],
+            ..State::default()
+        };
+        assert_eq!(grantable(&state, 2), None, "s31 is held");
+        assert_eq!(grantable(&state, 3), Some(false), "c5 is free");
+        assert_eq!(
+            grantable(&state, 4),
+            None,
+            "exclusive air waits for the holder"
+        );
+        assert!(blocks_waiters(&state, 1));
     }
 
     #[test]
-    fn expected_starts_follow_grant_order_after_the_holder() {
-        let state = State {
+    fn a_short_ticket_passes_earlier_conflicting_ones_once() {
+        let mut state = State {
             queue: vec![
-                ticket(1, false, 600),
-                ticket(2, true, 60),
-                ticket(3, true, 60),
+                ticket(1, false, 600, board("s31")),
+                ticket(2, true, 60, board("s31")),
             ],
-            holder: Some(Holder {
-                ticket: ticket(9, false, 300),
-                token: "t".into(),
-                granted_unix: 1000,
-                over_budget: false,
-            }),
+            holders: vec![],
+            ..State::default()
+        };
+        // A free board goes to the earliest ticket.
+        assert_eq!(grantable(&state, 1), Some(false));
+        assert_eq!(grantable(&state, 2), Some(true));
+        state.jumped = true;
+        assert_eq!(grantable(&state, 2), None);
+    }
+
+    #[test]
+    fn expected_starts_count_only_conflicting_work() {
+        let state = State {
+            holders: vec![holder(ticket(9, false, 300, board("s31")))],
+            queue: vec![
+                ticket(1, false, 600, board("s31")),
+                ticket(2, false, 60, board("c5")),
+                ticket(3, false, 60, board("s31")),
+            ],
             ..State::default()
         };
         assert_eq!(
             expected_starts(&state, 1100),
-            [(2, 200), (1, 260), (3, 860)]
+            [(1, 0, 200), (2, 0, 0), (3, 1, 800)]
         );
     }
 }

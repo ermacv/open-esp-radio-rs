@@ -174,15 +174,26 @@ pub fn flash(
     use sha2::Digest as _;
     let output = build.directory();
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
-    let _grant = arbiter.acquire(&oer_hil_arbiter::Request::from_environment(format!(
-        "build firmware {example} --flash{}",
-        if monitor { " --monitor" } else { "" }
-    ))?)?;
     let registered = match port {
         Some(_) => None,
         None => only_attached_board("esp32s31", &arbiter.devices()?),
     };
-    let lease = oer_esp32s31_firmware::device::DeviceLease::select(port.or(registered.as_deref()))?;
+    let port = port.or(registered.as_deref());
+    let board = port
+        .map(|port| oer_hil_arbiter::port_mac(port).unwrap_or_else(|| port.display().to_string()));
+    let mut request = oer_hil_arbiter::Request::from_environment(format!(
+        "build firmware {example} --flash{}",
+        if monitor { " --monitor" } else { "" }
+    ))?;
+    request.claims = match &board {
+        Some(board) => vec![
+            oer_hil_arbiter::Claim::board(board),
+            oer_hil_arbiter::Claim::shared(oer_hil_arbiter::AIR),
+        ],
+        None => Vec::new(),
+    };
+    let _grant = arbiter.acquire(&request)?;
+    let lease = oer_esp32s31_firmware::device::DeviceLease::select(port)?;
     let port = Some(lease.port());
     for (address, filename, reset) in [
         (BOOTLOADER_OFFSET, "bootloader.bin", "no-reset"),

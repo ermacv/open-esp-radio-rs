@@ -34,7 +34,14 @@ pub fn configure_force_txrx(registers: &mut impl SharedPhyAccess, enabled: bool,
 pub fn configure_debug_mode(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.set_pbus_work_mode(false);
+    debug_clear_mode_high();
     registers.set_pbus_debug_mode(true);
+}
+
+#[allow(unsafe_code)]
+fn debug_clear_mode_high() {
+    let mode = 0x2010_088c as *mut u32;
+    unsafe { mode.write_volatile(mode.read_volatile() & 0x03ff_ffff) };
 }
 
 /// Enter PBus work mode and sample the optional settle-pulse condition once.

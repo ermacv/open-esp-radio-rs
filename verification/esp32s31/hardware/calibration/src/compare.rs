@@ -51,6 +51,10 @@ struct Tolerances {
     schema: u16,
     #[serde(default)]
     fields: BTreeMap<String, Tolerance>,
+    /// Reviews of image registers by published name; unreviewed registers
+    /// follow the vendor-spread rule.
+    #[serde(default)]
+    registers: BTreeMap<String, Tolerance>,
 }
 
 #[derive(Clone, Default, Deserialize)]
@@ -95,42 +99,127 @@ struct Summary {
     excluded: Vec<Excluded>,
     /// Vendor object byte ranges no compared field covers, `[start, end)`.
     uncovered: Vec<[usize; 2]>,
-    /// The vendor boots' calibrated register state, until production
-    /// publishes its own.
-    vendor_registers: VendorRegisters,
+    /// The calibrated radio-PHY register image of both sides.
+    registers: RegisterSummary,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct VendorRegisters {
-    /// Registers every vendor boot answered.
-    read: usize,
+struct RegisterSummary {
+    verdict: Verdict,
+    /// Registers both sides read and the rule compared.
+    compared: usize,
+    matched: usize,
+    /// Registers outside their vendor range widened by their own vendor
+    /// spread.
+    differing: Vec<RegisterDifference>,
+    /// Reviewed registers left out, with their reasons.
+    excluded: Vec<ExcludedRegister>,
     /// Registers whose read reset the chip in the calibrated state.
     unreadable: Vec<String>,
-    /// Registers whose value differed between vendor boots.
-    varying: Vec<String>,
+    /// Vendor-readable registers production did not report.
+    not_read: Vec<String>,
 }
 
-/// The vendor register state of the boots' register replies.
-fn vendor_registers(replies: &[String]) -> Result<VendorRegisters> {
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct RegisterDifference {
+    name: String,
+    vendor: [u32; 2],
+    production: [u32; 2],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct ExcludedRegister {
+    name: String,
+    reason: String,
+}
+
+/// Register values by address, and the addresses whose read reset the chip.
+type RegisterValues = (BTreeMap<u32, Vec<u32>>, std::collections::BTreeSet<u32>);
+
+/// Every register value of `texts` by address, and the unreadable ones.
+fn register_values(texts: &[String]) -> Result<RegisterValues> {
     let mut values: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     let mut unreadable = std::collections::BTreeSet::new();
-    for text in replies {
+    for text in texts {
         for (address, value) in vendor::registers(text)? {
             values.entry(address).or_default().push(value);
         }
         unreadable.extend(vendor::unreadable(text)?);
     }
-    let format = |address: &u32| format!("{address:#010x}");
-    Ok(VendorRegisters {
-        read: values.len(),
-        varying: values
-            .iter()
-            .filter(|(_, v)| v.windows(2).any(|w| w[0] != w[1]))
-            .map(|(a, _)| format(a))
-            .collect(),
-        unreadable: unreadable.iter().map(format).collect(),
-    })
+    Ok((values, unreadable))
+}
+
+/// Compare the production register image with the vendor boots'. A
+/// register passes when every production value lies within the vendor
+/// range widened by the vendor range's own width, the fields' rule applied
+/// to whole registers.
+fn compare_registers(
+    image: &[crate::registers::Register],
+    vendor: &[String],
+    production: &[String],
+    reviews: &BTreeMap<String, Tolerance>,
+) -> Result<RegisterSummary> {
+    let (vendor_values, unreadable) = register_values(vendor)?;
+    let (production_values, _) = register_values(production)?;
+    let range = |values: &[u32]| {
+        values.iter().fold([u32::MAX, u32::MIN], |[low, high], &v| {
+            [low.min(v), high.max(v)]
+        })
+    };
+    let mut summary = RegisterSummary {
+        verdict: Verdict::Match,
+        compared: 0,
+        matched: 0,
+        differing: vec![],
+        excluded: vec![],
+        unreadable: vec![],
+        not_read: vec![],
+    };
+    for register in image {
+        if unreadable.contains(&register.address) {
+            summary.unreadable.push(register.name.clone());
+            continue;
+        }
+        let Some(vendor) = vendor_values.get(&register.address) else {
+            continue;
+        };
+        if let Some(review) = reviews.get(&register.name).filter(|r| r.excluded) {
+            summary.excluded.push(ExcludedRegister {
+                name: register.name.clone(),
+                reason: review.reason.clone(),
+            });
+            continue;
+        }
+        let Some(production) = production_values.get(&register.address) else {
+            summary.not_read.push(register.name.clone());
+            continue;
+        };
+        let (v, p) = (range(vendor), range(production));
+        let margin = u64::from(v[1] - v[0]);
+        summary.compared += 1;
+        if u64::from(v[0]) <= u64::from(p[0]) + margin
+            && u64::from(p[1]) <= u64::from(v[1]) + margin
+        {
+            summary.matched += 1;
+        } else {
+            summary.differing.push(RegisterDifference {
+                name: register.name.clone(),
+                vendor: v,
+                production: p,
+            });
+        }
+    }
+    summary.verdict = if !summary.differing.is_empty() {
+        Verdict::Diff
+    } else if summary.compared == 0 || !summary.not_read.is_empty() {
+        Verdict::Incomplete
+    } else {
+        Verdict::Match
+    };
+    Ok(summary)
 }
 
 #[derive(Serialize)]
@@ -339,10 +428,18 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
                 .ok_or_else(|| format!("{} lacks {VENDOR_OBJECT}", path.display()).into())
         })
         .collect::<Result<Vec<_>>>()?;
-    let register_replies = numbered(&arguments.captures, VENDOR_PREFIX, REGISTER_EXTENSION)?
-        .iter()
-        .map(|path| Ok(std::fs::read_to_string(path)?))
-        .collect::<Result<Vec<_>>>()?;
+    let texts = |prefix: &str| -> Result<Vec<String>> {
+        numbered(&arguments.captures, prefix, REGISTER_EXTENSION)?
+            .iter()
+            .map(|path| Ok(std::fs::read_to_string(path)?))
+            .collect()
+    };
+    let registers = compare_registers(
+        &crate::registers::partition(&root, crate::registers::PARTITION)?,
+        &texts(VENDOR_PREFIX)?,
+        &texts(PRODUCTION_PREFIX)?,
+        &tolerances.registers,
+    )?;
     let production = numbered(&arguments.captures, PRODUCTION_PREFIX, ARTIFACT_EXTENSION)?
         .iter()
         .map(|path| production::output(&std::fs::read(path)?))
@@ -380,9 +477,15 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             )
         })
         .collect::<Result<Vec<_>>>()?;
-    let verdict = if summaries.iter().any(|f| f.verdict == Verdict::Diff) {
+    let verdicts = || {
+        summaries
+            .iter()
+            .map(|f| f.verdict)
+            .chain(std::iter::once(registers.verdict))
+    };
+    let verdict = if verdicts().any(|v| v == Verdict::Diff) {
         Verdict::Diff
-    } else if summaries.iter().any(|f| f.verdict == Verdict::Incomplete) {
+    } else if verdicts().any(|v| v == Verdict::Incomplete) {
         Verdict::Incomplete
     } else {
         Verdict::Match
@@ -401,7 +504,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         fields: summaries,
         excluded,
         uncovered: uncovered(length, &fields),
-        vendor_registers: vendor_registers(&register_replies)?,
+        registers,
     };
     let output = arguments
         .output
@@ -483,18 +586,52 @@ mod tests {
     }
 
     #[test]
-    fn vendor_registers_report_varying_and_unreadable_addresses() {
-        let boot = |value: u32| {
+    fn registers_compare_within_their_own_vendor_spread() {
+        let image = |name: &str, address| crate::registers::Register {
+            name: name.into(),
+            address,
+        };
+        let registers = [
+            image("A.STABLE", 0x10),
+            image("A.VARYING", 0x14),
+            image("A.CLOCKED_OFF", 0x18),
+            image("A.EXCLUDED", 0x1c),
+            image("A.MISSED", 0x20),
+        ];
+        let line = vendor::register_line;
+        let vendor_boot = |varying| {
             format!(
-                "oer-vendor-calibration-register 00000010 {value:08x}\n\
-                 oer-vendor-calibration-register 00000014 00000001\n{}",
-                vendor::unreadable_line(0x18)
+                "{}{}{}{}{}",
+                line(0x10, 7),
+                line(0x14, varying),
+                vendor::unreadable_line(0x18),
+                line(0x1c, 1),
+                line(0x20, 1)
             )
         };
-        let registers = vendor_registers(&[boot(1), boot(2)]).unwrap();
-        assert_eq!(registers.read, 2);
-        assert_eq!(registers.varying, ["0x00000010"]);
-        assert_eq!(registers.unreadable, ["0x00000018"]);
+        let production = format!("{}{}{}", line(0x10, 7), line(0x14, 13), line(0x1c, 9));
+        let reviews = BTreeMap::from([(
+            "A.EXCLUDED".to_owned(),
+            Tolerance {
+                excluded: true,
+                reason: "environment".into(),
+                ..Tolerance::default()
+            },
+        )]);
+        let summary = compare_registers(
+            &registers,
+            &[vendor_boot(10), vendor_boot(11)],
+            &[production],
+            &reviews,
+        )
+        .unwrap();
+        // 13 lies beyond 11 + (11 - 10).
+        assert_eq!((summary.compared, summary.matched), (2, 1));
+        assert_eq!(summary.differing[0].name, "A.VARYING");
+        assert_eq!(summary.unreadable, ["A.CLOCKED_OFF"]);
+        assert_eq!(summary.excluded[0].name, "A.EXCLUDED");
+        assert_eq!(summary.not_read, ["A.MISSED"]);
+        assert_eq!(summary.verdict, Verdict::Diff);
     }
 
     #[test]

@@ -34,6 +34,12 @@ pub fn reports(console: &str) -> usize {
     console.lines().filter(|line| line.trim() == end).count()
 }
 
+/// One register reply line: the firmware's answer format, which the host
+/// also writes for the production register image.
+pub fn register_line(address: u32, value: u32) -> String {
+    format!("{REPORT_PREFIX}{REGISTER_SUFFIX} {address:08x} {value:08x}\n")
+}
+
 /// The request line for the word at `address`.
 pub fn register_request(address: u32) -> String {
     format!("{REGISTER_REQUEST} {address:08x}\n")

@@ -7,6 +7,7 @@
 //! vendor firmware, then the production image, so both sides see the same
 //! board temperature. Each production boot receives a fresh startup artifact
 //! path, so it calibrates fully and publishes the new retained calibration.
+use crate::registers::Register;
 use crate::{Result, repository_root, vendor};
 use oer_hil_runner_core::lab::config::LabConfig;
 use oer_hil_runner_core::session::{SerialCapture, Settings, Target};
@@ -31,6 +32,8 @@ const VENDOR_BOOT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Serial read poll interval; the USB-Serial/JTAG console ignores the rate.
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
 const BAUD_RATE: u32 = 115_200;
+/// Longest wait for one production register image window.
+const REGISTER_IMAGE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Console characters an unanswered register read reports.
 const CONSOLE_TAIL_CHARS: usize = 2000;
 /// Extensions of the per-boot vendor consoles and register replies.
@@ -194,16 +197,34 @@ fn vendor_registers(
 }
 
 /// One cold production boot publishing its retained calibration to
-/// `artifact`.
-fn production_boot(lab: &LabConfig, artifact: &Path, output: &Path) -> Result<()> {
+/// `artifact`, then reading the register image at `readable` indices; the
+/// replies use the vendor register line format.
+fn production_boot(
+    lab: &LabConfig,
+    artifact: &Path,
+    output: &Path,
+    registers: &[Register],
+    readable: &[usize],
+) -> Result<String> {
     let mut lab = lab.clone();
     lab.device.startup_artifact = Some(artifact.to_owned());
     let capture = SerialCapture::start_with_reset(&lab.device.serial, output)?;
-    let result = capture.prepare_startup(Target {
-        lab: &lab,
-        settings: Settings::default(),
-    });
-    let (_, status) = capture.finish_with(result)?;
+    let result = (|| {
+        let (_, status) = capture.prepare_startup(Target {
+            lab: &lab,
+            settings: Settings::default(),
+        })?;
+        let mut replies = String::new();
+        for window in windows(readable) {
+            let words = capture.read_phy_register_image(window, REGISTER_IMAGE_TIMEOUT)?;
+            for (offset, value) in words.values.iter().enumerate() {
+                let register = &registers[usize::from(words.first) + offset];
+                replies.push_str(&vendor::register_line(register.address, *value));
+            }
+        }
+        Ok((status, replies))
+    })();
+    let (status, replies) = capture.finish_with(result)?;
     let status = status.ok_or("the production image published no startup artifact")?;
     if status.disposition != oer_hil_protocol::StartupArtifactDisposition::Created {
         return Err(format!(
@@ -212,7 +233,27 @@ fn production_boot(lab: &LabConfig, artifact: &Path, output: &Path) -> Result<()
         )
         .into());
     }
-    Ok(())
+    Ok(replies)
+}
+
+/// Requests covering the ascending `indices` in runs of at most one reply.
+fn windows(indices: &[usize]) -> Vec<oer_hil_protocol::PhyRegisterImageRequest> {
+    let mut windows: Vec<oer_hil_protocol::PhyRegisterImageRequest> = vec![];
+    for &index in indices {
+        match windows.last_mut() {
+            Some(window)
+                if usize::from(window.first) + usize::from(window.count) == index
+                    && usize::from(window.count) < oer_hil_protocol::PHY_REGISTER_IMAGE_WORDS =>
+            {
+                window.count += 1
+            }
+            _ => windows.push(oer_hil_protocol::PhyRegisterImageRequest {
+                first: index as u16,
+                count: 1,
+            }),
+        }
+    }
+    windows
 }
 
 pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
@@ -255,7 +296,10 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         drop(serial);
         let stem = format!("{VENDOR_PREFIX}{boot:02}");
         std::fs::write(output.join(format!("{stem}.{CONSOLE_EXTENSION}")), console)?;
-        std::fs::write(output.join(format!("{stem}.{REGISTER_EXTENSION}")), replies)?;
+        std::fs::write(
+            output.join(format!("{stem}.{REGISTER_EXTENSION}")),
+            &replies,
+        )?;
         println!(
             "vendor boot {boot}: report and {} registers captured",
             registers.len()
@@ -268,12 +312,28 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             &port,
         )?;
         journal(&root, &arguments.production_image, &production, &port)?;
-        production_boot(
+        let answered = vendor::registers(&replies)?;
+        let readable: Vec<usize> = registers
+            .iter()
+            .enumerate()
+            .filter(|(_, register)| answered.contains_key(&register.address))
+            .map(|(index, _)| index)
+            .collect();
+        let production_replies = production_boot(
             &lab,
             &output.join(format!("{PRODUCTION_PREFIX}{boot:02}.bin")),
             &output.join(format!("session-production-{boot:02}")),
+            &registers,
+            &readable,
         )?;
-        println!("production boot {boot}: retained calibration captured");
+        std::fs::write(
+            output.join(format!("{PRODUCTION_PREFIX}{boot:02}.{REGISTER_EXTENSION}")),
+            production_replies,
+        )?;
+        println!(
+            "production boot {boot}: retained calibration and {} registers captured",
+            readable.len()
+        );
     }
 
     let record = Capture {
@@ -287,4 +347,19 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     bytes.push(b'\n');
     std::fs::write(output.join(RECORD), bytes)?;
     Ok(std::process::ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readable_indices_group_into_reply_windows() {
+        let indices: Vec<usize> = (0..20).chain([30, 31]).collect();
+        let windows: Vec<_> = windows(&indices)
+            .iter()
+            .map(|w| (w.first, w.count))
+            .collect();
+        assert_eq!(windows, [(0, 16), (16, 4), (30, 2)]);
+    }
 }

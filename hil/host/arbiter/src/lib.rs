@@ -16,6 +16,7 @@
 
 mod board;
 mod budget;
+pub mod control;
 mod devices;
 mod grant;
 mod history;
@@ -32,6 +33,7 @@ pub use board::{BoardEvent, BoardEventKind};
 pub use budget::{
     BRIEF_BUDGET, BudgetSource, DEFAULT_BUDGET, MAX_SHORT_BUDGET, format_duration, parse_duration,
 };
+pub use control::{BootMode, Control, ResetControl};
 pub use devices::{
     AttachedPort, Device, attached_ports, board_mac, device_label, normalize_mac, port_mac,
 };

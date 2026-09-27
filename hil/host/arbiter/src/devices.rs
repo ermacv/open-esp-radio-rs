@@ -17,6 +17,9 @@ pub struct Device {
     pub mac: String,
     pub chip: Option<String>,
     pub name: Option<String>,
+    /// How the stand resets or powers the board out of band.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<crate::Control>,
 }
 
 impl Device {
@@ -160,6 +163,9 @@ impl Arbiter {
                     *field = value;
                 }
             }
+            if update.control.is_some() && (overwrite || device.control.is_none()) {
+                device.control = update.control;
+            }
             name_by_chip(&mut registry.devices);
             let device = registry.devices[index].clone();
             registry.devices.sort_by(|a, b| a.mac.cmp(&b.mac));
@@ -279,6 +285,7 @@ mod tests {
             mac: "38:44:BE:AA:25:64".into(),
             chip: None,
             name: Some("esp32c5".into()),
+            control: None,
         }];
         assert_eq!(board_mac(&devices, "esp32c5").unwrap(), "38:44:BE:AA:25:64");
         // A chip names its only registered board, never one of several.
@@ -286,6 +293,7 @@ mod tests {
             mac: mac.into(),
             chip: Some("esp32h2".into()),
             name: name.map(Into::into),
+            control: None,
         };
         let one = [chip_only(None, "AA:AA:AA:AA:AA:01")];
         assert_eq!(board_mac(&one, "esp32h2").unwrap(), "AA:AA:AA:AA:AA:01");
@@ -312,6 +320,7 @@ mod tests {
                     mac: mac.into(),
                     chip: Some(chip.into()),
                     name: None,
+                    control: None,
                 })
                 .unwrap()
         };
@@ -324,6 +333,7 @@ mod tests {
                 mac: "30:ED:A0:F3:F6:D0".into(),
                 chip: Some("esp32s31".into()),
                 name: Some("bench-dut".into()),
+                control: None,
             })
             .unwrap();
         assert_eq!(
@@ -348,7 +358,7 @@ mod tests {
             .register_device(Device {
                 mac: "30:ed:a0:f3:f6:d0".into(),
                 chip: Some("esp32s31".into()),
-                name: None,
+                ..Device::default()
             })
             .unwrap();
         let device = arbiter
@@ -356,6 +366,7 @@ mod tests {
                 mac: "30:ED:A0:F3:F6:D0".into(),
                 chip: Some("other".into()),
                 name: Some("esp32s31".into()),
+                ..Device::default()
             })
             .unwrap();
         assert_eq!(device.chip.as_deref(), Some("esp32s31"));
@@ -364,12 +375,32 @@ mod tests {
             .set_device(Device {
                 mac: "30:ED:A0:F3:F6:D0".into(),
                 chip: Some("esp32c5".into()),
-                name: None,
+                ..Device::default()
             })
             .unwrap();
         let devices = arbiter.devices().unwrap();
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].chip.as_deref(), Some("esp32c5"));
         assert_eq!(devices[0].name.as_deref(), Some("esp32s31"));
+        // A control path is kept when a later update names none.
+        let control: crate::Control = serde_json::from_str(
+            r#"{"reset":{"via":"uart-rts-dtr","serial":"5B90165754","en":"rts","boot":"dtr"}}"#,
+        )
+        .unwrap();
+        arbiter
+            .set_device(Device {
+                mac: "30:ED:A0:F3:F6:D0".into(),
+                control: Some(control.clone()),
+                ..Device::default()
+            })
+            .unwrap();
+        arbiter
+            .register_device(Device {
+                mac: "30:ED:A0:F3:F6:D0".into(),
+                chip: Some("esp32s31".into()),
+                ..Device::default()
+            })
+            .unwrap();
+        assert_eq!(arbiter.devices().unwrap()[0].control, Some(control));
     }
 }

@@ -331,7 +331,7 @@ pub fn record_board(port: &Path, kind: oer_hil_arbiter::BoardEventKind) {
             arbiter.register_device(oer_hil_arbiter::Device {
                 mac: mac.clone(),
                 chip: Some(String::from("esp32s31")),
-                name: None,
+                ..oer_hil_arbiter::Device::default()
             })?;
         }
         arbiter.record_board(device, kind)

@@ -266,7 +266,7 @@ mod tests {
         let device = |mac: &str, chip: &str| oer_hil_arbiter::Device {
             mac: mac.into(),
             chip: Some(chip.into()),
-            name: None,
+            ..oer_hil_arbiter::Device::default()
         };
         let port = |port: &str, mac: &str| oer_hil_arbiter::AttachedPort {
             port: port.into(),

@@ -201,6 +201,7 @@ mod tests {
             mac: "38:44:BE:AA:25:64".into(),
             chip: Some("esp32c5".into()),
             name: None,
+            control: None,
         }];
         assert_eq!(
             device_label(Some("38:44:BE:AA:25:64"), &devices),

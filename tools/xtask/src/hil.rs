@@ -834,13 +834,32 @@ fn devices(
     }
     #[derive(clap::Subcommand)]
     enum DevicesCommand {
-        /// Register or change a board's chip and name.
+        /// Register or change a board's chip, name and reset path.
         Set {
             mac: String,
             #[arg(long)]
             chip: Option<String>,
             #[arg(long)]
             name: Option<String>,
+            /// USB serial number of a USB-to-UART bridge whose modem lines
+            /// drive the chip's EN and BOOT; needs `--en` and `--boot`.
+            #[arg(long, value_name = "USB_SERIAL", requires_all = ["en", "boot"])]
+            reset_uart: Option<String>,
+            /// The bridge line that pulls EN low.
+            #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
+            en: Option<oer_hil_arbiter::control::Line>,
+            /// The bridge line that pulls the boot strap low.
+            #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
+            boot: Option<oer_hil_arbiter::control::Line>,
+        },
+        /// Reset a board through its registered reset path under a lease of
+        /// that board, and print the reset reason its ROM reports.
+        Reset {
+            #[arg(value_name = "NAME|MAC")]
+            board: String,
+            /// Hold the boot strap low: the ROM waits for a download.
+            #[arg(long)]
+            download: bool,
         },
         /// Take a board out of service: until `release`, only this owner
         /// (`--owner`, else the checkout) may claim it. Leases already held
@@ -860,9 +879,72 @@ fn devices(
     let cli = DevicesCli::try_parse_from(args)?;
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     match cli.command {
-        Some(DevicesCommand::Set { mac, chip, name }) => {
-            let device = arbiter.set_device(oer_hil_arbiter::Device { mac, chip, name })?;
+        Some(DevicesCommand::Set {
+            mac,
+            chip,
+            name,
+            reset_uart,
+            en,
+            boot,
+        }) => {
+            let control = match (reset_uart, en, boot) {
+                (Some(serial), Some(en), Some(boot)) => Some(oer_hil_arbiter::Control {
+                    reset: Some(oer_hil_arbiter::ResetControl {
+                        via: oer_hil_arbiter::control::ResetVia::UartRtsDtr,
+                        serial,
+                        en,
+                        boot,
+                    }),
+                    power: None,
+                }),
+                _ => None,
+            };
+            let device = arbiter.set_device(oer_hil_arbiter::Device {
+                mac,
+                chip,
+                name,
+                control,
+            })?;
             println!("{} {}", device.mac, device.label());
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
+        Some(DevicesCommand::Reset { board, download }) => {
+            let devices = arbiter.devices()?;
+            let mac = oer_hil_arbiter::board_mac(&devices, &board)?;
+            let reset = devices
+                .iter()
+                .find(|device| device.mac == mac)
+                .and_then(|device| device.control.as_ref()?.reset.clone())
+                .ok_or_else(|| {
+                    format!("board `{board}` has no reset path; see `cargo hil devices set --reset-uart`")
+                })?;
+            let request = oer_hil_arbiter::Request {
+                owner: options.owner(ctx),
+                work: format!(
+                    "devices reset {board}{}",
+                    if download { " --download" } else { "" }
+                ),
+                budget: options.budget,
+                short: options.short,
+                scenarios: Vec::new(),
+                claims: vec![oer_hil_arbiter::Claim::board(&mac)],
+            };
+            let _grant = arbiter.acquire(&request)?;
+            let mode = if download {
+                oer_hil_arbiter::BootMode::Download
+            } else {
+                oer_hil_arbiter::BootMode::Normal
+            };
+            let banner = reset.reset(mode)?;
+            match oer_hil_arbiter::control::reset_line(&banner) {
+                Some(line) => println!("{board} ({mac}) reset: {line}"),
+                None => {
+                    return Err(format!(
+                        "{board} ({mac}) printed no ROM reset line after the reset: {banner:?}"
+                    )
+                    .into());
+                }
+            }
             return Ok(std::process::ExitCode::SUCCESS);
         }
         Some(DevicesCommand::Maintenance { board, reason }) => {
@@ -1174,8 +1256,8 @@ mod tests {
         use oer_hil_arbiter::{AIR, Claim, Mode};
         let devices = [oer_hil_arbiter::Device {
             mac: "38:44:BE:AA:25:64".into(),
-            chip: None,
             name: Some("esp32c5".into()),
+            ..oer_hil_arbiter::Device::default()
         }];
         assert_eq!(
             lease_claims(&[], None, true, &devices).unwrap(),

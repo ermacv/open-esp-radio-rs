@@ -239,9 +239,23 @@ registered name, its MAC, or its chip when it is the only registered board of
 that chip selects it; a chip with several registered boards is refused with
 their names.
 
+A board may also have a reset path that does not depend on its USB
+Serial/JTAG port: a DevKit's USB-to-UART bridge whose modem lines drive the
+chip's EN and BOOT pins. `cargo hil devices set MAC --reset-uart USB_SERIAL
+--en rts --boot dtr` records it, with the lines named explicitly, in the
+registry's `control.reset`; `control.power` is reserved for a switchable hub
+port. Both are absent unless registered. `cargo hil devices reset BOARD`
+resets the chip through EN under a lease of the board, as its RST button does,
+and prints the reset reason and boot mode the ROM reports on the bridge;
+`--download` holds the boot strap low so the ROM waits for a download, and is
+never implied. The bridge port is the stand's: a terminal that opens it with
+its default modem lines resets the chip.
+
 ```console
 cargo hil devices                     # boards: label, port, last firmware
 cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --name esp32c5
+cargo hil devices set 38:44:BE:AA:25:64 --reset-uart 5B90165754 --en rts --boot dtr
+cargo hil devices reset esp32c5       # rst:0x1 (POWERON),boot:0x18 (SPI_FAST_FLASH_BOOT)
 cargo hil lease --board esp32c5 --flashed ieee802154-peer --application build/peer.bin \
     --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \
     --chip esp32c5 -- idf.py -p /dev/ttyACM1 flash

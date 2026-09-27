@@ -2209,6 +2209,7 @@ dependencies = [
  "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
+ "oer-esp32s31-pac",
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
 ]

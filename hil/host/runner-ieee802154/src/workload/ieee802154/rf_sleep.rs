@@ -131,6 +131,7 @@ fn session<L: PeerLink>(
                 background_maintenance: false,
                 enhanced_ack: false,
                 rf_policy: Ieee802154SessionRfPolicy::CloseWhenAsleep,
+                wifi_coexistence: false,
             },
             START_TIMEOUT,
         )?,

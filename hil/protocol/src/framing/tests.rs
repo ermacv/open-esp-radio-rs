@@ -1574,6 +1574,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         background_maintenance: true,
         enhanced_ack: true,
         rf_policy: crate::Ieee802154SessionRfPolicy::CloseWhenAsleep,
+        wifi_coexistence: true,
     };
     assert!(config.validate());
     assert!(
@@ -1649,6 +1650,10 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
                 closes: u16::MAX,
                 opens: u16::MAX,
                 failed: true,
+            },
+            coexistence: crate::Ieee802154SessionCoexistence {
+                enabled: true,
+                disable_failed: true,
             },
         }),
         Event::Ieee802154SessionPhyMaintained(crate::Ieee802154SessionPhyMaintenance::Tracked),

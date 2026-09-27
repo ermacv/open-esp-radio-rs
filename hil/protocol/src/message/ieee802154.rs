@@ -477,6 +477,19 @@ pub struct Ieee802154SessionConfig {
     /// Whether RF closes while the radio sleeps; closing needs a session
     /// without background maintenance.
     pub rf_policy: Ieee802154SessionRfPolicy,
+    /// Take part in coexistence with Wi-Fi for the session, as a Thread
+    /// border router does (`esp_coex_wifi_i154_enable`), with the
+    /// coexistence schedule running.
+    pub wifi_coexistence: bool,
+}
+
+/// Coexistence of one session with Wi-Fi.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionCoexistence {
+    /// The session took part in coexistence.
+    pub enabled: bool,
+    /// Leaving coexistence at the stop failed.
+    pub disable_failed: bool,
 }
 
 /// Whether the session's client closes RF while its radio sleeps.
@@ -654,4 +667,6 @@ pub struct Ieee802154SessionStopEvidence {
     pub maintenance: Ieee802154SessionMaintenanceCounts,
     /// RF closes and opens; all zero while RF stays open.
     pub rf: Ieee802154SessionRfCounts,
+    /// Coexistence with Wi-Fi; all false without it.
+    pub coexistence: Ieee802154SessionCoexistence,
 }

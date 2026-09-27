@@ -178,3 +178,19 @@ fn only_an_unacknowledged_transmit_passes_the_foreign_check() {
     evidence.outcome = Ieee802154AirTxOutcome::ChannelBusy;
     assert!(check_device_unacknowledged(&evidence, 0x73).is_err());
 }
+
+/// Coexistence must be taken part in exactly when requested and left
+/// cleanly.
+#[test]
+fn coexistence_matches_the_request_and_is_left_cleanly() {
+    use oer_hil_protocol::Ieee802154SessionCoexistence;
+    let evidence = |enabled, disable_failed| Ieee802154SessionCoexistence {
+        enabled,
+        disable_failed,
+    };
+    super::validate_coexistence(evidence(true, false), true).unwrap();
+    super::validate_coexistence(evidence(false, false), false).unwrap();
+    assert!(super::validate_coexistence(evidence(false, false), true).is_err());
+    assert!(super::validate_coexistence(evidence(true, false), false).is_err());
+    assert!(super::validate_coexistence(evidence(true, true), true).is_err());
+}

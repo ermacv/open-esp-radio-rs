@@ -135,6 +135,7 @@ fn session(capture: &SerialCapture, config: &Config) -> Result<Ieee802154Session
                 background_maintenance: true,
                 enhanced_ack: false,
                 rf_policy: Ieee802154SessionRfPolicy::AlwaysOn,
+                wifi_coexistence: false,
             },
             START_TIMEOUT,
         )?,

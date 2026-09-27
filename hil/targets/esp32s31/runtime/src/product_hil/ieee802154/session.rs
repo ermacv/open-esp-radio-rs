@@ -28,8 +28,8 @@ use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{
     Event as HilEvent, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirTxOutcome,
-    Ieee802154SessionAck, Ieee802154SessionConfig, Ieee802154SessionFrame,
-    Ieee802154SessionMaintenanceCounts, Ieee802154SessionMaintenancePolicy,
+    Ieee802154SessionAck, Ieee802154SessionCoexistence, Ieee802154SessionConfig,
+    Ieee802154SessionFrame, Ieee802154SessionMaintenanceCounts, Ieee802154SessionMaintenancePolicy,
     Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
     Ieee802154SessionRfCounts, Ieee802154SessionRfPolicy, Ieee802154SessionStopEvidence,
@@ -461,40 +461,46 @@ pub(in crate::product_hil) async fn run_session(
             Err(result) => result,
         }
     };
+    // Coexistence with Wi-Fi, as a Thread border router enters it.
+    let mut coexistence = Ieee802154SessionCoexistence::default();
+    if config.wifi_coexistence && started == Ieee802154SessionResult::Done {
+        system.enable_wifi_coexistence(&client.radio).await;
+        coexistence.enabled = true;
+    }
     publish_event_reliably(0, request_id, HilEvent::Ieee802154SessionStarted(started)).await;
 
-    let counts = Cell::new(Ieee802154SessionMaintenanceCounts::default());
-    let stop_request = if config.background_maintenance {
-        let stop = Signal::<CriticalSectionRawMutex, ()>::new();
-        let maintenance = async {
-            let maintained = match config.maintenance_policy {
-                // The domain's own periodic loop, as the vendor timer runs it.
-                Ieee802154SessionMaintenancePolicy::Vendor => {
-                    track_until(&client.radio, stop.wait(), &counts).await
-                }
-                Ieee802154SessionMaintenancePolicy::Quiesced => system
-                    .maintain_phy_until(&client.radio, stop.wait(), |outcome| {
-                        counts.set(count(counts.get(), outcome))
-                    })
-                    .await
-                    .is_ok(),
-            };
-            if !maintained {
-                let mut failed = counts.get();
-                failed.failed = true;
-                counts.set(failed);
-            }
-        };
-        let commands = async {
-            let request = core::pin::pin!(serve(&mut session, None)).await;
-            stop.signal(());
-            request
-        };
-        let ((), request) = core::pin::pin!(join(maintenance, commands)).await;
-        request
-    } else {
-        core::pin::pin!(serve(&mut session, Some((&mut system, &client.radio)),)).await
+    // The coexistence schedule runs beside the session while it takes part.
+    let schedule_stop = Signal::<CriticalSectionRawMutex, ()>::new();
+    let schedule = async {
+        if coexistence.enabled {
+            client
+                .radio
+                .run_coex_schedule_until(schedule_stop.wait())
+                .await;
+        }
     };
+    let counts = Cell::new(Ieee802154SessionMaintenanceCounts::default());
+    let serving = async {
+        let served = core::pin::pin!(serve_session(
+            &mut session,
+            &mut system,
+            &client,
+            config,
+            &counts
+        ));
+        let stop_request = served.await;
+        schedule_stop.signal(());
+        stop_request
+    };
+    let ((), stop_request) = core::pin::pin!(join(schedule, serving)).await;
+    if coexistence.enabled
+        && system
+            .disable_wifi_coexistence(&client.radio)
+            .await
+            .is_err()
+    {
+        coexistence.disable_failed = true;
+    }
 
     let id = session.id();
     let _ = session.submit(RadioCommand::Sleep { id });
@@ -515,7 +521,50 @@ pub(in crate::product_hil) async fn run_session(
             result: stopped,
             maintenance: counts.get(),
             rf: session.rf,
+            coexistence,
         }),
     )
     .await;
+}
+
+/// Serve the session's commands, with background maintenance beside them
+/// when configured, until the host stops it; returns the stop request.
+async fn serve_session(
+    session: &mut Session,
+    system: &mut Ieee802154System,
+    client: &Client,
+    config: Ieee802154SessionConfig,
+    counts: &Cell<Ieee802154SessionMaintenanceCounts>,
+) -> u32 {
+    if config.background_maintenance {
+        let stop = Signal::<CriticalSectionRawMutex, ()>::new();
+        let maintenance = async {
+            let maintained = match config.maintenance_policy {
+                // The domain's own periodic loop, as the vendor timer runs it.
+                Ieee802154SessionMaintenancePolicy::Vendor => {
+                    track_until(&client.radio, stop.wait(), counts).await
+                }
+                Ieee802154SessionMaintenancePolicy::Quiesced => system
+                    .maintain_phy_until(&client.radio, stop.wait(), |outcome| {
+                        counts.set(count(counts.get(), outcome))
+                    })
+                    .await
+                    .is_ok(),
+            };
+            if !maintained {
+                let mut failed = counts.get();
+                failed.failed = true;
+                counts.set(failed);
+            }
+        };
+        let commands = async {
+            let request = core::pin::pin!(serve(session, None)).await;
+            stop.signal(());
+            request
+        };
+        let ((), request) = core::pin::pin!(join(maintenance, commands)).await;
+        request
+    } else {
+        core::pin::pin!(serve(session, Some((system, &client.radio)))).await
+    }
 }

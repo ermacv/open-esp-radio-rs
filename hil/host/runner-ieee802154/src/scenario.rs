@@ -69,6 +69,10 @@ pub struct PeerExchange {
     pub channel: u8,
     /// Frames per direction.
     pub frames: u8,
+    /// Run the exchange with the device taking part in coexistence with
+    /// Wi-Fi and the coexistence schedule running.
+    #[serde(default)]
+    pub wifi_coexistence: bool,
 }
 
 /// The single-device on-air check.
@@ -201,6 +205,7 @@ impl Ieee802154Scenario {
                     boots: exchange.boots,
                     channel: exchange.channel,
                     frames: exchange.frames,
+                    wifi_coexistence: exchange.wifi_coexistence,
                 },
                 output,
                 context,

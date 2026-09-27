@@ -25,8 +25,8 @@ use std::{fs, path::Path, time::Duration};
 
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
-    Ieee802154AirTxOutcome, Ieee802154SessionConfig, Ieee802154SessionFrame,
-    Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
+    Ieee802154AirTxOutcome, Ieee802154SessionCoexistence, Ieee802154SessionConfig,
+    Ieee802154SessionFrame, Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
     Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionRfPolicy,
     Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
@@ -73,6 +73,27 @@ pub struct Config {
     pub boots: u8,
     pub channel: u8,
     pub frames: u8,
+    /// Take part in coexistence with Wi-Fi for the session.
+    pub wifi_coexistence: bool,
+}
+
+/// The session took part in coexistence exactly when asked, and left it
+/// cleanly.
+pub(crate) fn validate_coexistence(
+    coexistence: Ieee802154SessionCoexistence,
+    requested: bool,
+) -> Result<()> {
+    if coexistence.enabled != requested {
+        return Err(format!(
+            "coexistence with Wi-Fi was {}, requested {requested}",
+            coexistence.enabled
+        )
+        .into());
+    }
+    if coexistence.disable_failed {
+        return Err("leaving coexistence with Wi-Fi failed".into());
+    }
+    Ok(())
 }
 
 /// A data frame with PAN ID compression and short addresses.
@@ -237,6 +258,7 @@ fn exchange<L: PeerLink>(
                 background_maintenance: false,
                 enhanced_ack: true,
                 rf_policy: Ieee802154SessionRfPolicy::AlwaysOn,
+                wifi_coexistence: config.wifi_coexistence,
             },
             START_TIMEOUT,
         )?,
@@ -333,10 +355,9 @@ fn exchange<L: PeerLink>(
     check_peer_acknowledged(peer.next_event(PEER_EVENT_TIMEOUT)?, 0x61, false)?;
     check_device_received(&capture.collect_ieee802154_session()?, &[frame])?;
 
-    expect_session(
-        "stop",
-        capture.stop_ieee802154_session(COMMAND_TIMEOUT)?.result,
-    )?;
+    let stopped = capture.stop_ieee802154_session(COMMAND_TIMEOUT)?;
+    expect_session("stop", stopped.result)?;
+    validate_coexistence(stopped.coexistence, config.wifi_coexistence)?;
     peer.sleep()?;
     Ok(BootReport {
         boot,

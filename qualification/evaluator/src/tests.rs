@@ -93,6 +93,7 @@ runs = "missing-runs"
             output_directory: None,
             capability: None,
             details: false,
+            hil_target: None,
         })
     }
 }

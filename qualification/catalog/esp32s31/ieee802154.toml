@@ -410,9 +410,9 @@ scope-and-limitations = "Unslotted CSMA/CA as ESP-IDF's OpenThread SubMac runs i
 id = "ieee802154-cca-and-channel-access-active-scan"
 section = "ieee802154-cca-and-channel-access"
 title = "Active Scan"
-status = "absent"
+status = "host-only"
 level = "composed-product"
-scope-and-limitations = "No beacon-request and response-collection MAC procedure exists. Raw ED is a separate operation."
+scope-and-limitations = "The upper MAC owns the beacon-request and beacon-collection procedure, as with ESP-IDF, whose IEEE 802.15.4 driver has no scan: OpenThread's Mac runs it over the radio's transmit, receive and channel switching, and the repository's openthread fork exposes it as `OpenThread::scan` (`otLinkActiveScan`). The radio itself only serves energy scans. Active scan is not exercised by a host test or on air."
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-rx"

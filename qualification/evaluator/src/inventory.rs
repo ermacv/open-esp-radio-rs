@@ -959,7 +959,7 @@ scope-and-limitations = "No composition"
         let output = root.join("target/qualification/catalog/test-ieee802154-render");
         let rendered = render_domain(&catalog, &output, &root).unwrap();
         assert!(rendered.contains("## Domain: `ieee802154`"));
-        assert!(rendered.contains("| ieee802154 | HOST-ONLY | 3 |"));
+        assert!(rendered.contains("| ieee802154 | HOST-ONLY | 4 |"));
         assert!(
             rendered
                 .contains("Displayed rows: 45. Unique source facts: 45. Explicit projections: 2.")

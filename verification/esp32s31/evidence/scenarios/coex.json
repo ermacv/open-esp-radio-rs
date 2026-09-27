@@ -1,12 +1,12 @@
 {
-  "schema": 7,
+  "schema": 8,
   "command": "vendor-scenario",
   "target": "esp32s31",
   "scenario": "coex",
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "549ca4128dcc79a0c1282156f3705626855a22a0713fd655622ede036324991a"
+    "input-2": "591580aac4808379c3102b6781c5c9ffd5165ac7cc7964a330daac5f4db68cd5"
   },
   "sources": [
     {
@@ -111,7 +111,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/radio",
-      "sha256": "31e230a1b6035c27251f1fd517d69688327362e12bd42289b46367c0351f1bce"
+      "sha256": "839fc6cece33c287f216bf3dc99f47ba7f3ede898e9b7365a22315c752e8f034"
     },
     {
       "path": "crates/runtime/ieee80211",
@@ -163,7 +163,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "3ff9a9d9e2d29e8cef2cf7d05ac439156bc7563bbea0da0ef073115c5f05aa1a"
+      "sha256": "fd88d51f407019dcd43faf6fc487dfd88136fc77b84975d8db674f01648147ca"
     },
     {
       "path": "verification/harness/codegen",
@@ -175,7 +175,7 @@
     },
     {
       "path": "verification/schema",
-      "sha256": "da8d21fef553e0749263e2fb6ad17598cc50f1fba1ded4211ba2f16b11caaae0"
+      "sha256": "554c247bda8dcb3126f56e2bda1855d97291378b76c5fad851e303a322963ebf"
     }
   ],
   "entries": [

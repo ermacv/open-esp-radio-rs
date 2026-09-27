@@ -1,0 +1,298 @@
+{
+  "schema": 8,
+  "command": "vendor-scenario",
+  "target": "esp32s31",
+  "scenario": "ieee802154-host",
+  "inputs": {
+    "esp-idf/components/esp_coex/include/esp_coex_i154.h": "4989f8d5a99300cf75419d099d735e38fb27be3f083bb79e7abe8a5af0d34f3e",
+    "esp-idf/components/esp_hal_ieee802154/esp32s31/ieee802154_periph.c": "56246b6b482752e0d217e2391acb4869ae02cd18068c5ee3b361a4b7ae110995",
+    "esp-idf/components/esp_hal_ieee802154/esp32s31/include/hal/ieee802154_ll.h": "a66a3562ff6ef62ffa6dda90bc08e97f0d4509bcf3817cdc57795fd97daeaa30",
+    "esp-idf/components/esp_hal_ieee802154/include/hal/ieee802154_common_ll.h": "ba4ce294b402df311f25c4d0ce9cb33449e3eb41993aff94a25df5a66142d471",
+    "esp-idf/components/esp_hal_ieee802154/include/hal/ieee802154_periph.h": "603e619ed574592ec6196ea68b4af35c1afa15ebd08050691c7f63d67a0896e0",
+    "esp-idf/components/ieee802154/driver/esp_ieee802154_ack.c": "525e1ac8b3e5bad9bfb74b7e786d72e23fd83405e3c09fbc85b8c2cb387b8a1c",
+    "esp-idf/components/ieee802154/driver/esp_ieee802154_dev.c": "9aaccfa2832cb89bfdfd98086a984269e621400a272b02926c4e088d16222830",
+    "esp-idf/components/ieee802154/driver/esp_ieee802154_event.c": "c62a7bc108dce00e4b907c9521ad4de0c49080d6f6f5b091481f5c2f4af94063",
+    "esp-idf/components/ieee802154/driver/esp_ieee802154_frame.c": "af84dc5dcc04d1ee20fd2f686ebc7220793791c7eb50bfd41107727a58d2df3d",
+    "esp-idf/components/ieee802154/driver/esp_ieee802154_pib.c": "4bc94779b0c29fdfc77dcdf0c6d3d66fad5d02324aa951d9f19877bc62532cf4",
+    "esp-idf/components/ieee802154/driver/esp_ieee802154_sec.c": "7f5cae45d08ec496b78fd18cfa788be8557ba91d40eb6fe77b42967961bbdc19",
+    "esp-idf/components/ieee802154/driver/esp_ieee802154_timer.c": "66a2b68bb718d8fa878cbf28488af810ecb902288fde26dc7a0e5b32dcbd1326",
+    "esp-idf/components/ieee802154/driver/esp_ieee802154_util.c": "e1a012d5f359e2445128977e82a304ba94c100c2994729e062e26586596df38a",
+    "esp-idf/components/ieee802154/esp_ieee802154.c": "a83716d9944d4ffba1998cc64ebb635a605b60fc77c74ae6070e83a1c617f1bc",
+    "esp-idf/components/ieee802154/esp_ieee802154_multipan.c": "4a82ff4a9b1eac7158ecc3c06e800ea1a844c6b2f87ff773fcd55c3cf9552aa3",
+    "esp-idf/components/ieee802154/include/esp_ieee802154.h": "244f330affef9e4d4383275c678bfb2a0a5027725ffa8ebf1266897db2ca1e59",
+    "esp-idf/components/ieee802154/include/esp_ieee802154_multipan.h": "4c040a3b38769a2e697f65f21b04ea84d93f3de9048be27977b8e61b55777146",
+    "esp-idf/components/ieee802154/include/esp_ieee802154_types.h": "5206f935bfaee354562e7ab87d499a196db251aa52f1d1bd9051bb32b4957424",
+    "esp-idf/components/ieee802154/private_include/esp_ieee802154_ack.h": "977df90ca0c0db4f2148c66d8956c49bdfd7418e7a33925b6495144be6db197d",
+    "esp-idf/components/ieee802154/private_include/esp_ieee802154_dev.h": "afdb884e6dc78f19c9d72adedfc1ea7fdbbdebb86d1e7aaa80bb89e62a74bfd3",
+    "esp-idf/components/ieee802154/private_include/esp_ieee802154_event.h": "7cb1e76c74bd417e3c5ce5842bbe243c4045ac26104d0c7b1ec8175fe8eb9d07",
+    "esp-idf/components/ieee802154/private_include/esp_ieee802154_frame.h": "c4d326c59bd71a43db2de265ab3886064faf95ee018a541fc2deb0bc5609d1e1",
+    "esp-idf/components/ieee802154/private_include/esp_ieee802154_pib.h": "cdad2d0fa07babe25f0174d69d551ca7acb6bd250ff9614961d0bff55638d835",
+    "esp-idf/components/ieee802154/private_include/esp_ieee802154_sec.h": "b4e8dee38a3b67082fdffffc09cdcaed3f15a3af578231915231946dce8cd3b9",
+    "esp-idf/components/ieee802154/private_include/esp_ieee802154_timer.h": "e5ab8062c0c4b9195bd597a79a6aabb692fdb686a9599a034db36a46d8f89bd6",
+    "esp-idf/components/ieee802154/private_include/esp_ieee802154_util.h": "4ca86544b16248e1d66b85cc84df8ac37bde50727189b3b242513aab22e19017",
+    "esp-idf/components/soc/esp32s31/include/soc/interrupts.h": "1a4f155b87090376b1a40ac62e19de344c7f10dc53d9b4451b66d545e9e4717d",
+    "esp-idf/components/soc/esp32s31/include/soc/periph_defs.h": "4e0b93faf5d62efcd0e4e9303298af066f7d62acd42a6fbe3b546683248e947e",
+    "esp-idf/components/soc/esp32s31/include/soc/soc.h": "b19cf9e6916f1416b8385160c6de277ff64f8cd80e9cb22d44833d9f9654e92b",
+    "esp-idf/components/soc/esp32s31/include/soc/soc_caps.h": "002387dadb652c01af2fd606d90131a67eef24dbe74234a5ae6b0bb0d32ab1e4",
+    "esp-idf/components/soc/esp32s31/register/soc/ieee802154_reg.h": "fd3f944ac97634605083031f96c0f942af26a81a9e9a3123281c59e5719f9d9c",
+    "esp-idf/components/soc/esp32s31/register/soc/ieee802154_struct.h": "da13c2bc78cd6ef35a4e54ddddf11ce48fda967746193f1a0ad03578a5881752",
+    "esp-idf/components/soc/esp32s31/register/soc/reg_base.h": "24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d"
+  },
+  "sources": [
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee802154",
+      "sha256": "1bb99f2c203cff6240caa9bf636634c3ff9b4c5b9d0bca533696a463e583b7e6"
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal",
+      "sha256": "4ebb430cb5c9909150febe5abd28d4efd85a9ac2608746e12dd4528e77c3f858"
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac",
+      "sha256": "8e41e6dabd97ce0df4cbf29e140629ba37f6a666127273066130bd01a5a1bd36"
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw",
+      "sha256": "a77ecc62f3f6d4fedb1919d4adbd922aabbffd4b6c219f31218e82625f932b0d"
+    },
+    {
+      "path": "crates/memory",
+      "sha256": "7a365308d70124337653db5cf1d44cd33af8e46524fac4ce72facbf58c0ba2ce"
+    },
+    {
+      "path": "crates/protocols/ieee802154",
+      "sha256": "3458d7c72a98e52a2ae9ff8340b13287695f5ec216f5bbdc9baf170c052112cb"
+    },
+    {
+      "path": "verification/esp32s31/host/ieee802154",
+      "sha256": "48f2c1cb8cf707918e7575eca6d1ce9694bf56cb1f24db33e6b69fb2d0c48116"
+    },
+    {
+      "path": "verification/schema",
+      "sha256": "554c247bda8dcb3126f56e2bda1855d97291378b76c5fad851e303a322963ebf"
+    }
+  ],
+  "entries": [
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "enable",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-without-ack",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-with-ack",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-with-cca-busy",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "receive-with-auto-ack",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "receive-crc-error-restarts",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "energy-detect",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "cca-busy",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-ack-timer-expires",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-ack-abort-timeout",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "receive-with-enhanced-ack",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "receive-with-secured-enhanced-ack",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "receive-2015-without-enhanced-ack",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-during-ack-fails",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-stops-receive",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-restarts-transmit",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "full-receive-ring-uses-the-stub",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "energy-detect-abort",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-at",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "receive-at-window-closes",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "receive-at-window-closes-mid-frame",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "configure-identity",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "transmit-with-security",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    },
+    {
+      "suite": "ieee802154-host",
+      "source": "esp-idf",
+      "symbol": "sleep-after-receive",
+      "production": "oer_esp32s31_ieee802154::engine",
+      "verdict": "match",
+      "cases": 1,
+      "reviews": []
+    }
+  ],
+  "untriaged": [],
+  "functions": [],
+  "unobserved": [],
+  "observed": [],
+  "unprojected": []
+}

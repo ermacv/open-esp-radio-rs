@@ -227,6 +227,8 @@ fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
 #[derive(Debug)]
 pub struct Pinned {
     pub id: String,
+    /// The artifact's source id.
+    pub source: String,
     pub path: PathBuf,
     /// Built locally rather than fetched from a vendor source.
     pub local: bool,
@@ -262,6 +264,7 @@ pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
         }
         pinned.push(Pinned {
             id: artifact.id,
+            source: artifact.source,
             path,
             local,
         });

@@ -249,7 +249,7 @@ pub(crate) fn native_shard(
                 verdict: scenario_evidence::MATCH.into(),
                 cases: 1,
                 reviews: vec!["ab".repeat(32)],
-                coverage: scenario_evidence::Coverage {
+                coverage: Some(scenario_evidence::Coverage {
                     blocks: scenario_evidence::Count {
                         reached: 1,
                         total: 1,
@@ -261,19 +261,19 @@ pub(crate) fn native_shard(
                     open: 0,
                     excluded: 0,
                     untriaged: 0,
-                },
-                observation: scenario_evidence::Observation {
+                }),
+                observation: Some(scenario_evidence::Observation {
                     executed: 1,
                     observed: 1,
                     reviewed: 0,
                     untriaged: 0,
-                },
-                state: scenario_evidence::State {
+                }),
+                state: Some(scenario_evidence::State {
                     written: 1,
                     compared: 1,
                     reviewed: 0,
                     untriaged: 0,
-                },
+                }),
             })
             .collect(),
         untriaged: vec![],
@@ -501,13 +501,23 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
         index.validate("test-radio").is_err()
     };
     // More reached than exist.
-    assert!(rejected(&|i| i.entries[0].coverage.blocks.reached = 2));
+    assert!(rejected(&|i| i.entries[0]
+        .coverage
+        .as_mut()
+        .unwrap()
+        .blocks
+        .reached = 2));
     // An uncovered block neither excluded nor untriaged.
-    assert!(rejected(&|i| i.entries[0].coverage.blocks.total = 2));
+    assert!(rejected(&|i| i.entries[0]
+        .coverage
+        .as_mut()
+        .unwrap()
+        .blocks
+        .total = 2));
     // A claim's untriaged location another claim covers is not listed.
     let mut covered = evidence.clone();
-    covered.entries[0].coverage.blocks.total = 2;
-    covered.entries[0].coverage.untriaged = 1;
+    covered.entries[0].coverage.as_mut().unwrap().blocks.total = 2;
+    covered.entries[0].coverage.as_mut().unwrap().untriaged = 1;
     covered.validate("test-radio").unwrap();
     let location = |offset| scenario_evidence::Location {
         function: "set_channel".into(),
@@ -515,18 +525,22 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
         kind: scenario_evidence::LocationKind::Block,
     };
     let mut listed = evidence.clone();
-    listed.entries[0].coverage.blocks.total = 2;
-    listed.entries[0].coverage.untriaged = 1;
+    listed.entries[0].coverage.as_mut().unwrap().blocks.total = 2;
+    listed.entries[0].coverage.as_mut().unwrap().untriaged = 1;
     listed.untriaged = vec![location(4)];
     listed.validate("test-radio").unwrap();
     // Listed locations are ascending and unique.
     listed.untriaged = vec![location(4), location(4)];
     assert!(listed.validate("test-radio").is_err());
     // An open transfer site must be excluded or untriaged like a block.
-    assert!(rejected(&|i| i.entries[0].coverage.open = 1));
+    assert!(rejected(&|i| i.entries[0]
+        .coverage
+        .as_mut()
+        .unwrap()
+        .open = 1));
     let mut open = evidence.clone();
-    open.entries[0].coverage.open = 1;
-    open.entries[0].coverage.untriaged = 1;
+    open.entries[0].coverage.as_mut().unwrap().open = 1;
+    open.entries[0].coverage.as_mut().unwrap().untriaged = 1;
     open.untriaged = vec![scenario_evidence::Location {
         function: "set_channel".into(),
         offset: 8,
@@ -541,7 +555,7 @@ fn native_index_state_must_account_for_every_written_byte() {
     let evidence = native_shard(&fixture.0, "radio", &[("radio", "archive", "set_channel")]);
     // A written byte neither compared, reviewed nor untriaged.
     let mut index = evidence.clone();
-    index.entries[0].state.written = 2;
+    index.entries[0].state.as_mut().unwrap().written = 2;
     assert!(index.validate("test-radio").is_err());
     let range = |offset, length| scenario_evidence::StateRange {
         symbol: "phy_param".into(),
@@ -549,8 +563,8 @@ fn native_index_state_must_account_for_every_written_byte() {
         length,
     };
     let mut listed = evidence.clone();
-    listed.entries[0].state.written = 2;
-    listed.entries[0].state.untriaged = 1;
+    listed.entries[0].state.as_mut().unwrap().written = 2;
+    listed.entries[0].state.as_mut().unwrap().untriaged = 1;
     listed.unprojected = vec![range(0x16, 1), range(0x11e, 1)];
     listed.validate("test-radio").unwrap();
     // Listed ranges are nonempty, ascending and coalesced.
@@ -574,14 +588,18 @@ fn native_index_observation_must_account_for_every_executed_line() {
         index.validate("test-radio").is_err()
     };
     // An executed line neither observed, reviewed nor untriaged.
-    assert!(rejected(&|i| i.entries[0].observation.executed = 2));
+    assert!(rejected(&|i| i.entries[0]
+        .observation
+        .as_mut()
+        .unwrap()
+        .executed = 2));
     let line = |line| scenario_evidence::SourceLine {
         path: "production/src/lib.rs".into(),
         line,
     };
     let mut listed = evidence.clone();
-    listed.entries[0].observation.executed = 2;
-    listed.entries[0].observation.untriaged = 1;
+    listed.entries[0].observation.as_mut().unwrap().executed = 2;
+    listed.entries[0].observation.as_mut().unwrap().untriaged = 1;
     listed.unobserved = vec![line(3)];
     listed.validate("test-radio").unwrap();
     // Listed lines are relative, ascending and unique.
@@ -592,4 +610,17 @@ fn native_index_observation_must_account_for_every_executed_line() {
         line: 3,
     }];
     assert!(listed.validate("test-radio").is_err());
+}
+
+#[test]
+fn source_compiled_entries_carry_no_blobray_metrics() {
+    let fixture = fixture_root("stand");
+    let mut shard = native_shard(&fixture.0, "stand", &[("stand", "esp-idf", "transmit")]);
+    let entry = &mut shard.entries[0];
+    (entry.coverage, entry.observation, entry.state) = (None, None, None);
+    shard.validate("test-radio").unwrap();
+    let text = serde_json::to_string(&shard).unwrap();
+    assert!(!text.contains("\"coverage\""));
+    let reloaded: scenario_evidence::Index = serde_json::from_str(&text).unwrap();
+    assert_eq!(reloaded, shard);
 }

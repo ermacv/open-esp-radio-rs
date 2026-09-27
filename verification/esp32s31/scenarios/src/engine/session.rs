@@ -997,9 +997,9 @@ impl Session {
             verdict: evidence_index::MATCH.into(),
             cases,
             reviews: reviews.into_iter().collect(),
-            coverage,
-            observation,
-            state,
+            coverage: Some(coverage),
+            observation: Some(observation),
+            state: Some(state),
         })
     }
 

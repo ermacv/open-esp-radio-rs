@@ -20,7 +20,7 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Shard format.
-pub const SCHEMA: u32 = 7;
+pub const SCHEMA: u32 = 8;
 /// Producer command recorded in every shard.
 pub const COMMAND: &str = "vendor-scenario";
 /// Extension of a shard file; its stem is the scenario name.
@@ -185,9 +185,15 @@ pub struct Entry {
     /// name one run's imported revision, so unchanged sources reproduce them.
     /// The contracts are typed values reviewed through git.
     pub reviews: Vec<String>,
-    pub coverage: Coverage,
-    pub observation: Observation,
-    pub state: State,
+    /// Vendor coverage, production observation and vendor state of the
+    /// comparisons, which Blobray measures; a stand that compiles vendor
+    /// source does not measure them and leaves them out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<Coverage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observation: Option<Observation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<State>,
 }
 
 /// SHA-256 over every file below `relative`, excluding `target` and hidden
@@ -282,13 +288,13 @@ impl Index {
                 )
                 .into());
             }
-            let c = &entry.coverage;
-            if c.blocks.reached > c.blocks.total
-                || c.directions.reached > c.directions.total
-                || c.excluded + c.untriaged
-                    != (c.blocks.total - c.blocks.reached)
-                        + (c.directions.total - c.directions.reached)
-                        + c.open
+            if let Some(c) = &entry.coverage
+                && (c.blocks.reached > c.blocks.total
+                    || c.directions.reached > c.directions.total
+                    || c.excluded + c.untriaged
+                        != (c.blocks.total - c.blocks.reached)
+                            + (c.directions.total - c.directions.reached)
+                            + c.open)
             {
                 return Err(format!(
                     "entry {} {} has inconsistent coverage",
@@ -296,16 +302,18 @@ impl Index {
                 )
                 .into());
             }
-            let o = &entry.observation;
-            if o.observed + o.reviewed + o.untriaged != o.executed {
+            if let Some(o) = &entry.observation
+                && o.observed + o.reviewed + o.untriaged != o.executed
+            {
                 return Err(format!(
                     "entry {} {} has inconsistent observation",
                     entry.source, entry.symbol
                 )
                 .into());
             }
-            let s = &entry.state;
-            if s.compared + s.reviewed + s.untriaged != s.written {
+            if let Some(s) = &entry.state
+                && s.compared + s.reviewed + s.untriaged != s.written
+            {
                 return Err(format!(
                     "entry {} {} has inconsistent state",
                     entry.source, entry.symbol

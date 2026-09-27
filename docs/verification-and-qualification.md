@@ -175,6 +175,13 @@ available: affected capabilities remain unqualified while status and HIL
 planning still work. An unreadable, malformed or inconsistent existing shard,
 or a file in the directory that is not a shard, remains an error.
 
+The IEEE 802.15.4 host stand
+([`verification/esp32s31/host/ieee802154`](../verification/esp32s31/host/ieee802154/README.md))
+writes the `ieee802154-host` shard of the same schema: one MATCH entry per
+stand scenario comparing the compiled public ESP-IDF driver with the
+production engine, over the pinned `esp-idf` sources. Its entries carry no
+Blobray coverage, observation or state counts.
+
 `cargo xtask evidence` rewrites every stale shard, or the shards of the
 scenarios it names. Git merges shards as binary files, so a conflicting merge
 keeps one side intact instead of inserting markers; the task then regenerates

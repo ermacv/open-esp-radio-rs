@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "63a7e2dbff3fcdac8f524f15b114d28ea14898b70371347cf83d71acf2ae5deb",
+    "input-2": "e4bdbd2ca671614223f858182c58ea53acc35d8afb7b20a413af48ddd3a7af11",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "input-5": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
@@ -16,11 +16,11 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth",
-      "sha256": "f72c261cadc29958b099cdc2de78f5bfb8324f135e0ee8e37f66e4c038d56182"
+      "sha256": "7c3d9fa8616f6dff8471affa705136fe8a298211dc6120469bdd06bd44452299"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory",
-      "sha256": "929f1267d37102f990750de7f075e2a3d420ef58154764b6bcead043ea1f46f3"
+      "sha256": "78bdcf87f3ecfc02db2f6309dca9185514498377bbf6562faa8a56257f232bc4"
     },
     {
       "path": "crates/hardware/esp32s31/hal",
@@ -28,7 +28,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "e6216432f1a0d6643eec7796652f581f17276ab943e4cce0182322c1a1eb6f4f"
+      "sha256": "8e41e6dabd97ce0df4cbf29e140629ba37f6a666127273066130bd01a5a1bd36"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
@@ -116,7 +116,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "4df6a8e94752721d8b1875260f4186bcc9ab14c8017081a773fcf6e72ffa944f"
+        "b2177cfee4a2c864a1e04def5f5b3f8b9037ef3191d3163ce4b6c330d758d69e"
       ],
       "coverage": {
         "blocks": {
@@ -152,7 +152,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "c121d2ff23208e12b5d0f615892a9e7a299ca4c63c06ff27c46f3736691c680c"
+        "b3e0aa0489f785c7de436e128cf81412803c3acc8ea4d691cc0c2c01ede6612e"
       ],
       "coverage": {
         "blocks": {
@@ -188,7 +188,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "f5232a1c4213547cee2e14cb59c1407b39884b6ecdcdb6ffabe4298c5740e57a"
+        "e62dcdf21934aa616e751462b56ff1bce226bddefb390cf561afab444c55c54a"
       ],
       "coverage": {
         "blocks": {
@@ -224,7 +224,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "1c8a08b4a79dde20157ef54fb2a948c6ea0bdf4b62326e015d3ad7c25b426779"
+        "bec6ac7dbf41229f41cf89c9a34ef6fde142786f477f52a078b88b7f85f62494"
       ],
       "coverage": {
         "blocks": {
@@ -260,7 +260,7 @@
       "verdict": "match",
       "cases": 12,
       "reviews": [
-        "9a0c76ab91723cbd2a3fa59834d117f0de519a2b69c42e01a47a9439cccb78c7"
+        "316cf0e3371f2040fa24f146cd903e284ec594afa03fbff8195cee91b58c6d97"
       ],
       "coverage": {
         "blocks": {
@@ -296,7 +296,7 @@
       "verdict": "match",
       "cases": 288,
       "reviews": [
-        "46a2a5f902cf432090d690ad2d6201a929d22b1de170c7dc23d943fab9b22e43"
+        "2b878f9f0ea01cb554e685b646d5dbfd9abf4c6eb1a700e7f1791743de26659d"
       ],
       "coverage": {
         "blocks": {
@@ -332,7 +332,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "d01804a2bd93ceca4d681926b6806b27be6f1d512bab091f66d963f94076f092"
+        "edf4928fb506e18c956e07655e990a5f2c445fe7d57e2b309c87fbce0428aed2"
       ],
       "coverage": {
         "blocks": {
@@ -368,7 +368,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "c9a6a901987c6ec111d015fbe9f6872869954d5dc3c8ad82927b5f5d989b52a8"
+        "7d05ed8c6255d90a59f3f9fb01171717c55afee3c8183553b7e17ad077046be6"
       ],
       "coverage": {
         "blocks": {
@@ -1524,7 +1524,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/memory_lists.rs",
-      "line": 237
+      "line": 238
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -4358,11 +4358,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/memory_lists.rs",
-      "line": 182
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/memory_lists.rs",
-      "line": 187
+      "line": 183
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/memory_lists.rs",
@@ -4370,7 +4366,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/memory_lists.rs",
-      "line": 193
+      "line": 189
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/memory_lists.rs",
+      "line": 194
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",

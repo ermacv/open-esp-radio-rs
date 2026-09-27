@@ -110,11 +110,28 @@ pub enum PhyI2cAccessError {
 #[must_use = "dropping the analog I2C owner loses its register authority"]
 pub struct PhyI2cRegisters {
     peripherals: svd::peripheral_ownership::PhyI2cPeripherals,
+    /// The host map was rewritten for a command that has not started yet
+    /// because its host was busy. The map image is the same for every block,
+    /// so a retry only polls the host, as the vendor leaves do.
+    host_map_pending: bool,
 }
 
 impl PhyI2cRegisters {
     pub(crate) const fn new(peripherals: svd::peripheral_ownership::PhyI2cPeripherals) -> Self {
-        Self { peripherals }
+        Self {
+            peripherals,
+            host_map_pending: false,
+        }
+    }
+
+    /// Rewrite the host map once per command and return the block's host.
+    fn select_host_once(&mut self, block: PhyI2cBlock) -> PhyI2cHost {
+        if self.host_map_pending {
+            block.host()
+        } else {
+            self.host_map_pending = true;
+            self.configure_and_select_host(block)
+        }
     }
 
     fn master(&self) -> &svd::I2cAnaMst {
@@ -137,6 +154,7 @@ impl PhyI2cRegisters {
     }
 
     fn publish(&mut self, host: PhyI2cHost, address: PhyI2cAddress, value: u8, write: bool) {
+        self.host_map_pending = false;
         let code = address.block.command_code();
         match host {
             PhyI2cHost::Host0 => svd::zero_based_field_write::publish_phy_i2c_host0_command(
@@ -163,10 +181,10 @@ impl PhyI2cRegisters {
     ///
     /// # Errors
     ///
-    /// The block's host is busy; the host map has been rewritten but no
-    /// command was published.
+    /// The block's host is busy; the host map has been rewritten once for
+    /// this command, and a retry only polls the host.
     pub fn try_start_read(&mut self, address: PhyI2cAddress) -> Result<(), PhyI2cAccessError> {
-        let host = self.configure_and_select_host(address.block);
+        let host = self.select_host_once(address.block);
         if self.is_busy(host) {
             return Err(PhyI2cAccessError::Busy);
         }
@@ -199,13 +217,14 @@ impl PhyI2cRegisters {
     ///
     /// # Errors
     ///
-    /// The block's host is busy; no command was published.
+    /// The block's host is busy; the host map has been rewritten once for
+    /// this command, and a retry only polls the host.
     pub fn try_start_write(
         &mut self,
         address: PhyI2cAddress,
         value: u8,
     ) -> Result<(), PhyI2cAccessError> {
-        let host = self.configure_and_select_host(address.block);
+        let host = self.select_host_once(address.block);
         if self.is_busy(host) {
             return Err(PhyI2cAccessError::Busy);
         }

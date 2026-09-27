@@ -91,14 +91,18 @@ fn field_mask(most: u32, least: u32) -> u32 {
 }
 
 /// An analog bank holding `value` in the one register a case addresses,
-/// whose ports first report `initial_busy` busy reads.
+/// whose addressed port first reports `initial_busy` busy reads.
 fn bank(block: u32, register: u32, value: u32, initial_busy: u32) -> Objects {
     Objects {
         devices: vec![analog_bank(
             "analog",
             "the addressed analog register; commands complete after one busy read",
             BUSY_READS,
-            [initial_busy; 2],
+            {
+                let mut ports = [IDLE; 2];
+                ports[host(block)] = initial_busy;
+                ports
+            },
             vec![CommandCell {
                 selector: selector(block, register),
                 initial: value,
@@ -119,16 +123,19 @@ fn sampled_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
     })
 }
 
-/// `(block, host, register, data)` over a cleared register on an idle
-/// port. A port still busy with an earlier command is not compared yet: the
-/// vendor re-polls the port, while production restarts the command and
-/// selects the host again.
+/// `(block, host, register, data, port state)` over a cleared register: the
+/// port is idle, or still busy with an earlier command, which a write waits
+/// for before it issues.
 fn written_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    let (busy, arguments) = words.split_last().expect("words and a port state");
     Ok(Objects {
-        vendor_words: words.to_vec(),
-        ..bank(words[0], words[2], 0, IDLE)
+        vendor_words: arguments.to_vec(),
+        ..bank(words[0], words[2], 0, *busy)
     })
 }
+
+/// Port states of a write: idle, and busy with an earlier command.
+const PORT_STATES: &[u32] = &[IDLE, BUSY_READS];
 
 /// Production polls a port for completion before it issues a read; the
 /// vendor issues at once.
@@ -206,7 +213,7 @@ fn expect_read(words: &[u32], observed: &Observed) -> std::result::Result<(), St
 }
 
 fn expect_write(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
-    let [block, _, register, data] = *words else {
+    let [block, _, register, data, _] = *words else {
         return Err("write words".into());
     };
     if observed
@@ -286,19 +293,22 @@ const LEAVES: &[Leaf] = &[
     ),
     expected(
         ruled(
-            objects(
-                leaf(
-                    "phy_chip_i2c_writeReg",
-                    "open_phy_i2c_trace_phy_chip_i2c_writeReg",
-                    &[
-                        ("block", Domain::Words(BLOCKS)),
-                        ("host_id", Domain::Words(HOSTS)),
-                        ("reg_add", Domain::Words(REGISTERS)),
-                        ("data", Domain::Words(BYTES)),
-                    ],
-                    false,
+            stated(
+                objects(
+                    leaf(
+                        "phy_chip_i2c_writeReg",
+                        "open_phy_i2c_trace_phy_chip_i2c_writeReg",
+                        &[
+                            ("block", Domain::Words(BLOCKS)),
+                            ("host_id", Domain::Words(HOSTS)),
+                            ("reg_add", Domain::Words(REGISTERS)),
+                            ("data", Domain::Words(BYTES)),
+                        ],
+                        false,
+                    ),
+                    written_abi,
                 ),
-                written_abi,
+                PORT_STATES,
             ),
             polling,
         ),

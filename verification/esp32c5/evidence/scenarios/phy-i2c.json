@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "dbf33c418c8d408d4005c849d12a1432deea82e2e5e57de3c8ddf914d104fffb",
     "input-1": "49693d745eb4b4e6e6c77be4f5213765d545d8c7a1d9742a8a619bf596c4e27a",
-    "input-2": "8828aa8315a341e233c02bb594b6e78cf241ca6a0207f005cacc4346113db224"
+    "input-2": "7e26ea35b5a74800f8d8490920f00f54353576c16d8714d07fbeb83fb2307da1"
   },
   "sources": [
     {
@@ -15,7 +15,7 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac",
-      "sha256": "ff3946719c094dda9f58547bfddb5ba7295d269d22c45c07e23ff89991b302eb"
+      "sha256": "0d65ab69c469b52388e2fdbf4f3f552e377b01fe841dd4b0289b5c8f558ea5c7"
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw",
@@ -83,7 +83,7 @@
     },
     {
       "path": "verification/esp32c5/scenarios",
-      "sha256": "54a52a7c867fb718645b8123cfbd2b6c16a3d27cc4ea8d894654bd04079bee4a"
+      "sha256": "89c9d65a1171b6819f928e8f396fe83f19f34ace3dd833cbffcc96803d8d52c4"
     },
     {
       "path": "verification/harness/codegen",
@@ -195,8 +195,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 26,
-        "observed": 26,
+        "executed": 28,
+        "observed": 28,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -213,7 +213,7 @@
       "symbol": "phy_chip_i2c_writeReg",
       "production": "open_phy_i2c_trace_phy_chip_i2c_writeReg",
       "verdict": "match",
-      "cases": 1080,
+      "cases": 2160,
       "reviews": [
         "80682c2047c57505bdc8f97a9efc4143e45af015451262bfc5e30049e400542a"
       ],
@@ -223,16 +223,16 @@
           "total": 12
         },
         "directions": {
-          "reached": 7,
+          "reached": 8,
           "total": 8
         },
         "open": 0,
         "excluded": 0,
-        "untriaged": 1
+        "untriaged": 0
       },
       "observation": {
-        "executed": 19,
-        "observed": 19,
+        "executed": 21,
+        "observed": 21,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -267,8 +267,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 26,
-        "observed": 26,
+        "executed": 28,
+        "observed": 28,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -299,12 +299,12 @@
           "total": 14
         },
         "open": 0,
-        "excluded": 2,
-        "untriaged": 1
+        "excluded": 3,
+        "untriaged": 0
       },
       "observation": {
-        "executed": 33,
-        "observed": 33,
+        "executed": 35,
+        "observed": 35,
         "reviewed": 0,
         "untriaged": 0
       },
@@ -316,18 +316,7 @@
       }
     }
   ],
-  "untriaged": [
-    {
-      "function": "phy_chip_i2c_writeReg",
-      "offset": 64,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_chip_i2c_writeReg.constprop.2",
-      "offset": 64,
-      "kind": "taken"
-    }
-  ],
+  "untriaged": [],
   "functions": [
     "phy_chip_i2c_readReg",
     "phy_chip_i2c_readReg_org",
@@ -436,55 +425,63 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 127
+      "line": 129
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 128
+      "line": 133
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 169
+      "line": 144
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 170
+      "line": 145
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 173
+      "line": 187
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 175
+      "line": 188
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 178
+      "line": 191
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 189
+      "line": 193
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 208
+      "line": 196
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 209
+      "line": 207
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 212
+      "line": 227
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 214
+      "line": 228
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 222
+      "line": 231
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 233
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 241
     }
   ],
   "unprojected": []

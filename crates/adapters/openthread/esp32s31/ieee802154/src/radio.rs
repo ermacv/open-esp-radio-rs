@@ -1,4 +1,4 @@
-//! `openthread::Radio` over the IEEE 802.15.4 runtime.
+//! `openthread_radio::Radio` over the IEEE 802.15.4 runtime.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::Deque;
@@ -12,7 +12,7 @@ use oer_ieee802154::{
     LinkMetrics, PendingTableHalf, RadioCommand, RadioState, RadioTimestamp, RequestId,
     ScheduledReceiveRequest, TimeSync, TxMode, TxRequest, TxSecurity,
 };
-use openthread::{
+use openthread_radio::{
     AckSecurity, Capabilities, Config, CslConfig, EnhAckProbingConfig, FrameCounterUpdate,
     MacCapabilities, MacKeys, PsduMeta, Radio, RadioCaps, RadioClock, RadioErrorKind, RadioRssi,
     SentAck, SrcMatchConfig, TxFrame,
@@ -519,7 +519,7 @@ where
     }
 
     fn clock(&self) -> RadioClock {
-        self.clock.unwrap_or(openthread::embassy_radio_clock)
+        self.clock.unwrap_or(openthread_radio::embassy_radio_clock)
     }
 
     fn rssi(&self) -> Option<RadioRssi> {
@@ -659,3 +659,6 @@ fn terminal_of(event: &Ieee802154RadioEvent) -> Option<RequestId> {
         Ieee802154RadioEvent::Received(_) => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

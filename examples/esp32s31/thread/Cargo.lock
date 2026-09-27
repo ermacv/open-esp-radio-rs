@@ -1503,7 +1503,7 @@ dependencies = [
  "oer-esp32s31-ieee802154-runtime",
  "oer-ieee802154",
  "oer-ieee802154-engine",
- "openthread",
+ "openthread-radio",
 ]
 
 [[package]]
@@ -1680,22 +1680,33 @@ dependencies = [
 [[package]]
 name = "openthread"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=2821c399272367f6eb708b0f90792fc65f60d1f3#2821c399272367f6eb708b0f90792fc65f60d1f3"
+source = "git+https://github.com/ermacv/openthread?rev=7bae20d812340dd1e987dd9a2ad92a879a9ed0da#7bae20d812340dd1e987dd9a2ad92a879a9ed0da"
 dependencies = [
  "bitflags 2.13.2",
  "embassy-futures",
  "embassy-sync 0.8.0",
  "embassy-time",
  "heapless 0.9.3",
+ "openthread-radio",
  "openthread-sys",
  "rand_core 0.10.1",
  "scopeguard",
 ]
 
 [[package]]
+name = "openthread-radio"
+version = "0.4.0"
+source = "git+https://github.com/ermacv/openthread?rev=7bae20d812340dd1e987dd9a2ad92a879a9ed0da#7bae20d812340dd1e987dd9a2ad92a879a9ed0da"
+dependencies = [
+ "bitflags 2.13.2",
+ "embassy-time",
+ "heapless 0.9.3",
+]
+
+[[package]]
 name = "openthread-sys"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=2821c399272367f6eb708b0f90792fc65f60d1f3#2821c399272367f6eb708b0f90792fc65f60d1f3"
+source = "git+https://github.com/ermacv/openthread?rev=7bae20d812340dd1e987dd9a2ad92a879a9ed0da#7bae20d812340dd1e987dd9a2ad92a879a9ed0da"
 dependencies = [
  "anyhow",
  "bindgen",

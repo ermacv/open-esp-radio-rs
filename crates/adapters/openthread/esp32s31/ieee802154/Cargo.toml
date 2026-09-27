@@ -14,17 +14,19 @@ oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-esp32s31-ieee802154-runtime = { path = "../../../../runtime/esp32s31/ieee802154" }
 oer-ieee802154-engine = { path = "../../../../hardware/ieee802154/engine" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
+# The fork's radio trait, without the OpenThread C library.
+openthread-radio = { git = "https://github.com/ermacv/openthread", rev = "7bae20d812340dd1e987dd9a2ad92a879a9ed0da", default-features = false }
 
-# OpenThread is built from source for the chip target only; host builds of
-# the workspace do not compile its C library.
-[target.'cfg(target_arch = "riscv32")'.dependencies]
-openthread = { git = "https://github.com/ermacv/openthread", rev = "2821c399272367f6eb708b0f90792fc65f60d1f3", default-features = false }
+[dev-dependencies]
+embassy-futures = "0.1.2"
+embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
+oer-esp32s31-ieee802154-runtime = { path = "../../../../runtime/esp32s31/ieee802154", features = ["model"] }
+oer-ieee802154-engine = { path = "../../../../hardware/ieee802154/engine", features = ["model"] }
 
 [lints]
 workspace = true
 
 [package.metadata.docs.rs]
-# The OpenThread radio exists only for the chip target; document it there alone.
 default-target = "riscv32imafc-unknown-none-elf"
 targets = []
 

@@ -5,10 +5,12 @@
 IEEE 802.15.4 runtime, so the OpenThread stack that crate binds can run on
 the composed client.
 
-It depends on the repository's fork of that crate,
+It depends on `openthread-radio`, the trait crate of the repository's fork
+of that crate,
 [`ermacv/openthread`](https://github.com/ermacv/openthread/tree/oer/radio-security)
 at a pinned revision on branch `oer/radio-security`, based on the 0.4.0
-release. The fork extends the trait with what OpenThread hands a radio that
+release; the fork's `openthread` crate at the same revision re-exports the
+trait for the application. The fork extends the trait with what OpenThread hands a radio that
 claims `OT_RADIO_CAPS_TRANSMIT_SEC` and reads back from it: the MAC keys and
 frame counter (`set_mac_keys`, `set_mac_frame_counter`), each frame's
 transmit information (`transmit_frame`: `mIsARetx`, `mIsSecurityProcessed`,
@@ -109,12 +111,18 @@ for its end.
 
 ## Build
 
-OpenThread is compiled from source for the chip target by `openthread-sys`,
-which needs system-installed CMake, Clang and libclang; host builds of the
-workspace do not compile it.
+The adapter needs no OpenThread C library: `openthread-radio` holds the
+trait alone, so the adapter builds and is tested on the host, where its tests
+drive the trait as OpenThread does over the runtime and the engine's register
+model. The application's `openthread` crate compiles OpenThread from source
+for the chip target through `openthread-sys`, which needs system-installed
+CMake, Clang and libclang; host builds of the workspace do not compile it.
 
 ## Limits
 
-The adapter is not qualified on air. The
+The HIL cell `ieee802154-thread-exchange` attaches an end device over the
+adapter to a network ESP-IDF's OpenThread leads and exchanges UDP both ways;
+CSL, time synchronization and secured enhanced ACKs are not exercised on air.
+The
 [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an
 OpenThread end device over it.

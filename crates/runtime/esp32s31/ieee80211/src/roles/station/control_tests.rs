@@ -495,6 +495,7 @@ fn make_tx<'a>(
                 station_address: STATION,
                 bssid: BSSID,
                 peer_qos: true,
+                management_protection: false,
                 exchange: MacTxPlan {
                     access_category: WmmAccessCategory::BestEffort,
                     initial_rate: oer_esp32s31_ieee80211_mac::tx::TxPhyRate::Legacy(
@@ -2080,4 +2081,123 @@ fn group_rekey_hardware_failure_restores_old_epoch_or_quarantines() {
         replay_rx.stop().unwrap();
         group.clear(&mut hardware);
     }
+}
+
+fn management_protected_control<'a>(
+    resources: &'a ConnectedControlResources<NoopRawMutex, 4>,
+    hardware: &mut Hardware,
+) -> (
+    crate::roles::station::control_mailbox::ConnectedControlPublisher<'a, NoopRawMutex, 4>,
+    ConnectedControl<'a, NoopRawMutex, 4>,
+) {
+    fn transaction_seed() -> u32 {
+        0x0102
+    }
+
+    let (publisher, receiver) = resources.split();
+    let mut control = ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    let (supplicant, _ptk) = established_supplicant();
+    let group = install_sta_group_ccmp(hardware, 1, &INITIAL_GTK).unwrap();
+    let group_material = StaGroupCcmpKeyMaterial::new(1, INITIAL_GTK).unwrap();
+    let replay = StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap();
+    let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
+    let (_rx, replay_control) = resource.start(replay).unwrap();
+    let management = oer_esp32s31_ieee80211_sta::connected::management_protection::StationManagementProtection::new(
+        [0x5a; 16],
+        &oer_ieee80211_rsn::frames::RsnIgtk::new(4, [0; 6], [0x77; 16]).unwrap(),
+    );
+    assert!(
+        control
+            .install_wpa2_security(
+                ConnectedWpa2Security::new(
+                    supplicant,
+                    group,
+                    group_material,
+                    replay_control,
+                    Some(management),
+                ),
+                transaction_seed,
+            )
+            .is_ok()
+    );
+    (publisher, control)
+}
+
+#[test]
+fn an_unanswered_sa_query_ends_the_association_after_1024_ms() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let (mut publisher, mut control) = management_protected_control(&resources, &mut hardware);
+
+    publisher.publish(ConnectedRxEvent::UnprotectedDisconnect(StaDisconnect {
+        kind: StaDisconnectKind::Deauthentication,
+        reason_code: 7,
+    }));
+    // The first Request, then one every 200 ms until the timeout.
+    let mut requests = 0;
+    loop {
+        embassy_futures::block_on(control.wait_ready(&mut tx));
+        match embassy_futures::block_on(control.service(&mut hardware, &mut tx)) {
+            Ok(DatapathControlProgress::TxPending) => {
+                requests += 1;
+                finish_tx(&mut hardware, &mut tx, 0);
+                assert_eq!(
+                    embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+                    Ok(DatapathControlProgress::More)
+                );
+            }
+            Ok(DatapathControlProgress::Exit(reason)) => {
+                assert_eq!(
+                    reason,
+                    oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::SaQueryTimeout
+                );
+                break;
+            }
+            other => panic!("unexpected control progress {other:?}"),
+        }
+    }
+    assert_eq!(requests, 6);
+    assert_eq!(tx.now_micros(), 1_024_000);
+}
+
+#[test]
+fn a_forged_protected_frame_is_counted_and_keeps_the_association() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let (mut publisher, mut control) = management_protected_control(&resources, &mut hardware);
+
+    let mut forged = [0_u8; 50];
+    forged[..2].copy_from_slice(&[0xc0, 0x40]);
+    forged[4..10].copy_from_slice(&STATION);
+    forged[10..16].copy_from_slice(&BSSID);
+    forged[16..22].copy_from_slice(&BSSID);
+    forged[27] = 0x20;
+    publisher.publish(ConnectedRxEvent::ProtectedManagement {
+        frame: &forged,
+        group: false,
+    });
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::More)
+    );
+    assert_eq!(control.management_protection_drops().unverified, 1);
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::Idle)
+    );
 }

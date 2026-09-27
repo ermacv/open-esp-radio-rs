@@ -238,6 +238,7 @@ impl ConnectedStaPlan {
             ingress: self.config.receive.ingress,
             security: self.security,
             peer_qos: self.link.peer_qos,
+            management_protection: self.link.management_protection,
         }
     }
 
@@ -246,6 +247,7 @@ impl ConnectedStaPlan {
             station_address: self.link.station_address,
             bssid: self.link.bssid,
             peer_qos: self.link.peer_qos,
+            management_protection: self.link.management_protection,
             exchange: MacTxPlan {
                 access_category: WmmAccessCategory::BestEffort,
                 initial_rate: self.data_tx_rate,

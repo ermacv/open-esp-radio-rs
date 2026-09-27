@@ -69,13 +69,21 @@ impl<'a, H, T> StaPeerRadio<'a, H, T> {
 pub struct StaPeerStation {
     pub station_address: [u8; 6],
     pub association_phy: PhyMode,
+    /// The association request's RSN element negotiated management frame
+    /// protection.
+    pub management_protection: bool,
 }
 
 impl StaPeerStation {
-    pub const fn new(station_address: [u8; 6], association_phy: PhyMode) -> Self {
+    pub const fn new(
+        station_address: [u8; 6],
+        association_phy: PhyMode,
+        management_protection: bool,
+    ) -> Self {
         Self {
             station_address,
             association_phy,
+            management_protection,
         }
     }
 }
@@ -92,6 +100,8 @@ pub struct StaConnectedLink {
     /// station joined from; power management places its TBTT from it.
     pub beacon_timestamp_tsf: u64,
     pub peer_qos: bool,
+    /// The association protects its robust management frames.
+    pub management_protection: bool,
     pub association_phy: PhyMode,
     /// The selected HT channel width is allowed to use a 400 ns guard
     /// interval according to the AP's retained HT Capabilities IE.
@@ -235,6 +245,7 @@ impl StaPeerPort {
             beacon_interval_tu: prepared.access_point.beacon_interval_tu,
             beacon_timestamp_tsf: prepared.access_point.timestamp,
             peer_qos: plan.peer_qos,
+            management_protection: station.management_protection,
             association_phy: station.association_phy,
             peer_supports_ht_short_guard_interval: match station.association_phy {
                 PhyMode::Ht20 => prepared

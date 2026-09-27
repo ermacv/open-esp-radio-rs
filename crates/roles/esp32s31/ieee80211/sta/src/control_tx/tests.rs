@@ -391,6 +391,7 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
                 station_address: [2, 3, 4, 5, 6, 7],
                 bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
                 peer_qos: true,
+                management_protection: false,
                 exchange: MacTxPlan {
                     access_category: LegacyTxQueue::BestEffort.access_category(),
                     initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
@@ -455,6 +456,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
             station_address: [2, 3, 4, 5, 6, 7],
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
             peer_qos: true,
+            management_protection: false,
             exchange: MacTxPlan {
                 access_category: LegacyTxQueue::BestEffort.access_category(),
                 initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),

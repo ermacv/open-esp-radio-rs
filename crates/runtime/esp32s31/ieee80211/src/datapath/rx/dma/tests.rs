@@ -833,6 +833,7 @@ fn dispatcher_config() -> ConnectedRxConfig {
         },
         security: WifiSecurityMode::Wpa2Personal,
         peer_qos: true,
+        management_protection: false,
     }
 }
 

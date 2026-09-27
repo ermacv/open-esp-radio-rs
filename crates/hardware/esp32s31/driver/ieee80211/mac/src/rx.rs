@@ -1183,6 +1183,30 @@ pub fn extract_control(
 }
 
 /// Validates one completed chain, strips the four-byte FCS and copies one
+/// unfragmented, CCMP-protected management MPDU into caller-owned storage.
+///
+/// Hardware does not decrypt received management frames: under management
+/// frame protection the station opens them in software, as the vendor's
+/// `sta_recv_mgmt` does, so the copy keeps its CCMP header and MIC.
+pub fn extract_protected_management(
+    segments: &[RxSegment<'_>],
+    config: RxIngressConfig,
+    output: &mut [u8],
+) -> Result<RxManagementFrame, RxError> {
+    let frame = extract_mpdu(segments, config, output)?;
+    if frame.length < MLME_HEADER_SIZE {
+        return Err(RxError::Bounds);
+    }
+    if output[0] & 0x0f != 0 {
+        return Err(RxError::Ignored);
+    }
+    if output[1] & 0x40 == 0 || output[1] & 0x04 != 0 || output[22] & 0x0f != 0 {
+        return Err(RxError::Unsupported);
+    }
+    Ok(frame)
+}
+
+/// Validates one completed chain, strips the four-byte FCS and copies one
 /// unfragmented, unprotected management MPDU into caller-owned storage.
 pub fn extract_management(
     segments: &[RxSegment<'_>],

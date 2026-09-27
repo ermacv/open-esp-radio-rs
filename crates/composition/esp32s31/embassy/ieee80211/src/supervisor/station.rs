@@ -1780,15 +1780,18 @@ pub(crate) async fn run_connected<'state, 'security>(
         if radio_runner
             .services_mut()
             .control_mut()
-            .install_wpa2_security(ConnectedWpa2Security::new(
-                connected
-                    .take()
-                    .expect("installed WPA2 keys retain connected supplicant state"),
-                group,
-                group_material,
-                replay,
-                management,
-            ))
+            .install_wpa2_security(
+                ConnectedWpa2Security::new(
+                    connected
+                        .take()
+                        .expect("installed WPA2 keys retain connected supplicant state"),
+                    group,
+                    group_material,
+                    replay,
+                    management,
+                ),
+                super::tx_entropy,
+            )
             .is_err()
         {
             unreachable!("a fresh connected control owner has no WPA2 session");

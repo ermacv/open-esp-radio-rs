@@ -7,17 +7,31 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use embassy_futures::select::select6;
+use embassy_futures::select::{select, select6};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
+use oer_esp32s31_ieee80211_sta::connected::management_protection::ProtectedManagementFrame;
 use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
+use oer_ieee80211_mac::station::StaDisconnect;
 use oer_ieee80211_rsn::{OwnedEapolFrame, RsnInterface};
 
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 
 pub(super) use oer_esp32s31_ieee80211_sta::connected::security::ConnectedSecurityFrame;
+
+/// Robust management input of an association that protects its management
+/// frames. Both are unauthenticated until control opens the frame or an SA
+/// Query confirms the disconnect.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectedManagementInput {
+    Protected(ProtectedManagementFrame),
+    UnprotectedDisconnect(StaDisconnect),
+}
+
+/// Capacity of the robust management lane.
+const MANAGEMENT_CAPACITY: usize = 2;
 
 /// Explicit observer for profiles that intentionally ignore control-plane
 /// events. Production association/BlockAck state should supply a real sink.
@@ -50,6 +64,8 @@ fn scheduled_connected_control(event: ConnectedRxEvent<'_>) -> Option<ConnectedR
         event @ ConnectedRxControlEvent::PeerDisconnect(_) => Some(event),
         ConnectedRxControlEvent::Trigger { .. }
         | ConnectedRxControlEvent::Ndpa { .. }
+        | ConnectedRxControlEvent::UnprotectedDisconnect(_)
+        | ConnectedRxControlEvent::SaQuery(_)
         | ConnectedRxControlEvent::PowerSaveData(_) => None,
     }
 }
@@ -65,6 +81,8 @@ fn scheduled_he_observation(event: ConnectedRxEvent<'_>) -> Option<ConnectedRxCo
         | ConnectedRxControlEvent::BlockAck(_)
         | ConnectedRxControlEvent::IndividualTwt(_)
         | ConnectedRxControlEvent::PeerDisconnect(_)
+        | ConnectedRxControlEvent::UnprotectedDisconnect(_)
+        | ConnectedRxControlEvent::SaQuery(_)
         | ConnectedRxControlEvent::PowerSaveData(_) => None,
     }
 }
@@ -144,6 +162,11 @@ pub struct ConnectedControlResources<M: RawMutex, const CAPACITY: usize> {
     /// coalesces, as the next frame or timer carries the same decision.
     power_save_data: Channel<M, ConnectedRxControlEvent, POWER_SAVE_DATA_CAPACITY>,
     power_save_data_armed: AtomicBool,
+    /// Robust management frames control opens and unprotected disconnects
+    /// it confirms. They are peer input anyone can forge, so a full lane
+    /// drops rather than invalidating the ordered control stream.
+    management: Channel<M, ConnectedManagementInput, MANAGEMENT_CAPACITY>,
+    dropped_management: AtomicU32,
     overflowed: AtomicBool,
     dropped_he_observations: AtomicU32,
 }
@@ -158,6 +181,8 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
             unprotected_security: Channel::new(),
             power_save_data: Channel::new(),
             power_save_data_armed: AtomicBool::new(false),
+            management: Channel::new(),
+            dropped_management: AtomicU32::new(0),
             overflowed: AtomicBool::new(false),
             dropped_he_observations: AtomicU32::new(0),
         }
@@ -184,6 +209,8 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
             .power_save_data_armed
             .store(false, Ordering::Release);
         while resources.power_save_data.try_receive().is_ok() {}
+        while resources.management.try_receive().is_ok() {}
+        resources.dropped_management.store(0, Ordering::Release);
         resources
             .dropped_he_observations
             .store(0, Ordering::Release);
@@ -196,6 +223,8 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
                 unprotected_security: resources.unprotected_security.sender(),
                 power_save_data: resources.power_save_data.sender(),
                 power_save_data_armed: &resources.power_save_data_armed,
+                management: resources.management.sender(),
+                dropped_management: &resources.dropped_management,
                 overflowed: &resources.overflowed,
                 dropped_he_observations: &resources.dropped_he_observations,
             },
@@ -207,6 +236,8 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
                 unprotected_security: resources.unprotected_security.receiver(),
                 power_save_data: resources.power_save_data.receiver(),
                 power_save_data_armed: &resources.power_save_data_armed,
+                management: resources.management.receiver(),
+                dropped_management: &resources.dropped_management,
                 overflowed: &resources.overflowed,
                 dropped_he_observations: &resources.dropped_he_observations,
             },
@@ -231,6 +262,8 @@ pub struct ConnectedControlPublisher<'resources, M: RawMutex, const CAPACITY: us
     unprotected_security: Sender<'resources, M, ConnectedSecurityFrame, 1>,
     power_save_data: Sender<'resources, M, ConnectedRxControlEvent, POWER_SAVE_DATA_CAPACITY>,
     power_save_data_armed: &'resources AtomicBool,
+    management: Sender<'resources, M, ConnectedManagementInput, MANAGEMENT_CAPACITY>,
+    dropped_management: &'resources AtomicU32,
     overflowed: &'resources AtomicBool,
     dropped_he_observations: &'resources AtomicU32,
 }
@@ -267,6 +300,22 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
                     });
             if !matches!(result, Some(Ok(()))) {
                 self.overflowed.store(true, Ordering::Release);
+            }
+            return;
+        }
+        let management = match event {
+            ConnectedRxEvent::ProtectedManagement { frame, group } => Some(
+                ProtectedManagementFrame::try_copy(frame, group)
+                    .map(ConnectedManagementInput::Protected),
+            ),
+            ConnectedRxEvent::UnprotectedDisconnect(disconnect) => Some(Some(
+                ConnectedManagementInput::UnprotectedDisconnect(disconnect),
+            )),
+            _ => None,
+        };
+        if let Some(input) = management {
+            if input.is_none_or(|input| self.management.try_send(input).is_err()) {
+                self.dropped_management.fetch_add(1, Ordering::Relaxed);
             }
             return;
         }
@@ -307,6 +356,8 @@ pub struct ConnectedControlReceiver<'resources, M: RawMutex, const CAPACITY: usi
     unprotected_security: Receiver<'resources, M, ConnectedSecurityFrame, 1>,
     power_save_data: Receiver<'resources, M, ConnectedRxControlEvent, POWER_SAVE_DATA_CAPACITY>,
     power_save_data_armed: &'resources AtomicBool,
+    management: Receiver<'resources, M, ConnectedManagementInput, MANAGEMENT_CAPACITY>,
+    dropped_management: &'resources AtomicU32,
     overflowed: &'resources AtomicBool,
     dropped_he_observations: &'resources AtomicU32,
 }
@@ -333,6 +384,16 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
         }
     }
 
+    pub fn try_receive_management(&self) -> Option<ConnectedManagementInput> {
+        self.management.try_receive().ok()
+    }
+
+    /// Robust management input dropped because it did not fit its copy or
+    /// its lane was full.
+    pub fn dropped_management(&self) -> u32 {
+        self.dropped_management.load(Ordering::Acquire)
+    }
+
     pub fn try_receive_power_save_data(&self) -> Option<ConnectedRxControlEvent> {
         self.power_save_data.try_receive().ok()
     }
@@ -356,13 +417,16 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     }
 
     pub async fn ready(&self) {
-        select6(
-            self.terminal.ready_to_receive(),
-            self.security.ready_to_receive(),
-            self.unprotected_security.ready_to_receive(),
-            self.power_save_data.ready_to_receive(),
-            self.receiver.ready_to_receive(),
-            self.he_observation.ready_to_receive(),
+        select(
+            select6(
+                self.terminal.ready_to_receive(),
+                self.security.ready_to_receive(),
+                self.unprotected_security.ready_to_receive(),
+                self.power_save_data.ready_to_receive(),
+                self.receiver.ready_to_receive(),
+                self.he_observation.ready_to_receive(),
+            ),
+            self.management.ready_to_receive(),
         )
         .await;
     }
@@ -374,6 +438,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
             + self.power_save_data.len()
             + self.receiver.len()
             + self.he_observation.len()
+            + self.management.len()
     }
 
     pub fn is_empty(&self) -> bool {

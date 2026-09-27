@@ -31,10 +31,11 @@ use oer_ieee80211_mac::{
     channel::WifiChannel,
     extensions::espressif::esp_now::EspNowRandomValue,
     management::ProbeRequest,
+    management_protection::is_robust_action_category,
     security::WifiSecurityMode,
     station::{
-        StaActionFrame, StaDataFrame, StaProtectedDataFrame, StaProtectedEthernetFrame,
-        StaTxSequenceCounters, StationFrameError,
+        StaActionFrame, StaDataFrame, StaProtectedActionFrame, StaProtectedDataFrame,
+        StaProtectedEthernetFrame, StaTxSequenceCounters, StationFrameError,
     },
     station_power_save::{StaNullDataFrame, StaPowerManagement},
 };
@@ -58,6 +59,9 @@ pub struct SingleMpduTxConfig {
     pub station_address: [u8; 6],
     pub bssid: [u8; 6],
     pub peer_qos: bool,
+    /// The association protects its robust management frames, so robust
+    /// Action frames leave under the pairwise key.
+    pub management_protection: bool,
     /// Chip-independent exchange policy selected at the association handoff.
     pub exchange: MacTxPlan<TxPhyRate>,
 }
@@ -740,12 +744,15 @@ where
             .map_err(Into::into)
     }
 
-    /// Encode and publish one unprotected connected Action management frame.
+    /// Encode and publish one connected Action management frame.
     ///
-    /// The same pinned descriptor is shared with network data, so this method
-    /// fails while any prior transaction is active. The runner enforces that
-    /// control work is started only after the current network lease has lost
-    /// hardware ownership.
+    /// Under management frame protection a robust Action frame leaves
+    /// CCMP-protected under the pairwise key, as the vendor's
+    /// `ieee80211_crypto_encap` protects it; every other Action frame leaves
+    /// in plaintext. The same pinned descriptor is shared with network data,
+    /// so this method fails while any prior transaction is active. The runner
+    /// enforces that control work is started only after the current network
+    /// lease has lost hardware ownership.
     pub fn start_action<H: TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -755,17 +762,39 @@ where
         if self.ordinary.active() {
             return Err(SingleMpduTxError::Busy);
         }
-        let sequence_number = self.sequences.take_non_qos();
-        let frame_length = {
+        let protected = self.config.management_protection
+            && body
+                .first()
+                .is_some_and(|category| is_robust_action_category(*category));
+        let (frame_length, hardware_mic_length, hardware_key_selector) = if protected {
+            let ConnectedTxSecurity::Wpa2Personal(key) = &mut self.security else {
+                return Err(SingleMpduTxError::SecurityModeMismatch);
+            };
+            let ccmp_header = key.next_tx_ccmp_header()?;
+            let sequence_number = self.sequences.take_non_qos();
             let buffer = self.ordinary.buffer_mut()?;
-            StaActionFrame {
+            let frame_length = StaProtectedActionFrame {
+                source: self.config.station_address,
+                bssid: self.config.bssid,
+                sequence_number,
+                ccmp_header,
+                body,
+            }
+            .encode(&mut buffer[TX_METADATA_SIZE..])
+            .map_err(SingleMpduTxError::Encode)?;
+            (frame_length, TX_CCMP_MIC_SIZE, key.hardware_index())
+        } else {
+            let sequence_number = self.sequences.take_non_qos();
+            let buffer = self.ordinary.buffer_mut()?;
+            let frame_length = StaActionFrame {
                 source: self.config.station_address,
                 bssid: self.config.bssid,
                 sequence_number,
                 body,
             }
             .encode(&mut buffer[TX_METADATA_SIZE..])
-            .map_err(SingleMpduTxError::Encode)?
+            .map_err(SingleMpduTxError::Encode)?;
+            (frame_length, 0, 0)
         };
         self.ordinary
             .start(
@@ -781,8 +810,8 @@ where
                         publication_limit: self.config.exchange.publication_limit,
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
                     },
-                    hardware_mic_length: 0,
-                    hardware_key_selector: 0,
+                    hardware_mic_length,
+                    hardware_key_selector,
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: config.scheduler_priority,
                     packet_priority: config.packet_priority,

@@ -34,6 +34,7 @@ fn open_config() -> ConnectedRxConfig {
         },
         security: WifiSecurityMode::Open,
         peer_qos: false,
+        management_protection: false,
     }
 }
 

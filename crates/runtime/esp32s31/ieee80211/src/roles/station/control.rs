@@ -69,7 +69,7 @@ use crate::{
     roles::{
         concurrent::StaApRxBlockAck,
         station::{
-            control_mailbox::ConnectedControlReceiver,
+            control_mailbox::{ConnectedControlReceiver, ConnectedManagementInput},
             power::{StationPowerBinding, StationPowerLink},
         },
     },
@@ -134,12 +134,26 @@ pub struct ConnectedControl<'resources, M: RawMutex, const CAPACITY: usize> {
     deferred_control_event: Option<ConnectedRxControlEvent>,
     power: Option<&'resources StationPowerLink<M>>,
     hardware_beacon_monitor: Option<StationHardwareBeaconMonitorEpoch>,
+    unverified_management: u32,
+}
+
+/// Robust management input one association dropped.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConnectedManagementProtectionDrops {
+    /// Frames that did not open under the temporal key or verify under the
+    /// IGTK.
+    pub unverified: u32,
+    /// Frames too long to copy or arriving at a full lane.
+    pub mailbox: u32,
 }
 
 const fn control_event_requires_active(event: ConnectedRxControlEvent) -> bool {
     matches!(
         event,
-        ConnectedRxControlEvent::BlockAck(_) | ConnectedRxControlEvent::IndividualTwt(_)
+        ConnectedRxControlEvent::BlockAck(_)
+            | ConnectedRxControlEvent::IndividualTwt(_)
+            | ConnectedRxControlEvent::UnprotectedDisconnect(_)
+            | ConnectedRxControlEvent::SaQuery(_)
     )
 }
 
@@ -186,6 +200,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             deferred_control_event: None,
             power: None,
             hardware_beacon_monitor: None,
+            unverified_management: 0,
         }
     }
 
@@ -205,15 +220,23 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             deferred_control_event: None,
             power: None,
             hardware_beacon_monitor: None,
+            unverified_management: 0,
         }
     }
 
+    /// Install the association's WPA2 security. When it protects
+    /// management frames, `random` draws the first transaction identifier of
+    /// every SA Query procedure.
     pub fn install_wpa2_security(
         &mut self,
-        security: ConnectedWpa2Security,
+        mut security: ConnectedWpa2Security,
+        random: fn() -> u32,
     ) -> Result<(), ConnectedWpa2Security> {
         if self.security.is_some() {
             return Err(security);
+        }
+        if security.management_protection().is_some() {
+            self.core.enable_management_protection(random);
         }
         self.security = Some(security);
         Ok(())
@@ -457,6 +480,9 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         while self.receiver.try_receive_security().is_some() {
             discarded_events = discarded_events.saturating_add(1);
         }
+        while self.receiver.try_receive_management().is_some() {
+            discarded_events = discarded_events.saturating_add(1);
+        }
         if self.deferred_control_event.take().is_some() {
             discarded_events = discarded_events.saturating_add(1);
         }
@@ -585,6 +611,42 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         .await;
     }
 
+    /// Turn one robust management input into the control event it carries:
+    /// open or verify a protected frame under the association's keys, or
+    /// pass an unprotected disconnect on to the SA Query procedure.
+    fn open_management(
+        &mut self,
+        input: ConnectedManagementInput,
+    ) -> Option<ConnectedRxControlEvent> {
+        match input {
+            ConnectedManagementInput::UnprotectedDisconnect(disconnect) => {
+                Some(ConnectedRxControlEvent::UnprotectedDisconnect(disconnect))
+            }
+            ConnectedManagementInput::Protected(mut frame) => {
+                let protection = self
+                    .security
+                    .as_mut()
+                    .and_then(ConnectedWpa2Security::management_protection)?;
+                match protection.receive(&mut frame) {
+                    Ok(event) => event,
+                    Err(_) => {
+                        self.unverified_management = self.unverified_management.saturating_add(1);
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    /// Robust management frames that failed to open or verify, and robust
+    /// management input the mailbox dropped.
+    pub fn management_protection_drops(&self) -> ConnectedManagementProtectionDrops {
+        ConnectedManagementProtectionDrops {
+            unverified: self.unverified_management,
+            mailbox: self.receiver.dropped_management(),
+        }
+    }
+
     fn service_core_step<H, X>(
         &mut self,
         hardware: &mut H,
@@ -696,6 +758,24 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
                 ));
             };
             return Ok(security.process(hardware, tx, frame).await);
+        }
+        if (!holds_tx || self.deferred_control_event.is_none())
+            && let Some(input) = self.receiver.try_receive_management()
+        {
+            let Some(event) = self.open_management(input) else {
+                return Ok(DatapathControlProgress::More);
+            };
+            if holds_tx && control_event_requires_active(event) {
+                self.deferred_control_event = Some(event);
+                return self.service_core_step(hardware, tx, None, false, context);
+            }
+            return self.service_core_step(
+                hardware,
+                tx,
+                Some(event),
+                !self.receiver.is_empty(),
+                context,
+            );
         }
         let deferred = if holds_tx {
             None

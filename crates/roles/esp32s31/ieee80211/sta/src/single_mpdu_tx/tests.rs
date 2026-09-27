@@ -193,6 +193,7 @@ fn make_tx<'a>(
                 station_address: [2, 3, 4, 5, 6, 7],
                 bssid: BSSID,
                 peer_qos: true,
+                management_protection: false,
                 exchange: MacTxPlan {
                     access_category: LegacyTxQueue::BestEffort.access_category(),
                     initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
@@ -540,6 +541,70 @@ fn connected_action_uses_the_shared_slot_as_plaintext_voice_tx() {
         &[2, 3, 4, 5, 6, 7]
     );
     assert_eq!(&bytes[TX_METADATA_SIZE + 24..TX_METADATA_SIZE + 30], &body);
+}
+
+#[test]
+fn a_robust_action_leaves_protected_under_management_frame_protection() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    tx.config.management_protection = true;
+    let sa_query_response = [8, 1, 0x12, 0x34];
+
+    assert_eq!(
+        tx.start_action(
+            &mut hardware,
+            &sa_query_response,
+            ActionTxConfig::VENDOR_MANAGEMENT
+        ),
+        Ok(WifiTxProgress::Pending)
+    );
+    let (_, program) = hardware.legacy.expect("legacy queue image");
+    // Header, CCMP header, body, the hardware MIC and the FCS.
+    assert_eq!(program.signal(), 24 + 8 + 4 + 8 + 4);
+    hardware.completion = Some(completion(0));
+    assert_eq!(
+        tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
+            },
+        ),
+        Ok(WifiTxProgress::Complete)
+    );
+    let bytes = tx.ordinary.slot.as_mut().buffer_mut().unwrap();
+    assert_eq!(
+        &bytes[TX_METADATA_SIZE..TX_METADATA_SIZE + 2],
+        &[0xd0, 0x40]
+    );
+    // The CCMP header carries Extended IV.
+    assert_eq!(bytes[TX_METADATA_SIZE + 27] & 0x20, 0x20);
+    assert_eq!(
+        &bytes[TX_METADATA_SIZE + 32..TX_METADATA_SIZE + 36],
+        &sa_query_response
+    );
+}
+
+#[test]
+fn a_public_action_stays_plaintext_under_management_frame_protection() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    tx.config.management_protection = true;
+    // Category 4 (Public) is not robust.
+    let body = [4, 0, 0, 0];
+    assert_eq!(
+        tx.start_action(&mut hardware, &body, ActionTxConfig::VENDOR_MANAGEMENT),
+        Ok(WifiTxProgress::Pending)
+    );
+    let (_, program) = hardware.legacy.expect("legacy queue image");
+    assert_eq!(program.signal(), 24 + 4 + 4);
 }
 
 #[test]

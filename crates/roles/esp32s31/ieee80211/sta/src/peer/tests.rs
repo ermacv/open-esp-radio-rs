@@ -209,7 +209,7 @@ fn port_owns_scan_and_association_peer_programming() {
     let mut hardware = MockRadio::new(-95);
     let programmed = StaPeerPort::program(
         StaPeerRadio::new(&mut hardware, &mut transmit),
-        StaPeerStation::new([8, 9, 10, 11, 12, 13], PhyMode::He20),
+        StaPeerStation::new([8, 9, 10, 11, 12, 13], PhyMode::He20, false),
         &response,
         prepared,
     )
@@ -287,7 +287,7 @@ fn scan_mcs32_capability_reaches_the_connected_ht40_owner_without_tx_admission()
     let mut hardware = MockRadio::new(-95);
     let programmed = StaPeerPort::program(
         StaPeerRadio::new(&mut hardware, &mut transmit),
-        StaPeerStation::new([8, 9, 10, 11, 12, 13], PhyMode::Ht40),
+        StaPeerStation::new([8, 9, 10, 11, 12, 13], PhyMode::Ht40, false),
         &response,
         prepared,
     )

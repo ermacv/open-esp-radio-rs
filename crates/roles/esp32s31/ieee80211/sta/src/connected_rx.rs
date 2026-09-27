@@ -29,6 +29,7 @@ use oer_ieee80211_mac::{
         OpenDataDefragmenter, OpenDataFragmentError, OpenDataFragmentPreflight,
         OpenDataUnfragmentedAdmission, parse_ccmp_data_identity, parse_open_data_identity,
     },
+    management_protection::{SaQuery, is_robust_action_category},
     ndpa::{HeNdpa, HeNdpaError},
     security::WifiSecurityMode,
     station::{StaDisconnect, parse_sta_disconnect},
@@ -52,7 +53,7 @@ use oer_esp32s31_ieee80211_mac::{
     rx::ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
     rx::{
         PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
-        extract_control, extract_management,
+        extract_control, extract_management, extract_protected_management,
     },
     tx::ampdu::{BlockAckAction, parse_block_ack_action},
     tx::{HeTriggerScheduledRate, HeTriggerScheduledRateError},
@@ -115,6 +116,8 @@ pub struct ConnectedRxConfig {
     /// Peer-negotiated receive geometry. Open TX may deliberately remain
     /// non-QoS while an HT/WMM AP legitimately sends plaintext QoS Data.
     pub peer_qos: bool,
+    /// The association protects its robust management frames.
+    pub management_protection: bool,
 }
 
 /// Destination class observed before protected-data extraction.
@@ -1087,6 +1090,18 @@ pub enum ConnectedRxEvent<'frame> {
         payload: &'frame [u8],
     },
     PeerDisconnect(StaDisconnect),
+    /// Under management frame protection, an unprotected Deauthentication
+    /// or Disassociation for a class 2 or 3 frame (reason 6 or 7): the
+    /// station confirms its association with an SA Query before it believes
+    /// it.
+    UnprotectedDisconnect(StaDisconnect),
+    /// A robust management frame of an association that protects them:
+    /// CCMP-protected when individually addressed, carrying a Management MIC
+    /// element when `group`. The sink copies it for control to open.
+    ProtectedManagement {
+        frame: &'frame [u8],
+        group: bool,
+    },
     /// One admitted data frame of the access point while the station runs
     /// in power save. A fragmented Open MSDU reaches this edge only after
     /// complete reassembly.
@@ -1126,6 +1141,11 @@ pub enum ConnectedRxControlEvent {
     BlockAck(BlockAckAction),
     IndividualTwt(IndividualTwtAction),
     PeerDisconnect(StaDisconnect),
+    /// An unprotected disconnect of an association that protects its
+    /// management frames; control confirms it with an SA Query.
+    UnprotectedDisconnect(StaDisconnect),
+    /// An SA Query Action control opened from a protected frame.
+    SaQuery(SaQuery),
     PowerSaveData(PowerSaveData),
 }
 
@@ -1178,6 +1198,9 @@ impl ConnectedRxEvent<'_> {
             Self::PeerDisconnect(disconnect) => {
                 Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
             }
+            // Unauthenticated until control opens or confirms them; the
+            // sink copies these into their own coalescing lane.
+            Self::UnprotectedDisconnect(_) | Self::ProtectedManagement { .. } => None,
             Self::PowerSaveData(data) => Some(ConnectedRxControlEvent::PowerSaveData(data)),
             Self::Ethernet { .. } => None,
         }
@@ -1258,6 +1281,10 @@ pub enum ConnectedRxDispatch {
         peer: EspNowPeerId,
     },
     PeerDisconnect,
+    /// A robust management frame went to control to open or verify.
+    ProtectedManagement,
+    /// An unprotected disconnect went to control for an SA Query.
+    UnprotectedDisconnect,
     UnprotectedEapol,
     Data {
         ethernet_frames: u8,
@@ -1360,6 +1387,7 @@ impl ConnectedRxDispatcher {
             },
             security: WifiSecurityMode::Wpa2Personal,
             peer_qos: true,
+            management_protection: false,
         })
     }
 
@@ -1741,6 +1769,16 @@ impl ConnectedRxDispatcher {
                 });
                 ConnectedRxDispatch::Ndpa
             }
+            ACTION_FRAME_CONTROL
+                if self.config.management_protection && frame_control & PROTECTED != 0 =>
+            {
+                self.dispatch_protected_management(segment, protection, frame_control, mpdu, sink)
+            }
+            DISASSOCIATION_FRAME_CONTROL | DEAUTHENTICATION_FRAME_CONTROL
+                if self.config.management_protection && frame_control & PROTECTED != 0 =>
+            {
+                self.dispatch_protected_management(segment, protection, frame_control, mpdu, sink)
+            }
             ACTION_FRAME_CONTROL => {
                 let management = match extract_management(
                     core::slice::from_ref(&segment),
@@ -1752,6 +1790,13 @@ impl ConnectedRxDispatcher {
                 };
                 if management.length < 24 {
                     return ConnectedRxDispatch::Ignored;
+                }
+                if self.config.management_protection && is_robust_action_category(mpdu[24]) {
+                    return self.dispatch_robust_management(
+                        &mpdu[..management.length],
+                        frame_control,
+                        sink,
+                    );
                 }
                 let body = &mpdu[24..management.length];
                 let is_associated_peer_action = mpdu[4..10] == self.config.station_address
@@ -1871,11 +1916,13 @@ impl ConnectedRxDispatcher {
                     Ok(management) => management,
                     Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
                 };
-                let Some(disconnect) = parse_sta_disconnect(
-                    &mpdu[..management.length],
-                    self.config.station_address,
-                    self.config.bssid,
-                ) else {
+                let frame = &mpdu[..management.length];
+                if self.config.management_protection {
+                    return self.dispatch_robust_management(frame, frame_control, sink);
+                }
+                let Some(disconnect) =
+                    parse_sta_disconnect(frame, self.config.station_address, self.config.bssid)
+                else {
                     return ConnectedRxDispatch::Ignored;
                 };
                 sink.publish(ConnectedRxEvent::PeerDisconnect(disconnect));
@@ -1888,6 +1935,70 @@ impl ConnectedRxDispatcher {
                 runtime_received_at_micros,
                 sink,
             ),
+        }
+    }
+
+    /// Route one robust management frame of an association that protects
+    /// them, as the vendor `sta_input` and `sta_recv_mgmt` do: a protected
+    /// individually addressed frame and a group-addressed frame go to control
+    /// to open or verify; an unprotected individually addressed disconnect
+    /// for reason 6 or 7 starts an SA Query; every other unprotected robust
+    /// frame is dropped.
+    ///
+    /// SOURCE: complete pinned `libnet80211.a[ieee80211_sta.o]::sta_input`
+    /// and `sta_recv_mgmt`.
+    fn dispatch_protected_management(
+        &self,
+        segment: RxSegment<'_>,
+        protection: ConnectedRxProtection,
+        frame_control: u16,
+        mpdu: &mut [u8],
+        sink: &mut dyn ConnectedRxSink,
+    ) -> ConnectedRxDispatch {
+        let management = match extract_protected_management(
+            core::slice::from_ref(&segment),
+            self.config.ingress,
+            mpdu,
+        ) {
+            Ok(management) => management,
+            Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+        };
+        self.dispatch_robust_management(&mpdu[..management.length], frame_control, sink)
+    }
+
+    fn dispatch_robust_management(
+        &self,
+        frame: &[u8],
+        frame_control: u16,
+        sink: &mut dyn ConnectedRxSink,
+    ) -> ConnectedRxDispatch {
+        const CLASS_2_FROM_NONAUTHENTICATED: u16 = 6;
+        const CLASS_3_FROM_NONASSOCIATED: u16 = 7;
+        if frame.len() < 24
+            || frame[10..16] != self.config.bssid
+            || frame[16..22] != self.config.bssid
+        {
+            return ConnectedRxDispatch::Ignored;
+        }
+        let group = frame[4] & 1 != 0;
+        if !group && frame[4..10] != self.config.station_address {
+            return ConnectedRxDispatch::Ignored;
+        }
+        if group || frame_control & PROTECTED != 0 {
+            sink.publish(ConnectedRxEvent::ProtectedManagement { frame, group });
+            return ConnectedRxDispatch::ProtectedManagement;
+        }
+        match parse_sta_disconnect(frame, self.config.station_address, self.config.bssid) {
+            Some(
+                disconnect @ StaDisconnect {
+                    reason_code: CLASS_2_FROM_NONAUTHENTICATED | CLASS_3_FROM_NONASSOCIATED,
+                    ..
+                },
+            ) => {
+                sink.publish(ConnectedRxEvent::UnprotectedDisconnect(disconnect));
+                ConnectedRxDispatch::UnprotectedDisconnect
+            }
+            _ => ConnectedRxDispatch::Ignored,
         }
     }
 

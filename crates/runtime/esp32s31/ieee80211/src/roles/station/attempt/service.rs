@@ -248,9 +248,19 @@ where
             owner.station.association_preference,
         )
         .phy;
+        let management_protection =
+            select_association_rsn(&owner.station.access_point, owner.station.security)
+                .map_err(|error| {
+                    StaAttemptStepError::terminal(StaAttemptTargetError::Security(error))
+                })?
+                .management_protection();
         let ProgrammedStaPeer { peer, report } = StaPeerPort::program(
             StaPeerRadio::new(&mut *owner.hardware, &mut *owner.transmit),
-            StaPeerStation::new(owner.station.station_address, association_phy),
+            StaPeerStation::new(
+                owner.station.station_address,
+                association_phy,
+                management_protection,
+            ),
             &response,
             prepared,
         )

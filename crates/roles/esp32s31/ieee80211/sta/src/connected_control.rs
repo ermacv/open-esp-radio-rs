@@ -39,6 +39,7 @@ use oer_esp32s31_ieee80211_mac::{
 };
 
 use oer_ieee80211_mac::{
+    management_protection::SaQuery,
     station::{StaDisconnect, StaDisconnectKind},
     station_beacon::StaBeaconProtection,
     station_power_save::StaPowerManagement,
@@ -97,6 +98,9 @@ pub enum ConnectedDisconnectReason {
     ControlMailboxOverflow,
     ActiveStateRestoreFailed,
     GroupKeyHandshakeFailed,
+    /// The access point did not answer the SA Query that an unprotected
+    /// disconnect started, so the association no longer holds.
+    SaQueryTimeout,
 }
 
 impl From<StaDisconnect> for ConnectedDisconnectReason {
@@ -127,6 +131,7 @@ pub enum ConnectedControlTxKind {
         flow_id: IndividualTwtFlowId,
         kind: IndividualTwtTxKind,
     },
+    SaQuery,
 }
 
 /// Association-scoped observable outcome of the portable TWT requester.
@@ -255,6 +260,7 @@ enum ControlInFlight {
     BeaconProbe,
     PowerManagement(StaPowerManagement),
     IndividualTwt(IndividualTwtTransmission),
+    SaQuery,
 }
 
 impl ControlInFlight {
@@ -270,6 +276,7 @@ impl ControlInFlight {
                 flow_id: transmission.flow_id,
                 kind: transmission.kind,
             },
+            Self::SaQuery => ConnectedControlTxKind::SaQuery,
         }
     }
 }
@@ -561,6 +568,10 @@ pub struct ConnectedControlCore {
     power: ConnectedPower,
     individual_twt: Option<IndividualTwtRequester>,
     individual_twt_kick: bool,
+    /// Random source of SA Query transaction identifiers; present while the
+    /// association protects its management frames.
+    sa_query_random: Option<fn() -> u32>,
+    sa_query: StationSaQuery,
     observations: ConnectedControlObservations,
 }
 
@@ -580,8 +591,18 @@ impl ConnectedControlCore {
             power: ConnectedPower::new(),
             individual_twt: None,
             individual_twt_kick: false,
+            sa_query_random: None,
+            sa_query: StationSaQuery::new(),
             observations: ConnectedControlObservations::default(),
         }
+    }
+
+    /// Answer and start SA Queries for an association that protects its
+    /// management frames. `random` draws the first transaction identifier of
+    /// each procedure, as the vendor's `os_get_random` does.
+    pub fn enable_management_protection(&mut self, random: fn() -> u32) {
+        self.sa_query_random = Some(random);
+        self.sa_query = StationSaQuery::new();
     }
 
     pub fn with_he_trigger_based(mut self, config: Option<HeTriggerBasedTxConfig>) -> Self {
@@ -759,7 +780,10 @@ impl ConnectedControlCore {
           let power = self.power.next_deadline();
           // Link and TWT deadlines lead to frames, which wait for the slice.
           if self.power.blocks_tx() {
-              return earliest_deadline(block_ack, power);
+              return earliest_deadline(
+                  earliest_deadline(block_ack, power),
+                  self.sa_query.timeout_micros(),
+              );
           }
           let link = self
               .beacon_monitor
@@ -771,7 +795,7 @@ impl ConnectedControlCore {
               .and_then(IndividualTwtRequester::next_deadline_micros);
           earliest_deadline(
               earliest_deadline(earliest_deadline(block_ack, link), individual_twt),
-              power,
+              earliest_deadline(power, self.sa_query.deadline_micros()),
           )
       }
     }
@@ -802,7 +826,7 @@ impl ConnectedControlCore {
                     self.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_agreement(tid, None);
                 }
-                ControlInFlight::BeaconProbe => {}
+                ControlInFlight::BeaconProbe | ControlInFlight::SaQuery => {}
                 ControlInFlight::PowerManagement(_) => {}
                 ControlInFlight::IndividualTwt(transmission) => {
                     self.individual_twt
@@ -924,7 +948,7 @@ impl ConnectedControlCore {
                         self.initial_tx_block_ack[index] = true;
                     }
                 }
-                ControlInFlight::BeaconProbe => {}
+                ControlInFlight::BeaconProbe | ControlInFlight::SaQuery => {}
                 ControlInFlight::PowerManagement(advertised) => {
                     let traffic = self.power_traffic(context, control_event_pending);
                     let clock = power_clock(tx);
@@ -994,10 +1018,27 @@ impl ConnectedControlCore {
             }
             return Ok(DatapathControlProgress::More);
         }
+        // The SA Query timeout runs whether or not frames may leave.
+        if self.sa_query.timed_out(now_micros) {
+            return Ok(DatapathControlProgress::Exit(
+                ConnectedDisconnectReason::SaQueryTimeout,
+            ));
+        }
         // Outside the Wi-Fi slice, or with the RF asleep, control frames wait
         // as the vendor's blocked TX queues hold them.
         if self.power.blocks_tx() {
             return Ok(DatapathControlProgress::Idle);
+        }
+        match self.sa_query.step(now_micros) {
+            SaQueryStep::Idle => {}
+            SaQueryStep::Request(transaction) => {
+                return self.start_sa_query(hardware, tx, SaQuery::Request { transaction });
+            }
+            SaQueryStep::TimedOut => {
+                return Ok(DatapathControlProgress::Exit(
+                    ConnectedDisconnectReason::SaQueryTimeout,
+                ));
+            }
         }
         if self.individual_twt.is_some()
             && let Some(progress) = self.service_individual_twt(hardware, tx)?
@@ -1123,6 +1164,26 @@ impl ConnectedControlCore {
         } = ports;
         if let ConnectedRxControlEvent::PeerDisconnect(disconnect) = event {
             return Ok(DatapathControlProgress::Exit(disconnect.into()));
+        }
+        if let ConnectedRxControlEvent::UnprotectedDisconnect(_) = event {
+            let Some(random) = self.sa_query_random else {
+                return Ok(DatapathControlProgress::More);
+            };
+            let Some(transaction) = self.sa_query.start(tx.now_micros(), random()) else {
+                return Ok(DatapathControlProgress::More);
+            };
+            return self.start_sa_query(hardware, tx, SaQuery::Request { transaction });
+        }
+        if let ConnectedRxControlEvent::SaQuery(query) = event {
+            return match query {
+                SaQuery::Request { transaction } => {
+                    self.start_sa_query(hardware, tx, SaQuery::Response { transaction })
+                }
+                SaQuery::Response { transaction } => {
+                    self.sa_query.response(transaction);
+                    Ok(DatapathControlProgress::More)
+                }
+            };
         }
         if let ConnectedRxControlEvent::PowerSaveData(data) = event {
             let coex = self.power.coex_view();
@@ -1546,6 +1607,8 @@ impl ConnectedControlCore {
             | ConnectedRxControlEvent::BlockAck(_)
             | ConnectedRxControlEvent::IndividualTwt(_)
             | ConnectedRxControlEvent::PeerDisconnect(_)
+            | ConnectedRxControlEvent::UnprotectedDisconnect(_)
+            | ConnectedRxControlEvent::SaQuery(_)
             | ConnectedRxControlEvent::PowerSaveData(_) => DatapathControlProgress::Idle,
         }
     }
@@ -1678,6 +1741,23 @@ impl ConnectedControlCore {
         Ok(DatapathControlProgress::TxPending)
     }
 
+    /// Send one SA Query Action; the transmitter protects it with the
+    /// pairwise key as a robust Action frame.
+    fn start_sa_query<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        query: SaQuery,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        tx.start_action(hardware, &query.encode(), ActionTxConfig::VENDOR_MANAGEMENT)?;
+        self.in_flight = Some(ControlInFlight::SaQuery);
+        Ok(DatapathControlProgress::TxPending)
+    }
+
     fn start_tx_addba<H, X>(
         &mut self,
         hardware: &mut H,
@@ -1722,6 +1802,9 @@ fn follow_beacon_protection<X: ConnectedControlTx>(tx: &mut X, beacon: StaBeacon
 }
 
 mod power;
+mod sa_query;
+
+use sa_query::{SaQueryStep, StationSaQuery};
 
 use power::{ConnectedPower, power_clock};
 pub use power::{

@@ -385,6 +385,8 @@ struct RecordingSink {
     ethernet_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
     block_ack: Vec<BlockAckAction>,
     peer_disconnects: Vec<StaDisconnect>,
+    unprotected_disconnects: Vec<StaDisconnect>,
+    protected_management: Vec<(Vec<u8>, bool)>,
     power_save_deliveries: Vec<PowerSaveData>,
     unprotected_eapol: Vec<Vec<u8>>,
 }
@@ -413,6 +415,12 @@ impl ConnectedRxSink for RecordingSink {
             ConnectedRxEvent::BlockAck { action, .. } => self.block_ack.push(action),
             ConnectedRxEvent::PeerDisconnect(disconnect) => {
                 self.peer_disconnects.push(disconnect);
+            }
+            ConnectedRxEvent::UnprotectedDisconnect(disconnect) => {
+                self.unprotected_disconnects.push(disconnect);
+            }
+            ConnectedRxEvent::ProtectedManagement { frame, group } => {
+                self.protected_management.push((frame.to_vec(), group));
             }
             ConnectedRxEvent::PowerSaveData(delivery) => {
                 self.power_save_deliveries.push(delivery);
@@ -527,6 +535,7 @@ fn config() -> ConnectedRxConfig {
         },
         security: WifiSecurityMode::Wpa2Personal,
         peer_qos: true,
+        management_protection: false,
     }
 }
 
@@ -1718,4 +1727,121 @@ fn routes_only_peer_disconnects_addressed_to_this_station() {
         ConnectedRxDispatch::Ignored
     );
     assert_eq!(sink.peer_disconnects.len(), 1);
+}
+
+fn protected_management_config() -> ConnectedRxConfig {
+    ConnectedRxConfig {
+        management_protection: true,
+        ..config()
+    }
+}
+
+/// One management frame from the access point, `body` after the header.
+fn management_storage(frame_control: u16, destination: [u8; 6], body: &[u8]) -> ([u8; 192], usize) {
+    let mpdu = 24 + body.len();
+    let signal = mpdu + 4;
+    let mut storage = [0_u8; 192];
+    set_tail(&mut storage, signal);
+    let frame = &mut storage[FRAME_OFFSET..FRAME_OFFSET + mpdu];
+    frame[..2].copy_from_slice(&frame_control.to_le_bytes());
+    frame[4..10].copy_from_slice(&destination);
+    frame[10..16].copy_from_slice(&BSSID);
+    frame[16..22].copy_from_slice(&BSSID);
+    frame[24..].copy_from_slice(body);
+    (storage, signal)
+}
+
+fn dispatch_management(
+    config: ConnectedRxConfig,
+    frame_control: u16,
+    destination: [u8; 6],
+    body: &[u8],
+) -> (ConnectedRxDispatch, RecordingSink) {
+    let (storage, signal) = management_storage(frame_control, destination, body);
+    let mut dispatcher = ConnectedRxDispatcher::new(config);
+    let mut sink = RecordingSink::default();
+    let mut mpdu = [0_u8; 128];
+    let mut ethernet = [0_u8; 128];
+    let dispatch = dispatcher.dispatch(
+        segment(&storage, signal),
+        &mut mpdu,
+        &mut ethernet,
+        &mut sink,
+    );
+    (dispatch, sink)
+}
+
+#[test]
+fn an_unprotected_class_2_or_3_disconnect_starts_an_sa_query_under_protection() {
+    for reason in [6_u16, 7] {
+        let (dispatch, sink) = dispatch_management(
+            protected_management_config(),
+            DEAUTHENTICATION_FRAME_CONTROL,
+            STATION,
+            &reason.to_le_bytes(),
+        );
+        assert_eq!(dispatch, ConnectedRxDispatch::UnprotectedDisconnect);
+        assert!(sink.peer_disconnects.is_empty());
+        assert_eq!(sink.unprotected_disconnects[0].reason_code, reason);
+    }
+    // Any other unprotected disconnect is dropped.
+    let (dispatch, sink) = dispatch_management(
+        protected_management_config(),
+        DISASSOCIATION_FRAME_CONTROL,
+        STATION,
+        &3_u16.to_le_bytes(),
+    );
+    assert_eq!(dispatch, ConnectedRxDispatch::Ignored);
+    assert!(sink.peer_disconnects.is_empty() && sink.unprotected_disconnects.is_empty());
+}
+
+#[test]
+fn protected_and_group_robust_frames_go_to_control_to_open() {
+    const PROTECTED: u16 = 0x4000;
+    let body = [0x5a; 18];
+    let (dispatch, sink) = dispatch_management(
+        protected_management_config(),
+        DEAUTHENTICATION_FRAME_CONTROL | PROTECTED,
+        STATION,
+        &body,
+    );
+    assert_eq!(dispatch, ConnectedRxDispatch::ProtectedManagement);
+    assert_eq!(sink.protected_management.len(), 1);
+    assert!(!sink.protected_management[0].1);
+    assert_eq!(sink.protected_management[0].0[24..], body);
+
+    let (dispatch, sink) = dispatch_management(
+        protected_management_config(),
+        DEAUTHENTICATION_FRAME_CONTROL,
+        [0xff; 6],
+        &body,
+    );
+    assert_eq!(dispatch, ConnectedRxDispatch::ProtectedManagement);
+    assert!(sink.protected_management[0].1);
+
+    let (dispatch, sink) = dispatch_management(
+        protected_management_config(),
+        ACTION_FRAME_CONTROL | PROTECTED,
+        STATION,
+        &body,
+    );
+    assert_eq!(dispatch, ConnectedRxDispatch::ProtectedManagement);
+    assert_eq!(sink.protected_management.len(), 1);
+}
+
+#[test]
+fn an_unprotected_robust_action_is_dropped_under_protection() {
+    // An unprotected ADDBA Request: category 3 is robust.
+    let addba = [3, 0, 1, 0x02, 0x10, 0, 0, 0x10, 0];
+    let (dispatch, sink) = dispatch_management(
+        protected_management_config(),
+        ACTION_FRAME_CONTROL,
+        STATION,
+        &addba,
+    );
+    assert_eq!(dispatch, ConnectedRxDispatch::Ignored);
+    assert!(sink.block_ack.is_empty() && sink.protected_management.is_empty());
+    let (dispatch, sink) = dispatch_management(config(), ACTION_FRAME_CONTROL, STATION, &addba);
+    assert_eq!(dispatch, ConnectedRxDispatch::BlockAck);
+    assert_eq!(sink.block_ack.len(), 1);
 }

@@ -245,6 +245,7 @@ pub fn make_ordinary<'a, const BUFFER_SIZE: usize>(
                 station_address: STATION,
                 bssid: BSSID,
                 peer_qos: true,
+                management_protection: false,
                 exchange: MacTxPlan {
                     access_category: WmmAccessCategory::BestEffort,
                     initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),

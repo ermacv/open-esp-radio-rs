@@ -708,15 +708,18 @@ impl ProductionWifiEpochRunner {
                 unreachable!("paired security modes were validated before owner split")
             };
             station_control
-                .install_wpa2_security(ConnectedWpa2Security::new(
-                    connected
-                        .take()
-                        .expect("installed station keys retain supplicant state"),
-                    group,
-                    group_material,
-                    replay,
-                    management,
-                ))
+                .install_wpa2_security(
+                    ConnectedWpa2Security::new(
+                        connected
+                            .take()
+                            .expect("installed station keys retain supplicant state"),
+                        group,
+                        group_material,
+                        replay,
+                        management,
+                    ),
+                    tx_entropy,
+                )
                 .unwrap_or_else(|_| unreachable!("fresh station control has no security session"));
         }
         let station_drivers = ConnectedStaPort::assemble(

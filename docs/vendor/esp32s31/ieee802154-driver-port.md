@@ -86,7 +86,7 @@ defers every decision to a task cannot meet these deadlines.
 | `esp_phy_enable` / `esp_phy_disable(PHY_MODEM_IEEE802154)` | RF client acquire and release around operations | PHY `join_ieee802154` / `leave_ieee802154` on the arbiter's shared PHY domain |
 | `esp_btbb_enable` / `esp_btbb_disable` | common BTBB initialization | arbiter BTBB reference, taken by `join_ieee802154` with the registration's gain byte |
 | `bt_bb_get_tx_pwr_table` | dBm-to-power-index table | HAL `ESP32S31_TX_POWER_LEVELS`, recovered from the provider |
-| `esp_coex_ieee802154_*` | PTI scenes, external-coexistence stages, coexistence break notice | PTI levels: HAL scene priorities read from the arbiter table, published by the driver engine; external-coexistence stages and the break notice absent |
+| `esp_coex_ieee802154_*` | PTI scenes, external-coexistence stages, coexistence break notice | PTI levels: HAL scene priorities read from the arbiter table, published by the driver engine; external-coexistence stages absent. The break notice has no effect on the pinned ESP32-S31 libcoexist (`esp_coex_ieee802154_coex_break_notify` tail-calls `hal_ieee802154_coex_break_notify`, a bare `ret`; reviewed fact `BLOB_LIBCOEX_IEEE802154_HANDOFF`), so the engine sends none; the provenance check follows that body |
 | `ieee802154_txon_delay_set` (called by `ieee802154_mac_init`) | MAC TX/RX timing delays | `TXON_DELAY`, `RXON_DELAY`, `TXRX_SWITCH_DELAY` and `TXOFF_DELAY` in the HAL MAC foundation; the shared auxiliary TX-on delay keeps the BTBB initialization value |
 | `bt_bb_get_cur_rx_info` | receive diagnostic | none |
 | `modem_clock_module_*` | module clock, reset and MAC reset | arbiter modem clock planner; MAC reset in the HAL IEEE 802.15.4 lifecycle |

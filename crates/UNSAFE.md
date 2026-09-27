@@ -30,8 +30,9 @@ attribute. The table below maps package identities to source owners.
 
 ## Generated access and trusted handwritten code
 
-`hardware/esp32s31/pac/raw/` is the `oer-esp32s31-pac-raw` package.
-It contains only SVD-generated register access, checked through the
+`hardware/esp32s31/pac/raw/` is the `oer-esp32s31-pac-raw` package, and
+`hardware/esp32c5/pac/raw/` the `oer-esp32c5-pac-raw` package.
+Each contains only SVD-generated register access, checked through the
 generator/publisher pipeline. The publisher has no declaration for
 handwritten modules in this package.
 
@@ -63,6 +64,7 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-bluetooth-system` | `composition/esp32s31/embassy/bluetooth/` |
 | `esp32s31-embassy-wifi` | `composition/esp32s31/embassy/ieee80211/` |
 | `esp32s31-ieee802154-system` | `composition/esp32s31/embassy/ieee802154/` |
+| `esp32c5-pac` | `hardware/esp32c5/pac/` |
 
 These exceptions cover distinct obligations: singleton acquisition and MMIO
 serialization, stable addresses and CPU/DMA transfer, target ABI and placement,

@@ -21,6 +21,7 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-bluetooth-system",
     "oer-esp32s31-ieee80211-system",
     "oer-esp32s31-ieee802154-system",
+    "oer-esp32c5-pac",
 ];
 /// The closed radio PAC of each chip.
 const CLOSED_PACS: &[&str] = &["oer-esp32s31-pac", "oer-esp32c5-pac"];

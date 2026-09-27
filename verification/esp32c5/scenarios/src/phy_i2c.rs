@@ -15,7 +15,7 @@
 use crate::{I2C_HOST_MAP, I2C_PORTS, I2C_READ_MASK, LIBRARY, ROM};
 use blobray_domain::{
     CommandBank, CommandCell, CommandPort, DeviceBehavior, DeviceDeclaration, EffectRule,
-    RegionLifetime,
+    RegionLifetime, RegisterCell,
 };
 use oer_vendor_scenario_engine::evidence::PhyEffect;
 use oer_vendor_scenario_engine::harness::Result;
@@ -668,6 +668,293 @@ const PARALLEL_SECOND_BLOCKS: &[u32] = &[0x67, 0x6a];
 const PARALLEL_REGISTERS: &[u32] = &[0x00, 0x15];
 const PARALLEL_FLAG: &[u32] = &[0];
 
+/// PMU `RF_PWC` and `IMM_HP_CK_POWER` of ESP-IDF `soc/esp32c5/register/soc/pmu_reg.h`.
+const PMU_RF_PWC: u32 = 0x600b_0158;
+const PMU_IMM_HP_CK_POWER: u32 = 0x600b_00cc;
+/// The RF analog I2C power bits `phy_open_i2c_xpd` sets at once.
+const RF_ANALOG_I2C_POWER: u32 = 0xf300_0000;
+const TIE_HIGH_XPD_BB_I2C: u32 = 1 << 28;
+const XPD_PERIF_I2C: u32 = 1 << 27;
+const PERIF_I2C_RSTB: u32 = 1 << 26;
+/// Initial `RF_PWC` words: every combination of the peripheral power and
+/// reset bits, over otherwise clear and set words.
+const RF_PWC_STATES: &[u32] = &[
+    0,
+    XPD_PERIF_I2C,
+    PERIF_I2C_RSTB,
+    XPD_PERIF_I2C | PERIF_I2C_RSTB,
+    !(XPD_PERIF_I2C | PERIF_I2C_RSTB),
+];
+
+fn pmu_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    let (state, arguments) = words.split_last().expect("words and a state");
+    Ok(Objects {
+        vendor_words: arguments.to_vec(),
+        devices: vec![DeviceDeclaration {
+            id: "pmu".into(),
+            applicability: "PMU RF_PWC and IMM_HP_CK_POWER retain writes".into(),
+            lifetime: RegionLifetime::Phase,
+            behavior: DeviceBehavior::RegisterBank {
+                cells: vec![
+                    RegisterCell {
+                        address: PMU_IMM_HP_CK_POWER,
+                        width: 4,
+                        value: 0,
+                    },
+                    RegisterCell {
+                        address: PMU_RF_PWC,
+                        width: 4,
+                        value: *state,
+                    },
+                ],
+            },
+        }],
+        ..Default::default()
+    })
+}
+
+fn writes_to(observed: &Observed, address: u32) -> Vec<u32> {
+    observed
+        .effects
+        .iter()
+        .filter_map(|e| match e {
+            PhyEffect::Write(a, v) if *a == address => Some(*v),
+            _ => None,
+        })
+        .collect()
+}
+
+fn expect_open_i2c_xpd(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    let state = words[0];
+    let powered = state | RF_ANALOG_I2C_POWER;
+    let mut expected = vec![powered];
+    let mut word = powered;
+    if state & XPD_PERIF_I2C == 0 {
+        word |= XPD_PERIF_I2C;
+        expected.push(word);
+        word &= !PERIF_I2C_RSTB;
+        expected.push(word);
+        word |= PERIF_I2C_RSTB;
+        expected.push(word);
+    }
+    if word & PERIF_I2C_RSTB == 0 {
+        word |= PERIF_I2C_RSTB;
+        expected.push(word);
+    }
+    let rf = writes_to(observed, PMU_RF_PWC);
+    if rf != expected {
+        return Err(format!("RF_PWC writes {rf:x?}, expected {expected:x?}"));
+    }
+    if writes_to(observed, PMU_IMM_HP_CK_POWER) != [TIE_HIGH_XPD_BB_I2C] {
+        return Err("no BB I2C power tie".into());
+    }
+    Ok(())
+}
+
+/// The host-0, host-1 and hardware-host bus timing words.
+const I2C_TIMING: [u32; 3] = [0x600a_f824, 0x600a_f828, 0x600a_f82c];
+const CLOCK_SELECTIONS: &[u32] = &[0, 1, 5, 31];
+
+fn expect_clk_sel(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    let n = words[0];
+    let pulse = if n == 0 { 1 } else { 2 * n };
+    let timing: Vec<(u32, u32)> = observed
+        .effects
+        .iter()
+        .filter_map(|e| match e {
+            PhyEffect::Write(a, v) if I2C_TIMING.contains(a) => Some((*a, *v)),
+            _ => None,
+        })
+        .collect();
+    let addresses: Vec<u32> = timing.iter().map(|(a, _)| *a).collect();
+    let order: Vec<u32> = I2C_TIMING.iter().flat_map(|a| [*a, *a]).collect();
+    if addresses != order {
+        return Err(format!("timing writes {timing:x?}"));
+    }
+    for pair in timing.chunks(2) {
+        let (guard, final_word) = (pair[0].1, pair[1].1);
+        if guard >> 6 & 0x1f != n || final_word >> 6 & 0x1f != n || final_word & 0x3f != pulse {
+            return Err(format!("timing {pair:x?} for {n}"));
+        }
+    }
+    Ok(())
+}
+
+/// Independent reading of the configuration leaves: (block, register, msb,
+/// lsb, value); a whole-byte write has msb 7 and lsb 0 and no read.
+type Command = (u32, u32, u32, u32, u32);
+const BAND: &[Command] = &[(0x6a, 1, 7, 0, 0x7f)];
+const CRYSTAL: &[Command] = &[(0x61, 8, 4, 4, 0), (0x61, 7, 5, 5, 1)];
+const BIAS: &[Command] = &[
+    (0x6a, 0, 3, 0, 0xf),
+    (0x6a, 1, 7, 4, 7),
+    (0x6a, 0, 7, 4, 9),
+    (0x6a, 1, 3, 0, 0xf),
+];
+const DAC_RATE: &[Command] = &[(0x66, 4, 4, 4, 0)];
+const ADC_RATE_ZERO: &[Command] = &[(0x66, 4, 2, 2, 1)];
+const ADC_RATE_ONE: &[Command] = &[(0x66, 4, 2, 2, 0)];
+
+/// An analog bank whose addressed registers all hold `sample`.
+fn command_bank(commands: &[Command], sample: u32) -> Objects {
+    let mut cells: Vec<CommandCell> = commands
+        .iter()
+        .map(|(block, register, ..)| CommandCell {
+            selector: selector(*block, *register),
+            initial: sample,
+            reads: None,
+        })
+        .collect();
+    cells.sort_by_key(|c| c.selector);
+    cells.dedup_by_key(|c| c.selector);
+    Objects {
+        devices: vec![analog_bank(
+            "analog",
+            "the addressed analog registers; commands complete after one busy read",
+            BUSY_READS,
+            [IDLE; 2],
+            cells,
+        )],
+        ..Default::default()
+    }
+}
+
+/// The command writes `commands` perform over registers that hold `sample`
+/// and are updated by each earlier write.
+fn expected_commands(commands: &[Command], sample: u32) -> Vec<(u32, u32)> {
+    let mut registers = std::collections::BTreeMap::new();
+    commands
+        .iter()
+        .map(|&(block, register, msb, lsb, value)| {
+            let current = *registers.get(&(block, register)).unwrap_or(&sample);
+            let byte = if (msb, lsb) == (7, 0) {
+                value
+            } else {
+                let mask = field_mask(msb, lsb) << lsb;
+                (current & !mask | value << lsb) & 0xff
+            };
+            registers.insert((block, register), byte);
+            (
+                I2C_PORTS[host(block)],
+                selector(block, register) | byte << DATA_SHIFT | COMMAND_WRITE,
+            )
+        })
+        .collect()
+}
+
+fn check_commands(
+    observed: &Observed,
+    commands: &[Command],
+    sample: u32,
+) -> std::result::Result<(), String> {
+    let writes: Vec<(u32, u32)> = port_writes(observed)
+        .into_iter()
+        .filter(|(_, v)| v & COMMAND_WRITE == COMMAND_WRITE)
+        .collect();
+    let expected = expected_commands(commands, sample);
+    if writes != expected {
+        return Err(format!("commands {writes:x?}, expected {expected:x?}"));
+    }
+    Ok(())
+}
+
+/// The baseband configuration word of `phy_dac_rate_set` and
+/// `phy_adc_rate_set`, inside the radio aperture.
+const RATE_WORD: u32 = 0x600a_0448;
+
+macro_rules! configuration_leaf {
+    ($abi:ident, $expect:ident, $commands:expr, $rate:expr) => {
+        /// `(arguments…, state)`: every addressed register holds the state's
+        /// low byte and the baseband word starts at the bits above it.
+        fn $abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+            let (state, arguments) = words.split_last().expect("a state");
+            Ok(Objects {
+                vendor_words: arguments.to_vec(),
+                registers: vec![(RATE_WORD, state >> 8)],
+                ..command_bank($commands(arguments), state & 0xff)
+            })
+        }
+
+        fn $expect(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+            let (state, arguments) = words.split_last().expect("a state");
+            let (sample, rate_word) = (state & 0xff, state >> 8);
+            check_commands(observed, $commands(arguments), sample)?;
+            let rate: Option<fn(&[u32], u32) -> Vec<u32>> = $rate;
+            if let Some(rate) = rate {
+                let writes = writes_to(observed, RATE_WORD);
+                let expected = rate(arguments, rate_word);
+                if writes != expected {
+                    return Err(format!(
+                        "rate word writes {writes:x?}, expected {expected:x?}"
+                    ));
+                }
+            }
+            Ok(())
+        }
+    };
+}
+
+fn dac_rate_word(_: &[u32], word: u32) -> Vec<u32> {
+    let high = word & !0x8;
+    vec![high, high & !0x4]
+}
+
+fn adc_rate_word(arguments: &[u32], word: u32) -> Vec<u32> {
+    let rate = arguments[0] & 1;
+    let high = word & !0x2 | rate << 1;
+    vec![high, high & !0x1 | rate]
+}
+
+fn bbpll_rate_word(_: &[u32], word: u32) -> Vec<u32> {
+    let mut writes = dac_rate_word(&[], word);
+    let last = *writes.last().expect("two writes");
+    writes.extend(adc_rate_word(&[0], last));
+    writes
+}
+
+fn band_commands(_: &[u32]) -> &'static [Command] {
+    BAND
+}
+fn crystal_commands(_: &[u32]) -> &'static [Command] {
+    CRYSTAL
+}
+fn bias_commands(_: &[u32]) -> &'static [Command] {
+    BIAS
+}
+fn dac_commands(_: &[u32]) -> &'static [Command] {
+    DAC_RATE
+}
+fn adc_commands(arguments: &[u32]) -> &'static [Command] {
+    if arguments[0] == 0 {
+        ADC_RATE_ZERO
+    } else {
+        ADC_RATE_ONE
+    }
+}
+const BBPLL: &[Command] = &[(0x66, 4, 4, 4, 0), (0x66, 4, 2, 2, 1)];
+fn bbpll_commands(_: &[u32]) -> &'static [Command] {
+    BBPLL
+}
+
+configuration_leaf!(band_abi, expect_band, band_commands, None);
+configuration_leaf!(crystal_abi, expect_crystal, crystal_commands, None);
+configuration_leaf!(bias_abi, expect_bias, bias_commands, None);
+configuration_leaf!(dac_abi, expect_dac, dac_commands, Some(dac_rate_word));
+configuration_leaf!(adc_abi, expect_adc, adc_commands, Some(adc_rate_word));
+configuration_leaf!(
+    bbpll_abi,
+    expect_bbpll,
+    bbpll_commands,
+    Some(bbpll_rate_word)
+);
+
+/// Samples and rate words of the configuration leaves, as one state word
+/// each: sample in the low byte, rate word above.
+const CONFIGURATION_STATES: &[u32] = &[0x0_00, 0x0_a5, 0xf_ff, 0xf_5a];
+const BANDS: &[u32] = &[0, 1];
+const RATES: &[u32] = &[0, 1];
+const NO_ARGUMENT: &[(&str, Domain)] = &[];
+
 const LEAVES: &[Leaf] = &[
     expected(
         leaf(
@@ -816,6 +1103,138 @@ const LEAVES: &[Leaf] = &[
         ),
         expect_initialization,
     ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_open_i2c_xpd",
+                    "open_phy_i2c_trace_phy_open_i2c_xpd",
+                    NO_ARGUMENT,
+                    false,
+                ),
+                pmu_abi,
+            ),
+            RF_PWC_STATES,
+        ),
+        expect_open_i2c_xpd,
+    ),
+    expected(
+        leaf(
+            "phy_i2c_clk_sel",
+            "open_phy_i2c_trace_phy_i2c_clk_sel",
+            &[("selection", Domain::Words(CLOCK_SELECTIONS))],
+            false,
+        ),
+        expect_clk_sel,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_band_i2c_set",
+                        "open_phy_i2c_trace_phy_band_i2c_set",
+                        &[("band", Domain::Words(BANDS))],
+                        false,
+                    ),
+                    band_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_band,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_xtal_reg_set",
+                        "open_phy_i2c_trace_phy_xtal_reg_set",
+                        NO_ARGUMENT,
+                        false,
+                    ),
+                    crystal_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_crystal,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_bias_reg_set",
+                        "open_phy_i2c_trace_phy_bias_reg_set",
+                        NO_ARGUMENT,
+                        false,
+                    ),
+                    bias_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_bias,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_dac_rate_set",
+                        "open_phy_i2c_trace_phy_dac_rate_set",
+                        &[("rate", Domain::Words(RATES))],
+                        false,
+                    ),
+                    dac_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_dac,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_adc_rate_set",
+                        "open_phy_i2c_trace_phy_adc_rate_set",
+                        &[("rate", Domain::Words(RATES))],
+                        false,
+                    ),
+                    adc_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_adc,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_i2c_bbpll_set",
+                        "open_phy_i2c_trace_phy_i2c_bbpll_set",
+                        NO_ARGUMENT,
+                        false,
+                    ),
+                    bbpll_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_bbpll,
+    ),
 ];
 
 /// Names no pinned input defines: ESP-IDF's `rtc_clk_xtal_freq_get` and the
@@ -826,7 +1245,7 @@ const ABSENT: &[&str] = &["rtc_clk_xtal_freq_get", "_rom_eco_version"];
 
 /// The analog-register I2C transport suite over `libphy.a`.
 pub const PHY_I2C: Suite = Suite {
-    title: "ESP32-C5 PHY I2C transport leaf comparison",
+    title: "ESP32-C5 PHY analog and RF-initialization leaf comparison",
     id: "phy-i2c",
     archives: &[LIBRARY],
     rom: ROM,

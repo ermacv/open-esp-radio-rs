@@ -230,3 +230,106 @@ oer_probe_macros::probe! {
         })
     }
 }
+
+/// Drive one analog configuration leaf to completion on the isolated bus.
+fn configure(leaf: oer_esp32c5_pac::PhyI2cConfiguration) -> u32 {
+    with_bus(|bus| {
+        let mut configuration = oer_esp32c5_hal::analog::configuration(leaf);
+        for _ in 0..MAXIMUM_PARALLEL_ACTIONS {
+            match configuration.poll(bus) {
+                Ok(Step::Ready(())) => return 0,
+                Ok(Step::Pending) => {}
+                Err(_) => return INVALID_ARGUMENT,
+            }
+        }
+        EXHAUSTED
+    })
+}
+
+/// Borrow the isolated PHY radio partition.
+fn with_radio<R>(call: impl FnOnce(&mut oer_esp32c5_pac::PhyRadioRegisters) -> R) -> R {
+    let RadioPartitions { mut phy_radio, .. } = RadioPartitions::for_validation();
+    call(&mut phy_radio)
+}
+
+oer_probe_macros::probe! {
+    /// `phy_open_i2c_xpd()`.
+    pub fn open_phy_i2c_trace_phy_open_i2c_xpd() -> u32 {
+        with_radio(|radio| radio.power_analog_i2c());
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_i2c_clk_sel(n)` for `n` within the SDA side-guard field.
+    pub fn open_phy_i2c_trace_phy_i2c_clk_sel(selection: u32) -> u32 {
+        let Some(selection) = u8::try_from(selection)
+            .ok()
+            .and_then(oer_esp32c5_pac::PhyI2cClockSelection::new)
+        else {
+            return INVALID_ARGUMENT;
+        };
+        let RadioPartitions { mut phy_i2c, .. } = RadioPartitions::for_validation();
+        phy_i2c.select_clock(selection);
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_band_i2c_set(band)`; the vendor ignores the band.
+    pub fn open_phy_i2c_trace_phy_band_i2c_set(band: u32) -> u32 {
+        let _ = band;
+        configure(oer_esp32c5_pac::PhyI2cConfiguration::Band)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_xtal_reg_set()`.
+    pub fn open_phy_i2c_trace_phy_xtal_reg_set() -> u32 =>
+        configure(oer_esp32c5_pac::PhyI2cConfiguration::CrystalRegisters);
+}
+
+oer_probe_macros::probe! {
+    /// `phy_bias_reg_set()`.
+    pub fn open_phy_i2c_trace_phy_bias_reg_set() -> u32 =>
+        configure(oer_esp32c5_pac::PhyI2cConfiguration::BiasRegisters);
+}
+
+oer_probe_macros::probe! {
+    /// `phy_dac_rate_set(rate)`; the vendor ignores the rate.
+    pub fn open_phy_i2c_trace_phy_dac_rate_set(rate: u32) -> u32 {
+        let _ = rate;
+        let result = configure(oer_esp32c5_pac::PhyI2cConfiguration::DacRate);
+        if result == 0 {
+            with_radio(|radio| radio.clear_dac_rate_bits());
+        }
+        result
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_adc_rate_set(rate)` for a rate of 0 or 1.
+    pub fn open_phy_i2c_trace_phy_adc_rate_set(rate: u32) -> u32 {
+        let rate = match rate {
+            0 => false,
+            1 => true,
+            _ => return INVALID_ARGUMENT,
+        };
+        let result = configure(oer_esp32c5_pac::PhyI2cConfiguration::AdcRate(rate));
+        if result == 0 {
+            with_radio(|radio| radio.set_adc_rate_bits(rate));
+        }
+        result
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_i2c_bbpll_set()`: the DAC rate and then the ADC rate at zero.
+    pub fn open_phy_i2c_trace_phy_i2c_bbpll_set() -> u32 {
+        let result = open_phy_i2c_trace_phy_dac_rate_set(0);
+        if result != 0 {
+            return result;
+        }
+        open_phy_i2c_trace_phy_adc_rate_set(0)
+    }
+}

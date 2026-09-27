@@ -21,7 +21,7 @@ a fact was observed in; they are not pins.
 
 ## Captured PHY research with Next
 
-The `research` scenario ([`research.rs`](scenarios/src/research.rs)) exercises the current Next application using
+The `research` scenario ([`research.rs`](scenarios/src/phy/research.rs)) exercises the current Next application using
 explicit private inputs and its built-in resource supervisor. It authenticates
 the PHY and ROM artifacts, imports PHY/ROM, deletes the source copies, analyzes functions,
 links the I2C command initializer with exact ROM companions, verifies composed
@@ -71,13 +71,13 @@ cargo xtask vendor-scenario all \
 
 ## Captured I2C command-memory comparison
 
-The `i2c` scenario ([`i2c.rs`](scenarios/src/i2c.rs)) compares the authenticated archive/ROM command initializer
+The `i2c` scenario ([`i2c.rs`](scenarios/src/phy/i2c.rs)) compares the authenticated archive/ROM command initializer
 and its descriptor/no-op leaves with a freshly built production probe ELF. It
 checks all 45 ordered command writes against independent instruction-derived
 expectations on zero, mixed, lower and upper parameter profiles. Descriptor
 outputs are checked byte for byte from both zero and filled initial memory.
 Command-memory writes use an explicit passive register model. The runner also
-executes the [transport scenarios](scenarios/src/i2c_transport.rs) below with bounded
+executes the [transport scenarios](scenarios/src/phy/i2c_transport.rs) below with bounded
 packed-command responses; neither model claims physical timing or RF behavior.
 
 ```console
@@ -158,7 +158,7 @@ relation under declared peripheral responses, not analog-bus or RF qualification
 ### Current calibration leaves
 
 `--sdk` with the pinned bootloader firmware includes the native
-[four-leaf matrix](scenarios/src/calibration_leaves.rs). Its eleven independent cold cases
+[four-leaf matrix](scenarios/src/phy/calibration_leaves.rs). Its eleven independent cold cases
 exercise TX-gain restore, forced signed digital gains, temperature-to-power and
 post-init AGC with complementary retained register inputs. All MMIO reads/writes
 remain selected, with independently checked ordered writes and temperature
@@ -188,7 +188,7 @@ establish a complete calibration or physical timing claim.
 ### PBus and DCODE prefix
 
 `--sdk` also runs
-[the native prefix matrix](scenarios/src/calibration_prefix.rs). PBus covers 24 combinations
+[the native prefix matrix](scenarios/src/phy/calibration_prefix.rs). PBus covers 24 combinations
 of retained values, work-mode settling, immediate/delayed readiness and stack
 fills. It compares all MMIO observations and requested delays, with independent
 expected command/acknowledgment writes. Three stuck-command positions execute the
@@ -224,7 +224,7 @@ declared environment, not complete RX calibration or hardware qualification.
 ### RFPLL search and frequency maintenance
 
 `--phy-sdk PATH` runs
-[the native RFPLL matrix](scenarios/src/rfpll.rs). The additional linked SDK firmware
+[the native RFPLL matrix](scenarios/src/phy/rfpll.rs). The additional linked SDK firmware
 must have SHA-256 `ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9`.
 It contributes the exact static `phy_printf` definition needed by the linked
 archive section. It is captured and retained but is not an execution companion:
@@ -274,7 +274,7 @@ observations do not establish hardware/RF or grant qualification.
 
 ### Wi-Fi and Bluetooth gain arithmetic/publication
 
-The `gain` scenario of the [typed scenario package](scenarios/src/gain.rs)
+The `gain` scenario of the [typed scenario package](scenarios/src/phy/gain.rs)
 executes captured archive callbacks and ROM children against the compiled
 production arithmetic and publishers. Build and validate the probe catalog
 with `cargo xtask build vendor-probes --chip esp32s31`. Then run from the
@@ -299,7 +299,7 @@ Each scenario passes its Blobray budget explicitly. `--limit-mode` is required;
 (2,000,000,000) set each operation's deadline and capacities. Every finite matrix
 is one execution request, because Blobray retains requests by identity rather
 than inside 64 KiB control records. Shared guest addresses and analog command
-encodings are named in [`layout.rs`](scenarios/src/layout.rs). The full gain
+encodings are named in [`layout.rs`](scenarios/src/engine/layout.rs). The full gain
 scenario with `--rftest` completes in about half a minute on an otherwise idle
 host.
 
@@ -319,7 +319,7 @@ expectations; Blobray mechanisms supply the rest:
   final vendor bytes with its production output location, and output padding
   is not claimed.
 - The channel, RX-gain and TX-DC roots compare their effects under a reviewed
-  effect contract ([`contracts.rs`](scenarios/src/contracts.rs)). The contract
+  effect contract ([`contracts.rs`](scenarios/src/engine/contracts.rs)). The contract
   is a typed value reviewed through git; each root's relation selects it by the
   digest of its canonical encoding, and the scenario supplies it with the
   in-process comparison. Blobray
@@ -375,7 +375,7 @@ whole-TXCAL, Wi-Fi or BT/154 protocol qualification.
 ### Gain state and RF-test power producer
 
 The same scenario characterizes captured calibration storage and the RF-test
-power policy ([`gain_state.rs`](scenarios/src/gain_state.rs)). These are vendor-only executions: no
+power policy ([`gain_state.rs`](scenarios/src/phy/gain_state.rs)). These are vendor-only executions: no
 production storage or RF power API exists, and none is inferred.
 
 Storage always runs, because it needs only the pinned archive and ROM. The
@@ -407,7 +407,7 @@ Negative cases are:
 
 ## Coexistence schedule comparison
 
-The `coex` scenario ([`coex.rs`](scenarios/src/coex.rs)) compares the time-slice
+The `coex` scenario ([`coex.rs`](scenarios/src/coexistence/coex.rs)) compares the time-slice
 schedule of the pinned `libcoexist.a[coexist_scheme.o]` with the production
 `CoexSchedule` through the `open_coex_schm_trace_step` probe. A cold setup case
 points the ROM cell `g_coa_funcs_p` at a modeled adapter table (semaphore
@@ -452,7 +452,7 @@ compares exactly.
 
 ## Bluetooth low-power clock
 
-The `bluetooth` scenario ([`ble.rs`](scenarios/src/ble.rs)) also links the
+The `bluetooth` scenario ([`ble.rs`](scenarios/src/bluetooth/ble.rs)) also links the
 ESP-IDF `libesp_hw_support.a` and `libhal.a` of the reference build and
 compares `modem_clock_select_lp_clock_source(PERIPH_BT_MODULE, MAIN_XTAL, 399)`
 with the production lease selection, and
@@ -482,13 +482,30 @@ The open ESP-IDF IEEE 802.15.4 controller is ported from source and requires no
 controller archive or ELF. Its closed baseband and coexistence functions have no
 native vendor comparison.
 
+## Scenario crate layout
+
+[`scenarios/src`](scenarios/src) separates the shared engine from the domain
+scenarios and the reviewed data:
+
+- `engine/`: the Blobray session, the comparison harness and call edges,
+  artifact authentication, coverage, observation and state analysis, and the
+  evidence shards;
+- `phy/`, `wifi/`, `bluetooth/`, `coexistence/`: the scenarios of each domain,
+  with `wifi/mac.rs` also owning the leaf-suite machinery the Bluetooth and
+  coexistence leaves reuse;
+- `decisions/`: the reviewed coverage, observation and state decisions, one
+  module per kind. Their types and stale-decision checks stay in the engine.
+
+Domain modules keep their crate-root paths (`crate::gain`, `crate::ble`) as
+re-exports, and `main.rs` holds the command line.
+
 ## Coverage decisions
 
 Every claimed vendor root reports the coverage of its closure: the code
 statically reachable from the root through direct transfers and the observed
 targets of executed indirect ones, excluding call models. Each uncovered block
 or branch direction is either excluded by a reviewed decision in
-[`coverage.rs`](scenarios/src/coverage.rs), with its reason, or listed as
+[`decisions/coverage.rs`](scenarios/src/decisions/coverage.rs), with its reason, or listed as
 untriaged in the evidence index. Decisions currently exclude vendor runtime
 helpers (diagnostic formatting, compiler arithmetic and copy helpers, prologue
 millicode) as whole functions. A decision on a closure function that is fully
@@ -506,7 +523,7 @@ including inlined frames; a line is observed when any of its executed
 instructions is. Each evidence entry counts the lines its executions executed,
 observed, reviewed and left untriaged. A line executed but observed by no
 scenario is either reviewed by a decision in
-[`observation.rs`](scenarios/src/observation.rs) (file and trimmed source line,
+[`decisions/observation.rs`](scenarios/src/decisions/observation.rs) (file and trimmed source line,
 with its reason) or listed as unobserved in the evidence index. A decision that
 matches no unobserved line fails `all`. Unobserved lines are pending work: each
 becomes a follow-up case, a relation that compares its effect, or a reviewed
@@ -584,7 +601,7 @@ No callback model, resolved callee or hardware assertion follows from this revie
 
 ## Shared Next scenario preparation
 
-[`harness.rs`](scenarios/src/harness.rs) and [`session.rs`](scenarios/src/session.rs)
+[`harness.rs`](scenarios/src/engine/harness.rs) and [`session.rs`](scenarios/src/engine/session.rs)
 own supervised setup operations, authenticated input capture, in-process comparison,
 exact symbol selection and the shared memory/phase/comparison builders. The I2C, transport and calibration scenarios keep their independent
 expected values and explicit peripheral assumptions. The research scenario uses
@@ -602,7 +619,7 @@ scenario choices. Opaque owner/layout types require explicit adapters. Word padd
 both an explicit count and fill value; unknown memory stays unknown.
 
 Setup results (the imported revision, its inventory, the probe catalog, linked
-images and data exports) are memoized in [`setup-cache`](scenarios/src/setup_cache.rs)
+images and data exports) are memoized in [`setup-cache`](scenarios/src/engine/setup_cache.rs)
 below the scenario output, keyed by the Blobray executable, the authenticated input
 bytes and the operation's request. A warm run creates no Blobray project; a miss
 creates it once and checks that its revision equals the cached one.
@@ -612,7 +629,7 @@ in-process verification over the authenticated input bytes and the exported
 linked image: no project, content store or journal participates, and records stay
 in memory. A run keeps only its results: claim verdicts, case counts, coverage
 and input/source digests. The combined I2C route also checks
-[compiled call boundaries](scenarios/src/harness_edges.rs) alongside positive and
+[compiled call boundaries](scenarios/src/engine/harness_edges.rs) alongside positive and
 negative PHY comparisons.
 
 Run preparation-only regressions without private inputs:

@@ -1,5 +1,19 @@
 //! A linked captured PHY image with compiled production and the shared
 //! stack-entry, parameter-setup and callback-installation phases.
+
+pub mod calibration_leaves;
+pub mod calibration_prefix;
+pub mod channel;
+pub mod gain;
+pub mod gain_state;
+pub mod i2c;
+pub mod i2c_transport;
+pub mod research;
+pub mod rfpll;
+pub mod rx_gain;
+pub mod tracking;
+pub mod tracking_graph;
+pub mod tx_dc;
 use crate::evidence::{outcomes, split_cases};
 use crate::harness::direct;
 use crate::harness::{Budget, Input, with_stack_fill};

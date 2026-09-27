@@ -82,7 +82,7 @@ pub struct ComparedCase {
     pub verdict: Option<blobray_domain::ComparisonVerdict>,
 }
 
-#[path = "../../../schema/scenario-evidence.rs"]
+#[path = "../../../../schema/scenario-evidence.rs"]
 pub mod evidence_index;
 
 /// Authenticated inputs, their captured revision and the probe catalog.

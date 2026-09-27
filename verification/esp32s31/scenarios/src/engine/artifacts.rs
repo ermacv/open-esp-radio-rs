@@ -72,7 +72,7 @@ pub fn parse(text: &str) -> Result<Manifest, String> {
 pub fn manifest() -> &'static Manifest {
     static MANIFEST: OnceLock<Manifest> = OnceLock::new();
     MANIFEST.get_or_init(|| {
-        parse(include_str!("../../artifacts.toml")).expect("tracked artifact manifest")
+        parse(include_str!("../../../artifacts.toml")).expect("tracked artifact manifest")
     })
 }
 

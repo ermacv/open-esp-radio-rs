@@ -138,7 +138,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil runs prune [--days 30] [--keep-failed 5] [--apply]
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
-  cargo hil firmware flash IMAGE --board NAME|MAC [--jtag]   flash under a lease of that board, journaled
+  cargo hil firmware flash IMAGE --board NAME|MAC [--jtag] [--if-changed]   flash under a lease of that board, journaled
   cargo hil flash --board NAME|MAC [--image NAME] [--monitor 30s [--until TEXT]] [--air shared|exclusive|none] [--via usb|jtag] ELF
                                       flash an ELF for the board's chip under a lease of that board,
                                       journal it, capture the console for a bounded time
@@ -778,6 +778,10 @@ fn firmware(
             /// espflash and the USB Serial/JTAG reset lines.
             #[arg(long)]
             jtag: bool,
+            /// Leave the board alone when its journaled flash is this image
+            /// with the digest of the current build.
+            #[arg(long)]
+            if_changed: bool,
         },
     }
     match FirmwareCli::try_parse_from(args)? {
@@ -785,7 +789,12 @@ fn firmware(
         FirmwareCli::Build { image } => {
             crate::firmware_catalog::build(ctx, &image)?;
         }
-        FirmwareCli::Flash { image, board, jtag } => {
+        FirmwareCli::Flash {
+            image,
+            board,
+            jtag,
+            if_changed,
+        } => {
             let request = oer_hil_arbiter::Request {
                 owner: options.owner(ctx),
                 work: format!("firmware flash {image} --board {board}"),
@@ -794,7 +803,7 @@ fn firmware(
                 scenarios: Vec::new(),
                 claims: Vec::new(),
             };
-            crate::firmware_catalog::flash(ctx, &image, &board, jtag, request)?;
+            crate::firmware_catalog::flash(ctx, &image, &board, jtag, if_changed, request)?;
         }
     }
     Ok(std::process::ExitCode::SUCCESS)

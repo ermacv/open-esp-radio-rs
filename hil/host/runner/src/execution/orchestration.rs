@@ -76,6 +76,7 @@ pub(crate) fn run_all(
             prebuilt,
             lease: Some(lease),
             flashed: None,
+            peer_image: None,
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
@@ -116,6 +117,7 @@ pub(crate) fn run_one(
             prebuilt,
             lease: Some(lease),
             flashed: None,
+            peer_image: None,
         };
         let results = execute_one(&mut session, &mut operations, selected)?;
         operations.run_then(then.as_deref(), &mut session)?;
@@ -157,6 +159,7 @@ pub(crate) fn run_many(
             prebuilt,
             lease: Some(lease),
             flashed: None,
+            peer_image: None,
         };
         let results = execute_selected(&mut session, &mut operations, selected)?;
         operations.run_then(then.as_deref(), &mut session)?;
@@ -372,6 +375,8 @@ struct LiveSuite<'a> {
     lease: Option<hil_core::lab::lock::FixtureLock>,
     /// The class on the device and, when built by this run, its archive.
     flashed: Option<(ImageClass, Option<Box<hil_core::image::Artifacts>>)>,
+    /// The peer image this run brought up to its current catalog build.
+    peer_image: Option<&'static str>,
 }
 
 trait SuiteEffects {
@@ -530,7 +535,7 @@ impl LiveSuite<'_> {
     /// Flash the catalog's peer image when another consumer's image is on
     /// the peer board. The flash joins this run's lease, which holds the
     /// peer board, and is journaled like any catalog flash.
-    fn restore_peer(&self, scenario: &Scenario) -> Result<()> {
+    fn restore_peer(&mut self, scenario: &Scenario) -> Result<()> {
         let (Some(peer), Some(image)) = (
             self.lab.ieee802154_peer.as_ref(),
             scenario.family.ieee802154_peer_image(),
@@ -538,19 +543,29 @@ impl LiveSuite<'_> {
             return Ok(());
         };
         let image = image.name;
-        let Some(found) = hil_core::lab::lock::other_board_image(&peer.serial, image)? else {
+        // Once per image and run: the catalog build and the journal decide
+        // whether the board already carries the current build.
+        if self.peer_image == Some(image) {
             return Ok(());
-        };
+        }
         let lease = self.lease.as_ref().ok_or("the run holds no stand lease")?;
         let board = hil_core::lab::lock::board_identity(&peer.serial);
-        eprintln!("hil: the 802.15.4 peer carries `{found}`; flashing `{image}` from the catalog");
         let mut command =
             std::process::Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
         command
             .current_dir(self.root)
-            .args(["hil", "firmware", "flash", image, "--board", &board])
+            .args([
+                "hil",
+                "firmware",
+                "flash",
+                image,
+                "--board",
+                &board,
+                "--if-changed",
+            ])
             .envs(lease.environment());
         oer_process::run(&mut command)?;
+        self.peer_image = Some(image);
         Ok(())
     }
 }

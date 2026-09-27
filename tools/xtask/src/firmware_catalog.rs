@@ -242,6 +242,7 @@ pub fn flash(
     image: &str,
     board: &str,
     jtag: bool,
+    if_changed: bool,
     request: oer_hil_arbiter::Request,
 ) -> Result<()> {
     let entries = entries(&ctx.root)?;
@@ -268,6 +269,19 @@ pub fn flash(
         .into());
     }
     let built = build(ctx, image)?;
+    if if_changed
+        && carries(
+            arbiter.latest_flash(&mac)?.map(|event| event.kind).as_ref(),
+            &entry.image,
+            &built.application_sha256,
+        )
+    {
+        eprintln!(
+            "hil: {board} already carries {image} {}",
+            &built.application_sha256[..12]
+        );
+        return Ok(());
+    }
     let files =
         flash_files(&vendor_firmware::output(&ctx.root, &entry.project(&ctx.root)).join("build"))?;
     let request = oer_hil_arbiter::Request {
@@ -331,6 +345,15 @@ pub fn flash(
     )?;
     eprintln!("hil-arbiter: recorded {} on {mac}", entry.image);
     Ok(())
+}
+
+/// Whether the board's newest journaled flash is `image` with this digest.
+fn carries(latest: Option<&oer_hil_arbiter::BoardEventKind>, image: &str, sha256: &str) -> bool {
+    matches!(
+        latest,
+        Some(oer_hil_arbiter::BoardEventKind::Flashed { image: carried, application_sha256, .. })
+            if carried == image && application_sha256 == sha256
+    )
 }
 
 /// An attached board of the stand.
@@ -451,6 +474,24 @@ mod tests {
     }
 
     #[test]
+    fn only_the_same_image_and_digest_is_left_alone() {
+        let flashed = |image: &str, sha: &str| oer_hil_arbiter::BoardEventKind::Flashed {
+            image: image.into(),
+            application_sha256: sha.into(),
+            commit: None,
+            dirty: None,
+            origin: String::new(),
+        };
+        assert!(carries(Some(&flashed("peer", "aa")), "peer", "aa"));
+        assert!(
+            !carries(Some(&flashed("peer", "bb")), "peer", "aa"),
+            "a stale build"
+        );
+        assert!(!carries(Some(&flashed("probe", "aa")), "peer", "aa"));
+        assert!(!carries(None, "peer", "aa"));
+    }
+
+    #[test]
     fn a_held_image_is_refused_before_any_board_is_touched() {
         let root = tempfile::tempdir().unwrap();
         project(
@@ -472,7 +513,7 @@ mod tests {
             scenarios: Vec::new(),
             claims: Vec::new(),
         };
-        let error = flash(&ctx, "held-peer", "esp32c5", false, request)
+        let error = flash(&ctx, "held-peer", "esp32c5", false, false, request)
             .unwrap_err()
             .to_string();
         assert!(

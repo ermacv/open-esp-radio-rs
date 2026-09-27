@@ -10,6 +10,7 @@ pub mod chip;
 pub mod coverage;
 pub mod dependencies;
 pub mod evidence;
+pub mod failure;
 pub mod harness;
 pub mod leaf;
 pub mod observation;

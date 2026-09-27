@@ -700,6 +700,32 @@ impl Session {
         let (total, time) = self.executed.get();
         self.executed.set((total + steps, time + seconds));
         if result.verdict != verdict {
+            // Every departing case, both sides' events and their contract
+            // classification, beside the run.
+            let contracts = &self.effects;
+            let report = crate::failure::cases(request, &result.records, verdict, |case| {
+                let selected = request
+                    .cases
+                    .get(case as usize)?
+                    .relation
+                    .as_ref()?
+                    .effects
+                    .as_ref()?;
+                contracts
+                    .iter()
+                    .find(|contract| {
+                        blobray_application::in_process::effect_contract_ref(contract)
+                            .is_ok_and(|reference| &reference == selected)
+                    })
+                    .cloned()
+            })
+            .and_then(|cases| {
+                crate::failure::write(self.runner.run_directory(), label, verdict, &cases)
+            })
+            .map_or_else(
+                |e| format!("no failure report: {e}"),
+                |path| path.display().to_string(),
+            );
             // Name the first case that departs from the expected verdict.
             let departing = result.records.iter().find_map(|r| match r {
                 ExecutionEvidence::Comparison {
@@ -741,7 +767,7 @@ impl Session {
                     _ => vec![],
                 };
                 panic!(
-                    "{label}: {:?}, expected {verdict:?}; case {case} `{}`: {compared:?}; stops {stops:?}; unfinished models {open_models:?}; nearby events {nearby:?}",
+                    "{label}: {:?}, expected {verdict:?}; case {case} `{}`: {compared:?}; stops {stops:?}; unfinished models {open_models:?}; nearby events {nearby:?}; report {report}",
                     result.verdict, request.cases[case as usize].name
                 );
             }

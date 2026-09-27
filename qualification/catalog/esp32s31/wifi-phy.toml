@@ -1014,8 +1014,8 @@ section = "wifi-interfaces-and-operating-modes"
 title = "Wi-Fi / Bluetooth (Classic/LE) / IEEE 802.15.4 coexistence"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. The Wi-Fi runtime does not yet publish its schedule status, request its events or react to phases; end-to-end coexistence is not a published capability."
-packages = ["oer-esp32s31-radio-runtime", "oer-esp32s31-coex"]
+scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. Wi-Fi publishes its status, schedule interval and channel, shortens shared scan dwells, and a connected station follows the phases through the vendor [power manager](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs): slice requests, TBTT phase restart, PM=1 and blocked TX queues at the slice end, RF sleep and the Bluetooth preemption end. The per-frame reconnect requests (events 45 and 46) and the reconnect policy are absent, a paired STA+AP runs no station power management, and no HIL scenario yet runs Wi-Fi beside an active Bluetooth or IEEE 802.15.4 peer."
+packages = ["oer-esp32s31-radio-runtime", "oer-esp32s31-coex", "oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-runtime"]
 
 [[items]]
 id = "wifi-legacy-and-ht-mac-behavior-rts-protection"
@@ -1175,15 +1175,15 @@ section = "wifi-tsf-beacon-monitoring-and-power-saving"
 title = "Legacy station power save"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "PM=1/PM=0 transitions are ACK-gated; TIM/DTIM/listen interval, PS-Poll and doze permits are source-owned. The S31 boundary probes and rolls back only reviewed wake-prefix fields and does not claim RF/PHY/BB/clock sleep. Passive connected ESP-NOW RX is rejected when this policy is enabled, and concurrent STA+AP remains always awake."
+scope-and-limitations = "Station power save is the vendor [modem-sleep manager](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs): PM=1/PM=0 Null Data frames, TIM/DTIM and listen-interval wakes on the station TBTT schedule, held network frames until the station wakes. Like the vendor, it sends no PS-Poll. The minimum and maximum modem-sleep types have no HIL evidence yet, and a paired STA+AP runs no station power management."
 
 [[items]]
 id = "wifi-tsf-beacon-monitoring-and-power-saving-full-modem-sleep"
 section = "wifi-tsf-beacon-monitoring-and-power-saving"
 title = "Full modem sleep"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "Legacy station power-save policy does not compose RF/PHY/baseband shutdown, clock gating, retention and restoration into a hardware sleep/wake lifecycle."
+scope-and-limitations = "The connected station's power agent sleeps its RF by leaving the shared PHY client set and closing RF after the last client, and wakes it with a PHY prepare, client return and due tracking, as `wifi_rf_phy_disable`/`wifi_rf_phy_enable` do. Clock gating, retention and light sleep are absent, and no HIL scenario measures the sleep."
 
 [[items]]
 id = "wifi-tsf-beacon-monitoring-and-power-saving-disconnected-state-wi-fi-sleep"

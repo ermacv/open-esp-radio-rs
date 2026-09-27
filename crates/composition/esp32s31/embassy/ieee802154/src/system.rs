@@ -668,12 +668,17 @@ impl Ieee802154System {
                 });
             }
         };
+        oer_esp32s31_radio_runtime::runtime_trace(0x7001);
         RUNTIME.open_rf_admission();
+        oer_esp32s31_radio_runtime::runtime_trace(0x7002);
         if acquired == ConcurrentAcquire::TrackingDue {
             // The rejoined client tracks before it transmits, as at start.
+            oer_esp32s31_radio_runtime::runtime_trace(0x7003);
             let tracked = core::pin::pin!(self.track_quiescent(&mut guard));
             tracked.await.map_err(Ieee802154RfError::Maintenance)?;
+            oer_esp32s31_radio_runtime::runtime_trace(0x7004);
         }
+        oer_esp32s31_radio_runtime::runtime_trace(0x7005);
         Ok(())
     }
 
@@ -692,11 +697,14 @@ impl Ieee802154System {
             let woken = core::pin::pin!(self.wake_rf(radio));
             woken.await.map_err(Ieee802154SubmitError::Rf)?;
         }
+        oer_esp32s31_radio_runtime::runtime_trace(0x7101);
         let accepted = RUNTIME
             .submit(command)
             .map_err(Ieee802154SubmitError::Runtime)?;
+        oer_esp32s31_radio_runtime::runtime_trace(0x7102);
         let slept = core::pin::pin!(self.sleep_rf_if_idle(radio));
         slept.await.map_err(Ieee802154SubmitError::Rf)?;
+        oer_esp32s31_radio_runtime::runtime_trace(0x7103);
         Ok(accepted)
     }
 

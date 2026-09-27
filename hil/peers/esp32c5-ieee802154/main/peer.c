@@ -353,6 +353,18 @@ static void command_txat(char **argv, int argc)
     reply(esp_ieee802154_transmit_at(s_tx_frame, false, at), "TXAT");
 }
 
+/* Wait for the burst transmission in flight to end; one frame lasts at most
+ * 4.3 ms. Whole ticks: at the default 100 Hz tick a millisecond rounds to no
+ * delay at all. Returns whether it ended. */
+static bool burst_drain(void)
+{
+    TickType_t bound = pdMS_TO_TICKS(50) + 1;
+    for (TickType_t waited = 0; waited < bound && atomic_load(&s_burst_in_flight); waited++) {
+        vTaskDelay(1);
+    }
+    return !atomic_load(&s_burst_in_flight);
+}
+
 /* BURST <MAC bytes as hex, without FCS> | BURST STOP
  *
  * Start transmitting the frame back to back without CCA until BURST STOP,
@@ -365,11 +377,7 @@ static void command_burst(char **argv, int argc)
             reply(ESP_ERR_INVALID_STATE, "BURST");
             return;
         }
-        /* One frame lasts at most 4.3 ms; its end reaches the event task. */
-        for (int wait = 0; wait < 50 && atomic_load(&s_burst_in_flight); wait++) {
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
-        bool drained = !atomic_load(&s_burst_in_flight);
+        bool drained = burst_drain();
         printf("@BURST sent=%u failed=%u\n", atomic_load(&s_burst_sent),
                atomic_load(&s_burst_failed));
         reply(drained ? ESP_OK : ESP_ERR_TIMEOUT, "BURST");
@@ -401,9 +409,7 @@ static void command_burst(char **argv, int argc)
 static void command_sync(void)
 {
     if (atomic_exchange(&s_burst_active, false)) {
-        for (int wait = 0; wait < 50 && atomic_load(&s_burst_in_flight); wait++) {
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
+        burst_drain();
     }
     esp_err_t error = esp_ieee802154_disable();
     if (error == ESP_OK) {

@@ -5,240 +5,118 @@
 //! retained from one fill pattern, so every register bit the leaf reads takes
 //! both values across the fills, and compares every register effect exactly
 //! and, where the leaf returns one, the return word.
-use crate::harness::{Arg, Buffer, Input, Result, case, direct, filled, invalid, known, selection};
-use crate::layout::{INPUT, OUTPUT, radio_aperture};
-use crate::phy::{image_layout, select};
-use crate::session::{Session, image_symbol_id, request};
+use crate::harness::{Result, case, direct, invalid};
+use crate::layout::INPUT;
+use crate::session::{Session, request};
 use blobray_domain::{
-    CallBinding, CallBoundary, CallCapture, CallDeclaration, CallOutput, CallOutputScope,
-    CallRepetition, CallResponse, ComparisonVerdict, EffectContractRef, EffectDisposition,
-    EffectPattern, EffectRule, EffectSelector, EffectValue, ExecutionCase, ExecutionGoal,
-    ExecutionSymbol, ExecutionTarget, LinkRequest, MemoryPair, ObjectId, ObjectLocation,
-    RegionLifetime, SessionReset,
+    CallBinding, CallBoundary, CallDeclaration, CallOutput, CallOutputScope, CallRepetition,
+    CallResponse, ExecutionTarget, RegionLifetime, SessionReset,
 };
+pub use oer_vendor_scenario_engine::leaf::{
+    Dispatch, Domain, LEAF_EVENTS, LEAF_FILLS, Leaf, LeafCase, LeafOptions as MacOptions,
+    LeafRun as Mac, OUTPUT_FILL, Objects, Replacement, Suite, Vendor, VendorAbi, call_boundary,
+    claims, compared_bytes, dispatching, exercise, image_symbols, in_archive, leaf, objects,
+    ordered, output, prefix, quiet, released, released_when_leased, replaced, rom, stated,
+    tail_prefix, vendor_reads,
+};
+use std::any::Any;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 /// Names no pinned input defines: newlib `putchar`, which only the
 /// `libpp.a` diagnostic dumps reachable from the transmit leaves call. They
 /// resolve to an unmapped address, so reaching one stops the case.
 const ABSENT: &[&str] = &["putchar"];
-/// Input index of the compiled production probe ELF.
-const PROBE_INPUT: usize = 2;
-/// Input index of the vendor Wi-Fi firmware.
-const PHY_SDK_INPUT: u64 = 3;
 /// Input index of the pinned `libnet80211.a`.
 const NET80211_INPUT: u64 = 4;
-/// Radio register fills: all clear, all set and two alternating patterns.
-pub const LEAF_FILLS: [u8; 4] = [0x00, 0xff, 0x5a, 0xa5];
-/// Reads of one vendor-only register a leaf case may perform.
-const VENDOR_ONLY_READS: u32 = 16;
-/// Guest events one leaf case may record.
-const LEAF_EVENTS: u32 = 1 << 10;
 /// Logical transmit queues the production HAL admits.
 const QUEUES: &[u32] = &[0, 1, 2, 3];
 /// Event masks: none, the lowest bit, an alternating pattern and all bits.
 const EVENT_MASKS: &[u32] = &[0, 1, 0x5a5a_a5a5, u32::MAX];
 
-/// Private inputs and budget of the MAC scenario.
-/// One leaf suite: its archives, pinned by artifact id (the first at
-/// session input 0, the others from `EXTRA_ARCHIVE_INPUT` on), its leaves,
-/// and whether it carries the Wi-Fi rate tables and retry sequences.
-pub struct Suite {
-    pub title: &'static str,
-    pub archives: &'static [&'static str],
-    pub leaves: &'static [Leaf],
-    pub wifi: bool,
-    /// Symbols the link declares absent: referenced only after compared
-    /// prefixes.
-    pub absent: &'static [&'static str],
-}
+/// Artifact ids of the ROM and of the vendor firmware every ESP32-S31 leaf
+/// suite links: the firmware supplies the network-stack data and logging
+/// symbols that code after a compared prefix references. Every suite keeps
+/// the `mac` contract identifier its reviewed contracts carry.
+pub const ROM: &str = "rom";
+pub const FIRMWARE: &str = "phy-sdk";
+pub const CONTRACT_ID: &str = "mac";
 
-/// Session input of the second suite archive.
-const EXTRA_ARCHIVE_INPUT: u64 = 4;
+/// Link roots of the Wi-Fi rate tables and retry sequences, beyond the
+/// leaves.
+const WIFI_ROOTS: &[&[&str]] = &[&[RateTables::INDEX_CALLER], crate::retry::ROOTS];
 
-/// The Wi-Fi MAC suite over `libpp.a` and `libnet80211.a`.
+/// The Wi-Fi MAC suite over `libpp.a` and `libnet80211.a`, with the rate
+/// tables and retry sequences.
 pub const WIFI_MAC: Suite = Suite {
     title: "Wi-Fi MAC HAL leaf comparison",
+    id: CONTRACT_ID,
     archives: &["libpp", "libnet80211"],
+    rom: ROM,
+    firmware: Some(FIRMWARE),
     leaves: LEAVES,
-    wifi: true,
     absent: ABSENT,
+    roots: WIFI_ROOTS,
+    prepare: Some(wifi_prepare),
+    claims: crate::retry::CLAIMS,
 };
 
-pub struct MacOptions {
-    pub binary: PathBuf,
-    pub suite: &'static Suite,
-    /// One path per suite archive, in the suite's order.
-    pub archives: Vec<PathBuf>,
-    pub rom: PathBuf,
-    /// Authenticated vendor firmware: supplies the network-stack data and
-    /// logging symbols that code after a compared prefix references.
-    pub phy_sdk: PathBuf,
-    pub production: PathBuf,
-    pub linker: PathBuf,
-    pub output: PathBuf,
-    pub budget: crate::harness::Budget,
-    pub patches: Vec<blobray_application::in_process::ImagePatch>,
-}
-
-/// Values one parameter takes: ABI words, six-byte addresses the leaf reads
-/// through a pointer to a buffer at `INPUT`, or the address of an output
-/// object in the region at `OUTPUT`, filled with `OUTPUT_FILL` and compared
-/// after the leaf; a nullable output also takes the null pointer.
-#[derive(Clone, Copy)]
-pub enum Domain {
-    Words(&'static [u32]),
-    Addresses(&'static [[u8; 6]]),
-    Output {
-        offset: u32,
-        length: u32,
-        nullable: bool,
-    },
-}
-
-impl Domain {
-    fn len(self) -> usize {
-        match self {
-            Self::Words(values) => values.len(),
-            Self::Addresses(values) => values.len(),
-            Self::Output { nullable, .. } => 1 + usize::from(nullable),
+/// The vendor rate tables the Wi-Fi builders and retry sequences read,
+/// checked against the rate domain production admits.
+fn wifi_prepare(run: &mut Mac) -> Result<Box<dyn Any>> {
+    let vendor = run.vendor.clone();
+    let image = image_symbols(&run.session.run.join("image/image.elf"))?;
+    let dot11n_index = schedule_indices(
+        &mut run.session,
+        &vendor,
+        &image,
+        RateTables::DOT11N_INDEX,
+        HT_RATE_CODES,
+    )?;
+    let dot11ax_index = schedule_indices(
+        &mut run.session,
+        &vendor,
+        &image,
+        RateTables::DOT11AX_INDEX,
+        HE_RATE_CODES,
+    )?;
+    let rates = RateTables {
+        index: vendor_section(&run.session, RateTables::OBJECT, RateTables::INDEX_SECTION)?,
+        arena: vendor_section(&run.session, RateTables::OBJECT, RateTables::ARENA_SECTION)?,
+        dot11n: vendor_section(&run.session, RateTables::OBJECT, RateTables::DOT11N_SECTION)?,
+        dot11n_index,
+        dot11ax: vendor_section(
+            &run.session,
+            RateTables::OBJECT,
+            RateTables::DOT11AX_SECTION,
+        )?,
+        dot11ax_index,
+    };
+    let admitted: Vec<u32> = rates
+        .mapped()
+        .into_iter()
+        .filter(|code| !UNADMITTED_RATE_CODES.contains(code))
+        .collect();
+    let arenas = [
+        (RateArena::Legacy, RATE_CODES),
+        (RateArena::Ht, HT_RATE_CODES),
+        (RateArena::He, HE_RATE_CODES),
+    ];
+    for (arena, codes) in arenas {
+        for code in codes {
+            if !rates.covers_publication_limit(arena, *code)? {
+                return Err(invalid(format!(
+                    "vendor record of rate {code:#x} ends before its publication limit"
+                )));
+            }
         }
     }
-}
-
-/// A non-null output object of `length` bytes at the start of the region.
-const fn output(length: u32) -> Domain {
-    Domain::Output {
-        offset: 0,
-        length,
-        nullable: false,
+    if admitted != RATE_CODES {
+        return Err(invalid(format!(
+            "rcGetRate rate domain differs from the vendor index table: {:x?}",
+            rates.mapped()
+        )));
     }
-}
-
-/// Initial bytes of an output object: bytes a leaf leaves alone compare too.
-const OUTPUT_FILL: u8 = 0xa5;
-/// Source of the bytes a setup phase copies into a linked-image object.
-const IMAGE_SOURCE: u32 = 0x3fff_b000;
-
-/// One vendor leaf, its production probe and the argument domain of each
-/// parameter, in ABI order; the cases are their product.
-pub struct Leaf {
-    pub vendor: &'static str,
-    pub probe: &'static str,
-    pub parameters: &'static [(&'static str, Domain)],
-    pub returns: bool,
-    /// Full fences production adds to order the leaf's register edge
-    /// against surrounding memory and device accesses.
-    pub ordering_fences: u32,
-    /// Release fences production adds when it releases the shared-radio
-    /// lease after the leaf's register transaction.
-    pub release_fences: u32,
-    /// Whether production may reject a case before it leases the radio, so
-    /// the release fences occur only in cases that reach the hardware.
-    pub release_optional: bool,
-    /// Reviewed word writes production performs in place of vendor writes,
-    /// each exactly once.
-    pub replacements: &'static [Replacement],
-    /// Registers the vendor reads for values production does not need,
-    /// with their reason: production may omit those reads.
-    pub vendor_reads: &'static [(u32, &'static str)],
-    /// A bounded feature: the vendor side stops before calling this
-    /// function, and only the prefix up to that call is compared.
-    pub prefix_until: Option<&'static str>,
-    /// Whether a tail call of `prefix_until` also ends the vendor side.
-    pub prefix_tail: bool,
-    /// Builds both sides' objects from the semantic probe words when the
-    /// vendor reads its arguments from its own objects.
-    pub vendor_abi: Option<VendorAbi>,
-    /// The vendor function is a ROM symbol rather than a `libpp.a` root.
-    pub rom: bool,
-    /// Session input of the archive defining the vendor function.
-    pub archive: u64,
-    /// Object states the builder receives after the probe words: a further
-    /// case dimension that reaches the probe only through the objects.
-    pub states: &'static [u32],
-    /// A dispatcher compared up to its selected callee: for the case words,
-    /// the vendor callee and the production callee both sides stop before.
-    /// Reaching another callee leaves the goal unmet; the first argument
-    /// word at both stops must be the case's first word.
-    pub dispatch: Option<Dispatch>,
-    /// Vendor functions answered with a zero return and no other effect:
-    /// assertions the compared domain never fails.
-    pub quiet_calls: &'static [&'static str],
-}
-
-/// The vendor and production callees a dispatcher selects for the words.
-pub type Dispatch = fn(&[u32]) -> (&'static str, &'static str);
-
-/// Objects of one case: vendor argument words, initialized vendor and
-/// production objects as (address, bytes), and vendor call models.
-#[derive(Default)]
-pub struct Objects {
-    pub vendor_words: Vec<u32>,
-    pub vendor: Vec<(u32, Vec<u8>)>,
-    pub production: Vec<(u32, Vec<u8>)>,
-    pub calls: Vec<CallDeclaration>,
-    /// Object bytes both sides share and the relation compares after the
-    /// leaf, as (address, length); each side receives the same objects.
-    pub compared: Vec<(u32, u32)>,
-    /// Vendor objects inside the linked image's data, as (address, bytes):
-    /// setup phases copy them in with the captured ROM `memcpy`, and the
-    /// compared phase keeps them warm.
-    pub image: Vec<(u32, Vec<u8>)>,
-    /// Register models both sides share, as (address, initial word): exact
-    /// registers within the radio aperture whose initial value the case
-    /// selects instead of the fill pattern.
-    pub registers: Vec<(u32, u32)>,
-    /// Registers both sides read as a finite sequence, as (address, runs):
-    /// a read beyond the runs fails the case, so both sides must read each
-    /// exactly as often as the runs allow.
-    pub sequences: Vec<(u32, Vec<blobray_domain::ReadRun>)>,
-}
-
-/// Builds a case's objects from the semantic probe words, followed by the
-/// object state when the leaf has states.
-pub type VendorAbi = fn(&[u32], &Vendor<'_>) -> Result<Objects>;
-
-/// What a builder may read from the vendor side: linked-image or ROM symbol
-/// addresses and data sections of the captured archive.
-pub struct Vendor<'a> {
-    pub resolve: &'a dyn Fn(&str) -> Result<u32>,
-    /// Symbols the linked image defines; any other symbol is a ROM address.
-    pub image: &'a BTreeMap<String, u32>,
-    pub rates: &'a RateTables,
-    /// Symbol values of the vendor firmware, including the absolute
-    /// addresses its linker scripts provide.
-    pub firmware: &'a dyn Fn(&str) -> Result<u32>,
-}
-
-impl Vendor<'_> {
-    pub(crate) fn symbol(&self, name: &str) -> Result<u32> {
-        (self.resolve)(name)
-    }
-
-    /// The address of a symbol or uniquely named input section of the
-    /// linked image.
-    pub(crate) fn image_symbol(&self, name: &str) -> Result<u32> {
-        self.image
-            .get(name)
-            .copied()
-            .ok_or_else(|| invalid(format!("the linked image does not place {name}")))
-    }
-
-    /// The boundary of a call model answering `name`: captured code when the
-    /// linked image defines it, an unmapped address otherwise.
-    pub(crate) fn boundary(&self, name: &str) -> CallBoundary {
-        call_boundary(self.image, name)
-    }
-}
-
-pub(crate) fn call_boundary(image: &BTreeMap<String, u32>, name: &str) -> CallBoundary {
-    if image.contains_key(name) {
-        CallBoundary::CapturedCode
-    } else {
-        CallBoundary::Unmapped
-    }
+    Ok(Box::new(rates))
 }
 
 /// `libpp.a[trc.o]` 802.11g retry data: the rate-code-to-record index table
@@ -342,133 +220,9 @@ impl RateTables {
     }
 }
 
-pub(crate) const fn leaf(
-    vendor: &'static str,
-    probe: &'static str,
-    parameters: &'static [(&'static str, Domain)],
-    returns: bool,
-) -> Leaf {
-    Leaf {
-        vendor,
-        probe,
-        parameters,
-        returns,
-        ordering_fences: 0,
-        release_fences: 0,
-        release_optional: false,
-        replacements: &[],
-        vendor_reads: &[],
-        prefix_until: None,
-        prefix_tail: false,
-        vendor_abi: None,
-        rom: false,
-        archive: 0,
-        states: &[],
-        dispatch: None,
-        quiet_calls: &[],
-    }
-}
-
-/// A dispatcher leaf compared up to the callee `select` names.
-pub(crate) const fn dispatching(leaf: Leaf, select: Dispatch) -> Leaf {
-    Leaf {
-        dispatch: Some(select),
-        ..leaf
-    }
-}
-
-/// A leaf whose vendor `calls` return zero with no other effect.
-pub(crate) const fn quiet(leaf: Leaf, calls: &'static [&'static str]) -> Leaf {
-    Leaf {
-        quiet_calls: calls,
-        ..leaf
-    }
-}
-
-/// A leaf whose vendor function is the ROM symbol of that name.
-pub(crate) const fn rom(leaf: Leaf) -> Leaf {
-    Leaf { rom: true, ..leaf }
-}
-
 /// A leaf whose vendor function is the `libnet80211.a` root of that name.
 const fn net80211(leaf: Leaf) -> Leaf {
     in_archive(leaf, NET80211_INPUT)
-}
-
-/// A leaf whose vendor function the suite archive at session input `input`
-/// defines.
-pub(crate) const fn in_archive(leaf: Leaf, input: u64) -> Leaf {
-    Leaf {
-        archive: input,
-        ..leaf
-    }
-}
-
-/// A leaf whose production counterpart adds `fences` ordering fences.
-pub(crate) const fn ordered(leaf: Leaf, fences: u32) -> Leaf {
-    Leaf {
-        ordering_fences: fences,
-        ..leaf
-    }
-}
-
-/// A leaf whose production counterpart releases its shared-radio lease
-/// with `fences` release fences.
-pub(crate) const fn released(leaf: Leaf, fences: u32) -> Leaf {
-    Leaf {
-        release_fences: fences,
-        ..leaf
-    }
-}
-
-/// A leaf whose production counterpart releases its shared-radio lease
-/// with `fences` release fences in the cases it leases the radio at all: it
-/// rejects invalid arguments before leasing.
-pub(crate) const fn released_when_leased(leaf: Leaf, fences: u32) -> Leaf {
-    Leaf {
-        release_fences: fences,
-        release_optional: true,
-        ..leaf
-    }
-}
-
-/// One reviewed write substitution: production writes `replacement` where
-/// the vendor writes `vendor`, as (address, value) pairs, for `reason`.
-#[derive(Clone, Copy)]
-pub struct Replacement {
-    pub vendor: (u32, u32),
-    pub replacement: (u32, u32),
-    pub reason: &'static str,
-}
-
-/// A leaf whose production counterpart performs `replacements`.
-pub(crate) const fn replaced(leaf: Leaf, replacements: &'static [Replacement]) -> Leaf {
-    Leaf {
-        replacements,
-        ..leaf
-    }
-}
-
-/// A leaf whose vendor reads `registers` for values production does not
-/// need; production may omit each read.
-pub(crate) const fn vendor_reads(leaf: Leaf, registers: &'static [(u32, &'static str)]) -> Leaf {
-    Leaf {
-        vendor_reads: registers,
-        ..leaf
-    }
-}
-
-/// A leaf whose objects also take each of `states`.
-pub(crate) const fn stated(leaf: Leaf, states: &'static [u32]) -> Leaf {
-    Leaf { states, ..leaf }
-}
-
-/// A leaf whose vendor reads its semantic arguments from objects `abi` builds.
-pub(crate) const fn objects(leaf: Leaf, abi: VendorAbi) -> Leaf {
-    Leaf {
-        vendor_abi: Some(abi),
-        ..leaf
-    }
 }
 
 /// `hal_mac_tx_config_edca` object at `INPUT`: a context pointer, then the
@@ -1028,7 +782,11 @@ const RATE_COUNTERS: &[u32] = &[0, 0x0001_0100, 0x0002_0200, 0x0004_0200, 0x0000
 const RATE_SELECTED: u32 = RATE_DESCRIPTOR + 0x0c;
 
 fn rate_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
-    let arena = if vendor.rates.dot11n_index.contains_key(&words[2]) {
+    let arena = if vendor
+        .context::<RateTables>()?
+        .dot11n_index
+        .contains_key(&words[2])
+    {
         RateArena::Ht
     } else {
         RateArena::Legacy
@@ -1062,7 +820,10 @@ fn scheduled_rate_abi(
     let objects = vec![
         (RATE_DESCRIPTOR, self::words(&descriptor)),
         (RATE_CONTEXT, vec![0; 16]),
-        (RATE_SCHEDULE, vendor.rates.record(arena, *rate)?),
+        (
+            RATE_SCHEDULE,
+            vendor.context::<RateTables>()?.record(arena, *rate)?,
+        ),
     ];
     let assert = CallDeclaration {
         id: "wifi-assert".into(),
@@ -1092,47 +853,6 @@ fn scheduled_rate_abi(
     })
 }
 
-/// Initial bytes of each compared range, from the vendor objects covering it.
-fn compared_bytes(objects: &[(u32, Vec<u8>)], compared: &[(u32, u32)]) -> Result<Vec<u8>> {
-    let mut bytes = vec![];
-    for (address, length) in compared {
-        let (start, object) = objects
-            .iter()
-            .find(|(start, object)| {
-                *start <= *address && address + length <= start + object.len() as u32
-            })
-            .ok_or_else(|| invalid(format!("compared range {address:#x} has no object")))?;
-        let offset = (address - start) as usize;
-        bytes.extend_from_slice(&object[offset..offset + *length as usize]);
-    }
-    Ok(bytes)
-}
-
-/// Addresses of the named symbols of the linked image, including the
-/// absolute companion definitions, and of the input sections its link map
-/// places by section name: a local object without a symbol, such as a
-/// static byte in `.bss.<name>`, is addressed by its section.
-fn image_symbols(elf: &std::path::Path) -> Result<BTreeMap<String, u32>> {
-    use object::{Object, ObjectSymbol};
-    let bytes = std::fs::read(elf)?;
-    let file = object::File::parse(&*bytes)?;
-    let mut symbols = BTreeMap::new();
-    for symbol in file.symbols() {
-        if let (Ok(name), Ok(address)) = (symbol.name(), u32::try_from(symbol.address()))
-            && !name.is_empty()
-            && !symbol.is_undefined()
-        {
-            symbols.entry(name.to_owned()).or_insert(address);
-        }
-    }
-    if let Ok(map) = std::fs::read_to_string(elf.with_file_name(crate::state::LINK_MAP)) {
-        for section in crate::state::link_map_sections(&map) {
-            symbols.entry(section.name).or_insert(section.address);
-        }
-    }
-    Ok(symbols)
-}
-
 /// Transmit-error details of status four and the retry leaf each selects.
 const TX_ERROR_DETAILS: &[u32] = &[0, 1, 2, 3, 4, 5, 6];
 /// Ordinary queues the dispatcher cases use: the lowest and the highest.
@@ -1158,30 +878,6 @@ fn tx_error_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
         ..Default::default()
     })
 }
-
-/// A leaf compared only up to the vendor's call of `callee`.
-pub(crate) const fn prefix(leaf: Leaf, callee: &'static str) -> Leaf {
-    Leaf {
-        prefix_until: Some(callee),
-        ..leaf
-    }
-}
-
-/// A leaf compared only up to the vendor's call or tail call of `callee`.
-pub(crate) const fn tail_prefix(leaf: Leaf, callee: &'static str) -> Leaf {
-    Leaf {
-        prefix_until: Some(callee),
-        prefix_tail: true,
-        ..leaf
-    }
-}
-
-/// Full-fence predecessor and successor sets: device input, output, memory
-/// reads and writes.
-const FULL_FENCE: u8 = 0xf;
-/// Release-fence predecessor and successor sets: memory reads and writes
-/// before memory writes.
-const RELEASE_FENCE: (u8, u8) = (0x3, 0x1);
 
 /// Logical MAC interface contexts: station, access point and two others.
 const INTERFACES: &[u32] = &[0, 1, 2, 3];
@@ -1233,10 +929,6 @@ const TSF_HIGH: Domain = Domain::Output {
 
 /// Bytes of the transmit Block Ack record: control, sequence and bitmap.
 const BLOCK_ACK_BYTES: u32 = 12;
-
-/// One case: its setup phases, the compared phase, the initial bytes of its
-/// compared objects and its probe words.
-type LeafCase = (Vec<ExecutionCase>, ExecutionCase, Vec<u8>, Vec<u32>);
 
 /// Every compared leaf.
 pub const LEAVES: &[Leaf] = &[
@@ -1695,787 +1387,4 @@ fn rx_policy_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
 /// The policy-zero `g_ic` context: no address and the first station mode.
 fn rx_disable_all_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
     rx_policy_abi(&[words[0], 0, 0, RX_MODES[0]], vendor)
-}
-
-/// Linked `libpp.a` image with its captured roots and both execution targets.
-pub struct Mac {
-    pub session: Session,
-    pub suite: &'static Suite,
-    pub rates: RateTables,
-    pub roots: BTreeMap<String, u32>,
-    pub image_object: ObjectId,
-    pub vendor: ExecutionTarget,
-    pub production: ExecutionTarget,
-}
-
-impl std::ops::Deref for Mac {
-    type Target = Session;
-    fn deref(&self) -> &Session {
-        &self.session
-    }
-}
-impl std::ops::DerefMut for Mac {
-    fn deref_mut(&mut self) -> &mut Session {
-        &mut self.session
-    }
-}
-
-impl Mac {
-    pub fn new(options: &MacOptions) -> Result<Self> {
-        let suite = options.suite;
-        if options.archives.len() != suite.archives.len() {
-            return Err(invalid("one path per suite archive"));
-        }
-        let mut inputs = vec![
-            Input {
-                role: suite.archives[0],
-                path: &options.archives[0],
-                sha256: Some(crate::artifacts::sha256(suite.archives[0])),
-            },
-            Input {
-                role: "rom",
-                path: &options.rom,
-                sha256: Some(crate::artifacts::sha256("rom")),
-            },
-            Input {
-                role: "production",
-                path: &options.production,
-                sha256: None,
-            },
-            crate::phy::phy_sdk_input(&options.phy_sdk),
-        ];
-        for (id, path) in suite.archives.iter().zip(&options.archives).skip(1) {
-            inputs.push(Input {
-                role: id,
-                path,
-                sha256: Some(crate::artifacts::sha256(id)),
-            });
-        }
-        let archive_inputs: Vec<u64> = [0]
-            .into_iter()
-            .chain((0..suite.archives.len() as u64 - 1).map(|i| EXTRA_ARCHIVE_INPUT + i))
-            .collect();
-        let mut session = Session::start(
-            &options.binary,
-            &options.output,
-            options.budget,
-            &inputs,
-            suite.title,
-            &options.patches,
-        )?;
-        // The first leaf is the link entry; the others are further roots,
-        // each selected in the archive that defines it.
-        let leaves = suite.leaves;
-        let wifi_roots: Vec<(u64, &str)> = if suite.wifi {
-            [(0, RateTables::INDEX_CALLER)]
-                .into_iter()
-                .chain(crate::retry::ROOTS.iter().map(|root| (0, *root)))
-                .collect()
-        } else {
-            vec![]
-        };
-        let mut vendors: Vec<(u64, &str)> = leaves
-            .iter()
-            .filter(|l| !l.rom)
-            .map(|l| (l.archive, l.vendor))
-            .filter(|(_, v)| *v != leaves[0].vendor)
-            .chain(wifi_roots)
-            .collect();
-        vendors.sort_unstable();
-        vendors.dedup();
-        let roots = vendors
-            .iter()
-            .map(|(input, v)| select(&session, *input as usize, v))
-            .collect::<Result<Vec<_>>>()?;
-        let link = LinkRequest {
-            companions: vec![],
-            revision: Some(session.revision.clone()),
-            inputs: archive_inputs,
-            entry: select(&session, leaves[0].archive as usize, leaves[0].vendor)?,
-            roots,
-            layout: image_layout(),
-            absent: suite.absent.iter().map(|n| (*n).to_owned()).collect(),
-        };
-        let linked = session.link(
-            &link,
-            &options.linker,
-            leaves[0].vendor,
-            &[crate::layout::ROM_INPUT, PHY_SDK_INPUT],
-        )?;
-        let (vendor, production) = session.targets(&linked.image)?;
-        if !suite.wifi {
-            return Ok(Self {
-                suite,
-                rates: RateTables::default(),
-                image_object: ObjectId {
-                    artifact: linked.manifest.elf.clone(),
-                    location: ObjectLocation::Standalone,
-                },
-                roots: linked.roots,
-                vendor,
-                production,
-                session,
-            });
-        }
-        let image = image_symbols(&session.run.join("image/image.elf"))?;
-        let dot11n_index = schedule_indices(
-            &mut session,
-            &vendor,
-            &image,
-            RateTables::DOT11N_INDEX,
-            HT_RATE_CODES,
-        )?;
-        let dot11ax_index = schedule_indices(
-            &mut session,
-            &vendor,
-            &image,
-            RateTables::DOT11AX_INDEX,
-            HE_RATE_CODES,
-        )?;
-        let rates = RateTables {
-            index: vendor_section(&session, RateTables::OBJECT, RateTables::INDEX_SECTION)?,
-            arena: vendor_section(&session, RateTables::OBJECT, RateTables::ARENA_SECTION)?,
-            dot11n: vendor_section(&session, RateTables::OBJECT, RateTables::DOT11N_SECTION)?,
-            dot11n_index,
-            dot11ax: vendor_section(&session, RateTables::OBJECT, RateTables::DOT11AX_SECTION)?,
-            dot11ax_index,
-        };
-        let admitted: Vec<u32> = rates
-            .mapped()
-            .into_iter()
-            .filter(|code| !UNADMITTED_RATE_CODES.contains(code))
-            .collect();
-        let arenas = [
-            (RateArena::Legacy, RATE_CODES),
-            (RateArena::Ht, HT_RATE_CODES),
-            (RateArena::He, HE_RATE_CODES),
-        ];
-        for (arena, codes) in arenas {
-            for code in codes {
-                if !rates.covers_publication_limit(arena, *code)? {
-                    return Err(invalid(format!(
-                        "vendor record of rate {code:#x} ends before its publication limit"
-                    )));
-                }
-            }
-        }
-        if admitted != RATE_CODES {
-            return Err(invalid(format!(
-                "rcGetRate rate domain differs from the vendor index table: {:x?}",
-                rates.mapped()
-            )));
-        }
-        Ok(Self {
-            suite,
-            rates,
-            image_object: ObjectId {
-                artifact: linked.manifest.elf.clone(),
-                location: ObjectLocation::Standalone,
-            },
-            roots: linked.roots,
-            vendor,
-            production,
-            session,
-        })
-    }
-
-    /// Symbols of the linked image.
-    pub(crate) fn image_symbols(&self) -> Result<BTreeMap<String, u32>> {
-        image_symbols(&self.session.run.join("image/image.elf"))
-    }
-
-    /// Address of `name` in the linked image, or else in the ROM.
-    pub(crate) fn symbol_address(&self, image: &BTreeMap<String, u32>, name: &str) -> Result<u32> {
-        if let Some(address) = image.get(name) {
-            return Ok(*address);
-        }
-        Ok(u32::try_from(
-            crate::harness::symbol(
-                &self.session.inventory,
-                crate::layout::ROM_INPUT as usize,
-                name,
-            )?
-            .value,
-        )?)
-    }
-
-    /// Entry address of the vendor function of `leaf`.
-    fn vendor_entry(&self, leaf: &Leaf) -> Result<u32> {
-        if leaf.rom {
-            Ok(u32::try_from(
-                crate::harness::symbol(
-                    &self.session.inventory,
-                    crate::layout::ROM_INPUT as usize,
-                    leaf.vendor,
-                )?
-                .value,
-            )?)
-        } else {
-            Ok(self.roots[leaf.vendor])
-        }
-    }
-
-    /// Exact code endpoint of the vendor function of `leaf`.
-    fn vendor_endpoint(&self, leaf: &Leaf) -> Result<blobray_domain::CallEndpoint> {
-        if leaf.rom {
-            self.session
-                .input_endpoint(crate::layout::ROM_INPUT, leaf.vendor)
-        } else {
-            self.session.image_endpoint(
-                &self.vendor,
-                &self.image_object,
-                leaf.vendor,
-                self.roots[leaf.vendor],
-            )
-        }
-    }
-
-    /// The reviewed contract of a leaf whose production adds ordering
-    /// fences: exactly that many full fences, every other effect compared
-    /// exactly.
-    fn ordering_contract(&mut self, leaf: &Leaf) -> Result<EffectContractRef> {
-        let vendor = self.vendor_endpoint(leaf)?;
-        let production = self.session.input_endpoint(2, leaf.probe)?;
-        let write = |(address, value): (u32, u32)| EffectPattern {
-            selector: EffectSelector::MmioWrite { address, width: 4 },
-            value: EffectValue::Exact { value },
-            followed_by: None,
-        };
-        let mut rules: Vec<EffectRule> = leaf
-            .replacements
-            .iter()
-            .map(|replacement| EffectRule {
-                name: format!("replaced-write-{:08x}", replacement.vendor.0),
-                vendor: Some(write(replacement.vendor)),
-                replacement: Some(write(replacement.replacement)),
-                disposition: EffectDisposition::Replaced,
-                min_occurrences: 1,
-                max_occurrences: 1,
-                reason: replacement.reason.into(),
-            })
-            .collect();
-        for (address, reason) in leaf.vendor_reads {
-            let read = EffectPattern {
-                selector: EffectSelector::MmioRead {
-                    address: *address,
-                    width: 4,
-                },
-                value: EffectValue::Any,
-                followed_by: None,
-            };
-            rules.push(EffectRule {
-                name: format!("vendor-only-read-{address:08x}"),
-                vendor: Some(read),
-                replacement: Some(read),
-                disposition: EffectDisposition::Omitted,
-                min_occurrences: 0,
-                max_occurrences: VENDOR_ONLY_READS,
-                reason: (*reason).into(),
-            });
-        }
-        if leaf.release_fences != 0 {
-            rules.push(EffectRule {
-                name: "lease-release-fence".into(),
-                vendor: None,
-                replacement: Some(EffectPattern {
-                    selector: EffectSelector::Fence {
-                        predecessor: RELEASE_FENCE.0,
-                        successor: RELEASE_FENCE.1,
-                    },
-                    value: EffectValue::Any,
-                    followed_by: None,
-                }),
-                disposition: EffectDisposition::Added,
-                min_occurrences: if leaf.release_optional {
-                    0
-                } else {
-                    leaf.release_fences
-                },
-                max_occurrences: leaf.release_fences,
-                reason: if leaf.release_optional {
-                    "production releases its shared-radio lease after the register \
-                    transaction, and leases the radio only for arguments that reach the \
-                    hardware; the vendor serializes with a critical section answered as quiet \
-                    calls"
-                } else {
-                    "production releases its shared-radio lease after the register \
-                    transaction; the vendor serializes with a critical section answered as \
-                    quiet calls"
-                }
-                .into(),
-            });
-        }
-        if leaf.ordering_fences == 0 {
-            return self.review_ordering(leaf, vendor, production, rules);
-        }
-        rules.push(EffectRule {
-            name: "device-ordering-fence".into(),
-            vendor: None,
-            replacement: Some(EffectPattern {
-                selector: EffectSelector::Fence {
-                    predecessor: FULL_FENCE,
-                    successor: FULL_FENCE,
-                },
-                value: EffectValue::Any,
-                followed_by: None,
-            }),
-            disposition: EffectDisposition::Added,
-            min_occurrences: leaf.ordering_fences,
-            max_occurrences: leaf.ordering_fences,
-            reason: "production orders the register edge against surrounding memory and device \
-                accesses; the vendor leaves ordering to its caller"
-                .into(),
-        });
-        self.review_ordering(leaf, vendor, production, rules)
-    }
-
-    fn review_ordering(
-        &mut self,
-        leaf: &Leaf,
-        vendor: blobray_domain::CallEndpoint,
-        production: blobray_domain::CallEndpoint,
-        rules: Vec<EffectRule>,
-    ) -> Result<EffectContractRef> {
-        let applicability = "one register transaction over retained radio registers";
-        self.session.review_effects(
-            &format!("{}-effects", leaf.probe),
-            &format!("esp32s31.mac.{}.effects", leaf.vendor),
-            crate::contracts::phy_contract(vendor, production, rules, applicability),
-            "every register effect compares exactly; production adds ordering fences",
-        )
-    }
-
-    /// Both sides of `leaf` for every argument combination, object state and
-    /// fill.
-    /// Each case carries the initial bytes of the objects it compares and
-    /// its probe words.
-    fn cases(&mut self, leaf: &Leaf) -> Result<Vec<LeafCase>> {
-        let image_symbols = image_symbols(&self.session.run.join("image/image.elf"))?;
-        let effects = if leaf.ordering_fences != 0
-            || leaf.release_fences != 0
-            || !leaf.replacements.is_empty()
-            || !leaf.vendor_reads.is_empty()
-        {
-            Some(self.ordering_contract(leaf)?)
-        } else {
-            None
-        };
-        // Every combination of one value index per parameter.
-        let mut combinations: Vec<Vec<usize>> = vec![vec![]];
-        for (_, domain) in leaf.parameters {
-            combinations = combinations
-                .into_iter()
-                .flat_map(|prefix| {
-                    (0..domain.len()).map(move |index| {
-                        let mut indices = prefix.clone();
-                        indices.push(index);
-                        indices
-                    })
-                })
-                .collect();
-        }
-        let mut rows = vec![];
-        for indices in &combinations {
-            let (mut words, mut memory, mut arguments, mut label) =
-                (vec![], vec![], vec![], String::new());
-            // End of the output region the parameters address.
-            let mut output: Option<u32> = None;
-            for ((name, domain), index) in leaf.parameters.iter().zip(indices) {
-                match domain {
-                    Domain::Words(values) => {
-                        let value = values[*index];
-                        words.push(value);
-                        arguments.push((*name, Arg::Word(Some(i64::from(value)))));
-                        label.push_str(&format!("-{value:x}"));
-                    }
-                    Domain::Addresses(values) => {
-                        let bytes = values[*index];
-                        words.push(INPUT);
-                        memory.push(known(INPUT, bytes.len() as u32, &bytes)?);
-                        arguments.push((*name, Buffer::new(INPUT, bytes).into()));
-                        label.push_str(&format!("-{bytes:02x?}"));
-                    }
-                    Domain::Output {
-                        offset,
-                        length,
-                        nullable,
-                    } => {
-                        let address = if *nullable && *index == 0 {
-                            0
-                        } else {
-                            OUTPUT + offset
-                        };
-                        words.push(address);
-                        arguments.push((*name, Arg::Word(Some(i64::from(address)))));
-                        output = Some(output.unwrap_or(0).max(offset + length));
-                        label.push_str(&format!("-{address:x}"));
-                    }
-                }
-            }
-            let (output_memory, observe) = match output {
-                Some(length) => (
-                    vec![filled(OUTPUT, length, OUTPUT_FILL)?],
-                    vec![selection(OUTPUT, length)],
-                ),
-                None => (vec![], vec![]),
-            };
-            let regions = |objects: &[(u32, Vec<u8>)]| {
-                objects
-                    .iter()
-                    .map(|(address, bytes)| known(*address, bytes.len() as u32, bytes))
-                    .collect::<Result<Vec<_>>>()
-            };
-            let rom = |name: &str| -> Result<u32> {
-                if let Some(address) = image_symbols.get(name) {
-                    return Ok(*address);
-                }
-                Ok(u32::try_from(
-                    crate::harness::symbol(
-                        &self.session.inventory,
-                        crate::layout::ROM_INPUT as usize,
-                        name,
-                    )?
-                    .value,
-                )?)
-            };
-            let firmware = |name: &str| -> Result<u32> {
-                Ok(u32::try_from(
-                    crate::harness::symbol(&self.session.inventory, PHY_SDK_INPUT as usize, name)?
-                        .value,
-                )?)
-            };
-            let states: Vec<Option<u32>> = if leaf.states.is_empty() {
-                vec![None]
-            } else {
-                leaf.states.iter().copied().map(Some).collect()
-            };
-            for state in states {
-                let (
-                    vendor_words,
-                    mut vendor_memory,
-                    production_memory,
-                    vendor_calls,
-                    compared,
-                    initial,
-                    image,
-                    registers,
-                    sequences,
-                ) = match leaf.vendor_abi {
-                    Some(abi) => {
-                        let mut semantic = words.clone();
-                        semantic.extend(state);
-                        let objects = abi(
-                            &semantic,
-                            &Vendor {
-                                resolve: &rom,
-                                firmware: &firmware,
-                                image: &image_symbols,
-                                rates: &self.rates,
-                            },
-                        )?;
-                        let initial = compared_bytes(&objects.vendor, &objects.compared)?;
-                        (
-                            objects.vendor_words,
-                            regions(&objects.vendor)?,
-                            regions(&objects.production)?,
-                            objects.calls,
-                            objects.compared,
-                            initial,
-                            objects.image,
-                            objects.registers,
-                            objects.sequences,
-                        )
-                    }
-                    None => (
-                        words.clone(),
-                        memory.clone(),
-                        vec![],
-                        vec![],
-                        vec![],
-                        vec![],
-                        vec![],
-                        vec![],
-                        vec![],
-                    ),
-                };
-                // Exact register models take precedence over the aperture.
-                let devices = |fill: u8| {
-                    let mut devices = vec![];
-                    for (index, (address, runs)) in sequences.iter().enumerate() {
-                        devices.push(crate::layout::sequence_read(
-                            &format!("case-sequence-{index}"),
-                            *address,
-                            runs.clone(),
-                        ));
-                    }
-                    if !registers.is_empty() {
-                        devices.push(crate::layout::register_bank(
-                            "case-registers",
-                            "registers whose initial value the case selects",
-                            registers.clone(),
-                        ));
-                    }
-                    devices.push(radio_aperture(fill));
-                    devices
-                };
-                let initial = [vec![OUTPUT_FILL; output.unwrap_or(0) as usize], initial].concat();
-                let compared: Vec<_> = compared
-                    .iter()
-                    .map(|(address, length)| selection(*address, *length))
-                    .collect();
-                vendor_memory.extend(output_memory.clone());
-                let observed = [observe.clone(), compared].concat();
-                let state_label = state.map_or(String::new(), |state| format!("-s{state:x}"));
-                for fill in LEAF_FILLS {
-                    let mut vendor = direct(
-                        self.vendor_entry(leaf)?,
-                        &vendor_words,
-                        vendor_memory.clone(),
-                        devices(fill),
-                        observed.clone(),
-                    );
-                    vendor.calls = vendor_calls.clone();
-                    for name in leaf.quiet_calls {
-                        // Names the suite declares absent share one unmapped
-                        // address, which one declaration answers.
-                        let (address, boundary) = if self.suite.absent.contains(name) {
-                            (
-                                blobray_domain::ABSENT_SYMBOL_ADDRESS,
-                                CallBoundary::Unmapped,
-                            )
-                        } else {
-                            (rom(name)?, call_boundary(&image_symbols, name))
-                        };
-                        if vendor.calls.iter().any(|c| c.binding.address == address) {
-                            continue;
-                        }
-                        vendor.calls.push(CallDeclaration {
-                            id: (*name).into(),
-                            applicability: "a call the compared domain answers without effect"
-                                .into(),
-                            lifetime: RegionLifetime::Phase,
-                            binding: CallBinding {
-                                address,
-                                boundary,
-                                allow_tail: true,
-                            },
-                            argument_words: 1,
-                            responses: vec![CallResponse {
-                                return_words: [Some(0), None],
-                                outputs: vec![],
-                                allocation: None,
-                                delay_micros: None,
-                            }],
-                            repetition: CallRepetition::Unbounded,
-                        });
-                    }
-                    if let Some(callee) = leaf.prefix_until {
-                        vendor.goal = ExecutionGoal::ObserveCall {
-                            target: ExecutionSymbol {
-                                source: self.vendor.source.clone(),
-                                symbol: image_symbol_id(
-                                    &self.session.run.join("image/image.elf"),
-                                    &self.image_object,
-                                    callee,
-                                )?,
-                            },
-                            include_tail: leaf.prefix_tail,
-                        };
-                    }
-                    let mut production = self.session.probes.invoke(
-                        leaf.probe,
-                        arguments.clone(),
-                        devices(fill),
-                        observed.clone(),
-                    )?;
-                    if let Some(select) = leaf.dispatch {
-                        let (vendor_callee, production_callee) = select(&words);
-                        let capture = CallCapture {
-                            include_tail: true,
-                            argument_words: 1,
-                            overrides: vec![],
-                        };
-                        vendor.goal = ExecutionGoal::ObserveCall {
-                            target: ExecutionSymbol {
-                                source: self.vendor.source.clone(),
-                                symbol: image_symbol_id(
-                                    &self.session.run.join("image/image.elf"),
-                                    &self.image_object,
-                                    vendor_callee,
-                                )?,
-                            },
-                            include_tail: true,
-                        };
-                        vendor.observe_calls = Some(capture.clone());
-                        production.goal = ExecutionGoal::ObserveCall {
-                            target: ExecutionSymbol {
-                                source: self.production.source.clone(),
-                                symbol: crate::harness::symbol(
-                                    &self.session.inventory,
-                                    PROBE_INPUT,
-                                    production_callee,
-                                )?
-                                .id
-                                .clone(),
-                            },
-                            include_tail: true,
-                        };
-                        production.observe_calls = Some(capture);
-                    }
-                    production.memory.extend(output_memory.clone());
-                    production.memory.extend(production_memory.clone());
-                    production.arguments.resize(8, Some(0));
-                    let name = format!("{}{label}{state_label}-{fill:02x}", leaf.vendor);
-                    // Each image object is copied in by the captured ROM
-                    // `memcpy`; production has no counterpart and copies
-                    // nothing.
-                    let memcpy = u32::try_from(
-                        crate::harness::symbol(
-                            &self.session.inventory,
-                            crate::layout::ROM_INPUT as usize,
-                            "memcpy",
-                        )?
-                        .value,
-                    )?;
-                    let mut setup = vec![];
-                    for (index, (address, bytes)) in image.iter().enumerate() {
-                        let length = bytes.len() as u32;
-                        let mut phase = case(
-                            format!("{name}-image-{index}"),
-                            direct(
-                                memcpy,
-                                &[*address, IMAGE_SOURCE, length],
-                                vec![known(IMAGE_SOURCE, length, bytes)?],
-                                vec![],
-                                vec![],
-                            ),
-                            Some(direct(
-                                memcpy,
-                                &[IMAGE_SOURCE, IMAGE_SOURCE, 0],
-                                vec![],
-                                vec![],
-                                vec![],
-                            )),
-                            if index == 0 {
-                                SessionReset::Cold
-                            } else {
-                                SessionReset::Warm
-                            },
-                            false,
-                        );
-                        phase.stack_fill = Some(fill);
-                        setup.push(phase);
-                    }
-                    let mut row = case(
-                        name,
-                        vendor,
-                        Some(production),
-                        if setup.is_empty() {
-                            SessionReset::Cold
-                        } else {
-                            SessionReset::Warm
-                        },
-                        false,
-                    );
-                    row.stack_fill = Some(fill);
-                    let relation = row.relation.as_mut().unwrap();
-                    relation.returns.low = leaf.returns;
-                    relation.effects = effects.clone();
-                    relation.memory = (0..observed.len() as u16)
-                        .map(|index| MemoryPair {
-                            vendor: index,
-                            replacement: index,
-                        })
-                        .collect();
-                    rows.push((setup, row, initial.clone(), words.clone()));
-                }
-            }
-        }
-        Ok(rows)
-    }
-}
-
-/// Compare every leaf; each must MATCH in every case and record effects.
-pub fn exercise(ctx: &mut Mac) -> Result<()> {
-    for leaf in ctx.suite.leaves {
-        let mut rows = vec![];
-        let (mut initial, mut case_words, mut positions) = (vec![], vec![], vec![]);
-        for (setup, row, bytes, words) in ctx.cases(leaf)? {
-            rows.extend(setup);
-            positions.push(rows.len() as u32);
-            rows.push(row);
-            initial.push(bytes);
-            case_words.push(words);
-        }
-        let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
-        let records = ctx
-            .submit(
-                leaf.probe,
-                &request(&vendor, Some(&production), None, rows, LEAF_EVENTS),
-                Some(ComparisonVerdict::Match),
-            )?
-            .records
-            .clone();
-        for (index, case) in positions.into_iter().enumerate() {
-            for side in [false, true] {
-                if !crate::i2c::all_complete(&records, case, side) {
-                    return Err(invalid(format!(
-                        "{} case {case} did not complete",
-                        leaf.vendor
-                    )));
-                }
-            }
-            if leaf.dispatch.is_some() {
-                let expected = case_words[index][0];
-                for side in [false, true] {
-                    let argument = crate::evidence::events(&records, case, side)
-                        .iter()
-                        .rev()
-                        .find_map(|e| match e {
-                            blobray_domain::ExecutionEvent::TransferArgument { word: 0, value } => {
-                                value.value()
-                            }
-                            _ => None,
-                        });
-                    if argument != Some(expected) {
-                        return Err(invalid(format!(
-                            "{} case {case}: side {side} reached its callee with {argument:?}",
-                            leaf.vendor
-                        )));
-                    }
-                }
-                continue;
-            }
-            // A leaf must act: a register effect, a write that changes an
-            // object it is compared through, or a compared return word.
-            let initial = &initial[index];
-            if !leaf.returns
-                && crate::evidence::phy_effects(&crate::evidence::events(&records, case, false))
-                    .is_empty()
-                && (initial.is_empty()
-                    || crate::evidence::output(&records, case, false) == *initial)
-            {
-                return Err(invalid(format!(
-                    "{} case {case} has no register effect and changes no compared object",
-                    leaf.vendor
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Evidence claims: every leaf with its production probe.
-pub fn claims(ctx: &Mac) -> Vec<(&'static str, &'static str, &'static str)> {
-    let retry: &[_] = if ctx.suite.wifi {
-        crate::retry::CLAIMS
-    } else {
-        &[]
-    };
-    ctx.suite
-        .leaves
-        .iter()
-        .map(|l| (if l.rom { "rom" } else { "archive" }, l.vendor, l.probe))
-        .chain(retry.iter().copied())
-        .collect()
 }

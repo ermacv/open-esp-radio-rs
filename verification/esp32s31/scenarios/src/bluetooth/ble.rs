@@ -475,7 +475,12 @@ pub const BLUETOOTH: Suite = Suite {
         "libhal",
     ],
     leaves: LEAVES,
-    wifi: false,
+    id: crate::mac::CONTRACT_ID,
+    rom: crate::mac::ROM,
+    firmware: Some(crate::mac::FIRMWARE),
+    roots: &[],
+    prepare: None,
+    claims: &[],
     // ESP-IDF linker-script broker tables, which the interrupt, the scheduler
     // and its stop reach only after their compared prefixes; the peripheral bases and ROM
     // aliases the linker scripts provide and the firmware's writable-IRAM

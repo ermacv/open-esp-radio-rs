@@ -564,7 +564,7 @@ fn wifi_mac(
         suite: &mac::WIFI_MAC,
         archives: vec![libpp, libnet80211],
         rom: common.rom,
-        phy_sdk,
+        firmware: Some(phy_sdk),
         production: common.production,
         linker: common.linker,
         output: common.output,
@@ -596,7 +596,7 @@ fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Ou
             .map(|id| oer_esp32s31_vendor_scenarios::artifacts::default_path(id))
             .collect(),
         rom: common.rom,
-        phy_sdk,
+        firmware: Some(phy_sdk),
         production,
         linker: common.linker,
         output: common.output,
@@ -631,7 +631,7 @@ fn coex_hw(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
             .map(|id| oer_esp32s31_vendor_scenarios::artifacts::default_path(id))
             .collect(),
         rom: common.rom,
-        phy_sdk,
+        firmware: Some(phy_sdk),
         production: common.production,
         linker: common.linker,
         output: common.output,

@@ -575,7 +575,12 @@ pub const COEX_HW: Suite = Suite {
     title: "Coexistence hardware leaf comparison",
     archives: &["libcoexist", "libbtbb"],
     leaves: LEAVES,
-    wifi: false,
+    id: crate::mac::CONTRACT_ID,
+    rom: crate::mac::ROM,
+    firmware: Some(crate::mac::FIRMWARE),
+    roots: &[],
+    prepare: None,
+    claims: &[],
     // ESP-IDF glue the request's invalid-kind assertion reaches; the compared
     // kinds never do.
     absent: &["coexist_printf"],

@@ -10,6 +10,7 @@ pub mod chip;
 pub mod coverage;
 pub mod evidence;
 pub mod harness;
+pub mod leaf;
 pub mod observation;
 pub mod phy;
 pub mod session;

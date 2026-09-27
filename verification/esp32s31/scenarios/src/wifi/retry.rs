@@ -250,7 +250,7 @@ fn sequence(
     let boundary = |name: &str| crate::mac::call_boundary(&image, name);
     let context = QUEUES + queue * QUEUE_BYTES;
     let record = ctx
-        .rates
+        .context::<crate::mac::RateTables>()?
         .record(crate::mac::RateArena::Legacy, INITIAL_RATE)?;
     let mut buffer = vec![0u8; BUFFER_BYTES];
     buffer[BUFFER_DMA..BUFFER_DMA + 4].copy_from_slice(&DMA.to_le_bytes());
@@ -536,7 +536,9 @@ fn continuation(
 /// Compare every retry sequence; each phase must MATCH and choose the
 /// continuation production chooses.
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
-    let limit = ctx.rates.publication_limit(INITIAL_RATE)?;
+    let limit = ctx
+        .context::<crate::mac::RateTables>()?
+        .publication_limit(INITIAL_RATE)?;
     let limits = vendor_limits(ctx)?;
     let image = ctx.image_symbols()?;
     let targets: Vec<(u32, &'static str)> = CONTINUATIONS

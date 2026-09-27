@@ -1125,9 +1125,9 @@ scope-and-limitations = "There is no 802.1X/EAP supplicant/authenticator or ente
 id = "wifi-security-wpa3-personal-wpa3-enterprise"
 section = "wifi-security"
 title = "WPA3-Personal / WPA3-Enterprise"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "SAE, transition policy, enterprise authentication and their lifecycle are not present."
+scope-and-limitations = "The station authenticates with SAE group 19 (hunting-and-pecking and hash-to-element, anti-clogging tokens) and keys the AKM 8 four-way handshake with required protected management frames. WPA3-Personal credentials join SAE only; WPA2-Personal credentials upgrade to SAE when the access point offers it. There is no PMKSA caching, no access point SAE, no WPA3-Enterprise and no SAE groups other than 19."
 
 [[items]]
 id = "wifi-security-opportunistic-wireless-encryption-owe"

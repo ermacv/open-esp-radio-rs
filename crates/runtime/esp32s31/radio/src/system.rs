@@ -1108,7 +1108,31 @@ pub extern "C" fn runtime_trace(value: u32) {
     #[unsafe(no_mangle)]
     static OER_TRACE_RING: [AtomicU32; 65] = [const { AtomicU32::new(0) }; 65];
     OER_RUNTIME_TRACE.store(value, SeqCst);
+    if value == 0x6104 {
+        TRANSMIT_ARMED.store(true, SeqCst);
+    }
     let index = OER_TRACE_RING[64].load(SeqCst) % 64;
     OER_TRACE_RING[index as usize].store(value, SeqCst);
     OER_TRACE_RING[64].store(index + 1, SeqCst);
+}
+
+static TRANSMIT_ARMED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Debug: park at the first transmission after each 802.15.4 start.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn oer_debug_before_transmit() {
+    if TRANSMIT_ARMED.swap(false, core::sync::atomic::Ordering::SeqCst) {
+        runtime_trace(0x7a7a);
+        oer_debug_park();
+    }
+}
+
+/// Debug: an openocd hardware breakpoint target.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn oer_debug_park() {
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    core::hint::black_box(());
 }

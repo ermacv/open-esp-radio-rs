@@ -604,6 +604,9 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         &self,
         command: RadioCommand<'_>,
     ) -> Result<AcceptedCommand, Ieee802154RuntimeError> {
+        if matches!(command, RadioCommand::Transmit(_)) {
+            before_transmit();
+        }
         let submitted = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed
@@ -812,4 +815,12 @@ fn snapshot_etm() {
     trace(read(0x2010_30a8));
     trace(read(0x2010_30ac));
     trace(read(0x2010_3084));
+}
+
+#[allow(unsafe_code)]
+fn before_transmit() {
+    unsafe extern "C" {
+        fn oer_debug_before_transmit();
+    }
+    unsafe { oer_debug_before_transmit() };
 }

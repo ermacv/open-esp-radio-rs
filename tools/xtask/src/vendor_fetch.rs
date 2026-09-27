@@ -17,6 +17,7 @@ pub const CACHE: &str = "target/vendor";
 pub fn manifest_path(chip: &str) -> Result<&'static str> {
     match chip {
         "esp32s31" => Ok("verification/esp32s31/artifacts.toml"),
+        "esp32c5" => Ok("verification/esp32c5/artifacts.toml"),
         other => Err(format!("no vendor artifacts pinned for chip {other}").into()),
     }
 }
@@ -355,13 +356,15 @@ mod tests {
     #[test]
     fn tracked_manifests_parse_with_complete_sources() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let text = std::fs::read_to_string(root.join(manifest_path("esp32s31").unwrap())).unwrap();
-        let (sources, artifacts) = parse(&text).unwrap();
-        assert!(artifacts.iter().any(|a| a.id == "libphy"));
-        for source in &sources {
-            if source.kind != Kind::Local {
-                github(source.repository.as_deref().unwrap()).unwrap();
-                assert!(source.revision.is_some());
+        for chip in ["esp32s31", "esp32c5"] {
+            let text = std::fs::read_to_string(root.join(manifest_path(chip).unwrap())).unwrap();
+            let (sources, artifacts) = parse(&text).unwrap();
+            assert!(artifacts.iter().any(|a| a.id == "libphy"), "{chip}");
+            for source in &sources {
+                if source.kind != Kind::Local {
+                    github(source.repository.as_deref().unwrap()).unwrap();
+                    assert!(source.revision.is_some());
+                }
             }
         }
     }

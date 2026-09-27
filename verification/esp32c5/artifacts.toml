@@ -1,0 +1,136 @@
+# The single pin of every ESP32-C5 vendor artifact this repository compares
+# against.
+#
+# Each artifact names its upstream source and SHA-256. `cargo xtask
+# vendor-fetch esp32c5` downloads every artifact into
+# `target/vendor/<source>/<revision>/<path>` and verifies it. The library
+# revisions are the submodules of the pinned ESP-IDF revision, which are the
+# same PHY, Wi-Fi and coexistence revisions the ESP32-S31 pin uses.
+schema = 1
+
+[[source]]
+id = "esp-phy-lib"
+kind = "git"
+repository = "https://github.com/espressif/esp-phy-lib"
+revision = "20f1db053a0e6cb9f1c09d255c43bf42483041d0"
+
+[[source]]
+id = "esp32-wifi-lib"
+kind = "git"
+repository = "https://github.com/espressif/esp32-wifi-lib"
+revision = "af55a0ca258ce9d791d1661d7c2bbb65f08c0c21"
+
+[[source]]
+id = "esp-coex-lib"
+kind = "git"
+repository = "https://github.com/espressif/esp-coex-lib"
+revision = "c758e7b56e0fa22177a0539796e1df59978dc322"
+
+[[source]]
+id = "esp32c5-bt-lib"
+kind = "git"
+repository = "https://github.com/espressif/esp32c5-bt-lib"
+revision = "0b5cb2d7cfb4078e951da36a695bc4fb37e52391"
+
+# Release tarball of ROM ELFs; `path` names the member.
+[[source]]
+id = "esp-rom-elfs"
+kind = "release"
+repository = "https://github.com/espressif/esp-rom-elfs"
+revision = "20260528"
+asset = "esp-rom-elfs-20260528.tar.gz"
+sha256 = "caa463d3cbef2430a5a35847c1d9f2f152403b17a802050927ff60c8da54fe46"
+
+[[artifact]]
+id = "libphy"
+source = "esp-phy-lib"
+path = "esp32c5/libphy.a"
+sha256 = "dbf33c418c8d408d4005c849d12a1432deea82e2e5e57de3c8ddf914d104fffb"
+
+[[artifact]]
+id = "librftest"
+source = "esp-phy-lib"
+path = "esp32c5/librftest.a"
+sha256 = "0f9680b41612762d854accf2334412e3e01b206a3ec290bbbb232842fdaec7ba"
+
+[[artifact]]
+id = "libbtbb"
+source = "esp-phy-lib"
+path = "esp32c5/libbtbb.a"
+sha256 = "9cbaf5bce18e6190dfab3213d2ecc65e2a5dd8bbde48bf5218dbbf47cc23da11"
+
+[[artifact]]
+id = "libbttestmode"
+source = "esp-phy-lib"
+path = "esp32c5/libbttestmode.a"
+sha256 = "a69f6ece10de8d639937be7d64e419f3f6bf0f4bcd0569996f7a63aa643a6c1b"
+
+[[artifact]]
+id = "libpp"
+source = "esp32-wifi-lib"
+path = "esp32c5/libpp.a"
+sha256 = "9d6192d056021523ce567a5de3a9e7b1fe2e9f6da23349c68a4e2cee0c8c3046"
+
+[[artifact]]
+id = "libnet80211"
+source = "esp32-wifi-lib"
+path = "esp32c5/libnet80211.a"
+sha256 = "cb2257b2e4b3b8dabc9aaacae5254153ab0c693c0094c96c5db39ae74a630fca"
+
+[[artifact]]
+id = "libcore"
+source = "esp32-wifi-lib"
+path = "esp32c5/libcore.a"
+sha256 = "8e1dba21cc9413f0c12e67cad0ac8361fa49a47302dc675c07f04f0d4a07260d"
+
+[[artifact]]
+id = "libespnow"
+source = "esp32-wifi-lib"
+path = "esp32c5/libespnow.a"
+sha256 = "3f65ddf42ebab9fa9138ebe5475da37b0c603584c1c3e55c035d84587dff9bb7"
+
+[[artifact]]
+id = "libmesh"
+source = "esp32-wifi-lib"
+path = "esp32c5/libmesh.a"
+sha256 = "f2a1310f9e5abdd7bc703e36dffc6e905ba0f939bd057dbd992d64b06f24bdf6"
+
+[[artifact]]
+id = "libsmartconfig"
+source = "esp32-wifi-lib"
+path = "esp32c5/libsmartconfig.a"
+sha256 = "232a83d082af0de7e177f679738e102e6ac6942a9131ff3b8b64d68e90135f21"
+
+[[artifact]]
+id = "libwapi"
+source = "esp32-wifi-lib"
+path = "esp32c5/libwapi.a"
+sha256 = "6a25d10926478199a058ff23a98d95739b4b7a32c8bb19dfb7fad0289e64061a"
+
+[[artifact]]
+id = "libcoexist"
+source = "esp-coex-lib"
+path = "esp32c5/libcoexist.a"
+sha256 = "de883d649e4e2e9407a6ab0dc28d5d2aa4cd8d30d0071abfe5a9183348ceb627"
+
+[[artifact]]
+id = "libble_app"
+source = "esp32c5-bt-lib"
+path = "libble_app.a"
+sha256 = "8ddce4072d4182410115ce9409e3239caab0e5eae6c67745de7238c388d7c6e9"
+
+# Chip revision v1.0 ROM.
+
+[[artifact]]
+id = "rom-rev100"
+source = "esp-rom-elfs"
+path = "esp32c5_rev100_rom.elf"
+sha256 = "49693d745eb4b4e6e6c77be4f5213765d545d8c7a1d9742a8a619bf596c4e27a"
+
+# Chip revision v0.x ROM.
+
+[[artifact]]
+id = "rom-rev0"
+source = "esp-rom-elfs"
+path = "esp32c5_rev0_rom.elf"
+sha256 = "34141e699c5f0f420ab18b714a7d0f198378c5f3025f449058431d7e9cc630ad"

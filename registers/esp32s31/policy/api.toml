@@ -767,6 +767,41 @@ min = 1
 max = 0x7f
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 
+[[enum-domains]]
+name = "CoexTimerClockSource"
+description = "One-hot coexistence timer clock selector that complete coex_hw_timer_freq_set publishes in the low nibble of COEX_LP_CLK_CONF."
+
+[[enum-domains.values]]
+name = "Selector1"
+value = 1
+description = "Selector 1, accepted with a divisor of at least 3."
+sources = ["BLOB_LIBCOEX_TIMER_CLOCK"]
+
+[[enum-domains.values]]
+name = "Selector2"
+value = 2
+description = "Selector 2, accepted with a divisor of at least 40."
+sources = ["BLOB_LIBCOEX_TIMER_CLOCK"]
+
+[[enum-domains.values]]
+name = "Selector4"
+value = 4
+description = "Selector 4, the crystal clock coex_core_pre_init selects on a real chip with divisor 50."
+sources = ["BLOB_LIBCOEX_TIMER_CLOCK"]
+
+[[enum-domains.values]]
+name = "Selector8"
+value = 8
+description = "Selector 8, accepted only with divisor 1; coex_core_pre_init selects it off silicon."
+sources = ["BLOB_LIBCOEX_TIMER_CLOCK"]
+
+[[bounded-domains]]
+name = "CoexTimerClockDividerMinusOne"
+description = "Twelve-bit coexistence timer clock divider image, the divisor minus one, that complete coex_hw_timer_freq_set publishes."
+min = 0
+max = 4095
+sources = ["BLOB_LIBCOEX_TIMER_CLOCK"]
+
 [[bounded-domains]]
 name = "CoexTimerClientValue"
 description = "Two-bit coexistence client selector published by complete coex_hw_timer_set."
@@ -8649,6 +8684,29 @@ fields = [{ field = "PRIMARY_TICK_IMAGE", source-bit-offset = 0 }]
 value = 1000
 exposure = "facade"
 sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "select_coex_timer_clock_source"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "COEX_LP_CLK_CONF"
+fields = [
+    { field = "CLK_COEX_LP_SEL_OSC_SLOW", source-bit-offset = 0 },
+    { field = "CLK_COEX_LP_SEL_OSC_FAST", source-bit-offset = 1 },
+    { field = "CLK_COEX_LP_SEL_XTAL", source-bit-offset = 2 },
+    { field = "CLK_COEX_LP_SEL_XTAL32K", source-bit-offset = 3 },
+]
+domain = "CoexTimerClockSource"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_TIMER_CLOCK", "S31_MODEM_LPCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "set_coex_timer_clock_divider"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "COEX_LP_CLK_CONF"
+fields = [{ field = "CLK_COEX_LP_DIV_NUM", source-bit-offset = 0 }]
+domain = "CoexTimerClockDividerMinusOne"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_TIMER_CLOCK", "S31_MODEM_LPCON_STRUCT"]
 
 [[field-replace-modifies]]
 name = "configure_coex_timer_client"

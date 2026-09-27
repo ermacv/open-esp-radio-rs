@@ -365,6 +365,27 @@ impl MacRxBeaconClearRequest {
     }
 }
 
+/// One-hot coexistence timer clock selector that complete coex_hw_timer_freq_set publishes in the low nibble of COEX_LP_CLK_CONF.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CoexTimerClockSource {
+    /// Selector 1, accepted with a divisor of at least 3.
+    Selector1 = 0x00000001,
+    /// Selector 2, accepted with a divisor of at least 40.
+    Selector2 = 0x00000002,
+    /// Selector 4, the crystal clock coex_core_pre_init selects on a real chip with divisor 50.
+    Selector4 = 0x00000004,
+    /// Selector 8, accepted only with divisor 1; coex_core_pre_init selects it off silicon.
+    Selector8 = 0x00000008,
+}
+
+impl CoexTimerClockSource {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Boolean state accepted by reviewed MODEM_SYSCON clock-gate transactions.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1654,6 +1675,29 @@ impl MacRxBlockAckWindow {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value >= 0x00000001 && value <= 0x0000007f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Twelve-bit coexistence timer clock divider image, the divisor minus one, that complete coex_hw_timer_freq_set publishes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CoexTimerClockDividerMinusOne(u32);
+
+impl CoexTimerClockDividerMinusOne {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000fff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000fff {
             Some(Self(value))
         } else {
             None
@@ -6654,6 +6698,24 @@ pub(crate) fn force_coex_timer(registers: &crate::svd::CoexHwTimer, index: usize
 #[inline]
 pub(crate) fn unforce_coex_timer(registers: &crate::svd::CoexHwTimer, index: usize) {
     crate::svd::field_replace_modify::unforce_coex_timer(registers, index);
+}
+
+/// Typed bridge for the reviewed `select_coex_timer_clock_source` field-replacement transaction.
+#[inline]
+pub(crate) fn select_coex_timer_clock_source(
+    registers: &crate::svd::ModemLpconSharedClock,
+    value: CoexTimerClockSource,
+) {
+    crate::svd::field_replace_modify::select_coex_timer_clock_source(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_coex_timer_clock_divider` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_timer_clock_divider(
+    registers: &crate::svd::ModemLpconSharedClock,
+    value: CoexTimerClockDividerMinusOne,
+) {
+    crate::svd::field_replace_modify::set_coex_timer_clock_divider(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `configure_coex_timer_client` field-replacement transaction.

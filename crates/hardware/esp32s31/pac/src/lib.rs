@@ -122,12 +122,13 @@ pub use frequency::PhyFrequencyI2cNumberAddresses;
 pub use ieee802154::mac::{Ieee802154PolledRegisterLease, Ieee802154RegisterLease};
 
 pub use generated::{
-    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickInput, MacAssociationId,
-    MacExtraSoftApRxBlockAckEntryIndex, MacHeBssColor, MacHeDefaultPacketExtensionDuration,
-    MacHePacketPaddingDuration, MacInterface, MacItwtClearIndex, MacKeyEntryIndex,
-    MacMinimumMpduStartSpacing, MacPti, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence,
-    MacRxBlockAckTid, MacRxBlockAckWindow, MacTxPtiCount, MacTxQueueIndex,
-    ModemLowPowerClockDivider, PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
+    CoexTimerClientValue, CoexTimerClockDividerMinusOne, CoexTimerClockSource, CoexTimerPtiValue,
+    CoexTimerTickInput, MacAssociationId, MacExtraSoftApRxBlockAckEntryIndex, MacHeBssColor,
+    MacHeDefaultPacketExtensionDuration, MacHePacketPaddingDuration, MacInterface,
+    MacItwtClearIndex, MacKeyEntryIndex, MacMinimumMpduStartSpacing, MacPti,
+    MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
+    MacTxPtiCount, MacTxQueueIndex, ModemLowPowerClockDivider, PhyForcedPowerIndex,
+    PhyFtmEnableVendorArgument,
 };
 
 pub use ieee802154::mac::{

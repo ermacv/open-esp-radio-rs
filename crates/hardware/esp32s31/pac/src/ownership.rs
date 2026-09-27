@@ -80,6 +80,17 @@ impl SharedRadioRegisters {
         }
     }
 
+    /// Program the coexistence timer clock as `coex_hw_timer_freq_set` does.
+    #[doc(hidden)]
+    pub fn configure_coexistence_timer_clock(
+        &mut self,
+        source: crate::CoexTimerClockSource,
+        divider_minus_one: crate::CoexTimerClockDividerMinusOne,
+    ) {
+        self.radio_phy
+            .configure_coexistence_timer_clock(source, divider_minus_one);
+    }
+
     /// Preserve the vendor two-read coexistence clock sampling rule.
     #[doc(hidden)]
     pub fn sample_coexistence_low_power_clock(

@@ -71109,6 +71109,38 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace MODEM_LPCON_SHARED_CLOCK.COEX_LP_CLK_CONF fields `[CLK_COEX_LP_SEL_OSC_SLOW, CLK_COEX_LP_SEL_OSC_FAST, CLK_COEX_LP_SEL_XTAL, CLK_COEX_LP_SEL_XTAL32K]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn select_coex_timer_clock_source(registers: &crate::ModemLpconSharedClock, input: u32) {
+        registers.coex_lp_clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_coex_lp_sel_osc_slow()
+                .bit((input & 0x00000001) != 0)
+                .clk_coex_lp_sel_osc_fast()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .clk_coex_lp_sel_xtal()
+                .bit(((input >> 2) & 0x00000001) != 0)
+                .clk_coex_lp_sel_xtal32k()
+                .bit(((input >> 3) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.COEX_LP_CLK_CONF fields `[CLK_COEX_LP_DIV_NUM]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_timer_clock_divider(registers: &crate::ModemLpconSharedClock, input: u32) {
+        registers.coex_lp_clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .clk_coex_lp_div_num()
+                    .bits((input & 0x00000fff) as u16)
+            }
+        });
+    }
+
     /// Replace COEX_HW_TIMER.CONFIGURATION%s fields `[PARAMETER_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_coex_timer_client(registers: &crate::CoexHwTimer, index: usize, input: u32) {

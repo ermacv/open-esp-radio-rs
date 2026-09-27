@@ -93,6 +93,20 @@ impl RadioPhyRegisters {
         }
     }
 
+    /// Select the coexistence timer clock and its divider, as complete
+    /// `coex_hw_timer_freq_set` does: the one-hot source first, then the
+    /// divider, each through its own fresh-read RMW.
+    #[doc(hidden)]
+    pub fn configure_coexistence_timer_clock(
+        &mut self,
+        source: crate::CoexTimerClockSource,
+        divider_minus_one: crate::CoexTimerClockDividerMinusOne,
+    ) {
+        let registers = &self.peripherals.modem_lpcon_shared_clock;
+        crate::generated::select_coex_timer_clock_source(registers, source);
+        crate::generated::set_coex_timer_clock_divider(registers, divider_minus_one);
+    }
+
     #[doc(hidden)]
     pub fn sample_coexistence_low_power_clock(
         &self,

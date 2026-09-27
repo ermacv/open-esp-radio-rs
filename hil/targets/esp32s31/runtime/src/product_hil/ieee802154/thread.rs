@@ -267,7 +267,8 @@ pub(in crate::product_hil) async fn run_thread(
     };
     publish_event_reliably(0, request_id, started(Ieee802154SessionResult::Done)).await;
 
-    let radio: ThreadRadio = OpenThreadRadio::new(system.runtime(), OpenThreadRadioDefaults::ESP_IDF);
+    let radio: ThreadRadio =
+        OpenThreadRadio::new(system.runtime(), OpenThreadRadioDefaults::ESP_IDF);
     let tracking_stop = Signal::<CriticalSectionRawMutex, ()>::new();
     let tracking = async {
         // The radio system's periodic PHY tracking, as ESP-IDF's

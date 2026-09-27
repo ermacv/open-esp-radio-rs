@@ -360,7 +360,7 @@ extern "C" fn runtime_main() -> ! {
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0));
     #[cfg(feature = "wifi-ble-coex")]
-    hang_sentinel::start(timer_group.timer1);
+    hang_sentinel::start(peripherals.SYSTIMER);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let watchdog_service = watchdog::init(peripherals.TIMG1);
 

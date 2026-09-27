@@ -2,7 +2,7 @@
 //! panic report.
 //!
 //! A task on the core 0 protocol executor advances a heartbeat every 100 ms.
-//! A periodic TIMG0 timer 1 interrupt at the highest priority checks it every
+//! A periodic SYSTIMER alarm 0 interrupt at the highest priority checks it every
 //! 500 ms and panics after three seconds without progress. The panic report
 //! then carries `mepc`, the instruction the interrupt preempted, and the
 //! pending interrupt sources, which tell a busy loop, an interrupt storm and
@@ -17,7 +17,7 @@ use esp_hal::{
     Blocking,
     interrupt::Priority,
     time::Duration,
-    timer::{PeriodicTimer, timg::Timer},
+    timer::{PeriodicTimer, systimer::SystemTimer},
 };
 
 static HEARTBEAT: AtomicU32 = AtomicU32::new(0);
@@ -29,9 +29,9 @@ static TIMER: Mutex<CriticalSectionRawMutex, RefCell<Option<PeriodicTimer<'stati
 const CHECK_PERIOD_MILLIS: u64 = 500;
 const STALE_CHECK_LIMIT: u32 = 6;
 
-/// Start the sentinel on TIMG0 timer 1; its interrupt runs on this core.
-pub(super) fn start(timer: Timer<'static>) {
-    let mut periodic = PeriodicTimer::new(timer);
+/// Start the sentinel on SYSTIMER alarm 0; its interrupt runs on this core.
+pub(super) fn start(systimer: esp_hal::peripherals::SYSTIMER<'static>) {
+    let mut periodic = PeriodicTimer::new(SystemTimer::new(systimer).alarm0);
     periodic.set_interrupt_handler(check);
     periodic
         .start(Duration::from_millis(CHECK_PERIOD_MILLIS))

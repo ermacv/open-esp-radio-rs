@@ -2912,10 +2912,10 @@ dependencies = [
  "oer-esp32s31-phy",
  "oer-hil-protocol",
  "oer-hil-runner-core",
+ "oer-register-model",
  "serde",
  "serde_json",
  "serialport",
- "svd-parser",
  "toml",
 ]
 

@@ -333,7 +333,13 @@ start/end ticks and records the window in the link state. The pinned
 bit 20 of `+0x18` and ends the item at most 32768 microseconds after the
 start; for a continuous scan it stores the difference `0x3fffffff` instead.
 The open scanner always schedules finite windows and follows the first
-branch. Its
+branch. The same body sets bit 23 of item `+0x00` and writes the default
+arbitration priority in `+0x18` bits 3:0: 4 when bit 16 of the window's start
+time is set, 1 otherwise, clearing bits 7:4. The open codec always writes 1.
+That nibble is not consulted on any reachable path of the pinned scheduler (see
+[the scheduler lists](bluetooth-scheduler-lists.md#overlap-check)), so this
+alternation has no effect there; whether hardware reads the nibble is not
+established. Its
 named `r_ble_lll_scan_get_earliest_start_time` result selects the sole
 adjusted-start item flag. The open codec accepts that semantic result rather
 than exposing the positional flag or reproducing the vendor timing policy.

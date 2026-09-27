@@ -68,6 +68,10 @@ and made `r_btdm_sched_run` its caller.
 | `r_btdm_sched_stop` | `r_sym_bt_74l62ZLsZuXg67pPHSd7` | exact body |
 | `r_btdm_hal_link_skip_specified_tl` | `r_sym_bt_t4aeyhcVrKTNMSlq45XR` | exact body |
 | `r_btdm_sched_pick_finished_items` | `r_sym_bt_M9nG353V0svWrv1l1zGw` | exact body |
+| `r_btdm_sched_actual_start_time_get` | `r_sym_bt_O5lSxcYW6bGB7SPJpXgX` | lineage |
+| `r_btdm_sched_arbitrate_by_default_policy` | `r_sym_bt_jzw6WTDKUlY3F90cFtr2` | lineage |
+| `r_sched_txn_delayAccordingToPriorityCb` | `r_sym_sched_IQtKTdW2DgEK4Oo4n10P` | lineage |
+| `r_sched_txn_onSchedGetEarliestTicks` | `brk_sym_sched_wfZseauvjWnjfiu10yWN` | lineage |
 | `r_btdm_sched_run` | `r_sym_bt_DPWY0umixzmXEaFuUyCI` | exact body |
 | `r_btdm_sched_get_hw_list_header` / `set_hw_list_header` | `r_sym_bt_6wSHUtNRioHeB7CKjVJA` / `r_sym_bt_8m3cRMNRZNfaJ7qVvayk` | exact body |
 | `r_btdm_sched_mem_get_hw_start_time` | `r_sym_bt_sdf6bUMpe1CnARWl962a` | exact body |
@@ -115,8 +119,8 @@ replace, the role-specific item layouts in the role references.
 | `+0x00` bits 19:0 | Hardware next link. `reset_new_item` clears it together with bit 25 |
 | `+0x00` bit 25 | Set on every deleted, skipped item, and on a preempted item when lock-modify is enabled |
 | `+0x00` bit 24 | Marks the item that the merge reports to its optional first-marked output |
-| `+0x00` bit 22 | When clear, a completed item must not start after the current list head |
-| `+0x18` bits 3:0 | Priority nibble (not consulted on any reachable conflict path) |
+| `+0x00` bit 22 | Flexible start: the item may start once its predecessor ends. When clear, a completed item must not start after the current list head |
+| `+0x18` bits 3:0 | Default-arbitration priority (not consulted on any reachable conflict path) |
 | `+0x30` bit 31 | Selects the device list; when clear, the overlap check applies the late-start check |
 | `+0x38` | Execution status. `0xffff_ffff` means not executed; hardware replaces it; preemption writes zero |
 | `+0x44` / `+0x48` | Start and end time; lists are ordered by start |
@@ -184,6 +188,29 @@ head, the list start time is refreshed and the software lists are resorted.
 
 It returns 0, 1 or 2 for an admitted item. The priority nibble comparison
 after a missing callback is unreachable in this body because of step 2.
+
+The only other reader of the nibble is `r_btdm_sched_arbitrate_by_default_policy`
+(`r_sym_bt_jzw6WTDKUlY3F90cFtr2`). It returns 2 when either item has `+0x4f`
+bit 3 and otherwise ranks the higher nibble first. Its sole caller,
+`r_sched_txn_delayAccordingToPriorityCb`, passes the new item first, which step
+2 has already marked, so this comparison is unreachable as well. The nibble
+is therefore a software priority of a dormant default policy; whether hardware
+reads it is not established.
+
+### Flexible start
+
+Item `+0x00` bit 22 is written only by the advertising follower chain
+(`r_ble_lll_adv_sched_remaining_pri_after`, pinned
+`r_sym_ble_eNifqLwR78cnxeKb1y6t`) and by `r_ble_lll_scan_restart` when
+`r_ble_lll_scan_get_earliest_start_time` reports an adjusted start. The first
+advertising item clears it. `r_sched_txn_onSchedGetEarliestTicks` (pinned
+`brk_sym_sched_wfZseauvjWnjfiu10yWN`) reads it on the head item of the first
+software list. When it is set, the function reports that the head has no
+fixed start. Otherwise it reports the item's actual start time from
+`r_btdm_sched_actual_start_time_get`, which returns `+0x44` for an item with
+`+0x30` bit 31 clear. The names and uses identify the bit as a flexible start
+that follows the predecessor. The hardware effect is not established by these
+bodies.
 
 ### Merge
 
@@ -383,7 +410,7 @@ The bodies above do not establish:
   on item execution, and the meaning of each result code;
 - the modify mode flag, the lock-modify result and when the environment
   enables the lock-modify request;
-- the meaning of item `+0x00` bit 22, of `SCHEDULER_STATE` bit 29 and of the
+- the hardware effect of item `+0x00` bit 22, the meaning of `SCHEDULER_STATE` bit 29 and of the
   sleep-timer start source;
 - why insertion begin skips locking when sleep policy is disabled;
 - the effect of the skip request, the hold at `0x2010_1204` and the meaning

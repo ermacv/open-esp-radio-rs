@@ -129,13 +129,13 @@ fn execute_all(radio: &Radio, status: u32) {
 #[test]
 fn the_timing_follows_the_scheduler_policy() {
     let radio = radio();
-    assert_eq!(radio.timing().preparation_lead.as_micros(), 107);
+    assert_eq!(radio.timing().preparation_lead.as_micros(), 137);
     assert_eq!(radio.timing().admission_guard.as_micros(), 40);
     assert_eq!(radio.now(), RadioInstant::from_micros(0));
     // A recurring event ends 5,154 us after its widened anchor less the lead.
     let connection = radio.timing().connection;
     assert_eq!(connection.local_sleep_clock_ppm, 500);
-    assert_eq!(connection.event_length.as_micros(), 5_154 - 107);
+    assert_eq!(connection.event_length.as_micros(), 5_154 - 137);
     assert_eq!(connection.first_event_length.as_micros(), 5_155);
 }
 

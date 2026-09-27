@@ -24,15 +24,20 @@ impl SchedulerSoftwareConfig {
         Self {
             late_start_guard_micros: 40,
             sequence_lead_micros: 46,
-            preparation_lead_micros: 107,
+            preparation_lead_micros: 137,
         }
     }
 
     /// Common microsecond lead between item start and its phase anchor.
     ///
-    /// The standalone scheduler initializes this one-byte policy to 107. DTM
-    /// and advertising consume the same scheduler policy; it is not part of a
-    /// role-specific command or descriptor ABI.
+    /// SOURCE: pinned `libble_app.a[sched_3.o]::r_sym_sched_modWXEVwpjpaAKhsFBrP`
+    /// stores the low byte of `options[0x10] + tick_unit - 1 + config[1]` in
+    /// the scheduler environment word that `r_sym_sched_GEBmwfVsspx61ARDIjlz`
+    /// returns. `r_ble_controller_init` writes 91 to the private option,
+    /// the tick unit is one and the common configuration's second word is 46,
+    /// so the standalone lead is 137. DTM and advertising consume the same
+    /// scheduler policy; it is not part of a role-specific command or
+    /// descriptor ABI.
     #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
     pub const fn preparation_lead_micros(self) -> u32 {
         self.preparation_lead_micros

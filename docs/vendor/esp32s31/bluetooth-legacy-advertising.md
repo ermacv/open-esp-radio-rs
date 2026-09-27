@@ -91,7 +91,7 @@ Complete current `r_sym_ble_mqh4OXzoN59kvnkKFMA1` and named
 `r_ble_lll_adv_sched_first_pri_event` close the first-event producer. Named
 `r_ble_lll_adv_init`, matching current `r_sym_ble_grUssKu7oWAkmdueH0Od`,
 initializes a 2000-microsecond first-event delay. The first event samples the
-always-awake radio path and scheduler time, adds the common 107-unit
+always-awake radio path and scheduler time, adds the common 137-microsecond
 preparation lead, and forms the LE 1M duration as `payload_length * 8 + 80`.
 If the radio observation is later than the nominal start, it shifts start and
 end together and preserves duration. Both positions then pass through the

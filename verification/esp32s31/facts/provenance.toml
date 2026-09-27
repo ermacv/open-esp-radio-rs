@@ -253,6 +253,12 @@ code = "5878d727c044f16ebcd8a32e77a2471f685bdc08c493981cf05566af6e5622b7"
 [[function]]
 artifact = "libble_app"
 member = "ble_74.o"
+symbol = "r_ble_controller_init"
+code = "9a0cd43c64c499eaa8cb80c7763a2c05179ac6921985c46d8a6121282fb64606"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_74.o"
 symbol = "r_esp_ble_diag_select"
 code = "722ed60c83ad50f2302bc8ad2fc1d133e44cc676067936843b1d4e99c0fa5fe8"
 
@@ -571,8 +577,20 @@ code = "ec88294141d3e53cb4bb237c6c650dd755585f5b8c9365808e17494ebca13866"
 [[function]]
 artifact = "libble_app"
 member = "sched_3.o"
+symbol = "r_sym_sched_GEBmwfVsspx61ARDIjlz"
+code = "e2e8744060194e94545af22853f4094fda7621c7a2389ba84eff8e5f0ed5a60f"
+
+[[function]]
+artifact = "libble_app"
+member = "sched_3.o"
 symbol = "r_sym_sched_hG0vjzWD9iloJ7W5NaCG"
 code = "840978ea43383411b65037b3827cd103b8a423907d308f98a880c0a92be60388"
+
+[[function]]
+artifact = "libble_app"
+member = "sched_3.o"
+symbol = "r_sym_sched_modWXEVwpjpaAKhsFBrP"
+code = "a8b71e3bff0f8f490d7ce589d7e4e6ab2192d65628ed8a468db7232dd0c26548"
 
 [[function]]
 artifact = "libbredr_app"

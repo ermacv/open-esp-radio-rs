@@ -65,6 +65,11 @@ pub fn attached_ports() -> Vec<AttachedPort> {
         .collect()
 }
 
+/// The registered label of the board with `mac`, or the MAC.
+pub fn device_label(devices: &[Device], mac: &str) -> String {
+    crate::board::device_label(Some(mac), devices)
+}
+
 /// The USB serial number of the port behind `path`, following symlinks such
 /// as `/dev/serial/by-id`.
 pub fn port_mac(path: &Path) -> Option<String> {

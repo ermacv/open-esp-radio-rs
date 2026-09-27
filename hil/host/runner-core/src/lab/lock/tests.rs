@@ -169,3 +169,27 @@ fn a_granted_holder_waits_for_locks_held_outside_the_queue() {
     drop(outside);
     assert!(waiter.join().unwrap());
 }
+
+#[test]
+fn a_board_is_refused_only_when_its_newest_flash_is_another_image() {
+    let flash = |image: &str| oer_hil_arbiter::BoardEvent {
+        unix: 1,
+        owner: String::from("bluetooth"),
+        checkout: None,
+        device: Some(String::from("38:44:BE:AA:25:64")),
+        kind: oer_hil_arbiter::BoardEventKind::Flashed {
+            image: image.to_owned(),
+            application_sha256: String::from("ab"),
+            commit: None,
+            dirty: None,
+            origin: String::from("test"),
+        },
+    };
+    assert!(board_image_matches(None, "c5", "peer", "reflash").is_ok());
+    assert!(board_image_matches(Some(&flash("peer")), "c5", "peer", "reflash").is_ok());
+    let error = board_image_matches(Some(&flash("ble-peer")), "c5", "peer", "reflash")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("`ble-peer` flashed by bluetooth"), "{error}");
+    assert!(error.ends_with("reflash"), "{error}");
+}

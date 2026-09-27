@@ -28,7 +28,7 @@ mod store;
 
 pub use board::{BoardEvent, BoardEventKind};
 pub use budget::{BudgetSource, DEFAULT_BUDGET, MAX_SHORT_BUDGET, format_duration, parse_duration};
-pub use devices::{AttachedPort, Device, attached_ports, normalize_mac, port_mac};
+pub use devices::{AttachedPort, Device, attached_ports, device_label, normalize_mac, port_mac};
 pub use grant::{BUDGET_ENV, Grant, LEASE_ENV, OWNER_ENV, Request, SHORT_ENV, default_owner};
 pub use history::{LeaseOutcome, LeaseRecord};
 pub use status::{HolderStatus, QueuedStatus, Status};

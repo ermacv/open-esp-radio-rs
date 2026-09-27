@@ -17,6 +17,11 @@ use crate::Result;
 
 /// Protocol version the driver speaks.
 pub const PEER_PROTOCOL: u32 = 1;
+/// Board-journal image name of `hil/peers/esp32c5-ieee802154`.
+pub const PEER_IMAGE: &str = "ieee802154-peer";
+/// How to restore the peer firmware when another consumer replaced it.
+pub const PEER_REFLASH: &str = "flash hil/peers/esp32c5-ieee802154 under a lease with \
+    `cargo hil lease --flashed ieee802154-peer --application <bin> --port <port> -- idf.py -p <port> flash`";
 const READY_TIMEOUT: Duration = Duration::from_secs(5);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -243,7 +248,11 @@ impl<L: PeerLink> Peer<L> {
                 });
             }
         }
-        Err("IEEE 802.15.4 peer did not report ready".into())
+        Err(format!(
+            "IEEE 802.15.4 peer did not report ready; the board may carry other \
+             firmware: {PEER_REFLASH}"
+        )
+        .into())
     }
 
     fn command(&mut self, name: &str, line: &str) -> Result<()> {

@@ -169,6 +169,42 @@ pub fn record_board(port: &Path, kind: oer_hil_arbiter::BoardEventKind) {
     }
 }
 
+/// Refuse a board whose newest journaled flash is not `expected`. A board
+/// without a journaled flash passes; the consumer's own handshake decides.
+pub fn require_board_image(port: &Path, expected: &str, reflash: &str) -> Result<()> {
+    let Some(mac) = oer_hil_arbiter::port_mac(port) else {
+        return Ok(());
+    };
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let label = oer_hil_arbiter::device_label(&arbiter.devices()?, &mac);
+    board_image_matches(
+        arbiter.latest_flash(&mac)?.as_ref(),
+        &label,
+        expected,
+        reflash,
+    )
+}
+
+fn board_image_matches(
+    latest: Option<&oer_hil_arbiter::BoardEvent>,
+    label: &str,
+    expected: &str,
+    reflash: &str,
+) -> Result<()> {
+    match latest.map(|event| (event, &event.kind)) {
+        Some((event, oer_hil_arbiter::BoardEventKind::Flashed { image, .. }))
+            if image != expected =>
+        {
+            Err(format!(
+                "board {label} carries `{image}` flashed by {}, not `{expected}`; {reflash}",
+                event.owner
+            )
+            .into())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Journal a successful flash of `application` to the DUT at `port`.
 pub fn record_flash(
     port: &Path,

@@ -143,6 +143,14 @@ impl Arbiter {
         history::read_lines(&self.board_path())
     }
 
+    /// The newest journaled flash of the board with `mac`.
+    pub fn latest_flash(&self, mac: &str) -> crate::Result<Option<BoardEvent>> {
+        Ok(self.board_events()?.into_iter().rev().find(|event| {
+            event.device.as_deref() == Some(mac)
+                && matches!(event.kind, crate::BoardEventKind::Flashed { .. })
+        }))
+    }
+
     /// Append a change of the board with MAC `device` (the DUT when unknown),
     /// attributed to the current owner.
     pub fn record_board(

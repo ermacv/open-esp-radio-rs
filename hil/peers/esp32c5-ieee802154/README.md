@@ -21,8 +21,19 @@ The console is the default UART. To use the USB Serial/JTAG port instead,
 select it under *Component config → ESP System Settings → Channel for console
 output*; the application follows that choice.
 
-Name the peer's serial port in the `[ieee802154_peer]` table of
-`hil/local.toml`.
+Name the peer's board or serial port in the `[ieee802154_peer]` table of the
+lab configuration. The board is shared with other consumers, so flash it under
+a stand lease and record the flash as `ieee802154-peer`:
+
+```console
+cargo hil lease --flashed ieee802154-peer --application build/<app>.bin \
+    --port <port> --chip esp32c5 -- idf.py -p <port> flash
+```
+
+Before an IEEE 802.15.4 peer scenario the runner reads the board journal and
+blocks the scenario when the board's newest recorded flash is another image,
+naming who flashed it. A board without a recorded flash is accepted; the
+peer's `@READY` handshake then decides.
 
 ## Line protocol
 

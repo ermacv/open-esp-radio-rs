@@ -1214,6 +1214,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
 }
 
 #[allow(unsafe_code)]
+/// Debug trace.
 pub fn runtime_trace(value: u32) {
     #[unsafe(link_section = ".rtc_fast.persistent")]
     #[unsafe(no_mangle)]

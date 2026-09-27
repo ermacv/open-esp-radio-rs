@@ -1127,7 +1127,7 @@ section = "wifi-security"
 title = "WPA3-Personal / WPA3-Enterprise"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The station authenticates with SAE group 19 (hunting-and-pecking and hash-to-element, anti-clogging tokens) and keys the AKM 8 four-way handshake with required protected management frames. WPA3-Personal credentials join SAE only; WPA2-Personal credentials upgrade to SAE when the access point offers it. There is no PMKSA caching, no access point SAE, no WPA3-Enterprise and no SAE groups other than 19."
+scope-and-limitations = "The station authenticates with SAE group 19 (hunting-and-pecking and hash-to-element, anti-clogging tokens) and keys the AKM 8 four-way handshake with required protected management frames. WPA3-Personal credentials join SAE only; WPA2-Personal credentials upgrade to SAE when the access point offers it. A cached PMKSA of the same access point and SSID, kept across station restarts, replaces SAE with Open System authentication and a PMKID, and an association or handshake failure or an invalidating disconnect forgets it. There is no access point SAE, no WPA3-Enterprise and no SAE groups other than 19."
 
 [[items]]
 id = "wifi-security-opportunistic-wireless-encryption-owe"

@@ -256,6 +256,33 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// `ieee802154_txon_delay_set` of libbtbb: the shared-radio lease's IEEE
+    /// 802.15.4 transmit-on delay override, with IEEE 802.15.4 holding BTBB.
+    /// Zero, or `u32::MAX` when the lease refuses it.
+    pub fn open_ieee802154_btbb_trace_txon_delay() -> u32 {
+        oer_esp32s31_hal::ieee802154::coex_trace::override_tx_on_delay()
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `hal_set_IEEE802154_TXRX_pti` of libcoexist: the IEEE 802.15.4 MAC
+    /// owner's TX/RX PTI write. Zero, or `u32::MAX` without a write for a
+    /// priority outside the four-bit domain.
+    pub fn open_ieee802154_coex_trace_txrx_pti(pti: u32) -> u32 {
+        oer_esp32s31_hal::ieee802154::coex_trace::set_txrx_pti(pti)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `hal_set_IEEE802154_ACK_pti` of libcoexist: the IEEE 802.15.4 MAC
+    /// owner's ACK PTI write. Zero, or `u32::MAX` without a write for a
+    /// priority outside the four-bit domain.
+    pub fn open_ieee802154_coex_trace_ack_pti(pti: u32) -> u32 {
+        oer_esp32s31_hal::ieee802154::coex_trace::set_ack_pti(pti)
+    }
+}
+
+oer_probe_macros::probe! {
     /// Compiled production-path probe for the complete `coex_core_pti_get`
     /// contract. The vendor ABI returns `0x102` for a null output pointer and
     /// otherwise copies one entry from its priority table, which the radio

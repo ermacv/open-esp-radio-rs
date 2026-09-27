@@ -180,6 +180,101 @@ const fn output(length: u32) -> Domain {
     }
 }
 
+/// External coexistence work modes production admits: leader (0) and
+/// follower (2). The vendor's mode 1 and modes from 3 are outside
+/// production, which rejects them without a write.
+const EXTERNAL_MODES: &[u32] = &[0, 2];
+const FOLLOWER_MODE: u32 = 2;
+/// External coexistence wire types `esp_coex_external_get_wire_type`
+/// reports.
+const EXTERNAL_WIRES: &[u32] = &[0, 1, 2, 3];
+/// Priority nibbles of `hal_set_extern_pti`: the bounds and both sides of
+/// the top bit, so the three-priority product stays within one request's
+/// case capacity over every mode, wire and register fill.
+const EXTERNAL_PTIS: &[u32] = &[0, 7, 8, 15];
+/// Grant delays in microseconds (`(delay << 4) & 0xf0`) and validity levels
+/// of `ic_set_extern_coex_params`.
+const EXTERNAL_DELAYS: &[u32] = &[0, 5, 15];
+const EXTERNAL_VALIDITY: &[u32] = &[0, 1];
+/// The captured wire-type query, answered with the case's wire.
+const WIRE_QUERY: &str = "esp_coex_external_get_wire_type";
+
+/// A model of the captured wire-type query answering `wire`.
+fn wire_model(vendor: &Vendor<'_>, wire: u32) -> Result<CallDeclaration> {
+    Ok(CallDeclaration {
+        binding: CallBinding {
+            address: vendor.symbol(WIRE_QUERY)?,
+            boundary: vendor.boundary(WIRE_QUERY),
+            allow_tail: false,
+        },
+        applicability: "the external coexistence wire type the case selects".into(),
+        ..model("coex-external-wire", 0, wire)
+    })
+}
+
+/// `hal_set_extern_pti_mode(mode)`: the probe's wire answers the vendor's
+/// follower query.
+fn external_mode_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [mode, wire] = *words else {
+        unreachable!("mode words: mode, wire")
+    };
+    Ok(Objects {
+        vendor_words: vec![mode],
+        calls: vec![wire_model(vendor, wire)?],
+        ..Default::default()
+    })
+}
+
+/// The vendor's retained follower flag, a static byte of
+/// `hal_external_coexist.o` without a symbol, addressed by its section.
+const FOLLOWER_FLAG: &str = ".bss.s_external_coex_is_slv_mode";
+
+/// The vendor keeps the work mode in its follower flag; production takes
+/// the mode with each operation. Each case seeds the flag for its mode.
+fn follower_flag(vendor: &Vendor<'_>, mode: u32) -> Result<(u32, Vec<u8>)> {
+    Ok((
+        vendor.image_symbol(FOLLOWER_FLAG)?,
+        vec![u8::from(mode == FOLLOWER_MODE)],
+    ))
+}
+
+/// `hal_set_extern_pti(first, second, third)` in the case's mode.
+fn external_pti_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [mode, wire, first, second, third] = *words else {
+        unreachable!("priority words: mode, wire, three priorities")
+    };
+    Ok(Objects {
+        vendor_words: vec![first, second, third],
+        image: vec![follower_flag(vendor, mode)?],
+        calls: vec![wire_model(vendor, wire)?],
+        ..Default::default()
+    })
+}
+
+/// `hal_clr_extern_pti()` in the case's mode.
+fn external_clear_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [mode] = *words else {
+        unreachable!("clear words: mode")
+    };
+    Ok(Objects {
+        image: vec![follower_flag(vendor, mode)?],
+        ..Default::default()
+    })
+}
+
+/// `ic_set_extern_coex_params(mode, {delay, validity})`: the parameter
+/// structure travels by value in one argument word.
+fn external_params_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [mode, wire, delay, validity] = *words else {
+        unreachable!("parameter words: mode, wire, delay, validity")
+    };
+    Ok(Objects {
+        vendor_words: vec![mode, delay | validity << 8],
+        calls: vec![wire_model(vendor, wire)?],
+        ..Default::default()
+    })
+}
+
 /// Production borrows the timer bank through a validation lease of the
 /// radio arbiter and releases it with one release fence after the leaf's
 /// register transaction.
@@ -364,6 +459,69 @@ pub const LEAVES: &[Leaf] = &[
         "open_ieee802154_coex_trace_ack_pti",
         &[("pti", Domain::Words(PTIS))],
         false,
+    ),
+    // External coexistence in leader mode, and the work-mode selection.
+    objects(
+        leaf(
+            "hal_set_extern_pti_mode",
+            "open_coex_external_trace_pti_mode",
+            &[
+                ("mode", Domain::Words(EXTERNAL_MODES)),
+                ("wire", Domain::Words(EXTERNAL_WIRES)),
+            ],
+            false,
+        ),
+        external_mode_abi,
+    ),
+    objects(
+        leaf(
+            "hal_set_extern_pti",
+            "open_coex_external_trace_set_pti",
+            &[
+                ("mode", Domain::Words(EXTERNAL_MODES)),
+                ("wire", Domain::Words(EXTERNAL_WIRES)),
+                ("first", Domain::Words(EXTERNAL_PTIS)),
+                ("second", Domain::Words(EXTERNAL_PTIS)),
+                ("third", Domain::Words(EXTERNAL_PTIS)),
+            ],
+            false,
+        ),
+        external_pti_abi,
+    ),
+    objects(
+        leaf(
+            "hal_clr_extern_pti",
+            "open_coex_external_trace_clear_pti",
+            &[("mode", Domain::Words(EXTERNAL_MODES))],
+            false,
+        ),
+        external_clear_abi,
+    ),
+    leaf(
+        "hal_enable_extern_coex",
+        "open_coex_external_trace_enable",
+        &[],
+        false,
+    ),
+    leaf(
+        "hal_disable_extern_coex",
+        "open_coex_external_trace_disable",
+        &[],
+        false,
+    ),
+    objects(
+        leaf(
+            "ic_set_extern_coex_params",
+            "open_coex_external_trace_params",
+            &[
+                ("mode", Domain::Words(EXTERNAL_MODES)),
+                ("wire", Domain::Words(EXTERNAL_WIRES)),
+                ("delay_us", Domain::Words(EXTERNAL_DELAYS)),
+                ("validate_high", Domain::Words(EXTERNAL_VALIDITY)),
+            ],
+            true,
+        ),
+        external_params_abi,
     ),
     // The IEEE 802.15.4 MAC TX-on, TX-off and TX/RX switch delays.
     in_archive(

@@ -643,4 +643,33 @@ pub const DECISIONS: &[Decision] = &[
             },
         ],
     },
+    Decision {
+        reason: "external coexistence work modes production rejects without a write: mode 1, \
+            whose vendor path sets bits 31:30 of the external configuration, and modes from 3, \
+            which the vendor reports through the `g_coa_funcs_p` console slot",
+        places: &[
+            // The mode-1 and invalid-mode dispatch directions.
+            Place::Range {
+                function: "hal_set_extern_pti_mode",
+                start: 0x20,
+                end: 0x24,
+            },
+            Place::Range {
+                function: "hal_set_extern_pti_mode",
+                start: 0x2a,
+                end: 0x2c,
+            },
+            // The mode-1 configuration and the invalid-mode report.
+            Place::Range {
+                function: "hal_set_extern_pti_mode",
+                start: 0x44,
+                end: 0x5a,
+            },
+            Place::Range {
+                function: "hal_set_extern_pti_mode",
+                start: 0xca,
+                end: 0xec,
+            },
+        ],
+    },
 ];

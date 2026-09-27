@@ -14,6 +14,14 @@ const fn place(claim: Claim, symbol: &'static str, start: u32, end: u32) -> Plac
     }
 }
 
+const EXTERNAL_MODE: Claim = (
+    "hal_set_extern_pti_mode",
+    "open_coex_external_trace_pti_mode",
+);
+const EXTERNAL_PARAMS: Claim = (
+    "ic_set_extern_coex_params",
+    "open_coex_external_trace_params",
+);
 const PARENT: Claim = ("phy_param_track_tot", "open_phy_tracking_trace_parent");
 const COMBINED: Claim = ("phy_cal_param_track", "open_phy_calibration_trace_combined");
 const RX_GAIN: Claim = (
@@ -121,12 +129,12 @@ pub const DECISIONS: &[Decision] = &[
         places: &[place(AP_TSF_START, "BcnSendTick", 0, 4)],
     },
     Decision {
-        reason: "`phy_track.o` static `s_track_result`, named by its section anchor: a debug \
+        reason: "`phy_track.o` static `s_track_result`, named by its section: a debug \
             copy of the current, power, common and transmit reference temperatures, the RFPLL \
             reference and the progress word, all compared as `phy_param` fields of the parent \
             claim; only the exported `phy_debug_get_track_result` reads it, and no vendor \
             library or ROM function calls that",
-        places: &[place(PARENT, "0x200001ec", 0, 14)],
+        places: &[place(PARENT, ".bss.s_track_result", 0, 14)],
     },
     Decision {
         reason: "`phy_force_txrx_off_new` nesting count: every force/release pair of the \
@@ -200,6 +208,16 @@ pub const DECISIONS: &[Decision] = &[
             place(RFPLL_MAINTAIN, "phy_param", 0x194, 0x195),
             place(RFPLL_THERMAL, "phy_param", 0x194, 0x195),
             place(PARENT, "phy_param", 0x194, 0x195),
+        ],
+    },
+    Decision {
+        reason: "external coexistence follower flag: the vendor records the work mode in a \
+            static byte its priority writes read later; production passes the mode with each \
+            operation instead, and the follower priority leaves seed the byte for each mode, \
+            so the flag's effect is compared through them",
+        places: &[
+            place(EXTERNAL_MODE, ".bss.s_external_coex_is_slv_mode", 0, 1),
+            place(EXTERNAL_PARAMS, ".bss.s_external_coex_is_slv_mode", 0, 1),
         ],
     },
 ];

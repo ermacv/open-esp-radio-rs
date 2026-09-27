@@ -1,0 +1,6 @@
+# Reviewed register evidence: vendor radio libraries.
+schema = 1
+
+[[sources]]
+id = "C5_BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"
+description = "ESP32-C5 libbtbb.a of espressif/esp-phy-lib 20f1db053a0e6cb9f1c09d255c43bf42483041d0, sha256 9cbaf5bce18e6190dfab3213d2ecc65e2a5dd8bbde48bf5218dbbf47cc23da11; complete bt_bb_v2.o ieee802154_txon_delay_set body, size 0x42. It performs four ordered fresh-read RMW operations on the IEEE 802.15.4 MAC block and no other access: 0x600A3104 bits 9:0 become 40, 0x600A3114 bits 9:0 become 122, 0x600A3110 bits 10:0 become 50 and 0x600A310c bits 5:0 are cleared, each preserving every other bit."

@@ -1,0 +1,27 @@
+schema = 1
+model = "../model/device.toml"
+reviewed = ["../model/reviewed.toml"]
+memory = "../model/memory.toml"
+ownership = "../policy/ownership.toml"
+api = "../policy/api.toml"
+lints = "../policy/lints.toml"
+evidence = [
+    "../evidence/policy.toml",
+    "../evidence/platform.toml",
+    "../evidence/vendor-radio-libraries.toml",
+]
+
+[applicability]
+ecosystems = ["esp-idf"]
+chip = "esp32c5"
+chip-revisions = ["rev100"]
+artifact-lineages = ["esp32c5-radio"]
+
+[outputs]
+svd = "../published/radio.svd"
+pac-raw = "../../../crates/hardware/esp32c5/pac/raw/src/lib.rs"
+pac-api = "../../../crates/hardware/esp32c5/pac/src/generated.rs"
+bindings = "../published/radio.bindings.toml"
+crate-name = "oer_esp32c5_pac_raw"
+target = "none"
+edition = "2024"

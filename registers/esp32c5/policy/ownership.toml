@@ -1,0 +1,5 @@
+# Reviewed MMIO publication scope shared by explicit project compositions.
+schema = 1
+owned-ranges = [
+    "modem-ieee802154",
+]

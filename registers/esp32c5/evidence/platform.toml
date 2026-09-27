@@ -1,0 +1,18 @@
+# Reviewed register evidence: platform.
+schema = 1
+
+[[sources]]
+id = "C5_REG_BASE"
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7, https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/soc/esp32c5/register/soc/reg_base.h, sha256 b71b182aedcd6b4bb4d4878f5387b5541cd4c3ff511a17ad3c2a8e46cb660233. It names DR_REG_MODEM0_BASE as 0x600A0000 and IEEE802154_REG_BASE as 0x600A3000."
+
+[[sources]]
+id = "ESP_IDF_4D59230D_C5_IEEE802154_STRUCT"
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7, https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/soc/esp32c5/register/soc/ieee802154_struct.h, sha256 cd2f8f9bc6718a285275b88a4c3785ec366d3c4bb159dfdfe50c7ed30e4bd5cc. The public volatile esp_ieee802154_t declaration fixes register and field geometry through offset 0x184, but its TODO ZB-93 says the file still awaits generation from IEEE802154.csv; it therefore supports a selective partial model. Against the ESP32-S31 struct at the same commit it declares a seven-bit frequency code, a five-bit power code, thirteen events, four-bit TX/RX and ACK PTI fields at bits 3:0 and 7:4, no receive current-channel index and no upper-half diagnostic counters."
+
+[[sources]]
+id = "ESP_IDF_4D59230D_C5_IEEE802154_REG"
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7, https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/soc/esp32c5/register/soc/ieee802154_reg.h, sha256 28051ca940282680697130f980126e6bfa5a804672b2ffbf6c2a1fe5b3d84269. The public register macros independently restate the selected offsets and masks with the same TODO ZB-93; they are corroboration for selected geometry only."
+
+[[sources]]
+id = "esp-idf-4d59230d-ieee802154-common-ll"
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7, https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/esp_hal_ieee802154/include/hal/ieee802154_common_ll.h, sha256 ba4ce294b402df311f25c4d0ce9cb33449e3eb41993aff94a25df5a66142d471. Public inline accessors prove the selected software read/write directions, command/event values and field use; they do not establish reset values or semantics for untouched fields. The ESP32-C5 extension https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/esp_hal_ieee802154/esp32c5/include/hal/ieee802154_ll.h, sha256 c369a2418ddd61cc65d536ab288ceb0fa78970abd91106be0b2a0f4ee3ad9cd1, adds no register accessor."

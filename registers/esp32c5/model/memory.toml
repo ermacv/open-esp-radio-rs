@@ -1,0 +1,15 @@
+schema = 1
+default-address-space = "cpu"
+
+[[address-spaces]]
+id = "cpu"
+address-width = 32
+endianness = "little"
+
+[[regions]]
+name = "modem-ieee802154"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600A3000
+end-exclusive = 0x600A4000
+permissions = "rw"

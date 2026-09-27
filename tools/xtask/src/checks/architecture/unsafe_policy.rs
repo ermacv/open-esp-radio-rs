@@ -5,7 +5,8 @@
 
 use crate::{Result, checks::common::ProductionPackage};
 
-const GENERATED: &str = "oer-esp32s31-pac-raw";
+/// Generated register bindings of each chip; they state no crate-root policy.
+const GENERATED: &[&str] = &["oer-esp32s31-pac-raw", "oer-esp32c5-pac-raw"];
 const AUDITED_UNSAFE: &[&str] = &[
     "oer-memory",
     "oer-esp32s31-bluetooth",
@@ -21,18 +22,22 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-ieee80211-system",
     "oer-esp32s31-ieee802154-system",
 ];
+/// The closed radio PAC of each chip.
+const CLOSED_PACS: &[&str] = &["oer-esp32s31-pac", "oer-esp32c5-pac"];
 /// The HAL is the only production consumer of the closed PAC; drivers and
 /// adapters reach hardware through HAL owners.
 const PAC_CONSUMERS: &[&str] = &[
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-pac",
     "oer-esp32s31-hal",
+    "oer-esp32c5-pac-raw",
+    "oer-esp32c5-pac",
 ];
 /// The crate-root attribute that states each production library's unsafe
 /// policy. Rustc and Clippy enforce it in every build; this check keeps the
 /// reviewed audited list and the source attributes in agreement.
 fn required_attribute(name: &str) -> Option<&'static str> {
-    if name == GENERATED {
+    if GENERATED.contains(&name) {
         None
     } else if AUDITED_UNSAFE.contains(&name) {
         Some("#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]")
@@ -66,7 +71,7 @@ pub(super) fn check(packages: &[ProductionPackage]) -> Result<()> {
             .package
             .dependencies
             .iter()
-            .any(|d| d.name == "oer-esp32s31-pac")
+            .any(|d| CLOSED_PACS.contains(&d.name.as_str()))
             && !PAC_CONSUMERS.contains(&name)
         {
             return Err(format!("package crosses closed-PAC ownership boundary: {name}").into());
@@ -92,7 +97,9 @@ mod tests {
 
     #[test]
     fn audited_packages_deny_and_others_forbid_unsafe_code() {
-        assert_eq!(required_attribute(GENERATED), None);
+        for generated in GENERATED {
+            assert_eq!(required_attribute(generated), None);
+        }
         assert_eq!(
             required_attribute("oer-esp32s31-hal"),
             Some("#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]")

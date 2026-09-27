@@ -2490,6 +2490,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32c5-pac"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32c5-pac-raw",
+]
+
+[[package]]
+name = "oer-esp32c5-pac-raw"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "vcell",
+]
+
+[[package]]
 name = "oer-esp32s31-bluetooth"
 version = "0.1.0"
 dependencies = [

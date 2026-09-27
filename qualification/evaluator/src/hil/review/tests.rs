@@ -495,3 +495,30 @@ fn identical_snapshot_is_direct_evidence_regardless_of_commit_or_dirty_state() {
         );
     }
 }
+
+#[test]
+fn observation_of_an_unclassified_workload_is_excluded_not_fatal() {
+    let fixture = setup();
+    let old = fixture.0.join("runs/old");
+    let procedure = old.join("scenarios/exchange/scenario.json");
+    let mut definition: Value = read_json(&procedure).unwrap();
+    definition["ieee802154"] = json!({"kind": "removed"});
+    write(&procedure, &definition);
+    crate::hil::tests::seal(&old);
+    let index = fixture.load().unwrap();
+    let observation = index.scenarios["exchange"]
+        .iter()
+        .find(|observation| observation.run_directory.as_deref() == Some(old.as_path()))
+        .unwrap();
+    assert_eq!(
+        observer::assess(
+            &fixture.0,
+            &observer::Current::load(&fixture.0),
+            observation,
+            None,
+            None
+        )
+        .unwrap(),
+        observer::Compatibility::GraphNotProjectable
+    );
+}

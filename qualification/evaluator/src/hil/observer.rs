@@ -342,6 +342,11 @@ pub(super) fn assess(
         .as_ref()
         .and_then(build_inputs::workload)
         .unwrap_or_default();
+    // A run of a workload the registry no longer classifies, such as one of
+    // a removed scenario, has no dependency scope in today's observer inputs.
+    if !workload.is_empty() && registry["timing"].get(&workload).is_none() {
+        return Ok(Compatibility::GraphNotProjectable);
+    }
     let dependencies = build_inputs::dependencies(&registry, &workload)?;
     let Some(current) = current.resolved.as_ref() else {
         return Ok(Compatibility::IdentityDiffers);

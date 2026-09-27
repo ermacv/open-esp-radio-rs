@@ -16,6 +16,14 @@ serial = "/dev/ttyACM0"
 # relative path belongs to each checkout.
 startup_artifact = "target/hil/esp32s31/startup-artifact.bin"
 
+# Devices under test of other chips, one table per chip id from
+# platform/<chip>/chip.toml, with the same fields as [device]; [device] is the
+# same as [targets.esp32s31]. A run for a chip uses its table; a table whose
+# board is absent fails only such a run.
+# [targets.esp32c5]
+# id = "esp32c5-devkit-01"
+# board = "esp32c5"
+
 # Optional, used only by Bluetooth workloads.
 [bluetooth]
 adapter = "hci0"

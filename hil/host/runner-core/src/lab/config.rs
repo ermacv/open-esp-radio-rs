@@ -22,6 +22,11 @@ use crate::{
 pub struct LabConfig {
     path: PathBuf,
     cell_id: String,
+    /// The chip of `device`.
+    target: String,
+    /// Every device under test by chip, resolved by [`Self::for_target`].
+    targets: std::collections::BTreeMap<String, RawDeviceConfig>,
+    /// The device under test of `target`.
     pub device: DeviceConfig,
     pub bluetooth_adapter: Option<oer_hil_fixture::bluetooth::model::Adapter>,
     /// The IEEE 802.15.4 reference peer (`hil/peers/esp32c5-ieee802154`).
@@ -46,7 +51,11 @@ pub struct LegacyBssConfig {
 #[serde(deny_unknown_fields)]
 struct RawLabConfig {
     lab: RawLabIdentity,
-    device: RawDeviceConfig,
+    /// The esp32s31 device under test; the same as `[targets.esp32s31]`.
+    device: Option<RawDeviceConfig>,
+    /// Devices under test by chip id.
+    #[serde(default)]
+    targets: std::collections::BTreeMap<String, RawDeviceConfig>,
     bluetooth: Option<RawBluetoothConfig>,
     ieee802154_peer: Option<RawIeee802154PeerConfig>,
     station: RawStationConfig,
@@ -85,7 +94,7 @@ struct RawLabIdentity {
     id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawDeviceConfig {
     id: String,
@@ -277,6 +286,31 @@ fn board_port(
     }
 }
 
+/// The chip whose device a lab configuration uses unless a run names another.
+pub const DEFAULT_TARGET: &str = "esp32s31";
+
+/// The serial port, id and startup artifact of `chip`'s device under test.
+fn resolve_target(
+    targets: &std::collections::BTreeMap<String, RawDeviceConfig>,
+    chip: &str,
+    resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
+) -> Result<(PathBuf, String, Option<PathBuf>)> {
+    let device = targets.get(chip).cloned().ok_or_else(|| {
+        format!(
+            "HIL lab config has no device under test for {chip}; add [targets.{chip}] (configured: {})",
+            targets.keys().cloned().collect::<Vec<_>>().join(", ")
+        )
+    })?;
+    let serial = board_port(
+        &format!("targets.{chip}"),
+        device.serial,
+        device.board.as_deref(),
+        Some(chip),
+        resolve,
+    )?;
+    Ok((serial, device.id, device.startup_artifact))
+}
+
 /// Resolve a registered board name or MAC to its attached port, requiring
 /// `chip` when the registry knows the board's chip.
 fn resolve_board(board: &str, chip: Option<&str>) -> Result<PathBuf> {
@@ -346,15 +380,41 @@ impl LabConfig {
             }
         }
         validate_identifier("lab.id", &raw.lab.id)?;
-        validate_identifier("device.id", &raw.device.id)?;
-        // The runner builds ESP32-S31 firmware for its device under test.
-        let device_serial = board_port(
-            "device",
-            raw.device.serial.take(),
-            raw.device.board.as_deref(),
-            Some("esp32s31"),
-            resolve,
-        )?;
+        let root = repository_root()?;
+        let mut targets = std::mem::take(&mut raw.targets);
+        if let Some(device) = raw.device.take() {
+            if targets.contains_key(DEFAULT_TARGET) {
+                return Err(format!(
+                    "HIL lab config names both [device] and [targets.{DEFAULT_TARGET}]; keep one"
+                )
+                .into());
+            }
+            targets.insert(DEFAULT_TARGET.to_owned(), device);
+        }
+        let supported = oer_chip_profile::supported(&root)?;
+        for (chip, device) in &targets {
+            if !supported.contains(chip) {
+                return Err(format!(
+                    "HIL lab config [targets.{chip}] names no supported chip; supported: {}",
+                    supported.join(", ")
+                )
+                .into());
+            }
+            validate_identifier(&format!("targets.{chip}.id"), &device.id)?;
+        }
+        let target = match targets.len() {
+            _ if targets.contains_key(DEFAULT_TARGET) => DEFAULT_TARGET.to_owned(),
+            1 => targets.keys().next().cloned().unwrap_or_default(),
+            0 => return Err("HIL lab config needs [device] or a [targets.<chip>] table".into()),
+            _ => {
+                return Err(format!(
+                    "HIL lab config [targets] must include {DEFAULT_TARGET} or name exactly one chip"
+                )
+                .into());
+            }
+        };
+        let (device_serial, device_id, device_startup_artifact) =
+            resolve_target(&targets, &target, resolve)?;
         if raw.station.ssid.is_empty() || raw.station.ssid.len() > 32 {
             return Err("HIL station SSID must contain 1..=32 bytes".into());
         }
@@ -476,8 +536,7 @@ impl LabConfig {
             }
             RawStationFixtureConfig::External { phys } => validate_phys("external", phys)?,
         }
-        let root = repository_root()?;
-        let startup_artifact = raw.device.startup_artifact.map(|path| {
+        let startup_artifact = device_startup_artifact.map(|path| {
             if path.is_absolute() {
                 path
             } else {
@@ -538,8 +597,10 @@ impl LabConfig {
                     })
                 })
                 .transpose()?,
+            target,
+            targets,
             device: DeviceConfig {
-                id: raw.device.id,
+                id: device_id,
                 serial: device_serial,
                 startup_artifact,
             },
@@ -665,6 +726,48 @@ impl LabConfig {
         lab
     }
 
+    /// The chip of the device under test this configuration uses.
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    /// The chips with a device under test.
+    pub fn targets(&self) -> Vec<&str> {
+        self.targets.keys().map(String::as_str).collect()
+    }
+
+    /// This configuration with `chip`'s device under test, resolving its
+    /// board now so an absent board of another chip never fails a load.
+    pub fn for_target(&self, chip: &str) -> Result<Self> {
+        self.for_target_resolving(chip, &resolve_board)
+    }
+
+    pub(crate) fn for_target_resolving(
+        &self,
+        chip: &str,
+        resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
+    ) -> Result<Self> {
+        if chip == self.target {
+            return Ok(self.clone());
+        }
+        let (serial, id, startup_artifact) = resolve_target(&self.targets, chip, resolve)?;
+        let root = repository_root()?;
+        let mut lab = self.clone();
+        lab.target = chip.to_owned();
+        lab.device = DeviceConfig {
+            id,
+            serial,
+            startup_artifact: startup_artifact.map(|path| {
+                if path.is_absolute() {
+                    path
+                } else {
+                    root.join(path)
+                }
+            }),
+        };
+        Ok(lab)
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -682,6 +785,8 @@ impl LabConfig {
             cell_id: String::from("test-cell"),
             bluetooth_adapter: None,
             ieee802154_peer: None,
+            target: DEFAULT_TARGET.to_owned(),
+            targets: std::collections::BTreeMap::new(),
             device: DeviceConfig {
                 id: String::from("test-device"),
                 serial: PathBuf::from("/dev/ttyACM0"),

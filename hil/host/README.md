@@ -76,6 +76,13 @@ fixture. It is ignored by Git; scenarios contain no lab secrets or
 machine-specific paths. The identities are written into every run manifest so
 results from different cells and boards cannot be silently mixed.
 
+Each device under test belongs to a chip: `[targets.<chip>]` names it (its
+identity, serial port or board, startup artifact), keyed by a chip id with a
+profile in `platform/<chip>/chip.toml`. `[device]` is the same as
+`[targets.esp32s31]` and stays the default; another chip's board is resolved
+only when a run for that chip asks for it, so an absent board fails only such
+a run.
+
 Multi-boot station lifecycle scenarios require a configured startup artifact.
 Their first boot may create or replace it; every later boot must report
 `Restored` before the station lifecycle can qualify. This makes cold PHY cache

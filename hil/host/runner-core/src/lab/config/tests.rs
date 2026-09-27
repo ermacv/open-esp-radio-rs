@@ -283,3 +283,68 @@ fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
     );
     assert_eq!(peer.high_khz, 2_426_000);
 }
+
+#[test]
+fn devices_under_test_are_keyed_by_chip_and_device_is_the_esp32s31() {
+    use std::io::Write;
+    let raw: toml::Value =
+        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    let resolve = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
+        match (board, chip) {
+            ("esp32c5", Some("esp32c5")) => Ok("/dev/ttyACM1".into()),
+            ("esp32c5", None) => Ok("/dev/ttyACM1".into()),
+            ("gone", _) => Err("board `gone` is not attached".into()),
+            _ => Err(format!("unexpected {board} {chip:?}").into()),
+        }
+    };
+    let load = |value: &toml::Value| {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(toml::to_string(value).unwrap().as_bytes())
+            .unwrap();
+        LabConfig::load_resolving(file.path(), &resolve)
+    };
+    let target = |board: &str| {
+        let mut table = toml::Table::new();
+        table.insert("id".into(), "esp32c5-dut".into());
+        table.insert("board".into(), board.into());
+        toml::Value::Table(table)
+    };
+    // [device] is the esp32s31 and stays the default; another chip resolves
+    // only when a run asks for it.
+    let mut both = raw.clone();
+    let mut targets = toml::Table::new();
+    targets.insert("esp32c5".into(), target("esp32c5"));
+    both.as_table_mut()
+        .unwrap()
+        .insert("targets".into(), toml::Value::Table(targets));
+    let lab = load(&both).unwrap();
+    assert_eq!(lab.target(), "esp32s31");
+    assert_eq!(lab.targets(), ["esp32c5", "esp32s31"]);
+    let esp32c5 = lab.for_target_resolving("esp32c5", &resolve).unwrap();
+    assert_eq!(esp32c5.target(), "esp32c5");
+    assert_eq!(esp32c5.device.id, "esp32c5-dut");
+    assert_eq!(
+        esp32c5.device.serial,
+        std::path::PathBuf::from("/dev/ttyACM1")
+    );
+    assert!(lab.for_target_resolving("esp32h2", &resolve).is_err());
+    // An unattached board of another chip does not fail the load.
+    let mut absent = both.clone();
+    absent["targets"]["esp32c5"]["board"] = "gone".into();
+    let lab = load(&absent).unwrap();
+    assert!(lab.for_target_resolving("esp32c5", &resolve).is_err());
+    // [device] and [targets.esp32s31] name one device; an unknown chip is refused.
+    let mut twice = both.clone();
+    let device = twice["device"].clone();
+    twice["targets"]
+        .as_table_mut()
+        .unwrap()
+        .insert("esp32s31".into(), device);
+    assert!(load(&twice).is_err());
+    let mut unknown = both;
+    unknown["targets"]
+        .as_table_mut()
+        .unwrap()
+        .insert("esp32x9".into(), target("esp32c5"));
+    assert!(load(&unknown).is_err());
+}

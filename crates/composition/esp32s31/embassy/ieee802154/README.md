@@ -134,6 +134,14 @@ other scene levels (`esp_ieee802154_set_coex_config`); a changed table does
 not reach the MAC until it is called. Stopping the client returns both
 priorities to the disabled image the foundation proves.
 
+Next to Wi-Fi, as in a Thread border router,
+`Ieee802154System::enable_wifi_coexistence` enters IEEE 802.15.4 into
+coexistence (`esp_coex_wifi_i154_enable`: `coex_enable` and the schedule
+status bit) through `RadioGuard::enable_ieee802154_coex`; the image must
+run the radio system's coexistence schedule, as its Wi-Fi composition does.
+`disable_wifi_coexistence` leaves it again, and `stop` refuses while it
+takes part, since leaving can fail after it changed the coexistence state.
+
 RF stays open for the client's lifetime by default
 (`Ieee802154RfPolicy::AlwaysOn`), as in ESP-IDF builds without tickless idle
 and modem retention. Under `Ieee802154RfPolicy::CloseWhenAsleep` the client

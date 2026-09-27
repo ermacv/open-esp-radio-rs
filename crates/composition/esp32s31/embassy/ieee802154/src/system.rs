@@ -4,6 +4,7 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Instant, Timer};
 use esp_hal::interrupt::{InterruptHandler, Priority};
+use oer_esp32s31_coex::CoexError;
 use oer_esp32s31_hal::{
     ieee802154::{
         Ieee802154Clocked, Ieee802154Cold, Ieee802154FoundationCheckpoint, Ieee802154Powered,
@@ -168,6 +169,9 @@ pub enum Ieee802154StopError {
     Clocks(ModemClockError),
     /// Common radio power could not be left.
     Power(CommonRadioPowerError),
+    /// IEEE 802.15.4 still takes part in coexistence with Wi-Fi; disable it
+    /// with [`Ieee802154System::disable_wifi_coexistence`] first.
+    WifiCoexistenceEnabled,
 }
 
 /// Failed teardown.
@@ -263,6 +267,8 @@ pub struct Ieee802154System {
     /// The scene levels the MAC's priorities were resolved with
     /// (`s_coex_config`).
     coex_config: Ieee802154CoexConfig,
+    /// Whether IEEE 802.15.4 takes part in coexistence with Wi-Fi.
+    wifi_coexistence: bool,
 }
 
 /// Why PHY maintenance failed.
@@ -492,6 +498,7 @@ pub async fn start<P, C: PlatformClockProvider>(
             rf_policy: Ieee802154RfPolicy::AlwaysOn,
             bound: Some(bound),
             coex_config: Ieee802154CoexConfig::VENDOR,
+            wifi_coexistence: false,
         }),
         Err(error) => {
             let parts = RUNTIME
@@ -713,6 +720,49 @@ impl Ieee802154System {
         Ok(())
     }
 
+    /// Take part in coexistence with Wi-Fi, as ESP-IDF's
+    /// `esp_coex_wifi_i154_enable` does for a Thread border router: enable
+    /// coexistence for IEEE 802.15.4 and publish its schedule status, so the
+    /// coexistence schedule counts it (`RadioGuard::enable_ieee802154_coex`).
+    /// The image must run `RadioSystem::run_coex_schedule` once, as its
+    /// Wi-Fi composition does. Nothing happens when it already takes part.
+    pub async fn enable_wifi_coexistence<P, C: PlatformClockProvider>(
+        &mut self,
+        radio: &RadioSystem<P, C>,
+    ) {
+        if self.wifi_coexistence {
+            return;
+        }
+        radio.lock().await.enable_ieee802154_coex();
+        self.wifi_coexistence = true;
+    }
+
+    /// Leave coexistence with Wi-Fi: withdraw the schedule status and
+    /// disable coexistence for IEEE 802.15.4
+    /// (`RadioGuard::disable_ieee802154_coex`). [`Self::stop`] requires it
+    /// after [`Self::enable_wifi_coexistence`]. Nothing happens when it does
+    /// not take part.
+    ///
+    /// # Errors
+    ///
+    /// A coexistence timer could not be disabled; IEEE 802.15.4 has left
+    /// coexistence and the core keeps the timer as uncertain.
+    pub async fn disable_wifi_coexistence<P, C: PlatformClockProvider>(
+        &mut self,
+        radio: &RadioSystem<P, C>,
+    ) -> Result<(), CoexError> {
+        if !self.wifi_coexistence {
+            return Ok(());
+        }
+        self.wifi_coexistence = false;
+        radio.lock().await.disable_ieee802154_coex()
+    }
+
+    /// Whether IEEE 802.15.4 takes part in coexistence with Wi-Fi.
+    pub const fn wifi_coexistence(&self) -> bool {
+        self.wifi_coexistence
+    }
+
     /// The scene levels the MAC's priorities were last resolved with
     /// (`esp_ieee802154_get_coex_config`): the vendor default after start.
     pub const fn coex_config(&self) -> Ieee802154CoexConfig {
@@ -901,7 +951,20 @@ impl Ieee802154System {
             rf_policy,
             bound,
             coex_config,
+            wifi_coexistence,
         } = self;
+        if wifi_coexistence {
+            return Err(Ieee802154StopFailure {
+                error: Ieee802154StopError::WifiCoexistenceEnabled,
+                owner: Ok(Self {
+                    route,
+                    rf_policy,
+                    bound,
+                    coex_config,
+                    wifi_coexistence,
+                }),
+            });
+        }
         if let Some(bound) = bound
             && let Err((error, bound)) = bound.quiesce()
         {
@@ -912,6 +975,7 @@ impl Ieee802154System {
                     rf_policy,
                     bound: Some(bound),
                     coex_config,
+                    wifi_coexistence,
                 }),
             });
         }

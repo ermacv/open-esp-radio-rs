@@ -659,7 +659,7 @@ section = "ieee802154-product-stacks"
 title = "Thread"
 status = "host-only"
 level = "composed-product"
-scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) implements the Radio trait of the repository's fork of the openthread crate over the runtime: OpenThread's SubMac runs CSMA/CA and retries and the radio secures frames and enhanced ACKs with OpenThread's keys, as ESP-IDF's OpenThread port does. OpenThread is built with CSL, and the radio serves its scheduled windows, delayed frames and CSL IEs. The [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an OpenThread minimal or synchronized sleepy end device; on-air qualification is absent, and this matrix does not claim a production Thread integration."
+scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) implements the Radio trait of the repository's fork of the openthread crate over the runtime: OpenThread's SubMac runs CSMA/CA and retries and the radio secures frames and enhanced ACKs with OpenThread's keys, as ESP-IDF's OpenThread port does. OpenThread is built with CSL, and the radio serves its scheduled windows, delayed frames and CSL IEs. The [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an OpenThread minimal or synchronized sleepy end device, and the `oer` facade's `openthread` feature exposes the adapter. The HIL cell `ieee802154-thread-exchange` attaches a minimal end device to a network ESP-IDF's OpenThread leads and exchanges UDP both ways; it has not run on air yet, and this matrix does not claim a production Thread integration."
 
 [[items]]
 id = "ieee802154-product-stacks-zigbee"

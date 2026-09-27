@@ -14,7 +14,22 @@
  *
  *   r <hex address>   ->   oer-vendor-calibration-register <address> <value>
  *
- * The firmware holds no register list of its own. The host resets the board
+ *   a <hex block> <hex register>
+ *       ->   oer-vendor-calibration-analog <block> <register> <value>
+ *
+ * and restarts the Wi-Fi radio on request, as production's idle radio
+ * restart does, so the host can read the registers after one RF close and
+ * wake:
+ *
+ *   w   ->   oer-vendor-calibration-restarted <PHY modem flags while stopped>
+ *
+ * The registration and the client share the Wi-Fi modem flag, so stopping
+ * the client clears the last flag and closes RF: the flags read zero. Starting
+ * it again wakes the PHY.
+ *
+ * Analog registers are read through the ESP-IDF analog-I2C driver, which
+ * selects the block's host from the host map the PHY configured. The
+ * firmware holds no register list of its own. The host resets the board
  * for each repetition.
  */
 #include <stdio.h>
@@ -24,6 +39,8 @@
 
 #include "esp_event.h"
 #include "esp_phy_init.h"
+#include "esp_private/phy.h"
+#include "esp_private/regi2c_ctrl.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -33,9 +50,45 @@
 /* Longest request line: "r " and eight hex digits. */
 #define REQUEST_BYTES 16
 
-/* Answer one `r <hex address>` request with the word read there. */
+/* Stop the Wi-Fi client, releasing its PHY modem, and start it again in
+ * the boot's receive state; reply with the modem flags while stopped. */
+static void restart(void)
+{
+    ESP_ERROR_CHECK(esp_wifi_stop());
+    unsigned flags = phy_get_modem_flag();
+    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
+    char reply[64];
+    int length = snprintf(reply, sizeof(reply), REPORT_PREFIX "-restarted %08x\n", flags);
+    usb_serial_jtag_write_bytes(reply, length, portMAX_DELAY);
+}
+
+/* Answer one `a <hex block> <hex register>` request with the analog
+ * register's value; every block the host names reports host id zero. */
+static void answer_analog(const char *request)
+{
+    char *end;
+    uint8_t block = (uint8_t)strtoul(request + 2, &end, 16);
+    uint8_t reg = (uint8_t)strtoul(end, NULL, 16);
+    uint8_t value = regi2c_ctrl_read_reg(block, 0, reg);
+    char reply[64];
+    int length = snprintf(reply, sizeof(reply), REPORT_PREFIX "-analog %02x %02x %02x\n", block,
+                          reg, value);
+    usb_serial_jtag_write_bytes(reply, length, portMAX_DELAY);
+}
+
+/* Answer one `r <hex address>`, `a <hex block> <hex register>` or `w`
+ * request. */
 static void answer(const char *request)
 {
+    if (request[0] == 'w' && request[1] == '\0') {
+        restart();
+        return;
+    }
+    if (request[0] == 'a' && request[1] == ' ') {
+        answer_analog(request);
+        return;
+    }
     if (request[0] != 'r' || request[1] != ' ') {
         return;
     }

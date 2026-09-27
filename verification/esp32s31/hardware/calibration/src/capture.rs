@@ -1,5 +1,6 @@
 //! Cold calibrations of the vendor firmware and the production image on the
-//! leased board.
+//! leased board, with their register state read after the bring-up or after
+//! one further Wi-Fi radio restart.
 //!
 //! Run under the stand lease (`cargo hil --owner <name> lease -- ...`). The
 //! vendor firmware comes from `cargo xtask vendor-firmware`; the production
@@ -7,7 +8,7 @@
 //! vendor firmware, then the production image, so both sides see the same
 //! board temperature. Each production boot receives a fresh startup artifact
 //! path, so it calibrates fully and publishes the new retained calibration.
-use crate::registers::Register;
+use crate::registers::{Register, Space};
 use crate::{Result, repository_root, vendor};
 use oer_hil_runner_core::lab::config::LabConfig;
 use oer_hil_runner_core::session::{SerialCapture, Settings, Target};
@@ -34,6 +35,8 @@ const READ_TIMEOUT: Duration = Duration::from_millis(100);
 const BAUD_RATE: u32 = 115_200;
 /// Bootstrap ELF the HIL image build leaves beside the application.
 const BOOTSTRAP_ELF: &str = "bootstrap.elf";
+/// Longest wait for one Wi-Fi radio restart on either side.
+const RESTART_TIMEOUT: Duration = Duration::from_secs(10);
 /// Longest wait for one production register image window.
 const REGISTER_IMAGE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Console characters an unanswered register read reports.
@@ -41,11 +44,25 @@ const CONSOLE_TAIL_CHARS: usize = 2000;
 /// Extensions of the per-boot vendor consoles and register replies.
 pub const CONSOLE_EXTENSION: &str = "log";
 pub const REGISTER_EXTENSION: &str = "registers";
+pub const ANALOG_EXTENSION: &str = "analog";
+
+/// Lifecycle point at which both sides report their state.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum Lifecycle {
+    /// After the cold calibration and the Wi-Fi bring-up.
+    #[default]
+    Cold,
+    /// After one further Wi-Fi radio restart: RF closed and woken.
+    Restart,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Capture {
     pub started_unix_seconds: u64,
+    #[serde(default)]
+    pub lifecycle: Lifecycle,
     pub vendor_application_sha256: String,
     pub vendor_idf_revision: String,
     pub production_image: String,
@@ -66,6 +83,9 @@ pub struct Arguments {
     /// HIL image class whose cold calibration is compared.
     #[arg(long, default_value = "correctness")]
     production_image: String,
+    /// Lifecycle point at which the registers are read.
+    #[arg(long, value_enum, default_value_t = Lifecycle::Cold)]
+    lifecycle: Lifecycle,
     #[arg(long)]
     lab_config: Option<PathBuf>,
 }
@@ -153,27 +173,63 @@ fn vendor_boot(port: &Path) -> Result<(String, Box<dyn serialport::SerialPort>)>
     .into())
 }
 
+/// Restart the vendor Wi-Fi radio and require that stopping the client
+/// released every PHY modem, which closes RF. `replies` accumulates the
+/// console.
+fn vendor_restart(serial: &mut dyn serialport::SerialPort, replies: &mut String) -> Result<()> {
+    let done = vendor::restarts(replies)?.len();
+    serial.write_all(vendor::RESTART_REQUEST.as_bytes())?;
+    let started = Instant::now();
+    let mut buffer = [0; 256];
+    loop {
+        if let Some(&flags) = vendor::restarts(replies)?.get(done) {
+            if flags != 0 {
+                return Err(format!(
+                    "the stopped vendor Wi-Fi client left PHY modem flags {flags:#x}, so RF stayed open"
+                )
+                .into());
+            }
+            return Ok(());
+        }
+        if started.elapsed() > RESTART_TIMEOUT {
+            return Err(format!("no vendor restart reply within {RESTART_TIMEOUT:?}").into());
+        }
+        match serial.read(&mut buffer) {
+            Ok(read) => replies.push_str(&String::from_utf8_lossy(&buffer[..read])),
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
 /// The vendor firmware's replies to reads of `registers`. A read that
 /// resets the chip, such as a register whose clock domain the calibration
 /// leaves off, shows as a new boot report instead of a reply: the register
 /// is recorded as unreadable in this state and the reads continue once the
-/// new boot reports.
+/// new boot reports, after restarting the radio again at the
+/// [`Lifecycle::Restart`] point. `replies` holds the console so far, and
+/// its restarts.
 fn vendor_registers(
     serial: &mut dyn serialport::SerialPort,
+    space: Space,
     registers: &[crate::registers::Register],
-) -> Result<String> {
-    let mut replies = String::new();
+    lifecycle: Lifecycle,
+    replies: &mut String,
+) -> Result<()> {
     let mut buffer = [0; 256];
     for register in registers {
-        serial.write_all(vendor::register_request(register.address).as_bytes())?;
-        let boots = vendor::reports(&replies);
+        serial.write_all(space.request(register.address).as_bytes())?;
+        let boots = vendor::reports(replies);
         let started = Instant::now();
         loop {
-            if vendor::registers(&replies)?.contains_key(&register.address) {
+            if space.replies(replies)?.contains_key(&register.address) {
                 break;
             }
-            if vendor::reports(&replies) > boots {
+            if vendor::reports(replies) > boots {
                 replies.push_str(&vendor::unreadable_line(register.address));
+                if lifecycle == Lifecycle::Restart {
+                    vendor_restart(serial, replies)?;
+                }
                 break;
             }
             if started.elapsed() > VENDOR_BOOT_TIMEOUT {
@@ -195,19 +251,21 @@ fn vendor_registers(
             }
         }
     }
-    Ok(replies)
+    Ok(())
 }
 
 /// One cold production boot publishing its retained calibration to
-/// `artifact`, then reading the register image at `readable` indices; the
-/// replies use the vendor register line format.
+/// `artifact`, then reading the register image at `readable` indices and
+/// the whole analog image; the replies use the vendor line formats.
 fn production_boot(
     lab: &LabConfig,
     artifact: &Path,
     output: &Path,
     registers: &[Register],
     readable: &[usize],
-) -> Result<String> {
+    analog: &[Register],
+    lifecycle: Lifecycle,
+) -> Result<(String, String)> {
     let mut lab = lab.clone();
     lab.device.startup_artifact = Some(artifact.to_owned());
     let capture = SerialCapture::start_with_reset(&lab.device.serial, output)?;
@@ -216,15 +274,39 @@ fn production_boot(
             lab: &lab,
             settings: Settings::default(),
         })?;
+        if lifecycle == Lifecycle::Restart {
+            let evidence = capture
+                .wait_wifi_radio_restart(capture.request_radio_restart()?, RESTART_TIMEOUT)?;
+            if evidence.rf != oer_hil_protocol::WifiRadioRestartRf::ClosedAndWoken {
+                return Err(format!("the production restart kept RF open: {evidence:?}").into());
+            }
+        }
         let mut replies = String::new();
         for window in windows(readable) {
             let words = capture.read_phy_register_image(window, REGISTER_IMAGE_TIMEOUT)?;
             for (offset, value) in words.values.iter().enumerate() {
                 let register = &registers[usize::from(words.first) + offset];
-                replies.push_str(&vendor::register_line(register.address, *value));
+                replies.push_str(&Space::Mmio.line(register.address, *value));
             }
         }
-        Ok((status, replies))
+        let mut analog_replies = String::new();
+        let every: Vec<usize> = (0..analog.len()).collect();
+        for window in windows(&every) {
+            let bytes = capture.read_phy_analog_image(window, REGISTER_IMAGE_TIMEOUT)?;
+            if usize::from(bytes.length) != analog.len() {
+                return Err(format!(
+                    "production reads {} analog registers, the published model {}",
+                    bytes.length,
+                    analog.len()
+                )
+                .into());
+            }
+            for (offset, value) in bytes.values.iter().enumerate() {
+                let register = &analog[usize::from(bytes.first) + offset];
+                analog_replies.push_str(&Space::Analog.line(register.address, u32::from(*value)));
+            }
+        }
+        Ok((status, (replies, analog_replies)))
     })();
     let (status, replies) = capture.finish_with(result)?;
     let status = status.ok_or("the production image published no startup artifact")?;
@@ -274,9 +356,10 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let (production, production_sha256) = build_production(&root, &arguments.production_image)?;
     // The image's bootstrap ELF, from which the runner restores the HIL
     // bootloader on every production flash.
-    let production_bootstrap = Some(production.with_file_name(BOOTSTRAP_ELF))
-        .filter(|path| path.is_file());
+    let production_bootstrap =
+        Some(production.with_file_name(BOOTSTRAP_ELF)).filter(|path| path.is_file());
     let registers = crate::registers::partition(&root, crate::registers::PARTITION)?;
+    let analog = crate::registers::analog(&root, crate::registers::ANALOG_DOMAIN)?;
     if let Some(parent) = arguments.output.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -300,7 +383,25 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         )?;
         journal(&root, &journal_name, &vendor_build.application, &port)?;
         let (console, mut serial) = vendor_boot(&port)?;
-        let replies = vendor_registers(&mut *serial, &registers)?;
+        let mut replies = String::new();
+        if arguments.lifecycle == Lifecycle::Restart {
+            vendor_restart(&mut *serial, &mut replies)?;
+        }
+        vendor_registers(
+            &mut *serial,
+            Space::Mmio,
+            &registers,
+            arguments.lifecycle,
+            &mut replies,
+        )?;
+        let mut analog_replies = String::new();
+        vendor_registers(
+            &mut *serial,
+            Space::Analog,
+            &analog,
+            arguments.lifecycle,
+            &mut analog_replies,
+        )?;
         drop(serial);
         let stem = format!("{VENDOR_PREFIX}{boot:02}");
         std::fs::write(output.join(format!("{stem}.{CONSOLE_EXTENSION}")), console)?;
@@ -308,9 +409,14 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             output.join(format!("{stem}.{REGISTER_EXTENSION}")),
             &replies,
         )?;
+        std::fs::write(
+            output.join(format!("{stem}.{ANALOG_EXTENSION}")),
+            &analog_replies,
+        )?;
         println!(
-            "vendor boot {boot}: report and {} registers captured",
-            registers.len()
+            "vendor boot {boot}: report, {} registers and {} analog registers captured",
+            registers.len(),
+            analog.len()
         );
 
         oer_hil_runner_core::device::flash_application(
@@ -328,16 +434,22 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             .filter(|(_, register)| answered.contains_key(&register.address))
             .map(|(index, _)| index)
             .collect();
-        let production_replies = production_boot(
+        let (production_replies, production_analog) = production_boot(
             &lab,
             &output.join(format!("{PRODUCTION_PREFIX}{boot:02}.bin")),
             &output.join(format!("session-production-{boot:02}")),
             &registers,
             &readable,
+            &analog,
+            arguments.lifecycle,
         )?;
         std::fs::write(
             output.join(format!("{PRODUCTION_PREFIX}{boot:02}.{REGISTER_EXTENSION}")),
             production_replies,
+        )?;
+        std::fs::write(
+            output.join(format!("{PRODUCTION_PREFIX}{boot:02}.{ANALOG_EXTENSION}")),
+            production_analog,
         )?;
         println!(
             "production boot {boot}: retained calibration and {} registers captured",
@@ -347,6 +459,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
 
     let record = Capture {
         started_unix_seconds,
+        lifecycle: arguments.lifecycle,
         vendor_application_sha256: vendor_build.application_sha256,
         vendor_idf_revision: vendor_build.idf_revision,
         production_image: arguments.production_image.clone(),

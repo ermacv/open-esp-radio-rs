@@ -1,4 +1,4 @@
-idf_component_register(SRCS "main.c" PRIV_REQUIRES esp_phy esp_driver_usb_serial_jtag esp_wifi esp_event)
+idf_component_register(SRCS "main.c" PRIV_REQUIRES esp_phy esp_hw_support esp_driver_usb_serial_jtag esp_wifi esp_event)
 
 # Vendor data objects the firmware reports after calibration. Each size is
 # the object's symbol size in the pinned archive that defines it, so the

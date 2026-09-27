@@ -9,6 +9,12 @@ const END_SUFFIX: &str = "-end";
 /// Suffix of a register reply prefix, and the request the firmware answers.
 const REGISTER_SUFFIX: &str = "-register";
 pub const REGISTER_REQUEST: &str = "r";
+/// Suffix of an analog register reply prefix, and the request it answers.
+const ANALOG_SUFFIX: &str = "-analog";
+pub const ANALOG_REQUEST: &str = "a";
+/// The Wi-Fi radio restart request and the suffix of its reply.
+pub const RESTART_REQUEST: &str = "w\n";
+const RESTARTED_SUFFIX: &str = "-restarted";
 
 /// Suffix of the host's record of a register whose read reset the chip.
 const UNREADABLE_SUFFIX: &str = "-unreadable";
@@ -28,6 +34,18 @@ pub fn unreadable(console: &str) -> Result<std::collections::BTreeSet<u32>> {
         .collect()
 }
 
+/// The PHY modem flags each complete restart reply of `console` reports
+/// while the Wi-Fi client was stopped.
+pub fn restarts(console: &str) -> Result<Vec<u32>> {
+    let prefix = format!("{REPORT_PREFIX}{RESTARTED_SUFFIX} ");
+    let complete = console.rfind('\n').map_or("", |end| &console[..end]);
+    complete
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(&prefix))
+        .map(|flags| Ok(u32::from_str_radix(flags, 16)?))
+        .collect()
+}
+
 /// Complete boot reports in `console`.
 pub fn reports(console: &str) -> usize {
     let end = format!("{REPORT_PREFIX}{END_SUFFIX}");
@@ -43,6 +61,42 @@ pub fn register_line(address: u32, value: u32) -> String {
 /// The request line for the word at `address`.
 pub fn register_request(address: u32) -> String {
     format!("{REGISTER_REQUEST} {address:08x}\n")
+}
+
+/// One analog register reply line, in the firmware's answer format.
+pub fn analog_line(block: u8, register: u8, value: u8) -> String {
+    format!("{REPORT_PREFIX}{ANALOG_SUFFIX} {block:02x} {register:02x} {value:02x}\n")
+}
+
+/// The request line for analog `register` of `block`.
+pub fn analog_request(block: u8, register: u8) -> String {
+    format!("{ANALOG_REQUEST} {block:02x} {register:02x}\n")
+}
+
+/// `((block, register), value)` of each complete analog reply line of
+/// `console`.
+pub fn analog(console: &str) -> Result<BTreeMap<(u8, u8), u8>> {
+    let prefix = format!("{REPORT_PREFIX}{ANALOG_SUFFIX} ");
+    let mut values = BTreeMap::new();
+    let complete = console.rfind('\n').map_or("", |end| &console[..end]);
+    for line in complete.lines().map(str::trim) {
+        let Some(rest) = line.strip_prefix(&prefix) else {
+            continue;
+        };
+        let fields: Vec<u8> = rest
+            .split(' ')
+            .map(|field| u8::from_str_radix(field, 16))
+            .collect::<std::result::Result<_, _>>()?;
+        let [block, register, value] = fields[..] else {
+            return Err(format!("malformed analog reply: {line}").into());
+        };
+        if values.insert((block, register), value).is_some() {
+            return Err(
+                format!("analog register {block:02x}/{register:02x} answered twice").into(),
+            );
+        }
+    }
+    Ok(values)
 }
 
 /// `(address, value)` of each complete register reply line of `console`; a
@@ -133,6 +187,19 @@ mod tests {
     }
 
     #[test]
+    fn analog_replies_are_read_by_block_and_register() {
+        let console = format!(
+            "{}oer-vendor-calibration-analog 61 0a",
+            analog_line(0x61, 0x09, 0x5c)
+        );
+        let values = analog(&console).unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[&(0x61, 0x09)], 0x5c);
+        assert_eq!(analog_request(0x6b, 0x02), "a 6b 02\n");
+        assert!(analog("oer-vendor-calibration-analog 61 09\n").is_err());
+    }
+
+    #[test]
     fn unreadable_registers_and_reports_are_counted() {
         let console = format!(
             "oer-vendor-calibration-end\n{}oer-vendor-calibration-end\n",
@@ -140,6 +207,13 @@ mod tests {
         );
         assert_eq!(reports(&console), 2);
         assert!(unreadable(&console).unwrap().contains(&0x2010_2800));
+    }
+
+    #[test]
+    fn restart_replies_report_the_stopped_modem_flags() {
+        let console = "oer-vendor-calibration-restarted 00000000\n\
+                       oer-vendor-calibration-restarted 000";
+        assert_eq!(restarts(console).unwrap(), [0]);
     }
 
     #[test]

@@ -11,25 +11,29 @@
 //! field without a review leaves the comparison INCOMPLETE; reviews naming
 //! no compared field are rejected.
 use crate::capture::{
-    CONSOLE_EXTENSION, Capture, PRODUCTION_PREFIX, REGISTER_EXTENSION, VENDOR_PREFIX,
+    ANALOG_EXTENSION, CONSOLE_EXTENSION, Capture, Lifecycle, PRODUCTION_PREFIX, REGISTER_EXTENSION,
+    VENDOR_PREFIX,
 };
 use crate::committed::{
     CALIBRATION, CALIBRATION_BYTES, OutputField, PARENT, PARENT_BYTES, TRACKING_PROGRESS_FIELD,
     VENDOR_OBJECT, committed,
 };
+use crate::registers::Space;
 use crate::{Result, production, repository_root, vendor};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Summary format.
-const SCHEMA: u16 = 2;
+const SCHEMA: u16 = 3;
 /// Tolerance file format.
 const TOLERANCE_SCHEMA: u16 = 2;
 /// Reviewed tolerances, relative to this package.
 const TOLERANCES: &str = "tolerances.toml";
 /// Tracked summary, relative to the repository root.
 const SUMMARY: &str = "verification/esp32s31/evidence/hardware/calibration.json";
+/// Summary of another lifecycle point, in its capture directory.
+const UNTRACKED_SUMMARY: &str = "summary.json";
 const SECONDS_PER_DAY: u64 = 86_400;
 /// Extension of the captured production artifacts.
 const ARTIFACT_EXTENSION: &str = "bin";
@@ -86,6 +90,7 @@ struct Summary {
     schema: u16,
     /// UTC day the captures started.
     date: String,
+    lifecycle: Lifecycle,
     verdict: Verdict,
     vendor_object: &'static str,
     vendor_application_sha256: String,
@@ -101,6 +106,8 @@ struct Summary {
     uncovered: Vec<[usize; 2]>,
     /// The calibrated radio-PHY register image of both sides.
     registers: RegisterSummary,
+    /// The calibrated analog image of both sides.
+    analog: RegisterSummary,
 }
 
 #[derive(Serialize)]
@@ -139,12 +146,13 @@ struct ExcludedRegister {
 /// Register values by address, and the addresses whose read reset the chip.
 type RegisterValues = (BTreeMap<u32, Vec<u32>>, std::collections::BTreeSet<u32>);
 
-/// Every register value of `texts` by address, and the unreadable ones.
-fn register_values(texts: &[String]) -> Result<RegisterValues> {
+/// Every register value of `texts` in `space` by address, and the
+/// unreadable ones.
+fn register_values(space: Space, texts: &[String]) -> Result<RegisterValues> {
     let mut values: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     let mut unreadable = std::collections::BTreeSet::new();
     for text in texts {
-        for (address, value) in vendor::registers(text)? {
+        for (address, value) in space.replies(text)? {
             values.entry(address).or_default().push(value);
         }
         unreadable.extend(vendor::unreadable(text)?);
@@ -157,13 +165,14 @@ fn register_values(texts: &[String]) -> Result<RegisterValues> {
 /// range widened by the vendor range's own width, the fields' rule applied
 /// to whole registers.
 fn compare_registers(
+    space: Space,
     image: &[crate::registers::Register],
     vendor: &[String],
     production: &[String],
     reviews: &BTreeMap<String, Tolerance>,
 ) -> Result<RegisterSummary> {
-    let (vendor_values, unreadable) = register_values(vendor)?;
-    let (production_values, _) = register_values(production)?;
+    let (vendor_values, unreadable) = register_values(space, vendor)?;
+    let (production_values, _) = register_values(space, production)?;
     let range = |values: &[u32]| {
         values.iter().fold([u32::MAX, u32::MIN], |[low, high], &v| {
             [low.min(v), high.max(v)]
@@ -428,16 +437,24 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
                 .ok_or_else(|| format!("{} lacks {VENDOR_OBJECT}", path.display()).into())
         })
         .collect::<Result<Vec<_>>>()?;
-    let texts = |prefix: &str| -> Result<Vec<String>> {
-        numbered(&arguments.captures, prefix, REGISTER_EXTENSION)?
+    let texts = |prefix: &str, extension: &str| -> Result<Vec<String>> {
+        numbered(&arguments.captures, prefix, extension)?
             .iter()
             .map(|path| Ok(std::fs::read_to_string(path)?))
             .collect()
     };
     let registers = compare_registers(
+        Space::Mmio,
         &crate::registers::partition(&root, crate::registers::PARTITION)?,
-        &texts(VENDOR_PREFIX)?,
-        &texts(PRODUCTION_PREFIX)?,
+        &texts(VENDOR_PREFIX, REGISTER_EXTENSION)?,
+        &texts(PRODUCTION_PREFIX, REGISTER_EXTENSION)?,
+        &tolerances.registers,
+    )?;
+    let analog = compare_registers(
+        Space::Analog,
+        &crate::registers::analog(&root, crate::registers::ANALOG_DOMAIN)?,
+        &texts(VENDOR_PREFIX, ANALOG_EXTENSION)?,
+        &texts(PRODUCTION_PREFIX, ANALOG_EXTENSION)?,
         &tolerances.registers,
     )?;
     let production = numbered(&arguments.captures, PRODUCTION_PREFIX, ARTIFACT_EXTENSION)?
@@ -481,7 +498,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         summaries
             .iter()
             .map(|f| f.verdict)
-            .chain(std::iter::once(registers.verdict))
+            .chain([registers.verdict, analog.verdict])
     };
     let verdict = if verdicts().any(|v| v == Verdict::Diff) {
         Verdict::Diff
@@ -493,6 +510,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let summary = Summary {
         schema: SCHEMA,
         date: utc_date(capture.started_unix_seconds),
+        lifecycle: capture.lifecycle,
         verdict,
         vendor_object: VENDOR_OBJECT,
         vendor_application_sha256: capture.vendor_application_sha256,
@@ -505,11 +523,17 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         excluded,
         uncovered: uncovered(length, &fields),
         registers,
+        analog,
     };
+    // The tracked summary records the cold lifecycle point; other points
+    // stay beside their captures unless an output is named.
     let output = arguments
         .output
         .clone()
-        .unwrap_or_else(|| root.join(SUMMARY));
+        .unwrap_or_else(|| match capture.lifecycle {
+            Lifecycle::Cold => root.join(SUMMARY),
+            Lifecycle::Restart => arguments.captures.join(UNTRACKED_SUMMARY),
+        });
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -619,6 +643,7 @@ mod tests {
             },
         )]);
         let summary = compare_registers(
+            Space::Mmio,
             &registers,
             &[vendor_boot(10), vendor_boot(11)],
             &[production],

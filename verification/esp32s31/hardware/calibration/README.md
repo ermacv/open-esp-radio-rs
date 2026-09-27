@@ -31,12 +31,25 @@ steps:
    partition (`RadioPhyPeripherals` of `registers/esp32s31/policy/api.toml`,
    registers from the published SVD). A read that resets the chip, such as
    a register whose clock domain the Wi-Fi calibration leaves off, is
-   recorded as unreadable and the reads continue after the new boot.
+   recorded as unreadable and the reads continue after the new boot. Then
+   request every register of the analog image: each analog-I2C register a
+   reviewed `PhyI2cField` of the PAC API policy occupies (its
+   `register-image`), read through the ESP-IDF analog-I2C driver.
 2. Flash the production image class (`--production-image`, `correctness` by
    default) and prepare one reset with a fresh startup artifact path, so the
    boot calibrates fully and publishes its retained calibration. Then read
    the radio-PHY register image (HIL `PhyRegisterImage`) at the indices the
-   vendor boot of the round read.
+   vendor boot of the round read, and the whole analog image (HIL
+   `PhyAnalogImage`, one production analog-I2C read per register).
+
+`--lifecycle` selects when both sides report their registers. `cold`, the
+default, reads them after the cold calibration and the Wi-Fi bring-up.
+`restart` first restarts the Wi-Fi radio once: the vendor firmware stops
+and starts its Wi-Fi client, and requires that stopping it released every
+PHY modem, which closes RF; production runs its idle radio restart
+(`RestartRadio`) and requires that RF was closed and woken. A vendor read
+that resets the chip is followed by another restart before the reads
+continue.
 
 Alternating the sides exposes both to the same board temperature drift.
 Captures stay in the ignored output directory.
@@ -65,11 +78,12 @@ these parts:
 
 A field without a review leaves the verdict INCOMPLETE.
 
-The summary goes to
-[`evidence/hardware/calibration.json`](../../evidence/hardware/calibration.json).
-It records:
+The summary of a `cold` capture goes to
+[`evidence/hardware/calibration.json`](../../evidence/hardware/calibration.json);
+the summary of another lifecycle point stays in its capture directory as
+`summary.json` unless `--output` names a path. It records:
 
-- the capture date and verdict;
+- the capture date, lifecycle point and verdict;
 - both images;
 - each field's margin and its vendor and production ranges;
 - the excluded fields with their reasons;
@@ -77,7 +91,8 @@ It records:
 - the register image: registers compared and matched, the registers
   outside their vendor range widened by their own vendor spread with both
   ranges, reviewed exclusions, registers whose read reset the chip, and
-  vendor-readable registers production did not report.
+  vendor-readable registers production did not report;
+- the analog image, under the same rule and reviews.
 
 ## Limitations
 

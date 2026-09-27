@@ -613,7 +613,14 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
                 events: &self.events,
                 lost: &self.lost,
             };
-            trace(0x8001);
+            trace(0x8100 | match &command {
+                RadioCommand::Receive { .. } => 1,
+                RadioCommand::ScheduledReceive(_) => 2,
+                RadioCommand::Transmit(_) => 3,
+                RadioCommand::EnergyScan(_) => 4,
+                RadioCommand::ClearChannelAssessment { .. } => 5,
+                _ => 0xf,
+            });
             let accepted = installed
                 .radio
                 .submit(&mut installed.hardware, command, &mut sink);
@@ -789,7 +796,7 @@ mod tests;
 #[allow(unsafe_code)]
 fn trace(value: u32) {
     unsafe extern "C" {
-        static OER_RUNTIME_TRACE: core::sync::atomic::AtomicU32;
+        fn runtime_trace(value: u32);
     }
-    unsafe { OER_RUNTIME_TRACE.store(value, core::sync::atomic::Ordering::SeqCst) };
+    unsafe { runtime_trace(value) };
 }

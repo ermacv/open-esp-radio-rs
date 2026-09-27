@@ -382,6 +382,16 @@ extern "C" fn runtime_main() -> ! {
                 OER_RESET_TRACE[2].load(SeqCst),
                 OER_RESET_TRACE[3].load(SeqCst),
             );
+            {
+                unsafe extern "C" {
+                    static OER_TRACE_RING: [u32; 17];
+                }
+                let ring = core::ptr::read_volatile(&raw const OER_TRACE_RING);
+                let next = ring[16] as usize;
+                for step in 0..16 {
+                    ets_printf(c"OER_RING %x\r\n".as_ptr(), ring[(next + step) % 16]);
+                }
+            }
             ets_printf(
                 c"OER_RESET %x %x %x %x\r\n".as_ptr(),
                 OER_RESET_TRACE[4].load(SeqCst),

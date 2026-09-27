@@ -1096,12 +1096,19 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     }
 }
 
-/// Debug trace.
+/// Debug trace: the last value and a ring of the last sixteen.
 #[allow(unsafe_code)]
-pub fn runtime_trace(value: u32) {
+#[unsafe(no_mangle)]
+pub extern "C" fn runtime_trace(value: u32) {
+    use core::sync::atomic::{AtomicU32, Ordering::SeqCst};
     #[unsafe(link_section = ".rtc_fast.persistent")]
     #[unsafe(no_mangle)]
-    static OER_RUNTIME_TRACE: core::sync::atomic::AtomicU32 =
-        core::sync::atomic::AtomicU32::new(0);
-    OER_RUNTIME_TRACE.store(value, core::sync::atomic::Ordering::SeqCst);
+    static OER_RUNTIME_TRACE: AtomicU32 = AtomicU32::new(0);
+    #[unsafe(link_section = ".rtc_fast.persistent")]
+    #[unsafe(no_mangle)]
+    static OER_TRACE_RING: [AtomicU32; 17] = [const { AtomicU32::new(0) }; 17];
+    OER_RUNTIME_TRACE.store(value, SeqCst);
+    let index = OER_TRACE_RING[16].load(SeqCst) % 16;
+    OER_TRACE_RING[index as usize].store(value, SeqCst);
+    OER_TRACE_RING[16].store(index + 1, SeqCst);
 }

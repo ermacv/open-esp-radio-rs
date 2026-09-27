@@ -64,8 +64,13 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
 #[unsafe(no_mangle)]
 pub static OER_WAKE_TRACE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
+#[allow(unsafe_code)]
 pub fn wake_trace(value: u32) {
     OER_WAKE_TRACE.store(value, core::sync::atomic::Ordering::SeqCst);
+    unsafe extern "C" {
+        fn runtime_trace(value: u32);
+    }
+    unsafe { runtime_trace(value) };
 }
 
 /// Execute the exact finite current-vendor RF-close graph after preflight.

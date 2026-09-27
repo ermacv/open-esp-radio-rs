@@ -27,6 +27,8 @@
 #include "esp_phy_init.h"
 #include "esp_private/esp_modem_clock.h"
 #endif
+#include "hal/pmu_types.h"
+#include "modem/modem_lpcon_struct.h"
 
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
 #include "driver/usb_serial_jtag.h"
@@ -35,6 +37,17 @@
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
 #endif
+
+/* ESP-IDF enables the analog I2C master clock in the PMU's MODEM state as well
+ * as ACTIVE. That map survives a USB Serial/JTAG (RTS) reset of the HP system,
+ * after which the esp32c5 rev 1.0 ROM boots into UART/SDIO download with USB
+ * dead. The peer never enters the MODEM state, so keep the ROM's ACTIVE-only
+ * map; the radio enable path does not rewrite it, but reassert it anyway. */
+static void keep_rom_i2c_master_clock_map(void)
+{
+    MODEM_LPCON.clk_conf_power_st.clk_i2c_mst_st_map = BIT(PMU_HP_ICG_MODEM_CODE_ACTIVE);
+}
+
 
 #define PROTOCOL_VERSION 1
 /* PHR length field: MAC bytes plus the two-byte FCS. */
@@ -393,6 +406,7 @@ static void command_sync(void)
     esp_err_t error = esp_ieee802154_disable();
     if (error == ESP_OK) {
         error = esp_ieee802154_enable();
+        keep_rom_i2c_master_clock_map();
     }
     if (error == ESP_OK) {
         error = esp_ieee802154_reset_pending_table(true);
@@ -499,7 +513,9 @@ static void dispatch(char *line)
     } else if (strcmp(argv[0], "OFF") == 0 && argc == 1) {
         reply(esp_ieee802154_disable(), "OFF");
     } else if (strcmp(argv[0], "ON") == 0 && argc == 1) {
-        reply(esp_ieee802154_enable(), "ON");
+        esp_err_t enabled = esp_ieee802154_enable();
+        keep_rom_i2c_master_clock_map();
+        reply(enabled, "ON");
     } else {
         printf("@ERR %s unknown\n", argv[0]);
         fflush(stdout);
@@ -521,6 +537,7 @@ static void console_init(void)
 
 void app_main(void)
 {
+    keep_rom_i2c_master_clock_map();
     s_events = xQueueCreate(EVENT_QUEUE_DEPTH, sizeof(peer_event_t));
     configASSERT(s_events != NULL);
     console_init();
@@ -530,6 +547,7 @@ void app_main(void)
     fflush(stdout);
 #else
     ESP_ERROR_CHECK(esp_ieee802154_enable());
+    keep_rom_i2c_master_clock_map();
 #endif
     xTaskCreate(event_task, "peer_events", 4096, NULL, 5, NULL);
     printf("@READY protocol=%d target=%s\n", PROTOCOL_VERSION, CONFIG_IDF_TARGET);

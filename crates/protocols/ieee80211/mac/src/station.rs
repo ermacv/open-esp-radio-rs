@@ -23,6 +23,8 @@ const OPEN_AUTHENTICATION_FRAME_CONTROL: u16 = 0x00b0;
 const DISASSOCIATION_FRAME_CONTROL: u16 = 0x00a0;
 const DEAUTHENTICATION_FRAME_CONTROL: u16 = 0x00c0;
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
+/// Frame Control Protected Frame bit.
+const PROTECTED_FRAME: u16 = 0x4000;
 const ASSOCIATION_REQUEST_FRAME_CONTROL: u16 = 0x0000;
 const ASSOCIATION_RESPONSE_FRAME_CONTROL: u16 = 0x0010;
 const OPEN_SYSTEM_ALGORITHM: u16 = 0;
@@ -92,7 +94,8 @@ pub use data::{
 };
 pub use management::{
     OpenAuthenticationRequest, OpenAuthenticationResponse, StaActionFrame, StaDisconnect,
-    StaDisconnectKind, parse_open_authentication_response, parse_sta_disconnect,
+    StaDisconnectKind, StaProtectedActionFrame, parse_open_authentication_response,
+    parse_sta_disconnect,
 };
 pub use security::{SelectedRsn, StaSecurityError, select_association_rsn, select_wpa2_psk_rsn};
 

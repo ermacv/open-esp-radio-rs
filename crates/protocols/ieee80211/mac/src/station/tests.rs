@@ -1,6 +1,6 @@
 use super::association::PhyMode;
 use super::*;
-use crate::security::rsn::RSN_CAPABILITY_MFPR;
+use crate::security::rsn::{RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR};
 use crate::sequence::seq;
 
 // A synthetic profile keeps framing/admission tests independent of any chip.
@@ -113,6 +113,31 @@ fn encodes_sta_action_frame_around_owned_body() {
 }
 
 #[test]
+fn encodes_protected_action_frame_with_its_ccmp_header() {
+    let body = [8, 1, 0x12, 0x34];
+    let ccmp_header = [5, 0, 0, 0x20, 0, 0, 0, 0];
+    let mut output = [0xa5; 40];
+    let length = StaProtectedActionFrame {
+        source: LOCAL,
+        bssid: BSSID,
+        sequence_number: seq(0x123),
+        ccmp_header,
+        body: &body,
+    }
+    .encode(&mut output)
+    .unwrap();
+    // Hardware appends the MIC after the body.
+    assert_eq!(length, 36);
+    assert_eq!(&output[0..2], &[0xd0, 0x40]);
+    assert_eq!(&output[4..10], &BSSID);
+    assert_eq!(&output[10..16], &LOCAL);
+    assert_eq!(&output[22..24], &[0x30, 0x12]);
+    assert_eq!(&output[24..32], &ccmp_header);
+    assert_eq!(&output[32..36], &body);
+    assert_eq!(output[36], 0xa5);
+}
+
+#[test]
 fn parses_only_matching_open_authentication_response() {
     let frame = authentication_response(17);
     assert_eq!(
@@ -163,21 +188,59 @@ fn parses_only_disconnects_from_selected_access_point() {
 }
 
 #[test]
-fn mixed_wpa2_wpa3_ap_is_narrowed_to_wpa2_psk_ccmp() {
+fn mixed_wpa2_wpa3_ap_is_narrowed_to_wpa2_psk_ccmp_with_management_protection() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8], [0, 0x0f, 0xac, 2]], 0x80);
     let selected = select_wpa2_psk_rsn(&record).unwrap();
     assert_eq!(selected.as_bytes().len(), SELECTED_RSN_IE_LEN);
     assert_eq!(&selected.as_bytes()[8..14], &[1, 0, 0, 0x0f, 0xac, 4]);
     assert_eq!(&selected.as_bytes()[14..20], &[1, 0, 0, 0x0f, 0xac, 2]);
-    assert_eq!(&selected.as_bytes()[20..22], &[0, 4]);
+    // SPP A-MSDU capable and, for a capable access point, MFPC.
+    assert_eq!(&selected.as_bytes()[20..22], &[0x80, 4]);
+    assert!(selected.management_protection());
 }
 
 #[test]
-fn required_management_frame_protection_is_rejected() {
-    let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], RSN_CAPABILITY_MFPR);
+fn an_access_point_without_mfpc_keeps_management_frames_unprotected() {
+    let selected = select_wpa2_psk_rsn(&access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0)).unwrap();
+    assert_eq!(&selected.as_bytes()[20..22], &[0, 4]);
+    assert!(!selected.management_protection());
+}
+
+#[test]
+fn psk_sha256_is_preferred_whenever_offered() {
+    let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2], [0, 0x0f, 0xac, 6]], 0);
     assert_eq!(
-        select_wpa2_psk_rsn(&record),
-        Err(StaSecurityError::ManagementFrameProtectionRequired)
+        &select_wpa2_psk_rsn(&record).unwrap().as_bytes()[14..20],
+        &[1, 0, 0, 0x0f, 0xac, 6]
+    );
+}
+
+#[test]
+fn required_management_frame_protection_needs_capability() {
+    let required = access_point_with_rsn(
+        &[[0, 0x0f, 0xac, 6]],
+        RSN_CAPABILITY_MFPR | RSN_CAPABILITY_MFPC,
+    );
+    let selected = select_wpa2_psk_rsn(&required).unwrap();
+    assert!(selected.management_protection());
+    // The station stays capable only; it does not require protection.
+    assert_eq!(&selected.as_bytes()[20..22], &[0x80, 4]);
+    assert_eq!(
+        select_wpa2_psk_rsn(&access_point_with_rsn(
+            &[[0, 0x0f, 0xac, 2]],
+            RSN_CAPABILITY_MFPR
+        )),
+        Err(StaSecurityError::MalformedRsn)
+    );
+}
+
+#[test]
+fn only_bip_cmac_128_protects_group_management_frames() {
+    let mut gmac = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], RSN_CAPABILITY_MFPC);
+    append_rsn_tail(&mut gmac, &[0, 0, 0x00, 0x0f, 0xac, 11]);
+    assert_eq!(
+        select_wpa2_psk_rsn(&gmac),
+        Err(StaSecurityError::UnsupportedGroupManagementCipher)
     );
 }
 

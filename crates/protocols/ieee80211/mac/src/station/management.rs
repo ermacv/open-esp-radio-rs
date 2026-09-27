@@ -97,6 +97,54 @@ impl StaActionFrame<'_> {
     }
 }
 
+/// One robust STA-originated Action management frame under the pairwise
+/// key of an association that protects its management frames.
+///
+/// The frame carries the Protected bit and the CCMP header; hardware appends
+/// the MIC, as for protected data. The vendor protects a robust management
+/// frame through the same `ieee80211_crypto_encap` key selection as data.
+///
+/// SOURCE: complete pinned `libnet80211.a[ieee80211_crypto.o]::
+/// ieee80211_crypto_encap` and `[ieee80211_crypto_ccmp.o]::ccmp_encap`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaProtectedActionFrame<'a> {
+    pub source: [u8; 6],
+    pub bssid: [u8; 6],
+    pub sequence_number: SequenceNumber,
+    pub ccmp_header: [u8; CCMP_HEADER_LEN],
+    pub body: &'a [u8],
+}
+
+impl StaProtectedActionFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        validate_peer(self.bssid)?;
+        let body_start = MANAGEMENT_HEADER_LEN + CCMP_HEADER_LEN;
+        let required =
+            body_start
+                .checked_add(self.body.len())
+                .ok_or(StationFrameError::OutputTooSmall {
+                    required: usize::MAX,
+                })?;
+        if output.len() < required {
+            return Err(StationFrameError::OutputTooSmall { required });
+        }
+
+        let frame = &mut output[..required];
+        frame.fill(0);
+        write_management_header(
+            frame,
+            ACTION_FRAME_CONTROL | PROTECTED_FRAME,
+            self.bssid,
+            self.source,
+            self.bssid,
+            self.sequence_number,
+        );
+        frame[MANAGEMENT_HEADER_LEN..body_start].copy_from_slice(&self.ccmp_header);
+        frame[body_start..].copy_from_slice(self.body);
+        Ok(required)
+    }
+}
+
 /// Parse a response addressed to this station and BSSID.
 ///
 /// `None` means that the frame is valid input but belongs to another

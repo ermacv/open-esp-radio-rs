@@ -18,7 +18,8 @@ use crate::frames::{RSN_IGTK_LEN, RSN_IPN_LEN, RsnIgtk};
 pub const MANAGEMENT_MIC_ELEMENT_ID: u8 = 76;
 /// Management MIC element body of BIP-CMAC-128: key id, IPN and MIC.
 const MANAGEMENT_MIC_BODY_LEN: usize = 2 + RSN_IPN_LEN + BIP_MIC_LEN;
-const MANAGEMENT_MIC_ELEMENT_LEN: usize = 2 + MANAGEMENT_MIC_BODY_LEN;
+/// Management MIC element of BIP-CMAC-128, closing a protected group frame.
+pub const MANAGEMENT_MIC_ELEMENT_LEN: usize = 2 + MANAGEMENT_MIC_BODY_LEN;
 const BIP_MIC_LEN: usize = 8;
 /// Frame Control flags BIP leaves out of its additional authentication data:
 /// Retry, Power Management and More Data.

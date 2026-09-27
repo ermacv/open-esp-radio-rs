@@ -1,4 +1,4 @@
-//! Durable evidence packages. Export/import are offline; GitHub is a transport.
+//! Durable evidence packages, exported, verified and imported offline.
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::Result;
 
-mod github;
 mod install;
 mod package;
 mod retention;
@@ -43,21 +42,6 @@ pub enum Command {
     /// Restore runs into the local HIL store without overwriting different data.
     Import {
         archive: PathBuf,
-        #[arg(long)]
-        sha256: Option<String>,
-    },
-    /// Upload a verified package to a new release in a private repository.
-    Publish {
-        archive: PathBuf,
-        #[arg(long)]
-        repo: String,
-    },
-    /// Download, verify and import a private release by its archive ID.
-    Fetch {
-        id: String,
-        #[arg(long)]
-        repo: String,
-        /// Optional digest pinned independently of the release metadata.
         #[arg(long)]
         sha256: Option<String>,
     },
@@ -134,7 +118,5 @@ pub fn run(root: &Path, command: Command) -> Result<()> {
                 false,
             )
         }
-        Command::Publish { archive, repo } => github::publish(&archive, &repo),
-        Command::Fetch { id, repo, sha256 } => github::fetch(root, &id, &repo, sha256.as_deref()),
     }
 }

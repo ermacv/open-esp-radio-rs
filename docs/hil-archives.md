@@ -1,6 +1,6 @@
 # Durable HIL evidence
 
-The HIL runner owns evidence export, verification, import and remote transport.
+The HIL runner owns evidence export, verification and import.
 An archive preserves observations, including failures and interrupted runs.
 Archiving does not make a run pass, reconstruct missing source content or
 turn development measurements into current hardware qualification.
@@ -10,22 +10,12 @@ turn development measurements into current hardware qualification.
 - Git stores scenarios, analysis implementations, data contracts and identities
   of baselines actively consumed by a tool. It does not store a growing history
   of measurement tables, firmware binaries or generated reports.
-- A private evidence repository stores selected experiment archives as GitHub
-  release assets. Releases are named by archive ID; each ID is published once.
 - `target/hil/esp32s31/` is the local working store. It may be reconstructed from
   archived evidence. Export and import never delete original runs.
 
-Ordinary builds and host tests do not access the evidence repository. Only
-`archive publish` and `archive fetch` use GitHub. They require the `gh` CLI and
-an account with access to the selected private repository. Authentication uses
-`gh auth login` / environment tokens, or the existing noninteractive Git
-credential helper for `github.com`. Credentials are passed only to the GitHub
-child process, never serialized into archive references.
-
-The project's private store is
-[`ermacv/open-esp-radio-evidence`](https://github.com/ermacv/open-esp-radio-evidence).
-The repository is selected explicitly with `--repo`; forks can use their own
-private store without changing the runner.
+The runs of every checkout of this user share one store (see
+[find and compare runs](../hil/host/README.md#find-and-compare-runs)); an
+archive moves selected runs between machines or keeps them beyond pruning.
 
 ## Export and verify offline
 
@@ -63,26 +53,9 @@ to interpret that experiment. For dirty development builds, preserve available
 patches and relevant untracked source files explicitly: the archive cannot
 reconstruct source bytes that the original run did not retain.
 
-## Publish and retrieve private evidence
+## Import
 
-```console
-cargo hil archive publish <archive.tar.gz> --repo <owner/private-evidence-repository>
-cargo hil archive fetch <archive-id> --repo <owner/private-evidence-repository> --sha256 <expected-digest>
-```
-
-Publication refuses public repositories. It creates a new draft release with
-`evidence.tar.gz` and `reference.json`, downloads the uploaded archive and
-verifies it against the local digest before publishing the release. A failed
-upload or read-back leaves a draft for inspection; the command never replaces
-an existing release. Use a new archive ID for a revised report or selection.
-
-`reference.json` schema 1 records the repository, archive ID, asset name and
-SHA-256. Fetch checks the requested release identity, reference, optional
-independently pinned digest, complete archive and native HIL seals before
-importing. The release reference checks transfer integrity; an independently
-pinned digest additionally detects replacement of both remote assets.
-
-To import an already downloaded package without GitHub access:
+To restore a package, for example from another machine:
 
 ```console
 cargo hil archive import <archive.tar.gz> --sha256 <expected-digest>
@@ -113,7 +86,7 @@ This read-only inventory preserves explicit selections, the latest passing run
 for each scenario, non-passing or incomplete runs, imported archive members and
 sources referenced by firmware replay. Unreadable/unknown run metadata is kept
 with its reason; an unknown explicit run ID is an error. It never deletes files,
-opens hardware, contacts the evidence repository or changes CAS objects.
+opens hardware or changes CAS objects.
 All CAS objects remain retained. Declared digest references are not hash
 verification; logical candidate bytes include hard-linked storage and must not
 be interpreted as reclaimable disk space. Concurrent writers can change the
@@ -121,11 +94,9 @@ inventory. Review candidates and verify evidence separately before any deletion;
 the report is not deletion authorization. Baselines outside imported archives
 must be selected explicitly.
 
-Archive selected control measurements, reproducible regressions and experiments
-that justify implementation choices. Preserve failed attempts and selection
-rationale alongside successful measurements. Keep routine local iterations
-until they are no longer needed; there is no automatic garbage collection.
-Before deleting the last local copy, verify a downloaded remote copy. Private
-remote archives require access and should have a separate backup when they are
-irreplaceable. Public documentation may describe current behavior and link to a
-selected reference; access to private evidence is not implied by that link.
+The shared run store is pruned automatically by the rule of
+`cargo hil runs prune` (see
+[find and compare runs](../hil/host/README.md#find-and-compare-runs)). Pin a
+run, or export it, to keep it beyond that rule. Archive selected control
+measurements, reproducible regressions and experiments that justify
+implementation choices, together with failed attempts and selection rationale.

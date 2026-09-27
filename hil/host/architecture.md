@@ -113,8 +113,6 @@ cargo hil report rebuild
 cargo hil report verify [run-id]
 cargo hil archive export <archive-id> --run <run-id>
 cargo hil archive verify|import <archive.tar.gz>
-cargo hil archive publish <archive.tar.gz> --repo <owner/repository>
-cargo hil archive fetch <archive-id> --repo <owner/repository>
 cargo hil run <scenario-id>
 cargo hil run <scenario-id> --firmware-from <run-id>
 cargo hil run-all [--tag qualification]
@@ -164,7 +162,7 @@ terminal evidence, so they do not discard the other direction's delivery.
 Single-cycle measurements do not replace the catalog's repeated AP lifecycle
 qualification scenarios.
 
-Durable evidence packages and private remote storage are described in
+Durable evidence packages are described in
 [HIL archives](../../docs/hil-archives.md). Archive commands do not access the DUT.
 
 `plan [scenario] [--tag ...]` resolves requirements from the catalog offline;

@@ -1501,6 +1501,12 @@ code = "d7cfea578f01a31570395ad2a0936b2b7abedcf5f5d3ca1e0e424832674ea5e9"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_ioctl.o"
+symbol = "map_wifi_config_sae_pwe_to_supp"
+code = "6e60ed09400ea79080aa64536e4ad61cdfb4bb52d303c9313e8a915f99353176"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_ioctl.o"
 symbol = "wifi_get_partial_ru_max_txpwr_process"
 code = "b53255f6e4cc933ecbfdc7ea73405f01fff107c4703f7ae7ee460adad1e2b1aa"
 

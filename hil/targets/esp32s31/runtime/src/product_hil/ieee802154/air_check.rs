@@ -137,6 +137,7 @@ async fn run_cycle(
         max_frame_retries: 0,
         security: TxSecurity::Radio,
         interface: Interface::PRIMARY,
+        time_sync: None,
     }))?;
     cycle.direct = transmitted(system, requested_at_micros).await?;
 
@@ -154,6 +155,7 @@ async fn run_cycle(
             max_frame_retries: 0,
             security: TxSecurity::Radio,
             interface: Interface::PRIMARY,
+            time_sync: None,
         }))?;
         *scheduled = transmitted(system, at).await?;
     }

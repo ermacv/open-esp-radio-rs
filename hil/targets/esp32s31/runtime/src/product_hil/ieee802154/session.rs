@@ -170,6 +170,7 @@ impl Session {
             max_frame_retries: request.max_frame_retries,
             security: TxSecurity::Radio,
             interface: Interface::PRIMARY,
+            time_sync: None,
         })) {
             evidence.result = result;
             return evidence;

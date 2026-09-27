@@ -62,7 +62,9 @@ const EVENT_ITEM: usize = ITEMS - 1;
 const RX_PACKETS: usize = BLUETOOTH_PERIPHERAL_CONNECTION_RX_PACKETS;
 const LINK_STATE_WORDS: usize = BLUETOOTH_PERIPHERAL_CONNECTION_LINK_STATE_BYTES / 4;
 const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES / 4;
-const CONTROL_TX_PACKET_BYTES: usize = crate::BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + 27;
+/// The longest data PDU payload on air: 251 octets of data plus the MIC.
+const DATA_PDU_PAYLOAD_BYTES: usize = 255;
+const TX_PACKET_BYTES: usize = crate::BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + DATA_PDU_PAYLOAD_BYTES;
 
 const LINK_STATE_SCHEDULER_HEAD: usize = 0x64 / 4;
 const LINK_STATE_RX_HEAD: usize = 0x68 / 4;
@@ -401,7 +403,7 @@ pub struct PeripheralConnectionStorage {
     items: [ItemStorage; ITEMS],
     tx_sentinel: LeTxBufferHeaderStorage,
     tx_successor: LeTxBufferHeaderStorage,
-    tx_packet: LeTxPacketStorage<CONTROL_TX_PACKET_BYTES>,
+    tx_packet: LeTxPacketStorage<TX_PACKET_BYTES>,
     rx: LeRxNodes<RX_PACKETS>,
 }
 
@@ -414,7 +416,7 @@ pub struct PeripheralConnectionBinding {
     items: [ControllerSramLinkAddress; ITEMS],
     tx_sentinel: ControllerSramLinkAddress,
     tx_successor: ControllerSramLinkAddress,
-    tx_packet: LeTxPacketAddress<CONTROL_TX_PACKET_BYTES>,
+    tx_packet: LeTxPacketAddress<TX_PACKET_BYTES>,
     rx: LeRxRing<RX_PACKETS>,
     number: u16,
 }

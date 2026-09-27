@@ -356,6 +356,29 @@ fn one_packet_is_pending_until_the_peer_acknowledges_it() {
 }
 
 #[test]
+fn the_longest_encrypted_data_pdu_fits_and_a_longer_one_is_refused() {
+    let mut pool = pool();
+    let instance = active(&mut pool);
+    // 251 octets of data plus a 4-octet MIC.
+    assert!(matches!(
+        pool.enqueue_transmission(
+            &instance,
+            PeripheralConnectionTransmitPduKind::DataStartOrComplete,
+            &[0; 256]
+        ),
+        Err(PeripheralConnectionError::Transmit(_))
+    ));
+    assert_eq!(
+        pool.enqueue_transmission(
+            &instance,
+            PeripheralConnectionTransmitPduKind::DataStartOrComplete,
+            &[0; 255]
+        ),
+        Ok(true)
+    );
+}
+
+#[test]
 fn release_returns_a_pristine_instance() {
     let mut pool = pool();
     let instance = active(&mut pool);

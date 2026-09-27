@@ -77,6 +77,21 @@ other key identifier modes reuse the address of the last mode 1
 transmission, as the port's shared `s_security_addr` does; unlike the port,
 secured enhanced ACKs do not refresh it.
 
+`Ieee802154Parked::multipan` parks an engine built with multi-PAN
+(`CONFIG_IEEE802154_MULTI_PAN_ENABLE`) and one to four interfaces. Its
+radio publishes `MULTI_PAN`: `Configuration::Interface` sets each
+interface's PAN ID, addresses, enable bit, pending mode and frame-pending
+table, received frames report the interface they matched (`None` for a
+broadcast), and a transmission names its interface. As ESP-IDF's
+multi-instance OpenThread port keeps a security context per instance,
+`Ieee802154SystemRuntime::with_interface_mac_keys` holds each interface's
+keys: a transmission is secured with its interface's keys and extended
+address, an enhanced ACK with those of the interface the acknowledged frame
+matched. Receive and sleep stay radio-wide: the port's
+`esp_ieee802154_multipan_receive` is enabling the interface and receiving,
+`esp_ieee802154_multipan_sleep` disabling it and sleeping once no
+interface is enabled.
+
 CSMA-CA transmissions follow OpenThread `SubMac` over the one-CCA radio: a
 random backoff before each CCA attempt, receiving on the transmit channel
 when the radio was receiving, and another backoff while the channel is busy.

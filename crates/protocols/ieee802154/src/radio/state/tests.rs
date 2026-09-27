@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
-    EnergyScanRequest, FcsStatus, FramePending, FrameView, RadioFault, ReceivedFrame, RxMetadata,
-    SecurityStatus, TxRequest,
+    Configuration, EnergyScanRequest, FcsStatus, FramePending, FrameView, Interface,
+    InterfaceSetting, RadioFault, ReceivedFrame, RxMetadata, SecurityStatus, TxRequest,
 };
 
 const ID: RequestId = RequestId::new(7);
@@ -20,6 +20,7 @@ fn metadata(channel: Channel) -> RxMetadata {
         security: SecurityStatus::Unprocessed,
         frame_pending: crate::FramePending::Unavailable,
         sent_acknowledgement: Default::default(),
+        interface: Some(Interface::PRIMARY),
     }
 }
 
@@ -83,6 +84,7 @@ fn transmit_correlates_completion_and_restores_receive() {
         transmit_power_dbm: Some(3),
         max_frame_retries: 0,
         security: Default::default(),
+        interface: Interface::PRIMARY,
     };
     machine.admit(RadioCommand::Transmit(request)).unwrap();
     assert_eq!(
@@ -152,6 +154,7 @@ fn acknowledgement_capability_is_derived_only_from_the_fcf() {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }))
         .unwrap();
 
@@ -166,6 +169,7 @@ fn acknowledgement_capability_is_derived_only_from_the_fcf() {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         })),
         Err(CommandError::Unsupported {
             command: CommandKind::Transmit,
@@ -247,6 +251,7 @@ fn failed_transmit_cannot_publish_an_acknowledgement() {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }))
         .unwrap();
     let ack_bytes = [2];
@@ -330,6 +335,7 @@ fn a_transmission_from_receive_mode_accepts_frames_on_its_channel() {
                 transmit_power_dbm: None,
                 max_frame_retries: 0,
                 security: Default::default(),
+                interface: Interface::PRIMARY,
             }))
             .unwrap();
     };
@@ -370,6 +376,7 @@ fn frame_retries_require_the_retry_capability() {
             transmit_power_dbm: None,
             max_frame_retries,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         })
     };
     let mut machine = enabled(RadioCapabilities::NONE);
@@ -483,4 +490,98 @@ fn an_operation_ends_a_scheduled_window() {
             channel: channel(20)
         })
     );
+}
+
+fn configure_interface(index: u8, setting: InterfaceSetting) -> RadioCommand<'static> {
+    RadioCommand::Configure {
+        id: ID,
+        configuration: Configuration::Interface {
+            interface: Interface::new(index),
+            setting,
+        },
+    }
+}
+
+/// Interface settings need multi-PAN and address only the radio's
+/// interfaces; a pending-table setting also needs source matching.
+#[test]
+fn interface_settings_need_multi_pan_and_an_existing_interface() {
+    let mut single = enabled(RadioCapabilities::SOURCE_MATCH);
+    assert_eq!(single.interfaces(), 1);
+    assert_eq!(
+        single.admit(configure_interface(0, InterfaceSetting::PanId(0x1234))),
+        Err(CommandError::Unsupported {
+            command: CommandKind::Configure,
+            required: RadioCapabilities::MULTI_PAN,
+        })
+    );
+
+    let mut machine = RadioStateMachine::with_interfaces(RadioCapabilities::MULTI_PAN, 4);
+    machine.admit(RadioCommand::Enable { id: ID }).unwrap();
+    assert_eq!(machine.interfaces(), 4);
+    machine
+        .admit(configure_interface(3, InterfaceSetting::Enabled(true)))
+        .unwrap();
+    assert_eq!(
+        machine.admit(configure_interface(4, InterfaceSetting::ShortAddress(1))),
+        Err(CommandError::UnknownInterface {
+            interface: Interface::new(4),
+            interfaces: 4,
+        })
+    );
+    assert_eq!(
+        machine.admit(configure_interface(
+            1,
+            InterfaceSetting::ResetPendingTable(crate::PendingTableHalf::Short)
+        )),
+        Err(CommandError::Unsupported {
+            command: CommandKind::Configure,
+            required: RadioCapabilities::MULTI_PAN | RadioCapabilities::SOURCE_MATCH,
+        })
+    );
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+}
+
+/// Without multi-PAN the interface count stays one whatever was asked.
+#[test]
+fn a_radio_without_multi_pan_has_the_primary_interface_alone() {
+    assert_eq!(
+        RadioStateMachine::with_interfaces(RadioCapabilities::NONE, 4).interfaces(),
+        1
+    );
+    assert_eq!(
+        RadioStateMachine::with_interfaces(RadioCapabilities::MULTI_PAN, 0).interfaces(),
+        1
+    );
+}
+
+/// A transmission names one of the radio's interfaces.
+#[test]
+fn a_transmission_names_an_existing_interface() {
+    let bytes = [0x41, 0x88, 0x2a];
+    let request = |interface| {
+        RadioCommand::Transmit(TxRequest {
+            id: ID,
+            frame: FrameView::new(&bytes).unwrap(),
+            channel: channel(20),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+            max_frame_retries: 0,
+            security: Default::default(),
+            interface: Interface::new(interface),
+        })
+    };
+    let mut single = enabled(RadioCapabilities::NONE);
+    assert_eq!(
+        single.admit(request(1)),
+        Err(CommandError::UnknownInterface {
+            interface: Interface::new(1),
+            interfaces: 1,
+        })
+    );
+    assert_eq!(single.state(), RadioState::Resting(RestingState::Sleeping));
+
+    let mut machine = RadioStateMachine::with_interfaces(RadioCapabilities::MULTI_PAN, 2);
+    machine.admit(RadioCommand::Enable { id: ID }).unwrap();
+    machine.admit(request(1)).unwrap();
 }

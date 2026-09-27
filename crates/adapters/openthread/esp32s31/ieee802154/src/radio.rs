@@ -8,7 +8,7 @@ use oer_esp32s31_ieee802154_runtime::{
     Ieee802154Runtime, Ieee802154RuntimeError,
 };
 use oer_ieee802154::{
-    AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView,
+    AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView, Interface,
     PendingTableHalf, RadioCommand, RadioState, RadioTimestamp, RequestId, ScheduledReceiveRequest,
     TxMode, TxRequest, TxSecurity,
 };
@@ -262,6 +262,7 @@ where
             transmit_power_dbm: Some(power),
             max_frame_retries: 0,
             security,
+            interface: Interface::PRIMARY,
         })) {
             return (Err(error), None);
         }

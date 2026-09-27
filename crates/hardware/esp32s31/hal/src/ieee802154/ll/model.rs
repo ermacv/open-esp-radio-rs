@@ -60,6 +60,10 @@ pub struct Ieee802154LlModel {
     pub promiscuous: bool,
     /// Transmit security enable.
     pub transmit_security: bool,
+    /// The transmit security nonce address.
+    pub security_address: [u8; 8],
+    /// The transmit security key.
+    pub security_key: [u8; 16],
     /// PAN ID of each context.
     pub panid: [u16; 4],
     /// Short address of each context.
@@ -100,6 +104,8 @@ impl Default for Ieee802154LlModel {
             pending_bit: false,
             promiscuous: false,
             transmit_security: false,
+            security_address: [0; 8],
+            security_key: [0; 16],
             panid: [0; 4],
             short_address: [0; 4],
             extended_address: [[0; 8]; 4],
@@ -261,8 +267,12 @@ impl Ieee802154LowLevel for Ieee802154LlModel {
     fn ack_timeout(&mut self) -> u16 {
         self.ack_timeout
     }
-    fn set_security_address(&mut self, _address: &[u8; 8]) {}
-    fn set_security_key(&mut self, _key: &[u8; 16]) {}
+    fn set_security_address(&mut self, address: &[u8; 8]) {
+        self.security_address = *address;
+    }
+    fn set_security_key(&mut self, key: &[u8; 16]) {
+        self.security_key = *key;
+    }
     fn set_security_offset(&mut self, _offset: u8) {}
     fn enable_all_events(&mut self) {}
     fn enable_event(&mut self, _event: Ieee802154Event) {}

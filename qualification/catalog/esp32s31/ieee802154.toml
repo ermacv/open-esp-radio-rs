@@ -527,8 +527,15 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Four Multi-PAN contexts"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "A [multi-PAN engine](src/engine.rs) assigns each received frame to the interface it addresses and keeps pending mode, pending table, receive and sleep per interface, as the vendor multi-PAN build does. The radio role and runtime serve interface zero; on-air multi-PAN filtering is not qualified."
-packages = ["oer-esp32s31-ieee802154", "oer-esp32s31-pac"]
+scope-and-limitations = "A [multi-PAN engine](src/engine.rs) assigns each received frame to the interface it addresses and keeps pending mode, pending table, receive and sleep per interface, as the vendor multi-PAN build does. The portable contract addresses up to the engine's interfaces (`MULTI_PAN`, `Configuration::Interface`, `TxRequest::interface`, `RxMetadata::interface`); the role keeps MAC keys, the nonce address and enhanced-ACK security per interface, as ESP-IDF's multi-instance OpenThread port does, and the composition parks a multi-PAN engine. The OpenThread adapter serves one instance on interface zero; on-air multi-PAN filtering is not qualified."
+packages = [
+    "oer-esp32s31-ieee802154",
+    "oer-esp32s31-pac",
+    "oer-ieee802154",
+    "oer-esp32s31-ieee802154-radio",
+    "oer-esp32s31-ieee802154-runtime",
+    "oer-esp32s31-ieee802154-system",
+]
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-automatic-frame-pending"
@@ -544,7 +551,7 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Source Matching table"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The protocol pending table owns add, clear and reset of short and extended addresses for interface zero, and the portable contract configures it and the pending mode (`SOURCE_MATCH`), refusing a source a full half has no room for. The OpenThread adapter applies OpenThread's table entry by entry, as ESP-IDF's port does. Multi-PAN tables are absent."
+scope-and-limitations = "The protocol pending table owns add, clear and reset of short and extended addresses of each interface, and the portable contract configures it and the pending mode (`SOURCE_MATCH`), refusing a source a full half has no room for. The OpenThread adapter applies OpenThread's table entry by entry, as ESP-IDF's port does. A multi-PAN radio configures the table and pending mode of each interface through `Configuration::Interface`."
 
 [[items]]
 id = "ieee802154-timing-mac-timers-clock-match"

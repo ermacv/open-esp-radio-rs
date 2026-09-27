@@ -32,16 +32,18 @@ use oer_esp32s31_ieee802154::engine::{
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CcaMode, Channel,
     CommandError, Configuration, CsmaCa, FcsStatus, FramePending, FrameRetries, FrameVersion,
-    FrameView, KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities, RadioCommand,
-    RadioEvent, RadioFault, RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame,
-    RequestId, RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TxMode,
-    TxSecurity, TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
+    FrameView, Interface, InterfaceSetting, KeyIdMode, MacKeys, PendingTableHalf, PhrFrame,
+    RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine,
+    RadioTimestamp, ReceivedFrame, RequestId, RestingState, RetryStart, RxMetadata, SecurityStatus,
+    SentAcknowledgement, TxMode, TxSecurity, TxStatus, csl_phase, generate_enhanced_ack,
+    write_csl_ie,
 };
 
-/// The portable capabilities the role implements.
+/// The portable capabilities the role implements over any engine.
 ///
-/// Source matching configures the frame-pending table of interface zero, as
-/// ESP-IDF's single-interface API does.
+/// Source matching without an interface configures the frame-pending table
+/// of interface zero, as ESP-IDF's single-interface API does. An engine
+/// built with multi-PAN adds [`RadioCapabilities::MULTI_PAN`].
 pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::NONE
     .union(RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT)
     .union(RadioCapabilities::CSMA_CA)
@@ -87,9 +89,10 @@ pub struct Ieee802154EnhancedAckIeTooLong;
 /// handler for each received 2015 frame that requests an ACK.
 ///
 /// It builds the ACK with [`generate_enhanced_ack`], carrying the configured
-/// header IEs, and secures the ACK of a secured frame with the radio's
-/// [`MacKeys`] ([`Ieee802154Radio::mac_keys`]): the next frame counter and
-/// the key of the frame's key index. Without keys, or when the frame cannot
+/// header IEs, and secures the ACK of a secured frame with the [`MacKeys`]
+/// of the interface the frame matched ([`Ieee802154Radio::interface_mac_keys`]),
+/// as the multi-instance port does: the next frame counter and the key of
+/// the frame's key index. Without keys, or when the frame cannot
 /// be acknowledged, the generator refuses and the engine delivers the frame
 /// without an ACK. The port rebuilds its
 /// CSL and link-metrics IEs per frame; here the IEs are the caller's bytes.
@@ -161,7 +164,16 @@ impl Ieee802154EnhancedAckGenerator {
         };
         let key = match generated.security() {
             Some(header) => {
-                let Some(keys) = security.keys.as_mut() else {
+                // The multi-instance port secures the ACK with the keys of
+                // the interface the frame matched, and refuses a frame no
+                // single interface claims.
+                let Some(interface) = info
+                    .mpf_index
+                    .and_then(|index| security.interfaces.get_mut(usize::from(index.value())))
+                else {
+                    return Ieee802154EnhancedAck::Refused;
+                };
+                let Some(keys) = interface.keys.as_mut() else {
                     return Ieee802154EnhancedAck::Refused;
                 };
                 let frame_counter = keys.frame_counter();
@@ -169,7 +181,7 @@ impl Ieee802154EnhancedAckGenerator {
                     return Ieee802154EnhancedAck::Refused;
                 };
                 // The port's `s_ack_frame_counter` and `s_ack_key_id`.
-                security.enhanced_ack = Some(AppliedSecurity {
+                interface.enhanced_ack = Some(AppliedSecurity {
                     frame_counter,
                     key_id: header.key_index,
                 });
@@ -245,6 +257,8 @@ struct Transmission {
     tx_security: TxSecurity,
     /// The security header fields an attempt wrote into the frame.
     applied: Option<AppliedSecurity>,
+    /// The interface whose keys and extended address secure the frame.
+    interface: Ieee802154MultipanIndex,
     phase: Phase,
 }
 
@@ -307,7 +321,11 @@ impl Transmission {
             if !self.armed {
                 engine.set_transmit_security(ll, self.image(), &security.key, &security.address);
             }
-        } else if let Some(keys) = env.security.keys.as_mut()
+        } else if let Some(interface) = env
+            .security
+            .interfaces
+            .get_mut(usize::from(self.interface.value()))
+            && let Some(keys) = interface.keys.as_mut()
             && self.tx_security != TxSecurity::Processed
             && PhrFrame::new(self.image()).security_enabled()
         {
@@ -321,13 +339,13 @@ impl Transmission {
             let length = usize::from(self.image[0]) + 1;
             let mode = security.apply(&mut self.image[..length]);
             if mode == Some(KeyIdMode::Index) {
-                env.security.address =
-                    ll.multipan_extended_address(Ieee802154MultipanIndex::CONTEXT0);
+                interface.address = ll.multipan_extended_address(self.interface);
             }
             if let Some(applied) = mode.and_then(|mode| security.applied(mode)) {
                 self.applied = Some(applied);
             }
-            engine.set_transmit_security(ll, self.image(), &security.key, &env.security.address);
+            let address = interface.address;
+            engine.set_transmit_security(ll, self.image(), &security.key, &address);
         }
         self.armed = false;
         self.phase = Phase::Attempting;
@@ -392,18 +410,35 @@ struct Collector<'role> {
     notifications: [Option<Notification>; NOTIFICATIONS],
 }
 
-/// The security and CSL state the radio keeps for the stack, as ESP-IDF's
-/// OpenThread port keeps it in its statics.
-#[derive(Default)]
-struct RadioSecurity {
+/// The security the radio keeps for one interface, as ESP-IDF's
+/// multi-instance OpenThread port keeps it per instance (`s_sec_ctx`).
+#[derive(Clone, Copy, Default)]
+struct InterfaceSecurity {
     /// Keys and frame counter of secured transmissions and enhanced ACKs.
     keys: Option<MacKeys>,
-    /// The port's `s_security_addr`: the extended address of the last key
-    /// identifier mode 1 transmission.
+    /// The port's `security_addr`: the extended address of the interface's
+    /// last key identifier mode 1 transmission.
     address: [u8; 8],
-    /// The security of the enhanced ACK generated since the last received
-    /// frame (`s_with_security_enh_ack`).
+    /// The security of the enhanced ACK generated since the interface's
+    /// last received frame (`with_security_enh_ack`).
     enhanced_ack: Option<AppliedSecurity>,
+}
+
+impl InterfaceSecurity {
+    const NONE: Self = Self {
+        keys: None,
+        address: [0; 8],
+        enhanced_ack: None,
+    };
+}
+
+/// The security and CSL state the radio keeps for the stack, as ESP-IDF's
+/// OpenThread port keeps it in its statics: security per interface, CSL
+/// for the radio.
+#[derive(Default)]
+struct RadioSecurity {
+    /// Indexed by the interface.
+    interfaces: [InterfaceSecurity; Ieee802154MultipanIndex::COUNT as usize],
     /// The CSL receiver state.
     csl: Ieee802154Csl,
 }
@@ -445,11 +480,16 @@ impl Ieee802154Environment for Collector<'_> {
         frame: &[u8; FRAME_SIZE],
         info: &Ieee802154FrameInfo,
     ) {
-        // `ot_radio_receive_done`: the secured enhanced ACK belongs to a
-        // 2015 frame that requested one; it is forgotten either way.
+        // `ot_radio_receive_done`: the secured enhanced ACK of the matched
+        // interface belongs to a 2015 frame that requested one; it is
+        // forgotten either way.
         let frame = PhrFrame::new(frame);
         let enhanced = frame.ack_required() && frame.version() == FrameVersion::V2015;
-        let security = self.security.enhanced_ack.take().filter(|_| enhanced);
+        let security = info
+            .mpf_index
+            .and_then(|index| self.security.interfaces.get_mut(usize::from(index.value())))
+            .and_then(|interface| interface.enhanced_ack.take())
+            .filter(|_| enhanced);
         self.push(Notification::Received(
             slot,
             SentAcknowledgement {
@@ -563,6 +603,53 @@ const fn tx_status(error: Ieee802154TxError) -> TxStatus {
     }
 }
 
+/// The MAC interface of a portable one.
+const fn multipan_index(interface: Interface) -> Option<Ieee802154MultipanIndex> {
+    Ieee802154MultipanIndex::new(interface.index())
+}
+
+/// Apply one interface setting (`esp_ieee802154_set_multipan_*`,
+/// `esp_ieee802154_multipan_*`).
+fn configure_interface<L: Ieee802154LowLevel + ?Sized>(
+    engine: &mut Ieee802154Engine<'_>,
+    ll: &mut L,
+    index: Ieee802154MultipanIndex,
+    setting: InterfaceSetting,
+) {
+    match setting {
+        InterfaceSetting::PanId(panid) => engine.set_multipan_panid(ll, index, panid),
+        InterfaceSetting::ShortAddress(address) => {
+            engine.set_multipan_short_address(ll, index, address);
+        }
+        InterfaceSetting::ExtendedAddress(address) => {
+            engine.set_multipan_extended_address(ll, index, address);
+        }
+        InterfaceSetting::Enabled(enabled) => {
+            let enable = engine.multipan_enable(ll);
+            let enable = if enabled {
+                enable.with(index)
+            } else {
+                enable.without(index)
+            };
+            engine.set_multipan_enable(ll, enable);
+        }
+        InterfaceSetting::PendingMode(mode) => engine.pib().set_pending_mode(index, mode),
+        InterfaceSetting::AddPendingAddress(address) => {
+            // Room was checked before admission.
+            let _ = engine.pending_table_for(index).add(address);
+        }
+        InterfaceSetting::RemovePendingAddress(address) => {
+            engine.pending_table_for(index).clear(address);
+        }
+        InterfaceSetting::ResetPendingTable(PendingTableHalf::Short) => {
+            engine.pending_table_for(index).reset_short();
+        }
+        InterfaceSetting::ResetPendingTable(PendingTableHalf::Extended) => {
+            engine.pending_table_for(index).reset_extended();
+        }
+    }
+}
+
 fn hal_channel(channel: Channel) -> Ieee802154Channel {
     Ieee802154Channel::new(channel.get()).expect("portable and HAL channels share 11 through 26")
 }
@@ -616,6 +703,7 @@ fn received_frame<'image>(
             security: SecurityStatus::Unprocessed,
             frame_pending,
             sent_acknowledgement: SentAcknowledgement::NONE,
+            interface: info.mpf_index.map(|index| Interface::new(index.value())),
         },
     })
 }
@@ -634,18 +722,24 @@ pub struct Ieee802154Radio<'storage> {
 impl<'storage> Ieee802154Radio<'storage> {
     /// Admit portable commands to an engine the composition has enabled and
     /// initialized. The role starts `Disabled` until `Enable` is admitted.
+    /// An engine built with multi-PAN gives the radio its interfaces.
     pub const fn new(engine: Ieee802154Engine<'storage>, platform: Ieee802154Platform) -> Self {
+        let machine = match engine.multipan() {
+            Some(interfaces) => RadioStateMachine::with_interfaces(
+                IEEE802154_RADIO_CAPABILITIES.union(RadioCapabilities::MULTI_PAN),
+                interfaces.count(),
+            ),
+            None => RadioStateMachine::new(IEEE802154_RADIO_CAPABILITIES),
+        };
         Self {
             engine,
-            machine: RadioStateMachine::new(IEEE802154_RADIO_CAPABILITIES),
+            machine,
             platform,
             enhanced_ack: None,
             transmission: None,
             next_security: None,
             security: RadioSecurity {
-                keys: None,
-                address: [0; 8],
-                enhanced_ack: None,
+                interfaces: [InterfaceSecurity::NONE; Ieee802154MultipanIndex::COUNT as usize],
                 csl: Ieee802154Csl {
                     period: 0,
                     sample_time: 0,
@@ -669,8 +763,30 @@ impl<'storage> Ieee802154Radio<'storage> {
     /// ACKs take their counter from the same keys. Security the upper layer
     /// arms with [`Self::set_transmit_security`] takes precedence for the
     /// next transmission; without keys a secured frame goes out as given.
+    ///
+    /// These are the keys of [`Interface::PRIMARY`]; a multi-PAN radio keeps
+    /// keys per interface ([`Self::interface_mac_keys`]).
     pub fn mac_keys(&mut self) -> &mut Option<MacKeys> {
-        &mut self.security.keys
+        &mut self.security.interfaces[0].keys
+    }
+
+    /// The MAC keys and frame counter of one interface, `None` for an
+    /// interface the radio does not have. As ESP-IDF's multi-instance
+    /// OpenThread port keeps a security context per instance, a
+    /// transmission is secured with the keys of its
+    /// [`TxRequest::interface`](oer_ieee802154::TxRequest::interface) and
+    /// that interface's extended address, and an enhanced ACK with the keys
+    /// of the interface the acknowledged frame matched; the received frame
+    /// reports that ACK's security. Otherwise the keys behave as
+    /// [`Self::mac_keys`] describes.
+    pub fn interface_mac_keys(&mut self, interface: Interface) -> Option<&mut Option<MacKeys>> {
+        if interface.index() >= self.machine.interfaces() {
+            return None;
+        }
+        self.security
+            .interfaces
+            .get_mut(usize::from(interface.index()))
+            .map(|security| &mut security.keys)
     }
 
     /// The radio clock (`otPlatRadioGetNow`): the monotonic epoch of
@@ -700,6 +816,12 @@ impl<'storage> Ieee802154Radio<'storage> {
         self.engine
     }
 
+    /// The number of addressing interfaces: the engine's multi-PAN
+    /// interfaces, or one.
+    pub const fn interfaces(&self) -> u8 {
+        self.machine.interfaces()
+    }
+
     /// The portable state.
     pub const fn state(&self) -> RadioState {
         self.machine.state()
@@ -725,16 +847,25 @@ impl<'storage> Ieee802154Radio<'storage> {
         sink: &mut S,
     ) -> Result<AcceptedCommand, CommandError> {
         // The pending table's room is the backend's to judge, after the
-        // capability the state machine checks.
-        if let RadioCommand::Configure {
-            configuration: Configuration::AddPendingAddress(address),
-            ..
-        } = command
+        // capability and interface the state machine checks.
+        if let RadioCommand::Configure { configuration, .. } = command
+            && let Some((index, address)) = match configuration {
+                Configuration::AddPendingAddress(address) => {
+                    Some((Ieee802154MultipanIndex::CONTEXT0, address))
+                }
+                Configuration::Interface {
+                    interface,
+                    setting: InterfaceSetting::AddPendingAddress(address),
+                } if interface.index() < self.machine.interfaces() => {
+                    multipan_index(interface).map(|index| (index, address))
+                }
+                _ => None,
+            }
             && self
                 .machine
                 .capabilities()
                 .contains(RadioCapabilities::SOURCE_MATCH)
-            && !self.engine.pending_table().has_room(address)
+            && !self.engine.pending_table_for(index).has_room(address)
         {
             return Err(CommandError::PendingTableFull);
         }
@@ -793,6 +924,11 @@ impl<'storage> Ieee802154Radio<'storage> {
                 Configuration::ResetPendingTable(PendingTableHalf::Extended) => {
                     engine.pending_table().reset_extended();
                 }
+                Configuration::Interface { interface, setting } => {
+                    let index = multipan_index(interface)
+                        .expect("the state machine admits only the engine's interfaces");
+                    configure_interface(engine, ll, index, setting);
+                }
             },
             RadioCommand::Transmit(request) => {
                 let channel = hal_channel(request.channel);
@@ -819,6 +955,8 @@ impl<'storage> Ieee802154Radio<'storage> {
                     armed: security.is_some(),
                     tx_security: request.security,
                     applied: None,
+                    interface: multipan_index(request.interface)
+                        .expect("the state machine admits only the engine's interfaces"),
                     phase: Phase::Attempting,
                 };
                 transmission.start_access(engine, ll, &mut collector);

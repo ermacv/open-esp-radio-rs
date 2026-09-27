@@ -1,6 +1,6 @@
 //! Backend-to-caller observations, completion categories and receive metadata.
 
-use super::{RadioTimestamp, RequestId, channel::Channel};
+use super::{RadioTimestamp, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
 
 /// Backend-to-Host observation.
@@ -144,6 +144,14 @@ pub struct RxMetadata {
     pub frame_pending: FramePending,
     /// The acknowledgement the radio sent for the frame.
     pub sent_acknowledgement: SentAcknowledgement,
+    /// The interface whose PAN ID and address the frame's destination
+    /// matched (ESP-IDF's `mpf_index`), which acknowledged it and whose
+    /// security [`Self::sent_acknowledgement`] reports. `None` for a frame
+    /// no single interface claims - a broadcast, or one received in
+    /// promiscuous mode - which ESP-IDF's multi-instance OpenThread port
+    /// hands to every interface. A radio without multi-PAN reports
+    /// [`Interface::PRIMARY`] for every frame.
+    pub interface: Option<Interface>,
 }
 
 /// One borrowed received MAC frame and its normalized metadata.

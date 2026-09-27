@@ -44,9 +44,9 @@ pub use oer_esp32s31_ieee802154::engine::{
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
-    AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, MacKeys, PendingTable,
-    RadioCommand, RadioEvent, RadioFault, RadioState, RadioTimestamp, ReceivedFrame, RequestId,
-    RestingState, RxMetadata, TxStatus,
+    AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, Interface, MacKeys,
+    PendingTable, RadioCommand, RadioEvent, RadioFault, RadioState, RadioTimestamp, ReceivedFrame,
+    RequestId, RestingState, RxMetadata, TxStatus,
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
@@ -766,6 +766,30 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         change: impl FnOnce(&mut Option<MacKeys>) -> T,
     ) -> Result<T, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| change(radio.mac_keys()))
+    }
+
+    /// Read or change the MAC keys and frame counter of one interface of a
+    /// multi-PAN radio ([`Ieee802154Radio::interface_mac_keys`]); `None`
+    /// for an interface the radio does not have.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn with_interface_mac_keys<T>(
+        &self,
+        interface: Interface,
+        change: impl FnOnce(&mut Option<MacKeys>) -> T,
+    ) -> Result<Option<T>, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.interface_mac_keys(interface).map(change))
+    }
+
+    /// The number of addressing interfaces of the installed radio.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn interfaces(&self) -> Result<u8, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.interfaces())
     }
 
     /// Change the enhanced-ACK generator of the installed radio: install

@@ -57,13 +57,14 @@ pub use mac::security::{MacKeys, TransmitSecurity};
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
 pub use radio::command::{
-    CcaMode, CommandKind, Configuration, EnergyScanRequest, PendingTableHalf, RadioCommand,
-    ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
+    CcaMode, CommandKind, Configuration, EnergyScanRequest, InterfaceSetting, PendingTableHalf,
+    RadioCommand, ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
 };
 pub use radio::event::{
     AppliedSecurity, FcsStatus, FramePending, RadioEvent, RadioFault, ReceivedFrame, RxMetadata,
     SecurityStatus, SentAcknowledgement, TxStatus,
 };
+pub use radio::interface::Interface;
 pub use radio::state::{
     AcceptedCommand, CommandError, EventError, RadioState, RadioStateMachine, RestingState,
 };

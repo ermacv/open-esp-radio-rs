@@ -5,8 +5,9 @@ use super::{
     RequestId,
     capabilities::RadioCapabilities,
     channel::Channel,
-    command::{CommandKind, Configuration, RadioCommand, TxMode},
+    command::{CommandKind, Configuration, InterfaceSetting, RadioCommand, TxMode},
     event::{RadioEvent, TxStatus},
+    interface::Interface,
 };
 
 /// Stable state to which an asynchronous operation returns.
@@ -92,6 +93,13 @@ pub enum CommandError {
     },
     /// The frame-pending table has no room for the source.
     PendingTableFull,
+    /// The command names an interface the radio does not have.
+    UnknownInterface {
+        /// The rejected interface.
+        interface: Interface,
+        /// The radio's interface count.
+        interfaces: u8,
+    },
     /// The controller did not publish the required capability.
     Unsupported {
         /// Rejected operation kind.
@@ -144,26 +152,60 @@ pub enum EventError {
 /// let forged = RadioStateMachine {
 ///     state: RadioState::Disabled,
 ///     capabilities: RadioCapabilities::NONE,
+///     interfaces: 1,
 /// };
 /// ```
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RadioStateMachine {
     state: RadioState,
     capabilities: RadioCapabilities,
+    interfaces: u8,
 }
 
 impl RadioStateMachine {
-    /// Construct one disabled controller contract.
+    /// Construct one disabled controller contract with the primary
+    /// interface alone.
     pub const fn new(capabilities: RadioCapabilities) -> Self {
+        Self::with_interfaces(capabilities, 1)
+    }
+
+    /// Construct one disabled controller contract with `interfaces`
+    /// addressing interfaces. Without
+    /// [`RadioCapabilities::MULTI_PAN`], and for a count of zero, the radio
+    /// has the primary interface alone.
+    pub const fn with_interfaces(capabilities: RadioCapabilities, interfaces: u8) -> Self {
+        let interfaces = if interfaces == 0 || !capabilities.contains(RadioCapabilities::MULTI_PAN)
+        {
+            1
+        } else {
+            interfaces
+        };
         Self {
             state: RadioState::Disabled,
             capabilities,
+            interfaces,
         }
     }
 
     /// Return the immutable backend capability set.
     pub const fn capabilities(&self) -> RadioCapabilities {
         self.capabilities
+    }
+
+    /// The number of addressing interfaces.
+    pub const fn interfaces(&self) -> u8 {
+        self.interfaces
+    }
+
+    fn require_interface(&self, interface: Interface) -> Result<(), CommandError> {
+        if interface.index() < self.interfaces {
+            Ok(())
+        } else {
+            Err(CommandError::UnknownInterface {
+                interface,
+                interfaces: self.interfaces,
+            })
+        }
     }
 
     /// Return the complete current state.
@@ -222,6 +264,9 @@ impl RadioStateMachine {
                         required,
                     });
                 }
+                if let Configuration::Interface { interface, .. } = configuration {
+                    self.require_interface(interface)?;
+                }
                 previous
             }
             RadioCommand::Transmit(request) => {
@@ -254,6 +299,7 @@ impl RadioStateMachine {
                         required: RadioCapabilities::TRANSMIT_RETRIES,
                     });
                 }
+                self.require_interface(request.interface)?;
                 if request.transmit_power_dbm.is_some()
                     && !self
                         .capabilities
@@ -456,6 +502,18 @@ const fn required_configuration_capability(configuration: Configuration) -> Radi
         | Configuration::AddPendingAddress(_)
         | Configuration::RemovePendingAddress(_)
         | Configuration::ResetPendingTable(_) => RadioCapabilities::SOURCE_MATCH,
+        Configuration::Interface { setting, .. } => {
+            RadioCapabilities::MULTI_PAN.union(match setting {
+                InterfaceSetting::PendingMode(_)
+                | InterfaceSetting::AddPendingAddress(_)
+                | InterfaceSetting::RemovePendingAddress(_)
+                | InterfaceSetting::ResetPendingTable(_) => RadioCapabilities::SOURCE_MATCH,
+                InterfaceSetting::PanId(_)
+                | InterfaceSetting::ShortAddress(_)
+                | InterfaceSetting::ExtendedAddress(_)
+                | InterfaceSetting::Enabled(_) => RadioCapabilities::NONE,
+            })
+        }
         Configuration::PanId(_)
         | Configuration::ShortAddress(_)
         | Configuration::ExtendedAddress(_)

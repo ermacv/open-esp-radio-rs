@@ -17,11 +17,13 @@ use oer_esp32s31_hal::ieee802154::{
     ll::{Ieee802154LlCommand, model::Ieee802154LlModel},
     mac::{Ieee802154Event, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation},
 };
-use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers};
+use oer_esp32s31_ieee802154::engine::{
+    Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces,
+};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
-    Channel, CommandError, FrameView, RadioCommand, RadioState, RequestId, RestingState, TxMode,
-    TxRequest, TxStatus,
+    Channel, CommandError, FrameView, Interface, MacKeys, RadioCommand, RadioState, RequestId,
+    RestingState, TxMode, TxRequest, TxStatus,
 };
 
 use super::{
@@ -166,6 +168,7 @@ fn a_transmission_completes_through_the_event_queue() {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }))
         .unwrap();
     runtime.interrupt(None, &[Ieee802154Event::TxDone]);
@@ -363,6 +366,7 @@ fn a_running_operation_or_a_missing_radio_refuses_the_pause() {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }))
         .unwrap();
     assert_eq!(runtime.pause().err(), Some(Ieee802154PauseError::Busy));
@@ -430,6 +434,7 @@ fn next_event_runs_csma_ca_backoffs() {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }))
         .unwrap();
     let command = || {
@@ -485,6 +490,7 @@ fn next_event_runs_retry_delays() {
             transmit_power_dbm: None,
             max_frame_retries: 1,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }))
         .unwrap();
     // The last MAC command, cleared once read.
@@ -563,6 +569,7 @@ fn closed_rf_admission_refuses_commands_that_need_rf() {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }),
         RadioCommand::ClearChannelAssessment {
             id: RequestId::new(6),
@@ -633,5 +640,46 @@ fn txrx_statistics_are_collected_on_request() {
     assert_eq!(
         runtime.txrx_statistics(),
         Ok(Some(Ieee802154TxRxStatistics::default()))
+    );
+}
+
+/// A runtime over a multi-PAN engine lends the keys of each interface it
+/// has, and a single-interface runtime only the primary interface's.
+#[test]
+fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
+    let single = enabled::<4>();
+    assert_eq!(single.interfaces(), Ok(1));
+    assert_eq!(
+        single.with_interface_mac_keys(Interface::new(1), |_| ()),
+        Ok(None)
+    );
+
+    let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
+    let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+    let parts = Ieee802154RuntimeParts {
+        engine: Ieee802154Engine::new_multipan(
+            buffers,
+            levels,
+            Ieee802154PibDefaults::default(),
+            Ieee802154Interfaces::new(2).unwrap(),
+        ),
+        hardware: Ieee802154LlModel::default(),
+    };
+    let runtime = Runtime::<4>::new();
+    assert!(
+        runtime
+            .install(parts, PLATFORM, Ieee802154PibDefaults::default())
+            .is_ok()
+    );
+    assert_eq!(runtime.interfaces(), Ok(2));
+    let keys = MacKeys::new(1, [1; 16], [2; 16], [3; 16], 9);
+    assert_eq!(
+        runtime.with_interface_mac_keys(Interface::new(1), |slot| *slot = Some(keys)),
+        Ok(Some(()))
+    );
+    assert_eq!(runtime.with_mac_keys(|slot| slot.is_none()), Ok(true));
+    assert_eq!(
+        runtime.with_interface_mac_keys(Interface::new(1), |slot| *slot),
+        Ok(Some(Some(keys)))
     );
 }

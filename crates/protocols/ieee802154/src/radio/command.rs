@@ -1,6 +1,6 @@
 //! Caller-owned command values; frame bytes are borrowed only for admission.
 
-use super::{RadioTimestamp, RequestId, channel::Channel};
+use super::{RadioTimestamp, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
 use crate::mac::header::FrameAddress;
 use crate::mac::pending::AutoPendingMode;
@@ -169,6 +169,11 @@ pub struct TxRequest<'frame> {
     pub max_frame_retries: u8,
     /// Who secures the frame when its security-enabled bit is set.
     pub security: TxSecurity,
+    /// The interface that sends the frame: its MAC keys and frame counter
+    /// secure it, and its extended address is the nonce source, as
+    /// ESP-IDF's multi-instance OpenThread port secures each instance's
+    /// frames. [`Interface::PRIMARY`] on a radio without multi-PAN.
+    pub interface: Interface,
 }
 
 /// One scheduled receive window (`otPlatRadioReceiveAt`).
@@ -204,6 +209,11 @@ pub struct EnergyScanRequest {
 }
 
 /// One portable radio configuration update.
+///
+/// The addresses and the frame-pending table without an interface are
+/// those of [`Interface::PRIMARY`], as ESP-IDF's single-interface API sets
+/// them; [`Configuration::Interface`] addresses any interface of a
+/// multi-PAN radio.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Configuration {
     /// Set the local PAN identifier in host byte order.
@@ -212,6 +222,14 @@ pub enum Configuration {
     ShortAddress(u16),
     /// Set the local extended address in canonical over-the-air byte order.
     ExtendedAddress([u8; 8]),
+    /// Update one interface of a multi-PAN radio
+    /// (`esp_ieee802154_set_multipan_*`, `esp_ieee802154_multipan_*`).
+    Interface {
+        /// The interface the setting changes.
+        interface: Interface,
+        /// The setting.
+        setting: InterfaceSetting,
+    },
     /// Enable or disable promiscuous receive publication.
     Promiscuous(bool),
     /// Enable or disable automatic acknowledgement generation.
@@ -248,6 +266,44 @@ pub enum Configuration {
     RemovePendingAddress(FrameAddress),
     /// Empty the short or the extended half of the frame-pending table
     /// (`esp_ieee802154_reset_pending_table`).
+    ResetPendingTable(PendingTableHalf),
+}
+
+/// One setting of one interface of a multi-PAN radio.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum InterfaceSetting {
+    /// Set the interface's PAN identifier in host byte order
+    /// (`esp_ieee802154_set_multipan_panid`).
+    PanId(u16),
+    /// Set the interface's short address in host byte order
+    /// (`esp_ieee802154_set_multipan_short_address`).
+    ShortAddress(u16),
+    /// Set the interface's extended address in canonical over-the-air byte
+    /// order (`esp_ieee802154_set_multipan_extended_address`).
+    ExtendedAddress([u8; 8]),
+    /// Accept frames addressed to the interface, or stop
+    /// (`esp_ieee802154_set_multipan_enable`). A multi-PAN receiver
+    /// filters and acknowledges for its enabled interfaces: ESP-IDF's
+    /// `esp_ieee802154_multipan_receive` is enabling the interface and
+    /// [`RadioCommand::Receive`], and `esp_ieee802154_multipan_sleep` is
+    /// disabling it and [`RadioCommand::Sleep`] once no interface is
+    /// enabled.
+    Enabled(bool),
+    /// How automatic acknowledgements decide frame pending for the
+    /// interface (`esp_ieee802154_multipan_set_pending_mode`); requires
+    /// source matching.
+    PendingMode(AutoPendingMode),
+    /// Add a source to the interface's frame-pending table
+    /// (`esp_ieee802154_multipan_add_pending_addr`); requires source
+    /// matching, and admission fails when the table has no room for it.
+    AddPendingAddress(FrameAddress),
+    /// Remove a source from the interface's frame-pending table
+    /// (`esp_ieee802154_multipan_clear_pending_addr`); requires source
+    /// matching.
+    RemovePendingAddress(FrameAddress),
+    /// Empty one half of the interface's frame-pending table
+    /// (`esp_ieee802154_multipan_reset_pending_table`); requires source
+    /// matching.
     ResetPendingTable(PendingTableHalf),
 }
 

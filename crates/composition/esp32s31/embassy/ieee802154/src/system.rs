@@ -18,7 +18,7 @@ use oer_esp32s31_hal::{
     },
 };
 use oer_esp32s31_ieee802154::{
-    engine::{Ieee802154Engine, Ieee802154EngineBuffers},
+    engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces},
     pib::Ieee802154PibDefaults,
 };
 use oer_esp32s31_ieee802154_esp_hal::{
@@ -95,6 +95,27 @@ impl Ieee802154Parked {
         Self {
             partition,
             engine: Ieee802154Engine::new(buffers, Ieee802154TxPowerLevels::ESP32S31, defaults),
+        }
+    }
+
+    /// Park a partition with a fresh multi-PAN engine of `interfaces`
+    /// interfaces (`CONFIG_IEEE802154_MULTI_PAN_ENABLE`,
+    /// `CONFIG_IEEE802154_INTERFACE_NUM`): the runtime's radio then accepts
+    /// interface settings and transmissions of each interface.
+    pub fn multipan(
+        partition: Ieee802154RadioPartition,
+        buffers: &'static mut Ieee802154EngineBuffers,
+        defaults: Ieee802154PibDefaults,
+        interfaces: Ieee802154Interfaces,
+    ) -> Self {
+        Self {
+            partition,
+            engine: Ieee802154Engine::new_multipan(
+                buffers,
+                Ieee802154TxPowerLevels::ESP32S31,
+                defaults,
+                interfaces,
+            ),
         }
     }
 }

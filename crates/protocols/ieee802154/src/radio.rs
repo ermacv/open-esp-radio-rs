@@ -9,6 +9,8 @@ pub mod channel;
 pub mod command;
 /// Backend observations and normalized receive metadata.
 pub mod event;
+/// Addressing interfaces of a multi-PAN radio.
+pub mod interface;
 /// Command admission and event validation under one finite owner.
 pub mod state;
 

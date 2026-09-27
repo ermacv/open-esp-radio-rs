@@ -13,15 +13,16 @@ use oer_esp32s31_hal::ieee802154::{
     },
 };
 use oer_esp32s31_ieee802154::engine::{
-    Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154State, PENDING_TABLE_SIZE,
+    Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces, Ieee802154State,
+    PENDING_TABLE_SIZE,
 };
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
     AppliedSecurity, AutoPendingMode, CSL_IE_TEMPLATE, CcaMode, Channel, CommandError,
-    Configuration, EnergyScanRequest, FrameAddress, FramePending, FrameView, MacKeys,
-    PendingTableHalf, RadioCommand, RadioEvent, RadioState, RadioTimestamp, RequestId,
-    RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest, TxSecurity,
-    TxStatus, csl_phase,
+    Configuration, EnergyScanRequest, FrameAddress, FramePending, FrameView, Interface,
+    InterfaceSetting, MacKeys, PendingTableHalf, RadioCommand, RadioEvent, RadioState,
+    RadioTimestamp, RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode,
+    TxRequest, TxSecurity, TxStatus, csl_phase,
 };
 
 use super::{
@@ -65,12 +66,16 @@ struct Sink(
     Vec<Seen>,
     Vec<Option<AppliedSecurity>>,
     Vec<SentAcknowledgement>,
+    Vec<Option<Interface>>,
 );
 
 impl Ieee802154RadioSink for Sink {
     fn event(&mut self, event: RadioEvent<'_>) {
         match event {
-            RadioEvent::Received(frame) => self.2.push(frame.metadata.sent_acknowledgement),
+            RadioEvent::Received(frame) => {
+                self.2.push(frame.metadata.sent_acknowledgement);
+                self.3.push(frame.metadata.interface);
+            }
             RadioEvent::TransmitDone { security, .. } => self.1.push(security),
             _ => {}
         }
@@ -128,7 +133,26 @@ impl Bench {
     fn enabled() -> Self {
         let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
         let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
-        let mut engine = Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default());
+        Self::with_engine(Ieee802154Engine::new(
+            buffers,
+            levels,
+            Ieee802154PibDefaults::default(),
+        ))
+    }
+
+    /// An enabled radio over an engine built with multi-PAN.
+    fn multipan(interfaces: u8) -> Self {
+        let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
+        let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+        Self::with_engine(Ieee802154Engine::new_multipan(
+            buffers,
+            levels,
+            Ieee802154PibDefaults::default(),
+            Ieee802154Interfaces::new(interfaces).unwrap(),
+        ))
+    }
+
+    fn with_engine(mut engine: Ieee802154Engine<'static>) -> Self {
         let mut hw = Ieee802154LlModel::default();
         engine.enable();
         engine.mac_init(&mut hw, Ieee802154PibDefaults::default());
@@ -170,6 +194,7 @@ impl Bench {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }))
     }
 
@@ -731,6 +756,7 @@ impl Bench {
             transmit_power_dbm: None,
             max_frame_retries: retries,
             security: Default::default(),
+            interface: Interface::PRIMARY,
         }))
         .unwrap();
     }
@@ -919,6 +945,7 @@ impl Bench {
             transmit_power_dbm: None,
             max_frame_retries: 0,
             security,
+            interface: Interface::PRIMARY,
         }))
         .unwrap();
     }
@@ -1238,4 +1265,231 @@ fn source_matching_configures_the_pending_table() {
     let table = bench.radio.engine().pending_table();
     assert!(!table.contains(short(0)));
     assert!(table.contains(FrameAddress::Extended([7; 8])));
+}
+
+impl Bench {
+    fn configure_interface(
+        &mut self,
+        index: u8,
+        setting: InterfaceSetting,
+    ) -> Result<(), CommandError> {
+        self.submit(RadioCommand::Configure {
+            id: RequestId::new(9),
+            configuration: Configuration::Interface {
+                interface: Interface::new(index),
+                setting,
+            },
+        })
+    }
+}
+
+/// An engine built with multi-PAN gives the radio its interfaces; each
+/// interface setting reaches that interface's identity, enable bit and
+/// frame-pending table, as `esp_ieee802154_set_multipan_*` and
+/// `esp_ieee802154_multipan_*` do.
+#[test]
+fn interface_settings_reach_their_interface() {
+    let mut bench = Bench::multipan(2);
+    assert_eq!(bench.radio.interfaces(), 2);
+    let short = FrameAddress::Short([0x22, 0x00]);
+    for setting in [
+        InterfaceSetting::PanId(0xabcd),
+        InterfaceSetting::ShortAddress(0x0011),
+        InterfaceSetting::ExtendedAddress([8, 7, 6, 5, 4, 3, 2, 1]),
+        InterfaceSetting::Enabled(true),
+        InterfaceSetting::AddPendingAddress(short),
+    ] {
+        bench.configure_interface(1, setting).unwrap();
+    }
+    assert_eq!(
+        (
+            bench.hw.panid[1],
+            bench.hw.short_address[1],
+            bench.hw.extended_address[1]
+        ),
+        (0xabcd, 0x0011, [8, 7, 6, 5, 4, 3, 2, 1])
+    );
+    assert!(
+        bench
+            .hw
+            .multipan_enable
+            .contains(Ieee802154MultipanIndex::CONTEXT1)
+    );
+    let engine = bench.radio.engine();
+    assert!(
+        engine
+            .pending_table_for(Ieee802154MultipanIndex::CONTEXT1)
+            .contains(short)
+    );
+    assert!(!engine.pending_table().contains(short));
+
+    bench
+        .configure_interface(1, InterfaceSetting::Enabled(false))
+        .unwrap();
+    assert!(
+        !bench
+            .hw
+            .multipan_enable
+            .contains(Ieee802154MultipanIndex::CONTEXT1)
+    );
+    bench
+        .configure_interface(
+            1,
+            InterfaceSetting::ResetPendingTable(PendingTableHalf::Short),
+        )
+        .unwrap();
+    assert!(
+        !bench
+            .radio
+            .engine()
+            .pending_table_for(Ieee802154MultipanIndex::CONTEXT1)
+            .contains(short)
+    );
+    assert_eq!(
+        bench.configure_interface(2, InterfaceSetting::PanId(1)),
+        Err(CommandError::UnknownInterface {
+            interface: Interface::new(2),
+            interfaces: 2,
+        })
+    );
+    assert!(bench.radio.interface_mac_keys(Interface::new(2)).is_none());
+}
+
+/// An interface's frame-pending table refuses a source it has no room for,
+/// independently of the other interfaces.
+#[test]
+fn an_interface_pending_table_refuses_a_source_without_room() {
+    let mut bench = Bench::multipan(2);
+    for index in 0..PENDING_TABLE_SIZE as u16 {
+        let address = FrameAddress::Short(index.to_le_bytes());
+        bench
+            .configure_interface(1, InterfaceSetting::AddPendingAddress(address))
+            .unwrap();
+    }
+    let extra = FrameAddress::Short([0xee, 0xee]);
+    assert_eq!(
+        bench.configure_interface(1, InterfaceSetting::AddPendingAddress(extra)),
+        Err(CommandError::PendingTableFull)
+    );
+    bench
+        .submit(RadioCommand::Configure {
+            id: RequestId::new(9),
+            configuration: Configuration::AddPendingAddress(extra),
+        })
+        .unwrap();
+}
+
+/// A radio without multi-PAN has the primary interface alone and reports
+/// it for every frame.
+#[test]
+fn a_radio_without_multi_pan_has_one_interface() {
+    let mut bench = Bench::receiving();
+    assert_eq!(
+        bench.configure_interface(0, InterfaceSetting::PanId(1)),
+        Err(CommandError::Unsupported {
+            command: oer_ieee802154::CommandKind::Configure,
+            required: oer_ieee802154::RadioCapabilities::MULTI_PAN,
+        })
+    );
+    bench.deliver(&DATA);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert_eq!(bench.sink.3, [Some(Interface::PRIMARY)]);
+}
+
+impl Bench {
+    /// A multi-PAN radio receiving on channel 15 whose interface 1 is PAN
+    /// 0x1234 with short address 1, the destination of [`SECURED_2015`],
+    /// and whose interface 0 is another PAN.
+    fn multipan_receiving() -> Self {
+        let mut bench = Self::multipan(2);
+        bench
+            .configure_interface(0, InterfaceSetting::PanId(0x4321))
+            .unwrap();
+        for setting in [
+            InterfaceSetting::PanId(0x1234),
+            InterfaceSetting::ShortAddress(0x0001),
+            InterfaceSetting::Enabled(true),
+        ] {
+            bench.configure_interface(1, setting).unwrap();
+        }
+        bench
+            .submit(RadioCommand::Receive {
+                id: RequestId::new(2),
+                channel: channel(15),
+            })
+            .unwrap();
+        bench
+    }
+}
+
+/// The enhanced ACK of a frame is secured with the keys of the interface
+/// the frame matched, and the frame reports that interface and the ACK's
+/// security, as the multi-instance port's `ot_radio_enh_ack_generator`
+/// and `ot_radio_receive_done` use `mpf_index`.
+#[test]
+fn an_enhanced_ack_is_secured_by_the_matched_interface() {
+    let mut bench = Bench::multipan_receiving();
+    *bench.radio.mac_keys() = Some(MacKeys::new(1, [1; 16], [2; 16], [3; 16], 7));
+    *bench.radio.interface_mac_keys(Interface::new(1)).unwrap() =
+        Some(MacKeys::new(1, [4; 16], [5; 16], [6; 16], 50));
+    *bench.radio.enhanced_ack() = Some(Ieee802154EnhancedAckGenerator::new());
+
+    bench.deliver(&SECURED_2015);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert!(bench.hw.transmit_security);
+    assert_eq!(bench.hw.security_key, [5; 16]);
+    bench.interrupt(&[Ieee802154Event::AckTxDone]);
+    assert_eq!(bench.sink.3, [Some(Interface::new(1))]);
+    assert_eq!(
+        bench.sink.2[0].security,
+        Some(AppliedSecurity {
+            frame_counter: 50,
+            key_id: Some(1)
+        })
+    );
+    let interface_keys = bench.radio.interface_mac_keys(Interface::new(1)).unwrap();
+    assert_eq!(interface_keys.unwrap().frame_counter(), 51);
+    assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 7);
+}
+
+/// A broadcast belongs to no single interface and reports none, which the
+/// multi-instance port hands to every instance.
+#[test]
+fn a_broadcast_reports_no_interface() {
+    let mut bench = Bench::multipan_receiving();
+    bench.deliver(&DATA);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert_eq!(bench.sink.3, [None]);
+}
+
+/// A transmission is secured with the keys of its interface and that
+/// interface's extended address as the nonce source, as the multi-instance
+/// port's `radio_start_transmit` does.
+#[test]
+fn a_transmission_is_secured_by_its_interface() {
+    let mut bench = Bench::multipan(2);
+    let address = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
+    bench
+        .configure_interface(1, InterfaceSetting::ExtendedAddress(address))
+        .unwrap();
+    *bench.radio.mac_keys() = Some(MacKeys::new(4, [1; 16], [2; 16], [3; 16], 100));
+    *bench.radio.interface_mac_keys(Interface::new(1)).unwrap() =
+        Some(MacKeys::new(4, [4; 16], [5; 16], [6; 16], 300));
+    bench
+        .submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(3),
+            frame: FrameView::new(&SECURED_MODE_1).unwrap(),
+            channel: channel(11),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+            max_frame_retries: 0,
+            security: TxSecurity::Radio,
+            interface: Interface::new(1),
+        }))
+        .unwrap();
+    assert!(bench.hw.transmit_security);
+    assert_eq!(bench.transmitted_security(), ([0x2c, 0x01, 0, 0], 4));
+    assert_eq!(bench.hw.security_key, [5; 16]);
+    assert_eq!(bench.hw.security_address, bench.hw.extended_address[1]);
+    assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 100);
 }

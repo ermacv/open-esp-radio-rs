@@ -989,6 +989,22 @@ pub async fn protocol_task(capabilities: Capabilities) {
                 let session_id = command.session_id;
                 let request_id = command.request_id;
                 match command.body {
+                    Command::PhyTracking(control) => {
+                        let response = if session_id != 0 {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else {
+                            #[cfg(not(feature = "memory-benchmark"))]
+                            {
+                                crate::phy_tracking::control(control)
+                            }
+                            #[cfg(feature = "memory-benchmark")]
+                            {
+                                let _ = control;
+                                Event::Rejected(RejectReason::Unsupported)
+                            }
+                        };
+                        queue_event_reliably(session_id, request_id, response).await;
+                    }
                     Command::PhyFault(control) => {
                         let response = if session_id == 0 {
                             crate::phy_fault::control(control)

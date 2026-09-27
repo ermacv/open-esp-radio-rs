@@ -126,6 +126,8 @@ compile_error!(
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod phy_calibration_artifact;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+mod phy_tracking;
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod product_hil;
 #[cfg(feature = "psram-task-stack")]
 use oer_esp32s31_platform_runtime::stacks as psram_task_stack;

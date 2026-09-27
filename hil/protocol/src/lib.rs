@@ -17,7 +17,10 @@ pub use bluetooth_secure_gatt::{
 mod system;
 pub use system::{BootEvidence, ResetReason, WatchdogTestMode};
 mod phy_fault;
-pub use phy_fault::{PhyFaultCommand, PhyFaultEvidence, PhyFaultMode, PhyFaultPhase};
+pub use phy_fault::{
+    PhyFaultCommand, PhyFaultEvidence, PhyFaultMode, PhyFaultPhase, PhyTrackingCommand,
+    PhyTrackingEvidence,
+};
 mod framing;
 #[cfg(feature = "async-io")]
 mod io;

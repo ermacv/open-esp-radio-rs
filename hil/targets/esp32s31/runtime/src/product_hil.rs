@@ -1035,10 +1035,23 @@ async fn coex_schedule_task(radio: &'static SharedRadio) {
     radio.run_coex_schedule().await
 }
 
+/// The timer stops between ticks while a HIL experiment suspends it.
 #[embassy_executor::task]
 async fn phy_tracking_task(radio: &'static SharedRadio) {
-    let error = radio.run_tracking().await;
-    panic!("shared PHY tracking failed: {error:?}");
+    loop {
+        while crate::phy_tracking::suspended() {
+            crate::phy_tracking::changed().await;
+        }
+        if let Err(error) = radio
+            .run_tracking_until(
+                crate::phy_tracking::until_suspended(),
+                crate::phy_tracking::record,
+            )
+            .await
+        {
+            panic!("shared PHY tracking failed: {error:?}");
+        }
+    }
 }
 
 #[embassy_executor::task]

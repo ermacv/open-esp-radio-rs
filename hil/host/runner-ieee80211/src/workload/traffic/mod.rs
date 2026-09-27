@@ -5,6 +5,7 @@ pub mod icmp_latency;
 pub mod offered_load;
 pub mod paced_tcp;
 pub mod paced_udp;
+pub mod phy_tracking;
 pub mod rx_traffic;
 pub mod tcp_traffic;
 pub mod tx_traffic;

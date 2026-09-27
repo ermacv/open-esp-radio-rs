@@ -57,6 +57,8 @@ pub struct Config {
     pub bandwidth_mhz: u16,
     pub minimum_rate_kbps: u64,
     pub maximum_idle_channel_utilization_255: Option<u8>,
+    /// Suspend the shared PHY's periodic tracking for the session.
+    pub suspend_phy_tracking: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
@@ -275,6 +277,10 @@ pub fn run(
         output,
         "station",
     )?;
+    let tracking = match super::phy_tracking::begin(&capture, options.suspend_phy_tracking) {
+        Ok(tracking) => tracking,
+        Err(error) => return capture.finish_with(Err(error)),
+    };
     let session = match capture.start_session(SessionConfig {
         network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -325,6 +331,9 @@ pub fn run(
     }
 
     if let Err(error) = capture.acknowledge_session(session) {
+        return capture.finish_with(Err(error));
+    }
+    if let Err(error) = super::phy_tracking::finish(&capture, output, tracking) {
         return capture.finish_with(Err(error));
     }
     let local_ingress = local_ingress_capture
@@ -696,6 +705,7 @@ impl Default for Config {
             bandwidth_mhz: 20,
             minimum_rate_kbps: 114_700,
             maximum_idle_channel_utilization_255: None,
+            suspend_phy_tracking: false,
         }
     }
 }

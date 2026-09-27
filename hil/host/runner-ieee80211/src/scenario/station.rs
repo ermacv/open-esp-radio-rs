@@ -27,6 +27,10 @@ pub struct StationUdp {
     /// BSS protection for the whole workload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub induced_protection: Option<InducedProtection>,
+    /// Suspend the shared PHY's periodic tracking for the traffic session,
+    /// the arm without tracking of a PHY maintenance experiment.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    pub suspend_phy_tracking: bool,
     #[serde(default)]
     pub criteria: StationUdpCriteria,
 }

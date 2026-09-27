@@ -1020,6 +1020,22 @@ impl SerialCapture {
         }
     }
 
+    /// Suspend, resume or report the shared PHY's periodic tracking timer.
+    pub fn phy_tracking(
+        &self,
+        command: oer_hil_protocol::PhyTrackingCommand,
+    ) -> Result<oer_hil_protocol::PhyTrackingEvidence> {
+        match self
+            .send_command(0, Command::PhyTracking(command), Duration::from_secs(2))?
+            .body
+        {
+            Event::PhyTracking(evidence) => Ok(evidence),
+            response => {
+                Err(format!("PHY tracking control {command:?} rejected: {response:?}").into())
+            }
+        }
+    }
+
     pub fn require_bluetooth_irq_stack(&self) -> Result<()> {
         let response =
             self.send_command(0, Command::QueryInterruptStackUsage, Duration::from_secs(5))?;

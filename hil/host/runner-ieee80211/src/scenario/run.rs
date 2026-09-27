@@ -281,6 +281,7 @@ fn station_udp_traffic(
                 rate_bps: workload.offer.rx_bps.expect("validated RX offer"),
                 minimum_rate_bps: criteria.minimum_rx_bps,
                 maximum_idle_channel_utilization_255: criteria.maximum_idle_channel_utilization_255,
+                suspend_phy_tracking: workload.suspend_phy_tracking,
                 ..Default::default()
             },
             output,
@@ -311,6 +312,7 @@ fn station_udp_traffic(
                     throughput_floor_bps: criteria.minimum_tx_bps,
                     maximum_idle_channel_utilization_255: criteria
                         .maximum_idle_channel_utilization_255,
+                    suspend_phy_tracking: workload.suspend_phy_tracking,
                     ..Default::default()
                 },
                 output,

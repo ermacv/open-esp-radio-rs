@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 179;
+pub const PROTOCOL_VERSION: u16 = 180;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -497,6 +497,8 @@ pub enum Command {
     /// Query the current platform boot without changing any radio state.
     GetBootStatus,
     PhyFault(crate::PhyFaultCommand),
+    /// Suspend, resume or report the shared PHY's periodic tracking timer.
+    PhyTracking(crate::PhyTrackingCommand),
     BluetoothPeripheral(crate::BluetoothPeripheralOperation),
     BluetoothDtm(crate::BluetoothDtmOperation),
     GetCapabilities,
@@ -1067,6 +1069,7 @@ pub enum Event {
     SystemWatchdogTest(crate::WatchdogTestMode),
     BootStatus(crate::BootEvidence),
     PhyFault(crate::PhyFaultEvidence),
+    PhyTracking(crate::PhyTrackingEvidence),
     BluetoothPeripheral(crate::BluetoothPeripheralEvidence),
     BluetoothDtm(crate::BluetoothDtmEvidence),
     /// AP-epoch modelled service accounting, emitted before the correlated stop.

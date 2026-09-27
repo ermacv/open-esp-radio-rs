@@ -47,6 +47,8 @@ pub struct Config {
     pub expected_rx_format: u8,
     pub phy: PhyExpectation,
     pub maximum_idle_channel_utilization_255: Option<u8>,
+    /// Suspend the shared PHY's periodic tracking for the session.
+    pub suspend_phy_tracking: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -209,6 +211,10 @@ pub fn run(
         None
     };
     let duration_millis = u32::try_from(options.duration.as_millis())?;
+    let tracking = match super::phy_tracking::begin(&capture, options.suspend_phy_tracking) {
+        Ok(tracking) => tracking,
+        Err(error) => return capture.finish_with(Err(error)),
+    };
     let session = capture.start_session(SessionConfig {
         network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -250,6 +256,9 @@ pub fn run(
         }
     };
     if let Err(error) = capture.acknowledge_session(session) {
+        return capture.finish_with(Err(error));
+    }
+    if let Err(error) = super::phy_tracking::finish(&capture, output, tracking) {
         return capture.finish_with(Err(error));
     }
     if let Some(wire) = host_wire_capture {
@@ -817,6 +826,7 @@ impl Default for Config {
             expected_rx_format: 4,
             phy: PhyExpectation::He20,
             maximum_idle_channel_utilization_255: None,
+            suspend_phy_tracking: false,
         }
     }
 }

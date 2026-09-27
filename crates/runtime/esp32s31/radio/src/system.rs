@@ -1106,9 +1106,9 @@ pub extern "C" fn runtime_trace(value: u32) {
     static OER_RUNTIME_TRACE: AtomicU32 = AtomicU32::new(0);
     #[unsafe(link_section = ".rtc_fast.persistent")]
     #[unsafe(no_mangle)]
-    static OER_TRACE_RING: [AtomicU32; 17] = [const { AtomicU32::new(0) }; 17];
+    static OER_TRACE_RING: [AtomicU32; 65] = [const { AtomicU32::new(0) }; 65];
     OER_RUNTIME_TRACE.store(value, SeqCst);
-    let index = OER_TRACE_RING[16].load(SeqCst) % 16;
+    let index = OER_TRACE_RING[64].load(SeqCst) % 64;
     OER_TRACE_RING[index as usize].store(value, SeqCst);
-    OER_TRACE_RING[16].store(index + 1, SeqCst);
+    OER_TRACE_RING[64].store(index + 1, SeqCst);
 }

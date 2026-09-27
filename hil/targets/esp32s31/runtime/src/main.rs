@@ -345,8 +345,8 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
 
 #[unsafe(link_section = ".rtc_fast.persistent")]
 #[unsafe(no_mangle)]
-static OER_RESET_TRACE: [core::sync::atomic::AtomicU32; 6] =
-    [const { core::sync::atomic::AtomicU32::new(0) }; 6];
+static OER_RESET_TRACE: [core::sync::atomic::AtomicU32; 16] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 16];
 
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
@@ -356,10 +356,10 @@ extern "C" fn runtime_main() -> ! {
             Some(r) => r as u32,
             None => 0xff,
         };
-        OER_RESET_TRACE[4].store(OER_RESET_TRACE[5].load(SeqCst), SeqCst);
-        OER_RESET_TRACE[5].store(OER_RESET_TRACE[0].load(SeqCst), SeqCst);
-        OER_RESET_TRACE[0].store(OER_RESET_TRACE[1].load(SeqCst), SeqCst);
-        OER_RESET_TRACE[1].store(0xb000_0000 | reason, SeqCst);
+        for i in 8..15 {
+            OER_RESET_TRACE[i].store(OER_RESET_TRACE[i + 1].load(SeqCst), SeqCst);
+        }
+        OER_RESET_TRACE[15].store(0xb000_0000 | reason, SeqCst);
     }
     unsafe { ets_install_usb_printf() };
     {
@@ -384,21 +384,23 @@ extern "C" fn runtime_main() -> ! {
             );
             {
                 unsafe extern "C" {
-                    static OER_TRACE_RING: [u32; 17];
+                    static OER_TRACE_RING: [u32; 65];
                 }
                 let ring = core::ptr::read_volatile(&raw const OER_TRACE_RING);
-                let next = ring[16] as usize;
-                for step in 0..16 {
-                    ets_printf(c"OER_RING %x\r\n".as_ptr(), ring[(next + step) % 16]);
+                let next = ring[64] as usize;
+                for step in 0..64 {
+                    ets_printf(c"OER_RING %x\r\n".as_ptr(), ring[(next + step) % 64]);
                 }
             }
-            ets_printf(
-                c"OER_RESET %x %x %x %x\r\n".as_ptr(),
-                OER_RESET_TRACE[4].load(SeqCst),
-                OER_RESET_TRACE[5].load(SeqCst),
-                OER_RESET_TRACE[0].load(SeqCst),
-                OER_RESET_TRACE[1].load(SeqCst),
-            )
+            for base in [8usize, 12] {
+                ets_printf(
+                    c"OER_RESET %x %x %x %x\r\n".as_ptr(),
+                    OER_RESET_TRACE[base].load(SeqCst),
+                    OER_RESET_TRACE[base + 1].load(SeqCst),
+                    OER_RESET_TRACE[base + 2].load(SeqCst),
+                    OER_RESET_TRACE[base + 3].load(SeqCst),
+                );
+            }
         };
     }
     print(c"OPEN_RADIO_HIL runtime=START profile=");

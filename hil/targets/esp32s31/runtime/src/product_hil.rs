@@ -1029,6 +1029,12 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
 }
 
 /// ESP-IDF's periodic `phy_track_pll` timer for the shared radio.
+/// The coexistence schedule's phase timer for the shared radio.
+#[embassy_executor::task]
+async fn coex_schedule_task(radio: &'static SharedRadio) {
+    radio.run_coex_schedule().await
+}
+
 #[embassy_executor::task]
 async fn phy_tracking_task(radio: &'static SharedRadio) {
     let error = radio.run_tracking().await;
@@ -1725,6 +1731,7 @@ pub async fn run(
     };
     let radio = SHARED_RADIO.init(radio);
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
+    spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task must allocate once"));
 
     let started_at = Instant::now();
     let WifiStarted {

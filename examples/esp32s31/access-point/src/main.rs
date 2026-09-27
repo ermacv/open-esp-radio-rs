@@ -135,6 +135,7 @@ async fn access_point_task(
         WifiChannel::mhz20(AP_CHANNEL).expect("initial channel must be valid"),
     );
     spawner.spawn(tracking_task(radio).expect("PHY tracking task storage is available once"));
+    spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task storage is available once"));
     let ConcurrentPartitions {
         wifi: partition, ..
     } = partitions;
@@ -220,6 +221,12 @@ async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::Sys
 }
 
 /// ESP-IDF's periodic `phy_track_pll` timer for the shared radio.
+/// The coexistence schedule's phase timer for the shared radio.
+#[embassy_executor::task]
+async fn coex_schedule_task(radio: &'static SharedRadio) {
+    radio.run_coex_schedule().await
+}
+
 #[embassy_executor::task]
 async fn tracking_task(radio: &'static SharedRadio) {
     let error = radio.run_tracking().await;

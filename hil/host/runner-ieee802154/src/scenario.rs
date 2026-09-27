@@ -20,6 +20,21 @@ pub enum Ieee802154Scenario {
     AirCheck(AirCheck),
     PeerExchange(PeerExchange),
     BackgroundMaintenance(BackgroundMaintenance),
+    ChannelEnergy(ChannelEnergy),
+}
+
+/// Channel energy and assessment against the reference peer's burst.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChannelEnergy {
+    pub boots: u8,
+    /// The channel the peer's burst occupies.
+    pub channel: u8,
+    /// A channel at least five channels (25 MHz) from the burst's.
+    pub far_channel: u8,
+    /// Assessments per step.
+    pub samples: u8,
+    pub energy_scan_micros: u32,
 }
 
 /// Background PHY maintenance of the running client.
@@ -121,6 +136,26 @@ impl Ieee802154Scenario {
                     "frames",
                 )
             }
+            Self::ChannelEnergy(energy) => {
+                bounded(energy.boots, 1, 20, "boots")?;
+                bounded(energy.samples, 1, 16, "samples")?;
+                for channel in [energy.channel, energy.far_channel] {
+                    let request = oer_hil_protocol::Ieee802154SessionAssessRequest {
+                        channel,
+                        energy_scan_micros: energy.energy_scan_micros,
+                    };
+                    if !request.validate() {
+                        return Err(
+                            "IEEE 802.15.4 channel energy bounds are outside the wire contract"
+                                .into(),
+                        );
+                    }
+                }
+                if energy.channel.abs_diff(energy.far_channel) < 5 {
+                    return Err("the far channel is within 25 MHz of the burst's".into());
+                }
+                Ok(())
+            }
             Self::AirCheck(check) => {
                 bounded(check.boots, 1, 20, "boots")?;
                 if check.request().validate() {
@@ -136,11 +171,13 @@ impl Ieee802154Scenario {
         let mut plan = Plan::target_only(match self {
             Self::EventStatus(_) => ImageClass::DiagnosticIeee802154EventStatus,
             Self::EdEvent(_) => ImageClass::DiagnosticIeee802154EdEvent,
-            Self::AirCheck(_) | Self::PeerExchange(_) | Self::BackgroundMaintenance(_) => {
-                ImageClass::DiagnosticIeee802154Radio
-            }
+            Self::AirCheck(_)
+            | Self::PeerExchange(_)
+            | Self::BackgroundMaintenance(_)
+            | Self::ChannelEnergy(_) => ImageClass::DiagnosticIeee802154Radio,
         });
-        plan.requirements.ieee802154_peer = matches!(self, Self::PeerExchange(_));
+        plan.requirements.ieee802154_peer =
+            matches!(self, Self::PeerExchange(_) | Self::ChannelEnergy(_));
         plan
     }
 
@@ -192,6 +229,17 @@ impl Ieee802154Scenario {
                 output,
                 context,
             ),
+            Self::ChannelEnergy(energy) => ieee802154::channel_energy::run(
+                ieee802154::channel_energy::Config {
+                    boots: energy.boots,
+                    channel: energy.channel,
+                    far_channel: energy.far_channel,
+                    samples: energy.samples,
+                    energy_scan_micros: energy.energy_scan_micros,
+                },
+                output,
+                context,
+            ),
             Self::AirCheck(check) => ieee802154::air_check::run(
                 ieee802154::air_check::Config {
                     boots: check.boots,
@@ -239,6 +287,28 @@ mod tests {
         for invalid in ["frames = 0", "frames = 17"] {
             let scenario: Ieee802154Scenario =
                 toml::from_str(&table.replace("frames = 4", invalid)).unwrap();
+            assert!(scenario.validate().is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn the_channel_energy_cell_needs_the_peer_and_a_far_channel() {
+        let table = "kind = 'channel-energy'\nboots = 1\nchannel = 15\nfar_channel = 25\nsamples = 4\nenergy_scan_micros = 2000";
+        let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
+        scenario.validate().unwrap();
+        let plan = scenario.plan();
+        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
+        assert!(plan.requirements.ieee802154_peer);
+        for invalid in [
+            "far_channel = 18",
+            "far_channel = 27",
+            "samples = 0",
+            "energy_scan_micros = 100",
+        ] {
+            let key = invalid.split(' ').next().unwrap();
+            let original = table.lines().find(|line| line.starts_with(key)).unwrap();
+            let scenario: Ieee802154Scenario =
+                toml::from_str(&table.replace(original, invalid)).unwrap();
             assert!(scenario.validate().is_err(), "{invalid}");
         }
     }

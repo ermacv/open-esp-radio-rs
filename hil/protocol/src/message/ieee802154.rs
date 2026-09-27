@@ -542,6 +542,36 @@ impl Ieee802154SessionTransmitRequest {
     }
 }
 
+/// Energy scan and clear-channel assessment of one channel in a session.
+///
+/// Each runs as its own radio command on `channel`, so the radio retunes to
+/// it and back to the session channel for the next transmit or receive.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionAssessRequest {
+    /// IEEE 802.15.4 channel, 11 through 26.
+    pub channel: u8,
+    /// Energy-scan duration in microseconds, 128 through 1 000 000.
+    pub energy_scan_micros: u32,
+}
+
+impl Ieee802154SessionAssessRequest {
+    /// Returns whether the request is inside the wire contract.
+    pub const fn validate(self) -> bool {
+        self.channel >= 11
+            && self.channel <= 26
+            && self.energy_scan_micros >= 128
+            && self.energy_scan_micros <= 1_000_000
+    }
+}
+
+/// Outcome of one channel assessment.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionAssessment {
+    pub result: Ieee802154SessionResult,
+    pub energy: Ieee802154AirEnergyOutcome,
+    pub cca: Ieee802154AirCcaOutcome,
+}
+
 /// Automatic frame-pending decision of the device under test.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Ieee802154SessionPendingMode {

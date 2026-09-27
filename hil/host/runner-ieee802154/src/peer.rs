@@ -80,6 +80,14 @@ pub(crate) enum Line {
     Ok(String),
     Err { command: String, reason: String },
     Event(PeerEvent),
+    Burst(PeerBurst),
+}
+
+/// Transmissions of one burst, reported when it stops.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeerBurst {
+    pub sent: u32,
+    pub failed: u32,
 }
 
 fn hex(text: &str) -> Option<Vec<u8>> {
@@ -144,6 +152,10 @@ pub(crate) fn parse_line(line: &str) -> Option<Line> {
         "ED" => Some(Line::Event(PeerEvent::EnergyDetected(
             fields.get(1)?.parse().ok()?,
         ))),
+        "BURST" => Some(Line::Burst(PeerBurst {
+            sent: field(&fields, "sent")?.parse().ok()?,
+            failed: field(&fields, "failed")?.parse().ok()?,
+        })),
         _ => None,
     }
 }
@@ -342,11 +354,19 @@ impl<L: PeerLink> Peer<L> {
     }
 
     fn command(&mut self, name: &str, line: &str) -> Result<()> {
+        self.command_reporting(name, line).map(|_| ())
+    }
+
+    /// Send `line` and wait for the reply to `name`; returns the burst
+    /// report printed before it, if any.
+    fn command_reporting(&mut self, name: &str, line: &str) -> Result<Option<PeerBurst>> {
         self.link.send(line)?;
         let deadline = Instant::now() + COMMAND_TIMEOUT;
+        let mut burst = None;
         while let Some(line) = self.link.receive(deadline)? {
             match parse_line(&line) {
-                Some(Line::Ok(command)) if command == name => return Ok(()),
+                Some(Line::Burst(report)) => burst = Some(report),
+                Some(Line::Ok(command)) if command == name => return Ok(burst),
                 Some(Line::Err { command, reason }) if command == name => {
                     return Err(format!("IEEE 802.15.4 peer rejected {name}: {reason}").into());
                 }
@@ -373,6 +393,18 @@ impl<L: PeerLink> Peer<L> {
     /// arrives as a [`PeerEvent`].
     pub fn transmit(&mut self, cca: bool, frame: &[u8]) -> Result<()> {
         self.command("TX", &format!("TX {} {}", u8::from(cca), to_hex(frame)))
+    }
+
+    /// Start transmitting MAC bytes (without FCS) back to back without CCA
+    /// until [`Self::stop_burst`]; the peer reports no event for them.
+    pub fn burst(&mut self, frame: &[u8]) -> Result<()> {
+        self.command("BURST", &format!("BURST {}", to_hex(frame)))
+    }
+
+    /// Stop the burst after its last transmission and return its counts.
+    pub fn stop_burst(&mut self) -> Result<PeerBurst> {
+        self.command_reporting("BURST", "BURST STOP")?
+            .ok_or_else(|| "IEEE 802.15.4 peer stopped a burst without its report".into())
     }
 
     pub fn set_pending_mode(&mut self, mode: u8) -> Result<()> {

@@ -1283,6 +1283,26 @@ impl SerialCapture {
         }
     }
 
+    /// Scan the energy on one channel and assess it once in the running
+    /// session.
+    pub fn assess_ieee802154_session_channel(
+        &self,
+        request: Ieee802154SessionAssessRequest,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionAssessment> {
+        match self
+            .send_command(0, Command::AssessIeee802154SessionChannel(request), timeout)?
+            .body
+        {
+            Event::Ieee802154SessionAssessed(assessment) => Ok(assessment),
+            Event::Rejected(reason) => Err(format!(
+                "device rejected the IEEE 802.15.4 channel assessment: {reason:?}"
+            )
+            .into()),
+            _ => Err("device returned an invalid IEEE 802.15.4 channel assessment".into()),
+        }
+    }
+
     pub fn stop_ieee802154_session(
         &self,
         timeout: Duration,

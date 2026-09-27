@@ -1608,6 +1608,10 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         }),
         Command::StopIeee802154Session,
         Command::MaintainIeee802154SessionPhy,
+        Command::AssessIeee802154SessionChannel(crate::Ieee802154SessionAssessRequest {
+            channel: 26,
+            energy_scan_micros: 1_000_000,
+        }),
     ] {
         round_trip(Envelope::new(7, 3, 9, 2, command));
     }
@@ -1653,6 +1657,11 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
             },
         }),
         Event::Ieee802154SessionPhyMaintained(crate::Ieee802154SessionPhyMaintenance::Tracked),
+        Event::Ieee802154SessionAssessed(crate::Ieee802154SessionAssessment {
+            result: crate::Ieee802154SessionResult::Done,
+            energy: crate::Ieee802154AirEnergyOutcome::Energy(i8::MIN),
+            cca: crate::Ieee802154AirCcaOutcome::Busy,
+        }),
     ] {
         round_trip(Envelope::new(7, 3, 9, 2, event));
     }

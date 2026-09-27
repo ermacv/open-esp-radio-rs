@@ -160,3 +160,26 @@ fn the_recording_link_keeps_the_whole_conversation() {
         ["< boot noise", "< @READY protocol=1", "> RX", "< @OK RX"]
     );
 }
+
+#[test]
+fn a_burst_stop_returns_the_report_printed_before_its_answer() {
+    let link = ScriptedLink::new(&[
+        "@READY protocol=1",
+        "@OK BURST",
+        "@BURST sent=412 failed=1",
+        "@OK BURST",
+        "@OK BURST",
+    ]);
+    let mut peer = Peer::start(link).unwrap();
+    peer.burst(&[0x41, 0x88]).unwrap();
+    assert_eq!(
+        peer.stop_burst().unwrap(),
+        PeerBurst {
+            sent: 412,
+            failed: 1
+        }
+    );
+    assert_eq!(peer.link.sent, ["BURST 4188", "BURST STOP"]);
+    // A stop answered without its report is not a stopped burst.
+    assert!(peer.stop_burst().is_err());
+}

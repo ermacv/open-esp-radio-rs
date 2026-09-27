@@ -39,8 +39,8 @@ use oer_hil_protocol::{
 };
 #[cfg(feature = "ieee802154-radio")]
 use oer_hil_protocol::{
-    Ieee802154AirCheckRequest, Ieee802154SessionConfig, Ieee802154SessionPendingRequest,
-    Ieee802154SessionTransmitRequest,
+    Ieee802154AirCheckRequest, Ieee802154SessionAssessRequest, Ieee802154SessionConfig,
+    Ieee802154SessionPendingRequest, Ieee802154SessionTransmitRequest,
 };
 
 #[cfg(not(feature = "memory-benchmark"))]
@@ -271,6 +271,10 @@ pub enum Ieee802154SessionCommand {
     },
     MaintainPhy {
         request_id: u32,
+    },
+    Assess {
+        request_id: u32,
+        request: Ieee802154SessionAssessRequest,
     },
 }
 
@@ -1449,6 +1453,38 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::Unsupported),
                         )
                         .await;
+                    }
+                    Command::AssessIeee802154SessionChannel(request) => {
+                        #[cfg(feature = "ieee802154-radio")]
+                        if request.validate() {
+                            admit_ieee802154_session_command(
+                                ieee802154_session_open,
+                                session_id,
+                                request_id,
+                                Ieee802154SessionCommand::Assess {
+                                    request_id,
+                                    request,
+                                },
+                            )
+                            .await;
+                        } else {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidConfiguration),
+                            )
+                            .await;
+                        }
+                        #[cfg(not(feature = "ieee802154-radio"))]
+                        {
+                            let _ = request;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::Unsupported),
+                            )
+                            .await;
+                        }
                     }
                     Command::StopIeee802154Session => {
                         #[cfg(feature = "ieee802154-radio")]

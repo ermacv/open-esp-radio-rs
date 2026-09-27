@@ -4,8 +4,8 @@
 //! and filter, and then serves the host's commands until it stops: transmit
 //! and report the outcome with any acknowledgement, enter receive mode,
 //! report and forget the frames received so far, and change the automatic
-//! frame-pending decision. The host may ask for enhanced ACKs of 2015
-//! frames. Received frames accumulate between collections,
+//! frame-pending decision, and measure and assess any channel. The host may
+//! ask for enhanced ACKs of 2015 frames. Received frames accumulate between collections,
 //! so the host can drive the peer while the device listens.
 
 use core::cell::Cell;
@@ -27,18 +27,20 @@ use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{
-    Event as HilEvent, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirTxOutcome,
-    Ieee802154SessionAck, Ieee802154SessionCoexistence, Ieee802154SessionConfig,
-    Ieee802154SessionFrame, Ieee802154SessionMaintenanceCounts, Ieee802154SessionMaintenancePolicy,
-    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
+    Event as HilEvent, IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirCcaOutcome,
+    Ieee802154AirEnergyOutcome, Ieee802154AirTxOutcome, Ieee802154SessionAck,
+    Ieee802154SessionAssessRequest, Ieee802154SessionAssessment, Ieee802154SessionCoexistence,
+    Ieee802154SessionConfig, Ieee802154SessionFrame, Ieee802154SessionMaintenanceCounts,
+    Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
+    Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
     Ieee802154SessionStopEvidence, Ieee802154SessionTransmitEvidence,
     Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, RejectReason,
     ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
-    AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, Interface, RadioCommand,
-    RequestId, TxMode, TxRequest, TxSecurity,
+    AutoPendingMode, Channel, Configuration, EnergyScanRequest, FrameAddress, FrameView, Interface,
+    RadioCommand, RequestId, TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, tx_outcome};
@@ -50,6 +52,10 @@ type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
 
 /// Bound on one transmission's terminal event, over its retries.
 const TRANSMIT_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Bound on the terminal event of one energy scan beyond its duration, and
+/// of one clear-channel assessment.
+const ASSESS_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Frames received since the previous collection.
 #[derive(Default)]
@@ -206,6 +212,95 @@ impl Session {
         }
     }
 
+    /// The next terminal event within `timeout`; received frames are
+    /// recorded on the way.
+    async fn terminal_event(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Ieee802154RadioEvent, Ieee802154SessionResult> {
+        loop {
+            let Ok(event) = with_timeout(timeout, self.runtime.next_event()).await else {
+                return Err(Ieee802154SessionResult::EventTimeout);
+            };
+            if let Some(event) = self.observe(event) {
+                return Ok(event);
+            }
+        }
+    }
+
+    /// Scan the energy on the requested channel, then assess it once, as
+    /// two radio commands on that channel.
+    async fn assess(
+        &mut self,
+        request: Ieee802154SessionAssessRequest,
+    ) -> Ieee802154SessionAssessment {
+        let mut assessment = Ieee802154SessionAssessment::default();
+        let Ok(channel) = Channel::new(request.channel) else {
+            assessment.result = Ieee802154SessionResult::CommandRejected;
+            return assessment;
+        };
+        let id = self.id();
+        if let Err(result) = self.submit(RadioCommand::EnergyScan(EnergyScanRequest {
+            id,
+            channel,
+            duration_us: request.energy_scan_micros,
+        })) {
+            assessment.result = result;
+            return assessment;
+        }
+        let scan_timeout =
+            Duration::from_micros(u64::from(request.energy_scan_micros)) + ASSESS_TIMEOUT;
+        assessment.energy = match self.terminal_event(scan_timeout).await {
+            Ok(Ieee802154RadioEvent::EnergyScanDone {
+                id: done,
+                energy_dbm,
+                ..
+            }) if done == id => Ieee802154AirEnergyOutcome::Energy(energy_dbm),
+            Ok(Ieee802154RadioEvent::EnergyScanFailed { id: done, .. }) if done == id => {
+                Ieee802154AirEnergyOutcome::Failed
+            }
+            Ok(_) => {
+                assessment.result = Ieee802154SessionResult::UnexpectedEvent;
+                return assessment;
+            }
+            Err(result) => {
+                assessment.result = result;
+                return assessment;
+            }
+        };
+        let id = self.id();
+        if let Err(result) = self.submit(RadioCommand::ClearChannelAssessment { id, channel }) {
+            assessment.result = result;
+            return assessment;
+        }
+        assessment.cca = match self.terminal_event(ASSESS_TIMEOUT).await {
+            Ok(Ieee802154RadioEvent::ClearChannelAssessmentDone { id: done, idle, .. })
+                if done == id =>
+            {
+                if idle {
+                    Ieee802154AirCcaOutcome::Clear
+                } else {
+                    Ieee802154AirCcaOutcome::Busy
+                }
+            }
+            Ok(Ieee802154RadioEvent::ClearChannelAssessmentFailed { id: done, .. })
+                if done == id =>
+            {
+                Ieee802154AirCcaOutcome::Failed
+            }
+            Ok(_) => {
+                assessment.result = Ieee802154SessionResult::UnexpectedEvent;
+                return assessment;
+            }
+            Err(result) => {
+                assessment.result = result;
+                return assessment;
+            }
+        };
+        assessment.result = Ieee802154SessionResult::Done;
+        assessment
+    }
+
     fn pending(&mut self, request: Ieee802154SessionPendingRequest) -> bool {
         let mode = match request.mode {
             Ieee802154SessionPendingMode::Disabled => AutoPendingMode::Disable,
@@ -323,6 +418,18 @@ async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) ->
                     0,
                     request_id,
                     HilEvent::Ieee802154SessionPhyMaintained(outcome),
+                )
+                .await;
+            }
+            Ieee802154SessionCommand::Assess {
+                request_id,
+                request,
+            } => {
+                let assessment = session.assess(request).await;
+                publish_event_reliably(
+                    0,
+                    request_id,
+                    HilEvent::Ieee802154SessionAssessed(assessment),
                 )
                 .await;
             }

@@ -2701,12 +2701,6 @@ code = "ad6feb6d2a78bf0df8ff9aca719b795b7c03849f48effaaed42af28fe90ca884"
 [[function]]
 artifact = "libpp"
 member = "hal_pwr.o"
-symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_disable"
-code = "c6c32cdb07abd52f2dd9ac30b3724fcfddc9bef8553d0ce961441e35ef76744b"
-
-[[function]]
-artifact = "libpp"
-member = "hal_pwr.o"
 symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_early_time"
 code = "a4ffe350e9b07fcc8ff9c627d32a2c9afddd89b060a12859ed09956cbb801f2e"
 
@@ -3205,12 +3199,6 @@ code = "1d73e2b676e1bfe2e3a8ac9a8755742d368d658634e35265951bb822b22cfee2"
 [[function]]
 artifact = "libpp"
 member = "pm.o"
-symbol = "pm_mac_enable_tsf_tbtt_modem_wakeup"
-code = "1f636e8bd9a36341acce950e4563dff1ceef04aad9902c470aa4e793e0d71fb4"
-
-[[function]]
-artifact = "libpp"
-member = "pm.o"
 symbol = "pm_on_coex_schm_status_config"
 code = "7b4ec4e45df5261ab2067cb336bc5f3d2a1641836b3ffc8c6897b162de2c9a60"
 
@@ -3255,6 +3243,12 @@ artifact = "libpp"
 member = "pm.o"
 symbol = "pm_wake_up"
 code = "5adb9aa1f970158dfcf5fd8651ada417adbf8b89972d5e90034d25a736e8e796"
+
+[[function]]
+artifact = "libpp"
+member = "pm_coex.o"
+symbol = "pm_coex_update_rx_beacon_pti"
+code = "691a63dcd367cda33f4f8541075dda8bd69a481effcfa611d3b86a5f7fd705eb"
 
 [[function]]
 artifact = "libpp"
@@ -4873,12 +4867,6 @@ code = "f1acb79b7a0ce22a05069e9ae7e9dd192b8e35f95c764cedffcfc769ad2f4d1d"
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "pm_mac_enable_tsf_tbtt_modem_wakeup"
-code = "3219bf96a2563641008a7b0eebe2b70cbb931384adfc1769ff414328d9393341"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "pm_on_tbtt"
 code = "b4fba893ada15b01751b183416befe2fb0d4d0399a2e8468c603e0f29149d35e"
 
@@ -5001,12 +4989,6 @@ artifact = "rom"
 member = ""
 symbol = "pwr_hal_set_mac_modem_state_sleep_limit"
 code = "ad6feb6d2a78bf0df8ff9aca719b795b7c03849f48effaaed42af28fe90ca884"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_disable"
-code = "c6c32cdb07abd52f2dd9ac30b3724fcfddc9bef8553d0ce961441e35ef76744b"
 
 [[function]]
 artifact = "rom"

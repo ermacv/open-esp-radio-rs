@@ -198,6 +198,7 @@ fn successful_join_uses_typed_sequences_and_leaves_association_rx_live() {
                 he_operation: false,
                 wmm: false,
                 wmm_parameters: None,
+                association_comeback_tu: None,
             },
             total_received_frames: 1,
         })

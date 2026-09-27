@@ -332,7 +332,7 @@ where
             }
             let started_micros = *started_micros.get_or_insert_with(|| self.timer.now_micros());
             let boundary_ms = runtime
-                .elapsed_ms()
+                .ticks()
                 .checked_add(1)
                 .ok_or(StaJoinError::ClockOverflow)?;
             self.wait_boundary(started_micros, boundary_ms).await?;

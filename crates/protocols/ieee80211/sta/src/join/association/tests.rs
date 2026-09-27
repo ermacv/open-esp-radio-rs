@@ -98,6 +98,7 @@ fn association_runtime_accepts_only_selected_peer_response() {
         he_operation: false,
         wmm: false,
         wmm_parameters: None,
+        association_comeback_tu: None,
     };
     assert_eq!(
         runtime.observe_management_frame(&association_response(0)),
@@ -135,6 +136,79 @@ fn association_runtime_reports_peer_disconnect_and_rejection() {
         rejected.observe_management_frame(&association_response(17)),
         Ok(StaAssociationEvent::Failed {
             failure: StaAssociationFailure::Rejected { status_code: 17 },
+            total_received_frames: 0,
+        })
+    );
+}
+
+fn refused_temporarily(comeback_tu: u32) -> std::vec::Vec<u8> {
+    let mut frame = association_response(30).to_vec();
+    frame.extend_from_slice(&[56, 5, 3]);
+    frame.extend_from_slice(&comeback_tu.to_le_bytes());
+    frame
+}
+
+/// Run ticks until the runtime asks to transmit, returning the milliseconds
+/// that passed.
+fn ticks_until_attempt(
+    runtime: &mut StaAssociationRuntime,
+    sequence: &mut StaSequenceCounter,
+) -> (u32, StaAssociationAttempt) {
+    for tick in 0..10_000 {
+        if let Some(attempt) = runtime.begin_tick(sequence).unwrap() {
+            return (tick, attempt);
+        }
+        assert_eq!(runtime.finish_tick(), Ok(StaAssociationEvent::Irrelevant));
+    }
+    panic!("no attempt within ten seconds");
+}
+
+#[test]
+fn a_temporary_refusal_comes_back_once_after_its_comeback_time() {
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
+    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    let (_, first) = ticks_until_attempt(&mut runtime, &mut sequence);
+    assert_eq!(first.ordinal, 1);
+    // 1000 TUs, as hostapd names while it confirms the old association.
+    assert_eq!(
+        runtime.observe_management_frame(&refused_temporarily(1_000)),
+        Ok(StaAssociationEvent::Irrelevant)
+    );
+    assert_eq!(runtime.finish_tick(), Ok(StaAssociationEvent::Irrelevant));
+    // (1000 + 100) TUs of 1024 us: 1126.4 ms, rounded up, counting the tick
+    // that received the refusal.
+    let (waited, again) = ticks_until_attempt(&mut runtime, &mut sequence);
+    assert_eq!(waited, 1_126);
+    assert_eq!(again.ordinal, 1);
+    assert_eq!(again.elapsed_ms, 0);
+    // A second refusal ends the association.
+    assert_eq!(
+        runtime.observe_management_frame(&refused_temporarily(1_000)),
+        Ok(StaAssociationEvent::Failed {
+            failure: StaAssociationFailure::ComebackRefused { comeback_tu: 1_000 },
+            total_received_frames: 0,
+        })
+    );
+}
+
+#[test]
+fn a_long_or_unnamed_temporary_refusal_ends_the_association() {
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
+    let mut long = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    long.begin_tick(&mut sequence).unwrap();
+    assert_eq!(
+        long.observe_management_frame(&refused_temporarily(5_001)),
+        Ok(StaAssociationEvent::Failed {
+            failure: StaAssociationFailure::ComebackRefused { comeback_tu: 5_001 },
+            total_received_frames: 0,
+        })
+    );
+    let mut unnamed = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    unnamed.begin_tick(&mut sequence).unwrap();
+    assert_eq!(
+        unnamed.observe_management_frame(&association_response(30)),
+        Ok(StaAssociationEvent::Failed {
+            failure: StaAssociationFailure::Rejected { status_code: 30 },
             total_received_frames: 0,
         })
     );

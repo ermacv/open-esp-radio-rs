@@ -380,6 +380,10 @@ pub struct AssociationResponse {
     pub he_operation: bool,
     pub wmm: bool,
     pub wmm_parameters: Option<WmmParameterSet>,
+    /// Association comeback time in TUs from a Timeout Interval element of
+    /// type 3; an access point that refuses a protected association
+    /// temporarily (status 30) names it.
+    pub association_comeback_tu: Option<u32>,
 }
 
 impl AssociationResponse {
@@ -413,6 +417,7 @@ pub fn parse_association_response(
     let mut he_operation = false;
     let mut wmm = false;
     let mut wmm_parameters = None;
+    let mut association_comeback_tu = None;
     let mut offset = MANAGEMENT_HEADER_LEN + 6;
     while offset + 2 <= frame.len() {
         let id = frame[offset];
@@ -430,6 +435,12 @@ pub fn parse_association_response(
         if is_wmm {
             wmm_parameters = parse_wmm_parameter_element(&frame[offset..end]).or(wmm_parameters);
         }
+        if let [TIMEOUT_INTERVAL_ASSOCIATION_COMEBACK, a, b, c, d, ..] = *value
+            && id == TIMEOUT_INTERVAL_ELEMENT_ID
+        {
+            let comeback = u32::from_le_bytes([a, b, c, d]);
+            association_comeback_tu = (comeback != 0).then_some(comeback);
+        }
         offset = end;
     }
 
@@ -444,8 +455,14 @@ pub fn parse_association_response(
         // even if a bounded RX prefix omitted a later vendor WMM element.
         wmm: wmm || ht_capability || he_capability,
         wmm_parameters,
+        association_comeback_tu,
     })
 }
+
+/// Timeout Interval element identifier.
+const TIMEOUT_INTERVAL_ELEMENT_ID: u8 = 56;
+/// Timeout Interval type of the association comeback time.
+const TIMEOUT_INTERVAL_ASSOCIATION_COMEBACK: u8 = 3;
 
 fn write_element(frame: &mut [u8], offset: &mut usize, id: u8, value: &[u8]) {
     frame[*offset] = id;

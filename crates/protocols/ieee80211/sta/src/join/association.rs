@@ -48,6 +48,12 @@ pub enum StaAssociationFailure {
     Rejected {
         status_code: u16,
     },
+    /// The access point refused the association temporarily with a comeback
+    /// time the station does not wait for: longer than 5000 TUs, or a second
+    /// refusal after the station already came back once.
+    ComebackRefused {
+        comeback_tu: u32,
+    },
     /// A successful response contradicted the exact security mode selected
     /// from the scan record. Treating this as association success would make
     /// the following key/plaintext transition an implicit downgrade.
@@ -98,7 +104,24 @@ pub struct StaAssociationRuntime {
     tick_active: bool,
     terminal: bool,
     received_frames: u32,
+    /// Milliseconds left until the station comes back after a temporary
+    /// refusal; the association deadline and retransmissions pause meanwhile.
+    comeback_remaining_ms: u32,
+    came_back: bool,
+    /// Completed millisecond ticks of the whole epoch, including a comeback
+    /// wait; the executor paces its ticks by this count.
+    ticks: u32,
 }
+
+/// Status of a temporary association refusal: the access point protects the
+/// management frames of an association it still holds and first confirms
+/// it with an SA Query.
+const REJECTED_TEMPORARILY: u16 = 30;
+/// The longest comeback time the vendor waits for.
+const MAXIMUM_COMEBACK_TU: u32 = 5_000;
+/// The vendor comes back this many TUs after the named comeback time.
+const COMEBACK_MARGIN_TU: u32 = 100;
+const MICROS_PER_TU: u32 = 1_024;
 
 impl StaAssociationRuntime {
     pub const fn new(local: [u8; 6], bssid: [u8; 6], security: WifiSecurityMode) -> Self {
@@ -110,6 +133,9 @@ impl StaAssociationRuntime {
             tick_active: false,
             terminal: false,
             received_frames: 0,
+            comeback_remaining_ms: 0,
+            came_back: false,
+            ticks: 0,
         }
     }
 
@@ -126,6 +152,9 @@ impl StaAssociationRuntime {
             return Err(StaAssociationRuntimeError::TickAlreadyActive);
         }
         self.tick_active = true;
+        if self.comeback_remaining_ms != 0 {
+            return Ok(None);
+        }
         Ok(
             StaAssociationRetrySchedule::attempt_at(self.elapsed_ms).map(|ordinal| {
                 StaAssociationAttempt {
@@ -157,6 +186,11 @@ impl StaAssociationRuntime {
         let Some(response) = parse_association_response(frame, self.local, self.bssid) else {
             return Ok(StaAssociationEvent::Irrelevant);
         };
+        if response.status_code == REJECTED_TEMPORARILY
+            && let Some(comeback_tu) = response.association_comeback_tu
+        {
+            return Ok(self.come_back(comeback_tu));
+        }
         if response.status_code != 0 {
             return Ok(self.fail(StaAssociationFailure::Rejected {
                 status_code: response.status_code,
@@ -178,6 +212,11 @@ impl StaAssociationRuntime {
     pub fn finish_tick(&mut self) -> Result<StaAssociationEvent, StaAssociationRuntimeError> {
         self.require_active_tick()?;
         self.tick_active = false;
+        self.ticks = self.ticks.saturating_add(1);
+        if self.comeback_remaining_ms != 0 {
+            self.comeback_remaining_ms -= 1;
+            return Ok(StaAssociationEvent::Irrelevant);
+        }
         self.elapsed_ms = self.elapsed_ms.saturating_add(1);
         if self.elapsed_ms >= STA_RESPONSE_TIMEOUT_MS {
             Ok(self.fail(StaAssociationFailure::Timeout))
@@ -186,8 +225,14 @@ impl StaAssociationRuntime {
         }
     }
 
+    /// Milliseconds of the current request's deadline.
     pub const fn elapsed_ms(&self) -> u32 {
         self.elapsed_ms
+    }
+
+    /// Completed ticks of the whole epoch, including a comeback wait.
+    pub const fn ticks(&self) -> u32 {
+        self.ticks
     }
 
     pub const fn total_received_frames(&self) -> u32 {
@@ -202,6 +247,25 @@ impl StaAssociationRuntime {
         } else {
             Ok(())
         }
+    }
+
+    /// Wait out one temporary refusal, then send a fresh Association Request
+    /// under a fresh deadline, as the vendor's `sta_recv_assoc` does: it
+    /// disarms the association timer and arms `sta_assoc_comeback` for the
+    /// comeback time plus 100 TUs. A second refusal, or one longer than
+    /// 5000 TUs, ends the association.
+    ///
+    /// SOURCE: complete pinned `libnet80211.a[ieee80211_sta.o]::
+    /// sta_recv_assoc` and `sta_assoc_comeback`.
+    fn come_back(&mut self, comeback_tu: u32) -> StaAssociationEvent {
+        if self.came_back || comeback_tu > MAXIMUM_COMEBACK_TU {
+            return self.fail(StaAssociationFailure::ComebackRefused { comeback_tu });
+        }
+        self.came_back = true;
+        self.elapsed_ms = 0;
+        self.comeback_remaining_ms =
+            ((comeback_tu + COMEBACK_MARGIN_TU) * MICROS_PER_TU).div_ceil(1_000);
+        StaAssociationEvent::Irrelevant
     }
 
     fn fail(&mut self, failure: StaAssociationFailure) -> StaAssociationEvent {

@@ -6597,10 +6597,10 @@ scope = []
 register-method = "current_rx_info"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "RSSI"
+method = "rssi"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
 access = "read-only"
 
 [[registers]]

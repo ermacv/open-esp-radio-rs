@@ -224,15 +224,16 @@ bitWidth = 4
 
 [peripherals.registers.register]
 name = "CURRENT_RX_INFO"
-description = "Complete current Bluetooth receive-information image returned by bt_bb_get_cur_rx_info. Inner status encoding remains unknown."
+description = "Current baseband receive information returned complete by bt_bb_get_cur_rx_info. The low byte is the signed RSSI of the most recent baseband reception, of whichever protocol received it; bits 31:8 remain unknown. Read side effects are unproven."
 addressOffset = 0xB0
 size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "RSSI"
+description = "Signed two's-complement RSSI in dBm of the most recent baseband reception, as ESP-IDF's ieee802154_get_recent_rssi truncates the complete image to int8_t."
 bitOffset = 0
-bitWidth = 32
+bitWidth = 8
 
 [[peripherals.registers]]
 
@@ -1025,14 +1026,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.CURRENT_RX_INFO"
-sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS", "ESP_IDF_7B9CC1AC_IEEE802154_RECENT_RSSI"]
 provenance = "observed"
 accuracy = "exact"
-completeness = "complete"
+completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.CURRENT_RX_INFO.IMAGE"
-sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+entity = "BT_V3_2_BASEBAND.CURRENT_RX_INFO.RSSI"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS", "ESP_IDF_7B9CC1AC_IEEE802154_RECENT_RSSI"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

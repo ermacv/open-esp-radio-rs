@@ -49302,7 +49302,7 @@ pub mod bt_v3_2_baseband {
         pub const fn software_reset_idle_status(&self) -> &SoftwareResetIdleStatus {
             &self.software_reset_idle_status
         }
-        #[doc = "0xb0 - Complete current Bluetooth receive-information image returned by bt_bb_get_cur_rx_info. Inner status encoding remains unknown."]
+        #[doc = "0xb0 - Current baseband receive information returned complete by bt_bb_get_cur_rx_info. The low byte is the signed RSSI of the most recent baseband reception, of whichever protocol received it; bits 31:8 remain unknown. Read side effects are unproven."]
         #[inline(always)]
         pub const fn current_rx_info(&self) -> &CurrentRxInfo {
             &self.current_rx_info
@@ -49863,23 +49863,23 @@ pub mod bt_v3_2_baseband {
         #[doc = "`read()` method returns [`software_reset_idle_status::R`](R) reader structure"]
         impl crate::Readable for SoftwareResetIdleStatusSpec {}
     }
-    #[doc = "CURRENT_RX_INFO (r) register accessor: Complete current Bluetooth receive-information image returned by bt_bb_get_cur_rx_info. Inner status encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`current_rx_info::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@current_rx_info`] module"]
+    #[doc = "CURRENT_RX_INFO (r) register accessor: Current baseband receive information returned complete by bt_bb_get_cur_rx_info. The low byte is the signed RSSI of the most recent baseband reception, of whichever protocol received it; bits 31:8 remain unknown. Read side effects are unproven.\n\nYou can [`read`](crate::Reg::read) this register and get [`current_rx_info::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@current_rx_info`] module"]
     #[doc(alias = "CURRENT_RX_INFO")]
     pub type CurrentRxInfo = crate::Reg<current_rx_info::CurrentRxInfoSpec>;
-    #[doc = "Complete current Bluetooth receive-information image returned by bt_bb_get_cur_rx_info. Inner status encoding remains unknown."]
+    #[doc = "Current baseband receive information returned complete by bt_bb_get_cur_rx_info. The low byte is the signed RSSI of the most recent baseband reception, of whichever protocol received it; bits 31:8 remain unknown. Read side effects are unproven."]
     pub mod current_rx_info {
         #[doc = "Register `CURRENT_RX_INFO` reader"]
         pub type R = crate::R<CurrentRxInfoSpec>;
-        #[doc = "Field `IMAGE` reader - "]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `RSSI` reader - Signed two's-complement RSSI in dBm of the most recent baseband reception, as ESP-IDF's ieee802154_get_recent_rssi truncates the complete image to int8_t."]
+        pub type RssiR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:7 - Signed two's-complement RSSI in dBm of the most recent baseband reception, as ESP-IDF's ieee802154_get_recent_rssi truncates the complete image to int8_t."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn rssi(&self) -> RssiR {
+                RssiR::new((self.bits & 0xff) as u8)
             }
         }
-        #[doc = "Complete current Bluetooth receive-information image returned by bt_bb_get_cur_rx_info. Inner status encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`current_rx_info::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Current baseband receive information returned complete by bt_bb_get_cur_rx_info. The low byte is the signed RSSI of the most recent baseband reception, of whichever protocol received it; bits 31:8 remain unknown. Read side effects are unproven.\n\nYou can [`read`](crate::Reg::read) this register and get [`current_rx_info::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CurrentRxInfoSpec;
         impl crate::RegisterSpec for CurrentRxInfoSpec {
             type Ux = u32;
@@ -59413,7 +59413,7 @@ pub mod peripheral_ownership {
         pub bluetooth_scheduler_interrupt_runtime: crate::BluetoothSchedulerInterruptRuntime,
     }
 
-    /// Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability.
+    /// Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability. The restricted PAC carves out one read-only capability: IEEE 802.15.4 reads the RSSI byte of CURRENT_RX_INFO, which no shared operation accesses.
     pub struct SharedRadioPeripherals {
         pub bt_v3_2_baseband: crate::BtV3_2Baseband,
         pub shared_radio_init_control: crate::SharedRadioInitControl,
@@ -59449,7 +59449,7 @@ pub mod peripheral_ownership {
         pub bluetooth_modem_lp_timer: BluetoothModemLpTimerPeripherals,
         /// Bluetooth controller interrupt registers transferred independently from task lifecycle ownership to the hard ISR.
         pub bluetooth_interrupts: BluetoothInterruptPeripherals,
-        /// Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability.
+        /// Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability. The restricted PAC carves out one read-only capability: IEEE 802.15.4 reads the RSSI byte of CURRENT_RX_INFO, which no shared operation accesses.
         pub shared_radio: SharedRadioPeripherals,
         /// Modem event-task matrix. The restricted PAC splits its channels into disjoint capabilities: channels zero and one for IEEE 802.15.4 and channels four through seven for Bluetooth, each writing only its own bits of the write-trigger set and clear words.
         pub modem_etm: ModemEtmPeripherals,
@@ -60050,6 +60050,12 @@ pub mod field_read {
         index: usize,
     ) -> u32 {
         registers.entry(index).read().head_pointer().bits()
+    }
+
+    /// Read `BT_V3_2_BASEBAND`.`CURRENT_RX_INFO`.`RSSI` without exposing its register block.
+    #[inline]
+    pub fn observe_ieee802154_recent_rssi(registers: &crate::BtV3_2Baseband) -> u8 {
+        registers.current_rx_info().read().rssi().bits()
     }
 
     /// Read `PHY_AGC_ORACLE`.`FTM_CONTROL`.`ENABLE` without exposing its register block.

@@ -159,7 +159,7 @@ peripherals = [
 [[ownership-partitions]]
 name = "SharedRadioPeripherals"
 member = "shared_radio"
-description = "Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability."
+description = "Protocol-neutral physical register words touched by more than one radio lifecycle, including the BTBB baseband shared by Bluetooth and IEEE 802.15.4, serialized before either protocol receives a narrow capability. The restricted PAC carves out one read-only capability: IEEE 802.15.4 reads the RSSI byte of CURRENT_RX_INFO, which no shared operation accesses."
 peripherals = [
     "BT_V3_2_BASEBAND",
     "SHARED_RADIO_INIT_CONTROL",
@@ -3160,6 +3160,13 @@ input-mask = 0x00000001
 set-mask = 0x00000000
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
+
+[[field-reads]]
+name = "observe_ieee802154_recent_rssi"
+peripheral = "BT_V3_2_BASEBAND"
+register = "CURRENT_RX_INFO"
+field = "RSSI"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS", "ESP_IDF_7B9CC1AC_IEEE802154_RECENT_RSSI"]
 
 [[field-reads]]
 name = "observe_phy_ftm_enabled"

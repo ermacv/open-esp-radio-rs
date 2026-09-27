@@ -21133,15 +21133,16 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
         </register>
         <register>
           <name>CURRENT_RX_INFO</name>
-          <description>Complete current Bluetooth receive-information image returned by bt_bb_get_cur_rx_info. Inner status encoding remains unknown.</description>
+          <description>Current baseband receive information returned complete by bt_bb_get_cur_rx_info. The low byte is the signed RSSI of the most recent baseband reception, of whichever protocol received it; bits 31:8 remain unknown. Read side effects are unproven.</description>
           <addressOffset>0xB0</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>RSSI</name>
+              <description>Signed two's-complement RSSI in dBm of the most recent baseband reception, as ESP-IDF's ieee802154_get_recent_rssi truncates the complete image to int8_t.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>8</bitWidth>
             </field>
           </fields>
         </register>

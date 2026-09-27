@@ -1677,6 +1677,7 @@ pub struct Ieee802154RegisterLease<'registers> {
     registers: &'registers mut crate::ieee802154::ownership::TaskRegisters,
     interrupt_route: &'registers crate::svd::Ieee802154InterruptRoute,
     etm: &'registers crate::modem::etm::Ieee802154EtmChannels,
+    rx_info: &'registers crate::ieee802154::baseband::Ieee802154BasebandRxInfo,
 }
 
 /// Exclusive task-side lease for the two reviewed MAC timers.
@@ -2685,6 +2686,7 @@ impl Ieee802154TaskRegisters {
             registers: &mut self.peripherals.ieee802154_mac,
             interrupt_route: &self.peripherals.ieee802154_interrupt_route,
             etm: &self.peripherals.etm,
+            rx_info: &self.peripherals.rx_info,
         }
     }
 }
@@ -2709,6 +2711,15 @@ const fn event_of(event: crate::ieee802154::ownership::RawEvent) -> Ieee802154Ev
 
 mod etm;
 mod single_field;
+
+impl Ieee802154RegisterLease<'_> {
+    /// The signed RSSI in dBm of the most recent baseband reception, as
+    /// `esp_ieee802154_get_recent_rssi` reads it: live, of whichever protocol
+    /// last received on the shared baseband. Read side effects are unproven.
+    pub fn recent_rssi(&self) -> i8 {
+        self.rx_info.recent_rssi()
+    }
+}
 
 pub use etm::{Ieee802154EtmChannel, Ieee802154EtmRoute};
 

@@ -107,7 +107,7 @@ pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
                 write_i2c_direct(registers, address, value)?;
             }
             PhyRfCloseOperation::PowerOffRfCircuits => {
-                oer_esp32s31_hal::phy::analog_i2c::power_off_rf_circuits(registers);
+                // DEBUG: keep RF circuit power across close.
             }
             PhyRfCloseOperation::ClearImmediateClockPower => {
                 oer_esp32s31_hal::phy::clock::clear_rf_immediate_clock_power(registers);

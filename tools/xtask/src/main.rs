@@ -116,7 +116,10 @@ enum Check {
     /// Check local Markdown links and the static qualification catalogs.
     Docs,
     /// Build the PHY library for the chip target and audit its artifact and graph.
-    Phy,
+    Phy {
+        #[arg(long)]
+        chip: String,
+    },
     /// Build both final HIL application images and run their target audits.
     Images,
     BlobrayStandalone,
@@ -209,7 +212,7 @@ fn run() -> Result<std::process::ExitCode> {
             Check::Network => checks::network::run(&ctx),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Docs => checks::docs::run(&ctx),
-            Check::Phy => checks::phy::run(&ctx),
+            Check::Phy { chip } => checks::phy::run(&ctx, &chip),
             Check::Images => checks::images::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
             Check::Provenance { chip } => oer_xtask::vendor_provenance::check(&ctx, &chip),

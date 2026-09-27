@@ -17,6 +17,12 @@ const PHY_PACKAGES: &[&str] = &[
     "oer-esp32s31-pac",
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-phy",
+    // Portable IEEE 802.15.4 frame values the MAC engine is typed over.
+    "oer-ieee802154",
+    // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive.
+    "oer-ieee802154-engine",
+    // The chip-neutral modem clock planner behind the HAL's clock owners.
+    "oer-radio-clock",
     // Safe structural pin projection for the observed child future; this is
     // a Rust macro library, with no allocator, native build or radio ABI.
     "pin-project-lite",
@@ -82,7 +88,14 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
 }
 
 /// Build the PHY library for the chip target and audit its artifact and graph.
-pub fn run(ctx: &Context) -> Result<()> {
+/// Only ESP32-S31 has a production PHY library; any other chip is an error
+/// rather than a silent audit of the ESP32-S31 library.
+pub fn run(ctx: &Context, chip: &str) -> Result<()> {
+    if chip != "esp32s31" {
+        return Err(
+            format!("chip {chip} has no production PHY library; supported: esp32s31").into(),
+        );
+    }
     let artifact = phy(ctx)?;
     println!("PHY rlib audit passed: {}", artifact.display());
     Ok(())

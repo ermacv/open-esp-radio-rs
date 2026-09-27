@@ -434,6 +434,7 @@ mod tests {
 
     #[test]
     fn scripted_samples_apply_only_to_the_selected_cell() {
+        crate::install();
         let DeviceBehavior::CommandBank(bank) = bank(Some(0x0466), 0xa6, true, 2, [1, 0]).behavior
         else {
             panic!("command bank")

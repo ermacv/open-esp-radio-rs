@@ -666,6 +666,7 @@ mod tests {
 
     #[test]
     fn contract_omits_only_unused_sar_words() {
+        crate::install();
         let rules = tx_rules();
         let omitted = |event: &ExecutionEvent| {
             rules

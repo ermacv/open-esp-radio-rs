@@ -35,6 +35,7 @@ pub static CHIP: oer_vendor_scenario_engine::Chip = oer_vendor_scenario_engine::
     stack: (layout::STACK_ADDRESS, layout::STACK_BYTES),
     observation: decisions::observation::DECISIONS,
     state: decisions::state::DECISIONS,
+    phy: Some(&layout::PHY_LAYOUT),
 };
 
 /// Run the scenario engine for the ESP32-S31.

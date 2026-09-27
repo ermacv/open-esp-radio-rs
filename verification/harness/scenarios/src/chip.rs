@@ -27,6 +27,16 @@ pub struct Chip {
     pub observation: &'static [crate::observation::Decision],
     /// Reviewed decisions on unprojected vendor state.
     pub state: &'static [crate::state::Decision],
+    /// PHY session layout, for chips whose scenarios link the PHY archive.
+    pub phy: Option<&'static crate::phy::PhyLayout>,
+}
+
+impl Chip {
+    /// The chip's PHY session layout.
+    pub fn phy(&self) -> &'static crate::phy::PhyLayout {
+        self.phy
+            .unwrap_or_else(|| panic!("{} declares no PHY session layout", self.name))
+    }
 }
 
 static CHIP: OnceLock<&'static Chip> = OnceLock::new();
@@ -61,4 +71,28 @@ pub(crate) static TEST: Chip = Chip {
     stack: (0, 0),
     observation: &[],
     state: &[],
+    phy: Some(&TEST_PHY),
+};
+
+/// The test chip's PHY layout: distinct transport and scratch addresses.
+#[cfg(test)]
+static TEST_PHY: crate::phy::PhyLayout = crate::phy::PhyLayout {
+    library: "libphy",
+    rom: "rom",
+    phy_sdk: "phy-sdk",
+    input: 0x1000,
+    output: 0x2000,
+    parameter_copy: 0x1800,
+    phy_param_bytes: 16,
+    rom_interface_pointer: 0x3000,
+    rom_parameter_pointer: 0x3004,
+    rom_callback_table: 0x3100,
+    image_code_start: 0x1_0000,
+    image_data_start: 0x2_0000,
+    image_region_bytes: 0x1_0000,
+    i2c_ports: [0x4000, 0x4004],
+    i2c_read_mask: 0x401c,
+    i2c_host_map: 0x4020,
+    radio_mmio: 0x4000,
+    radio_mmio_bytes: 0x1000,
 };

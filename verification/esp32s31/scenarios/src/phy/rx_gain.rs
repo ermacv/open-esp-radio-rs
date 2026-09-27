@@ -1091,6 +1091,7 @@ mod tests {
 
     #[test]
     fn contract_selects_only_the_skipped_dc_snapshot_and_polling_waits() {
+        crate::install();
         let rules = rx_rules(MAX_EVENTS);
         let selected = |event: &ExecutionEvent, next: &ExecutionEvent| {
             rules

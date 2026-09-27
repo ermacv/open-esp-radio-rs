@@ -422,7 +422,8 @@ fn a_failed_reflash_after_yielding_blocks_only_the_next_scenario() {
 }
 
 #[test]
-fn a_series_yields_and_an_air_measurement_claims_the_air_exclusively() {
+fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
+    use hil_core::lab::lock::{BAND_2G4, Emits, Need, Spectrum};
     let catalog = catalog();
     let [first, second] = two_same_image(&catalog);
     assert!(!lease_request(&[first]).divisible);
@@ -431,16 +432,47 @@ fn a_series_yields_and_an_air_measurement_claims_the_air_exclusively() {
     assert_eq!(series.scenarios, [first.id(), second.id()]);
     let mut measured = first.clone();
     measured.header.tags.push(AIR_EXCLUSIVE_TAG.to_owned());
-    let shared = if first.header.tags.iter().any(|tag| tag == AIR_EXCLUSIVE_TAG) {
-        hil_core::lab::lock::AirMode::Exclusive
-    } else {
-        hil_core::lab::lock::AirMode::Shared
+    let air = lease_request(&[&measured, second]).air;
+    for (low, high) in first.family.air_ranges() {
+        assert!(air.contains(&Spectrum::new((low, high), Need::Strict, Emits::Noisy)));
+    }
+    // Scenario ranges follow the family: 802.15.4 its channel, a radio-free
+    // image none, Wi-Fi the 2.4 GHz band.
+    let find = |predicate: &dyn Fn(&Scenario) -> bool| {
+        catalog
+            .all()
+            .iter()
+            .find(|scenario| predicate(scenario))
+            .expect("the catalog has such a scenario")
     };
-    assert_eq!(lease_request(&[first]).air, shared);
+    let peer = find(&|scenario| {
+        matches!(
+            &scenario.family,
+            crate::scenario::Family::Ieee802154(
+                hil_ieee802154::scenario::Ieee802154Scenario::PeerExchange(_)
+            )
+        )
+    });
+    let crate::scenario::Family::Ieee802154(
+        hil_ieee802154::scenario::Ieee802154Scenario::PeerExchange(exchange),
+    ) = &peer.family
+    else {
+        unreachable!()
+    };
+    let channel = Spectrum::ieee802154(exchange.channel, Need::None, Emits::None);
     assert_eq!(
-        lease_request(&[&measured, second]).air,
-        hil_core::lab::lock::AirMode::Exclusive
+        peer.family.air_ranges(),
+        [(channel.low_khz, channel.high_khz)]
     );
+    let watchdog = find(&|scenario| {
+        matches!(
+            scenario.family,
+            crate::scenario::Family::System(hil_system::scenario::SystemScenario::Watchdog {})
+        )
+    });
+    assert!(lease_request(&[watchdog]).air.is_empty());
+    let wifi = find(&|scenario| matches!(scenario.family, crate::scenario::Family::Wifi(_)));
+    assert_eq!(wifi.family.air_ranges(), [BAND_2G4]);
 }
 
 #[test]

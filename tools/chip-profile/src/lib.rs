@@ -142,7 +142,9 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.path().join(PLATFORM).join("no-profile")).unwrap();
-        let error = Profile::load(root.path(), "esp32s2").unwrap_err().to_string();
+        let error = Profile::load(root.path(), "esp32s2")
+            .unwrap_err()
+            .to_string();
         assert_eq!(error, "unsupported chip `esp32s2`; supported: esp32x9");
         assert_eq!(supported(root.path()).unwrap(), ["esp32x9"]);
     }

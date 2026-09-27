@@ -61,12 +61,26 @@ budget.
 
 ## Stand claims
 
-A run claims the boards and fixtures its scenarios require and shares the air
-with other radio work on the stand. A scenario that measures the radio
-environment, such as RF levels, airtime or interference, carries the tag
-`air-exclusive`; its run then claims the air exclusively, so no other radio
-work runs meanwhile. Tags are excluded from scenario digests, so adding the tag
-does not invalidate recorded evidence.
+A run claims the boards and fixtures its scenarios require and the frequency
+ranges their radio work occupies. The range follows the family: IEEE 802.15.4
+scenarios occupy their channels (2 MHz each), Wi-Fi, Bluetooth, coexistence
+and system scenarios the 2.4 GHz band, and the register diagnostics
+(`event-status`, `ed-event`) and the radio-free watchdog none. By default a
+scenario tolerates other protocol traffic in its range and transmits
+normally. Tags change that:
+
+| Tag | Meaning |
+| --- | --- |
+| `air-strict` | No other transmitter may use its range: RF levels, noise, sensitivity, A/B throughput |
+| `air-noisy` | It transmits without regard for others: a continuous carrier, no CSMA, DTM, a throughput flood |
+| `air-exclusive` | Both of the above |
+
+Two runs conflict only where their ranges overlap: a strict run excludes any
+transmission there, and a tolerant one excludes a noisy transmitter. Work on
+disjoint ranges, or without a radio, runs in parallel. Every run records the
+ranges it held, their level and the other leases held at its grant in
+`air.json`. Tags are excluded from scenario digests, so adding a tag does not
+invalidate recorded evidence.
 
 ## Named checks
 

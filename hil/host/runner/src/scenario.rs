@@ -24,6 +24,42 @@ pub(crate) enum Family {
     Coexistence(crate::coexistence::CoexistenceScenario),
 }
 
+impl Family {
+    /// The frequency ranges, in kHz, the scenario's radio work occupies; none
+    /// for work that never enables a radio. The esp32s31 radios run in the
+    /// 2.4 GHz band; Wi-Fi and Bluetooth hop or configure across it, so they
+    /// occupy the band, while IEEE 802.15.4 occupies its channels.
+    pub(crate) fn air_ranges(&self) -> Vec<(u64, u64)> {
+        use hil_core::lab::lock::{BAND_2G4, Emits, Need, Spectrum};
+        use hil_ieee802154::scenario::Ieee802154Scenario as Ieee802154;
+        let channel = |channel: u8| Spectrum::ieee802154(channel, Need::None, Emits::None);
+        let range = |spectrum: Spectrum| (spectrum.low_khz, spectrum.high_khz);
+        match self {
+            Self::Ieee802154(Ieee802154::EventStatus(_) | Ieee802154::EdEvent(_)) => Vec::new(),
+            Self::Ieee802154(Ieee802154::AirCheck(scenario)) => {
+                vec![range(channel(scenario.channel))]
+            }
+            Self::Ieee802154(Ieee802154::PeerExchange(scenario)) => {
+                vec![range(channel(scenario.channel))]
+            }
+            Self::Ieee802154(Ieee802154::ThreadExchange(scenario)) => {
+                vec![range(channel(scenario.channel))]
+            }
+            Self::Ieee802154(Ieee802154::BackgroundMaintenance(scenario)) => {
+                vec![range(channel(scenario.channel))]
+            }
+            Self::Ieee802154(Ieee802154::ChannelEnergy(scenario)) => vec![
+                range(channel(scenario.channel)),
+                range(channel(scenario.far_channel)),
+            ],
+            Self::System(hil_system::scenario::SystemScenario::Watchdog {}) => Vec::new(),
+            Self::Wifi(_) | Self::Bluetooth(_) | Self::Coexistence(_) | Self::System(_) => {
+                vec![BAND_2G4]
+            }
+        }
+    }
+}
+
 pub(crate) type Scenario = hil_core::scenario::Scenario<Family>;
 pub(crate) type Catalog = hil_core::scenario::Catalog<Family>;
 

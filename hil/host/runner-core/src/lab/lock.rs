@@ -12,8 +12,8 @@ use oer_process::CommandExt as _;
 
 use crate::Result;
 
-/// How a lease uses the shared radio environment.
-pub use oer_hil_arbiter::Mode as AirMode;
+/// The frequency ranges a lease uses and how.
+pub use oer_hil_arbiter::spectrum::{BAND_2G4, Emits, Need, Spectrum};
 
 /// Holds exclusive fixture ownership until the hardware command returns.
 pub struct FixtureLock {
@@ -34,8 +34,9 @@ pub struct LeaseRequest {
     pub required: super::requirements::Requirements,
     /// Named in the lease so their durations estimate later budgets.
     pub scenarios: Vec<String>,
-    /// Exclusive for scenarios measuring the radio environment.
-    pub air: oer_hil_arbiter::Mode,
+    /// The frequency ranges the work uses; empty when it never enables a
+    /// radio.
+    pub air: Vec<Spectrum>,
     /// Work with boundaries yields there once over budget while others wait;
     /// indivisible work is terminated at its budget instead.
     pub divisible: bool,
@@ -48,7 +49,11 @@ impl LeaseRequest {
         Self {
             required,
             scenarios: Vec::new(),
-            air: oer_hil_arbiter::Mode::Shared,
+            air: vec![Spectrum::new(
+                oer_hil_arbiter::spectrum::BAND_2G4,
+                Need::Tolerant,
+                Emits::Normal,
+            )],
             divisible: false,
             device: true,
         }
@@ -220,11 +225,46 @@ fn claims(
             .into_iter()
             .map(|provider| Claim::shared(crate::fixture::software::resource(provider))),
     );
-    claims.push(Claim {
-        resource: oer_hil_arbiter::AIR.to_owned(),
-        mode: request.air,
-    });
+    claims.extend(request.air.iter().flat_map(Spectrum::claims));
     claims
+}
+
+/// What the run's evidence records about the air: the ranges `request` used
+/// with their need and emission, and every other lease held at the grant
+/// with its claims, so a measurement under a strict need is told apart from
+/// one taken beside other radio work.
+pub fn air_record(request: &LeaseRequest) -> Result<serde_json::Value> {
+    use oer_hil_arbiter::spectrum::{Emits, Need};
+    let ranges = request
+        .air
+        .iter()
+        .map(|range| {
+            serde_json::json!({
+                "low_khz": range.low_khz,
+                "high_khz": range.high_khz,
+                "need": match range.need {
+                    Need::None => "none",
+                    Need::Tolerant => "tolerant",
+                    Need::Strict => "strict",
+                },
+                "emits": match range.emits {
+                    Emits::None => "none",
+                    Emits::Normal => "normal",
+                    Emits::Noisy => "noisy",
+                },
+            })
+        })
+        .collect::<Vec<_>>();
+    let concurrent = oer_hil_arbiter::Arbiter::open()?
+        .status()?
+        .holders
+        .into_iter()
+        .filter(|holder| holder.pid != std::process::id())
+        .map(|holder| {
+            serde_json::json!({"owner": holder.owner, "work": holder.work, "claims": holder.claims})
+        })
+        .collect::<Vec<_>>();
+    Ok(serde_json::json!({"schema": 1, "ranges": ranges, "concurrent": concurrent}))
 }
 
 /// Wait in the stand's queue for `claims`. The lease is described by this

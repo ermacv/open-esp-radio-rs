@@ -231,31 +231,56 @@ fn prebuild(
     Ok(built)
 }
 
-/// Tag of scenarios that measure the radio environment: they claim the air
-/// exclusively, so no other radio work runs on the stand meanwhile.
+/// Tag of scenarios that measure the radio environment and transmit without
+/// regard for others: they need their ranges quiet and are noisy themselves.
+/// It stands for `air-strict` plus `air-noisy`.
 pub(crate) const AIR_EXCLUSIVE_TAG: &str = "air-exclusive";
+/// Tag of scenarios that need no other transmitter in their ranges.
+pub(crate) const AIR_STRICT_TAG: &str = "air-strict";
+/// Tag of scenarios that transmit noisily: a continuous carrier, transmission
+/// without CSMA, DTM or a throughput flood.
+pub(crate) const AIR_NOISY_TAG: &str = "air-noisy";
 
-/// The stand lease of a run: its boards and fixtures, the air exclusively
-/// when a scenario measures it, and yielding at scenario boundaries when the
-/// run has several scenarios.
+/// How `scenario` uses the air: its family's ranges, tolerant of others'
+/// protocol traffic and transmitting normally unless its tags say otherwise.
+pub(crate) fn air_use(scenario: &Scenario) -> Vec<hil_core::lab::lock::Spectrum> {
+    use hil_core::lab::lock::{Emits, Need, Spectrum};
+    let tagged = |tag: &str| scenario.header.tags.iter().any(|known| known == tag);
+    let need = if tagged(AIR_EXCLUSIVE_TAG) || tagged(AIR_STRICT_TAG) {
+        Need::Strict
+    } else {
+        Need::Tolerant
+    };
+    let emits = if tagged(AIR_EXCLUSIVE_TAG) || tagged(AIR_NOISY_TAG) {
+        Emits::Noisy
+    } else {
+        Emits::Normal
+    };
+    scenario
+        .family
+        .air_ranges()
+        .into_iter()
+        .map(|range| Spectrum::new(range, need, emits))
+        .collect()
+}
+
+/// The stand lease of a run: its boards and fixtures, the frequency ranges
+/// of its scenarios, and yielding at scenario boundaries when the run has
+/// several scenarios.
 pub(crate) fn lease_request(selected: &[&Scenario]) -> hil_core::lab::lock::LeaseRequest {
+    let mut air = Vec::new();
+    for range in selected.iter().flat_map(|scenario| air_use(scenario)) {
+        if !air.contains(&range) {
+            air.push(range);
+        }
+    }
     hil_core::lab::lock::LeaseRequest {
         required: requirements(selected),
         scenarios: selected
             .iter()
             .map(|scenario| scenario.id().to_owned())
             .collect(),
-        air: if selected.iter().any(|scenario| {
-            scenario
-                .header
-                .tags
-                .iter()
-                .any(|tag| tag == AIR_EXCLUSIVE_TAG)
-        }) {
-            hil_core::lab::lock::AirMode::Exclusive
-        } else {
-            hil_core::lab::lock::AirMode::Shared
-        },
+        air,
         divisible: selected.len() > 1,
         device: true,
     }
@@ -268,8 +293,13 @@ fn lease_stand(
     selected: &[&Scenario],
 ) -> Result<hil_core::lab::lock::FixtureLock> {
     session.record_event("stand-lease-requested", None, None, None)?;
-    let fixture = hil_core::lab::lock::FixtureLock::lease(lab, lease_request(selected))?;
+    let request = lease_request(selected);
+    let fixture = hil_core::lab::lock::FixtureLock::lease(lab, request.clone())?;
     session.record_event("stand-lease-granted", None, None, None)?;
+    hil_core::durable::atomic_json(
+        &session.directory().join("air.json"),
+        &hil_core::lab::lock::air_record(&request)?,
+    )?;
     let lab_provenance =
         hil_core::lab::provenance::LabProvenance::capture(lab, requirements(selected))?;
     session.record_lab_provenance(&lab_provenance)?;

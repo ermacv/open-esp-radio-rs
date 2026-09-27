@@ -177,6 +177,7 @@ pub fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
                 bluetooth_secure_gatt: false,
                 bluetooth_gatt: false,
                 phy_fault_injection: false,
+                phy_register_image: false,
                 bluetooth_dtm: false,
                 bluetooth_peripheral: false,
                 bluetooth_phy_maintenance: false,

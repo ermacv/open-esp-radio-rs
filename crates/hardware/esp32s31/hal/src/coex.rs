@@ -52,24 +52,9 @@ impl CoexEventId {
     }
 }
 
-/// One four-bit coexistence priority.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct CoexPti(u8);
-
-impl CoexPti {
-    /// A priority of the four-bit hardware domain, or `None` above it.
-    pub const fn new(value: u8) -> Option<Self> {
-        if value <= 0x0f {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-}
+/// One four-bit coexistence priority, shared with the chip-neutral
+/// IEEE 802.15.4 engine that publishes it to the MAC.
+pub use oer_ieee802154_engine::coex::CoexPti;
 
 /// Priority of every coexistence event.
 ///
@@ -85,11 +70,14 @@ impl CoexPtiTable {
     pub const fn pti(&self, event: CoexEventId) -> CoexPti {
         // Every byte is four-bit clean: the vendor table is, and `set` takes
         // only a checked priority.
-        CoexPti(self.0[event.0 as usize])
+        match CoexPti::new(self.0[event.0 as usize]) {
+            Some(pti) => pti,
+            None => panic!("the priority table holds only four-bit values"),
+        }
     }
 
     pub fn set(&mut self, event: CoexEventId, pti: CoexPti) {
-        self.0[event.0 as usize] = pti.0;
+        self.0[event.0 as usize] = pti.value();
     }
 
     /// The priority of an IEEE 802.15.4 coexistence level.

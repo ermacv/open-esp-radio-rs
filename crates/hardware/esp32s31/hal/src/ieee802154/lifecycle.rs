@@ -13,77 +13,14 @@
 
 use core::marker::PhantomData;
 
-use oer_esp32s31_pac::{Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154Pti};
+use oer_esp32s31_pac::{Ieee802154FoundationSnapshot, Ieee802154Pti};
 
 /// PTI value used by the public vendor LL when coexistence is disabled.
 pub(crate) const COEX_DISABLED_PTI: u8 = 3;
 
-/// Lowest IEEE 802.15.4 channel supported by the 2.4 GHz PHY.
-pub const IEEE802154_MIN_CHANNEL: u8 = 11;
-
-/// Highest IEEE 802.15.4 channel supported by the 2.4 GHz PHY.
-pub const IEEE802154_MAX_CHANNEL: u8 = 26;
-
-/// One checked IEEE 802.15.4 2.4 GHz channel.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154Channel(u8);
-
-/// An integer outside the IEEE 802.15.4 2.4 GHz channel range.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154ChannelError {
-    attempted: u8,
-}
-
-impl Ieee802154ChannelError {
-    /// Return the rejected channel number.
-    pub const fn attempted(self) -> u8 {
-        self.attempted
-    }
-}
-
-impl Ieee802154Channel {
-    /// Check and construct one channel in the inclusive range 11 through 26.
-    pub const fn new(channel: u8) -> Result<Self, Ieee802154ChannelError> {
-        if channel >= IEEE802154_MIN_CHANNEL && channel <= IEEE802154_MAX_CHANNEL {
-            Ok(Self(channel))
-        } else {
-            Err(Ieee802154ChannelError { attempted: channel })
-        }
-    }
-
-    /// Return the standardized channel number.
-    pub const fn number(self) -> u8 {
-        self.0
-    }
-
-    /// Map a checked channel to the ESP32-S31 MAC frequency-code field.
-    ///
-    /// The pinned public vendor utility maps channels 11 through 26 to codes
-    /// 3 through 78 with `(channel - 11) * 5 + 3`.
-    pub const fn frequency_code(self) -> Ieee802154FrequencyCode {
-        Ieee802154FrequencyCode::new((self.0 - IEEE802154_MIN_CHANNEL) * 5 + 3)
-    }
-
-    /// `ieee802154_freq_to_channel`: the channel whose frequency code is
-    /// `code`, or `None` for a code the vendor utility asserts against.
-    pub const fn from_frequency_code(code: u8) -> Option<Self> {
-        if code < 3 || !(code - 3).is_multiple_of(5) {
-            return None;
-        }
-        match Self::new((code - 3) / 5 + IEEE802154_MIN_CHANNEL) {
-            Ok(channel) => Some(channel),
-            Err(_) => None,
-        }
-    }
-}
-
-impl TryFrom<u8> for Ieee802154Channel {
-    type Error = Ieee802154ChannelError;
-
-    fn try_from(channel: u8) -> Result<Self, Self::Error> {
-        Self::new(channel)
-    }
-}
+pub use oer_ieee802154_engine::channel::{
+    IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
+};
 
 /// Private MAC reset lines in the shared modem syscon block.
 ///

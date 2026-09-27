@@ -31,7 +31,7 @@ pub use maintenance::{
 // the `oer` facade) alone.
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_hal::{ieee802154::ll::Ieee802154MacOwners, root::RadioHardware};
-pub use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
+pub use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
 

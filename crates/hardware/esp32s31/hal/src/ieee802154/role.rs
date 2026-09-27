@@ -363,10 +363,9 @@ impl Ieee802154EdEventProbeFinished {
 
 impl Ieee802154MacPolicyWrites for Ieee802154FoundationConfigured {
     fn set_channel(&mut self, channel: crate::ieee802154::Ieee802154Channel) {
-        self.inner
-            .backend_mut()
-            .mac_hal()
-            .set_frequency_code(channel.frequency_code());
+        self.inner.backend_mut().mac_hal().set_frequency_code(
+            oer_esp32s31_pac::Ieee802154FrequencyCode::new(channel.frequency_code()),
+        );
     }
 
     fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {

@@ -183,7 +183,7 @@ ieee802154-radio = [
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-phy",
     "dep:oer-esp32s31-radio-esp-hal",
-    "dep:oer-esp32s31-ieee802154",
+    "dep:oer-ieee802154-engine",
     "dep:oer-esp32s31-ieee802154-runtime",
     "dep:oer-esp32s31-ieee802154-system",
     "dep:oer-esp32s31-radio-runtime",
@@ -221,7 +221,7 @@ trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", 
 oer-esp32s31-bluetooth = { workspace = true, optional = true }
 oer-esp32s31-bluetooth-system = { workspace = true, optional = true }
 oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
-oer-esp32s31-ieee802154 = { workspace = true, optional = true }
+oer-ieee802154-engine = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-runtime = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-system = { workspace = true, optional = true }
 oer-esp32s31-radio-runtime = { workspace = true, optional = true }

@@ -243,7 +243,7 @@ postconditions:
   recovered effects are the MAC `TXON_DELAY`, `RXON_DELAY`,
   `TXRX_SWITCH_DELAY` and `TXOFF_DELAY` fields;
 - TX policy uses the level set of closed `bt_bb_get_tx_pwr_table()`, recovered
-  as `Ieee802154TxPowerLevels::ESP32S31`.
+  as `ESP32S31_TX_POWER_LEVELS`.
 
 The PHY client set is shared with Wi-Fi and Bluetooth, and BTBB has its own
 first/last-user refcount. A control owner cannot safely replace either with an
@@ -253,7 +253,7 @@ on-air capability.
 
 ## Implementation boundary
 
-The [MAC engine](../../../crates/hardware/esp32s31/driver/ieee802154/src/engine.rs)
+The [MAC engine](../../../crates/hardware/ieee802154/engine/src/engine.rs)
 owns the vendor state machine, `next_operation` and its DMA buffers; the PAC
 owns register authority. The [runtime](../../../crates/runtime/esp32s31/ieee802154/src/lib.rs)
 serializes the engine with the MAC owners and queues its notifications, and

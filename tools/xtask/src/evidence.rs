@@ -41,7 +41,7 @@ const STANDS: &[Stand] = &[Stand {
     scenario: "ieee802154-host",
     manifest: "verification/esp32s31/host/ieee802154/Cargo.toml",
     source: "esp-idf",
-    production: "oer_esp32s31_ieee802154::engine",
+    production: "oer_ieee802154_engine::engine",
 }];
 
 /// Shared schema sources every shard depends on.

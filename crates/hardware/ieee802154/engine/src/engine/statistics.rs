@@ -3,10 +3,8 @@
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`): operation counts the driver
 //! keeps and the MAC diagnostic counters it drains at every interrupt.
 
-use oer_esp32s31_hal::ieee802154::{
-    ll::{Ieee802154DebugCounter, Ieee802154LowLevel},
-    mac::{Ieee802154Event, Ieee802154EventMask},
-};
+use crate::ll::Ieee802154LowLevel;
+use crate::types::{Ieee802154DebugCounter, Ieee802154Event, Ieee802154EventMask};
 
 /// Transmissions that ended in an abort, by reason.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]

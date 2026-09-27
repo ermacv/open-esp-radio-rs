@@ -97,38 +97,25 @@ impl Ieee802154AckTimeout {
     }
 }
 
-/// Source-confirmed clear-channel-assessment policy.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154CcaMode {
-    /// Report clear only when no carrier is detected.
-    Carrier,
-    /// Report clear only when measured energy is below the threshold.
-    EnergyDetection,
-    /// Report busy when either carrier or excess energy is detected; the
-    /// channel is clear only when both checks are clear.
-    CarrierOrEnergyDetection,
-    /// Report busy only when both carrier and excess energy are detected; the
-    /// channel is clear when either check is clear.
-    CarrierAndEnergyDetection,
+pub use oer_ieee802154_engine::types::Ieee802154CcaMode;
+
+/// The PAC mode of a chip-neutral CCA mode.
+pub(crate) const fn cca_mode_into_pac(mode: Ieee802154CcaMode) -> PacCcaMode {
+    match mode {
+        Ieee802154CcaMode::Carrier => PacCcaMode::Carrier,
+        Ieee802154CcaMode::EnergyDetection => PacCcaMode::EnergyDetection,
+        Ieee802154CcaMode::CarrierOrEnergyDetection => PacCcaMode::CarrierOrEnergyDetection,
+        Ieee802154CcaMode::CarrierAndEnergyDetection => PacCcaMode::CarrierAndEnergyDetection,
+    }
 }
 
-impl Ieee802154CcaMode {
-    pub(crate) const fn into_pac(self) -> PacCcaMode {
-        match self {
-            Self::Carrier => PacCcaMode::Carrier,
-            Self::EnergyDetection => PacCcaMode::EnergyDetection,
-            Self::CarrierOrEnergyDetection => PacCcaMode::CarrierOrEnergyDetection,
-            Self::CarrierAndEnergyDetection => PacCcaMode::CarrierAndEnergyDetection,
-        }
-    }
-
-    const fn from_pac(value: PacCcaMode) -> Self {
-        match value {
-            PacCcaMode::Carrier => Self::Carrier,
-            PacCcaMode::EnergyDetection => Self::EnergyDetection,
-            PacCcaMode::CarrierOrEnergyDetection => Self::CarrierOrEnergyDetection,
-            PacCcaMode::CarrierAndEnergyDetection => Self::CarrierAndEnergyDetection,
-        }
+/// The chip-neutral CCA mode of a PAC mode.
+const fn cca_mode_from_pac(value: PacCcaMode) -> Ieee802154CcaMode {
+    match value {
+        PacCcaMode::Carrier => Ieee802154CcaMode::Carrier,
+        PacCcaMode::EnergyDetection => Ieee802154CcaMode::EnergyDetection,
+        PacCcaMode::CarrierOrEnergyDetection => Ieee802154CcaMode::CarrierOrEnergyDetection,
+        PacCcaMode::CarrierAndEnergyDetection => Ieee802154CcaMode::CarrierAndEnergyDetection,
     }
 }
 
@@ -413,7 +400,7 @@ impl Ieee802154MacPolicySnapshot {
     pub(crate) const fn from_pac(snapshot: PacMacPolicySnapshot) -> Self {
         Self {
             frequency_code: snapshot.frequency_code().value(),
-            cca_mode: Ieee802154CcaMode::from_pac(snapshot.cca_mode()),
+            cca_mode: cca_mode_from_pac(snapshot.cca_mode()),
             cca_threshold_code: snapshot.cca_threshold_code(),
             ack_timeout: Ieee802154AckTimeout::from_units(snapshot.ack_timeout().value()),
             control: Ieee802154MacControl::from_pac(snapshot.control()),
@@ -425,7 +412,7 @@ impl Ieee802154MacPolicySnapshot {
     #[cfg(test)]
     const fn from_policy(policy: Ieee802154MacPolicy) -> Self {
         Self {
-            frequency_code: policy.channel.frequency_code().value(),
+            frequency_code: policy.channel.frequency_code(),
             cca_mode: policy.cca_mode,
             cca_threshold_code: policy.cca_threshold_code,
             ack_timeout: policy.ack_timeout,
@@ -614,7 +601,7 @@ fn verify_mac_policy_snapshot(
 ) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>> {
     verify(
         Ieee802154MacPolicyCheckpoint::Channel,
-        snapshot.frequency_code == expected.channel.frequency_code().value(),
+        snapshot.frequency_code == expected.channel.frequency_code(),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::CcaMode,

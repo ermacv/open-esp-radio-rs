@@ -1,5 +1,5 @@
 //! Runs a [`Scenario`] against the production engine
-//! (`oer_esp32s31_ieee802154::engine`) and records the same boundary
+//! (`oer_ieee802154_engine::engine`) and records the same boundary
 //! vocabulary as the compiled vendor driver.
 //!
 //! The adapter below is the only place that knows the vendor encodings: it
@@ -10,32 +10,32 @@
 
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
-use oer_esp32s31_hal::coex::CoexPti;
-use oer_esp32s31_hal::ieee802154::{
-    Ieee802154CcaMode, Ieee802154Channel, Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels,
-    ll::{
-        Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
-        Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
-        Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStateCode,
-        Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
-    },
-    mac::{
-        Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
-        Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReason,
-        Ieee802154TxAbortReasonObservation,
-    },
-};
 #[cfg(feature = "sw-coex")]
 use oer_esp32s31_hal::{
     coex::{CoexPtiTable, Ieee802154CoexLevel},
-    ieee802154::coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
+    ieee802154::coex::{Ieee802154CoexConfig, resolve_priorities},
 };
-use oer_esp32s31_ieee802154::engine::{
+#[cfg(feature = "sw-coex")]
+use oer_ieee802154_engine::coex::Ieee802154Coexistence;
+use oer_ieee802154_engine::{
+    channel::Ieee802154Channel,
+    coex::CoexPti,
+    ll::{Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154Timer},
+    tx_power::{Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels},
+    types::{
+        Ieee802154CcaMode, Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel,
+        Ieee802154EtmRoute, Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservation,
+        Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxAbortReason,
+        Ieee802154RxAbortReasonObservation, Ieee802154RxStateCode, Ieee802154RxStatus,
+        Ieee802154TxAbortEnableSet, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
+    },
+};
+use oer_ieee802154_engine::engine::{
     FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
     Ieee802154Environment, Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot,
     Ieee802154TxError,
 };
-use oer_esp32s31_ieee802154::pib::{
+use oer_ieee802154_engine::pib::{
     AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults,
 };
 use oer_ieee802154::FrameAddress;
@@ -380,7 +380,6 @@ impl Ieee802154LowLevel for PortLl {
             Ieee802154RxStateCode::new(0).expect("zero is a state code"),
             false,
             false,
-            false,
         )
     }
     fn is_current_rx_frame(&mut self) -> bool {
@@ -469,7 +468,7 @@ impl Ieee802154LowLevel for PortLl {
     fn set_channel(&mut self, channel: Ieee802154Channel) {
         self.value(
             "ieee802154_ll_set_freq",
-            u64::from(channel.frequency_code().value()),
+            u64::from(channel.frequency_code()),
         );
     }
     fn set_tx_power(&mut self, power: &Ieee802154ResolvedTxPower<'_>) {
@@ -814,13 +813,13 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
         buffers,
         levels,
         defaults,
-        oer_esp32s31_ieee802154::engine::Ieee802154Interfaces::new(2).expect("two interfaces"),
+        oer_ieee802154_engine::engine::Ieee802154Interfaces::new(2).expect("two interfaces"),
     );
     // The stand's software-coexistence build uses the driver's default
     // scene levels.
     #[cfg(feature = "sw-coex")]
     engine.set_coexistence(Ieee802154Coexistence::Software(
-        Ieee802154CoexPriorities::resolve(Ieee802154CoexConfig::VENDOR, &level_table()),
+        resolve_priorities(Ieee802154CoexConfig::VENDOR, &level_table()),
     ));
     let shared = Rc::new(RefCell::new(Shared {
         model: LlModel::new((scenario.inputs)()),

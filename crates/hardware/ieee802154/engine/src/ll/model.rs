@@ -4,23 +4,8 @@
 //! event image, abort reasons and measurement results the MAC would latch.
 //! The model knows nothing else about the hardware.
 
-use super::{
-    Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
-    Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
-    Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer,
-    Ieee802154TxAbortEnableSet,
-};
-use crate::coex::CoexPti;
-use crate::ieee802154::{
-    Ieee802154MultipanIndex,
-    lifecycle::{COEX_DISABLED_PTI, Ieee802154Channel},
-    mac::{
-        Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReasonObservation,
-        Ieee802154TxAbortReasonObservation,
-    },
-    policy::Ieee802154CcaMode,
-    tx_power::Ieee802154ResolvedTxPower,
-};
+use super::{COEX_DISABLED_PTI, Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154Timer};
+use crate::{channel::*, coex::*, tx_power::*, types::*};
 
 /// The modelled MAC state; every field is public for the test to set or
 /// inspect.
@@ -119,29 +104,27 @@ impl Default for Ieee802154LlModel {
     }
 }
 
-/// The MAC's diagnostic counters.
-pub const DEBUG_COUNTERS: usize = 17;
+/// The common LL's diagnostic counters.
+pub const DEBUG_COUNTERS: usize = 15;
 
 /// The model slot of a diagnostic counter in `debug_counters`.
 pub const fn debug_slot(counter: Ieee802154DebugCounter) -> usize {
     match counter {
         Ieee802154DebugCounter::SfdTimeout => 0,
-        Ieee802154DebugCounter::RxFilterNotWork => 1,
-        Ieee802154DebugCounter::CrcError => 2,
-        Ieee802154DebugCounter::RxPreambleDetectError => 3,
-        Ieee802154DebugCounter::EdAbort => 4,
-        Ieee802154DebugCounter::CcaFail => 5,
-        Ieee802154DebugCounter::RxFilterFail => 6,
-        Ieee802154DebugCounter::NoRssDetect => 7,
-        Ieee802154DebugCounter::RxAbortCoex => 8,
-        Ieee802154DebugCounter::RxRestart => 9,
-        Ieee802154DebugCounter::TxAckAbortCoex => 10,
-        Ieee802154DebugCounter::EdScanBreakCoex => 11,
-        Ieee802154DebugCounter::RxAckAbortCoex => 12,
-        Ieee802154DebugCounter::RxAckTimeout => 13,
-        Ieee802154DebugCounter::TxBreakCoex => 14,
-        Ieee802154DebugCounter::TxSecurityError => 15,
-        Ieee802154DebugCounter::CcaBusy => 16,
+        Ieee802154DebugCounter::CrcError => 1,
+        Ieee802154DebugCounter::EdAbort => 2,
+        Ieee802154DebugCounter::CcaFail => 3,
+        Ieee802154DebugCounter::RxFilterFail => 4,
+        Ieee802154DebugCounter::NoRssDetect => 5,
+        Ieee802154DebugCounter::RxAbortCoex => 6,
+        Ieee802154DebugCounter::RxRestart => 7,
+        Ieee802154DebugCounter::TxAckAbortCoex => 8,
+        Ieee802154DebugCounter::EdScanBreakCoex => 9,
+        Ieee802154DebugCounter::RxAckAbortCoex => 10,
+        Ieee802154DebugCounter::RxAckTimeout => 11,
+        Ieee802154DebugCounter::TxBreakCoex => 12,
+        Ieee802154DebugCounter::TxSecurityError => 13,
+        Ieee802154DebugCounter::CcaBusy => 14,
     }
 }
 
@@ -187,7 +170,6 @@ impl Ieee802154LowLevel for Ieee802154LlModel {
             0,
             self.rx_abort,
             super::Ieee802154RxStateCode::new(0).expect("zero is a state code"),
-            false,
             false,
             false,
         )
@@ -291,7 +273,7 @@ impl Ieee802154LowLevel for Ieee802154LlModel {
         self.ack_pti = pti.value();
     }
     fn set_channel(&mut self, channel: Ieee802154Channel) {
-        self.frequency_code = channel.frequency_code().value();
+        self.frequency_code = channel.frequency_code();
     }
     fn set_tx_power(&mut self, _power: &Ieee802154ResolvedTxPower<'_>) {}
     fn set_cca_mode(&mut self, _mode: Ieee802154CcaMode) {}

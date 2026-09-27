@@ -1,28 +1,11 @@
 //! Engine behavior against a register model. Every expectation is read from
 //! the pinned `esp_ieee802154_dev.c`, not from this engine's output.
 
+use crate::ll::model::{DEBUG_COUNTERS, debug_slot};
+use crate::{channel::*, coex::*, ll::*, tx_power::*, types::*};
 use std::{boxed::Box, vec, vec::Vec};
 
 use crate::pib::{Ieee802154MultipanIndex, Ieee802154PibDefaults};
-use oer_esp32s31_hal::coex::{CoexPti, CoexPtiTable};
-use oer_esp32s31_hal::ieee802154::ll::{
-    Ieee802154DebugCounter,
-    model::{DEBUG_COUNTERS, debug_slot},
-};
-use oer_esp32s31_hal::ieee802154::{
-    Ieee802154CcaMode, Ieee802154Channel, Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels,
-    coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
-    ll::{
-        Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
-        Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
-        Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStateCode,
-        Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
-    },
-    mac::{
-        Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
-        Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReasonObservation,
-    },
-};
 
 use super::{
     FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
@@ -178,7 +161,6 @@ impl Ieee802154LowLevel for Hw {
             Ieee802154RxStateCode::new(0).unwrap(),
             false,
             false,
-            false,
         )
     }
     fn is_current_rx_frame(&mut self) -> bool {
@@ -267,7 +249,7 @@ impl Ieee802154LowLevel for Hw {
     }
     fn set_channel(&mut self, channel: Ieee802154Channel) {
         self.calls.push(Call::SetChannel(channel.number()));
-        self.frequency_code = channel.frequency_code().value();
+        self.frequency_code = channel.frequency_code();
     }
     fn set_tx_power(&mut self, power: &Ieee802154ResolvedTxPower<'_>) {
         self.calls
@@ -600,9 +582,7 @@ fn software_coexistence_publishes_each_scene_priority() {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     let mut engine = Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default());
-    engine.set_coexistence(Ieee802154Coexistence::Software(
-        Ieee802154CoexPriorities::resolve(Ieee802154CoexConfig::VENDOR, &CoexPtiTable::VENDOR),
-    ));
+    engine.set_coexistence(Ieee802154Coexistence::Software(vendor_priorities()));
     let mut hw = Hw::default();
     engine.enable();
     engine.mac_init(&mut hw, Ieee802154PibDefaults::default());
@@ -1302,4 +1282,12 @@ fn a_refused_transmission_counts_as_deferred() {
     bench.transmit(&DATA_NO_ACK, false);
     let statistics = bench.engine.txrx_statistics().unwrap();
     assert_eq!((statistics.tx.nums, statistics.tx.deferred_nums), (0, 1));
+}
+
+/// The priorities the ESP32-S31 vendor table resolves for the driver's
+/// default scene levels (idle 1, TX/RX 3, timed TX/RX 8, ACK 8), as an
+/// example chip's coexistence.
+fn vendor_priorities() -> Ieee802154CoexPriorities {
+    let pti = |value| CoexPti::new(value).expect("four-bit priority");
+    Ieee802154CoexPriorities::new(pti(1), pti(3), pti(8), pti(8))
 }

@@ -1,321 +1,250 @@
-//! Hardware-side helpers of the public ESP-IDF IEEE 802.15.4 driver, ported
-//! over a backend whose methods are the driver's `ieee802154_ll_*` accessors.
+//! The ESP32-S31 implementation of the chip-neutral MAC low-level interface.
 //!
-//! The pinned driver (`components/ieee802154/driver`) mixes hardware steps
-//! with its callbacks and state. This module owns only the hardware steps:
-//! the modem ETM channel helpers of `esp_ieee802154_util.c`, the timer
-//! helpers of `esp_ieee802154_timer.c`, `event_end_process` and the register
-//! part of `ieee802154_mac_init` from `esp_ieee802154_dev.c`, and
-//! `ieee802154_sec_clear`. Timer callbacks, operation state and interrupt
-//! allocation stay with the driver engine.
-//!
-//! Every helper is generic over [`Ieee802154LowLevel`], so the engine and its
-//! tests issue exactly the accessor sequence the vendor driver issues and a
-//! recording backend can compare it with the vendor host stand.
+//! [`Ieee802154MacOwners`] implements
+//! [`oer_ieee802154_engine::ll::Ieee802154LowLevel`] over the ESP32-S31 PAC:
+//! each method is one accessor of the pinned public LL, and the functions
+//! below convert between the engine's semantic values and the PAC's
+//! register-level types. The accessor order is the engine's; nothing here
+//! adds, merges or reorders register transactions.
 
 use oer_esp32s31_pac::{
-    Ieee802154Pti as PacPti, Ieee802154Timer0ThresholdWord as PacTimer0ThresholdWord,
+    Ieee802154AckTimeoutUnits as PacAckTimeoutUnits, Ieee802154DebugCounter as PacDebugCounter,
+    Ieee802154EdSampleMode as PacEdSampleMode, Ieee802154EtmChannel as PacEtmChannel,
+    Ieee802154EtmRoute as PacEtmRoute, Ieee802154Event as PacEvent,
+    Ieee802154EventMask as PacEventMask, Ieee802154EventObservation as PacEventObservation,
+    Ieee802154FrequencyCode as PacFrequencyCode, Ieee802154MacCommand as PacMacCommand,
+    Ieee802154MultipanEnableState as PacMultipanEnableState,
+    Ieee802154MultipanIndex as PacMultipanIndex, Ieee802154Pti as PacPti,
+    Ieee802154RxAbortEnableSet as PacRxAbortEnableSet, Ieee802154RxAbortReason as PacRxAbortReason,
+    Ieee802154RxAbortReasonObservation as PacRxAbortReasonObservation,
+    Ieee802154RxStatus as PacRxStatus, Ieee802154SecurityPayloadOffset as PacSecurityPayloadOffset,
+    Ieee802154Timer0ThresholdWord as PacTimer0ThresholdWord,
     Ieee802154Timer1ThresholdWord as PacTimer1ThresholdWord,
+    Ieee802154TxAbortEnableSet as PacTxAbortEnableSet, Ieee802154TxAbortReason as PacTxAbortReason,
+    Ieee802154TxAbortReasonObservation as PacTxAbortReasonObservation,
     Ieee802154TxPowerCode as PacTxPowerCode,
 };
-
-use oer_esp32s31_pac::{
-    Ieee802154AckTimeoutUnits as PacAckTimeoutUnits, Ieee802154MacCommand as PacMacCommand,
-    Ieee802154SecurityPayloadOffset as PacSecurityPayloadOffset,
+pub use oer_ieee802154_engine::ll::{
+    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154Timer, event_end_process,
+    mac_init_registers, sec_clear, set_txrx_pti, timer_fire_at,
 };
-
-pub use oer_esp32s31_pac::{
-    Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
-    Ieee802154EventObservation, Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet,
-    Ieee802154RxStateCode, Ieee802154RxStatus, Ieee802154TxAbortEnableSet,
-};
-
-use crate::coex::CoexPti;
-use crate::ieee802154::{
-    Ieee802154MultipanIndex,
-    backend::ed_duration_units,
-    coex::{Ieee802154CoexScene, Ieee802154Coexistence},
-    lifecycle::{COEX_DISABLED_PTI, Ieee802154Channel},
-    mac::{
-        Ieee802154Event, Ieee802154EventMask, Ieee802154InterruptOwner,
-        Ieee802154RxAbortReasonObservation, Ieee802154TaskOwner,
+use oer_ieee802154_engine::{
+    channel::Ieee802154Channel,
+    coex::CoexPti,
+    ll::COEX_DISABLED_PTI,
+    tx_power::Ieee802154ResolvedTxPower,
+    types::{
+        Ieee802154CcaMode, Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel,
+        Ieee802154EtmRoute, Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservation,
+        Ieee802154MultipanEnableState, Ieee802154MultipanIndex, Ieee802154RxAbortEnableSet,
+        Ieee802154RxAbortReason, Ieee802154RxAbortReasonObservation, Ieee802154RxStateCode,
+        Ieee802154RxStatus, Ieee802154TxAbortEnableSet, Ieee802154TxAbortReason,
         Ieee802154TxAbortReasonObservation,
     },
-    policy::Ieee802154CcaMode,
-    tx_power::Ieee802154ResolvedTxPower,
 };
 
-/// One of the two MAC timers.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ieee802154Timer {
-    /// TIMER0: ACK watchdog and timed transmit.
-    Timer0,
-    /// TIMER1: timed receive.
-    Timer1,
+use crate::ieee802154::{
+    backend::ed_duration_units,
+    mac::{Ieee802154InterruptOwner, Ieee802154TaskOwner},
+    policy::cca_mode_into_pac,
+};
+
+/// Every named event, in one order shared by both vocabularies.
+const EVENTS: [(Ieee802154Event, PacEvent); 12] = [
+    (Ieee802154Event::TxDone, PacEvent::TxDone),
+    (Ieee802154Event::RxDone, PacEvent::RxDone),
+    (Ieee802154Event::AckTxDone, PacEvent::AckTxDone),
+    (Ieee802154Event::AckRxDone, PacEvent::AckRxDone),
+    (Ieee802154Event::RxAbort, PacEvent::RxAbort),
+    (Ieee802154Event::TxAbort, PacEvent::TxAbort),
+    (Ieee802154Event::EdDone, PacEvent::EdDone),
+    (Ieee802154Event::Timer0Overflow, PacEvent::Timer0Overflow),
+    (Ieee802154Event::Timer1Overflow, PacEvent::Timer1Overflow),
+    (Ieee802154Event::ClockCountMatch, PacEvent::ClockCountMatch),
+    (Ieee802154Event::TxSfdDone, PacEvent::TxSfdDone),
+    (Ieee802154Event::RxSfdDone, PacEvent::RxSfdDone),
+];
+
+const fn command_into_pac(command: Ieee802154LlCommand) -> PacMacCommand {
+    match command {
+        Ieee802154LlCommand::TxStart => PacMacCommand::Transmit,
+        Ieee802154LlCommand::RxStart => PacMacCommand::Receive,
+        Ieee802154LlCommand::CcaTxStart => PacMacCommand::ClearChannelThenTransmit,
+        Ieee802154LlCommand::EdStart => PacMacCommand::EnergyDetection,
+        Ieee802154LlCommand::Stop => PacMacCommand::Stop,
+    }
 }
 
-/// Operation commands of `ieee802154_ll_set_cmd`; timer commands are
-/// [`Ieee802154LowLevel::start_timer`] and [`Ieee802154LowLevel::stop_timer`].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ieee802154LlCommand {
-    /// `IEEE802154_CMD_TX_START`.
-    TxStart,
-    /// `IEEE802154_CMD_RX_START`.
-    RxStart,
-    /// `IEEE802154_CMD_CCA_TX_START`.
-    CcaTxStart,
-    /// `IEEE802154_CMD_ED_START`.
-    EdStart,
-    /// `IEEE802154_CMD_STOP`.
-    Stop,
+fn event_into_pac(event: Ieee802154Event) -> PacEvent {
+    EVENTS
+        .iter()
+        .find(|(engine, _)| *engine == event)
+        .map(|(_, pac)| *pac)
+        .expect("every engine event has a PAC event")
 }
 
-impl Ieee802154LlCommand {
-    const fn into_pac(self) -> PacMacCommand {
-        match self {
-            Self::TxStart => PacMacCommand::Transmit,
-            Self::RxStart => PacMacCommand::Receive,
-            Self::CcaTxStart => PacMacCommand::ClearChannelThenTransmit,
-            Self::EdStart => PacMacCommand::EnergyDetection,
-            Self::Stop => PacMacCommand::Stop,
+fn event_mask_into_pac(mask: Ieee802154EventMask) -> PacEventMask {
+    EVENTS
+        .iter()
+        .filter(|(engine, _)| mask.contains(*engine))
+        .fold(PacEventMask::NONE, |pac, (_, event)| {
+            pac.union(event.mask())
+        })
+}
+
+/// The engine observation of a PAC event sample; an unclassified PAC sample
+/// stays unclassified.
+fn event_observation_from_pac(observation: PacEventObservation) -> Ieee802154EventObservation {
+    let events = EVENTS
+        .iter()
+        .filter(|(_, pac)| observation.contains(*pac))
+        .fold(Ieee802154EventMask::NONE, |mask, (engine, _)| {
+            mask.with(*engine)
+        });
+    Ieee802154EventObservation::new(events, observation.classification().is_err())
+}
+
+const fn rx_abort_reason_from_pac(
+    observation: PacRxAbortReasonObservation,
+) -> Ieee802154RxAbortReasonObservation {
+    use Ieee802154RxAbortReason as R;
+    use PacRxAbortReason as P;
+    let reason = match observation {
+        PacRxAbortReasonObservation::Unclassified => {
+            return Ieee802154RxAbortReasonObservation::Unclassified;
         }
-    }
+        PacRxAbortReasonObservation::Named(reason) => reason,
+    };
+    Ieee802154RxAbortReasonObservation::Named(match reason {
+        P::RxStop => R::RxStop,
+        P::SfdTimeout => R::SfdTimeout,
+        P::CrcError => R::CrcError,
+        P::InvalidLength => R::InvalidLength,
+        P::FilterFail => R::FilterFail,
+        P::NoRss => R::NoRss,
+        P::CoexistenceBreak => R::CoexistenceBreak,
+        P::UnexpectedAck => R::UnexpectedAck,
+        P::RxRestart => R::RxRestart,
+        P::TxAckTimeout => R::TxAckTimeout,
+        P::TxAckStop => R::TxAckStop,
+        P::TxAckCoexistenceBreak => R::TxAckCoexistenceBreak,
+        P::EnhancedAckSecurityError => R::EnhancedAckSecurityError,
+        P::EdAbort => R::EdAbort,
+        P::EdStop => R::EdStop,
+        P::EdCoexistenceReject => R::EdCoexistenceReject,
+    })
 }
 
-/// The `ieee802154_ll_*` accessors, the modem ETM register steps and the
-/// timer commands used by the driver's hardware helpers.
-///
-/// Each method is one accessor of the pinned public LL; implementations must
-/// not add, merge or reorder register transactions.
-pub trait Ieee802154LowLevel {
-    /// `ieee802154_ll_set_cmd` of an operation command.
-    fn set_command(&mut self, command: Ieee802154LlCommand);
-    /// `ieee802154_ll_get_events`.
-    fn events(&mut self) -> Ieee802154EventObservation;
-    /// `ieee802154_ll_clear_events`: clear the asserted events of `mask`.
-    fn clear_events(&mut self, mask: Ieee802154EventMask);
-    /// `ieee802154_ll_get_rx_abort_reason`.
-    fn rx_abort_reason(&mut self) -> Ieee802154RxAbortReasonObservation;
-    /// `ieee802154_ll_get_tx_abort_reason`.
-    fn tx_abort_reason(&mut self) -> Ieee802154TxAbortReasonObservation;
-    /// `ieee802154_ll_get_rx_status`.
-    fn rx_status(&mut self) -> Ieee802154RxStatus;
-    /// `ieee802154_ll_is_current_rx_frame`.
-    fn is_current_rx_frame(&mut self) -> bool;
-    /// `ieee802154_ll_set_tx_addr`.
-    fn set_tx_address(&mut self, address: u32);
-    /// `ieee802154_ll_set_rx_addr`.
-    fn set_rx_address(&mut self, address: u32);
-    /// `ieee802154_ll_get_tx_auto_ack`.
-    fn tx_auto_ack(&mut self) -> bool;
-    /// `ieee802154_ll_get_rx_auto_ack`.
-    fn rx_auto_ack(&mut self) -> bool;
-    /// `ieee802154_ll_get_tx_enhance_ack`.
-    fn tx_enhanced_ack(&mut self) -> bool;
-    /// `ieee802154_ll_get_pending_mode`.
-    fn pending_mode(&mut self) -> bool;
-    /// `ieee802154_ll_set_pending_bit`.
-    fn set_pending_bit(&mut self, pending: bool);
-    /// `ieee802154_ll_get_freq`.
-    fn frequency_code(&mut self) -> u8;
-    /// `ieee802154_ll_get_ed_rss`.
-    fn ed_rss(&mut self) -> i8;
-    /// `ieee802154_ll_is_cca_busy`.
-    fn cca_busy(&mut self) -> bool;
-    /// `ieee802154_ll_get_*_cnt`: one MAC diagnostic counter.
-    fn debug_counter(&mut self, counter: Ieee802154DebugCounter) -> u16;
-    /// `ieee802154_ll_clear_debug_cnt` of one counter.
-    fn clear_debug_counter(&mut self, counter: Ieee802154DebugCounter);
-    /// `ieee802154_ll_set_ed_duration` in 16-microsecond symbols.
-    fn set_ed_duration(&mut self, symbols: u16);
-    /// `ieee802154_ll_enhack_generate_done_notify`.
-    fn notify_enhanced_ack_generated(&mut self);
-    /// `ieee802154_ll_disable_rx_abort_events`.
-    fn disable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet);
-    /// `ieee802154_ll_set_multipan_panid`, which also enables the context.
-    fn set_multipan_panid(&mut self, index: Ieee802154MultipanIndex, panid: u16);
-    /// `ieee802154_ll_get_multipan_panid`.
-    fn multipan_panid(&mut self, index: Ieee802154MultipanIndex) -> u16;
-    /// `ieee802154_ll_set_multipan_short_addr`, which also enables the context.
-    fn set_multipan_short_address(&mut self, index: Ieee802154MultipanIndex, address: u16);
-    /// `ieee802154_ll_get_multipan_short_addr`.
-    fn multipan_short_address(&mut self, index: Ieee802154MultipanIndex) -> u16;
-    /// `ieee802154_ll_set_multipan_ext_addr`, which also enables the context.
-    fn set_multipan_extended_address(&mut self, index: Ieee802154MultipanIndex, address: [u8; 8]);
-    /// `ieee802154_ll_get_multipan_ext_addr`.
-    fn multipan_extended_address(&mut self, index: Ieee802154MultipanIndex) -> [u8; 8];
-    /// `ieee802154_ll_set_multipan_enable_mask`.
-    fn set_multipan_enable(&mut self, state: Ieee802154MultipanEnableState);
-    /// `ieee802154_ll_get_multipan_enable_mask`.
-    fn multipan_enable(&mut self) -> Ieee802154MultipanEnableState;
-    /// `ieee802154_ll_set_ack_timeout` in 16-microsecond units.
-    fn set_ack_timeout(&mut self, units: u16);
-    /// `ieee802154_ll_get_ack_timeout` in 16-microsecond units.
-    fn ack_timeout(&mut self) -> u16;
-    /// `ieee802154_ll_set_security_addr`.
-    fn set_security_address(&mut self, address: &[u8; 8]);
-    /// `ieee802154_ll_set_security_key`.
-    fn set_security_key(&mut self, key: &[u8; 16]);
-    /// `ieee802154_ll_set_security_offset`: the seven-bit field keeps the low
-    /// seven bits, as the vendor bitfield assignment does.
-    fn set_security_offset(&mut self, offset: u8);
-    /// `ieee802154_ll_enable_events(IEEE802154_EVENT_MASK)`.
-    fn enable_all_events(&mut self);
-    /// `ieee802154_ll_enable_events` of one event.
-    fn enable_event(&mut self, event: Ieee802154Event);
-    /// `ieee802154_ll_disable_events` of one event.
-    fn disable_event(&mut self, event: Ieee802154Event);
-    /// `ieee802154_ll_enable_tx_abort_events`.
-    fn enable_tx_aborts(&mut self, set: Ieee802154TxAbortEnableSet);
-    /// `ieee802154_ll_enable_rx_abort_events`.
-    fn enable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet);
-    /// `ieee802154_ll_set_ed_sample_mode`.
-    fn set_ed_sample_mode(&mut self, mode: Ieee802154EdSampleMode);
-    /// `ieee802154_ll_disable_coex`.
-    fn disable_coex(&mut self);
-    /// libcoexist `hal_set_IEEE802154_TXRX_pti`.
-    fn set_txrx_pti(&mut self, pti: CoexPti);
-    /// libcoexist `hal_set_IEEE802154_ACK_pti`.
-    fn set_ack_pti(&mut self, pti: CoexPti);
-    /// `ieee802154_ll_set_freq` of the channel's frequency code.
-    fn set_channel(&mut self, channel: Ieee802154Channel);
-    /// `ieee802154_ll_set_power` of the resolved power index.
-    fn set_tx_power(&mut self, power: &Ieee802154ResolvedTxPower<'_>);
-    /// `ieee802154_ll_set_cca_mode`.
-    fn set_cca_mode(&mut self, mode: Ieee802154CcaMode);
-    /// `ieee802154_ll_set_cca_threshold`.
-    fn set_cca_threshold(&mut self, threshold_dbm: i8);
-    /// `ieee802154_ll_set_tx_auto_ack`.
-    fn set_tx_auto_ack(&mut self, enable: bool);
-    /// `ieee802154_ll_set_rx_auto_ack`.
-    fn set_rx_auto_ack(&mut self, enable: bool);
-    /// `ieee802154_ll_set_tx_enhance_ack`.
-    fn set_tx_enhanced_ack(&mut self, enable: bool);
-    /// `ieee802154_ll_set_coordinator`.
-    fn set_coordinator(&mut self, enable: bool);
-    /// `ieee802154_ll_set_promiscuous`.
-    fn set_promiscuous(&mut self, enable: bool);
-    /// `ieee802154_ll_set_pending_mode`: the one-bit enhanced/Zigbee selector.
-    fn set_pending_mode(&mut self, enhanced: bool);
-    /// `ieee802154_ll_set_transmit_security`.
-    fn set_transmit_security(&mut self, enable: bool);
-    /// `ieee802154_ll_timer0_set_threshold` or `ieee802154_ll_timer1_set_threshold`
-    /// in microseconds.
-    fn set_timer_threshold(&mut self, timer: Ieee802154Timer, microseconds: u32);
-    /// `ieee802154_ll_set_cmd` of the timer's start command.
-    fn start_timer(&mut self, timer: Ieee802154Timer);
-    /// `ieee802154_ll_set_cmd` of the timer's stop command.
-    fn stop_timer(&mut self, timer: Ieee802154Timer);
-    /// `REG_READ(ETM_CHEN_AD0_REG)` tested for the channel bit.
-    fn etm_channel_enabled(&mut self, channel: Ieee802154EtmChannel) -> bool;
-    /// `ETM_CHENCLR_AD0_REG` written back with the channel bit added. The
-    /// word is write-trigger, so hardware writes only the channel bit.
-    fn disable_etm_channel(&mut self, channel: Ieee802154EtmChannel);
-    /// `ETM_CHENSET_AD0_REG` written back with the channel bit added. The
-    /// word is write-trigger, so hardware writes only the channel bit.
-    fn enable_etm_channel(&mut self, channel: Ieee802154EtmChannel);
-    /// The channel's complete event word, then its complete task word.
-    fn set_etm_route(&mut self, route: Ieee802154EtmRoute);
-}
-
-/// `ieee802154_etm_channel_clear`: disable `channel` only if it is enabled.
-pub fn etm_channel_clear<Ll: Ieee802154LowLevel + ?Sized>(
-    ll: &mut Ll,
-    channel: Ieee802154EtmChannel,
-) {
-    if ll.etm_channel_enabled(channel) {
-        ll.disable_etm_channel(channel);
-    }
-}
-
-/// `ieee802154_etm_set_event_task`: clear the route's channel, program its
-/// event and task words, then enable it.
-pub fn etm_set_event_task<Ll: Ieee802154LowLevel + ?Sized>(ll: &mut Ll, route: Ieee802154EtmRoute) {
-    let channel = route.channel();
-    etm_channel_clear(ll, channel);
-    ll.set_etm_route(route);
-    ll.enable_etm_channel(channel);
-}
-
-/// `is_target_time_expired`: the wrapping difference `now - target` has a
-/// clear sign bit, so a target equal to `now` has expired.
-pub const fn target_time_expired(target: u32, now: u32) -> bool {
-    now.wrapping_sub(target) & (1 << 31) == 0
-}
-
-/// Threshold `ieee802154_timer*_fire_at` programs for `fire_time` sampled at
-/// `now`: zero once expired, otherwise the remaining microseconds.
-pub const fn timer_threshold(fire_time: u32, now: u32) -> u32 {
-    if target_time_expired(fire_time, now) {
-        0
-    } else {
-        fire_time.wrapping_sub(now)
-    }
-}
-
-/// `ieee802154_timer0_fire_at` / `ieee802154_timer1_fire_at`: program the
-/// remaining interval, then start the timer. `now` is the caller's truncated
-/// `esp_timer_get_time` sample.
-pub fn timer_fire_at<Ll: Ieee802154LowLevel + ?Sized>(
-    ll: &mut Ll,
-    timer: Ieee802154Timer,
-    fire_time: u32,
-    now: u32,
-) {
-    ll.set_timer_threshold(timer, timer_threshold(fire_time, now));
-    ll.start_timer(timer);
-}
-
-/// Register steps of `event_end_process`: clear both ETM channels, then stop
-/// both timers. The driver engine also drops the timer callbacks.
-pub fn event_end_process<Ll: Ieee802154LowLevel + ?Sized>(ll: &mut Ll) {
-    etm_channel_clear(ll, Ieee802154EtmChannel::Channel0);
-    etm_channel_clear(ll, Ieee802154EtmChannel::Channel1);
-    ll.stop_timer(Ieee802154Timer::Timer0);
-    ll.stop_timer(Ieee802154Timer::Timer1);
-}
-
-/// `ieee802154_sec_clear`.
-pub fn sec_clear<Ll: Ieee802154LowLevel + ?Sized>(ll: &mut Ll) {
-    ll.set_transmit_security(false);
-}
-
-/// Register steps of `ieee802154_mac_init` between the MAC reset and
-/// `ieee802154_txon_delay_set`.
-///
-/// All events are enabled except TIMER0, which the ACK watchdog enables per
-/// transmission; the runtime abort baselines are enabled; ED reports the
-/// average sample. With software coexistence the ACK PTI takes its level and
-/// the TX/RX PTI the idle scene; without it both PTIs are disabled. The
-/// caller owns the preceding MAC reset and PIB initialization and the
-/// following TX-on delay, interrupt allocation and modem initialization.
-pub fn mac_init_registers<Ll: Ieee802154LowLevel + ?Sized>(
-    ll: &mut Ll,
-    coexistence: &Ieee802154Coexistence,
-) {
-    ll.enable_all_events();
-    ll.disable_event(Ieee802154Event::Timer0Overflow);
-    ll.enable_tx_aborts(Ieee802154TxAbortEnableSet::RuntimeBaseline);
-    ll.enable_rx_aborts(Ieee802154RxAbortEnableSet::RuntimeBaseline);
-    ll.set_ed_sample_mode(Ieee802154EdSampleMode::Average);
-    match coexistence {
-        Ieee802154Coexistence::Software(priorities) => {
-            ll.set_ack_pti(priorities.ack());
-            ll.set_txrx_pti(priorities.scene(Ieee802154CoexScene::Idle));
+const fn tx_abort_reason_from_pac(
+    observation: PacTxAbortReasonObservation,
+) -> Ieee802154TxAbortReasonObservation {
+    use Ieee802154TxAbortReason as R;
+    use PacTxAbortReason as P;
+    let reason = match observation {
+        PacTxAbortReasonObservation::Unclassified => {
+            return Ieee802154TxAbortReasonObservation::Unclassified;
         }
-        Ieee802154Coexistence::Disabled => ll.disable_coex(),
+        PacTxAbortReasonObservation::Named(reason) => reason,
+    };
+    Ieee802154TxAbortReasonObservation::Named(match reason {
+        P::RxAckStop => R::RxAckStop,
+        P::RxAckSfdTimeout => R::RxAckSfdTimeout,
+        P::RxAckCrcError => R::RxAckCrcError,
+        P::RxAckInvalidLength => R::RxAckInvalidLength,
+        P::RxAckFilterFail => R::RxAckFilterFail,
+        P::RxAckNoRss => R::RxAckNoRss,
+        P::RxAckCoexistenceBreak => R::RxAckCoexistenceBreak,
+        P::RxAckTypeNotAck => R::RxAckTypeNotAck,
+        P::RxAckRestart => R::RxAckRestart,
+        P::RxAckTimeout => R::RxAckTimeout,
+        P::TxStop => R::TxStop,
+        P::TxCoexistenceBreak => R::TxCoexistenceBreak,
+        P::TxSecurityError => R::TxSecurityError,
+        P::CcaFailed => R::CcaFailed,
+        P::CcaBusy => R::CcaBusy,
+    })
+}
+
+fn rx_status_from_pac(status: PacRxStatus) -> Ieee802154RxStatus {
+    Ieee802154RxStatus::new(
+        status.filter_fail_reason(),
+        rx_abort_reason_from_pac(status.abort_reason()),
+        Ieee802154RxStateCode::new(status.state().value())
+            .expect("the PAC state field is three bits"),
+        status.preamble_match(),
+        status.sfd_match(),
+    )
+}
+
+const fn debug_counter_into_pac(counter: Ieee802154DebugCounter) -> PacDebugCounter {
+    use Ieee802154DebugCounter as C;
+    use PacDebugCounter as P;
+    match counter {
+        C::SfdTimeout => P::SfdTimeout,
+        C::CrcError => P::CrcError,
+        C::EdAbort => P::EdAbort,
+        C::CcaFail => P::CcaFail,
+        C::RxFilterFail => P::RxFilterFail,
+        C::NoRssDetect => P::NoRssDetect,
+        C::RxAbortCoex => P::RxAbortCoex,
+        C::RxRestart => P::RxRestart,
+        C::TxAckAbortCoex => P::TxAckAbortCoex,
+        C::EdScanBreakCoex => P::EdScanBreakCoex,
+        C::RxAckAbortCoex => P::RxAckAbortCoex,
+        C::RxAckTimeout => P::RxAckTimeout,
+        C::TxBreakCoex => P::TxBreakCoex,
+        C::TxSecurityError => P::TxSecurityError,
+        C::CcaBusy => P::CcaBusy,
     }
 }
 
-/// `IEEE802154_SET_TXRX_PTI`: publish the TX/RX PTI of `scene`. A build
-/// without software coexistence compiles it to nothing.
-pub fn set_txrx_pti<Ll: Ieee802154LowLevel + ?Sized>(
-    ll: &mut Ll,
-    coexistence: &Ieee802154Coexistence,
-    scene: Ieee802154CoexScene,
-) {
-    if let Ieee802154Coexistence::Software(priorities) = coexistence {
-        ll.set_txrx_pti(priorities.scene(scene));
+const fn rx_abort_set_into_pac(set: Ieee802154RxAbortEnableSet) -> PacRxAbortEnableSet {
+    match set {
+        Ieee802154RxAbortEnableSet::RuntimeBaseline => PacRxAbortEnableSet::RuntimeBaseline,
+        Ieee802154RxAbortEnableSet::All => PacRxAbortEnableSet::All,
+    }
+}
+
+const fn tx_abort_set_into_pac(set: Ieee802154TxAbortEnableSet) -> PacTxAbortEnableSet {
+    match set {
+        Ieee802154TxAbortEnableSet::RuntimeBaseline => PacTxAbortEnableSet::RuntimeBaseline,
+        Ieee802154TxAbortEnableSet::All => PacTxAbortEnableSet::All,
+    }
+}
+
+const fn ed_sample_mode_into_pac(mode: Ieee802154EdSampleMode) -> PacEdSampleMode {
+    match mode {
+        Ieee802154EdSampleMode::Maximum => PacEdSampleMode::Maximum,
+        Ieee802154EdSampleMode::Average => PacEdSampleMode::Average,
+    }
+}
+
+fn multipan_index_into_pac(index: Ieee802154MultipanIndex) -> PacMultipanIndex {
+    PacMultipanIndex::new(index.value()).expect("both vocabularies name four contexts")
+}
+
+fn multipan_state_into_pac(state: Ieee802154MultipanEnableState) -> PacMultipanEnableState {
+    let [c0, c1, c2, c3] = state.enabled();
+    PacMultipanEnableState::new(c0, c1, c2, c3)
+}
+
+fn multipan_state_from_pac(state: PacMultipanEnableState) -> Ieee802154MultipanEnableState {
+    let enabled = |index| state.contains(PacMultipanIndex::new(index).expect("context index"));
+    Ieee802154MultipanEnableState::new(enabled(0), enabled(1), enabled(2), enabled(3))
+}
+
+const fn etm_channel_into_pac(channel: Ieee802154EtmChannel) -> PacEtmChannel {
+    match channel {
+        Ieee802154EtmChannel::Channel0 => PacEtmChannel::Channel0,
+        Ieee802154EtmChannel::Channel1 => PacEtmChannel::Channel1,
+    }
+}
+
+const fn etm_route_into_pac(route: Ieee802154EtmRoute) -> PacEtmRoute {
+    match route {
+        Ieee802154EtmRoute::Timer0ToTxStart => PacEtmRoute::Timer0ToTxStart,
+        Ieee802154EtmRoute::Timer0ToCcaTx => PacEtmRoute::Timer0ToCcaTx,
+        Ieee802154EtmRoute::Timer1ToRxStart => PacEtmRoute::Timer1ToRxStart,
     }
 }
 
@@ -357,27 +286,31 @@ impl Ieee802154MacOwners {
 
 impl Ieee802154LowLevel for Ieee802154MacOwners {
     fn set_command(&mut self, command: Ieee802154LlCommand) {
-        self.task.lease().request_mac_command(command.into_pac());
+        self.task
+            .lease()
+            .request_mac_command(command_into_pac(command));
     }
 
     fn events(&mut self) -> Ieee802154EventObservation {
-        self.interrupts.registers().events()
+        event_observation_from_pac(self.interrupts.registers().events())
     }
 
     fn clear_events(&mut self, mask: Ieee802154EventMask) {
-        self.interrupts.registers_mut().clear_events(mask);
+        self.interrupts
+            .registers_mut()
+            .clear_events(event_mask_into_pac(mask));
     }
 
     fn rx_abort_reason(&mut self) -> Ieee802154RxAbortReasonObservation {
-        self.interrupts.registers().rx_abort_reason()
+        rx_abort_reason_from_pac(self.interrupts.registers().rx_abort_reason())
     }
 
     fn tx_abort_reason(&mut self) -> Ieee802154TxAbortReasonObservation {
-        self.interrupts.registers().tx_abort_reason()
+        tx_abort_reason_from_pac(self.interrupts.registers().tx_abort_reason())
     }
 
     fn rx_status(&mut self) -> Ieee802154RxStatus {
-        self.task.lease().rx_status()
+        rx_status_from_pac(self.task.lease().rx_status())
     }
 
     fn is_current_rx_frame(&mut self) -> bool {
@@ -425,11 +358,15 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
     }
 
     fn debug_counter(&mut self, counter: Ieee802154DebugCounter) -> u16 {
-        self.task.lease().debug_counter(counter)
+        self.task
+            .lease()
+            .debug_counter(debug_counter_into_pac(counter))
     }
 
     fn clear_debug_counter(&mut self, counter: Ieee802154DebugCounter) {
-        self.task.lease().clear_debug_counter(counter);
+        self.task
+            .lease()
+            .clear_debug_counter(debug_counter_into_pac(counter));
     }
 
     fn set_ed_duration(&mut self, symbols: u16) {
@@ -443,41 +380,55 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
     }
 
     fn disable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet) {
-        self.task.lease().disable_rx_aborts(set);
+        self.task
+            .lease()
+            .disable_rx_aborts(rx_abort_set_into_pac(set));
     }
 
     fn set_multipan_panid(&mut self, index: Ieee802154MultipanIndex, panid: u16) {
-        self.task.lease().set_multipan_pan_id(index, panid);
+        self.task
+            .lease()
+            .set_multipan_pan_id(multipan_index_into_pac(index), panid);
     }
 
     fn multipan_panid(&mut self, index: Ieee802154MultipanIndex) -> u16 {
-        self.task.lease().multipan_pan_id(index)
+        self.task
+            .lease()
+            .multipan_pan_id(multipan_index_into_pac(index))
     }
 
     fn set_multipan_short_address(&mut self, index: Ieee802154MultipanIndex, address: u16) {
-        self.task.lease().set_multipan_short_address(index, address);
+        self.task
+            .lease()
+            .set_multipan_short_address(multipan_index_into_pac(index), address);
     }
 
     fn multipan_short_address(&mut self, index: Ieee802154MultipanIndex) -> u16 {
-        self.task.lease().multipan_short_address(index)
+        self.task
+            .lease()
+            .multipan_short_address(multipan_index_into_pac(index))
     }
 
     fn set_multipan_extended_address(&mut self, index: Ieee802154MultipanIndex, address: [u8; 8]) {
         self.task
             .lease()
-            .set_multipan_extended_address(index, address);
+            .set_multipan_extended_address(multipan_index_into_pac(index), address);
     }
 
     fn multipan_extended_address(&mut self, index: Ieee802154MultipanIndex) -> [u8; 8] {
-        self.task.lease().multipan_extended_address(index)
+        self.task
+            .lease()
+            .multipan_extended_address(multipan_index_into_pac(index))
     }
 
     fn set_multipan_enable(&mut self, state: Ieee802154MultipanEnableState) {
-        self.task.lease().set_multipan_enable_state(state);
+        self.task
+            .lease()
+            .set_multipan_enable_state(multipan_state_into_pac(state));
     }
 
     fn multipan_enable(&mut self) -> Ieee802154MultipanEnableState {
-        self.task.lease().multipan_enable_state()
+        multipan_state_from_pac(self.task.lease().multipan_enable_state())
     }
 
     fn set_ack_timeout(&mut self, units: u16) {
@@ -509,23 +460,29 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
     }
 
     fn enable_event(&mut self, event: Ieee802154Event) {
-        self.task.lease().enable_event(event);
+        self.task.lease().enable_event(event_into_pac(event));
     }
 
     fn disable_event(&mut self, event: Ieee802154Event) {
-        self.task.lease().disable_event(event);
+        self.task.lease().disable_event(event_into_pac(event));
     }
 
     fn enable_tx_aborts(&mut self, set: Ieee802154TxAbortEnableSet) {
-        self.task.lease().enable_tx_aborts(set);
+        self.task
+            .lease()
+            .enable_tx_aborts(tx_abort_set_into_pac(set));
     }
 
     fn enable_rx_aborts(&mut self, set: Ieee802154RxAbortEnableSet) {
-        self.task.lease().enable_rx_aborts(set);
+        self.task
+            .lease()
+            .enable_rx_aborts(rx_abort_set_into_pac(set));
     }
 
     fn set_ed_sample_mode(&mut self, mode: Ieee802154EdSampleMode) {
-        self.task.lease().set_ed_sample_mode(mode);
+        self.task
+            .lease()
+            .set_ed_sample_mode(ed_sample_mode_into_pac(mode));
     }
 
     fn disable_coex(&mut self) {
@@ -546,7 +503,7 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
     fn set_channel(&mut self, channel: Ieee802154Channel) {
         self.task
             .lease()
-            .set_frequency_code(channel.frequency_code());
+            .set_frequency_code(PacFrequencyCode::new(channel.frequency_code()));
     }
 
     fn set_tx_power(&mut self, power: &Ieee802154ResolvedTxPower<'_>) {
@@ -556,7 +513,7 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
     }
 
     fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {
-        self.task.lease().set_cca_mode(mode.into_pac());
+        self.task.lease().set_cca_mode(cca_mode_into_pac(mode));
     }
 
     fn set_cca_threshold(&mut self, threshold_dbm: i8) {
@@ -623,24 +580,27 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
     }
 
     fn etm_channel_enabled(&mut self, channel: Ieee802154EtmChannel) -> bool {
-        self.task.lease().etm_channel_enabled(channel)
+        self.task
+            .lease()
+            .etm_channel_enabled(etm_channel_into_pac(channel))
     }
 
     fn disable_etm_channel(&mut self, channel: Ieee802154EtmChannel) {
-        self.task.lease().disable_etm_channel(channel);
+        self.task
+            .lease()
+            .disable_etm_channel(etm_channel_into_pac(channel));
     }
 
     fn enable_etm_channel(&mut self, channel: Ieee802154EtmChannel) {
-        self.task.lease().enable_etm_channel(channel);
+        self.task
+            .lease()
+            .enable_etm_channel(etm_channel_into_pac(channel));
     }
 
     fn set_etm_route(&mut self, route: Ieee802154EtmRoute) {
-        self.task.lease().set_etm_route(route);
+        self.task.lease().set_etm_route(etm_route_into_pac(route));
     }
 }
 
-#[cfg(feature = "ll-model")]
-pub mod model;
-
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;

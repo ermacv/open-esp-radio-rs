@@ -11,19 +11,20 @@ use embassy_futures::{
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::{Duration, Timer};
 use oer_esp32s31_hal::coex::{CoexEventId, CoexPti, CoexPtiTable};
-use oer_esp32s31_hal::ieee802154::{
-    Ieee802154TxPowerLevels,
-    coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
-    ll::{Ieee802154LlCommand, model::Ieee802154LlModel},
-    mac::{Ieee802154Event, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation},
-};
-use oer_esp32s31_ieee802154::engine::{
-    Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces,
-};
-use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
+use oer_esp32s31_hal::ieee802154::coex::{Ieee802154CoexConfig, resolve_priorities};
 use oer_ieee802154::{
     Channel, CommandError, FrameView, Interface, MacKeys, RadioCommand, RadioState, RequestId,
     RestingState, TxMode, TxRequest, TxStatus,
+};
+use oer_ieee802154_engine::engine::{
+    Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces,
+};
+use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
+use oer_ieee802154_engine::{
+    coex::Ieee802154Coexistence,
+    ll::{Ieee802154LlCommand, model::Ieee802154LlModel},
+    tx_power::Ieee802154TxPowerLevels,
+    types::{Ieee802154Event, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation},
 };
 
 use super::{
@@ -230,9 +231,10 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
     let mut parts = parts();
     parts
         .engine
-        .set_coexistence(Ieee802154Coexistence::Software(
-            Ieee802154CoexPriorities::resolve(Ieee802154CoexConfig::VENDOR, &CoexPtiTable::VENDOR),
-        ));
+        .set_coexistence(Ieee802154Coexistence::Software(resolve_priorities(
+            Ieee802154CoexConfig::VENDOR,
+            &CoexPtiTable::VENDOR,
+        )));
     let runtime = Runtime::<4>::new();
     assert!(
         runtime
@@ -248,9 +250,10 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
     let mut table = CoexPtiTable::VENDOR;
     table.set(CoexEventId::new(43).unwrap(), CoexPti::new(6).unwrap());
     runtime
-        .set_coexistence(Ieee802154Coexistence::Software(
-            Ieee802154CoexPriorities::resolve(Ieee802154CoexConfig::VENDOR, &table),
-        ))
+        .set_coexistence(Ieee802154Coexistence::Software(resolve_priorities(
+            Ieee802154CoexConfig::VENDOR,
+            &table,
+        )))
         .unwrap();
     runtime
         .submit(RadioCommand::Enable {
@@ -290,7 +293,7 @@ fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
             .radio
             .engine()
             .pib()
-            .pending_mode(oer_esp32s31_hal::ieee802154::Ieee802154MultipanIndex::CONTEXT0)
+            .pending_mode(oer_ieee802154_engine::types::Ieee802154MultipanIndex::CONTEXT0)
     });
     assert_eq!(mode, oer_ieee802154::AutoPendingMode::Enhanced);
 }

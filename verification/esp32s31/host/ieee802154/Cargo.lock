@@ -111,15 +111,8 @@ name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-pac",
+ "oer-ieee802154-engine",
  "oer-memory",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-ieee802154",
 ]
 
 [[package]]
@@ -128,8 +121,8 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
  "sha2",
  "toml",
 ]
@@ -153,6 +146,13 @@ dependencies = [
 [[package]]
 name = "oer-ieee802154"
 version = "0.1.0"
+
+[[package]]
+name = "oer-ieee802154-engine"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee802154",
+]
 
 [[package]]
 name = "oer-memory"

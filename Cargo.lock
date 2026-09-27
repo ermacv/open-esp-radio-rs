@@ -2627,6 +2627,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "oer-esp32s31-pac",
+ "oer-ieee802154-engine",
  "oer-memory",
 ]
 
@@ -2826,14 +2827,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-ieee802154"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-ieee802154",
-]
-
-[[package]]
 name = "oer-esp32s31-ieee802154-esp-hal"
 version = "0.1.0"
 dependencies = [
@@ -2857,9 +2850,8 @@ dependencies = [
 name = "oer-esp32s31-ieee802154-radio"
 version = "0.1.0"
 dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
 ]
 
 [[package]]
@@ -2870,9 +2862,9 @@ dependencies = [
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-radio",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
 ]
 
 [[package]]
@@ -2885,7 +2877,6 @@ dependencies = [
  "esp-hal",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-esp-hal",
  "oer-esp32s31-ieee802154-runtime",
  "oer-esp32s31-phy",
@@ -2893,6 +2884,7 @@ dependencies = [
  "oer-esp32s31-radio-esp-hal",
  "oer-esp32s31-radio-runtime",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
  "static_cell",
 ]
 
@@ -3282,6 +3274,13 @@ name = "oer-ieee802154"
 version = "0.1.0"
 
 [[package]]
+name = "oer-ieee802154-engine"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee802154",
+]
+
+[[package]]
 name = "oer-memory"
 version = "0.1.0"
 
@@ -3505,7 +3504,6 @@ dependencies = [
  "oer-esp32s31-ieee80211-mac",
  "oer-esp32s31-ieee80211-sta",
  "oer-esp32s31-ieee80211-system",
- "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-openthread",
  "oer-esp32s31-ieee802154-system",
  "oer-ieee80211-ap",
@@ -3515,6 +3513,7 @@ dependencies = [
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
  "oer-memory",
  "oer-network-interface",
  "oer-radio",

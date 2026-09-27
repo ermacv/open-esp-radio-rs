@@ -7,13 +7,13 @@
 //! before the next operation. Addresses, PAN identifiers and the ACK timeout
 //! are not PIB values; the vendor driver writes them directly.
 
-pub use oer_esp32s31_hal::ieee802154::Ieee802154MultipanIndex;
+pub use crate::types::Ieee802154MultipanIndex;
 pub use oer_ieee802154::AutoPendingMode;
 
-use oer_esp32s31_hal::ieee802154::{
-    IEEE802154_MIN_CHANNEL, Ieee802154CcaMode, Ieee802154Channel, Ieee802154TxPowerLevels,
-    ll::Ieee802154LowLevel,
-};
+use crate::channel::{IEEE802154_MIN_CHANNEL, Ieee802154Channel};
+use crate::ll::Ieee802154LowLevel;
+use crate::tx_power::Ieee802154TxPowerLevels;
+use crate::types::Ieee802154CcaMode;
 
 const CHANNEL_COUNT: usize = 16;
 const INTERFACE_COUNT: usize = Ieee802154MultipanIndex::COUNT as usize;

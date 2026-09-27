@@ -3,8 +3,7 @@ use std::vec::Vec;
 use oer_esp32s31_pac::{Ieee802154FoundationSnapshot, Ieee802154Pti};
 
 use super::{
-    COEX_DISABLED_PTI, IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel,
-    Ieee802154ChannelError, Ieee802154FoundationCheckpoint, Ieee802154Lifecycle,
+    COEX_DISABLED_PTI, Ieee802154FoundationCheckpoint, Ieee802154Lifecycle,
     Ieee802154LifecycleBackend, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
     Ieee802154ResetPort, Ieee802154ResetReadback, state,
 };
@@ -284,63 +283,4 @@ fn a_returning_owner_with_unmasked_events_falls_back_to_reset() {
         Ieee802154FoundationCheckpoint::EventsMasked
     );
     let _reset: Ieee802154Lifecycle<FakeBackend, state::Reset> = failure.into_lifecycle();
-}
-
-#[test]
-fn channel_constructor_is_exhaustive_and_fail_closed() {
-    for candidate in u8::MIN..=u8::MAX {
-        let result = Ieee802154Channel::new(candidate);
-        if (IEEE802154_MIN_CHANNEL..=IEEE802154_MAX_CHANNEL).contains(&candidate) {
-            assert_eq!(result.map(Ieee802154Channel::number), Ok(candidate));
-        } else {
-            assert_eq!(
-                result,
-                Err(Ieee802154ChannelError {
-                    attempted: candidate,
-                })
-            );
-        }
-    }
-}
-
-#[test]
-fn every_channel_maps_to_the_reviewed_vendor_frequency_code() {
-    for number in IEEE802154_MIN_CHANNEL..=IEEE802154_MAX_CHANNEL {
-        let channel = Ieee802154Channel::new(number).expect("2.4 GHz channel");
-        assert_eq!(
-            channel.frequency_code().value(),
-            (number - IEEE802154_MIN_CHANNEL) * 5 + 3,
-        );
-    }
-
-    assert_eq!(
-        Ieee802154Channel::new(IEEE802154_MIN_CHANNEL)
-            .expect("lower boundary")
-            .frequency_code()
-            .value(),
-        3
-    );
-    assert_eq!(
-        Ieee802154Channel::new(IEEE802154_MAX_CHANNEL)
-            .expect("upper boundary")
-            .frequency_code()
-            .value(),
-        78
-    );
-}
-
-/// `ieee802154_freq_to_channel` inverts `ieee802154_channel_to_freq` and
-/// rejects every other code.
-#[test]
-fn a_frequency_code_names_a_channel_only_on_the_five_code_grid() {
-    for number in IEEE802154_MIN_CHANNEL..=IEEE802154_MAX_CHANNEL {
-        let channel = Ieee802154Channel::new(number).unwrap();
-        assert_eq!(
-            Ieee802154Channel::from_frequency_code(channel.frequency_code().value()),
-            Some(channel)
-        );
-    }
-    for code in [0, 2, 4, 7, 83, 255] {
-        assert_eq!(Ieee802154Channel::from_frequency_code(code), None);
-    }
 }

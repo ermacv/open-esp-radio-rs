@@ -15,17 +15,11 @@ pub const FRAME_SIZE: usize = 128;
 /// Receive buffers the upper layer may hold (`CONFIG_IEEE802154_RX_BUFFER_SIZE`).
 pub const RX_BUFFER_COUNT: usize = 20;
 
-/// The memory the IEEE 802.15.4 MAC DMA reaches: the internal SRAM of
-/// `SOC_DMA_LOW`..`SOC_DMA_HIGH` in ESP-IDF's `soc/esp32s31/include/soc/soc.h`
-/// at `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`. PSRAM is outside it: a
-/// frame there makes the MAC report a DMA error, and nothing reaches the
-/// air or memory.
-pub const DMA_WINDOW: core::ops::Range<usize> = 0x2f00_0000..0x2f08_0000;
-
-/// Whether the `len` bytes at `start` lie in [`DMA_WINDOW`].
-const fn dma_window_contains(start: usize, len: usize) -> bool {
+/// Whether the `len` bytes at `start` lie in `window`, the memory a chip's
+/// MAC DMA reaches.
+const fn dma_window_contains(window: &core::ops::Range<usize>, start: usize, len: usize) -> bool {
     match start.checked_add(len) {
-        Some(end) => start >= DMA_WINDOW.start && end <= DMA_WINDOW.end,
+        Some(end) => start >= window.start && end <= window.end,
         None => false,
     }
 }
@@ -128,10 +122,11 @@ impl Ieee802154EngineBuffers {
         }
     }
 
-    /// Whether every frame lies in [`DMA_WINDOW`], where the MAC DMA
-    /// reaches it.
-    pub fn is_dma_visible(&self) -> bool {
+    /// Whether every frame lies in `window`, the memory the chip's MAC DMA
+    /// reaches. Each chip's HAL names its window.
+    pub fn is_dma_visible(&self, window: &core::ops::Range<usize>) -> bool {
         dma_window_contains(
+            window,
             core::ptr::from_ref(self) as usize,
             core::mem::size_of::<Self>(),
         )

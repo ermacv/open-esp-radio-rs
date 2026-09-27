@@ -379,12 +379,16 @@ impl Ieee802154PolledOperationBackend for Ieee802154PacHal<'_> {
         &mut self,
         channel: crate::ieee802154::Ieee802154Channel,
     ) -> Result<(), Self::Error> {
-        self.backend.set_frequency_code(channel.frequency_code());
+        self.backend
+            .set_frequency_code(oer_esp32s31_pac::Ieee802154FrequencyCode::new(
+                channel.frequency_code(),
+            ));
         Ok(())
     }
 
     fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) -> Result<(), Self::Error> {
-        self.backend.set_cca_mode(mode.into_pac());
+        self.backend
+            .set_cca_mode(crate::ieee802154::policy::cca_mode_into_pac(mode));
         Ok(())
     }
 
@@ -517,7 +521,8 @@ impl<B: Ieee802154RegisterBackend> Ieee802154Hal<B> {
     }
 
     pub(crate) fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {
-        self.backend.set_cca_mode(mode.into_pac());
+        self.backend
+            .set_cca_mode(crate::ieee802154::policy::cca_mode_into_pac(mode));
     }
 
     pub(crate) fn set_cca_threshold_code(&mut self, threshold: i8) {

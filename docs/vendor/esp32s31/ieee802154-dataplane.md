@@ -58,7 +58,7 @@ converts dBm through the level set returned by `bt_bb_get_tx_pwr_table()`.
 The HAL ports the public clamp-and-floor scan over a non-decreasing level set;
 it rejects an empty set, a length outside the public eight-bit domain, or
 descending values before producing a channel-bound opaque field code.
-`Ieee802154TxPowerLevels::ESP32S31` is the provider's set recovered from the
+`ESP32S31_TX_POWER_LEVELS` is the provider's set recovered from the
 vendor library: sixteen levels from -24 to 21 dBm in 3 dB steps, whose index
 is the `TXPOWER` field code. The level set is not an RF calibration result.
 The static policy transition itself writes no TX-power code.

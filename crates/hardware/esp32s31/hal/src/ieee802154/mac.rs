@@ -77,13 +77,15 @@ impl Ieee802154MacPolicyWrites for Ieee802154TaskOwner {
     fn set_channel(&mut self, channel: Ieee802154Channel) {
         self.registers
             .ieee802154_register_lease()
-            .set_frequency_code(channel.frequency_code());
+            .set_frequency_code(oer_esp32s31_pac::Ieee802154FrequencyCode::new(
+                channel.frequency_code(),
+            ));
     }
 
     fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {
         self.registers
             .ieee802154_register_lease()
-            .set_cca_mode(mode.into_pac());
+            .set_cca_mode(crate::ieee802154::policy::cca_mode_into_pac(mode));
     }
 
     fn set_cca_threshold_code(&mut self, threshold: i8) {

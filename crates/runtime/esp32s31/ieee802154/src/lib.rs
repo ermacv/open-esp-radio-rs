@@ -33,20 +33,20 @@ use embassy_sync::{
     signal::Signal,
 };
 use embassy_time::{Duration, Instant, Timer};
-use oer_esp32s31_hal::ieee802154::{
-    Ieee802154MultipanIndex, coex::Ieee802154Coexistence, ll::Ieee802154LowLevel,
-};
-use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
-pub use oer_esp32s31_ieee802154::engine::{
-    Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
-    Ieee802154TxRxStatistics, Ieee802154TxStatistics,
-};
-use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, Interface, MacKeys,
     PendingTable, RadioCommand, RadioEvent, RadioFault, RadioState, RadioTimestamp, ReceivedFrame,
     RequestId, RestingState, RxMetadata, TxStatus,
+};
+use oer_ieee802154_engine::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
+pub use oer_ieee802154_engine::engine::{
+    Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
+    Ieee802154TxRxStatistics, Ieee802154TxStatistics,
+};
+use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
+use oer_ieee802154_engine::{
+    coex::Ieee802154Coexistence, ll::Ieee802154LowLevel, types::Ieee802154MultipanIndex,
 };
 
 pub use oer_esp32s31_ieee802154_radio::{

@@ -350,7 +350,7 @@ section = "whole-radio-coverage-index"
 title = "IEEE 802.15.4"
 kind = "source-reference"
 details = "Inventory: [Radio/MAC](ieee802154/FEATURES.md)\n\nCurrent qualification authority: [ieee802154.toml](../../../../qualification/targets/esp32s31/ieee802154.toml)"
-packages = ["oer-esp32s31-ieee802154"]
+packages = ["oer-ieee802154-engine"]
 documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[items]]

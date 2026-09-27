@@ -17,27 +17,25 @@
 //! or publishing the scene priorities where the vendor's
 //! `IEEE802154_SET_TXRX_PTI` does.
 
+use crate::channel::Ieee802154Channel;
+use crate::coex::{Ieee802154CoexScene, Ieee802154Coexistence};
+use crate::ll::{
+    self, Ieee802154EtmRoute, Ieee802154LlCommand, Ieee802154LowLevel,
+    Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer,
+};
 use crate::pib::{Ieee802154MultipanIndex, Ieee802154Pib, Ieee802154PibDefaults};
-use oer_esp32s31_hal::ieee802154::{
-    Ieee802154Channel, Ieee802154TxPowerLevels,
-    coex::{Ieee802154CoexScene, Ieee802154Coexistence},
-    ll::{
-        self, Ieee802154EtmRoute, Ieee802154LlCommand, Ieee802154LowLevel,
-        Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,
-        Ieee802154Timer,
-    },
-    mac::{
-        Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
-        Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReason,
-        Ieee802154TxAbortReasonObservation,
-    },
+use crate::tx_power::Ieee802154TxPowerLevels;
+use crate::types::{
+    Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
+    Ieee802154RxAbortReasonObservation, Ieee802154TxAbortReason,
+    Ieee802154TxAbortReasonObservation,
 };
 use oer_ieee802154::{FrameAddress, FrameType, FrameVersion, PendingTable, PhrFrame, ack_pending};
 
 mod buffers;
 mod statistics;
 
-pub use buffers::{DMA_WINDOW, FRAME_SIZE, Ieee802154EngineBuffers, RX_BUFFER_COUNT};
+pub use buffers::{FRAME_SIZE, Ieee802154EngineBuffers, RX_BUFFER_COUNT};
 pub use statistics::{
     Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
     Ieee802154TxRxStatistics, Ieee802154TxStatistics,
@@ -383,10 +381,11 @@ impl<'storage> Ieee802154Engine<'storage> {
         self.coexistence
     }
 
-    /// Whether the engine's DMA frames lie in [`DMA_WINDOW`]; the MAC
-    /// cannot transmit or receive through frames outside it.
-    pub fn buffers_dma_visible(&self) -> bool {
-        self.buffers.is_dma_visible()
+    /// Whether the engine's DMA frames lie in `window`, the memory the
+    /// chip's MAC DMA reaches; the MAC cannot transmit or receive through
+    /// frames outside it.
+    pub fn buffers_dma_visible(&self, window: &core::ops::Range<usize>) -> bool {
+        self.buffers.is_dma_visible(window)
     }
 
     /// The multi-PAN interfaces, `None` without multi-PAN.

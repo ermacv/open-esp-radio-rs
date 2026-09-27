@@ -8,18 +8,14 @@ use oer_esp32s31_coex::CoexError;
 use oer_esp32s31_hal::{
     ieee802154::{
         Ieee802154Clocked, Ieee802154Cold, Ieee802154FoundationCheckpoint, Ieee802154Powered,
-        Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154TxPowerLevels,
-        coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
+        Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
+        coex::{Ieee802154CoexConfig, Ieee802154Coexistence, resolve_priorities},
         ll::Ieee802154MacOwners,
     },
     root::Ieee802154RadioPartition,
     shared_radio::{
         CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
     },
-};
-use oer_esp32s31_ieee802154::{
-    engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces},
-    pib::Ieee802154PibDefaults,
 };
 use oer_esp32s31_ieee802154_esp_hal::{
     BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError, bind, now_micros,
@@ -43,6 +39,10 @@ use oer_esp32s31_phy::{
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_esp32s31_radio_runtime::{Ieee802154JoinError, RadioGuard, RadioPhyError, RadioSystem};
+use oer_ieee802154_engine::{
+    engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces},
+    pib::Ieee802154PibDefaults,
+};
 use static_cell::ConstStaticCell;
 
 use crate::maintenance::{
@@ -72,7 +72,7 @@ extern "C" fn ieee802154_interrupt() {
 }
 
 /// The engine's DMA frames. The MAC DMA reaches internal SRAM alone
-/// ([`DMA_WINDOW`](oer_esp32s31_ieee802154::engine::DMA_WINDOW)), so they
+/// ([`IEEE802154_DMA_WINDOW`](oer_esp32s31_hal::ieee802154::IEEE802154_DMA_WINDOW)), so they
 /// live in the platform's DMA-visible section whatever the image's data
 /// placement; one engine takes them.
 #[allow(
@@ -102,7 +102,11 @@ impl Ieee802154Parked {
         let buffers = ENGINE_BUFFERS.try_take()?;
         Some(Self {
             partition,
-            engine: Ieee802154Engine::new(buffers, Ieee802154TxPowerLevels::ESP32S31, defaults),
+            engine: Ieee802154Engine::new(
+                buffers,
+                oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS,
+                defaults,
+            ),
         })
     }
 
@@ -121,7 +125,7 @@ impl Ieee802154Parked {
             partition,
             engine: Ieee802154Engine::new_multipan(
                 buffers,
-                Ieee802154TxPowerLevels::ESP32S31,
+                oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS,
                 defaults,
                 interfaces,
             ),
@@ -305,7 +309,10 @@ pub async fn start<P, C: PlatformClockProvider>(
 ) -> Result<Ieee802154System, Ieee802154StartFailure> {
     // Frames the MAC DMA cannot reach leave the radio silent on air; refuse
     // before any hardware changes.
-    if !parked.engine.buffers_dma_visible() {
+    if !parked
+        .engine
+        .buffers_dma_visible(&oer_esp32s31_hal::ieee802154::IEEE802154_DMA_WINDOW)
+    {
         return Err(Ieee802154StartFailure {
             error: Ieee802154StartError::BuffersNotDmaVisible,
             owner: Ok(parked),
@@ -509,10 +516,7 @@ fn coexistence(
     lease: &SharedRadioLease<'_, ConcurrentPhy>,
     config: Ieee802154CoexConfig,
 ) -> Ieee802154Coexistence {
-    Ieee802154Coexistence::Software(Ieee802154CoexPriorities::resolve(
-        config,
-        &lease.coex_pti_table(),
-    ))
+    Ieee802154Coexistence::Software(resolve_priorities(config, &lease.coex_pti_table()))
 }
 
 impl Ieee802154System {

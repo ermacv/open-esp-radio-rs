@@ -1480,15 +1480,8 @@ name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-pac",
+ "oer-ieee802154-engine",
  "oer-memory",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-ieee802154",
 ]
 
 [[package]]
@@ -1515,9 +1508,8 @@ dependencies = [
 name = "oer-esp32s31-ieee802154-radio"
 version = "0.1.0"
 dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
 ]
 
 [[package]]
@@ -1527,10 +1519,9 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "embassy-time",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-radio",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
 ]
 
 [[package]]
@@ -1543,7 +1534,6 @@ dependencies = [
  "esp-hal",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-esp-hal",
  "oer-esp32s31-ieee802154-runtime",
  "oer-esp32s31-phy",
@@ -1551,6 +1541,7 @@ dependencies = [
  "oer-esp32s31-radio-esp-hal",
  "oer-esp32s31-radio-runtime",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
  "static_cell",
 ]
 
@@ -1636,6 +1627,13 @@ name = "oer-ieee802154"
 version = "0.1.0"
 
 [[package]]
+name = "oer-ieee802154-engine"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee802154",
+]
+
+[[package]]
 name = "oer-memory"
 version = "0.1.0"
 
@@ -1664,10 +1662,10 @@ name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-openthread",
  "oer-esp32s31-ieee802154-system",
  "oer-ieee802154",
+ "oer-ieee802154-engine",
  "oer-memory",
  "oer-network-interface",
  "oer-radio",

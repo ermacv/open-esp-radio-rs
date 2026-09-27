@@ -36,7 +36,8 @@ Cargo package identities are independent of this directory hierarchy.
 | `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
 | `roles/esp32s31/ieee802154/radio/` | Executor-free IEEE 802.15.4 radio role: the portable radio contract over the ported MAC engine |
 | `roles/esp32s31/bluetooth/radio/` | Executor-free Bluetooth LE radio role: the portable LE radio contract over the scheduler executor and the role instance pools |
-| `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; the IEEE 802.15.4 root is the MAC engine ported from the public ESP-IDF driver |
+| `hardware/ieee802154/engine/` | Chip-neutral IEEE 802.15.4 MAC engine ported from the public ESP-IDF driver, over the `Ieee802154LowLevel` interface each chip's HAL implements |
+| `hardware/esp32s31/driver/{bluetooth,coex}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; `ieee802154/` keeps only the ESP32-S31 IEEE 802.15.4 capability page |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/embassy/esp32s31/` | Executor/time platform ABI and coexistence mailbox |

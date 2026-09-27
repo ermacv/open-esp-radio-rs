@@ -16,11 +16,20 @@ pub(crate) mod policy;
 
 pub(crate) mod role;
 
-pub(crate) mod tx_power;
+pub mod tx_power;
 
 pub(crate) mod validation;
 
 pub use oer_esp32s31_pac::Ieee802154MultipanIndex;
+
+/// The memory the ESP32-S31 IEEE 802.15.4 MAC DMA reaches: the internal SRAM
+/// of `SOC_DMA_LOW`..`SOC_DMA_HIGH` in ESP-IDF's
+/// `soc/esp32s31/include/soc/soc.h` at
+/// `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`. PSRAM is outside it: a frame
+/// there makes the MAC report a DMA error, and nothing reaches the air or
+/// memory. The engine checks its frame buffers against it
+/// ([`oer_ieee802154_engine::engine::Ieee802154Engine::buffers_dma_visible`]).
+pub const IEEE802154_DMA_WINDOW: core::ops::Range<usize> = 0x2f00_0000..0x2f08_0000;
 
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
@@ -75,6 +84,4 @@ pub use role::{
     Ieee802154ResetTransitionFailure,
 };
 
-pub use tx_power::{
-    Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels, Ieee802154TxPowerLevelsError,
-};
+pub use tx_power::ESP32S31_TX_POWER_LEVELS;

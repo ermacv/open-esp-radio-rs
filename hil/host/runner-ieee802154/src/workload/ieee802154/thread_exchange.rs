@@ -82,7 +82,7 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
         let boot_output = output.join(format!("boot-{boot:03}"));
         let transcript = PeerTranscript::default();
         let result = context.with_capture(&boot_output, |capture| {
-            let mut peer = ThreadPeer::open_recorded(&peer_config.serial, &transcript)?;
+            let mut peer = ThreadPeer::open_recorded(&peer_config.serial()?, &transcript)?;
             exchange(capture, &mut peer, &config, boot)
         });
         transcript.save(&boot_output.join(PEER_TRANSCRIPT))?;

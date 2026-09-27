@@ -194,10 +194,10 @@ fn the_ieee802154_peer_is_optional_and_needs_an_identity() {
     let lab = load(&raw).unwrap();
     assert_eq!(
         lab.ieee802154_peer,
-        Some(Ieee802154PeerConfig {
-            id: String::from("esp32c5-peer-01"),
-            serial: std::path::PathBuf::from("/dev/ttyUSB0"),
-        })
+        Some(Ieee802154PeerConfig::new(
+            String::from("esp32c5-peer-01"),
+            std::path::PathBuf::from("/dev/ttyUSB0"),
+        ))
     );
     let mut absent = raw.clone();
     absent.as_table_mut().unwrap().remove("ieee802154_peer");
@@ -237,11 +237,25 @@ fn devices_are_named_by_serial_port_or_by_registered_board() {
     assert_eq!(lab.device.serial, std::path::PathBuf::from("/dev/ttyACM0"));
     assert_eq!(
         lab.ieee802154_peer,
-        Some(Ieee802154PeerConfig {
-            id: String::from("esp32c5"),
-            serial: std::path::PathBuf::from("/dev/ttyACM1"),
-        })
+        Some(Ieee802154PeerConfig::new(
+            String::from("esp32c5"),
+            std::path::PathBuf::from("/dev/ttyACM1"),
+        ))
     );
+    // A peer board that is not attached fails only the runs that use it.
+    let detached = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
+        match (board, chip) {
+            ("esp32s31", Some("esp32s31")) => Ok("/dev/ttyACM0".into()),
+            _ => Err(format!("board `{board}` is not attached").into()),
+        }
+    };
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(toml::to_string(&boards).unwrap().as_bytes())
+        .unwrap();
+    let lab = LabConfig::load_resolving(file.path(), &detached).unwrap();
+    assert_eq!(lab.device.serial, std::path::PathBuf::from("/dev/ttyACM0"));
+    let error = lab.ieee802154_peer.unwrap().serial().unwrap_err();
+    assert!(error.to_string().contains("not attached"), "{error}");
     let mut both = boards.clone();
     both["device"]
         .as_table_mut()

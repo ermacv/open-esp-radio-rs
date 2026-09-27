@@ -208,12 +208,15 @@ fn claims(
     if request.device {
         claims.push(Claim::board(&board_identity(&lab.device.serial)));
     }
-    if let Some(peer) = lab
+    // A peer whose board is not attached is claimed by no port; the run's
+    // preflight reports it.
+    if let Some(serial) = lab
         .ieee802154_peer
         .as_ref()
         .filter(|_| request.required.ieee802154_peer)
+        .and_then(|peer| peer.serial().ok())
     {
-        claims.push(Claim::board(&board_identity(&peer.serial)));
+        claims.push(Claim::board(&board_identity(&serial)));
     }
     claims.extend(
         keys.iter()
@@ -606,7 +609,7 @@ fn bluetooth_key(adapter: oer_hil_fixture::bluetooth::model::Adapter) -> Result<
 fn ieee802154_peer_key(peer: &super::config::Ieee802154PeerConfig) -> Result<String> {
     Ok(format!(
         "ieee802154-peer:{}",
-        peer.serial.canonicalize()?.display()
+        peer.serial()?.canonicalize()?.display()
     ))
 }
 

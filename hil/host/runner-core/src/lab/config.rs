@@ -85,7 +85,25 @@ struct RawIeee802154PeerConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Ieee802154PeerConfig {
     pub id: String,
-    pub serial: PathBuf,
+    /// The peer's port, or why its board has none: a board that is not
+    /// attached fails only the runs that use the peer.
+    port: std::result::Result<PathBuf, String>,
+}
+
+impl Ieee802154PeerConfig {
+    pub fn new(id: String, serial: PathBuf) -> Self {
+        Self {
+            id,
+            port: Ok(serial),
+        }
+    }
+
+    /// The peer's serial port; an error when its board is not attached.
+    pub fn serial(&self) -> Result<PathBuf> {
+        self.port
+            .clone()
+            .map_err(|error| format!("IEEE 802.15.4 peer: {error}").into())
+    }
 }
 
 #[derive(Deserialize)]
@@ -585,16 +603,15 @@ impl LabConfig {
                     if id.trim().is_empty() {
                         return Err("IEEE 802.15.4 peer id is empty".into());
                     }
-                    Ok(Ieee802154PeerConfig {
-                        id,
-                        serial: board_port(
-                            "ieee802154_peer",
-                            config.serial,
-                            config.board.as_deref(),
-                            None,
-                            resolve,
-                        )?,
-                    })
+                    // Only the board's attachment is deferred to the runs
+                    // that use the peer; a malformed section still fails.
+                    let port = match (config.serial, config.board.as_deref()) {
+                        (None, Some(board)) => resolve(board, None).map_err(|e| e.to_string()),
+                        (serial, board) => {
+                            Ok(board_port("ieee802154_peer", serial, board, None, resolve)?)
+                        }
+                    };
+                    Ok(Ieee802154PeerConfig { id, port })
                 })
                 .transpose()?,
             target,

@@ -563,7 +563,7 @@ impl LiveSuite<'_> {
             return Ok(());
         }
         let lease = self.lease.as_ref().ok_or("the run holds no stand lease")?;
-        let board = hil_core::lab::lock::board_identity(&peer.serial);
+        let board = hil_core::lab::lock::board_identity(&peer.serial()?);
         let mut command =
             std::process::Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
         command

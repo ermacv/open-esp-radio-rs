@@ -144,8 +144,9 @@ pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Opt
     let plan = selected.plan();
     if let Some(image) = selected.family.ieee802154_peer_image()
         && let Some(peer) = &lab.ieee802154_peer
-        && let Err(error) =
-            hil_core::lab::lock::require_board_image(&peer.serial, image.name, image.reflash)
+        && let Err(error) = peer.serial().and_then(|serial| {
+            hil_core::lab::lock::require_board_image(&serial, image.name, image.reflash)
+        })
     {
         return Some(Failure::new(FailureKind::Precondition, error.to_string()));
     }

@@ -7,6 +7,7 @@ members = [
     "tools/process",
     "tools/firmware",
     "tools/symbol-lineage",
+    "verification/esp32s31/hardware/calibration",
     "platform/esp32s31/layout",
     "hil/protocol",
     "hil/schema",

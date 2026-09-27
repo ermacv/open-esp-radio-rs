@@ -1,0 +1,9 @@
+# Reviewed tolerances of the hardware calibration cross-check.
+#
+# One entry per compared field of the `phy_param` relation
+# (verification/esp32s31/scenarios/src/phy/committed.rs). A production value
+# passes when it lies within the range the vendor cold boots span on the same
+# board, widened by `margin` element units. `signed` reads the elements as
+# two's-complement values. A compared field without an entry leaves the
+# cross-check INCOMPLETE.
+schema = 1

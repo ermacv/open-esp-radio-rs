@@ -9,7 +9,7 @@ no HIL board scenarios and no private vendor artifacts.
 | L0 pins | which vendor code is the reference | [`esp32s31/artifacts.toml`](esp32s31/artifacts.toml) |
 | L1 facts | recovered constants, tables and register facts describe the pinned code | production `SOURCE:` blocks, [`registers`](../registers/README.md) evidence, [`esp32s31/facts`](esp32s31/facts) |
 | L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md), shards in [`esp32s31/evidence/scenarios`](esp32s31/evidence/scenarios) |
-| L3 hardware | the drivers work on the board | [`hil`](../hil/README.md), tracked shards in `hil/evidence/` |
+| L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), tracked shards in `hil/evidence/`, [`esp32s31/hardware`](esp32s31/hardware/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
 | L4 readiness | a capability is qualified | [`qualification`](../qualification/README.md) |
 
 ```text
@@ -24,6 +24,7 @@ verification/
     host/ieee802154/ L2: the public IEEE 802.15.4 driver compiled on the host
     evidence/        L2 output: one generated shard per scenario
     hil-vendor/      L3: vendor ESP-IDF firmware for hardware cross-checks
+    hardware/        L3: vendor-versus-production cross-checks on the board
 ```
 
 **L0.** `cargo xtask vendor-fetch esp32s31` downloads and verifies every pinned
@@ -49,8 +50,11 @@ vendor behavior they cover.
 **L3 and L4.** HIL runs exercise the drivers on hardware; `cargo xtask
 vendor-firmware esp32s31` builds the vendor firmware of `hil-vendor/` against
 the pinned ESP-IDF, with its PHY, coexistence, Wi-Fi and Bluetooth library
-submodules replaced by the pinned archives, for comparisons of vendor and
-production behavior on the same board. A qualifying
+submodules replaced by the pinned archives, and the
+[calibration cross-check](esp32s31/hardware/calibration/README.md) compares
+its cold calibration with production's on the same board through the
+tracking scenario's reviewed relation, writing a dated summary to
+`esp32s31/evidence/hardware/`. A qualifying
 observation is recorded as a tracked shard bound to its firmware and observer
 sources. The only path from
 comparison or HIL evidence to product readiness is the independent

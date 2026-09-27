@@ -2607,6 +2607,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-hil-calibration-artifact"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-phy",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "oer-esp32s31-ieee80211"
 version = "0.1.0"
 dependencies = [
@@ -2891,6 +2900,22 @@ version = "0.1.0"
 dependencies = [
  "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-phy-vendor-calibration"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "oer-esp32s31-firmware",
+ "oer-esp32s31-hil-calibration-artifact",
+ "oer-esp32s31-phy",
+ "oer-hil-protocol",
+ "oer-hil-runner-core",
+ "serde",
+ "serde_json",
+ "serialport",
+ "toml",
 ]
 
 [[package]]

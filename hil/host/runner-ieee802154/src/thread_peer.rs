@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     Result,
-    peer::{PeerLink, PeerTranscript, RecordingLink, SerialLink},
+    peer::{PeerLink, PeerTranscript, RecordingLink, SerialLink, SyncAnswer, synchronize_link},
 };
 
 /// Protocol version the driver speaks.
@@ -126,24 +126,23 @@ impl<L: PeerLink> ThreadPeer<L> {
     /// Leave any network and close the socket with `SYNC`, and wait for the
     /// peer's `@READY` line on `link`.
     pub fn synchronize(mut link: L) -> Result<Self> {
-        link.send("SYNC")?;
-        let deadline = Instant::now() + READY_TIMEOUT;
-        while let Some(line) = link.receive(deadline)? {
-            if let Some(Line::Ready { protocol }) = parse_line(&line) {
-                if protocol != THREAD_PEER_PROTOCOL {
-                    return Err(format!("Thread peer speaks protocol {protocol}").into());
-                }
-                return Ok(Self {
-                    link,
-                    received: VecDeque::new(),
-                });
-            }
+        let answer = |line: &str| match parse_line(line) {
+            Some(Line::Ready { protocol }) => SyncAnswer::Ready(protocol),
+            Some(Line::Err { .. }) => SyncAnswer::Rejected,
+            _ => SyncAnswer::Other,
+        };
+        match synchronize_link(&mut link, READY_TIMEOUT, answer)? {
+            Some(THREAD_PEER_PROTOCOL) => Ok(Self {
+                link,
+                received: VecDeque::new(),
+            }),
+            Some(protocol) => Err(format!("Thread peer speaks protocol {protocol}").into()),
+            None => Err(format!(
+                "Thread peer did not answer SYNC; the board may carry other firmware: \
+                 {THREAD_PEER_REFLASH}"
+            )
+            .into()),
         }
-        Err(format!(
-            "Thread peer did not answer SYNC; the board may carry other firmware: \
-             {THREAD_PEER_REFLASH}"
-        )
-        .into())
     }
 
     /// Send `line` and wait for the answer to `name`; returns the report

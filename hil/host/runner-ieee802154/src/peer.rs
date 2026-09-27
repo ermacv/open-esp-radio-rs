@@ -177,6 +177,42 @@ pub(crate) fn cfg_line(config: &PeerConfig) -> String {
     )
 }
 
+/// How a line answers a `SYNC`.
+pub(crate) enum SyncAnswer {
+    /// The peer reported ready with this protocol.
+    Ready(u32),
+    /// The peer rejected a line: bytes of the `SYNC` were lost.
+    Rejected,
+    Other,
+}
+
+/// Attempts of one synchronization: bytes sent right after the port opens
+/// can be lost.
+const SYNC_ATTEMPTS: usize = 3;
+
+/// Send `SYNC` until the peer reports ready; returns its protocol. An empty
+/// line first ends whatever partial line the peer holds, and a rejected
+/// `SYNC` is sent again.
+pub(crate) fn synchronize_link<L: PeerLink>(
+    link: &mut L,
+    timeout: Duration,
+    answer: impl Fn(&str) -> SyncAnswer,
+) -> Result<Option<u32>> {
+    for _ in 0..SYNC_ATTEMPTS {
+        link.send("")?;
+        link.send("SYNC")?;
+        let deadline = Instant::now() + timeout;
+        while let Some(line) = link.receive(deadline)? {
+            match answer(&line) {
+                SyncAnswer::Ready(protocol) => return Ok(Some(protocol)),
+                SyncAnswer::Rejected => break,
+                SyncAnswer::Other => {}
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Line transport to the peer.
 pub trait PeerLink {
     fn send(&mut self, line: &str) -> Result<()>;
@@ -337,24 +373,23 @@ impl<L: PeerLink> Peer<L> {
     /// Return the running peer on `link` to its defaults with `SYNC` and
     /// wait for its `@READY` line.
     pub fn synchronize(mut link: L) -> Result<Self> {
-        link.send("SYNC")?;
-        let deadline = Instant::now() + READY_TIMEOUT;
-        while let Some(line) = link.receive(deadline)? {
-            if let Some(Line::Ready { protocol }) = parse_line(&line) {
-                if protocol != PEER_PROTOCOL {
-                    return Err(format!("IEEE 802.15.4 peer speaks protocol {protocol}").into());
-                }
-                return Ok(Self {
-                    link,
-                    events: VecDeque::new(),
-                });
-            }
+        let answer = |line: &str| match parse_line(line) {
+            Some(Line::Ready { protocol }) => SyncAnswer::Ready(protocol),
+            Some(Line::Err { .. }) => SyncAnswer::Rejected,
+            _ => SyncAnswer::Other,
+        };
+        match synchronize_link(&mut link, READY_TIMEOUT, answer)? {
+            Some(PEER_PROTOCOL) => Ok(Self {
+                link,
+                events: VecDeque::new(),
+            }),
+            Some(protocol) => Err(format!("IEEE 802.15.4 peer speaks protocol {protocol}").into()),
+            None => Err(format!(
+                "IEEE 802.15.4 peer did not answer SYNC; the board may carry other \
+                 firmware: {PEER_REFLASH}"
+            )
+            .into()),
         }
-        Err(format!(
-            "IEEE 802.15.4 peer did not answer SYNC; the board may carry other \
-             firmware: {PEER_REFLASH}"
-        )
-        .into())
     }
 
     fn command(&mut self, name: &str, line: &str) -> Result<()> {

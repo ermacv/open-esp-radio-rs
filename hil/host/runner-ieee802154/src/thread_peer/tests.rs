@@ -78,6 +78,7 @@ fn commands_render_and_return_their_reports() {
     assert_eq!(
         peer.link.sent,
         [
+            "",
             "SYNC",
             "FORM 15 0x4f45",
             "DATASET",

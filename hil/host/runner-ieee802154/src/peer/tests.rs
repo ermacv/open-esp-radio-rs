@@ -110,7 +110,7 @@ fn commands_wait_for_their_answer_and_keep_interleaved_events() {
     ]);
     let mut peer = Peer::synchronize(link).unwrap();
     peer.transmit(false, &[0x41, 0x88]).unwrap();
-    assert_eq!(peer.link.sent, ["SYNC", "TX 0 4188"]);
+    assert_eq!(peer.link.sent, ["", "SYNC", "TX 0 4188"]);
     assert!(matches!(
         peer.next_event(Duration::ZERO).unwrap(),
         Some(PeerEvent::Received(_))
@@ -158,6 +158,7 @@ fn the_recording_link_keeps_the_whole_conversation() {
     assert_eq!(
         lines,
         [
+            "> ",
             "> SYNC",
             "< earlier output",
             "< @READY protocol=1",
@@ -186,7 +187,18 @@ fn a_burst_stop_returns_the_report_printed_before_its_answer() {
             failed: 1
         }
     );
-    assert_eq!(peer.link.sent, ["SYNC", "BURST 4188", "BURST STOP"]);
+    assert_eq!(peer.link.sent, ["", "SYNC", "BURST 4188", "BURST STOP"]);
     // A stop answered without its report is not a stopped burst.
     assert!(peer.stop_burst().is_err());
+}
+
+#[test]
+fn a_mangled_sync_is_sent_again() {
+    // The first bytes after the port opened were lost: the peer rejected
+    // what reached it, then answered the repeated SYNC.
+    let link = ScriptedLink::new(&["@ERR n unknown", "@READY protocol=1", "@OK SYNC"]);
+    let peer = Peer::synchronize(link).unwrap();
+    assert_eq!(peer.link.sent, ["", "SYNC", "", "SYNC"]);
+    let silent = ScriptedLink::new(&["@ERR a unknown", "@ERR b unknown", "@ERR c unknown"]);
+    assert!(Peer::synchronize(silent).is_err());
 }

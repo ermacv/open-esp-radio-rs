@@ -62,6 +62,7 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-executor-embassy` | `adapters/embassy/esp32s31/executor/` |
 | `esp32s31-bluetooth-system` | `composition/esp32s31/embassy/bluetooth/` |
 | `esp32s31-embassy-wifi` | `composition/esp32s31/embassy/ieee80211/` |
+| `esp32s31-ieee802154-system` | `composition/esp32s31/embassy/ieee802154/` |
 
 These exceptions cover distinct obligations: singleton acquisition and MMIO
 serialization, stable addresses and CPU/DMA transfer, target ABI and placement,

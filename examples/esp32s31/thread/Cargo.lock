@@ -178,11 +178,11 @@ checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
 dependencies = [
  "bt-hci-transport",
  "btuuid",
- "embassy-sync 0.7.2",
+ "embassy-sync 0.8.0",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "futures-intrusive",
- "heapless 0.8.0",
+ "heapless 0.9.3",
 ]
 
 [[package]]
@@ -1556,6 +1556,7 @@ dependencies = [
  "oer-esp32s31-phy-runtime",
  "oer-esp32s31-radio-runtime",
  "oer-ieee802154",
+ "static_cell",
 ]
 
 [[package]]

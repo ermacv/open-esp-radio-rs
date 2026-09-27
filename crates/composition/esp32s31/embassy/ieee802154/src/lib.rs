@@ -1,5 +1,5 @@
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 #![deny(missing_docs)]
 
 //! ESP32-S31 IEEE 802.15.4 as a client of the shared radio arbiter.

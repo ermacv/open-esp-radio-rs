@@ -23,7 +23,7 @@ use esp_hal::{
 use log::{error, info};
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 use oer_esp32s31_hal::root::RadioHardware;
-use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
+use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_openthread::{
     OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
     frames::role_coex_config,
@@ -73,8 +73,6 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 static TRNG: StaticCell<Trng> = StaticCell::new();
 static RADIO: StaticCell<Radio> = StaticCell::new();
-static BUFFERS: ConstStaticCell<Ieee802154EngineBuffers> =
-    ConstStaticCell::new(Ieee802154EngineBuffers::new());
 static SYSTEM: StaticCell<Ieee802154System> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
 static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
@@ -162,7 +160,8 @@ async fn thread_task(
     );
     let radio: &'static Radio = RADIO.init(radio);
     let defaults = Ieee802154PibDefaults::default();
-    let parked = Ieee802154Parked::new(partitions.ieee802154, BUFFERS.take(), defaults);
+    let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)
+        .expect("the IEEE 802.15.4 engine frames are taken once");
     // Bring-up registers and calibrates the shared PHY; pin its future.
     let started = {
         let started = pin!(start(radio, parked, defaults));

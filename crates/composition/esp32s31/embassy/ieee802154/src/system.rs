@@ -49,6 +49,7 @@ use oer_esp32s31_radio_runtime::{
     RadioSystem,
 };
 use oer_ieee802154::{AcceptedCommand, RadioCommand};
+use static_cell::ConstStaticCell;
 
 use crate::maintenance::{
     Ieee802154PhyMaintenance, MAINTENANCE_PERIOD_MICROS, next_attempt_micros,
@@ -76,6 +77,18 @@ extern "C" fn ieee802154_interrupt() {
     RUNTIME.on_interrupt();
 }
 
+/// The engine's DMA frames. The MAC DMA reaches internal SRAM alone
+/// ([`DMA_WINDOW`](oer_esp32s31_ieee802154::engine::DMA_WINDOW)), so they
+/// live in the platform's DMA-visible section whatever the image's data
+/// placement; one engine takes them.
+#[allow(
+    unsafe_code,
+    reason = "the linker must retain the MAC's DMA frames in DMA-visible SRAM"
+)]
+#[unsafe(link_section = ".dma.bss.open_radio_ieee802154_engine")]
+static ENGINE_BUFFERS: ConstStaticCell<Ieee802154EngineBuffers> =
+    ConstStaticCell::new(Ieee802154EngineBuffers::new());
+
 /// The IEEE 802.15.4 partition and MAC engine while the client is stopped.
 pub struct Ieee802154Parked {
     /// The partition of the concurrent split.
@@ -85,30 +98,32 @@ pub struct Ieee802154Parked {
 }
 
 impl Ieee802154Parked {
-    /// Park a partition with a fresh engine over `buffers`, using the
-    /// ESP32-S31 BTBB transmit-power levels.
+    /// Park a partition with a fresh engine over the composition's
+    /// DMA-visible frames, using the ESP32-S31 BTBB transmit-power levels.
+    /// `None` once an engine took the frames.
     pub fn new(
         partition: Ieee802154RadioPartition,
-        buffers: &'static mut Ieee802154EngineBuffers,
         defaults: Ieee802154PibDefaults,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        let buffers = ENGINE_BUFFERS.try_take()?;
+        Some(Self {
             partition,
             engine: Ieee802154Engine::new(buffers, Ieee802154TxPowerLevels::ESP32S31, defaults),
-        }
+        })
     }
 
     /// Park a partition with a fresh multi-PAN engine of `interfaces`
     /// interfaces (`CONFIG_IEEE802154_MULTI_PAN_ENABLE`,
     /// `CONFIG_IEEE802154_INTERFACE_NUM`): the runtime's radio then accepts
-    /// interface settings and transmissions of each interface.
+    /// interface settings and transmissions of each interface. `None` once
+    /// an engine took the composition's DMA-visible frames.
     pub fn multipan(
         partition: Ieee802154RadioPartition,
-        buffers: &'static mut Ieee802154EngineBuffers,
         defaults: Ieee802154PibDefaults,
         interfaces: Ieee802154Interfaces,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        let buffers = ENGINE_BUFFERS.try_take()?;
+        Some(Self {
             partition,
             engine: Ieee802154Engine::new_multipan(
                 buffers,
@@ -116,7 +131,7 @@ impl Ieee802154Parked {
                 defaults,
                 interfaces,
             ),
-        }
+        })
     }
 }
 
@@ -143,6 +158,8 @@ pub enum Ieee802154StartError {
     AlreadyInstalled,
     /// The CPU route of modem source 132 could not be bound.
     Route(EspHalIeee802154InterruptRouteError),
+    /// The engine's DMA frames lie outside the memory the MAC DMA reaches.
+    BuffersNotDmaVisible,
 }
 
 /// Owners retained after a failure that may have left hardware in an
@@ -363,6 +380,14 @@ pub async fn start<P, C: PlatformClockProvider>(
     parked: Ieee802154Parked,
     defaults: Ieee802154PibDefaults,
 ) -> Result<Ieee802154System, Ieee802154StartFailure> {
+    // Frames the MAC DMA cannot reach leave the radio silent on air; refuse
+    // before any hardware changes.
+    if !parked.engine.buffers_dma_visible() {
+        return Err(Ieee802154StartFailure {
+            error: Ieee802154StartError::BuffersNotDmaVisible,
+            owner: Ok(parked),
+        });
+    }
     let Ieee802154Parked {
         partition,
         mut engine,

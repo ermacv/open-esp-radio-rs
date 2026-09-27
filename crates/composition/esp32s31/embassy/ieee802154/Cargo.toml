@@ -19,6 +19,7 @@ oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
 oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }
 oer-esp32s31-coex = { path = "../../../../hardware/esp32s31/driver/coex" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
+static_cell = "2.1.1"
 
 # Hardware composition is target-only.
 [target.'cfg(target_arch = "riscv32")'.dependencies]

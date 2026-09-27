@@ -37,7 +37,7 @@ use oer_ieee802154::{FrameAddress, FrameType, FrameVersion, PendingTable, PhrFra
 mod buffers;
 mod statistics;
 
-pub use buffers::{FRAME_SIZE, Ieee802154EngineBuffers, RX_BUFFER_COUNT};
+pub use buffers::{DMA_WINDOW, FRAME_SIZE, Ieee802154EngineBuffers, RX_BUFFER_COUNT};
 pub use statistics::{
     Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
     Ieee802154TxRxStatistics, Ieee802154TxStatistics,
@@ -381,6 +381,12 @@ impl<'storage> Ieee802154Engine<'storage> {
     /// The coexistence the engine publishes.
     pub const fn coexistence(&self) -> Ieee802154Coexistence {
         self.coexistence
+    }
+
+    /// Whether the engine's DMA frames lie in [`DMA_WINDOW`]; the MAC
+    /// cannot transmit or receive through frames outside it.
+    pub fn buffers_dma_visible(&self) -> bool {
+        self.buffers.is_dma_visible()
     }
 
     /// The multi-PAN interfaces, `None` without multi-PAN.

@@ -2868,6 +2868,7 @@ dependencies = [
  "oer-esp32s31-phy-runtime",
  "oer-esp32s31-radio-runtime",
  "oer-ieee802154",
+ "static_cell",
 ]
 
 [[package]]

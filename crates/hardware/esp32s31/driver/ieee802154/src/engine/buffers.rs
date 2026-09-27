@@ -15,6 +15,21 @@ pub const FRAME_SIZE: usize = 128;
 /// Receive buffers the upper layer may hold (`CONFIG_IEEE802154_RX_BUFFER_SIZE`).
 pub const RX_BUFFER_COUNT: usize = 20;
 
+/// The memory the IEEE 802.15.4 MAC DMA reaches: the internal SRAM of
+/// `SOC_DMA_LOW`..`SOC_DMA_HIGH` in ESP-IDF's `soc/esp32s31/include/soc/soc.h`
+/// at `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`. PSRAM is outside it: a
+/// frame there makes the MAC report a DMA error, and nothing reaches the
+/// air or memory.
+pub const DMA_WINDOW: core::ops::Range<usize> = 0x2f00_0000..0x2f08_0000;
+
+/// Whether the `len` bytes at `start` lie in [`DMA_WINDOW`].
+const fn dma_window_contains(start: usize, len: usize) -> bool {
+    match start.checked_add(len) {
+        Some(end) => start >= DMA_WINDOW.start && end <= DMA_WINDOW.end,
+        None => false,
+    }
+}
+
 /// One four-byte-aligned DMA frame image.
 #[repr(C, align(4))]
 pub(crate) struct DmaFrame(UnsafeCell<[u8; FRAME_SIZE]>);
@@ -113,6 +128,15 @@ impl Ieee802154EngineBuffers {
         }
     }
 
+    /// Whether every frame lies in [`DMA_WINDOW`], where the MAC DMA
+    /// reaches it.
+    pub fn is_dma_visible(&self) -> bool {
+        dma_window_contains(
+            core::ptr::from_ref(self) as usize,
+            core::mem::size_of::<Self>(),
+        )
+    }
+
     /// The buffer whose published address is `address`.
     #[cfg(not(target_arch = "riscv32"))]
     pub(crate) fn frame_at(&self, address: u32) -> Option<&DmaFrame> {
@@ -130,3 +154,6 @@ impl Ieee802154EngineBuffers {
 // SAFETY: the buffers are reachable only through the engine's exclusive
 // borrow, and every access is a whole-image volatile copy.
 unsafe impl Sync for Ieee802154EngineBuffers {}
+
+#[cfg(test)]
+mod tests;

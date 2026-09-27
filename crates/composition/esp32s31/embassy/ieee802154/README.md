@@ -77,6 +77,12 @@ other key identifier modes reuse the address of the last mode 1
 transmission, as the port's shared `s_security_addr` does; unlike the port,
 secured enhanced ACKs do not refresh it.
 
+The engine's DMA frames belong to the composition: the MAC DMA reaches
+internal SRAM alone, not PSRAM, so they live in the platform's DMA-visible
+section whatever the image's data placement, and `Ieee802154Parked::new`
+takes them once. `start` refuses frames outside that memory before touching
+the hardware (`Ieee802154StartError::BuffersNotDmaVisible`).
+
 `Ieee802154Parked::multipan` parks an engine built with multi-PAN
 (`CONFIG_IEEE802154_MULTI_PAN_ENABLE`) and one to four interfaces. Its
 radio publishes `MULTI_PAN`: `Configuration::Interface` sets each

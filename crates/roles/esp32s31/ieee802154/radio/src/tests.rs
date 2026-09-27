@@ -1541,8 +1541,8 @@ fn an_enhanced_ack_to_a_probing_initiator_carries_its_link_metrics() {
     assert!(!ack.windows(3).any(|window| window == [0x9b, 0xb8, 0xea]));
 }
 
-/// A frame with a Time IE gets the time sync sequence and the network time
-/// - the radio clock plus the offset - when its SFD goes out, as the port's
+/// A frame with a Time IE gets the time sync sequence and the network time,
+/// the radio clock plus the offset, when its SFD goes out, as the port's
 /// `ot_radio_transmit_sfd_done` writes them.
 #[test]
 fn the_time_ie_gets_the_network_time_at_the_sfd() {

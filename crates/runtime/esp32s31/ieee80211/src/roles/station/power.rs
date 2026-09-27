@@ -387,6 +387,12 @@ mod agent {
                     link.performed.fetch_add(1, Ordering::AcqRel);
                 }
                 Either3::Second(phase) => {
+                    #[cfg(feature = "diagnostics")]
+                    log::info!(
+                        "open-radio: power agent coex phase share={} wifi={}",
+                        phase.share_percent(),
+                        phase.wifi()
+                    );
                     link.phase.lock(|cell| {
                         cell.set(Some(CoexPhaseView {
                             share_percent: phase.share_percent(),
@@ -402,6 +408,8 @@ mod agent {
                     link.preemption.lock(|cell| cell.set(Some(end)));
                 }
                 Either3::Third(Either::Second(observation)) => {
+                    #[cfg(feature = "diagnostics")]
+                    log::info!("open-radio: power agent power irq {observation:?}");
                     if !observation.sta_tbtt() {
                         continue;
                     }

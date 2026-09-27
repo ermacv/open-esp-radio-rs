@@ -1598,6 +1598,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-hil-calibration-artifact"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-phy",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "oer-esp32s31-ieee80211"
 version = "0.1.0"
 dependencies = [
@@ -1956,6 +1965,7 @@ dependencies = [
  "oer-esp32s31-bluetooth-system",
  "oer-esp32s31-executor-embassy",
  "oer-esp32s31-hal",
+ "oer-esp32s31-hil-calibration-artifact",
  "oer-esp32s31-ieee80211-dma",
  "oer-esp32s31-ieee80211-esp-hal",
  "oer-esp32s31-ieee80211-mac",
@@ -1980,8 +1990,6 @@ dependencies = [
  "oer-ieee802154",
  "oer-network-interface",
  "open-esp-radio",
- "postcard",
- "serde",
  "static_cell",
  "trouble-host",
  "xarxa 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=0d41d8e80cb617d355cf6981b6ff76635c44cadc)",

@@ -73,8 +73,7 @@ open-radio-hil = [
     "dep:oer-hil-target-core",
     "dep:oer-hil-esp32s31-telemetry",
     "dep:oer-ieee80211-runtime",
-    "dep:postcard",
-    "dep:serde",
+    "dep:oer-esp32s31-hil-calibration-artifact",
 ]
 # The Wi-Fi image with a concurrent Bluetooth LE client on the same shared
 # radio: the Trouble GATT application runs beside Wi-Fi traffic and serves the
@@ -236,8 +235,7 @@ oer-esp32s31-platform-board = { path = "../../../../platform/esp32s31/board" }
 oer-esp32s31-platform-runtime = { path = "../../../../platform/esp32s31/runtime" }
 oer-hil-esp32s31-telemetry = { workspace = true, optional = true }
 oer-ieee80211-runtime = { workspace = true, optional = true }
-postcard = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
+oer-esp32s31-hil-calibration-artifact = { path = "../calibration-artifact", optional = true }
 static_cell.workspace = true
 
 [lints]

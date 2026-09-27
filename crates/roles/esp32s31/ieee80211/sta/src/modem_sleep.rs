@@ -1107,7 +1107,9 @@ impl ModemSleep {
     }
 
     /// `pm_handle_tbtt_interval`: a TBTT interval of `beacons` beacon
-    /// intervals kept in step with the DTIM.
+    /// intervals kept in step with the DTIM. When the DTIM is not yet
+    /// aligned with that period, the interval first runs up to the DTIM
+    /// and is re-derived at the next beacon.
     fn handle_tbtt_interval(&mut self, beacons: u8, tim: Option<PmTim>) -> u32 {
         let Some(tim) = tim else {
             self.update_tbtt_at_next_beacon = true;
@@ -1116,11 +1118,12 @@ impl ModemSleep {
         let beacons = beacons.max(1);
         let period = tim.dtim_period.max(1);
         let compatible = beacons.is_multiple_of(period) || period.is_multiple_of(beacons);
-        if !compatible || tim.dtim_count % beacons != 0 {
+        let offset = tim.dtim_count % beacons;
+        if !compatible || offset == 0 {
             return u32::from(beacons) * self.beacon_interval_micros;
         }
         self.update_tbtt_at_next_beacon = true;
-        u32::from(tim.dtim_count % beacons) * self.beacon_interval_micros
+        u32::from(offset) * self.beacon_interval_micros
     }
 
     /// `pm_update_next_tbtt`: program the TBTT schedule from this beacon.

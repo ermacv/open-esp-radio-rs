@@ -230,11 +230,16 @@ fn the_tbtt_interval_keeps_step_with_the_dtim() {
     };
     // Six beacons against a DTIM period of four: incompatible.
     assert_eq!(pm.handle_tbtt_interval(6, tim(0, 4)), 6 * BI);
-    // Compatible, but the DTIM is not aligned yet.
-    assert_eq!(pm.handle_tbtt_interval(3, tim(1, 3)), 3 * BI);
-    // Aligned: the vendor re-derives it at the next beacon.
+    // Compatible and aligned with the DTIM: the whole period.
     pm.update_tbtt_at_next_beacon = false;
-    assert_eq!(pm.handle_tbtt_interval(3, tim(0, 3)), 0);
+    assert_eq!(pm.handle_tbtt_interval(3, tim(0, 3)), 3 * BI);
+    assert!(!pm.update_tbtt_at_next_beacon);
+    // A DTIM every beacon keeps a TBTT every beacon.
+    assert_eq!(pm.handle_tbtt_interval(1, tim(0, 1)), BI);
+    assert!(!pm.update_tbtt_at_next_beacon);
+    // Compatible, but the DTIM is not aligned yet: run up to it, then
+    // re-derive the interval at the next beacon.
+    assert_eq!(pm.handle_tbtt_interval(3, tim(1, 3)), BI);
     assert!(pm.update_tbtt_at_next_beacon);
     // No TIM: one beacon interval, resynchronized at the next beacon.
     assert_eq!(pm.handle_tbtt_interval(6, None), BI);

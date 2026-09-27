@@ -34,8 +34,8 @@ any other bytes. Changing a pin means changing the manifest, then following
 the pinned behavior in production.
 
 **L1.** A recovered fact names the vendor function it was read from. `cargo
-xtask check provenance` fails when such a function changed since its facts
-were reviewed; `cargo xtask vendor-diff` shows what changed between two pins,
+xtask check provenance --chip esp32s31` fails when such a function changed since its facts
+were reviewed; `cargo xtask vendor-diff --chip esp32s31` shows what changed between two pins,
 and `tools/symbol-lineage` pairs obfuscated names across releases. See the
 [source policy](../docs/source-policy.md).
 

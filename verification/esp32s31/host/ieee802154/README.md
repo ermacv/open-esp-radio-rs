@@ -71,7 +71,7 @@ are not compared. A vendor assertion, or a step the engine does not own, is
 content. The stand has no BTBB power table, so both sides resolve power
 to index zero. The tests require `MATCH` for every catalog scenario.
 
-`cargo xtask evidence ieee802154-host` runs `compare` for every catalog
+`cargo xtask evidence --chip esp32s31 ieee802154-host` runs `compare` for every catalog
 scenario and, only when all of them MATCH, writes the stand's evidence shard
 `verification/esp32s31/evidence/scenarios/ieee802154-host.json`: one entry per
 scenario (source `esp-idf`, production `oer_esp32s31_ieee802154::engine`), the

@@ -26,7 +26,7 @@ enum Task {
     /// the forwarded arguments (for example `gain --library ...`).
     #[command(disable_help_flag = true)]
     VendorScenario {
-        #[arg(long, default_value = "esp32s31")]
+        #[arg(long)]
         chip: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<std::ffi::OsString>,
@@ -34,13 +34,13 @@ enum Task {
     /// Download the chip's pinned vendor artifacts into `target/vendor` and
     /// verify every artifact against `artifacts.toml`.
     VendorFetch {
-        #[arg(default_value = "esp32s31")]
+        #[arg()]
         chip: String,
     },
     /// Build the chip's tracked vendor firmware against the pinned ESP-IDF
     /// and pinned vendor archives into `target/vendor-firmware`.
     VendorFirmware {
-        #[arg(long, default_value = "esp32s31")]
+        #[arg(long)]
         chip: String,
         /// One project of `verification/<chip>/hil-vendor`; all when omitted.
         project: Option<String>,
@@ -48,7 +48,7 @@ enum Task {
     /// Compare two revisions of a vendor archive function by function, or
     /// every pinned artifact with its namesake in `--baseline`.
     VendorDiff {
-        #[arg(long, default_value = "esp32s31")]
+        #[arg(long)]
         chip: String,
         #[arg(long, requires = "new", conflicts_with = "baseline")]
         old: Option<PathBuf>,
@@ -64,7 +64,7 @@ enum Task {
     /// Rewrite the vendor evidence shards whose recorded sources changed, or
     /// the named scenarios' shards. Resolves conflicting shards after a merge.
     Evidence {
-        #[arg(long, default_value = "esp32s31")]
+        #[arg(long)]
         chip: String,
         /// Linker the scenarios prepare images with.
         #[arg(long, default_value = "ld.lld")]
@@ -79,7 +79,7 @@ enum Task {
         scenarios: Vec<String>,
     },
     VendorProvenance {
-        #[arg(long, default_value = "esp32s31")]
+        #[arg(long)]
         chip: String,
         /// Functions whose pinned code was reviewed.
         #[arg(long, value_delimiter = ',')]
@@ -123,7 +123,7 @@ enum Check {
     /// Check that every vendor function production and the register model
     /// cite is registered with its reviewed, still pinned code.
     Provenance {
-        #[arg(long, default_value = "esp32s31")]
+        #[arg(long)]
         chip: String,
     },
 }
@@ -149,7 +149,7 @@ enum Build {
         network: Option<oer_esp32s31_firmware::network::Integration>,
     },
     VendorProbes {
-        #[arg(long, default_value = "esp32s31")]
+        #[arg(long)]
         chip: String,
         #[arg(long)]
         list_roles: bool,

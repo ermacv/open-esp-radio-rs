@@ -42,9 +42,9 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   `verification/<chip>/artifacts.toml`; `cargo xtask
   vendor-fetch <chip>` downloads and verifies them into `target/vendor/`, and
   the vendor scenarios default to those paths. Hashes elsewhere record where a
-  reviewed fact was observed and are not pins. `cargo xtask check provenance`
+  reviewed fact was observed and are not pins. `cargo xtask check provenance --chip <chip>`
   fails when a cited vendor function changed since its facts were reviewed;
-  after a pin change, `cargo xtask vendor-diff` lists what changed.
+  after a pin change, `cargo xtask vendor-diff --chip <chip>` lists what changed.
 - `qualification/` owns capability programs and their independent evaluator.
   `registers/` owns reviewed hardware models, publication policy and generated
   SVD/bindings. `tools/` contains Blobray, memory analysis and repository checks

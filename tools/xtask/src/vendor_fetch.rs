@@ -14,12 +14,8 @@ use std::process::Command;
 pub const CACHE: &str = "target/vendor";
 
 /// Tracked manifest of `chip`, relative to the repository root.
-pub fn manifest_path(chip: &str) -> Result<&'static str> {
-    match chip {
-        "esp32s31" => Ok("verification/esp32s31/artifacts.toml"),
-        "esp32c5" => Ok("verification/esp32c5/artifacts.toml"),
-        other => Err(format!("no vendor artifacts pinned for chip {other}").into()),
-    }
+pub fn manifest_path(root: &Path, chip: &str) -> Result<String> {
+    Ok(crate::chips::Chip::new(root, chip)?.artifacts())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -239,7 +235,7 @@ pub struct Pinned {
 /// missing or differs, naming `cargo xtask vendor-fetch` for fetched ones.
 /// Local builds are skipped when absent: they are not vendor sources.
 pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
-    let manifest = manifest_path(chip)?;
+    let manifest = manifest_path(&ctx.root, chip)?;
     let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
     let mut pinned = vec![];
     for artifact in artifacts {
@@ -285,7 +281,7 @@ pub struct GitPin {
 
 /// Every pinned git source of `chip`.
 pub fn git_pins(ctx: &Context, chip: &str) -> Result<Vec<GitPin>> {
-    let manifest = manifest_path(chip)?;
+    let manifest = manifest_path(&ctx.root, chip)?;
     let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
     sources
         .into_iter()
@@ -312,7 +308,7 @@ pub fn git_pins(ctx: &Context, chip: &str) -> Result<Vec<GitPin>> {
 /// Fetch and verify every artifact of `chip`; report local builds that are
 /// missing or differ. Fails when any artifact is not available as pinned.
 pub fn run(ctx: &Context, chip: &str) -> Result<()> {
-    let manifest = manifest_path(chip)?;
+    let manifest = manifest_path(&ctx.root, chip)?;
     let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
     let mut failures = vec![];
     for artifact in &artifacts {
@@ -357,7 +353,8 @@ mod tests {
     fn tracked_manifests_parse_with_complete_sources() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         for chip in ["esp32s31", "esp32c5"] {
-            let text = std::fs::read_to_string(root.join(manifest_path(chip).unwrap())).unwrap();
+            let text =
+                std::fs::read_to_string(root.join(manifest_path(&root, chip).unwrap())).unwrap();
             let (sources, artifacts) = parse(&text).unwrap();
             assert!(artifacts.iter().any(|a| a.id == "libphy"), "{chip}");
             for source in &sources {

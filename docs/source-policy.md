@@ -49,9 +49,9 @@ Every vendor function a `SOURCE:` block, register-model evidence source or
 register or field description names is registered with the
 relocation-normalized code fingerprint of the revision its facts were reviewed
 against (`verification/<chip>/facts/provenance.toml`). A pin update
-that changes or removes such a function fails `cargo xtask check provenance`;
-`cargo xtask vendor-diff` shows what changed, and after the facts follow the
-pinned code, `cargo xtask vendor-provenance --accept` records its fingerprint.
+that changes or removes such a function fails `cargo xtask check provenance --chip <chip>`;
+`cargo xtask vendor-diff --chip <chip>` shows what changed, and after the facts follow the
+pinned code, `cargo xtask vendor-provenance --chip <chip> --accept` records its fingerprint.
 
 Raw archive/ELF files, bulk section dumps, disassembly and unreviewed extraction
 outputs remain private oracle inputs or ignored reports. A reviewed table

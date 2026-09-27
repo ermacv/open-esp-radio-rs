@@ -2,7 +2,7 @@
 
 ESP-IDF applications that run vendor code on the HIL board, so hardware
 cross-checks compare vendor and production behavior on the same device.
-`cargo xtask vendor-firmware esp32s31 [PROJECT]` builds them against the
+`cargo xtask vendor-firmware --chip esp32s31 [PROJECT]` builds them against the
 pinned ESP-IDF and the pinned vendor archives of
 [`artifacts.toml`](../artifacts.toml); outputs and `build.json` stay in
 `target/vendor-firmware/esp32s31/<project>/`. A project with a `firmware.toml`

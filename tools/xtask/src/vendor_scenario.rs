@@ -6,10 +6,16 @@ use crate::{Context, Result, process};
 use std::ffi::OsString;
 
 pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
-    let (package, binary) = match chip {
-        "esp32s31" => ("oer-esp32s31-vendor-scenarios", "esp32s31-vendor-scenarios"),
-        other => return Err(format!("no vendor scenarios for chip {other}").into()),
-    };
+    let chip = crate::chips::Chip::new(&ctx.root, chip)?;
+    let (package, binary) = chip.scenarios();
+    if !ctx
+        .root
+        .join(chip.verification("scenarios/Cargo.toml"))
+        .is_file()
+    {
+        return Err(format!("no vendor scenarios for chip {}", chip.name()).into());
+    }
+    let (package, binary) = (package.as_str(), binary.as_str());
     let Some((scenario, rest)) = args.split_first() else {
         return Err("select a scenario, for example `gain`".into());
     };

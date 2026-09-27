@@ -17,11 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// Tracked registry of `chip`, relative to the repository root.
-fn registry_path(chip: &str) -> Result<&'static str> {
-    match chip {
-        "esp32s31" => Ok("verification/esp32s31/facts/provenance.toml"),
-        other => Err(format!("no provenance registry for chip {other}").into()),
-    }
+fn registry_path(root: &Path, chip: &str) -> Result<String> {
+    Ok(crate::chips::Chip::new(root, chip)?.provenance_registry())
 }
 
 /// Register-model evidence and model of `chip`, relative to the
@@ -127,8 +124,14 @@ fn is_comment(line: &str) -> bool {
     line.starts_with("//") || line.starts_with("/*") || line.starts_with('*')
 }
 
-/// Identifiers of every `SOURCE:` comment block under `directory`.
-fn production_words(directory: &Path, out: &mut BTreeSet<String>) -> Result<()> {
+/// Identifiers of every `SOURCE:` comment block under `directory`, outside
+/// the directories of other chips, whose facts cite their own pins.
+fn production_words(
+    directory: &Path,
+    chip: &crate::chips::Chip,
+    supported: &[String],
+    out: &mut BTreeSet<String>,
+) -> Result<()> {
     for entry in std::fs::read_dir(directory)? {
         let path = entry?.path();
         let name = path
@@ -136,8 +139,11 @@ fn production_words(directory: &Path, out: &mut BTreeSet<String>) -> Result<()> 
             .and_then(|n| n.to_str())
             .unwrap_or_default();
         if path.is_dir() {
-            if name != "target" && !name.starts_with('.') {
-                production_words(&path, out)?;
+            if name != "target"
+                && !name.starts_with('.')
+                && !chip.excludes(Path::new(name), supported)
+            {
+                production_words(&path, chip, supported, out)?;
             }
         } else if name.ends_with(".rs") {
             let text = std::fs::read_to_string(&path)?;
@@ -226,7 +232,7 @@ struct Survey {
 }
 
 fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
-    let registry = match std::fs::read_to_string(ctx.root.join(registry_path(chip)?)) {
+    let registry = match std::fs::read_to_string(ctx.root.join(registry_path(&ctx.root, chip)?)) {
         Ok(text) => parse_registry(&text)?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => vec![],
         Err(error) => return Err(error.into()),
@@ -242,7 +248,9 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
         }
     }
     let mut words = BTreeSet::new();
-    production_words(&ctx.root.join(PRODUCTION), &mut words)?;
+    let supported = crate::chips::supported(&ctx.root)?;
+    let scanned = crate::chips::Chip::new(&ctx.root, chip)?;
+    production_words(&ctx.root.join(PRODUCTION), &scanned, &supported, &mut words)?;
     for directory in register_directories(chip) {
         register_words(&ctx.root.join(directory), &mut words)?;
     }
@@ -329,7 +337,7 @@ pub fn check(ctx: &Context, chip: &str) -> Result<()> {
 
 fn survey_count(ctx: &Context, chip: &str) -> Result<usize> {
     Ok(parse_registry(&std::fs::read_to_string(
-        ctx.root.join(registry_path(chip)?),
+        ctx.root.join(registry_path(&ctx.root, chip)?),
     )?)?
     .len())
 }
@@ -418,7 +426,7 @@ pub fn update(
     }
     let entries: Vec<Entry> = entries.into_iter().collect();
     std::fs::write(
-        ctx.root.join(registry_path(chip)?),
+        ctx.root.join(registry_path(&ctx.root, chip)?),
         render_registry(&entries),
     )?;
     println!("{} registered functions", entries.len());

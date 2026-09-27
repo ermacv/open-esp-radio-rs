@@ -182,7 +182,7 @@ stand scenario comparing the compiled public ESP-IDF driver with the
 production engine, over the pinned `esp-idf` sources. Its entries carry no
 Blobray coverage, observation or state counts.
 
-`cargo xtask evidence` rewrites every stale shard, or the shards of the
+`cargo xtask evidence --chip <chip>` rewrites every stale shard, or the shards of the
 scenarios it names. Git merges shards as binary files, so a conflicting merge
 keeps one side intact instead of inserting markers; the task then regenerates
 the shard from the scenarios. After a rebase that touched shards, run it and

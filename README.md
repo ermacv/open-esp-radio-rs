@@ -109,7 +109,7 @@ cargo xtask check metadata
 cargo xtask check network
 cargo xtask check architecture
 cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
-cargo xtask check phy
+cargo xtask check phy --chip esp32s31
 cargo xtask check images
 ```
 

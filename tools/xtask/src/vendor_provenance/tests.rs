@@ -30,10 +30,45 @@ fn only_comment_blocks_opened_by_the_marker_are_cited() {
     )
     .unwrap();
     let mut words = BTreeSet::new();
-    production_words(directory.path(), &mut words).unwrap();
+    production_words(directory.path(), &esp32s31(), &supported(), &mut words).unwrap();
     assert!(words.contains("hal_mac_tx_set_ppdu"));
     assert!(!words.contains("rcGetRate"));
     assert!(!words.contains("rcUpdateRate"));
+}
+
+fn root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn esp32s31() -> crate::chips::Chip {
+    crate::chips::Chip::new(&root(), "esp32s31").unwrap()
+}
+
+fn supported() -> Vec<String> {
+    vec!["esp32c5".into(), "esp32s31".into()]
+}
+
+/// Another chip's facts cite its own pins, so they are not this chip's
+/// references.
+#[test]
+fn another_chips_directory_is_not_scanned() {
+    let directory = tempfile::tempdir().unwrap();
+    for (chip, symbol) in [
+        ("esp32s31", "bt_bb_v2_init_cmplx"),
+        ("esp32c5", "ieee802154_txon_delay_set"),
+    ] {
+        let crate_dir = directory.path().join("hardware").join(chip);
+        std::fs::create_dir_all(&crate_dir).unwrap();
+        std::fs::write(
+            crate_dir.join("a.rs"),
+            format!("// SOURCE: `{symbol}` body.\nfn x() {{}}\n"),
+        )
+        .unwrap();
+    }
+    let mut words = BTreeSet::new();
+    production_words(directory.path(), &esp32s31(), &supported(), &mut words).unwrap();
+    assert!(words.contains("bt_bb_v2_init_cmplx"));
+    assert!(!words.contains("ieee802154_txon_delay_set"));
 }
 
 #[test]

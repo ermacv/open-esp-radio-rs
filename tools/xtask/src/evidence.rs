@@ -18,19 +18,15 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 /// Shard directory of `chip`, relative to the repository root.
-fn directory(chip: &str) -> Result<&'static str> {
-    match chip {
-        "esp32s31" => Ok("verification/esp32s31/evidence/scenarios"),
-        other => Err(format!("no evidence index for chip {other}").into()),
-    }
+fn directory(root: &Path, chip: &str) -> Result<String> {
+    Ok(crate::chips::Chip::new(root, chip)?.evidence_shards())
 }
-
-/// Qualification target the shards name.
-const TARGET: &str = "esp32s31";
 
 /// A stand that compiles pinned vendor source on the host and compares the
 /// production engine with it scenario by scenario.
 struct Stand {
+    /// The chip whose shards it writes.
+    chip: &'static str,
     /// Shard name.
     scenario: &'static str,
     manifest: &'static str,
@@ -41,6 +37,7 @@ struct Stand {
 }
 
 const STANDS: &[Stand] = &[Stand {
+    chip: "esp32s31",
     scenario: "ieee802154-host",
     manifest: "verification/esp32s31/host/ieee802154/Cargo.toml",
     source: "esp-idf",
@@ -50,9 +47,13 @@ const STANDS: &[Stand] = &[Stand {
 /// Shared schema sources every shard depends on.
 const SCHEMA_SOURCES: &str = "verification/schema";
 
-/// The comparison probe packages a scenario run needs.
-const RADIO_PROBES: &str = "oer-esp32s31-probe-radio-elf";
-const BLUETOOTH_PROBES: &str = "oer-esp32s31-probe-bluetooth-elf";
+/// The comparison probe packages of `chip` a scenario run needs.
+fn probes(chip: &str) -> (String, String) {
+    (
+        format!("oer-{chip}-probe-radio-elf"),
+        format!("oer-{chip}-probe-bluetooth-elf"),
+    )
+}
 
 /// Scenario names of the shards in `directory` that are stale or unreadable.
 pub fn stale(root: &Path, directory: &Path) -> Result<Vec<String>> {
@@ -90,7 +91,8 @@ pub fn run(
     limit_mode: String,
     output: PathBuf,
 ) -> Result<ExitCode> {
-    let directory = Path::new(directory(chip)?);
+    let directory = directory(&ctx.root, chip)?;
+    let directory = Path::new(&directory);
     let selected = if scenarios.is_empty() {
         stale(&ctx.root, directory)?
     } else {
@@ -104,11 +106,11 @@ pub fn run(
     println!("regenerating evidence shards: {}", selected.join(", "));
     let (stands, selected): (Vec<String>, Vec<String>) = selected
         .into_iter()
-        .partition(|name| STANDS.iter().any(|s| s.scenario == name));
+        .partition(|name| STANDS.iter().any(|s| s.chip == chip && s.scenario == name));
     for name in &stands {
         let stand = STANDS
             .iter()
-            .find(|s| s.scenario == name)
+            .find(|s| s.chip == chip && s.scenario == name)
             .expect("partitioned stand");
         let shard = stand_shard(ctx, chip, stand)?;
         write(&ctx.root.join(directory), &shard)?;
@@ -117,8 +119,9 @@ pub fn run(
         return Ok(ExitCode::SUCCESS);
     }
     crate::checks::vendor::run(ctx, chip, false)?;
-    let radio = crate::checks::vendor::elf(ctx, RADIO_PROBES)?;
-    let bluetooth = crate::checks::vendor::elf(ctx, BLUETOOTH_PROBES)?;
+    let (radio, bluetooth) = probes(chip);
+    let radio = crate::checks::vendor::elf(ctx, &radio)?;
+    let bluetooth = crate::checks::vendor::elf(ctx, &bluetooth)?;
     // Several scenarios run concurrently under one budget in `all`.
     let runs: Vec<String> = if selected.len() > 1 {
         vec!["all".into()]
@@ -214,7 +217,7 @@ fn stand_shard(ctx: &Context, chip: &str, stand: &Stand) -> Result<scenario_evid
     let shard = scenario_evidence::Index {
         schema: scenario_evidence::SCHEMA,
         command: scenario_evidence::COMMAND.into(),
-        target: TARGET.into(),
+        target: chip.into(),
         scenario: stand.scenario.into(),
         inputs,
         sources,
@@ -225,7 +228,7 @@ fn stand_shard(ctx: &Context, chip: &str, stand: &Stand) -> Result<scenario_evid
         observed: vec![],
         unprojected: vec![],
     };
-    shard.validate(TARGET)?;
+    shard.validate(chip)?;
     Ok(shard)
 }
 

@@ -36,7 +36,7 @@ callback has no reviewed binding; its unknown target cannot acquire callee effec
 Outputs must stay in ignored storage.
 
 ```console
-cargo xtask vendor-scenario research --linker /usr/bin/ld.lld --limit-mode watchdog \
+cargo xtask vendor-scenario --chip esp32s31 research --linker /usr/bin/ld.lld --limit-mode watchdog \
   --output target/blobray-phy-research
 ```
 
@@ -62,7 +62,7 @@ those shards as stale. See
 [vendor verification](../../docs/verification-and-qualification.md#vendor-verification-path).
 
 ```console
-cargo xtask vendor-scenario all \
+cargo xtask vendor-scenario --chip esp32s31 all \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --bluetooth-production target/verification/esp32s31-bluetooth-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-bluetooth-elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog \
@@ -82,7 +82,7 @@ packed-command responses; neither model claims physical timing or RF behavior.
 
 ```console
 cargo xtask build vendor-probes --chip esp32s31
-cargo xtask vendor-scenario i2c \
+cargo xtask vendor-scenario --chip esp32s31 i2c \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld --limit-mode watchdog \
   --sdk target/architecture-research/phy-vendor-tracking/vendor-wifi/build/bootloader/bootloader.elf \
@@ -282,7 +282,7 @@ repository root; `xtask` builds `blobray` and the scenarios and supplies
 `--binary`:
 
 ```console
-cargo xtask vendor-scenario gain \
+cargo xtask vendor-scenario --chip esp32s31 gain \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld \
   --rftest target/vendor/esp-phy-lib/20f1db053a0e6cb9f1c09d255c43bf42483041d0/esp32s31/librftest.a \
@@ -431,7 +431,7 @@ static entries are entered at their linked addresses; claims name the global
 entries.
 
 ```console
-cargo xtask vendor-scenario coex \
+cargo xtask vendor-scenario --chip esp32s31 coex \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/coex --limit-mode watchdog
 ```
@@ -540,7 +540,7 @@ segment of the probe ELF, so a failing run means a killed mutant, not a bad
 patch; a mutant run writes no evidence index.
 
 ```console
-cargo xtask vendor-scenario all ... --patch 1001c6bc:a30aed00:13000000
+cargo xtask vendor-scenario --chip esp32s31 all ... --patch 1001c6bc:a30aed00:13000000
 ```
 
 A mutant of an unobserved line that survives confirms the finding; one that a

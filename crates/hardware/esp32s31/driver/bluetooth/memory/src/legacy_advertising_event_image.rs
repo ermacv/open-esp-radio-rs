@@ -18,7 +18,10 @@ const RESERVED_HEADER_BITS: u8 = (1 << 4) | (1 << 5) | (1 << 7);
 const DEVICE_ADDRESS_BYTES: usize = 6;
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
-const ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
+const POWER_BYTE_MASK: u32 = 0x0000_ff00;
+/// Scheduling priority `r_sym_ble_Ok6PLzc6qsIOuEzma5oM` returns for the
+/// first event at the default low advertising level.
+const DEFAULT_ADVERTISING_PRIORITY: u32 = 1;
 const RATE_LANES_MASK: u32 = 0xf000_0000;
 const OPTIONS_IMAGE_MASK: u32 = 0x3f00_0000;
 const REVIEWED_STANDALONE_OPTIONS: u32 = 3 << 24;
@@ -157,6 +160,15 @@ pub(super) struct LegacyAdvertisingLinkStateWords {
 
 impl LegacyAdvertisingLinkStateWords {
     /// Apply the exact no-RX/no-CTE/no-privacy LE 1M reset projection.
+    ///
+    /// SOURCE: pinned `libble_app.a[ble_2.o]::r_sym_ble_7lsXnox2LxrGG0FmY7qR`
+    /// (`r_ble_lll_adv_reset_link_state`). Its `r_sym_ble_VTHfF9d12DSYglVnHRqM`
+    /// prefix stores the scheduling priority of `r_sym_ble_Ok6PLzc6qsIOuEzma5oM`
+    /// in byte `+0x60`, one for the default low advertising level. The body
+    /// stores the transmit-power index in byte `+0x61` and no longer in
+    /// `+0x04`, and sets bits 31:29 of `+0x08`. The channel-39 power copy of
+    /// the link state is selected by `ble_adv_tx_options` bit 2, which the
+    /// supported profile leaves clear.
     pub(super) const fn reset(
         mut self,
         tx_header: ControllerSramLinkAddress,
@@ -167,9 +179,8 @@ impl LegacyAdvertisingLinkStateWords {
             ((((self.word_00 | 0x8000_0000) >> 16) as u16 & 0xe00f) | 0x1ff0) as u32;
         self.word_00 = (transformed_high_half << 16) | tx_header.compressed_image();
 
-        self.word_04 = (self.word_04 & !(LOW_TWENTY_MASK | ROUNDED_POWER_MASK | RATE_LANES_MASK))
-            | ((default_tx_power.index() as u32) << 23);
-        self.word_08 = 0xcff0_0000;
+        self.word_04 &= !(LOW_TWENTY_MASK | RATE_LANES_MASK);
+        self.word_08 = 0xeff0_0000;
         self.word_0c |= 0xa000_0000;
         self.word_14 = (self.word_14 | 0x0400_0000) & !0x0800_0000;
         self.word_18 &= 0x1fff_ffff;
@@ -195,12 +206,15 @@ impl LegacyAdvertisingLinkStateWords {
         self.word_34 = 0;
         self.access_address_word_38 = LeAccessAddress::PRIMARY_ADVERTISING.controller_image();
         self.word_50 = (self.word_50 & !OPTIONS_IMAGE_MASK) | REVIEWED_STANDALONE_OPTIONS;
-        self.word_60 = (self.word_60 & 0xffff_ff00) | 1;
+        self.word_60 = (self.word_60 & 0xffff_0000)
+            | ((default_tx_power.index() as u32) << 8)
+            | DEFAULT_ADVERTISING_PRIORITY;
         self
     }
 
-    const fn rounded_power(self) -> u32 {
-        (self.word_04 & ROUNDED_POWER_MASK) >> 23
+    /// The power index the common insertion copies into the item.
+    const fn power_index(self) -> u32 {
+        (self.word_60 & POWER_BYTE_MASK) >> 8
     }
 }
 
@@ -232,8 +246,8 @@ impl LegacyAdvertisingSchedulerItemWords {
             self.word_00 |= successor.compressed_image();
         }
         self.word_04 |= 0x8000_0000;
-        self.word_14 = (self.word_14 & !SCHEDULER_ITEM_RATE_AND_POWER_MASK)
-            | (link_state.rounded_power() << 20);
+        self.word_14 =
+            (self.word_14 & !SCHEDULER_ITEM_RATE_AND_POWER_MASK) | (link_state.power_index() << 20);
         self.word_18 = (self.word_18 & !(SCHEDULER_ITEM_FREQUENCY_MASK | 0xff))
             | ((channel.frequency_image() as u32) << 8)
             | 0x11;
@@ -244,3 +258,6 @@ impl LegacyAdvertisingSchedulerItemWords {
         self
     }
 }
+
+#[cfg(test)]
+mod tests;

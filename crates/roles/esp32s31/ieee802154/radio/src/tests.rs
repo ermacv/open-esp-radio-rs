@@ -1493,3 +1493,46 @@ fn a_transmission_is_secured_by_its_interface() {
     assert_eq!(bench.hw.security_address, bench.hw.extended_address[1]);
     assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 100);
 }
+
+/// The enhanced ACK to a frame from a Link Metrics probing initiator
+/// carries the probing IE with the frame's LQI and link margin, as the
+/// port's generator adds `otLinkMetricsEnhAckGenData`; other sources get
+/// none.
+#[test]
+fn an_enhanced_ack_to_a_probing_initiator_carries_its_link_metrics() {
+    use oer_ieee802154::LinkMetrics;
+    let mut bench = Bench::receiving();
+    let mut generator = Ieee802154EnhancedAckGenerator::new();
+    generator.probing().set_noise_floor(-97);
+    generator
+        .probing()
+        .configure(
+            0x0002,
+            [9; 8],
+            LinkMetrics {
+                lqi: true,
+                link_margin: true,
+                ..LinkMetrics::NONE
+            },
+        )
+        .unwrap();
+    *bench.radio.enhanced_ack() = Some(generator);
+
+    bench.deliver(&PLAIN_2015);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    // LQI 200 and the margin of -60 dBm over -97 dBm, 37 * 255 / 130.
+    let probing_ie = [0x06, 0x00, 0x9b, 0xb8, 0xea, 0x00, 200, 72];
+    let ack = bench.transmit_image();
+    assert!(
+        ack.windows(probing_ie.len())
+            .any(|window| window == probing_ie)
+    );
+    bench.interrupt(&[Ieee802154Event::AckTxDone]);
+
+    let mut other = PLAIN_2015;
+    other[7] = 0x03;
+    bench.deliver(&other);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    let ack = bench.transmit_image();
+    assert!(!ack.windows(3).any(|window| window == [0x9b, 0xb8, 0xea]));
+}

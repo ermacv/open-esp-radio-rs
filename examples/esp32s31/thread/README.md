@@ -16,6 +16,11 @@ the device runs as a synchronized sleepy end device instead: its receiver
 is off when idle and it samples its parent's channel once per CSL period
 in windows its radio schedules; the parent must support CSL.
 
+It is also built with Thread Link Metrics (the `link-metrics-subject` and
+`link-metrics-initiator` features, as ESP-IDF's
+`CONFIG_OPENTHREAD_LINK_METRICS`): a neighbor can probe it with enhanced
+ACKs, which then carry the Thread probing IE with the frame's metrics.
+
 On every role change the device sets its IEEE 802.15.4 coexistence level
 as ESP-IDF's `handle_ot_role_change` does with software coexistence:
 immediate transmission and reception at the low level while its receiver

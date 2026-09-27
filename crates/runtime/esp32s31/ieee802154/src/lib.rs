@@ -50,8 +50,9 @@ use oer_ieee802154::{
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
-    IEEE802154_ENHANCED_ACK_IE_CAPACITY, IEEE802154_RADIO_CAPABILITIES, Ieee802154Csl,
-    Ieee802154EnhancedAckGenerator, Ieee802154EnhancedAckIeTooLong, Ieee802154Platform,
+    IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
+    IEEE802154_RADIO_CAPABILITIES, Ieee802154Csl, Ieee802154EnhancedAckGenerator,
+    Ieee802154EnhancedAckIeTooLong, Ieee802154Platform,
 };
 
 /// A received frame copied out of the receive ring.

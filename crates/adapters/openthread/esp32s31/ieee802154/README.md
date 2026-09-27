@@ -18,7 +18,9 @@ before the instance is built (`OtResources::set_radio_caps`) and, with its
 `csl` feature, Coordinated Sampled Listening: the radio clock
 (`Radio::clock`), scheduled receive windows (`Radio::receive_at`), the CSL
 receiver state (`Radio::set_csl`), delayed transmission (`TxFrame::tx_at`)
-and receive SFD times (`PsduMeta::timestamp`).
+and receive SFD times (`PsduMeta::timestamp`), and, with its
+`link-metrics-subject` feature, the enhanced-ACK probing initiators of a
+Link Metrics subject (`Radio::set_enh_ack_probing`).
 
 ## Use
 
@@ -78,6 +80,14 @@ phase to the next sample time when its SFD goes out, and retransmissions
 take a new frame counter, all as the port does. A CSL transmitter's delayed
 frame becomes a scheduled transmission, with a CCA when OpenThread asks for
 one.
+
+A Link Metrics subject's probing initiators
+(`otPlatRadioConfigureEnhAckProbing`) reach the runtime's enhanced-ACK
+generator, whose ACKs to an initiator carry the Thread enhanced-ACK
+probing IE with the frame's metrics, as the port's generator adds
+`otLinkMetricsEnhAckGenData`. Link margins are measured from the receive
+sensitivity the radio reports; ESP-IDF's port never sets the noise floor
+of its `link_metrics.cpp` utility, so its margins are zero.
 
 Frames that arrive during a transmission or energy scan wait in a bounded
 queue for `receive`; a full queue drops the newest. A transmission whose

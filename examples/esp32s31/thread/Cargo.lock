@@ -178,11 +178,11 @@ checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
 dependencies = [
  "bt-hci-transport",
  "btuuid",
- "embassy-sync 0.8.0",
+ "embassy-sync 0.7.2",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "futures-intrusive",
- "heapless 0.9.3",
+ "heapless 0.8.0",
 ]
 
 [[package]]
@@ -1658,7 +1658,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 [[package]]
 name = "openthread"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=869d684a9abd8b76e21e29745f4f0d91e043e569#869d684a9abd8b76e21e29745f4f0d91e043e569"
+source = "git+https://github.com/ermacv/openthread?rev=e7e5332fbf3837957eb6b3e29d2efccf5d5316b2#e7e5332fbf3837957eb6b3e29d2efccf5d5316b2"
 dependencies = [
  "bitflags 2.13.2",
  "embassy-futures",
@@ -1673,7 +1673,7 @@ dependencies = [
 [[package]]
 name = "openthread-sys"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=869d684a9abd8b76e21e29745f4f0d91e043e569#869d684a9abd8b76e21e29745f4f0d91e043e569"
+source = "git+https://github.com/ermacv/openthread?rev=e7e5332fbf3837957eb6b3e29d2efccf5d5316b2#e7e5332fbf3837957eb6b3e29d2efccf5d5316b2"
 dependencies = [
  "anyhow",
  "bindgen",

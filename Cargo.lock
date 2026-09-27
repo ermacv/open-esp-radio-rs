@@ -390,11 +390,11 @@ checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
 dependencies = [
  "bt-hci-transport",
  "btuuid",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.7.2",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "futures-intrusive",
- "heapless 0.9.3",
+ "heapless 0.8.0",
 ]
 
 [[package]]
@@ -1399,7 +1399,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3467,7 +3467,7 @@ dependencies = [
 [[package]]
 name = "openthread"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=869d684a9abd8b76e21e29745f4f0d91e043e569#869d684a9abd8b76e21e29745f4f0d91e043e569"
+source = "git+https://github.com/ermacv/openthread?rev=e7e5332fbf3837957eb6b3e29d2efccf5d5316b2#e7e5332fbf3837957eb6b3e29d2efccf5d5316b2"
 dependencies = [
  "bitflags 2.13.1",
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3482,7 +3482,7 @@ dependencies = [
 [[package]]
 name = "openthread-sys"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=869d684a9abd8b76e21e29745f4f0d91e043e569#869d684a9abd8b76e21e29745f4f0d91e043e569"
+source = "git+https://github.com/ermacv/openthread?rev=e7e5332fbf3837957eb6b3e29d2efccf5d5316b2#e7e5332fbf3837957eb6b3e29d2efccf5d5316b2"
 dependencies = [
  "anyhow",
  "bindgen",
@@ -3852,7 +3852,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4293,7 +4293,7 @@ dependencies = [
  "getrandom",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4702,7 +4702,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

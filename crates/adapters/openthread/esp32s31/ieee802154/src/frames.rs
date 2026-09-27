@@ -3,8 +3,8 @@
 
 use oer_esp32s31_hal::{coex::Ieee802154CoexLevel, ieee802154::coex::Ieee802154CoexConfig};
 use oer_ieee802154::{
-    AppliedSecurity, AutoPendingMode, Configuration, FrameAddress, MAX_MAC_FRAME_LEN, MacKeys,
-    SentAcknowledgement, TxSecurity, TxStatus,
+    AppliedSecurity, AutoPendingMode, Configuration, EnhAckProbing, FrameAddress, LinkMetrics,
+    MAX_MAC_FRAME_LEN, MacKeys, SentAcknowledgement, TxSecurity, TxStatus,
 };
 
 /// Bytes of the FCS OpenThread counts in every PSDU; the MAC appends it on
@@ -250,3 +250,21 @@ pub const fn role_coex_config(
 
 #[cfg(test)]
 mod tests;
+
+/// Replace the probing initiators of `probing` with OpenThread's table:
+/// `initiators` yields short address, extended address as `otExtAddress`
+/// holds it (most significant byte first) and metrics, most recently added
+/// first, as `otPlatRadioConfigureEnhAckProbing` built it. The radio keeps
+/// the extended address in frame byte order, and adding the initiators
+/// oldest first keeps the newest matching first. An initiator the radio's
+/// table has no room for is left out.
+pub fn replace_enh_ack_probing<const N: usize>(
+    probing: &mut EnhAckProbing<N>,
+    initiators: impl DoubleEndedIterator<Item = (u16, [u8; 8], LinkMetrics)>,
+) {
+    probing.reset();
+    for (short, mut extended, metrics) in initiators.rev() {
+        extended.reverse();
+        let _ = probing.configure(short, extended, metrics);
+    }
+}

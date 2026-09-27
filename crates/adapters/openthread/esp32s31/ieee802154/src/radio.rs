@@ -9,18 +9,19 @@ use oer_esp32s31_ieee802154_runtime::{
 };
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView, Interface,
-    PendingTableHalf, RadioCommand, RadioState, RadioTimestamp, RequestId, ScheduledReceiveRequest,
-    TxMode, TxRequest, TxSecurity,
+    LinkMetrics, PendingTableHalf, RadioCommand, RadioState, RadioTimestamp, RequestId,
+    ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
 };
 use openthread::{
-    AckSecurity, Capabilities, Config, CslConfig, FrameCounterUpdate, MacCapabilities, MacKeys,
-    PsduMeta, Radio, RadioCaps, RadioClock, RadioErrorKind, SentAck, SrcMatchConfig, TxFrame,
+    AckSecurity, Capabilities, Config, CslConfig, EnhAckProbingConfig, FrameCounterUpdate,
+    MacCapabilities, MacKeys, PsduMeta, Radio, RadioCaps, RadioClock, RadioErrorKind, SentAck,
+    SrcMatchConfig, TxFrame,
 };
 
 use crate::frames::{
     CSL_ACCURACY_PPM, CSL_UNCERTAINTY, PORT_INITIAL_KEYS, TransmitFailure, csl_period,
-    extended_address, pending_changes, pending_mode, psdu_mac, radio_time, scan_micros,
-    sent_ack_security, set_frame_counter, set_mac_keys, transmit_failure, tx_security,
+    extended_address, pending_changes, pending_mode, psdu_mac, radio_time, replace_enh_ack_probing,
+    scan_micros, sent_ack_security, set_frame_counter, set_mac_keys, transmit_failure, tx_security,
     write_applied_security, write_psdu,
 };
 
@@ -334,8 +335,15 @@ where
                 keys.get_or_insert(PORT_INITIAL_KEYS);
             })
             .map_err(|_| RadioErrorKind::Other)?;
+        // Link margins are measured from the receive sensitivity the radio
+        // reports; ESP-IDF's port leaves the noise floor at zero.
+        let noise_floor = self.defaults.receive_sensitivity_dbm;
         self.runtime
-            .with_enhanced_ack(|generator| *generator = Some(Ieee802154EnhancedAckGenerator::new()))
+            .with_enhanced_ack(|generator| {
+                let mut installed = Ieee802154EnhancedAckGenerator::new();
+                installed.probing().set_noise_floor(noise_floor);
+                *generator = Some(installed);
+            })
             .map_err(|_| RadioErrorKind::Other)?;
         self.clock = Some(self.runtime.clock().map_err(|_| RadioErrorKind::Other)?);
         // The radio holds the threshold OpenThread starts from.
@@ -507,6 +515,33 @@ where
                 *installed = Ieee802154Csl {
                     period: csl_period(csl.period),
                     sample_time: csl.sample_time,
+                }
+            })
+            .map_err(|_| RadioErrorKind::Other)
+    }
+
+    async fn set_enh_ack_probing(
+        &mut self,
+        config: &EnhAckProbingConfig,
+    ) -> Result<(), Self::Error> {
+        self.runtime
+            .with_enhanced_ack(|generator| {
+                if let Some(generator) = generator {
+                    replace_enh_ack_probing(
+                        generator.probing(),
+                        config.initiators.iter().map(|initiator| {
+                            (
+                                initiator.short_address,
+                                initiator.ext_address,
+                                LinkMetrics {
+                                    pdu_count: initiator.metrics.pdu_count,
+                                    lqi: initiator.metrics.lqi,
+                                    link_margin: initiator.metrics.link_margin,
+                                    rssi: initiator.metrics.rssi,
+                                },
+                            )
+                        }),
+                    );
                 }
             })
             .map_err(|_| RadioErrorKind::Other)

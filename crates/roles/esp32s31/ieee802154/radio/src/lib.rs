@@ -31,12 +31,12 @@ use oer_esp32s31_ieee802154::engine::{
 };
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CcaMode, Channel,
-    CommandError, Configuration, CsmaCa, FcsStatus, FramePending, FrameRetries, FrameVersion,
-    FrameView, Interface, InterfaceSetting, KeyIdMode, MacKeys, PendingTableHalf, PhrFrame,
-    RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine,
-    RadioTimestamp, ReceivedFrame, RequestId, RestingState, RetryStart, RxMetadata, SecurityStatus,
-    SentAcknowledgement, TxMode, TxSecurity, TxStatus, csl_phase, generate_enhanced_ack,
-    write_csl_ie,
+    CommandError, Configuration, CsmaCa, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing, FcsStatus,
+    FramePending, FrameRetries, FrameVersion, FrameView, Interface, InterfaceSetting, KeyIdMode,
+    MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent, RadioFault,
+    RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId, RestingState,
+    RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TxMode, TxSecurity, TxStatus,
+    csl_phase, generate_enhanced_ack, write_csl_ie,
 };
 
 /// The portable capabilities the role implements over any engine.
@@ -63,6 +63,12 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
 /// `OT_ACK_IE_MAX_SIZE`).
 pub const IEEE802154_ENHANCED_ACK_IE_CAPACITY: usize = 16;
 
+/// Probing initiators the enhanced-ACK generator serves at most:
+/// `OPENTHREAD_CONFIG_MLE_LINK_METRICS_MAX_SERIES_SUPPORTED`, which is
+/// OpenThread's `OPENTHREAD_CONFIG_MLE_MAX_CHILDREN`, ten in ESP-IDF's
+/// default configuration (`CONFIG_OPENTHREAD_MLE_MAX_CHILDREN`).
+pub const IEEE802154_ENH_ACK_PROBING_CAPACITY: usize = 10;
+
 /// The CSL receiver state of ESP-IDF's OpenThread port (`s_csl_period`,
 /// `s_csl_sample_time`; `otPlatRadioEnableCsl`,
 /// `otPlatRadioUpdateCslSampleTime`).
@@ -88,27 +94,42 @@ pub struct Ieee802154EnhancedAckIeTooLong;
 /// `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`), run inside the interrupt
 /// handler for each received 2015 frame that requests an ACK.
 ///
-/// It builds the ACK with [`generate_enhanced_ack`], carrying the configured
-/// header IEs, and secures the ACK of a secured frame with the [`MacKeys`]
+/// It builds the ACK with [`generate_enhanced_ack`], carrying, in the port's
+/// order, the CSL IE of a CSL receiver, the enhanced-ACK probing IE of
+/// Link Metrics when the frame's source is a probing initiator
+/// ([`Self::probing`]), then the configured header IEs, and secures the ACK of a secured frame with the [`MacKeys`]
 /// of the interface the frame matched ([`Ieee802154Radio::interface_mac_keys`]),
 /// as the multi-instance port does: the next frame counter and the key of
 /// the frame's key index. Without keys, or when the frame cannot
 /// be acknowledged, the generator refuses and the engine delivers the frame
-/// without an ACK. The port rebuilds its
-/// CSL and link-metrics IEs per frame; here the IEs are the caller's bytes.
+/// without an ACK.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Ieee802154EnhancedAckGenerator {
     header_ies: [u8; IEEE802154_ENHANCED_ACK_IE_CAPACITY],
     header_ies_len: usize,
+    probing: EnhAckProbing<IEEE802154_ENH_ACK_PROBING_CAPACITY>,
 }
 
 impl Ieee802154EnhancedAckGenerator {
-    /// A generator without header IEs.
+    /// A generator without header IEs or probing initiators, measuring
+    /// link margins from a zero noise floor.
     pub const fn new() -> Self {
         Self {
             header_ies: [0; IEEE802154_ENHANCED_ACK_IE_CAPACITY],
             header_ies_len: 0,
+            probing: EnhAckProbing::new(0),
         }
+    }
+
+    /// The Link Metrics probing initiators and the noise floor their link
+    /// margins are measured from (`otPlatRadioConfigureEnhAckProbing`).
+    /// An ACK to a frame from an initiator carries the probing IE with the
+    /// frame's metrics, as the port's `otLinkMetricsEnhAckGenData` gives
+    /// them. ESP-IDF's port never sets the noise floor, so its link margin
+    /// is zero; the caller sets it, and the OpenThread adapter uses the
+    /// receive sensitivity it reports.
+    pub fn probing(&mut self) -> &mut EnhAckProbing<IEEE802154_ENH_ACK_PROBING_CAPACITY> {
+        &mut self.probing
     }
 
     /// The header IEs every ACK carries.
@@ -148,12 +169,19 @@ impl Ieee802154EnhancedAckGenerator {
         else {
             return Ieee802154EnhancedAck::Refused;
         };
-        // The port's generator puts the CSL IE template before the other IEs.
-        let mut ies = [0; CSL_IE_TEMPLATE.len() + IEEE802154_ENHANCED_ACK_IE_CAPACITY];
+        // The port's generator puts the CSL IE template first, then the
+        // probing IE of a Link Metrics initiator.
+        let mut ies = [0; CSL_IE_TEMPLATE.len()
+            + ENH_ACK_PROBING_IE_CAPACITY
+            + IEEE802154_ENHANCED_ACK_IE_CAPACITY];
         let mut ies_len = 0;
         if security.csl.period != 0 {
             ies[..CSL_IE_TEMPLATE.len()].copy_from_slice(&CSL_IE_TEMPLATE);
             ies_len = CSL_IE_TEMPLATE.len();
+        }
+        if let Ok(Some(source)) = PhrFrame::new(frame).source_address() {
+            let data = self.probing.data(source, info.lqi, info.rssi);
+            ies_len += data.write_ie(&mut ies[ies_len..]);
         }
         ies[ies_len..ies_len + self.header_ies_len]
             .copy_from_slice(&self.header_ies[..self.header_ies_len]);

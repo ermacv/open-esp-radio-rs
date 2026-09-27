@@ -1,13 +1,13 @@
 use oer_ieee802154::{
-    AppliedSecurity, AutoPendingMode, Configuration, FrameAddress, SentAcknowledgement, TxSecurity,
-    TxStatus,
+    AppliedSecurity, AutoPendingMode, Configuration, EnhAckProbing, FrameAddress, LinkMetrics,
+    SentAcknowledgement, TxSecurity, TxStatus,
 };
 
 use super::{
     PORT_INITIAL_KEYS, TransmitFailure, csl_period, extended_address, extended_pending_address,
-    pending_changes, pending_mode, psdu_mac, radio_time, role_coex_config, scan_micros,
-    sent_ack_security, set_frame_counter, set_mac_keys, short_pending_address, transmit_failure,
-    tx_security, write_applied_security, write_psdu,
+    pending_changes, pending_mode, psdu_mac, radio_time, replace_enh_ack_probing, role_coex_config,
+    scan_micros, sent_ack_security, set_frame_counter, set_mac_keys, short_pending_address,
+    transmit_failure, tx_security, write_applied_security, write_psdu,
 };
 
 #[test]
@@ -208,4 +208,34 @@ fn role_changes_set_the_txrx_level_from_the_link_mode() {
         role_coex_config(current, false).txrx,
         Ieee802154CoexLevel::Middle
     );
+}
+
+/// OpenThread's probing table reaches the radio with extended addresses in
+/// frame byte order and its newest initiator matching first; a replaced
+/// table forgets the initiators it no longer holds.
+#[test]
+fn the_probing_table_reaches_the_radio_in_frame_byte_order() {
+    let lqi = LinkMetrics {
+        lqi: true,
+        ..LinkMetrics::NONE
+    };
+    let rssi = LinkMetrics {
+        rssi: true,
+        ..LinkMetrics::NONE
+    };
+    let canonical = [1, 2, 3, 4, 5, 6, 7, 8];
+    let frame_order = FrameAddress::Extended([8, 7, 6, 5, 4, 3, 2, 1]);
+    let mut probing = EnhAckProbing::<4>::new(-97);
+    // Newest first: short 2 was added after short 1, with the same device.
+    replace_enh_ack_probing(
+        &mut probing,
+        [(2, canonical, rssi), (1, canonical, lqi)].into_iter(),
+    );
+    assert_eq!(probing.metrics(frame_order), Some(rssi));
+    assert_eq!(probing.metrics(FrameAddress::Short([1, 0])), Some(lqi));
+
+    replace_enh_ack_probing(&mut probing, [(1, canonical, lqi)].into_iter());
+    assert_eq!(probing.metrics(FrameAddress::Short([2, 0])), None);
+    assert_eq!(probing.metrics(frame_order), Some(lqi));
+    assert_eq!(probing.noise_floor(), -97);
 }

@@ -17,7 +17,7 @@ oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
 # OpenThread is built from source for the chip target only; host builds of
 # the workspace do not compile its C library.
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-openthread = { git = "https://github.com/ermacv/openthread", rev = "869d684a9abd8b76e21e29745f4f0d91e043e569", default-features = false }
+openthread = { git = "https://github.com/ermacv/openthread", rev = "e7e5332fbf3837957eb6b3e29d2efccf5d5316b2", default-features = false }
 
 [lints]
 workspace = true

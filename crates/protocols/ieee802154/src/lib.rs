@@ -33,6 +33,8 @@ pub mod mac {
     pub mod frame;
     /// MAC header inspection of `[PHR, PSDU...]` images.
     pub mod header;
+    /// Enhanced-ACK based probing of Link Metrics.
+    pub mod link_metrics;
     /// Frame-pending table and ACK pending-bit decision.
     pub mod pending;
     /// Frame retransmission after a failed attempt.
@@ -51,6 +53,10 @@ pub use mac::enhanced_ack::{
 };
 pub use mac::frame::{Frame, FrameError, FrameView, MAX_MAC_FRAME_LEN, MIN_MAC_FRAME_LEN};
 pub use mac::header::{AddressMode, FrameAddress, FrameType, FrameVersion, PhrFrame};
+pub use mac::link_metrics::{
+    ENH_ACK_PROBING_DATA_CAPACITY, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing, LinkMetrics,
+    ProbingData, ProbingError, link_margin,
+};
 pub use mac::pending::{AckPending, AutoPendingMode, PendingTable, PendingTableFull, ack_pending};
 pub use mac::retransmission::{AttemptFailure, FrameRetries, RetryStart};
 pub use mac::security::{MacKeys, TransmitSecurity};

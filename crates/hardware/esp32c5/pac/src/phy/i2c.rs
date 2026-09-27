@@ -238,7 +238,9 @@ pub enum PhyI2cConfigurationCommand {
 /// The analog configuration leaves of `phy_rf_init` that only write
 /// analog registers.
 ///
-/// SOURCE: reviewed evidence `C5_BLOB_LIBPHY_RF_INIT_LEAVES`.
+/// SOURCE: reviewed evidence `C5_BLOB_LIBPHY_RF_INIT_LEAVES` and
+/// `C5_BLOB_LIBPHY_RF_INIT_LEAVES_3` (`phy_i2c_rc_cal_set`,
+/// `phy_filter_dcap_set`, `phy_i2c_pkdet_set`, `phy_i2c_sar2_init_code`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cConfiguration {
     /// `phy_band_i2c_set`.
@@ -251,6 +253,53 @@ pub enum PhyI2cConfiguration {
     AdcRate(bool),
     /// `phy_bias_reg_set`.
     BiasRegisters,
+    /// `phy_i2c_rc_cal_set(first, second, third)`.
+    RcCalibration(PhyI2cRcCalibration),
+    /// `phy_filter_dcap_set` over the `phy_param` fields it reads.
+    FilterCapacitors(PhyI2cInitializationInputs),
+    /// `phy_i2c_pkdet_set`.
+    PeakDetector,
+    /// `phy_i2c_sar2_init_code(code)`.
+    Sar2InitializationCode(PhyI2cSar2Code),
+}
+
+/// Arguments of `phy_i2c_rc_cal_set`, within the fields they replace:
+/// block 0x6B register 0x11 bits 5:4, register 0x0F bits 7:3 and register
+/// 0x13 bits 5:2.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyI2cRcCalibration {
+    first: u8,
+    second: u8,
+    third: u8,
+}
+
+impl PhyI2cRcCalibration {
+    pub const fn new(first: u8, second: u8, third: u8) -> Option<Self> {
+        if first <= 3 && second <= 31 && third <= 15 {
+            Some(Self {
+                first,
+                second,
+                third,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+/// Argument of `phy_i2c_sar2_init_code`: bits 11:8 go to block 0x69
+/// register 4 bits 3:0 and bits 7:0 to register 3.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyI2cSar2Code(u16);
+
+impl PhyI2cSar2Code {
+    pub const fn new(code: u16) -> Option<Self> {
+        if code <= 0xfff {
+            Some(Self(code))
+        } else {
+            None
+        }
+    }
 }
 
 impl PhyI2cConfiguration {
@@ -283,6 +332,45 @@ impl PhyI2cConfiguration {
             (Self::BiasRegisters, 1) => modify(0x6a, 1, 7, 4, 7),
             (Self::BiasRegisters, 2) => modify(0x6a, 0, 7, 4, 9),
             (Self::BiasRegisters, 3) => modify(0x6a, 1, 3, 0, 0xf),
+            (Self::RcCalibration(arguments), 0) => modify(0x6b, 0x11, 5, 4, arguments.first),
+            (Self::RcCalibration(arguments), 1) => modify(0x6b, 0x0f, 7, 3, arguments.second),
+            (Self::RcCalibration(arguments), 2) => modify(0x6b, 0x13, 5, 2, arguments.third),
+            (Self::FilterCapacitors(_), 0) => modify(0x67, 0x1d, 3, 2, 0),
+            (Self::FilterCapacitors(_), 1) => modify(0x67, 5, 6, 6, 1),
+            (Self::FilterCapacitors(_), 2) => modify(0x67, 5, 3, 3, 1),
+            (Self::FilterCapacitors(_), 3) => modify(0x67, 5, 5, 5, 1),
+            (Self::FilterCapacitors(inputs), 4..=19) => {
+                let (register, value) = match index {
+                    4 => (6, inputs.parameter_f5),
+                    5 => (8, clamp(inputs.parameter_f7, 10, 50)),
+                    6 => (0xa, inputs.parameter_f5),
+                    7 => (0xc, inputs.parameter_f7),
+                    8 => (7, inputs.parameter_f6),
+                    9 => (9, clamp(inputs.parameter_f8, 10, 60)),
+                    10 => (0xb, inputs.parameter_f6),
+                    11 => (0xd, inputs.parameter_f8),
+                    12 => (0xe, inputs.parameter_fb),
+                    13 => (0x10, inputs.parameter_fb),
+                    14 => (0x12, inputs.parameter_f9),
+                    15 => (0x14, inputs.parameter_f9),
+                    16 => (0xf, inputs.parameter_fc),
+                    17 => (0x11, inputs.parameter_fc),
+                    18 => (0x13, inputs.parameter_fa),
+                    _ => (0x15, inputs.parameter_fa),
+                };
+                PhyI2cConfigurationCommand::Write(
+                    PhyI2cAddress::new(PhyI2cBlock { code: 0x67 }, register),
+                    value,
+                )
+            }
+            (Self::PeakDetector, 0) => modify(0x67, 0x1d, 7, 7, 1),
+            (Self::PeakDetector, 1) => modify(0x67, 0x1d, 6, 4, 4),
+            (Self::PeakDetector, 2) => modify(0x67, 3, 6, 4, 4),
+            (Self::Sar2InitializationCode(code), 0) => modify(0x69, 4, 3, 0, (code.0 >> 8) as u8),
+            (Self::Sar2InitializationCode(code), 1) => PhyI2cConfigurationCommand::Write(
+                PhyI2cAddress::new(PhyI2cBlock { code: 0x69 }, 3),
+                code.0 as u8,
+            ),
             _ => return None,
         })
     }

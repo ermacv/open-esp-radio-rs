@@ -60,6 +60,7 @@ pub use ownership::{
 pub use phy::i2c::{
     PHY_I2C_INITIALIZATION_PAIR_COUNT, PhyI2cAccessError, PhyI2cAddress, PhyI2cBlock,
     PhyI2cClockSelection, PhyI2cConfiguration, PhyI2cConfigurationCommand, PhyI2cHost,
-    PhyI2cInitializationInputs, PhyI2cParallelWrite, PhyI2cRegisters,
+    PhyI2cInitializationInputs, PhyI2cParallelWrite, PhyI2cRcCalibration, PhyI2cRegisters,
+    PhyI2cSar2Code,
 };
 pub use phy::radio::PhyRadioRegisters;

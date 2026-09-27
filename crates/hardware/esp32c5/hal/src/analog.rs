@@ -15,7 +15,7 @@ use oer_radio_analog::{
 
 pub use oer_esp32c5_pac::{
     PhyI2cBlock, PhyI2cClockSelection, PhyI2cConfiguration, PhyI2cHost, PhyI2cInitializationInputs,
-    PhyI2cParallelWrite,
+    PhyI2cParallelWrite, PhyI2cRcCalibration, PhyI2cSar2Code,
 };
 
 /// Unique owner of the ESP32-C5 analog register bus.
@@ -116,13 +116,35 @@ pub fn configuration(
 mod tests {
     use super::*;
 
-    const LEAVES: [PhyI2cConfiguration; 6] = [
+    const LEAVES: [PhyI2cConfiguration; 10] = [
         PhyI2cConfiguration::Band,
         PhyI2cConfiguration::CrystalRegisters,
         PhyI2cConfiguration::DacRate,
         PhyI2cConfiguration::AdcRate(false),
         PhyI2cConfiguration::AdcRate(true),
         PhyI2cConfiguration::BiasRegisters,
+        PhyI2cConfiguration::PeakDetector,
+        PhyI2cConfiguration::FilterCapacitors(PhyI2cInitializationInputs {
+            parameter_f5: 0xff,
+            parameter_f6: 0xff,
+            parameter_f7: 0xff,
+            parameter_f8: 0xff,
+            parameter_f9: 0xff,
+            parameter_fa: 0xff,
+            parameter_fb: 0xff,
+            parameter_fc: 0xff,
+            parameter_410: 0,
+            parameter_412: 0,
+            parameter_416: 0,
+        }),
+        PhyI2cConfiguration::RcCalibration(match PhyI2cRcCalibration::new(3, 31, 15) {
+            Some(arguments) => arguments,
+            None => panic!("largest arguments"),
+        }),
+        PhyI2cConfiguration::Sar2InitializationCode(match PhyI2cSar2Code::new(0xfff) {
+            Some(code) => code,
+            None => panic!("largest code"),
+        }),
     ];
 
     /// Every command of every leaf maps to a portable command whose value

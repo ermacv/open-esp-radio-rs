@@ -55,6 +55,12 @@ code = "adfbe593f5b821a3f043df44a81c1372a66e93d4b0b50063992e543bd8b26ed0"
 [[function]]
 artifact = "libphy"
 member = "phy_i2c.o"
+symbol = "phy_filter_dcap_set"
+code = "4988817cb53434fde26e518e76dc2383250e232835650dd360ba9825c921583f"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
 symbol = "phy_get_i2c_hostid_"
 code = "c4760d9e652c5d1f56706dec0ea13471041b0436e9c1635e3c626cf1701a0ba5"
 
@@ -105,6 +111,24 @@ artifact = "libphy"
 member = "phy_i2c.o"
 symbol = "phy_i2c_paral_write_num"
 code = "fc57c198045af0407156210aa3515c622c01a47f5823fd78320eff2976b86e3a"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_i2c_pkdet_set"
+code = "69741d31860f68103a470305c87e0f33a839d6b92b1e24a4d9725cfde7c9912f"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_i2c_rc_cal_set"
+code = "6af4aa1da1e2ba6356c2bff212ad64681e3cbe05ee90451918737a3d395926ed"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_i2c_sar2_init_code"
+code = "515a021d1e2880fa0323150fdd432e2b8ef2586966a877eb87acbe448fec6572"
 
 [[function]]
 artifact = "libphy"
@@ -211,6 +235,12 @@ code = "045eba6fa8391e498810812518a0f95befaaef0dcfb5aa98f3cdd1468b925de4"
 [[function]]
 artifact = "rom-rev0"
 member = ""
+symbol = "phy_filter_dcap_set"
+code = "6f376b0238871f4f5f4290be508ec949be582d41f7c7e69ff929f5a08e483547"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
 symbol = "phy_get_data_sat"
 code = "a1668b59ab7a74446d8cffb7cb2be853566fce6cf5343dd5a367f3357e40631c"
 
@@ -243,6 +273,24 @@ artifact = "rom-rev0"
 member = ""
 symbol = "phy_i2c_paral_write_num"
 code = "c84930cfda0cf9316280d21e7751630108c6e9bce5b0a4851e25a7dbeedaf1b9"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_i2c_pkdet_set"
+code = "c64dfe2a86596693913e2e1ff68eeaf9e4b4a680647c569127eba16781ea075a"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_i2c_rc_cal_set"
+code = "ff7e10345d699e3acd4ea53258f7cd340fa91cb5b13d89cae6b4b49c05a1eca0"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_i2c_sar2_init_code"
+code = "96971714240b3f5db65b9f580392fa6b67c99cb6983139087f36607a719dddd2"
 
 [[function]]
 artifact = "rom-rev0"
@@ -313,6 +361,12 @@ code = "1bb6db70af94fc1ee29220bc22aacecad2a295114a06132e8407713cf459947d"
 [[function]]
 artifact = "rom-rev100"
 member = ""
+symbol = "phy_filter_dcap_set"
+code = "6f376b0238871f4f5f4290be508ec949be582d41f7c7e69ff929f5a08e483547"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
 symbol = "phy_get_data_sat"
 code = "a1668b59ab7a74446d8cffb7cb2be853566fce6cf5343dd5a367f3357e40631c"
 
@@ -345,6 +399,24 @@ artifact = "rom-rev100"
 member = ""
 symbol = "phy_i2c_paral_write_num"
 code = "c84930cfda0cf9316280d21e7751630108c6e9bce5b0a4851e25a7dbeedaf1b9"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_i2c_pkdet_set"
+code = "c64dfe2a86596693913e2e1ff68eeaf9e4b4a680647c569127eba16781ea075a"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_i2c_rc_cal_set"
+code = "ff7e10345d699e3acd4ea53258f7cd340fa91cb5b13d89cae6b4b49c05a1eca0"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_i2c_sar2_init_code"
+code = "96971714240b3f5db65b9f580392fa6b67c99cb6983139087f36607a719dddd2"
 
 [[function]]
 artifact = "rom-rev100"

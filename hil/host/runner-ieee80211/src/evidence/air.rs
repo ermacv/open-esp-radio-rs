@@ -200,7 +200,7 @@ pub fn decode(path: &Path, filter: &str, payload: Payload) -> Result<Vec<AirFram
     parse(&String::from_utf8(output.stdout)?, payload)
 }
 
-/// Parse tshark field records in [`FIELDS`] order.
+/// Parse tshark field records in the order of the captured field list.
 pub fn parse(text: &str, payload: Payload) -> Result<Vec<AirFrame>> {
     let columns = match payload {
         Payload::Include => FIELDS.len(),

@@ -25,13 +25,40 @@ pub mod event {
 
 /// `IEEE802154_RX_ABORT_BY_*` codes used by the catalog.
 pub mod rx_abort {
+    pub const RX_STOP: u8 = 1;
+    pub const SFD_TIMEOUT: u8 = 2;
     pub const CRC_ERROR: u8 = 3;
+    pub const INVALID_LEN: u8 = 4;
+    pub const FILTER_FAIL: u8 = 5;
+    pub const NO_RSS: u8 = 6;
+    pub const COEX_BREAK: u8 = 7;
+    pub const UNEXPECTED_ACK: u8 = 8;
+    pub const RX_RESTART: u8 = 9;
+    pub const TX_ACK_TIMEOUT: u8 = 16;
+    pub const TX_ACK_STOP: u8 = 17;
+    pub const TX_ACK_COEX_BREAK: u8 = 18;
+    pub const ENHACK_SECURITY_ERROR: u8 = 19;
     pub const ED_ABORT: u8 = 24;
+    pub const ED_STOP: u8 = 25;
+    pub const ED_COEX_REJECT: u8 = 26;
 }
 
 /// `IEEE802154_TX_ABORT_BY_*` codes used by the catalog.
 pub mod tx_abort {
+    pub const RX_ACK_STOP: u8 = 1;
+    pub const RX_ACK_SFD_TIMEOUT: u8 = 2;
+    pub const RX_ACK_CRC_ERROR: u8 = 3;
+    pub const RX_ACK_INVALID_LEN: u8 = 4;
+    pub const RX_ACK_FILTER_FAIL: u8 = 5;
+    pub const RX_ACK_NO_RSS: u8 = 6;
+    pub const RX_ACK_COEX_BREAK: u8 = 7;
+    pub const RX_ACK_TYPE_NOT_ACK: u8 = 8;
+    pub const RX_ACK_RESTART: u8 = 9;
     pub const RX_ACK_TIMEOUT: u8 = 16;
+    pub const TX_STOP: u8 = 17;
+    pub const TX_COEX_BREAK: u8 = 18;
+    pub const TX_SECURITY_ERROR: u8 = 19;
+    pub const CCA_FAILED: u8 = 24;
     pub const CCA_BUSY: u8 = 25;
 }
 
@@ -448,6 +475,140 @@ fn transmit_power_levels() -> Vec<Step> {
     steps
 }
 
+fn rx_abort_event(reason: u8) -> Step {
+    Step::Interrupt {
+        events: event::RX_ABORT,
+        rx_abort: reason,
+        tx_abort: 0,
+    }
+}
+
+fn tx_abort_event(reason: u8) -> Step {
+    Step::Interrupt {
+        events: event::TX_ABORT,
+        rx_abort: 0,
+        tx_abort: reason,
+    }
+}
+
+/// Every receive-abort reason the driver's receive phase handles, each while
+/// it receives with receive-when-idle: the stops and the ACK reasons end
+/// without a next operation, the frame failures report and restart.
+fn receive_abort_reasons() -> Vec<Step> {
+    use rx_abort::*;
+    let mut steps = vec![Step::Enable, Step::SetRxWhenIdle(true), Step::Receive];
+    for reason in [
+        RX_STOP,
+        SFD_TIMEOUT,
+        CRC_ERROR,
+        INVALID_LEN,
+        FILTER_FAIL,
+        NO_RSS,
+        COEX_BREAK,
+        UNEXPECTED_ACK,
+        RX_RESTART,
+        TX_ACK_TIMEOUT,
+        TX_ACK_STOP,
+        TX_ACK_COEX_BREAK,
+        ENHACK_SECURITY_ERROR,
+        ED_STOP,
+    ] {
+        steps.push(rx_abort_event(reason));
+    }
+    steps
+}
+
+/// The receive-abort reasons the hardware raises while the driver transmits
+/// the automatic ACK of a received frame. Both ISR phases see every abort,
+/// and the receive phase rejects frame failures outside reception, so these
+/// are the ACK failures, which deliver the frame and receive again, and the
+/// stops, which end the phase silently and leave the driver in it; the
+/// application then sleeps and receives again.
+fn ack_transmit_abort_reasons() -> Vec<Step> {
+    use rx_abort::*;
+    let mut steps = vec![
+        Step::Enable,
+        Step::SetRxWhenIdle(true),
+        Step::Receive,
+        Step::Input("ieee802154_ll_get_tx_auto_ack", 1),
+    ];
+    for reason in [
+        TX_ACK_TIMEOUT,
+        TX_ACK_COEX_BREAK,
+        ENHACK_SECURITY_ERROR,
+        TX_ACK_STOP,
+        RX_STOP,
+        ED_STOP,
+    ] {
+        steps.push(Step::DeliverFrame(received_data_frame()));
+        steps.push(interrupt(event::RX_DONE));
+        steps.push(rx_abort_event(reason));
+        if ![TX_ACK_TIMEOUT, TX_ACK_COEX_BREAK, ENHACK_SECURITY_ERROR].contains(&reason) {
+            steps.push(Step::Sleep);
+            steps.push(Step::Receive);
+        }
+    }
+    steps
+}
+
+/// Every transmit-abort reason in the phase that raises it: while the
+/// driver waits for the ACK, while it transmits, and while it assesses the
+/// channel first.
+fn transmit_abort_reasons() -> Vec<Step> {
+    use tx_abort::*;
+    let mut steps = vec![Step::Enable];
+    for reason in [
+        RX_ACK_STOP,
+        RX_ACK_SFD_TIMEOUT,
+        RX_ACK_CRC_ERROR,
+        RX_ACK_INVALID_LEN,
+        RX_ACK_FILTER_FAIL,
+        RX_ACK_NO_RSS,
+        RX_ACK_COEX_BREAK,
+        RX_ACK_TYPE_NOT_ACK,
+        RX_ACK_RESTART,
+        RX_ACK_TIMEOUT,
+    ] {
+        steps.push(Step::Transmit {
+            frame: data_frame(true),
+            cca: false,
+        });
+        steps.push(interrupt(event::TX_DONE));
+        steps.push(tx_abort_event(reason));
+    }
+    for (reason, cca) in [
+        (TX_STOP, false),
+        (TX_COEX_BREAK, false),
+        (TX_SECURITY_ERROR, false),
+        (TX_COEX_BREAK, true),
+        (TX_SECURITY_ERROR, true),
+        (CCA_FAILED, true),
+        (CCA_BUSY, true),
+    ] {
+        steps.push(Step::Transmit {
+            frame: data_frame(true),
+            cca,
+        });
+        steps.push(tx_abort_event(reason));
+    }
+    steps
+}
+
+/// The energy-detection aborts of an energy scan and of a clear-channel
+/// assessment.
+fn energy_detection_abort_reasons() -> Vec<Step> {
+    use rx_abort::*;
+    let mut steps = vec![Step::Enable];
+    for reason in [ED_ABORT, ED_COEX_REJECT] {
+        steps.push(Step::EnergyDetect(8));
+        steps.push(Step::Input("ieee802154_ll_get_rx_status", 0x0018_0000));
+        steps.push(rx_abort_event(reason));
+        steps.push(Step::Cca);
+        steps.push(rx_abort_event(reason));
+    }
+    steps
+}
+
 fn enable() -> Vec<Step> {
     vec![Step::Enable]
 }
@@ -569,6 +730,26 @@ pub const SCENARIOS: &[Scenario] = &[
         name: "enable",
         inputs: no_inputs,
         steps: enable,
+    },
+    Scenario {
+        name: "receive-abort-reasons",
+        inputs: no_inputs,
+        steps: receive_abort_reasons,
+    },
+    Scenario {
+        name: "ack-transmit-abort-reasons",
+        inputs: no_inputs,
+        steps: ack_transmit_abort_reasons,
+    },
+    Scenario {
+        name: "transmit-abort-reasons",
+        inputs: no_inputs,
+        steps: transmit_abort_reasons,
+    },
+    Scenario {
+        name: "energy-detection-abort-reasons",
+        inputs: no_inputs,
+        steps: energy_detection_abort_reasons,
     },
     Scenario {
         name: "transmit-power-levels",

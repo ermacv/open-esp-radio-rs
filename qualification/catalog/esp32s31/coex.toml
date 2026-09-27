@@ -14,11 +14,11 @@ level = "lower-primitive"
 id = "coex-timer-validation-bridge"
 composition = "diagnostic"
 scope = "Execute the recovered coexistence core timer operations through the validation-probes HAL bridge"
-limits = "Core tables clock conversion and an Embassy mailbox exist; production Wi-Fi and Bluetooth runtimes do not compose this concrete timer owner"
+limits = "Core tables and clock conversion run through the radio runtime's arbiter ports; production Wi-Fi and Bluetooth runtimes do not submit requests yet"
 source-paths = [
   "crates/hardware/esp32s31/hal/src/coex.rs",
   "crates/hardware/esp32s31/driver/coex/src/lib.rs",
-  "crates/adapters/embassy/esp32s31/coex/src/lib.rs",
+  "crates/runtime/esp32s31/radio/src/system.rs",
 ]
 
 [[sections]]
@@ -26,7 +26,7 @@ id = "coex-overview"
 domain = "coexistence"
 title = "ESP32-S31 coexistence source capabilities"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
-overview = "See the [whole-radio capability map](../FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis inventory distinguishes recovered models, validation hardware access and\nproduction radio integration. The current code is not a working end-to-end\ncoexistence layer. A timer write, mailbox reply or matching vendor leaf does\nnot establish an RF grant, concurrent connectivity or hardware qualification.\n\n| Status | Meaning |\n| --- | --- |\n| IMPLEMENTED | The exact named source operation is complete at the stated boundary. A model-only row claims only that model operation. |\n| PARTIAL | Recovered hardware or source machinery exists without complete operational composition. |\n| FAIL-CLOSED | A typed boundary deliberately prevents activation/publication. Missing code or known register addresses alone do not establish this status. |\n| ABSENT | No production policy/runtime owner implements the operation. |\n\nThe [official S31 coexistence guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-guides/coexist.html)\ndescribes priority arbitration over a shared 2.4 GHz RF path. Wi-Fi, BT and BLE\nuse state-dependent time slices; IEEE 802.15.4 uses operation-dependent\npriorities rather than a fourth fixed slice. These are vendor capabilities,\nnot open-driver implementation claims.\n\n[S31 SoC declarations](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32s31/include/soc/soc_caps.h)\ninclude hardware PTI and advanced external coexistence. The source boundaries\nbelow determine how much of that hardware the open driver can use."
+overview = "See the [whole-radio capability map](../FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis inventory distinguishes recovered models, validation hardware access and\nproduction radio integration. The current code is not a working end-to-end\ncoexistence layer. A timer write or matching vendor leaf does\nnot establish an RF grant, concurrent connectivity or hardware qualification.\n\n| Status | Meaning |\n| --- | --- |\n| IMPLEMENTED | The exact named source operation is complete at the stated boundary. A model-only row claims only that model operation. |\n| PARTIAL | Recovered hardware or source machinery exists without complete operational composition. |\n| FAIL-CLOSED | A typed boundary deliberately prevents activation/publication. Missing code or known register addresses alone do not establish this status. |\n| ABSENT | No production policy/runtime owner implements the operation. |\n\nThe [official S31 coexistence guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-guides/coexist.html)\ndescribes priority arbitration over a shared 2.4 GHz RF path. Wi-Fi, BT and BLE\nuse state-dependent time slices; IEEE 802.15.4 uses operation-dependent\npriorities rather than a fourth fixed slice. These are vendor capabilities,\nnot open-driver implementation claims.\n\n[S31 SoC declarations](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32s31/include/soc/soc_caps.h)\ninclude hardware PTI and advanced external coexistence. The source boundaries\nbelow determine how much of that hardware the open driver can use."
 documents = ["crates/hardware/esp32s31/driver/FEATURES.md"]
 
 [[sections]]
@@ -279,13 +279,13 @@ level = "composed-product"
 scope-and-limitations = "No Classic/application status integration selects a scheme."
 
 [[items]]
-id = "coex-protocol-integration-and-lifetime-embassy-mailbox"
+id = "coex-protocol-integration-and-lifetime-radio-runtime-owner"
 section = "coex-protocol-integration-and-lifetime"
-title = "Embassy mailbox"
-status = "implemented"
-level = "lower-primitive"
-scope-and-limitations = "[Adapter](../../../../adapters/embassy/esp32s31/coex/src/lib.rs) serializes Enable, Disable, WifiRequest, BluetoothRequest, Release, Status and Shutdown through one generic `CoexOwner`. This is mailbox/core composition, not live radio integration."
-packages = ["oer-esp32s31-coex-embassy"]
+title = "Radio runtime owner"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "The [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) owns `CoexCore` and the schedule under the arbiter lease: enable, disable, Wi-Fi and Bluetooth requests, release, schedule status, interval and restart go through `RadioGuard`, and `RadioSystem::run_coex_schedule` times the phases and publishes them to Wi-Fi and Bluetooth. No protocol publishes status, requests its events or reacts to phases yet."
+packages = ["oer-esp32s31-radio-runtime", "oer-esp32s31-coex"]
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-live-wifi-requests"
@@ -293,7 +293,7 @@ section = "coex-protocol-integration-and-lifetime"
 title = "Live Wi-Fi requests"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "Production Wi-Fi runtime does not submit requests through the coexistence mailbox."
+scope-and-limitations = "Production Wi-Fi runtime does not submit requests through the radio runtime's coexistence owner."
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-live-bt-ble-requests"
@@ -301,7 +301,7 @@ section = "coex-protocol-integration-and-lifetime"
 title = "Live BT/BLE requests"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "Production Bluetooth runtime does not submit requests through the coexistence mailbox."
+scope-and-limitations = "Production Bluetooth runtime does not submit requests through the radio runtime's coexistence owner."
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-wifi-beacon-shared-rx-individual-twt-pti-hooks"

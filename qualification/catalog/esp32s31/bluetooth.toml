@@ -928,9 +928,9 @@ source-fact-refs = ["coex-timer-validation-bridge"]
 id = "wifi-bluetooth-coex-runtime"
 composition = "unimplemented"
 scope = "Compose joint Wi-Fi and Bluetooth ownership with live RF request grant and release arbitration"
-limits = "The recovered core and mailbox do not supply safe concurrent platform ownership or a production policy scheduler"
+limits = "The radio runtime owns the recovered core and schedule; Bluetooth does not publish status, request its events or react to phases"
 source-paths = [
-  "crates/adapters/embassy/esp32s31/coex/src/lib.rs",
+  "crates/runtime/esp32s31/radio/src/system.rs",
   "crates/hardware/esp32s31/driver/coex/src/core.rs",
 ]
 
@@ -3054,7 +3054,7 @@ section = "bluetooth-coexistence"
 title = "Internal Wi-Fi/Bluetooth coexistence"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [coexistence core](../coex/src/lib.rs), PAC and [Embassy mailbox](../../../../adapters/embassy/esp32s31/coex/src/lib.rs) exist. Safe concurrent Wi-Fi/Bluetooth singleton ownership is not composed."
+scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. Bluetooth does not yet publish its schedule status, request its events or react to phases."
 
 [[items]]
 id = "bluetooth-wi-fi-bluetooth-ieee-802-15-4-radio-coordination"

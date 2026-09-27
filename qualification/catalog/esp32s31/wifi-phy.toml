@@ -1014,8 +1014,8 @@ section = "wifi-interfaces-and-operating-modes"
 title = "Wi-Fi / Bluetooth (Classic/LE) / IEEE 802.15.4 coexistence"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [coexistence core](../coex/src/lib.rs), PAC timer controls and [Embassy mailbox](../../../../adapters/embassy/esp32s31/coex/src/lib.rs) exist. The Wi-Fi runtime does not compose a complete shared-radio request/grant/release lifecycle with the other radios; end-to-end coexistence is not a published capability."
-packages = ["oer-esp32s31-coex-embassy", "oer-esp32s31-coex"]
+scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. The Wi-Fi runtime does not yet publish its schedule status, request its events or react to phases; end-to-end coexistence is not a published capability."
+packages = ["oer-esp32s31-radio-runtime", "oer-esp32s31-coex"]
 
 [[items]]
 id = "wifi-legacy-and-ht-mac-behavior-rts-protection"

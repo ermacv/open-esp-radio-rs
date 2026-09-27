@@ -2569,15 +2569,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-coex-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "oer-esp32s31-coex",
-]
-
-[[package]]
 name = "oer-esp32s31-executor-embassy"
 version = "0.1.0"
 dependencies = [

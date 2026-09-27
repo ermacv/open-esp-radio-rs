@@ -1141,9 +1141,8 @@ pub(crate) struct NativeEvidence {
 
 impl NativeEvidence {
     fn load(root: &Path, path: &Path, target: &str) -> Result<Self> {
-        let evidence = scenario_evidence::Evidence::load(root, path, target).map_err(|error| {
-            format!("scenario evidence index {}: {error}", path.display())
-        })?;
+        let evidence = scenario_evidence::Evidence::load(root, path, target)
+            .map_err(|error| format!("scenario evidence index {}: {error}", path.display()))?;
         Ok(Self {
             shards: evidence.shards,
         })
@@ -1164,7 +1163,10 @@ impl NativeEvidence {
     }
 
     fn entries(&self) -> usize {
-        self.shards.iter().map(|(shard, _)| shard.entries.len()).sum()
+        self.shards
+            .iter()
+            .map(|(shard, _)| shard.entries.len())
+            .sum()
     }
 
     fn current_entries(&self) -> usize {

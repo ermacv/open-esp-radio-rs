@@ -346,8 +346,11 @@ fn a_stale_shard_leaves_other_scenarios_current() {
     fs::create_dir_all(root.join(directory)).unwrap();
     for shard in [&radio, &other] {
         fs::write(
-            root.join(directory)
-                .join(format!("{}.{}", shard.scenario, scenario_evidence::SHARD_EXTENSION)),
+            root.join(directory).join(format!(
+                "{}.{}",
+                shard.scenario,
+                scenario_evidence::SHARD_EXTENSION
+            )),
             serde_json::to_vec(shard).unwrap(),
         )
         .unwrap();

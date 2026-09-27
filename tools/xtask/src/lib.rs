@@ -19,6 +19,7 @@ pub mod process;
 pub mod vendor_diff;
 pub mod vendor_fetch;
 pub mod vendor_fingerprint;
+pub mod vendor_firmware;
 pub mod vendor_provenance;
 pub mod vendor_scenario;
 

@@ -107,7 +107,7 @@ fn parse(text: &str) -> Result<(Vec<Source>, Vec<Artifact>)> {
     Ok((sources, artifacts))
 }
 
-fn sha256(path: &Path) -> Result<String> {
+pub(crate) fn sha256(path: &Path) -> Result<String> {
     let bytes = std::fs::read(path)?;
     Ok(Sha256::digest(&bytes)
         .iter()
@@ -270,6 +270,42 @@ pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
         });
     }
     Ok(pinned)
+}
+
+/// A pinned git source of `chip` with its artifacts' paths and SHA-256.
+#[derive(Debug)]
+pub struct GitPin {
+    pub id: String,
+    pub repository: String,
+    pub revision: String,
+    /// `(path, sha256)` of each artifact, relative to the checkout.
+    pub artifacts: Vec<(String, String)>,
+}
+
+/// Every pinned git source of `chip`.
+pub fn git_pins(ctx: &Context, chip: &str) -> Result<Vec<GitPin>> {
+    let manifest = manifest_path(chip)?;
+    let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
+    sources
+        .into_iter()
+        .filter(|s| s.kind == Kind::Git)
+        .map(|source| {
+            Ok(GitPin {
+                artifacts: artifacts
+                    .iter()
+                    .filter(|a| a.source == source.id)
+                    .map(|a| (a.path.clone(), a.sha256.clone()))
+                    .collect(),
+                repository: source
+                    .repository
+                    .ok_or_else(|| format!("{} lacks `repository`", source.id))?,
+                revision: source
+                    .revision
+                    .ok_or_else(|| format!("{} lacks `revision`", source.id))?,
+                id: source.id,
+            })
+        })
+        .collect()
 }
 
 /// Fetch and verify every artifact of `chip`; report local builds that are

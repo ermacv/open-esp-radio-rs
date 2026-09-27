@@ -37,6 +37,14 @@ enum Task {
         #[arg(default_value = "esp32s31")]
         chip: String,
     },
+    /// Build the chip's tracked vendor firmware against the pinned ESP-IDF
+    /// and pinned vendor archives into `target/vendor-firmware`.
+    VendorFirmware {
+        #[arg(long, default_value = "esp32s31")]
+        chip: String,
+        /// One project of `verification/<chip>/hil-vendor`; all when omitted.
+        project: Option<String>,
+    },
     /// Compare two revisions of a vendor archive function by function, or
     /// every pinned artifact with its namesake in `--baseline`.
     VendorDiff {
@@ -169,6 +177,9 @@ fn run() -> Result<std::process::ExitCode> {
             return oer_xtask::vendor_scenario::run(&ctx, &chip, &args);
         }
         Task::VendorFetch { chip } => oer_xtask::vendor_fetch::run(&ctx, &chip),
+        Task::VendorFirmware { chip, project } => {
+            oer_xtask::vendor_firmware::run(&ctx, &chip, project.as_deref())
+        }
         Task::VendorDiff {
             chip,
             old,

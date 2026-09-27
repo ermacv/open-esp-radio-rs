@@ -23,6 +23,7 @@ verification/
     scenarios/       L2: typed Blobray comparisons against the pinned binaries
     host/ieee802154/ L2: the public IEEE 802.15.4 driver compiled on the host
     evidence/        L2 output: one generated shard per scenario
+    hil-vendor/      L3: vendor ESP-IDF firmware for hardware cross-checks
 ```
 
 **L0.** `cargo xtask vendor-fetch esp32s31` downloads and verifies every pinned
@@ -45,7 +46,11 @@ describes the scenarios, their inputs and their reviewed decisions; the
 [vendor contract reference](../docs/vendor/esp32s31/README.md) explains the
 vendor behavior they cover.
 
-**L3 and L4.** HIL runs exercise the drivers on hardware; a qualifying
+**L3 and L4.** HIL runs exercise the drivers on hardware; `cargo xtask
+vendor-firmware esp32s31` builds the vendor firmware of `hil-vendor/` against
+the pinned ESP-IDF, with its PHY, coexistence, Wi-Fi and Bluetooth library
+submodules replaced by the pinned archives, for comparisons of vendor and
+production behavior on the same board. A qualifying
 observation is recorded as a tracked shard bound to its firmware and observer
 sources. The only path from
 comparison or HIL evidence to product readiness is the independent

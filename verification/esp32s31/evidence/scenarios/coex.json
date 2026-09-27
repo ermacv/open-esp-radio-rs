@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "08c84320961100be3fa2cb1d7e5b5cd0e8ea65f7c974207d29bd1c44639384e0"
+    "input-2": "57c1e49df9076882d58b23430cd7e32133d29c601856fa7ff1015687e06af9d4"
   },
   "sources": [
     {
@@ -75,7 +75,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "0194afcfd027b2717e54c43d3ad59c89425a0a1c1d99c93e7ba98a726a624a79"
+      "sha256": "80266968526554c27d4fc5cc6c4505202e29860a86052d294cbcbe0c25c4c315"
     },
     {
       "path": "verification/harness/codegen",

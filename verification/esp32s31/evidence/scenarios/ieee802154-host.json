@@ -45,11 +45,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "f822fe0ee531a057a8c78101b5bf2aa1dd9172af37e4419e87fba0be6789d31b"
+      "sha256": "8c64bf74633231535c39e9c2895fc6029518057c7225e3de17dc8d33c2468a90"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "faa6e7f9b918801faa0bad74c10b0b49d6f09e8f4baac755fde6a82a29dd9e20"
+      "sha256": "259f6c3699a17368d053c3e969327226403a0b179723982981aaa5d9e893919d"
     },
     {
       "path": "crates/hardware/ieee802154/engine",

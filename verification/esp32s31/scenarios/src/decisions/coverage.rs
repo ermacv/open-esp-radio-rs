@@ -11,6 +11,24 @@ use crate::coverage::{Decision, Place};
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "the descriptor class of word-zero bit 24, for which `mac_tx_set_plcp1` \
+            publishes vector format three and `mac_tx_set_len` skips the non-HE data length: \
+            production publishes vector formats zero to two only and always writes the \
+            non-HE data length (reviewed with the Wi-Fi owner)",
+        places: &[
+            Place::Range {
+                function: "mac_tx_set_plcp1",
+                start: 0x32,
+                end: 0x38,
+            },
+            Place::Range {
+                function: "mac_tx_set_len",
+                start: 0xaa,
+                end: 0xac,
+            },
+        ],
+    },
+    Decision {
         reason: "a packet PTI at least coexistence event one's PTI 5, which `mac_tx_set_pti` \
             then publishes instead: every data priority production sends is 3 or lower",
         places: &[Place::Range {

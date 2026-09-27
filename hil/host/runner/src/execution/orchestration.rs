@@ -243,7 +243,7 @@ pub(crate) const AIR_NOISY_TAG: &str = "air-noisy";
 
 /// How `scenario` uses the air: its family's ranges, tolerant of others'
 /// protocol traffic and transmitting normally unless its tags say otherwise.
-pub(crate) fn air_use(scenario: &Scenario) -> Vec<hil_core::lab::lock::Spectrum> {
+pub(crate) fn air_use(lab: &LabConfig, scenario: &Scenario) -> Vec<hil_core::lab::lock::Spectrum> {
     use hil_core::lab::lock::{Emits, Need, Spectrum};
     let tagged = |tag: &str| scenario.header.tags.iter().any(|known| known == tag);
     let need = if tagged(AIR_EXCLUSIVE_TAG) || tagged(AIR_STRICT_TAG) {
@@ -258,7 +258,7 @@ pub(crate) fn air_use(scenario: &Scenario) -> Vec<hil_core::lab::lock::Spectrum>
     };
     scenario
         .family
-        .air_ranges()
+        .air_ranges(lab, scenario.plan().wifi)
         .into_iter()
         .map(|range| Spectrum::new(range, need, emits))
         .collect()
@@ -267,9 +267,12 @@ pub(crate) fn air_use(scenario: &Scenario) -> Vec<hil_core::lab::lock::Spectrum>
 /// The stand lease of a run: its boards and fixtures, the frequency ranges
 /// of its scenarios, and yielding at scenario boundaries when the run has
 /// several scenarios.
-pub(crate) fn lease_request(selected: &[&Scenario]) -> hil_core::lab::lock::LeaseRequest {
+pub(crate) fn lease_request(
+    lab: &LabConfig,
+    selected: &[&Scenario],
+) -> hil_core::lab::lock::LeaseRequest {
     let mut air = Vec::new();
-    for range in selected.iter().flat_map(|scenario| air_use(scenario)) {
+    for range in selected.iter().flat_map(|scenario| air_use(lab, scenario)) {
         if !air.contains(&range) {
             air.push(range);
         }
@@ -293,7 +296,7 @@ fn lease_stand(
     selected: &[&Scenario],
 ) -> Result<hil_core::lab::lock::FixtureLock> {
     session.record_event("stand-lease-requested", None, None, None)?;
-    let request = lease_request(selected);
+    let request = lease_request(lab, selected);
     let fixture = hil_core::lab::lock::FixtureLock::lease(lab, request.clone())?;
     session.record_event("stand-lease-granted", None, None, None)?;
     hil_core::durable::atomic_json(

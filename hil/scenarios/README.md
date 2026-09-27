@@ -63,8 +63,10 @@ budget.
 
 A run claims the boards and fixtures its scenarios require and the frequency
 ranges their radio work occupies. The range follows the family: IEEE 802.15.4
-scenarios occupy their channels (2 MHz each), Wi-Fi, Bluetooth, coexistence
-and system scenarios the 2.4 GHz band, and the register diagnostics
+scenarios occupy their channels (2 MHz each), Wi-Fi scenarios the channel of
+their link in the lab configuration (its primary channel and, for HT40, the
+secondary above or below, each 22 MHz wide), Bluetooth, coexistence and
+system scenarios the 2.4 GHz band, and the register diagnostics
 (`event-status`, `ed-event`) and the radio-free watchdog none. By default a
 scenario tolerates other protocol traffic in its range and transmits
 normally. Tags change that:

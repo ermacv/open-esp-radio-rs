@@ -609,6 +609,31 @@ impl LabConfig {
         })
     }
 
+    /// The frequency range, in kHz, the Wi-Fi link of `wifi` occupies: the
+    /// fixture's primary channel and, for HT40, its secondary channel above
+    /// or below, with the spectral mask's 1 MHz beyond each 20 MHz channel.
+    pub fn wifi_range_khz(&self, wifi: WifiLabUse) -> (u64, u64) {
+        let lab = self.resolve(wifi);
+        let (channel, above) = match &lab.station_fixture {
+            StationFixtureConfig::OpenWrt(config) => (config.channel, config.ht40_above),
+            StationFixtureConfig::LocalLinux(config) => (config.channel, config.ht40_above),
+            StationFixtureConfig::External(_) => (
+                lab.access_point.channel,
+                lab.access_point.channel_width == WifiChannelWidth::Mhz40Above,
+            ),
+        };
+        let center: u64 = if channel == 14 {
+            2_484_000
+        } else {
+            2_407_000 + 5_000 * u64::from(channel)
+        };
+        match lab.fixture_phy(wifi) {
+            PhyExpectation::Ht40 if above => (center - 11_000, center + 31_000),
+            PhyExpectation::Ht40 => (center - 31_000, center + 11_000),
+            PhyExpectation::Ht20 | PhyExpectation::He20 => (center - 11_000, center + 11_000),
+        }
+    }
+
     /// Resolve the channel geometry of an access-point scenario: the target
     /// AP adopts the requested link and the fixture follows its channel.
     pub fn resolve(&self, wifi: WifiLabUse) -> Self {

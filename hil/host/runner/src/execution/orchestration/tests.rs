@@ -425,6 +425,8 @@ fn a_failed_reflash_after_yielding_blocks_only_the_next_scenario() {
 fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
     use hil_core::lab::lock::{BAND_2G4, Emits, Need, Spectrum};
     let catalog = catalog();
+    let lab = LabConfig::for_test();
+    let lease_request = |selected: &[&Scenario]| lease_request(&lab, selected);
     let [first, second] = two_same_image(&catalog);
     assert!(!lease_request(&[first]).divisible);
     let series = lease_request(&[first, second]);
@@ -433,7 +435,7 @@ fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
     let mut measured = first.clone();
     measured.header.tags.push(AIR_EXCLUSIVE_TAG.to_owned());
     let air = lease_request(&[&measured, second]).air;
-    for (low, high) in first.family.air_ranges() {
+    for (low, high) in first.family.air_ranges(&lab, first.plan().wifi) {
         assert!(air.contains(&Spectrum::new((low, high), Need::Strict, Emits::Noisy)));
     }
     // Scenario ranges follow the family: 802.15.4 its channel, a radio-free
@@ -461,7 +463,7 @@ fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
     };
     let channel = Spectrum::ieee802154(exchange.channel, Need::None, Emits::None);
     assert_eq!(
-        peer.family.air_ranges(),
+        peer.family.air_ranges(&lab, peer.plan().wifi),
         [(channel.low_khz, channel.high_khz)]
     );
     let watchdog = find(&|scenario| {
@@ -472,7 +474,11 @@ fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
     });
     assert!(lease_request(&[watchdog]).air.is_empty());
     let wifi = find(&|scenario| matches!(scenario.family, crate::scenario::Family::Wifi(_)));
-    assert_eq!(wifi.family.air_ranges(), [BAND_2G4]);
+    let [(low, high)] = wifi.family.air_ranges(&lab, wifi.plan().wifi)[..] else {
+        panic!("a Wi-Fi scenario occupies one range");
+    };
+    assert_eq!((low, high), lab.wifi_range_khz(wifi.plan().wifi));
+    assert!(BAND_2G4.0 <= low && high <= BAND_2G4.1 + 1_000 && high - low <= 42_000);
 }
 
 #[test]

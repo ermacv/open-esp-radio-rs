@@ -26,10 +26,14 @@ pub(crate) enum Family {
 
 impl Family {
     /// The frequency ranges, in kHz, the scenario's radio work occupies; none
-    /// for work that never enables a radio. The esp32s31 radios run in the
-    /// 2.4 GHz band; Wi-Fi and Bluetooth hop or configure across it, so they
-    /// occupy the band, while IEEE 802.15.4 occupies its channels.
-    pub(crate) fn air_ranges(&self) -> Vec<(u64, u64)> {
+    /// for work that never enables a radio. Wi-Fi occupies the channel of its
+    /// link in `lab` (`wifi`), IEEE 802.15.4 its channels, and Bluetooth, whose
+    /// connections hop across it, the 2.4 GHz band.
+    pub(crate) fn air_ranges(
+        &self,
+        lab: &hil_core::lab::config::LabConfig,
+        wifi: hil_core::lab::link::WifiLabUse,
+    ) -> Vec<(u64, u64)> {
         use hil_core::lab::lock::{BAND_2G4, Emits, Need, Spectrum};
         use hil_ieee802154::scenario::Ieee802154Scenario as Ieee802154;
         let channel = |channel: u8| Spectrum::ieee802154(channel, Need::None, Emits::None);
@@ -56,9 +60,8 @@ impl Family {
                 range(channel(scenario.far_channel)),
             ],
             Self::System(hil_system::scenario::SystemScenario::Watchdog {}) => Vec::new(),
-            Self::Wifi(_) | Self::Bluetooth(_) | Self::Coexistence(_) | Self::System(_) => {
-                vec![BAND_2G4]
-            }
+            Self::Wifi(_) => vec![lab.wifi_range_khz(wifi)],
+            Self::Bluetooth(_) | Self::Coexistence(_) | Self::System(_) => vec![BAND_2G4],
         }
     }
 }

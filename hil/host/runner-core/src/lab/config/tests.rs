@@ -258,3 +258,28 @@ fn devices_are_named_by_serial_port_or_by_registered_board() {
         "the device must resolve as an esp32s31"
     );
 }
+
+#[test]
+fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
+    let lab = LabConfig::for_test();
+    let link = |phy| crate::lab::link::WifiLabUse {
+        link: Some(phy),
+        ..Default::default()
+    };
+    // Channel 6 (2437 MHz): 20 MHz wide, HT40 with its secondary above.
+    assert_eq!(
+        lab.wifi_range_khz(link(PhyExpectation::Ht20)),
+        (2_426_000, 2_448_000)
+    );
+    assert_eq!(
+        lab.wifi_range_khz(link(PhyExpectation::Ht40)),
+        (2_426_000, 2_468_000)
+    );
+    // The IEEE 802.15.4 channel 15 (2424-2426 MHz) just touches channel 6.
+    let peer = oer_hil_arbiter::spectrum::Spectrum::ieee802154(
+        15,
+        oer_hil_arbiter::spectrum::Need::None,
+        oer_hil_arbiter::spectrum::Emits::None,
+    );
+    assert_eq!(peer.high_khz, 2_426_000);
+}

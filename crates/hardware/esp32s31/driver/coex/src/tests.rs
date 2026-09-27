@@ -297,6 +297,6 @@ fn clock_configuration_domains_match_vendor_validation() {
     assert!(!CoexClockSelector::Selector2.accepts_divisor(39));
     assert!(CoexClockSelector::Selector1.accepts_divisor(3));
     assert!(!CoexClockSelector::Selector1.accepts_divisor(2));
-    assert!(CoexClockSelector::Selector1.accepts_divisor(4096));
-    assert!(!CoexClockSelector::Selector1.accepts_divisor(4097));
+    // The vendor bounds the divisor only from below.
+    assert!(CoexClockSelector::Selector1.accepts_divisor(4097));
 }

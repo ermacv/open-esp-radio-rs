@@ -18,16 +18,16 @@ pub enum CoexClockSelector {
 }
 
 impl CoexClockSelector {
-    /// Validate the public divisor used by `coex_hw_timer_freq_set`.
-    /// The register stores this value minus one.
-    pub const fn accepts_divisor(self, divisor: u16) -> bool {
-        divisor <= 4096
-            && match self {
-                Self::Selector8 => divisor == 1,
-                Self::Selector4 => divisor >= 50,
-                Self::Selector2 => divisor >= 40,
-                Self::Selector1 => divisor >= 3,
-            }
+    /// Validate the public divisor used by `coex_hw_timer_freq_set`. The
+    /// vendor bounds it only from below; the register keeps the low twelve
+    /// bits of the divisor minus one.
+    pub const fn accepts_divisor(self, divisor: u32) -> bool {
+        match self {
+            Self::Selector8 => divisor == 1,
+            Self::Selector4 => divisor >= 50,
+            Self::Selector2 => divisor >= 40,
+            Self::Selector1 => divisor >= 3,
+        }
     }
 }
 

@@ -104,3 +104,16 @@ pub fn core_release(event: CoexEventId) -> Result<(), CoexError> {
     })
     .map(|_| ())
 }
+
+/// Program the timer clock as `coex_hw_timer_freq_set(selector, divisor)`
+/// does. A selector outside the four one-hot values is rejected.
+pub fn set_timer_clock(selector: u32, divisor: u32) -> bool {
+    let selector = match selector {
+        1 => crate::CoexClockSelector::Selector1,
+        2 => crate::CoexClockSelector::Selector2,
+        4 => crate::CoexClockSelector::Selector4,
+        8 => crate::CoexClockSelector::Selector8,
+        _ => return false,
+    };
+    with_lease(|lease| CoexArbiterPorts::new(lease).set_timer_clock(selector, divisor))
+}

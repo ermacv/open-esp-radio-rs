@@ -18,8 +18,8 @@ use oer_esp32s31_hal::{
 };
 
 use crate::{
-    CoexClient, CoexClockHardware, CoexError, CoexEventId, CoexPti, CoexTimerClock,
-    CoexTimerHardware, CoexTimerIndex, hal::timer_clock,
+    CoexClient, CoexClockHardware, CoexClockSelector, CoexError, CoexEventId, CoexPti,
+    CoexTimerClock, CoexTimerHardware, CoexTimerIndex, hal::timer_clock,
 };
 
 const fn bank_timer(index: CoexTimerIndex) -> CoexPolicyTimer {
@@ -86,16 +86,41 @@ impl<'lease, 'radio, T> CoexArbiterPorts<'lease, 'radio, T> {
     /// can convert its duration.
     ///
     /// SOURCE: complete pinned `libcoexist.a[coexist_core.o]::
-    /// coex_core_pre_init` and `[coexist_hw.o]::coex_hw_timer_freq_set`.
+    /// coex_core_pre_init`.
     pub fn configure_timer_clock(&self) {
-        let (source, divisor) = if self.real_chip {
-            (CoexTimerClockSource::Selector4, 50)
+        let (selector, divisor) = if self.real_chip {
+            (CoexClockSelector::Selector4, 50)
         } else {
-            (CoexTimerClockSource::Selector8, 1)
+            (CoexClockSelector::Selector8, 1)
         };
-        let divider_minus_one = CoexTimerClockDividerMinusOne::new(divisor - 1)
-            .expect("the vendor timer clock divisor fits the divider field");
+        assert!(
+            self.set_timer_clock(selector, divisor),
+            "the vendor timer clock is an accepted selection"
+        );
+    }
+
+    /// Program the timer clock `selector` divided by `divisor`, as
+    /// `coex_hw_timer_freq_set` does: a divisor the selector does not accept
+    /// changes nothing and returns `false`; otherwise the selector replaces
+    /// the low nibble, then the divisor minus one the divider field.
+    ///
+    /// SOURCE: complete pinned `libcoexist.a[coexist_hw.o]::
+    /// coex_hw_timer_freq_set`.
+    pub fn set_timer_clock(&self, selector: CoexClockSelector, divisor: u32) -> bool {
+        if !selector.accepts_divisor(divisor) {
+            return false;
+        }
+        let source = match selector {
+            CoexClockSelector::Selector1 => CoexTimerClockSource::Selector1,
+            CoexClockSelector::Selector2 => CoexTimerClockSource::Selector2,
+            CoexClockSelector::Selector4 => CoexTimerClockSource::Selector4,
+            CoexClockSelector::Selector8 => CoexTimerClockSource::Selector8,
+        };
+        // The divider field keeps the low twelve bits of the divisor minus one.
+        let divider_minus_one = CoexTimerClockDividerMinusOne::new((divisor - 1) & 0x0fff)
+            .expect("twelve bits fit the divider field");
         self.with_bank(|bank| bank.configure_timer_clock(source, divider_minus_one));
+        true
     }
 
     fn with_bank(&self, operation: impl FnOnce(&mut oer_esp32s31_hal::coex::CoexTimerBank<'_>)) {

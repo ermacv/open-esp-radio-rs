@@ -53,6 +53,16 @@ image's IEEE 802.15.4 session on the same channel. These points compare
 register state only and write their summary beside their captures. The
 production image must serve the register images during the session.
 
+At these points the vendor side can also investigate what production does
+not publish. Each `--vendor-window ADDRESS:WORDS` (hexadecimal address,
+decimal word count) is read with `PEEK` into `vendor-NN.windows`;
+`--vendor-transmit` then sends one data frame without CCA or acknowledgement
+request and reads the analog image and the windows again into
+`vendor-NN.transmitted.*`. `--vendor-only` neither builds nor boots
+production, and `compare` rejects such a capture: production serves only
+its register partition, so the windows are evidence for an investigation,
+not a comparison.
+
 `--lifecycle` selects when both sides report their registers. `cold`, the
 default, reads them after the cold calibration and the Wi-Fi bring-up.
 `restart` first restarts the Wi-Fi radio once: the vendor firmware stops

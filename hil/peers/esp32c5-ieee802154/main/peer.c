@@ -329,6 +329,10 @@ static void dispatch(char *line)
         command_pending(argv, argc);
     } else if (strcmp(argv[0], "ED") == 0) {
         command_ed(argv, argc);
+    } else if (strcmp(argv[0], "OFF") == 0 && argc == 1) {
+        reply(esp_ieee802154_disable(), "OFF");
+    } else if (strcmp(argv[0], "ON") == 0 && argc == 1) {
+        reply(esp_ieee802154_enable(), "ON");
     } else {
         printf("@ERR %s unknown\n", argv[0]);
         fflush(stdout);

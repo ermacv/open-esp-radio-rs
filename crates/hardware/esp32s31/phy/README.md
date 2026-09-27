@@ -188,18 +188,12 @@ MAC owners; they return through a foundation readback, not a policy readback,
 because the operational MAC rewrote the PIB. `leave_ieee802154` releases the
 client and the BTBB reference, neither with register access.
 
-Sleep follows the vendor `ieee802154_rf_disable`/`ieee802154_rf_enable`
-pair, which is `esp_phy_disable`/`esp_phy_enable(PHY_MODEM_IEEE802154)`
-alone: `suspend_ieee802154` drops the client bit and keeps the BTBB
-reference in an affine `Ieee802154PhySuspended`, so the radio system may
-close RF after the last client left; `resume_ieee802154` re-enters the client
-once the radio system has woken RF, and reports due tracking as a join does.
-`RegisteredIeee802154OperationalRoute::suspend_rf` and
-`RegisteredIeee802154SuspendedRoute::resume_rf` apply the same pair to an
-operational MAC epoch, and `leave_suspended_ieee802154` drops the reference
-of a client that leaves while asleep. The vendor compiles this sleep only
-with modem retention and tickless idle; otherwise RF stays open for the
-client's lifetime, so sleep is a composition option.
+IEEE 802.15.4 stays a PHY client while it sleeps. On the ESP32-S31 the
+vendor `ieee802154_rf_disable` closes RF only together with the REGDMA PHY
+retention (`esp_hw_support/lowpower/port/esp32s31/sleep_phy.c`), whose I2C
+burst the pinned `libphy.a` does not provide
+(`phy_ana_i2c_master_burst_rf_onoff`); without it the vendor keeps RF open
+for the client's lifetime. RF closes only when the last client leaves.
 
 Protocol runtimes must first return their real TX, RX DMA, IRQ, MAC/LL and
 per-protocol receive-enable owners to the composition. Consequently neither

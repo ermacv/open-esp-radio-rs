@@ -36,13 +36,6 @@ protocol compositions are clients of the system:
   `RadioSystem::run_tracking_until` ends when a stop future completes, which
   it polls only between ticks so a started tick always finishes.
 
-- `RadioGuard::suspend_ieee802154` and `RadioGuard::resume_ieee802154` are
-  the vendor `ieee802154_rf_disable`/`ieee802154_rf_enable` pair around
-  IEEE 802.15.4 sleep: the operational MAC route leaves the PHY client set
-  while keeping its BTBB reference, RF closes when no client remains, and a
-  wake reopens RF before the client re-enters. The vendor compiles this
-  sleep only with modem retention and tickless idle, so a composition
-  enables it explicitly.
 - `RadioGuard::suspend_wifi` and `RadioGuard::resume_wifi` are the vendor
   modem sleep's `wifi_rf_phy_disable`/`wifi_rf_phy_enable`: the Wi-Fi
   membership becomes a suspended token while Wi-Fi leaves the PHY client set,

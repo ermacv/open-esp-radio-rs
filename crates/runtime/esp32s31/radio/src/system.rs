@@ -1219,5 +1219,5 @@ fn snapshot() {
 /// Debug: trace PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL.
 #[allow(unsafe_code)]
 pub fn trace_rate() {
-    runtime_trace(unsafe { core::ptr::read_volatile(0x2010_448c as *const u32) });
+    runtime_trace(unsafe { core::ptr::read_volatile(0x2010_08b8 as *const u32) });
 }

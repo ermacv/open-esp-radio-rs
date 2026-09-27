@@ -65,6 +65,7 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
 pub static OER_WAKE_TRACE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 #[allow(unsafe_code)]
+static PBUS_SEEN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0xffff_ffff);
 const WAKE_EXECUTE: core::ops::RangeInclusive<u32> = 1..=36;
 
 #[allow(unsafe_code)]
@@ -391,10 +392,15 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
     for _ in 0..RF_OPERATION_LIMIT {
         let PhyRfWakeAction::Execute(operation) = transition.action() else {
             wake_trace(0x2fff);
+            wake_trace(read_pbus38());
             return Ok(());
         };
         step += 1;
-        wake_trace(0x2000 | step);
+        let pbus_now = read_pbus38();
+        if pbus_now != PBUS_SEEN.swap(pbus_now, core::sync::atomic::Ordering::SeqCst) {
+            wake_trace(0x3000 | step);
+            wake_trace(pbus_now);
+        }
         // DEBUG bisection: execute only the steps in WAKE_EXECUTE.
         if !WAKE_EXECUTE.contains(&step) && !matches!(step, 1 | 2 | 3 | 6 | 33 | 34 | 35 | 36) {
             transition
@@ -572,4 +578,9 @@ mod lifecycle_tests {
             )
         ));
     }
+}
+
+#[allow(unsafe_code)]
+fn read_pbus38() -> u32 {
+    unsafe { core::ptr::read_volatile(0x2010_08b8 as *const u32) }
 }

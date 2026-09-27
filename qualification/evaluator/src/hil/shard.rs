@@ -238,6 +238,39 @@ fn observation_sources(
     )
 }
 
+/// The inherited compiler flags an observation's firmware was built with, as
+/// its build provenance records them. Such an image depends on the builder's
+/// environment, which no source binding covers, so it is never recorded.
+fn inherited_flags(observation: &ScenarioEvidence) -> Result<Option<&'static str>> {
+    let (Some(run), Some(subject)) = (&observation.run_directory, &observation.subject) else {
+        return Ok(None);
+    };
+    images_inherited_flags(run, &subject.firmware)
+}
+
+fn images_inherited_flags(
+    run: &Path,
+    images: &[subject::FirmwareIdentity],
+) -> Result<Option<&'static str>> {
+    for image in images.iter().filter_map(|f| f.image.as_deref()) {
+        let path = run
+            .join("firmware")
+            .join(image)
+            .join("build-provenance.json");
+        let Some(provenance) = read_optional_json::<Value>(&path)? else {
+            continue;
+        };
+        let environment = &provenance["environment"];
+        if !environment["inherited_rustflags"].is_null() {
+            return Ok(Some("RUSTFLAGS"));
+        }
+        if !environment["inherited_encoded_rustflags"].is_null() {
+            return Ok(Some("CARGO_ENCODED_RUSTFLAGS"));
+        }
+    }
+    Ok(None)
+}
+
 /// Repository package directories of an image's runtime and bootstrap, with
 /// the runtime features its build provenance records, from `cargo tree`.
 fn image_packages(root: &Path, provenance: &Value) -> Result<Option<BTreeSet<PathBuf>>> {
@@ -348,13 +381,6 @@ fn recorded_sources(
         else {
             return Ok(None);
         };
-        // Inherited compiler flags change the image outside the checkout.
-        let environment = &provenance["environment"];
-        if !environment["inherited_rustflags"].is_null()
-            || !environment["inherited_encoded_rustflags"].is_null()
-        {
-            return Ok(None);
-        }
         let Some(expected) = packages(&provenance)? else {
             return Ok(None);
         };
@@ -408,7 +434,7 @@ pub(crate) fn distill(
     fs::create_dir_all(root.join(directory))?;
     let mut recorded = vec![];
     for (scenario, observations) in &index.scenarios {
-        let Some(observation) = observations
+        let mut qualifying = observations
             .iter()
             .filter(|o| {
                 !o.source_bound
@@ -416,8 +442,23 @@ pub(crate) fn distill(
                     && o.outcome == Outcome::Passed
                     && o.run_directory.is_some()
             })
-            .max_by_key(|o| o.started_unix_millis)
-        else {
+            .collect::<Vec<_>>();
+        qualifying.sort_by_key(|o| std::cmp::Reverse(o.started_unix_millis));
+        let mut chosen = None;
+        for observation in qualifying {
+            match inherited_flags(observation)? {
+                Some(flags) => eprintln!(
+                    "hil-evidence: {scenario}: run {} is not recorded; its firmware was built \
+                     with inherited {flags}, which no source binding covers",
+                    observation.run_id
+                ),
+                None => {
+                    chosen = Some(observation);
+                    break;
+                }
+            }
+        }
+        let Some(observation) = chosen else {
             continue;
         };
         let (Some(seal), Some(subject), Some(run)) = (
@@ -552,25 +593,6 @@ mod tests {
             );
         }
         assert!(sources.windows(2).all(|w| w[0] < w[1]), "sorted and unique");
-        // Inherited RUSTFLAGS: the broad binding.
-        fs::write(
-            run.join("firmware/correctness/build-provenance.json"),
-            serde_json::to_vec(
-                &json!({"parameters": {}, "environment": {"inherited_rustflags": "-Copt-level=0"}}),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        assert!(
-            recorded_sources(&root, &run, &[image("correctness", false)], None, &radio)
-                .unwrap()
-                .is_none()
-        );
-        fs::write(
-            run.join("firmware/correctness/build-provenance.json"),
-            serde_json::to_vec(&json!({"parameters": {}})).unwrap(),
-        )
-        .unwrap();
         // A package `cargo tree` finds but the list lacks: the broad binding.
         let more = |_: &Value| {
             Ok(Some(BTreeSet::from([
@@ -624,5 +646,32 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn firmware_built_with_inherited_flags_is_never_recorded() {
+        let run = std::env::temp_dir().join(format!("oer-shard-flags-{}", std::process::id()));
+        let provenance = |environment: Value| {
+            fs::create_dir_all(run.join("firmware/correctness")).unwrap();
+            fs::write(
+                run.join("firmware/correctness/build-provenance.json"),
+                serde_json::to_vec(&json!({"environment": environment})).unwrap(),
+            )
+            .unwrap();
+        };
+        let images = [image("correctness", false)];
+        provenance(json!({"inherited_rustflags": null, "inherited_encoded_rustflags": null}));
+        assert_eq!(images_inherited_flags(&run, &images).unwrap(), None);
+        provenance(json!({"inherited_rustflags": "-Copt-level=0"}));
+        assert_eq!(
+            images_inherited_flags(&run, &images).unwrap(),
+            Some("RUSTFLAGS")
+        );
+        provenance(json!({"inherited_encoded_rustflags": "-g"}));
+        assert_eq!(
+            images_inherited_flags(&run, &images).unwrap(),
+            Some("CARGO_ENCODED_RUSTFLAGS")
+        );
+        fs::remove_dir_all(run).unwrap();
     }
 }

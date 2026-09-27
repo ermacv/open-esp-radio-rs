@@ -495,8 +495,10 @@ and the `.cargo/config.toml` files the builds discover, so a change in another
 radio's driver leaves it current. The evaluator independently runs `cargo tree`
 for the image's runtime (with the features its build provenance records) and
 bootstrap; when the recorded list lacks the manifest of any package found
-there, or the build inherited `RUSTFLAGS` or `CARGO_ENCODED_RUSTFLAGS`, the
-shard falls back to the broad binding. Firmware builds drop inherited
+there, the shard falls back to the broad binding. An observation whose
+firmware was built with inherited `RUSTFLAGS` or `CARGO_ENCODED_RUSTFLAGS` is
+never recorded: no source binding covers the builder's environment, and
+`hil-evidence` names the skipped run. Firmware builds drop inherited
 `CARGO_PROFILE_*`, `CARGO_BUILD_*` and `CARGO_TARGET_*` variables except the
 job count and target directory. A replayed
 image or an older bundle without recorded inputs binds the path packages of

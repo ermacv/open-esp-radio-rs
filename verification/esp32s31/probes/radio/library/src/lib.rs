@@ -256,6 +256,73 @@ oer_probe_macros::probe! {
         oer_esp32s31_coex::validation::unforce_timer(index);
 }
 
+// External coexistence leaves of `libcoexist.a[hal_external_coexist.o]`.
+// The vendor keeps the follower mode in its local `s_external_coex_is_slv_mode`
+// and asks `esp_coex_external_get_wire_type` for the wires; the probes take
+// both as words. A mode or wire outside the production domain returns
+// `REJECTED` without a write.
+
+oer_probe_macros::probe! {
+    /// `hal_set_extern_pti_mode(mode)` with the case's wires.
+    pub fn open_coex_external_trace_pti_mode(mode: u32, wire: u32) -> u32 {
+        oer_esp32s31_hal::validation::coex_external::hal_set_extern_pti_mode(mode, wire)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `hal_set_extern_pti(first, second, third)` in the case's mode.
+    pub fn open_coex_external_trace_set_pti(
+        mode: u32,
+        wire: u32,
+        first: u32,
+        second: u32,
+        third: u32,
+    ) -> u32 {
+        oer_esp32s31_hal::validation::coex_external::hal_set_extern_pti(
+            mode, wire, first, second, third,
+        )
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `hal_clr_extern_pti` in the case's mode.
+    pub fn open_coex_external_trace_clear_pti(mode: u32) -> u32 {
+        oer_esp32s31_hal::validation::coex_external::hal_clr_extern_pti(mode)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `hal_enable_extern_coex`.
+    pub fn open_coex_external_trace_enable() -> u32 {
+        oer_esp32s31_hal::validation::coex_external::hal_set_extern_coex_enabled(true)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `hal_disable_extern_coex`.
+    pub fn open_coex_external_trace_disable() -> u32 {
+        oer_esp32s31_hal::validation::coex_external::hal_set_extern_coex_enabled(false)
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `ic_set_extern_coex_params(mode, {delay, validate_high})`: the work
+    /// mode, then the grant delay and validity.
+    pub fn open_coex_external_trace_params(
+        mode: u32,
+        wire: u32,
+        delay_us: u32,
+        validate_high: u32,
+    ) -> u32 {
+        oer_esp32s31_hal::validation::coex_external::ic_set_extern_coex_params(
+            mode,
+            wire,
+            delay_us,
+            validate_high != 0,
+        )
+    }
+}
+
 oer_probe_macros::probe! {
     /// `ieee802154_txon_delay_set` of libbtbb: the IEEE 802.15.4 MAC
     /// timing delays of the MAC foundation. Always zero.

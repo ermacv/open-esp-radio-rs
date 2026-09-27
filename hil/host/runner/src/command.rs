@@ -140,7 +140,7 @@ pub(crate) fn run() -> Result<()> {
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
-            let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
+            // Orchestration builds the images, then leases the stand.
             orchestration::run_all(
                 &root,
                 &lab,
@@ -211,6 +211,13 @@ pub(crate) fn run() -> Result<()> {
                 let lab = lab::config::LabConfig::load(&lab_path)?;
                 let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash(&root, &artifacts, &lab.device.serial)?;
+                lab::lock::record_flash(
+                    class.id(),
+                    &artifacts.application_image,
+                    None,
+                    None,
+                    String::from("image flash of the live checkout"),
+                );
                 image::print_artifacts(class, &artifacts, true)
             }
             ImageCommand::Replay { run_id, class } => {
@@ -220,6 +227,13 @@ pub(crate) fn run() -> Result<()> {
                 let lab = lab::config::LabConfig::load(&lab_path)?;
                 let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash_archived(&root, &firmware, &lab.device.serial)?;
+                lab::lock::record_flash(
+                    firmware.image.id(),
+                    &firmware.application_path,
+                    None,
+                    None,
+                    format!("image replay of run {}", firmware.run_id),
+                );
                 emit_json(
                     &serde_json::json!({
                         "schema": hil_core::evidence::run::RUN_SCHEMA,
@@ -288,7 +302,7 @@ pub(crate) fn run() -> Result<()> {
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
-            let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
+            // Orchestration builds the images, then leases the stand.
             orchestration::run_one(
                 &root,
                 &lab,
@@ -318,7 +332,7 @@ pub(crate) fn run() -> Result<()> {
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
-            let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
+            // Orchestration builds the images, then leases the stand.
             orchestration::run_all(
                 &root,
                 &lab,

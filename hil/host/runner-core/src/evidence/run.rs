@@ -168,6 +168,11 @@ impl RunSession {
         &self.directory
     }
 
+    /// The source the run's current-source images are built from.
+    pub fn repository(&self) -> &RepositoryProvenance {
+        &self.manifest.repository
+    }
+
     pub fn write_plan(&self, plan: &RunPlan) -> Result<()> {
         atomic_json(&self.directory.join("plan.json"), plan)
     }

@@ -63,6 +63,7 @@ members = [
     "crates/hardware/esp32s31/pac/raw",
     "crates/hardware/esp32s31/pac",
     "crates/adapters/esp-hal/esp32s31/soc",
+    "hil/host/arbiter",
     "hil/host/fixture",
     "hil/host/fixture-install",
     "hil/host/runner",

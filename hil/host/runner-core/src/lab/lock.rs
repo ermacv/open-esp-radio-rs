@@ -17,6 +17,9 @@ pub struct FixtureLock {
     _cell: ResourceLease,
     _device: Option<oer_esp32s31_firmware::device::DeviceLease>,
     _resources: Vec<ResourceLease>,
+    // Declared last so the fixture locks are released before the stand's
+    // lease that ordered them.
+    _grant: Option<oer_hil_arbiter::Grant>,
 }
 
 impl FixtureLock {
@@ -24,13 +27,14 @@ impl FixtureLock {
         Self::acquire_for(lab, super::requirements::Requirements::default())
     }
 
+    /// Wait for the stand's lease, then take the device and fixture locks.
     pub fn acquire_for(
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<Self> {
-        let device = oer_esp32s31_firmware::device::DeviceLease::acquire(&lab.device.serial)?;
-        let mut owner = Self::acquire_without_device(lab, required)?;
-        owner._device = Some(device);
+        let grant = acquire_stand()?;
+        let mut owner = wait_for_fixture(|| Self::lock_now(lab, required, true))?;
+        owner._grant = Some(grant);
         Ok(owner)
     }
 
@@ -38,6 +42,37 @@ impl FixtureLock {
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<Self> {
+        let grant = acquire_stand()?;
+        let mut owner = wait_for_fixture(|| Self::lock_now(lab, required, false))?;
+        owner._grant = Some(grant);
+        Ok(owner)
+    }
+
+    /// Check that the stand and fixture are free now, without queueing.
+    pub fn probe_for(
+        lab: &super::config::LabConfig,
+        required: super::requirements::Requirements,
+    ) -> Result<()> {
+        if let Some(holder) = oer_hil_arbiter::Arbiter::open()?.status()?.holder
+            && holder.pid != std::process::id()
+        {
+            return Err(format!(
+                "HIL stand is leased by {} for `{}` (pid {})",
+                holder.owner, holder.work, holder.pid
+            )
+            .into());
+        }
+        Self::lock_now(lab, required, true).map(drop)
+    }
+
+    fn lock_now(
+        lab: &super::config::LabConfig,
+        required: super::requirements::Requirements,
+        device: bool,
+    ) -> Result<Self> {
+        let device = device
+            .then(|| oer_esp32s31_firmware::device::DeviceLease::acquire(&lab.device.serial))
+            .transpose()?;
         use sha2::{Digest, Sha256};
         let directory = oer_esp32s31_firmware::device::lease_directory()?.join(format!(
             "cell-{:x}",
@@ -48,8 +83,9 @@ impl FixtureLock {
         let resources = Self::acquire_resources(&root, resource_keys(lab, required)?)?;
         Ok(Self {
             _cell: cell,
-            _device: None,
+            _device: device,
             _resources: resources,
+            _grant: None,
         })
     }
 
@@ -65,6 +101,80 @@ impl FixtureLock {
                 )
             })
             .collect()
+    }
+}
+
+/// Wait in the stand's queue. The lease is described by this runner's
+/// arguments; the environment supplies owner, budget and short-lease choice.
+/// A lease of its own terminates this process at twice its budget.
+pub fn acquire_stand() -> Result<oer_hil_arbiter::Grant> {
+    let work = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
+    let request = oer_hil_arbiter::Request::from_environment(work)?;
+    let mut grant = oer_hil_arbiter::Arbiter::open()?.acquire(&request)?;
+    grant.terminate_self_on_overrun();
+    Ok(grant)
+}
+
+/// Retry while a process outside the arbiter (for example a checkout without
+/// it) still holds a device or fixture lock.
+fn wait_for_fixture<T>(mut lock: impl FnMut() -> Result<T>) -> Result<T> {
+    let mut reported = false;
+    loop {
+        match lock() {
+            Err(error) if is_busy(&*error) => {
+                if !reported {
+                    eprintln!("hil-arbiter: waiting for a lock held outside the queue: {error}");
+                    reported = true;
+                }
+                oer_process::sleep(std::time::Duration::from_secs(1))?;
+            }
+            result => return result,
+        }
+    }
+}
+
+fn is_busy(error: &(dyn std::error::Error + 'static)) -> bool {
+    error.is::<FixtureBusy>() || error.is::<oer_esp32s31_firmware::device::DeviceBusy>()
+}
+
+/// Another process holds a fixture lock.
+#[derive(Debug)]
+pub struct FixtureBusy(String);
+
+impl std::fmt::Display for FixtureBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for FixtureBusy {}
+
+/// Journal a board change. Failure is reported and never fails the run.
+pub fn record_board(kind: oer_hil_arbiter::BoardEventKind) {
+    if let Err(error) =
+        oer_hil_arbiter::Arbiter::open().and_then(|arbiter| arbiter.record_board(kind))
+    {
+        eprintln!("hil-arbiter: cannot record board change: {error}");
+    }
+}
+
+/// Journal a successful flash of `application`.
+pub fn record_flash(
+    image: &str,
+    application: &Path,
+    commit: Option<String>,
+    dirty: Option<bool>,
+    origin: String,
+) {
+    match crate::durable::sha256_file(application) {
+        Ok(application_sha256) => record_board(oer_hil_arbiter::BoardEventKind::Flashed {
+            image: image.to_owned(),
+            application_sha256,
+            commit,
+            dirty,
+            origin,
+        }),
+        Err(error) => eprintln!("hil-arbiter: cannot identify flashed application: {error}"),
     }
 }
 
@@ -93,10 +203,10 @@ impl ResourceLease {
             } else {
                 owner.to_owned()
             };
-            return Err(format!(
+            return Err(FixtureBusy(format!(
                 "physical HIL fixture is already owned by {detail} ({}): {error}",
                 path.display()
-            )
+            ))
             .into());
         }
 
@@ -260,14 +370,23 @@ fn ieee802154_peer_key(peer: &super::config::Ieee802154PeerConfig) -> Result<Str
     ))
 }
 
+/// The Bluetooth adapter alone, under the stand's lease.
+pub struct BluetoothLease {
+    _resource: ResourceLease,
+    _grant: oer_hil_arbiter::Grant,
+}
+
 pub fn acquire_bluetooth(
     adapter: oer_hil_fixture::bluetooth::model::Adapter,
-) -> Result<ResourceLease> {
+) -> Result<BluetoothLease> {
     use sha2::{Digest, Sha256};
-    ResourceLease::acquire_directory(&oer_esp32s31_firmware::device::lease_directory()?.join(
-        format!(
-            "resource-{:x}",
-            Sha256::digest(bluetooth_key(adapter)?.as_bytes())
-        ),
-    ))
+    let grant = acquire_stand()?;
+    let directory = oer_esp32s31_firmware::device::lease_directory()?.join(format!(
+        "resource-{:x}",
+        Sha256::digest(bluetooth_key(adapter)?.as_bytes())
+    ));
+    Ok(BluetoothLease {
+        _resource: wait_for_fixture(|| ResourceLease::acquire_directory(&directory))?,
+        _grant: grant,
+    })
 }

@@ -158,16 +158,26 @@ fn audit_stack(elf: &Path, output: &Path, budget: &oer_memory_report::StackBudge
 }
 
 /// Flash the exact audited images and select ota_0 without erasing other partitions.
+///
+/// The HIL stand is leased for the flash and the optional monitor; the lease
+/// has no watchdog, because an interactive monitor has no budget.
 pub fn flash(
     ctx: &Context,
     build: &FirmwareBuild,
+    example: &str,
     port: Option<&Path>,
     monitor: bool,
 ) -> Result<()> {
     use oer_esp32s31_firmware::flash::{
         BOOTLOADER_OFFSET, OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET,
     };
+    use sha2::Digest as _;
     let output = build.directory();
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let _grant = arbiter.acquire(&oer_hil_arbiter::Request::from_environment(format!(
+        "build firmware {example} --flash{}",
+        if monitor { " --monitor" } else { "" }
+    ))?)?;
     let lease = oer_esp32s31_firmware::device::DeviceLease::select(port)?;
     let port = Some(lease.port());
     for (address, filename, reset) in [
@@ -186,6 +196,14 @@ pub fn flash(
         );
         process::run(&mut command)?;
     }
+    let application = fs::read(output.join("application.bin"))?;
+    arbiter.record_board(oer_hil_arbiter::BoardEventKind::Flashed {
+        image: example.to_owned(),
+        application_sha256: format!("{:x}", sha2::Sha256::digest(&application)),
+        commit: None,
+        dirty: None,
+        origin: format!("xtask build firmware {example} --flash"),
+    })?;
     if monitor {
         monitor::run(port.ok_or("--monitor requires --port")?)?;
     }

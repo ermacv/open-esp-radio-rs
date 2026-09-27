@@ -74,7 +74,7 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
         })?;
     }
     checks.run("resource-ownership", || {
-        hil_core::lab::lock::FixtureLock::acquire_for(lab, required).map(|_| ())
+        hil_core::lab::lock::FixtureLock::probe_for(lab, required)
     })?;
     crate::emit_json(
         &serde_json::json!({

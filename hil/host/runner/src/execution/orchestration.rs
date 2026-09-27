@@ -64,11 +64,14 @@ pub(crate) fn run_all(
     if let SuiteSelection::Campaign(plan) = selection {
         session.write_campaign(plan)?;
     }
+    let prebuilt = prebuild(&mut session, lab, selected, network)?;
+    let _fixture = lease_stand(&mut session, lab, selected)?;
     let results = {
         let mut operations = LiveSuite {
             root,
             lab,
             firmware: FirmwarePreparation::BuildCurrent(network),
+            prebuilt,
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
@@ -93,15 +96,62 @@ pub(crate) fn run_one(
         Some(firmware.plan()),
         invocation,
     )?;
+    let prebuilt = match &firmware {
+        RunFirmware::BuildCurrent(network) => {
+            prebuild(&mut session, lab, &selected_entries, *network)?
+        }
+        RunFirmware::Replay(_) => Vec::new(),
+    };
+    let _fixture = lease_stand(&mut session, lab, &selected_entries)?;
     let results = {
         let mut operations = LiveSuite {
             root,
             lab,
             firmware: FirmwarePreparation::Selected(&firmware),
+            prebuilt,
         };
         execute_one(&mut session, &mut operations, selected)?
     };
     finish_run(session, results)
+}
+
+/// Build the current-source image of every class with a scenario whose
+/// configuration preconditions hold. Building needs no hardware, so it runs
+/// before the stand is leased; flashing and execution follow under the lease.
+fn prebuild(
+    session: &mut RunSession,
+    lab: &LabConfig,
+    selected: &[&Scenario],
+    network: Integration,
+) -> Result<Vec<(ImageClass, firmware::Built)>> {
+    let mut built = Vec::new();
+    for (class, scenarios) in group_selected_scenarios(selected) {
+        oer_process::check_cancelled()?;
+        if scenarios
+            .iter()
+            .all(|scenario| fixture::preflight::scenario_precondition(lab, scenario).is_some())
+        {
+            continue;
+        }
+        built.push((class, firmware::build_image(class, network, session)?));
+    }
+    Ok(built)
+}
+
+/// Wait for the stand, then observe the leased fixture.
+fn lease_stand(
+    session: &mut RunSession,
+    lab: &LabConfig,
+    selected: &[&Scenario],
+) -> Result<hil_core::lab::lock::FixtureLock> {
+    session.record_event("stand-lease-requested", None, None, None)?;
+    let fixture = hil_core::lab::lock::FixtureLock::acquire_for(lab, requirements(selected))?;
+    session.record_event("stand-lease-granted", None, None, None)?;
+    let lab_provenance =
+        hil_core::lab::provenance::LabProvenance::capture(lab, requirements(selected))?;
+    session.record_lab_provenance(&lab_provenance)?;
+    session.record_event("lab-provenance-captured", None, None, None)?;
+    Ok(fixture)
 }
 
 enum FirmwarePreparation<'a> {
@@ -113,6 +163,8 @@ struct LiveSuite<'a> {
     root: &'a Path,
     lab: &'a LabConfig,
     firmware: FirmwarePreparation<'a>,
+    /// Images built before the lease; a class without one is prepared whole.
+    prebuilt: Vec<(ImageClass, firmware::Built)>,
 }
 
 trait SuiteEffects {
@@ -144,6 +196,10 @@ impl SuiteEffects for LiveSuite<'_> {
         class: ImageClass,
         session: &mut RunSession,
     ) -> Result<Option<Failure>> {
+        if let Some(index) = self.prebuilt.iter().position(|(built, _)| *built == class) {
+            let (_, built) = self.prebuilt.remove(index);
+            return firmware::flash_built(self.root, self.lab, class, built, session);
+        }
         match self.firmware {
             FirmwarePreparation::BuildCurrent(network) => {
                 firmware::prepare_image(self.root, self.lab, class, network, session)
@@ -325,10 +381,6 @@ fn start_run(
         fs::create_dir_all(&directory)?;
         hil_core::durable::atomic_json(&directory.join("scenario.json"), scenario)?;
     }
-    let required = requirements(selected);
-    let lab_provenance = hil_core::lab::provenance::LabProvenance::capture(lab, required)?;
-    session.record_lab_provenance(&lab_provenance)?;
-    session.record_event("lab-provenance-captured", None, None, None)?;
     Ok(session)
 }
 

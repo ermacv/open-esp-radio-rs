@@ -66,6 +66,10 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
+pub fn sha256_bytes(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
 pub fn unix_millis() -> Result<u64> {
     let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
     u64::try_from(millis).map_err(|_| "host timestamp exceeds the HIL report range".into())

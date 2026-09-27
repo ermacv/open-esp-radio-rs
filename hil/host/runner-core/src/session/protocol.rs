@@ -90,6 +90,12 @@ impl SerialCapture {
             && let Some(bytes) = crate::session::startup_artifact::load_if_present(path)?
         {
             self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
+            crate::lab::lock::record_board(
+                oer_hil_arbiter::BoardEventKind::StartupArtifactUploaded {
+                    path: path.display().to_string(),
+                    sha256: crate::durable::sha256_bytes(&bytes),
+                },
+            );
         }
         if capabilities.features.runtime_initialization {
             self.initialize(target, PROTOCOL_READY_TIMEOUT)?;
@@ -112,6 +118,13 @@ impl SerialCapture {
                 .into());
             }
             crate::session::startup_artifact::persist_atomically(path, &bytes)?;
+            crate::lab::lock::record_board(
+                oer_hil_arbiter::BoardEventKind::StartupArtifactWritten {
+                    path: path.display().to_string(),
+                    sha256: crate::durable::sha256_bytes(&bytes),
+                    disposition: format!("{:?}", status.disposition),
+                },
+            );
             eprintln!(
                 "startup_artifact={} disposition={:?} bytes={} initialization_elapsed_us={}",
                 path.display(),

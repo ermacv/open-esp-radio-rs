@@ -2949,6 +2949,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-arbiter"
+version = "0.1.0"
+dependencies = [
+ "fs2",
+ "oer-process",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "oer-hil-fixture"
 version = "0.1.0"
 dependencies = [
@@ -3052,6 +3064,7 @@ dependencies = [
  "mio",
  "object 0.39.1",
  "oer-esp32s31-firmware",
+ "oer-hil-arbiter",
  "oer-hil-fixture",
  "oer-hil-fixture-install",
  "oer-hil-protocol",
@@ -3398,6 +3411,7 @@ dependencies = [
  "libc",
  "object 0.39.1",
  "oer-esp32s31-firmware",
+ "oer-hil-arbiter",
  "oer-hil-schema",
  "oer-memory-report",
  "oer-probe-codegen",

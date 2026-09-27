@@ -148,3 +148,24 @@ fn dropping_owner_releases_lock_while_a_forked_child_retains_the_descriptor() {
         successor.as_ref().err()
     );
 }
+
+#[test]
+fn a_granted_holder_waits_for_locks_held_outside_the_queue() {
+    let directory = tempfile::tempdir().unwrap();
+    let outside = ResourceLease::acquire_directory(directory.path()).unwrap();
+    let error = ResourceLease::acquire_directory(directory.path())
+        .err()
+        .unwrap();
+    assert!(is_busy(&*error));
+    assert!(!is_busy(
+        &*Box::<dyn std::error::Error + Send + Sync>::from("missing Bluetooth fixture adapter")
+    ));
+    let path = directory.path().to_owned();
+    let waiter = std::thread::spawn(move || {
+        wait_for_fixture(|| ResourceLease::acquire_directory(&path)).is_ok()
+    });
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(!waiter.is_finished());
+    drop(outside);
+    assert!(waiter.join().unwrap());
+}

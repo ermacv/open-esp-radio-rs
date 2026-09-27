@@ -73,11 +73,11 @@ impl DeviceLease {
         if file.try_lock_exclusive().is_err() {
             let mut owner = String::new();
             file.read_to_string(&mut owner)?;
-            return Err(format!(
+            return Err(DeviceBusy(format!(
                 "serial device is already leased by {} ({})",
                 owner.trim(),
                 path.display()
-            )
+            ))
             .into());
         }
         let mut lease = Self {
@@ -97,6 +97,18 @@ impl Drop for DeviceLease {
         let _ = FileExt::unlock(&self.file);
     }
 }
+
+/// Another process leases the serial device.
+#[derive(Debug)]
+pub struct DeviceBusy(String);
+
+impl std::fmt::Display for DeviceBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DeviceBusy {}
 
 /// Per-user host ownership, independent of a repository's target directory.
 pub fn lease_directory() -> Result<PathBuf> {

@@ -49,6 +49,13 @@ pub fn prepare(ctx: &Context) -> Result<(std::path::PathBuf, std::path::PathBuf)
 }
 
 pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
+    let (options, args) = LeaseOptions::split(args)?;
+    let args = args.as_slice();
+    match args.first().and_then(|argument| argument.to_str()) {
+        Some("queue") => return queue(&args[1..]),
+        Some("lease") => return lease(ctx, options, &args[1..]),
+        _ => {}
+    }
     let (runner, receipt_path) = prepare(ctx)?;
     if hands_off_terminal(args) {
         // Fixture installation ends in a foreground sudo handoff. A supervised
@@ -61,6 +68,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             let error = ctx
                 .command(&runner)
                 .args(args)
+                .envs(options.environment(ctx))
                 .env("OER_OBSERVER_RECEIPT", &receipt_path)
                 .exec();
             return Err(format!("cannot hand the terminal to the HIL runner: {error}").into());
@@ -71,6 +79,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         ctx.command(&runner)
             .args(args)
+            .envs(options.environment(ctx))
             .env("OER_OBSERVER_RECEIPT", &receipt_path),
         std::time::Duration::from_secs(300),
     )?;
@@ -79,6 +88,174 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         record_evidence(ctx, &receipt_path)?;
     }
     Ok(exit_code(status))
+}
+
+/// Stand lease options accepted before the HIL command, or after `lease`.
+#[derive(Debug, Default, PartialEq)]
+struct LeaseOptions {
+    owner: Option<String>,
+    budget: Option<std::time::Duration>,
+    short: bool,
+}
+
+impl LeaseOptions {
+    /// Split leading `--owner NAME`, `--budget DURATION` and `--short` from
+    /// the remaining arguments.
+    fn split(args: &[OsString]) -> Result<(Self, Vec<OsString>)> {
+        let mut options = Self::default();
+        let mut rest = args.iter();
+        let mut remaining = Vec::new();
+        while let Some(argument) = rest.next() {
+            let text = argument.to_str().unwrap_or_default();
+            let (name, inline) = match text.split_once('=') {
+                Some((name, value)) => (name, Some(value.to_owned())),
+                None => (text, None),
+            };
+            let mut value = || -> Result<String> {
+                inline
+                    .clone()
+                    .or_else(|| {
+                        rest.next()
+                            .and_then(|value| value.to_str().map(str::to_owned))
+                    })
+                    .ok_or_else(|| format!("{name} requires a value").into())
+            };
+            match name {
+                "--owner" => options.owner = Some(value()?),
+                "--budget" => {
+                    options.budget = Some(oer_hil_arbiter::parse_duration(&value()?)?);
+                }
+                "--short" if inline.is_none() => options.short = true,
+                _ => {
+                    remaining.push(argument.clone());
+                    remaining.extend(rest.cloned());
+                    break;
+                }
+            }
+        }
+        Ok((options, remaining))
+    }
+
+    /// Explicit options win; otherwise an enclosing lease's owner, otherwise
+    /// this checkout's directory name.
+    fn owner(&self, ctx: &Context) -> String {
+        self.owner
+            .clone()
+            .or_else(|| {
+                std::env::var(oer_hil_arbiter::OWNER_ENV)
+                    .ok()
+                    .filter(|owner| !owner.is_empty())
+            })
+            .or_else(|| {
+                ctx.root
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(oer_hil_arbiter::default_owner)
+    }
+
+    fn environment(&self, ctx: &Context) -> Vec<(&'static str, String)> {
+        let mut environment = vec![(oer_hil_arbiter::OWNER_ENV, self.owner(ctx))];
+        if let Some(budget) = self.budget {
+            environment.push((
+                oer_hil_arbiter::BUDGET_ENV,
+                format!("{}s", budget.as_secs()),
+            ));
+        }
+        if self.short {
+            environment.push((oer_hil_arbiter::SHORT_ENV, String::from("1")));
+        }
+        environment
+    }
+}
+
+/// Print the stand's holder, queue, board state and recent leases.
+fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
+    let json = match args {
+        [] => false,
+        [flag] if flag == "--json" => true,
+        _ => return Err("usage: cargo hil queue [--json]".into()),
+    };
+    let status = oer_hil_arbiter::Arbiter::open()?.status()?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&status)?);
+    } else {
+        println!("{status}");
+    }
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// Exit status of a lease command terminated at twice its budget.
+const BUDGET_EXCEEDED_EXIT: u8 = 124;
+
+/// Run one command, typically a series of HIL commands, under one lease.
+/// Nested `cargo hil` commands join the lease instead of queueing.
+fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
+    let (options, command) = LeaseOptions::split(args)?;
+    let usage = "usage: cargo hil lease [--owner NAME] [--budget DURATION] [--short] -- COMMAND...";
+    let [separator, program, arguments @ ..] = command.as_slice() else {
+        return Err(usage.into());
+    };
+    if separator != "--" {
+        return Err(usage.into());
+    }
+    let options = LeaseOptions {
+        owner: options.owner.or(outer.owner),
+        budget: options.budget.or(outer.budget),
+        short: options.short || outer.short,
+    };
+    let work = std::iter::once(program)
+        .chain(arguments)
+        .map(|argument| argument.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let request = oer_hil_arbiter::Request {
+        owner: options.owner(ctx),
+        work,
+        budget: options.budget,
+        short: options.short,
+    };
+    let grant = oer_hil_arbiter::Arbiter::open()?.acquire(&request)?;
+    let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
+        ctx.command(program)
+            .args(arguments)
+            .env(oer_hil_arbiter::OWNER_ENV, &request.owner)
+            .envs(grant.environment()),
+        std::time::Duration::from_secs(300),
+    )?;
+    supervise(&grant, &mut child)
+}
+
+/// Warn at the budget and terminate the command group at twice the budget.
+fn supervise(
+    grant: &oer_hil_arbiter::Grant,
+    child: &mut oer_process::owned::Child,
+) -> Result<std::process::ExitCode> {
+    let Some(budget) = grant.budget() else {
+        return Ok(exit_code(child.wait_forwarding_cancellation()?));
+    };
+    let started = std::time::Instant::now();
+    let mut warned = false;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(exit_code(status));
+        }
+        if oer_process::cancellation_requested() {
+            child.kill()?;
+            return Ok(std::process::ExitCode::from(130));
+        }
+        let elapsed = started.elapsed();
+        if !warned && elapsed >= budget {
+            grant.warn_over_budget();
+            warned = true;
+        }
+        if elapsed >= budget * 2 {
+            grant.mark_budget_exceeded();
+            child.kill()?;
+            return Ok(std::process::ExitCode::from(BUDGET_EXCEEDED_EXIT));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
 }
 
 /// The HIL target the runner executes on.
@@ -150,6 +327,64 @@ mod tests {
         assert!(!produces_runs(&args(&["run-plan", "plan.json", "--check"])));
         assert!(!produces_runs(&args(&["plan", "--scenario", "x"])));
         assert!(!produces_runs(&args(&["doctor"])));
+    }
+
+    #[test]
+    fn lease_options_precede_the_command_and_stop_at_the_first_other_argument() {
+        let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
+        let (options, rest) = LeaseOptions::split(&args(&[
+            "--owner",
+            "phy",
+            "--budget=40m",
+            "--short",
+            "run",
+            "x",
+            "--owner",
+            "kept",
+        ]))
+        .unwrap();
+        assert_eq!(
+            options,
+            LeaseOptions {
+                owner: Some("phy".into()),
+                budget: Some(std::time::Duration::from_secs(2400)),
+                short: true,
+            }
+        );
+        assert_eq!(rest, args(&["run", "x", "--owner", "kept"]));
+        assert!(LeaseOptions::split(&args(&["--budget"])).is_err());
+        assert!(LeaseOptions::split(&args(&["--budget", "soon"])).is_err());
+        let (options, rest) = LeaseOptions::split(&args(&["run", "x"])).unwrap();
+        assert_eq!(options, LeaseOptions::default());
+        assert_eq!(rest.len(), 2);
+    }
+
+    #[test]
+    fn a_lease_command_is_terminated_at_twice_its_budget() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = oer_hil_arbiter::Arbiter::at(directory.path()).unwrap();
+        let grant = arbiter
+            .acquire(&oer_hil_arbiter::Request {
+                owner: "test".into(),
+                work: "sleep".into(),
+                budget: Some(std::time::Duration::from_secs(1)),
+                short: false,
+            })
+            .unwrap();
+        let started = std::time::Instant::now();
+        let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
+            Command::new("sleep").arg("60"),
+            std::time::Duration::from_secs(1),
+        )
+        .unwrap();
+        let code = supervise(&grant, &mut child).unwrap();
+        assert_eq!(code, std::process::ExitCode::from(BUDGET_EXCEEDED_EXIT));
+        assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+        drop(grant);
+        assert_eq!(
+            arbiter.history().unwrap()[0].outcome,
+            oer_hil_arbiter::LeaseOutcome::BudgetExceeded
+        );
     }
 
     #[test]

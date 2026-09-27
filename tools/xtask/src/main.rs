@@ -234,7 +234,7 @@ fn run() -> Result<std::process::ExitCode> {
                 network,
             )?;
             if flash {
-                oer_xtask::firmware::flash(&ctx, &output, port.as_deref(), monitor)?;
+                oer_xtask::firmware::flash(&ctx, &output, &example, port.as_deref(), monitor)?;
             }
             Ok(())
         }

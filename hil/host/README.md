@@ -81,6 +81,52 @@ with [the peer firmware](../peers/esp32c5-ieee802154/README.md). Name its
 stable identity and serial port in the `[ieee802154_peer]` table; the runner
 leases that port for the scenario and resets the peer before each use.
 
+## Share the stand
+
+Every checkout of this user shares one physical stand through the
+[arbiter](arbiter/README.md). Hardware commands (`run`, `run-all`, `run-plan`,
+`image flash`, `image replay`, `device status`, `fixture check`, the Bluetooth
+fixture commands and `cargo xtask build firmware <example> --flash`) wait in
+its FIFO queue instead of failing when the stand is busy. A run builds its
+images before it queues, so the lease covers flashing and execution only.
+
+```console
+cargo hil queue                       # holder, queue with expected starts, board state
+cargo hil --budget 10m run <scenario> # one run, one lease
+cargo hil --owner phy lease --budget 40m -- sh -c 'cargo hil run a && cargo hil run b'
+```
+
+`lease` runs one command under one lease; every `cargo hil` command inside it
+joins that lease, so no other owner can flash between the runs of a series. The
+lease options precede the HIL command, or follow `lease`:
+
+| Option | Meaning |
+| --- | --- |
+| `--owner NAME` | Who holds the lease; defaults to an enclosing lease's owner, then the checkout directory name |
+| `--budget DURATION` | `90s`, `15m`, `1h30m`; defaults to the longest of the last five completed leases of the same command, otherwise 15 minutes |
+| `--short` | A budget of at most two minutes; granted ahead of the queue head, at most once in a row |
+
+The environment variables `OER_HIL_OWNER`, `OER_HIL_BUDGET` and `OER_HIL_SHORT=1`
+carry the same choices. At its budget a lease is reported over budget; at twice
+its budget its process group receives `SIGTERM`, which runs the ordinary
+cancellation and fixture cleanup, and `SIGKILL` five minutes later. A `lease`
+terminated this way exits with status 124. `cargo xtask build firmware --flash
+--monitor` holds a lease without a budget watchdog for its interactive monitor.
+A top-level run records its evidence shards after its lease is released.
+`cargo hil doctor` reports a busy stand without queueing.
+
+A command started in the background returns when its lease ends; its exit is
+the notification for an agent. The user receives desktop notifications through
+`notify-send` when a waiting owner is granted the stand, when the stand becomes
+free, and when a lease exceeds its budget; `OER_HIL_NOTIFY=0` disables them.
+
+On every grant the arbiter prints the board's last flashed firmware (image,
+commit, application hash, owner) and the last startup-artifact upload or write,
+which carries the PHY calibration cache, and lists the changes other owners
+made since this owner's previous lease. It only reports this state; it never
+erases or restores it. A checkout without the arbiter still fails fast on the
+fixture locks; a granted holder waits for such a process to finish.
+
 ## Build and run
 
 `cargo hil plan <scenario> --out target/hil/plan.json` prepares an executable

@@ -8,7 +8,8 @@ use crate::{
 };
 
 use oer_esp32s31_firmware::flash::{
-    OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET, ota0_selector_image,
+    AfterFlash, FlashSegment, OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET,
+    ota0_selector_image,
 };
 
 pub fn status(root: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
@@ -115,6 +116,7 @@ pub fn flash_application(
     port: &Path,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
+    let mut segments = Vec::new();
     match bootstrap {
         Some(bootstrap) => {
             let container = output.join("rom-container.bin");
@@ -122,17 +124,14 @@ pub fn flash_application(
             oer_esp32s31_firmware::save_rom_image_command(&mut encode, root, bootstrap, &container);
             run_command(&mut encode, "encode the ESP-IDF bootloader")?;
             let bootloader = output.join("bootloader.bin");
-            fs::write(
-                &bootloader,
-                oer_esp32s31_firmware::flash::rom_bootloader(&fs::read(&container)?)?,
-            )?;
-            write_flash_binary(
-                port,
-                oer_esp32s31_firmware::flash::BOOTLOADER_OFFSET,
-                &bootloader,
-                "no-reset",
-                "write ESP-IDF bootloader",
-            )?;
+            let container = fs::read(&container)?;
+            let data = oer_esp32s31_firmware::flash::rom_bootloader(&container)?.to_vec();
+            fs::write(&bootloader, &data)?;
+            segments.push(FlashSegment {
+                address: oer_esp32s31_firmware::flash::BOOTLOADER_OFFSET,
+                data,
+                description: "ESP-IDF bootloader",
+            });
         }
         None => eprintln!(
             "hil: {} has no bootstrap ELF; the board keeps its current bootloader",
@@ -150,44 +149,23 @@ pub fn flash_application(
         .arg(&partition_csv);
     run_command(&mut partition, "encode HIL partition table")?;
     fs::write(&selector_bin, ota0_selector_image())?;
-
-    write_flash_binary(
-        port,
-        PARTITION_TABLE_OFFSET,
-        &partition_bin,
-        "no-reset",
-        "write HIL partition table",
-    )?;
-    write_flash_binary(
-        port,
-        OTA_0_OFFSET,
-        application,
-        "no-reset",
-        "write HIL application",
-    )?;
-    write_flash_binary(
-        port,
-        OTA_SELECTOR_OFFSET,
-        &selector_bin,
-        "hard-reset",
-        "select HIL ota_0 image",
-    )
-}
-
-fn write_flash_binary(
-    port: &Path,
-    address: u32,
-    image: &Path,
-    after: &str,
-    description: &str,
-) -> Result<()> {
-    let mut command = Command::new(program_from_env("ESPFLASH", "espflash"));
-    oer_esp32s31_firmware::flash::write_bin_command(
-        &mut command,
-        Some(port),
-        address,
-        image,
-        after,
-    );
-    run_command(&mut command, description)
+    segments.push(FlashSegment {
+        address: PARTITION_TABLE_OFFSET,
+        data: fs::read(&partition_bin)?,
+        description: "HIL partition table",
+    });
+    segments.push(FlashSegment {
+        address: OTA_0_OFFSET,
+        data: fs::read(application)?,
+        description: "HIL application",
+    });
+    // The selector is written last: an interrupted write leaves the previous
+    // selection pointing at an image whose checksum no longer validates.
+    segments.push(FlashSegment {
+        address: OTA_SELECTOR_OFFSET,
+        data: ota0_selector_image().to_vec(),
+        description: "HIL ota_0 selector",
+    });
+    oer_esp32s31_firmware::flash::write_segments(port, &segments, AfterFlash::HardReset)
+        .map_err(|error| format!("flash the HIL image through {}: {error}", port.display()).into())
 }

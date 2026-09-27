@@ -21,7 +21,7 @@ pub const ROM: &str = "rom-rev100";
 /// in HP SRAM (0x4080_0000..0x4086_0000) below the ROM data at 0x4085_xxxx.
 const INPUT: u32 = 0x3fff_0000;
 const OUTPUT: u32 = 0x3fff_1000;
-const PARAMETER_COPY: u32 = INPUT + 0x800;
+pub const PARAMETER_COPY: u32 = INPUT + 0x800;
 const STACK: (u32, u32) = (0x4084_0000, 0x8000);
 
 /// Placement of linked vendor images, outside every ESP32-C5 mapping (flash
@@ -36,7 +36,7 @@ const ROM_INTERFACE_POINTER: u32 = 0x4085_fc6c;
 const ROM_PARAMETER_POINTER: u32 = 0x4085_fc70;
 const ROM_CALLBACK_TABLE: u32 = 0x4085_faac;
 /// Size of `phy_param` in the pinned `libphy.a`.
-const PHY_PARAM_BYTES: u32 = 0x438;
+pub const PHY_PARAM_BYTES: u32 = 0x438;
 
 /// `I2C_ANA_MST` of ESP-IDF `soc/esp32c5/include/modem/i2c_ana_mst_reg.h`:
 /// the two host command ports, the complemented read mask `ANA_CONF1` and

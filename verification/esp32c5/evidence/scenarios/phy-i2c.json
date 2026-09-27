@@ -6,20 +6,20 @@
   "inputs": {
     "input-0": "dbf33c418c8d408d4005c849d12a1432deea82e2e5e57de3c8ddf914d104fffb",
     "input-1": "49693d745eb4b4e6e6c77be4f5213765d545d8c7a1d9742a8a619bf596c4e27a",
-    "input-2": "7e26ea35b5a74800f8d8490920f00f54353576c16d8714d07fbeb83fb2307da1"
+    "input-2": "81e5b294fbc9562e75171a17d59f6c62890afe60073355ac3b3974e361048cfc"
   },
   "sources": [
     {
       "path": "crates/hardware/esp32c5/hal",
-      "sha256": "928c52dfac6ebc0390db3275fb1115aee1eabe208e399cd79bc987c970c582fc"
+      "sha256": "a09b2ea771bb4e4cb993aeb098effe5f9b12ea57d5b9c153121c3f0a959534be"
     },
     {
       "path": "crates/hardware/esp32c5/pac",
-      "sha256": "0d65ab69c469b52388e2fdbf4f3f552e377b01fe841dd4b0289b5c8f558ea5c7"
+      "sha256": "87d3e7c031cd796972ea7bd949f7c4df3dbcdd903c88e544fb70550e093f5ad6"
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw",
-      "sha256": "f6581751c624bd04f2822473bde796eab0da477a4bc631075f56a196cadb8ca8"
+      "sha256": "1a355b146e512f912dcbe79a16100387de897121c5cdf8ec062378dc294feb14"
     },
     {
       "path": "crates/hardware/ieee802154/engine",
@@ -27,7 +27,7 @@
     },
     {
       "path": "crates/hardware/radio/analog",
-      "sha256": "86710110c54231d6c1209f0425100156b1f55749d9f9ca33a6f4f60e4976038b"
+      "sha256": "8822220be9842320a44cd8a6ab00cbbdbe774cb69e11182b33606775b132d526"
     },
     {
       "path": "crates/hardware/radio/clock",
@@ -43,7 +43,7 @@
     },
     {
       "path": "tools/blobray/crates/application",
-      "sha256": "eb1f1fbe5e066a65604d7484edc9a33a42422bdffb61efbd0409c0e2725604b5"
+      "sha256": "9c0e98405d41143e9d183f8dc4141d31e353837ee2a29d32ff9af55cf068a786"
     },
     {
       "path": "tools/blobray/crates/artifacts",
@@ -51,7 +51,7 @@
     },
     {
       "path": "tools/blobray/crates/domain",
-      "sha256": "cfe1222decd438d38e1897f8dc384924e455c1a28458876f5924bcd92b421b35"
+      "sha256": "b80c8e42758d5c2b0c37751185f7b50280f13d52b3aae014496973fdd35fad3b"
     },
     {
       "path": "tools/blobray/crates/knowledge",
@@ -63,7 +63,7 @@
     },
     {
       "path": "tools/blobray/crates/store",
-      "sha256": "1a7161ba1ba3bddca7ce772cfe6010d9ef93d3762603e33e0d81383cbd3fac54"
+      "sha256": "5f1cfaa9c81421f134f2aaa2354b84bdff9316ba9bc33be38c06f50a460820b2"
     },
     {
       "path": "tools/blobray/crates/verification",
@@ -79,11 +79,11 @@
     },
     {
       "path": "verification/esp32c5/probes/radio/library",
-      "sha256": "566dd1cb952dac401708ff00716c71f04a5d2c53be52ad00aebbdd1b301dbbf9"
+      "sha256": "9125da8995dd2d3649c48d6afd8ad02bbfbea761aed0172cbf96db658d181fd0"
     },
     {
       "path": "verification/esp32c5/scenarios",
-      "sha256": "ee2344960a0f07c3977ebe818237c716612d6d11bbf62725cecedfed58811bf5"
+      "sha256": "c20903f1bf032c2d95c01443782dc1998ea1f1bc882ad6910e25854bfde2e5c2"
     },
     {
       "path": "verification/harness/codegen",
@@ -314,18 +314,94 @@
         "reviewed": 0,
         "untriaged": 0
       }
+    },
+    {
+      "suite": "phy-i2c",
+      "source": "archive",
+      "symbol": "phy_i2c_paral_write",
+      "production": "open_phy_i2c_trace_phy_i2c_paral_write",
+      "verdict": "match",
+      "cases": 576,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 5,
+          "total": 5
+        },
+        "directions": {
+          "reached": 4,
+          "total": 4
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 20,
+        "observed": 17,
+        "reviewed": 0,
+        "untriaged": 3
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "phy-i2c",
+      "source": "archive",
+      "symbol": "phy_i2c_init1",
+      "production": "open_phy_i2c_trace_phy_i2c_init1",
+      "verdict": "match",
+      "cases": 16,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 29,
+          "total": 30
+        },
+        "directions": {
+          "reached": 19,
+          "total": 22
+        },
+        "open": 2,
+        "excluded": 6,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 65,
+        "observed": 64,
+        "reviewed": 0,
+        "untriaged": 1
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
     }
   ],
   "untriaged": [],
   "functions": [
+    "0x40038656",
+    "0x40038666",
+    "0x40038676",
+    "memset",
     "phy_chip_i2c_readReg",
     "phy_chip_i2c_readReg_org",
     "phy_chip_i2c_writeReg",
     "phy_chip_i2c_writeReg.constprop.2",
+    "phy_get_data_sat",
     "phy_get_i2c_hostid_",
     "phy_get_i2c_read_mask_",
     "phy_i2c_enter_critical",
     "phy_i2c_exit_critical",
+    "phy_i2c_init1",
+    "phy_i2c_paral_write",
+    "phy_i2c_paral_write_num",
     "phy_i2c_readReg_Mask",
     "phy_i2c_writeReg_Mask"
   ],
@@ -333,19 +409,39 @@
   "observed": [
     {
       "path": "crates/hardware/esp32c5/hal/src/analog.rs",
-      "line": 37
+      "line": 39
     },
     {
       "path": "crates/hardware/esp32c5/hal/src/analog.rs",
-      "line": 41
+      "line": 43
     },
     {
       "path": "crates/hardware/esp32c5/hal/src/analog.rs",
-      "line": 45
+      "line": 47
     },
     {
       "path": "crates/hardware/esp32c5/hal/src/analog.rs",
-      "line": 49
+      "line": 51
+    },
+    {
+      "path": "crates/hardware/esp32c5/hal/src/analog.rs",
+      "line": 59
+    },
+    {
+      "path": "crates/hardware/esp32c5/hal/src/analog.rs",
+      "line": 63
+    },
+    {
+      "path": "crates/hardware/esp32c5/hal/src/analog.rs",
+      "line": 67
+    },
+    {
+      "path": "crates/hardware/esp32c5/hal/src/analog.rs",
+      "line": 71
+    },
+    {
+      "path": "crates/hardware/esp32c5/hal/src/analog.rs",
+      "line": 83
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
@@ -358,6 +454,10 @@
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
       "line": 398
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 492
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
@@ -381,31 +481,75 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 5772
+      "line": 5785
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 5852
+      "line": 5865
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 6366
+      "line": 6379
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 6369
+      "line": 6382
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 6662
+      "line": 6403
     },
     {
       "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
-      "line": 6666
+      "line": 6408
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6410
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6412
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6433
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6438
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6440
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6442
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6675
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6679
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6686
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/raw/src/lib.rs",
+      "line": 6690
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/generated.rs",
       "line": 421
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/generated.rs",
+      "line": 427
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/ownership.rs",
@@ -425,23 +569,51 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 129
+      "line": 164
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 133
+      "line": 167
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 144
+      "line": 169
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 145
+      "line": 170
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 187
+      "line": 171
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 172
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 177
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 178
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 179
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 184
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 185
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 186
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
@@ -449,11 +621,11 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 191
+      "line": 190
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 193
+      "line": 192
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
@@ -461,27 +633,143 @@
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 197
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 198
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 199
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 200
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 201
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 203
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 205
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 206
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
       "line": 207
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 227
+      "line": 209
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 228
+      "line": 212
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 231
+      "line": 213
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 233
+      "line": 214
     },
     {
       "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
-      "line": 241
+      "line": 215
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 216
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 217
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 250
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 254
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 265
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 266
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 271
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 276
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 283
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 292
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 341
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 342
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 345
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 347
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 350
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 361
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 381
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 382
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 385
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 387
+    },
+    {
+      "path": "crates/hardware/esp32c5/pac/src/phy/i2c.rs",
+      "line": 395
     }
   ],
   "unprojected": []

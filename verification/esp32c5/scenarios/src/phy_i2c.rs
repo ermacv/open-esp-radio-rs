@@ -13,14 +13,20 @@
 //! of ESP-IDF 4d59230d `regi2c_impl.c` and `i2c_ana_mst_reg.h` (evidence
 //! `ESP_IDF_4D59230D_C5_I2C_ANA_MST`).
 use crate::{I2C_HOST_MAP, I2C_PORTS, I2C_READ_MASK, LIBRARY, ROM};
-use blobray_domain::{CommandCell, EffectRule};
+use blobray_domain::{
+    CommandBank, CommandCell, CommandPort, DeviceBehavior, DeviceDeclaration, EffectRule,
+    RegionLifetime,
+};
 use oer_vendor_scenario_engine::evidence::PhyEffect;
 use oer_vendor_scenario_engine::harness::Result;
 use oer_vendor_scenario_engine::leaf::{
     Domain, Leaf, Objects, Observed, Suite, Vendor, expected, leaf, objects, ruled, stated,
 };
 use oer_vendor_scenario_engine::phy::contracts::port_polling;
-use oer_vendor_scenario_engine::phy::layout::{COMMAND_READ, COMMAND_WRITE, analog_bank};
+use oer_vendor_scenario_engine::phy::layout::{
+    COMMAND_BUSY, COMMAND_DATA_MASK, COMMAND_READ, COMMAND_SELECTOR_MASK, COMMAND_WRITE,
+    analog_bank,
+};
 
 /// Every analog block the transport admits.
 const BLOCKS: &[u32] = &[
@@ -264,6 +270,404 @@ fn expect_write_field(words: &[u32], observed: &Observed) -> std::result::Result
     )
 }
 
+/// The write command of a parallel pair: `phy_i2c_paral_write` publishes it
+/// without the start bit.
+const PARALLEL_WRITE: u32 = 0x0100_0000;
+/// The host map of the parallel initialization, in place.
+const PARALLEL_HOST_MAP_SET: u32 = 0x0000_2060;
+
+/// An analog bank over both ports that admits the parallel write command at
+/// the `selectors` a case addresses.
+fn parallel_bank(selectors: impl IntoIterator<Item = u32>) -> Objects {
+    let mut cells: Vec<CommandCell> = selectors
+        .into_iter()
+        .map(|selector| CommandCell {
+            selector,
+            initial: 0,
+            reads: None,
+        })
+        .collect();
+    cells.sort_by_key(|cell| cell.selector);
+    cells.dedup_by_key(|cell| cell.selector);
+    Objects {
+        devices: vec![DeviceDeclaration {
+            id: "analog-parallel".into(),
+            applicability: "both analog ports; parallel writes without the start bit complete after one busy read".into(),
+            lifetime: RegionLifetime::Phase,
+            behavior: DeviceBehavior::CommandBank(CommandBank {
+                selector_mask: COMMAND_SELECTOR_MASK,
+                data_mask: COMMAND_DATA_MASK,
+                read_command: COMMAND_READ,
+                write_command: PARALLEL_WRITE,
+                busy_mask: COMMAND_BUSY,
+                reset_command: None,
+                ports: I2C_PORTS
+                    .iter()
+                    .map(|address| CommandPort {
+                        address: *address,
+                        initial: 0,
+                        initial_busy_reads: IDLE,
+                        busy_reads: BUSY_READS,
+                    })
+                    .collect(),
+                cells,
+            }),
+        }],
+        ..Default::default()
+    }
+}
+
+/// `(block0, reg0, data0, block1, reg1, data1, flag)`.
+fn parallel_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    Ok(Objects {
+        vendor_words: words.to_vec(),
+        ..parallel_bank([
+            words[1] << REGISTER_SHIFT | words[0],
+            words[4] << REGISTER_SHIFT | words[3],
+        ])
+    })
+}
+
+fn parallel_command(block: u32, register: u32, data: u32) -> u32 {
+    register << REGISTER_SHIFT | block | data << DATA_SHIFT | PARALLEL_WRITE
+}
+
+/// The port writes of a case, in order.
+fn port_writes(observed: &Observed) -> Vec<(u32, u32)> {
+    observed
+        .effects
+        .iter()
+        .filter_map(|e| match e {
+            PhyEffect::Write(address, value) if I2C_PORTS.contains(address) => {
+                Some((*address, *value))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn expect_parallel(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    let [b0, r0, d0, b1, r1, d1, _] = *words else {
+        return Err("parallel words".into());
+    };
+    let expected = vec![
+        (I2C_PORTS[0], parallel_command(b0, r0, d0)),
+        (I2C_PORTS[1], parallel_command(b1, r1, d1)),
+    ];
+    if port_writes(observed) != expected {
+        return Err(format!("port writes {:x?}", port_writes(observed)));
+    }
+    if observed.effects.iter().any(|e| {
+        matches!(e, PhyEffect::Write(address, _) if *address == I2C_HOST_MAP || *address == I2C_READ_MASK)
+    }) {
+        return Err("a parallel write selects a host map or read mask".into());
+    }
+    Ok(())
+}
+
+/// One byte `phy_i2c_init1` writes: an immediate or a `phy_param` field.
+#[derive(Clone, Copy)]
+enum Param {
+    Constant(u32),
+    Byte(usize),
+    /// `phy_get_data_sat(param[offset], high, low)`.
+    Saturated(usize, u32, u32),
+    /// Bits 9:2 of the halfword at 0x416 with bit 6 set.
+    Shifted416,
+    /// Bits 1:0 of the halfword at 0x416 at 5:4.
+    Low416,
+}
+
+impl Param {
+    fn value(self, image: &[u8]) -> u32 {
+        let halfword = u32::from(image[0x416]) | u32::from(image[0x417]) << 8;
+        match self {
+            Self::Constant(value) => value,
+            Self::Byte(offset) => u32::from(image[offset]),
+            Self::Saturated(offset, low, high) => u32::from(image[offset]).clamp(low, high),
+            Self::Shifted416 => (halfword >> 2 | 0x40) & 0xff,
+            Self::Low416 => (halfword << 4) & 0x30,
+        }
+    }
+}
+
+/// Independent reading of `phy_i2c_init1`'s stack arrays: the host-0 and
+/// host-1 (block, register, data) of each of its 44 pairs.
+/// One host's (block, register, data) command of a parallel pair.
+type HostCommand = (u32, u32, Param);
+
+const INITIALIZATION: [(HostCommand, HostCommand); 44] = [
+    (
+        (0x6b, 0x2, Param::Constant(0x72)),
+        (0x6a, 0x0, Param::Constant(0xff)),
+    ),
+    (
+        (0x6b, 0x3, Param::Constant(0xaa)),
+        (0x6a, 0x1, Param::Constant(0x7f)),
+    ),
+    (
+        (0x6b, 0xe, Param::Constant(0x55)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x6b, 0x7, Param::Constant(0xff)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x6b, 0xa, Param::Constant(0x8)),
+        (0x67, 0x2, Param::Constant(0x3)),
+    ),
+    (
+        (0x6b, 0xc, Param::Constant(0x55)),
+        (0x67, 0x1, Param::Constant(0x6f)),
+    ),
+    (
+        (0x6b, 0xf, Param::Constant(0x81)),
+        (0x67, 0x5, Param::Constant(0x6b)),
+    ),
+    (
+        (0x6b, 0x9, Param::Constant(0x0)),
+        (0x67, 0x1d, Param::Constant(0xc2)),
+    ),
+    (
+        (0x6b, 0x5, Param::Constant(0x33)),
+        (0x67, 0x6, Param::Byte(0xf5)),
+    ),
+    (
+        (0x6b, 0x6, Param::Constant(0x30)),
+        (0x67, 0x8, Param::Saturated(0xf7, 10, 50)),
+    ),
+    (
+        (0x6b, 0xd, Param::Constant(0x57)),
+        (0x67, 0xa, Param::Byte(0xf5)),
+    ),
+    (
+        (0x6b, 0x8, Param::Constant(0xfd)),
+        (0x67, 0xc, Param::Byte(0xf7)),
+    ),
+    (
+        (0x6b, 0x4, Param::Constant(0xac)),
+        (0x67, 0x7, Param::Byte(0xf6)),
+    ),
+    (
+        (0x6e, 0x5, Param::Shifted416),
+        (0x67, 0x9, Param::Saturated(0xf8, 10, 60)),
+    ),
+    (
+        (0x6e, 0x7, Param::Constant(0x63)),
+        (0x67, 0xb, Param::Byte(0xf6)),
+    ),
+    (
+        (0x6e, 0x8, Param::Constant(0x73)),
+        (0x67, 0xd, Param::Byte(0xf8)),
+    ),
+    (
+        (0x6e, 0x9, Param::Constant(0xc)),
+        (0x67, 0xe, Param::Byte(0xfb)),
+    ),
+    (
+        (0x6e, 0xd, Param::Constant(0x22)),
+        (0x67, 0x10, Param::Byte(0xfb)),
+    ),
+    (
+        (0x6e, 0x1, Param::Constant(0x71)),
+        (0x67, 0x12, Param::Byte(0xf9)),
+    ),
+    (
+        (0x6e, 0x10, Param::Constant(0x63)),
+        (0x67, 0x14, Param::Byte(0xf9)),
+    ),
+    (
+        (0x6e, 0x11, Param::Constant(0x73)),
+        (0x67, 0xf, Param::Byte(0xfc)),
+    ),
+    (
+        (0x6e, 0x4, Param::Constant(0x47)),
+        (0x67, 0x11, Param::Byte(0xfc)),
+    ),
+    ((0x6e, 0xc, Param::Low416), (0x67, 0x13, Param::Byte(0xfa))),
+    (
+        (0x6e, 0xf, Param::Constant(0x47)),
+        (0x67, 0x15, Param::Byte(0xfa)),
+    ),
+    (
+        (0x6e, 0x12, Param::Constant(0x44)),
+        (0x6a, 0x3, Param::Constant(0xf)),
+    ),
+    (
+        (0x6e, 0x13, Param::Constant(0x63)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x6e, 0x14, Param::Constant(0x73)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0xf, Param::Constant(0x3f)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x1, Param::Constant(0xab)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x13, Param::Constant(0x90)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x6, Param::Constant(0xe0)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x15, Param::Constant(0x98)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x11, Param::Constant(0xc)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x14, Param::Constant(0xa)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x0, Param::Constant(0xdb)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0xe, Param::Constant(0x0)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x8, Param::Constant(0x61)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x7, Param::Constant(0x0)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x6e, 0xa, Param::Byte(0x410)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x6e, 0xb, Param::Byte(0x412)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x1a, Param::Constant(0x11)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x19, Param::Constant(0x48)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x12, Param::Constant(0x0)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+    (
+        (0x63, 0x18, Param::Constant(0xdd)),
+        (0x67, 0x3, Param::Constant(0x44)),
+    ),
+];
+
+/// `phy_param` images of the initialization cases: clear, a pattern with
+/// distinct fields, saturation bounds with a full halfword at 0x416, and
+/// both saturated fields inside their ranges.
+const PARAMETER_PROFILES: &[u32] = &[0, 1, 2, 3];
+
+fn parameter_image(profile: u32) -> Vec<u8> {
+    let mut image = vec![0; crate::PHY_PARAM_BYTES as usize];
+    match profile {
+        1 => {
+            for (index, offset) in (0xf5..=0xfc).enumerate() {
+                image[offset] = 0x11 * (index as u8 + 1);
+            }
+            image[0x410..0x418].copy_from_slice(&[0x34, 0x12, 0xcd, 0xab, 0, 0, 0xff, 0x03]);
+        }
+        2 => {
+            image[0xf7] = 0x05;
+            image[0xf8] = 0xff;
+            image[0x416..0x418].copy_from_slice(&[0xfc, 0xff]);
+        }
+        3 => {
+            image[0xf7] = 30;
+            image[0xf8] = 40;
+            image[0x416..0x418].copy_from_slice(&[0x5a, 0x01]);
+        }
+        _ => {}
+    }
+    image
+}
+
+/// `(parameters, profile)`: production reads the image at `parameters`,
+/// the vendor its linked `phy_param`, both holding the profile's image.
+fn initialization_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [parameters, profile] = *words else {
+        return Err(oer_vendor_scenario_engine::harness::invalid(
+            "initialization words",
+        ));
+    };
+    let image = parameter_image(profile);
+    Ok(Objects {
+        vendor_words: vec![],
+        production: vec![(parameters, image.clone())],
+        image: vec![(vendor.image_symbol("phy_param")?, image)],
+        ..parallel_bank(
+            INITIALIZATION
+                .iter()
+                .flat_map(|((b0, r0, _), (b1, r1, _))| {
+                    [r0 << REGISTER_SHIFT | b0, r1 << REGISTER_SHIFT | b1]
+                }),
+        )
+    })
+}
+
+fn expect_initialization(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    let image = parameter_image(words[1]);
+    let expected: Vec<(u32, u32)> = INITIALIZATION
+        .iter()
+        .flat_map(|((b0, r0, d0), (b1, r1, d1))| {
+            [
+                (I2C_PORTS[0], parallel_command(*b0, *r0, d0.value(&image))),
+                (I2C_PORTS[1], parallel_command(*b1, *r1, d1.value(&image))),
+            ]
+        })
+        .collect();
+    let observed_writes = port_writes(observed);
+    if observed_writes != expected {
+        let first = observed_writes
+            .iter()
+            .zip(&expected)
+            .position(|(a, b)| a != b);
+        return Err(format!("port writes differ at {first:?}"));
+    }
+    let maps: Vec<u32> = observed
+        .effects
+        .iter()
+        .filter_map(|e| match e {
+            PhyEffect::Write(address, value) if *address == I2C_HOST_MAP => {
+                Some(value & !HOST_MAP_KEPT)
+            }
+            _ => None,
+        })
+        .collect();
+    if maps != [PARALLEL_HOST_MAP_SET, HOST_MAP_SET] {
+        return Err(format!("host maps {maps:x?}"));
+    }
+    Ok(())
+}
+
+/// Where production reads the parameter image.
+const PARAMETER_IMAGE: &[u32] = &[crate::PARAMETER_COPY];
+/// Pair words: host-0 and host-1 blocks, registers and data, and the flag
+/// production admits.
+const PARALLEL_FIRST_BLOCKS: &[u32] = &[0x63, 0x6b];
+const PARALLEL_SECOND_BLOCKS: &[u32] = &[0x67, 0x6a];
+const PARALLEL_REGISTERS: &[u32] = &[0x00, 0x15];
+const PARALLEL_FLAG: &[u32] = &[0];
+
 const LEAVES: &[Leaf] = &[
     expected(
         leaf(
@@ -376,6 +780,41 @@ const LEAVES: &[Leaf] = &[
             polling,
         ),
         expect_write_field,
+    ),
+    expected(
+        objects(
+            leaf(
+                "phy_i2c_paral_write",
+                "open_phy_i2c_trace_phy_i2c_paral_write",
+                &[
+                    ("block0", Domain::Words(PARALLEL_FIRST_BLOCKS)),
+                    ("reg0", Domain::Words(PARALLEL_REGISTERS)),
+                    ("data0", Domain::Words(BYTES)),
+                    ("block1", Domain::Words(PARALLEL_SECOND_BLOCKS)),
+                    ("reg1", Domain::Words(PARALLEL_REGISTERS)),
+                    ("data1", Domain::Words(BYTES)),
+                    ("flag", Domain::Words(PARALLEL_FLAG)),
+                ],
+                false,
+            ),
+            parallel_abi,
+        ),
+        expect_parallel,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_i2c_init1",
+                    "open_phy_i2c_trace_phy_i2c_init1",
+                    &[("parameters", Domain::Words(PARAMETER_IMAGE))],
+                    false,
+                ),
+                initialization_abi,
+            ),
+            PARAMETER_PROFILES,
+        ),
+        expect_initialization,
     ),
 ];
 

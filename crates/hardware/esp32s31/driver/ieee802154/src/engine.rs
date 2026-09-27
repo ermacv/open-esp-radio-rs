@@ -35,8 +35,13 @@ use oer_esp32s31_hal::ieee802154::{
 use oer_ieee802154::{FrameAddress, FrameType, FrameVersion, PendingTable, PhrFrame, ack_pending};
 
 mod buffers;
+mod statistics;
 
 pub use buffers::{FRAME_SIZE, Ieee802154EngineBuffers, RX_BUFFER_COUNT};
+pub use statistics::{
+    Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
+    Ieee802154TxRxStatistics, Ieee802154TxStatistics,
+};
 
 use buffers::DmaFrame;
 
@@ -314,6 +319,8 @@ pub struct Ieee802154Engine<'storage> {
     recent_rx_info_index: u8,
     needs_next_operation: bool,
     pending_rx_stop: bool,
+    /// TX/RX statistics while collected (`CONFIG_IEEE802154_TXRX_STATISTIC`).
+    statistics: Option<Ieee802154TxRxStatistics>,
     timer0: Option<TimerAction>,
     timer1: Option<TimerAction>,
     coexistence: Ieee802154Coexistence,
@@ -343,6 +350,7 @@ impl<'storage> Ieee802154Engine<'storage> {
             recent_rx_info_index: 0,
             needs_next_operation: false,
             pending_rx_stop: false,
+            statistics: None,
             timer0: None,
             timer1: None,
             coexistence: Ieee802154Coexistence::Disabled,
@@ -691,9 +699,30 @@ impl<'storage> Ieee802154Engine<'storage> {
         defaults: Ieee802154PibDefaults,
     ) {
         self.pib = Ieee802154Pib::new(defaults, self.levels);
+        self.clear_txrx_statistics();
         ll::mac_init_registers(ll, &self.coexistence);
         self.rx_buffer_clear();
         self.state = Ieee802154State::Idle;
+    }
+
+    /// Collect TX/RX statistics, as the vendor's debug build with
+    /// `CONFIG_IEEE802154_TXRX_STATISTIC` does, or stop collecting them.
+    /// Collection starts from zero; each interrupt then drains the MAC's
+    /// diagnostic counters.
+    pub fn set_txrx_statistics(&mut self, collect: bool) {
+        self.statistics = collect.then(Ieee802154TxRxStatistics::default);
+    }
+
+    /// The TX/RX statistics, while collected.
+    pub const fn txrx_statistics(&self) -> Option<Ieee802154TxRxStatistics> {
+        self.statistics
+    }
+
+    /// `ieee802154_txrx_statistic_clear`.
+    pub fn clear_txrx_statistics(&mut self) {
+        if let Some(statistics) = self.statistics.as_mut() {
+            *statistics = Ieee802154TxRxStatistics::default();
+        }
     }
 
     /// Return the MAC's PTIs to the disabled foundation image before the
@@ -760,6 +789,9 @@ impl<'storage> Ieee802154Engine<'storage> {
             image[..frame.len()].copy_from_slice(frame);
             cx.env.transmit_failed(&image, error);
             ll::sec_clear(cx.ll);
+            if let Some(statistics) = self.statistics.as_mut() {
+                statistics.tx.deferred_nums += 1;
+            }
             return Ok(());
         }
         self.tx_init(&mut cx, frame);
@@ -918,6 +950,9 @@ impl<'storage> Ieee802154Engine<'storage> {
         let Ok(mut events) = observation.classification() else {
             panic!("IEEE802154_ASSERT(events == 0): unclassified MAC event");
         };
+        if let Some(statistics) = self.statistics.as_mut() {
+            statistics.record(cx.ll, events);
+        }
         cx.ll.clear_events(events);
 
         if events.contains(Ieee802154Event::RxAbort) {
@@ -1280,6 +1315,9 @@ impl<'storage> Ieee802154Engine<'storage> {
         L: Ieee802154LowLevel + ?Sized,
         E: Ieee802154Environment + ?Sized,
     {
+        if let Some(statistics) = self.statistics.as_mut() {
+            statistics.tx.nums += 1;
+        }
         // The vendor points `s_tx_frame` at the new frame before stopping the
         // current operation, so a stopped transmission reports the new frame.
         self.buffers.tx.write(frame);
@@ -1698,6 +1736,9 @@ impl<'storage> Ieee802154Engine<'storage> {
                     Ieee802154State::Tx | Ieee802154State::TxCca
                 ));
                 let error = if reason == Reason::TxCoexistenceBreak {
+                    if let Some(statistics) = self.statistics.as_mut() {
+                        statistics.tx.abort.tx_coex_break += 1;
+                    }
                     Ieee802154TxError::Coexist
                 } else {
                     Ieee802154TxError::Security

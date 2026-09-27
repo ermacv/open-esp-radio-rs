@@ -27,7 +27,7 @@ use oer_ieee802154::{
 use super::{
     Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154EventsLost, Ieee802154Platform,
     Ieee802154RadioEvent, Ieee802154RfCloseError, Ieee802154Runtime, Ieee802154RuntimeError,
-    Ieee802154RuntimeParts,
+    Ieee802154RuntimeParts, Ieee802154TxRxStatistics,
 };
 
 static LEVELS: [i8; 1] = [0];
@@ -612,4 +612,26 @@ fn the_clock_and_csl_state_belong_to_the_installed_radio() {
         })
         .unwrap();
     assert_eq!(runtime.with_csl(|csl| csl.period), Ok(100));
+}
+
+/// The runtime collects, lends and clears the engine's TX/RX statistics.
+#[test]
+fn txrx_statistics_are_collected_on_request() {
+    let runtime = enabled::<4>();
+    assert_eq!(runtime.txrx_statistics(), Ok(None));
+    runtime.set_txrx_statistics(true).unwrap();
+    runtime
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(15),
+        })
+        .unwrap();
+    runtime.interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+    let statistics = runtime.txrx_statistics().unwrap().unwrap();
+    assert_eq!(statistics.rx.done_nums, 1);
+    runtime.clear_txrx_statistics().unwrap();
+    assert_eq!(
+        runtime.txrx_statistics(),
+        Ok(Some(Ieee802154TxRxStatistics::default()))
+    );
 }

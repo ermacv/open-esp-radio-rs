@@ -5,9 +5,10 @@
 //! The model knows nothing else about the hardware.
 
 use super::{
-    Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
-    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154MultipanEnableState,
-    Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
+    Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
+    Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
+    Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer,
+    Ieee802154TxAbortEnableSet,
 };
 use crate::coex::CoexPti;
 use crate::ieee802154::{
@@ -75,6 +76,8 @@ pub struct Ieee802154LlModel {
     pub txrx_pti: u8,
     /// ACK PTI field value.
     pub ack_pti: u8,
+    /// The MAC diagnostic counters, in `Ieee802154DebugCounter` order.
+    pub debug_counters: [u16; DEBUG_COUNTERS],
 }
 
 impl Default for Ieee802154LlModel {
@@ -105,7 +108,34 @@ impl Default for Ieee802154LlModel {
             multipan_enable: Ieee802154MultipanEnableState::NONE,
             txrx_pti: 0,
             ack_pti: 0,
+            debug_counters: [0; DEBUG_COUNTERS],
         }
+    }
+}
+
+/// The MAC's diagnostic counters.
+pub const DEBUG_COUNTERS: usize = 17;
+
+/// The model slot of a diagnostic counter in `debug_counters`.
+pub const fn debug_slot(counter: Ieee802154DebugCounter) -> usize {
+    match counter {
+        Ieee802154DebugCounter::SfdTimeout => 0,
+        Ieee802154DebugCounter::RxFilterNotWork => 1,
+        Ieee802154DebugCounter::CrcError => 2,
+        Ieee802154DebugCounter::RxPreambleDetectError => 3,
+        Ieee802154DebugCounter::EdAbort => 4,
+        Ieee802154DebugCounter::CcaFail => 5,
+        Ieee802154DebugCounter::RxFilterFail => 6,
+        Ieee802154DebugCounter::NoRssDetect => 7,
+        Ieee802154DebugCounter::RxAbortCoex => 8,
+        Ieee802154DebugCounter::RxRestart => 9,
+        Ieee802154DebugCounter::TxAckAbortCoex => 10,
+        Ieee802154DebugCounter::EdScanBreakCoex => 11,
+        Ieee802154DebugCounter::RxAckAbortCoex => 12,
+        Ieee802154DebugCounter::RxAckTimeout => 13,
+        Ieee802154DebugCounter::TxBreakCoex => 14,
+        Ieee802154DebugCounter::TxSecurityError => 15,
+        Ieee802154DebugCounter::CcaBusy => 16,
     }
 }
 
@@ -188,6 +218,12 @@ impl Ieee802154LowLevel for Ieee802154LlModel {
     }
     fn cca_busy(&mut self) -> bool {
         self.cca_busy
+    }
+    fn debug_counter(&mut self, counter: Ieee802154DebugCounter) -> u16 {
+        self.debug_counters[debug_slot(counter)]
+    }
+    fn clear_debug_counter(&mut self, counter: Ieee802154DebugCounter) {
+        self.debug_counters[debug_slot(counter)] = 0;
     }
     fn set_ed_duration(&mut self, _symbols: u16) {}
     fn notify_enhanced_ack_generated(&mut self) {}

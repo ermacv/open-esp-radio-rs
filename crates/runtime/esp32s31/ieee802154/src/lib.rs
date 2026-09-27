@@ -37,6 +37,10 @@ use oer_esp32s31_hal::ieee802154::{
     Ieee802154MultipanIndex, coex::Ieee802154Coexistence, ll::Ieee802154LowLevel,
 };
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
+pub use oer_esp32s31_ieee802154::engine::{
+    Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
+    Ieee802154TxRxStatistics, Ieee802154TxStatistics,
+};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
@@ -546,6 +550,38 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     /// No radio is installed.
     pub fn now(&self) -> Result<RadioTimestamp, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| radio.now())
+    }
+
+    /// Collect the vendor's TX/RX statistics
+    /// (`CONFIG_IEEE802154_TXRX_STATISTIC`), from zero, or stop collecting
+    /// them.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn set_txrx_statistics(&self, collect: bool) -> Result<(), Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.engine().set_txrx_statistics(collect))
+    }
+
+    /// The TX/RX statistics while collected
+    /// (`esp_ieee802154_txrx_statistic_print` reads them).
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn txrx_statistics(
+        &self,
+    ) -> Result<Option<Ieee802154TxRxStatistics>, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.engine().txrx_statistics())
+    }
+
+    /// `esp_ieee802154_txrx_statistic_clear`.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn clear_txrx_statistics(&self) -> Result<(), Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.engine().clear_txrx_statistics())
     }
 
     /// The radio clock as a function (`otPlatRadioGetNow`), for callers

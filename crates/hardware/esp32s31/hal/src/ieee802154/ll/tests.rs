@@ -4,11 +4,12 @@
 use std::{vec, vec::Vec};
 
 use super::{
-    Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
-    Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154MultipanEnableState,
-    Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
-    etm_channel_clear, etm_set_event_task, event_end_process, mac_init_registers, sec_clear,
-    set_txrx_pti, target_time_expired, timer_fire_at, timer_threshold,
+    Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
+    Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
+    Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStatus, Ieee802154Timer,
+    Ieee802154TxAbortEnableSet, etm_channel_clear, etm_set_event_task, event_end_process,
+    mac_init_registers, sec_clear, set_txrx_pti, target_time_expired, timer_fire_at,
+    timer_threshold,
 };
 use crate::coex::{CoexPti, CoexPtiTable};
 use crate::ieee802154::{
@@ -93,6 +94,8 @@ impl Ieee802154LowLevel for Recorder {
         frequency_code() -> u8;
         ed_rss() -> i8;
         cca_busy() -> bool;
+        debug_counter(Ieee802154DebugCounter) -> u16;
+        clear_debug_counter(Ieee802154DebugCounter);
         set_ed_duration(u16);
         notify_enhanced_ack_generated();
         disable_rx_aborts(Ieee802154RxAbortEnableSet);

@@ -5,6 +5,10 @@ use std::{boxed::Box, vec, vec::Vec};
 
 use crate::pib::{Ieee802154MultipanIndex, Ieee802154PibDefaults};
 use oer_esp32s31_hal::coex::{CoexPti, CoexPtiTable};
+use oer_esp32s31_hal::ieee802154::ll::{
+    Ieee802154DebugCounter,
+    model::{DEBUG_COUNTERS, debug_slot},
+};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154CcaMode, Ieee802154Channel, Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels,
     coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
@@ -23,7 +27,8 @@ use oer_esp32s31_hal::ieee802154::{
 use super::{
     FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
     Ieee802154Environment, Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot,
-    Ieee802154SlotError, Ieee802154State, Ieee802154TxError, RX_BUFFER_COUNT,
+    Ieee802154SlotError, Ieee802154State, Ieee802154TxError, Ieee802154TxRxStatistics,
+    RX_BUFFER_COUNT,
 };
 
 static LEVELS: [i8; 4] = [-9, -3, 4, 10];
@@ -108,6 +113,8 @@ pub(crate) struct Hw {
     short_address: u16,
     extended_address: [u8; 8],
     ack_timeout: u16,
+    /// The MAC diagnostic counters, in the HAL model's slots.
+    pub(crate) debug_counters: [u16; DEBUG_COUNTERS],
 }
 
 impl Default for Hw {
@@ -131,6 +138,7 @@ impl Default for Hw {
             short_address: 0,
             extended_address: [0; 8],
             ack_timeout: 0,
+            debug_counters: [0; DEBUG_COUNTERS],
         }
     }
 }
@@ -214,6 +222,12 @@ impl Ieee802154LowLevel for Hw {
     fn cca_busy(&mut self) -> bool {
         self.calls.push(Call::CcaBusy);
         self.cca_busy
+    }
+    fn debug_counter(&mut self, counter: Ieee802154DebugCounter) -> u16 {
+        self.debug_counters[debug_slot(counter)]
+    }
+    fn clear_debug_counter(&mut self, counter: Ieee802154DebugCounter) {
+        self.debug_counters[debug_slot(counter)] = 0;
     }
     fn set_ed_duration(&mut self, symbols: u16) {
         self.calls.push(Call::EdDuration(symbols));
@@ -1232,4 +1246,60 @@ fn an_sfd_edit_reaches_the_transmitted_frame() {
     assert_eq!(image[10], 0x5a);
     assert_eq!(image[..10], DATA_NO_ACK[..10]);
     assert_eq!(bench.take_notes(), [Note::TransmitSfd]);
+}
+
+/// The TX/RX statistics of the vendor's debug build: off by default; when
+/// collected, transmissions are counted at `tx_init`, a lone `TX_DONE` is
+/// counted and each interrupt drains the MAC's diagnostic counters.
+#[test]
+fn txrx_statistics_count_operations_and_drain_the_mac_counters() {
+    let mut bench = Bench::enabled();
+    bench.hw.debug_counters[debug_slot(Ieee802154DebugCounter::CcaBusy)] = 2;
+    bench.transmit(&DATA_NO_ACK, false);
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    assert_eq!(bench.engine.txrx_statistics(), None);
+    assert_eq!(
+        bench.hw.debug_counters[debug_slot(Ieee802154DebugCounter::CcaBusy)],
+        2,
+        "nothing drains the counters while statistics are off"
+    );
+
+    bench.engine.set_txrx_statistics(true);
+    bench.hw.debug_counters[debug_slot(Ieee802154DebugCounter::CrcError)] = 3;
+    bench.transmit(&DATA_NO_ACK, false);
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    let statistics = bench.engine.txrx_statistics().unwrap();
+    assert_eq!((statistics.tx.nums, statistics.tx.done_nums), (1, 1));
+    assert_eq!(statistics.tx.abort.cca_busy, 2);
+    assert_eq!(statistics.rx.abort.crc_error, 3);
+    assert_eq!(bench.hw.debug_counters, [0; DEBUG_COUNTERS]);
+
+    // The vendor compares the whole event image: TX_DONE with another event
+    // is not counted.
+    bench.transmit(&DATA_NO_ACK, false);
+    bench.interrupt(&[Ieee802154Event::TxDone, Ieee802154Event::TxSfdDone]);
+    assert_eq!(bench.engine.txrx_statistics().unwrap().tx.done_nums, 1);
+    assert_eq!(bench.engine.txrx_statistics().unwrap().tx.nums, 2);
+
+    // `mac_init` clears them.
+    bench
+        .engine
+        .mac_init(&mut bench.hw, Ieee802154PibDefaults::default());
+    assert_eq!(
+        bench.engine.txrx_statistics(),
+        Some(Ieee802154TxRxStatistics::default())
+    );
+}
+
+/// A transmission refused because a reception is in progress is counted as
+/// deferred, not started.
+#[test]
+fn a_refused_transmission_counts_as_deferred() {
+    let mut bench = Bench::enabled();
+    bench.engine.set_txrx_statistics(true);
+    bench.engine.receive(&mut bench.hw, &mut bench.env);
+    bench.hw.current_rx_frame = true;
+    bench.transmit(&DATA_NO_ACK, false);
+    let statistics = bench.engine.txrx_statistics().unwrap();
+    assert_eq!((statistics.tx.nums, statistics.tx.deferred_nums), (0, 1));
 }

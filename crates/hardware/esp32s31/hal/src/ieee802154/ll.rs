@@ -25,9 +25,9 @@ use oer_esp32s31_pac::{
 };
 
 pub use oer_esp32s31_pac::{
-    Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute, Ieee802154EventObservation,
-    Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStateCode,
-    Ieee802154RxStatus, Ieee802154TxAbortEnableSet,
+    Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
+    Ieee802154EventObservation, Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet,
+    Ieee802154RxStateCode, Ieee802154RxStatus, Ieee802154TxAbortEnableSet,
 };
 
 use crate::coex::CoexPti;
@@ -122,6 +122,10 @@ pub trait Ieee802154LowLevel {
     fn ed_rss(&mut self) -> i8;
     /// `ieee802154_ll_is_cca_busy`.
     fn cca_busy(&mut self) -> bool;
+    /// `ieee802154_ll_get_*_cnt`: one MAC diagnostic counter.
+    fn debug_counter(&mut self, counter: Ieee802154DebugCounter) -> u16;
+    /// `ieee802154_ll_clear_debug_cnt` of one counter.
+    fn clear_debug_counter(&mut self, counter: Ieee802154DebugCounter);
     /// `ieee802154_ll_set_ed_duration` in 16-microsecond symbols.
     fn set_ed_duration(&mut self, symbols: u16);
     /// `ieee802154_ll_enhack_generate_done_notify`.
@@ -418,6 +422,14 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
 
     fn cca_busy(&mut self) -> bool {
         self.interrupts.registers().cca_busy()
+    }
+
+    fn debug_counter(&mut self, counter: Ieee802154DebugCounter) -> u16 {
+        self.task.lease().debug_counter(counter)
+    }
+
+    fn clear_debug_counter(&mut self, counter: Ieee802154DebugCounter) {
+        self.task.lease().clear_debug_counter(counter);
     }
 
     fn set_ed_duration(&mut self, symbols: u16) {

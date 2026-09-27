@@ -1792,6 +1792,7 @@ pub async fn run(
         radio_runner_task(spawner, runner)
             .expect("production radio runner task must allocate once"),
     );
+    spawner.spawn(heartbeat_task().expect("heartbeat task must allocate once"));
     // Report the production outcome after hardware initialization, never from
     // inside a timing-sensitive calibration transition.
     crate::console::runtime_log_reliably(format_args!(
@@ -2547,3 +2548,16 @@ async fn wifi_role_task(
 
 #[cfg(feature = "driver-observation")]
 mod phy_diagnostics;
+
+#[embassy_executor::task]
+async fn heartbeat_task() {
+    unsafe extern "C" {
+        static OER_RESET_TRACE: [core::sync::atomic::AtomicU32; 6];
+    }
+    let mut beats = 0u32;
+    loop {
+        embassy_time::Timer::after_millis(100).await;
+        beats += 1;
+        unsafe { OER_RESET_TRACE[2].store(0xbea0_0000 | beats, core::sync::atomic::Ordering::SeqCst) };
+    }
+}

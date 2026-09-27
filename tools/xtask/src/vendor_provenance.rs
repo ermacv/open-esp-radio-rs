@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 /// Tracked registry of `chip`, relative to the repository root.
 fn registry_path(chip: &str) -> Result<&'static str> {
     match chip {
-        "esp32s31" => Ok("verification/vendor/projects/esp32s31/provenance.toml"),
+        "esp32s31" => Ok("verification/esp32s31/facts/provenance.toml"),
         other => Err(format!("no provenance registry for chip {other}").into()),
     }
 }

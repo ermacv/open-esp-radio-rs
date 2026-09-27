@@ -98,10 +98,10 @@ hardware key publication, crypto activation and retirement; its handshake and
 replay/deadline policy do not require vendor equivalence.
 
 Vendor evidence comes from the typed vendor scenarios in
-[`verification/vendor/projects/esp32s31/scenarios`](../verification/vendor/projects/esp32s31/scenarios).
+[`verification/esp32s31/scenarios`](../verification/esp32s31/scenarios).
 The native evidence index is the directory
-`verification/vendor/projects/esp32s31/evidence/scenarios`
-([schema](../verification/vendor/schema/scenario-evidence.rs)), one shard per
+`verification/esp32s31/evidence/scenarios`
+([schema](../verification/schema/scenario-evidence.rs)), one shard per
 scenario named after it. `vendor-scenario <scenario> --index <directory>`
 writes that scenario's shard when it passes with no unmet obligation;
 `vendor-scenario all --index <directory>` runs every scenario under one budget

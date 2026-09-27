@@ -36,10 +36,10 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   placement for HIL and standalone examples. `tools/firmware/` owns host image
   packing and structural checks.
 - `hil/` contains the typed HIL protocol, host runner, targets, and scenarios.
-- `verification/vendor/` holds reviewed vendor-comparison inputs; `_oracles/`
+- `verification/` holds reviewed vendor-comparison inputs; `_oracles/`
   is private input and must never be committed. The single pin of every
   vendor archive, ROM ELF and SDK firmware (repository, revision, SHA-256) is
-  `verification/vendor/projects/<chip>/artifacts.toml`; `cargo xtask
+  `verification/<chip>/artifacts.toml`; `cargo xtask
   vendor-fetch <chip>` downloads and verifies them into `target/vendor/`, and
   the vendor scenarios default to those paths. Hashes elsewhere record where a
   reviewed fact was observed and are not pins. `cargo xtask check provenance`
@@ -49,7 +49,7 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   `registers/` owns reviewed hardware models, publication policy and generated
   SVD/bindings. `tools/` contains Blobray, memory analysis and repository checks
   under `tools/xtask/`. Vendor investigation compositions live under
-  `verification/vendor/projects/`.
+  `verification/`.
 
 Keep tests beside their Rust modules (`#[cfg(test)]`) or in a crate's `tests/`
 directory. Do not place production behavior in verification probes.

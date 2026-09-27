@@ -2,8 +2,8 @@
 members = [
     "crates/oer",
     "tools/xtask",
-    "verification/vendor/harness/codegen",
-    "verification/vendor/harness/macros",
+    "verification/harness/codegen",
+    "verification/harness/macros",
     "tools/process",
     "tools/firmware",
     "tools/symbol-lineage",
@@ -87,7 +87,7 @@ exclude = [
     "examples/esp32s31/station",
     "examples/esp32s31/thread",
     "hil/targets/esp32s31",
-    "verification/vendor/projects/esp32s31/probes",
+    "verification/esp32s31/probes",
 ]
 resolver = "3"
 

@@ -37,7 +37,7 @@ no private artifacts. It explicitly selects the shared lint pack and source evid
 without selecting the investigation's executable reconstructions or authenticating
 private vendor artifacts.
 
-The [vendor investigation](../../verification/vendor/projects/esp32s31/README.md)
+The [vendor investigation](../../verification/esp32s31/README.md)
 selects those additional inputs explicitly and authenticates artifact-specific
 facts in its caller-provided run context. Sharing a publication scope does not
 inherit that context or promote a model-only check into comparison evidence.

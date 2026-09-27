@@ -2,7 +2,7 @@ schema = 3
 id = "esp32s31-ieee802154"
 
 [validation]
-evidence-index = "verification/vendor/projects/esp32s31/evidence/scenarios"
+evidence-index = "verification/esp32s31/evidence/scenarios"
 hil-catalog = "hil/scenarios"
 
 [[source-facts]]
@@ -44,7 +44,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-lifecycle.md",
+  "docs/vendor/esp32s31/ieee802154-lifecycle.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -75,7 +75,7 @@ depends-on = [
   "clock-reset-foundation",
 ]
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-dataplane.md",
+  "docs/vendor/esp32s31/ieee802154-dataplane.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -106,7 +106,7 @@ depends-on = [
   "static-mac-policy",
 ]
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-control.md",
+  "docs/vendor/esp32s31/ieee802154-control.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -138,7 +138,7 @@ depends-on = [
   "clock-reset-foundation",
 ]
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-lifecycle.md",
+  "docs/vendor/esp32s31/ieee802154-lifecycle.md",
 ]
 gaps = [
   { axis = "implementation", id = "shared-pll-rf-retune-and-tracking-lifetime-composition-missing" },
@@ -171,7 +171,7 @@ depends-on = [
   "clock-reset-foundation",
 ]
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-control.md",
+  "docs/vendor/esp32s31/ieee802154-control.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
@@ -204,7 +204,7 @@ depends-on = [
   "active-interrupt-runtime",
 ]
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/ieee802154-dataplane.md",
+  "docs/vendor/esp32s31/ieee802154-dataplane.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-air-check", minimum-repetitions = 1 },

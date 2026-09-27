@@ -2,7 +2,7 @@ schema = 3
 id = "esp32s31-wifi-phy"
 
 [validation]
-evidence-index = "verification/vendor/projects/esp32s31/evidence/scenarios"
+evidence-index = "verification/esp32s31/evidence/scenarios"
 hil-catalog = "hil/scenarios"
 
 [[source-facts]]

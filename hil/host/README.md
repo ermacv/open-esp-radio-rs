@@ -22,7 +22,7 @@ Target firmware lives under `hil/targets/<chip>`. Machine-readable evidence
 lives in immutable bundles under `target/hil/<chip>/runs`. The qualification
 evaluator independently checks those bundles; Markdown is not proof input.
 
-Vendor-linked oracles remain isolated under `verification/vendor`; they are
+Vendor-linked oracles remain isolated under `verification`; they are
 not HIL scenarios or runner commands.
 
 The ownership map and bundle contract are in the

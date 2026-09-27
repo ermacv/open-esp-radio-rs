@@ -145,7 +145,7 @@ struct ConnectionFacts {
 
 // Source-owned S31 connection-event policy. The provenance of each term is
 // the recurring-event section of
-// verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md:
+// docs/vendor/esp32s31/bluetooth-peripheral-connection.md:
 // the 63-us widening jitter and the 10-us receive guard are the reviewed
 // private-options defaults, the 2-us receive tail and the 1-us boundary are
 // CPU-time ticks, and 5,154 us is the complete LE 1M event duration. A

@@ -16,7 +16,7 @@ pub const CACHE: &str = "target/vendor";
 /// Tracked manifest of `chip`, relative to the repository root.
 pub fn manifest_path(chip: &str) -> Result<&'static str> {
     match chip {
-        "esp32s31" => Ok("verification/vendor/projects/esp32s31/artifacts.toml"),
+        "esp32s31" => Ok("verification/esp32s31/artifacts.toml"),
         other => Err(format!("no vendor artifacts pinned for chip {other}").into()),
     }
 }

@@ -23,7 +23,7 @@ pub const COEX_EVENT_COUNT: usize = 49;
 /// `c758e7b56e0fa22177a0539796e1df59978dc322` (`esp32s31/libcoexist.a`
 /// sha256 `13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147`,
 /// `coexist_core.o` section `.dram1.2`, 49 bytes), the pinned archive of
-/// `verification/vendor/projects/esp32s31/artifacts.toml`. Index is the event
+/// `verification/esp32s31/artifacts.toml`. Index is the event
 /// number. Events 1, 3, 10 and 15 are the cold Wi-Fi MAC priorities (5, 7, 3
 /// and 1); event 48 is the PHY grant-protect request (15).
 const VENDOR_PTI_TABLE: [u8; COEX_EVENT_COUNT] = [

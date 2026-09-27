@@ -1,7 +1,7 @@
 # PHY compiled comparison
 
 PHY comparison executes authenticated vendor artifacts and compiled Rust probes
-in the [typed vendor scenarios](../../verification/vendor/projects/esp32s31/README.md). The
+in the [typed vendor scenarios](../../verification/esp32s31/README.md). The
 [PHY inventory entry point](../../crates/hardware/esp32s31/phy/FEATURES.md) links
 the canonical catalog and its generated primitive/consumer view; comparison reports describe
 evidence for exact declared boundaries, not general RF readiness.
@@ -15,7 +15,7 @@ explicit scenario arguments. The separate
 [source-only publication](../../registers/esp32s31/publication/README.md)
 checks generated PAC/model consistency without authenticating private binaries.
 
-[Comparison probes](../../verification/vendor/projects/esp32s31/probes/README.md)
+[Comparison probes](../../verification/esp32s31/probes/README.md)
 retain entry points into production PHY/HAL code. A probe's name or a generated
 reference is not evidence that the shipping entry executes that behavior.
 

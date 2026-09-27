@@ -338,7 +338,7 @@ radiated power, sensitivity or sustained thermal stability.
 ## Vendor reference scope
 
 The runtime parent order and combined RX/TX transaction follow the pinned
-esp-phy-lib `libphy.a` of `verification/vendor/projects/esp32s31/artifacts.toml`.
+esp-phy-lib `libphy.a` of `verification/esp32s31/artifacts.toml`.
 RX has its own temperature reference; TX uses one shared reference and retains
 separate Wi-Fi and BT/154 calibration results. Authenticated parent-boundary
 execution checks call order and arguments with explicit child models. Compiled

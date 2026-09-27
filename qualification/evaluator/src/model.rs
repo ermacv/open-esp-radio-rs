@@ -1,4 +1,4 @@
-#[path = "../../../verification/vendor/schema/scenario-evidence.rs"]
+#[path = "../../../verification/schema/scenario-evidence.rs"]
 #[allow(
     dead_code,
     reason = "the scenario runner derives the cross-scenario views; qualification reads verdicts"

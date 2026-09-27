@@ -6,7 +6,7 @@ imports = [
 ]
 
 [validation]
-evidence-index = "verification/vendor/projects/esp32s31/evidence/scenarios"
+evidence-index = "verification/esp32s31/evidence/scenarios"
 hil-catalog = "hil/scenarios"
 
 [[capabilities]]
@@ -70,8 +70,8 @@ implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/README.md",
-  "verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md",
+  "verification/esp32s31/README.md",
+  "docs/vendor/esp32s31/bluetooth-controller-boundary.md",
 ]
 depends-on = [
   "clock-reset-prerequisite",
@@ -104,7 +104,7 @@ implementation = "incomplete"
 host = "covered"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 depends-on = [
   "controller-initialization",
@@ -136,8 +136,8 @@ implementation = "incomplete"
 host = "covered"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/README.md",
-  "verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md",
+  "verification/esp32s31/README.md",
+  "docs/vendor/esp32s31/bluetooth-controller-boundary.md",
 ]
 depends-on = [
   "controller-initialization",
@@ -221,7 +221,7 @@ implementation = "incomplete"
 host = "covered"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/README.md",
+  "verification/esp32s31/README.md",
   "registers/esp32s31/evidence/vendor-radio-libraries.toml",
 ]
 depends-on = [
@@ -255,8 +255,8 @@ implementation = "incomplete"
 host = "covered"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/README.md",
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "verification/esp32s31/README.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 depends-on = [
   "controller-initialization",
@@ -288,7 +288,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "bounded-affine-memory-and-ownership-transitions"
 depends-on = [
@@ -319,7 +319,7 @@ implementation = "incomplete"
 host = "incomplete"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
 depends-on = [
@@ -352,7 +352,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
 depends-on = [
@@ -383,7 +383,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
 depends-on = [
@@ -415,7 +415,7 @@ implementation = "incomplete"
 host = "incomplete"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
@@ -445,7 +445,7 @@ implementation = "incomplete"
 host = "incomplete"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
 depends-on = [
@@ -559,7 +559,7 @@ implementation = "incomplete"
 host = "covered"
 async = "bounded"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-direct-test-mode.md",
+  "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 depends-on = [
   "controller-initialization",
@@ -593,7 +593,7 @@ implementation = "incomplete"
 host = "covered"
 async = "bounded"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-interrupt-runtime.md",
+  "docs/vendor/esp32s31/bluetooth-interrupt-runtime.md",
 ]
 depends-on = [
   "interrupt-runtime",
@@ -626,7 +626,7 @@ implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/README.md",
+  "verification/esp32s31/README.md",
 ]
 depends-on = [
   "common-phy-baseband",
@@ -771,8 +771,8 @@ implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/reference/bluetooth-legacy-advertising.md",
-  "verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md",
+  "docs/vendor/esp32s31/bluetooth-legacy-advertising.md",
+  "docs/vendor/esp32s31/bluetooth-peripheral-connection.md",
 ]
 depends-on = [
   "packet-dataplane",
@@ -844,7 +844,7 @@ implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/README.md",
+  "verification/esp32s31/README.md",
 ]
 depends-on = [
   "interrupt-runtime",
@@ -911,7 +911,7 @@ implementation = "incomplete"
 host = "covered"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/README.md",
+  "verification/esp32s31/README.md",
 ]
 depends-on = [
   "async-controller-runtime",
@@ -954,7 +954,7 @@ implementation = "incomplete"
 host = "covered"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/README.md",
+  "verification/esp32s31/README.md",
 ]
 depends-on = [
   "async-controller-runtime",

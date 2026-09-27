@@ -3,7 +3,7 @@
 This component owns the finite measured capacitor search and conditional
 frequency-memory update. Its source reference is `phy_rfpll_cap_init_cal_track`
 and `phy_rfpll_cap_correct_track` of the pinned esp-phy-lib `libphy.a`
-(`verification/vendor/projects/esp32s31/artifacts.toml`).
+(`verification/esp32s31/artifacts.toml`).
 
 `search::Search` issues helper operations and accepts their completions. It
 keeps requested capacitor values separate from the helper's programmed value:
@@ -139,7 +139,7 @@ debug override, skipped/executed outcomes and the resulting reference against
 the admitted vendor child. Vendor-only cases retain the busy/result-flag
 characterization. Tests also
 check that a bounded I2C timeout returns without restoring hardware control.
-See the [RFPLL comparison scenarios](../../../../../../../verification/vendor/projects/esp32s31/README.md#rfpll-search-and-frequency-maintenance).
+See the [RFPLL comparison scenarios](../../../../../../../verification/esp32s31/README.md#rfpll-search-and-frequency-maintenance).
 
 The comparison preserves every requested delay, including any unexpected
 executor-added one-microsecond wait. It does not assert equal execution time or raw polling

@@ -3,7 +3,7 @@ id = "esp32s31-bluetooth-products"
 imports = ["qualification/catalog/esp32s31/bluetooth.toml"]
 
 [validation]
-evidence-index = "verification/vendor/projects/esp32s31/evidence/scenarios"
+evidence-index = "verification/esp32s31/evidence/scenarios"
 hil-catalog = "hil/scenarios"
 
 [[capabilities]]
@@ -22,7 +22,7 @@ depends-on = [
   "portable-connectable-advertising",
   "portable-peripheral-connection",
 ]
-vendor-anchors = ["verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md"]
+vendor-anchors = ["docs/vendor/esp32s31/bluetooth-controller-boundary.md"]
 hil-requirements = [
   { scenario = "bluetooth-peripheral-recovery", minimum-repetitions = 3 },
   { scenario = "bluetooth-peripheral-local-disconnect", minimum-repetitions = 3 },
@@ -55,7 +55,7 @@ source-fact-refs = [
 ]
 
 [capabilities.development]
-knowledge = ["verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md", "crates/hardware/esp32s31/phy/src/tracking/README.md"]
+knowledge = ["docs/vendor/esp32s31/bluetooth-peripheral-connection.md", "crates/hardware/esp32s31/phy/src/tracking/README.md"]
 host-tests = [
   { manifest = "crates/protocols/bluetooth/le/ll/Cargo.toml", filter = "connection::maintenance::tests", source = "crates/protocols/bluetooth/le/ll/src/connection/maintenance/tests.rs" },
 ]
@@ -82,7 +82,7 @@ implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
 depends-on = ["peripheral-acl"]
-vendor-anchors = ["verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md"]
+vendor-anchors = ["docs/vendor/esp32s31/bluetooth-controller-boundary.md"]
 hil-requirements = [
   { scenario = "bluetooth-peripheral-encrypted-acl", minimum-repetitions = 3 },
   { scenario = "bluetooth-peripheral-key-refresh", minimum-repetitions = 3 },
@@ -112,7 +112,7 @@ source-paths = [
 ]
 
 [capabilities.development]
-knowledge = ["crates/protocols/bluetooth/le/ll/src/security.rs", "verification/vendor/projects/esp32s31/reference/bluetooth-controller-boundary.md"]
+knowledge = ["crates/protocols/bluetooth/le/ll/src/security.rs", "docs/vendor/esp32s31/bluetooth-controller-boundary.md"]
 host-tests = [
   { manifest = "crates/protocols/bluetooth/le/ll/Cargo.toml", filter = "security::tests", source = "crates/protocols/bluetooth/le/ll/src/security.rs" },
 ]

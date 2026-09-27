@@ -2,7 +2,7 @@
 //!
 //! Reference: `phy_rfpll_cap_init_cal_track` and `phy_rfpll_cap_correct_track`
 //! of the pinned esp-phy-lib `libphy.a`
-//! (`verification/vendor/projects/esp32s31/artifacts.toml`).
+//! (`verification/esp32s31/artifacts.toml`).
 //! This finite child is the production RFPLL capacitor correction. It does
 //! not enable automatic tracking or grant access to RF. The target-only
 //! `crate::target_port::rfpll` executes the

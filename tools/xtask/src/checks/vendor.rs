@@ -3,7 +3,7 @@
 use crate::{Context, Result, process};
 use std::{ffi::OsStr, num::NonZeroUsize, process::Command};
 
-const PROJECT: &str = "verification/vendor/projects/esp32s31";
+const PROJECT: &str = "verification/esp32s31";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const JOBS: &str = "OPEN_RADIO_ANALYSIS_BUILD_JOBS";
 

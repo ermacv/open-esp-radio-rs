@@ -561,6 +561,55 @@ fn a_test_receiver_reports_before_its_end() {
 }
 
 #[test]
+fn cancelling_a_running_test_stops_the_scheduler_instead_of_skipping_it() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    radio
+        .request(
+            RadioRequest::TestReceive(TestReceive {
+                id: EventId::new(4),
+                channel: TestChannel::new(19).unwrap(),
+                phy: TestPhy::Le1M,
+                window: window(10_000, 1_000),
+                recurring: true,
+                tx_power: TxPower::from_dbm(0),
+            }),
+            &mut sink,
+        )
+        .unwrap();
+    let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
+        panic!("the test starts")
+    };
+    radio
+        .request(RadioRequest::Cancel(EventId::new(4)), &mut sink)
+        .unwrap();
+    assert!(radio.stop_requested());
+    // While hardware runs the test, no cancellation hold starts.
+    assert!(matches!(
+        radio.drive(view(true), &mut sink),
+        RadioStep::Idle
+    ));
+    assert!(sink.0.is_empty());
+    radio
+        .enter_stopped(oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped::for_validation())
+        .unwrap();
+    assert!(!radio.stop_requested());
+    radio
+        .resume(&ControllerTimeSample::for_validation(0))
+        .unwrap();
+    // The stopped scheduler lets the event leave its list at once.
+    let RadioStep::Transaction(step) = radio.drive(view(false), &mut sink) else {
+        panic!("the cancelled test leaves its list")
+    };
+    assert_eq!(
+        step.actions().collect::<Vec<_>>(),
+        [SchedulerAction::PublishHead(None)]
+    );
+    assert_eq!(sink.0, [Seen::Ended(EventId::new(4), false)]);
+    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+}
+
+#[test]
 fn configuration_errors_leave_the_radio_unchanged() {
     let mut radio = radio();
     let mut sink = Sink::default();

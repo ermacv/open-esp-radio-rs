@@ -456,6 +456,15 @@ impl<
                 {
                     installed.radio.observe_time(&sample);
                 }
+                // A cancelled test event leaves its list once the scheduler
+                // stopped; resuming restarts at the remaining events.
+                if !installed.faulted
+                    && installed.radio.stop_requested()
+                    && let Err(fault) = self.quiesce_installed(installed, |_| ()).await
+                {
+                    installed.faulted = true;
+                    return fault;
+                }
                 match self.pass(installed) {
                     Ok(pass) => pass,
                     Err(fault) => {

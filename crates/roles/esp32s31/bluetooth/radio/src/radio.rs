@@ -242,6 +242,9 @@ pub struct BluetoothRadio<
     timing: RadioTiming,
     policy: SchedulerTimingPolicy,
     faulted: bool,
+    /// A listed Direct Test Mode event was cancelled: the scheduler must
+    /// stop before the event can leave its list.
+    stop_requested: bool,
     coexistence: CoexistenceProfile,
 }
 
@@ -298,6 +301,7 @@ impl<
             },
             policy: SchedulerTimingPolicy::from_scheduler_config(config, scale),
             faulted: false,
+            stop_requested: false,
             coexistence: CoexistenceProfile::Standalone,
         }
     }
@@ -410,7 +414,9 @@ impl<
         let mut cancelled = [None; ITEMS];
         let mut count = 0;
         for (id, _) in self.executor.list().iter() {
-            if self.event_of(id).is_some_and(|event| event.cancel) {
+            if self.event_of(id).is_some_and(|event| event.cancel)
+                && !(self.stop_requested && view.busy.is_busy())
+            {
                 cancelled[count] = Some(id);
                 count += 1;
             }
@@ -533,7 +539,16 @@ impl<
         &mut self,
         stopped: BluetoothSchedulerStopped,
     ) -> Result<(), oer_esp32s31_bluetooth::scheduler::SchedulerStopRejected> {
-        self.executor.enter_stopped(stopped)
+        self.executor.enter_stopped(stopped)?;
+        self.stop_requested = false;
+        Ok(())
+    }
+
+    /// Whether a cancelled event needs the scheduler stopped and resumed
+    /// before it can leave its list; [`Self::drive`] leaves it listed until
+    /// then.
+    pub const fn stop_requested(&self) -> bool {
+        self.stop_requested
     }
 
     /// The stopped receipt the executor holds.
@@ -1522,6 +1537,11 @@ impl<
         let Some(owner) = owner else {
             return Err(RequestError::UnknownEvent);
         };
+        // The vendor ends a test by stopping the scheduler rather than
+        // cancelling its running event (`r_sym_ble_9DFKLYZzjaztWMiPU4NR`).
+        if found.is_none() && owner.kind() == SchedulerRoleKind::DirectTestMode {
+            self.stop_requested = true;
+        }
         let mut dropped = [None; ITEMS];
         let mut count = 0;
         for slot in self.pending.iter_mut() {

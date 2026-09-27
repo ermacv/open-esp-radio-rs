@@ -740,6 +740,13 @@ guard; such an event ends as not executed. This implements the reviewed stop
 ordering with source-owned containers; it is not a whole-function vendor
 MATCH or hardware qualification.
 
+Test End takes the same stop. A test event that is still waiting for
+insertion leaves at once. Cancelling one that the scheduler already lists asks
+the runtime to stop the scheduler instead of opening the cancellation hold:
+the radio keeps the event listed while hardware runs, the runtime stops the
+scheduler before its next pass and resumes it, and the event then leaves its
+list through the idle path and ends as not executed.
+
 There is one intentional HCI difference. The current vendor callback increments
 its shared count for a successful TX event and Test End serializes that value.
 Bluetooth Core 6.3, Vol 6 Part F, requires the packet report ending a

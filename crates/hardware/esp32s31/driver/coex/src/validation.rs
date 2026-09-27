@@ -61,7 +61,8 @@ impl CoexTimerHardware for TimerPort<'_, '_> {
         client: CoexClient,
         pti: CoexPti,
     ) -> Result<(), CoexError> {
-        let client = CoexTimerClientValue::new(client as u32).ok_or(CoexError::Hardware)?;
+        let client = CoexTimerClientValue::new(u32::from(client.timer_client_value()))
+            .ok_or(CoexError::Hardware)?;
         let pti = CoexTimerPtiValue::new(u32::from(pti.value())).ok_or(CoexError::Hardware)?;
         self.shared
             .bank

@@ -107,11 +107,29 @@ impl CoexTimerIndex {
     }
 }
 
+/// The requesting radio; the discriminant is its `coex_core_request`
+/// request kind (`coex_bt_request` passes 0, `coex_wifi_request` 1).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum CoexClient {
     Bluetooth = 0,
     Wifi = 1,
+}
+
+// Complete `coex_core_request` request-kind switch image of esp-coex-lib
+// c758e7b56e0fa22177a0539796e1df59978dc322 (`esp32s31/libcoexist.a` sha256
+// 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147,
+// `coexist_core.o` `.rodata.CSWTCH.27`). Element `k` is the timer client
+// field value `coex_hw_timer_set` receives for request kind `k`; request kind
+// 2 is the PHY grant-protect request the radio arbiter programs itself.
+const REVIEWED_TIMER_CLIENT_MAP: [u8; 5] = [0x02, 0x01, 0x00, 0x03, 0x04];
+
+impl CoexClient {
+    /// The timer client field value `coex_core_request` programs for this
+    /// radio's requests.
+    pub const fn timer_client_value(self) -> u8 {
+        REVIEWED_TIMER_CLIENT_MAP[self as usize]
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

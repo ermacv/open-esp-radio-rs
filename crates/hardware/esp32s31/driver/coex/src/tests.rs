@@ -25,7 +25,13 @@ impl CoexTimerHardware for TimerModel {
         client: CoexClient,
         pti: CoexPti,
     ) -> Result<(), CoexError> {
-        self.programmed = Some((index.value(), client as u8, pti.value(), 0, 0));
+        self.programmed = Some((
+            index.value(),
+            client.timer_client_value(),
+            pti.value(),
+            0,
+            0,
+        ));
         self.operations.borrow_mut().push("configure");
         Ok(())
     }
@@ -150,6 +156,36 @@ fn clock_conversion_matches_instruction_level_constants() {
     let source_four =
         CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector4, 49, 40, true);
     assert_eq!(source_four.tick_image(1_000).unwrap(), 800);
+}
+
+#[test]
+fn bluetooth_and_wifi_requests_program_the_vendor_timer_clients() {
+    let request = CoexClientRequest {
+        event: CoexEventId::new(1).unwrap(),
+        latency: 2,
+        duration: 3,
+    };
+    for (bluetooth, client) in [(true, 2), (false, 1)] {
+        let mut core = CoexCore::new();
+        let operations = OperationTrace::default();
+        let mut hardware = TimerModel {
+            operations: operations.clone(),
+            ..TimerModel::default()
+        };
+        let mut clock = ClockModel {
+            clock: CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector1, 0, 40, true),
+            samples: 0,
+            operations,
+        };
+        core.enable();
+        if bluetooth {
+            core.request_bluetooth(&mut hardware, &mut clock, request)
+        } else {
+            core.request_wifi(&mut hardware, &mut clock, request)
+        }
+        .unwrap();
+        assert_eq!(hardware.programmed.map(|p| p.1), Some(client));
+    }
 }
 
 #[test]

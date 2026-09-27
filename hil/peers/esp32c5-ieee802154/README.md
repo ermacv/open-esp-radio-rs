@@ -22,7 +22,7 @@ it in the board journal as `ieee802154-peer`. The tracked
 reproducible build.
 
 Name the peer's board or serial port in the `[ieee802154_peer]` table of the
-lab configuration. The board is shared with other consumers. Before an
+lab configuration. The board is shared with other consumers. Before a
 run's first IEEE 802.15.4 peer scenario, `cargo hil run` brings the board up
 to the current catalog build of the scenario's peer image within the run's
 lease, which holds the peer board: `cargo hil firmware flash IMAGE

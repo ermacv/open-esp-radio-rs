@@ -908,18 +908,21 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-/// Make this checkout's run directory the shared store, migrating its runs.
+/// Make this checkout's run directory of every supported chip the shared
+/// store, migrating its runs.
 fn use_shared_store(ctx: &Context) -> Result<()> {
-    let local = ctx.root.join("target/hil").join(HIL_TARGET).join("runs");
-    match crate::hil_store::link_runs(&local, &crate::hil_store::shared_runs(HIL_TARGET)?)? {
-        crate::hil_store::Linked::Migrated { runs, kept } => eprintln!(
-            "hil: moved {runs} runs into the shared store; the old directory is {}",
-            kept.display()
-        ),
-        crate::hil_store::Linked::Deferred { active } => eprintln!(
-            "hil: run {active} is in progress; this checkout joins the shared store later"
-        ),
-        crate::hil_store::Linked::Existing | crate::hil_store::Linked::Created => {}
+    for chip in oer_chip_profile::supported(&ctx.root)? {
+        let local = ctx.root.join("target/hil").join(&chip).join("runs");
+        match crate::hil_store::link_runs(&local, &crate::hil_store::shared_runs(&chip)?)? {
+            crate::hil_store::Linked::Migrated { runs, kept } => eprintln!(
+                "hil: moved {runs} {chip} runs into the shared store; the old directory is {}",
+                kept.display()
+            ),
+            crate::hil_store::Linked::Deferred { active } => eprintln!(
+                "hil: run {active} is in progress; this checkout joins the shared {chip} store later"
+            ),
+            crate::hil_store::Linked::Existing | crate::hil_store::Linked::Created => {}
+        }
     }
     Ok(())
 }

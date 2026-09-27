@@ -719,7 +719,7 @@ fn start_run(
 ) -> Result<RunSession> {
     let mut session = RunSession::create(
         root,
-        "esp32s31",
+        lab.target(),
         lab.cell_id(),
         &lab.device.id,
         &lab.device.serial,

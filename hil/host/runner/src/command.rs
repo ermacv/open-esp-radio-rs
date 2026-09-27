@@ -255,14 +255,13 @@ pub(crate) fn run() -> Result<()> {
             device::status(&root, &lab)
         }
         CliCommand::Report { command } => match command {
-            ReportCommand::Rebuild => {
-                let completion =
-                    hil_core::evidence::reporting::history::rebuild(&root, "esp32s31")?;
+            ReportCommand::Rebuild { target } => {
+                let completion = hil_core::evidence::reporting::history::rebuild(&root, &target)?;
                 emit_json(&completion, false)
             }
-            ReportCommand::Verify { run_id } => {
+            ReportCommand::Verify { run_id, target } => {
                 let completion =
-                    hil_core::evidence::verify::verify(&root, "esp32s31", run_id.as_deref())?;
+                    hil_core::evidence::verify::verify(&root, &target, run_id.as_deref())?;
                 emit_json(&completion, false)
             }
         },
@@ -298,7 +297,7 @@ pub(crate) fn run() -> Result<()> {
                 Some(run_id) => {
                     let class = orchestration::single_image_class(&selected)?;
                     RunFirmware::Replay(Box::new(hil_core::evidence::verify::archived_firmware(
-                        &root, "esp32s31", &run_id, class,
+                        &root, &target, &run_id, class,
                     )?))
                 }
                 None => RunFirmware::BuildCurrent(network),

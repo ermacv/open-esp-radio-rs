@@ -228,9 +228,18 @@ pub(crate) enum DeviceCommand {
 #[derive(Debug, Subcommand)]
 pub(crate) enum ReportCommand {
     /// Rebuild history.json and history.html without attached hardware.
-    Rebuild,
+    Rebuild {
+        /// Chip whose runs to read.
+        #[arg(long, default_value = hil_core::lab::config::DEFAULT_TARGET)]
+        target: String,
+    },
     /// Verify one run bundle, or every bundle when RUN_ID is omitted.
-    Verify { run_id: Option<String> },
+    Verify {
+        run_id: Option<String>,
+        /// Chip whose runs to read.
+        #[arg(long, default_value = hil_core::lab::config::DEFAULT_TARGET)]
+        target: String,
+    },
 }
 
 #[cfg(test)]

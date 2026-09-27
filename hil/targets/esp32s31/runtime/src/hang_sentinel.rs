@@ -44,8 +44,15 @@ pub(super) fn start(systimer: esp_hal::peripherals::SYSTIMER<'static>) {
 /// The heartbeat of the core 0 protocol executor.
 #[embassy_executor::task]
 pub(super) async fn heartbeat_task() {
+    let mut beats = 0_u32;
     loop {
         HEARTBEAT.fetch_add(1, Ordering::Relaxed);
+        beats += 1;
+        if beats.is_multiple_of(10) {
+            let (point, count) =
+                oer_esp32s31_ieee80211_runtime::diagnostics::runner_await::current();
+            log::info!("hil-hang: radio loop await point={point} entered={count}");
+        }
         embassy_time::Timer::after_millis(100).await;
     }
 }

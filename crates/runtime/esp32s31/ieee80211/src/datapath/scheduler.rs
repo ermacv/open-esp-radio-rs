@@ -321,6 +321,10 @@ where
                 };
                 #[cfg(feature = "task-poll-telemetry")]
                 let core0_control_started = cycle_count();
+                #[cfg(feature = "diagnostics")]
+                crate::diagnostics::runner_await::mark(
+                    crate::diagnostics::runner_await::RunnerAwait::Control,
+                );
                 let control_progress = self.services.service_control(control_context).await?;
                 #[cfg(feature = "task-poll-telemetry")]
                 CORE0_RX_CYCLES.record_control(
@@ -550,6 +554,10 @@ where
             let network = &self.network;
             let interfaces = self.interfaces;
             let prepared_tx_interface = self.prepared_tx_interface;
+            #[cfg(feature = "diagnostics")]
+            crate::diagnostics::runner_await::mark(
+                crate::diagnostics::runner_await::RunnerAwait::Idle,
+            );
             match select(
                 stop.as_mut(),
                 select3(wait_rx, self.services.wait_control_ready(), async {

@@ -31,4 +31,6 @@ pub(crate) mod core0_rx_service_histogram;
 #[cfg(feature = "diagnostics")]
 pub mod network;
 pub(crate) mod profile;
+#[cfg(feature = "diagnostics")]
+pub mod runner_await;
 pub mod rx_pipeline;

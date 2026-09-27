@@ -75,7 +75,6 @@ const LINK_STATE_RX_RESERVE: usize = 0x78 / 4;
 const LINK_STATE_TX_PATH: usize = 0;
 const LINK_STATE_CRC_INITIALIZATION: usize = 0x2c / 4;
 const LINK_STATE_ACCESS_ADDRESS: usize = 0x38 / 4;
-const LINK_STATE_ROUNDED_POWER: usize = 1;
 const LINK_STATE_RX_PATH: usize = 2;
 const LINK_STATE_CONTROL_POLICY: usize = 3;
 const LINK_STATE_PACKET_FLAGS: usize = 0x14 / 4;
@@ -87,7 +86,8 @@ const LINK_STATE_EVENT_SPAN: usize = 0x34 / 4;
 const LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION: usize = 0x50 / 4;
 const LINK_STATE_DIRECTION_FINDING_POLICY: usize = 0x54 / 4;
 const LINK_STATE_EVENT_PRIORITY: usize = 0x60 / 4;
-const LINK_STATE_ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
+const LINK_STATE_PRIORITY_BYTE_MASK: u32 = 0x0000_00ff;
+const LINK_STATE_POWER_BYTE_MASK: u32 = 0x0000_ff00;
 const LINK_STATE_TX_PATH_VALID: u32 = 1 << 31;
 const LINK_STATE_TX_QUEUE_READY: u32 = 1 << 28;
 const LINK_STATE_SUPPORTED_MAX_TX_OCTETS: u32 = 251;
@@ -210,12 +210,17 @@ impl LinkStateStorage {
         });
         self.words[LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION]
             .set(LINK_STATE_COMMON_RADIO_POLICY_BASELINE << 24);
-        self.words[LINK_STATE_EVENT_PRIORITY].set(u32::from(event.priority.value()));
-
+        // SOURCE: pinned `libble_app.a[ble_3.o]::r_sym_ble_bgOSnaHsEjrTC0mkupqH`
+        // (`r_ble_lll_conn_reset_link_state`) stores the transmit-power index
+        // in byte `+0x61`, next to the priority byte `+0x60`, and no longer
+        // in `+0x04`.
         let power = u32::from(event.default_tx_power.index());
-        let current = self.words[LINK_STATE_ROUNDED_POWER].get();
-        self.words[LINK_STATE_ROUNDED_POWER]
-            .set((current & !LINK_STATE_ROUNDED_POWER_MASK) | (power << 23));
+        let current = self.words[LINK_STATE_EVENT_PRIORITY].get();
+        self.words[LINK_STATE_EVENT_PRIORITY].set(
+            (current & !(LINK_STATE_PRIORITY_BYTE_MASK | LINK_STATE_POWER_BYTE_MASK))
+                | (power << 8)
+                | u32::from(event.priority.value()),
+        );
         self.words[LINK_STATE_RECEIVE_TIME].set(event.receive_time.wrapping_controller_ticks());
         self.words[LINK_STATE_EVENT_SPAN].set(event.event_span.ticks());
     }
@@ -225,7 +230,9 @@ impl LinkStateStorage {
         event_span: PeripheralConnectionEventSpan,
         priority: PeripheralConnectionSchedulerPriority,
     ) {
-        self.words[LINK_STATE_EVENT_PRIORITY].set(u32::from(priority.value()));
+        let current = self.words[LINK_STATE_EVENT_PRIORITY].get();
+        self.words[LINK_STATE_EVENT_PRIORITY]
+            .set((current & !LINK_STATE_PRIORITY_BYTE_MASK) | u32::from(priority.value()));
         self.words[LINK_STATE_EVENT_SPAN].set(event_span.ticks());
     }
 
@@ -244,8 +251,8 @@ impl LinkStateStorage {
         );
     }
 
-    fn rounded_power(&self) -> u32 {
-        (self.words[LINK_STATE_ROUNDED_POWER].get() & LINK_STATE_ROUNDED_POWER_MASK) >> 23
+    fn power_index(&self) -> u32 {
+        (self.words[LINK_STATE_EVENT_PRIORITY].get() & LINK_STATE_POWER_BYTE_MASK) >> 8
     }
 
     fn receive_time(&self) -> PeripheralConnectionReceiveTime {
@@ -339,11 +346,11 @@ impl ItemStorage {
         header.set_sequence(window.start(), window.end(), raw_sequence_lead);
     }
 
-    fn prepare_first_event(&self, rounded_power: u32, event: &PeripheralConnectionFirstEvent) {
+    fn prepare_first_event(&self, power_index: u32, event: &PeripheralConnectionFirstEvent) {
         self.prepare_priority_and_channel(event.channel, event.priority, event.coexistence);
         self.words[SCHEDULER_ITEM_RATE_AND_POWER].set(
             (self.words[SCHEDULER_ITEM_RATE_AND_POWER].get() & !SCHEDULER_ITEM_RATE_AND_POWER_MASK)
-                | (rounded_power << 20),
+                | (power_index << 20),
         );
         self.words[SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION]
             .set(SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE | event.receive_wait.total_micros());
@@ -631,7 +638,7 @@ impl<const N: usize> PeripheralConnectionPool<N> {
         graph
             .link_state
             .prepare_event_profile(rx.head_link(), cpu.binding.tx_sentinel, &event);
-        graph.items[EVENT_ITEM].prepare_first_event(graph.link_state.rounded_power(), &event);
+        graph.items[EVENT_ITEM].prepare_first_event(graph.link_state.power_index(), &event);
         graph
             .link_state
             .install_direction_finding_workspace(workspace);

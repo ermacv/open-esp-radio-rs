@@ -441,3 +441,21 @@ fn the_first_event_installs_the_coexistence_protection_only_when_given() {
         .unwrap();
     assert_eq!(protection(&pool, &instance), Some(20));
 }
+
+#[test]
+fn a_recurring_event_keeps_the_power_the_first_event_stored() {
+    fn power(pool: &Pool, instance: &SchedulerRoleInstance) -> u32 {
+        let (graph, _, _) = pool.shared(instance).unwrap();
+        graph.link_state.power_index()
+    }
+    let mut pool = pool();
+    let instance = active(&mut pool);
+    let first = power(&pool, &instance);
+    assert_eq!(
+        first,
+        u32::from(crate::LeTxPower::from_dbm(0).unwrap().index())
+    );
+    pool.prepare_recurring_event(&instance, recurring_event(1_000))
+        .unwrap();
+    assert_eq!(power(&pool, &instance), first);
+}

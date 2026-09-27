@@ -312,9 +312,9 @@ where
         )));
     }
     let (mut registers, phy) = lease.phy_hal_with_attachment();
-    // DEBUG: skip the wake graph too.
-    let _ = &mut registers;
-    if let Err(error) = Ok::<(), crate::PhyTargetPortError>(()) {
+    if let Err(error) =
+        radio_lifecycle::execute_rf_wake_with_hal::<D>(&mut registers, domain.phy_state()).await
+    {
         *phy.slot_mut() = Slot::Poisoned;
         return Err(ConcurrentRfError::Failed(error));
     }

@@ -23,7 +23,6 @@ pub enum RsnElementError {
     UnsupportedPairwiseCipher,
     UnsupportedAkm,
     UnsupportedGroupManagementCipher,
-    PmkidCachingUnsupported,
 }
 
 /// The management frame protection an RSN element advertises.
@@ -47,6 +46,7 @@ pub struct ValidatedRsnElement {
     owned: OwnedRsnIe,
     akm: Akm,
     capabilities: u16,
+    pmkid_count: u16,
 }
 
 impl ValidatedRsnElement {
@@ -61,6 +61,12 @@ impl ValidatedRsnElement {
 
     pub const fn capabilities(&self) -> u16 {
         self.capabilities
+    }
+
+    /// The number of PMKIDs the element lists: a station resuming a cached
+    /// PMKSA names its PMKID.
+    pub const fn pmkid_count(&self) -> u16 {
+        self.pmkid_count
     }
 
     pub const fn management_frame_protection(&self) -> ManagementFrameProtection {
@@ -79,7 +85,8 @@ impl ValidatedRsnElement {
 /// select the first supported [`Akm`] of the element.
 ///
 /// A syntactically incomplete element is [`RsnElementError::Malformed`]
-/// before any suite, capability or PMKID policy is applied.
+/// before any suite or capability policy is applied. A listed PMKID is
+/// reported, not judged: whether a PMKSA can be resumed is the caller's.
 pub fn validate_rsn_element(bytes: &[u8]) -> Result<ValidatedRsnElement, RsnElementError> {
     let owned = OwnedRsnIe::try_copy(bytes).map_err(|error| match error {
         RsnFrameError::CapacityExceeded => RsnElementError::CapacityExceeded,
@@ -110,9 +117,6 @@ pub fn validate_rsn_element(bytes: &[u8]) -> Result<ValidatedRsnElement, RsnElem
     if capabilities & RSN_CAPABILITY_MFPR != 0 && !capable {
         return Err(RsnElementError::Malformed);
     }
-    if rsn.pmkid_count().is_some_and(|count| count != 0) {
-        return Err(RsnElementError::PmkidCachingUnsupported);
-    }
     match rsn.group_management_cipher() {
         None => {}
         Some(_) if !capable => return Err(RsnElementError::Malformed),
@@ -123,6 +127,7 @@ pub fn validate_rsn_element(bytes: &[u8]) -> Result<ValidatedRsnElement, RsnElem
         owned,
         akm,
         capabilities,
+        pmkid_count: rsn.pmkid_count().unwrap_or(0),
     })
 }
 

@@ -41,6 +41,11 @@ impl<'peers> AccessPointService<'peers> {
             return None;
         }
         let rsn = validate_rsn_element(security.rsn_ie?).ok()?;
+        // The access point caches no PMKSA, so it refuses a station that
+        // resumes one.
+        if rsn.pmkid_count() != 0 {
+            return None;
+        }
         // The access point protects no management frames, so it refuses a
         // station that associates only with protection.
         if rsn.management_frame_protection().required {

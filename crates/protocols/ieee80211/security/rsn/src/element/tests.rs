@@ -71,16 +71,19 @@ fn rejects_non_ccmp_non_psk_and_required_pmf() {
 }
 
 #[test]
-fn accepts_zero_pmkid_count_and_rejects_nonzero_lists() {
+fn reports_the_listed_pmkids() {
     let mut ie = [0_u8; 40];
     ie[..22].copy_from_slice(&rsn(4, 2, 0));
     ie[1] = 22;
-    assert!(validate_rsn_element(&ie[..24]).is_ok());
+    assert_eq!(
+        validate_rsn_element(&ie[..24]).map(|element| element.pmkid_count()),
+        Ok(0)
+    );
     ie[1] = 38;
     ie[22..24].copy_from_slice(&1_u16.to_le_bytes());
     assert_eq!(
-        validate_rsn_element(&ie[..40]),
-        Err(RsnElementError::PmkidCachingUnsupported)
+        validate_rsn_element(&ie[..40]).map(|element| element.pmkid_count()),
+        Ok(1)
     );
 }
 

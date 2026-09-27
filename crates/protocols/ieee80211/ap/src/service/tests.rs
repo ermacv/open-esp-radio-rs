@@ -1224,3 +1224,23 @@ fn bss_protection_follows_associated_erp_ht_and_preamble_membership() {
     assert_eq!(mixed.erp_information(), 0x07);
     assert_eq!(mixed.ht.mode, HtProtectionMode::NonHtMixed);
 }
+
+#[test]
+fn a_station_resuming_a_pmksa_is_refused_by_an_access_point_without_a_cache() {
+    let mut storage = AccessPointPeerStorage::new();
+    let service = AccessPointService::new(
+        AP,
+        Pmk::derive(b"password", b"test-ap").unwrap(),
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        AccessPointClientLimit::new(2).unwrap(),
+        AccessPointInactiveTimeout::new(10).unwrap(),
+        &mut storage,
+    );
+    assert!(service.matches_association_security(association_security(&WPA2_RSN)));
+    let mut resuming = [0_u8; 40];
+    resuming[..22].copy_from_slice(&WPA2_RSN);
+    resuming[1] = 38;
+    resuming[22..24].copy_from_slice(&1_u16.to_le_bytes());
+    resuming[24..40].copy_from_slice(&[0x5a; 16]);
+    assert!(!service.matches_association_security(association_security(&resuming)));
+}

@@ -3,6 +3,7 @@
 
 pub mod peer;
 pub mod scenario;
+pub mod thread_peer;
 pub mod workload;
 
 pub(crate) use hil_core::Result;

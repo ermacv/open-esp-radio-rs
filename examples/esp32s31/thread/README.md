@@ -8,7 +8,9 @@ runtime to OpenThread through the
 [OpenThread radio adapter](../../../crates/adapters/openthread/esp32s31/ieee802154/README.md).
 The device joins the network of the active operational dataset, logs its
 role and addresses on every state change and echoes UDP datagrams on port
-1212.
+1212. It reaches the radio only through the `oer` facade's `openthread`
+feature (`oer::systems::esp32s31::embassy::ieee802154`), besides the board
+runtime and the Embassy executor binding.
 
 OpenThread is built with Coordinated Sampled Listening (the `csl` feature
 of the `openthread` fork). With `THREAD_CSL_PERIOD_US` set at build time,

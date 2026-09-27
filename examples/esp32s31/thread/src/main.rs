@@ -21,27 +21,22 @@ use esp_hal::{
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use log::{error, info};
+use oer::systems::esp32s31::embassy::ieee802154::{
+    EspHalRadioClocks, EspHalRadioPlatform, IEEE802154_EVENT_CAPACITY, Ieee802154MacOwners,
+    Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System, RadioHardware, SharedRadio,
+    openthread::{
+        OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+        frames::role_coex_config,
+    },
+    start,
+};
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
-use oer_esp32s31_hal::root::RadioHardware;
-use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
-use oer_esp32s31_ieee802154_openthread::{
-    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
-    frames::role_coex_config,
-};
-use oer_esp32s31_ieee802154_system::{
-    IEEE802154_EVENT_CAPACITY, Ieee802154Parked, Ieee802154System, start,
-};
-use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
-use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
-use oer_esp32s31_radio_runtime::RadioSystem;
 use openthread::{OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use oer_esp32s31_hal::ieee802154::ll::Ieee802154MacOwners;
 use tinyrlibc as _;
 
-type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
 /// Frames OpenThread has not taken yet while it transmits or scans.
 const RX_QUEUE: usize = 8;
 type ThreadRadio = OpenThreadRadio<
@@ -72,7 +67,7 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 // The entropy source must outlive every `Trng` OpenThread draws from.
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 static TRNG: StaticCell<Trng> = StaticCell::new();
-static RADIO: StaticCell<Radio> = StaticCell::new();
+static RADIO: StaticCell<SharedRadio> = StaticCell::new();
 static SYSTEM: StaticCell<Ieee802154System> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
 static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
@@ -97,16 +92,6 @@ fn ieee_eui64() -> [u8; 8] {
         base[4],
         base[5],
     ]
-}
-
-fn calibration_identity() -> PhyCalibrationIdentity {
-    let mut base_mac_address = [0; 6];
-    base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
-    PhyCalibrationIdentity {
-        rf_cal_version: phy_get_rf_cal_version(),
-        base_mac_address,
-        mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
-    }
 }
 
 #[unsafe(no_mangle)]
@@ -152,13 +137,10 @@ async fn thread_task(
     trng: Trng,
 ) {
     let hardware = RadioHardware::take().expect("the radio hardware is taken once");
-    let (radio, partitions) = RadioSystem::new(
-        hardware,
-        platform,
-        EspHalRadioClocks::new(),
-        calibration_identity(),
-    );
-    let radio: &'static Radio = RADIO.init(radio);
+    let identity = platform.phy_calibration_identity();
+    let (radio, partitions) =
+        SharedRadio::new(hardware, platform, EspHalRadioClocks::new(), identity);
+    let radio: &'static SharedRadio = RADIO.init(radio);
     let defaults = Ieee802154PibDefaults::default();
     let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)
         .expect("the IEEE 802.15.4 engine frames are taken once");
@@ -247,7 +229,7 @@ async fn thread_task(
 /// The periodic PHY tracking of the shared radio, as ESP-IDF's
 /// `phy_track_pll` timer runs it.
 #[embassy_executor::task]
-async fn tracking_task(radio: &'static Radio) {
+async fn tracking_task(radio: &'static SharedRadio) {
     let failure = radio.run_tracking().await;
     error!("PHY tracking stopped: {failure:?}; the radio needs a reset");
 }
@@ -265,7 +247,7 @@ async fn openthread_task(ot: OpenThread<'static>, radio: ThreadRadio) -> ! {
 async fn role_task(
     ot: OpenThread<'static>,
     system: &'static mut Ieee802154System,
-    radio: &'static Radio,
+    radio: &'static SharedRadio,
 ) -> ! {
     let mut role = None;
     loop {

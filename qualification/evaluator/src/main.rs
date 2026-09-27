@@ -1,4 +1,5 @@
 mod engineering;
+mod hash_cache;
 mod hil;
 mod inventory;
 mod model;
@@ -335,7 +336,9 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match execute(arguments) {
+    let result = execute(arguments);
+    hash_cache::save();
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");

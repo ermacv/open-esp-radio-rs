@@ -326,8 +326,14 @@ pub(super) fn compatible(
     if build_inputs::validate_registry(current, &registry).is_err() {
         return Ok(false);
     }
-    let mut old_dependencies =
-        build_inputs::projection(&proof["build"]["resolved"], &dependencies)?;
+    // An observer recorded by an older runner whose package graph no longer
+    // projects onto today's inputs cannot be this observer: the observation
+    // is excluded as incompatible, as for any other dependency difference.
+    let Ok(mut old_dependencies) =
+        build_inputs::projection(&proof["build"]["resolved"], &dependencies)
+    else {
+        return Ok(false);
+    };
     let mut new_dependencies = build_inputs::projection(current, &dependencies)?;
     let old_units = build_inputs::take_unit_profiles(&mut old_dependencies);
     let new_units = build_inputs::take_unit_profiles(&mut new_dependencies);

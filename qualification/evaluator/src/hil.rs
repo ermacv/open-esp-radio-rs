@@ -1029,7 +1029,7 @@ fn valid_id(value: &str) -> bool {
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
-    Ok(format!("{:x}", Sha256::digest(fs::read(path)?)))
+    crate::hash_cache::sha256_file(path)
 }
 
 fn git_output(root: &Path, arguments: &[&str]) -> Result<String> {

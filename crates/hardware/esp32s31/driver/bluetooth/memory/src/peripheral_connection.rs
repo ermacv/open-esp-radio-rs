@@ -212,7 +212,7 @@ impl LinkStateStorage {
             .set(LINK_STATE_COMMON_RADIO_POLICY_BASELINE << 24);
         // SOURCE: pinned `libble_app.a[ble_3.o]::r_sym_ble_bgOSnaHsEjrTC0mkupqH`
         // (`r_ble_lll_conn_reset_link_state`) stores the transmit-power index
-        // in byte `+0x61`, next to the priority byte `+0x60`, and no longer
+        // in byte `+0x61`, next to the priority byte `+0x60`, and not
         // in `+0x04`.
         let power = u32::from(event.default_tx_power.index());
         let current = self.words[LINK_STATE_EVENT_PRIORITY].get();

@@ -137,6 +137,10 @@ fn the_timing_follows_the_scheduler_policy() {
     assert_eq!(connection.local_sleep_clock_ppm, 500);
     assert_eq!(connection.event_length.as_micros(), 5_154 - 137);
     assert_eq!(connection.first_event_length.as_micros(), 5_155);
+    // The widening adds the Controller's default `ble_ll_jitter_usecs`; the
+    // receive guard is the private options' 10 us.
+    assert_eq!(connection.widening_jitter.as_micros(), 16);
+    assert_eq!(connection.receive_guard.as_micros(), 10);
 }
 
 #[test]

@@ -151,13 +151,14 @@ struct ConnectionFacts {
 // Source-owned S31 connection-event policy. The provenance of each term is
 // the recurring-event section of
 // docs/vendor/esp32s31/bluetooth-peripheral-connection.md:
-// the 63-us widening jitter and the 10-us receive guard are the reviewed
-// private-options defaults, the 2-us receive tail and the 1-us boundary are
-// CPU-time ticks, and 5,154 us is the complete LE 1M event duration. A
+// the 16-us widening jitter is the Controller configuration's default
+// `ble_ll_jitter_usecs`, the 10-us receive guard is the private-options
+// default, the 2-us receive tail and the 1-us boundary are CPU-time ticks, and
+// 5,154 us is the complete LE 1M event duration. A
 // recurring event ends 5,154 us after its widened anchor less the preparation
 // lead; the first event ends 5,154 us plus the boundary after its transmit
 // window, with the 16-us first-event uncertainty on each side.
-const WIDENING_JITTER_MICROS: u32 = 63;
+const WIDENING_JITTER_MICROS: u32 = 16;
 const RECEIVE_GUARD_MICROS: u32 = 10;
 const RECEIVE_TAIL_MICROS: u32 = 2;
 const BOUNDARY_GUARD_MICROS: u32 = 1;

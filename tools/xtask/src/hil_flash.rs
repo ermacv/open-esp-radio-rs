@@ -35,17 +35,24 @@ struct FlashCli {
     /// command fails when it never appears.
     #[arg(long, value_name = "TEXT", requires = "monitor")]
     until: Option<String>,
-    /// Radio environment the image uses; exclusive for RF measurements.
+    /// Radio environment the image uses: `shared`, `exclusive` for RF
+    /// measurements, or `none` for an image that never enables the radio,
+    /// which then runs beside an exclusive air lease.
     #[arg(long, value_parser = parse_air, default_value = "shared")]
-    air: oer_hil_arbiter::Mode,
+    air: Air,
     elf: PathBuf,
 }
 
-fn parse_air(text: &str) -> std::result::Result<oer_hil_arbiter::Mode, String> {
+/// How an image uses the radio environment; `None` claims no air.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Air(Option<oer_hil_arbiter::Mode>);
+
+fn parse_air(text: &str) -> std::result::Result<Air, String> {
     match text {
-        "shared" => Ok(oer_hil_arbiter::Mode::Shared),
-        "exclusive" => Ok(oer_hil_arbiter::Mode::Exclusive),
-        _ => Err(String::from("use `shared` or `exclusive`")),
+        "shared" => Ok(Air(Some(oer_hil_arbiter::Mode::Shared))),
+        "exclusive" => Ok(Air(Some(oer_hil_arbiter::Mode::Exclusive))),
+        "none" => Ok(Air(None)),
+        _ => Err(String::from("use `shared`, `exclusive` or `none`")),
     }
 }
 
@@ -96,13 +103,12 @@ pub fn run(
 
     let request = oer_hil_arbiter::Request {
         work: format!("flash {} --board {}", elf.display(), cli.board),
-        claims: vec![
-            oer_hil_arbiter::Claim::board(&board.mac),
-            oer_hil_arbiter::Claim {
+        claims: std::iter::once(oer_hil_arbiter::Claim::board(&board.mac))
+            .chain(cli.air.0.map(|mode| oer_hil_arbiter::Claim {
                 resource: oer_hil_arbiter::AIR.to_owned(),
-                mode: cli.air,
-            },
-        ],
+                mode,
+            }))
+            .collect(),
         ..request
     };
     let _grant = arbiter.acquire(&request)?;
@@ -259,7 +265,10 @@ mod tests {
         .unwrap();
         assert_eq!(cli.board, "esp32c5");
         assert_eq!(cli.elf, Path::new("app.elf"));
-        assert_eq!(cli.air, oer_hil_arbiter::Mode::Shared);
+        assert_eq!(cli.air, Air(Some(oer_hil_arbiter::Mode::Shared)));
+        let quiet =
+            FlashCli::try_parse_from(["--board", "esp32c5", "--air", "none", "app.elf"]).unwrap();
+        assert_eq!(quiet.air, Air(None));
         assert!(FlashCli::try_parse_from(["--board", "esp32c5", "--until", "X", "a.elf"]).is_err());
     }
 }

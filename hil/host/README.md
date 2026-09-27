@@ -112,7 +112,9 @@ cargo hil --owner phy lease --budget 20m -- sh -c 'cargo hil run a --firmware-fr
 `flash --board NAME|MAC ELF` is the manual cycle for images outside the
 runner and the ESP-IDF catalog, such as a new chip's first no_std images. It
 derives the application image with `espflash save-image` before queueing,
-leases only that board (and the air, shared unless `--air exclusive`), lets
+leases only that board and the air (shared; `--air exclusive` for RF
+measurements; `--air none` for an image that never enables the radio, which
+then runs beside an exclusive air lease), lets
 `espflash` write the ESP-IDF bootloader, partition table and application for
 the board's registered chip, and journals the image under `--image` or the
 ELF's file name. `--monitor 30s` then captures the console into

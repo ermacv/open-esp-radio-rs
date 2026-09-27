@@ -138,7 +138,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
   cargo hil firmware flash IMAGE --board NAME|MAC   flash under a lease of that board, journaled
-  cargo hil flash --board NAME|MAC [--image NAME] [--monitor 30s [--until TEXT]] [--air exclusive] ELF
+  cargo hil flash --board NAME|MAC [--image NAME] [--monitor 30s [--until TEXT]] [--air shared|exclusive|none] ELF
                                       flash an ELF for the board's chip under a lease of that board,
                                       journal it, capture the console for a bounded time
 

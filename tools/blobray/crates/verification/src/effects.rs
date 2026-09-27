@@ -95,6 +95,8 @@ mod tests {
     }
     fn pattern(selector: EffectSelector) -> EffectPattern {
         EffectPattern {
+            preceded_by: None,
+            occurrence: None,
             followed_by: None,
             selector,
             value: EffectValue::Any,
@@ -215,6 +217,8 @@ mod tests {
             ignored(
                 "transport-wait",
                 EffectPattern {
+                    preceded_by: None,
+                    occurrence: None,
                     followed_by: Some(transport),
                     ..pattern(EffectSelector::Delay { micros: Some(1) })
                 },
@@ -273,6 +277,8 @@ mod tests {
     #[test]
     fn context_selectors_overlap_only_when_both_contexts_can() {
         let delay_before = |address| EffectPattern {
+            preceded_by: None,
+            occurrence: None,
             followed_by: Some(EffectSelector::MmioRead { address, width: 4 }),
             ..pattern(EffectSelector::Delay { micros: Some(1) })
         };
@@ -355,6 +361,8 @@ mod tests {
         let mut replaced = rule(EffectDisposition::Replaced);
         replaced.vendor.as_mut().unwrap().value = EffectValue::Exact { value: 7 };
         replaced.replacement = Some(EffectPattern {
+            preceded_by: None,
+            occurrence: None,
             followed_by: None,
             selector: EffectSelector::Delay { micros: Some(9) },
             value: EffectValue::Exact { value: 9 },
@@ -508,6 +516,8 @@ mod tests {
         }
         let mut x = p.clone();
         let pat = EffectPattern {
+            preceded_by: None,
+            occurrence: None,
             followed_by: None,
             selector: EffectSelector::MmioWrite {
                 address: 0x4000,
@@ -637,5 +647,99 @@ mod tests {
                 ComparisonVerdict::Diff
             );
         }
+    }
+
+    #[test]
+    fn occurrence_and_predecessor_patterns_tell_samples_of_one_register_apart() {
+        const CONTROL: u32 = 0x2010_4080;
+        const NEXT: u32 = 0x2010_4088;
+        const LAST: u32 = 0x2010_408c;
+        let read_of = |address| EffectSelector::MmioRead { address, width: 4 };
+        let added = |name: &str, pattern: EffectPattern| EffectRule {
+            name: name.into(),
+            vendor: None,
+            replacement: Some(pattern),
+            disposition: EffectDisposition::Added,
+            min_occurrences: 1,
+            max_occurrences: 1,
+            reason: "production proves release before the append".into(),
+        };
+        let first = |address| EffectPattern {
+            occurrence: Some(1),
+            ..pattern(read_of(address))
+        };
+        let mut p = policy(vec![
+            added("settled-check", first(CONTROL)),
+            added(
+                "proof-last",
+                EffectPattern {
+                    preceded_by: Some(read_of(CONTROL)),
+                    ..pattern(read_of(LAST))
+                },
+            ),
+            added("proof-next", first(NEXT)),
+        ]);
+        // Effects no rule selects compare exactly.
+        p.contract.unclassified = UnclassifiedEffects::Required;
+        let doorbell = ExecutionEvent::Write {
+            address: CONTROL,
+            width: 4,
+            value: 1,
+        };
+        let vendor = |settled| vec![read(CONTROL, 0), doorbell.clone(), read(NEXT, settled)];
+        let production = |settled| {
+            vec![
+                read(CONTROL, 0),
+                read(LAST, 0x11c),
+                read(NEXT, 0x128),
+                read(CONTROL, 0),
+                doorbell.clone(),
+                read(NEXT, settled),
+            ]
+        };
+        // The proof samples are production's own; the settle sample and
+        // every doorbell effect compare exactly.
+        assert_eq!(
+            compare(&p, vendor(0x128), production(0x128)).verdict,
+            ComparisonVerdict::Match
+        );
+        assert_eq!(
+            compare(&p, vendor(0x128), production(0x134)).verdict,
+            ComparisonVerdict::Diff
+        );
+        // A LAST sample not preceded by the settled check is not a proof.
+        let reordered = vec![
+            read(LAST, 0x11c),
+            read(CONTROL, 0),
+            read(NEXT, 0x128),
+            read(CONTROL, 0),
+            doorbell.clone(),
+            read(NEXT, 0x128),
+        ];
+        assert_ne!(
+            compare(&p, vendor(0x128), reordered).verdict,
+            ComparisonVerdict::Match
+        );
+    }
+
+    #[test]
+    fn distinct_occurrences_of_one_selector_do_not_overlap() {
+        let selector = EffectSelector::MmioRead {
+            address: 0x2010_4088,
+            width: 4,
+        };
+        let nth = |n| EffectPattern {
+            occurrence: Some(n),
+            ..pattern(selector)
+        };
+        assert!(!nth(1).overlaps(nth(2)));
+        assert!(nth(1).overlaps(nth(1)));
+        assert!(nth(1).overlaps(pattern(selector)));
+        let zero = EffectRule {
+            vendor: Some(nth(0)),
+            replacement: Some(nth(0)),
+            ..rule(EffectDisposition::Ignored)
+        };
+        assert!(policy(vec![zero]).contract.validate().is_err());
     }
 }

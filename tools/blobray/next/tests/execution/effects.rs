@@ -21,6 +21,8 @@ fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
         boundary: ReviewedCallBoundary::Code { address: 0x1000 },
     };
     let pattern = EffectPattern {
+        preceded_by: None,
+        occurrence: None,
         followed_by: None,
         selector: EffectSelector::MmioWrite {
             address: 0x3000,
@@ -517,6 +519,8 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         Some(projection.knowledge.clone()),
     );
     let pattern = EffectPattern {
+        preceded_by: None,
+        occurrence: None,
         followed_by: None,
         selector: EffectSelector::MmioWrite {
             address: 0x6000,

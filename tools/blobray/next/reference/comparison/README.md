@@ -173,9 +173,16 @@ occurrence/boundary shape as call correspondence), `rules`, `claim_ceiling`,
 Selectors are `mmio-read`/`mmio-write` with physical address and width,
 `delay` with `micros` (a value or explicit `null` for all delays), or `fence` with
 predecessor/successor masks. An optional `followed_by` selector restricts a pattern
-to effects whose immediately next concrete effect on the same side matches it.
+to effects whose immediately next concrete effect on the same side matches it, and
+an optional `preceded_by` selector to effects whose immediately previous concrete
+effect matches it. An optional `occurrence: N` (from one) restricts it to the N-th
+effect of that side its `selector` matches, counting every matching effect whatever
+its rule: two samples of one register with different roles, such as a replacement's
+own proof read before a read both sides share, get different rules. A rule
+classifies each effect by the first pattern that selects it.
 Per-side patterns cannot overlap: base selectors may overlap only when both
-patterns carry non-overlapping `followed_by` selectors.
+patterns carry non-overlapping `followed_by` or `preceded_by` selectors, or
+different occurrences of the same selector.
 
 `unclassified` is `incomplete` by default: every effect must be selected by a rule.
 `unclassified: "required"` compares effects that no rule selects exactly, in order
@@ -183,7 +190,10 @@ and value, as if a required rule selected them.
 
 Required rules compare identical observations. Omitted rules permit an ordered
 subsequence of exact vendor effects; replaced rules require both explicit patterns
-in corresponding order. Added rules validate replacement-only effects. Ignored rules
+in corresponding order: a replaced effect keeps its position in the ordered
+comparison, so its n-th vendor occurrence pairs with its n-th replacement occurrence
+and every effect around it still compares in order; only the values within the
+pair are not equated. Added rules validate replacement-only effects. Ignored rules
 use identical patterns with `value: any` and retain matching effects on either side
 as raw evidence without pairing them. Forbidden rules reject observed occurrences. Missing exercise and unclassified effects are
 INCOMPLETE; known differences are DIFF. A zero minimum means required when observed;

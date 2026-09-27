@@ -170,6 +170,8 @@ mod tests {
             index: 1,
         });
         let pattern = EffectPattern {
+            preceded_by: None,
+            occurrence: None,
             followed_by: None,
             selector: EffectSelector::MmioWrite {
                 address: 0x3000,

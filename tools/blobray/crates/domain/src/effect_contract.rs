@@ -33,6 +33,15 @@ pub struct EffectPattern {
     /// this selector, for example a plumbing delay before a transport read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub followed_by: Option<EffectSelector>,
+    /// The pattern applies only when the side's previous concrete effect
+    /// matches this selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preceded_by: Option<EffectSelector>,
+    /// The pattern applies only to this occurrence, counting from one, of
+    /// an effect `selector` matches on its side: two samples of one register
+    /// with different roles get different rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence: Option<u32>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -223,13 +232,18 @@ impl EffectSelector {
 }
 impl EffectPattern {
     fn validate(self) -> Result<()> {
-        if let Some(next) = self.followed_by {
+        for neighbour in [self.followed_by, self.preceded_by].into_iter().flatten() {
             EffectPattern {
-                selector: next,
+                selector: neighbour,
                 value: EffectValue::Any,
                 followed_by: None,
+                preceded_by: None,
+                occurrence: None,
             }
             .validate()?;
+        }
+        if self.occurrence == Some(0) {
+            return Err(invalid());
         }
         match self.selector {
             EffectSelector::MmioRead { address, width }
@@ -260,18 +274,43 @@ impl EffectPattern {
         }
         Ok(())
     }
-    /// The pattern selects `event` whose immediately next concrete effect is `next`.
+    /// The pattern selects `event` whose immediately next concrete effect is
+    /// `next`, without a predecessor or occurrence constraint.
     pub fn selects(self, event: &ExecutionEvent, next: Option<&ExecutionEvent>) -> bool {
+        self.selects_after(event, next, &[])
+    }
+    /// The pattern selects `event`, which follows the side's earlier concrete
+    /// effects `history` and precedes `next`.
+    pub fn selects_after(
+        self,
+        event: &ExecutionEvent,
+        next: Option<&ExecutionEvent>,
+        history: &[ExecutionEvent],
+    ) -> bool {
         self.selector.matches(event)
             && self
                 .followed_by
                 .is_none_or(|f| next.is_some_and(|n| f.matches(n)))
+            && self
+                .preceded_by
+                .is_none_or(|p| history.last().is_some_and(|previous| p.matches(previous)))
+            && self.occurrence.is_none_or(|n| {
+                1 + history.iter().filter(|e| self.selector.matches(e)).count() as u64
+                    == u64::from(n)
+            })
     }
     /// Two patterns can select the same effect.
     pub fn overlaps(self, other: Self) -> bool {
+        let neighbours = |a: Option<EffectSelector>, b: Option<EffectSelector>| match (a, b) {
+            (Some(a), Some(b)) => a.overlaps(b),
+            _ => true,
+        };
         self.selector.overlaps(other.selector)
-            && match (self.followed_by, other.followed_by) {
-                (Some(a), Some(b)) => a.overlaps(b),
+            && neighbours(self.followed_by, other.followed_by)
+            && neighbours(self.preceded_by, other.preceded_by)
+            && match (self.occurrence, other.occurrence) {
+                // Distinct occurrences of one selector never coincide.
+                (Some(a), Some(b)) => a == b || self.selector != other.selector,
                 _ => true,
             }
     }
@@ -431,6 +470,9 @@ pub struct EffectTracker<'a> {
     counts: [u32; MAX_EFFECT_RULES],
     first_unclassified: Option<EffectGap>,
     first_violation: Option<EffectViolation>,
+    /// The side's concrete effects observed so far, for predecessor and
+    /// occurrence patterns.
+    history: Vec<ExecutionEvent>,
 }
 impl<'a> EffectTracker<'a> {
     pub fn new(
@@ -446,6 +488,7 @@ impl<'a> EffectTracker<'a> {
             counts: [0; MAX_EFFECT_RULES],
             first_unclassified: None,
             first_violation: None,
+            history: Vec::new(),
         })
     }
     /// Classify `event`; `next` is the same side's next concrete effect, if any.
@@ -485,11 +528,15 @@ impl<'a> EffectTracker<'a> {
                 "invalid concrete effect observation",
             ));
         }
-        let Some((i, r, p)) = self.contract.rules.iter().enumerate().find_map(|(i, r)| {
+        let history = std::mem::take(&mut self.history);
+        let selected = self.contract.rules.iter().enumerate().find_map(|(i, r)| {
             r.pattern(self.replacement)
-                .filter(|p| p.selects(event, next))
+                .filter(|p| p.selects_after(event, next, &history))
                 .map(|p| (i, r, p))
-        }) else {
+        });
+        self.history = history;
+        self.history.push(event.clone());
+        let Some((i, r, p)) = selected else {
             if self.contract.unclassified == UnclassifiedEffects::Required {
                 return Ok(EffectSelection::Unlisted);
             }

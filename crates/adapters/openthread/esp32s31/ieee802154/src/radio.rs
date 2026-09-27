@@ -60,6 +60,8 @@ pub struct OpenThreadRadio<'r, 's, M: RawMutex, H, const EVENTS: usize, const QU
     next_id: u32,
     /// The runtime's radio clock, once the radio is initialized.
     clock: Option<RadioClock>,
+    /// The CCA threshold the radio holds, in dBm.
+    cca_threshold: Option<i8>,
 }
 
 /// One frame to transmit and how.
@@ -100,7 +102,18 @@ where
             pending: None,
             next_id: 0,
             clock: None,
+            cca_threshold: None,
         }
+    }
+
+    /// Give the radio OpenThread's CCA threshold, as the port's
+    /// `otPlatRadioSetCcaEnergyDetectThreshold` does, when it changed.
+    fn apply_cca_threshold(&mut self, threshold: i8) -> Result<(), RadioErrorKind> {
+        if self.cca_threshold != Some(threshold) {
+            self.configure(Configuration::CcaThresholdDbm(threshold))?;
+            self.cca_threshold = Some(threshold);
+        }
+        Ok(())
     }
 
     /// The full radio-clock instant of a 32-bit OpenThread radio time.
@@ -201,8 +214,13 @@ where
         let Some(frame) = psdu_mac(psdu).and_then(|mac| FrameView::new(mac).ok()) else {
             return (Err(RadioErrorKind::TxInvalid), None);
         };
+        if let Some(threshold) = cca_threshold
+            && let Err(error) = self.apply_cca_threshold(threshold)
+        {
+            return (Err(error), None);
+        }
         let id = self.id();
-        // The threshold stays the radio's own; its presence asks for a CCA.
+        // The threshold's presence asks for a CCA.
         // A delayed frame starts at its time (`esp_ieee802154_transmit_at`).
         let mode = match (tx_at, cca_threshold.is_some()) {
             (Some(at), cca) => TxMode::Scheduled {
@@ -295,6 +313,9 @@ where
             .with_enhanced_ack(|generator| *generator = Some(Ieee802154EnhancedAckGenerator::new()))
             .map_err(|_| RadioErrorKind::Other)?;
         self.clock = Some(self.runtime.clock().map_err(|_| RadioErrorKind::Other)?);
+        // The radio holds the threshold OpenThread starts from.
+        self.cca_threshold = None;
+        self.apply_cca_threshold(self.defaults.cca_threshold_dbm)?;
         Ok(RadioCaps {
             phy: OPEN_THREAD_RADIO_CAPABILITIES,
             mac: MacCapabilities::all(),

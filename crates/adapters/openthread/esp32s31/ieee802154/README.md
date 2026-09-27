@@ -50,8 +50,11 @@ The capabilities are the ones the radio keeps under this trait:
 
 As over ESP-IDF's radio, OpenThread's `SubMac` runs CSMA-CA backoffs and
 retries itself; each of its attempts reaches the radio as one transmission,
-with a CCA at the radio's own threshold when OpenThread asks for one, so the
-radio's own CSMA-CA and retries stay unused. The radio secures each attempt
+with a CCA when OpenThread asks for one, so the radio's own CSMA-CA and
+retries stay unused. The CCA uses OpenThread's energy threshold: the radio
+starts from the reported default and takes each threshold
+`otPlatRadioSetCcaEnergyDetectThreshold` sets before the next CCA, as the
+port hands it to `esp_ieee802154_set_cca_threshold`. The radio secures each attempt
 as the port's `otPlatRadioTransmit` does: a new frame counter and the
 current key index for a first transmission, the frame's own for
 `SubMac`'s retransmission, nothing for a frame OpenThread secured itself.

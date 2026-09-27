@@ -1,7 +1,7 @@
 schema = 5
 id = "bluetooth-dtm-bidirectional"
 description = "LE 1M DTM delivery from ESP to Linux adapter and back, with independent receiver counts, silence controls and quiet Test End/Reset restart checks"
-tags = ["bluetooth", "dtm", "diagnostic"]
+tags = ["bluetooth", "dtm", "diagnostic", "air-exclusive"]
 
 [bluetooth]
 kind = "dtm"

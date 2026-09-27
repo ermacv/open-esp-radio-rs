@@ -1621,6 +1621,12 @@ code = "a3fe8c1d24afcfdf974535366fd078c60797d752399224b66c9a29edac5cfacd"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_sta.o"
+symbol = "sta_auth_sae"
+code = "379f571bf6dd69aff1d8d91f2bc94b0d7bcc1fa7e9f3acff9a0e3a699b13932e"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
 symbol = "sta_bip_check"
 code = "26c4fd6f526be163d9f728c54a14a74a30f9a84eefbd1ef5975d22d2854955da"
 

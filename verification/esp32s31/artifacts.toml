@@ -51,7 +51,7 @@ sha256 = "caa463d3cbef2430a5a35847c1d9f2f152403b17a802050927ff60c8da54fe46"
 id = "esp-idf"
 kind = "git"
 repository = "https://github.com/espressif/esp-idf"
-revision = "7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe"
+revision = "4d59230ddff16327812782151ef0afef202dc6d7"
 
 # Built locally from an ESP-IDF tree; never fetched. `path` is where the
 # scenarios expect the build output below the repository root.
@@ -264,7 +264,7 @@ sha256 = "e1a012d5f359e2445128977e82a304ba94c100c2994729e062e26586596df38a"
 id = "esp-idf/components/ieee802154/esp_ieee802154.c"
 source = "esp-idf"
 path = "components/ieee802154/esp_ieee802154.c"
-sha256 = "a83716d9944d4ffba1998cc64ebb635a605b60fc77c74ae6070e83a1c617f1bc"
+sha256 = "c9e9a7a1d5748e9a2b4ad5dfa1ab4bca4a48d275d4bc3695deac39e540a84555"
 
 [[artifact]]
 id = "esp-idf/components/ieee802154/esp_ieee802154_multipan.c"
@@ -354,7 +354,7 @@ sha256 = "4e0b93faf5d62efcd0e4e9303298af066f7d62acd42a6fbe3b546683248e947e"
 id = "esp-idf/components/soc/esp32s31/include/soc/soc_caps.h"
 source = "esp-idf"
 path = "components/soc/esp32s31/include/soc/soc_caps.h"
-sha256 = "002387dadb652c01af2fd606d90131a67eef24dbe74234a5ae6b0bb0d32ab1e4"
+sha256 = "77d19d8e40e94fb4574da545056223f27263f0611a3e9b97690432b449ff8e9a"
 
 [[artifact]]
 id = "esp-idf/components/soc/esp32s31/include/soc/soc.h"

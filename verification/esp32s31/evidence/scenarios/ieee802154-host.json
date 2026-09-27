@@ -17,7 +17,7 @@
     "esp-idf/components/ieee802154/driver/esp_ieee802154_sec.c": "7f5cae45d08ec496b78fd18cfa788be8557ba91d40eb6fe77b42967961bbdc19",
     "esp-idf/components/ieee802154/driver/esp_ieee802154_timer.c": "66a2b68bb718d8fa878cbf28488af810ecb902288fde26dc7a0e5b32dcbd1326",
     "esp-idf/components/ieee802154/driver/esp_ieee802154_util.c": "e1a012d5f359e2445128977e82a304ba94c100c2994729e062e26586596df38a",
-    "esp-idf/components/ieee802154/esp_ieee802154.c": "a83716d9944d4ffba1998cc64ebb635a605b60fc77c74ae6070e83a1c617f1bc",
+    "esp-idf/components/ieee802154/esp_ieee802154.c": "c9e9a7a1d5748e9a2b4ad5dfa1ab4bca4a48d275d4bc3695deac39e540a84555",
     "esp-idf/components/ieee802154/esp_ieee802154_multipan.c": "4a82ff4a9b1eac7158ecc3c06e800ea1a844c6b2f87ff773fcd55c3cf9552aa3",
     "esp-idf/components/ieee802154/include/esp_ieee802154.h": "244f330affef9e4d4383275c678bfb2a0a5027725ffa8ebf1266897db2ca1e59",
     "esp-idf/components/ieee802154/include/esp_ieee802154_multipan.h": "4c040a3b38769a2e697f65f21b04ea84d93f3de9048be27977b8e61b55777146",
@@ -33,7 +33,7 @@
     "esp-idf/components/soc/esp32s31/include/soc/interrupts.h": "1a4f155b87090376b1a40ac62e19de344c7f10dc53d9b4451b66d545e9e4717d",
     "esp-idf/components/soc/esp32s31/include/soc/periph_defs.h": "4e0b93faf5d62efcd0e4e9303298af066f7d62acd42a6fbe3b546683248e947e",
     "esp-idf/components/soc/esp32s31/include/soc/soc.h": "b19cf9e6916f1416b8385160c6de277ff64f8cd80e9cb22d44833d9f9654e92b",
-    "esp-idf/components/soc/esp32s31/include/soc/soc_caps.h": "002387dadb652c01af2fd606d90131a67eef24dbe74234a5ae6b0bb0d32ab1e4",
+    "esp-idf/components/soc/esp32s31/include/soc/soc_caps.h": "77d19d8e40e94fb4574da545056223f27263f0611a3e9b97690432b449ff8e9a",
     "esp-idf/components/soc/esp32s31/register/soc/ieee802154_reg.h": "fd3f944ac97634605083031f96c0f942af26a81a9e9a3123281c59e5719f9d9c",
     "esp-idf/components/soc/esp32s31/register/soc/ieee802154_struct.h": "da13c2bc78cd6ef35a4e54ddddf11ce48fda967746193f1a0ad03578a5881752",
     "esp-idf/components/soc/esp32s31/register/soc/reg_base.h": "24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d"
@@ -41,19 +41,19 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/driver/ieee802154",
-      "sha256": "5c88db6f228aef16db35cbcf62692a72c720bfea45a3f836d3b3089aff4a6e31"
+      "sha256": "19e9fb2ac22c01ea01a1934f6b04b40c89da42ba82436d2f815b029866dd840e"
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "8928f7bb8fea0864cc200df7a7f2776b6e9da74ff74184069ed4a53f84904e7a"
+      "sha256": "385ca9bf610f3b3f2f23abc1b80d95839b4f219669fb9d91cfbcf7579e76aa16"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "794982d0f1519b8db955b53aa43b5bd07a7b9e91277f819c6117d538f25d470c"
+      "sha256": "104561db0412b7f1d341783edd543f91faa4a393c6c2017fa4ed562f4950508b"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "eb956cc25a50cf9f5d9eb39264f9f0b47767ebc773bdc9b40eea3be357809e61"
+      "sha256": "d9d9a352afa7c0bc42d57ebde284c9357de1ea271c41be655ec66408753b970c"
     },
     {
       "path": "crates/memory",

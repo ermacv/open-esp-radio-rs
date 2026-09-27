@@ -725,9 +725,13 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         clocked: &Ieee802154Clocked,
     ) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154JoinError> {
         // The client needs RF open, not the registration report.
+        runtime_trace(0x6001);
         let _prepared = self.prepare_phy().await.map_err(Ieee802154JoinError::Phy)?;
-        join_ieee802154(self.lease(), clocked, &mut EmbassyPhyTime)
-            .map_err(Ieee802154JoinError::Client)
+        runtime_trace(0x6002);
+        let joined = join_ieee802154(self.lease(), clocked, &mut EmbassyPhyTime)
+            .map_err(Ieee802154JoinError::Client);
+        runtime_trace(0x6003);
+        joined
     }
 
     /// Leave the shared PHY, as the vendor `esp_ieee802154_disable` does
@@ -750,12 +754,15 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         clocked: &Ieee802154Clocked,
         membership: Ieee802154PhyMembership,
     ) -> Result<Ieee802154Left, Ieee802154PhyLeaveFailure> {
+        runtime_trace(0x4001);
         let last = leave_ieee802154(self.lease(), clocked, membership)?;
+        runtime_trace(0x4002);
         let rf_closed = if last {
             self.close_phy_if_idle().await
         } else {
             Ok(false)
         };
+        runtime_trace(0x4003);
         Ok(Ieee802154Left { rf_closed })
     }
 
@@ -1087,4 +1094,14 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
             }
         })
     }
+}
+
+/// Debug trace.
+#[allow(unsafe_code)]
+pub fn runtime_trace(value: u32) {
+    #[unsafe(link_section = ".rtc_fast.persistent")]
+    #[unsafe(no_mangle)]
+    static OER_RUNTIME_TRACE: core::sync::atomic::AtomicU32 =
+        core::sync::atomic::AtomicU32::new(0);
+    OER_RUNTIME_TRACE.store(value, core::sync::atomic::Ordering::SeqCst);
 }

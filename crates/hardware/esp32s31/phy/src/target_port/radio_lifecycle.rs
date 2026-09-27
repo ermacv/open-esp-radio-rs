@@ -59,6 +59,15 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
     ))
 }
 
+#[allow(unsafe_code)]
+#[unsafe(link_section = ".rtc_fast.persistent")]
+#[unsafe(no_mangle)]
+pub static OER_WAKE_TRACE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+pub fn wake_trace(value: u32) {
+    OER_WAKE_TRACE.store(value, core::sync::atomic::Ordering::SeqCst);
+}
+
 /// Execute the exact finite current-vendor RF-close graph after preflight.
 ///
 /// The first operation crosses the point of no recovery. Any returned error
@@ -66,7 +75,10 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
 pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
 ) -> Result<(), PhyTargetPortError> {
-    drive_rf_close(|operation| {
+    let mut step = 0u32;
+    let result = drive_rf_close(|operation| {
+        step += 1;
+        wake_trace(0x1000 | step);
         match operation {
             // The current ESP32-S31 library installs empty critical-section
             // callbacks. Preserve the boundaries in the graph without
@@ -103,7 +115,9 @@ pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
             }
         }
         Ok(())
-    })
+    });
+    wake_trace(0x1fff);
+    result
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -364,11 +378,15 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
     let register_parameters = state.register_init_parameters();
     let frequency_control = state.channel_frequency_control();
     let mut transition = crate::lifecycle::PhyRfWakeTransition::new();
+    let mut step = 0u32;
 
     for _ in 0..RF_OPERATION_LIMIT {
         let PhyRfWakeAction::Execute(operation) = transition.action() else {
+            wake_trace(0x2fff);
             return Ok(());
         };
+        step += 1;
+        wake_trace(0x2000 | step);
         {
             match operation {
                 PhyRfWakeOperation::SetBasebandMode { mode } => {

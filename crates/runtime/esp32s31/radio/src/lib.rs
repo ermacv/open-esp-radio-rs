@@ -1,5 +1,5 @@
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 
 //! The shared ESP32-S31 radio on the chip, as ESP-IDF's `esp_phy` component.
@@ -28,7 +28,7 @@
 mod system;
 
 #[cfg(target_arch = "riscv32")]
-pub use system::{
+pub use system::{runtime_trace, 
     CoexPreemptionEnd, CoexWifiChannel, ExternalCoexStopError, Ieee802154JoinError, Ieee802154Left,
     RadioGuard, RadioPhyError, RadioPhyPrepared, RadioResources, RadioSystem, WifiAsleep,
     WifiCoexView, WifiCoexViewCell, WifiWakeError, WifiWakeFailure,

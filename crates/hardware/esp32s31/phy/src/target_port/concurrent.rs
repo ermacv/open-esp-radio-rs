@@ -303,6 +303,7 @@ where
             ConcurrentPhyError::EpochMismatch,
         ));
     }
+    super::radio_lifecycle::wake_trace(0x2e00);
     if let Err(error) = enable_phy_clocks(lease, clocks) {
         *lease.attachment_mut().slot_mut() = Slot::RfClosed(domain);
         return Err(ConcurrentRfError::Rejected(ConcurrentPhyError::Clock(
@@ -317,9 +318,12 @@ where
         return Err(ConcurrentRfError::Failed(error));
     }
     *phy.slot_mut() = Slot::Registered(domain);
-    lease
+    super::radio_lifecycle::wake_trace(0x2f00);
+    let released = lease
         .disable_phy_modem_clocks(PhyClockModule::Calibration, clocks)
-        .map_err(ConcurrentRfError::Clock)
+        .map_err(ConcurrentRfError::Clock);
+    super::radio_lifecycle::wake_trace(0x2f01);
+    released
 }
 
 /// Run the pending tracking request once every active client proves

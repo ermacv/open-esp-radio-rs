@@ -702,7 +702,7 @@ fn seal_failure_rolls_the_manifest_back_to_interrupted() {
 }
 
 #[test]
-fn unrelated_history_failure_cannot_revoke_a_sealed_run() {
+fn an_unrelated_unreadable_bundle_cannot_revoke_a_sealed_run() {
     for failed in [false, true] {
         let root = temporary_directory("history-failure");
         let session = integrated_session(&root);
@@ -723,8 +723,12 @@ fn unrelated_history_failure_cannot_revoke_a_sealed_run() {
             }
         );
         assert_eq!(suite.outcome, completion.outcome);
-        assert!(completion.history_report.is_none() && completion.history_html.is_none());
-        assert!(completion.history_failure.unwrap().contains("no manifest"));
+        // An unreadable bundle beside it is left out of the history.
+        assert!(completion.history_failure.is_none());
+        let history: crate::evidence::reporting::history::HistoryReport =
+            serde_json::from_slice(&fs::read(completion.history_report.unwrap()).unwrap()).unwrap();
+        assert_eq!(history.runs.len(), 1);
+        assert!(history.skipped[0].reason.contains("no manifest"));
         let manifest: RunManifest = serde_json::from_slice(
             &fs::read(completion.run_directory.join("manifest.json")).unwrap(),
         )
@@ -841,7 +845,16 @@ fn history_counts_sealed_attempt_once_before_and_after_campaign_completion() {
     assert_eq!(history.scenarios[0].observations, 1);
     assert_eq!(history.measurements[0].observations, 1);
     fs::write(run.join("scenarios/boot-smoke/result.json"), b"{}").unwrap();
-    assert!(crate::evidence::reporting::history::rebuild_at(&root, "esp32s31").is_err());
+    // An unreadable run, such as one of another runner version in the shared
+    // store, is named and left out rather than failing the whole view.
+    let completion = crate::evidence::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
+    assert_eq!((completion.runs, completion.skipped), (0, 1));
+    let history = read();
+    assert_eq!(
+        history.skipped[0].run_directory,
+        run.strip_prefix(&root).unwrap()
+    );
+    assert!(history.runs.is_empty());
     fs::remove_dir_all(root).unwrap();
 }
 

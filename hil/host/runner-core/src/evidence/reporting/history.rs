@@ -87,6 +87,15 @@ pub struct HistoryReport {
     pub runs: Vec<RunHistoryEntry>,
     pub scenarios: Vec<ScenarioTrend>,
     pub measurements: Vec<MeasurementTrend>,
+    /// Runs this runner cannot read, such as those of other runner versions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<SkippedRun>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SkippedRun {
+    pub run_directory: PathBuf,
+    pub reason: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -96,6 +105,7 @@ pub struct HistoryCompletion {
     pub runs: usize,
     pub scenarios: usize,
     pub measurements: usize,
+    pub skipped: usize,
     pub history_report: PathBuf,
     pub html_report: PathBuf,
 }
@@ -155,6 +165,7 @@ pub fn rebuild_at(target_directory: &Path, target: &str) -> Result<HistoryComple
     let mut runs = Vec::new();
     let mut observations = Vec::new();
     let mut measurement_observations = Vec::new();
+    let mut skipped = Vec::new();
     for entry in entries {
         if !entry.file_type()?.is_dir() {
             return Err(format!(
@@ -163,87 +174,22 @@ pub fn rebuild_at(target_directory: &Path, target: &str) -> Result<HistoryComple
             )
             .into());
         }
-        let run_directory = entry.path();
-        let manifest_path = run_directory.join("manifest.json");
-        if !manifest_path.is_file() {
-            return Err(format!(
-                "HIL run bundle has no manifest: {}",
-                run_directory.display()
-            )
-            .into());
-        }
-        let manifest: RunManifest = read_json(&manifest_path)?;
-        validate_manifest(&manifest, target, &run_directory)?;
-        let relative_directory = PathBuf::from("runs").join(&manifest.run_id);
-        let suite = if manifest.state == RunState::Completed {
-            let suite_path = run_directory.join("suite.json");
-            if !suite_path.is_file() {
-                return Err(format!(
-                    "completed HIL run has no suite report: {}",
-                    run_directory.display()
-                )
-                .into());
+        // The store is shared by every checkout, so it holds runs written by
+        // other runner versions; one this runner cannot read is left out of
+        // the derived view and named, rather than failing the whole view.
+        match read_run(&entry.path(), target) {
+            Ok(run) => {
+                latest_observation_millis =
+                    latest_observation_millis.max(run.latest_observation_millis);
+                observations.extend(run.observations);
+                measurement_observations.extend(run.measurement_observations);
+                runs.extend(run.entry);
             }
-            let suite: SuiteResult = read_json(&suite_path)?;
-            validate_suite(&suite, &manifest)?;
-            Some(suite)
-        } else {
-            None
-        };
-        let units = crate::evidence::run::completed_attempts(&run_directory, &manifest)?
-            .unwrap_or_else(|| suite.iter().cloned().collect());
-        for suite in &units {
-            latest_observation_millis = latest_observation_millis.max(suite.finished_unix_millis);
-            for scenario in &suite.scenarios {
-                observations.push(ScenarioObservation {
-                    started_unix_millis: suite.started_unix_millis,
-                    run_id: suite.run_id.clone(),
-                    scenario: scenario.scenario.clone(),
-                    outcome: scenario.outcome,
-                });
-                for repetition in &scenario.repetitions {
-                    for measurement in &repetition.measurements {
-                        measurement_observations.push(MeasurementObservation {
-                            started_unix_millis: suite.started_unix_millis,
-                            run_id: suite.run_id.clone(),
-                            scenario: scenario.scenario.clone(),
-                            repetition: repetition.repetition,
-                            measurement: measurement.clone(),
-                        });
-                    }
-                }
-            }
+            Err(error) => skipped.push(SkippedRun {
+                run_directory: PathBuf::from("runs").join(entry.file_name()),
+                reason: error.to_string(),
+            }),
         }
-        let replayed_from_runs = manifest
-            .firmware
-            .iter()
-            .filter_map(|artifact| {
-                artifact
-                    .replayed_from
-                    .as_ref()
-                    .map(|origin| origin.source_run_id.clone())
-            })
-            .collect();
-        runs.push(RunHistoryEntry {
-            run_id: manifest.run_id,
-            state: manifest.state,
-            outcome: suite.as_ref().map(|suite| suite.outcome),
-            started_unix_millis: manifest.started_unix_millis,
-            finished_unix_millis: manifest.finished_unix_millis,
-            duration_millis: manifest.duration_millis,
-            commit: manifest.repository.commit,
-            dirty: manifest.repository.dirty,
-            workspace_sha256: manifest.repository.workspace_sha256,
-            replayed_from_runs,
-            cell_id: manifest.cell.cell_id,
-            device_id: manifest.cell.device_id,
-            suite_counts: suite.map(|suite| suite.counts),
-            suite_report: (manifest.state == RunState::Completed)
-                .then(|| relative_directory.join("suite.json")),
-            html_report: (manifest.state == RunState::Completed)
-                .then(|| relative_directory.join("report.html")),
-            run_directory: relative_directory,
-        });
     }
 
     runs.sort_by(|left, right| {
@@ -280,6 +226,7 @@ pub fn rebuild_at(target_directory: &Path, target: &str) -> Result<HistoryComple
         scenarios: scenario_trends(observations),
         measurements: measurement_trends(measurement_observations),
         runs,
+        skipped,
     };
     let history_report = target_directory.join("history.json");
     let html_report = target_directory.join("history.html");
@@ -291,9 +238,107 @@ pub fn rebuild_at(target_directory: &Path, target: &str) -> Result<HistoryComple
         runs: report.runs.len(),
         scenarios: report.scenarios.len(),
         measurements: report.measurements.len(),
+        skipped: report.skipped.len(),
         history_report,
         html_report,
     })
+}
+
+#[derive(Default)]
+struct ReadRun {
+    entry: Option<RunHistoryEntry>,
+    observations: Vec<ScenarioObservation>,
+    measurement_observations: Vec<MeasurementObservation>,
+    latest_observation_millis: u64,
+}
+
+/// One run's history entry and observations.
+fn read_run(run_directory: &Path, target: &str) -> Result<ReadRun> {
+    let mut run = ReadRun::default();
+    let run_directory = run_directory.to_owned();
+    let manifest_path = run_directory.join("manifest.json");
+    if !manifest_path.is_file() {
+        return Err(format!(
+            "HIL run bundle has no manifest: {}",
+            run_directory.display()
+        )
+        .into());
+    }
+    let manifest: RunManifest = read_json(&manifest_path)?;
+    validate_manifest(&manifest, target, &run_directory)?;
+    let relative_directory = PathBuf::from("runs").join(&manifest.run_id);
+    let suite = if manifest.state == RunState::Completed {
+        let suite_path = run_directory.join("suite.json");
+        if !suite_path.is_file() {
+            return Err(format!(
+                "completed HIL run has no suite report: {}",
+                run_directory.display()
+            )
+            .into());
+        }
+        let suite: SuiteResult = read_json(&suite_path)?;
+        validate_suite(&suite, &manifest)?;
+        Some(suite)
+    } else {
+        None
+    };
+    let units = crate::evidence::run::completed_attempts(&run_directory, &manifest)?
+        .unwrap_or_else(|| suite.iter().cloned().collect());
+    for suite in &units {
+        run.latest_observation_millis = run
+            .latest_observation_millis
+            .max(suite.finished_unix_millis);
+        for scenario in &suite.scenarios {
+            run.observations.push(ScenarioObservation {
+                started_unix_millis: suite.started_unix_millis,
+                run_id: suite.run_id.clone(),
+                scenario: scenario.scenario.clone(),
+                outcome: scenario.outcome,
+            });
+            for repetition in &scenario.repetitions {
+                for measurement in &repetition.measurements {
+                    run.measurement_observations.push(MeasurementObservation {
+                        started_unix_millis: suite.started_unix_millis,
+                        run_id: suite.run_id.clone(),
+                        scenario: scenario.scenario.clone(),
+                        repetition: repetition.repetition,
+                        measurement: measurement.clone(),
+                    });
+                }
+            }
+        }
+    }
+    let replayed_from_runs = manifest
+        .firmware
+        .iter()
+        .filter_map(|artifact| {
+            artifact
+                .replayed_from
+                .as_ref()
+                .map(|origin| origin.source_run_id.clone())
+        })
+        .collect();
+    run.entry = Some(RunHistoryEntry {
+        run_id: manifest.run_id,
+        state: manifest.state,
+        outcome: suite.as_ref().map(|suite| suite.outcome),
+        started_unix_millis: manifest.started_unix_millis,
+        finished_unix_millis: manifest.finished_unix_millis,
+        duration_millis: manifest.duration_millis,
+        commit: manifest.repository.commit,
+        dirty: manifest.repository.dirty,
+        workspace_sha256: manifest.repository.workspace_sha256,
+        replayed_from_runs,
+        cell_id: manifest.cell.cell_id,
+        device_id: manifest.cell.device_id,
+        suite_counts: suite.map(|suite| suite.counts),
+        suite_report: (manifest.state == RunState::Completed)
+            .then(|| relative_directory.join("suite.json")),
+        html_report: (manifest.state == RunState::Completed)
+            .then(|| relative_directory.join("report.html")),
+        run_directory: relative_directory,
+    });
+    Ok(run)
 }
 
 fn history_counts(runs: &[RunHistoryEntry]) -> HistoryCounts {

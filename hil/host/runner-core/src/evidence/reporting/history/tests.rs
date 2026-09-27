@@ -171,10 +171,16 @@ fn concurrent_history_publication_waits_for_the_previous_snapshot() {
 }
 
 #[test]
-fn malformed_run_bundle_fails_closed() {
+fn a_malformed_run_bundle_is_named_and_left_out() {
     let target = temporary_target("invalid");
     fs::create_dir(target.join("runs/run-without-manifest")).unwrap();
-    let error = rebuild_at(&target, "esp32s31").unwrap_err();
-    assert!(error.to_string().contains("has no manifest"));
+    assert_eq!(rebuild_at(&target, "esp32s31").unwrap().skipped, 1);
+    let report: HistoryReport =
+        serde_json::from_slice(&fs::read(target.join("history.json")).unwrap()).unwrap();
+    assert_eq!(
+        report.skipped[0].run_directory,
+        Path::new("runs/run-without-manifest")
+    );
+    assert!(report.skipped[0].reason.contains("has no manifest"));
     fs::remove_dir_all(target).unwrap();
 }

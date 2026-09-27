@@ -5210,7 +5210,7 @@ pub mod modem_syscon_radio {
         impl crate::Resettable for ClkConf1Spec {}
     }
 }
-#[doc = "ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor COEXIST modem clock device. Other fields remain absent and are preserved by every field transaction."]
+#[doc = "ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor COEXIST modem clock device, and the power-state map of the analog I2C master clock. Other fields remain absent and are preserved by every field transaction."]
 pub type ModemLpconSharedClock =
     crate::Periph<modem_lpcon_shared_clock::RegisterBlock, 0x600a_f000>;
 impl core::fmt::Debug for ModemLpconSharedClock {
@@ -5218,19 +5218,26 @@ impl core::fmt::Debug for ModemLpconSharedClock {
         f.debug_struct("ModemLpconSharedClock").finish()
     }
 }
-#[doc = "ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor COEXIST modem clock device. Other fields remain absent and are preserved by every field transaction."]
+#[doc = "ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor COEXIST modem clock device, and the power-state map of the analog I2C master clock. Other fields remain absent and are preserved by every field transaction."]
 pub mod modem_lpcon_shared_clock {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
         _reserved0: [u8; 0x18],
         clk_conf: ClkConf,
+        _reserved1: [u8; 0x04],
+        clk_conf_power_st: ClkConfPowerSt,
     }
     impl RegisterBlock {
         #[doc = "0x18 - Low-power modem clock gates."]
         #[inline(always)]
         pub const fn clk_conf(&self) -> &ClkConf {
             &self.clk_conf
+        }
+        #[doc = "0x20 - PMU power states in which each low-power modem clock domain runs."]
+        #[inline(always)]
+        pub const fn clk_conf_power_st(&self) -> &ClkConfPowerSt {
+            &self.clk_conf_power_st
         }
     }
     #[doc = "CLK_CONF (rw) register accessor: Low-power modem clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf`] module"]
@@ -5273,6 +5280,47 @@ pub mod modem_lpcon_shared_clock {
         }
         #[doc = "`reset()` method sets CLK_CONF to value 0"]
         impl crate::Resettable for ClkConfSpec {}
+    }
+    #[doc = "CLK_CONF_POWER_ST (rw) register accessor: PMU power states in which each low-power modem clock domain runs.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf_power_st::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf_power_st::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf_power_st`] module"]
+    #[doc(alias = "CLK_CONF_POWER_ST")]
+    pub type ClkConfPowerSt = crate::Reg<clk_conf_power_st::ClkConfPowerStSpec>;
+    #[doc = "PMU power states in which each low-power modem clock domain runs."]
+    pub mod clk_conf_power_st {
+        #[doc = "Register `CLK_CONF_POWER_ST` reader"]
+        pub type R = crate::R<ClkConfPowerStSpec>;
+        #[doc = "Register `CLK_CONF_POWER_ST` writer"]
+        pub type W = crate::W<ClkConfPowerStSpec>;
+        #[doc = "Field `CLK_I2C_MST_ST_MAP` reader - PMU power states in which the analog register I2C master clock runs, one bit per state (SLEEP, MODEM, ACTIVE). On ESP32-C5 v1.0 the MODEM bit must stay clear: it survives the HP-system reset of a USB Serial/JTAG RTS pulse, after which the ROM boots into UART/SDIO download (docs/hardware-errata.md, ESP32-C5 rev 1.0 USB Serial/JTAG reset erratum)."]
+        pub type ClkI2cMstStMapR = crate::FieldReader;
+        #[doc = "Field `CLK_I2C_MST_ST_MAP` writer - PMU power states in which the analog register I2C master clock runs, one bit per state (SLEEP, MODEM, ACTIVE). On ESP32-C5 v1.0 the MODEM bit must stay clear: it survives the HP-system reset of a USB Serial/JTAG RTS pulse, after which the ROM boots into UART/SDIO download (docs/hardware-errata.md, ESP32-C5 rev 1.0 USB Serial/JTAG reset erratum)."]
+        pub type ClkI2cMstStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 24:27 - PMU power states in which the analog register I2C master clock runs, one bit per state (SLEEP, MODEM, ACTIVE). On ESP32-C5 v1.0 the MODEM bit must stay clear: it survives the HP-system reset of a USB Serial/JTAG RTS pulse, after which the ROM boots into UART/SDIO download (docs/hardware-errata.md, ESP32-C5 rev 1.0 USB Serial/JTAG reset erratum)."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_st_map(&self) -> ClkI2cMstStMapR {
+                ClkI2cMstStMapR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 24:27 - PMU power states in which the analog register I2C master clock runs, one bit per state (SLEEP, MODEM, ACTIVE). On ESP32-C5 v1.0 the MODEM bit must stay clear: it survives the HP-system reset of a USB Serial/JTAG RTS pulse, after which the ROM boots into UART/SDIO download (docs/hardware-errata.md, ESP32-C5 rev 1.0 USB Serial/JTAG reset erratum)."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_st_map(&mut self) -> ClkI2cMstStMapW<'_, ClkConfPowerStSpec> {
+                ClkI2cMstStMapW::new(self, 24)
+            }
+        }
+        #[doc = "PMU power states in which each low-power modem clock domain runs.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf_power_st::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf_power_st::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConfPowerStSpec;
+        impl crate::RegisterSpec for ClkConfPowerStSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf_power_st::R`](R) reader structure"]
+        impl crate::Readable for ClkConfPowerStSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf_power_st::W`](W) writer structure"]
+        impl crate::Writable for ClkConfPowerStSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF_POWER_ST to value 0"]
+        impl crate::Resettable for ClkConfPowerStSpec {}
     }
 }
 #[unsafe(no_mangle)]

@@ -44,3 +44,14 @@ note = "The pinned public LL reads the thirteen-bit event image and clears a req
 [[assertions.evidence]]
 source = "esp-idf-4d59230d-ieee802154-common-ll"
 locator = "ieee802154_ll_clear_events"
+
+[[assertions]]
+id = "modem-lpcon.clk-conf-power-st.access"
+subject = "register:esp32c5/cpu/0x600af020/32"
+kind = "register-access"
+value = "read-write"
+note = "CLK_I2C_MST_ST_MAP keeps its value through a USB Serial/JTAG HP-system reset; with its MODEM bit set the v1.0 ROM then boots into UART/SDIO download (docs/hardware-errata.md). Firmware must leave the MODEM bit clear."
+
+[[assertions.evidence]]
+source = "hil-open-c5-i2c-mst-st-map-usb-reset-2026-09-27"
+locator = "restoring CLK_I2C_MST_ST_MAP to 0x4 before the USB reset"

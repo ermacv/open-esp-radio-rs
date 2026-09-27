@@ -72,7 +72,9 @@ fault.
   [the IEEE 802.15.4 peer](../hil/peers/esp32c5-ieee802154/README.md#usb-serialjtag-resets).
   With it, USB resets and flashing over a running peer work.
 - Firmware for the ESP32-C5 in this repository must not add the MODEM state
-  to that map unless it also avoids USB Serial/JTAG resets.
+  to that map unless it also avoids USB Serial/JTAG resets. The
+  [ESP32-C5 register model](../registers/esp32c5/README.md) publishes the
+  field with this constraint and the observation as its evidence.
 - Any other ESP-IDF image on an ESP32-C5 rev 1.0, such as a vendor comparison
   image without the workaround, is reset or flashed through JTAG
   (OpenOCD `program_esp … reset`), not over USB Serial/JTAG.

@@ -1914,3 +1914,21 @@ method = "clk_coex_en"
 bit-offset = 1
 bit-width = 1
 access = "read-write"
+
+[[registers]]
+address = 1611329568
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_SHARED_CLOCK.CLK_CONF_POWER_ST"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+peripheral-type = "ModemLpconSharedClock"
+peripheral-module = "modem_lpcon_shared_clock"
+scope = []
+register-method = "clk_conf_power_st"
+
+[[registers.fields]]
+svd-name = "CLK_I2C_MST_ST_MAP"
+method = "clk_i2c_mst_st_map"
+bit-offset = 24
+bit-width = 4
+access = "read-write"

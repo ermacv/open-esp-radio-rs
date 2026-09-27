@@ -35,7 +35,7 @@ description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7:
 
 [[sources]]
 id = "ESP_IDF_4D59230D_C5_MODEM_LPCON_STRUCT"
-description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7: https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/soc/esp32c5/include/modem/modem_lpcon_struct.h sha256 3b31903e3e6b858fef0203ee6f6ab9f9b99bb81ceec5b0285b25dbc96b83c508 places CLK_CONF at 0x18 by declaration order with CLK_COEX_EN at bit 1; https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/soc/esp32c5/include/modem/modem_lpcon_reg.h sha256 0c361db253cb8d729471a907ed9a4435cc02de973c7e119e62b0d24e59e1076e restates that offset and bit as read-write with reset image 0."
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7: https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/soc/esp32c5/include/modem/modem_lpcon_struct.h sha256 3b31903e3e6b858fef0203ee6f6ab9f9b99bb81ceec5b0285b25dbc96b83c508 places CLK_CONF at 0x18 by declaration order with CLK_COEX_EN at bit 1, and CLK_CONF_POWER_ST at 0x20 with CLK_I2C_MST_ST_MAP at bits 27:24; https://raw.githubusercontent.com/espressif/esp-idf/4d59230ddff16327812782151ef0afef202dc6d7/components/soc/esp32c5/include/modem/modem_lpcon_reg.h sha256 0c361db253cb8d729471a907ed9a4435cc02de973c7e119e62b0d24e59e1076e restates those offsets and fields as read-write with reset images 0."
 
 [[sources]]
 id = "ESP_IDF_4D59230D_C5_MODEM_CLOCK"

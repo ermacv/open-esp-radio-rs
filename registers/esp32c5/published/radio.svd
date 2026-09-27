@@ -1752,8 +1752,9 @@ and are preserved by every field transaction.</description>
     <peripheral>
       <name>MODEM_LPCON_SHARED_CLOCK</name>
       <description>ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor
-COEXIST modem clock device. Other fields remain absent and are preserved by
-every field transaction.</description>
+COEXIST modem clock device, and the power-state map of the analog I2C master
+clock. Other fields remain absent and are preserved by every field
+transaction.</description>
       <baseAddress>0x600AF000</baseAddress>
       <registers>
         <register>
@@ -1769,6 +1770,26 @@ every field transaction.</description>
               <description>Enable the coexistence clock.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF_POWER_ST</name>
+          <description>PMU power states in which each low-power modem clock domain runs.</description>
+          <addressOffset>0x20</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_I2C_MST_ST_MAP</name>
+              <description>PMU power states in which the analog register I2C master clock runs, one bit
+per state (SLEEP, MODEM, ACTIVE). On ESP32-C5 v1.0 the MODEM bit must stay
+clear: it survives the HP-system reset of a USB Serial/JTAG RTS pulse, after
+which the ROM boots into UART/SDIO download (docs/hardware-errata.md,
+ESP32-C5 rev 1.0 USB Serial/JTAG reset erratum).</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>4</bitWidth>
             </field>
           </fields>
         </register>

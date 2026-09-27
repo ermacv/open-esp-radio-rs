@@ -6,4 +6,5 @@ owned-ranges = [
     "ieee802154-core0-route",
     "modem-syscon-radio",
     "modem-lpcon-shared-clock",
+    "modem-lpcon-clock-state-map",
 ]

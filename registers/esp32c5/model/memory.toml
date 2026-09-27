@@ -45,3 +45,11 @@ kind = "mmio"
 start = 0x600AF018
 end-exclusive = 0x600AF01C
 permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-clock-state-map"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600AF020
+end-exclusive = 0x600AF024
+permissions = "rw"

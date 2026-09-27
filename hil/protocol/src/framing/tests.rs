@@ -912,7 +912,9 @@ fn connected_station_negotiated_link_round_trips_on_current_version() {
         Event::StationLifecycle(StationLifecycleEvent::Connected {
             generation: 5,
             association_bandwidth_mhz: Some(40),
-            security: Some(crate::StationLinkSecurity::Wpa2Personal),
+            security: Some(crate::StationLinkSecurity::Wpa2Personal {
+                management_protection: true,
+            }),
         }),
     );
     let mut encoder = FrameEncoder::new();

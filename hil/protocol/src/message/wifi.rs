@@ -684,5 +684,8 @@ pub enum StationLifecycleEvent {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StationLinkSecurity {
     Open,
-    Wpa2Personal,
+    Wpa2Personal {
+        /// The association protects its robust management frames.
+        management_protection: bool,
+    },
 }

@@ -2,7 +2,9 @@
 
 use crate::Result;
 use hil_core::{
-    lab::config::StationConfig, lab::config::StationFixtureConfig, lab::link::PhyExpectation,
+    lab::config::StationConfig,
+    lab::config::StationFixtureConfig,
+    lab::link::{ManagementFrameProtection, PhyExpectation},
 };
 
 /// Restores the selected AP frontier on every normal or error return.
@@ -17,15 +19,29 @@ impl ControlledAp {
         station: &StationConfig,
         fixture: &StationFixtureConfig,
         phy: PhyExpectation,
+        management_frame_protection: ManagementFrameProtection,
     ) -> Result<Self> {
+        if management_frame_protection.negotiated()
+            && !matches!(fixture, StationFixtureConfig::OpenWrt(_))
+        {
+            return Err(crate::fixture::Error::new(
+                "management frame protection requires the OpenWrt station fixture",
+            )
+            .into());
+        }
         match fixture {
             StationFixtureConfig::LocalLinux(config) => Ok(Self::Local(
                 super::local::ap::AccessPoint::start(config, station, phy)
                     .map_err(super::Error::context)?,
             )),
             StationFixtureConfig::OpenWrt(openwrt) => Ok(Self::OpenWrt(Box::new(
-                super::openwrt::ap::AccessPoint::start(openwrt, station, phy)
-                    .map_err(super::Error::context)?,
+                super::openwrt::ap::AccessPoint::start(
+                    openwrt,
+                    station,
+                    phy,
+                    management_frame_protection,
+                )
+                .map_err(super::Error::context)?,
             ))),
             StationFixtureConfig::External(_) => {
                 require_station_credentials(station)?;

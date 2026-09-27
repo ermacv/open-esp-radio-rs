@@ -548,7 +548,9 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
             Event::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 4,
                 association_bandwidth_mhz: Some(40),
-                security: Some(StationLinkSecurity::Wpa2Personal),
+                security: Some(StationLinkSecurity::Wpa2Personal {
+                    management_protection: false,
+                }),
             }),
         ))))
         .unwrap();
@@ -571,7 +573,9 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
             Event::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 5,
                 association_bandwidth_mhz: Some(40),
-                security: Some(StationLinkSecurity::Wpa2Personal),
+                security: Some(StationLinkSecurity::Wpa2Personal {
+                    management_protection: false,
+                }),
             }),
         ))))
         .unwrap();
@@ -584,7 +588,9 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
             Event::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 5,
                 association_bandwidth_mhz: Some(40),
-                security: Some(StationLinkSecurity::Wpa2Personal),
+                security: Some(StationLinkSecurity::Wpa2Personal {
+                    management_protection: false,
+                }),
             }),
         ))))
         .unwrap();
@@ -648,7 +654,9 @@ fn network_recovery_requires_readiness_after_the_new_connected_edge() {
             Event::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 5,
                 association_bandwidth_mhz: Some(40),
-                security: Some(StationLinkSecurity::Wpa2Personal),
+                security: Some(StationLinkSecurity::Wpa2Personal {
+                    management_protection: false,
+                }),
             }),
         ))))
         .unwrap();

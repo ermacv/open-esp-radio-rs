@@ -38,8 +38,13 @@ impl Prepared {
         let required = plan.requirements;
         let ap = if required.station_network {
             let phy = lab.fixture_phy(plan.wifi);
-            let mut ap = ControlledAp::start(&lab.station, &lab.station_fixture, phy)
-                .map_err(super::Error::context)?;
+            let mut ap = ControlledAp::start(
+                &lab.station,
+                &lab.station_fixture,
+                phy,
+                plan.wifi.management_frame_protection,
+            )
+            .map_err(super::Error::context)?;
             // A fresh selected-radio epoch is part of the multi-client fixture.
             // It never resets the router's other radios or the wired uplink.
             if required.openwrt_client {

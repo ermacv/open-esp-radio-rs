@@ -9,7 +9,7 @@ use oer_hil_protocol::{
     WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
 };
 
-use crate::Result;
+use crate::{Result, scenario::LinkExpectation};
 use hil_core::{
     lab::link::PhyExpectation, session::SerialCapture, session::StationConnectionObservation,
 };
@@ -60,13 +60,13 @@ pub fn run(
     options: Config,
     output: &Path,
     context: &Context<'_>,
-    phy: PhyExpectation,
+    link: LinkExpectation,
 ) -> Result<()> {
     let options = options.validate()?;
 
     fs::create_dir_all(output)?;
     context.with_capture(output, |capture| {
-        qualify(capture, context, operation, &options, phy)
+        qualify(capture, context, operation, &options, link)
     })?;
     eprintln!("wifi_{}=PASS", operation.id());
     eprintln!("uart_log={}", output.join("uart.log").display());
@@ -78,7 +78,7 @@ fn qualify(
     context: &Context<'_>,
     operation: Operation,
     options: &Config,
-    phy: PhyExpectation,
+    link: LinkExpectation,
 ) -> Result<()> {
     let capabilities = capture.prepare_station(context.target(), options.timeout)?;
     if !capabilities.features.wifi_role_control {
@@ -87,14 +87,14 @@ fn qualify(
     report_stack(capture, options.timeout, "connected")?;
 
     if operation == Operation::Restart {
-        context.lab.station_fixture.require_phy(phy)?;
+        context.lab.station_fixture.require_phy(link.phy)?;
         if context.settings.data_plane
             != oer_hil_protocol::WifiDataPlanePlacement::SplitRadioNetwork
         {
             return Err("radio lifecycle requires split radio/network data-plane ownership".into());
         }
         let initial = capture.wait_for_connected_station_link_after(0, options.timeout)?;
-        require_station_link(initial, phy)?;
+        require_station_link(initial, link)?;
         data_path::prove_station_data_path(
             capture,
             context,
@@ -117,7 +117,7 @@ fn qualify(
             let lifecycle_generation = restarted.generation;
             report_stack(capture, options.timeout, "radio-restarted")?;
             let (started, connected) =
-                start_connected_station(capture, context, options.timeout, phy)?;
+                start_connected_station(capture, context, options.timeout, link)?;
             require_station_after_lifecycle(lifecycle_generation, started)?;
             let expected_link_generation = station_link_generation.wrapping_add(1);
             if connected.generation != expected_link_generation {
@@ -449,32 +449,36 @@ fn start_connected_station(
     capture: &SerialCapture,
     context: &Context<'_>,
     timeout: Duration,
-    phy: PhyExpectation,
+    link: LinkExpectation,
 ) -> Result<(WifiRoleTransitionEvidence, StationConnectionObservation)> {
     let lifecycle_cursor = capture.station_lifecycle_cursor();
     let evidence = start_station_evidence(capture, context, timeout)?;
     let connected = capture.wait_for_connected_station_link_after(lifecycle_cursor, timeout)?;
-    require_station_link(connected, phy)?;
+    require_station_link(connected, link)?;
     Ok((evidence, connected))
 }
 
 pub(super) fn require_station_link(
     connected: StationConnectionObservation,
-    phy: PhyExpectation,
+    link: LinkExpectation,
 ) -> Result<()> {
-    let expected_bandwidth = match phy {
+    let expected_bandwidth = match link.phy {
         PhyExpectation::Ht40 => 40,
         PhyExpectation::Ht20 | PhyExpectation::He20 => 20,
     };
+    let expected_security = oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+        management_protection: link.management_frame_protection.negotiated(),
+    };
     if connected.association_bandwidth_mhz != Some(expected_bandwidth)
-        || connected.security != Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal)
+        || connected.security != Some(expected_security)
     {
         return Err(format!(
-            "station connected generation {} with negotiated width {:?} MHz/security {:?}, expected {} MHz/WPA2-Personal",
+            "station connected generation {} with negotiated width {:?} MHz/security {:?}, expected {} MHz/{:?}",
             connected.generation,
             connected.association_bandwidth_mhz,
             connected.security,
             expected_bandwidth,
+            expected_security,
         ).into());
     }
     Ok(())

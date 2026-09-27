@@ -65,7 +65,7 @@ pub(super) fn execute(
             operation,
         } => {
             let (operation, config) = role(*operation, seconds(*timeout_seconds));
-            ieee80211::control::run(operation, config, output, context, link.phy)
+            ieee80211::control::run(operation, config, output, context, *link)
         }
         WifiWorkload::MonitorCapture {
             link,

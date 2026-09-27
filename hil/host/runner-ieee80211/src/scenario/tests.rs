@@ -31,6 +31,7 @@ fn station_udp_requirements_follow_the_offer_and_observers() {
         rx.wifi,
         WifiLabUse {
             link: Some(PhyExpectation::Ht40),
+            management_frame_protection: Default::default(),
             access_point: false,
         }
     );
@@ -248,6 +249,7 @@ fn access_point_clients_select_fixture_services() {
         laptop.wifi,
         WifiLabUse {
             link: None,
+            management_frame_protection: Default::default(),
             access_point: true,
         }
     );

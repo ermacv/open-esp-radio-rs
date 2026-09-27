@@ -1312,8 +1312,12 @@ async fn station_lifecycle_task(mut status: StationStatus) {
                             oer_esp32s31_ieee80211_system::StationLinkSecurity::Open => {
                                 oer_hil_protocol::StationLinkSecurity::Open
                             }
-                            oer_esp32s31_ieee80211_system::StationLinkSecurity::Wpa2Personal => {
-                                oer_hil_protocol::StationLinkSecurity::Wpa2Personal
+                            oer_esp32s31_ieee80211_system::StationLinkSecurity::Wpa2Personal {
+                                management_protection,
+                            } => {
+                                oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+                                    management_protection,
+                                }
                             }
                         }
                             });

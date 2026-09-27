@@ -93,7 +93,9 @@ fn lifecycle_stop_requires_the_current_station_link_disconnect() {
             StationLifecycleEvent::Connected {
                 generation: u32::MAX,
                 association_bandwidth_mhz: Some(40),
-                security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal),
+                security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+                    management_protection: false
+                }),
             },
             u32::MAX,
         )
@@ -101,23 +103,52 @@ fn lifecycle_stop_requires_the_current_station_link_disconnect() {
     );
 }
 
+fn link(
+    phy: PhyExpectation,
+    management_frame_protection: hil_core::lab::link::ManagementFrameProtection,
+) -> crate::scenario::LinkExpectation {
+    crate::scenario::LinkExpectation {
+        phy,
+        minimum_mcs: None,
+        guard_interval: Default::default(),
+        management_frame_protection,
+    }
+}
+
 #[test]
 fn lifecycle_connected_link_requires_negotiated_phy_and_security() {
+    use hil_core::lab::link::ManagementFrameProtection::{Disabled, Required};
     let ht40_wpa2 = StationConnectionObservation {
         generation: 4,
         association_bandwidth_mhz: Some(40),
-        security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal),
+        security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+            management_protection: false,
+        }),
         event_cursor_after: 3,
     };
-    assert!(require_station_link(ht40_wpa2, PhyExpectation::Ht40).is_ok());
-    assert!(require_station_link(ht40_wpa2, PhyExpectation::Ht20).is_err());
+    assert!(require_station_link(ht40_wpa2, link(PhyExpectation::Ht40, Disabled)).is_ok());
+    assert!(require_station_link(ht40_wpa2, link(PhyExpectation::Ht20, Disabled)).is_err());
+    // A fixture offering protection requires the station to negotiate it.
+    assert!(require_station_link(ht40_wpa2, link(PhyExpectation::Ht40, Required)).is_err());
+    assert!(
+        require_station_link(
+            StationConnectionObservation {
+                security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+                    management_protection: true,
+                }),
+                ..ht40_wpa2
+            },
+            link(PhyExpectation::Ht40, Required),
+        )
+        .is_ok()
+    );
     assert!(
         require_station_link(
             StationConnectionObservation {
                 security: Some(oer_hil_protocol::StationLinkSecurity::Open),
                 ..ht40_wpa2
             },
-            PhyExpectation::Ht40,
+            link(PhyExpectation::Ht40, Disabled),
         )
         .is_err()
     );
@@ -127,7 +158,7 @@ fn lifecycle_connected_link_requires_negotiated_phy_and_security() {
                 association_bandwidth_mhz: None,
                 ..ht40_wpa2
             },
-            PhyExpectation::Ht40,
+            link(PhyExpectation::Ht40, Disabled),
         )
         .is_err()
     );

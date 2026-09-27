@@ -10,7 +10,11 @@ use std::{
 use zeroize::Zeroizing;
 
 use crate::Result;
-use hil_core::{lab::config::OpenWrtConfig, lab::config::StationConfig, lab::link::PhyExpectation};
+use hil_core::{
+    lab::config::OpenWrtConfig,
+    lab::config::StationConfig,
+    lab::link::{ManagementFrameProtection, PhyExpectation},
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Observation {
@@ -27,14 +31,30 @@ pub struct Profile {
     pub ht40_above: bool,
     pub phy: PhyExpectation,
     pub channel: u8,
+    pub management_frame_protection: ManagementFrameProtection,
 }
 
 impl Profile {
-    pub fn new(config: &OpenWrtConfig, phy: PhyExpectation) -> Self {
+    pub fn new(
+        config: &OpenWrtConfig,
+        phy: PhyExpectation,
+        management_frame_protection: ManagementFrameProtection,
+    ) -> Self {
         Self {
             ht40_above: config.ht40_above,
             phy,
             channel: config.channel,
+            management_frame_protection,
+        }
+    }
+
+    /// The OpenWrt `ieee80211w` option; with protection OpenWrt also offers
+    /// PSK-SHA256 beside PSK.
+    fn ieee80211w(self) -> &'static str {
+        match self.management_frame_protection {
+            ManagementFrameProtection::Disabled => "0",
+            ManagementFrameProtection::Optional => "1",
+            ManagementFrameProtection::Required => "2",
         }
     }
 
@@ -84,7 +104,7 @@ impl Profile {
         json!({
             &config.radio: {"channel": self.channel.to_string(), "htmode": self.htmode(), "disabled": "0"},
             &config.ap_section: {"mode": "ap", "ssid": ssid, "key": passphrase,
-                "encryption": "psk2", "wmm": "1", "ieee80211w": "0", "disabled": "0", "hidden": "0", "ifname": config.wireless_interface}
+                "encryption": "psk2", "wmm": "1", "ieee80211w": self.ieee80211w(), "disabled": "0", "hidden": "0", "ifname": config.wireless_interface}
         })
     }
 }
@@ -135,8 +155,9 @@ impl AccessPoint {
         config: &OpenWrtConfig,
         station: &StationConfig,
         phy: PhyExpectation,
+        management_frame_protection: ManagementFrameProtection,
     ) -> Result<Self> {
-        let profile = Profile::new(config, phy);
+        let profile = Profile::new(config, phy, management_frame_protection);
         probe(config, profile)?;
         if config.read_only {
             return Self::attach(

@@ -603,6 +603,7 @@ fn validate_mcs_evidence(
         phy,
         minimum_mcs: Some(minimum_mcs),
         guard_interval,
+        ..
     }) = expected_link
     else {
         return Ok(());

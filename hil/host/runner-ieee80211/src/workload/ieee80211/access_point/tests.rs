@@ -502,6 +502,7 @@ fn ap_ht40_mcs7_gate_is_directional_and_fails_closed() {
         phy: PhyExpectation::Ht40,
         minimum_mcs: Some(7),
         guard_interval: hil_core::lab::link::HtGuardIntervalExpectation::Any,
+        management_frame_protection: Default::default(),
     });
     let udp = |rx_bps, tx_bps| {
         AccessPointTraffic::Udp(crate::scenario::access_point::AccessPointUdp {
@@ -530,6 +531,7 @@ fn ap_guard_interval_gate_tolerates_only_epoch_warmup_frames() {
         phy: PhyExpectation::Ht40,
         minimum_mcs: Some(7),
         guard_interval: HtGuardIntervalExpectation::Short,
+        management_frame_protection: Default::default(),
     });
     let rx = AccessPointTraffic::Udp(crate::scenario::access_point::AccessPointUdp {
         duration_seconds: 1,

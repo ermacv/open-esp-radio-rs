@@ -80,6 +80,7 @@ fn fixture_lifecycle_harness() {
             &lab.station,
             &lab.station_fixture,
             hil_core::lab::link::PhyExpectation::Ht40,
+            hil_core::lab::link::ManagementFrameProtection::Disabled,
         )
         .err()
         .expect("injected fixture failure");

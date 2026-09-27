@@ -1,4 +1,5 @@
 use super::*;
+use hil_core::lab::link::ManagementFrameProtection;
 
 fn observation(phy: PhyExpectation) -> Observation {
     Observation {
@@ -23,6 +24,7 @@ fn ht20_width_does_not_prove_he20() {
         ht40_above: false,
         phy: PhyExpectation::He20,
         channel: 13,
+        management_frame_protection: ManagementFrameProtection::Disabled,
     };
     let mut observed = observation(PhyExpectation::Ht20);
     assert!(profile.verify(&observed).is_err());
@@ -43,6 +45,7 @@ fn ht40_requires_the_requested_secondary_channel() {
         ht40_above: false,
         phy: PhyExpectation::Ht40,
         channel: 13,
+        management_frame_protection: ManagementFrameProtection::Disabled,
     };
     let mut observed = observation(PhyExpectation::Ht20);
     observed.htmode = "HT40-".into();
@@ -58,6 +61,7 @@ fn capability_is_interface_specific_and_respects_regulation() {
         ht40_above: false,
         phy: PhyExpectation::He20,
         channel: 13,
+        management_frame_protection: ManagementFrameProtection::Disabled,
     };
     let caps = "Supported interface modes:\n * AP\n HT20/HT40\n HE Iftypes: managed\n * 2472 MHz [13] (20.0 dBm)\n";
     assert!(verify_capabilities(profile, caps).is_err());
@@ -117,6 +121,7 @@ fn restoring_uci_and_radio_up_is_insufficient_if_the_original_ap_is_missing() {
             ht40_above: false,
             phy: PhyExpectation::He20,
             channel: 13,
+            management_frame_protection: ManagementFrameProtection::Disabled,
         },
         json!({}),
     )
@@ -144,6 +149,7 @@ fn restores_after_partial_apply_readback_failure_and_stop_failure() {
                 ht40_above: false,
                 phy: PhyExpectation::He20,
                 channel: 13,
+                management_frame_protection: ManagementFrameProtection::Disabled,
             },
             json!({}),
         );
@@ -179,6 +185,7 @@ fn restore_failure_is_not_a_successful_owner_release() {
             ht40_above: false,
             phy: PhyExpectation::He20,
             channel: 13,
+            management_frame_protection: ManagementFrameProtection::Disabled,
         },
         json!({}),
     )
@@ -210,6 +217,7 @@ fn existing_ap_is_verified_without_mutation_even_on_stop_or_drop() {
             ht40_above: false,
             phy: PhyExpectation::He20,
             channel: 13,
+            management_frame_protection: ManagementFrameProtection::Disabled,
         },
         json!({}),
     )
@@ -238,6 +246,7 @@ fn existing_ap_mismatch_never_falls_back_to_apply_or_restore() {
                     ht40_above: false,
                     phy: PhyExpectation::Ht40,
                     channel: 13,
+                    management_frame_protection: ManagementFrameProtection::Disabled,
                 },
                 json!({})
             )
@@ -253,6 +262,7 @@ fn existing_generic_ht40_setting_still_requires_exact_active_geometry() {
         ht40_above: false,
         phy: PhyExpectation::Ht40,
         channel: 13,
+        management_frame_protection: ManagementFrameProtection::Disabled,
     };
     let mut observed = observation(PhyExpectation::Ht40);
     observed.htmode = "HT40".into();
@@ -260,4 +270,22 @@ fn existing_generic_ht40_setting_still_requires_exact_active_geometry() {
     profile.verify(&observed).unwrap();
     observed.geometry = "channel 13 (2472 MHz), width: 20 MHz, center1: 2472 MHz".into();
     assert!(profile.verify(&observed).is_err());
+}
+
+#[test]
+fn management_frame_protection_selects_the_openwrt_ieee80211w_option() {
+    let config = hil_core::lab::config::LabConfig::for_test();
+    let hil_core::lab::config::StationFixtureConfig::OpenWrt(openwrt) = &config.station_fixture
+    else {
+        panic!("OpenWrt test lab required");
+    };
+    for (protection, expected) in [
+        (ManagementFrameProtection::Disabled, "0"),
+        (ManagementFrameProtection::Optional, "1"),
+        (ManagementFrameProtection::Required, "2"),
+    ] {
+        let options = Profile::new(openwrt, PhyExpectation::Ht20, protection)
+            .options(openwrt, &config.station);
+        assert_eq!(options[&openwrt.ap_section]["ieee80211w"], expected);
+    }
 }

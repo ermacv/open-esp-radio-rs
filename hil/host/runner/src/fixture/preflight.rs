@@ -65,7 +65,11 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                 let phy = lab.fixture_phy(plan.wifi);
                 hil_wifi::fixture::openwrt::ap::probe(
                     config,
-                    hil_wifi::fixture::openwrt::ap::Profile::new(config, phy),
+                    hil_wifi::fixture::openwrt::ap::Profile::new(
+                        config,
+                        phy,
+                        plan.wifi.management_frame_protection,
+                    ),
                 )
                 .map_err(hil_core::fixture::Error::context)?;
                 // Both directions consume remote counters and command-line capture tools.

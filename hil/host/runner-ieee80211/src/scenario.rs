@@ -12,7 +12,7 @@ use hil_core::{
     context::Context,
     image::ImageClass,
     lab::{
-        link::{HtGuardIntervalExpectation, PhyExpectation, WifiLabUse},
+        link::{HtGuardIntervalExpectation, ManagementFrameProtection, PhyExpectation, WifiLabUse},
         requirements::Requirements,
     },
     scenario::{Plan, bounded},
@@ -74,6 +74,10 @@ pub struct LinkExpectation {
     pub minimum_mcs: Option<u8>,
     #[serde(default)]
     pub guard_interval: HtGuardIntervalExpectation,
+    /// Management frame protection the station fixture offers; the station
+    /// must negotiate it whenever it is offered.
+    #[serde(default)]
+    pub management_frame_protection: ManagementFrameProtection,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -323,6 +327,15 @@ impl WifiScenario {
     }
 
     fn validate_link(&self, link: LinkExpectation) -> Result<()> {
+        if link.management_frame_protection.negotiated()
+            && !matches!(self.workload, WifiWorkload::Role { .. })
+        {
+            return Err(format!(
+                "management_frame_protection={} is verified only by the role workload",
+                link.management_frame_protection.id()
+            )
+            .into());
+        }
         if let Some(minimum_mcs) = link.minimum_mcs {
             if !self.image.requires_driver_observation() {
                 return Err("minimum_mcs requires a driver-observation image".into());
@@ -521,6 +534,11 @@ impl WifiScenario {
             checks,
             wifi: WifiLabUse {
                 link: self.workload.link().map(|link| link.phy),
+                management_frame_protection: self
+                    .workload
+                    .link()
+                    .map(|link| link.management_frame_protection)
+                    .unwrap_or_default(),
                 access_point: matches!(self.workload, WifiWorkload::AccessPoint(_)),
             },
         }

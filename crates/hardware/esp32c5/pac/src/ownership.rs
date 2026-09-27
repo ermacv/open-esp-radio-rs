@@ -36,6 +36,7 @@ pub struct RadioPartitions {
     pub ieee802154: Ieee802154Partition,
     pub modem_clock: crate::modem::clock::ModemClockRegisters,
     pub phy_i2c: crate::phy::i2c::PhyI2cRegisters,
+    pub phy_radio: crate::phy::radio::PhyRadioRegisters,
 }
 
 impl RadioPartitions {
@@ -51,6 +52,7 @@ impl RadioPartitions {
             modem_etm,
             modem_clock,
             phy_i2c,
+            phy_radio,
         } = svd::peripheral_ownership::partition(peripherals);
         Self {
             ieee802154: Ieee802154Partition {
@@ -59,6 +61,7 @@ impl RadioPartitions {
             },
             modem_clock: crate::modem::clock::ModemClockRegisters::new(modem_clock),
             phy_i2c: crate::phy::i2c::PhyI2cRegisters::new(phy_i2c),
+            phy_radio: crate::phy::radio::PhyRadioRegisters::new(phy_radio),
         }
     }
 

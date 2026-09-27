@@ -8,6 +8,8 @@ fragments = [
     "peripherals/modem-syscon-radio.toml",
     "peripherals/modem-lpcon-shared-clock.toml",
     "peripherals/i2c-ana-mst.toml",
+    "peripherals/pmu-radio.toml",
+    "peripherals/phy-baseband-config.toml",
 ]
 
 [device]

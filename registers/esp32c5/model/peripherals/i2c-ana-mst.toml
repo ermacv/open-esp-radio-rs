@@ -178,3 +178,90 @@ value = 0x19C1
 [[peripherals.registers.register.fields.enumeratedValues.values]]
 name = "PARALLEL_INITIALIZATION_MAP"
 value = 0x206
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "I2C0_CTRL1"
+description = "Host-0 bus timing."
+addressOffset = 0x24
+size = 32
+access = "read-write"
+resetValue = 0x00000042
+
+[[peripherals.registers.register.fields]]
+name = "SCL_PULSE_DURATION"
+description = "SCL pulse duration."
+bitOffset = 0
+bitWidth = 6
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x3F
+
+[[peripherals.registers.register.fields]]
+name = "SDA_SIDE_GUARD"
+description = "SDA side guard."
+bitOffset = 6
+bitWidth = 5
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x1F
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "I2C1_CTRL1"
+description = "Host-1 bus timing."
+addressOffset = 0x28
+size = 32
+access = "read-write"
+resetValue = 0x00000042
+
+[[peripherals.registers.register.fields]]
+name = "SCL_PULSE_DURATION"
+description = "SCL pulse duration."
+bitOffset = 0
+bitWidth = 6
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x3F
+
+[[peripherals.registers.register.fields]]
+name = "SDA_SIDE_GUARD"
+description = "SDA side guard."
+bitOffset = 6
+bitWidth = 5
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x1F
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "HW_I2C_CTRL"
+description = "Hardware-host bus timing."
+addressOffset = 0x2C
+size = 32
+access = "read-write"
+resetValue = 0x00000042
+
+[[peripherals.registers.register.fields]]
+name = "SCL_PULSE_DURATION"
+description = "SCL pulse duration."
+bitOffset = 0
+bitWidth = 6
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x3F
+
+[[peripherals.registers.register.fields]]
+name = "SDA_SIDE_GUARD"
+description = "SDA side guard."
+bitOffset = 6
+bitWidth = 5
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x1F

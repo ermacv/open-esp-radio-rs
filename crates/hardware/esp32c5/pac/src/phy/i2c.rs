@@ -221,6 +221,88 @@ impl PhyI2cInitializationInputs {
     }
 }
 
+/// One command of an analog configuration leaf, in the vendor order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyI2cConfigurationCommand {
+    /// `phy_i2c_writeReg`: write a whole byte.
+    Write(PhyI2cAddress, u8),
+    /// `phy_i2c_writeReg_Mask(block, host, reg, msb, lsb, value)`.
+    Modify {
+        address: PhyI2cAddress,
+        msb: u8,
+        lsb: u8,
+        value: u8,
+    },
+}
+
+/// The analog configuration leaves of `phy_rf_init` that only write
+/// analog registers.
+///
+/// SOURCE: reviewed evidence `C5_BLOB_LIBPHY_RF_INIT_LEAVES`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyI2cConfiguration {
+    /// `phy_band_i2c_set`.
+    Band,
+    /// `phy_xtal_reg_set`.
+    CrystalRegisters,
+    /// The analog half of `phy_dac_rate_set`.
+    DacRate,
+    /// The analog half of `phy_adc_rate_set(rate)`.
+    AdcRate(bool),
+    /// `phy_bias_reg_set`.
+    BiasRegisters,
+}
+
+impl PhyI2cConfiguration {
+    /// Command `index`, or `None` after the last.
+    pub const fn command(self, index: usize) -> Option<PhyI2cConfigurationCommand> {
+        const fn modify(
+            block: u8,
+            register: u8,
+            msb: u8,
+            lsb: u8,
+            value: u8,
+        ) -> PhyI2cConfigurationCommand {
+            PhyI2cConfigurationCommand::Modify {
+                address: PhyI2cAddress::new(PhyI2cBlock { code: block }, register),
+                msb,
+                lsb,
+                value,
+            }
+        }
+        Some(match (self, index) {
+            (Self::Band, 0) => PhyI2cConfigurationCommand::Write(
+                PhyI2cAddress::new(PhyI2cBlock { code: 0x6a }, 1),
+                0x7f,
+            ),
+            (Self::CrystalRegisters, 0) => modify(0x61, 8, 4, 4, 0),
+            (Self::CrystalRegisters, 1) => modify(0x61, 7, 5, 5, 1),
+            (Self::DacRate, 0) => modify(0x66, 4, 4, 4, 0),
+            (Self::AdcRate(rate), 0) => modify(0x66, 4, 2, 2, if rate { 0 } else { 1 }),
+            (Self::BiasRegisters, 0) => modify(0x6a, 0, 3, 0, 0xf),
+            (Self::BiasRegisters, 1) => modify(0x6a, 1, 7, 4, 7),
+            (Self::BiasRegisters, 2) => modify(0x6a, 0, 7, 4, 9),
+            (Self::BiasRegisters, 3) => modify(0x6a, 1, 3, 0, 0xf),
+            _ => return None,
+        })
+    }
+}
+
+/// Bus clock selection of `phy_i2c_clk_sel(n)`, for `n` within the SDA
+/// side-guard field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyI2cClockSelection(u8);
+
+impl PhyI2cClockSelection {
+    pub const fn new(selection: u8) -> Option<Self> {
+        if selection <= 31 {
+            Some(Self(selection))
+        } else {
+            None
+        }
+    }
+}
+
 /// A command is still owned by its host.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cAccessError {
@@ -297,6 +379,23 @@ impl PhyI2cRegisters {
             true,
             false,
         );
+    }
+
+    /// `phy_i2c_clk_sel(n)`: in the host-0, host-1 and hardware-host timing
+    /// words, the SDA side guard becomes `n` and then the SCL pulse duration
+    /// `n == 0 ? 1 : 2n`.
+    pub fn select_clock(&mut self, selection: PhyI2cClockSelection) {
+        use crate::generated::{PhyI2cSclPulseDuration, PhyI2cSdaSideGuard};
+        let n = u32::from(selection.0);
+        let guard = PhyI2cSdaSideGuard::new(n).expect("a selection fits the guard field");
+        let pulse = PhyI2cSclPulseDuration::new(if n == 0 { 1 } else { 2 * n })
+            .expect("twice a guard fits the pulse field");
+        crate::generated::set_phy_i2c_host0_sda_side_guard(self.master(), guard);
+        crate::generated::set_phy_i2c_host0_scl_pulse_duration(self.master(), pulse);
+        crate::generated::set_phy_i2c_host1_sda_side_guard(self.master(), guard);
+        crate::generated::set_phy_i2c_host1_scl_pulse_duration(self.master(), pulse);
+        crate::generated::set_phy_i2c_hardware_host_sda_side_guard(self.master(), guard);
+        crate::generated::set_phy_i2c_hardware_host_scl_pulse_duration(self.master(), pulse);
     }
 
     /// Whether a host is executing a command.

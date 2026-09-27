@@ -8,4 +8,7 @@ owned-ranges = [
     "modem-lpcon-shared-clock",
     "modem-lpcon-clock-state-map",
     "i2c-ana-mst-phy",
+    "pmu-radio-imm",
+    "pmu-radio-rf-pwc",
+    "phy-baseband-config",
 ]

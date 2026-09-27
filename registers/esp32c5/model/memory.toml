@@ -59,5 +59,29 @@ name = "i2c-ana-mst-phy"
 address-space = "cpu"
 kind = "mmio"
 start = 0x600AF800
-end-exclusive = 0x600AF824
+end-exclusive = 0x600AF830
+permissions = "rw"
+
+[[regions]]
+name = "pmu-radio-imm"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600B00CC
+end-exclusive = 0x600B00D0
+permissions = "rw"
+
+[[regions]]
+name = "pmu-radio-rf-pwc"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600B0158
+end-exclusive = 0x600B015C
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-config"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600A0448
+end-exclusive = 0x600A044C
 permissions = "rw"

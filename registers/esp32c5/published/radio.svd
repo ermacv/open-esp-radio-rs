@@ -2000,6 +2000,239 @@ every field transaction.</description>
             </field>
           </fields>
         </register>
+        <register>
+          <name>I2C0_CTRL1</name>
+          <description>Host-0 bus timing.</description>
+          <addressOffset>0x24</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000042</resetValue>
+          <fields>
+            <field>
+              <name>SCL_PULSE_DURATION</name>
+              <description>SCL pulse duration.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>SDA_SIDE_GUARD</name>
+              <description>SDA side guard.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>5</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>31</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>I2C1_CTRL1</name>
+          <description>Host-1 bus timing.</description>
+          <addressOffset>0x28</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000042</resetValue>
+          <fields>
+            <field>
+              <name>SCL_PULSE_DURATION</name>
+              <description>SCL pulse duration.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>SDA_SIDE_GUARD</name>
+              <description>SDA side guard.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>5</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>31</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>HW_I2C_CTRL</name>
+          <description>Hardware-host bus timing.</description>
+          <addressOffset>0x2C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000042</resetValue>
+          <fields>
+            <field>
+              <name>SCL_PULSE_DURATION</name>
+              <description>SCL pulse duration.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>SDA_SIDE_GUARD</name>
+              <description>SDA side guard.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>5</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>31</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PMU_RADIO</name>
+      <description>ESP32-C5 PMU fields that the PHY drives: the analog I2C power and reset
+controls of the RF blocks and the immediate BB I2C power tie. Other fields
+remain absent and are preserved by every field transaction.</description>
+      <baseAddress>0x600B0000</baseAddress>
+      <registers>
+        <register>
+          <name>IMM_HP_CK_POWER</name>
+          <description>Immediate HP clock and analog power ties.</description>
+          <addressOffset>0xCC</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>TIE_HIGH_XPD_BB_I2C</name>
+              <description>Tie the BB analog I2C power high; ESP-IDF declares the field write-trigger.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RF_PWC</name>
+          <description>Analog I2C power and reset of the RF blocks.</description>
+          <addressOffset>0x158</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x08000000</resetValue>
+          <fields>
+            <field>
+              <name>XPD_CKGEN5G</name>
+              <description>Power the 5 GHz clock generator.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>XPD_TC5G_I2C</name>
+              <description>Power the analog I2C of the 5 GHz transceiver.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>XPD_RX5G_I2C</name>
+              <description>Power the analog I2C of the 5 GHz receiver.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>PERIF_I2C_RSTB</name>
+              <description>Release the peripheral analog I2C from reset when set.</description>
+              <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>XPD_PERIF_I2C</name>
+              <description>Power the peripheral analog I2C.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>XPD_TXRF_I2C</name>
+              <description>Power the analog I2C of the RF transmitter.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>XPD_RFRX_PBUS</name>
+              <description>Power the RF receiver PBus.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>XPD_CKGEN_I2C</name>
+              <description>Power the analog I2C of the clock generator.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>XPD_PLL_I2C</name>
+              <description>Power the analog I2C of the PLL.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PHY_BASEBAND_CONFIG</name>
+      <description>ESP32-C5 PHY baseband configuration words recovered from complete pinned
+libphy leaves. Operation-derived fields keep UNKNOWN where no public
+documentation establishes their electrical meaning.</description>
+      <baseAddress>0x600A0000</baseAddress>
+      <registers>
+        <register>
+          <name>ADC_RATE_AND_FRONT_END_CONTROL</name>
+          <description>Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears.</description>
+          <addressOffset>0x448</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>ADC_RATE_LOW_UNKNOWN</name>
+              <description>Bit 0, set to the ADC rate bit by phy_adc_rate_set.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ADC_RATE_HIGH_UNKNOWN</name>
+              <description>Bit 1, set to the ADC rate bit by phy_adc_rate_set.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>DAC_RATE_LOW_UNKNOWN</name>
+              <description>Bit 2, cleared by phy_dac_rate_set.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>DAC_RATE_HIGH_UNKNOWN</name>
+              <description>Bit 3, cleared by phy_dac_rate_set.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
       </registers>
     </peripheral>
   </peripherals>

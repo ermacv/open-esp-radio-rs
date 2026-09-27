@@ -96,6 +96,23 @@ impl ModemResetState {
     }
 }
 
+/// Rate bit phy_adc_rate_set copies into the baseband configuration word.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyRateBit {
+    /// The rate bit is clear.
+    Clear = 0x00000000,
+    /// The rate bit is set.
+    Set = 0x00000001,
+}
+
+impl PhyRateBit {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Sixteen-bit energy-detection duration subset accepted by the reviewed public IEEE 802.15.4 common LL setter; physical units remain outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154EdDurationUnits(u32);
@@ -130,6 +147,52 @@ impl Ieee802154TxPowerCode {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x0000001f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Five-bit SDA side guard of an analog I2C host timing word.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyI2cSdaSideGuard(u32);
+
+impl PhyI2cSdaSideGuard {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000001f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000001f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Six-bit SCL pulse duration of an analog I2C host timing word.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyI2cSclPulseDuration(u32);
+
+impl PhyI2cSclPulseDuration {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000003f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000003f {
             Some(Self(value))
         } else {
             None
@@ -334,6 +397,36 @@ pub(crate) fn disable_ieee802154_etm_channel1(registers: &crate::svd::ModemEtm) 
     crate::svd::field_or_modify::disable_ieee802154_etm_channel1(registers);
 }
 
+/// Typed bridge for the reviewed `power_rf_analog_i2c` fixed field-OR transaction.
+#[inline]
+pub(crate) fn power_rf_analog_i2c(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_or_modify::power_rf_analog_i2c(registers);
+}
+
+/// Typed bridge for the reviewed `tie_high_bb_analog_i2c_power` fixed field-OR transaction.
+#[inline]
+pub(crate) fn tie_high_bb_analog_i2c_power(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_or_modify::tie_high_bb_analog_i2c_power(registers);
+}
+
+/// Typed bridge for the reviewed `power_peripheral_analog_i2c` fixed field-OR transaction.
+#[inline]
+pub(crate) fn power_peripheral_analog_i2c(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_or_modify::power_peripheral_analog_i2c(registers);
+}
+
+/// Typed bridge for the reviewed `release_peripheral_analog_i2c_reset` fixed field-OR transaction.
+#[inline]
+pub(crate) fn release_peripheral_analog_i2c_reset(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_or_modify::release_peripheral_analog_i2c_reset(registers);
+}
+
+/// Typed bridge for the reviewed `power_5g_clock_generator` fixed field-OR transaction.
+#[inline]
+pub(crate) fn power_5g_clock_generator(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_or_modify::power_5g_clock_generator(registers);
+}
+
 /// Typed bridge for the reviewed `set_ieee802154_apb_clock` field-replacement transaction.
 #[inline]
 pub(crate) fn set_ieee802154_apb_clock(
@@ -425,4 +518,94 @@ pub(crate) fn configure_phy_i2c_host_map(registers: &crate::svd::I2cAnaMst) {
 #[inline]
 pub(crate) fn configure_phy_i2c_parallel_host_map(registers: &crate::svd::I2cAnaMst) {
     crate::svd::field_replace_modify::configure_phy_i2c_parallel_host_map(registers);
+}
+
+/// Typed bridge for the reviewed `hold_peripheral_analog_i2c_reset` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn hold_peripheral_analog_i2c_reset(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::hold_peripheral_analog_i2c_reset(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_host0_sda_side_guard` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_host0_sda_side_guard(
+    registers: &crate::svd::I2cAnaMst,
+    value: PhyI2cSdaSideGuard,
+) {
+    crate::svd::field_replace_modify::set_phy_i2c_host0_sda_side_guard(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_host0_scl_pulse_duration` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_host0_scl_pulse_duration(
+    registers: &crate::svd::I2cAnaMst,
+    value: PhyI2cSclPulseDuration,
+) {
+    crate::svd::field_replace_modify::set_phy_i2c_host0_scl_pulse_duration(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_host1_sda_side_guard` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_host1_sda_side_guard(
+    registers: &crate::svd::I2cAnaMst,
+    value: PhyI2cSdaSideGuard,
+) {
+    crate::svd::field_replace_modify::set_phy_i2c_host1_sda_side_guard(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_host1_scl_pulse_duration` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_host1_scl_pulse_duration(
+    registers: &crate::svd::I2cAnaMst,
+    value: PhyI2cSclPulseDuration,
+) {
+    crate::svd::field_replace_modify::set_phy_i2c_host1_scl_pulse_duration(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_hardware_host_sda_side_guard` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_hardware_host_sda_side_guard(
+    registers: &crate::svd::I2cAnaMst,
+    value: PhyI2cSdaSideGuard,
+) {
+    crate::svd::field_replace_modify::set_phy_i2c_hardware_host_sda_side_guard(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_hardware_host_scl_pulse_duration` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_hardware_host_scl_pulse_duration(
+    registers: &crate::svd::I2cAnaMst,
+    value: PhyI2cSclPulseDuration,
+) {
+    crate::svd::field_replace_modify::set_phy_i2c_hardware_host_scl_pulse_duration(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `set_phy_adc_rate_high` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_adc_rate_high(registers: &crate::svd::PhyBasebandConfig, value: PhyRateBit) {
+    crate::svd::field_replace_modify::set_phy_adc_rate_high(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_phy_adc_rate_low` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_adc_rate_low(registers: &crate::svd::PhyBasebandConfig, value: PhyRateBit) {
+    crate::svd::field_replace_modify::set_phy_adc_rate_low(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `clear_phy_dac_rate_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_dac_rate_high(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::clear_phy_dac_rate_high(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_dac_rate_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_dac_rate_low(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::clear_phy_dac_rate_low(registers);
 }

@@ -29,6 +29,12 @@ member = "phy_i2c"
 description = "Analog register I2C master hosts, read mask and host selection driven by the PHY."
 peripherals = ["I2C_ANA_MST"]
 
+[[ownership-partitions]]
+name = "PhyRadioPeripherals"
+member = "phy_radio"
+description = "PMU analog I2C power controls and PHY baseband configuration words driven by the PHY."
+peripherals = ["PMU_RADIO", "PHY_BASEBAND_CONFIG"]
+
 [[w1c-register-snapshots]]
 name = "ieee802154_event_status"
 peripheral = "IEEE802154_MAC"
@@ -656,3 +662,226 @@ peripheral = "MODEM_LPCON_SHARED_CLOCK"
 register = "CLK_CONF"
 field = "CLK_I2C_MST_EN"
 sources = ["ESP_IDF_4D59230D_C5_I2C_ANA_MST", "ESP_IDF_4D59230D_C5_MODEM_LPCON_STRUCT"]
+
+[[field-or-modifies]]
+name = "power_rf_analog_i2c"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+value = 0xf3000000
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES", "ESP_IDF_4D59230D_C5_PMU"]
+
+[[field-or-modifies.fields]]
+field = "XPD_TC5G_I2C"
+source-bit-offset = 24
+
+[[field-or-modifies.fields]]
+field = "XPD_RX5G_I2C"
+source-bit-offset = 25
+
+[[field-or-modifies.fields]]
+field = "XPD_TXRF_I2C"
+source-bit-offset = 28
+
+[[field-or-modifies.fields]]
+field = "XPD_RFRX_PBUS"
+source-bit-offset = 29
+
+[[field-or-modifies.fields]]
+field = "XPD_CKGEN_I2C"
+source-bit-offset = 30
+
+[[field-or-modifies.fields]]
+field = "XPD_PLL_I2C"
+source-bit-offset = 31
+
+[[field-or-modifies]]
+name = "tie_high_bb_analog_i2c_power"
+peripheral = "PMU_RADIO"
+register = "IMM_HP_CK_POWER"
+value = 1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES", "ESP_IDF_4D59230D_C5_PMU"]
+
+[[field-or-modifies.fields]]
+field = "TIE_HIGH_XPD_BB_I2C"
+source-bit-offset = 0
+
+[[field-reads]]
+name = "observe_peripheral_analog_i2c_power"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+field = "XPD_PERIF_I2C"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES", "ESP_IDF_4D59230D_C5_PMU"]
+
+[[field-reads]]
+name = "observe_peripheral_analog_i2c_released"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+field = "PERIF_I2C_RSTB"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES", "ESP_IDF_4D59230D_C5_PMU"]
+
+[[field-or-modifies]]
+name = "power_peripheral_analog_i2c"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+value = 1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES", "ESP_IDF_4D59230D_C5_PMU"]
+
+[[field-or-modifies.fields]]
+field = "XPD_PERIF_I2C"
+source-bit-offset = 0
+
+[[field-replace-modifies]]
+name = "hold_peripheral_analog_i2c_reset"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+fields = [{ field = "PERIF_I2C_RSTB", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES", "ESP_IDF_4D59230D_C5_PMU"]
+
+[[field-or-modifies]]
+name = "release_peripheral_analog_i2c_reset"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+value = 1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES", "ESP_IDF_4D59230D_C5_PMU"]
+
+[[field-or-modifies.fields]]
+field = "PERIF_I2C_RSTB"
+source-bit-offset = 0
+
+[[field-or-modifies]]
+name = "power_5g_clock_generator"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+value = 1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES", "ESP_IDF_4D59230D_C5_PMU"]
+
+[[field-or-modifies.fields]]
+field = "XPD_CKGEN5G"
+source-bit-offset = 0
+
+[[bounded-domains]]
+name = "PhyI2cSdaSideGuard"
+description = "Five-bit SDA side guard of an analog I2C host timing word."
+min = 0
+max = 31
+sources = ["ESP_IDF_4D59230D_C5_I2C_ANA_MST"]
+
+[[bounded-domains]]
+name = "PhyI2cSclPulseDuration"
+description = "Six-bit SCL pulse duration of an analog I2C host timing word."
+min = 0
+max = 63
+sources = ["ESP_IDF_4D59230D_C5_I2C_ANA_MST"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_host0_sda_side_guard"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL1"
+fields = [{ field = "SDA_SIDE_GUARD", source-bit-offset = 0 }]
+domain = "PhyI2cSdaSideGuard"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_host0_scl_pulse_duration"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL1"
+fields = [{ field = "SCL_PULSE_DURATION", source-bit-offset = 0 }]
+domain = "PhyI2cSclPulseDuration"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_host1_sda_side_guard"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL1"
+fields = [{ field = "SDA_SIDE_GUARD", source-bit-offset = 0 }]
+domain = "PhyI2cSdaSideGuard"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_host1_scl_pulse_duration"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL1"
+fields = [{ field = "SCL_PULSE_DURATION", source-bit-offset = 0 }]
+domain = "PhyI2cSclPulseDuration"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_hardware_host_sda_side_guard"
+peripheral = "I2C_ANA_MST"
+register = "HW_I2C_CTRL"
+fields = [{ field = "SDA_SIDE_GUARD", source-bit-offset = 0 }]
+domain = "PhyI2cSdaSideGuard"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_hardware_host_scl_pulse_duration"
+peripheral = "I2C_ANA_MST"
+register = "HW_I2C_CTRL"
+fields = [{ field = "SCL_PULSE_DURATION", source-bit-offset = 0 }]
+domain = "PhyI2cSclPulseDuration"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "set_phy_adc_rate_high"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [{ field = "ADC_RATE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyRateBit"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "set_phy_adc_rate_low"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [{ field = "ADC_RATE_LOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyRateBit"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "clear_phy_dac_rate_high"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [{ field = "DAC_RATE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[field-replace-modifies]]
+name = "clear_phy_dac_rate_low"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [{ field = "DAC_RATE_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[enum-domains]]
+name = "PhyRateBit"
+description = "Rate bit phy_adc_rate_set copies into the baseband configuration word."
+
+[[enum-domains.values]]
+name = "Clear"
+value = 0
+description = "The rate bit is clear."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[enum-domains.values]]
+name = "Set"
+value = 1
+description = "The rate bit is set."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]

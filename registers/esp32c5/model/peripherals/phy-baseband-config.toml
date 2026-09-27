@@ -1,0 +1,41 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_BASEBAND_CONFIG"
+description = """
+ESP32-C5 PHY baseband configuration words recovered from complete pinned
+libphy leaves. Operation-derived fields keep UNKNOWN where no public
+documentation establishes their electrical meaning."""
+baseAddress = 0x600A0000
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ADC_RATE_AND_FRONT_END_CONTROL"
+description = "Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears."
+addressOffset = 0x448
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "ADC_RATE_LOW_UNKNOWN"
+description = "Bit 0, set to the ADC rate bit by phy_adc_rate_set."
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ADC_RATE_HIGH_UNKNOWN"
+description = "Bit 1, set to the ADC rate bit by phy_adc_rate_set."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "DAC_RATE_LOW_UNKNOWN"
+description = "Bit 2, cleared by phy_dac_rate_set."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "DAC_RATE_HIGH_UNKNOWN"
+description = "Bit 3, cleared by phy_dac_rate_set."
+bitOffset = 3
+bitWidth = 1

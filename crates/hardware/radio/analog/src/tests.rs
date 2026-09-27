@@ -218,3 +218,44 @@ fn an_empty_parallel_sequence_still_selects_and_restores_the_map() {
         [ParallelOperation::Select, ParallelOperation::Restore]
     );
 }
+
+#[test]
+fn a_configuration_runs_its_writes_and_field_writes_in_order() {
+    let mut model = Model::new(2);
+    model.registers[1] = 0xf0;
+    let commands = |index: usize| match index {
+        0 => Some(ConfigurationCommand::Write(0_u8, 0x7f)),
+        1 => Some(ConfigurationCommand::Modify(
+            AnalogField::new(1_u8, 3, 0).expect("field"),
+            0x9,
+        )),
+        _ => None,
+    };
+    let mut configuration = Configuration::new(commands);
+    run(&mut model, |bus| {
+        configuration.poll(bus).expect("valid commands")
+    });
+    assert_eq!(
+        model.operations,
+        [
+            Operation::StartWrite(0, 0x7f),
+            Operation::StartRead(1),
+            Operation::StartWrite(1, 0xf9),
+        ]
+    );
+}
+
+#[test]
+fn a_configuration_rejects_a_value_wider_than_its_field_before_the_bus() {
+    let mut model = Model::new(0);
+    let commands = |index: usize| {
+        (index == 0)
+            .then(|| ConfigurationCommand::Modify(AnalogField::new(0_u8, 0, 0).expect("field"), 2))
+    };
+    let mut configuration = Configuration::new(commands);
+    assert_eq!(
+        configuration.poll(&mut model),
+        Err(InvalidCommand { index: 0 })
+    );
+    assert!(model.operations.is_empty());
+}

@@ -425,3 +425,15 @@ id = "esp-idf/components/soc/esp32c5/include/modem/i2c_ana_mst_reg.h"
 source = "esp-idf"
 path = "components/soc/esp32c5/include/modem/i2c_ana_mst_reg.h"
 sha256 = "ee3eaf9f6cb38f0e12d7d2d0de6a09df29a4ef1bcf17fe3b2e93ce2774a3961c"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/register/soc/pmu_reg.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/register/soc/pmu_reg.h"
+sha256 = "c3120d0bc75133e98dbe5143b1be0b6c2999d01c70a4d37ff8dadff41cd67b96"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/register/soc/pmu_struct.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/register/soc/pmu_struct.h"
+sha256 = "8c2182865c43655273217ba788e4e6465a914906d5347f2ac0075e0ad17b5c9a"

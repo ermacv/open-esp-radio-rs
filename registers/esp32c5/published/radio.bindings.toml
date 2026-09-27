@@ -41,6 +41,45 @@ bit-width = 23
 access = "read-write"
 
 [[registers]]
+address = 1611269192
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "adc_rate_and_front_end_control"
+
+[[registers.fields]]
+svd-name = "ADC_RATE_LOW_UNKNOWN"
+method = "adc_rate_low_unknown"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADC_RATE_HIGH_UNKNOWN"
+method = "adc_rate_high_unknown"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DAC_RATE_LOW_UNKNOWN"
+method = "dac_rate_low_unknown"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DAC_RATE_HIGH_UNKNOWN"
+method = "dac_rate_high_unknown"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 1611280384
 width = 32
 access = "write-only"
@@ -2087,4 +2126,171 @@ svd-name = "PHY_HOST_MAP"
 method = "phy_host_map"
 bit-offset = 4
 bit-width = 13
+access = "read-write"
+
+[[registers]]
+address = 1611331620
+width = 32
+access = "read-write"
+identity = "I2C_ANA_MST.I2C0_CTRL1"
+peripheral = "I2C_ANA_MST"
+peripheral-type = "I2cAnaMst"
+peripheral-module = "i2c_ana_mst"
+scope = []
+register-method = "i2c0_ctrl1"
+
+[[registers.fields]]
+svd-name = "SCL_PULSE_DURATION"
+method = "scl_pulse_duration"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SDA_SIDE_GUARD"
+method = "sda_side_guard"
+bit-offset = 6
+bit-width = 5
+access = "read-write"
+
+[[registers]]
+address = 1611331624
+width = 32
+access = "read-write"
+identity = "I2C_ANA_MST.I2C1_CTRL1"
+peripheral = "I2C_ANA_MST"
+peripheral-type = "I2cAnaMst"
+peripheral-module = "i2c_ana_mst"
+scope = []
+register-method = "i2c1_ctrl1"
+
+[[registers.fields]]
+svd-name = "SCL_PULSE_DURATION"
+method = "scl_pulse_duration"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SDA_SIDE_GUARD"
+method = "sda_side_guard"
+bit-offset = 6
+bit-width = 5
+access = "read-write"
+
+[[registers]]
+address = 1611331628
+width = 32
+access = "read-write"
+identity = "I2C_ANA_MST.HW_I2C_CTRL"
+peripheral = "I2C_ANA_MST"
+peripheral-type = "I2cAnaMst"
+peripheral-module = "i2c_ana_mst"
+scope = []
+register-method = "hw_i2c_ctrl"
+
+[[registers.fields]]
+svd-name = "SCL_PULSE_DURATION"
+method = "scl_pulse_duration"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SDA_SIDE_GUARD"
+method = "sda_side_guard"
+bit-offset = 6
+bit-width = 5
+access = "read-write"
+
+[[registers]]
+address = 1611333836
+width = 32
+access = "read-write"
+identity = "PMU_RADIO.IMM_HP_CK_POWER"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "imm_hp_ck_power"
+
+[[registers.fields]]
+svd-name = "TIE_HIGH_XPD_BB_I2C"
+method = "tie_high_xpd_bb_i2c"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611333976
+width = 32
+access = "read-write"
+identity = "PMU_RADIO.RF_PWC"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "rf_pwc"
+
+[[registers.fields]]
+svd-name = "XPD_CKGEN5G"
+method = "xpd_ckgen5g"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "XPD_TC5G_I2C"
+method = "xpd_tc5g_i2c"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "XPD_RX5G_I2C"
+method = "xpd_rx5g_i2c"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PERIF_I2C_RSTB"
+method = "perif_i2c_rstb"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "XPD_PERIF_I2C"
+method = "xpd_perif_i2c"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "XPD_TXRF_I2C"
+method = "xpd_txrf_i2c"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "XPD_RFRX_PBUS"
+method = "xpd_rfrx_pbus"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "XPD_CKGEN_I2C"
+method = "xpd_ckgen_i2c"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "XPD_PLL_I2C"
+method = "xpd_pll_i2c"
+bit-offset = 31
+bit-width = 1
 access = "read-write"

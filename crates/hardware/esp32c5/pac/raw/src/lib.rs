@@ -5354,6 +5354,9 @@ pub mod i2c_ana_mst {
         _reserved2: [u8; 0x14],
         ana_conf1: AnaConf1,
         ana_conf2: AnaConf2,
+        i2c0_ctrl1: I2c0Ctrl1,
+        i2c1_ctrl1: I2c1Ctrl1,
+        hw_i2c_ctrl: HwI2cCtrl,
     }
     impl RegisterBlock {
         #[doc = "0x00 - Host-0 analog-register command word."]
@@ -5375,6 +5378,21 @@ pub mod i2c_ana_mst {
         #[inline(always)]
         pub const fn ana_conf2(&self) -> &AnaConf2 {
             &self.ana_conf2
+        }
+        #[doc = "0x24 - Host-0 bus timing."]
+        #[inline(always)]
+        pub const fn i2c0_ctrl1(&self) -> &I2c0Ctrl1 {
+            &self.i2c0_ctrl1
+        }
+        #[doc = "0x28 - Host-1 bus timing."]
+        #[inline(always)]
+        pub const fn i2c1_ctrl1(&self) -> &I2c1Ctrl1 {
+            &self.i2c1_ctrl1
+        }
+        #[doc = "0x2c - Hardware-host bus timing."]
+        #[inline(always)]
+        pub const fn hw_i2c_ctrl(&self) -> &HwI2cCtrl {
+            &self.hw_i2c_ctrl
         }
     }
     #[doc = "I2C0_CTRL (rw) register accessor: Host-0 analog-register command word.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c0_ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c0_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@i2c0_ctrl`] module"]
@@ -5744,6 +5762,516 @@ pub mod i2c_ana_mst {
             const RESET_VALUE: u32 = 0x04;
         }
     }
+    #[doc = "I2C0_CTRL1 (rw) register accessor: Host-0 bus timing.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c0_ctrl1::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c0_ctrl1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@i2c0_ctrl1`] module"]
+    #[doc(alias = "I2C0_CTRL1")]
+    pub type I2c0Ctrl1 = crate::Reg<i2c0_ctrl1::I2c0Ctrl1Spec>;
+    #[doc = "Host-0 bus timing."]
+    pub mod i2c0_ctrl1 {
+        #[doc = "Register `I2C0_CTRL1` reader"]
+        pub type R = crate::R<I2c0Ctrl1Spec>;
+        #[doc = "Register `I2C0_CTRL1` writer"]
+        pub type W = crate::W<I2c0Ctrl1Spec>;
+        #[doc = "Field `SCL_PULSE_DURATION` reader - SCL pulse duration."]
+        pub type SclPulseDurationR = crate::FieldReader;
+        #[doc = "Field `SCL_PULSE_DURATION` writer - SCL pulse duration."]
+        pub type SclPulseDurationW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `SDA_SIDE_GUARD` reader - SDA side guard."]
+        pub type SdaSideGuardR = crate::FieldReader;
+        #[doc = "Field `SDA_SIDE_GUARD` writer - SDA side guard."]
+        pub type SdaSideGuardW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:5 - SCL pulse duration."]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&self) -> SclPulseDurationR {
+                SclPulseDurationR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:10 - SDA side guard."]
+            #[inline(always)]
+            pub fn sda_side_guard(&self) -> SdaSideGuardR {
+                SdaSideGuardR::new(((self.bits >> 6) & 0x1f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - SCL pulse duration."]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&mut self) -> SclPulseDurationW<'_, I2c0Ctrl1Spec> {
+                SclPulseDurationW::new(self, 0)
+            }
+            #[doc = "Bits 6:10 - SDA side guard."]
+            #[inline(always)]
+            pub fn sda_side_guard(&mut self) -> SdaSideGuardW<'_, I2c0Ctrl1Spec> {
+                SdaSideGuardW::new(self, 6)
+            }
+        }
+        #[doc = "Host-0 bus timing.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c0_ctrl1::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c0_ctrl1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct I2c0Ctrl1Spec;
+        impl crate::RegisterSpec for I2c0Ctrl1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`i2c0_ctrl1::R`](R) reader structure"]
+        impl crate::Readable for I2c0Ctrl1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`i2c0_ctrl1::W`](W) writer structure"]
+        impl crate::Writable for I2c0Ctrl1Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets I2C0_CTRL1 to value 0x42"]
+        impl crate::Resettable for I2c0Ctrl1Spec {
+            const RESET_VALUE: u32 = 0x42;
+        }
+    }
+    #[doc = "I2C1_CTRL1 (rw) register accessor: Host-1 bus timing.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c1_ctrl1::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c1_ctrl1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@i2c1_ctrl1`] module"]
+    #[doc(alias = "I2C1_CTRL1")]
+    pub type I2c1Ctrl1 = crate::Reg<i2c1_ctrl1::I2c1Ctrl1Spec>;
+    #[doc = "Host-1 bus timing."]
+    pub mod i2c1_ctrl1 {
+        #[doc = "Register `I2C1_CTRL1` reader"]
+        pub type R = crate::R<I2c1Ctrl1Spec>;
+        #[doc = "Register `I2C1_CTRL1` writer"]
+        pub type W = crate::W<I2c1Ctrl1Spec>;
+        #[doc = "Field `SCL_PULSE_DURATION` reader - SCL pulse duration."]
+        pub type SclPulseDurationR = crate::FieldReader;
+        #[doc = "Field `SCL_PULSE_DURATION` writer - SCL pulse duration."]
+        pub type SclPulseDurationW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `SDA_SIDE_GUARD` reader - SDA side guard."]
+        pub type SdaSideGuardR = crate::FieldReader;
+        #[doc = "Field `SDA_SIDE_GUARD` writer - SDA side guard."]
+        pub type SdaSideGuardW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:5 - SCL pulse duration."]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&self) -> SclPulseDurationR {
+                SclPulseDurationR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:10 - SDA side guard."]
+            #[inline(always)]
+            pub fn sda_side_guard(&self) -> SdaSideGuardR {
+                SdaSideGuardR::new(((self.bits >> 6) & 0x1f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - SCL pulse duration."]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&mut self) -> SclPulseDurationW<'_, I2c1Ctrl1Spec> {
+                SclPulseDurationW::new(self, 0)
+            }
+            #[doc = "Bits 6:10 - SDA side guard."]
+            #[inline(always)]
+            pub fn sda_side_guard(&mut self) -> SdaSideGuardW<'_, I2c1Ctrl1Spec> {
+                SdaSideGuardW::new(self, 6)
+            }
+        }
+        #[doc = "Host-1 bus timing.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c1_ctrl1::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c1_ctrl1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct I2c1Ctrl1Spec;
+        impl crate::RegisterSpec for I2c1Ctrl1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`i2c1_ctrl1::R`](R) reader structure"]
+        impl crate::Readable for I2c1Ctrl1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`i2c1_ctrl1::W`](W) writer structure"]
+        impl crate::Writable for I2c1Ctrl1Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets I2C1_CTRL1 to value 0x42"]
+        impl crate::Resettable for I2c1Ctrl1Spec {
+            const RESET_VALUE: u32 = 0x42;
+        }
+    }
+    #[doc = "HW_I2C_CTRL (rw) register accessor: Hardware-host bus timing.\n\nYou can [`read`](crate::Reg::read) this register and get [`hw_i2c_ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hw_i2c_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hw_i2c_ctrl`] module"]
+    #[doc(alias = "HW_I2C_CTRL")]
+    pub type HwI2cCtrl = crate::Reg<hw_i2c_ctrl::HwI2cCtrlSpec>;
+    #[doc = "Hardware-host bus timing."]
+    pub mod hw_i2c_ctrl {
+        #[doc = "Register `HW_I2C_CTRL` reader"]
+        pub type R = crate::R<HwI2cCtrlSpec>;
+        #[doc = "Register `HW_I2C_CTRL` writer"]
+        pub type W = crate::W<HwI2cCtrlSpec>;
+        #[doc = "Field `SCL_PULSE_DURATION` reader - SCL pulse duration."]
+        pub type SclPulseDurationR = crate::FieldReader;
+        #[doc = "Field `SCL_PULSE_DURATION` writer - SCL pulse duration."]
+        pub type SclPulseDurationW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `SDA_SIDE_GUARD` reader - SDA side guard."]
+        pub type SdaSideGuardR = crate::FieldReader;
+        #[doc = "Field `SDA_SIDE_GUARD` writer - SDA side guard."]
+        pub type SdaSideGuardW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:5 - SCL pulse duration."]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&self) -> SclPulseDurationR {
+                SclPulseDurationR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:10 - SDA side guard."]
+            #[inline(always)]
+            pub fn sda_side_guard(&self) -> SdaSideGuardR {
+                SdaSideGuardR::new(((self.bits >> 6) & 0x1f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - SCL pulse duration."]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&mut self) -> SclPulseDurationW<'_, HwI2cCtrlSpec> {
+                SclPulseDurationW::new(self, 0)
+            }
+            #[doc = "Bits 6:10 - SDA side guard."]
+            #[inline(always)]
+            pub fn sda_side_guard(&mut self) -> SdaSideGuardW<'_, HwI2cCtrlSpec> {
+                SdaSideGuardW::new(self, 6)
+            }
+        }
+        #[doc = "Hardware-host bus timing.\n\nYou can [`read`](crate::Reg::read) this register and get [`hw_i2c_ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hw_i2c_ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HwI2cCtrlSpec;
+        impl crate::RegisterSpec for HwI2cCtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`hw_i2c_ctrl::R`](R) reader structure"]
+        impl crate::Readable for HwI2cCtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`hw_i2c_ctrl::W`](W) writer structure"]
+        impl crate::Writable for HwI2cCtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets HW_I2C_CTRL to value 0x42"]
+        impl crate::Resettable for HwI2cCtrlSpec {
+            const RESET_VALUE: u32 = 0x42;
+        }
+    }
+}
+#[doc = "ESP32-C5 PMU fields that the PHY drives: the analog I2C power and reset controls of the RF blocks and the immediate BB I2C power tie. Other fields remain absent and are preserved by every field transaction."]
+pub type PmuRadio = crate::Periph<pmu_radio::RegisterBlock, 0x600b_0000>;
+impl core::fmt::Debug for PmuRadio {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PmuRadio").finish()
+    }
+}
+#[doc = "ESP32-C5 PMU fields that the PHY drives: the analog I2C power and reset controls of the RF blocks and the immediate BB I2C power tie. Other fields remain absent and are preserved by every field transaction."]
+pub mod pmu_radio {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0xcc],
+        imm_hp_ck_power: ImmHpCkPower,
+        _reserved1: [u8; 0x88],
+        rf_pwc: RfPwc,
+    }
+    impl RegisterBlock {
+        #[doc = "0xcc - Immediate HP clock and analog power ties."]
+        #[inline(always)]
+        pub const fn imm_hp_ck_power(&self) -> &ImmHpCkPower {
+            &self.imm_hp_ck_power
+        }
+        #[doc = "0x158 - Analog I2C power and reset of the RF blocks."]
+        #[inline(always)]
+        pub const fn rf_pwc(&self) -> &RfPwc {
+            &self.rf_pwc
+        }
+    }
+    #[doc = "IMM_HP_CK_POWER (rw) register accessor: Immediate HP clock and analog power ties.\n\nYou can [`read`](crate::Reg::read) this register and get [`imm_hp_ck_power::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_hp_ck_power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@imm_hp_ck_power`] module"]
+    #[doc(alias = "IMM_HP_CK_POWER")]
+    pub type ImmHpCkPower = crate::Reg<imm_hp_ck_power::ImmHpCkPowerSpec>;
+    #[doc = "Immediate HP clock and analog power ties."]
+    pub mod imm_hp_ck_power {
+        #[doc = "Register `IMM_HP_CK_POWER` reader"]
+        pub type R = crate::R<ImmHpCkPowerSpec>;
+        #[doc = "Register `IMM_HP_CK_POWER` writer"]
+        pub type W = crate::W<ImmHpCkPowerSpec>;
+        #[doc = "Field `TIE_HIGH_XPD_BB_I2C` reader - Tie the BB analog I2C power high; ESP-IDF declares the field write-trigger."]
+        pub type TieHighXpdBbI2cR = crate::BitReader;
+        #[doc = "Field `TIE_HIGH_XPD_BB_I2C` writer - Tie the BB analog I2C power high; ESP-IDF declares the field write-trigger."]
+        pub type TieHighXpdBbI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 28 - Tie the BB analog I2C power high; ESP-IDF declares the field write-trigger."]
+            #[inline(always)]
+            pub fn tie_high_xpd_bb_i2c(&self) -> TieHighXpdBbI2cR {
+                TieHighXpdBbI2cR::new(((self.bits >> 28) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 28 - Tie the BB analog I2C power high; ESP-IDF declares the field write-trigger."]
+            #[inline(always)]
+            pub fn tie_high_xpd_bb_i2c(&mut self) -> TieHighXpdBbI2cW<'_, ImmHpCkPowerSpec> {
+                TieHighXpdBbI2cW::new(self, 28)
+            }
+        }
+        #[doc = "Immediate HP clock and analog power ties.\n\nYou can [`read`](crate::Reg::read) this register and get [`imm_hp_ck_power::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_hp_ck_power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ImmHpCkPowerSpec;
+        impl crate::RegisterSpec for ImmHpCkPowerSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`imm_hp_ck_power::R`](R) reader structure"]
+        impl crate::Readable for ImmHpCkPowerSpec {}
+        #[doc = "`write(|w| ..)` method takes [`imm_hp_ck_power::W`](W) writer structure"]
+        impl crate::Writable for ImmHpCkPowerSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets IMM_HP_CK_POWER to value 0"]
+        impl crate::Resettable for ImmHpCkPowerSpec {}
+    }
+    #[doc = "RF_PWC (rw) register accessor: Analog I2C power and reset of the RF blocks.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_pwc::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_pwc::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rf_pwc`] module"]
+    #[doc(alias = "RF_PWC")]
+    pub type RfPwc = crate::Reg<rf_pwc::RfPwcSpec>;
+    #[doc = "Analog I2C power and reset of the RF blocks."]
+    pub mod rf_pwc {
+        #[doc = "Register `RF_PWC` reader"]
+        pub type R = crate::R<RfPwcSpec>;
+        #[doc = "Register `RF_PWC` writer"]
+        pub type W = crate::W<RfPwcSpec>;
+        #[doc = "Field `XPD_CKGEN5G` reader - Power the 5 GHz clock generator."]
+        pub type XpdCkgen5gR = crate::BitReader;
+        #[doc = "Field `XPD_CKGEN5G` writer - Power the 5 GHz clock generator."]
+        pub type XpdCkgen5gW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `XPD_TC5G_I2C` reader - Power the analog I2C of the 5 GHz transceiver."]
+        pub type XpdTc5gI2cR = crate::BitReader;
+        #[doc = "Field `XPD_TC5G_I2C` writer - Power the analog I2C of the 5 GHz transceiver."]
+        pub type XpdTc5gI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `XPD_RX5G_I2C` reader - Power the analog I2C of the 5 GHz receiver."]
+        pub type XpdRx5gI2cR = crate::BitReader;
+        #[doc = "Field `XPD_RX5G_I2C` writer - Power the analog I2C of the 5 GHz receiver."]
+        pub type XpdRx5gI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PERIF_I2C_RSTB` reader - Release the peripheral analog I2C from reset when set."]
+        pub type PerifI2cRstbR = crate::BitReader;
+        #[doc = "Field `PERIF_I2C_RSTB` writer - Release the peripheral analog I2C from reset when set."]
+        pub type PerifI2cRstbW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `XPD_PERIF_I2C` reader - Power the peripheral analog I2C."]
+        pub type XpdPerifI2cR = crate::BitReader;
+        #[doc = "Field `XPD_PERIF_I2C` writer - Power the peripheral analog I2C."]
+        pub type XpdPerifI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `XPD_TXRF_I2C` reader - Power the analog I2C of the RF transmitter."]
+        pub type XpdTxrfI2cR = crate::BitReader;
+        #[doc = "Field `XPD_TXRF_I2C` writer - Power the analog I2C of the RF transmitter."]
+        pub type XpdTxrfI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `XPD_RFRX_PBUS` reader - Power the RF receiver PBus."]
+        pub type XpdRfrxPbusR = crate::BitReader;
+        #[doc = "Field `XPD_RFRX_PBUS` writer - Power the RF receiver PBus."]
+        pub type XpdRfrxPbusW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `XPD_CKGEN_I2C` reader - Power the analog I2C of the clock generator."]
+        pub type XpdCkgenI2cR = crate::BitReader;
+        #[doc = "Field `XPD_CKGEN_I2C` writer - Power the analog I2C of the clock generator."]
+        pub type XpdCkgenI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `XPD_PLL_I2C` reader - Power the analog I2C of the PLL."]
+        pub type XpdPllI2cR = crate::BitReader;
+        #[doc = "Field `XPD_PLL_I2C` writer - Power the analog I2C of the PLL."]
+        pub type XpdPllI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 23 - Power the 5 GHz clock generator."]
+            #[inline(always)]
+            pub fn xpd_ckgen5g(&self) -> XpdCkgen5gR {
+                XpdCkgen5gR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - Power the analog I2C of the 5 GHz transceiver."]
+            #[inline(always)]
+            pub fn xpd_tc5g_i2c(&self) -> XpdTc5gI2cR {
+                XpdTc5gI2cR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25 - Power the analog I2C of the 5 GHz receiver."]
+            #[inline(always)]
+            pub fn xpd_rx5g_i2c(&self) -> XpdRx5gI2cR {
+                XpdRx5gI2cR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Release the peripheral analog I2C from reset when set."]
+            #[inline(always)]
+            pub fn perif_i2c_rstb(&self) -> PerifI2cRstbR {
+                PerifI2cRstbR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27 - Power the peripheral analog I2C."]
+            #[inline(always)]
+            pub fn xpd_perif_i2c(&self) -> XpdPerifI2cR {
+                XpdPerifI2cR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 28 - Power the analog I2C of the RF transmitter."]
+            #[inline(always)]
+            pub fn xpd_txrf_i2c(&self) -> XpdTxrfI2cR {
+                XpdTxrfI2cR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 29 - Power the RF receiver PBus."]
+            #[inline(always)]
+            pub fn xpd_rfrx_pbus(&self) -> XpdRfrxPbusR {
+                XpdRfrxPbusR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30 - Power the analog I2C of the clock generator."]
+            #[inline(always)]
+            pub fn xpd_ckgen_i2c(&self) -> XpdCkgenI2cR {
+                XpdCkgenI2cR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Power the analog I2C of the PLL."]
+            #[inline(always)]
+            pub fn xpd_pll_i2c(&self) -> XpdPllI2cR {
+                XpdPllI2cR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 23 - Power the 5 GHz clock generator."]
+            #[inline(always)]
+            pub fn xpd_ckgen5g(&mut self) -> XpdCkgen5gW<'_, RfPwcSpec> {
+                XpdCkgen5gW::new(self, 23)
+            }
+            #[doc = "Bit 24 - Power the analog I2C of the 5 GHz transceiver."]
+            #[inline(always)]
+            pub fn xpd_tc5g_i2c(&mut self) -> XpdTc5gI2cW<'_, RfPwcSpec> {
+                XpdTc5gI2cW::new(self, 24)
+            }
+            #[doc = "Bit 25 - Power the analog I2C of the 5 GHz receiver."]
+            #[inline(always)]
+            pub fn xpd_rx5g_i2c(&mut self) -> XpdRx5gI2cW<'_, RfPwcSpec> {
+                XpdRx5gI2cW::new(self, 25)
+            }
+            #[doc = "Bit 26 - Release the peripheral analog I2C from reset when set."]
+            #[inline(always)]
+            pub fn perif_i2c_rstb(&mut self) -> PerifI2cRstbW<'_, RfPwcSpec> {
+                PerifI2cRstbW::new(self, 26)
+            }
+            #[doc = "Bit 27 - Power the peripheral analog I2C."]
+            #[inline(always)]
+            pub fn xpd_perif_i2c(&mut self) -> XpdPerifI2cW<'_, RfPwcSpec> {
+                XpdPerifI2cW::new(self, 27)
+            }
+            #[doc = "Bit 28 - Power the analog I2C of the RF transmitter."]
+            #[inline(always)]
+            pub fn xpd_txrf_i2c(&mut self) -> XpdTxrfI2cW<'_, RfPwcSpec> {
+                XpdTxrfI2cW::new(self, 28)
+            }
+            #[doc = "Bit 29 - Power the RF receiver PBus."]
+            #[inline(always)]
+            pub fn xpd_rfrx_pbus(&mut self) -> XpdRfrxPbusW<'_, RfPwcSpec> {
+                XpdRfrxPbusW::new(self, 29)
+            }
+            #[doc = "Bit 30 - Power the analog I2C of the clock generator."]
+            #[inline(always)]
+            pub fn xpd_ckgen_i2c(&mut self) -> XpdCkgenI2cW<'_, RfPwcSpec> {
+                XpdCkgenI2cW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Power the analog I2C of the PLL."]
+            #[inline(always)]
+            pub fn xpd_pll_i2c(&mut self) -> XpdPllI2cW<'_, RfPwcSpec> {
+                XpdPllI2cW::new(self, 31)
+            }
+        }
+        #[doc = "Analog I2C power and reset of the RF blocks.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_pwc::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_pwc::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RfPwcSpec;
+        impl crate::RegisterSpec for RfPwcSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rf_pwc::R`](R) reader structure"]
+        impl crate::Readable for RfPwcSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rf_pwc::W`](W) writer structure"]
+        impl crate::Writable for RfPwcSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets RF_PWC to value 0x0800_0000"]
+        impl crate::Resettable for RfPwcSpec {
+            const RESET_VALUE: u32 = 0x0800_0000;
+        }
+    }
+}
+#[doc = "ESP32-C5 PHY baseband configuration words recovered from complete pinned libphy leaves. Operation-derived fields keep UNKNOWN where no public documentation establishes their electrical meaning."]
+pub type PhyBasebandConfig = crate::Periph<phy_baseband_config::RegisterBlock, 0x600a_0000>;
+impl core::fmt::Debug for PhyBasebandConfig {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyBasebandConfig").finish()
+    }
+}
+#[doc = "ESP32-C5 PHY baseband configuration words recovered from complete pinned libphy leaves. Operation-derived fields keep UNKNOWN where no public documentation establishes their electrical meaning."]
+pub mod phy_baseband_config {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x0448],
+        adc_rate_and_front_end_control: AdcRateAndFrontEndControl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x448 - Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears."]
+        #[inline(always)]
+        pub const fn adc_rate_and_front_end_control(&self) -> &AdcRateAndFrontEndControl {
+            &self.adc_rate_and_front_end_control
+        }
+    }
+    #[doc = "ADC_RATE_AND_FRONT_END_CONTROL (rw) register accessor: Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@adc_rate_and_front_end_control`] module"]
+    #[doc(alias = "ADC_RATE_AND_FRONT_END_CONTROL")]
+    pub type AdcRateAndFrontEndControl =
+        crate::Reg<adc_rate_and_front_end_control::AdcRateAndFrontEndControlSpec>;
+    #[doc = "Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears."]
+    pub mod adc_rate_and_front_end_control {
+        #[doc = "Register `ADC_RATE_AND_FRONT_END_CONTROL` reader"]
+        pub type R = crate::R<AdcRateAndFrontEndControlSpec>;
+        #[doc = "Register `ADC_RATE_AND_FRONT_END_CONTROL` writer"]
+        pub type W = crate::W<AdcRateAndFrontEndControlSpec>;
+        #[doc = "Field `ADC_RATE_LOW_UNKNOWN` reader - Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+        pub type AdcRateLowUnknownR = crate::BitReader;
+        #[doc = "Field `ADC_RATE_LOW_UNKNOWN` writer - Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+        pub type AdcRateLowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ADC_RATE_HIGH_UNKNOWN` reader - Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+        pub type AdcRateHighUnknownR = crate::BitReader;
+        #[doc = "Field `ADC_RATE_HIGH_UNKNOWN` writer - Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+        pub type AdcRateHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `DAC_RATE_LOW_UNKNOWN` reader - Bit 2, cleared by phy_dac_rate_set."]
+        pub type DacRateLowUnknownR = crate::BitReader;
+        #[doc = "Field `DAC_RATE_LOW_UNKNOWN` writer - Bit 2, cleared by phy_dac_rate_set."]
+        pub type DacRateLowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `DAC_RATE_HIGH_UNKNOWN` reader - Bit 3, cleared by phy_dac_rate_set."]
+        pub type DacRateHighUnknownR = crate::BitReader;
+        #[doc = "Field `DAC_RATE_HIGH_UNKNOWN` writer - Bit 3, cleared by phy_dac_rate_set."]
+        pub type DacRateHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+            #[inline(always)]
+            pub fn adc_rate_low_unknown(&self) -> AdcRateLowUnknownR {
+                AdcRateLowUnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+            #[inline(always)]
+            pub fn adc_rate_high_unknown(&self) -> AdcRateHighUnknownR {
+                AdcRateHighUnknownR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Bit 2, cleared by phy_dac_rate_set."]
+            #[inline(always)]
+            pub fn dac_rate_low_unknown(&self) -> DacRateLowUnknownR {
+                DacRateLowUnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Bit 3, cleared by phy_dac_rate_set."]
+            #[inline(always)]
+            pub fn dac_rate_high_unknown(&self) -> DacRateHighUnknownR {
+                DacRateHighUnknownR::new(((self.bits >> 3) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+            #[inline(always)]
+            pub fn adc_rate_low_unknown(
+                &mut self,
+            ) -> AdcRateLowUnknownW<'_, AdcRateAndFrontEndControlSpec> {
+                AdcRateLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 1 - Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+            #[inline(always)]
+            pub fn adc_rate_high_unknown(
+                &mut self,
+            ) -> AdcRateHighUnknownW<'_, AdcRateAndFrontEndControlSpec> {
+                AdcRateHighUnknownW::new(self, 1)
+            }
+            #[doc = "Bit 2 - Bit 2, cleared by phy_dac_rate_set."]
+            #[inline(always)]
+            pub fn dac_rate_low_unknown(
+                &mut self,
+            ) -> DacRateLowUnknownW<'_, AdcRateAndFrontEndControlSpec> {
+                DacRateLowUnknownW::new(self, 2)
+            }
+            #[doc = "Bit 3 - Bit 3, cleared by phy_dac_rate_set."]
+            #[inline(always)]
+            pub fn dac_rate_high_unknown(
+                &mut self,
+            ) -> DacRateHighUnknownW<'_, AdcRateAndFrontEndControlSpec> {
+                DacRateHighUnknownW::new(self, 3)
+            }
+        }
+        #[doc = "Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AdcRateAndFrontEndControlSpec;
+        impl crate::RegisterSpec for AdcRateAndFrontEndControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`adc_rate_and_front_end_control::R`](R) reader structure"]
+        impl crate::Readable for AdcRateAndFrontEndControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`adc_rate_and_front_end_control::W`](W) writer structure"]
+        impl crate::Writable for AdcRateAndFrontEndControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
 }
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
@@ -5762,6 +6290,10 @@ pub struct Peripherals {
     pub modem_lpcon_shared_clock: ModemLpconSharedClock,
     #[doc = "I2C_ANA_MST"]
     pub i2c_ana_mst: I2cAnaMst,
+    #[doc = "PMU_RADIO"]
+    pub pmu_radio: PmuRadio,
+    #[doc = "PHY_BASEBAND_CONFIG"]
+    pub phy_baseband_config: PhyBasebandConfig,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -5790,6 +6322,8 @@ impl Peripherals {
             modem_syscon_radio: unsafe { ModemSysconRadio::steal() },
             modem_lpcon_shared_clock: unsafe { ModemLpconSharedClock::steal() },
             i2c_ana_mst: unsafe { I2cAnaMst::steal() },
+            pmu_radio: unsafe { PmuRadio::steal() },
+            phy_baseband_config: unsafe { PhyBasebandConfig::steal() },
         }
     }
 }
@@ -5819,6 +6353,12 @@ pub mod peripheral_ownership {
         pub i2c_ana_mst: crate::I2cAnaMst,
     }
 
+    /// PMU analog I2C power controls and PHY baseband configuration words driven by the PHY.
+    pub struct PhyRadioPeripherals {
+        pub pmu_radio: crate::PmuRadio,
+        pub phy_baseband_config: crate::PhyBasebandConfig,
+    }
+
     /// Complete target-reviewed ownership decomposition.
     pub struct PeripheralPartitions {
         /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
@@ -5829,6 +6369,8 @@ pub mod peripheral_ownership {
         pub modem_clock: ModemClockPeripherals,
         /// Analog register I2C master hosts, read mask and host selection driven by the PHY.
         pub phy_i2c: PhyI2cPeripherals,
+        /// PMU analog I2C power controls and PHY baseband configuration words driven by the PHY.
+        pub phy_radio: PhyRadioPeripherals,
     }
 
     /// Consume the singleton and apply the exhaustive target-owned partition.
@@ -5841,6 +6383,8 @@ pub mod peripheral_ownership {
             modem_syscon_radio,
             modem_lpcon_shared_clock,
             i2c_ana_mst,
+            pmu_radio,
+            phy_baseband_config,
         } = peripherals;
         PeripheralPartitions {
             ieee802154: Ieee802154Peripherals {
@@ -5853,6 +6397,10 @@ pub mod peripheral_ownership {
                 modem_lpcon_shared_clock,
             },
             phy_i2c: PhyI2cPeripherals { i2c_ana_mst },
+            phy_radio: PhyRadioPeripherals {
+                pmu_radio,
+                phy_baseband_config,
+            },
         }
     }
 
@@ -5975,6 +6523,18 @@ pub mod field_read {
     #[inline]
     pub fn observe_analog_i2c_master_clock(registers: &crate::ModemLpconSharedClock) -> bool {
         registers.clk_conf().read().clk_i2c_mst_en().bit()
+    }
+
+    /// Read `PMU_RADIO`.`RF_PWC`.`XPD_PERIF_I2C` without exposing its register block.
+    #[inline]
+    pub fn observe_peripheral_analog_i2c_power(registers: &crate::PmuRadio) -> bool {
+        registers.rf_pwc().read().xpd_perif_i2c().bit()
+    }
+
+    /// Read `PMU_RADIO`.`RF_PWC`.`PERIF_I2C_RSTB` without exposing its register block.
+    #[inline]
+    pub fn observe_peripheral_analog_i2c_released(registers: &crate::PmuRadio) -> bool {
+        registers.rf_pwc().read().perif_i2c_rstb().bit()
     }
 }
 
@@ -6571,6 +7131,81 @@ pub mod field_or_modify {
                 .bit(reader.ch1().bit() || ((input >> 1) & 0x00000001) != 0)
         });
     }
+
+    /// OR one reviewed logical image into PMU_RADIO.RF_PWC fields `[XPD_TC5G_I2C, XPD_RX5G_I2C, XPD_TXRF_I2C, XPD_RFRX_PBUS, XPD_CKGEN_I2C, XPD_PLL_I2C]` while preserving the fresh register observation.
+    #[inline]
+    pub fn power_rf_analog_i2c(registers: &crate::PmuRadio) {
+        registers.rf_pwc().modify(|reader, writer| {
+            let input = 0xf3000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .xpd_tc5g_i2c()
+                .bit(reader.xpd_tc5g_i2c().bit() || ((input >> 24) & 0x00000001) != 0)
+                .xpd_rx5g_i2c()
+                .bit(reader.xpd_rx5g_i2c().bit() || ((input >> 25) & 0x00000001) != 0)
+                .xpd_txrf_i2c()
+                .bit(reader.xpd_txrf_i2c().bit() || ((input >> 28) & 0x00000001) != 0)
+                .xpd_rfrx_pbus()
+                .bit(reader.xpd_rfrx_pbus().bit() || ((input >> 29) & 0x00000001) != 0)
+                .xpd_ckgen_i2c()
+                .bit(reader.xpd_ckgen_i2c().bit() || ((input >> 30) & 0x00000001) != 0)
+                .xpd_pll_i2c()
+                .bit(reader.xpd_pll_i2c().bit() || ((input >> 31) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PMU_RADIO.IMM_HP_CK_POWER fields `[TIE_HIGH_XPD_BB_I2C]` while preserving the fresh register observation.
+    #[inline]
+    pub fn tie_high_bb_analog_i2c_power(registers: &crate::PmuRadio) {
+        registers.imm_hp_ck_power().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tie_high_xpd_bb_i2c()
+                .bit(reader.tie_high_xpd_bb_i2c().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PMU_RADIO.RF_PWC fields `[XPD_PERIF_I2C]` while preserving the fresh register observation.
+    #[inline]
+    pub fn power_peripheral_analog_i2c(registers: &crate::PmuRadio) {
+        registers.rf_pwc().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .xpd_perif_i2c()
+                .bit(reader.xpd_perif_i2c().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PMU_RADIO.RF_PWC fields `[PERIF_I2C_RSTB]` while preserving the fresh register observation.
+    #[inline]
+    pub fn release_peripheral_analog_i2c_reset(registers: &crate::PmuRadio) {
+        registers.rf_pwc().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .perif_i2c_rstb()
+                .bit(reader.perif_i2c_rstb().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PMU_RADIO.RF_PWC fields `[XPD_CKGEN5G]` while preserving the fresh register observation.
+    #[inline]
+    pub fn power_5g_clock_generator(registers: &crate::PmuRadio) {
+        registers.rf_pwc().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .xpd_ckgen5g()
+                .bit(reader.xpd_ckgen5g().bit() || (input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared field-replacement read-modify-write transactions.
@@ -6689,6 +7324,131 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.phy_host_map().bits((input & 0x00001fff) as u16) }
         });
+    }
+
+    /// Replace PMU_RADIO.RF_PWC fields `[PERIF_I2C_RSTB]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn hold_peripheral_analog_i2c_reset(registers: &crate::PmuRadio) {
+        registers.rf_pwc().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.perif_i2c_rstb().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace I2C_ANA_MST.I2C0_CTRL1 fields `[SDA_SIDE_GUARD]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_host0_sda_side_guard(registers: &crate::I2cAnaMst, input: u32) {
+        registers.i2c0_ctrl1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sda_side_guard().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.I2C0_CTRL1 fields `[SCL_PULSE_DURATION]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_host0_scl_pulse_duration(registers: &crate::I2cAnaMst, input: u32) {
+        registers.i2c0_ctrl1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scl_pulse_duration().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.I2C1_CTRL1 fields `[SDA_SIDE_GUARD]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_host1_sda_side_guard(registers: &crate::I2cAnaMst, input: u32) {
+        registers.i2c1_ctrl1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sda_side_guard().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.I2C1_CTRL1 fields `[SCL_PULSE_DURATION]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_host1_scl_pulse_duration(registers: &crate::I2cAnaMst, input: u32) {
+        registers.i2c1_ctrl1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scl_pulse_duration().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.HW_I2C_CTRL fields `[SDA_SIDE_GUARD]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_hardware_host_sda_side_guard(registers: &crate::I2cAnaMst, input: u32) {
+        registers.hw_i2c_ctrl().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sda_side_guard().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.HW_I2C_CTRL fields `[SCL_PULSE_DURATION]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_hardware_host_scl_pulse_duration(registers: &crate::I2cAnaMst, input: u32) {
+        registers.hw_i2c_ctrl().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scl_pulse_duration().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_adc_rate_high(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers
+            .adc_rate_and_front_end_control()
+            .modify(|_, writer| {
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .adc_rate_high_unknown()
+                    .bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_adc_rate_low(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers
+            .adc_rate_and_front_end_control()
+            .modify(|_, writer| {
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer.adc_rate_low_unknown().bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[DAC_RATE_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_dac_rate_high(registers: &crate::PhyBasebandConfig) {
+        registers
+            .adc_rate_and_front_end_control()
+            .modify(|_, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .dac_rate_high_unknown()
+                    .bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[DAC_RATE_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_dac_rate_low(registers: &crate::PhyBasebandConfig) {
+        registers
+            .adc_rate_and_front_end_control()
+            .modify(|_, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer.dac_rate_low_unknown().bit((input & 0x00000001) != 0)
+            });
     }
 }
 

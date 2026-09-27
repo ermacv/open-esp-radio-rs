@@ -237,6 +237,100 @@ impl<Address: Copy> FieldWrite<Address> {
     }
 }
 
+/// One command of a vendor analog configuration leaf.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConfigurationCommand<Address> {
+    /// `phy_i2c_writeReg`: write a whole byte.
+    Write(Address, u8),
+    /// `phy_i2c_writeReg_Mask`: replace one field, which the value fits.
+    Modify(AnalogField<Address>, u8),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ConfigurationPhase<Address> {
+    Next(usize),
+    /// The index, address and byte of a write, and whether it started.
+    Writing(usize, Address, u8, bool),
+    Modifying(usize, FieldWrite<Address>),
+    Done,
+}
+
+/// A command of a configuration does not fit its field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidCommand {
+    pub index: usize,
+}
+
+/// Polled vendor configuration leaf: the commands `commands(0)`,
+/// `commands(1)`, ... up to the first `None`, each completed before the
+/// next starts.
+#[must_use = "a configuration does nothing until it is polled to completion"]
+#[derive(Clone, Copy, Debug)]
+pub struct Configuration<Commands, Address> {
+    commands: Commands,
+    phase: ConfigurationPhase<Address>,
+}
+
+impl<Commands, Address: Copy> Configuration<Commands, Address>
+where
+    Commands: Fn(usize) -> Option<ConfigurationCommand<Address>>,
+{
+    pub const fn new(commands: Commands) -> Self {
+        Self {
+            commands,
+            phase: ConfigurationPhase::Next(0),
+        }
+    }
+
+    /// Advance the configuration by at most one bus action.
+    ///
+    /// # Errors
+    ///
+    /// A `Modify` command's value does not fit its field; no bus action was
+    /// performed for it.
+    pub fn poll<Bus>(&mut self, bus: &mut Bus) -> Result<Step<()>, InvalidCommand>
+    where
+        Bus: AnalogRegisterBus<Address = Address>,
+    {
+        match self.phase {
+            ConfigurationPhase::Next(index) => match (self.commands)(index) {
+                None => {
+                    self.phase = ConfigurationPhase::Done;
+                    return Ok(Step::Ready(()));
+                }
+                Some(ConfigurationCommand::Write(address, value)) => {
+                    self.phase = ConfigurationPhase::Writing(index, address, value, false);
+                    return self.poll(bus);
+                }
+                Some(ConfigurationCommand::Modify(field, value)) => {
+                    let write =
+                        FieldWrite::new(field, value).map_err(|_| InvalidCommand { index })?;
+                    self.phase = ConfigurationPhase::Modifying(index, write);
+                    return self.poll(bus);
+                }
+            },
+            ConfigurationPhase::Writing(index, address, value, started) => {
+                if !started {
+                    if bus.try_start_write(address, value).is_ok() {
+                        self.phase = ConfigurationPhase::Writing(index, address, value, true);
+                    }
+                } else if bus.try_finish_write(address).is_ok() {
+                    self.phase = ConfigurationPhase::Next(index + 1);
+                }
+            }
+            ConfigurationPhase::Modifying(index, mut write) => {
+                if write.poll(bus) == Step::Ready(()) {
+                    self.phase = ConfigurationPhase::Next(index + 1);
+                } else {
+                    self.phase = ConfigurationPhase::Modifying(index, write);
+                }
+            }
+            ConfigurationPhase::Done => return Ok(Step::Ready(())),
+        }
+        Ok(Step::Pending)
+    }
+}
+
 /// One of the two analog I2C hosts of a parallel write.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ParallelHost {

@@ -5,11 +5,17 @@
 //! owner, whose addresses carry the libphy host map, host set, read masks and
 //! block alias.
 
-use oer_esp32c5_pac::{PhyI2cAccessError, PhyI2cAddress, PhyI2cRegisters};
-use oer_radio_analog::{AnalogRegisterBus, Busy, ParallelAnalogBus, ParallelHost, ParallelWrites};
+use oer_esp32c5_pac::{
+    PhyI2cAccessError, PhyI2cAddress, PhyI2cConfigurationCommand, PhyI2cRegisters,
+};
+use oer_radio_analog::{
+    AnalogField, AnalogRegisterBus, Busy, Configuration, ConfigurationCommand, ParallelAnalogBus,
+    ParallelHost, ParallelWrites,
+};
 
 pub use oer_esp32c5_pac::{
-    PhyI2cBlock, PhyI2cHost, PhyI2cInitializationInputs, PhyI2cParallelWrite,
+    PhyI2cBlock, PhyI2cClockSelection, PhyI2cConfiguration, PhyI2cHost, PhyI2cInitializationInputs,
+    PhyI2cParallelWrite,
 };
 
 /// Unique owner of the ESP32-C5 analog register bus.
@@ -81,4 +87,70 @@ pub fn initialization(
     inputs: PhyI2cInitializationInputs,
 ) -> ParallelWrites<impl Fn(usize) -> Option<PhyI2cParallelWrite>> {
     ParallelWrites::new(move |index| inputs.pair(index))
+}
+
+fn configuration_command(
+    command: PhyI2cConfigurationCommand,
+) -> Option<ConfigurationCommand<PhyI2cAddress>> {
+    Some(match command {
+        PhyI2cConfigurationCommand::Write(address, value) => {
+            ConfigurationCommand::Write(address, value)
+        }
+        PhyI2cConfigurationCommand::Modify {
+            address,
+            msb,
+            lsb,
+            value,
+        } => ConfigurationCommand::Modify(AnalogField::new(address, msb, lsb)?, value),
+    })
+}
+
+/// A vendor analog configuration leaf; poll it on an [`AnalogI2c`].
+pub fn configuration(
+    leaf: PhyI2cConfiguration,
+) -> Configuration<impl Fn(usize) -> Option<ConfigurationCommand<PhyI2cAddress>>, PhyI2cAddress> {
+    Configuration::new(move |index| leaf.command(index).and_then(configuration_command))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LEAVES: [PhyI2cConfiguration; 6] = [
+        PhyI2cConfiguration::Band,
+        PhyI2cConfiguration::CrystalRegisters,
+        PhyI2cConfiguration::DacRate,
+        PhyI2cConfiguration::AdcRate(false),
+        PhyI2cConfiguration::AdcRate(true),
+        PhyI2cConfiguration::BiasRegisters,
+    ];
+
+    /// Every command of every leaf maps to a portable command whose value
+    /// fits its field, so no configuration stops on an invalid command.
+    #[test]
+    fn every_configuration_command_is_a_valid_portable_command() {
+        for leaf in LEAVES {
+            let mut index = 0;
+            while let Some(command) = leaf.command(index) {
+                match configuration_command(command) {
+                    Some(ConfigurationCommand::Modify(field, value)) => {
+                        assert!(field.insert(0, value).is_some(), "{leaf:?} {index}");
+                    }
+                    Some(ConfigurationCommand::Write(..)) => {}
+                    None => panic!("{leaf:?} {index} has no valid field"),
+                }
+                index += 1;
+            }
+            assert!(index > 0, "{leaf:?} has commands");
+        }
+    }
+
+    #[test]
+    fn the_adc_rate_selects_the_inverted_analog_bit() {
+        let bit = |rate| match PhyI2cConfiguration::AdcRate(rate).command(0) {
+            Some(PhyI2cConfigurationCommand::Modify { value, .. }) => value,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!((bit(false), bit(true)), (1, 0));
+    }
 }

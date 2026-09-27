@@ -58,6 +58,8 @@ pub use ownership::{
     Ieee802154TaskRegisters, RadioPartitions,
 };
 pub use phy::i2c::{
-    PHY_I2C_INITIALIZATION_PAIR_COUNT, PhyI2cAccessError, PhyI2cAddress, PhyI2cBlock, PhyI2cHost,
+    PHY_I2C_INITIALIZATION_PAIR_COUNT, PhyI2cAccessError, PhyI2cAddress, PhyI2cBlock,
+    PhyI2cClockSelection, PhyI2cConfiguration, PhyI2cConfigurationCommand, PhyI2cHost,
     PhyI2cInitializationInputs, PhyI2cParallelWrite, PhyI2cRegisters,
 };
+pub use phy::radio::PhyRadioRegisters;

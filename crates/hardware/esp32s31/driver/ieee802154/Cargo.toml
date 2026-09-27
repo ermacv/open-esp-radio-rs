@@ -1,0 +1,29 @@
+[package]
+name = "oer-esp32s31-ieee802154"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Interrupt-driven ESP32-S31 IEEE 802.15.4 MAC driver ported from the public ESP-IDF driver"
+
+[dependencies]
+oer-esp32s31-hal = { path = "../../hal" }
+oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
+
+[dev-dependencies]
+oer-esp32s31-hal = { path = "../../hal", features = ["ll-model"] }
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+# Chip APIs exist only for the chip target; document them there alone.
+default-target = "riscv32imafc-unknown-none-elf"
+targets = []
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "hardware"
+platform = "chip"
+chip = "esp32s31"

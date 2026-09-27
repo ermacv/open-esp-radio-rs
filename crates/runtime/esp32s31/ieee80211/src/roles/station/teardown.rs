@@ -18,6 +18,7 @@ use crate::{
         tx::{ConnectedTx, ConnectedTxTeardownParts},
     },
 };
+use oer_esp32s31_ieee80211_sta::connected::management_protection::StationManagementProtection;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
@@ -258,6 +259,8 @@ pub enum ConnectedStaGroupSecurity {
         group: StaGroupCcmpSlot,
         material: StaGroupCcmpKeyMaterial,
         replay: StaCcmpRxReplayControlEndpoint,
+        /// Receive protection of robust management frames, when negotiated.
+        management: Option<StationManagementProtection>,
     },
 }
 

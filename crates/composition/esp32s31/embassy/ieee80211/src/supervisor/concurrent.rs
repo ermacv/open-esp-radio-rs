@@ -514,6 +514,7 @@ impl ProductionWifiEpochRunner {
                 group,
                 group_material,
                 replay,
+                management,
             } if material_is_wpa2 => {
                 let (replay_rx, replay_control) = match STA_CCMP_RX_REPLAY.start(replay) {
                     Ok(endpoints) => endpoints,
@@ -568,6 +569,7 @@ impl ProductionWifiEpochRunner {
                     group,
                     material: group_material,
                     replay: replay_control,
+                    management,
                 };
                 if let Err(failure) = plan.enable_ccmp_rx_replay(replay_rx) {
                     endpoint
@@ -698,6 +700,7 @@ impl ProductionWifiEpochRunner {
                 group,
                 material: group_material,
                 replay,
+                management,
             } = group_security
                 .take()
                 .expect("paired WPA2 mode retains its group-key owner")
@@ -712,6 +715,7 @@ impl ProductionWifiEpochRunner {
                     group,
                     group_material,
                     replay,
+                    management,
                 ))
                 .unwrap_or_else(|_| unreachable!("fresh station control has no security session"));
         }

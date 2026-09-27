@@ -388,12 +388,19 @@ where
             Ok(established) => {
                 owner.report.wpa2 = Some(established.metadata());
                 let (keys, connected) = established.into_parts();
-                let (pairwise, group, group_material, replay) = keys.into_parts();
+                let InstalledWpa2KeyParts {
+                    pairwise,
+                    group,
+                    group_material,
+                    replay,
+                    management,
+                } = keys.into_parts();
                 owner.installed_security = Some(StaInstalledSecurity::Wpa2Personal {
                     pairwise,
                     group,
                     group_material,
                     replay,
+                    management,
                 });
                 if !owner.security.set_connected(connected) {
                     return Err(StaAttemptStepError::terminal(StaAttemptTargetError::State(

@@ -49,9 +49,9 @@ use oer_esp32s31_ieee80211_sta::{
     },
     profile::select_association,
     wpa2::{
-        HandshakeTransmit, InstalledWpa2Keys, Wpa2HandshakePort, Wpa2HandshakePortError,
-        Wpa2HandshakeRadio, Wpa2HandshakeStorage, Wpa2KeyPort, Wpa2KeyPortError, Wpa2KeyRadio,
-        Wpa2KeySession, Wpa2Station,
+        HandshakeTransmit, InstalledWpa2KeyParts, InstalledWpa2Keys, Wpa2HandshakePort,
+        Wpa2HandshakePortError, Wpa2HandshakeRadio, Wpa2HandshakeStorage, Wpa2KeyPort,
+        Wpa2KeyPortError, Wpa2KeyRadio, Wpa2KeySession, Wpa2Station,
     },
 };
 

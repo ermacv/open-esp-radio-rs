@@ -8,6 +8,7 @@
 use core::future::Future;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
+use crate::connected::management_protection::StationManagementProtection;
 use crate::connected_rx::{StaCcmpRxReplayEpoch, StaCcmpRxReplayError};
 use crate::connection_coex::{ConnectionFrame, ConnectionFrameCoex, ReconnectFramePriority};
 
@@ -263,18 +264,28 @@ pub struct InstalledWpa2Keys {
     group: StaGroupCcmpSlot,
     group_material: StaGroupCcmpKeyMaterial,
     replay: StaCcmpRxReplayEpoch,
+    management: Option<StationManagementProtection>,
+}
+
+/// The owners of [`InstalledWpa2Keys`], returned to the connected station.
+pub struct InstalledWpa2KeyParts {
+    pub pairwise: StaPairwiseCcmpSlot,
+    pub group: StaGroupCcmpSlot,
+    pub group_material: StaGroupCcmpKeyMaterial,
+    pub replay: StaCcmpRxReplayEpoch,
+    /// Present when the association protects its management frames.
+    pub management: Option<StationManagementProtection>,
 }
 
 impl InstalledWpa2Keys {
-    pub fn into_parts(
-        self,
-    ) -> (
-        StaPairwiseCcmpSlot,
-        StaGroupCcmpSlot,
-        StaGroupCcmpKeyMaterial,
-        StaCcmpRxReplayEpoch,
-    ) {
-        (self.pairwise, self.group, self.group_material, self.replay)
+    pub fn into_parts(self) -> InstalledWpa2KeyParts {
+        InstalledWpa2KeyParts {
+            pairwise: self.pairwise,
+            group: self.group,
+            group_material: self.group_material,
+            replay: self.replay,
+            management: self.management,
+        }
     }
 }
 
@@ -412,11 +423,17 @@ where
                     return Err(Wpa2KeyPortError::Install(error));
                 }
             };
+        // With management frame protection the station keeps its temporal
+        // key to open protected management frames, as the vendor does.
+        let management = request.igtk().map(|igtk| {
+            StationManagementProtection::new(*request.pairwise().key().as_bytes(), igtk)
+        });
         Ok(InstalledWpa2Keys {
             pairwise,
             group,
             group_material,
             replay,
+            management,
         })
     }
 

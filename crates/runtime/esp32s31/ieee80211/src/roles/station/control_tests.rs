@@ -426,7 +426,7 @@ fn make_connected_security(
     let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
     let (rx, control) = resource.start(replay).unwrap();
     (
-        ConnectedWpa2Security::new(supplicant, group, group_material, control),
+        ConnectedWpa2Security::new(supplicant, group, group_material, control, None),
         rx,
         ptk,
     )
@@ -826,7 +826,13 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
     let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
     let (replay_rx, replay_control) = resource.start(replay).unwrap();
     CompletedWpa2Fixture {
-        security: ConnectedWpa2Security::new(connected, group, group_material, replay_control),
+        security: ConnectedWpa2Security::new(
+            connected,
+            group,
+            group_material,
+            replay_control,
+            None,
+        ),
         replay_rx,
         duplicate_message3: owned_station_eapol(&message3),
         bad_mic_message3,

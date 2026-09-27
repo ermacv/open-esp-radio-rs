@@ -4,6 +4,7 @@
 //! transaction. Runtime adapters supply classified EAPOL and existing hardware
 //! and TX ports; no mailbox, executor timer or task owner belongs here.
 
+use crate::connected::management_protection::StationManagementProtection;
 use crate::{
     connected_control::{ConnectedControlTx, ConnectedDisconnectReason},
     connected_rx::{StaCcmpRxReplayControlEndpoint, StaCcmpRxReplayError},
@@ -77,6 +78,8 @@ pub struct ConnectedWpa2Security {
     group_material: StaGroupCcmpKeyMaterial,
     used_group_key_ids: u8,
     replay: StaCcmpRxReplayControlEndpoint,
+    /// Receive protection of robust management frames, when negotiated.
+    management: Option<StationManagementProtection>,
     unwrap: RsnSoftwareAes,
     tx_in_flight: bool,
     group_message1: u32,
@@ -94,6 +97,7 @@ impl ConnectedWpa2Security {
         group: StaGroupCcmpSlot,
         group_material: StaGroupCcmpKeyMaterial,
         replay: StaCcmpRxReplayControlEndpoint,
+        management: Option<StationManagementProtection>,
     ) -> Self {
         let used_group_key_ids = 1_u8 << group_material.key_id();
         Self {
@@ -102,6 +106,7 @@ impl ConnectedWpa2Security {
             group_material,
             used_group_key_ids,
             replay,
+            management,
             unwrap: RsnSoftwareAes::new(),
             tx_in_flight: false,
             group_message1: 0,
@@ -112,6 +117,11 @@ impl ConnectedWpa2Security {
             retransmitted: 0,
             last_failure: None,
         }
+    }
+
+    /// Receive protection of the association's robust management frames.
+    pub fn management_protection(&mut self) -> Option<&mut StationManagementProtection> {
+        self.management.as_mut()
     }
 
     /// Whether this owner awaits completion of its protected control response.
@@ -340,6 +350,9 @@ impl ConnectedWpa2Security {
                             return self.fail(ConnectedWpa2SecurityFailure::KeyReplace(error));
                         }
                     }
+                }
+                if let (Some(management), Some(igtk)) = (self.management.as_mut(), request.igtk()) {
+                    management.install_igtk(igtk);
                 }
                 match self.supplicant.complete_group_key_install(request, true) {
                     Ok(response) => {

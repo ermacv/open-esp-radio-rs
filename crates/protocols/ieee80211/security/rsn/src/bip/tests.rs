@@ -65,3 +65,15 @@ fn a_frame_without_its_mic_element_or_another_key_fails() {
     assert_eq!(bip.verify(&frame), Err(BipError::UnknownKeyId));
     assert_eq!(bip.verify(&[0; 30]), Err(BipError::Truncated));
 }
+
+#[test]
+fn a_repeated_igtk_keeps_its_replay_state_and_a_new_one_resets_it() {
+    let mut bip = receiver(8);
+    assert_eq!(bip.verify(&deauthentication(MIC, 9)), Ok(()));
+    // The same IGTK redelivered with an older IPN.
+    bip.rekey(&RsnIgtk::new(4, [2, 0, 0, 0, 0, 0], [0x77; 16]).unwrap());
+    assert_eq!(bip.verify(&deauthentication(MIC, 9)), Err(BipError::Replay));
+    // Another IGTK starts from its own IPN.
+    bip.rekey(&RsnIgtk::new(5, [2, 0, 0, 0, 0, 0], [0x11; 16]).unwrap());
+    assert_eq!(bip.key_id(), 5);
+}

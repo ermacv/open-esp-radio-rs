@@ -1519,6 +1519,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             group,
             group_material,
             replay,
+            management,
         } if material_has_connected_wpa2 => {
             let (replay_rx, replay_control) = match STA_CCMP_RX_REPLAY.start(replay) {
                 Ok(endpoints) => endpoints,
@@ -1570,6 +1571,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 group,
                 material: group_material,
                 replay: replay_control,
+                management,
             };
             if let Err(failure) = plan.enable_ccmp_rx_replay(replay_rx) {
                 return ConnectedStationRunExit::Faulted(ConnectedStationFault::ReplaySetup {
@@ -1768,6 +1770,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             group,
             material: group_material,
             replay,
+            management,
         } = group_security
             .take()
             .expect("WPA2 composition retains group security")
@@ -1784,6 +1787,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 group,
                 group_material,
                 replay,
+                management,
             ))
             .is_err()
         {

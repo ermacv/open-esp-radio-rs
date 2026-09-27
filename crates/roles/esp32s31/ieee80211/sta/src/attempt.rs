@@ -7,6 +7,7 @@
 //! returns the exact owner supplied by the caller; it is never reconstructed
 //! from static storage or retained in an abandoned async task.
 
+use crate::connected::management_protection::StationManagementProtection;
 use core::{future::Future, marker::PhantomData};
 
 use crate::{
@@ -212,6 +213,8 @@ pub enum StaInstalledSecurity {
         group: StaGroupCcmpSlot,
         group_material: StaGroupCcmpKeyMaterial,
         replay: StaCcmpRxReplayEpoch,
+        /// Present when the association protects its management frames.
+        management: Option<StationManagementProtection>,
     },
 }
 

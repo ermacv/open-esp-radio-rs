@@ -63,6 +63,18 @@ impl BipReceiver {
         self.key_id
     }
 
+    /// Follow a group rekey: a new IGTK replaces this one, while a repeat of
+    /// this IGTK keeps the higher of its replay states, so a retransmitted
+    /// key never reopens packet numbers already accepted.
+    pub fn rekey(&mut self, igtk: &RsnIgtk) {
+        let delivered = packet_number(igtk.packet_number());
+        if igtk.key_id() == self.key_id && *igtk.key() == self.key {
+            self.last_packet_number = self.last_packet_number.max(delivered);
+        } else {
+            *self = Self::new(igtk);
+        }
+    }
+
     /// Verify one received group-addressed robust management frame, from its
     /// Frame Control field to the end of its body, and advance the replay
     /// state when it verifies.

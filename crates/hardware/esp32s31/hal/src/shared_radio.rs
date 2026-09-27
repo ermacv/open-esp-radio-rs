@@ -1100,6 +1100,25 @@ impl<T> SharedRadioLease<'_, T> {
 
     /// Borrow the shared registers for a protocol read-back that also reads
     /// protocol registers.
+    /// Registers of the radio-PHY partition image [`Self::phy_register_image`]
+    /// reads.
+    pub const PHY_REGISTER_IMAGE_LEN: usize =
+        oer_esp32s31_pac::RadioPhyRegisters::REGISTER_IMAGE_LEN;
+
+    /// Registers of the radio-PHY partition image.
+    pub const fn phy_register_image_len(&self) -> usize {
+        Self::PHY_REGISTER_IMAGE_LEN
+    }
+
+    /// Read register `index` of the radio-PHY partition image under this
+    /// lease, without effect, for hardware cross-checks of the calibrated
+    /// state; `None` past its end. A register whose clock domain is off
+    /// may not answer, so a caller reads only indices known to be readable
+    /// in the current radio state.
+    pub fn phy_register_image(&self, index: usize) -> Option<u32> {
+        self.registers().radio_phy().register_image(index)
+    }
+
     pub(crate) fn registers(&self) -> &SharedRadioRegisters {
         &self.state().registers
     }

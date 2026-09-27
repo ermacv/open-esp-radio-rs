@@ -1141,9 +1141,9 @@ scope-and-limitations = "No OWE key exchange, association selection or key lifec
 id = "wifi-security-bip-protected-management-frames"
 section = "wifi-security"
 title = "BIP / protected management frames"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "PMF negotiation, IGTK/BIGTK ownership, management replay and BIP MIC verification/publication are not present."
+scope-and-limitations = "The station negotiates management frame protection whenever the access point is capable of it, accepting a required one, and then prefers PSK-SHA256. It keeps the IGTK across group rekeys, opens protected individually addressed robust frames with a software copy of the temporal key, verifies group-addressed ones with BIP-CMAC-128, drops other unprotected robust frames, answers SA Query Requests, confirms unprotected class 2 and 3 disconnects with the vendor SA Query procedure and sends robust Action frames CCMP-protected. BIP-GMAC and BIP-CMAC-256, beacon protection (BIGTK), the access point role's management frame protection and station-originated Deauthentication are absent."
 
 [[items]]
 id = "wifi-security-gcmp-tkip-wapi-and-wep"

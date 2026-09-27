@@ -7,7 +7,8 @@
   <version>0.1</version>
   <description>ESP32-C5 modem/radio registers owned by the radio drivers. This first stage
     publishes the IEEE 802.15.4 MAC aperture, its interrupt route and
-    the modem ETM channels it programs. Unknown fields are omitted.</description>
+    the modem ETM channels it programs, and the modem clock gates and
+    resets of its vendor clock devices. Unknown fields are omitted.</description>
   <licenseText>MIT OR Apache-2.0</licenseText>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
@@ -1655,6 +1656,119 @@ reset values are claimed.</description>
                   <value>69</value>
                 </enumeratedValue>
               </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>MODEM_SYSCON_RADIO</name>
+      <description>ESP32-C5 MODEM_SYSCON clock gates and resets at MODEM_BASE + 0x9C00 driven
+by the vendor modem clock devices of the IEEE 802.15.4 module (802154_MAC,
+BT_I154_COMMON_BB, ETM, BT_APB) and its MAC reset. Other fields remain absent
+and are preserved by every field transaction.</description>
+      <baseAddress>0x600A9C00</baseAddress>
+      <registers>
+        <register>
+          <name>CLK_CONF</name>
+          <description>Modem clock selectors and protocol clock gates.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00200002</resetValue>
+          <fields>
+            <field>
+              <name>CLK_ETM_EN</name>
+              <description>Enable the modem ETM clock.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_ZB_APB_EN</name>
+              <description>Enable the IEEE 802.15.4 APB clock.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_ZBMAC_EN</name>
+              <description>Enable the IEEE 802.15.4 MAC clock.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_MODEM_SEC_APB_EN</name>
+              <description>Enable the modem-security APB clock.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_RST_CONF</name>
+          <description>Modem protocol reset lines.</description>
+          <addressOffset>0x10</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>RST_ZBMAC_APB</name>
+              <description>Hold the IEEE 802.15.4 APB interface in reset.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RST_ZBMAC</name>
+              <description>Hold the IEEE 802.15.4 MAC in reset.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF1</name>
+          <description>Wi-Fi, front-end and Bluetooth clock gates.</description>
+          <addressOffset>0x14</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_BT_APB_EN</name>
+              <description>Enable the Bluetooth APB clock.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_BTBB_EN</name>
+              <description>Enable the baseband clock shared by Bluetooth LE and IEEE 802.15.4.</description>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>MODEM_LPCON_SHARED_CLOCK</name>
+      <description>ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor
+COEXIST modem clock device. Other fields remain absent and are preserved by
+every field transaction.</description>
+      <baseAddress>0x600AF000</baseAddress>
+      <registers>
+        <register>
+          <name>CLK_CONF</name>
+          <description>Low-power modem clock gates.</description>
+          <addressOffset>0x18</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_COEX_EN</name>
+              <description>Enable the coexistence clock.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

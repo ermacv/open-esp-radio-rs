@@ -4979,6 +4979,302 @@ pub mod modem_etm {
         }
     }
 }
+#[doc = "ESP32-C5 MODEM_SYSCON clock gates and resets at MODEM_BASE + 0x9C00 driven by the vendor modem clock devices of the IEEE 802.15.4 module (802154_MAC, BT_I154_COMMON_BB, ETM, BT_APB) and its MAC reset. Other fields remain absent and are preserved by every field transaction."]
+pub type ModemSysconRadio = crate::Periph<modem_syscon_radio::RegisterBlock, 0x600a_9c00>;
+impl core::fmt::Debug for ModemSysconRadio {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ModemSysconRadio").finish()
+    }
+}
+#[doc = "ESP32-C5 MODEM_SYSCON clock gates and resets at MODEM_BASE + 0x9C00 driven by the vendor modem clock devices of the IEEE 802.15.4 module (802154_MAC, BT_I154_COMMON_BB, ETM, BT_APB) and its MAC reset. Other fields remain absent and are preserved by every field transaction."]
+pub mod modem_syscon_radio {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x04],
+        clk_conf: ClkConf,
+        _reserved1: [u8; 0x08],
+        modem_rst_conf: ModemRstConf,
+        clk_conf1: ClkConf1,
+    }
+    impl RegisterBlock {
+        #[doc = "0x04 - Modem clock selectors and protocol clock gates."]
+        #[inline(always)]
+        pub const fn clk_conf(&self) -> &ClkConf {
+            &self.clk_conf
+        }
+        #[doc = "0x10 - Modem protocol reset lines."]
+        #[inline(always)]
+        pub const fn modem_rst_conf(&self) -> &ModemRstConf {
+            &self.modem_rst_conf
+        }
+        #[doc = "0x14 - Wi-Fi, front-end and Bluetooth clock gates."]
+        #[inline(always)]
+        pub const fn clk_conf1(&self) -> &ClkConf1 {
+            &self.clk_conf1
+        }
+    }
+    #[doc = "CLK_CONF (rw) register accessor: Modem clock selectors and protocol clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf`] module"]
+    #[doc(alias = "CLK_CONF")]
+    pub type ClkConf = crate::Reg<clk_conf::ClkConfSpec>;
+    #[doc = "Modem clock selectors and protocol clock gates."]
+    pub mod clk_conf {
+        #[doc = "Register `CLK_CONF` reader"]
+        pub type R = crate::R<ClkConfSpec>;
+        #[doc = "Register `CLK_CONF` writer"]
+        pub type W = crate::W<ClkConfSpec>;
+        #[doc = "Field `CLK_ETM_EN` reader - Enable the modem ETM clock."]
+        pub type ClkEtmEnR = crate::BitReader;
+        #[doc = "Field `CLK_ETM_EN` writer - Enable the modem ETM clock."]
+        pub type ClkEtmEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_ZB_APB_EN` reader - Enable the IEEE 802.15.4 APB clock."]
+        pub type ClkZbApbEnR = crate::BitReader;
+        #[doc = "Field `CLK_ZB_APB_EN` writer - Enable the IEEE 802.15.4 APB clock."]
+        pub type ClkZbApbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_ZBMAC_EN` reader - Enable the IEEE 802.15.4 MAC clock."]
+        pub type ClkZbmacEnR = crate::BitReader;
+        #[doc = "Field `CLK_ZBMAC_EN` writer - Enable the IEEE 802.15.4 MAC clock."]
+        pub type ClkZbmacEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_SEC_APB_EN` reader - Enable the modem-security APB clock."]
+        pub type ClkModemSecApbEnR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_SEC_APB_EN` writer - Enable the modem-security APB clock."]
+        pub type ClkModemSecApbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 22 - Enable the modem ETM clock."]
+            #[inline(always)]
+            pub fn clk_etm_en(&self) -> ClkEtmEnR {
+                ClkEtmEnR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Enable the IEEE 802.15.4 APB clock."]
+            #[inline(always)]
+            pub fn clk_zb_apb_en(&self) -> ClkZbApbEnR {
+                ClkZbApbEnR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - Enable the IEEE 802.15.4 MAC clock."]
+            #[inline(always)]
+            pub fn clk_zbmac_en(&self) -> ClkZbmacEnR {
+                ClkZbmacEnR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 28 - Enable the modem-security APB clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_apb_en(&self) -> ClkModemSecApbEnR {
+                ClkModemSecApbEnR::new(((self.bits >> 28) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 22 - Enable the modem ETM clock."]
+            #[inline(always)]
+            pub fn clk_etm_en(&mut self) -> ClkEtmEnW<'_, ClkConfSpec> {
+                ClkEtmEnW::new(self, 22)
+            }
+            #[doc = "Bit 23 - Enable the IEEE 802.15.4 APB clock."]
+            #[inline(always)]
+            pub fn clk_zb_apb_en(&mut self) -> ClkZbApbEnW<'_, ClkConfSpec> {
+                ClkZbApbEnW::new(self, 23)
+            }
+            #[doc = "Bit 24 - Enable the IEEE 802.15.4 MAC clock."]
+            #[inline(always)]
+            pub fn clk_zbmac_en(&mut self) -> ClkZbmacEnW<'_, ClkConfSpec> {
+                ClkZbmacEnW::new(self, 24)
+            }
+            #[doc = "Bit 28 - Enable the modem-security APB clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_apb_en(&mut self) -> ClkModemSecApbEnW<'_, ClkConfSpec> {
+                ClkModemSecApbEnW::new(self, 28)
+            }
+        }
+        #[doc = "Modem clock selectors and protocol clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConfSpec;
+        impl crate::RegisterSpec for ClkConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf::R`](R) reader structure"]
+        impl crate::Readable for ClkConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf::W`](W) writer structure"]
+        impl crate::Writable for ClkConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF to value 0x0020_0002"]
+        impl crate::Resettable for ClkConfSpec {
+            const RESET_VALUE: u32 = 0x0020_0002;
+        }
+    }
+    #[doc = "MODEM_RST_CONF (rw) register accessor: Modem protocol reset lines.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_rst_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_rst_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_rst_conf`] module"]
+    #[doc(alias = "MODEM_RST_CONF")]
+    pub type ModemRstConf = crate::Reg<modem_rst_conf::ModemRstConfSpec>;
+    #[doc = "Modem protocol reset lines."]
+    pub mod modem_rst_conf {
+        #[doc = "Register `MODEM_RST_CONF` reader"]
+        pub type R = crate::R<ModemRstConfSpec>;
+        #[doc = "Register `MODEM_RST_CONF` writer"]
+        pub type W = crate::W<ModemRstConfSpec>;
+        #[doc = "Field `RST_ZBMAC_APB` reader - Hold the IEEE 802.15.4 APB interface in reset."]
+        pub type RstZbmacApbR = crate::BitReader;
+        #[doc = "Field `RST_ZBMAC_APB` writer - Hold the IEEE 802.15.4 APB interface in reset."]
+        pub type RstZbmacApbW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_ZBMAC` reader - Hold the IEEE 802.15.4 MAC in reset."]
+        pub type RstZbmacR = crate::BitReader;
+        #[doc = "Field `RST_ZBMAC` writer - Hold the IEEE 802.15.4 MAC in reset."]
+        pub type RstZbmacW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 23 - Hold the IEEE 802.15.4 APB interface in reset."]
+            #[inline(always)]
+            pub fn rst_zbmac_apb(&self) -> RstZbmacApbR {
+                RstZbmacApbR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - Hold the IEEE 802.15.4 MAC in reset."]
+            #[inline(always)]
+            pub fn rst_zbmac(&self) -> RstZbmacR {
+                RstZbmacR::new(((self.bits >> 24) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 23 - Hold the IEEE 802.15.4 APB interface in reset."]
+            #[inline(always)]
+            pub fn rst_zbmac_apb(&mut self) -> RstZbmacApbW<'_, ModemRstConfSpec> {
+                RstZbmacApbW::new(self, 23)
+            }
+            #[doc = "Bit 24 - Hold the IEEE 802.15.4 MAC in reset."]
+            #[inline(always)]
+            pub fn rst_zbmac(&mut self) -> RstZbmacW<'_, ModemRstConfSpec> {
+                RstZbmacW::new(self, 24)
+            }
+        }
+        #[doc = "Modem protocol reset lines.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_rst_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_rst_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ModemRstConfSpec;
+        impl crate::RegisterSpec for ModemRstConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`modem_rst_conf::R`](R) reader structure"]
+        impl crate::Readable for ModemRstConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`modem_rst_conf::W`](W) writer structure"]
+        impl crate::Writable for ModemRstConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets MODEM_RST_CONF to value 0"]
+        impl crate::Resettable for ModemRstConfSpec {}
+    }
+    #[doc = "CLK_CONF1 (rw) register accessor: Wi-Fi, front-end and Bluetooth clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf1::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf1`] module"]
+    #[doc(alias = "CLK_CONF1")]
+    pub type ClkConf1 = crate::Reg<clk_conf1::ClkConf1Spec>;
+    #[doc = "Wi-Fi, front-end and Bluetooth clock gates."]
+    pub mod clk_conf1 {
+        #[doc = "Register `CLK_CONF1` reader"]
+        pub type R = crate::R<ClkConf1Spec>;
+        #[doc = "Register `CLK_CONF1` writer"]
+        pub type W = crate::W<ClkConf1Spec>;
+        #[doc = "Field `CLK_BT_APB_EN` reader - Enable the Bluetooth APB clock."]
+        pub type ClkBtApbEnR = crate::BitReader;
+        #[doc = "Field `CLK_BT_APB_EN` writer - Enable the Bluetooth APB clock."]
+        pub type ClkBtApbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_BTBB_EN` reader - Enable the baseband clock shared by Bluetooth LE and IEEE 802.15.4."]
+        pub type ClkBtbbEnR = crate::BitReader;
+        #[doc = "Field `CLK_BTBB_EN` writer - Enable the baseband clock shared by Bluetooth LE and IEEE 802.15.4."]
+        pub type ClkBtbbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 16 - Enable the Bluetooth APB clock."]
+            #[inline(always)]
+            pub fn clk_bt_apb_en(&self) -> ClkBtApbEnR {
+                ClkBtApbEnR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 17 - Enable the baseband clock shared by Bluetooth LE and IEEE 802.15.4."]
+            #[inline(always)]
+            pub fn clk_btbb_en(&self) -> ClkBtbbEnR {
+                ClkBtbbEnR::new(((self.bits >> 17) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 16 - Enable the Bluetooth APB clock."]
+            #[inline(always)]
+            pub fn clk_bt_apb_en(&mut self) -> ClkBtApbEnW<'_, ClkConf1Spec> {
+                ClkBtApbEnW::new(self, 16)
+            }
+            #[doc = "Bit 17 - Enable the baseband clock shared by Bluetooth LE and IEEE 802.15.4."]
+            #[inline(always)]
+            pub fn clk_btbb_en(&mut self) -> ClkBtbbEnW<'_, ClkConf1Spec> {
+                ClkBtbbEnW::new(self, 17)
+            }
+        }
+        #[doc = "Wi-Fi, front-end and Bluetooth clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf1::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConf1Spec;
+        impl crate::RegisterSpec for ClkConf1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf1::R`](R) reader structure"]
+        impl crate::Readable for ClkConf1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf1::W`](W) writer structure"]
+        impl crate::Writable for ClkConf1Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF1 to value 0"]
+        impl crate::Resettable for ClkConf1Spec {}
+    }
+}
+#[doc = "ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor COEXIST modem clock device. Other fields remain absent and are preserved by every field transaction."]
+pub type ModemLpconSharedClock =
+    crate::Periph<modem_lpcon_shared_clock::RegisterBlock, 0x600a_f000>;
+impl core::fmt::Debug for ModemLpconSharedClock {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ModemLpconSharedClock").finish()
+    }
+}
+#[doc = "ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor COEXIST modem clock device. Other fields remain absent and are preserved by every field transaction."]
+pub mod modem_lpcon_shared_clock {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x18],
+        clk_conf: ClkConf,
+    }
+    impl RegisterBlock {
+        #[doc = "0x18 - Low-power modem clock gates."]
+        #[inline(always)]
+        pub const fn clk_conf(&self) -> &ClkConf {
+            &self.clk_conf
+        }
+    }
+    #[doc = "CLK_CONF (rw) register accessor: Low-power modem clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf`] module"]
+    #[doc(alias = "CLK_CONF")]
+    pub type ClkConf = crate::Reg<clk_conf::ClkConfSpec>;
+    #[doc = "Low-power modem clock gates."]
+    pub mod clk_conf {
+        #[doc = "Register `CLK_CONF` reader"]
+        pub type R = crate::R<ClkConfSpec>;
+        #[doc = "Register `CLK_CONF` writer"]
+        pub type W = crate::W<ClkConfSpec>;
+        #[doc = "Field `CLK_COEX_EN` reader - Enable the coexistence clock."]
+        pub type ClkCoexEnR = crate::BitReader;
+        #[doc = "Field `CLK_COEX_EN` writer - Enable the coexistence clock."]
+        pub type ClkCoexEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 1 - Enable the coexistence clock."]
+            #[inline(always)]
+            pub fn clk_coex_en(&self) -> ClkCoexEnR {
+                ClkCoexEnR::new(((self.bits >> 1) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 1 - Enable the coexistence clock."]
+            #[inline(always)]
+            pub fn clk_coex_en(&mut self) -> ClkCoexEnW<'_, ClkConfSpec> {
+                ClkCoexEnW::new(self, 1)
+            }
+        }
+        #[doc = "Low-power modem clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConfSpec;
+        impl crate::RegisterSpec for ClkConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf::R`](R) reader structure"]
+        impl crate::Readable for ClkConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf::W`](W) writer structure"]
+        impl crate::Writable for ClkConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF to value 0"]
+        impl crate::Resettable for ClkConfSpec {}
+    }
+}
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
@@ -4990,6 +5286,10 @@ pub struct Peripherals {
     pub ieee802154_interrupt_route: Ieee802154InterruptRoute,
     #[doc = "MODEM_ETM"]
     pub modem_etm: ModemEtm,
+    #[doc = "MODEM_SYSCON_RADIO"]
+    pub modem_syscon_radio: ModemSysconRadio,
+    #[doc = "MODEM_LPCON_SHARED_CLOCK"]
+    pub modem_lpcon_shared_clock: ModemLpconSharedClock,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -5015,6 +5315,8 @@ impl Peripherals {
             ieee802154_mac: unsafe { Ieee802154Mac::steal() },
             ieee802154_interrupt_route: unsafe { Ieee802154InterruptRoute::steal() },
             modem_etm: unsafe { ModemEtm::steal() },
+            modem_syscon_radio: unsafe { ModemSysconRadio::steal() },
+            modem_lpcon_shared_clock: unsafe { ModemLpconSharedClock::steal() },
         }
     }
 }
@@ -5033,12 +5335,20 @@ pub mod peripheral_ownership {
         pub modem_etm: crate::ModemEtm,
     }
 
+    /// Modem clock gates and MAC resets driven by the vendor modem clock devices; owned by the modem clock owner.
+    pub struct ModemClockPeripherals {
+        pub modem_syscon_radio: crate::ModemSysconRadio,
+        pub modem_lpcon_shared_clock: crate::ModemLpconSharedClock,
+    }
+
     /// Complete target-reviewed ownership decomposition.
     pub struct PeripheralPartitions {
         /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
         pub ieee802154: Ieee802154Peripherals,
         /// Modem event-task matrix channels zero and one, programmed by the IEEE 802.15.4 driver.
         pub modem_etm: ModemEtmPeripherals,
+        /// Modem clock gates and MAC resets driven by the vendor modem clock devices; owned by the modem clock owner.
+        pub modem_clock: ModemClockPeripherals,
     }
 
     /// Consume the singleton and apply the exhaustive target-owned partition.
@@ -5048,6 +5358,8 @@ pub mod peripheral_ownership {
             ieee802154_mac,
             ieee802154_interrupt_route,
             modem_etm,
+            modem_syscon_radio,
+            modem_lpcon_shared_clock,
         } = peripherals;
         PeripheralPartitions {
             ieee802154: Ieee802154Peripherals {
@@ -5055,6 +5367,10 @@ pub mod peripheral_ownership {
                 ieee802154_interrupt_route,
             },
             modem_etm: ModemEtmPeripherals { modem_etm },
+            modem_clock: ModemClockPeripherals {
+                modem_syscon_radio,
+                modem_lpcon_shared_clock,
+            },
         }
     }
 
@@ -5140,6 +5456,16 @@ pub mod full_register_read {
     }
 }
 
+/// Safe observations through reviewed SVD fields.
+pub mod field_read {
+
+    /// Read `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF`.`CLK_COEX_EN` without exposing its register block.
+    #[inline]
+    pub fn observe_coexistence_clock(registers: &crate::ModemLpconSharedClock) -> bool {
+        registers.clk_conf().read().clk_coex_en().bit()
+    }
+}
+
 /// Safe same-sample observations through reviewed SVD fields.
 pub mod field_snapshot_read {
 
@@ -5156,6 +5482,37 @@ pub mod field_snapshot_read {
             sample.pass_in_sec().bit(),
             sample.unclassified_9_31().bits(),
         )
+    }
+
+    /// Read `CLK_ETM_EN`, `CLK_ZB_APB_EN`, `CLK_ZBMAC_EN`, `CLK_MODEM_SEC_APB_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_modem_clock_conf(
+        registers: &crate::ModemSysconRadio,
+    ) -> (bool, bool, bool, bool) {
+        let sample = registers.clk_conf().read();
+        (
+            sample.clk_etm_en().bit(),
+            sample.clk_zb_apb_en().bit(),
+            sample.clk_zbmac_en().bit(),
+            sample.clk_modem_sec_apb_en().bit(),
+        )
+    }
+
+    /// Read `CLK_BT_APB_EN`, `CLK_BTBB_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF1` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_modem_clock_conf1(registers: &crate::ModemSysconRadio) -> (bool, bool) {
+        let sample = registers.clk_conf1().read();
+        (sample.clk_bt_apb_en().bit(), sample.clk_btbb_en().bit())
+    }
+
+    /// Read `RST_ZBMAC_APB`, `RST_ZBMAC` from one `MODEM_SYSCON_RADIO`.`MODEM_RST_CONF` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_ieee802154_resets(registers: &crate::ModemSysconRadio) -> (bool, bool) {
+        let sample = registers.modem_rst_conf().read();
+        (sample.rst_zbmac_apb().bit(), sample.rst_zbmac().bit())
     }
 }
 
@@ -5619,6 +5976,103 @@ pub mod field_or_modify {
             writer
                 .ch1()
                 .bit(reader.ch1().bit() || ((input >> 1) & 0x00000001) != 0)
+        });
+    }
+}
+
+/// Safe, SVD-declared field-replacement read-modify-write transactions.
+pub mod field_replace_modify {
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ZB_APB_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_ieee802154_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_zb_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ZBMAC_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_ieee802154_mac_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_zbmac_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_ETM_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_etm_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_etm_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields `[CLK_MODEM_SEC_APB_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_modem_security_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_modem_sec_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_BT_APB_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_bt_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields `[CLK_BTBB_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_ieee802154_baseband_clock(
+        registers: &crate::ModemSysconRadio,
+        input: u32,
+    ) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_btbb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_ZBMAC]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_ieee802154_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_zbmac().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields `[RST_ZBMAC_APB]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_ieee802154_apb_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_zbmac_apb().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_COEX_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coexistence_clock(registers: &crate::ModemLpconSharedClock, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_coex_en().bit((input & 0x00000001) != 0)
         });
     }
 }

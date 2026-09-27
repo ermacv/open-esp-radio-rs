@@ -29,3 +29,19 @@ kind = "mmio"
 start = 0x60010030
 end-exclusive = 0x60010034
 permissions = "rw"
+
+[[regions]]
+name = "modem-syscon-radio"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600A9C04
+end-exclusive = 0x600A9C18
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-shared-clock"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600AF018
+end-exclusive = 0x600AF01C
+permissions = "rw"

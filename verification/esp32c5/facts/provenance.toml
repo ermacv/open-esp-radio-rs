@@ -1,0 +1,11 @@
+# Code fingerprints of the vendor functions production `SOURCE:` blocks
+# and the register model cite, as reviewed. Maintained by
+# `cargo xtask vendor-provenance`; checked by `cargo xtask check
+# provenance`.
+schema = 1
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_bb_v2.o"
+symbol = "ieee802154_txon_delay_set"
+code = "7270adfbdfdd36efafb6c317fca779be09eeabba5624dbaf476b994464707a40"

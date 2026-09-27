@@ -5,8 +5,8 @@ use super::*;
 /// Physical owners used by one IEEE 802.15.4 task register set.
 ///
 /// The MAC, its interrupt route and its ETM channels are the whole IEEE
-/// 802.15.4 authority. Clocks, resets and the common PHY it depends on are
-/// not modelled by this crate yet.
+/// 802.15.4 authority. Its clocks and resets belong to the modem clock owner;
+/// the common PHY it depends on is not modelled by this crate yet.
 pub(crate) struct Ieee802154TaskPeripheralOwners {
     pub(crate) ieee802154_mac: crate::ieee802154::ownership::TaskRegisters,
     pub(crate) ieee802154_interrupt_route: svd::Ieee802154InterruptRoute,
@@ -34,6 +34,7 @@ pub struct Ieee802154Partition {
 #[must_use = "dropping the radio partitions permanently loses the unique hardware capability"]
 pub struct RadioPartitions {
     pub ieee802154: Ieee802154Partition,
+    pub modem_clock: crate::modem::clock::ModemClockRegisters,
 }
 
 impl RadioPartitions {
@@ -47,12 +48,14 @@ impl RadioPartitions {
         let svd::peripheral_ownership::PeripheralPartitions {
             ieee802154,
             modem_etm,
+            modem_clock,
         } = svd::peripheral_ownership::partition(peripherals);
         Self {
             ieee802154: Ieee802154Partition {
                 peripherals: ieee802154,
                 etm: crate::modem::etm::ieee802154_channels(modem_etm),
             },
+            modem_clock: crate::modem::clock::ModemClockRegisters::new(modem_clock),
         }
     }
 

@@ -62,6 +62,40 @@ impl Ieee802154TxRxSwitchDelay {
     }
 }
 
+/// Boolean state accepted by reviewed modem clock-gate transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ModemClockGateState {
+    /// The selected modem clock gate is disabled.
+    Disabled = 0x00000000,
+    /// The selected modem clock gate is enabled.
+    Enabled = 0x00000001,
+}
+
+impl ModemClockGateState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Boolean state accepted by reviewed modem reset transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ModemResetState {
+    /// The selected modem reset is released.
+    Released = 0x00000000,
+    /// The selected modem reset is asserted.
+    Asserted = 0x00000001,
+}
+
+impl ModemResetState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Sixteen-bit energy-detection duration subset accepted by the reviewed public IEEE 802.15.4 common LL setter; physical units remain outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154EdDurationUnits(u32);
@@ -298,4 +332,85 @@ pub(crate) fn disable_ieee802154_etm_channel0(registers: &crate::svd::ModemEtm) 
 #[inline]
 pub(crate) fn disable_ieee802154_etm_channel1(registers: &crate::svd::ModemEtm) {
     crate::svd::field_or_modify::disable_ieee802154_etm_channel1(registers);
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_apb_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_ieee802154_apb_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemClockGateState,
+) {
+    crate::svd::field_replace_modify::set_ieee802154_apb_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_mac_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_ieee802154_mac_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemClockGateState,
+) {
+    crate::svd::field_replace_modify::set_ieee802154_mac_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_etm_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_etm_clock(registers: &crate::svd::ModemSysconRadio, value: ModemClockGateState) {
+    crate::svd::field_replace_modify::set_etm_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_modem_security_apb_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_modem_security_apb_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemClockGateState,
+) {
+    crate::svd::field_replace_modify::set_modem_security_apb_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_apb_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_apb_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_apb_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_ieee802154_baseband_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_ieee802154_baseband_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_ieee802154_baseband_clock(
+        registers,
+        value.bits(),
+    );
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_mac_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_ieee802154_mac_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemResetState,
+) {
+    crate::svd::field_replace_modify::set_ieee802154_mac_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_apb_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_ieee802154_apb_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemResetState,
+) {
+    crate::svd::field_replace_modify::set_ieee802154_apb_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_coexistence_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_coexistence_clock(
+    registers: &crate::svd::ModemLpconSharedClock,
+    value: ModemClockGateState,
+) {
+    crate::svd::field_replace_modify::set_coexistence_clock(registers, value.bits());
 }

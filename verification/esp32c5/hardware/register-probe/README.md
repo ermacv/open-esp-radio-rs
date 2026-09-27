@@ -8,6 +8,14 @@ reads each word back. The bits that stay set are the implemented ones, so
 every `PROBE` line is `MATCH` when the silicon has the field widths the model
 declares and `DIFF` otherwise. The MAC stays idle; no command is issued.
 
+Before that, the image drives the modem clock owner of the production PAC
+(`oer_esp32c5_pac::ModemClockRegisters`). For each vendor modem clock device
+of the IEEE 802.15.4 module it disables and re-enables the device and checks
+the vendor enable check both ways. It then pulses the IEEE 802.15.4 MAC reset
+and checks that both lines read released. Finally it reads the four modem
+clock words through esp-pacs and checks that no bit outside the published
+fields changed.
+
 | Register | Expected implemented bits |
 | --- | --- |
 | `CHANNEL` | frequency code 6:0 and the unclassified bit 7 |
@@ -30,4 +38,5 @@ writes and uses esp-hal's standard linker script.
 The first run on the stand's ESP32-C5 v1.0 (2026-09-27) matched every width
 the struct declares except `CHANNEL`, whose bit 7 is also implemented; the
 register model records that bit as unclassified with this observation as its
-evidence.
+evidence. A second run the same day matched every modem clock device
+transition, the reset pulse and the preservation of the unpublished bits.

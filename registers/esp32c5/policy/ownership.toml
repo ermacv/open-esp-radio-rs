@@ -4,4 +4,6 @@ owned-ranges = [
     "modem-ieee802154",
     "modem-etm-ieee802154",
     "ieee802154-core0-route",
+    "modem-syscon-radio",
+    "modem-lpcon-shared-clock",
 ]

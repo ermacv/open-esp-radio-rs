@@ -1,0 +1,24 @@
+schema = 2
+
+[[peripherals]]
+name = "MODEM_LPCON_SHARED_CLOCK"
+description = """
+ESP32-C5 MODEM_LPCON clock gate at MODEM_BASE + 0xF000 driven by the vendor
+COEXIST modem clock device. Other fields remain absent and are preserved by
+every field transaction."""
+baseAddress = 0x600AF000
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "CLK_CONF"
+description = "Low-power modem clock gates."
+addressOffset = 0x18
+size = 32
+access = "read-write"
+resetValue = 0
+
+[[peripherals.registers.register.fields]]
+name = "CLK_COEX_EN"
+description = "Enable the coexistence clock."
+bitOffset = 1
+bitWidth = 1

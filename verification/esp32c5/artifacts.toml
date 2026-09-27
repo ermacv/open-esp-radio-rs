@@ -341,3 +341,69 @@ id = "esp-idf/components/soc/esp32c5/register/soc/reg_base.h"
 source = "esp-idf"
 path = "components/soc/esp32c5/register/soc/reg_base.h"
 sha256 = "b71b182aedcd6b4bb4d4878f5387b5541cd4c3ff511a17ad3c2a8e46cb660233"
+
+[[artifact]]
+id = "esp-idf/components/esp_hw_support/modem/include/modem/modem_clock_impl.h"
+source = "esp-idf"
+path = "components/esp_hw_support/modem/include/modem/modem_clock_impl.h"
+sha256 = "497fbee5c4e07adb01cfa5980ee58dbf9ecbffde6b60855f8d5df82fc9027bc7"
+
+[[artifact]]
+id = "esp-idf/components/esp_hw_support/modem/modem_clock.c"
+source = "esp-idf"
+path = "components/esp_hw_support/modem/modem_clock.c"
+sha256 = "e698cc6596430724b2fec5b8e631706f6ae112f12e0ae22119ff9e79b21c69d3"
+
+[[artifact]]
+id = "esp-idf/components/esp_hw_support/modem/port/esp32c5/modem_clock_impl.c"
+source = "esp-idf"
+path = "components/esp_hw_support/modem/port/esp32c5/modem_clock_impl.c"
+sha256 = "86a6699e04ef19b222c62ed47bf76600a29d7efae6679e5081f46f2c70789013"
+
+[[artifact]]
+id = "esp-idf/components/hal/esp32c5/include/hal/modem_lpcon_ll.h"
+source = "esp-idf"
+path = "components/hal/esp32c5/include/hal/modem_lpcon_ll.h"
+sha256 = "65455789d369f219bbebf8fc5bf093dc0a7af7b971096c8a03d158da655bf55d"
+
+[[artifact]]
+id = "esp-idf/components/hal/esp32c5/include/hal/modem_syscon_ll.h"
+source = "esp-idf"
+path = "components/hal/esp32c5/include/hal/modem_syscon_ll.h"
+sha256 = "e03d3aa035ae5b3f8a5246e783e3996351293bcb32e863f099b7ceb9ba1f8c69"
+
+[[artifact]]
+id = "esp-idf/components/hal/esp32c5/modem_clock_hal.c"
+source = "esp-idf"
+path = "components/hal/esp32c5/modem_clock_hal.c"
+sha256 = "15ce36a20a532d0da62f69a76f41dde50e4c2bfe9125630a6c0aba07dca61395"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/include/modem/modem_lpcon_reg.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/include/modem/modem_lpcon_reg.h"
+sha256 = "0c361db253cb8d729471a907ed9a4435cc02de973c7e119e62b0d24e59e1076e"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/include/modem/modem_lpcon_struct.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/include/modem/modem_lpcon_struct.h"
+sha256 = "3b31903e3e6b858fef0203ee6f6ab9f9b99bb81ceec5b0285b25dbc96b83c508"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/include/modem/modem_syscon_reg.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/include/modem/modem_syscon_reg.h"
+sha256 = "94cc7ea3d2acc5fcdd87eef5967cabdbaa12cdc625559d4f388179b9a2886ddf"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/include/modem/modem_syscon_struct.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/include/modem/modem_syscon_struct.h"
+sha256 = "5310ec5a02347b25f955b2fc3604df63ed392a8889591a92e4733efd5d851c04"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/include/modem/reg_base.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/include/modem/reg_base.h"
+sha256 = "b80d3594c383afaf2566820ed0ce729a1dccd8d8f36e5906665105fb15f5b17f"

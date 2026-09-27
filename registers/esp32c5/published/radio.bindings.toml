@@ -1807,3 +1807,110 @@ method = "id"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
+
+[[registers]]
+address = 1611308036
+width = 32
+access = "read-write"
+identity = "MODEM_SYSCON_RADIO.CLK_CONF"
+peripheral = "MODEM_SYSCON_RADIO"
+peripheral-type = "ModemSysconRadio"
+peripheral-module = "modem_syscon_radio"
+scope = []
+register-method = "clk_conf"
+
+[[registers.fields]]
+svd-name = "CLK_ETM_EN"
+method = "clk_etm_en"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_ZB_APB_EN"
+method = "clk_zb_apb_en"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_ZBMAC_EN"
+method = "clk_zbmac_en"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_SEC_APB_EN"
+method = "clk_modem_sec_apb_en"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611308048
+width = 32
+access = "read-write"
+identity = "MODEM_SYSCON_RADIO.MODEM_RST_CONF"
+peripheral = "MODEM_SYSCON_RADIO"
+peripheral-type = "ModemSysconRadio"
+peripheral-module = "modem_syscon_radio"
+scope = []
+register-method = "modem_rst_conf"
+
+[[registers.fields]]
+svd-name = "RST_ZBMAC_APB"
+method = "rst_zbmac_apb"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_ZBMAC"
+method = "rst_zbmac"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611308052
+width = 32
+access = "read-write"
+identity = "MODEM_SYSCON_RADIO.CLK_CONF1"
+peripheral = "MODEM_SYSCON_RADIO"
+peripheral-type = "ModemSysconRadio"
+peripheral-module = "modem_syscon_radio"
+scope = []
+register-method = "clk_conf1"
+
+[[registers.fields]]
+svd-name = "CLK_BT_APB_EN"
+method = "clk_bt_apb_en"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_BTBB_EN"
+method = "clk_btbb_en"
+bit-offset = 17
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611329560
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_SHARED_CLOCK.CLK_CONF"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+peripheral-type = "ModemLpconSharedClock"
+peripheral-module = "modem_lpcon_shared_clock"
+scope = []
+register-method = "clk_conf"
+
+[[registers.fields]]
+svd-name = "CLK_COEX_EN"
+method = "clk_coex_en"
+bit-offset = 1
+bit-width = 1
+access = "read-write"

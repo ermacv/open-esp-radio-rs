@@ -17,6 +17,12 @@ member = "modem_etm"
 description = "Modem event-task matrix channels zero and one, programmed by the IEEE 802.15.4 driver."
 peripherals = ["MODEM_ETM"]
 
+[[ownership-partitions]]
+name = "ModemClockPeripherals"
+member = "modem_clock"
+description = "Modem clock gates and MAC resets driven by the vendor modem clock devices; owned by the modem clock owner."
+peripherals = ["MODEM_SYSCON_RADIO", "MODEM_LPCON_SHARED_CLOCK"]
+
 [[w1c-register-snapshots]]
 name = "ieee802154_event_status"
 peripheral = "IEEE802154_MAC"
@@ -429,3 +435,144 @@ peripheral = "IEEE802154_INTERRUPT_ROUTE"
 register = "CORE0_ROUTE"
 fields = ["MAP", "UNCLASSIFIED_6_7", "PASS_IN_SEC", "UNCLASSIFIED_9_31"]
 sources = ["ESP_PACS_5CD68D2_C5_INTERRUPT_MATRIX"]
+
+[[enum-domains]]
+name = "ModemClockGateState"
+description = "Boolean state accepted by reviewed modem clock-gate transactions."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "The selected modem clock gate is disabled."
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "The selected modem clock gate is enabled."
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[enum-domains]]
+name = "ModemResetState"
+description = "Boolean state accepted by reviewed modem reset transactions."
+
+[[enum-domains.values]]
+name = "Released"
+value = 0
+description = "The selected modem reset is released."
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[enum-domains.values]]
+name = "Asserted"
+value = 1
+description = "The selected modem reset is asserted."
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "set_ieee802154_apb_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_ZB_APB_EN", source-bit-offset = 0 }]
+domain = "ModemClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-replace-modifies]]
+name = "set_ieee802154_mac_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_ZBMAC_EN", source-bit-offset = 0 }]
+domain = "ModemClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-replace-modifies]]
+name = "set_etm_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_ETM_EN", source-bit-offset = 0 }]
+domain = "ModemClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-replace-modifies]]
+name = "set_modem_security_apb_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_MODEM_SEC_APB_EN", source-bit-offset = 0 }]
+domain = "ModemClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_apb_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_BT_APB_EN", source-bit-offset = 0 }]
+domain = "ModemClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_ieee802154_baseband_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_BTBB_EN", source-bit-offset = 0 }]
+domain = "ModemClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-replace-modifies]]
+name = "set_ieee802154_mac_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_ZBMAC", source-bit-offset = 0 }]
+domain = "ModemResetState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-replace-modifies]]
+name = "set_ieee802154_apb_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_ZBMAC_APB", source-bit-offset = 0 }]
+domain = "ModemResetState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-replace-modifies]]
+name = "set_coexistence_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = [{ field = "CLK_COEX_EN", source-bit-offset = 0 }]
+domain = "ModemClockGateState"
+exposure = "facade"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_LPCON_STRUCT", "HIL_OPEN_C5_MODEM_CLOCK_PROBE_2026_09_27"]
+
+[[field-snapshot-reads]]
+name = "observe_modem_clock_conf"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = ["CLK_ETM_EN", "CLK_ZB_APB_EN", "CLK_ZBMAC_EN", "CLK_MODEM_SEC_APB_EN"]
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[field-snapshot-reads]]
+name = "observe_modem_clock_conf1"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = ["CLK_BT_APB_EN", "CLK_BTBB_EN"]
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[field-snapshot-reads]]
+name = "observe_ieee802154_resets"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = ["RST_ZBMAC_APB", "RST_ZBMAC"]
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[field-reads]]
+name = "observe_coexistence_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+field = "CLK_COEX_EN"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_CLOCK", "ESP_IDF_4D59230D_C5_MODEM_LPCON_STRUCT"]

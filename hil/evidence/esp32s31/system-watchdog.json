@@ -1,0 +1,1673 @@
+{
+  "schema": 2,
+  "target": "esp32s31",
+  "scenario": "system-watchdog",
+  "run-id": "1790549472009-00342d67",
+  "started-unix-millis": 1790549472009,
+  "outcome": "passed",
+  "failure": null,
+  "repetitions": [
+    {
+      "outcome": "passed",
+      "failure": null,
+      "measurements": [
+        {
+          "name": "target.blocked-poll.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 6,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 809,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 5,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 5,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        }
+      ]
+    },
+    {
+      "outcome": "passed",
+      "failure": null,
+      "measurements": [
+        {
+          "name": "target.blocked-poll.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 6,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 809,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 5,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 5,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        }
+      ]
+    },
+    {
+      "outcome": "passed",
+      "failure": null,
+      "measurements": [
+        {
+          "name": "target.blocked-poll.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.blocked-poll.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.cancelled.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 6,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 809,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 5,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.complete.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 5,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.late-restoration.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 7,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 3333,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.lost-completion.request-5.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 3,
+          "verdict": null
+        }
+      ]
+    }
+  ],
+  "completion-seal": {
+    "path": "attempts/system-watchdog.json",
+    "sha256": "37b76138ee6266d3855c1147385714ad69b3b1a6ace7ffc8dfd491cad9bbc819"
+  },
+  "subject": {
+    "observer": {
+      "build_sha256": "66bcdab0eeae2c45befaf9b23add0f24d8ed829abf81f27748235e0d03901fb6",
+      "executable_sha256": "dcefdc1b66bf16e41b45a465cd1501394007707ac6e4205c8311e0110c8622a6",
+      "schema": 2
+    },
+    "repository": {
+      "commit": "6df8b439c8f94a4e2356c6f5ed2f8850cdbe10af",
+      "dirty": true,
+      "workspace_sha256": "29d0e17bbc9bd55dddfbe9d7d751b500c594fb37d7386229159878f99c70875d"
+    },
+    "firmware": [
+      {
+        "image": "system-watchdog",
+        "build_id": "a62cf390b7c4de3541344daac1dab5ef9df082cbc642b054ffa5a9adea72d820",
+        "application": {
+          "path": "firmware/system-watchdog/application.bin",
+          "size_bytes": 278288,
+          "sha256": "68fc6f645fc597258ba675b4c3ce0211d07aa91147028079c0159b5c508a6a8e"
+        },
+        "build_provenance": {
+          "path": "firmware/system-watchdog/build-provenance.json",
+          "size_bytes": 5599,
+          "sha256": "7909f413c995e2d4e54448152a7920fe8abeeae46447190b6b2635c51d6b7ec2"
+        },
+        "replayed": false
+      }
+    ],
+    "procedure": {
+      "path": "scenarios/system-watchdog/scenario.json",
+      "size_bytes": 364,
+      "sha256": "fb4d05c24f5b27e3a513dd7db2177d894382ecbee6686cd7afeb713a317f58c9"
+    },
+    "fixture": {
+      "path": "lab-provenance.json",
+      "size_bytes": 2018,
+      "sha256": "840e78ee4937b5087eced9c15c27e472d67c0efc2773f822504d5b32f1b0bf9c"
+    },
+    "source_snapshot_manifest": {
+      "path": "source/snapshot/manifest.json",
+      "size_bytes": 800538,
+      "sha256": "908028f4351eba6aef95e533d069c9c00a75c3b727c758187b988b08aa0dc9e5"
+    }
+  },
+  "procedure": {
+    "description": "SoC deadline completion, stuck synchronous poll, cancellation, lost completion and late restoration; reset evidence only, no RF assertion",
+    "id": "system-watchdog",
+    "repetitions": 3,
+    "schema": 5,
+    "system": {
+      "kind": "watchdog"
+    },
+    "tags": [
+      "watchdog",
+      "soc",
+      "fault-injection"
+    ],
+    "transfer": "identical-image"
+  },
+  "sources": [
+    {
+      "path": ".cargo/config.toml",
+      "sha256": "5df4bde4735925017628aa3c7d769fbc20bca4d16fffa0fe09cc4ce88db7ae29"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "6ee70b72ef279e1852698c6a21f7d41c2d5ad5428400966a6b67a62edbabb0a8"
+    },
+    {
+      "path": "crates/adapters/embassy/esp32s31/executor/Cargo.toml",
+      "sha256": "dbf4b361f992a93783af4221e2ed815ee9c65f00785effc5184f45a60c58e17b"
+    },
+    {
+      "path": "crates/adapters/embassy/esp32s31/executor/src/executor.rs",
+      "sha256": "a4eec3388537d1714769fb3f7a2c9f64108ce96a7c540342793def9f37bad189"
+    },
+    {
+      "path": "crates/adapters/embassy/esp32s31/executor/src/lib.rs",
+      "sha256": "b97bc29e5f4941200860c0693ee9ca14fc248868ba3cd8497dc6e6b4010e7bc6"
+    },
+    {
+      "path": "crates/adapters/embassy/esp32s31/executor/src/time_driver.rs",
+      "sha256": "49b4a9c871b63ece88b1de9222837b1917cacd7c9442c102195fd50793d1f842"
+    },
+    {
+      "path": "crates/adapters/embassy/esp32s31/executor/src/timer_queue.rs",
+      "sha256": "c3a1a1b0e10ab47cf8f6f6e12a86bc906d89aec502b1e4b51f1ca1cfb7536b47"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/Cargo.toml",
+      "sha256": "aab4ded25ed1454411577f89a6543a68175cd7ec67ffef6e2cc9fdd1fb910897"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/src/cache/performance.rs",
+      "sha256": "b843b61d9da2c86e66a80303bc9bd3896d6a284402c84e11128e4bb1fab66978"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/src/cache.rs",
+      "sha256": "4fdf971191b6eebe985883c644ab6804b05f1b20bd84cb73af334ce39f9dfb7d"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/src/entropy.rs",
+      "sha256": "8daf21dd608ffe42e4d006775f6fa20bef1a06da1259232bd14f6540a4d650d8"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/src/flash/mmu.rs",
+      "sha256": "aec87c6115bf437ce544530d1701f3ddfeeb2753155b73e0dd37fc421bcc06b8"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/src/flash.rs",
+      "sha256": "dcd2c0c9b304add56e33a86327243bf10de458aa33e9634f1cca83d354c0a830"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/src/lib.rs",
+      "sha256": "b66e281fc62679b0bfff38e3aafbcf2129861076f622099da45081acad562f51"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/src/reset.rs",
+      "sha256": "e8a360aed4e818e8e839c23299c1a190eef9c58ab8f8afc61ec87382a10bdfea"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/soc/src/watchdog.rs",
+      "sha256": "5756a16299a737d13ae2304dd5cf25a0888f6569302187175b66cb19bbbd458d"
+    },
+    {
+      "path": "crates/protocols/ieee80211/mac",
+      "sha256": "4f0072279b94765aa8d8949d3fad1005fc99f9a6a1de05c11ff92409628bb883"
+    },
+    {
+      "path": "hil/host/arbiter",
+      "sha256": "5b840105133495b590f18cfdc50652f29c6afbb3b0f3d38c1daa6d864cedce60"
+    },
+    {
+      "path": "hil/host/fixture",
+      "sha256": "57c10932f3d2789fb911c04d50682ecb76cbe230d21216af3089b98d169ec7f4"
+    },
+    {
+      "path": "hil/host/fixture-install",
+      "sha256": "9dbb6687d62f5271b5bf913ac8e433e3e8a844ab08029b4844d0c1fd46316931"
+    },
+    {
+      "path": "hil/host/runner",
+      "sha256": "375dcce2dc4a10865c738f60501432db718a1955fc1594b8f875e626f0900d0c"
+    },
+    {
+      "path": "hil/host/runner-bluetooth",
+      "sha256": "1775bf9af12a4697ef345b1ce8b841afa43dfa3cec12d7aee40aec716b51572c"
+    },
+    {
+      "path": "hil/host/runner-core",
+      "sha256": "927a670362c9180ee2f6485369786f3356099106aa4dc4a238ca2e012cf45a96"
+    },
+    {
+      "path": "hil/host/runner-ieee80211",
+      "sha256": "a403686b8bd493cc585893991a8ce9facd21b3153574f557bdd37eab337a9a5d"
+    },
+    {
+      "path": "hil/host/runner-ieee802154",
+      "sha256": "a055e315678e07840116491fbe636aa24cdde41c4a6cd12744c061efabc3dff8"
+    },
+    {
+      "path": "hil/host/runner-system",
+      "sha256": "162cef2bf2c30b98ef401d5f76d7ef9d80c8d19e8a7a2f83c6ab1628189ba212"
+    },
+    {
+      "path": "hil/protocol",
+      "sha256": "3dc5e4d5c18e9bfa2fe17432b3ecbf9d8e7da8b2507c523710e97b0a0044f513"
+    },
+    {
+      "path": "hil/protocol/Cargo.toml",
+      "sha256": "324804d62e39b6870f0d090806e35506d6f62f7edba4407b49e036f22a8c9acb"
+    },
+    {
+      "path": "hil/protocol/src/bluetooth.rs",
+      "sha256": "e4bda289fb0f715f7c28228201b2d1d98f0c0e427229dbaa8eb2b1a896108b0d"
+    },
+    {
+      "path": "hil/protocol/src/bluetooth_gatt.rs",
+      "sha256": "116c8e4ee90774aac1acdb6ac65aa7bf4687680a91761c31850f88ca7423f699"
+    },
+    {
+      "path": "hil/protocol/src/bluetooth_secure_gatt.rs",
+      "sha256": "34ae3ca1b69f2acd987018b234dcbb4feec50e6114b21593fc9f62ffe3a9c6e9"
+    },
+    {
+      "path": "hil/protocol/src/framing.rs",
+      "sha256": "44857af3f873e9912f4b2eeacd17046cc6a8c065e406772141ae2f46c78a4bd0"
+    },
+    {
+      "path": "hil/protocol/src/io.rs",
+      "sha256": "8f9cccbb716d183b3641e44d867d0f059b7db89de8279b67acdec2b70f18e3db"
+    },
+    {
+      "path": "hil/protocol/src/lib.rs",
+      "sha256": "9b7653e59b2244c70ef8d2a8c7c08992461e6eb48810c1b8674ecf611de70ede"
+    },
+    {
+      "path": "hil/protocol/src/memory_benchmark.rs",
+      "sha256": "ea461950020085ad94f8949773e12a5764ceb7b9fe052d7eaba00fcfe14a18b8"
+    },
+    {
+      "path": "hil/protocol/src/message/artifact.rs",
+      "sha256": "8ed8b30f2774ff7788fa2faba6bc0ae72f205bc51faa3307d2e55f478c352703"
+    },
+    {
+      "path": "hil/protocol/src/message/ieee802154.rs",
+      "sha256": "1047d4bb0b081abb1c66c5357b8a8ca417ad49d9c70179fb6772e6652a3ae97e"
+    },
+    {
+      "path": "hil/protocol/src/message/session.rs",
+      "sha256": "fabdfa24501e716d82c5ad636843261ba196e85848fa1bf61d7c3735d22e6a68"
+    },
+    {
+      "path": "hil/protocol/src/message/wifi.rs",
+      "sha256": "e629bb0c98f28f6f342c185ef56b7d68cdb1db2c438d6a86c63e1df2ecac987f"
+    },
+    {
+      "path": "hil/protocol/src/message.rs",
+      "sha256": "d4ce72318c497e431e05fe90e228eac3f7b0b1e14373439ddf61ce3137095c6a"
+    },
+    {
+      "path": "hil/protocol/src/phy_fault.rs",
+      "sha256": "85a142b1b9857d95937f9dac1dd929002de6a497e2a1b027a213e2ccf2f46848"
+    },
+    {
+      "path": "hil/protocol/src/phy_register_image.rs",
+      "sha256": "10128bd6d56496f70933c959f1487fbec98cc8b936e1afc2486b1e3d765a5203"
+    },
+    {
+      "path": "hil/protocol/src/stream_pattern.rs",
+      "sha256": "c57dfd9acc818a8edc98cf2db76cc0aa42aff3f2b17fc7b1612efdb961ee0eba"
+    },
+    {
+      "path": "hil/protocol/src/system.rs",
+      "sha256": "cf9e3a215f0ba1b4cc3ebe213bc39e2e0e523a845cf33914c7766c72ec070f91"
+    },
+    {
+      "path": "hil/protocol/src/udp_probe.rs",
+      "sha256": "af251828d20332157101010202d81c2efc67f01e4eb35f9c7e1f8922283137a6"
+    },
+    {
+      "path": "hil/protocol/src/wifi_airtime.rs",
+      "sha256": "17d2dd84da352ad585668fe9de27f2d2a7f250da8e47debbcd272aac9d2e48af"
+    },
+    {
+      "path": "hil/protocol/src/wifi_rx.rs",
+      "sha256": "5851420da8e7bd2d248e3132ae92a88457964765f675eb222b343f2fc401fcf7"
+    },
+    {
+      "path": "hil/protocol/src/wifi_tx.rs",
+      "sha256": "33b47d97a6b3562c4c9557dab1a987b1940ede2823a57c0787031ab1ec6b9380"
+    },
+    {
+      "path": "hil/schema",
+      "sha256": "b530fda74e697659b977926121f826d0db3909ed4ed7f95c4e44a6526fb4671b"
+    },
+    {
+      "path": "hil/schema/observer-inputs.json",
+      "sha256": "ca796647d180610b5462ee503bbe22f5319a562294d20f347afa3c788c84d978"
+    },
+    {
+      "path": "hil/target-core/Cargo.toml",
+      "sha256": "2579a2137b6a3975c1580f6983751bc12442701eac7b640c21f1cd1bddcac8ab"
+    },
+    {
+      "path": "hil/target-core/src/console/progress.rs",
+      "sha256": "915f8d0d59eb5fa7a973541facf95985bb047005181bc05559c0be47e52bff19"
+    },
+    {
+      "path": "hil/target-core/src/console/writer.rs",
+      "sha256": "7d1db825f3cacff097b369601947e6ddb7ed06ee5a0db68321b70bc41a411411"
+    },
+    {
+      "path": "hil/target-core/src/console.rs",
+      "sha256": "3b462f5ec6728b7d0508c26d03c6126005be78c66a913fd975bbb5e925ef4576"
+    },
+    {
+      "path": "hil/target-core/src/lib.rs",
+      "sha256": "3f0c5303f4ba0b7b5dc637159fb4dab42997d1f9189b028de63ba4a2ce012f04"
+    },
+    {
+      "path": "hil/target-core/src/memory_benchmark.rs",
+      "sha256": "91672ce1d254fc104d8134de6d20b110f50f4c5554bc01d439ca722a1321d1dd"
+    },
+    {
+      "path": "hil/target-core/src/network/progress.rs",
+      "sha256": "e40f79bac2664f739446c06826389845e63239d778b374f6efd6a61f72246f70"
+    },
+    {
+      "path": "hil/target-core/src/network.rs",
+      "sha256": "3e1cd7ef3c2b2d12c4ddc91f70acde4b53a489967399ab01b21051a09605f5fb"
+    },
+    {
+      "path": "hil/target-core/src/postmortem.rs",
+      "sha256": "20cee5136d580997f423f22517bab8da719b13a8611f3f0eadceab753ecb30be"
+    },
+    {
+      "path": "hil/target-core/src/traffic/connection.rs",
+      "sha256": "e36c85f66b7b3f71dfa2cdd66fdf019a61e65accc30032d6653c8b512cd4836c"
+    },
+    {
+      "path": "hil/target-core/src/traffic/multi_tx.rs",
+      "sha256": "8fb1d9fcce73a9bc6c55614a59c021b02b3cb4248a351e3180b325c42444dc7a"
+    },
+    {
+      "path": "hil/target-core/src/traffic.rs",
+      "sha256": "b108b7be2207abb74e340bfe94028744c6cd5e21726a3d1bcb89a878d61f8e7f"
+    },
+    {
+      "path": "hil/targets/esp32s31/Cargo.lock",
+      "sha256": "8d9849278b447ade1195ca58090c50084c72edb15020b8dae0affbca4d580b74"
+    },
+    {
+      "path": "hil/targets/esp32s31/Cargo.toml",
+      "sha256": "bc5e8b10732f907ef2bbaa60ca883091dea101b2935f6dd93c8840fdbc954a77"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/Cargo.toml",
+      "sha256": "db7e4b6dd404aaa06dcf6cb1c967697ac5a7f0d4970ca057a440eb3493efc8a1"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/build.rs",
+      "sha256": "92ef6a9bc411d3a7bbd3a81781b1303934f4cbb9e7a13ced65be22a17709055f"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/exception.rs",
+      "sha256": "c81e99d6b13cbead862e52d5c6c8e57df1eb07973ccf9fa458cad37848dc66a8"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/main.rs",
+      "sha256": "8cbb267d9c0b5f9700b434fb2cd3b2e2dcff75768ca3fab14eaff87813736882"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/system/console.rs",
+      "sha256": "59f1990d751f0d55c8d91d5338354d4685e8d38c2de5517acb9c6838e1817553"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/system/mod.rs",
+      "sha256": "0f34694168157b2d6be72355efa0a682cea8a17f0dfcc1146b89e96334440f9e"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/system/postmortem.rs",
+      "sha256": "a74ba48a7b19f0a8976e3c5a1799241f6aa2b03c99930fe9dba19322280454f2"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/system/watchdog.rs",
+      "sha256": "004b7908fc202ad01a1be5294c7c3600aa868132ed815735ad48d8bf7b7af96a"
+    },
+    {
+      "path": "hil/targets/esp32s31/stack.toml",
+      "sha256": "fd22954332fd090ab1f2156ddd76b4251080b3b6142e6dd4668a6cc79e636231"
+    },
+    {
+      "path": "platform/esp32s31/Cargo.lock",
+      "sha256": "2d9f482a1e328efb1f2156fd595f3fc7b9fb842a3b01f6a8310cc0e0222c31b8"
+    },
+    {
+      "path": "platform/esp32s31/Cargo.toml",
+      "sha256": "212f1130a0e4ccc78fc983d1b35e374dac13102862e23fdcd2dc79e7a49f8891"
+    },
+    {
+      "path": "platform/esp32s31/board/Cargo.toml",
+      "sha256": "fdf4d28eb66ffb49f618ff9bafb615dd7fd76353f0f194fb7c9379e94a9cccf0"
+    },
+    {
+      "path": "platform/esp32s31/board/src/lib.rs",
+      "sha256": "eb06eacea06df68b6b9f036564dbba1157a5bcc1f3c833fbdfc24cb15d6d729b"
+    },
+    {
+      "path": "platform/esp32s31/bootstrap/Cargo.toml",
+      "sha256": "253bab9e519fdcce1d96b4c6484b64e7a66d82ff43fa233036c4269beffcbc58"
+    },
+    {
+      "path": "platform/esp32s31/bootstrap/build.rs",
+      "sha256": "e5c594d791b78bdb8c66fe5fb583fca997704e414cd732af0e382653bc6b7861"
+    },
+    {
+      "path": "platform/esp32s31/bootstrap/src/main.rs",
+      "sha256": "7dca7423a63b7dc3711cf453791d98dbf2b440e9f1e8b310ccc8c053daa74b75"
+    },
+    {
+      "path": "platform/esp32s31/layout",
+      "sha256": "1a63dd332cca966376b93829ac62659fe4b585a23cda8f965d9a033afd646375"
+    },
+    {
+      "path": "platform/esp32s31/layout/Cargo.toml",
+      "sha256": "8b75e6b4cfc57580e0cc5d003291503d8b3f62bad0191f656a78787781efbb7a"
+    },
+    {
+      "path": "platform/esp32s31/layout/src/build.rs",
+      "sha256": "227ffe8a3c8f840d1da0ebc0d6b82cc91ee2d5fd535d9e650adacbb6d934e892"
+    },
+    {
+      "path": "platform/esp32s31/layout/src/lib.rs",
+      "sha256": "2e151bcd21984d258cdca2db4d817e811391f4c9965b6f617f681b7afec5c519"
+    },
+    {
+      "path": "platform/esp32s31/layout/src/memory.rs",
+      "sha256": "5c8966533b10bcbe22d59eace8782831b034befa6414bb0ef8e71b9fce97c02c"
+    },
+    {
+      "path": "platform/esp32s31/layout/src/stage_two.rs",
+      "sha256": "454c222ff3f0e37c5933512cfbeeb44d939f41bc7c8100218353856ccc6c48dd"
+    },
+    {
+      "path": "platform/esp32s31/linker/bootstrap/flash-sections.x",
+      "sha256": "283d788910c9c0e6d3d1e418468e016e4c116c692fb34bb864fa0e19202fbdfb"
+    },
+    {
+      "path": "platform/esp32s31/linker/bootstrap/link.x",
+      "sha256": "1e211bf59507d661d5b7b1ec6cbad3116d446ee62717083c9918a93af9c1955e"
+    },
+    {
+      "path": "platform/esp32s31/linker/bootstrap/memory.x",
+      "sha256": "258553c8089aed64f8b42f1eddecd793037e2e7f820376db5a68f8dca0a8221c"
+    },
+    {
+      "path": "platform/esp32s31/linker/bootstrap/psram-sections.x",
+      "sha256": "8cbbd9c2b6cefa0f94db4c17f156f181e46e0014a9585015d419a3392fb00619"
+    },
+    {
+      "path": "platform/esp32s31/linker/bootstrap/sections.x",
+      "sha256": "0bcaaaf4cd54f250ea14eb509afa9d8b39e71f2519333018d35dcb82a8113a23"
+    },
+    {
+      "path": "platform/esp32s31/linker/rom/esp32s31-eco0.x",
+      "sha256": "b9ce3d215efe84ec68c65a4eab371fdc0d74338a2e8de7f3ecb3991d709a6ad5"
+    },
+    {
+      "path": "platform/esp32s31/linker/runtime/link.x",
+      "sha256": "0c6ff1656abfd9ab3e28f71077a000b6c630b2e9b668f574b94bc36d11ca4701"
+    },
+    {
+      "path": "platform/esp32s31/linker/runtime/memory.x",
+      "sha256": "20efdff103fc35ba71e9962d5f785182b016edac22186483f29a5f8ec4513ed0"
+    },
+    {
+      "path": "platform/esp32s31/linker/runtime/sections.x",
+      "sha256": "5b14cad979c6edded45ad9262ebcd25aeb7d352b1fb1aaeaff94f4cd03d506e4"
+    },
+    {
+      "path": "platform/esp32s31/partitions/applications.csv",
+      "sha256": "c37ebb86c884e27d21b401b0e3ad48e53b484ddb6fa1596fbdbf7f878b4d0116"
+    },
+    {
+      "path": "platform/esp32s31/runtime/Cargo.toml",
+      "sha256": "23badd759756e370c4377a83a2a23820173622c2fc6a221e71a719be55441142"
+    },
+    {
+      "path": "platform/esp32s31/runtime/src/entry.rs",
+      "sha256": "ea3a5543f876dfcf703836881c0f69c95bd4d91b05bcf0ad1b335c1bfcbc8705"
+    },
+    {
+      "path": "platform/esp32s31/runtime/src/lib.rs",
+      "sha256": "80206e0439228ce611a82c9cf49e7abcbc79b6c379cc7799a54d4d53c34001d3"
+    },
+    {
+      "path": "platform/esp32s31/runtime/src/stacks/watermark.rs",
+      "sha256": "38d5ac86aaa145f581e032974b6a08488c0ec929c95aae7ccf32c623fe67cda4"
+    },
+    {
+      "path": "platform/esp32s31/runtime/src/stacks.rs",
+      "sha256": "92db68cc1ebd185c9b5e8049ffb4ad6fcd4ff1a4013031645ecab9ebbc903520"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "sha256": "4f2a18bc72b318bd18159aad0df21687e552d04c2cf352173b282ff810a34bd4"
+    },
+    {
+      "path": "tools/chip-profile",
+      "sha256": "6af98baf2f8a53278d58401f4314be43a8744e83e468f6a4d80a8ff217e6cf39"
+    },
+    {
+      "path": "tools/firmware",
+      "sha256": "a8ccc7d82521e8f858aac10d326d98136f9999a20731c264f314629e97b22e96"
+    },
+    {
+      "path": "tools/memory-report",
+      "sha256": "75f4052961fa2d83aafbc5adf1f51b7c615c5af0b63de1f23abd4257a9dedf98"
+    },
+    {
+      "path": "tools/process",
+      "sha256": "8012f1498a078531e8a8f23d8483cf34d991ec8e64a9334166dc00542b9bd7c9"
+    }
+  ]
+}

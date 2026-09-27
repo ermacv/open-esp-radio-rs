@@ -11,7 +11,7 @@ description = "Host-wide FIFO arbitration, budgets and board journal for the sin
 [dependencies]
 fs2 = "0.4"
 oer-process = { path = "../../../tools/process" }
-rustix = { version = "1.1.4", features = ["process"] }
+rustix = { version = "1.1.4", features = ["param", "process"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serialport = { version = "4.8.1", default-features = false }

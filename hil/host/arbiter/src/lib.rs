@@ -33,6 +33,7 @@ pub use devices::{
 };
 pub use grant::{BUDGET_ENV, Grant, LEASE_ENV, OWNER_ENV, Request, SHORT_ENV, default_owner};
 pub use history::{LeaseOutcome, LeaseRecord};
+pub use process::process_started_unix_millis;
 pub use state::{AIR, Claim, Mode, STAND};
 pub use status::{HolderStatus, QueuedStatus, Status};
 pub use store::{Arbiter, DIRECTORY_ENV};

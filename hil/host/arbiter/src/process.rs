@@ -29,6 +29,21 @@ impl ProcessIdentity {
     }
 }
 
+/// When the live process `pid` started, in Unix milliseconds, to the
+/// resolution of the kernel's boot time (one second).
+pub fn process_started_unix_millis(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let boot_seconds: u64 = std::fs::read_to_string("/proc/stat")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .trim()
+        .parse()
+        .ok()?;
+    let ticks_per_second = rustix::param::clock_ticks_per_second();
+    Some(boot_seconds * 1000 + start_ticks(&stat)? * 1000 / ticks_per_second)
+}
+
 /// Field 22 of `/proc/<pid>/stat`. The command name (field 2) is enclosed in
 /// parentheses and may itself contain spaces or parentheses.
 fn start_ticks(stat: &str) -> Option<u64> {
@@ -40,6 +55,16 @@ fn start_ticks(stat: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn this_process_started_before_now() {
+        let started = process_started_unix_millis(std::process::id()).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        assert!(started <= now + 1000 && now - started < 24 * 3600 * 1000);
+    }
 
     #[test]
     fn start_time_skips_command_names_with_spaces_and_parentheses() {

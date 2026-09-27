@@ -139,8 +139,16 @@ pub fn load(directory: &Path) -> Option<Run> {
         id: text(&manifest["run_id"])
             .or_else(|| Some(directory.file_name()?.to_string_lossy().into_owned()))?,
         directory: directory.to_owned(),
-        started_millis: manifest["started_unix_millis"].as_u64().unwrap_or_default(),
-        state: text(&manifest["state"]).unwrap_or_default(),
+        started_millis: started_millis(&manifest),
+        state: text(&manifest["state"])
+            .map(|state| {
+                if state == "running" && !runner_alive(directory, started_millis(&manifest)) {
+                    String::from("abandoned")
+                } else {
+                    state
+                }
+            })
+            .unwrap_or_default(),
         outcome: suite.as_ref().and_then(|suite| text(&suite["outcome"])),
         commit: text(&manifest["repository"]["commit"]),
         dirty: manifest["repository"]["dirty"]
@@ -151,6 +159,28 @@ pub fn load(directory: &Path) -> Option<Run> {
         replayed,
         scenarios,
     })
+}
+
+fn started_millis(manifest: &Value) -> u64 {
+    manifest["started_unix_millis"].as_u64().unwrap_or_default()
+}
+
+/// Whether the runner that started the run in `directory` still runs. The run
+/// ID ends with the runner's PID in hexadecimal; a live process with that PID
+/// that started after the run is another process reusing it.
+fn runner_alive(directory: &Path, started_millis: u64) -> bool {
+    let Some(pid) = directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.split('-').nth(1))
+        .and_then(|pid| u32::from_str_radix(pid, 16).ok())
+    else {
+        // An unknown naming scheme is not evidence of a dead runner.
+        return true;
+    };
+    oer_hil_arbiter::process_started_unix_millis(pid)
+        // Boot time has a resolution of one second.
+        .is_some_and(|process| process <= started_millis + 2000)
 }
 
 fn collect_strings(value: &Value, key: &str) -> Vec<String> {
@@ -597,7 +627,9 @@ pub fn retained(
                 run.id.clone(),
                 format!("younger than {} days", rule.keep_days),
             );
-        } else if run.state == "running" || run.outcome.is_none() {
+        } else if run.state == "running" {
+            keep.insert(run.id.clone(), String::from("in progress"));
+        } else if run.outcome.is_none() && run.state != "abandoned" {
             keep.insert(run.id.clone(), String::from("incomplete"));
         }
         for source in &run.replayed {
@@ -676,6 +708,32 @@ pub fn cited_by_shards(root: &Path) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_running_run_without_its_runner_is_abandoned() {
+        let runs = tempfile::tempdir().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let running = |id: &str| {
+            let directory = runs.path().join(id);
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(
+                directory.join("manifest.json"),
+                serde_json::json!({"state": "running", "started_unix_millis": now}).to_string(),
+            )
+            .unwrap();
+            load(&directory).unwrap().state
+        };
+        // This test process started before the run.
+        assert_eq!(
+            running(&format!("{now}-{:08x}", std::process::id())),
+            "running"
+        );
+        // No process has PID 0xfffffffe.
+        assert_eq!(running(&format!("{now}-fffffffe")), "abandoned");
+    }
 
     fn bundle(runs: &Path, id: &str, started: u64, outcome: &str, replay: Option<&str>) {
         let directory = runs.join(id);

@@ -2,42 +2,42 @@
   "schema": 3,
   "date": "2026-09-27",
   "lifecycle": "restart",
-  "verdict": "diff",
+  "verdict": "match",
   "vendor-object": "phy_param",
   "vendor-application-sha256": "ee3b4fb1f7041c98aede6ad19da4803ac680163eecfd7801057d7837be850efc",
   "vendor-idf-revision": "4d59230ddff16327812782151ef0afef202dc6d7",
   "vendor-captures": 10,
   "production-image": "correctness",
-  "production-application-sha256": "7a9f2b7716db87ed7a43df84ad872d1a95d48eb0ad7f9b0e9e0ae9b3af03a548",
+  "production-application-sha256": "509499225c32444c5da9bde3320a9252fe52d0e4e48013dfff0a91b69382ad7b",
   "production-captures": 10,
   "fields": [
     {
       "name": "common-reference",
-      "verdict": "diff",
-      "margin": 1,
+      "verdict": "match",
+      "margin": 2,
       "reason": "temperature the common calibration commits as its tracking reference",
       "vendor": [
         [
           25,
-          26
+          27
         ]
       ],
       "production": [
         [
           27,
-          28
+          27
         ]
       ]
     },
     {
       "name": "transmit-reference",
-      "verdict": "diff",
-      "margin": 1,
+      "verdict": "match",
+      "margin": 2,
       "reason": "temperature the TX calibration commits as its tracking reference",
       "vendor": [
         [
           21,
-          22
+          23
         ]
       ],
       "production": [
@@ -94,7 +94,7 @@
           245
         ],
         [
-          265,
+          264,
           267
         ],
         [
@@ -102,24 +102,24 @@
           259
         ],
         [
-          253,
+          254,
           255
         ],
         [
           243,
-          244
+          245
         ],
         [
-          262,
-          265
+          263,
+          264
         ],
         [
-          258,
-          259
+          257,
+          260
         ],
         [
-          253,
-          256
+          254,
+          255
         ],
         [
           243,
@@ -127,20 +127,20 @@
         ],
         [
           261,
-          263
+          262
         ],
         [
           257,
-          259
+          260
         ],
         [
           253,
-          256
+          255
         ]
       ],
       "production": [
         [
-          243,
+          242,
           245
         ],
         [
@@ -156,12 +156,12 @@
           255
         ],
         [
-          244,
-          246
+          243,
+          245
         ],
         [
           262,
-          263
+          264
         ],
         [
           257,
@@ -172,7 +172,7 @@
           256
         ],
         [
-          244,
+          243,
           245
         ],
         [
@@ -180,36 +180,36 @@
           262
         ],
         [
-          256,
-          259
+          257,
+          260
         ],
         [
-          253,
-          257
+          254,
+          256
         ]
       ]
     },
     {
       "name": "bluetooth-dc-rows",
       "verdict": "match",
-      "margin": 10,
+      "margin": 9,
       "reason": "Bluetooth TX DC calibration codes",
       "vendor": [
         [
           260,
-          261
+          260
         ],
         [
           258,
           259
         ],
         [
-          252,
+          256,
           258
         ],
         [
           251,
-          258
+          257
         ],
         [
           259,
@@ -217,14 +217,14 @@
         ],
         [
           258,
+          258
+        ],
+        [
+          252,
           259
         ],
         [
           252,
-          260
-        ],
-        [
-          247,
           254
         ],
         [
@@ -237,25 +237,25 @@
         ],
         [
           254,
-          257
+          256
         ],
         [
-          247,
+          248,
           257
         ]
       ],
       "production": [
         [
           259,
-          261
+          260
         ],
         [
           258,
           259
         ],
         [
-          251,
-          262
+          256,
+          261
         ],
         [
           250,
@@ -266,7 +266,7 @@
           260
         ],
         [
-          257,
+          258,
           258
         ],
         [
@@ -274,8 +274,8 @@
           260
         ],
         [
-          251,
-          259
+          252,
+          254
         ],
         [
           259,
@@ -286,27 +286,27 @@
           258
         ],
         [
-          254,
-          257
+          253,
+          256
         ],
         [
           247,
-          257
+          256
         ]
       ]
     },
     {
       "name": "wifi-rx-dc",
       "verdict": "match",
-      "margin": 15,
+      "margin": 11,
       "reason": "Wi-Fi per-gain RX DC codes and the phy_rxdc_fine_cal pairs",
       "vendor": [
         [
-          260,
+          259,
           262
         ],
         [
-          302,
+          303,
           304
         ],
         [
@@ -318,24 +318,16 @@
           304
         ],
         [
-          259,
+          258,
           260
         ],
         [
-          302,
-          303
+          301,
+          304
         ],
         [
           258,
           261
-        ],
-        [
-          303,
-          306
-        ],
-        [
-          260,
-          262
         ],
         [
           303,
@@ -343,14 +335,22 @@
         ],
         [
           260,
-          261
+          262
         ],
         [
-          302,
-          303
+          303,
+          304
         ],
         [
           260,
+          262
+        ],
+        [
+          302,
+          304
+        ],
+        [
+          261,
           263
         ],
         [
@@ -358,66 +358,66 @@
           302
         ],
         [
-          260,
-          262
-        ],
-        [
-          302,
-          304
-        ],
-        [
-          277,
-          279
-        ],
-        [
-          246,
-          249
-        ],
-        [
-          277,
-          279
-        ],
-        [
-          246,
-          249
-        ],
-        [
-          277,
-          279
-        ],
-        [
-          246,
-          256
-        ],
-        [
-          271,
-          278
-        ],
-        [
-          246,
-          261
-        ],
-        [
-          264,
-          273
-        ],
-        [
-          249,
-          264
-        ]
-      ],
-      "production": [
-        [
           259,
           262
         ],
         [
-          302,
+          303,
+          304
+        ],
+        [
+          277,
+          279
+        ],
+        [
+          245,
+          248
+        ],
+        [
+          277,
+          279
+        ],
+        [
+          245,
+          248
+        ],
+        [
+          277,
+          285
+        ],
+        [
+          245,
+          248
+        ],
+        [
+          269,
+          280
+        ],
+        [
+          247,
+          256
+        ],
+        [
+          262,
+          273
+        ],
+        [
+          251,
+          261
+        ]
+      ],
+      "production": [
+        [
+          260,
+          261
+        ],
+        [
+          303,
           304
         ],
         [
           260,
-          262
+          263
         ],
         [
           303,
@@ -433,7 +433,23 @@
         ],
         [
           258,
-          260
+          261
+        ],
+        [
+          303,
+          305
+        ],
+        [
+          259,
+          261
+        ],
+        [
+          302,
+          304
+        ],
+        [
+          260,
+          262
         ],
         [
           303,
@@ -444,72 +460,56 @@
           261
         ],
         [
-          302,
-          304
-        ],
-        [
-          259,
-          262
-        ],
-        [
-          302,
-          304
+          301,
+          302
         ],
         [
           260,
           262
         ],
         [
-          300,
-          302
-        ],
-        [
-          259,
-          261
-        ],
-        [
           302,
           304
         ],
         [
-          276,
+          277,
           279
         ],
         [
           245,
-          249
+          248
         ],
         [
-          276,
+          277,
           279
         ],
         [
           245,
-          249
+          248
         ],
         [
-          276,
-          285
-        ],
-        [
-          245,
-          249
-        ],
-        [
-          266,
+          277,
           279
         ],
         [
-          247,
+          245,
+          248
+        ],
+        [
+          270,
+          279
+        ],
+        [
+          245,
+          254
+        ],
+        [
+          265,
+          271
+        ],
+        [
+          251,
           258
-        ],
-        [
-          261,
-          274
-        ],
-        [
-          252,
-          264
         ]
       ]
     },
@@ -552,7 +552,7 @@
           289
         ],
         [
-          242,
+          241,
           243
         ],
         [
@@ -581,7 +581,7 @@
         ],
         [
           288,
-          288
+          289
         ],
         [
           242,
@@ -634,15 +634,7 @@
           289
         ],
         [
-          242,
-          242
-        ],
-        [
-          288,
-          289
-        ],
-        [
-          242,
+          241,
           243
         ],
         [
@@ -682,7 +674,15 @@
           289
         ],
         [
-          229,
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          228,
           230
         ],
         [
@@ -690,24 +690,24 @@
           283
         ],
         [
-          258,
-          260
+          257,
+          259
         ],
         [
-          302,
+          301,
           304
         ]
       ]
     },
     {
       "name": "power-temperature",
-      "verdict": "diff",
-      "margin": 1,
+      "verdict": "match",
+      "margin": 2,
       "reason": "temperature the TX power calibration commits as its power tracking reference",
       "vendor": [
         [
           21,
-          22
+          23
         ]
       ],
       "production": [
@@ -809,13 +809,13 @@
     },
     {
       "name": "rfpll-reference",
-      "verdict": "diff",
-      "margin": 1,
+      "verdict": "match",
+      "margin": 2,
       "reason": "temperature the RFPLL calibration commits as its tracking reference",
       "vendor": [
         [
           21,
-          22
+          23
         ]
       ],
       "production": [
@@ -1171,23 +1171,15 @@
     "not-read": []
   },
   "analog": {
-    "verdict": "diff",
-    "compared": 39,
+    "verdict": "match",
+    "compared": 38,
     "matched": 38,
-    "differing": [
+    "differing": [],
+    "excluded": [
       {
         "name": "PhyI2cField.69.04",
-        "vendor": [
-          96,
-          96
-        ],
-        "production": [
-          101,
-          101
-        ]
-      }
-    ],
-    "excluded": [
+        "reason": "platform (PHY owner review, not confirmed on hardware): after an RF close and wake the vendor block reads its power-on default 0x60, while production keeps its cold SAR2 initialization 0x65; production runs from PSRAM and esp-hal keeps the MPLL and its analog-I2C power up (PMU_RADIO.HP_ACTIVE_HP_CK_POWER bits 26 and 30), under which the block keeps its state. Production powers the temperature sensor down on close as the vendor does (76006deb0), which did not change the byte. A vendor build with PSRAM enabled did not boot on the HIL console, so the cause is not reproduced on the vendor side"
+      },
       {
         "name": "PhyI2cField.6b.02",
         "reason": "live state: the I2C command memory holds both TX capacitor-bank images (0xc2 and 0x73), and the hardware sequencer publishes one on each RF event, so the byte shows the last event"

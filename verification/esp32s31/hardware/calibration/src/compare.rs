@@ -49,15 +49,30 @@ pub struct Arguments {
     output: Option<PathBuf>,
 }
 
+/// The reviews file: every name carries one review, or several whose
+/// lifecycle points differ.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Tolerances {
+struct ReviewFile {
     schema: u16,
     #[serde(default)]
-    fields: BTreeMap<String, Tolerance>,
+    fields: BTreeMap<String, Reviews>,
     /// Reviews of image registers by published name; unreviewed registers
     /// follow the vendor-spread rule.
     #[serde(default)]
+    registers: BTreeMap<String, Reviews>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Reviews {
+    One(Tolerance),
+    Many(Vec<Tolerance>),
+}
+
+/// The reviews that apply at one lifecycle point.
+struct Tolerances {
+    fields: BTreeMap<String, Tolerance>,
     registers: BTreeMap<String, Tolerance>,
 }
 
@@ -80,15 +95,35 @@ struct Tolerance {
     reason: String,
 }
 
-impl Tolerances {
-    /// The reviews that apply at `lifecycle`.
-    fn at(mut self, lifecycle: Lifecycle) -> Self {
-        let applies = |_: &String, review: &mut Tolerance| {
-            review.lifecycle.is_none_or(|point| point == lifecycle)
+impl ReviewFile {
+    /// The reviews that apply at `lifecycle`: a review without a point, or
+    /// the one naming it. Two reviews of one name applying at one point fail.
+    fn at(self, lifecycle: Lifecycle) -> Result<Tolerances> {
+        let select = |reviews: BTreeMap<String, Reviews>| -> Result<BTreeMap<String, Tolerance>> {
+            let mut applied = BTreeMap::new();
+            for (name, reviews) in reviews {
+                let reviews = match reviews {
+                    Reviews::One(review) => vec![review],
+                    Reviews::Many(reviews) => reviews,
+                };
+                let mut applying = reviews
+                    .into_iter()
+                    .filter(|review| review.lifecycle.is_none_or(|point| point == lifecycle));
+                if let Some(review) = applying.next() {
+                    if applying.next().is_some() {
+                        return Err(
+                            format!("{name} has two reviews at the {lifecycle:?} point").into()
+                        );
+                    }
+                    applied.insert(name, review);
+                }
+            }
+            Ok(applied)
         };
-        self.fields.retain(applies);
-        self.registers.retain(applies);
-        self
+        Ok(Tolerances {
+            fields: select(self.fields)?,
+            registers: select(self.registers)?,
+        })
     }
 }
 
@@ -429,12 +464,12 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         .tolerances
         .clone()
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(TOLERANCES));
-    let tolerances: Tolerances = toml::from_str(&std::fs::read_to_string(&tolerance_path)?)?;
-    if tolerances.schema != TOLERANCE_SCHEMA {
-        return Err(format!("unsupported tolerance schema {}", tolerances.schema).into());
+    let reviews: ReviewFile = toml::from_str(&std::fs::read_to_string(&tolerance_path)?)?;
+    if reviews.schema != TOLERANCE_SCHEMA {
+        return Err(format!("unsupported tolerance schema {}", reviews.schema).into());
     }
     let fields = fields();
-    if let Some(unknown) = tolerances
+    if let Some(unknown) = reviews
         .fields
         .keys()
         .find(|name| !fields.iter().any(|f| f.name == name.as_str()))
@@ -444,7 +479,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let capture: Capture = serde_json::from_slice(&std::fs::read(
         arguments.captures.join(crate::capture::RECORD),
     )?)?;
-    let tolerances = tolerances.at(capture.lifecycle);
+    let tolerances = reviews.at(capture.lifecycle)?;
     let vendor = numbered(&arguments.captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
         .iter()
         .map(|path| {
@@ -694,14 +729,27 @@ mod tests {
 
     #[test]
     fn a_review_scoped_to_a_lifecycle_point_applies_only_there() {
-        let tolerances: Tolerances = toml::from_str(
-            "schema = 2\n\
+        let text = "schema = 2\n\
              [registers.A]\nexcluded = true\nlifecycle = \"cold\"\nreason = \"cold only\"\n\
-             [registers.B]\nexcluded = true\nreason = \"always\"\n",
-        )
-        .unwrap();
-        let restart = tolerances.at(Lifecycle::Restart);
+             [registers.B]\nexcluded = true\nreason = \"always\"\n\
+             [[registers.C]]\nexcluded = true\nlifecycle = \"cold\"\nreason = \"cold\"\n\
+             [[registers.C]]\nexcluded = true\nlifecycle = \"restart\"\nreason = \"woken\"\n";
+        let reviews = || toml::from_str::<ReviewFile>(text).unwrap();
+        let restart = reviews().at(Lifecycle::Restart).unwrap();
         assert!(!restart.registers.contains_key("A"));
         assert!(restart.registers.contains_key("B"));
+        assert_eq!(restart.registers["C"].reason, "woken");
+        assert_eq!(
+            reviews().at(Lifecycle::Cold).unwrap().registers["C"].reason,
+            "cold"
+        );
+        let ambiguous =
+            "schema = 2\n[[registers.D]]\nreason = \"a\"\n[[registers.D]]\nreason = \"b\"\n";
+        assert!(
+            toml::from_str::<ReviewFile>(ambiguous)
+                .unwrap()
+                .at(Lifecycle::Cold)
+                .is_err()
+        );
     }
 }

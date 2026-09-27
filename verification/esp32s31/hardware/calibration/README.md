@@ -75,7 +75,9 @@ these parts:
 - which bits the relation models (`mask`);
 - whether it describes the environment rather than calibration (`excluded`);
 - the one lifecycle point it applies to (`lifecycle`), when the difference
-  comes from the point rather than the state;
+  comes from the point rather than the state; a name may carry one review
+  per point as an array of tables, and two reviews applying at one point
+  fail;
 - the reason.
 
 A field without a review leaves the verdict INCOMPLETE.

@@ -832,15 +832,23 @@ impl SerialCapture {
         }
     }
 
+    /// The standalone GATT image's observation, accepted only with its
+    /// single-core Bluetooth IRQ stack evidence.
     pub fn bluetooth_gatt(&self) -> Result<oer_hil_protocol::BluetoothGattEvidence> {
+        let evidence = self.bluetooth_gatt_observation()?;
+        self.require_bluetooth_irq_stack()?;
+        Ok(evidence)
+    }
+
+    /// The GATT application's observation without an image-specific stack
+    /// policy; the joint Wi-Fi/Bluetooth image reports its stacks through the
+    /// Wi-Fi evidence instead.
+    pub fn bluetooth_gatt_observation(&self) -> Result<oer_hil_protocol::BluetoothGattEvidence> {
         match self
             .send_command(0, Command::QueryBluetoothGatt, Duration::from_secs(2))?
             .body
         {
-            Event::BluetoothGatt(evidence) => {
-                self.require_bluetooth_irq_stack()?;
-                Ok(evidence)
-            }
+            Event::BluetoothGatt(evidence) => Ok(evidence),
             response => Err(format!("invalid GATT observation: {response:?}").into()),
         }
     }

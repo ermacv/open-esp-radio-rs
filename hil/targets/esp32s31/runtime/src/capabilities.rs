@@ -15,7 +15,7 @@ const MEMORY_BENCHMARK_PAYLOAD_CAPACITY: u16 = 4096;
 pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
-            bluetooth_gatt: false,
+            bluetooth_gatt: cfg!(feature = "wifi-ble-coex"),
             bluetooth_secure_gatt: false,
             bluetooth_dtm: false,
             bluetooth_peripheral: false,

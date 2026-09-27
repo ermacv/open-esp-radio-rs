@@ -76,6 +76,18 @@ open-radio-hil = [
     "dep:postcard",
     "dep:serde",
 ]
+# The Wi-Fi image with a concurrent Bluetooth LE client on the same shared
+# radio: the Trouble GATT application runs beside Wi-Fi traffic and serves the
+# joint Wi-Fi/Bluetooth coexistence scenarios through the Wi-Fi console.
+wifi-ble-coex = [
+    "open-radio-hil",
+    "dep:oer-esp32s31-hal",
+    "dep:oer-bluetooth-controller",
+    "dep:oer-bluetooth-hci",
+    "dep:oer-esp32s31-bluetooth-system",
+    "dep:gatt-application",
+    "dep:trouble-host",
+]
 driver-observation = [
     "oer-esp32s31-executor-embassy/timer-observation",
     "oer-esp32s31-ieee80211-system/diagnostics",

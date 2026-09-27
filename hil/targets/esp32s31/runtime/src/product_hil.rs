@@ -1521,6 +1521,10 @@ async fn report_network(iface: Iface<'static>, network_interface: WifiNetworkInt
 pub(crate) struct RadioPlatforms {
     pub(crate) radio: oer_esp32s31_ieee80211_system::EspHalRadioPlatform,
     pub(crate) wifi: oer_esp32s31_ieee80211_system::EspHalWifiPlatform,
+    /// The Bluetooth client's random source, which owns the SoC entropy
+    /// source the Wi-Fi client also reads.
+    #[cfg(feature = "wifi-ble-coex")]
+    pub(crate) bluetooth_entropy: &'static oer_esp32s31_bluetooth_system::BluetoothEntropy<'static>,
 }
 
 type SharedRadio = oer_esp32s31_ieee80211_system::SharedRadio;
@@ -1728,8 +1732,12 @@ pub async fn run(
     let RadioPlatforms {
         radio: radio_platform,
         wifi: wifi_platform,
+        #[cfg(feature = "wifi-ble-coex")]
+        bluetooth_entropy,
     } = platforms;
     let identity = radio_platform.phy_calibration_identity();
+    #[cfg(feature = "wifi-ble-coex")]
+    let bluetooth_address = radio_platform.bluetooth_public_address();
     let hardware = oer_esp32s31_ieee80211_system::RadioHardware::take()
         .expect("ESP32-S31 radio hardware must have a unique owner");
     let (radio, partitions) = SharedRadio::new(
@@ -1745,6 +1753,14 @@ pub async fn run(
     let radio = SHARED_RADIO.init(radio);
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
     spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task must allocate once"));
+    #[cfg(feature = "wifi-ble-coex")]
+    crate::bluetooth::shared::start(
+        spawner,
+        radio,
+        partitions.bluetooth,
+        bluetooth_address,
+        bluetooth_entropy,
+    );
 
     let started_at = Instant::now();
     let WifiStarted {

@@ -2,6 +2,7 @@
 
 pub mod backpressure;
 pub mod calibration;
+pub mod coexistence;
 pub mod deadline;
 mod encrypted_maintenance;
 pub mod gatt;

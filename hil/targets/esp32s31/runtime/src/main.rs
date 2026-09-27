@@ -94,8 +94,10 @@ use esp_hal::{
 use oer_esp32s31_executor_embassy::Executor;
 use static_cell::StaticCell;
 
-#[cfg(feature = "bluetooth-radio")]
+#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
 mod bluetooth;
+#[cfg(all(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+compile_error!("the joint Wi-Fi/Bluetooth image runs Bluetooth as a shared-radio client");
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
@@ -207,8 +209,13 @@ static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
 // The hardware entropy source is a process-lifetime owner. Keeping it in a
 // named static prevents task cancellation or panic cleanup from trying to
 // disable the source while a nested radio future still owns `Trng`.
-#[cfg(feature = "open-radio-hil")]
+#[cfg(all(feature = "open-radio-hil", not(feature = "wifi-ble-coex")))]
 static TRNG_SOURCE: StaticCell<esp_hal::rng::TrngSource<'static>> = StaticCell::new();
+// The joint image's Bluetooth client owns the same source through its entropy
+// service; the Wi-Fi readers borrow it for the process lifetime.
+#[cfg(feature = "wifi-ble-coex")]
+static BLUETOOTH_ENTROPY: StaticCell<oer_esp32s31_bluetooth_system::BluetoothEntropy<'static>> =
+    StaticCell::new();
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 static L1_CACHE_PERFORMANCE: StaticCell<oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters> =
     StaticCell::new();
@@ -430,11 +437,16 @@ extern "C" fn runtime_main() -> ! {
     #[cfg(feature = "open-radio-hil")]
     {
         console::init_logger();
-        use esp_hal::rng::{Trng, TrngSource};
-        let trng_source = TrngSource::new(peripherals.RNG);
+        use esp_hal::rng::Trng;
+        #[cfg(not(feature = "wifi-ble-coex"))]
+        let _trng_source = TRNG_SOURCE.init(esp_hal::rng::TrngSource::new(peripherals.RNG));
+        #[cfg(feature = "wifi-ble-coex")]
+        let bluetooth_entropy =
+            BLUETOOTH_ENTROPY.init(oer_esp32s31_bluetooth_system::BluetoothEntropy::new(
+                oer_esp32s31_soc_esp_hal::entropy::Entropy::new(peripherals.RNG),
+            ));
         let trng = Trng::try_new()
             .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=trng-ownership\r\n"));
-        let _trng_source = TRNG_SOURCE.init(trng_source);
         let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
         console::init_protocol(boot_id);
         #[cfg(not(feature = "memory-benchmark"))]
@@ -450,6 +462,8 @@ extern "C" fn runtime_main() -> ! {
                 peripherals.I2C_ANA_MST,
             ),
             wifi: oer_esp32s31_ieee80211_system::EspHalWifiPlatform::new(peripherals.WIFI),
+            #[cfg(feature = "wifi-ble-coex")]
+            bluetooth_entropy,
         };
         let usb = peripherals.USB_DEVICE;
         executor.run(|spawner| {

@@ -1018,8 +1018,25 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             crate::phy_fault::after_response(control, true);
                         }
                     }
+                    #[cfg(feature = "wifi-ble-coex")]
+                    Command::QueryBluetoothGatt => {
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::BluetoothGatt(crate::bluetooth::shared::evidence()),
+                        )
+                        .await;
+                    }
+                    #[cfg(not(feature = "wifi-ble-coex"))]
+                    Command::QueryBluetoothGatt => {
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::InvalidState),
+                        )
+                        .await;
+                    }
                     Command::BluetoothDtm(_)
-                    | Command::QueryBluetoothGatt
                     | Command::QueryBluetoothSecureGatt
                     | Command::ConfirmBluetoothGatt(_)
                     | Command::RestartBluetoothGatt { .. }

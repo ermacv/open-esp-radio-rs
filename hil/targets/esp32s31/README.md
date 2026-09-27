@@ -35,6 +35,19 @@ starts the next Controller epoch with a fresh Controller core. An application
 failure closes the Controller without restarting; an unconfirmed Reset keeps
 every owner.
 
+The `wifi-ble-coex` feature adds a Bluetooth LE client to the Wi-Fi image on
+the same shared radio. After the Wi-Fi image creates the radio system and
+spawns its PHY tracking and coexistence schedule tasks,
+`bluetooth/shared.rs` starts the Controller on the radio's Bluetooth
+partition and runs the radio runner, the HCI service, the Trouble Host and the
+plaintext GATT application on their own tasks; it adds no radio-system task.
+The Bluetooth entropy service owns the SoC random source that the Wi-Fi client
+also reads. The Wi-Fi console answers `QueryBluetoothGatt` with the
+application's observations and advertises `bluetooth_gatt`. The host drives it
+with the ATT echo load in `runner-bluetooth`'s
+`workload::bluetooth::coexistence`: one connection writes and reads back the
+application value for the measured interval, then disconnects gracefully.
+
 `runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
 API bindings and diagnostic wrappers. All implementations use the same traffic
 workers and public production radio constructor. Radio behaviour belongs in

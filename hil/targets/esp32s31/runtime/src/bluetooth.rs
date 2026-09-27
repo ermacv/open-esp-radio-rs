@@ -10,36 +10,57 @@
 //! `bluetooth-secure-gatt` image runs them beside its Host and restarts the
 //! Controller epoch on request. All reach the radio only through the HCI
 //! transport.
+//!
+//! The `wifi-ble-coex` image instead starts the GATT application as a client
+//! of the Wi-Fi image's shared radio ([`shared`]); the Wi-Fi image keeps the
+//! radio system, its periodic tasks and the HIL console.
 
+#[cfg(feature = "bluetooth-radio")]
 mod console;
 #[cfg(feature = "bluetooth-hil")]
 mod dtm;
-#[cfg(feature = "bluetooth-gatt")]
+#[cfg(any(feature = "bluetooth-gatt", feature = "wifi-ble-coex"))]
 mod gatt;
 #[cfg(feature = "bluetooth-secure-gatt")]
 mod secure;
+#[cfg(feature = "wifi-ble-coex")]
+pub(crate) mod shared;
 
 use oer_bluetooth_controller::LeVersionInformation;
+#[cfg(any(feature = "bluetooth-hil", feature = "bluetooth-gatt"))]
+use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
+#[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_bluetooth_system::{BluetoothEntropy, BluetoothParked, start_bluetooth_hci};
 #[cfg(not(feature = "bluetooth-secure-gatt"))]
-use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothHostTransport, BluetoothSystem};
+use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothSystem};
+#[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_hal::root::{ConcurrentPartitions, RadioHardware};
+#[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
+#[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_radio_runtime::RadioSystem;
+#[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_soc_esp_hal::entropy::Entropy;
+#[cfg(feature = "bluetooth-radio")]
 use static_cell::StaticCell;
 
 /// Development Controller identity for Link Layer version exchange: Core
 /// 5.4, the unassigned company value and subversion 1.
 const VERSION: LeVersionInformation = LeVersionInformation::new(0x0d, 0xffff, 1);
 
+#[cfg(feature = "bluetooth-radio")]
 pub(super) type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+#[cfg(feature = "wifi-ble-coex")]
+pub(super) type Radio = oer_esp32s31_ieee80211_system::SharedRadio;
 
+#[cfg(feature = "bluetooth-radio")]
 static RADIO: StaticCell<Radio> = StaticCell::new();
-#[cfg(not(feature = "bluetooth-secure-gatt"))]
+#[cfg(all(feature = "bluetooth-radio", not(feature = "bluetooth-secure-gatt")))]
 static SYSTEM: StaticCell<BluetoothSystem> = StaticCell::new();
+#[cfg(feature = "bluetooth-radio")]
 static ENTROPY: StaticCell<BluetoothEntropy<'static>> = StaticCell::new();
 
+#[cfg(feature = "bluetooth-radio")]
 pub(super) fn start(
     executor: &'static mut super::Executor<0>,
     platform: EspHalRadioPlatform,
@@ -71,6 +92,7 @@ pub(super) fn start(
     })
 }
 
+#[cfg(feature = "bluetooth-radio")]
 #[embassy_executor::task]
 #[allow(
     large_assignments,
@@ -129,6 +151,7 @@ async fn image(
     spawner.spawn(gatt::task(host, usb, boot).expect("Bluetooth GATT task"));
 }
 
+#[cfg(feature = "bluetooth-radio")]
 #[embassy_executor::task]
 async fn tracking(radio: &'static Radio) {
     let _error = radio.run_tracking().await;

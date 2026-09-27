@@ -8,7 +8,7 @@ use std::{
 };
 
 #[derive(serde::Serialize)]
-struct Exchange {
+pub(super) struct Exchange {
     connection: u32,
     request: Vec<u8>,
     response: Vec<u8>,
@@ -91,6 +91,36 @@ fn exchange(
     Ok(response)
 }
 
+/// Exchange the ATT MTU and discover the application's value handle by its
+/// UUIDs over ATT; no target handle is imported.
+pub(super) fn discover(
+    peer: &att::Att,
+    connection: u32,
+    exchanges: &mut Vec<Exchange>,
+) -> Result<u16> {
+    let mtu = exchange(peer, connection, &[2, 23, 0], exchanges)?;
+    if mtu.len() != 3 || mtu[0] != 3 || !(23..=517).contains(&word(&mtu[1..])) {
+        return Err(format!("invalid ATT MTU response: {mtu:?}").into());
+    }
+    let service = service(&exchange(
+        peer,
+        connection,
+        &[6, 1, 0, 255, 255, 0, 0x28, 0xf0, 0xff],
+        exchanges,
+    )?)?;
+    let [start_low, start_high] = service.0.to_le_bytes();
+    let [end_low, end_high] = service.1.to_le_bytes();
+    characteristic(
+        &exchange(
+            peer,
+            connection,
+            &[8, start_low, start_high, end_low, end_high, 3, 0x28],
+            exchanges,
+        )?,
+        service,
+    )
+}
+
 fn exercise(
     capture: &SerialCapture,
     owner: &att::Owner,
@@ -123,28 +153,7 @@ fn exercise(
         if live.address != Some(address) || live.disconnections != connection - 1 {
             return Err("GATT connection changed its application epoch".into());
         }
-        let mtu = exchange(&peer, connection, &[2, 23, 0], exchanges)?;
-        if mtu.len() != 3 || mtu[0] != 3 || !(23..=517).contains(&word(&mtu[1..])) {
-            return Err(format!("invalid ATT MTU response: {mtu:?}").into());
-        }
-        // Discover the application's UUIDs over ATT; do not import a target handle.
-        let service = service(&exchange(
-            &peer,
-            connection,
-            &[6, 1, 0, 255, 255, 0, 0x28, 0xf0, 0xff],
-            exchanges,
-        )?)?;
-        let [start_low, start_high] = service.0.to_le_bytes();
-        let [end_low, end_high] = service.1.to_le_bytes();
-        let handle = characteristic(
-            &exchange(
-                &peer,
-                connection,
-                &[8, start_low, start_high, end_low, end_high, 3, 0x28],
-                exchanges,
-            )?,
-            service,
-        )?;
+        let handle = discover(&peer, connection, exchanges)?;
         let [low, high] = handle.to_le_bytes();
         if exchange(&peer, connection, &[0x0a, low, high], exchanges)? != [0x0b, previous] {
             return Err("GATT value did not survive reconnect".into());

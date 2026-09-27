@@ -2,28 +2,36 @@
 //!
 //! The Trouble Host owns HCI and ATT over the Host end of the transport; the
 //! HIL console only reads the value-only observations the application
-//! reports.
+//! reports. The `wifi-ble-coex` image runs the same Host and application and
+//! folds the same observations for the Wi-Fi console.
 
 use core::cell::Cell;
 
-use gatt_application::gatt::{self, Observation};
+#[cfg(feature = "bluetooth-gatt")]
+use gatt_application::gatt;
+use gatt_application::gatt::Observation;
 use oer_bluetooth_hci::bt_hci::controller::ExternalController;
 use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
-use oer_hil_protocol::{BluetoothGattEvidence, Command, Event, FeatureCapabilities, RejectReason};
+use oer_hil_protocol::BluetoothGattEvidence;
+#[cfg(feature = "bluetooth-gatt")]
+use oer_hil_protocol::{Command, Event, FeatureCapabilities, RejectReason};
 use static_cell::StaticCell;
 use trouble_host::prelude::*;
 
+#[cfg(feature = "bluetooth-gatt")]
 use super::console;
 
 /// Command slots the Host keeps in flight.
 const COMMAND_SLOTS: usize = 4;
 
-type Controller = ExternalController<BluetoothHostTransport, COMMAND_SLOTS>;
+pub(super) type Controller = ExternalController<BluetoothHostTransport, COMMAND_SLOTS>;
 
 static RESOURCES: StaticCell<HostResources<DefaultPacketPool, 1, 3>> = StaticCell::new();
 
+#[cfg(feature = "bluetooth-gatt")]
 struct Profile(Cell<BluetoothGattEvidence>);
 
+#[cfg(feature = "bluetooth-gatt")]
 impl console::Profile for Profile {
     fn features(&self) -> FeatureCapabilities {
         FeatureCapabilities {
@@ -48,14 +56,14 @@ impl console::Profile for Profile {
     }
 }
 
+#[cfg(feature = "bluetooth-gatt")]
 #[embassy_executor::task]
 pub(super) async fn task(
     host: BluetoothHostTransport,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     boot: u64,
 ) {
-    let resources = RESOURCES.init_with(HostResources::new);
-    let stack = build(host, resources);
+    let stack = build(host);
     let mut runner = stack.runner();
     let profile = Profile(Cell::new(BluetoothGattEvidence::default()));
     let host = core::pin::pin!(runner.run());
@@ -75,14 +83,12 @@ pub(super) async fn task(
 // Host construction materializes security-manager and connection state
 // beyond the caller-owned resource arrays; keep it out of the task frame.
 #[inline(never)]
-fn build(
-    host: BluetoothHostTransport,
-    resources: &'static mut HostResources<DefaultPacketPool, 1, 3>,
-) -> Stack<'static, Controller, DefaultPacketPool> {
+pub(super) fn build(host: BluetoothHostTransport) -> Stack<'static, Controller, DefaultPacketPool> {
+    let resources = RESOURCES.init_with(HostResources::new);
     trouble_host::new(Controller::new(host), resources).build()
 }
 
-fn observe(state: &Cell<BluetoothGattEvidence>, event: Observation) {
+pub(super) fn observe(state: &Cell<BluetoothGattEvidence>, event: Observation) {
     let mut value = state.get();
     let increment =
         |counter: &mut u32| *counter = counter.checked_add(1).expect("GATT evidence exhausted");

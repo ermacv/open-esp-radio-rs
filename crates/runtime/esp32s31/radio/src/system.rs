@@ -1144,7 +1144,7 @@ pub extern "C" fn oer_debug_park() {
     core::hint::black_box(());
 }
 
-const SNAPSHOT_RANGES: [(usize, usize); 8] = [
+const SNAPSHOT_RANGES: [(usize, usize); 9] = [
     (0x2010_0000, 1024),
     (0x2010_2000, 16),
     (0x2010_2c00, 320),
@@ -1152,6 +1152,7 @@ const SNAPSHOT_RANGES: [(usize, usize); 8] = [
     (0x2010_f000, 64),
     (0x2010_f400, 64),
     (0x2010_f800, 16),
+    (0x2010_fc00, 256),
     (0x2070_4000, 128),
 ];
 const SNAPSHOT_BLOCKS: [u8; 9] = [0x61, 0x62, 0x63, 0x66, 0x67, 0x69, 0x6a, 0x6b, 0x6d];

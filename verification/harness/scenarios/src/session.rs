@@ -1,7 +1,6 @@
 //! Shared scenario lifecycle: run directory, linked image, execution
 //! submission, failure without publication and source-free preservation.
 use crate::harness::{Budget, Input, ProbeCatalog, Result, Runner, args, invalid, seed};
-use crate::layout::*;
 use blobray_application::QuerySummary;
 use blobray_domain::{
     ArtifactId, CallAbi, CallEndpoint, CompanionProposal, EffectContract, EffectContractRef,
@@ -82,7 +81,7 @@ pub struct ComparedCase {
     pub verdict: Option<blobray_domain::ComparisonVerdict>,
 }
 
-#[path = "../../../../schema/scenario-evidence.rs"]
+#[path = "../../../schema/scenario-evidence.rs"]
 pub mod evidence_index;
 
 /// Authenticated inputs, their captured revision and the probe catalog.
@@ -635,7 +634,7 @@ impl Session {
     /// compiled production input with the ROM companion. Stack bytes stay
     /// unknown until a request selects a fill.
     pub fn targets(&self, image: &PreparedImageId) -> Result<(ExecutionTarget, ExecutionTarget)> {
-        let stack = seed(STACK_ADDRESS, STACK_BYTES, &[], None)?;
+        let stack = seed(crate::chip().stack.0, crate::chip().stack.1, &[], None)?;
         Ok((
             ExecutionTarget {
                 revision: self.revision.clone(),
@@ -978,7 +977,7 @@ impl Session {
         }
         let compared = written.len() - unprojected.len();
         let (reviewed_state, untriaged_state) =
-            crate::state::classify(crate::state::DECISIONS, (symbol, entry), &unprojected);
+            crate::state::classify(crate::chip().state, (symbol, entry), &unprojected);
         let state = evidence_index::State {
             written: written.len() as u64,
             compared: compared as u64,
@@ -993,7 +992,7 @@ impl Session {
         let claim_lines = lines.map.lines(&instructions);
         let (reviewed, untriaged) = lines.sources.classify(
             &lines.root,
-            crate::observation::DECISIONS,
+            crate::chip().observation,
             &claim_lines.unobserved(),
         )?;
         let observation = evidence_index::Observation {
@@ -1051,7 +1050,12 @@ impl Session {
                         .get(*symbol)
                         .ok_or_else(|| invalid(format!("{symbol} is not a linked root")))?,
                     "rom" => u32::try_from(
-                        crate::harness::symbol(&self.inventory, ROM_INPUT as usize, symbol)?.value,
+                        crate::harness::symbol(
+                            &self.inventory,
+                            crate::chip().rom_input as usize,
+                            symbol,
+                        )?
+                        .value,
                     )?,
                     other => return Err(invalid(format!("unknown vendor source {other}"))),
                 };
@@ -1109,7 +1113,7 @@ impl Session {
 
 /// The named ROM storage constants are the pinned ROM's own symbols.
 pub fn verify_rom_symbols(inventory: &Revision, rom: usize) -> Result<()> {
-    for (name, address, size) in ROM_SYMBOLS {
+    for &(name, address, size) in crate::chip().rom_symbols {
         let symbol = crate::harness::symbol(inventory, rom, name)?;
         if symbol.value != u64::from(address) || symbol.size != size {
             return Err(invalid(format!(

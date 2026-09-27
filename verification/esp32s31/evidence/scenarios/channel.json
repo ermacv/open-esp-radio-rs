@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "40088a7016ec497f08eec9b0b1e0701b4af1f552c8cbdcac7d0ac37c7590c0a1"
+    "input-2": "a040d25b26197a9e87c6dd0e13d2c6419b4efeef4ae9f2c270c70d3af93f73a7"
   },
   "sources": [
     {
@@ -55,7 +55,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "35501c753b10fa4ed698132656504749a8694d1e73cfb0c62b9c892aa746b195"
+      "sha256": "b28f04d7f66f5c72ca3dc6b95d36703a3fff7904fdaab3583e091d7ec0736373"
     },
     {
       "path": "crates/memory",
@@ -71,7 +71,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/ap",
-      "sha256": "76dd3c809a2c809c1b523aaf71d85fa7a32a00e74bf041689f4d3c80823f6adf"
+      "sha256": "b18e141776e213fe8fc55ea86bd140337361f26f48b0915959646dff2635cf98"
     },
     {
       "path": "crates/protocols/ieee80211/datapath",
@@ -83,7 +83,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn",
-      "sha256": "bf16732072aac1ad631b5bab2d99cd1076be334db368ba4a9d6292406bf4bb1f"
+      "sha256": "54831f199dbf907a4d953c955131ac81f8e44a688dcefa8004ebae4a6b2f4f7c"
     },
     {
       "path": "crates/protocols/ieee80211/softmac",
@@ -111,7 +111,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/radio",
-      "sha256": "a3b647482a0db41b3f8b8a0f0b66b2d303bbea06540c7170e777adf73f38249e"
+      "sha256": "8fe16c94303346ee27785f81b84083a392206140152d6811aff79daead569587"
     },
     {
       "path": "crates/runtime/ieee80211",
@@ -163,7 +163,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "49b34a3217a5b3191be8f084dac107f0eae6e61f9ef75a975bd408c704047876"
+      "sha256": "a7ce9876d76389dc199dc61abe8611505a2a3e57f3092785179f04d5d7072dcd"
     },
     {
       "path": "verification/harness/codegen",
@@ -172,6 +172,10 @@
     {
       "path": "verification/harness/macros",
       "sha256": "11df2a1efcccb231eabcf72f4a2d3905388a75964e9b5121aad42f2fc62bb734"
+    },
+    {
+      "path": "verification/harness/scenarios",
+      "sha256": "59eadcbe25428db3b10fd4578e1074b5a8315267d39face41654d7c25c687d0f"
     },
     {
       "path": "verification/schema",
@@ -2974,7 +2978,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/state.rs",
-      "line": 1770
+      "line": 1774
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_executor.rs",

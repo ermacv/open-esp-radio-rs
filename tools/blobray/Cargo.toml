@@ -12,6 +12,7 @@ members = [
     "crates/verification",
     "next",
     "../../verification/esp32s31/scenarios",
+    "../../verification/harness/scenarios",
 ]
 resolver = "3"
 

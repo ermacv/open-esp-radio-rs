@@ -1,4 +1,4 @@
-//! The pinned ESP32-S31 vendor artifacts of `artifacts.toml`.
+//! The pinned vendor artifacts of the installed chip's `artifacts.toml`.
 //!
 //! Every scenario input is authenticated against this manifest, and each
 //! fetchable artifact has one cache location that `cargo xtask vendor-fetch`
@@ -7,8 +7,6 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-/// The tracked manifest, relative to the repository root.
-pub const MANIFEST: &str = "verification/esp32s31/artifacts.toml";
 /// Cache of fetched artifacts, relative to the repository root.
 pub const CACHE: &str = "target/vendor";
 
@@ -71,9 +69,7 @@ pub fn parse(text: &str) -> Result<Manifest, String> {
 /// The manifest compiled into this binary.
 pub fn manifest() -> &'static Manifest {
     static MANIFEST: OnceLock<Manifest> = OnceLock::new();
-    MANIFEST.get_or_init(|| {
-        parse(include_str!("../../../artifacts.toml")).expect("tracked artifact manifest")
-    })
+    MANIFEST.get_or_init(|| parse(crate::chip().manifest_text).expect("tracked artifact manifest"))
 }
 
 fn artifact(id: &str) -> &'static Artifact {
@@ -120,44 +116,6 @@ pub fn default_path(id: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn tracked_manifest_pins_every_scenario_input_once() {
-        let manifest = manifest();
-        for id in ["libphy", "librftest", "libpp", "rom", "sdk", "phy-sdk"] {
-            assert_eq!(sha256(id).len(), 64, "{id}");
-        }
-        let mut ids: Vec<_> = manifest.artifact.iter().map(|a| a.id.as_str()).collect();
-        ids.sort_unstable();
-        ids.dedup();
-        assert_eq!(ids.len(), manifest.artifact.len());
-        for source in &manifest.source {
-            if source.kind != SourceKind::Local {
-                assert!(
-                    source.repository.is_some() && source.revision.is_some(),
-                    "{}",
-                    source.id
-                );
-            }
-            if source.kind == SourceKind::Release {
-                assert!(
-                    source.asset.is_some() && source.sha256.is_some(),
-                    "{}",
-                    source.id
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn fetched_artifacts_live_under_their_source_revision() {
-        let root = Path::new("/repo");
-        assert_eq!(
-            path(root, "libphy"),
-            root.join("target/vendor/esp-phy-lib/20f1db053a0e6cb9f1c09d255c43bf42483041d0/esp32s31/libphy.a")
-        );
-        assert!(path(root, "sdk").starts_with(root.join("target/architecture-research")));
-    }
 
     #[test]
     fn unknown_sources_are_rejected() {

@@ -49,8 +49,6 @@ pub struct Decision {
     pub places: &'static [Place],
 }
 
-pub use crate::decisions::coverage::DECISIONS;
-
 /// Uncovered locations of one scenario's claimed closures, and the functions
 /// those closures contain.
 #[derive(Default)]

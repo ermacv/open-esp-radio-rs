@@ -13,8 +13,11 @@ use crate::harness::{Result, invalid};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// Production ESP32-S31 hardware sources, relative to the repository root.
-pub const SCOPE: &str = "crates/hardware/esp32s31";
+/// Production hardware sources of the installed chip, relative to the
+/// repository root.
+fn hardware_scope() -> &'static str {
+    crate::chip().hardware_scope
+}
 
 /// Repository root: this package lives three directories below it.
 pub fn root() -> Result<PathBuf> {
@@ -27,15 +30,13 @@ pub fn root() -> Result<PathBuf> {
 pub type SourceLine = (PathBuf, u32);
 
 /// A reviewed decision on executed lines no compared observation depends on.
-/// Each place is a file below `SCOPE` and a line's trimmed text, so the
+/// Each place is a file below the chip's hardware scope and a line's trimmed text, so the
 /// decision survives unrelated line shifts.
 #[derive(Clone, Copy, Debug)]
 pub struct Decision {
     pub reason: &'static str,
     pub places: &'static [(&'static str, &'static str)],
 }
-
-pub use crate::decisions::observation::DECISIONS;
 
 /// Executed and observed production hardware lines.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -67,7 +68,7 @@ pub struct LineMap {
 }
 
 impl LineMap {
-    /// The lines within `SCOPE` of every instruction in `pcs` of `elf`.
+    /// The lines within the chip's hardware scope of every instruction in `pcs` of `elf`.
     pub fn new(elf: &[u8], pcs: &BTreeSet<u32>, root: &Path) -> Result<Self> {
         use object::{Object, ObjectSection};
         let file = object::File::parse(elf)?;
@@ -81,7 +82,7 @@ impl LineMap {
         })?;
         let context = addr2line::Context::from_dwarf(dwarf)?;
         let root = root.canonicalize()?;
-        let scope = root.join(SCOPE);
+        let scope = root.join(hardware_scope());
         let mut lines = BTreeMap::new();
         for pc in pcs {
             let mut located = vec![];
@@ -100,7 +101,7 @@ impl LineMap {
                     continue;
                 };
                 if let Ok(relative) = Path::new(path).strip_prefix(&scope) {
-                    located.push((Path::new(SCOPE).join(relative), line));
+                    located.push((Path::new(hardware_scope()).join(relative), line));
                 }
             }
             lines.insert(*pc, located);
@@ -165,9 +166,9 @@ impl Sources {
         for line in unobserved {
             let text = self.text(root, line)?;
             if decisions.iter().any(|d| {
-                d.places
-                    .iter()
-                    .any(|(file, source)| line.0 == Path::new(SCOPE).join(file) && text == *source)
+                d.places.iter().any(|(file, source)| {
+                    line.0 == Path::new(hardware_scope()).join(file) && text == *source
+                })
             }) {
                 reviewed.insert(line.clone());
             } else {
@@ -189,7 +190,7 @@ impl Sources {
             let text = self.text(root, line)?.to_owned();
             for decision in decisions {
                 for place in decision.places {
-                    if line.0 == Path::new(SCOPE).join(place.0) && text == place.1 {
+                    if line.0 == Path::new(hardware_scope()).join(place.0) && text == place.1 {
                         matched.insert(*place);
                     }
                 }
@@ -217,10 +218,11 @@ impl Sources {
 mod tests {
     use super::*;
 
-    const FILE: &str = "crates/hardware/esp32s31/phy/src/example.rs";
+    const FILE: &str = "crates/hardware/test/phy/src/example.rs";
     const PLACE: &str = "phy/src/example.rs";
 
     fn root() -> tempfile::TempDir {
+        crate::install(&crate::chip::TEST);
         let root = tempfile::tempdir().unwrap();
         let file = root.path().join(FILE);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();

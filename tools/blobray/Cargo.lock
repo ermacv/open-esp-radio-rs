@@ -496,6 +496,7 @@ dependencies = [
  "gimli",
  "object",
  "oer-probe-codegen",
+ "oer-vendor-scenario-engine",
  "serde",
  "serde_json",
  "sha2",
@@ -513,6 +514,26 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "oer-vendor-scenario-engine"
+version = "0.1.0"
+dependencies = [
+ "addr2line",
+ "blobray-application",
+ "blobray-backend-riscv",
+ "blobray-domain",
+ "blobray-next",
+ "clap",
+ "gimli",
+ "object",
+ "oer-probe-codegen",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "toml",
 ]
 
 [[package]]

@@ -32,8 +32,6 @@ pub struct Place {
     pub end: u32,
 }
 
-pub use crate::decisions::state::DECISIONS;
-
 /// One vendor byte, by data symbol and offset; a byte outside every sized
 /// data symbol is named by the address of the nearest symbol below it, such
 /// as a section-local anchor.

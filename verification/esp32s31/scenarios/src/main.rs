@@ -2,7 +2,7 @@
 use clap::{Parser, Subcommand};
 use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Index};
 use oer_esp32s31_vendor_scenarios::{
-    ble, calibration_leaves, calibration_prefix, channel, coex, coex_hw, coverage,
+    ble, calibration_leaves, calibration_prefix, channel, coex, coex_hw, coverage, decisions,
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
@@ -456,9 +456,12 @@ fn gain(common: Common, rftest: Option<PathBuf>) -> Result<Outcome> {
     g.bluetooth()?;
     g.additive()?;
     g.negative()?;
-    let claims = g
-        .session
-        .claims("gain", &g.roots, &GAIN_CLAIMS, coverage::DECISIONS)?;
+    let claims = g.session.claims(
+        "gain",
+        &g.roots,
+        &GAIN_CLAIMS,
+        decisions::coverage::DECISIONS,
+    )?;
     Ok((
         finish(
             &unmet,
@@ -508,7 +511,7 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     }
     let claims = ctx
         .session
-        .claims("i2c", &ctx.roots, &list, coverage::DECISIONS)?;
+        .claims("i2c", &ctx.roots, &list, decisions::coverage::DECISIONS)?;
     Ok((
         finish(&unmet, "authenticated PHY comparisons passed", &ctx.run),
         claims,
@@ -534,9 +537,12 @@ fn channel(common: Common) -> Result<Outcome> {
     let options = common.phy();
     let mut ctx = channel::Channel::new(&options)?;
     channel::exercise(&mut ctx)?;
-    let claims = ctx
-        .session
-        .claims("channel", &ctx.roots, &CHANNEL_CLAIMS, coverage::DECISIONS)?;
+    let claims = ctx.session.claims(
+        "channel",
+        &ctx.roots,
+        &CHANNEL_CLAIMS,
+        decisions::coverage::DECISIONS,
+    )?;
     Ok((
         finish(
             &[],
@@ -572,7 +578,7 @@ fn wifi_mac(
         "wifi-mac",
         &ctx.roots,
         &mac::claims(&ctx),
-        coverage::DECISIONS,
+        decisions::coverage::DECISIONS,
     )?;
     Ok((
         finish(&[], "authenticated Wi-Fi MAC HAL leaves passed", &ctx.run),
@@ -603,7 +609,7 @@ fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Ou
         "bluetooth",
         &ctx.roots,
         &mac::claims(&ctx),
-        coverage::DECISIONS,
+        decisions::coverage::DECISIONS,
     )?;
     Ok((
         finish(
@@ -638,7 +644,7 @@ fn coex_hw(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
         "coex-hw",
         &ctx.roots,
         &mac::claims(&ctx),
-        coverage::DECISIONS,
+        decisions::coverage::DECISIONS,
     )?;
     Ok((
         finish(
@@ -663,9 +669,12 @@ fn coex(common: Common, libcoexist: PathBuf) -> Result<Outcome> {
     };
     let mut ctx = coex::Coex::new(&options)?;
     coex::exercise(&mut ctx)?;
-    let claims = ctx
-        .session
-        .claims("coex", &ctx.roots, coex::CLAIMS, coverage::DECISIONS)?;
+    let claims = ctx.session.claims(
+        "coex",
+        &ctx.roots,
+        coex::CLAIMS,
+        decisions::coverage::DECISIONS,
+    )?;
     Ok((
         finish(&[], "authenticated coexistence schedule passed", &ctx.run),
         claims,
@@ -675,9 +684,12 @@ fn coex(common: Common, libcoexist: PathBuf) -> Result<Outcome> {
 fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = rx_gain::RxGain::new(&common.phy(), &phy_sdk)?;
     rx_gain::exercise(&mut ctx)?;
-    let claims = ctx
-        .session
-        .claims("rx-gain", &ctx.roots, &RX_GAIN_CLAIMS, coverage::DECISIONS)?;
+    let claims = ctx.session.claims(
+        "rx-gain",
+        &ctx.roots,
+        &RX_GAIN_CLAIMS,
+        decisions::coverage::DECISIONS,
+    )?;
     Ok((
         finish(
             &[],
@@ -691,9 +703,12 @@ fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
 fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = tx_dc::TxDc::new(&common.phy(), &phy_sdk)?;
     tx_dc::exercise(&mut ctx)?;
-    let claims = ctx
-        .session
-        .claims("tx-dc", &ctx.roots, &TX_DC_CLAIMS, coverage::DECISIONS)?;
+    let claims = ctx.session.claims(
+        "tx-dc",
+        &ctx.roots,
+        &TX_DC_CLAIMS,
+        decisions::coverage::DECISIONS,
+    )?;
     Ok((
         finish(
             &[],
@@ -711,7 +726,7 @@ fn tracking(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
         "tracking",
         &ctx.roots,
         &TRACKING_CLAIMS,
-        coverage::DECISIONS,
+        decisions::coverage::DECISIONS,
     )?;
     Ok((
         finish(
@@ -832,12 +847,15 @@ mod evidence {
             .collect::<Result<Vec<_>>>()?;
         let line = |(path, line): (PathBuf, u32)| evidence_index::SourceLine { path, line };
         let mut observation = observation::Sources::default();
-        let (_, unobserved) =
-            observation.classify(&root, observation::DECISIONS, &claims.lines.unobserved())?;
+        let (_, unobserved) = observation.classify(
+            &root,
+            decisions::observation::DECISIONS,
+            &claims.lines.unobserved(),
+        )?;
         let mut unprojected = std::collections::BTreeSet::new();
         for (vendor, production, byte) in &claims.unprojected {
             let (_, untriaged) = state::classify(
-                state::DECISIONS,
+                decisions::state::DECISIONS,
                 (vendor, production),
                 &std::collections::BTreeSet::from([byte.clone()]),
             );
@@ -1040,9 +1058,9 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
     let root = observation::root()?;
     let unobserved_lines = lines.unobserved();
     let mut sources = observation::Sources::default();
-    sources.check(&root, observation::DECISIONS, &unobserved_lines)?;
+    sources.check(&root, decisions::observation::DECISIONS, &unobserved_lines)?;
     let (reviewed, unobserved) =
-        sources.classify(&root, observation::DECISIONS, &unobserved_lines)?;
+        sources.classify(&root, decisions::observation::DECISIONS, &unobserved_lines)?;
     let effect = unobserved
         .iter()
         .filter(|l| lines.effect.contains(*l))
@@ -1065,14 +1083,14 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
     }
     // Decisions are shared by every scenario, so one is stale only when no
     // scenario's closures leave a location it excludes uncovered.
-    coverage::Observed::of(&closures).check("all", coverage::DECISIONS)?;
+    coverage::Observed::of(&closures).check("all", decisions::coverage::DECISIONS)?;
     // A state decision is stale when no claim writes a byte it reviews
     // without comparing it.
-    state::check(state::DECISIONS, &unprojected)?;
+    state::check(decisions::state::DECISIONS, &unprojected)?;
     let (mut reviewed_state, mut untriaged_state) = (0, std::collections::BTreeSet::new());
     for (root, production, byte) in &unprojected {
         let (reviewed, untriaged) = state::classify(
-            state::DECISIONS,
+            decisions::state::DECISIONS,
             (root, production),
             &std::collections::BTreeSet::from([byte.clone()]),
         );
@@ -1099,6 +1117,7 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
 }
 
 fn main() -> ExitCode {
+    oer_esp32s31_vendor_scenarios::install();
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => {
             let shard = Shard::of("gain", &common);

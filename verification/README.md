@@ -15,7 +15,8 @@ no HIL board scenarios and no private vendor artifacts.
 ```text
 verification/
   schema/            evidence shard schema, shared with qualification
-  harness/           probe code generation and macros
+  harness/           probe code generation and macros, and the chip-neutral
+                     scenario engine (harness/scenarios)
   esp32s31/
     artifacts.toml   L0: every pinned archive, ROM ELF and SDK build
     facts/           L1: cited-function fingerprints, recovered name maps

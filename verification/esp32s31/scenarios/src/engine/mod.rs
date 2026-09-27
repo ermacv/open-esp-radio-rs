@@ -1,13 +1,10 @@
-//! Blobray session, comparison harness, coverage, observation and state
-//! analysis, and the evidence shards every scenario shares.
-pub mod artifacts;
+//! The chip-neutral scenario engine (`oer-vendor-scenario-engine`) under
+//! its crate paths, and the ESP32-S31 layout, PHY contracts and analog
+//! transport edges every scenario shares.
 pub mod contracts;
-pub mod coverage;
-pub mod evidence;
-pub mod harness;
 pub mod harness_edges;
 pub mod layout;
-pub mod observation;
-pub mod session;
-pub mod setup_cache;
-pub mod state;
+
+pub use oer_vendor_scenario_engine::{
+    artifacts, coverage, evidence, harness, observation, session, setup_cache, state,
+};

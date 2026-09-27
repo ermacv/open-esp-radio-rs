@@ -601,7 +601,7 @@ No callback model, resolved callee or hardware assertion follows from this revie
 
 ## Shared Next scenario preparation
 
-[`harness.rs`](scenarios/src/engine/harness.rs) and [`session.rs`](scenarios/src/engine/session.rs)
+[`harness.rs`](../harness/scenarios/src/harness.rs) and [`session.rs`](../harness/scenarios/src/session.rs)
 own supervised setup operations, authenticated input capture, in-process comparison,
 exact symbol selection and the shared memory/phase/comparison builders. The I2C, transport and calibration scenarios keep their independent
 expected values and explicit peripheral assumptions. The research scenario uses
@@ -619,7 +619,7 @@ scenario choices. Opaque owner/layout types require explicit adapters. Word padd
 both an explicit count and fill value; unknown memory stays unknown.
 
 Setup results (the imported revision, its inventory, the probe catalog, linked
-images and data exports) are memoized in [`setup-cache`](scenarios/src/engine/setup_cache.rs)
+images and data exports) are memoized in [`setup-cache`](../harness/scenarios/src/setup_cache.rs)
 below the scenario output, keyed by the Blobray executable, the authenticated input
 bytes and the operation's request. A warm run creates no Blobray project; a miss
 creates it once and checks that its revision equals the cached one.

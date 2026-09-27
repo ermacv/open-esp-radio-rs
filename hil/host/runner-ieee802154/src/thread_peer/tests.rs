@@ -29,14 +29,16 @@ impl PeerLink for ScriptedLink {
 #[test]
 fn only_the_openthread_peer_is_ready() {
     // The IEEE 802.15.4 peer's ready line is another image.
-    assert!(ThreadPeer::start(ScriptedLink::new(&["@READY protocol=1 target=esp32c5"])).is_err());
     assert!(
-        ThreadPeer::start(ScriptedLink::new(&[
+        ThreadPeer::synchronize(ScriptedLink::new(&["@READY protocol=1 target=esp32c5"])).is_err()
+    );
+    assert!(
+        ThreadPeer::synchronize(ScriptedLink::new(&[
             "@READY protocol=2 target=esp32c5 stack=openthread"
         ]))
         .is_err()
     );
-    ThreadPeer::start(ScriptedLink::new(&[
+    ThreadPeer::synchronize(ScriptedLink::new(&[
         "boot noise",
         "@READY protocol=1 target=esp32c5 stack=openthread",
     ]))
@@ -56,7 +58,7 @@ fn commands_render_and_return_their_reports() {
         "@OK UDP",
         "@OK UDP",
     ]);
-    let mut peer = ThreadPeer::start(link).unwrap();
+    let mut peer = ThreadPeer::synchronize(link).unwrap();
     peer.form(15, 0x4f45).unwrap();
     assert_eq!(
         peer.dataset().unwrap(),
@@ -76,6 +78,7 @@ fn commands_render_and_return_their_reports() {
     assert_eq!(
         peer.link.sent,
         [
+            "SYNC",
             "FORM 15 0x4f45",
             "DATASET",
             "STATE",
@@ -102,7 +105,7 @@ fn a_rejected_or_incomplete_answer_fails() {
         "@ERR FORM InvalidArgs",
         "@OK DATASET",
     ]);
-    let mut peer = ThreadPeer::start(link).unwrap();
+    let mut peer = ThreadPeer::synchronize(link).unwrap();
     assert!(peer.form(15, 0x4f45).is_err());
     assert!(peer.dataset().is_err());
     assert!(peer.state().is_err());

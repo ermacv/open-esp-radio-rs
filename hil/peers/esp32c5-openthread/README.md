@@ -33,6 +33,8 @@ where `<reason>` is OpenThread's error name.
 | `STATE` | Print `@STATE role=<role> rloc16=<hex> eid=<address>`: OpenThread's device role name, the RLOC16 and the mesh-local EID. |
 | `UDP OPEN <port>` | Open the UDP socket, bound to the port on the Thread interface. |
 | `UDP SEND <address> <port> <hex>` | Send the bytes (at most 128) from the socket to the IPv6 address and port. |
+| `SYNC` | Close the socket and disable Thread and IPv6, then print `@READY` again: the host takes over a running peer without resetting the chip. |
+| `OFF` | Leave the network and stop OpenThread, which disables the IEEE 802.15.4 driver and closes RF; the peer then answers only after a reset. |
 
 Events:
 

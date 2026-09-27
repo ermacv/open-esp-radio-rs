@@ -214,6 +214,18 @@ static otError command_udp(otInstance *instance, char **argv, int argc)
     return OT_ERROR_INVALID_ARGS;
 }
 
+/* SYNC: leave the network and close the socket, then report ready again, so
+ * the host takes over a running peer without resetting the chip. */
+static otError command_sync(otInstance *instance)
+{
+    if (s_socket_open) {
+        otUdpClose(instance, &s_socket);
+        s_socket_open = false;
+    }
+    otThreadSetEnabled(instance, false);
+    return otIp6SetEnabled(instance, false);
+}
+
 static void dispatch(char *line)
 {
     char *argv[8];
@@ -222,6 +234,16 @@ static void dispatch(char *line)
         argv[argc++] = token;
     }
     if (argc == 0) {
+        return;
+    }
+    if (strcmp(argv[0], "OFF") == 0 && argc == 1) {
+        /* Stop OpenThread, which disables the IEEE 802.15.4 driver and
+         * closes RF; the peer then only answers after a reset. */
+        esp_openthread_lock_acquire(portMAX_DELAY);
+        command_sync(esp_openthread_get_instance());
+        esp_openthread_lock_release();
+        esp_err_t stopped = esp_openthread_stop();
+        reply(stopped == ESP_OK ? OT_ERROR_NONE : OT_ERROR_FAILED, "OFF");
         return;
     }
     otInstance *instance = esp_openthread_get_instance();
@@ -235,6 +257,12 @@ static void dispatch(char *line)
         error = command_state(instance);
     } else if (strcmp(argv[0], "UDP") == 0) {
         error = command_udp(instance, argv, argc);
+    } else if (strcmp(argv[0], "SYNC") == 0 && argc == 1) {
+        error = command_sync(instance);
+        if (error == OT_ERROR_NONE) {
+            printf("@READY protocol=%d target=%s stack=openthread\n", PROTOCOL_VERSION,
+                   CONFIG_IDF_TARGET);
+        }
     }
     esp_openthread_lock_release();
     reply(error, argv[0]);

@@ -381,6 +381,34 @@ static void command_burst(char **argv, int argc)
     reply(error, "BURST");
 }
 
+/* SYNC: return the driver to its defaults and report ready again, so the
+ * host takes over a running peer without resetting the chip. */
+static void command_sync(void)
+{
+    if (atomic_exchange(&s_burst_active, false)) {
+        for (int wait = 0; wait < 50 && atomic_load(&s_burst_in_flight); wait++) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+    esp_err_t error = esp_ieee802154_disable();
+    if (error == ESP_OK) {
+        error = esp_ieee802154_enable();
+    }
+    if (error == ESP_OK) {
+        error = esp_ieee802154_reset_pending_table(true);
+    }
+    if (error == ESP_OK) {
+        error = esp_ieee802154_reset_pending_table(false);
+    }
+    /* Reports of the previous user end here. */
+    xQueueReset(s_events);
+    atomic_store(&s_burst_in_flight, false);
+    if (error == ESP_OK) {
+        printf("@READY protocol=%d target=%s\n", PROTOCOL_VERSION, CONFIG_IDF_TARGET);
+    }
+    reply(error, "SYNC");
+}
+
 /* PENDING <mode 0..3> | PENDING ADD <short:4hex> | PENDING CLEAR */
 static void command_pending(char **argv, int argc)
 {
@@ -466,6 +494,8 @@ static void dispatch(char *line)
         command_pending(argv, argc);
     } else if (strcmp(argv[0], "ED") == 0) {
         command_ed(argv, argc);
+    } else if (strcmp(argv[0], "SYNC") == 0 && argc == 1) {
+        command_sync();
     } else if (strcmp(argv[0], "OFF") == 0 && argc == 1) {
         reply(esp_ieee802154_disable(), "OFF");
     } else if (strcmp(argv[0], "ON") == 0 && argc == 1) {

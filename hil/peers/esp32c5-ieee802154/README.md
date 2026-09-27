@@ -58,6 +58,7 @@ Each command is answered by `@OK <command>` or `@ERR <command> <reason>`.
 | `PENDING ADD <short>` | Add a short address (big-endian hex) to the pending table. |
 | `PENDING CLEAR` | Clear the short-address pending table. |
 | `ED <symbols>` | Run one energy detection of the given number of 16 µs symbols. |
+| `SYNC` | Stop a burst, disable and enable the driver, clear both pending tables and pending reports, then print `@READY` again: the host takes over a running peer without resetting the chip. |
 | `OFF` | Disable the driver (`esp_ieee802154_disable`): the MAC, BTBB and the PHY client are released, and RF closes after the last client. |
 | `ON` | Enable the driver again (`esp_ieee802154_enable`); send `CFG` before the next operation. |
 

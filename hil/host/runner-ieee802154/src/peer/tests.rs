@@ -108,9 +108,9 @@ fn commands_wait_for_their_answer_and_keep_interleaved_events() {
         "@OK TX",
         "@TXDONE ack=-",
     ]);
-    let mut peer = Peer::start(link).unwrap();
+    let mut peer = Peer::synchronize(link).unwrap();
     peer.transmit(false, &[0x41, 0x88]).unwrap();
-    assert_eq!(peer.link.sent, ["TX 0 4188"]);
+    assert_eq!(peer.link.sent, ["SYNC", "TX 0 4188"]);
     assert!(matches!(
         peer.next_event(Duration::ZERO).unwrap(),
         Some(PeerEvent::Received(_))
@@ -127,27 +127,27 @@ fn commands_wait_for_their_answer_and_keep_interleaved_events() {
 #[test]
 fn a_rejected_or_silent_command_fails() {
     let link = ScriptedLink::new(&["@READY protocol=1", "@ERR RX ESP_FAIL"]);
-    let mut peer = Peer::start(link).unwrap();
+    let mut peer = Peer::synchronize(link).unwrap();
     assert!(peer.receive().is_err());
     assert!(peer.sleep().is_err());
 }
 
 #[test]
 fn a_peer_of_another_protocol_is_refused() {
-    assert!(Peer::start(ScriptedLink::new(&["@READY protocol=2"])).is_err());
-    assert!(Peer::start(ScriptedLink::new(&["no ready line"])).is_err());
+    assert!(Peer::synchronize(ScriptedLink::new(&["@READY protocol=2"])).is_err());
+    assert!(Peer::synchronize(ScriptedLink::new(&["no ready line"])).is_err());
 }
 
 /// The recording link keeps every sent and received line, including the
-/// ready line, in order and with its direction.
+/// synchronization, in order and with its direction.
 #[test]
 fn the_recording_link_keeps_the_whole_conversation() {
     let transcript = PeerTranscript::default();
     let link = RecordingLink::new(
-        ScriptedLink::new(&["boot noise", "@READY protocol=1", "@OK RX"]),
+        ScriptedLink::new(&["earlier output", "@READY protocol=1", "@OK SYNC", "@OK RX"]),
         transcript.clone(),
     );
-    let mut peer = Peer::start(link).unwrap();
+    let mut peer = Peer::synchronize(link).unwrap();
     peer.receive().unwrap();
     // Each line starts with the milliseconds since the link opened.
     let lines: Vec<String> = transcript
@@ -157,7 +157,14 @@ fn the_recording_link_keeps_the_whole_conversation() {
         .collect();
     assert_eq!(
         lines,
-        ["< boot noise", "< @READY protocol=1", "> RX", "< @OK RX"]
+        [
+            "> SYNC",
+            "< earlier output",
+            "< @READY protocol=1",
+            "> RX",
+            "< @OK SYNC",
+            "< @OK RX"
+        ]
     );
 }
 
@@ -170,7 +177,7 @@ fn a_burst_stop_returns_the_report_printed_before_its_answer() {
         "@OK BURST",
         "@OK BURST",
     ]);
-    let mut peer = Peer::start(link).unwrap();
+    let mut peer = Peer::synchronize(link).unwrap();
     peer.burst(&[0x41, 0x88]).unwrap();
     assert_eq!(
         peer.stop_burst().unwrap(),
@@ -179,7 +186,7 @@ fn a_burst_stop_returns_the_report_printed_before_its_answer() {
             failed: 1
         }
     );
-    assert_eq!(peer.link.sent, ["BURST 4188", "BURST STOP"]);
+    assert_eq!(peer.link.sent, ["SYNC", "BURST 4188", "BURST STOP"]);
     // A stop answered without its report is not a stopped burst.
     assert!(peer.stop_burst().is_err());
 }

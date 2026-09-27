@@ -191,17 +191,19 @@ pub struct SerialLink {
 }
 
 impl SerialLink {
-    /// Open the console and hard-reset the peer (RTS pulse with DTR
-    /// released, as esptool does), dropping output of the previous boot.
-    pub fn open_with_reset(path: &Path) -> Result<Self> {
+    /// Open the console without resetting the peer. RTS is released before
+    /// DTR, so the lines never pass through the reset state (RTS asserted,
+    /// DTR released); output the running image printed before is dropped.
+    /// A USB Serial/JTAG reset of an ESP32-C5 whose IEEE 802.15.4 radio runs
+    /// can leave it in ROM download, so the peer is never reset from here.
+    pub fn open(path: &Path) -> Result<Self> {
         let mut port = serialport::new(path.to_string_lossy(), 115_200)
             .timeout(Duration::from_millis(50))
             .open()?;
-        port.write_data_terminal_ready(false)?;
-        port.write_request_to_send(true)?;
-        thread::sleep(Duration::from_millis(100));
-        port.clear(serialport::ClearBuffer::Input)?;
         port.write_request_to_send(false)?;
+        port.write_data_terminal_ready(false)?;
+        thread::sleep(Duration::from_millis(50));
+        port.clear(serialport::ClearBuffer::Input)?;
         Ok(Self {
             port,
             buffered: Vec::new(),
@@ -316,24 +318,26 @@ pub struct Peer<L> {
 }
 
 impl Peer<SerialLink> {
-    /// Reset the peer on `path` and wait until it reports ready.
+    /// Take over the peer on `path` and wait until it reports ready.
     pub fn open(path: &Path) -> Result<Self> {
-        Self::start(SerialLink::open_with_reset(path)?)
+        Self::synchronize(SerialLink::open(path)?)
     }
 }
 
 impl Peer<RecordingLink<SerialLink>> {
-    /// Reset the peer on `path` and wait until it reports ready, recording
-    /// every line of the session, including the boot, into `transcript`.
+    /// Take over the peer on `path` and wait until it reports ready,
+    /// recording every line of the session into `transcript`.
     pub fn open_recorded(path: &Path, transcript: &PeerTranscript) -> Result<Self> {
-        let link = RecordingLink::new(SerialLink::open_with_reset(path)?, transcript.clone());
-        Self::start(link)
+        let link = RecordingLink::new(SerialLink::open(path)?, transcript.clone());
+        Self::synchronize(link)
     }
 }
 
 impl<L: PeerLink> Peer<L> {
-    /// Wait for the peer's `@READY` line on `link`.
-    pub fn start(mut link: L) -> Result<Self> {
+    /// Return the running peer on `link` to its defaults with `SYNC` and
+    /// wait for its `@READY` line.
+    pub fn synchronize(mut link: L) -> Result<Self> {
+        link.send("SYNC")?;
         let deadline = Instant::now() + READY_TIMEOUT;
         while let Some(line) = link.receive(deadline)? {
             if let Some(Line::Ready { protocol }) = parse_line(&line) {
@@ -347,7 +351,7 @@ impl<L: PeerLink> Peer<L> {
             }
         }
         Err(format!(
-            "IEEE 802.15.4 peer did not report ready; the board may carry other \
+            "IEEE 802.15.4 peer did not answer SYNC; the board may carry other \
              firmware: {PEER_REFLASH}"
         )
         .into())

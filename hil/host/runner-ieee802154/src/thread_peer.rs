@@ -114,17 +114,19 @@ pub struct ThreadPeer<L> {
 }
 
 impl ThreadPeer<RecordingLink<SerialLink>> {
-    /// Reset the peer on `path` and wait until it reports ready, recording
-    /// every line of the session, including the boot, into `transcript`.
+    /// Take over the peer on `path` and wait until it reports ready,
+    /// recording every line of the session into `transcript`.
     pub fn open_recorded(path: &Path, transcript: &PeerTranscript) -> Result<Self> {
-        let link = RecordingLink::new(SerialLink::open_with_reset(path)?, transcript.clone());
-        Self::start(link)
+        let link = RecordingLink::new(SerialLink::open(path)?, transcript.clone());
+        Self::synchronize(link)
     }
 }
 
 impl<L: PeerLink> ThreadPeer<L> {
-    /// Wait for the peer's `@READY` line on `link`.
-    pub fn start(mut link: L) -> Result<Self> {
+    /// Leave any network and close the socket with `SYNC`, and wait for the
+    /// peer's `@READY` line on `link`.
+    pub fn synchronize(mut link: L) -> Result<Self> {
+        link.send("SYNC")?;
         let deadline = Instant::now() + READY_TIMEOUT;
         while let Some(line) = link.receive(deadline)? {
             if let Some(Line::Ready { protocol }) = parse_line(&line) {
@@ -138,7 +140,7 @@ impl<L: PeerLink> ThreadPeer<L> {
             }
         }
         Err(format!(
-            "Thread peer did not report ready; the board may carry other firmware: \
+            "Thread peer did not answer SYNC; the board may carry other firmware: \
              {THREAD_PEER_REFLASH}"
         )
         .into())

@@ -607,3 +607,20 @@ fn firmware_builds_drop_inherited_cargo_overrides_that_change_the_image() {
         .map(std::ffi::OsString::from)
     );
 }
+
+#[test]
+fn a_console_image_classifies_as_the_class_that_declares_it() {
+    for class in ImageClass::ALL {
+        if let Some(features) = class.console_capabilities() {
+            assert_eq!(
+                classify_flashed_capabilities(&features),
+                Some(class),
+                "{}",
+                class.id()
+            );
+        }
+    }
+    let dtm = ImageClass::BluetoothDtm.console_capabilities().unwrap();
+    assert!(dtm.bluetooth_dtm && !dtm.bluetooth_peripheral);
+    assert_eq!(ImageClass::Correctness.console_capabilities(), None);
+}

@@ -6,6 +6,7 @@
 
 use super::*;
 use serde::Serialize;
+use std::borrow::Cow;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -81,6 +82,10 @@ pub(crate) struct EvidenceDecision {
     observations: Vec<ObservationDecision>,
     pub(crate) reviews: Vec<review::ReviewDecision>,
     pub(crate) property: Option<review::PropertyBinding>,
+    /// Why the current firmware cannot run the scenario, as its catalog
+    /// document declares; the obligation stays open until it can.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) unsupported: Option<String>,
 }
 
 impl EvidenceDecision {
@@ -132,14 +137,26 @@ impl EvidenceDecision {
     }
 
     /// Guidance only: never changes evidence eligibility or resolves a failure.
-    pub(crate) fn next_work(&self) -> Option<(crate::model::WorkKind, &'static str)> {
+    pub(crate) fn next_work(&self) -> Option<(crate::model::WorkKind, Cow<'_, str>)> {
         use crate::model::WorkKind;
         if self.reviews.iter().any(|r| r.status != "applied") {
             return Some((
                 WorkKind::AssessApplicability,
-                "An explicit applicability review no longer binds this property/build; inspect its review status before editing it or choosing a rerun.",
+                "An explicit applicability review no longer binds this property/build; inspect its review status before editing it or choosing a rerun.".into(),
             ));
         }
+        if let (EvidenceStatus::Missing, Some(reason)) = (self.status, &self.unsupported) {
+            return Some((
+                WorkKind::Implement,
+                format!("Not runnable on the current firmware: {reason}").into(),
+            ));
+        }
+        self.observed_work()
+            .map(|(kind, reason)| (kind, reason.into()))
+    }
+
+    fn observed_work(&self) -> Option<(crate::model::WorkKind, &'static str)> {
+        use crate::model::WorkKind;
         match self.status {
             EvidenceStatus::Satisfied => None,
             EvidenceStatus::UnresolvedFailure => Some((
@@ -196,6 +213,9 @@ impl HilEvidenceIndex {
             observations: Vec::new(),
             reviews: Vec::new(),
             property: None,
+            unsupported: catalog
+                .unsupported(&requirement.scenario)
+                .map(str::to_owned),
         };
         let mut candidates = Vec::new();
         for observation in self

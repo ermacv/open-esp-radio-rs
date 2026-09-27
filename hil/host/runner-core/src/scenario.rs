@@ -58,6 +58,10 @@ pub struct Header {
         skip_serializing_if = "is_default_targets"
     )]
     pub targets: Vec<String>,
+    /// Why the scenario cannot run on the current firmware. The runner
+    /// refuses to select it, before any image build, with this reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsupported: Option<String>,
 }
 
 const fn one_repetition() -> u8 {
@@ -72,7 +76,7 @@ fn is_default_targets(targets: &[String]) -> bool {
     targets == default_targets()
 }
 
-const HEADER_FIELDS: [&str; 7] = [
+const HEADER_FIELDS: [&str; 8] = [
     "schema",
     "id",
     "description",
@@ -80,6 +84,7 @@ const HEADER_FIELDS: [&str; 7] = [
     "transfer",
     "tags",
     "targets",
+    "unsupported",
 ];
 
 impl Header {
@@ -115,6 +120,13 @@ impl Header {
         }
         if self.description.trim().is_empty() {
             return Err("scenario description is empty".into());
+        }
+        if self
+            .unsupported
+            .as_ref()
+            .is_some_and(|reason| reason.trim().is_empty())
+        {
+            return Err(format!("scenario `{}` gives an empty unsupported reason", self.id).into());
         }
         bounded(self.repetitions, 1, 20, "repetitions")
     }
@@ -162,6 +174,13 @@ pub trait ScenarioFamily: Clone + Debug + Eq + Serialize + DeserializeOwned {
     fn validate(&self) -> Result<()>;
 
     fn plan(&self) -> Plan;
+
+    /// Whether an image of the planned class that declares `features` can
+    /// run this scenario. The class alone suffices unless the family names
+    /// a role the class's image may omit.
+    fn served_by(&self, _features: &oer_hil_protocol::FeatureCapabilities) -> bool {
+        true
+    }
 }
 
 /// One validated scenario document.

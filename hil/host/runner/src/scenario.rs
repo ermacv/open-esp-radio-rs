@@ -89,6 +89,13 @@ impl ScenarioFamily for Family {
             Self::Coexistence(scenario) => scenario.plan(),
         }
     }
+
+    fn served_by(&self, features: &oer_hil_protocol::FeatureCapabilities) -> bool {
+        match self {
+            Self::Bluetooth(scenario) => scenario.served_by(features),
+            Self::Wifi(_) | Self::System(_) | Self::Ieee802154(_) | Self::Coexistence(_) => true,
+        }
+    }
 }
 
 impl Family {

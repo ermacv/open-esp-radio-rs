@@ -176,7 +176,9 @@ pub(crate) fn named_scenarios(catalog: &Catalog, ids: &[String]) -> Result<Vec<S
             if ids[..index].contains(id) {
                 return Err(format!("scenario `{id}` is selected twice").into());
             }
-            catalog.get(id).cloned()
+            let scenario = catalog.get(id)?;
+            refuse_unsupported(&[scenario])?;
+            Ok(scenario.clone())
         })
         .collect()
 }
@@ -232,6 +234,18 @@ fn prebuild(
         built.push((class, firmware::build_image(class, network, session)?));
     }
     Ok(built)
+}
+
+/// Refuse an explicit selection naming a scenario the current firmware
+/// cannot run, before any image is built.
+pub(crate) fn refuse_unsupported(selected: &[&Scenario]) -> Result<()> {
+    match selected
+        .iter()
+        .find_map(|scenario| Some((scenario.id(), scenario.header.unsupported.as_deref()?)))
+    {
+        Some((id, reason)) => Err(format!("scenario `{id}` is unsupported: {reason}").into()),
+        None => Ok(()),
+    }
 }
 
 /// The chip that runs `selected`: `requested`, which every scenario must
@@ -835,7 +849,7 @@ fn run_scenario_repetition(
     let (outcome, failure, measurements) = match fixture::preflight::check(lab, selected)
         .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, &plan, output))
         .and_then(|fixture| {
-            preflight::validate_flashed_image(lab, plan.image, output)?;
+            preflight::validate_flashed_image(lab, selected, output)?;
             Ok(fixture)
         }) {
         Err(error) => {

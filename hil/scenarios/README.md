@@ -17,6 +17,7 @@ description = "..."
 repetitions = 3                 # default 1
 transfer = "identical-image"    # default unchanged-functional-contract
 tags = ["he20"]
+unsupported = "..."             # optional; see Unsupported scenarios
 
 [wifi]                          # or [bluetooth], [system], [ieee802154], [coexistence]
 image = "correctness"
@@ -183,6 +184,21 @@ The modes publish `wifi.station.recovery-retry-exhausted` or
 `wifi.station.initial-retry-exhausted` respectively. Both query the control
 interface afterwards and publish `wifi.station.control-responsive`. The host
 observes production lifecycle events; it does not implement retry policy.
+
+## Unsupported scenarios
+
+The optional top-level `unsupported` field states why the current firmware
+cannot run a scenario: no image it builds serves the workload's image class,
+or the class's image does not declare a role the workload drives. The runner
+refuses an explicitly named unsupported scenario before building any image;
+a tag or run-all selection skips it and prints its id and reason once. A
+qualification requirement on it stays open, and `cargo qualification next`
+shows the reason. The field is not part of the executed procedure, so
+recorded evidence stays comparable. The runner's catalog test fails when a
+marked scenario is served, or an unmarked one is not, by the image classes
+declared in `hil/targets/esp32s31/runtime/Cargo.toml` and their declared
+capabilities; after flashing, the runner checks the same roles against the
+capabilities the image reports.
 
 ## Transfer policy
 

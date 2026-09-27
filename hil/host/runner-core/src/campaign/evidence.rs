@@ -22,6 +22,8 @@ enum Action {
     Run,
     Review,
     Investigate,
+    /// The current firmware cannot run the scenario.
+    Unsupported,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -105,7 +107,7 @@ impl Selection {
                 Action::Run => {
                     candidates.insert(&obligation.scenario);
                 }
-                Action::Review | Action::Investigate => {
+                Action::Review | Action::Investigate | Action::Unsupported => {
                     withheld.insert(&obligation.scenario);
                 }
             }
@@ -221,7 +223,12 @@ mod tests {
     #[test]
     fn satisfied_obligations_and_reviews_do_not_expand_into_hardware_runs() {
         let catalog = super::super::tests::catalog();
-        for action in [Action::Satisfied, Action::Review, Action::Investigate] {
+        for action in [
+            Action::Satisfied,
+            Action::Review,
+            Action::Investigate,
+            Action::Unsupported,
+        ] {
             let plan = Plan::from_selection(&catalog, binding(action), Integration::UpstreamXarxa)
                 .unwrap();
             assert!(plan.resolve(&catalog).unwrap().0.is_empty());

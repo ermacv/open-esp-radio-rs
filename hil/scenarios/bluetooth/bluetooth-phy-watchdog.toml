@@ -4,6 +4,7 @@ description = "Real PHY calibration completion/restoration faults and cancellati
 repetitions = 3
 transfer = "identical-image"
 tags = ["bluetooth", "phy", "watchdog", "fault-injection"]
+unsupported = "The current firmware builds no Bluetooth watchdog-reset fault image."
 
 [bluetooth]
 kind = "phy-watchdog"

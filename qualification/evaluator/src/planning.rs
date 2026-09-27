@@ -52,12 +52,14 @@ impl Plan {
                 let (action, reason) = if decision.status == EvidenceStatus::Satisfied {
                     (
                         "satisfied",
-                        "Existing applicable evidence satisfies this obligation.",
+                        "Existing applicable evidence satisfies this obligation.".into(),
                     )
                 } else {
                     match decision.next_work() {
                         Some((WorkKind::AssessApplicability, reason)) => ("review", reason),
                         Some((WorkKind::InvestigateFailure, reason)) => ("investigate", reason),
+                        // The runner cannot execute it; the gap stays open.
+                        Some((WorkKind::Implement, reason)) => ("unsupported", reason),
                         Some((_, reason)) => ("run", reason),
                         None => {
                             return Err("unsatisfied obligation has no explained next work".into());

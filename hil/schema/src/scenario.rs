@@ -9,6 +9,9 @@
 use serde_json::{Map, Value};
 
 /// Remove presentation-only fields, drop nulls and fill schema-5 defaults.
+///
+/// Whether the current firmware can run a scenario is not part of its
+/// procedure: marking it unsupported keeps its recorded evidence comparable.
 pub fn normalize(document: &Value) -> Value {
     let defaults: Value = serde_json::from_str(include_str!("../scenario-v5-defaults.json"))
         .expect("compiled scenario defaults must be valid JSON");
@@ -19,6 +22,7 @@ pub fn normalize(document: &Value) -> Value {
         object.remove("description");
         object.remove("tags");
         object.remove("transfer");
+        object.remove("unsupported");
     }
     value
 }
@@ -84,6 +88,9 @@ mod tests {
         let normalized = normalize(&control);
         assert_eq!(normalized["repetitions"], 1);
         assert!(normalized.get("description").is_none() && normalized.get("tags").is_none());
+        let mut unsupported = control.clone();
+        unsupported["unsupported"] = json!("no image serves it");
+        assert_eq!(normalize(&unsupported), normalized);
         let workload = &normalized["wifi"]["workload"];
         assert_eq!(
             workload["link"],

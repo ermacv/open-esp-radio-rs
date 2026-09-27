@@ -181,6 +181,11 @@ impl ScenarioCatalog {
         Ok(())
     }
 
+    /// The declared reason the current firmware cannot run `scenario`.
+    pub(crate) fn unsupported(&self, scenario: &str) -> Option<&str> {
+        self.definitions.get(scenario)?.get("unsupported")?.as_str()
+    }
+
     pub(crate) fn validate_requirement(&self, requirement: &HilRequirement) -> Result<()> {
         let mut seen = BTreeSet::new();
         for name in &requirement.checks {

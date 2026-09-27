@@ -3,6 +3,7 @@ id = "bluetooth-peripheral-missing-key-plaintext"
 description = "Diagnose plaintext remote-version exchange after missing-key rejection before explicit Disconnect and encrypted recovery"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "encryption", "security-failure", "diagnostic"]
+unsupported = "The Bluetooth DTM image does not run the LE peripheral role."
 
 [bluetooth]
 kind = "security-failure"

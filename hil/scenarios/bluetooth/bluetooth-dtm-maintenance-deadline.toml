@@ -4,6 +4,7 @@ description = "Active DTM TX/RX reaches autonomous PHY hard expiry, produces a n
 repetitions = 3
 transfer = "identical-image"
 tags = ["bluetooth", "dtm", "phy-maintenance", "fail-stop", "air-exclusive"]
+unsupported = "The current firmware builds no Bluetooth image with automatic PHY maintenance."
 
 [bluetooth]
 kind = "maintenance-deadline"

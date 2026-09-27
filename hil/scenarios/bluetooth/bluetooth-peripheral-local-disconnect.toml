@@ -3,6 +3,7 @@ id = "bluetooth-peripheral-local-disconnect"
 description = "Two real LE peripheral connections with exact Feature and Version Exchange, ACL backpressure, Connection and Channel Map Updates, a second ACL exchange, target Host Disconnect, peer confirmation and advertising recovery"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "connection", "feature-exchange", "version-exchange", "connection-update", "channel-map-update", "disconnect", "acl", "recovery"]
+unsupported = "The Bluetooth DTM image does not run the LE peripheral role."
 
 [bluetooth]
 kind = "peripheral"

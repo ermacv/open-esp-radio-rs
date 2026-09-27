@@ -3,6 +3,7 @@ id = "bluetooth-peripheral-maintenance-backpressure"
 description = "Active PHY restoration on a live ACL connection, then held Host credit through supervision expiry, exact credit drain, same-HCI reconnect and physical cold retirement"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "backpressure", "phy-maintenance", "lifecycle"]
+unsupported = "The current firmware builds no Bluetooth image with automatic PHY maintenance."
 
 [bluetooth]
 kind = "acl-backpressure"

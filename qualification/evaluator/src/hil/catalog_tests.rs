@@ -136,3 +136,29 @@ fn a_joint_coexistence_table_is_one_family() {
     );
     assert!(ScenarioCatalog::load(&tree.0, Path::new("catalog")).is_err());
 }
+
+#[test]
+fn an_unsupported_scenario_stays_an_open_gap_with_its_reason() {
+    let tree = Tree::new();
+    tree.write(
+        "alpha-system.toml",
+        &ALPHA.replacen("\n[", "\nunsupported = \"no image serves it\"\n[", 1),
+    );
+    let catalog = ScenarioCatalog::load(&tree.0, Path::new("catalog")).unwrap();
+    assert_eq!(
+        catalog.unsupported("alpha-system"),
+        Some("no image serves it")
+    );
+    let decision = HilEvidenceIndex::default().decision_for(
+        &HilRequirement {
+            scenario: "alpha-system".into(),
+            checks: Vec::new(),
+            minimum_repetitions: 1,
+        },
+        &catalog,
+    );
+    assert_eq!(decision.status, EvidenceStatus::Missing);
+    let (kind, reason) = decision.next_work().unwrap();
+    assert_eq!(kind, crate::model::WorkKind::Implement);
+    assert!(reason.contains("no image serves it"));
+}

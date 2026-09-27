@@ -2,7 +2,8 @@
 
 use std::{path::Path, time::Duration};
 
-use oer_hil_protocol::WifiApScheduler;
+use hil_core::scenario::ScenarioFamily as _;
+use oer_hil_protocol::{FeatureCapabilities, WifiApScheduler};
 
 use crate::{
     Result, fixture,
@@ -51,24 +52,38 @@ pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<F
 
 pub(crate) fn validate_flashed_image(
     lab: &LabConfig,
-    expected: ImageClass,
+    selected: &Scenario,
     output: &Path,
 ) -> Result<()> {
-    if expected == ImageClass::BootSmoke {
+    if selected.image() == ImageClass::BootSmoke {
         return Ok(());
     }
     let capture =
         SerialCapture::start_with_reset(&lab.device.serial, &output.join("image-preflight"))?;
     let capabilities = capture.request_capabilities(Duration::from_secs(10));
     let capabilities = capture.finish_with(capabilities)?;
+    check_flashed_capabilities(selected, &capabilities.features)
+}
 
-    let observed = image::classify_flashed_capabilities(&capabilities.features)
+/// Accept a flashed image only when it is the scenario's class and declares
+/// every role the scenario drives.
+fn check_flashed_capabilities(selected: &Scenario, features: &FeatureCapabilities) -> Result<()> {
+    let expected = selected.image();
+    let observed = image::classify_flashed_capabilities(features)
         .ok_or("flashed image advertises mutually exclusive diagnostic capabilities")?;
     if observed != expected {
         return Err(format!(
             "scenario requires `{}` image but flashed target advertises `{}` capabilities",
             expected.id(),
             observed.id()
+        )
+        .into());
+    }
+    if !selected.family.served_by(features) {
+        return Err(format!(
+            "flashed `{}` image does not declare a role scenario `{}` drives",
+            observed.id(),
+            selected.id()
         )
         .into());
     }

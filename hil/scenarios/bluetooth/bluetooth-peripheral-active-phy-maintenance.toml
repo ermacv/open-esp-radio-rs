@@ -3,6 +3,7 @@ id = "bluetooth-peripheral-active-phy-maintenance"
 description = "Production automatic PHY maintenance inside three live peripheral ACL sessions, with peer Reset recovery and final retirement; explicit engineering budgets, no thermal qualification"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "lifecycle", "phy-maintenance"]
+unsupported = "The current firmware builds no Bluetooth image with automatic PHY maintenance."
 
 [bluetooth]
 kind = "peripheral"

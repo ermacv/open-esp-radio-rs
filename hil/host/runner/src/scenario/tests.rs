@@ -77,3 +77,64 @@ fn selection_requirements_union_every_family() {
     assert!(required.bluetooth_adapter && required.station_network && required.station_control);
     assert!(requirements(&[catalog.get("boot-smoke").unwrap()]) == Requirements::default());
 }
+
+#[test]
+fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
+    let root = crate::repository_root().unwrap();
+    let manifest: toml::Table = toml::from_str(
+        &std::fs::read_to_string(root.join("hil/targets/esp32s31/runtime/Cargo.toml")).unwrap(),
+    )
+    .unwrap();
+    let features = manifest["features"].as_table().unwrap();
+    // The firmware builds a class only while it declares every feature of
+    // the class's recipe.
+    let built = |class: ImageClass| {
+        class
+            .runtime_features()
+            .split(',')
+            .all(|feature| features.contains_key(feature))
+    };
+    for scenario in catalog().all() {
+        let class = scenario.image();
+        let served = built(class)
+            && class
+                .console_capabilities()
+                .is_none_or(|declared| scenario.family.served_by(&declared));
+        assert_eq!(
+            served,
+            scenario.header.unsupported.is_none(),
+            "scenario `{}` on image `{}`: served = {served}",
+            scenario.id(),
+            class.id()
+        );
+    }
+}
+
+#[test]
+fn an_explicit_selection_refuses_an_unsupported_scenario_and_a_tag_skips_it() {
+    let catalog = catalog();
+    let unsupported = catalog
+        .all()
+        .iter()
+        .find(|scenario| scenario.header.unsupported.is_some())
+        .expect("an unsupported scenario");
+    let explicit = crate::cli::Selection {
+        scenario: Some(unsupported.id().to_owned()),
+        tag: Vec::new(),
+    };
+    assert!(explicit.resolve(&catalog).is_err());
+    let tagged = crate::cli::Selection {
+        scenario: None,
+        tag: unsupported.header.tags.clone(),
+    };
+    let selected = tagged.resolve(&catalog).unwrap_or_default();
+    assert!(
+        selected
+            .iter()
+            .all(|scenario| scenario.id() != unsupported.id())
+    );
+    assert!(
+        crate::execution::orchestration::named_scenarios(&catalog, &[unsupported.id().to_owned()])
+            .is_err()
+    );
+}

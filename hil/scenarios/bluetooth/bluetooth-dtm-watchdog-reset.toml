@@ -4,6 +4,7 @@ description = "Diagnostic MWDT1 reset during active DTM TX/RX; peer checks RF si
 repetitions = 3
 transfer = "identical-image"
 tags = ["bluetooth", "dtm", "watchdog", "fault-injection", "air-exclusive"]
+unsupported = "The current firmware builds no Bluetooth watchdog-reset fault image."
 
 [bluetooth]
 kind = "watchdog-reset"

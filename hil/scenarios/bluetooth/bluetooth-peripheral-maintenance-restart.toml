@@ -3,6 +3,7 @@ id = "bluetooth-peripheral-maintenance-restart"
 description = "Guarded PHY maintenance and continued ACL in three connections, cold release/restart between them, old HCI closure and final cold retirement"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "lifecycle", "phy-maintenance", "restart"]
+unsupported = "The current firmware builds no Bluetooth image with automatic PHY maintenance."
 
 [bluetooth]
 kind = "peripheral"

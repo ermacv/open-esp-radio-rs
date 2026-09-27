@@ -63,6 +63,22 @@ fn boot_smoke_preflight_never_opens_a_serial_capture() {
     }
     let lab = LabConfig::load(&lab_path).expect("example lab config");
     let output = tempfile::tempdir().unwrap();
-    validate_flashed_image(&lab, ImageClass::BootSmoke, output.path()).unwrap();
+    validate_flashed_image(&lab, catalog().get("boot-smoke").unwrap(), output.path()).unwrap();
     assert!(std::fs::read_dir(output.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
+    let catalog = catalog();
+    let dtm = ImageClass::BluetoothDtm.console_capabilities().unwrap();
+    check_flashed_capabilities(catalog.get("bluetooth-dtm-bidirectional").unwrap(), &dtm).unwrap();
+    let connection = catalog
+        .get("bluetooth-peripheral-local-disconnect")
+        .unwrap();
+    assert!(check_flashed_capabilities(connection, &dtm).is_err());
+    let peripheral = FeatureCapabilities {
+        bluetooth_peripheral: true,
+        ..dtm
+    };
+    check_flashed_capabilities(connection, &peripheral).unwrap();
 }

@@ -3,6 +3,7 @@ id = "bluetooth-peripheral-phy-calibration"
 description = "Measure actual common RX and Bluetooth TX calibration with zero diagnostic thermal thresholds between ACL connections, restoring the original policy"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "lifecycle", "phy-maintenance", "calibration"]
+unsupported = "The Bluetooth DTM image does not run the LE peripheral role."
 
 [bluetooth]
 kind = "peripheral"

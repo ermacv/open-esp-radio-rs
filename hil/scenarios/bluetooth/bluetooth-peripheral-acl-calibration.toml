@@ -3,6 +3,7 @@ id = "bluetooth-peripheral-acl-calibration"
 description = "Four simultaneous HCI ACL credits and repeated full PHY calibration at 7.5 ms; empty peer ACK recovery, exact payload/credit checks, threshold restoration and cold retirement"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "acl", "phy-maintenance", "calibration"]
+unsupported = "The current firmware builds no Bluetooth image with automatic PHY maintenance."
 
 [bluetooth]
 kind = "acl-calibration"

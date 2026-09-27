@@ -161,13 +161,22 @@ impl Selection {
         catalog: &'a crate::scenario::Catalog,
     ) -> crate::Result<Vec<&'a crate::scenario::Scenario>> {
         if let Some(id) = &self.scenario {
-            return Ok(vec![catalog.get(id)?]);
+            let selected = vec![catalog.get(id)?];
+            crate::execution::orchestration::refuse_unsupported(&selected)?;
+            return Ok(selected);
         }
-        let selected: Vec<_> = catalog
+        let (selected, unsupported): (Vec<_>, Vec<_>) = catalog
             .all()
             .iter()
             .filter(|entry| self.tag.iter().all(|tag| entry.header.tags.contains(tag)))
-            .collect();
+            .partition(|entry| entry.header.unsupported.is_none());
+        for scenario in unsupported {
+            eprintln!(
+                "skipping unsupported scenario `{}`: {}",
+                scenario.id(),
+                scenario.header.unsupported.as_deref().unwrap_or_default()
+            );
+        }
         if selected.is_empty() {
             return Err("no HIL scenarios match the requested tags".into());
         }

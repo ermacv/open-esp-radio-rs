@@ -12,7 +12,9 @@ use hil_core::{
     lab::requirements::Requirements,
     scenario::{Plan, bounded},
 };
-use oer_hil_protocol::{BluetoothPeripheralTermination, BluetoothSecurityFailure, ResetReason};
+use oer_hil_protocol::{
+    BluetoothPeripheralTermination, BluetoothSecurityFailure, FeatureCapabilities, ResetReason,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -212,6 +214,24 @@ impl BluetoothScenario {
                 ..Requirements::default()
             },
             ..Plan::target_only(self.image())
+        }
+    }
+
+    /// Whether an image of [`Self::image`] declaring `features` runs this
+    /// workload: every workload but GATT drives the image's Controller role,
+    /// and a connection needs the peripheral role beside Direct Test Mode.
+    pub fn served_by(&self, features: &FeatureCapabilities) -> bool {
+        match self {
+            Self::Gatt {} | Self::SecureGatt { .. } => true,
+            Self::Dtm { .. } | Self::WatchdogReset {} | Self::MaintenanceDeadline {} => {
+                features.bluetooth_dtm
+            }
+            Self::PhyWatchdog {}
+            | Self::AclBackpressure { .. }
+            | Self::AclCalibration { .. }
+            | Self::EncryptedAcl { .. }
+            | Self::SecurityFailure { .. }
+            | Self::Peripheral { .. } => features.bluetooth_peripheral,
         }
     }
 

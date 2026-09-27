@@ -83,7 +83,7 @@ pub(super) fn capability(entry: &Entry, document: &CapabilityDocument) -> Vec<Ac
                     entry,
                     kind,
                     &decision.scenario,
-                    reason,
+                    &reason,
                     "evidence-decision",
                 ));
             }

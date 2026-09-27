@@ -2,15 +2,20 @@
 //!
 //! The vendor firmware under `verification/<chip>/hil-vendor/<app>/` runs
 //! vendor code on the board for hardware cross-checks. Every build uses the
-//! ESP-IDF revision pinned by the chip's `artifacts.toml`, checked out in
-//! `target/vendor-firmware/esp-idf/<revision>/`. Each IDF submodule whose
+//! ESP-IDF revision pinned by the chip's `artifacts.toml`, checked out once
+//! per host in the user's cache (`$OER_IDF_CACHE`, default
+//! `~/.cache/open-esp-radio/esp-idf`) below `<revision>-<pins>/`, where
+//! `<pins>` identifies every pinned source. Each IDF submodule whose
 //! upstream repository is itself a pinned source is checked out at the
 //! pinned revision instead and recorded in the tree's index, so the IDF
 //! submodule check keeps it; every pinned artifact in such a submodule is
 //! verified. After linking, every archive of the image named like a pinned
-//! artifact must be that artifact. The IDF tools live in
-//! `target/vendor-firmware/idf-tools`, apart from any user installation.
-//! Outputs land in `target/vendor-firmware/<chip>/<app>/` with a
+//! artifact must be that artifact. The IDF tools live in the cache's
+//! `idf-tools`, apart from any user installation. Every checkout shares the
+//! cache: preparing a tree or installing tools holds its lock exclusively,
+//! and a build holds it shared, so no build sees a tree or Python environment
+//! change under it. A checkout's former `target/vendor-firmware/esp-idf` and
+//! `idf-tools` are removed on its first build from the cache. Outputs land in `target/vendor-firmware/<chip>/<app>/` with a
 //! `build.json` recording the pins and the image digest.
 use crate::vendor_fetch::{self, GitPin};
 use crate::{Context, Result};
@@ -25,7 +30,9 @@ const BUILD_RECORD: &str = "build.json";
 const OUTPUT: &str = "target/vendor-firmware";
 /// Pinned source id of the ESP-IDF tree.
 const IDF_SOURCE: &str = "esp-idf";
-/// IDF tool installation below [`OUTPUT`].
+/// Overrides the host-wide ESP-IDF cache directory.
+pub const CACHE_ENV: &str = "OER_IDF_CACHE";
+/// IDF tool installation below the cache.
 const TOOLS: &str = "idf-tools";
 /// Marker of a completed tool installation for one IDF revision.
 const TOOLS_MARKER: &str = ".oer-installed";
@@ -151,12 +158,12 @@ struct Override {
 
 /// Check out the pinned ESP-IDF with its pinned submodules; returns the tree
 /// and the submodules replaced.
-fn prepare_tree(root: &Path, pins: &[GitPin]) -> Result<(PathBuf, Vec<Override>)> {
+fn prepare_tree(cache: &Path, pins: &[GitPin]) -> Result<(PathBuf, Vec<Override>)> {
     let idf = pins
         .iter()
         .find(|p| p.id == IDF_SOURCE)
         .ok_or_else(|| format!("no `{IDF_SOURCE}` source pinned"))?;
-    let tree = root.join(OUTPUT).join(IDF_SOURCE).join(&idf.revision);
+    let tree = cache.join(tree_name(pins, &idf.revision));
     checkout(&tree, &idf.repository, &idf.revision)?;
     let modules = submodules(&tree, &idf.repository)?;
     let mut overrides = vec![];
@@ -205,9 +212,67 @@ fn bash(script: &str, env: &[(&str, &Path)], log: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The host-wide cache of ESP-IDF trees and tools.
+fn cache_directory() -> Result<PathBuf> {
+    if let Some(directory) = std::env::var_os(CACHE_ENV).filter(|value| !value.is_empty()) {
+        return Ok(PathBuf::from(directory));
+    }
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+        .ok_or("HOME is required to locate the ESP-IDF cache")?;
+    Ok(base.join("open-esp-radio/esp-idf"))
+}
+
+/// Directory name of the tree prepared for `pins`: the IDF revision and a
+/// digest of every pinned source, so trees with different submodule pins
+/// never share a directory and a prepared tree never changes.
+fn tree_name(pins: &[GitPin], revision: &str) -> String {
+    use sha2::{Digest as _, Sha256};
+    let mut sources = pins
+        .iter()
+        .map(|pin| {
+            format!(
+                "{} {} {}\n",
+                pin.id,
+                normalize(&pin.repository),
+                pin.revision
+            )
+        })
+        .collect::<Vec<_>>();
+    sources.sort();
+    let digest = Sha256::digest(sources.concat().as_bytes());
+    let digest = digest
+        .iter()
+        .take(6)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("{revision}-{digest}")
+}
+
+/// Remove this checkout's own ESP-IDF tree and tools from before the cache.
+fn remove_checkout_copies(root: &Path) {
+    for name in [IDF_SOURCE, TOOLS] {
+        let directory = root.join(OUTPUT).join(name);
+        if directory.is_dir() {
+            eprintln!(
+                "vendor firmware: removing {} (the ESP-IDF now lives in the shared cache)",
+                directory.display()
+            );
+            if let Err(error) = std::fs::remove_dir_all(&directory) {
+                eprintln!(
+                    "vendor firmware: cannot remove {}: {error}",
+                    directory.display()
+                );
+            }
+        }
+    }
+}
+
 /// Install the IDF tools of `tree` for `chip` once per revision.
-fn install_tools(root: &Path, tree: &Path, chip: &str, revision: &str) -> Result<PathBuf> {
-    let tools = root.join(OUTPUT).join(TOOLS);
+fn install_tools(cache: &Path, tree: &Path, chip: &str, revision: &str) -> Result<PathBuf> {
+    let tools = cache.join(TOOLS);
     let marker = tools.join(format!("{TOOLS_MARKER}-{revision}-{chip}"));
     if !marker.is_file() {
         std::fs::create_dir_all(&tools)?;
@@ -261,6 +326,9 @@ pub struct Build {
     pub chip: String,
     pub project: String,
     pub idf_revision: String,
+    /// The ESP-IDF tree the build used; absent in records before the cache.
+    #[serde(default)]
+    pub idf_tree: Option<PathBuf>,
     overrides: Vec<Override>,
     pub application: String,
     pub application_sha256: String,
@@ -332,29 +400,57 @@ pub fn run(ctx: &Context, chip: &str, project: Option<&str>) -> Result<()> {
 /// `artifacts.toml` of `pins`, each for its own target chip, and write their
 /// `build.json`. An image linking an archive named like a pinned artifact but
 /// differing from it is refused.
-/// The ESP-IDF revision of the previous build in `output`, if any.
-fn built_revision(output: &Path) -> Option<String> {
+/// The ESP-IDF revision and tree of the previous build in `output`, if any.
+fn built_tree(output: &Path) -> Option<(String, Option<PathBuf>)> {
     let record: Build =
         serde_json::from_slice(&std::fs::read(output.join(BUILD_RECORD)).ok()?).ok()?;
-    Some(record.idf_revision)
+    Some((record.idf_revision, record.idf_tree))
+}
+
+fn remove_if_present(path: &Path) -> Result<()> {
+    let removed = if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+    match removed {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
+    }
 }
 
 pub fn build(ctx: &Context, pins: &str, projects: &[Project]) -> Result<Vec<Build>> {
     let pins = vendor_fetch::git_pins(ctx, pins)?;
-    let (tree, overrides) = prepare_tree(&ctx.root, &pins)?;
+    let cache = cache_directory()?;
+    std::fs::create_dir_all(&cache)?;
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(cache.join(".lock"))?;
+    // Exclusive while the tree and tools may change, then shared for the
+    // builds; flock converts the lock in place.
+    fs2::FileExt::lock_exclusive(&lock)?;
+    let (tree, overrides) = prepare_tree(&cache, &pins)?;
     let revision = git(&tree, &["rev-parse", "HEAD"])?;
+    let mut tools = PathBuf::new();
+    for project in projects {
+        tools = install_tools(&cache, &tree, &project.chip, &revision)?;
+    }
+    fs2::FileExt::lock_shared(&lock)?;
+    remove_checkout_copies(&ctx.root);
     let mut builds = Vec::with_capacity(projects.len());
     for project in projects {
         let name = &project.name;
         let chip = &project.chip;
-        let tools = install_tools(&ctx.root, &tree, chip, &revision)?;
         let output = output(&ctx.root, project);
         let build = output.join("build");
         // A build configured by another ESP-IDF tree cannot be reused: CMake
         // rejects its cache, and the generated sdkconfig follows that tree.
-        if built_revision(&output).is_some_and(|built| built != revision) {
-            std::fs::remove_dir_all(&build)?;
-            std::fs::remove_file(output.join("sdkconfig"))?;
+        if built_tree(&output).is_some_and(|built| built != (revision.clone(), Some(tree.clone())))
+        {
+            remove_if_present(&build)?;
+            remove_if_present(&output.join("sdkconfig"))?;
         }
         std::fs::create_dir_all(&output)?;
         // `--preview`: the pinned IDF lists the chip as a preview target.
@@ -390,6 +486,7 @@ idf.py --preview -C "$OER_PROJECT" -B "$OER_BUILD" -DIDF_TARGET="$OER_CHIP" -DSD
             chip: chip.to_owned(),
             project: name.to_owned(),
             idf_revision: revision.clone(),
+            idf_tree: Some(tree.clone()),
             overrides: overrides.clone(),
             application_sha256: vendor_fetch::sha256(&application)?,
             application: application.display().to_string(),
@@ -454,13 +551,14 @@ mod tests {
     }
 
     #[test]
-    fn a_previous_build_reports_its_idf_revision() {
+    fn a_previous_build_reports_its_idf_revision_and_tree() {
         let directory = tempfile::tempdir().unwrap();
-        assert_eq!(built_revision(directory.path()), None);
+        assert_eq!(built_tree(directory.path()), None);
         let record = Build {
             chip: "esp32s31".into(),
             project: "calibration".into(),
             idf_revision: "abc".into(),
+            idf_tree: Some("/cache/abc-01".into()),
             overrides: vec![],
             application: String::new(),
             application_sha256: String::new(),
@@ -471,7 +569,34 @@ mod tests {
             serde_json::to_vec(&record).unwrap(),
         )
         .unwrap();
-        assert_eq!(built_revision(directory.path()).as_deref(), Some("abc"));
+        assert_eq!(
+            built_tree(directory.path()),
+            Some(("abc".into(), Some("/cache/abc-01".into())))
+        );
+        // A record from before the cache names no tree, so its build is redone.
+        std::fs::write(
+            directory.path().join(BUILD_RECORD),
+            r#"{"chip":"esp32s31","project":"p","idf_revision":"abc","overrides":[],"application":"","application_sha256":"","elf":""}"#,
+        )
+        .unwrap();
+        assert_eq!(built_tree(directory.path()), Some(("abc".into(), None)));
+    }
+
+    #[test]
+    fn trees_with_different_pins_never_share_a_directory() {
+        let pin = |id: &str, revision: &str| GitPin {
+            id: id.into(),
+            repository: format!("https://example.invalid/{id}"),
+            revision: revision.into(),
+            artifacts: vec![],
+        };
+        let base = [pin("esp-idf", "aa"), pin("esp32-wifi-lib", "bb")];
+        let name = tree_name(&base, "aa");
+        assert!(name.starts_with("aa-"));
+        let reordered = [pin("esp32-wifi-lib", "bb"), pin("esp-idf", "aa")];
+        assert_eq!(tree_name(&reordered, "aa"), name);
+        let changed = [pin("esp-idf", "aa"), pin("esp32-wifi-lib", "cc")];
+        assert_ne!(tree_name(&changed, "aa"), name);
     }
 
     #[test]

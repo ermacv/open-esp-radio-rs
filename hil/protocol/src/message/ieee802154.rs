@@ -674,3 +674,91 @@ pub struct Ieee802154SessionStopEvidence {
     /// Coexistence with Wi-Fi; all false without it.
     pub coexistence: Ieee802154SessionCoexistence,
 }
+
+/// Active operational dataset TLVs. A dataset OpenThread creates takes about
+/// 110 bytes; this leaves room for the optional TLVs while the command stays
+/// within the embedded command queue's budget, below OpenThread's 254-byte
+/// `OT_OPERATIONAL_DATASET_MAX_LENGTH`.
+pub const IEEE802154_THREAD_DATASET_CAPACITY: usize = 224;
+/// UDP payload bytes one Thread session message carries.
+pub const IEEE802154_THREAD_PAYLOAD_CAPACITY: usize = 128;
+/// Datagrams one collection reports individually.
+pub const IEEE802154_THREAD_RECORDED_DATAGRAMS: usize = 3;
+
+/// Active operational dataset TLVs.
+pub type Ieee802154ThreadDataset = heapless::Vec<u8, IEEE802154_THREAD_DATASET_CAPACITY>;
+/// One UDP payload.
+pub type Ieee802154ThreadPayload = heapless::Vec<u8, IEEE802154_THREAD_PAYLOAD_CAPACITY>;
+
+/// Join a Thread network with OpenThread over the composed client.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154ThreadStartRequest {
+    /// The network's active operational dataset.
+    pub dataset: Ieee802154ThreadDataset,
+    /// Keep the receiver on when idle: a minimal end device; otherwise a
+    /// sleepy one.
+    pub rx_on_when_idle: bool,
+    /// The UDP port the device's socket binds.
+    pub udp_port: u16,
+}
+
+impl Ieee802154ThreadStartRequest {
+    /// Returns whether the request is inside the wire contract.
+    pub fn validate(&self) -> bool {
+        !self.dataset.is_empty() && self.udp_port != 0
+    }
+}
+
+/// OpenThread's device role.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154ThreadRole {
+    #[default]
+    Disabled,
+    Detached,
+    Child,
+    Router,
+    Leader,
+    Other,
+}
+
+/// The device's Thread interface.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154ThreadState {
+    pub result: Ieee802154SessionResult,
+    pub role: Ieee802154ThreadRole,
+    pub rloc16: u16,
+    /// The mesh-local EID, once the device has one.
+    pub mesh_local_eid: Option<[u8; 16]>,
+}
+
+/// Send one datagram from the device's socket.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154ThreadSendRequest {
+    pub destination: [u8; 16],
+    pub port: u16,
+    pub payload: Ieee802154ThreadPayload,
+}
+
+impl Ieee802154ThreadSendRequest {
+    /// Returns whether the request is inside the wire contract.
+    pub fn validate(&self) -> bool {
+        self.port != 0 && !self.payload.is_empty()
+    }
+}
+
+/// One datagram the device's socket received.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154ThreadDatagram {
+    pub source: [u8; 16],
+    pub port: u16,
+    pub payload: Ieee802154ThreadPayload,
+}
+
+/// Datagrams received since the previous collection.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154ThreadReceiveEvidence {
+    pub result: Ieee802154SessionResult,
+    /// Every datagram received, including those not recorded individually.
+    pub total: u16,
+    pub datagrams: heapless::Vec<Ieee802154ThreadDatagram, IEEE802154_THREAD_RECORDED_DATAGRAMS>,
+}

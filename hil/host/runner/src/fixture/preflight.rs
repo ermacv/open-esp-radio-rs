@@ -142,13 +142,10 @@ pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Opt
         }
     }
     let plan = selected.plan();
-    if plan.requirements.ieee802154_peer
+    if let Some(image) = selected.family.ieee802154_peer_image()
         && let Some(peer) = &lab.ieee802154_peer
-        && let Err(error) = hil_core::lab::lock::require_board_image(
-            &peer.serial,
-            hil_ieee802154::peer::PEER_IMAGE,
-            hil_ieee802154::peer::PEER_REFLASH,
-        )
+        && let Err(error) =
+            hil_core::lab::lock::require_board_image(&peer.serial, image.name, image.reflash)
     {
         return Some(Failure::new(FailureKind::Precondition, error.to_string()));
     }

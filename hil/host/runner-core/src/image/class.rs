@@ -29,6 +29,8 @@ pub enum ImageClass {
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
     DiagnosticIeee802154Radio,
+    /// The IEEE 802.15.4 radio image with OpenThread over its client.
+    DiagnosticIeee802154Thread,
     DiagnosticMemoryBenchmark,
 }
 
@@ -50,7 +52,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -73,6 +75,7 @@ impl ImageClass {
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
         Self::DiagnosticIeee802154Radio,
+        Self::DiagnosticIeee802154Thread,
         Self::DiagnosticMemoryBenchmark,
     ];
 
@@ -100,6 +103,7 @@ impl ImageClass {
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
             Self::DiagnosticIeee802154Radio => "diagnostic-ieee802154-radio",
+            Self::DiagnosticIeee802154Thread => "diagnostic-ieee802154-thread",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
         }
     }
@@ -167,6 +171,9 @@ impl ImageClass {
             Self::DiagnosticIeee802154Radio => {
                 "open-radio-hil,ieee802154-radio,psram-task-stack,code-psram,profile-psram-data"
             }
+            Self::DiagnosticIeee802154Thread => {
+                "open-radio-hil,ieee802154-thread,psram-task-stack,code-psram,profile-psram-data"
+            }
         }
     }
 
@@ -194,7 +201,8 @@ impl ImageClass {
             | Self::DiagnosticIeee802154EventStatus
             | Self::DiagnosticMemoryBenchmark
             | Self::DiagnosticIeee802154EdEvent
-            | Self::DiagnosticIeee802154Radio => "psram-code-psram-data-psram-stack",
+            | Self::DiagnosticIeee802154Radio
+            | Self::DiagnosticIeee802154Thread => "psram-code-psram-data-psram-stack",
         }
     }
 

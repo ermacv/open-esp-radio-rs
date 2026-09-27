@@ -21,6 +21,7 @@ pub enum Ieee802154Scenario {
     PeerExchange(PeerExchange),
     BackgroundMaintenance(BackgroundMaintenance),
     ChannelEnergy(ChannelEnergy),
+    ThreadExchange(ThreadExchange),
 }
 
 /// Channel energy and assessment against the reference peer's burst.
@@ -35,6 +36,27 @@ pub struct ChannelEnergy {
     /// Assessments per step.
     pub samples: u8,
     pub energy_scan_micros: u32,
+}
+
+/// A catalog image of the reference peer board.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeerImage {
+    /// The board-journal and catalog image name.
+    pub name: &'static str,
+    /// How to restore it when another consumer replaced it.
+    pub reflash: &'static str,
+}
+
+/// A Thread exchange between the device's OpenThread radio and the Thread
+/// reference peer.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThreadExchange {
+    pub boots: u8,
+    pub channel: u8,
+    pub pan_id: u16,
+    /// Datagrams per direction.
+    pub datagrams: u8,
 }
 
 /// Background PHY maintenance of the running client.
@@ -156,6 +178,17 @@ impl Ieee802154Scenario {
                 }
                 Ok(())
             }
+            Self::ThreadExchange(exchange) => {
+                bounded(exchange.boots, 1, 20, "boots")?;
+                bounded(exchange.channel, 11, 26, "channel")?;
+                bounded(exchange.pan_id, 0, 0xfffe, "pan_id")?;
+                bounded(
+                    exchange.datagrams,
+                    1,
+                    oer_hil_protocol::IEEE802154_THREAD_RECORDED_DATAGRAMS as u8,
+                    "datagrams",
+                )
+            }
             Self::AirCheck(check) => {
                 bounded(check.boots, 1, 20, "boots")?;
                 if check.request().validate() {
@@ -167,6 +200,25 @@ impl Ieee802154Scenario {
         }
     }
 
+    /// The catalog image the reference peer board must carry, if the
+    /// scenario uses the peer.
+    pub fn peer_image(&self) -> Option<PeerImage> {
+        match self {
+            Self::PeerExchange(_) | Self::ChannelEnergy(_) => Some(PeerImage {
+                name: crate::peer::PEER_IMAGE,
+                reflash: crate::peer::PEER_REFLASH,
+            }),
+            Self::ThreadExchange(_) => Some(PeerImage {
+                name: crate::thread_peer::THREAD_PEER_IMAGE,
+                reflash: crate::thread_peer::THREAD_PEER_REFLASH,
+            }),
+            Self::EventStatus(_)
+            | Self::EdEvent(_)
+            | Self::AirCheck(_)
+            | Self::BackgroundMaintenance(_) => None,
+        }
+    }
+
     pub fn plan(&self) -> Plan {
         let mut plan = Plan::target_only(match self {
             Self::EventStatus(_) => ImageClass::DiagnosticIeee802154EventStatus,
@@ -175,9 +227,9 @@ impl Ieee802154Scenario {
             | Self::PeerExchange(_)
             | Self::BackgroundMaintenance(_)
             | Self::ChannelEnergy(_) => ImageClass::DiagnosticIeee802154Radio,
+            Self::ThreadExchange(_) => ImageClass::DiagnosticIeee802154Thread,
         });
-        plan.requirements.ieee802154_peer =
-            matches!(self, Self::PeerExchange(_) | Self::ChannelEnergy(_));
+        plan.requirements.ieee802154_peer = self.peer_image().is_some();
         plan
     }
 
@@ -236,6 +288,16 @@ impl Ieee802154Scenario {
                     far_channel: energy.far_channel,
                     samples: energy.samples,
                     energy_scan_micros: energy.energy_scan_micros,
+                },
+                output,
+                context,
+            ),
+            Self::ThreadExchange(exchange) => ieee802154::thread_exchange::run(
+                ieee802154::thread_exchange::Config {
+                    boots: exchange.boots,
+                    channel: exchange.channel,
+                    pan_id: exchange.pan_id,
+                    datagrams: exchange.datagrams,
                 },
                 output,
                 context,
@@ -311,6 +373,35 @@ mod tests {
                 toml::from_str(&table.replace(original, invalid)).unwrap();
             assert!(scenario.validate().is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn peer_scenarios_name_the_image_their_peer_must_carry() {
+        let exchange: Ieee802154Scenario =
+            toml::from_str("kind = 'peer-exchange'\nboots = 1\nchannel = 15\nframes = 4").unwrap();
+        assert_eq!(
+            exchange.peer_image().map(|image| image.name),
+            Some(crate::peer::PEER_IMAGE)
+        );
+        let table =
+            "kind = 'thread-exchange'\nboots = 1\nchannel = 15\npan_id = 0x4f45\ndatagrams = 2";
+        let thread: Ieee802154Scenario = toml::from_str(table).unwrap();
+        thread.validate().unwrap();
+        assert_eq!(
+            thread.peer_image().map(|image| image.name),
+            Some(crate::thread_peer::THREAD_PEER_IMAGE)
+        );
+        let plan = thread.plan();
+        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Thread);
+        assert!(plan.requirements.ieee802154_peer);
+        for invalid in ["datagrams = 0", "datagrams = 4"] {
+            let scenario: Ieee802154Scenario =
+                toml::from_str(&table.replace("datagrams = 2", invalid)).unwrap();
+            assert!(scenario.validate().is_err(), "{invalid}");
+        }
+        let air_check: Ieee802154Scenario = toml::from_str("kind = 'air-check'\nboots = 1\nchannel = 15\ncycles = 2\nenergy_scan_micros = 5000\nreceive_window_millis = 200\nscheduled_lead_micros = 20000\nscheduled_window_micros = 50000").unwrap();
+        assert_eq!(air_check.peer_image(), None);
+        assert!(!air_check.plan().requirements.ieee802154_peer);
     }
 
     #[test]

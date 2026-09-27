@@ -51,6 +51,11 @@ oer-esp32s31-radio-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31
 oer-ieee802154-engine = { path = "../../../crates/hardware/ieee802154/engine" }
 oer-esp32s31-ieee802154-runtime = { path = "../../../crates/runtime/esp32s31/ieee802154" }
 oer-esp32s31-ieee802154-system = { path = "../../../crates/composition/esp32s31/embassy/ieee802154" }
+oer-esp32s31-ieee802154-openthread = { path = "../../../crates/adapters/openthread/esp32s31/ieee802154" }
+# The Thread image runs the repository's OpenThread fork over the client.
+openthread = { git = "https://github.com/ermacv/openthread", rev = "7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125", default-features = false, features = ["isupper"] }
+# The C library functions OpenThread links beyond what the Rust core provides.
+tinyrlibc = { version = "0.5", default-features = false, features = ["utoa", "strtoul"] }
 oer-esp32s31-radio-runtime = { path = "../../../crates/runtime/esp32s31/radio" }
 oer-ieee802154 = { path = "../../../crates/protocols/ieee802154" }
 oer-esp32s31-executor-embassy = { path = "../../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }

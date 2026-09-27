@@ -11,6 +11,10 @@ mod session;
 pub(super) use air_check::run_air_check;
 #[cfg(feature = "ieee802154-radio")]
 pub(super) use session::run_session;
+#[cfg(feature = "ieee802154-thread")]
+mod thread;
+#[cfg(feature = "ieee802154-thread")]
+pub(super) use thread::run_thread;
 
 #[cfg(any(
     feature = "ieee802154-event-status-probe",

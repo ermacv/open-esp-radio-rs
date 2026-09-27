@@ -189,6 +189,13 @@ ieee802154-radio = [
     "dep:oer-esp32s31-radio-runtime",
     "dep:oer-ieee802154",
 ]
+# OpenThread over the composed client: host-driven Thread sessions.
+ieee802154-thread = [
+    "ieee802154-radio",
+    "dep:oer-esp32s31-ieee802154-openthread",
+    "dep:openthread",
+    "dep:tinyrlibc",
+]
 
 [dependencies]
 oer-esp32s31-ieee80211-dma = { path = "../../../../crates/hardware/esp32s31/driver/ieee80211/dma", optional = true, features = ["rx-ownership-observation"] }
@@ -224,6 +231,9 @@ oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], option
 oer-ieee802154-engine = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-runtime = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-system = { workspace = true, optional = true }
+oer-esp32s31-ieee802154-openthread = { workspace = true, optional = true }
+openthread = { workspace = true, optional = true }
+tinyrlibc = { workspace = true, optional = true }
 oer-esp32s31-radio-runtime = { workspace = true, optional = true }
 oer-ieee802154 = { workspace = true, optional = true }
 oer-esp32s31-soc-esp-hal.workspace = true

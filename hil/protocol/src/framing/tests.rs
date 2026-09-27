@@ -1666,3 +1666,70 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         round_trip(Envelope::new(7, 3, 9, 2, event));
     }
 }
+
+#[test]
+fn ieee802154_thread_messages_at_their_bounds_fit_and_round_trip() {
+    use crate::{
+        IEEE802154_THREAD_DATASET_CAPACITY, IEEE802154_THREAD_PAYLOAD_CAPACITY,
+        IEEE802154_THREAD_RECORDED_DATAGRAMS, Ieee802154SessionResult, Ieee802154ThreadDatagram,
+        Ieee802154ThreadDataset, Ieee802154ThreadPayload, Ieee802154ThreadReceiveEvidence,
+        Ieee802154ThreadRole, Ieee802154ThreadSendRequest, Ieee802154ThreadStartRequest,
+        Ieee802154ThreadState,
+    };
+    let payload = || {
+        let mut payload = Ieee802154ThreadPayload::new();
+        payload
+            .extend_from_slice(&[0xa5; IEEE802154_THREAD_PAYLOAD_CAPACITY])
+            .unwrap();
+        payload
+    };
+    let mut dataset = Ieee802154ThreadDataset::new();
+    dataset
+        .extend_from_slice(&[0x5a; IEEE802154_THREAD_DATASET_CAPACITY])
+        .unwrap();
+    for command in [
+        Command::StartIeee802154Thread(Ieee802154ThreadStartRequest {
+            dataset,
+            rx_on_when_idle: true,
+            udp_port: u16::MAX,
+        }),
+        Command::QueryIeee802154Thread,
+        Command::SendIeee802154Thread(Ieee802154ThreadSendRequest {
+            destination: [u8::MAX; 16],
+            port: u16::MAX,
+            payload: payload(),
+        }),
+        Command::CollectIeee802154Thread,
+        Command::StopIeee802154Thread,
+    ] {
+        round_trip(Envelope::new(7, 3, 9, 2, command));
+    }
+    let mut datagrams = heapless::Vec::new();
+    for _ in 0..IEEE802154_THREAD_RECORDED_DATAGRAMS {
+        datagrams
+            .push(Ieee802154ThreadDatagram {
+                source: [u8::MAX; 16],
+                port: u16::MAX,
+                payload: payload(),
+            })
+            .unwrap();
+    }
+    for event in [
+        Event::Ieee802154ThreadStarted(Ieee802154SessionResult::StartFailed),
+        Event::Ieee802154ThreadState(Ieee802154ThreadState {
+            result: Ieee802154SessionResult::Done,
+            role: Ieee802154ThreadRole::Leader,
+            rloc16: u16::MAX,
+            mesh_local_eid: Some([u8::MAX; 16]),
+        }),
+        Event::Ieee802154ThreadSent(Ieee802154SessionResult::CommandRejected),
+        Event::Ieee802154ThreadReceived(Ieee802154ThreadReceiveEvidence {
+            result: Ieee802154SessionResult::EventsLost,
+            total: u16::MAX,
+            datagrams,
+        }),
+        Event::Ieee802154ThreadStopped(Ieee802154SessionResult::StopFailed),
+    ] {
+        round_trip(Envelope::new(7, 3, 9, 2, event));
+    }
+}

@@ -30,6 +30,8 @@ pub enum PreInitializationRequest {
     Ieee802154AirCheck(Ieee802154AirCheck),
     #[cfg(feature = "ieee802154-radio")]
     Ieee802154Session(Ieee802154SessionStart),
+    #[cfg(feature = "ieee802154-thread")]
+    Ieee802154Thread(Ieee802154ThreadStart),
 }
 
 /// Queues one best-effort diagnostic line on the runtime USB transport.
@@ -96,7 +98,7 @@ pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
             Either::Second(probe) => PreInitializationRequest::Ieee802154EdEvent(probe),
         }
     }
-    #[cfg(feature = "ieee802154-radio")]
+    #[cfg(all(feature = "ieee802154-radio", not(feature = "ieee802154-thread")))]
     {
         match select3(
             STARTUP_CONFIGURATIONS.receive(),
@@ -108,6 +110,30 @@ pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
             Either3::First(configuration) => PreInitializationRequest::Startup(configuration),
             Either3::Second(check) => PreInitializationRequest::Ieee802154AirCheck(check),
             Either3::Third(start) => PreInitializationRequest::Ieee802154Session(start),
+        }
+    }
+    #[cfg(feature = "ieee802154-thread")]
+    {
+        match embassy_futures::select::select4(
+            STARTUP_CONFIGURATIONS.receive(),
+            IEEE802154_AIR_CHECKS.receive(),
+            IEEE802154_SESSION_STARTS.receive(),
+            IEEE802154_THREAD_STARTS.receive(),
+        )
+        .await
+        {
+            embassy_futures::select::Either4::First(configuration) => {
+                PreInitializationRequest::Startup(configuration)
+            }
+            embassy_futures::select::Either4::Second(check) => {
+                PreInitializationRequest::Ieee802154AirCheck(check)
+            }
+            embassy_futures::select::Either4::Third(start) => {
+                PreInitializationRequest::Ieee802154Session(start)
+            }
+            embassy_futures::select::Either4::Fourth(start) => {
+                PreInitializationRequest::Ieee802154Thread(start)
+            }
         }
     }
     #[cfg(not(feature = "ieee802154-diagnostic"))]

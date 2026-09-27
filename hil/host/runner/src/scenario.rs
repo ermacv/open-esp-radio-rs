@@ -50,6 +50,14 @@ impl ScenarioFamily for Family {
 }
 
 impl Family {
+    /// The catalog image the IEEE 802.15.4 reference peer board must carry.
+    pub(crate) fn ieee802154_peer_image(&self) -> Option<hil_ieee802154::scenario::PeerImage> {
+        match self {
+            Self::Ieee802154(scenario) => scenario.peer_image(),
+            Self::Wifi(_) | Self::Bluetooth(_) | Self::System(_) | Self::Coexistence(_) => None,
+        }
+    }
+
     pub(crate) fn run(
         &self,
         output: &Path,

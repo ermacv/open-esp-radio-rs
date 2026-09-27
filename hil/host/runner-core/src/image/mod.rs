@@ -124,14 +124,19 @@ pub fn classify_flashed_capabilities(
         return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
             .then_some(ImageClass::DiagnosticRxOwnership);
     }
-    if features.ieee802154_air_check || features.ieee802154_session {
+    if features.ieee802154_air_check || features.ieee802154_session || features.ieee802154_thread {
         let mut control = *features;
         control.ieee802154_air_check = false;
         control.ieee802154_session = false;
-        return (features.ieee802154_air_check
+        control.ieee802154_thread = false;
+        let radio = features.ieee802154_air_check
             && features.ieee802154_session
-            && classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
-        .then_some(ImageClass::DiagnosticIeee802154Radio);
+            && classify_flashed_capabilities(&control) == Some(ImageClass::Performance);
+        return radio.then_some(if features.ieee802154_thread {
+            ImageClass::DiagnosticIeee802154Thread
+        } else {
+            ImageClass::DiagnosticIeee802154Radio
+        });
     }
     if features.phy_rx_hot_sram {
         return None;

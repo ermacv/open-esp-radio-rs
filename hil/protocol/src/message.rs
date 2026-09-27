@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 183;
+pub const PROTOCOL_VERSION: u16 = 184;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -194,6 +194,9 @@ pub struct FeatureCapabilities {
     pub ieee802154_air_check: bool,
     /// This image can run an IEEE 802.15.4 peer session.
     pub ieee802154_session: bool,
+    /// This image can run a Thread session: OpenThread over the composed
+    /// IEEE 802.15.4 client.
+    pub ieee802154_thread: bool,
 }
 
 /// Bounded alarm/clock agreement probe. It is intentionally independent of
@@ -538,6 +541,17 @@ pub enum Command {
     MaintainIeee802154SessionPhy,
     /// Measure the energy on one channel and assess it once.
     AssessIeee802154SessionChannel(Ieee802154SessionAssessRequest),
+    /// Start OpenThread over the composed client and join the dataset's
+    /// network.
+    StartIeee802154Thread(Ieee802154ThreadStartRequest),
+    /// Report the device's Thread interface.
+    QueryIeee802154Thread,
+    /// Send one datagram from the device's socket.
+    SendIeee802154Thread(Ieee802154ThreadSendRequest),
+    /// Return and forget the datagrams received since the last collection.
+    CollectIeee802154Thread,
+    /// Leave the network and stop the client.
+    StopIeee802154Thread,
     UploadStartupArtifact(StartupArtifactChunk),
     /// Initialize calibration and the network stack without materializing a
     /// Wi-Fi role. This command is accepted exactly once per boot.
@@ -1127,6 +1141,16 @@ pub enum Event {
     Ieee802154SessionPhyMaintained(Ieee802154SessionPhyMaintenance),
     /// Correlated result of [`Command::AssessIeee802154SessionChannel`].
     Ieee802154SessionAssessed(Ieee802154SessionAssessment),
+    /// Correlated result of [`Command::StartIeee802154Thread`].
+    Ieee802154ThreadStarted(Ieee802154SessionResult),
+    /// Correlated result of [`Command::QueryIeee802154Thread`].
+    Ieee802154ThreadState(Ieee802154ThreadState),
+    /// Correlated result of [`Command::SendIeee802154Thread`].
+    Ieee802154ThreadSent(Ieee802154SessionResult),
+    /// Correlated result of [`Command::CollectIeee802154Thread`].
+    Ieee802154ThreadReceived(Ieee802154ThreadReceiveEvidence),
+    /// Correlated result of [`Command::StopIeee802154Thread`].
+    Ieee802154ThreadStopped(Ieee802154SessionResult),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),

@@ -1301,6 +1301,84 @@ impl SerialCapture {
         }
     }
 
+    /// Start OpenThread over the composed client and join the dataset's
+    /// network.
+    pub fn start_ieee802154_thread(
+        &self,
+        request: Ieee802154ThreadStartRequest,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionResult> {
+        match self
+            .send_command(0, Command::StartIeee802154Thread(request), timeout)?
+            .body
+        {
+            Event::Ieee802154ThreadStarted(result) => Ok(result),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected the Thread session start: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid Thread session start response".into()),
+        }
+    }
+
+    pub fn query_ieee802154_thread(&self, timeout: Duration) -> Result<Ieee802154ThreadState> {
+        match self
+            .send_command(0, Command::QueryIeee802154Thread, timeout)?
+            .body
+        {
+            Event::Ieee802154ThreadState(state) => Ok(state),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected the Thread state query: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid Thread state".into()),
+        }
+    }
+
+    pub fn send_ieee802154_thread(
+        &self,
+        request: Ieee802154ThreadSendRequest,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionResult> {
+        match self
+            .send_command(0, Command::SendIeee802154Thread(request), timeout)?
+            .body
+        {
+            Event::Ieee802154ThreadSent(result) => Ok(result),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected the Thread datagram: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid Thread send response".into()),
+        }
+    }
+
+    pub fn collect_ieee802154_thread(
+        &self,
+        timeout: Duration,
+    ) -> Result<Ieee802154ThreadReceiveEvidence> {
+        match self
+            .send_command(0, Command::CollectIeee802154Thread, timeout)?
+            .body
+        {
+            Event::Ieee802154ThreadReceived(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected the Thread collection: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid Thread collection".into()),
+        }
+    }
+
+    pub fn stop_ieee802154_thread(&self, timeout: Duration) -> Result<Ieee802154SessionResult> {
+        match self
+            .send_command(0, Command::StopIeee802154Thread, timeout)?
+            .body
+        {
+            Event::Ieee802154ThreadStopped(result) => Ok(result),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected the Thread session stop: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid Thread session stop response".into()),
+        }
+    }
+
     /// Scan the energy on one channel and assess it once in the running
     /// session.
     pub fn assess_ieee802154_session_channel(

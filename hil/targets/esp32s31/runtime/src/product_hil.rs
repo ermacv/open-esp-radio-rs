@@ -1603,6 +1603,17 @@ pub async fn run(
             session.await;
             return;
         }
+        #[cfg(feature = "ieee802154-thread")]
+        PreInitializationRequest::Ieee802154Thread(start) => {
+            // The session holds the composition's bring-up future; pin it.
+            let thread = core::pin::pin!(ieee802154::run_thread(
+                platforms.radio,
+                start.request_id,
+                start.request
+            ));
+            thread.await;
+            return;
+        }
     };
     let crate::console::StartupConfiguration {
         ap_scheduler,

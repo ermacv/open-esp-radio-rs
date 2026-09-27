@@ -227,7 +227,7 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 23);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 24);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -283,6 +283,10 @@ fn image_classes_are_stable_and_do_not_use_workload_environment() {
         crate::image::ImageClass::DiagnosticIeee802154Radio.runtime_features(),
         "open-radio-hil,ieee802154-radio,psram-task-stack,code-psram,profile-psram-data"
     );
+    assert_eq!(
+        crate::image::ImageClass::DiagnosticIeee802154Thread.runtime_features(),
+        "open-radio-hil,ieee802154-thread,psram-task-stack,code-psram,profile-psram-data"
+    );
 }
 
 #[test]
@@ -312,6 +316,20 @@ fn the_ieee802154_radio_image_is_the_performance_image_with_its_services() {
         ..air_check
     };
     assert_eq!(classify_flashed_capabilities(&partial), None);
+    let thread = FeatureCapabilities {
+        ieee802154_thread: true,
+        ..air_check
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&thread),
+        Some(ImageClass::DiagnosticIeee802154Thread)
+    );
+    // Thread runs over the radio image's client, never without it.
+    let thread_alone = FeatureCapabilities {
+        ieee802154_thread: true,
+        ..performance
+    };
+    assert_eq!(classify_flashed_capabilities(&thread_alone), None);
     let mixed = FeatureCapabilities {
         ieee802154_ed_event_probe: true,
         ..air_check

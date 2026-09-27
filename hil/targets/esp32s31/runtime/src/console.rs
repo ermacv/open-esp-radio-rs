@@ -42,6 +42,8 @@ use oer_hil_protocol::{
     Ieee802154AirCheckRequest, Ieee802154SessionAssessRequest, Ieee802154SessionConfig,
     Ieee802154SessionPendingRequest, Ieee802154SessionTransmitRequest,
 };
+#[cfg(feature = "ieee802154-thread")]
+use oer_hil_protocol::{Ieee802154ThreadSendRequest, Ieee802154ThreadStartRequest};
 
 #[cfg(not(feature = "memory-benchmark"))]
 mod radio;
@@ -145,6 +147,14 @@ static IEEE802154_SESSION_STARTS: Channel<CriticalSectionRawMutex, Ieee802154Ses
 #[unsafe(link_section = ".critical.data.logging")]
 static IEEE802154_SESSION_COMMANDS: Channel<CriticalSectionRawMutex, Ieee802154SessionCommand, 1> =
     Channel::new();
+#[cfg(feature = "ieee802154-thread")]
+#[unsafe(link_section = ".critical.data.logging")]
+static IEEE802154_THREAD_STARTS: Channel<CriticalSectionRawMutex, Ieee802154ThreadStart, 1> =
+    Channel::new();
+#[cfg(feature = "ieee802154-thread")]
+#[unsafe(link_section = ".critical.data.logging")]
+static IEEE802154_THREAD_COMMANDS: Channel<CriticalSectionRawMutex, Ieee802154ThreadCommand, 1> =
+    Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
@@ -247,6 +257,61 @@ pub struct Ieee802154AirCheck {
 pub struct Ieee802154SessionStart {
     pub request_id: u32,
     pub config: Ieee802154SessionConfig,
+}
+
+#[cfg(feature = "ieee802154-thread")]
+pub struct Ieee802154ThreadStart {
+    pub request_id: u32,
+    pub request: Ieee802154ThreadStartRequest,
+}
+
+/// One command of a running Thread session.
+#[cfg(feature = "ieee802154-thread")]
+pub enum Ieee802154ThreadCommand {
+    Query {
+        request_id: u32,
+    },
+    Send {
+        request_id: u32,
+        request: Ieee802154ThreadSendRequest,
+    },
+    Collect {
+        request_id: u32,
+    },
+    Stop {
+        request_id: u32,
+    },
+}
+
+/// The next command of the running Thread session.
+#[cfg(feature = "ieee802154-thread")]
+pub async fn receive_ieee802154_thread_command() -> Ieee802154ThreadCommand {
+    IEEE802154_THREAD_COMMANDS.receive().await
+}
+
+/// Admit one command of a running Thread session, as
+/// `admit_ieee802154_session_command` does for peer sessions.
+#[cfg(feature = "ieee802154-thread")]
+async fn admit_ieee802154_thread_command(
+    thread_open: bool,
+    session_id: u64,
+    request_id: u32,
+    command: Ieee802154ThreadCommand,
+) -> bool {
+    if !thread_open {
+        publish_event_reliably(
+            session_id,
+            request_id,
+            Event::Rejected(RejectReason::InvalidState),
+        )
+        .await;
+        return false;
+    }
+    if IEEE802154_THREAD_COMMANDS.try_send(command).is_err() {
+        publish_event_reliably(session_id, request_id, Event::Rejected(RejectReason::Busy)).await;
+        return false;
+    }
+    true
 }
 
 /// One command of a running IEEE 802.15.4 peer session.
@@ -980,6 +1045,8 @@ pub async fn protocol_task(capabilities: Capabilities) {
     // An admitted session start opens the session; an admitted stop closes it.
     #[cfg(feature = "ieee802154-radio")]
     let mut ieee802154_session_open = false;
+    #[cfg(feature = "ieee802154-thread")]
+    let mut ieee802154_thread_open = false;
     #[cfg(not(feature = "ieee802154-diagnostic"))]
     let ieee802154_diagnostic_requested = false;
     // One slot per physical STA+AP network endpoint. A slot is keyed by its
@@ -1507,6 +1574,144 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             )
                             .await;
                         }
+                    }
+                    Command::StartIeee802154Thread(request) => {
+                        let admission = ieee802154_event_status_probe_admission(
+                            capabilities.features.ieee802154_thread,
+                            initialized,
+                            state == SessionState::WaitingForInitialization,
+                            session_id,
+                            ieee802154_diagnostic_requested,
+                            request.validate(),
+                        );
+                        match admission {
+                            Ieee802154EventStatusProbeAdmission::Reject(reason) => {
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(reason),
+                                )
+                                .await;
+                            }
+                            Ieee802154EventStatusProbeAdmission::Admit => {
+                                #[cfg(feature = "ieee802154-thread")]
+                                {
+                                    if IEEE802154_THREAD_STARTS
+                                        .try_send(Ieee802154ThreadStart {
+                                            request_id,
+                                            request,
+                                        })
+                                        .is_err()
+                                    {
+                                        publish_event_reliably(
+                                            session_id,
+                                            request_id,
+                                            Event::Rejected(RejectReason::Busy),
+                                        )
+                                        .await;
+                                    } else {
+                                        ieee802154_diagnostic_requested = true;
+                                        ieee802154_thread_open = true;
+                                    }
+                                }
+                                #[cfg(not(feature = "ieee802154-thread"))]
+                                {
+                                    let _ = request;
+                                    publish_event_reliably(
+                                        session_id,
+                                        request_id,
+                                        Event::Rejected(RejectReason::Unsupported),
+                                    )
+                                    .await;
+                                }
+                            }
+                        }
+                    }
+                    Command::QueryIeee802154Thread => {
+                        #[cfg(feature = "ieee802154-thread")]
+                        admit_ieee802154_thread_command(
+                            ieee802154_thread_open,
+                            session_id,
+                            request_id,
+                            Ieee802154ThreadCommand::Query { request_id },
+                        )
+                        .await;
+                        #[cfg(not(feature = "ieee802154-thread"))]
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
+                    Command::SendIeee802154Thread(request) => {
+                        #[cfg(feature = "ieee802154-thread")]
+                        if request.validate() {
+                            admit_ieee802154_thread_command(
+                                ieee802154_thread_open,
+                                session_id,
+                                request_id,
+                                Ieee802154ThreadCommand::Send {
+                                    request_id,
+                                    request,
+                                },
+                            )
+                            .await;
+                        } else {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidConfiguration),
+                            )
+                            .await;
+                        }
+                        #[cfg(not(feature = "ieee802154-thread"))]
+                        {
+                            let _ = request;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::Unsupported),
+                            )
+                            .await;
+                        }
+                    }
+                    Command::CollectIeee802154Thread => {
+                        #[cfg(feature = "ieee802154-thread")]
+                        admit_ieee802154_thread_command(
+                            ieee802154_thread_open,
+                            session_id,
+                            request_id,
+                            Ieee802154ThreadCommand::Collect { request_id },
+                        )
+                        .await;
+                        #[cfg(not(feature = "ieee802154-thread"))]
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
+                    Command::StopIeee802154Thread => {
+                        #[cfg(feature = "ieee802154-thread")]
+                        if admit_ieee802154_thread_command(
+                            ieee802154_thread_open,
+                            session_id,
+                            request_id,
+                            Ieee802154ThreadCommand::Stop { request_id },
+                        )
+                        .await
+                        {
+                            ieee802154_thread_open = false;
+                        }
+                        #[cfg(not(feature = "ieee802154-thread"))]
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
                     }
                     Command::StopIeee802154Session => {
                         #[cfg(feature = "ieee802154-radio")]

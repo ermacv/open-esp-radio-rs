@@ -58,7 +58,7 @@ pub(crate) async fn read_analog(request: PhyRegisterImageRequest) -> Event {
         return Event::Rejected(RejectReason::InvalidState);
     };
     let mut guard = radio.lock().await;
-    let mut lease = guard.lease();
+    let lease = guard.lease();
     let length = lease.phy_analog_image_len();
     let first = usize::from(request.first);
     let count = usize::from(request.count);

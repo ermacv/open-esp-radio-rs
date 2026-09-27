@@ -44,6 +44,13 @@ execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_fre
 reason = "Bluetooth registration retains the actual calibration transition and registered-owner result while borrowing the stopped outer Controller. The same production operation is reviewed in the Bluetooth HIL policy; this local CPU0 frame bound does not imply standalone aggregate-stack or RF qualification"
 
 [[reviewed_frames]]
+function_contains = "PhyDomain>::register::<"
+source_ends_with = ["crates/hardware/esp32s31/phy/src/target_port/domain.rs"]
+max_bytes = 9728
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "protocol-neutral domain registration retains its actual calibration transition, including the retained TX-power reference, and registered-domain result while borrowing the stopped outer route. The same production operation is reviewed in the HIL policy; this local CPU0 frame bound does not imply standalone aggregate-stack or RF qualification"
+
+[[reviewed_frames]]
 function_contains = "::target_port::concurrent::register_concurrent_phy::<"
 source_ends_with = ["crates/hardware/esp32s31/phy/src/target_port/concurrent.rs"]
 max_bytes = 9728

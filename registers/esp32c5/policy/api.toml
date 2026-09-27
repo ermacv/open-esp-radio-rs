@@ -33,7 +33,7 @@ peripherals = ["I2C_ANA_MST"]
 name = "PhyRadioPeripherals"
 member = "phy_radio"
 description = "PMU analog I2C power controls and PHY baseband configuration words driven by the PHY."
-peripherals = ["PMU_RADIO", "PHY_BASEBAND_CONFIG", "LP_AON_RADIO", "APB_SARADC_RADIO"]
+peripherals = ["PMU_RADIO", "PHY_BASEBAND_CONFIG", "LP_AON_RADIO", "APB_SARADC_RADIO", "PCR_RADIO"]
 
 [[w1c-register-snapshots]]
 name = "ieee802154_event_status"
@@ -1264,3 +1264,86 @@ name = "Full"
 value = 0xff
 description = "Nonzero argument."
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "enable_saradc_register_clock"
+peripheral = "PCR_RADIO"
+register = "SARADC_CONF"
+value = 0x4
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[field-or-modifies.fields]]
+field = "SARADC_REG_CLK_EN"
+source-bit-offset = 2
+
+[[field-or-modifies]]
+name = "enable_saradc_clocks"
+peripheral = "PCR_RADIO"
+register = "SARADC_CONF"
+value = 0x5
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[field-or-modifies.fields]]
+field = "SARADC_CLK_EN"
+source-bit-offset = 0
+
+[[field-or-modifies.fields]]
+field = "SARADC_REG_CLK_EN"
+source-bit-offset = 2
+
+[[field-replace-modifies]]
+name = "set_pcr_undocumented_014c_low_byte"
+peripheral = "PCR_RADIO"
+register = "UNDOCUMENTED_014C"
+fields = [{ field = "LOW_BYTE_UNKNOWN", source-bit-offset = 0 }]
+value = 0xa
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[field-or-modifies]]
+name = "enable_tsens_clock"
+peripheral = "PCR_RADIO"
+register = "TSENS_CLK_CONF"
+value = 0x500000
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[field-or-modifies.fields]]
+field = "TSENS_CLK_SEL"
+source-bit-offset = 20
+
+[[field-or-modifies.fields]]
+field = "TSENS_CLK_EN"
+source-bit-offset = 22
+
+[[field-replace-modifies]]
+name = "release_tsens_reset"
+peripheral = "PCR_RADIO"
+register = "TSENS_CLK_CONF"
+fields = [{ field = "TSENS_RST_EN", source-bit-offset = 0 }]
+value = 0x0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[field-or-modifies]]
+name = "select_tsens_clock"
+peripheral = "APB_SARADC_RADIO"
+register = "TSENS_CTRL2"
+value = 0x8000
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[field-or-modifies.fields]]
+field = "TSENS_CLK_SEL"
+source-bit-offset = 15
+
+[[field-replace-modifies]]
+name = "set_tsens_power"
+peripheral = "APB_SARADC_RADIO"
+register = "TSENS_CTRL"
+fields = [{ field = "TSENS_PU", source-bit-offset = 0 }]
+domain = "PhyRateBit"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]

@@ -7523,12 +7523,25 @@ pub mod apb_saradc_radio {
     #[doc = "Register block"]
     pub struct RegisterBlock {
         ctrl: Ctrl,
+        _reserved1: [u8; 0x54],
+        tsens_ctrl: TsensCtrl,
+        tsens_ctrl2: TsensCtrl2,
     }
     impl RegisterBlock {
         #[doc = "0x00 - SAR ADC control word."]
         #[inline(always)]
         pub const fn ctrl(&self) -> &Ctrl {
             &self.ctrl
+        }
+        #[doc = "0x58 - Temperature-sensor control."]
+        #[inline(always)]
+        pub const fn tsens_ctrl(&self) -> &TsensCtrl {
+            &self.tsens_ctrl
+        }
+        #[doc = "0x5c - Temperature-sensor control 2."]
+        #[inline(always)]
+        pub const fn tsens_ctrl2(&self) -> &TsensCtrl2 {
+            &self.tsens_ctrl2
         }
     }
     #[doc = "CTRL (rw) register accessor: SAR ADC control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ctrl`] module"]
@@ -7574,6 +7587,294 @@ pub mod apb_saradc_radio {
             const RESET_VALUE: u32 = 0x4003_8240;
         }
     }
+    #[doc = "TSENS_CTRL (rw) register accessor: Temperature-sensor control.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsens_ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsens_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tsens_ctrl`] module"]
+    #[doc(alias = "TSENS_CTRL")]
+    pub type TsensCtrl = crate::Reg<tsens_ctrl::TsensCtrlSpec>;
+    #[doc = "Temperature-sensor control."]
+    pub mod tsens_ctrl {
+        #[doc = "Register `TSENS_CTRL` reader"]
+        pub type R = crate::R<TsensCtrlSpec>;
+        #[doc = "Register `TSENS_CTRL` writer"]
+        pub type W = crate::W<TsensCtrlSpec>;
+        #[doc = "Field `TSENS_PU` reader - Power up the temperature sensor."]
+        pub type TsensPuR = crate::BitReader;
+        #[doc = "Field `TSENS_PU` writer - Power up the temperature sensor."]
+        pub type TsensPuW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 22 - Power up the temperature sensor."]
+            #[inline(always)]
+            pub fn tsens_pu(&self) -> TsensPuR {
+                TsensPuR::new(((self.bits >> 22) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 22 - Power up the temperature sensor."]
+            #[inline(always)]
+            pub fn tsens_pu(&mut self) -> TsensPuW<'_, TsensCtrlSpec> {
+                TsensPuW::new(self, 22)
+            }
+        }
+        #[doc = "Temperature-sensor control.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsens_ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsens_ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TsensCtrlSpec;
+        impl crate::RegisterSpec for TsensCtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tsens_ctrl::R`](R) reader structure"]
+        impl crate::Readable for TsensCtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tsens_ctrl::W`](W) writer structure"]
+        impl crate::Writable for TsensCtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets TSENS_CTRL to value 0x0001_8080"]
+        impl crate::Resettable for TsensCtrlSpec {
+            const RESET_VALUE: u32 = 0x0001_8080;
+        }
+    }
+    #[doc = "TSENS_CTRL2 (rw) register accessor: Temperature-sensor control 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsens_ctrl2::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsens_ctrl2::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tsens_ctrl2`] module"]
+    #[doc(alias = "TSENS_CTRL2")]
+    pub type TsensCtrl2 = crate::Reg<tsens_ctrl2::TsensCtrl2Spec>;
+    #[doc = "Temperature-sensor control 2."]
+    pub mod tsens_ctrl2 {
+        #[doc = "Register `TSENS_CTRL2` reader"]
+        pub type R = crate::R<TsensCtrl2Spec>;
+        #[doc = "Register `TSENS_CTRL2` writer"]
+        pub type W = crate::W<TsensCtrl2Spec>;
+        #[doc = "Field `TSENS_CLK_SEL` reader - Select the temperature-sensor clock."]
+        pub type TsensClkSelR = crate::BitReader;
+        #[doc = "Field `TSENS_CLK_SEL` writer - Select the temperature-sensor clock."]
+        pub type TsensClkSelW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 15 - Select the temperature-sensor clock."]
+            #[inline(always)]
+            pub fn tsens_clk_sel(&self) -> TsensClkSelR {
+                TsensClkSelR::new(((self.bits >> 15) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 15 - Select the temperature-sensor clock."]
+            #[inline(always)]
+            pub fn tsens_clk_sel(&mut self) -> TsensClkSelW<'_, TsensCtrl2Spec> {
+                TsensClkSelW::new(self, 15)
+            }
+        }
+        #[doc = "Temperature-sensor control 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsens_ctrl2::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsens_ctrl2::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TsensCtrl2Spec;
+        impl crate::RegisterSpec for TsensCtrl2Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tsens_ctrl2::R`](R) reader structure"]
+        impl crate::Readable for TsensCtrl2Spec {}
+        #[doc = "`write(|w| ..)` method takes [`tsens_ctrl2::W`](W) writer structure"]
+        impl crate::Writable for TsensCtrl2Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets TSENS_CTRL2 to value 0x4002"]
+        impl crate::Resettable for TsensCtrl2Spec {
+            const RESET_VALUE: u32 = 0x4002;
+        }
+    }
+}
+#[doc = "ESP32-C5 PCR fields the PHY drives: the SAR ADC and temperature-sensor clocks and one word the public header does not describe. Other fields remain absent and are preserved by every field transaction."]
+pub type PcrRadio = crate::Periph<pcr_radio::RegisterBlock, 0x6009_6000>;
+impl core::fmt::Debug for PcrRadio {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PcrRadio").finish()
+    }
+}
+#[doc = "ESP32-C5 PCR fields the PHY drives: the SAR ADC and temperature-sensor clocks and one word the public header does not describe. Other fields remain absent and are preserved by every field transaction."]
+pub mod pcr_radio {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x88],
+        saradc_conf: SaradcConf,
+        _reserved1: [u8; 0x04],
+        tsens_clk_conf: TsensClkConf,
+        _reserved2: [u8; 0xb8],
+        undocumented_014c: Undocumented014c,
+    }
+    impl RegisterBlock {
+        #[doc = "0x88 - SAR ADC clock and reset."]
+        #[inline(always)]
+        pub const fn saradc_conf(&self) -> &SaradcConf {
+            &self.saradc_conf
+        }
+        #[doc = "0x90 - Temperature-sensor clock and reset."]
+        #[inline(always)]
+        pub const fn tsens_clk_conf(&self) -> &TsensClkConf {
+            &self.tsens_clk_conf
+        }
+        #[doc = "0x14c - Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A."]
+        #[inline(always)]
+        pub const fn undocumented_014c(&self) -> &Undocumented014c {
+            &self.undocumented_014c
+        }
+    }
+    #[doc = "SARADC_CONF (rw) register accessor: SAR ADC clock and reset.\n\nYou can [`read`](crate::Reg::read) this register and get [`saradc_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`saradc_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@saradc_conf`] module"]
+    #[doc(alias = "SARADC_CONF")]
+    pub type SaradcConf = crate::Reg<saradc_conf::SaradcConfSpec>;
+    #[doc = "SAR ADC clock and reset."]
+    pub mod saradc_conf {
+        #[doc = "Register `SARADC_CONF` reader"]
+        pub type R = crate::R<SaradcConfSpec>;
+        #[doc = "Register `SARADC_CONF` writer"]
+        pub type W = crate::W<SaradcConfSpec>;
+        #[doc = "Field `SARADC_CLK_EN` reader - Enable the SAR ADC clock."]
+        pub type SaradcClkEnR = crate::BitReader;
+        #[doc = "Field `SARADC_CLK_EN` writer - Enable the SAR ADC clock."]
+        pub type SaradcClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SARADC_REG_CLK_EN` reader - Enable the SAR ADC register clock."]
+        pub type SaradcRegClkEnR = crate::BitReader;
+        #[doc = "Field `SARADC_REG_CLK_EN` writer - Enable the SAR ADC register clock."]
+        pub type SaradcRegClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Enable the SAR ADC clock."]
+            #[inline(always)]
+            pub fn saradc_clk_en(&self) -> SaradcClkEnR {
+                SaradcClkEnR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 2 - Enable the SAR ADC register clock."]
+            #[inline(always)]
+            pub fn saradc_reg_clk_en(&self) -> SaradcRegClkEnR {
+                SaradcRegClkEnR::new(((self.bits >> 2) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Enable the SAR ADC clock."]
+            #[inline(always)]
+            pub fn saradc_clk_en(&mut self) -> SaradcClkEnW<'_, SaradcConfSpec> {
+                SaradcClkEnW::new(self, 0)
+            }
+            #[doc = "Bit 2 - Enable the SAR ADC register clock."]
+            #[inline(always)]
+            pub fn saradc_reg_clk_en(&mut self) -> SaradcRegClkEnW<'_, SaradcConfSpec> {
+                SaradcRegClkEnW::new(self, 2)
+            }
+        }
+        #[doc = "SAR ADC clock and reset.\n\nYou can [`read`](crate::Reg::read) this register and get [`saradc_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`saradc_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SaradcConfSpec;
+        impl crate::RegisterSpec for SaradcConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`saradc_conf::R`](R) reader structure"]
+        impl crate::Readable for SaradcConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`saradc_conf::W`](W) writer structure"]
+        impl crate::Writable for SaradcConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets SARADC_CONF to value 0x01"]
+        impl crate::Resettable for SaradcConfSpec {
+            const RESET_VALUE: u32 = 0x01;
+        }
+    }
+    #[doc = "TSENS_CLK_CONF (rw) register accessor: Temperature-sensor clock and reset.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsens_clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsens_clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tsens_clk_conf`] module"]
+    #[doc(alias = "TSENS_CLK_CONF")]
+    pub type TsensClkConf = crate::Reg<tsens_clk_conf::TsensClkConfSpec>;
+    #[doc = "Temperature-sensor clock and reset."]
+    pub mod tsens_clk_conf {
+        #[doc = "Register `TSENS_CLK_CONF` reader"]
+        pub type R = crate::R<TsensClkConfSpec>;
+        #[doc = "Register `TSENS_CLK_CONF` writer"]
+        pub type W = crate::W<TsensClkConfSpec>;
+        #[doc = "Field `TSENS_CLK_SEL` reader - Select the temperature-sensor clock source."]
+        pub type TsensClkSelR = crate::BitReader;
+        #[doc = "Field `TSENS_CLK_SEL` writer - Select the temperature-sensor clock source."]
+        pub type TsensClkSelW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSENS_CLK_EN` reader - Enable the temperature-sensor clock."]
+        pub type TsensClkEnR = crate::BitReader;
+        #[doc = "Field `TSENS_CLK_EN` writer - Enable the temperature-sensor clock."]
+        pub type TsensClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSENS_RST_EN` reader - Hold the temperature sensor in reset."]
+        pub type TsensRstEnR = crate::BitReader;
+        #[doc = "Field `TSENS_RST_EN` writer - Hold the temperature sensor in reset."]
+        pub type TsensRstEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 20 - Select the temperature-sensor clock source."]
+            #[inline(always)]
+            pub fn tsens_clk_sel(&self) -> TsensClkSelR {
+                TsensClkSelR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 22 - Enable the temperature-sensor clock."]
+            #[inline(always)]
+            pub fn tsens_clk_en(&self) -> TsensClkEnR {
+                TsensClkEnR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Hold the temperature sensor in reset."]
+            #[inline(always)]
+            pub fn tsens_rst_en(&self) -> TsensRstEnR {
+                TsensRstEnR::new(((self.bits >> 23) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 20 - Select the temperature-sensor clock source."]
+            #[inline(always)]
+            pub fn tsens_clk_sel(&mut self) -> TsensClkSelW<'_, TsensClkConfSpec> {
+                TsensClkSelW::new(self, 20)
+            }
+            #[doc = "Bit 22 - Enable the temperature-sensor clock."]
+            #[inline(always)]
+            pub fn tsens_clk_en(&mut self) -> TsensClkEnW<'_, TsensClkConfSpec> {
+                TsensClkEnW::new(self, 22)
+            }
+            #[doc = "Bit 23 - Hold the temperature sensor in reset."]
+            #[inline(always)]
+            pub fn tsens_rst_en(&mut self) -> TsensRstEnW<'_, TsensClkConfSpec> {
+                TsensRstEnW::new(self, 23)
+            }
+        }
+        #[doc = "Temperature-sensor clock and reset.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsens_clk_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsens_clk_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TsensClkConfSpec;
+        impl crate::RegisterSpec for TsensClkConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tsens_clk_conf::R`](R) reader structure"]
+        impl crate::Readable for TsensClkConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tsens_clk_conf::W`](W) writer structure"]
+        impl crate::Writable for TsensClkConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets TSENS_CLK_CONF to value 0"]
+        impl crate::Resettable for TsensClkConfSpec {}
+    }
+    #[doc = "UNDOCUMENTED_014C (rw) register accessor: Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A.\n\nYou can [`read`](crate::Reg::read) this register and get [`undocumented_014c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`undocumented_014c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@undocumented_014c`] module"]
+    #[doc(alias = "UNDOCUMENTED_014C")]
+    pub type Undocumented014c = crate::Reg<undocumented_014c::Undocumented014cSpec>;
+    #[doc = "Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A."]
+    pub mod undocumented_014c {
+        #[doc = "Register `UNDOCUMENTED_014C` reader"]
+        pub type R = crate::R<Undocumented014cSpec>;
+        #[doc = "Register `UNDOCUMENTED_014C` writer"]
+        pub type W = crate::W<Undocumented014cSpec>;
+        #[doc = "Field `LOW_BYTE_UNKNOWN` reader - Low byte; meaning unknown."]
+        pub type LowByteUnknownR = crate::FieldReader;
+        #[doc = "Field `LOW_BYTE_UNKNOWN` writer - Low byte; meaning unknown."]
+        pub type LowByteUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 0:7 - Low byte; meaning unknown."]
+            #[inline(always)]
+            pub fn low_byte_unknown(&self) -> LowByteUnknownR {
+                LowByteUnknownR::new((self.bits & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7 - Low byte; meaning unknown."]
+            #[inline(always)]
+            pub fn low_byte_unknown(&mut self) -> LowByteUnknownW<'_, Undocumented014cSpec> {
+                LowByteUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A.\n\nYou can [`read`](crate::Reg::read) this register and get [`undocumented_014c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`undocumented_014c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Undocumented014cSpec;
+        impl crate::RegisterSpec for Undocumented014cSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`undocumented_014c::R`](R) reader structure"]
+        impl crate::Readable for Undocumented014cSpec {}
+        #[doc = "`write(|w| ..)` method takes [`undocumented_014c::W`](W) writer structure"]
+        impl crate::Writable for Undocumented014cSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
 }
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
@@ -7600,6 +7901,8 @@ pub struct Peripherals {
     pub lp_aon_radio: LpAonRadio,
     #[doc = "APB_SARADC_RADIO"]
     pub apb_saradc_radio: ApbSaradcRadio,
+    #[doc = "PCR_RADIO"]
+    pub pcr_radio: PcrRadio,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -7632,6 +7935,7 @@ impl Peripherals {
             phy_baseband_config: unsafe { PhyBasebandConfig::steal() },
             lp_aon_radio: unsafe { LpAonRadio::steal() },
             apb_saradc_radio: unsafe { ApbSaradcRadio::steal() },
+            pcr_radio: unsafe { PcrRadio::steal() },
         }
     }
 }
@@ -7667,6 +7971,7 @@ pub mod peripheral_ownership {
         pub phy_baseband_config: crate::PhyBasebandConfig,
         pub lp_aon_radio: crate::LpAonRadio,
         pub apb_saradc_radio: crate::ApbSaradcRadio,
+        pub pcr_radio: crate::PcrRadio,
     }
 
     /// Complete target-reviewed ownership decomposition.
@@ -7697,6 +8002,7 @@ pub mod peripheral_ownership {
             phy_baseband_config,
             lp_aon_radio,
             apb_saradc_radio,
+            pcr_radio,
         } = peripherals;
         PeripheralPartitions {
             ieee802154: Ieee802154Peripherals {
@@ -7714,6 +8020,7 @@ pub mod peripheral_ownership {
                 phy_baseband_config,
                 lp_aon_radio,
                 apb_saradc_radio,
+                pcr_radio,
             },
         }
     }
@@ -8733,6 +9040,62 @@ pub mod field_or_modify {
                 }
             });
     }
+
+    /// OR one reviewed logical image into PCR_RADIO.SARADC_CONF fields `[SARADC_REG_CLK_EN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_saradc_register_clock(registers: &crate::PcrRadio) {
+        registers.saradc_conf().modify(|reader, writer| {
+            let input = 0x00000004_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .saradc_reg_clk_en()
+                .bit(reader.saradc_reg_clk_en().bit() || ((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PCR_RADIO.SARADC_CONF fields `[SARADC_CLK_EN, SARADC_REG_CLK_EN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_saradc_clocks(registers: &crate::PcrRadio) {
+        registers.saradc_conf().modify(|reader, writer| {
+            let input = 0x00000005_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .saradc_clk_en()
+                .bit(reader.saradc_clk_en().bit() || (input & 0x00000001) != 0)
+                .saradc_reg_clk_en()
+                .bit(reader.saradc_reg_clk_en().bit() || ((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PCR_RADIO.TSENS_CLK_CONF fields `[TSENS_CLK_SEL, TSENS_CLK_EN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_tsens_clock(registers: &crate::PcrRadio) {
+        registers.tsens_clk_conf().modify(|reader, writer| {
+            let input = 0x00500000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tsens_clk_sel()
+                .bit(reader.tsens_clk_sel().bit() || ((input >> 20) & 0x00000001) != 0)
+                .tsens_clk_en()
+                .bit(reader.tsens_clk_en().bit() || ((input >> 22) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into APB_SARADC_RADIO.TSENS_CTRL2 fields `[TSENS_CLK_SEL]` while preserving the fresh register observation.
+    #[inline]
+    pub fn select_tsens_clock(registers: &crate::ApbSaradcRadio) {
+        registers.tsens_ctrl2().modify(|reader, writer| {
+            let input = 0x00008000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tsens_clk_sel()
+                .bit(reader.tsens_clk_sel().bit() || ((input >> 15) & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared field-replacement read-modify-write transactions.
@@ -9164,6 +9527,38 @@ pub mod field_replace_modify {
                     .sar_config_clear_unknown()
                     .bit((input & 0x00000001) != 0)
             });
+    }
+
+    /// Replace PCR_RADIO.UNDOCUMENTED_014C fields `[LOW_BYTE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_pcr_undocumented_014c_low_byte(registers: &crate::PcrRadio) {
+        registers.undocumented_014c().modify(|_, writer| {
+            let input = 0x0000000a_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.low_byte_unknown().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PCR_RADIO.TSENS_CLK_CONF fields `[TSENS_RST_EN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn release_tsens_reset(registers: &crate::PcrRadio) {
+        registers.tsens_clk_conf().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.tsens_rst_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace APB_SARADC_RADIO.TSENS_CTRL fields `[TSENS_PU]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_tsens_power(registers: &crate::ApbSaradcRadio, input: u32) {
+        registers.tsens_ctrl().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.tsens_pu().bit((input & 0x00000001) != 0)
+        });
     }
 }
 

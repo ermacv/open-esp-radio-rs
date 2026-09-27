@@ -12,6 +12,7 @@ fragments = [
     "peripherals/phy-baseband-config.toml",
     "peripherals/lp-aon-radio.toml",
     "peripherals/apb-saradc-radio.toml",
+    "peripherals/pcr-radio.toml",
 ]
 
 [device]

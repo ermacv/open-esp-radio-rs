@@ -6,7 +6,10 @@
 //! PMU fields of `ESP_IDF_4D59230D_C5_PMU`, and `C5_BLOB_LIBPHY_RF_INIT_LEAVES_2`
 //! (`phy_open_fe_bb_clk`, `phy_iq_swap_set`, `phy_fe_reg_init`,
 //! `phy_pwdet_reg_init`, `phy_dac_scale_set`, `phy_rxiq_scale_set`,
-//! `phy_pwdet_sar2_init`) with `ESP_IDF_4D59230D_C5_LP_AON_SARADC`.
+//! `phy_pwdet_sar2_init`) with `ESP_IDF_4D59230D_C5_LP_AON_SARADC`, and
+//! `C5_BLOB_LIBPHY_RF_INIT_LEAVES_4` (the `phy_rf_init` prologue,
+//! `phy_set_tsens_power`, `phy_set_tsens_pwr`, `phy_tsens_read_init`) with
+//! `ESP_IDF_4D59230D_C5_PCR_TSENS`.
 
 #![forbid(unsafe_code)]
 
@@ -176,5 +179,41 @@ impl PhyRadioRegisters {
                 PhySar2PowerDetectorCapacitor::Two
             },
         );
+    }
+
+    /// The register writes of the `phy_rf_init` prologue after
+    /// `phy_open_i2c_xpd`: power the 5 GHz clock generator, enable the SAR
+    /// ADC register clock and set the low byte of PCR word 0x14C.
+    pub fn open_rf_initialization_clocks(&mut self) {
+        generated::power_5g_clock_generator(self.pmu());
+        generated::enable_saradc_register_clock(&self.peripherals.pcr_radio);
+        generated::set_pcr_undocumented_014c_low_byte(&self.peripherals.pcr_radio);
+    }
+
+    /// `phy_set_tsens_power(on)`.
+    pub fn set_temperature_sensor_power(&mut self, on: bool) {
+        let bit = if on {
+            PhyRateBit::Set
+        } else {
+            PhyRateBit::Clear
+        };
+        generated::set_tsens_power(&self.peripherals.apb_saradc_radio, bit);
+    }
+
+    /// `phy_set_tsens_pwr`: power the temperature sensor and select its clock.
+    pub fn power_temperature_sensor(&mut self) {
+        self.set_temperature_sensor_power(true);
+        generated::select_tsens_clock(&self.peripherals.apb_saradc_radio);
+    }
+
+    /// `phy_tsens_read_init`: enable the SAR ADC and temperature-sensor
+    /// clocks, release the sensor's reset, select its clock and power it.
+    pub fn initialize_temperature_sensor(&mut self) {
+        let pcr = &self.peripherals.pcr_radio;
+        generated::enable_saradc_clocks(pcr);
+        generated::enable_tsens_clock(pcr);
+        generated::release_tsens_reset(pcr);
+        generated::select_tsens_clock(&self.peripherals.apb_saradc_radio);
+        self.power_temperature_sensor();
     }
 }

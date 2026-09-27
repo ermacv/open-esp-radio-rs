@@ -555,6 +555,30 @@ pub(crate) fn set_phy_power_detector_sar_mode(registers: &crate::svd::PhyBaseban
     crate::svd::field_or_modify::set_phy_power_detector_sar_mode(registers);
 }
 
+/// Typed bridge for the reviewed `enable_saradc_register_clock` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_saradc_register_clock(registers: &crate::svd::PcrRadio) {
+    crate::svd::field_or_modify::enable_saradc_register_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_saradc_clocks` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_saradc_clocks(registers: &crate::svd::PcrRadio) {
+    crate::svd::field_or_modify::enable_saradc_clocks(registers);
+}
+
+/// Typed bridge for the reviewed `enable_tsens_clock` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_tsens_clock(registers: &crate::svd::PcrRadio) {
+    crate::svd::field_or_modify::enable_tsens_clock(registers);
+}
+
+/// Typed bridge for the reviewed `select_tsens_clock` fixed field-OR transaction.
+#[inline]
+pub(crate) fn select_tsens_clock(registers: &crate::svd::ApbSaradcRadio) {
+    crate::svd::field_or_modify::select_tsens_clock(registers);
+}
+
 /// Typed bridge for the reviewed `set_ieee802154_apb_clock` field-replacement transaction.
 #[inline]
 pub(crate) fn set_ieee802154_apb_clock(
@@ -847,4 +871,22 @@ pub(crate) fn set_phy_dac_scale_low(registers: &crate::svd::PhyBasebandConfig, v
 #[inline]
 pub(crate) fn clear_phy_power_detector_sar_config(registers: &crate::svd::PhyBasebandConfig) {
     crate::svd::field_replace_modify::clear_phy_power_detector_sar_config(registers);
+}
+
+/// Typed bridge for the reviewed `set_pcr_undocumented_014c_low_byte` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_pcr_undocumented_014c_low_byte(registers: &crate::svd::PcrRadio) {
+    crate::svd::field_replace_modify::set_pcr_undocumented_014c_low_byte(registers);
+}
+
+/// Typed bridge for the reviewed `release_tsens_reset` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn release_tsens_reset(registers: &crate::svd::PcrRadio) {
+    crate::svd::field_replace_modify::release_tsens_reset(registers);
+}
+
+/// Typed bridge for the reviewed `set_tsens_power` field-replacement transaction.
+#[inline]
+pub(crate) fn set_tsens_power(registers: &crate::svd::ApbSaradcRadio, value: PhyRateBit) {
+    crate::svd::field_replace_modify::set_tsens_power(registers, value.bits());
 }

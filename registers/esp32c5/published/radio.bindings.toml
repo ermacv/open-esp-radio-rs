@@ -20,6 +20,42 @@ bit-width = 1
 access = "read-write"
 
 [[registers]]
+address = 1610670168
+width = 32
+access = "read-write"
+identity = "APB_SARADC_RADIO.TSENS_CTRL"
+peripheral = "APB_SARADC_RADIO"
+peripheral-type = "ApbSaradcRadio"
+peripheral-module = "apb_saradc_radio"
+scope = []
+register-method = "tsens_ctrl"
+
+[[registers.fields]]
+svd-name = "TSENS_PU"
+method = "tsens_pu"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1610670172
+width = 32
+access = "read-write"
+identity = "APB_SARADC_RADIO.TSENS_CTRL2"
+peripheral = "APB_SARADC_RADIO"
+peripheral-type = "ApbSaradcRadio"
+peripheral-module = "apb_saradc_radio"
+scope = []
+register-method = "tsens_ctrl2"
+
+[[registers.fields]]
+svd-name = "TSENS_CLK_SEL"
+method = "tsens_clk_sel"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 1610678320
 width = 32
 access = "read-write"
@@ -56,6 +92,81 @@ svd-name = "UNCLASSIFIED_9_31"
 method = "unclassified_9_31"
 bit-offset = 9
 bit-width = 23
+access = "read-write"
+
+[[registers]]
+address = 1611227272
+width = 32
+access = "read-write"
+identity = "PCR_RADIO.SARADC_CONF"
+peripheral = "PCR_RADIO"
+peripheral-type = "PcrRadio"
+peripheral-module = "pcr_radio"
+scope = []
+register-method = "saradc_conf"
+
+[[registers.fields]]
+svd-name = "SARADC_CLK_EN"
+method = "saradc_clk_en"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SARADC_REG_CLK_EN"
+method = "saradc_reg_clk_en"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611227280
+width = 32
+access = "read-write"
+identity = "PCR_RADIO.TSENS_CLK_CONF"
+peripheral = "PCR_RADIO"
+peripheral-type = "PcrRadio"
+peripheral-module = "pcr_radio"
+scope = []
+register-method = "tsens_clk_conf"
+
+[[registers.fields]]
+svd-name = "TSENS_CLK_SEL"
+method = "tsens_clk_sel"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSENS_CLK_EN"
+method = "tsens_clk_en"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSENS_RST_EN"
+method = "tsens_rst_en"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611227468
+width = 32
+access = "read-write"
+identity = "PCR_RADIO.UNDOCUMENTED_014C"
+peripheral = "PCR_RADIO"
+peripheral-type = "PcrRadio"
+peripheral-module = "pcr_radio"
+scope = []
+register-method = "undocumented_014c"
+
+[[registers.fields]]
+svd-name = "LOW_BYTE_UNKNOWN"
+method = "low_byte_unknown"
+bit-offset = 0
+bit-width = 8
 access = "read-write"
 
 [[registers]]

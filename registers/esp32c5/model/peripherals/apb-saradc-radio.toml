@@ -19,3 +19,33 @@ name = "SARADC2_PWDET_DRV"
 description = "Drive SAR ADC2 from the power detector."
 bitOffset = 29
 bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "TSENS_CTRL"
+description = "Temperature-sensor control."
+addressOffset = 0x58
+size = 32
+access = "read-write"
+resetValue = 0x18080
+
+[[peripherals.registers.register.fields]]
+name = "TSENS_PU"
+description = "Power up the temperature sensor."
+bitOffset = 22
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "TSENS_CTRL2"
+description = "Temperature-sensor control 2."
+addressOffset = 0x5c
+size = 32
+access = "read-write"
+resetValue = 0x4002
+
+[[peripherals.registers.register.fields]]
+name = "TSENS_CLK_SEL"
+description = "Select the temperature-sensor clock."
+bitOffset = 15
+bitWidth = 1

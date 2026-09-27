@@ -269,3 +269,35 @@ kind = "mmio"
 start = 0x6000e000
 end-exclusive = 0x6000e004
 permissions = "rw"
+
+[[regions]]
+name = "pcr-saradc-conf"
+address-space = "cpu"
+kind = "mmio"
+start = 0x60096088
+end-exclusive = 0x6009608c
+permissions = "rw"
+
+[[regions]]
+name = "pcr-tsens-clk-conf"
+address-space = "cpu"
+kind = "mmio"
+start = 0x60096090
+end-exclusive = 0x60096094
+permissions = "rw"
+
+[[regions]]
+name = "pcr-undocumented-014c"
+address-space = "cpu"
+kind = "mmio"
+start = 0x6009614c
+end-exclusive = 0x60096150
+permissions = "rw"
+
+[[regions]]
+name = "apb-saradc-tsens-ctrl"
+address-space = "cpu"
+kind = "mmio"
+start = 0x6000e058
+end-exclusive = 0x6000e060
+permissions = "rw"

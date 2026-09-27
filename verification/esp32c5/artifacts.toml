@@ -449,3 +449,9 @@ id = "esp-idf/components/soc/esp32c5/register/soc/apb_saradc_reg.h"
 source = "esp-idf"
 path = "components/soc/esp32c5/register/soc/apb_saradc_reg.h"
 sha256 = "4d82b7207af0bd4b448a1d964de996cbbd77cd211daa1c055beb76f79bc9059b"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/register/soc/pcr_reg.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/register/soc/pcr_reg.h"
+sha256 = "050c5eabe196672c096e7dd74b8ace4c95eb60ac00e7357c96d6e5b082341d5b"

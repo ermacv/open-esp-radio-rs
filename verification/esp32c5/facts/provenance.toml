@@ -150,6 +150,12 @@ code = "fab1c9455506bde48c54eca8cb1d784d7de48627d553033aff338775082d528e"
 
 [[function]]
 artifact = "libphy"
+member = "phy_init.o"
+symbol = "phy_rf_init"
+code = "59ae367de49e62603ed3c7709c44cfbb991ffe056e93ba06fa85d261a0cd23c9"
+
+[[function]]
+artifact = "libphy"
 member = "phy_pwdet.o"
 symbol = "phy_pwdet_reg_init"
 code = "35ad309432cef34ce20bc2049d3a74997513f26fe065b8a525548bcdd3e12653"
@@ -195,6 +201,24 @@ artifact = "libphy"
 member = "phy_reg.o"
 symbol = "phy_rxiq_scale_set"
 code = "6464c666c1b45881d92bbdff06791706f88aa5efcac76ea57f28e1ecc872288f"
+
+[[function]]
+artifact = "libphy"
+member = "phy_tsens.o"
+symbol = "phy_set_tsens_power"
+code = "cde50c52e80e5f23ec8618799d5e37b08ace84169ddf7934753224a069cc113a"
+
+[[function]]
+artifact = "libphy"
+member = "phy_tsens.o"
+symbol = "phy_set_tsens_pwr"
+code = "401d29cc8596975fd341956e8b5e69aea8f6f6a716708897f13c5d554bd19c77"
+
+[[function]]
+artifact = "libphy"
+member = "phy_tsens.o"
+symbol = "phy_tsens_read_init"
+code = "2bc862f3e151e1cd58ada52a3029bfc554968c80c8e882969b4c1afc479b05ff"
 
 [[function]]
 artifact = "rom-rev0"
@@ -323,6 +347,12 @@ symbol = "phy_pwdet_sar2_init"
 code = "70a7b28d3aecf2ca68b1de5e8f1c172e1b538ca61bc391c95fb2d74f3d324cf7"
 
 [[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_tsens_read_init"
+code = "f6346b346260dfc54868cefdbc94bb26834c91b3ed5987c2b69d4f3ca86ddb91"
+
+[[function]]
 artifact = "rom-rev100"
 member = ""
 symbol = "phy_adc_rate_set"
@@ -447,3 +477,9 @@ artifact = "rom-rev100"
 member = ""
 symbol = "phy_pwdet_sar2_init"
 code = "70a7b28d3aecf2ca68b1de5e8f1c172e1b538ca61bc391c95fb2d74f3d324cf7"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_tsens_read_init"
+code = "0cb6987705fa877aec76d0b571e6ba126fb933674c250fb8a652cb427283b388"

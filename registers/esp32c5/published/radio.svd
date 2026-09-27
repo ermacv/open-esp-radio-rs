@@ -2669,6 +2669,110 @@ documentation establishes their electrical meaning.</description>
             </field>
           </fields>
         </register>
+        <register>
+          <name>TSENS_CTRL</name>
+          <description>Temperature-sensor control.</description>
+          <addressOffset>0x58</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00018080</resetValue>
+          <fields>
+            <field>
+              <name>TSENS_PU</name>
+              <description>Power up the temperature sensor.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>TSENS_CTRL2</name>
+          <description>Temperature-sensor control 2.</description>
+          <addressOffset>0x5C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00004002</resetValue>
+          <fields>
+            <field>
+              <name>TSENS_CLK_SEL</name>
+              <description>Select the temperature-sensor clock.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PCR_RADIO</name>
+      <description>ESP32-C5 PCR fields the PHY drives: the SAR ADC and temperature-sensor clocks and one word the public header does not describe. Other fields remain absent and are preserved by every field transaction.</description>
+      <baseAddress>0x60096000</baseAddress>
+      <registers>
+        <register>
+          <name>SARADC_CONF</name>
+          <description>SAR ADC clock and reset.</description>
+          <addressOffset>0x88</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000001</resetValue>
+          <fields>
+            <field>
+              <name>SARADC_CLK_EN</name>
+              <description>Enable the SAR ADC clock.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>SARADC_REG_CLK_EN</name>
+              <description>Enable the SAR ADC register clock.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>TSENS_CLK_CONF</name>
+          <description>Temperature-sensor clock and reset.</description>
+          <addressOffset>0x90</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>TSENS_CLK_SEL</name>
+              <description>Select the temperature-sensor clock source.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSENS_CLK_EN</name>
+              <description>Enable the temperature-sensor clock.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSENS_RST_EN</name>
+              <description>Hold the temperature sensor in reset.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>UNDOCUMENTED_014C</name>
+          <description>Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A.</description>
+          <addressOffset>0x14C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>LOW_BYTE_UNKNOWN</name>
+              <description>Low byte; meaning unknown.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+          </fields>
+        </register>
       </registers>
     </peripheral>
   </peripherals>

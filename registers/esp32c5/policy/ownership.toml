@@ -34,4 +34,8 @@ owned-ranges = [
     "phy-baseband-7c80",
     "lp-aon-sar-cct",
     "apb-saradc-ctrl",
+    "pcr-saradc-conf",
+    "pcr-tsens-clk-conf",
+    "pcr-undocumented-014c",
+    "apb-saradc-tsens-ctrl",
 ]

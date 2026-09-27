@@ -61,13 +61,6 @@ static OT_SETTINGS_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0
 static OT_SETTINGS: StaticCell<SimpleRamSettings> = StaticCell::new();
 static UDP_RECEIVE: ConstStaticCell<[u8; UDP_BUFFER]> = ConstStaticCell::new([0; UDP_BUFFER]);
 
-/// The radio defaults ESP-IDF's OpenThread port applies.
-const RADIO_DEFAULTS: OpenThreadRadioDefaults = OpenThreadRadioDefaults {
-    tx_power_dbm: 20,
-    cca_threshold_dbm: -75,
-    receive_sensitivity_dbm: -100,
-};
-
 /// The IEEE 802.15.4 EUI-64 as ESP-IDF derives it
 /// (`esp_read_mac(ESP_MAC_IEEE802154)`): the base MAC's first three bytes,
 /// the eFuse MAC extension, then the base MAC's last three bytes.
@@ -274,7 +267,7 @@ pub(in crate::product_hil) async fn run_thread(
     };
     publish_event_reliably(0, request_id, started(Ieee802154SessionResult::Done)).await;
 
-    let radio: ThreadRadio = OpenThreadRadio::new(system.runtime(), RADIO_DEFAULTS);
+    let radio: ThreadRadio = OpenThreadRadio::new(system.runtime(), OpenThreadRadioDefaults::ESP_IDF);
     let tracking_stop = Signal::<CriticalSectionRawMutex, ()>::new();
     let tracking = async {
         // The radio system's periodic PHY tracking, as ESP-IDF's

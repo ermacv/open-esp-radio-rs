@@ -204,11 +204,11 @@ checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
 dependencies = [
  "bt-hci-transport",
  "btuuid",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.7.2",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "futures-intrusive",
- "heapless 0.9.3",
+ "heapless 0.8.0",
 ]
 
 [[package]]
@@ -2481,7 +2481,7 @@ dependencies = [
 [[package]]
 name = "openthread"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125#7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125"
+source = "git+https://github.com/ermacv/openthread?rev=2821c399272367f6eb708b0f90792fc65f60d1f3#2821c399272367f6eb708b0f90792fc65f60d1f3"
 dependencies = [
  "bitflags 2.13.1",
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2496,7 +2496,7 @@ dependencies = [
 [[package]]
 name = "openthread-sys"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125#7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125"
+source = "git+https://github.com/ermacv/openthread?rev=2821c399272367f6eb708b0f90792fc65f60d1f3#2821c399272367f6eb708b0f90792fc65f60d1f3"
 dependencies = [
  "anyhow",
  "bindgen",

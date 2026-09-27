@@ -1441,6 +1441,7 @@ dependencies = [
 name = "oer-esp32s31-ieee80211"
 version = "0.1.0"
 dependencies = [
+ "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211-dma",
  "oer-esp32s31-ieee80211-mac",
@@ -1520,6 +1521,7 @@ dependencies = [
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-embassy-net-owned",
+ "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211",
  "oer-esp32s31-ieee80211-ap",
@@ -1569,6 +1571,7 @@ dependencies = [
  "esp-hal",
  "oer-embassy-net-owned",
  "oer-embassy-net-upstream",
+ "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211",
  "oer-esp32s31-ieee80211-ap",

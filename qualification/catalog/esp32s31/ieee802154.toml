@@ -353,7 +353,7 @@ section = "ieee802154-phy-and-rf"
 title = "TX power"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[Power resolution](../../hal/src/ieee802154/tx_power.rs) carries the S31 BTBB provider level set recovered from `bt_bb_get_tx_pwr_table` (-24 to 21 dBm in 3 dB steps) and the PIB publishes the resolved index before each operation. On-air output power is not measured."
+scope-and-limitations = "[Power resolution](../../hal/src/ieee802154/tx_power.rs) carries the S31 BTBB provider level set recovered from `bt_bb_get_tx_pwr_table` (-24 to 21 dBm in 3 dB steps) and the PIB publishes the resolved index before each operation. The portable contract sets it for every channel or for one (`esp_ieee802154_set_power_with_channel`). On-air output power is not measured."
 packages = ["oer-esp32s31-hal"]
 
 [[items]]
@@ -396,7 +396,7 @@ section = "ieee802154-cca-and-channel-access"
 title = "CCA-before-TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine issues the CCA-then-TX command and reports CCA busy or failure. Whole-radio transmission remains incomplete."
+scope-and-limitations = "The engine issues the CCA-then-TX command and reports CCA busy or failure. The portable contract sets the CCA energy threshold and mode, and the OpenThread adapter applies OpenThread's threshold as the port does. Whole-radio transmission remains incomplete."
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-csma-ca"
@@ -479,7 +479,7 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Hardware frame filtering"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "PAN identity and coordinator/promiscuous control are configured, but whole-radio filtering and on-air admission are not closed."
+scope-and-limitations = "PAN identity, the PAN coordinator role and promiscuous control are configured through the portable contract, but whole-radio filtering and on-air admission are not closed."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-pan-id"

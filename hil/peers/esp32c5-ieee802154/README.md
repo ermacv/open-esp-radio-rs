@@ -73,6 +73,8 @@ Each command is answered by `@OK <command>` or `@ERR <command> <reason>`.
 | `SYNC` | Stop a burst, disable and enable the driver, clear both pending tables and pending reports, then print `@READY` again: the host takes over a running peer without resetting the chip. |
 | `OFF` | Disable the driver (`esp_ieee802154_disable`): the MAC, BTBB and the PHY client are released, and RF closes after the last client. |
 | `ON` | Enable the driver again (`esp_ieee802154_enable`); send `CFG` before the next operation. |
+| `PEEK <address>` | Read the 32-bit word at the word-aligned device address (eight hexadecimal digits) and print `@PEEK <address> <value>`, for register cross-checks. A register whose clock domain is off may reset the chip. |
+| `ANALOG <block> <register>` | Read one analog-I2C register (two hexadecimal digits each) through ESP-IDF's analog-I2C driver and print `@ANALOG <block> <register> <value>`. |
 
 Events, printed when the driver reports them:
 

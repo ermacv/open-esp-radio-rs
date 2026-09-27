@@ -17,6 +17,7 @@
 #include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_ieee802154.h"
+#include "esp_private/regi2c_ctrl.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -460,6 +461,40 @@ static void command_ed(char **argv, int argc)
     reply(esp_ieee802154_energy_detect(duration), "ED");
 }
 
+/* PEEK <address:8hex>: the 32-bit word at a device address, for register
+ * cross-checks. A register whose clock domain is off may reset the chip. */
+static void command_peek(char **argv, int argc)
+{
+    uint8_t address[4];
+    if (argc != 2 || !decode_hex(argv[1], address, 4)) {
+        reply(ESP_ERR_INVALID_ARG, "PEEK");
+        return;
+    }
+    uint32_t word = (uint32_t)address[0] << 24 | (uint32_t)address[1] << 16
+        | (uint32_t)address[2] << 8 | address[3];
+    if (word % 4 != 0) {
+        reply(ESP_ERR_INVALID_ARG, "PEEK");
+        return;
+    }
+    uint32_t value = *(volatile const uint32_t *)word;
+    printf("@PEEK %08lx %08lx\n", (unsigned long)word, (unsigned long)value);
+    fflush(stdout);
+}
+
+/* ANALOG <block:2hex> <register:2hex>: one analog-I2C register, read through
+ * ESP-IDF's analog-I2C driver, which selects the block's host itself. */
+static void command_analog(char **argv, int argc)
+{
+    uint8_t block, reg;
+    if (argc != 3 || !decode_hex(argv[1], &block, 1) || !decode_hex(argv[2], &reg, 1)) {
+        reply(ESP_ERR_INVALID_ARG, "ANALOG");
+        return;
+    }
+    uint8_t value = regi2c_ctrl_read_reg(block, 0, reg);
+    printf("@ANALOG %02x %02x %02x\n", block, reg, value);
+    fflush(stdout);
+}
+
 static void dispatch(char *line)
 {
     char *argv[8];
@@ -488,6 +523,10 @@ static void dispatch(char *line)
         command_ed(argv, argc);
     } else if (strcmp(argv[0], "SYNC") == 0 && argc == 1) {
         command_sync();
+    } else if (strcmp(argv[0], "PEEK") == 0) {
+        command_peek(argv, argc);
+    } else if (strcmp(argv[0], "ANALOG") == 0) {
+        command_analog(argv, argc);
     } else if (strcmp(argv[0], "OFF") == 0 && argc == 1) {
         reply(esp_ieee802154_disable(), "OFF");
     } else if (strcmp(argv[0], "ON") == 0 && argc == 1) {

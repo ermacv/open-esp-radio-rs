@@ -26,6 +26,16 @@ use oer_vendor_scenario_engine::phy::layout::{COMMAND_READ, COMMAND_WRITE, analo
 const BLOCKS: &[u32] = &[
     0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f,
 ];
+/// Every value of the vendor's `uint8_t` block argument.
+const BLOCK_BYTES: [u32; 256] = {
+    let mut values = [0; 256];
+    let mut index = 0;
+    while index < values.len() {
+        values[index] = index as u32;
+        index += 1;
+    }
+    values
+};
 /// The first and last block, the aliased block and a host-one block, for
 /// the field leaves.
 const FIELD_BLOCKS: &[u32] = &[0x61, 0x62, 0x66, 0x6f];
@@ -70,8 +80,12 @@ fn host(block: u32) -> usize {
     usize::from(HOST_ONE_BLOCKS.contains(&block))
 }
 
+/// The read mask of `block`; a block outside the transport has none.
 fn read_mask(block: u32) -> u32 {
-    READ_MASK_BITS[(block - BLOCKS[0]) as usize] << READ_MASK_SHIFT
+    block
+        .checked_sub(BLOCKS[0])
+        .and_then(|index| READ_MASK_BITS.get(index as usize))
+        .map_or(0, |bit| bit << READ_MASK_SHIFT)
 }
 
 fn slave(block: u32) -> u32 {
@@ -264,7 +278,7 @@ const LEAVES: &[Leaf] = &[
         leaf(
             "phy_get_i2c_read_mask_",
             "open_phy_i2c_trace_phy_get_i2c_read_mask_",
-            &[("block", Domain::Words(BLOCKS))],
+            &[("block", Domain::Words(&BLOCK_BYTES))],
             true,
         ),
         expect_read_mask,
@@ -396,6 +410,8 @@ mod tests {
         assert_eq!(host(0x61), 0);
         assert_eq!(read_mask(0x61), 0x100);
         assert_eq!(read_mask(0x62), 0);
+        assert_eq!(read_mask(0x00), 0);
+        assert_eq!(read_mask(0x70), 0);
         assert_eq!(selector(0x62, 0x07), 0x0765);
         assert_eq!(field_mask(7, 0), 0xff);
         assert_eq!(field_mask(4, 3), 0x3);

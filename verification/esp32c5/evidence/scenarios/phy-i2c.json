@@ -83,7 +83,7 @@
     },
     {
       "path": "verification/esp32c5/scenarios",
-      "sha256": "89c9d65a1171b6819f928e8f396fe83f19f34ace3dd833cbffcc96803d8d52c4"
+      "sha256": "ee2344960a0f07c3977ebe818237c716612d6d11bbf62725cecedfed58811bf5"
     },
     {
       "path": "verification/harness/codegen",
@@ -143,19 +143,19 @@
       "symbol": "phy_get_i2c_read_mask_",
       "production": "open_phy_i2c_trace_phy_get_i2c_read_mask_",
       "verdict": "match",
-      "cases": 60,
+      "cases": 1024,
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 3,
+          "reached": 4,
           "total": 4
         },
         "directions": {
-          "reached": 1,
+          "reached": 2,
           "total": 2
         },
         "open": 0,
-        "excluded": 2,
+        "excluded": 0,
         "untriaged": 0
       },
       "observation": {
@@ -191,8 +191,8 @@
           "total": 8
         },
         "open": 0,
-        "excluded": 2,
-        "untriaged": 0
+        "excluded": 0,
+        "untriaged": 2
       },
       "observation": {
         "executed": 28,
@@ -263,8 +263,8 @@
           "total": 8
         },
         "open": 0,
-        "excluded": 2,
-        "untriaged": 0
+        "excluded": 0,
+        "untriaged": 2
       },
       "observation": {
         "executed": 28,
@@ -299,8 +299,8 @@
           "total": 14
         },
         "open": 0,
-        "excluded": 3,
-        "untriaged": 0
+        "excluded": 1,
+        "untriaged": 2
       },
       "observation": {
         "executed": 35,

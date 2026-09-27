@@ -163,6 +163,15 @@ fn polling() -> Vec<EffectRule> {
     port_polling(MAX_POLLS)
 }
 
+/// Completion polls of a leaf that issues many commands.
+const MAX_LONG_POLLS: u32 = 512;
+
+/// The completion polling production adds before each read of a leaf with
+/// many commands.
+fn long_polling() -> Vec<EffectRule> {
+    port_polling(MAX_LONG_POLLS)
+}
+
 /// The host-map read and its rewrite, which every host selection performs.
 fn check_host_map(observed: &Observed) -> std::result::Result<(), String> {
     let old = observed
@@ -871,14 +880,14 @@ macro_rules! configuration_leaf {
             Ok(Objects {
                 vendor_words: arguments.to_vec(),
                 registers: vec![(RATE_WORD, state >> 8)],
-                ..command_bank($commands(arguments), state & 0xff)
+                ..command_bank(&$commands(arguments), state & 0xff)
             })
         }
 
         fn $expect(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
             let (state, arguments) = words.split_last().expect("a state");
             let (sample, rate_word) = (state & 0xff, state >> 8);
-            check_commands(observed, $commands(arguments), sample)?;
+            check_commands(observed, &$commands(arguments), sample)?;
             let rate: Option<fn(&[u32], u32) -> Vec<u32>> = $rate;
             if let Some(rate) = rate {
                 let writes = writes_to(observed, RATE_WORD);
@@ -912,17 +921,17 @@ fn bbpll_rate_word(_: &[u32], word: u32) -> Vec<u32> {
     writes
 }
 
-fn band_commands(_: &[u32]) -> &'static [Command] {
-    BAND
+fn band_commands(_: &[u32]) -> Vec<Command> {
+    (BAND).to_vec()
 }
-fn crystal_commands(_: &[u32]) -> &'static [Command] {
-    CRYSTAL
+fn crystal_commands(_: &[u32]) -> Vec<Command> {
+    (CRYSTAL).to_vec()
 }
-fn bias_commands(_: &[u32]) -> &'static [Command] {
-    BIAS
+fn bias_commands(_: &[u32]) -> Vec<Command> {
+    (BIAS).to_vec()
 }
-fn dac_commands(_: &[u32]) -> &'static [Command] {
-    DAC_RATE
+fn dac_commands(_: &[u32]) -> Vec<Command> {
+    (DAC_RATE).to_vec()
 }
 fn adc_commands(arguments: &[u32]) -> &'static [Command] {
     if arguments[0] == 0 {
@@ -932,8 +941,8 @@ fn adc_commands(arguments: &[u32]) -> &'static [Command] {
     }
 }
 const BBPLL: &[Command] = &[(0x66, 4, 4, 4, 0), (0x66, 4, 2, 2, 1)];
-fn bbpll_commands(_: &[u32]) -> &'static [Command] {
-    BBPLL
+fn bbpll_commands(_: &[u32]) -> Vec<Command> {
+    (BBPLL).to_vec()
 }
 
 configuration_leaf!(band_abi, expect_band, band_commands, None);
@@ -1197,6 +1206,93 @@ fn expect_pwdet_sar2_init(words: &[u32], observed: &Observed) -> std::result::Re
 }
 
 const DAC_SCALES: &[u32] = &[0, 1, 0x100];
+
+fn rc_cal_commands(arguments: &[u32]) -> Vec<Command> {
+    vec![
+        (0x6b, 0x11, 5, 4, arguments[0]),
+        (0x6b, 0x0f, 7, 3, arguments[1]),
+        (0x6b, 0x13, 5, 2, arguments[2]),
+    ]
+}
+fn pkdet_commands(_: &[u32]) -> Vec<Command> {
+    vec![
+        (0x67, 0x1d, 7, 7, 1),
+        (0x67, 0x1d, 6, 4, 4),
+        (0x67, 3, 6, 4, 4),
+    ]
+}
+fn sar2_commands(arguments: &[u32]) -> Vec<Command> {
+    vec![
+        (0x69, 4, 3, 0, arguments[0] >> 8),
+        (0x69, 3, 7, 0, arguments[0] & 0xff),
+    ]
+}
+configuration_leaf!(rc_cal_abi, expect_rc_cal, rc_cal_commands, None);
+configuration_leaf!(pkdet_abi, expect_pkdet, pkdet_commands, None);
+configuration_leaf!(sar2_abi, expect_sar2, sar2_commands, None);
+const RC_FIRST: &[u32] = &[0, 3];
+const RC_SECOND: &[u32] = &[0, 31];
+const RC_THIRD: &[u32] = &[0, 15];
+const SAR2_CODES: &[u32] = &[0, 0x5a5, 0xfff];
+
+/// `phy_filter_dcap_set`'s four field writes and sixteen byte writes over
+/// the `phy_param` bytes 0xF5 to 0xFC.
+fn filter_dcap_commands(image: &[u8]) -> Vec<Command> {
+    let p = |offset: usize| u32::from(image[offset]);
+    let sat = |offset: usize, low, high| p(offset).clamp(low, high);
+    let mut commands = vec![
+        (0x67, 0x1d, 3, 2, 0),
+        (0x67, 5, 6, 6, 1),
+        (0x67, 5, 3, 3, 1),
+        (0x67, 5, 5, 5, 1),
+    ];
+    for (register, value) in [
+        (6, p(0xf5)),
+        (8, sat(0xf7, 10, 50)),
+        (0xa, p(0xf5)),
+        (0xc, p(0xf7)),
+        (7, p(0xf6)),
+        (9, sat(0xf8, 10, 60)),
+        (0xb, p(0xf6)),
+        (0xd, p(0xf8)),
+        (0xe, p(0xfb)),
+        (0x10, p(0xfb)),
+        (0x12, p(0xf9)),
+        (0x14, p(0xf9)),
+        (0xf, p(0xfc)),
+        (0x11, p(0xfc)),
+        (0x13, p(0xfa)),
+        (0x15, p(0xfa)),
+    ] {
+        commands.push((0x67, register, 7, 0, value));
+    }
+    commands
+}
+
+/// `(parameters, profile)` over the initialization parameter images, with
+/// every addressed register holding 0xA5.
+fn filter_dcap_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [parameters, profile] = *words else {
+        return Err(oer_vendor_scenario_engine::harness::invalid("filter words"));
+    };
+    let image = parameter_image(profile);
+    Ok(Objects {
+        vendor_words: vec![],
+        production: vec![(parameters, image.clone())],
+        image: vec![(vendor.image_symbol("phy_param")?, image.clone())],
+        ..command_bank(&filter_dcap_commands(&image), FILTER_SAMPLE)
+    })
+}
+
+const FILTER_SAMPLE: u32 = 0xa5;
+
+fn expect_filter_dcap(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_commands(
+        observed,
+        &filter_dcap_commands(&parameter_image(words[1])),
+        FILTER_SAMPLE,
+    )
+}
 
 const LEAVES: &[Leaf] = &[
     expected(
@@ -1597,6 +1693,82 @@ const LEAVES: &[Leaf] = &[
             SWAP_SCALE_STATES,
         ),
         expect_pwdet_sar2_init,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_i2c_rc_cal_set",
+                        "open_phy_i2c_trace_phy_i2c_rc_cal_set",
+                        &[
+                            ("first", Domain::Words(RC_FIRST)),
+                            ("second", Domain::Words(RC_SECOND)),
+                            ("third", Domain::Words(RC_THIRD)),
+                        ],
+                        false,
+                    ),
+                    rc_cal_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_rc_cal,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_i2c_pkdet_set",
+                        "open_phy_i2c_trace_phy_i2c_pkdet_set",
+                        NO_ARGUMENT,
+                        false,
+                    ),
+                    pkdet_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_pkdet,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_i2c_sar2_init_code",
+                        "open_phy_i2c_trace_phy_i2c_sar2_init_code",
+                        &[("code", Domain::Words(SAR2_CODES))],
+                        false,
+                    ),
+                    sar2_abi,
+                ),
+                CONFIGURATION_STATES,
+            ),
+            polling,
+        ),
+        expect_sar2,
+    ),
+    expected(
+        ruled(
+            stated(
+                objects(
+                    leaf(
+                        "phy_filter_dcap_set",
+                        "open_phy_i2c_trace_phy_filter_dcap_set",
+                        &[("parameters", Domain::Words(PARAMETER_IMAGE))],
+                        false,
+                    ),
+                    filter_dcap_abi,
+                ),
+                PARAMETER_PROFILES,
+            ),
+            long_polling,
+        ),
+        expect_filter_dcap,
     ),
 ];
 

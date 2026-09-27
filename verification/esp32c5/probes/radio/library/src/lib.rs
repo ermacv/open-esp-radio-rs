@@ -413,3 +413,60 @@ oer_probe_macros::probe! {
         0
     }
 }
+
+/// The `phy_param` fields `phy_i2c_init1` and `phy_filter_dcap_set` read.
+fn initialization_inputs(parameters: u32) -> oer_esp32c5_pac::PhyI2cInitializationInputs {
+    let byte = |offset| parameter(parameters, offset);
+    oer_esp32c5_pac::PhyI2cInitializationInputs {
+        parameter_f5: byte(0xf5),
+        parameter_f6: byte(0xf6),
+        parameter_f7: byte(0xf7),
+        parameter_f8: byte(0xf8),
+        parameter_f9: byte(0xf9),
+        parameter_fa: byte(0xfa),
+        parameter_fb: byte(0xfb),
+        parameter_fc: byte(0xfc),
+        parameter_410: byte(0x410),
+        parameter_412: byte(0x412),
+        parameter_416: u16::from(byte(0x416)) | (u16::from(byte(0x417)) << 8),
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_i2c_rc_cal_set(first, second, third)` within its fields.
+    pub fn open_phy_i2c_trace_phy_i2c_rc_cal_set(first: u32, second: u32, third: u32) -> u32 {
+        let byte = |value: u32| u8::try_from(value).ok();
+        let Some(arguments) = byte(first)
+            .zip(byte(second))
+            .zip(byte(third))
+            .and_then(|((a, b), c)| oer_esp32c5_pac::PhyI2cRcCalibration::new(a, b, c))
+        else {
+            return INVALID_ARGUMENT;
+        };
+        configure(oer_esp32c5_pac::PhyI2cConfiguration::RcCalibration(arguments))
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_filter_dcap_set()` over the `phy_param` image at `parameters`.
+    pub fn open_phy_i2c_trace_phy_filter_dcap_set(parameters: u32) -> u32 =>
+        configure(oer_esp32c5_pac::PhyI2cConfiguration::FilterCapacitors(
+            initialization_inputs(parameters),
+        ));
+}
+
+oer_probe_macros::probe! {
+    /// `phy_i2c_pkdet_set()`.
+    pub fn open_phy_i2c_trace_phy_i2c_pkdet_set() -> u32 =>
+        configure(oer_esp32c5_pac::PhyI2cConfiguration::PeakDetector);
+}
+
+oer_probe_macros::probe! {
+    /// `phy_i2c_sar2_init_code(code)` for a twelve-bit code.
+    pub fn open_phy_i2c_trace_phy_i2c_sar2_init_code(code: u32) -> u32 {
+        let Some(code) = u16::try_from(code).ok().and_then(oer_esp32c5_pac::PhyI2cSar2Code::new) else {
+            return INVALID_ARGUMENT;
+        };
+        configure(oer_esp32c5_pac::PhyI2cConfiguration::Sar2InitializationCode(code))
+    }
+}

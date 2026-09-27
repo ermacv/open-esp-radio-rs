@@ -12,7 +12,10 @@ use hil_core::{
     context::Context,
     image::ImageClass,
     lab::{
-        link::{HtGuardIntervalExpectation, ManagementFrameProtection, PhyExpectation, WifiLabUse},
+        link::{
+            AccessPointSecurity, HtGuardIntervalExpectation, ManagementFrameProtection,
+            PhyExpectation, WifiLabUse,
+        },
         requirements::Requirements,
     },
     scenario::{Plan, bounded},
@@ -81,6 +84,10 @@ pub struct LinkExpectation {
         skip_serializing_if = "ManagementFrameProtection::is_disabled"
     )]
     pub management_frame_protection: ManagementFrameProtection,
+    /// Personal security the station fixture offers; the station must
+    /// authenticate with SAE whenever it is offered.
+    #[serde(default, skip_serializing_if = "AccessPointSecurity::is_wpa2_personal")]
+    pub access_point_security: AccessPointSecurity,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -330,12 +337,14 @@ impl WifiScenario {
     }
 
     fn validate_link(&self, link: LinkExpectation) -> Result<()> {
-        if link.management_frame_protection.negotiated()
+        if (link.management_frame_protection.negotiated()
+            || link.access_point_security.offers_sae())
             && !matches!(self.workload, WifiWorkload::Role { .. })
         {
             return Err(format!(
-                "management_frame_protection={} is verified only by the role workload",
-                link.management_frame_protection.id()
+                "management_frame_protection={} and access_point_security={} are verified only by the role workload",
+                link.management_frame_protection.id(),
+                link.access_point_security.id()
             )
             .into());
         }
@@ -541,6 +550,11 @@ impl WifiScenario {
                     .workload
                     .link()
                     .map(|link| link.management_frame_protection)
+                    .unwrap_or_default(),
+                access_point_security: self
+                    .workload
+                    .link()
+                    .map(|link| link.access_point_security)
                     .unwrap_or_default(),
                 access_point: matches!(self.workload, WifiWorkload::AccessPoint(_)),
             },

@@ -112,7 +112,31 @@ fn link(
         minimum_mcs: None,
         guard_interval: Default::default(),
         management_frame_protection,
+        access_point_security: Default::default(),
     }
+}
+
+#[test]
+fn a_wpa3_fixture_requires_an_sae_link() {
+    use hil_core::lab::link::{AccessPointSecurity, ManagementFrameProtection::Disabled};
+    let wpa3 = crate::scenario::LinkExpectation {
+        access_point_security: AccessPointSecurity::Wpa3Transition,
+        ..link(PhyExpectation::Ht40, Disabled)
+    };
+    let sae = StationConnectionObservation {
+        generation: 1,
+        association_bandwidth_mhz: Some(40),
+        security: Some(oer_hil_protocol::StationLinkSecurity::Wpa3Personal),
+        event_cursor_after: 3,
+    };
+    assert!(require_station_link(sae, wpa3).is_ok());
+    let psk = StationConnectionObservation {
+        security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+            management_protection: true,
+        }),
+        ..sae
+    };
+    assert!(require_station_link(psk, wpa3).is_err());
 }
 
 #[test]

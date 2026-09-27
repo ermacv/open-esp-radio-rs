@@ -1,5 +1,5 @@
 use super::*;
-use hil_core::lab::link::ManagementFrameProtection;
+use hil_core::lab::link::{AccessPointSecurity, ManagementFrameProtection};
 
 fn observation(phy: PhyExpectation) -> Observation {
     Observation {
@@ -25,6 +25,7 @@ fn ht20_width_does_not_prove_he20() {
         phy: PhyExpectation::He20,
         channel: 13,
         management_frame_protection: ManagementFrameProtection::Disabled,
+        access_point_security: AccessPointSecurity::Wpa2Personal,
     };
     let mut observed = observation(PhyExpectation::Ht20);
     assert!(profile.verify(&observed).is_err());
@@ -46,6 +47,7 @@ fn ht40_requires_the_requested_secondary_channel() {
         phy: PhyExpectation::Ht40,
         channel: 13,
         management_frame_protection: ManagementFrameProtection::Disabled,
+        access_point_security: AccessPointSecurity::Wpa2Personal,
     };
     let mut observed = observation(PhyExpectation::Ht20);
     observed.htmode = "HT40-".into();
@@ -62,6 +64,7 @@ fn capability_is_interface_specific_and_respects_regulation() {
         phy: PhyExpectation::He20,
         channel: 13,
         management_frame_protection: ManagementFrameProtection::Disabled,
+        access_point_security: AccessPointSecurity::Wpa2Personal,
     };
     let caps = "Supported interface modes:\n * AP\n HT20/HT40\n HE Iftypes: managed\n * 2472 MHz [13] (20.0 dBm)\n";
     assert!(verify_capabilities(profile, caps).is_err());
@@ -122,6 +125,7 @@ fn restoring_uci_and_radio_up_is_insufficient_if_the_original_ap_is_missing() {
             phy: PhyExpectation::He20,
             channel: 13,
             management_frame_protection: ManagementFrameProtection::Disabled,
+            access_point_security: AccessPointSecurity::Wpa2Personal,
         },
         json!({}),
     )
@@ -150,6 +154,7 @@ fn restores_after_partial_apply_readback_failure_and_stop_failure() {
                 phy: PhyExpectation::He20,
                 channel: 13,
                 management_frame_protection: ManagementFrameProtection::Disabled,
+                access_point_security: AccessPointSecurity::Wpa2Personal,
             },
             json!({}),
         );
@@ -186,6 +191,7 @@ fn restore_failure_is_not_a_successful_owner_release() {
             phy: PhyExpectation::He20,
             channel: 13,
             management_frame_protection: ManagementFrameProtection::Disabled,
+            access_point_security: AccessPointSecurity::Wpa2Personal,
         },
         json!({}),
     )
@@ -218,6 +224,7 @@ fn existing_ap_is_verified_without_mutation_even_on_stop_or_drop() {
             phy: PhyExpectation::He20,
             channel: 13,
             management_frame_protection: ManagementFrameProtection::Disabled,
+            access_point_security: AccessPointSecurity::Wpa2Personal,
         },
         json!({}),
     )
@@ -247,6 +254,7 @@ fn existing_ap_mismatch_never_falls_back_to_apply_or_restore() {
                     phy: PhyExpectation::Ht40,
                     channel: 13,
                     management_frame_protection: ManagementFrameProtection::Disabled,
+                    access_point_security: AccessPointSecurity::Wpa2Personal,
                 },
                 json!({})
             )
@@ -263,6 +271,7 @@ fn existing_generic_ht40_setting_still_requires_exact_active_geometry() {
         phy: PhyExpectation::Ht40,
         channel: 13,
         management_frame_protection: ManagementFrameProtection::Disabled,
+        access_point_security: AccessPointSecurity::Wpa2Personal,
     };
     let mut observed = observation(PhyExpectation::Ht40);
     observed.htmode = "HT40".into();
@@ -284,8 +293,37 @@ fn management_frame_protection_selects_the_openwrt_ieee80211w_option() {
         (ManagementFrameProtection::Optional, "1"),
         (ManagementFrameProtection::Required, "2"),
     ] {
-        let options = Profile::new(openwrt, PhyExpectation::Ht20, protection)
-            .options(openwrt, &config.station);
+        let options = Profile::new(
+            openwrt,
+            PhyExpectation::Ht20,
+            protection,
+            AccessPointSecurity::Wpa2Personal,
+        )
+        .options(openwrt, &config.station);
         assert_eq!(options[&openwrt.ap_section]["ieee80211w"], expected);
+    }
+}
+
+#[test]
+fn wpa3_security_selects_sae_and_management_frame_protection() {
+    let config = hil_core::lab::config::LabConfig::for_test();
+    let hil_core::lab::config::StationFixtureConfig::OpenWrt(openwrt) = &config.station_fixture
+    else {
+        panic!("OpenWrt test lab required");
+    };
+    for (security, encryption, ieee80211w) in [
+        (AccessPointSecurity::Wpa2Personal, "psk2", "0"),
+        (AccessPointSecurity::Wpa3Personal, "sae", "2"),
+        (AccessPointSecurity::Wpa3Transition, "sae-mixed", "1"),
+    ] {
+        let options = Profile::new(
+            openwrt,
+            PhyExpectation::Ht20,
+            ManagementFrameProtection::Disabled,
+            security,
+        )
+        .options(openwrt, &config.station);
+        assert_eq!(options[&openwrt.ap_section]["encryption"], encryption);
+        assert_eq!(options[&openwrt.ap_section]["ieee80211w"], ieee80211w);
     }
 }

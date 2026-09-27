@@ -39,6 +39,7 @@ fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
         let wifi = WifiLabUse {
             link,
             management_frame_protection: Default::default(),
+            access_point_security: Default::default(),
             access_point: true,
         };
         let resolved = lab.resolve(wifi);
@@ -63,6 +64,7 @@ fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
     let station = WifiLabUse {
         link: Some(PhyExpectation::He20),
         management_frame_protection: Default::default(),
+        access_point_security: Default::default(),
         access_point: false,
     };
     assert_eq!(

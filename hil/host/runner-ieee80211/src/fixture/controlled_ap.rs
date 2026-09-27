@@ -4,7 +4,7 @@ use crate::Result;
 use hil_core::{
     lab::config::StationConfig,
     lab::config::StationFixtureConfig,
-    lab::link::{ManagementFrameProtection, PhyExpectation},
+    lab::link::{AccessPointSecurity, ManagementFrameProtection, PhyExpectation},
 };
 
 /// Restores the selected AP frontier on every normal or error return.
@@ -20,12 +20,13 @@ impl ControlledAp {
         fixture: &StationFixtureConfig,
         phy: PhyExpectation,
         management_frame_protection: ManagementFrameProtection,
+        access_point_security: AccessPointSecurity,
     ) -> Result<Self> {
-        if management_frame_protection.negotiated()
+        if (management_frame_protection.negotiated() || access_point_security.offers_sae())
             && !matches!(fixture, StationFixtureConfig::OpenWrt(_))
         {
             return Err(crate::fixture::Error::new(
-                "management frame protection requires the OpenWrt station fixture",
+                "management frame protection and WPA3 require the OpenWrt station fixture",
             )
             .into());
         }
@@ -40,6 +41,7 @@ impl ControlledAp {
                     station,
                     phy,
                     management_frame_protection,
+                    access_point_security,
                 )
                 .map_err(super::Error::context)?,
             ))),

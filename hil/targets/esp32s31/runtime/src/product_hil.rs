@@ -1319,6 +1319,9 @@ async fn station_lifecycle_task(mut status: StationStatus) {
                                     management_protection,
                                 }
                             }
+                            oer_esp32s31_ieee80211_system::StationLinkSecurity::Wpa3Personal => {
+                                oer_hil_protocol::StationLinkSecurity::Wpa3Personal
+                            }
                         }
                             });
                     publish_station_lifecycle(StationLifecycleEvent::Connected {
@@ -1469,11 +1472,11 @@ fn station_request_with_preference(
     association_preference: Preference,
 ) -> StationRequest {
     let ssid = WifiSsid::new(ssid).expect("validated HIL SSID must fit the driver request");
-    let pmk = Pmk::derive(passphrase, ssid.as_bytes())
-        .expect("validated HIL WPA2 credentials must derive a PMK");
+    let security = StationSecurity::wpa2_personal(passphrase, ssid.as_bytes())
+        .expect("validated HIL personal credentials must derive a PMK");
     StationRequest::new(
         ssid,
-        StationSecurity::wpa2_personal(pmk),
+        security,
         StaReconnectPolicy::new(3, 100, 1_000, 100).expect("fixed HIL reconnect policy is valid"),
         StationScanPolicy::new(
             StationScanChannels::CHANNELS_1_TO_13,

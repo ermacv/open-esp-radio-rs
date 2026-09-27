@@ -69,6 +69,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                         config,
                         phy,
                         plan.wifi.management_frame_protection,
+                        plan.wifi.access_point_security,
                     ),
                 )
                 .map_err(hil_core::fixture::Error::context)?;

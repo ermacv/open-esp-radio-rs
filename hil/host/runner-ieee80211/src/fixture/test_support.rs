@@ -81,6 +81,7 @@ fn fixture_lifecycle_harness() {
             &lab.station_fixture,
             hil_core::lab::link::PhyExpectation::Ht40,
             hil_core::lab::link::ManagementFrameProtection::Disabled,
+            hil_core::lab::link::AccessPointSecurity::Wpa2Personal,
         )
         .err()
         .expect("injected fixture failure");

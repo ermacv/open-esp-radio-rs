@@ -13,7 +13,7 @@ use crate::Result;
 use hil_core::{
     lab::config::OpenWrtConfig,
     lab::config::StationConfig,
-    lab::link::{ManagementFrameProtection, PhyExpectation},
+    lab::link::{AccessPointSecurity, ManagementFrameProtection, PhyExpectation},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -32,6 +32,7 @@ pub struct Profile {
     pub phy: PhyExpectation,
     pub channel: u8,
     pub management_frame_protection: ManagementFrameProtection,
+    pub access_point_security: AccessPointSecurity,
 }
 
 impl Profile {
@@ -39,22 +40,38 @@ impl Profile {
         config: &OpenWrtConfig,
         phy: PhyExpectation,
         management_frame_protection: ManagementFrameProtection,
+        access_point_security: AccessPointSecurity,
     ) -> Self {
         Self {
             ht40_above: config.ht40_above,
             phy,
             channel: config.channel,
             management_frame_protection,
+            access_point_security,
+        }
+    }
+
+    /// The OpenWrt `encryption` option.
+    fn encryption(self) -> &'static str {
+        match self.access_point_security {
+            AccessPointSecurity::Wpa2Personal => "psk2",
+            AccessPointSecurity::Wpa3Personal => "sae",
+            AccessPointSecurity::Wpa3Transition => "sae-mixed",
         }
     }
 
     /// The OpenWrt `ieee80211w` option; with protection OpenWrt also offers
-    /// PSK-SHA256 beside PSK.
+    /// PSK-SHA256 beside PSK. WPA3 requires protection, and its transition
+    /// mode at least offers it.
     fn ieee80211w(self) -> &'static str {
-        match self.management_frame_protection {
-            ManagementFrameProtection::Disabled => "0",
-            ManagementFrameProtection::Optional => "1",
-            ManagementFrameProtection::Required => "2",
+        match (self.access_point_security, self.management_frame_protection) {
+            (AccessPointSecurity::Wpa3Personal, _) | (_, ManagementFrameProtection::Required) => {
+                "2"
+            }
+            (AccessPointSecurity::Wpa3Transition, _) | (_, ManagementFrameProtection::Optional) => {
+                "1"
+            }
+            (AccessPointSecurity::Wpa2Personal, ManagementFrameProtection::Disabled) => "0",
         }
     }
 
@@ -104,7 +121,7 @@ impl Profile {
         json!({
             &config.radio: {"channel": self.channel.to_string(), "htmode": self.htmode(), "disabled": "0"},
             &config.ap_section: {"mode": "ap", "ssid": ssid, "key": passphrase,
-                "encryption": "psk2", "wmm": "1", "ieee80211w": self.ieee80211w(), "disabled": "0", "hidden": "0", "ifname": config.wireless_interface}
+                "encryption": self.encryption(), "wmm": "1", "ieee80211w": self.ieee80211w(), "disabled": "0", "hidden": "0", "ifname": config.wireless_interface}
         })
     }
 }
@@ -156,8 +173,14 @@ impl AccessPoint {
         station: &StationConfig,
         phy: PhyExpectation,
         management_frame_protection: ManagementFrameProtection,
+        access_point_security: AccessPointSecurity,
     ) -> Result<Self> {
-        let profile = Profile::new(config, phy, management_frame_protection);
+        let profile = Profile::new(
+            config,
+            phy,
+            management_frame_protection,
+            access_point_security,
+        );
         probe(config, profile)?;
         if config.read_only {
             return Self::attach(

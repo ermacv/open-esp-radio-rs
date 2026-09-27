@@ -688,4 +688,6 @@ pub enum StationLinkSecurity {
         /// The association protects its robust management frames.
         management_protection: bool,
     },
+    /// SAE authenticated the association.
+    Wpa3Personal,
 }

@@ -466,8 +466,12 @@ pub(super) fn require_station_link(
         PhyExpectation::Ht40 => 40,
         PhyExpectation::Ht20 | PhyExpectation::He20 => 20,
     };
-    let expected_security = oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
-        management_protection: link.management_frame_protection.negotiated(),
+    let expected_security = if link.access_point_security.offers_sae() {
+        oer_hil_protocol::StationLinkSecurity::Wpa3Personal
+    } else {
+        oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+            management_protection: link.management_frame_protection.negotiated(),
+        }
     };
     if connected.association_bandwidth_mhz != Some(expected_bandwidth)
         || connected.security != Some(expected_security)

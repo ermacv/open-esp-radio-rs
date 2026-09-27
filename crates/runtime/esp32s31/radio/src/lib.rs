@@ -1,5 +1,5 @@
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 
 //! The shared ESP32-S31 radio on the chip, as ESP-IDF's `esp_phy` component.

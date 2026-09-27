@@ -322,6 +322,49 @@ fn divisible_work_is_asked_to_yield_only_while_it_blocks_a_waiter() {
 }
 
 #[test]
+fn divisible_work_within_its_budget_yields_only_to_brief_waiters() {
+    let directory = tempfile::tempdir().unwrap();
+    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let mut grant = arbiter
+        .acquire_within(
+            &Request {
+                budget: Some(Duration::from_secs(600)),
+                ..on_board("esp32s31", request("phy", "long series"))
+            },
+            None,
+        )
+        .unwrap();
+    grant.supervise_self(true);
+    let (child, identity) = other_process();
+    // A long request on the same board waits for the series' budget.
+    queue(
+        &arbiter,
+        Ticket {
+            budget_secs: 1800,
+            ..ticket(60, "wifi", identity, vec![Claim::board("esp32s31")])
+        },
+    );
+    std::thread::sleep(Duration::from_secs(6));
+    assert!(grant.blocks_waiters());
+    assert!(
+        !grant.yield_requested(),
+        "a long waiter waits for the budget"
+    );
+    // A brief one is let in at the next boundary.
+    arbiter
+        .transaction(|state| {
+            state.queue[0].budget_secs = 180;
+            Ok(())
+        })
+        .unwrap();
+    std::thread::sleep(Duration::from_secs(6));
+    assert!(grant.yield_requested());
+    grant.mark_yielded();
+    drop(grant);
+    stop(child);
+}
+
+#[test]
 fn status_and_board_report_the_latest_state() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();

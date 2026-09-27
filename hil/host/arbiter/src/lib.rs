@@ -27,7 +27,9 @@ mod status;
 mod store;
 
 pub use board::{BoardEvent, BoardEventKind};
-pub use budget::{BudgetSource, DEFAULT_BUDGET, MAX_SHORT_BUDGET, format_duration, parse_duration};
+pub use budget::{
+    BRIEF_BUDGET, BudgetSource, DEFAULT_BUDGET, MAX_SHORT_BUDGET, format_duration, parse_duration,
+};
 pub use devices::{
     AttachedPort, Device, attached_ports, board_mac, device_label, normalize_mac, port_mac,
 };

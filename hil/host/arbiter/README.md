@@ -18,7 +18,9 @@ journal.
   `OER_HIL_LEASE`, joins it without waiting when the lease covers its claims;
   a token of an ended lease or a claim outside the lease is an error.
 - `Grant` releases the lease on drop and records it in the history with its
-  outcome. `supervise_self` makes the holder its own watchdog: past its budget,
+  outcome. `supervise_self` makes the holder its own watchdog: within its
+  budget, divisible work sees `yield_requested` when a waiting ticket with a
+  budget of at most five minutes (`BRIEF_BUDGET`) conflicts with it; past its budget,
   while a waiting ticket conflicts with it, divisible work sees
   `yield_requested` and yields at its next boundary; indivisible work receives
   `SIGTERM`. At twice the budget it receives `SIGTERM` regardless. `cargo hil

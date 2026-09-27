@@ -43,6 +43,20 @@ pub(crate) fn blocks_waiters(state: &State, id: u64) -> bool {
         })
 }
 
+/// Whether a waiting ticket of at most `brief_secs` conflicts with the claims
+/// of holder `id`.
+pub(crate) fn blocks_brief_waiters(state: &State, id: u64, brief_secs: u64) -> bool {
+    state
+        .holders
+        .iter()
+        .find(|holder| holder.ticket.id == id)
+        .is_some_and(|holder| {
+            state.queue.iter().any(|ticket| {
+                ticket.budget_secs <= brief_secs && conflict(&ticket.claims, &holder.ticket.claims)
+            })
+        })
+}
+
 /// Earlier conflicting tickets and the expected wait in seconds of every
 /// queued ticket, assuming every lease uses its budget.
 pub(crate) fn expected_starts(state: &State, now: u64) -> Vec<(u64, usize, u64)> {

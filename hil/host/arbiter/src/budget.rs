@@ -10,6 +10,9 @@ use crate::history::{LeaseOutcome, LeaseRecord};
 pub const DEFAULT_BUDGET: Duration = Duration::from_secs(15 * 60);
 /// Largest budget a short request may declare to be granted ahead of the head.
 pub const MAX_SHORT_BUDGET: Duration = Duration::from_secs(2 * 60);
+/// Largest budget of a brief request: divisible work yields to it at its next
+/// boundary even before its own budget is used.
+pub const BRIEF_BUDGET: Duration = Duration::from_secs(5 * 60);
 /// Completed leases of the same work considered by the estimate.
 const HISTORY_SAMPLES: usize = 5;
 const MIN_ESTIMATE: u64 = 60;

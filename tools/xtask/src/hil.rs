@@ -152,7 +152,10 @@ Leases on different boards run in parallel. Choose a budget you expect to
 use: once it is spent and a waiting request needs the same resources, a run
 of several scenarios yields after its current scenario and queues again, and
 a single scenario or lease command is stopped (lease exit status 75). At
-twice the budget work is stopped regardless (lease exit status 124).
+twice the budget work is stopped regardless (lease exit status 124). A run of
+several scenarios also yields after its current scenario, within its budget,
+to a waiting request with a budget of at most 5m, so brief work is let in
+between the steps of long series.
 Scenarios tagged `air-exclusive` claim the air exclusively.
 
 Runner commands (`cargo hil run A B C` runs several scenarios under one lease):";

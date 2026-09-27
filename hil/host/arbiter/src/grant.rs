@@ -34,6 +34,8 @@ pub const SHORT_ENV: &str = "OER_HIL_SHORT";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(300);
 /// How often an over-budget holder looks for requests it blocks.
 const WAITER_CHECK: Duration = Duration::from_millis(500);
+/// How often divisible work within its budget looks for brief requests.
+const BRIEF_CHECK: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(500);
 /// Waits shorter than this do not notify the user when granted.
 const NOTIFY_AFTER_WAIT: Duration = Duration::from_secs(30);
@@ -479,8 +481,11 @@ impl Grant {
         }
     }
 
-    /// Supervise this process. At its budget the lease is reported; from then
-    /// on, while a waiting request needs its resources, divisible work is
+    /// Supervise this process. Within its budget, divisible work is asked to
+    /// yield at its next boundary when a brief request (a budget of at most
+    /// [`budget::BRIEF_BUDGET`]) needs its resources. At its budget the lease
+    /// is reported; from then on, while a waiting request needs its
+    /// resources, divisible work is
     /// asked to yield at its next boundary ([`Self::yield_requested`]) and
     /// indivisible work receives `SIGTERM` (its ordinary cancellation and
     /// cleanup). At twice the budget the process receives `SIGTERM`
@@ -511,8 +516,35 @@ impl Grant {
                     signal_self(rustix::process::Signal::KILL);
                 }
             };
-            if !wait(budget) {
-                return;
+            // Within its budget, divisible work yields at its next boundary
+            // to a brief request that needs its resources.
+            let over = Instant::now() + budget;
+            loop {
+                let now = Instant::now();
+                if now >= over {
+                    break;
+                }
+                if divisible
+                    && !ending.yield_requested.load(Ordering::Relaxed)
+                    && arbiter
+                        .transaction(|state| {
+                            Ok(queue::blocks_brief_waiters(
+                                state,
+                                id,
+                                budget::BRIEF_BUDGET.as_secs(),
+                            ))
+                        })
+                        .unwrap_or(false)
+                {
+                    ending.yield_requested.store(true, Ordering::Relaxed);
+                    eprintln!(
+                        "hil-arbiter: lease #{id} of {owner} yields to a brief waiting request \
+                         after the current step"
+                    );
+                }
+                if !wait(BRIEF_CHECK.min(over - now)) {
+                    return;
+                }
             }
             over_budget(&arbiter, id, &owner, &work, budget);
             let ceiling = Instant::now() + budget;

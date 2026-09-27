@@ -163,7 +163,10 @@ the same run bundle after flashing its image again. A single scenario and a
 runs the ordinary cancellation and fixture cleanup, and a `lease` stopped
 this way exits with status 75. While nobody waits, over-budget work
 continues; at twice its budget it is stopped regardless (`lease` exit status
-124), and `SIGKILL` follows five minutes after `SIGTERM`.
+124), and `SIGKILL` follows five minutes after `SIGTERM`. A run of several
+scenarios also gives way within its budget, at its next scenario boundary, to
+a waiting request of at most five minutes that needs its resources, so brief
+work runs between the steps of long series instead of after them.
 `cargo xtask build firmware --flash --monitor` holds a lease without a budget
 watchdog for its interactive monitor. A top-level run records its evidence
 shards after its lease is released. `cargo hil doctor` reports conflicting

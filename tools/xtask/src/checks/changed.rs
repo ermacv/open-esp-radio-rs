@@ -139,6 +139,9 @@ fn workspace_of(
 }
 
 pub fn run(ctx: &Context, base: &str) -> Result<()> {
+    if let Err(error) = crate::sweep::automatically(&ctx.root) {
+        eprintln!("check changed: the daily cache sweep failed: {error}");
+    }
     let changed = changed_files(ctx, base)?;
     let root_manifest = ctx.root.join("Cargo.toml");
     let metadata = cargo::metadata_no_deps(ctx, &root_manifest)?;

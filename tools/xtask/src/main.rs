@@ -100,6 +100,15 @@ enum Task {
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
+    /// List, or with --apply remove, rebuildable build caches unused for a
+    /// while (incremental data, HIL image caches); running builds are skipped.
+    Sweep {
+        /// Every sibling open-esp-radio-rs checkout, not only this one.
+        #[arg(long)]
+        all_checkouts: bool,
+        #[arg(long)]
+        apply: bool,
+    },
     Check {
         #[command(subcommand)]
         check: Check,
@@ -219,6 +228,17 @@ fn run() -> Result<std::process::ExitCode> {
             baseline,
         } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline),
         Task::Doc => oer_xtask::doc::run(&ctx),
+        Task::Sweep {
+            all_checkouts,
+            apply,
+        } => {
+            let roots = if all_checkouts {
+                oer_xtask::sweep::checkouts(&ctx.root)
+            } else {
+                vec![ctx.root.clone()]
+            };
+            oer_xtask::sweep::run(&roots, oer_xtask::sweep::Policy::default(), apply).map(|_| ())
+        }
         Task::Check { check } => match check {
             Check::Changed { base } => checks::changed::run(&ctx, &base),
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),

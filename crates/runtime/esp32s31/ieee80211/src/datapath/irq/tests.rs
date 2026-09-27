@@ -184,7 +184,7 @@ fn irq_epoch_recovers_setup_before_draining_every_executor_wake() {
     mac.publish(EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
     mac.notify_rx_capacity();
     let power_observation =
-        MacPowerInterruptObservation::from_semantic_events(true, false, true, false, true);
+        MacPowerInterruptObservation::from_semantic_events(true, false, true, false, true, true);
     power.publish(power_observation);
 
     let drained = epoch.quiesce(&platform).unwrap();
@@ -487,7 +487,8 @@ impl MacPowerInterrupt for PowerInterrupt {
 
 #[test]
 fn power_irq_retains_semantic_causes_without_register_images() {
-    let status = MacPowerInterruptObservation::from_semantic_events(false, true, false, true, true);
+    let status =
+        MacPowerInterruptObservation::from_semantic_events(false, true, false, true, false, true);
     let mut interrupt = PowerInterrupt {
         status,
         acknowledged: Cell::new(false),

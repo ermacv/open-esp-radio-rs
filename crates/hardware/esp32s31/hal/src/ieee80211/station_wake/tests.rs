@@ -36,3 +36,17 @@ fn station_tbtt_prefix_admits_one_outstanding_obligation() {
     );
     assert_eq!(state.require_tbtt_prepared(), Ok(()));
 }
+
+#[test]
+fn a_running_tbtt_schedule_excludes_the_wake_prefix() {
+    let mut state = StationWakeState {
+        tbtt_scheduled: true,
+        ..StationWakeState::default()
+    };
+    assert_eq!(
+        state.require_tbtt_idle(),
+        Err(StaTbttWakePrepareError::ScheduleRunning)
+    );
+    state.tbtt_scheduled = false;
+    assert_eq!(state.require_tbtt_idle(), Ok(()));
+}

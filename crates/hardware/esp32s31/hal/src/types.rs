@@ -38,7 +38,8 @@ pub use oer_esp32s31_pac::{
     PbusMemoryGroupBoundary, PhyAdcRate, PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
     PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot, StaBeaconMissLimit,
     StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig, StaModemWakeRestore,
-    StaTbttAutoPeriod, StaTbttWakeRestore, StaWakeProtectEarlyTimeRaw, TxBlockAckPayload,
+    StaTbttAutoPeriod, StaTbttSchedule, StaTbttWakeRestore, StaWakeProtectEarlyTimeRaw,
+    TxBlockAckPayload,
 };
 
 pub use crate::phy::restore::{
@@ -50,5 +51,6 @@ pub use crate::phy::restore::{
 
 pub use crate::ieee80211::station_wake::{
     StaModemWakePrepareError, StaModemWakeRestoreError, StaModemWakeRestoreFailure,
-    StaTbttWakePrepareError, StaTbttWakeRestoreError, StaTbttWakeRestoreFailure,
+    StaTbttScheduleError, StaTbttWakePrepareError, StaTbttWakeRestoreError,
+    StaTbttWakeRestoreFailure,
 };

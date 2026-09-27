@@ -8,7 +8,8 @@ use oer_esp32s31_ieee80211_mac::irq::PowerIrqSink;
 
 /// Embassy handoff for acknowledged DATAPATHPWR snapshots.
 ///
-/// The PAC decodes the reviewed TSF-timer fields before this boundary. Unknown
+/// The PAC decodes the reviewed TSF-timer and station TBTT fields before
+/// this boundary. Unknown
 /// fields remain one semantic flag and never escape as a register image.
 pub struct EmbassyPowerIrqRuntime<M: RawMutex> {
     signal: Signal<M, ()>,
@@ -16,6 +17,7 @@ pub struct EmbassyPowerIrqRuntime<M: RawMutex> {
     tsf_timer_1: AtomicBool,
     tsf_timer_2: AtomicBool,
     tsf_timer_3: AtomicBool,
+    sta_tbtt: AtomicBool,
     unhandled_event: AtomicBool,
 }
 
@@ -27,6 +29,7 @@ impl<M: RawMutex> EmbassyPowerIrqRuntime<M> {
             tsf_timer_1: AtomicBool::new(false),
             tsf_timer_2: AtomicBool::new(false),
             tsf_timer_3: AtomicBool::new(false),
+            sta_tbtt: AtomicBool::new(false),
             unhandled_event: AtomicBool::new(false),
         }
     }
@@ -41,6 +44,8 @@ impl<M: RawMutex> EmbassyPowerIrqRuntime<M> {
             .fetch_or(observation.tsf_timer_2(), Ordering::Release);
         self.tsf_timer_3
             .fetch_or(observation.tsf_timer_3(), Ordering::Release);
+        self.sta_tbtt
+            .fetch_or(observation.sta_tbtt(), Ordering::Release);
         self.unhandled_event
             .fetch_or(observation.has_unhandled_event(), Ordering::Release);
         self.signal.signal(());
@@ -52,6 +57,7 @@ impl<M: RawMutex> EmbassyPowerIrqRuntime<M> {
             self.tsf_timer_1.swap(false, Ordering::Acquire),
             self.tsf_timer_2.swap(false, Ordering::Acquire),
             self.tsf_timer_3.swap(false, Ordering::Acquire),
+            self.sta_tbtt.swap(false, Ordering::Acquire),
             self.unhandled_event.swap(false, Ordering::Acquire),
         )
     }

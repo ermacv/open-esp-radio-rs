@@ -224,7 +224,7 @@ pub use wifi::mac::{
             MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
         },
     },
-    tsf::{StaTbttWakeGateBaselineUnsupported, StaTbttWakeRestore},
+    tsf::{StaTbttSchedule, StaTbttWakeGateBaselineUnsupported, StaTbttWakeRestore},
     tx::{
         MacHeFecCoding, MacHeGuardIntervalAndLtf, MacHeMcs, MacHeRate, MacHeTxFormat,
         MacHeTxParameters, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtChannelWidth,

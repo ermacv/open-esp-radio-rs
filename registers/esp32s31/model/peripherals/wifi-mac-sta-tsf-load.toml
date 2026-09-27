@@ -32,6 +32,12 @@ description = "SoftAP TSF load request asserted after the two zero-value writes 
 bitOffset = 5
 bitWidth = 1
 
+[[peripherals.registers.register.fields]]
+name = "LOAD_STATION_TBTT_TARGET"
+description = "Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."
+bitOffset = 8
+bitWidth = 1
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -135,6 +141,7 @@ entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL"
 sources = [
     "BLOB_LIBPP_HAL_TSF",
     "ROM_REV0_HAL_GET_STA_TSF",
+    "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -213,6 +220,13 @@ completeness = "complete"
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION_SYNC_ENABLE"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_STATION_TBTT_TARGET"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

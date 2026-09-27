@@ -26943,6 +26943,10 @@ pub mod wifi_mac_sta_tsf_load {
         pub type LoadSoftapTsfR = crate::BitReader;
         #[doc = "Field `LOAD_SOFTAP_TSF` writer - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
         pub type LoadSoftapTsfW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LOAD_STATION_TBTT_TARGET` reader - Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
+        pub type LoadStationTbttTargetR = crate::BitReader;
+        #[doc = "Field `LOAD_STATION_TBTT_TARGET` writer - Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
+        pub type LoadStationTbttTargetW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 0 - Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
             #[inline(always)]
@@ -26958,6 +26962,11 @@ pub mod wifi_mac_sta_tsf_load {
             #[inline(always)]
             pub fn load_softap_tsf(&self) -> LoadSoftapTsfR {
                 LoadSoftapTsfR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 8 - Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
+            #[inline(always)]
+            pub fn load_station_tbtt_target(&self) -> LoadStationTbttTargetR {
+                LoadStationTbttTargetR::new(((self.bits >> 8) & 1) != 0)
             }
         }
         impl W {
@@ -26975,6 +26984,11 @@ pub mod wifi_mac_sta_tsf_load {
             #[inline(always)]
             pub fn load_softap_tsf(&mut self) -> LoadSoftapTsfW<'_, ControlSpec> {
                 LoadSoftapTsfW::new(self, 5)
+            }
+            #[doc = "Bit 8 - Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
+            #[inline(always)]
+            pub fn load_station_tbtt_target(&mut self) -> LoadStationTbttTargetW<'_, ControlSpec> {
+                LoadStationTbttTargetW::new(self, 8)
             }
         }
         #[doc = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -27218,12 +27232,12 @@ pub mod wifi_mac_rtc_timer_update {
         pub const fn rx_beacon_time_low(&self) -> &RxBeaconTimeLow {
             &self.rx_beacon_time_low
         }
-        #[doc = "0x28 - Shared STA TSF scheduler and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves."]
+        #[doc = "0x28 - Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves."]
         #[inline(always)]
         pub const fn sta_tsf_control(&self) -> &StaTsfControl {
             &self.sta_tsf_control
         }
-        #[doc = "0x2c - Complete hal_set_sta_tbtt_interval replaces the low 22 bits from argument bits 31:10. Complete hal_set_sta_tbtt performs the same update from its third argument."]
+        #[doc = "0x2c - Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."]
         #[inline(always)]
         pub const fn sta_tbtt_interval(&self) -> &StaTbttInterval {
             &self.sta_tbtt_interval
@@ -27543,7 +27557,7 @@ pub mod wifi_mac_rtc_timer_update {
         #[doc = "Field `TIME` reader - "]
         pub type TimeR = crate::FieldReader<u16>;
         #[doc = "Field `TIME` writer - "]
-        pub type TimeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type TimeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 16:31"]
             #[inline(always)]
@@ -27649,15 +27663,19 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STA_TSF_CONTROL (rw) register accessor: Shared STA TSF scheduler and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tsf_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tsf_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_tsf_control`] module"]
+    #[doc = "STA_TSF_CONTROL (rw) register accessor: Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tsf_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tsf_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_tsf_control`] module"]
     #[doc(alias = "STA_TSF_CONTROL")]
     pub type StaTsfControl = crate::Reg<sta_tsf_control::StaTsfControlSpec>;
-    #[doc = "Shared STA TSF scheduler and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves."]
+    #[doc = "Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves."]
     pub mod sta_tsf_control {
         #[doc = "Register `STA_TSF_CONTROL` reader"]
         pub type R = crate::R<StaTsfControlSpec>;
         #[doc = "Register `STA_TSF_CONTROL` writer"]
         pub type W = crate::W<StaTsfControlSpec>;
+        #[doc = "Field `STA_TBTT_AHEAD_TIME` reader - hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."]
+        pub type StaTbttAheadTimeR = crate::FieldReader<u16>;
+        #[doc = "Field `STA_TBTT_AHEAD_TIME` writer - hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."]
+        pub type StaTbttAheadTimeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(u8)]
@@ -27722,6 +27740,10 @@ pub mod wifi_mac_rtc_timer_update {
         pub type ModemStateWakeupProtectEnableR = crate::BitReader;
         #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` writer - pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
         pub type ModemStateWakeupProtectEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STA_TBTT_ENABLE` reader - hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
+        pub type StaTbttEnableR = crate::BitReader;
+        #[doc = "Field `STA_TBTT_ENABLE` writer - hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
+        pub type StaTbttEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `STA_TSF_ENABLE_LOW` reader - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
         pub type StaTsfEnableLowR = crate::BitReader;
         #[doc = "Field `STA_TSF_ENABLE_LOW` writer - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
@@ -27735,6 +27757,11 @@ pub mod wifi_mac_rtc_timer_update {
         #[doc = "Field `STA_TSF_ENABLE_HIGH` writer - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
         pub type StaTsfEnableHighW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bits 0:15 - hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."]
+            #[inline(always)]
+            pub fn sta_tbtt_ahead_time(&self) -> StaTbttAheadTimeR {
+                StaTbttAheadTimeR::new((self.bits & 0xffff) as u16)
+            }
             #[doc = "Bits 19:22 - hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
             #[inline(always)]
             pub fn sta_tsf_mode(&self) -> StaTsfModeR {
@@ -27744,6 +27771,11 @@ pub mod wifi_mac_rtc_timer_update {
             #[inline(always)]
             pub fn modem_state_wakeup_protect_enable(&self) -> ModemStateWakeupProtectEnableR {
                 ModemStateWakeupProtectEnableR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 26 - hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
+            #[inline(always)]
+            pub fn sta_tbtt_enable(&self) -> StaTbttEnableR {
+                StaTbttEnableR::new(((self.bits >> 26) & 1) != 0)
             }
             #[doc = "Bit 27 - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
             #[inline(always)]
@@ -27762,6 +27794,11 @@ pub mod wifi_mac_rtc_timer_update {
             }
         }
         impl W {
+            #[doc = "Bits 0:15 - hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."]
+            #[inline(always)]
+            pub fn sta_tbtt_ahead_time(&mut self) -> StaTbttAheadTimeW<'_, StaTsfControlSpec> {
+                StaTbttAheadTimeW::new(self, 0)
+            }
             #[doc = "Bits 19:22 - hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
             #[inline(always)]
             pub fn sta_tsf_mode(&mut self) -> StaTsfModeW<'_, StaTsfControlSpec> {
@@ -27773,6 +27810,11 @@ pub mod wifi_mac_rtc_timer_update {
                 &mut self,
             ) -> ModemStateWakeupProtectEnableW<'_, StaTsfControlSpec> {
                 ModemStateWakeupProtectEnableW::new(self, 24)
+            }
+            #[doc = "Bit 26 - hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
+            #[inline(always)]
+            pub fn sta_tbtt_enable(&mut self) -> StaTbttEnableW<'_, StaTsfControlSpec> {
+                StaTbttEnableW::new(self, 26)
             }
             #[doc = "Bit 27 - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
             #[inline(always)]
@@ -27790,7 +27832,7 @@ pub mod wifi_mac_rtc_timer_update {
                 StaTsfEnableHighW::new(self, 31)
             }
         }
-        #[doc = "Shared STA TSF scheduler and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tsf_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tsf_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tsf_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tsf_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct StaTsfControlSpec;
         impl crate::RegisterSpec for StaTsfControlSpec {
             type Ux = u32;
@@ -27802,34 +27844,36 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STA_TBTT_INTERVAL (rw) register accessor: Complete hal_set_sta_tbtt_interval replaces the low 22 bits from argument bits 31:10. Complete hal_set_sta_tbtt performs the same update from its third argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_tbtt_interval`] module"]
+    #[doc = "STA_TBTT_INTERVAL (rw) register accessor: Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_tbtt_interval`] module"]
     #[doc(alias = "STA_TBTT_INTERVAL")]
     pub type StaTbttInterval = crate::Reg<sta_tbtt_interval::StaTbttIntervalSpec>;
-    #[doc = "Complete hal_set_sta_tbtt_interval replaces the low 22 bits from argument bits 31:10. Complete hal_set_sta_tbtt performs the same update from its third argument."]
+    #[doc = "Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."]
     pub mod sta_tbtt_interval {
         #[doc = "Register `STA_TBTT_INTERVAL` reader"]
         pub type R = crate::R<StaTbttIntervalSpec>;
         #[doc = "Register `STA_TBTT_INTERVAL` writer"]
         pub type W = crate::W<StaTbttIntervalSpec>;
-        #[doc = "Field `INTERVAL_BITS_31_10` reader - "]
-        pub type IntervalBits31_10R = crate::FieldReader<u32>;
-        #[doc = "Field `INTERVAL_BITS_31_10` writer - "]
-        pub type IntervalBits31_10W<'a, REG> = crate::FieldWriter<'a, REG, 22, u32>;
+        #[doc = "Field `INTERVAL_TSF_BITS_35_10` reader - The TBTT interval in station TSF units of 1024 µs."]
+        pub type IntervalTsfBits35_10R = crate::FieldReader<u32>;
+        #[doc = "Field `INTERVAL_TSF_BITS_35_10` writer - The TBTT interval in station TSF units of 1024 µs."]
+        pub type IntervalTsfBits35_10W<'a, REG> = crate::FieldWriter<'a, REG, 26, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:21"]
+            #[doc = "Bits 0:25 - The TBTT interval in station TSF units of 1024 µs."]
             #[inline(always)]
-            pub fn interval_bits_31_10(&self) -> IntervalBits31_10R {
-                IntervalBits31_10R::new(self.bits & 0x003f_ffff)
+            pub fn interval_tsf_bits_35_10(&self) -> IntervalTsfBits35_10R {
+                IntervalTsfBits35_10R::new(self.bits & 0x03ff_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:21"]
+            #[doc = "Bits 0:25 - The TBTT interval in station TSF units of 1024 µs."]
             #[inline(always)]
-            pub fn interval_bits_31_10(&mut self) -> IntervalBits31_10W<'_, StaTbttIntervalSpec> {
-                IntervalBits31_10W::new(self, 0)
+            pub fn interval_tsf_bits_35_10(
+                &mut self,
+            ) -> IntervalTsfBits35_10W<'_, StaTbttIntervalSpec> {
+                IntervalTsfBits35_10W::new(self, 0)
             }
         }
-        #[doc = "Complete hal_set_sta_tbtt_interval replaces the low 22 bits from argument bits 31:10. Complete hal_set_sta_tbtt performs the same update from its third argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct StaTbttIntervalSpec;
         impl crate::RegisterSpec for StaTbttIntervalSpec {
             type Ux = u32;
@@ -31554,7 +31598,7 @@ pub mod wifi_mac_power_interrupt {
         clear: Clear,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4."]
+        #[doc = "0x00 - WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0."]
         #[inline(always)]
         pub const fn enable(&self) -> &Enable {
             &self.enable
@@ -31575,19 +31619,31 @@ pub mod wifi_mac_power_interrupt {
             &self.clear
         }
     }
-    #[doc = "ENABLE (rw) register accessor: WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
+    #[doc = "ENABLE (rw) register accessor: WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
     #[doc(alias = "ENABLE")]
     pub type Enable = crate::Reg<enable::EnableSpec>;
-    #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4."]
+    #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0."]
     pub mod enable {
         #[doc = "Register `ENABLE` reader"]
         pub type R = crate::R<EnableSpec>;
         #[doc = "Register `ENABLE` writer"]
         pub type W = crate::W<EnableSpec>;
-        #[doc = "Field `UNKNOWN_0_3` reader - Enable bits whose event identities remain unknown."]
-        pub type Unknown0_3R = crate::FieldReader;
-        #[doc = "Field `UNKNOWN_0_3` writer - Enable bits whose event identities remain unknown."]
-        pub type Unknown0_3W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `TBTT_3` reader - Enable the TSF-3 TBTT event."]
+        pub type Tbtt3R = crate::BitReader;
+        #[doc = "Field `TBTT_3` writer - Enable the TSF-3 TBTT event."]
+        pub type Tbtt3W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TBTT_2` reader - Enable the TSF-2 TBTT event."]
+        pub type Tbtt2R = crate::BitReader;
+        #[doc = "Field `TBTT_2` writer - Enable the TSF-2 TBTT event."]
+        pub type Tbtt2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TBTT_1` reader - Enable the TSF-1 TBTT event."]
+        pub type Tbtt1R = crate::BitReader;
+        #[doc = "Field `TBTT_1` writer - Enable the TSF-1 TBTT event."]
+        pub type Tbtt1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TBTT_0` reader - Enable the TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0R = crate::BitReader;
+        #[doc = "Field `TBTT_0` writer - Enable the TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `TSF_TIMER_3` reader - Enable the guarded TSF timer-three event."]
         pub type TsfTimer3R = crate::BitReader;
         #[doc = "Field `TSF_TIMER_3` writer - Enable the guarded TSF timer-three event."]
@@ -31609,10 +31665,25 @@ pub mod wifi_mac_power_interrupt {
         #[doc = "Field `UNKNOWN_8_31` writer - Enable bits whose event identities remain unknown."]
         pub type Unknown8_31W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:3 - Enable bits whose event identities remain unknown."]
+            #[doc = "Bit 0 - Enable the TSF-3 TBTT event."]
             #[inline(always)]
-            pub fn unknown_0_3(&self) -> Unknown0_3R {
-                Unknown0_3R::new((self.bits & 0x0f) as u8)
+            pub fn tbtt_3(&self) -> Tbtt3R {
+                Tbtt3R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Enable the TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&self) -> Tbtt2R {
+                Tbtt2R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Enable the TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&self) -> Tbtt1R {
+                Tbtt1R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Enable the TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&self) -> Tbtt0R {
+                Tbtt0R::new(((self.bits >> 3) & 1) != 0)
             }
             #[doc = "Bit 4 - Enable the guarded TSF timer-three event."]
             #[inline(always)]
@@ -31641,10 +31712,25 @@ pub mod wifi_mac_power_interrupt {
             }
         }
         impl W {
-            #[doc = "Bits 0:3 - Enable bits whose event identities remain unknown."]
+            #[doc = "Bit 0 - Enable the TSF-3 TBTT event."]
             #[inline(always)]
-            pub fn unknown_0_3(&mut self) -> Unknown0_3W<'_, EnableSpec> {
-                Unknown0_3W::new(self, 0)
+            pub fn tbtt_3(&mut self) -> Tbtt3W<'_, EnableSpec> {
+                Tbtt3W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Enable the TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&mut self) -> Tbtt2W<'_, EnableSpec> {
+                Tbtt2W::new(self, 1)
+            }
+            #[doc = "Bit 2 - Enable the TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&mut self) -> Tbtt1W<'_, EnableSpec> {
+                Tbtt1W::new(self, 2)
+            }
+            #[doc = "Bit 3 - Enable the TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&mut self) -> Tbtt0W<'_, EnableSpec> {
+                Tbtt0W::new(self, 3)
             }
             #[doc = "Bit 4 - Enable the guarded TSF timer-three event."]
             #[inline(always)]
@@ -31672,7 +31758,7 @@ pub mod wifi_mac_power_interrupt {
                 Unknown8_31W::new(self, 8)
             }
         }
-        #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EnableSpec;
         impl crate::RegisterSpec for EnableSpec {
             type Ux = u32;
@@ -31691,8 +31777,14 @@ pub mod wifi_mac_power_interrupt {
     pub mod raw {
         #[doc = "Register `RAW` reader"]
         pub type R = crate::R<RawSpec>;
-        #[doc = "Field `UNKNOWN_0_3` reader - Raw event bits whose identities remain unknown."]
-        pub type Unknown0_3R = crate::FieldReader;
+        #[doc = "Field `TBTT_3` reader - Raw TSF-3 TBTT event."]
+        pub type Tbtt3R = crate::BitReader;
+        #[doc = "Field `TBTT_2` reader - Raw TSF-2 TBTT event."]
+        pub type Tbtt2R = crate::BitReader;
+        #[doc = "Field `TBTT_1` reader - Raw TSF-1 TBTT event."]
+        pub type Tbtt1R = crate::BitReader;
+        #[doc = "Field `TBTT_0` reader - Raw TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0R = crate::BitReader;
         #[doc = "Field `TSF_TIMER_3` reader - Raw guarded TSF timer-three event."]
         pub type TsfTimer3R = crate::BitReader;
         #[doc = "Field `TSF_TIMER_2` reader - Raw guarded TSF timer-two event."]
@@ -31704,10 +31796,25 @@ pub mod wifi_mac_power_interrupt {
         #[doc = "Field `UNKNOWN_8_31` reader - Raw event bits whose identities remain unknown."]
         pub type Unknown8_31R = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:3 - Raw event bits whose identities remain unknown."]
+            #[doc = "Bit 0 - Raw TSF-3 TBTT event."]
             #[inline(always)]
-            pub fn unknown_0_3(&self) -> Unknown0_3R {
-                Unknown0_3R::new((self.bits & 0x0f) as u8)
+            pub fn tbtt_3(&self) -> Tbtt3R {
+                Tbtt3R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Raw TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&self) -> Tbtt2R {
+                Tbtt2R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Raw TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&self) -> Tbtt1R {
+                Tbtt1R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Raw TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&self) -> Tbtt0R {
+                Tbtt0R::new(((self.bits >> 3) & 1) != 0)
             }
             #[doc = "Bit 4 - Raw guarded TSF timer-three event."]
             #[inline(always)]
@@ -31750,8 +31857,14 @@ pub mod wifi_mac_power_interrupt {
     pub mod status {
         #[doc = "Register `STATUS` reader"]
         pub type R = crate::R<StatusSpec>;
-        #[doc = "Field `UNKNOWN_0_3` reader - Masked event bits whose identities remain unknown."]
-        pub type Unknown0_3R = crate::FieldReader;
+        #[doc = "Field `TBTT_3` reader - Masked TSF-3 TBTT event."]
+        pub type Tbtt3R = crate::BitReader;
+        #[doc = "Field `TBTT_2` reader - Masked TSF-2 TBTT event."]
+        pub type Tbtt2R = crate::BitReader;
+        #[doc = "Field `TBTT_1` reader - Masked TSF-1 TBTT event."]
+        pub type Tbtt1R = crate::BitReader;
+        #[doc = "Field `TBTT_0` reader - Masked TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0R = crate::BitReader;
         #[doc = "Field `TSF_TIMER_3` reader - Masked guarded TSF timer-three event."]
         pub type TsfTimer3R = crate::BitReader;
         #[doc = "Field `TSF_TIMER_2` reader - Masked guarded TSF timer-two event."]
@@ -31763,10 +31876,25 @@ pub mod wifi_mac_power_interrupt {
         #[doc = "Field `UNKNOWN_8_31` reader - Masked event bits whose identities remain unknown."]
         pub type Unknown8_31R = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:3 - Masked event bits whose identities remain unknown."]
+            #[doc = "Bit 0 - Masked TSF-3 TBTT event."]
             #[inline(always)]
-            pub fn unknown_0_3(&self) -> Unknown0_3R {
-                Unknown0_3R::new((self.bits & 0x0f) as u8)
+            pub fn tbtt_3(&self) -> Tbtt3R {
+                Tbtt3R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Masked TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&self) -> Tbtt2R {
+                Tbtt2R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Masked TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&self) -> Tbtt1R {
+                Tbtt1R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Masked TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&self) -> Tbtt0R {
+                Tbtt0R::new(((self.bits >> 3) & 1) != 0)
             }
             #[doc = "Bit 4 - Masked guarded TSF timer-three event."]
             #[inline(always)]
@@ -31811,10 +31939,22 @@ pub mod wifi_mac_power_interrupt {
         pub type R = crate::R<ClearSpec>;
         #[doc = "Register `CLEAR` writer"]
         pub type W = crate::W<ClearSpec>;
-        #[doc = "Field `UNKNOWN_0_3` reader - Acknowledge event bits whose identities remain unknown."]
-        pub type Unknown0_3R = crate::FieldReader;
-        #[doc = "Field `UNKNOWN_0_3` writer - Acknowledge event bits whose identities remain unknown."]
-        pub type Unknown0_3W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `TBTT_3` reader - Acknowledge the TSF-3 TBTT event."]
+        pub type Tbtt3R = crate::BitReader;
+        #[doc = "Field `TBTT_3` writer - Acknowledge the TSF-3 TBTT event."]
+        pub type Tbtt3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TBTT_2` reader - Acknowledge the TSF-2 TBTT event."]
+        pub type Tbtt2R = crate::BitReader;
+        #[doc = "Field `TBTT_2` writer - Acknowledge the TSF-2 TBTT event."]
+        pub type Tbtt2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TBTT_1` reader - Acknowledge the TSF-1 TBTT event."]
+        pub type Tbtt1R = crate::BitReader;
+        #[doc = "Field `TBTT_1` writer - Acknowledge the TSF-1 TBTT event."]
+        pub type Tbtt1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TBTT_0` reader - Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0R = crate::BitReader;
+        #[doc = "Field `TBTT_0` writer - Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0W<'a, REG> = crate::BitWriter1C<'a, REG>;
         #[doc = "Field `TSF_TIMER_3` reader - Acknowledge the guarded TSF timer-three event."]
         pub type TsfTimer3R = crate::BitReader;
         #[doc = "Field `TSF_TIMER_3` writer - Acknowledge the guarded TSF timer-three event."]
@@ -31836,10 +31976,25 @@ pub mod wifi_mac_power_interrupt {
         #[doc = "Field `UNKNOWN_8_31` writer - Acknowledge event bits whose identities remain unknown."]
         pub type Unknown8_31W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:3 - Acknowledge event bits whose identities remain unknown."]
+            #[doc = "Bit 0 - Acknowledge the TSF-3 TBTT event."]
             #[inline(always)]
-            pub fn unknown_0_3(&self) -> Unknown0_3R {
-                Unknown0_3R::new((self.bits & 0x0f) as u8)
+            pub fn tbtt_3(&self) -> Tbtt3R {
+                Tbtt3R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Acknowledge the TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&self) -> Tbtt2R {
+                Tbtt2R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Acknowledge the TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&self) -> Tbtt1R {
+                Tbtt1R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&self) -> Tbtt0R {
+                Tbtt0R::new(((self.bits >> 3) & 1) != 0)
             }
             #[doc = "Bit 4 - Acknowledge the guarded TSF timer-three event."]
             #[inline(always)]
@@ -31868,10 +32023,25 @@ pub mod wifi_mac_power_interrupt {
             }
         }
         impl W {
-            #[doc = "Bits 0:3 - Acknowledge event bits whose identities remain unknown."]
+            #[doc = "Bit 0 - Acknowledge the TSF-3 TBTT event."]
             #[inline(always)]
-            pub fn unknown_0_3(&mut self) -> Unknown0_3W<'_, ClearSpec> {
-                Unknown0_3W::new(self, 0)
+            pub fn tbtt_3(&mut self) -> Tbtt3W<'_, ClearSpec> {
+                Tbtt3W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Acknowledge the TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&mut self) -> Tbtt2W<'_, ClearSpec> {
+                Tbtt2W::new(self, 1)
+            }
+            #[doc = "Bit 2 - Acknowledge the TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&mut self) -> Tbtt1W<'_, ClearSpec> {
+                Tbtt1W::new(self, 2)
+            }
+            #[doc = "Bit 3 - Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&mut self) -> Tbtt0W<'_, ClearSpec> {
+                Tbtt0W::new(self, 3)
             }
             #[doc = "Bit 4 - Acknowledge the guarded TSF timer-three event."]
             #[inline(always)]
@@ -57988,10 +58158,25 @@ pub mod interrupt_snapshot {
         pub const fn is_empty(&self) -> bool {
             self.0 == 0
         }
-        /// Sampled value of SVD field `UNKNOWN_0_3`.
+        /// Sampled value of SVD field `TBTT_3`.
         #[inline]
-        pub const fn unknown_0_3(&self) -> u8 {
-            (self.0 & 0xf) as u8
+        pub const fn tbtt_3(&self) -> bool {
+            self.0 & 0x00000001 != 0
+        }
+        /// Sampled value of SVD field `TBTT_2`.
+        #[inline]
+        pub const fn tbtt_2(&self) -> bool {
+            self.0 & 0x00000002 != 0
+        }
+        /// Sampled value of SVD field `TBTT_1`.
+        #[inline]
+        pub const fn tbtt_1(&self) -> bool {
+            self.0 & 0x00000004 != 0
+        }
+        /// Sampled value of SVD field `TBTT_0`.
+        #[inline]
+        pub const fn tbtt_0(&self) -> bool {
+            self.0 & 0x00000008 != 0
         }
         /// Sampled value of SVD field `TSF_TIMER_3`.
         #[inline]
@@ -61589,6 +61774,19 @@ pub mod zero_based_field_write {
                     .tsf_timer_3()
                     .bit(tsf_timer_3_value)
             });
+        }
+    }
+
+    /// Write `TBTT_0` in `WIFI_MAC_POWER_INTERRUPT`.`CLEAR` while publishing zero to every other register bit.
+    #[inline]
+    pub fn acknowledge_mac_power_sta_tbtt(registers: &crate::WifiMacPowerInterrupt, value: bool) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .clear()
+                .write_with_zero(|writer| writer.tbtt_0().bit(value));
         }
     }
 

@@ -26,6 +26,19 @@ impl StaTbttWakeRestore {
     }
 }
 
+/// One station TBTT schedule, as the vendor power manager programs it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaTbttSchedule {
+    /// Station TSF of the first TBTT.
+    pub first_tbtt_tsf: u64,
+    /// Interval between TBTT events, in microseconds.
+    pub interval_micros: u32,
+    /// How long before each TBTT the event fires, in microseconds.
+    pub ahead_micros: u16,
+    /// Light-sleep wake lead published beside the schedule, in microseconds.
+    pub wake_ahead_micros: u16,
+}
+
 /// Snapshot either or both station TSF words using the complete ROM leaf's
 /// conditional-output semantics.
 #[inline(always)]
@@ -99,6 +112,80 @@ impl WifiRadioRegisters {
         });
         control.modify(|_, w| w.sta_tsf_mode().enabled());
         device_fence();
+    }
+
+    /// Program the station TBTT schedule and enable its interrupt.
+    ///
+    /// SOURCE: complete pinned `libpp.a[pm.o]::pm_update_next_tbtt` disables
+    /// and re-enables the station TBTT, programs the schedule with
+    /// `hal_set_sta_tbtt`, then clears the SoC wakeup request and sets bit
+    /// zero at `0x2010_d810`. Complete `hal_tsf.o::hal_disable_sta_tbtt`
+    /// clears TBTT enable bit 26 at `0x2010_d858`; `hal_enable_sta_tbtt`
+    /// sets it; `hal_set_sta_tbtt` writes the interval, the target, the
+    /// target load strobe, the ahead time and the light-sleep wake lead, in
+    /// that order. The station TBTT interrupt enable in the same leaves
+    /// belongs to the interrupt epoch, which keeps it enabled; bit 26 gates
+    /// the event.
+    pub fn start_station_tbtt(&mut self, schedule: StaTbttSchedule) {
+        self.stop_station_tbtt();
+        let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
+        rtc.sta_tsf_control()
+            .modify(|_, w| w.sta_tbtt_enable().set_bit());
+
+        self.set_station_tbtt_interval(schedule.interval_micros);
+        let target_bits_35_10 = ((schedule.first_tbtt_tsf >> 10) as u32)
+            & crate::generated::StationTbttTargetBits35To10::MAX;
+        crate::generated::publish_station_tbtt_target(
+            &self.peripherals.wifi_mac.wifi_mac_sta_tbtt_target,
+            crate::generated::StationTbttTargetBits35To10::new(target_bits_35_10)
+                .expect("masked station-TBTT target is a reviewed 26-bit value"),
+        );
+        self.peripherals
+            .wifi_mac
+            .wifi_mac_sta_tsf_load
+            .control()
+            .modify(|_, w| w.load_station_tbtt_target().set_bit());
+        let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
+        rtc.sta_tsf_control()
+            .modify(|_, w| w.sta_tbtt_ahead_time().set(schedule.ahead_micros));
+        rtc.sta_light_sleep_wake_ahead()
+            .modify(|_, w| w.time().set(schedule.wake_ahead_micros));
+
+        rtc.soc_wakeup_clear()
+            .modify(|_, w| w.clear_request().set_bit());
+        self.peripherals
+            .wifi_mac
+            .wifi_mac_tsf_status
+            .wakeup_signal_clear()
+            .modify(|_, w| w.clear().set_bit());
+        device_fence();
+    }
+
+    /// Stop the station TBTT.
+    ///
+    /// SOURCE: complete pinned `libpp.a[hal_tsf.o]::hal_disable_sta_tbtt`
+    /// clears bit 26 at `0x2010_d858`.
+    pub fn stop_station_tbtt(&mut self) {
+        self.peripherals
+            .wifi_mac
+            .wifi_mac_rtc_timer_update
+            .sta_tsf_control()
+            .modify(|_, w| w.sta_tbtt_enable().clear_bit());
+        device_fence();
+    }
+
+    /// Replace the station TBTT interval, as the vendor does when the
+    /// coexistence period changes.
+    ///
+    /// SOURCE: complete pinned `libpp.a[hal_tsf.o]::
+    /// hal_set_sta_tbtt_interval` replaces bits 25:0 at `0x2010_d85c` with
+    /// the interval shifted right by ten.
+    pub fn set_station_tbtt_interval(&mut self, interval_micros: u32) {
+        self.peripherals
+            .wifi_mac
+            .wifi_mac_rtc_timer_update
+            .sta_tbtt_interval()
+            .modify(|_, w| w.interval_tsf_bits_35_10().set(interval_micros >> 10));
     }
 
     /// Enable or disable the station TSF wake signal as one exact two-word

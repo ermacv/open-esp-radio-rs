@@ -11482,6 +11482,12 @@
               <bitOffset>5</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
+            <field>
+              <name>LOAD_STATION_TBTT_TARGET</name>
+              <description>Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
           </fields>
         </register>
         <register>
@@ -11716,6 +11722,12 @@
               <name>TIME</name>
               <bitOffset>16</bitOffset>
               <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -11755,11 +11767,23 @@
         </register>
         <register>
           <name>STA_TSF_CONTROL</name>
-          <description>Shared STA TSF scheduler and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.</description>
+          <description>Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.</description>
           <addressOffset>0x28</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
+            <field>
+              <name>STA_TBTT_AHEAD_TIME</name>
+              <description>hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
             <field>
               <name>STA_TSF_MODE</name>
               <description>hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them.</description>
@@ -11788,6 +11812,12 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
+              <name>STA_TBTT_ENABLE</name>
+              <description>hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit.</description>
+              <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
               <name>STA_TSF_ENABLE_LOW</name>
               <description>hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it.</description>
               <bitOffset>27</bitOffset>
@@ -11809,15 +11839,22 @@
         </register>
         <register>
           <name>STA_TBTT_INTERVAL</name>
-          <description>Complete hal_set_sta_tbtt_interval replaces the low 22 bits from argument bits 31:10. Complete hal_set_sta_tbtt performs the same update from its third argument.</description>
+          <description>Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.</description>
           <addressOffset>0x2C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INTERVAL_BITS_31_10</name>
+              <name>INTERVAL_TSF_BITS_35_10</name>
+              <description>The TBTT interval in station TSF units of 1024 µs.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>22</bitWidth>
+              <bitWidth>26</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>67108863</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -13429,22 +13466,34 @@
       <registers>
         <register>
           <name>ENABLE</name>
-          <description>WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4.</description>
+          <description>WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>UNKNOWN_0_3</name>
-              <description>Enable bits whose event identities remain unknown.</description>
+              <name>TBTT_3</name>
+              <description>Enable the TSF-3 TBTT event.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>15</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_2</name>
+              <description>Enable the TSF-2 TBTT event.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_1</name>
+              <description>Enable the TSF-1 TBTT event.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_0</name>
+              <description>Enable the TSF-0 TBTT event. TSF 0 is the station TSF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TSF_TIMER_3</name>
@@ -13492,10 +13541,28 @@
           <access>read-only</access>
           <fields>
             <field>
-              <name>UNKNOWN_0_3</name>
-              <description>Raw event bits whose identities remain unknown.</description>
+              <name>TBTT_3</name>
+              <description>Raw TSF-3 TBTT event.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_2</name>
+              <description>Raw TSF-2 TBTT event.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_1</name>
+              <description>Raw TSF-1 TBTT event.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_0</name>
+              <description>Raw TSF-0 TBTT event. TSF 0 is the station TSF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TSF_TIMER_3</name>
@@ -13537,10 +13604,28 @@
           <access>read-only</access>
           <fields>
             <field>
-              <name>UNKNOWN_0_3</name>
-              <description>Masked event bits whose identities remain unknown.</description>
+              <name>TBTT_3</name>
+              <description>Masked TSF-3 TBTT event.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_2</name>
+              <description>Masked TSF-2 TBTT event.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_1</name>
+              <description>Masked TSF-1 TBTT event.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_0</name>
+              <description>Masked TSF-0 TBTT event. TSF 0 is the station TSF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TSF_TIMER_3</name>
@@ -13583,16 +13668,28 @@
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>UNKNOWN_0_3</name>
-              <description>Acknowledge event bits whose identities remain unknown.</description>
+              <name>TBTT_3</name>
+              <description>Acknowledge the TSF-3 TBTT event.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>15</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_2</name>
+              <description>Acknowledge the TSF-2 TBTT event.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_1</name>
+              <description>Acknowledge the TSF-1 TBTT event.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_0</name>
+              <description>Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TSF_TIMER_3</name>

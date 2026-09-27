@@ -8,6 +8,7 @@ enum Event {
     ClearPower,
     Fence,
     PublishMac(MacInterruptMask),
+    PublishPower,
 }
 
 #[derive(Default)]
@@ -36,13 +37,17 @@ impl MacInterruptActivationBackend for Backend {
         self.events.push(Event::PublishMac(event_mask));
     }
 
+    fn publish_power_events(&mut self) {
+        self.events.push(Event::PublishPower);
+    }
+
     fn fence(&mut self) {
         self.events.push(Event::Fence);
     }
 }
 
 #[test]
-fn activation_clears_stale_events_before_publishing_runtime_mask() {
+fn activation_clears_stale_events_before_publishing_runtime_masks() {
     let mut backend = Backend::default();
 
     activate_mac_interrupt_epoch(&mut backend, MacInterruptMask::COLD_RX);
@@ -56,6 +61,7 @@ fn activation_clears_stale_events_before_publishing_runtime_mask() {
             Event::ClearPower,
             Event::Fence,
             Event::PublishMac(MacInterruptMask::COLD_RX),
+            Event::PublishPower,
             Event::Fence,
         ]
     );

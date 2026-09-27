@@ -1398,6 +1398,13 @@ register = "CLEAR"
 fields = ["TSF_TIMER_0", "TSF_TIMER_1", "TSF_TIMER_2", "TSF_TIMER_3"]
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
 
+[[zero-based-field-writes]]
+name = "acknowledge_mac_power_sta_tbtt"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+register = "CLEAR"
+fields = ["TBTT_0"]
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+
 [[interrupt-snapshots]]
 name = "mac_interrupt"
 peripheral = "WIFI_MAC_INTERRUPT"

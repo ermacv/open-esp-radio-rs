@@ -391,7 +391,9 @@ impl MacPowerInterruptSnapshot {
             self.0.tsf_timer_1(),
             self.0.tsf_timer_2(),
             self.0.tsf_timer_3(),
-            self.0.unknown_0_3() != 0 || self.0.unknown_8_31() != 0,
+            self.0.tbtt_0(),
+            // Only the station TSF's TBTT is ever enabled.
+            self.0.tbtt_1() || self.0.tbtt_2() || self.0.tbtt_3() || self.0.unknown_8_31() != 0,
         )
     }
 
@@ -422,12 +424,14 @@ impl MacPowerInterruptObservation {
     pub(crate) const TSF_TIMER_2: u8 = 0x04;
     pub(crate) const TSF_TIMER_3: u8 = 0x08;
     pub(crate) const UNHANDLED_EVENT: u8 = 0x10;
+    pub(crate) const STA_TBTT: u8 = 0x20;
 
     pub const fn from_semantic_events(
         tsf_timer_0: bool,
         tsf_timer_1: bool,
         tsf_timer_2: bool,
         tsf_timer_3: bool,
+        sta_tbtt: bool,
         unhandled_event: bool,
     ) -> Self {
         Self(
@@ -435,6 +439,7 @@ impl MacPowerInterruptObservation {
                 | (if tsf_timer_1 { Self::TSF_TIMER_1 } else { 0 })
                 | (if tsf_timer_2 { Self::TSF_TIMER_2 } else { 0 })
                 | (if tsf_timer_3 { Self::TSF_TIMER_3 } else { 0 })
+                | (if sta_tbtt { Self::STA_TBTT } else { 0 })
                 | (if unhandled_event {
                     Self::UNHANDLED_EVENT
                 } else {
@@ -465,6 +470,11 @@ impl MacPowerInterruptObservation {
 
     pub const fn tsf_timer_3(self) -> bool {
         self.0 & Self::TSF_TIMER_3 != 0
+    }
+
+    /// The station TSF reached its target beacon transmission time.
+    pub const fn sta_tbtt(self) -> bool {
+        self.0 & Self::STA_TBTT != 0
     }
 
     pub const fn has_unhandled_event(self) -> bool {

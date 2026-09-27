@@ -20,13 +20,16 @@ pub enum MacTsfTimerIndex {
     Timer3,
 }
 
-/// WDEVPWR causes whose bit identity is proven by complete TSF timer leaves.
+/// WDEVPWR causes whose bit identity is proven by complete TSF timer and
+/// TBTT interrupt leaves.
 ///
 /// Beacon-miss, modem-limit and RF causes remain intentionally absent: the
 /// reviewed bank exposes their opaque status bits but not their identities.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacPowerWakeCause {
     TsfTimer(MacTsfTimerIndex),
+    /// The station TSF's target beacon transmission time.
+    StaTbtt,
 }
 
 fn acknowledge_mac_power_wake_cause(
@@ -53,6 +56,9 @@ fn acknowledge_mac_power_wake_cause(
             svd::zero_based_field_write::acknowledge_mac_power_tsf_timer(
                 peripheral, false, false, false, true,
             );
+        }
+        MacPowerWakeCause::StaTbtt => {
+            svd::zero_based_field_write::acknowledge_mac_power_sta_tbtt(peripheral, true);
         }
     }
 }
@@ -190,6 +196,7 @@ trait MacInterruptActivationBackend {
     fn clear_mac_events(&mut self);
     fn clear_power_events(&mut self);
     fn publish_mac_events(&mut self, event_mask: MacInterruptMask);
+    fn publish_power_events(&mut self);
     fn fence(&mut self);
 }
 
@@ -208,6 +215,7 @@ fn activate_mac_interrupt_epoch(
     backend.clear_power_events();
     backend.fence();
     backend.publish_mac_events(event_mask);
+    backend.publish_power_events();
     backend.fence();
 }
 
@@ -218,6 +226,18 @@ impl MacInterruptActivationBackend for MacInterruptSetup {
 
     fn mask_power_events(&mut self) {
         svd::fixed_register_image::mask_mac_power_interrupts(&self.power_peripheral);
+    }
+
+    /// Enable the station TBTT event for the whole route epoch.
+    ///
+    /// SOURCE: complete pinned `libpp.a[hal_tsf.o]::hal_enable_sta_tbtt`
+    /// enables the station TBTT event at bit 3 of `0x2010_d8b4`. One route
+    /// serves every Wi-Fi role in turn, so the mask stays enabled and the
+    /// station TBTT enable, which only a connected station sets, gates it.
+    fn publish_power_events(&mut self) {
+        self.power_peripheral
+            .enable()
+            .modify(|_, writer| writer.tbtt_0().set_bit());
     }
 
     fn clear_mac_events(&mut self) {

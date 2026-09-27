@@ -12,7 +12,8 @@ use core::cell::RefMut;
 use oer_esp32s31_pac::WifiRadioRegisters;
 
 use oer_esp32s31_pac::{
-    StaModemWakeConfig, StaModemWakeRestore, StaTbttWakeGateBaselineUnsupported, StaTbttWakeRestore,
+    StaModemWakeConfig, StaModemWakeRestore, StaTbttSchedule, StaTbttWakeGateBaselineUnsupported,
+    StaTbttWakeRestore,
 };
 
 /// A second modem-wakeup transaction cannot overlap the first one.
@@ -37,6 +38,8 @@ pub struct StaModemWakeRestoreFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaTbttWakePrepareError {
     AlreadyPrepared,
+    /// A station TBTT schedule owns the TBTT target.
+    ScheduleRunning,
     /// The complete vendor disable leaf leaves RTC CONTROL bit 21 asserted.
     /// Entry therefore requires that exact idle image: synthesizing a clear
     /// during rollback would not be evidence-backed.
@@ -55,10 +58,20 @@ pub struct StaTbttWakeRestoreFailure {
     pub restore: StaTbttWakeRestore,
 }
 
+/// Why a station TBTT schedule operation was refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaTbttScheduleError {
+    /// A station-TBTT wake prefix owns the TBTT target.
+    WakePrefixPrepared,
+    /// No station TBTT schedule runs.
+    NotScheduled,
+}
+
 /// Outstanding station wake obligations of one Wi-Fi route.
 #[derive(Debug, Default)]
 pub(crate) struct StationWakeState {
     tbtt_prepared: bool,
+    tbtt_scheduled: bool,
     modem_wakeup_configured: bool,
 }
 
@@ -82,6 +95,8 @@ impl StationWakeState {
     fn require_tbtt_idle(&self) -> Result<(), StaTbttWakePrepareError> {
         if self.tbtt_prepared {
             Err(StaTbttWakePrepareError::AlreadyPrepared)
+        } else if self.tbtt_scheduled {
+            Err(StaTbttWakePrepareError::ScheduleRunning)
         } else {
             Ok(())
         }
@@ -206,6 +221,56 @@ impl<'registers> StationWakeHal<'registers> {
         )?;
         state.tbtt_prepared = true;
         Ok(restore)
+    }
+
+    /// Start the station TBTT schedule, as the vendor power manager does at
+    /// each beacon that moves the schedule. The event fires on the route's
+    /// power interrupt.
+    ///
+    /// # Errors
+    ///
+    /// A station-TBTT wake prefix owns the TBTT target.
+    pub fn start_station_tbtt(
+        &mut self,
+        schedule: StaTbttSchedule,
+    ) -> Result<(), StaTbttScheduleError> {
+        let (registers, state) = self.registers.parts_mut();
+        if state.tbtt_prepared {
+            return Err(StaTbttScheduleError::WakePrefixPrepared);
+        }
+        registers.start_station_tbtt(schedule);
+        state.tbtt_scheduled = true;
+        Ok(())
+    }
+
+    /// Replace the running station TBTT interval.
+    ///
+    /// # Errors
+    ///
+    /// No station TBTT schedule runs.
+    pub fn set_station_tbtt_interval(
+        &mut self,
+        interval_micros: u32,
+    ) -> Result<(), StaTbttScheduleError> {
+        let (registers, state) = self.registers.parts_mut();
+        if !state.tbtt_scheduled {
+            return Err(StaTbttScheduleError::NotScheduled);
+        }
+        registers.set_station_tbtt_interval(interval_micros);
+        Ok(())
+    }
+
+    /// Stop the station TBTT schedule. Stopping an idle schedule is a no-op
+    /// on the vendor disable leaf and leaves it idle.
+    pub fn stop_station_tbtt(&mut self) {
+        let (registers, state) = self.registers.parts_mut();
+        registers.stop_station_tbtt();
+        state.tbtt_scheduled = false;
+    }
+
+    /// Whether a station TBTT schedule runs.
+    pub fn station_tbtt_scheduled(&self) -> bool {
+        self.registers.state().tbtt_scheduled
     }
 
     /// Consume the exact rollback obligation created by

@@ -9,20 +9,34 @@ baseAddress = 0x2010D8B4
 
 [peripherals.registers.register]
 name = "ENABLE"
-description = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4."
+description = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0."
 addressOffset = 0x0
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_0_3"
-description = "Enable bits whose event identities remain unknown."
+name = "TBTT_3"
+description = "Enable the TSF-3 TBTT event."
 bitOffset = 0
-bitWidth = 4
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0xF
+[[peripherals.registers.register.fields]]
+name = "TBTT_2"
+description = "Enable the TSF-2 TBTT event."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_1"
+description = "Enable the TSF-1 TBTT event."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_0"
+description = "Enable the TSF-0 TBTT event. TSF 0 is the station TSF."
+bitOffset = 3
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "TSF_TIMER_3"
@@ -68,10 +82,28 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_0_3"
-description = "Raw event bits whose identities remain unknown."
+name = "TBTT_3"
+description = "Raw TSF-3 TBTT event."
 bitOffset = 0
-bitWidth = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_2"
+description = "Raw TSF-2 TBTT event."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_1"
+description = "Raw TSF-1 TBTT event."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_0"
+description = "Raw TSF-0 TBTT event. TSF 0 is the station TSF."
+bitOffset = 3
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "TSF_TIMER_3"
@@ -113,10 +145,28 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_0_3"
-description = "Masked event bits whose identities remain unknown."
+name = "TBTT_3"
+description = "Masked TSF-3 TBTT event."
 bitOffset = 0
-bitWidth = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_2"
+description = "Masked TSF-2 TBTT event."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_1"
+description = "Masked TSF-1 TBTT event."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_0"
+description = "Masked TSF-0 TBTT event. TSF 0 is the station TSF."
+bitOffset = 3
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "TSF_TIMER_3"
@@ -159,14 +209,28 @@ access = "read-write"
 modifiedWriteValues = "oneToClear"
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_0_3"
-description = "Acknowledge event bits whose identities remain unknown."
+name = "TBTT_3"
+description = "Acknowledge the TSF-3 TBTT event."
 bitOffset = 0
-bitWidth = 4
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0xF
+[[peripherals.registers.register.fields]]
+name = "TBTT_2"
+description = "Acknowledge the TSF-2 TBTT event."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_1"
+description = "Acknowledge the TSF-1 TBTT event."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TBTT_0"
+description = "Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."
+bitOffset = 3
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "TSF_TIMER_3"
@@ -208,6 +272,7 @@ sources = [
     "BLOB_LIBPP_ISR_REGISTER_DUMP",
     "BLOB_LIBPP_HAL_PWR_INTERRUPT",
     "BLOB_LIBPP_HAL_TSF_TIMER",
+    "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -218,6 +283,7 @@ entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE"
 sources = [
     "BLOB_LIBPP_ISR_REGISTER_DUMP",
     "BLOB_LIBPP_HAL_TSF_TIMER",
+    "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -228,6 +294,7 @@ entity = "WIFI_MAC_POWER_INTERRUPT.STATUS"
 sources = [
     "BLOB_LIBPP_ISR_REGISTER_DUMP",
     "BLOB_LIBPP_HAL_PWR_INTERRUPT",
+    "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -238,6 +305,7 @@ entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR"
 sources = [
     "BLOB_LIBPP_HAL_PWR_INTERRUPT",
     "BLOB_LIBPP_HAL_TSF_TIMER",
+    "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -245,17 +313,42 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_POWER_INTERRUPT.RAW"
-sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP", "BLOB_LIBPP_HAL_TSF_TIMER"]
+sources = [
+    "BLOB_LIBPP_ISR_REGISTER_DUMP",
+    "BLOB_LIBPP_HAL_TSF_TIMER",
+    "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
+]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE.UNKNOWN_0_3"
-sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP", "BLOB_LIBPP_HAL_TSF_TIMER"]
+entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE.TBTT_3"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
 provenance = "observed"
 accuracy = "exact"
-completeness = "unknown"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE.TBTT_2"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE.TBTT_1"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE.TBTT_0"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE.TSF_TIMER_3"
@@ -293,11 +386,32 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_POWER_INTERRUPT.RAW.UNKNOWN_0_3"
-sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP", "BLOB_LIBPP_HAL_TSF_TIMER"]
+entity = "WIFI_MAC_POWER_INTERRUPT.RAW.TBTT_3"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
 provenance = "observed"
 accuracy = "exact"
-completeness = "unknown"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.RAW.TBTT_2"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.RAW.TBTT_1"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.RAW.TBTT_0"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_POWER_INTERRUPT.RAW.TSF_TIMER_3"
@@ -335,11 +449,32 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_POWER_INTERRUPT.STATUS.UNKNOWN_0_3"
-sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT", "BLOB_LIBPP_HAL_TSF_TIMER"]
+entity = "WIFI_MAC_POWER_INTERRUPT.STATUS.TBTT_3"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
 provenance = "observed"
 accuracy = "exact"
-completeness = "unknown"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.STATUS.TBTT_2"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.STATUS.TBTT_1"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.STATUS.TBTT_0"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_POWER_INTERRUPT.STATUS.TSF_TIMER_3"
@@ -377,11 +512,32 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR.UNKNOWN_0_3"
-sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT", "BLOB_LIBPP_HAL_TSF_TIMER"]
+entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR.TBTT_3"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
 provenance = "observed"
 accuracy = "exact"
-completeness = "unknown"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR.TBTT_2"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR.TBTT_1"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR.TBTT_0"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR.TSF_TIMER_3"

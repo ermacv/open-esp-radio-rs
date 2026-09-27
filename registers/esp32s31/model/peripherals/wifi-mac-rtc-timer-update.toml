@@ -137,6 +137,10 @@ name = "TIME"
 bitOffset = 16
 bitWidth = 16
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -173,10 +177,20 @@ maximum = 0xFFFF
 
 [peripherals.registers.register]
 name = "STA_TSF_CONTROL"
-description = "Shared STA TSF scheduler and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves."
+description = "Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves."
 addressOffset = 0x28
 size = 32
 access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "STA_TBTT_AHEAD_TIME"
+description = "hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."
+bitOffset = 0
+bitWidth = 16
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF
 
 [[peripherals.registers.register.fields]]
 name = "STA_TSF_MODE"
@@ -206,6 +220,12 @@ bitOffset = 24
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
+name = "STA_TBTT_ENABLE"
+description = "hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."
+bitOffset = 26
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
 name = "STA_TSF_ENABLE_LOW"
 description = "hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."
 bitOffset = 27
@@ -227,15 +247,20 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "STA_TBTT_INTERVAL"
-description = "Complete hal_set_sta_tbtt_interval replaces the low 22 bits from argument bits 31:10. Complete hal_set_sta_tbtt performs the same update from its third argument."
+description = "Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."
 addressOffset = 0x2C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INTERVAL_BITS_31_10"
+name = "INTERVAL_TSF_BITS_35_10"
+description = "The TBTT interval in station TSF units of 1024 µs."
 bitOffset = 0
-bitWidth = 22
+bitWidth = 26
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3FFFFFF
 
 [[peripherals.registers]]
 
@@ -410,6 +435,7 @@ entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL"
 sources = [
     "BLOB_LIBPP_HAL_TSF",
     "BLOB_LIBPP_HAL_PWR",
+    "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -452,10 +478,20 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TBTT_INTERVAL"
-sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
+sources = [
+    "BLOB_LIBPP_HAL_TSF_RUNTIME",
+    "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
+]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TBTT_INTERVAL.INTERVAL_TSF_BITS_35_10"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SLOW_CLOCK_CALIBRATION"
@@ -467,6 +503,20 @@ completeness = "complete"
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SLOW_CLOCK_CALIBRATION.VALUE"
 sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.STA_TBTT_AHEAD_TIME"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.STA_TBTT_ENABLE"
+sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

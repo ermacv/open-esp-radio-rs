@@ -40849,6 +40849,13 @@ bit-offset = 5
 bit-width = 1
 access = "read-write"
 
+[[registers.fields]]
+svd-name = "LOAD_STATION_TBTT_TARGET"
+method = "load_station_tbtt_target"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
 [[registers]]
 address = 537974808
 width = 32
@@ -41214,6 +41221,13 @@ scope = []
 register-method = "sta_tsf_control"
 
 [[registers.fields]]
+svd-name = "STA_TBTT_AHEAD_TIME"
+method = "sta_tbtt_ahead_time"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "STA_TSF_MODE"
 method = "sta_tsf_mode"
 bit-offset = 19
@@ -41224,6 +41238,13 @@ access = "read-write"
 svd-name = "MODEM_STATE_WAKEUP_PROTECT_ENABLE"
 method = "modem_state_wakeup_protect_enable"
 bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STA_TBTT_ENABLE"
+method = "sta_tbtt_enable"
+bit-offset = 26
 bit-width = 1
 access = "read-write"
 
@@ -41260,10 +41281,10 @@ scope = []
 register-method = "sta_tbtt_interval"
 
 [[registers.fields]]
-svd-name = "INTERVAL_BITS_31_10"
-method = "interval_bits_31_10"
+svd-name = "INTERVAL_TSF_BITS_35_10"
+method = "interval_tsf_bits_35_10"
 bit-offset = 0
-bit-width = 22
+bit-width = 26
 access = "read-write"
 
 [[registers]]
@@ -41683,10 +41704,31 @@ scope = []
 register-method = "enable"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_0_3"
-method = "unknown_0_3"
+svd-name = "TBTT_3"
+method = "tbtt_3"
 bit-offset = 0
-bit-width = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_2"
+method = "tbtt_2"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_1"
+method = "tbtt_1"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_0"
+method = "tbtt_0"
+bit-offset = 3
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -41736,10 +41778,31 @@ scope = []
 register-method = "raw"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_0_3"
-method = "unknown_0_3"
+svd-name = "TBTT_3"
+method = "tbtt_3"
 bit-offset = 0
-bit-width = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_2"
+method = "tbtt_2"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_1"
+method = "tbtt_1"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_0"
+method = "tbtt_0"
+bit-offset = 3
+bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
@@ -41789,10 +41852,31 @@ scope = []
 register-method = "status"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_0_3"
-method = "unknown_0_3"
+svd-name = "TBTT_3"
+method = "tbtt_3"
 bit-offset = 0
-bit-width = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_2"
+method = "tbtt_2"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_1"
+method = "tbtt_1"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_0"
+method = "tbtt_0"
+bit-offset = 3
+bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
@@ -41842,10 +41926,31 @@ scope = []
 register-method = "clear"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_0_3"
-method = "unknown_0_3"
+svd-name = "TBTT_3"
+method = "tbtt_3"
 bit-offset = 0
-bit-width = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_2"
+method = "tbtt_2"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_1"
+method = "tbtt_1"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_0"
+method = "tbtt_0"
+bit-offset = 3
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]

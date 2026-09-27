@@ -11,11 +11,14 @@ use super::{
     PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
     PeripheralConnectionStorage, PeripheralConnectionTransmitPduKind,
     SCHEDULER_ITEM_ALLOCATION_NUMBER, SCHEDULER_ITEM_CAPTURE_AVAILABLE,
-    SCHEDULER_ITEM_CAPTURED_ANCHOR, SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION,
+    SCHEDULER_ITEM_CAPTURED_ANCHOR, SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES,
+    SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION,
 };
 use crate::{
-    DirectionFindingWorkspaceLink, DirectionFindingWorkspaceModelAddress,
-    DirectionFindingWorkspaceStorage,
+    ConnectionCoexistencePriorities, DirectionFindingWorkspaceLink,
+    DirectionFindingWorkspaceModelAddress, DirectionFindingWorkspaceStorage,
+    PeripheralConnectionCoexistenceProtection, SchedulerItemCoexistencePriority,
+    coexistence::lanes_image,
     le_rx_packet::LeRxOutcome,
     scheduler_pool::{
         SchedulerAllocationConfig, SchedulerPoolError, SchedulerPoolModelAddress,
@@ -55,6 +58,13 @@ fn workspace() -> DirectionFindingWorkspaceLink {
     .link()
 }
 
+fn lanes(event: u8, base: u8) -> ConnectionCoexistencePriorities {
+    ConnectionCoexistencePriorities {
+        event: SchedulerItemCoexistencePriority::new(event).unwrap(),
+        base: SchedulerItemCoexistencePriority::new(base).unwrap(),
+    }
+}
+
 fn first_event() -> PeripheralConnectionFirstEvent {
     PeripheralConnectionFirstEvent {
         channel: PeripheralConnectionDataChannel::new(0).unwrap(),
@@ -64,6 +74,8 @@ fn first_event() -> PeripheralConnectionFirstEvent {
         receive_wait: PeripheralConnectionReceiveWait::new(1_250, 50).unwrap(),
         default_tx_power: PeripheralConnectionDefaultTxPowerDbm::new(0),
         priority: PeripheralConnectionSchedulerPriority::FIRST_EVENT,
+        coexistence: lanes(9, 4),
+        protection: None,
         raw_sequence_lead: 100,
     }
 }
@@ -75,6 +87,7 @@ fn recurring_event(receive_wait_micros: u32) -> PeripheralConnectionRecurringEve
         window: PeripheralConnectionSchedulerWindow::new(50_000, 51_000).unwrap(),
         receive_wait: PeripheralConnectionRecurringReceiveWait::new(receive_wait_micros).unwrap(),
         priority: PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+        coexistence: lanes(4, 4),
         raw_sequence_lead: 100,
     }
 }
@@ -361,4 +374,48 @@ fn release_returns_a_pristine_instance() {
         graph.link_state.words[LINK_STATE_SCHEDULER_HEAD].get(),
         binding.items[EVENT_ITEM].controller_address().address()
     );
+}
+
+fn coexistence_lanes(pool: &Pool, instance: &SchedulerRoleInstance) -> u32 {
+    item_word(pool, instance, SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES) & 0x3ff
+}
+
+fn protection(pool: &Pool, instance: &SchedulerRoleInstance) -> Option<u32> {
+    let (graph, _, _) = pool.shared(instance).unwrap();
+    let word = graph.link_state.words[super::LINK_STATE_PACKET_SEQUENCE].get();
+    (word & super::LINK_STATE_COEXISTENCE_PROTECTED != 0)
+        .then_some((word >> super::LINK_STATE_COEXISTENCE_PROTECTION_SHIFT) & 0x3f)
+}
+
+#[test]
+fn every_event_carries_its_own_coexistence_lanes() {
+    let mut pool = pool();
+    let instance = active(&mut pool);
+    assert_eq!(
+        coexistence_lanes(&pool, &instance),
+        lanes_image(&[lanes(9, 4).event, lanes(9, 4).base])
+    );
+    pool.prepare_recurring_event(&instance, recurring_event(1_000))
+        .unwrap();
+    assert_eq!(
+        coexistence_lanes(&pool, &instance),
+        lanes_image(&[lanes(4, 4).event, lanes(4, 4).base])
+    );
+}
+
+#[test]
+fn the_first_event_installs_the_coexistence_protection_only_when_given() {
+    let mut pool = pool();
+    let instance = active(&mut pool);
+    assert_eq!(protection(&pool, &instance), None);
+
+    let instance = pool.acquire().unwrap();
+    pool.prepare_identity(&instance, IDENTITY).unwrap();
+    let protected = PeripheralConnectionFirstEvent {
+        protection: PeripheralConnectionCoexistenceProtection::new(20),
+        ..first_event()
+    };
+    pool.prepare_first_event(&instance, protected, workspace())
+        .unwrap();
+    assert_eq!(protection(&pool, &instance), Some(20));
 }

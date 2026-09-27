@@ -19,7 +19,7 @@ use oer_esp32s31_bluetooth::{
     },
 };
 use oer_esp32s31_bluetooth_radio::{
-    BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, RadioStep,
+    BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, CoexistenceProfile, RadioStep,
 };
 use oer_esp32s31_hal::{
     bluetooth::{
@@ -197,6 +197,8 @@ pub struct BluetoothRuntime<
     lost: AtomicBool,
     work: Signal<M, ()>,
     activity: Signal<M, RadioActivity>,
+    /// Whether another radio shares the antenna.
+    shared: AtomicBool,
 }
 
 impl<
@@ -262,6 +264,7 @@ impl<
             lost: AtomicBool::new(false),
             work: Signal::new(),
             activity: Signal::new(),
+            shared: AtomicBool::new(false),
         }
     }
 
@@ -317,13 +320,14 @@ impl<
             Ok(sample) => sample,
             Err(error) => return Err((BluetoothInstallError::Time(error), memory, hardware)),
         };
-        let radio = BluetoothRadio::new(
+        let mut radio = BluetoothRadio::new(
             memory,
             hardware.scheduler_config(),
             hardware.controller_time_scale(),
             &sample,
             hardware.local_sleep_clock_ppm(),
         );
+        radio.set_coexistence(self.coexistence());
         *installed = Some(Installed {
             radio,
             hardware,
@@ -399,6 +403,24 @@ impl<
             return Err(BluetoothOutcomesLost);
         }
         Ok(self.outcomes.receive().await)
+    }
+
+    /// Follow whether another radio shares the antenna. The installed radio
+    /// and every later installation use the matching coexistence profile.
+    pub async fn set_coexistence(&self, shared: bool) {
+        self.shared.store(shared, Ordering::Release);
+        let mut installed = self.installed.lock().await;
+        if let Some(installed) = installed.as_mut() {
+            installed.radio.set_coexistence(self.coexistence());
+        }
+    }
+
+    fn coexistence(&self) -> CoexistenceProfile {
+        if self.shared.load(Ordering::Acquire) {
+            CoexistenceProfile::Shared
+        } else {
+            CoexistenceProfile::Standalone
+        }
     }
 
     /// Publish the roles the Controller has active. Only the latest summary

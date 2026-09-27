@@ -26,6 +26,9 @@ pub use values::{
 };
 
 use crate::{
+    coexistence::{
+        ConnectionCoexistencePriorities, PeripheralConnectionCoexistenceProtection, lanes_image,
+    },
     direction_finding_workspace::DirectionFindingWorkspaceLink,
     le_rx_chain::{LeRxChainBindError, LeRxNodes, LeRxRing},
     le_rx_packet::LeRxOutcome,
@@ -91,6 +94,12 @@ const LINK_STATE_CONTROL_POLICY_ACTIVE: u32 = 1 << 31;
 const LINK_STATE_BASELINE_CONTROL_POLICY: u32 = 2;
 const LINK_STATE_CRC_CONTEXT_READY: u32 = 1 << 31;
 const LINK_STATE_PACKET_SEQUENCE_BASELINE: u32 = 0x1e00;
+// Bits 19:14 hold the coexistence protection; the vendor sets bits 21:20
+// with it.
+const LINK_STATE_COEXISTENCE_PROTECTION_SHIFT: u32 = 14;
+const LINK_STATE_COEXISTENCE_PROTECTED: u32 = 0x0030_0000;
+// The two connection lanes of the item priority word.
+const CONNECTION_LANES_MASK: u32 = 0x3ff;
 const LINK_STATE_COMMON_RADIO_POLICY_BASELINE: u32 = 3;
 const LINK_STATE_DIRECTION_FINDING_RETAINED_POLICY: u32 = 0xbf00_0000;
 const LINK_STATE_DIRECTION_FINDING_CONFIGURATION_READY: u32 = 1 << 30;
@@ -112,7 +121,6 @@ const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
 // Standalone module default after common allocation and connection-role masks.
 const SCHEDULER_ITEM_PERIPHERAL_ALLOCATION_FLAGS: u32 = 0xe7df_7fff;
 // Product policy for the dedicated radio, not the vendor coexistence default.
-const STANDALONE_RADIO_REQUEST_PRIORITY: u32 = 15;
 const SCHEDULER_ITEM_PERIPHERAL_PREFIX: u32 = 0x0020_0000;
 const SCHEDULER_ITEM_CONNECTION_CLASS: u32 = 3 << 8;
 const SCHEDULER_ITEM_CONTEXT_READY: u32 = 1 << 31;
@@ -190,7 +198,14 @@ impl LinkStateStorage {
         self.words[LINK_STATE_PACKET_CONTROL].set(0);
         self.words[LINK_STATE_CRC_INITIALIZATION]
             .set(self.words[LINK_STATE_CRC_INITIALIZATION].get() | LINK_STATE_CRC_CONTEXT_READY);
-        self.words[LINK_STATE_PACKET_SEQUENCE].set(LINK_STATE_PACKET_SEQUENCE_BASELINE);
+        self.words[LINK_STATE_PACKET_SEQUENCE].set(match event.protection {
+            Some(protection) => {
+                LINK_STATE_PACKET_SEQUENCE_BASELINE
+                    | LINK_STATE_COEXISTENCE_PROTECTED
+                    | (u32::from(protection.value()) << LINK_STATE_COEXISTENCE_PROTECTION_SHIFT)
+            }
+            None => LINK_STATE_PACKET_SEQUENCE_BASELINE,
+        });
         self.words[LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION]
             .set(LINK_STATE_COMMON_RADIO_POLICY_BASELINE << 24);
         self.words[LINK_STATE_EVENT_PRIORITY].set(u32::from(event.priority.value()));
@@ -276,8 +291,6 @@ impl ItemStorage {
         self.link_free(next_free);
         self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS].set(SCHEDULER_ITEM_PERIPHERAL_ALLOCATION_FLAGS);
         self.words[SCHEDULER_ITEM_ALLOCATION_NUMBER].set(u32::from(binding.number));
-        self.words[SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES]
-            .set(STANDALONE_RADIO_REQUEST_PRIORITY | (STANDALONE_RADIO_REQUEST_PRIORITY << 5));
         self.words[SCHEDULER_ITEM_CONTEXT].set(binding.scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_LINK_STATE]
             .set(SCHEDULER_ITEM_PERIPHERAL_PREFIX | binding.link_state.compressed_image());
@@ -295,7 +308,12 @@ impl ItemStorage {
         &self,
         channel: PeripheralConnectionDataChannel,
         priority: PeripheralConnectionSchedulerPriority,
+        coexistence: ConnectionCoexistencePriorities,
     ) {
+        self.words[SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES].set(
+            (self.words[SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES].get() & !CONNECTION_LANES_MASK)
+                | lanes_image(&[coexistence.event, coexistence.base]),
+        );
         self.words[SCHEDULER_ITEM_CONTEXT_STATE]
             .set(self.words[SCHEDULER_ITEM_CONTEXT_STATE].get() | SCHEDULER_ITEM_CONTEXT_READY);
         let priority = u32::from(priority.value());
@@ -320,7 +338,7 @@ impl ItemStorage {
     }
 
     fn prepare_first_event(&self, rounded_power: u32, event: &PeripheralConnectionFirstEvent) {
-        self.prepare_priority_and_channel(event.channel, event.priority);
+        self.prepare_priority_and_channel(event.channel, event.priority, event.coexistence);
         self.words[SCHEDULER_ITEM_RATE_AND_POWER].set(
             (self.words[SCHEDULER_ITEM_RATE_AND_POWER].get() & !SCHEDULER_ITEM_RATE_AND_POWER_MASK)
                 | (rounded_power << 20),
@@ -331,7 +349,7 @@ impl ItemStorage {
     }
 
     fn prepare_recurring_event(&self, event: &PeripheralConnectionRecurringEvent) {
-        self.prepare_priority_and_channel(event.channel, event.priority);
+        self.prepare_priority_and_channel(event.channel, event.priority, event.coexistence);
         let total_micros = event.receive_wait.total_micros();
         let receive_wait_image = if total_micros == 0 {
             SCHEDULER_ITEM_RECEIVE_WAIT_ZERO_IMAGE
@@ -527,6 +545,9 @@ pub struct PeripheralConnectionFirstEvent {
     pub receive_wait: PeripheralConnectionReceiveWait,
     pub default_tx_power: PeripheralConnectionDefaultTxPowerDbm,
     pub priority: PeripheralConnectionSchedulerPriority,
+    pub coexistence: ConnectionCoexistencePriorities,
+    /// Coexistence protection of the connection; none leaves it clear.
+    pub protection: Option<PeripheralConnectionCoexistenceProtection>,
     /// The accepted scheduler preparation lead in controller ticks.
     pub raw_sequence_lead: u32,
 }
@@ -539,6 +560,7 @@ pub struct PeripheralConnectionRecurringEvent {
     pub window: PeripheralConnectionSchedulerWindow,
     pub receive_wait: PeripheralConnectionRecurringReceiveWait,
     pub priority: PeripheralConnectionSchedulerPriority,
+    pub coexistence: ConnectionCoexistencePriorities,
     pub raw_sequence_lead: u32,
 }
 

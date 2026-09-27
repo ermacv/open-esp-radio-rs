@@ -11,7 +11,9 @@ use super::{
     SCHEDULER_ITEM_COEX_PRIORITIES,
 };
 use crate::{
-    LegacyAdvertisingPrimaryChannelPlan,
+    AdvertisingCoexistencePriorities, LegacyAdvertisingPrimaryChannelPlan,
+    SchedulerItemCoexistencePriority,
+    coexistence::lanes_image,
     le_rx_chain::{LeRxChain, LeRxChainModelAddress, LeRxChainStorage},
     le_rx_packet::LeRxOutcome,
     rx_memory_list::RxMemoryListClass,
@@ -26,6 +28,12 @@ const ADV_IND_PDU: [u8; 11] = [0x60, 9, 1, 2, 3, 4, 5, 6, 2, 1, 6];
 const SCAN_RESPONSE_PDU: [u8; 8] = [0x44, 6, 1, 2, 3, 4, 5, 6];
 
 type Pool = LegacyConnectableAdvertisingPool<1>;
+
+fn priorities(lanes: [u8; 4]) -> AdvertisingCoexistencePriorities {
+    AdvertisingCoexistencePriorities {
+        lanes: lanes.map(|lane| SchedulerItemCoexistencePriority::new(lane).unwrap()),
+    }
+}
 
 fn pool() -> Pool {
     let storage = Box::leak(Box::new(SchedulerRolePoolStorage::<
@@ -126,14 +134,26 @@ fn preparation_chains_both_pdus_and_joins_the_non_scanning_chain() {
 }
 
 #[test]
-fn the_item_carries_its_number_and_a_request_priority_in_every_phase() {
+fn the_item_carries_its_number_and_each_event_its_coexistence_lanes() {
     let mut pool = pool();
-    let instance = pool.acquire().unwrap();
+    let chain = chain(RxMemoryListClass::NonScanning);
+    let instance = prepared(&mut pool, &chain);
+    {
+        let (graph, _, _) = pool.shared(&instance).unwrap();
+        for item in &graph.items {
+            assert_eq!(item.words[SCHEDULER_ITEM_ALLOCATION_NUMBER].get(), 3);
+        }
+    }
+    let plan = LegacyAdvertisingPrimaryChannelPlan::new(true, true, true).unwrap();
+    let lanes = priorities([9, 0, 13, 13]);
+    pool.prepare_event(&instance, plan, 6_000, 200, 214, lanes)
+        .unwrap();
     let (graph, _, _) = pool.shared(&instance).unwrap();
     for item in &graph.items {
-        assert_eq!(item.words[SCHEDULER_ITEM_ALLOCATION_NUMBER].get(), 3);
-        let priorities = item.words[SCHEDULER_ITEM_COEX_PRIORITIES].get();
-        assert!((0..4).all(|phase| (priorities >> (phase * 5)) & 31 != 0));
+        assert_eq!(
+            item.words[SCHEDULER_ITEM_COEX_PRIORITIES].get() & 0x000f_ffff,
+            lanes_image(&lanes.lanes)
+        );
     }
 }
 
@@ -148,7 +168,7 @@ fn an_event_lowers_one_item_per_channel_and_finishing_restores_them() {
     );
     let plan = LegacyAdvertisingPrimaryChannelPlan::new(true, false, true).unwrap();
     let event = pool
-        .prepare_event(&instance, plan, 6_000, 200, 214)
+        .prepare_event(&instance, plan, 6_000, 200, 214, priorities([15; 4]))
         .unwrap();
     assert_eq!(
         event.items().collect::<std::vec::Vec<_>>(),
@@ -220,7 +240,8 @@ fn a_scanning_chain_and_early_events_are_refused() {
             LegacyAdvertisingPrimaryChannelPlan::new(true, false, false).unwrap(),
             0,
             1,
-            0
+            0,
+            priorities([15; 4])
         )
         .err(),
         Some(LegacyConnectableAdvertisingError::State)

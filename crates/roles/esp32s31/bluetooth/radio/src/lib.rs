@@ -26,11 +26,15 @@
 extern crate std;
 
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+mod coexistence;
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 mod radio;
 #[cfg(any(test, all(feature = "test-support", not(target_arch = "riscv32"))))]
 #[doc(hidden)]
 pub mod validation;
 
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+pub use coexistence::CoexistenceProfile;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub use radio::{BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, RadioStep};
 

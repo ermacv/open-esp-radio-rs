@@ -21,6 +21,7 @@
 extern crate std;
 
 mod ble_phy_engine;
+mod coexistence;
 mod connectable_advertising;
 mod direction_finding_workspace;
 mod dtm;
@@ -43,6 +44,10 @@ mod scheduler_item;
 mod scheduler_pool;
 mod sram_link;
 
+pub use coexistence::{
+    AdvertisingCoexistencePriorities, ConnectionCoexistencePriorities,
+    PeripheralConnectionCoexistenceProtection, SchedulerItemCoexistencePriority,
+};
 pub use scheduler_item::{SCHEDULER_ITEM_UNEXECUTED, SchedulerItemCompletionStatus};
 
 #[cfg(not(target_arch = "riscv32"))]

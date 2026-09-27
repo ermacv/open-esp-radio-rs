@@ -5,7 +5,9 @@ use super::{
     SCHEDULER_ITEM_ALLOCATION_NUMBER_OFFSET,
 };
 use crate::{
-    LegacyAdvertisingPduError, LegacyAdvertisingPrimaryChannelPlan,
+    AdvertisingCoexistencePriorities, LegacyAdvertisingPduError,
+    LegacyAdvertisingPrimaryChannelPlan, SchedulerItemCoexistencePriority,
+    coexistence::lanes_image,
     scheduler_pool::{
         SchedulerAllocationConfig, SchedulerItemSpace, SchedulerPoolError,
         SchedulerPoolModelAddress, SchedulerRoleInstance, SchedulerRolePoolStorage,
@@ -29,6 +31,12 @@ fn pool() -> LegacyAdvertisingPool<2> {
         numbers,
     )
     .expect("the pool fits controller SRAM")
+}
+
+fn priorities(lanes: [u8; 4]) -> AdvertisingCoexistencePriorities {
+    AdvertisingCoexistencePriorities {
+        lanes: lanes.map(|lane| SchedulerItemCoexistencePriority::new(lane).unwrap()),
+    }
 }
 
 fn all_channels() -> LegacyAdvertisingPrimaryChannelPlan {
@@ -79,7 +87,13 @@ fn an_event_lowers_one_unlinked_item_per_channel() {
     let mut pool = pool();
     let instance = reset(&mut pool);
     let event = pool
-        .prepare_event(&instance, all_channels(), 1_000, 128)
+        .prepare_event(
+            &instance,
+            all_channels(),
+            1_000,
+            128,
+            priorities([4, 0, 13, 13]),
+        )
         .unwrap();
     assert_eq!(
         event.items().collect::<std::vec::Vec<_>>(),
@@ -88,6 +102,11 @@ fn an_event_lowers_one_unlinked_item_per_channel() {
     let (graph, _, _) = pool.shared(&instance).unwrap();
     for item in &graph.items {
         assert_eq!(item.header().hardware_next_image(), 0);
+        // Each channel item carries the event's coexistence lanes.
+        assert_eq!(
+            item.words[super::SCHEDULER_ITEM_COEX_PRIORITIES_OFFSET].get() & 0x000f_ffff,
+            lanes_image(&priorities([4, 0, 13, 13]).lanes)
+        );
     }
     assert_eq!(graph.link_state.scheduler_head(), 0);
     assert_eq!(pool.pdu(&instance), Some(&PDU[..]));
@@ -102,7 +121,8 @@ fn only_prepared_items_are_submitted_and_the_space_links_them() {
         Err(SchedulerPoolError::NotPrepared)
     );
     let channel_37 = LegacyAdvertisingPrimaryChannelPlan::new(true, false, false).unwrap();
-    pool.prepare_event(&instance, channel_37, 0, 100).unwrap();
+    pool.prepare_event(&instance, channel_37, 0, 100, priorities([15; 4]))
+        .unwrap();
     assert_eq!(
         pool.submit(&instance, 1),
         Err(SchedulerPoolError::NotPrepared)
@@ -122,7 +142,7 @@ fn only_prepared_items_are_submitted_and_the_space_links_them() {
     pool.retire(id).unwrap();
     pool.finish_event(&instance).unwrap();
     // The next event starts from the allocation-time items again.
-    pool.prepare_event(&instance, all_channels(), 500, 100)
+    pool.prepare_event(&instance, all_channels(), 500, 100, priorities([15; 4]))
         .unwrap();
 }
 
@@ -134,7 +154,7 @@ fn finishing_an_event_restores_the_allocation_image() {
         .flat_map(|item| (0..0x60 / 4).map(move |word| (item, word)))
         .map(|(item, word)| item_word(&pool, &instance, item, word))
         .collect();
-    pool.prepare_event(&instance, all_channels(), 1_000, 128)
+    pool.prepare_event(&instance, all_channels(), 1_000, 128, priorities([15; 4]))
         .unwrap();
     pool.finish_event(&instance).unwrap();
     let after: std::vec::Vec<u32> = (0..3)

@@ -2,6 +2,7 @@
 
 use core::convert::Infallible;
 
+use crate::coexistence::{self, CoexistenceProfile};
 use oer_bluetooth_radio::{
     AdvertisingChannel, AdvertisingConfiguration, AdvertisingEvent, AdvertisingSetId,
     ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming,
@@ -241,6 +242,7 @@ pub struct BluetoothRadio<
     timing: RadioTiming,
     policy: SchedulerTimingPolicy,
     faulted: bool,
+    coexistence: CoexistenceProfile,
 }
 
 impl<
@@ -296,7 +298,15 @@ impl<
             },
             policy: SchedulerTimingPolicy::from_scheduler_config(config, scale),
             faulted: false,
+            coexistence: CoexistenceProfile::Standalone,
         }
+    }
+
+    /// Follow the antenna's sharing: from the next event on, the events
+    /// carry the coexistence priorities of `profile`, and connections opened
+    /// while it is shared are protected.
+    pub fn set_coexistence(&mut self, profile: CoexistenceProfile) {
+        self.coexistence = profile;
     }
 
     /// The timing a planner uses to keep reservations apart.
@@ -918,7 +928,13 @@ impl<
         let prepared = self
             .memory
             .legacy
-            .prepare_event(&slot.instance, plan, first.start(), raw_duration)
+            .prepare_event(
+                &slot.instance,
+                plan,
+                first.start(),
+                raw_duration,
+                coexistence::advertising_priorities(self.coexistence, event.coexistence),
+            )
             .map_err(|_| RequestError::Unsupported)?;
         let mut submitted = [None; 3];
         for (item, start, end) in prepared.items() {
@@ -986,6 +1002,7 @@ impl<
                 first.start(),
                 raw_duration,
                 lead_ticks,
+                coexistence::advertising_priorities(self.coexistence, event.coexistence),
             )
             .map_err(|_| RequestError::Unsupported)?;
         let mut submitted = [None; 3];
@@ -1217,6 +1234,8 @@ impl<
         .ok_or(RequestError::Unsupported)?;
         let priority = PeripheralConnectionSchedulerPriority::new(event.priority)
             .ok_or(RequestError::Unsupported)?;
+        let coexistence = coexistence::connection_priorities(self.coexistence, event.coexistence);
+        let protection = coexistence::connection_protection(self.coexistence);
         let lead = self.policy.sequence_lead_raw_delta();
         let receive_time = PeripheralConnectionReceiveTime::from_controller_ticks(
             self.clock.raw(facts.created_at.as_micros()),
@@ -1247,6 +1266,8 @@ impl<
                             facts.tx_power.dbm(),
                         ),
                         priority,
+                        coexistence,
+                        protection,
                         raw_sequence_lead: lead,
                     },
                     workspace,
@@ -1264,6 +1285,7 @@ impl<
                         window: raw_window,
                         receive_wait,
                         priority,
+                        coexistence,
                         raw_sequence_lead: lead,
                     },
                 )

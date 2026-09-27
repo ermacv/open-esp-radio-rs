@@ -4,7 +4,7 @@
 use core::cell::Cell;
 
 use critical_section::Mutex;
-use embassy_futures::select::{Either, Either3, select, select3};
+use embassy_futures::select::{Either, Either4, select, select4};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Instant;
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
@@ -479,7 +479,9 @@ impl BluetoothSystem {
 
     /// Drive the radio runtime and the source-127 timer task until a fault
     /// stops either or an interrupt service fails, and publish the active
-    /// roles to the coexistence schedule of `radio`.
+    /// roles to the coexistence schedule of `radio`. While another radio
+    /// shares the antenna, the events carry the vendor's coexistence
+    /// priorities.
     ///
     /// Cancel it before [`Self::stop`]; the stop settles whatever work the
     /// cancelled future left and withdraws every Bluetooth LE status bit.
@@ -491,11 +493,18 @@ impl BluetoothSystem {
             RUNTIME.run(),
             run_modem_timer(&mut self.epoch.modem_timer, &MODEM_TIMER_WAKE),
         );
-        match select3(workers, INTERRUPT_FAULT.wait(), publish_coex_status(radio)).await {
-            Either3::First(Either::First(fault)) => BluetoothRunnerFault::Radio(fault),
-            Either3::First(Either::Second(fault)) => BluetoothRunnerFault::ModemTimer(fault),
-            Either3::Second(fault) => BluetoothRunnerFault::Interrupt(fault),
-            Either3::Third(never) => match never {},
+        match select4(
+            workers,
+            INTERRUPT_FAULT.wait(),
+            publish_coex_status(radio),
+            follow_coex_sharing(radio),
+        )
+        .await
+        {
+            Either4::First(Either::First(fault)) => BluetoothRunnerFault::Radio(fault),
+            Either4::First(Either::Second(fault)) => BluetoothRunnerFault::ModemTimer(fault),
+            Either4::Second(fault) => BluetoothRunnerFault::Interrupt(fault),
+            Either4::Third(never) | Either4::Fourth(never) => match never {},
         }
     }
 
@@ -587,6 +596,7 @@ impl BluetoothSystem {
         // The scheduler is stopped: no role is active any more.
         guard.clear_coex_status_bits(CoexStatusType::Ble, BLE_COEX_STATUS_ALL);
         RUNTIME.clear_activity();
+        RUNTIME.set_coexistence(false).await;
         let (retired, last) = match retire(guard.lease(), task, retained, output, timer) {
             Ok(retired) => retired,
             Err(failure) => {
@@ -936,6 +946,18 @@ async fn publish_coex_status<P, C: PlatformClockProvider>(
         }
         apply_coex_status(&mut radio.lock().await, published, activity);
         published = activity;
+    }
+}
+
+/// Follow whether another radio shares the antenna, as the vendor BLE
+/// Controller's `coex_register_ble_cb` start and stop callbacks do.
+async fn follow_coex_sharing<P, C: PlatformClockProvider>(
+    radio: &RadioSystem<P, C>,
+) -> core::convert::Infallible {
+    loop {
+        RUNTIME
+            .set_coexistence(radio.bluetooth_coex_started().await)
+            .await;
     }
 }
 

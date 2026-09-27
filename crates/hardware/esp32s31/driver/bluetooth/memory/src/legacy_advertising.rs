@@ -12,6 +12,7 @@
 use vcell::VolatileCell;
 
 use crate::{
+    coexistence::{AdvertisingCoexistencePriorities, LANES_MASK, lanes_image},
     le_tx_packet::{
         BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, LeTxBufferHeaderStorage, LeTxPacketAddress,
         LeTxPacketPrepareError, LeTxPacketPreparedLength,
@@ -74,6 +75,7 @@ const LINK_STATE_WORD_60_OFFSET: usize = 0x60 / 4;
 const SCHEDULER_ITEM_CONTEXT_OFFSET: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
 const SCHEDULER_ITEM_ALLOCATION_NUMBER_OFFSET: usize = 0x20 / 4;
+const SCHEDULER_ITEM_COEX_PRIORITIES_OFFSET: usize = 0x24 / 4;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE: u32 = 0x0010_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX_IMAGE: u32 = 0x0060_0000;
 const SCHEDULER_ITEM_WORD_14_OFFSET: usize = 0x14 / 4;
@@ -428,6 +430,7 @@ impl<const N: usize> LegacyAdvertisingPool<N> {
         channels: LegacyAdvertisingPrimaryChannelPlan,
         raw_start: u32,
         raw_item_duration: u32,
+        coexistence: AdvertisingCoexistencePriorities,
     ) -> Result<LegacyAdvertisingEvent, LegacyAdvertisingError> {
         let cpu = self.cpu(instance).map_err(LegacyAdvertisingError::Pool)?;
         let LegacyAdvertisingState::Reset(length) = *cpu.state else {
@@ -454,6 +457,10 @@ impl<const N: usize> LegacyAdvertisingPool<N> {
             item.write_reviewed_words(
                 item.reviewed_words()
                     .prepare_event_item(link_state, channel, None, start, end),
+            );
+            item.words[SCHEDULER_ITEM_COEX_PRIORITIES_OFFSET].set(
+                (item.words[SCHEDULER_ITEM_COEX_PRIORITIES_OFFSET].get() & !LANES_MASK)
+                    | lanes_image(&coexistence.lanes),
             );
             event.windows[index] = (start, end);
         }

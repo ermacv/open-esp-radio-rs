@@ -13,6 +13,7 @@
 use vcell::VolatileCell;
 
 use crate::{
+    coexistence::{AdvertisingCoexistencePriorities, LANES_MASK, lanes_image},
     le_rx_chain::{LeRxChain, LeRxSource, LeRxTag},
     le_tx_packet::{
         BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, LeTxBufferHeaderStorage, LeTxPacketAddress,
@@ -85,8 +86,6 @@ const SCHEDULER_ITEM_COEX_PRIORITIES: usize = 0x24 / 4;
 // Common scheduler allocation installs both bits before the advertising role.
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x0060_0000;
-// Product-owned equal priorities for the dedicated, always-awake radio.
-const STANDALONE_COEX_PRIORITY: u32 = 15;
 // Complete common allocator applied to the standalone module default.
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0xffdf_7fff;
 
@@ -360,13 +359,6 @@ impl ItemStorage {
         self.words[SCHEDULER_ITEM_CONTEXT].set(binding.scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS].set(SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE);
         self.words[SCHEDULER_ITEM_ALLOCATION_NUMBER].set(u32::from(binding.number));
-        // Four five-bit lanes from the complete advertising PTI producer.
-        self.words[SCHEDULER_ITEM_COEX_PRIORITIES].set(
-            STANDALONE_COEX_PRIORITY
-                | (STANDALONE_COEX_PRIORITY << 5)
-                | (STANDALONE_COEX_PRIORITY << 10)
-                | (STANDALONE_COEX_PRIORITY << 15),
-        );
         self.words[SCHEDULER_ITEM_LINK_STATE]
             .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | binding.link_state.compressed_image());
     }
@@ -601,6 +593,7 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
         raw_start: u32,
         raw_item_duration: u32,
         raw_sequence_lead: u32,
+        coexistence: AdvertisingCoexistencePriorities,
     ) -> Result<LegacyAdvertisingEvent, LegacyConnectableAdvertisingError> {
         let cpu = self
             .cpu(instance)
@@ -629,6 +622,10 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
             );
             // Common r_btdm_sched_calc_seq_time projection.
             item.header().set_sequence(start, end, raw_sequence_lead);
+            item.words[SCHEDULER_ITEM_COEX_PRIORITIES].set(
+                (item.words[SCHEDULER_ITEM_COEX_PRIORITIES].get() & !LANES_MASK)
+                    | lanes_image(&coexistence.lanes),
+            );
             event.set_window(index, start, end);
         }
         graph.link_state.set_scheduler_head(None);

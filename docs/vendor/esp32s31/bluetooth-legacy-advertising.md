@@ -211,9 +211,16 @@ in this graph. Current `61.o:r_sym_ble_UCGCRefyBslibNM003px`
 (`ble_lll_mmgmt_alloc_scheduler_item`) sets both allocation bits in item
 `+0x00` and installs the module-default projection at `+0x1c`. Advertising's
 `50.o:r_sym_ble_K5YOgB5aAyEAMEega18V` writes four five-bit radio-request
-priorities at item `+0x24`. The standalone open profile supplies equal,
-nonzero priorities of 15; this is a product policy for the dedicated radio,
-not an identification of the vendor's default coexistence table.
+priorities at item `+0x24`. With another radio on the antenna the open radio
+applies the vendor's dynamic priority control: `coexAdv.c.o_1.o`
+`r_sym_coexAdv_pNmEzY32xPoYRR8VuoXP` installs lanes `4, 0, 13, 13` for a
+legacy set from the default tables `04 04 04` and `0d 0d`, and
+`r_sym_coexAdv_sLW7oGzvK2Nq64ivPWK2` replaces lane zero for every event
+from the legacy table `04 09 0b 03 02 01 28 00 50 00` at the event's level.
+The Controller core raises every third, second or single event for
+intervals up to 25 ms, up to 50 ms and longer (`r_sym_coexAdv_VG7v...`,
+`r_sym_coexAdv_A5DX...`). Alone on the antenna, every lane requests 15;
+this equal standalone policy is a product choice.
 
 Current `61.o:r_sym_ble_lecwwE0KZNKhANvOphXa`
 (`ble_lll_mmgmt_update_global_rxlink`) selects non-scanning class two in

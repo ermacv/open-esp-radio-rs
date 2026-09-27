@@ -3054,7 +3054,7 @@ section = "bluetooth-coexistence"
 title = "Internal Wi-Fi/Bluetooth coexistence"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. Each Bluetooth Controller epoch enables coexistence and publishes its advertising, scanning and connection status from the Controller's active roles, as the vendor status hook does; like the vendor BLE Controller it does not react to phases. Per-event coexistence priorities keep the standalone profile, and no joint Wi-Fi/Bluetooth run is qualified."
+scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. Each Bluetooth Controller epoch enables coexistence and publishes its advertising, scanning and connection status from the Controller's active roles, as the vendor status hook does; like the vendor BLE Controller it does not react to phases. While another radio shares the antenna, advertising and connection events carry the vendor's dynamic coexistence priorities and connections its coexistence protection; passive scanning keeps the standalone priorities. No joint Wi-Fi/Bluetooth run is qualified."
 
 [[items]]
 id = "bluetooth-wi-fi-bluetooth-ieee-802-15-4-radio-coordination"

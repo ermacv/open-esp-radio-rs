@@ -780,6 +780,12 @@ mod pools {
                 LegacyAdvertisingPrimaryChannelPlan::new(true, true, true).unwrap(),
                 1_000,
                 100,
+                oer_esp32s31_bluetooth_memory::AdvertisingCoexistencePriorities {
+                    lanes: [oer_esp32s31_bluetooth_memory::SchedulerItemCoexistencePriority::new(
+                        15,
+                    )
+                    .unwrap(); 4],
+                },
             )
             .unwrap();
         let items: Vec<(SchedulerItemId, SchedulerRawWindow)> = event

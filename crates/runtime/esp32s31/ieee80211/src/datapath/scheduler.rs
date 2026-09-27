@@ -1,6 +1,30 @@
 use super::*;
 use oer_ieee80211_runtime::await_stack_boundary;
 
+/// Control steps the scheduler runs again without awaiting before it yields.
+///
+/// A step that answers `More` is run again at once, so a step that never
+/// consumes its input would otherwise hold the executor forever and starve
+/// every task beside the radio loop.
+pub(crate) const CONTROL_PROGRESS_BUDGET: u32 = 32;
+
+/// Counts control steps rerun without an await and yields the executor once
+/// per [`CONTROL_PROGRESS_BUDGET`].
+#[derive(Default)]
+pub(crate) struct ControlProgressBudget {
+    unyielded: u32,
+}
+
+impl ControlProgressBudget {
+    pub(crate) async fn rerun(&mut self) {
+        self.unyielded += 1;
+        if self.unyielded >= CONTROL_PROGRESS_BUDGET {
+            self.unyielded = 0;
+            yield_now().await;
+        }
+    }
+}
+
 use crate::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
 };
@@ -51,6 +75,7 @@ where
     where
         F: FnMut(&mut B) -> Result<DatapathControlProgress<B::Exit>, B::Error>,
     {
+        let mut budget = ControlProgressBudget::default();
         loop {
             if self.active_tx_interface.is_some() {
                 self.drain_active_tx().await?;
@@ -64,7 +89,7 @@ where
                     );
                     self.drive_active_tx(false).await?;
                 }
-                DatapathControlProgress::More => {}
+                DatapathControlProgress::More => budget.rerun().await,
                 DatapathControlProgress::Idle => return Ok(None),
                 DatapathControlProgress::Exit(exit) => return Ok(Some(exit)),
             }
@@ -115,6 +140,7 @@ where
     {
         let mut stop = core::pin::pin!(stop);
         let mut stopping = false;
+        let mut budget = ControlProgressBudget::default();
         #[cfg(feature = "diagnostics")]
         let mut stop_iterations = 0_u8;
         loop {
@@ -174,7 +200,10 @@ where
                         .service_control(DatapathControlContext::STOPPING)
                         .await?
                     {
-                        DatapathControlProgress::More => continue,
+                        DatapathControlProgress::More => {
+                            budget.rerun().await;
+                            continue;
+                        }
                         DatapathControlProgress::TxPending => {
                             self.begin_active_tx(
                                 self.reported_active_tx_interface(),
@@ -191,7 +220,10 @@ where
                     }
                 }
                 match self.services.service_stop()? {
-                    DatapathStopProgress::More => continue,
+                    DatapathStopProgress::More => {
+                        budget.rerun().await;
+                        continue;
+                    }
                     DatapathStopProgress::TxPending => {
                         self.begin_active_tx(
                             self.reported_active_tx_interface(),
@@ -254,6 +286,7 @@ where
                 match control_progress {
                     DatapathControlProgress::More => {
                         self.control_ready_latched = true;
+                        budget.rerun().await;
                         continue;
                     }
                     DatapathControlProgress::TxPending => {

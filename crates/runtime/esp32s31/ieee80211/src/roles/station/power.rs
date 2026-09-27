@@ -4,7 +4,7 @@
 //! the MAC but neither the radio arbiter nor the Wi-Fi PHY membership. Its
 //! coexistence requests and RF sleep and wake travel over one
 //! [`StationPowerLink`] to [`run_station_power_agent`], which runs beside the
-//! datapath with the [`RadioSystem`]. The agent also carries the station
+//! datapath with the [`RadioSystem`](oer_esp32s31_radio_runtime::RadioSystem). The agent also carries the station
 //! TBTT interrupt, the coexistence phases and the Bluetooth preemption end
 //! back to control. Control reads the coexistence state itself, from a
 //! [`PowerCoexSource`], at every step, as the vendor reads it at every input.

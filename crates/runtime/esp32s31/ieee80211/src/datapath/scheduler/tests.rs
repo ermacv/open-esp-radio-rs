@@ -393,3 +393,104 @@ fn partial_successors_publish_without_waiting_but_yield_to_ready_control() {
         ]
     );
 }
+
+/// Control that is always ready and never consumes its input.
+struct SpinningControl {
+    steps: u32,
+}
+
+impl<S: SoftwareTxFrame + 'static, P: MaterializedTxFrame + 'static> DatapathServices<S, P>
+    for SpinningControl
+{
+    type Error = ();
+    type Exit = ();
+
+    async fn service_rx(
+        &mut self,
+        _: &mut dyn DatapathNetworkRxSet,
+        _: DatapathRxServiceContext,
+    ) -> Result<DatapathRxProgress, ()> {
+        Ok(DatapathRxProgress::Drained)
+    }
+
+    async fn start_tx<'a, I>(&'a mut self, _: S, _: &'a I) -> Result<WifiTxProgress, ()>
+    where
+        S: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P> + 'a,
+    {
+        panic!("spinning control admits no network TX")
+    }
+
+    async fn wait_tx_deadline(&mut self) {
+        core::future::pending().await
+    }
+
+    async fn service_tx(&mut self, _: WifiTxWake) -> Result<WifiTxProgress, ()> {
+        Ok(WifiTxProgress::Complete)
+    }
+
+    fn control_ready(&self, _: u64) -> bool {
+        true
+    }
+
+    async fn service_control(
+        &mut self,
+        _: DatapathControlContext,
+    ) -> Result<DatapathControlProgress<()>, ()> {
+        self.steps += 1;
+        Ok(DatapathControlProgress::More)
+    }
+
+    fn has_prepared_tx(&self) -> bool {
+        false
+    }
+
+    fn start_prepared_tx<I>(&mut self, _: &I) -> Result<WifiTxProgress, ()>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P>,
+    {
+        panic!("spinning control prepares no TX")
+    }
+
+    fn cancel_prepared_tx<I>(&mut self, _: &I) -> Result<(), ()>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = S, PhysicalFrame = P>,
+    {
+        Ok(())
+    }
+
+    fn service_stop(&mut self) -> Result<DatapathStopProgress, ()> {
+        Ok(DatapathStopProgress::Stopped)
+    }
+}
+
+#[test]
+fn control_that_never_consumes_its_input_cannot_starve_a_sibling_task() {
+    let storage = Box::leak(Box::new(PacketPoolStorage::<2>::new()));
+    let allocator = Box::leak(Box::new(PacketPool::new(storage))).allocator();
+    let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));
+    let interface = NetworkInterfaceId::new(0);
+    let (_device, owned) = endpoint.split(interface, [2, 0, 0, 0, 0, 1], allocator);
+    let resources = Box::leak(Box::new(
+        PinnedTxResources::<NoopRawMutex, 64, 16, 8, 1>::new(),
+    ));
+    let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
+    let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
+    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let mut runner = DatapathRunner::new(&irq, network, interface, SpinningControl { steps: 0 });
+    let sibling_ran = core::cell::Cell::new(false);
+    let mut cx = Context::from_waker(Waker::noop());
+    {
+        let run = runner.run();
+        let sibling = async {
+            sibling_ran.set(true);
+        };
+        let mut both = core::pin::pin!(select(run, sibling));
+        assert!(matches!(
+            both.as_mut().poll(&mut cx),
+            Poll::Ready(Either::Second(()))
+        ));
+    }
+    assert!(sibling_ran.get());
+    assert_eq!(runner.services.steps, CONTROL_PROGRESS_BUDGET);
+}

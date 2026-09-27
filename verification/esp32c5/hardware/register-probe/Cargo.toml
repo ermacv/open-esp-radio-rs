@@ -1,0 +1,48 @@
+[package]
+name = "oer-esp32c5-register-probe"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Board observation of the ESP32-C5 radio register model"
+
+[dependencies]
+esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["esp32c5", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["esp32c5"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["esp32c5", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["auto", "esp32c5"] }
+esp32c5 = { git = "https://github.com/esp-rs/esp-pacs", rev = "5cd68d2", default-features = false }
+oer-esp32c5-pac-raw = { path = "../../../../crates/hardware/esp32c5/pac/raw" }
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = "fat"
+opt-level = "s"
+panic = "abort"
+strip = false
+
+[patch."https://github.com/esp-rs/esp-pacs"]
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "507d14dbccfc26128b929b044d76f09cf2d1d2f6" }
+
+[workspace]
+resolver = "3"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# A mutable call inside `debug_assert!` disappears from optimized firmware.
+debug_assert_with_mut_call = "deny"
+# The repository `clippy.toml` lists methods radio code must not call.
+disallowed_methods = "deny"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "verification"
+platform = "chip"
+chip = "esp32c5"

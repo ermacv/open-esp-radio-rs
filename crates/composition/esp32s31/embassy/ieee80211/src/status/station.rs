@@ -19,14 +19,19 @@ pub enum StationLinkState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationLinkSecurity {
     Open,
-    Wpa2Personal,
+    Wpa2Personal {
+        /// The association protects its robust management frames.
+        management_protection: bool,
+    },
 }
 
-impl From<WifiSecurityMode> for StationLinkSecurity {
-    fn from(mode: WifiSecurityMode) -> Self {
+impl StationLinkSecurity {
+    pub const fn new(mode: WifiSecurityMode, management_protection: bool) -> Self {
         match mode {
             WifiSecurityMode::Open => Self::Open,
-            WifiSecurityMode::Wpa2Personal => Self::Wpa2Personal,
+            WifiSecurityMode::Wpa2Personal => Self::Wpa2Personal {
+                management_protection,
+            },
         }
     }
 }
@@ -149,11 +154,11 @@ impl StationStatus {
 
 pub(crate) fn publish_station_connected(
     association_bandwidth_mhz: u16,
-    security: WifiSecurityMode,
+    security: StationLinkSecurity,
 ) {
     STATION_STATUS.publish_link(
         StationLinkState::Connected,
-        Some((association_bandwidth_mhz, security.into())),
+        Some((association_bandwidth_mhz, security)),
     );
 }
 

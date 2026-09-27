@@ -1843,7 +1843,10 @@ pub(crate) async fn run_connected<'state, 'security>(
     );
     crate::status::publish_station_connected(
         u16::from(report.link.association_phy.bandwidth_mhz()),
-        negotiated_security,
+        crate::status::StationLinkSecurity::new(
+            negotiated_security,
+            report.link.management_protection,
+        ),
     );
     #[cfg(feature = "diagnostics")]
     {

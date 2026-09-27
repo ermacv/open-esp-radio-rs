@@ -1575,7 +1575,6 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         maintenance_policy: crate::Ieee802154SessionMaintenancePolicy::Quiesced,
         background_maintenance: true,
         enhanced_ack: true,
-        rf_policy: crate::Ieee802154SessionRfPolicy::CloseWhenAsleep,
         wifi_coexistence: true,
     };
     assert!(config.validate());
@@ -1646,11 +1645,6 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
                 tracked: u16::MAX,
                 awaiting_other_clients: u16::MAX,
                 busy: u16::MAX,
-                failed: true,
-            },
-            rf: crate::Ieee802154SessionRfCounts {
-                closes: u16::MAX,
-                opens: u16::MAX,
                 failed: true,
             },
             coexistence: crate::Ieee802154SessionCoexistence {

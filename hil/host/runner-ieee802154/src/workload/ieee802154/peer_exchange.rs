@@ -28,9 +28,8 @@ use oer_hil_protocol::{
     Ieee802154AirTxOutcome, Ieee802154SessionCoexistence, Ieee802154SessionConfig,
     Ieee802154SessionFrame, Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
     Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
-    Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionRfPolicy,
-    Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
-    ieee802154_frame_crc32c,
+    Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionTransmitEvidence,
+    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, ieee802154_frame_crc32c,
 };
 use serde::Serialize;
 
@@ -261,7 +260,6 @@ fn exchange<L: PeerLink>(
                 maintenance_policy: Ieee802154SessionMaintenancePolicy::Vendor,
                 background_maintenance: false,
                 enhanced_ack: true,
-                rf_policy: Ieee802154SessionRfPolicy::AlwaysOn,
                 wifi_coexistence: config.wifi_coexistence,
             },
             START_TIMEOUT,

@@ -20,17 +20,6 @@ pub enum Ieee802154Scenario {
     AirCheck(AirCheck),
     PeerExchange(PeerExchange),
     BackgroundMaintenance(BackgroundMaintenance),
-    RfSleep(RfSleep),
-}
-
-/// RF closed while the radio sleeps, with the reference peer.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RfSleep {
-    pub boots: u8,
-    pub channel: u8,
-    /// Device transmissions from sleep.
-    pub frames: u8,
 }
 
 /// Background PHY maintenance of the running client.
@@ -122,11 +111,6 @@ impl Ieee802154Scenario {
                 bounded(maintenance.channel, 11, 26, "channel")?;
                 bounded(maintenance.periods, 2, 30, "periods")
             }
-            Self::RfSleep(sleep) => {
-                bounded(sleep.boots, 1, 20, "boots")?;
-                bounded(sleep.channel, 11, 26, "channel")?;
-                bounded(sleep.frames, 1, 50, "frames")
-            }
             Self::PeerExchange(exchange) => {
                 bounded(exchange.boots, 1, 20, "boots")?;
                 bounded(exchange.channel, 11, 26, "channel")?;
@@ -152,13 +136,11 @@ impl Ieee802154Scenario {
         let mut plan = Plan::target_only(match self {
             Self::EventStatus(_) => ImageClass::DiagnosticIeee802154EventStatus,
             Self::EdEvent(_) => ImageClass::DiagnosticIeee802154EdEvent,
-            Self::AirCheck(_)
-            | Self::PeerExchange(_)
-            | Self::BackgroundMaintenance(_)
-            | Self::RfSleep(_) => ImageClass::DiagnosticIeee802154Radio,
+            Self::AirCheck(_) | Self::PeerExchange(_) | Self::BackgroundMaintenance(_) => {
+                ImageClass::DiagnosticIeee802154Radio
+            }
         });
-        plan.requirements.ieee802154_peer =
-            matches!(self, Self::PeerExchange(_) | Self::RfSleep(_));
+        plan.requirements.ieee802154_peer = matches!(self, Self::PeerExchange(_));
         plan
     }
 
@@ -210,15 +192,6 @@ impl Ieee802154Scenario {
                 output,
                 context,
             ),
-            Self::RfSleep(sleep) => ieee802154::rf_sleep::run(
-                ieee802154::rf_sleep::Config {
-                    boots: sleep.boots,
-                    channel: sleep.channel,
-                    frames: sleep.frames,
-                },
-                output,
-                context,
-            ),
             Self::AirCheck(check) => ieee802154::air_check::run(
                 ieee802154::air_check::Config {
                     boots: check.boots,
@@ -252,21 +225,6 @@ mod tests {
             ))
             .unwrap();
             assert!(excessive.validate().is_err());
-        }
-    }
-
-    #[test]
-    fn rf_sleep_needs_the_peer_and_bounds_its_frames() {
-        let table = "kind = 'rf-sleep'\nboots = 1\nchannel = 15\nframes = 4";
-        let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
-        scenario.validate().unwrap();
-        let plan = scenario.plan();
-        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
-        assert!(plan.requirements.ieee802154_peer);
-        for invalid in ["frames = 0", "frames = 51"] {
-            let scenario: Ieee802154Scenario =
-                toml::from_str(&table.replace("frames = 4", invalid)).unwrap();
-            assert!(scenario.validate().is_err(), "{invalid}");
         }
     }
 

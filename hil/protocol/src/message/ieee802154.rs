@@ -474,9 +474,6 @@ pub struct Ieee802154SessionConfig {
     /// Answer 2015 frames that request an ACK with an unsecured enhanced
     /// ACK; otherwise they get no ACK.
     pub enhanced_ack: bool,
-    /// Whether RF closes while the radio sleeps; closing needs a session
-    /// without background maintenance.
-    pub rf_policy: Ieee802154SessionRfPolicy,
     /// Take part in coexistence with Wi-Fi for the session, as a Thread
     /// border router does (`esp_coex_wifi_i154_enable`), with the
     /// coexistence schedule running.
@@ -490,27 +487,6 @@ pub struct Ieee802154SessionCoexistence {
     pub enabled: bool,
     /// Leaving coexistence at the stop failed.
     pub disable_failed: bool,
-}
-
-/// Whether the session's client closes RF while its radio sleeps.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub enum Ieee802154SessionRfPolicy {
-    /// RF stays open for the session.
-    #[default]
-    AlwaysOn,
-    /// RF closes while the radio sleeps and opens before an operation.
-    CloseWhenAsleep,
-}
-
-/// RF closes and opens of one session.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Ieee802154SessionRfCounts {
-    /// Times the client closed RF for its sleeping radio.
-    pub closes: u16,
-    /// Times the client opened RF for an operation.
-    pub opens: u16,
-    /// A close or open failed.
-    pub failed: bool,
 }
 
 /// When shared PHY tracking may start.
@@ -665,8 +641,6 @@ pub struct Ieee802154SessionStopEvidence {
     pub result: Ieee802154SessionResult,
     /// Background maintenance outcomes; all zero without it.
     pub maintenance: Ieee802154SessionMaintenanceCounts,
-    /// RF closes and opens; all zero while RF stays open.
-    pub rf: Ieee802154SessionRfCounts,
     /// Coexistence with Wi-Fi; all false without it.
     pub coexistence: Ieee802154SessionCoexistence,
 }

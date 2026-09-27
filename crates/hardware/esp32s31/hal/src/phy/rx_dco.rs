@@ -1,7 +1,7 @@
 //! Owned ESP32-S31 RX-DCO control-field access.
 //!
 //! The primary source is complete pinned
-//! `libphy.a[phy_rx_cal.o]::phy_xtal_duty_cal`, size `0x392`. Complete rev0
+//! `libphy.a[phy_rx_cal.o]::phy_xtal_duty_cal`, size `0x3a6`. Complete rev0
 //! ROM `phy_pbus_rx_dco_cal` at `0x2f82_8f44`, size `0x228`, independently
 //! uses the same field around its bounded measurement graph.
 

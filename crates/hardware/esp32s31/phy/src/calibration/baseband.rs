@@ -1,6 +1,6 @@
 //! Rust-owned slices of the ESP32-S31 baseband cold initializer.
 //!
-//! The pinned parent is `libphy.a[phy_init.o]::phy_bb_init`, size `0x16a`.
+//! The pinned parent is `libphy.a[phy_init.o]::phy_bb_init`, size `0x18e`.
 //! This module is intentionally built from independently completed child
 //! transitions. It must not grow a generic "call vendor calibration" action:
 //! every child becomes either pure Rust state or an explicit I2C, MMIO,

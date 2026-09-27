@@ -155,9 +155,9 @@ pub(crate) fn configure_phy_rx_gain_dc_registers(
 /// Program the complete crystal-duty calibration tone without `g_phyFuns`.
 ///
 /// Primary reference: pinned
-/// `libphy.a[phy_reg.o]::phy_start_tx_tone_step_new`, size `0xc2`, together
+/// `libphy.a[phy_reg.o]::phy_start_tx_tone_step_new`, size `0xf4`, together
 /// with its `g_phyFuns + 0x30` target
-/// `phy_txgain_comp_pacfg_new`, size `0x54`.
+/// `phy_txgain_comp_pacfg_new`, size `0x5c`.
 ///
 /// The calibration caller supplies only the three nonzero-capable arguments;
 /// the second path is zero in both evidenced calls. `enabled=true` reproduces

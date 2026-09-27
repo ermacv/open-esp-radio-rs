@@ -992,13 +992,13 @@ code = "303a25e922b46de3a2bceb659dde9541dc720b9e8083a846af81d412dc525de7"
 artifact = "libcoexist"
 member = "coexist_core.o"
 symbol = "coex_core_request"
-code = "30bffe93f8aa087d954be11c82bd90276c822b3de3ba4cefdd6cc66134a65d57"
+code = "0e0ff7807808d58646f75cd206a2e4f627e3dea9630e036b59d8deb526bda26a"
 
 [[function]]
 artifact = "libcoexist"
 member = "coexist_core.o"
 symbol = "coex_core_timer_idx_get"
-code = "cc4fd6b94e23168a7338ab4c8b35daadb3cea8cbd21821f5b225bf8f39336f65"
+code = "ecfc5b7c6d8e5c07280cfa7146072e2cc09c7bfb6dced21e3e5d56a9de813897"
 
 [[function]]
 artifact = "libcoexist"
@@ -1334,7 +1334,7 @@ code = "804676357d7a163da365dbc6765a54cdc7304e30727ca7ad29f281a97c75de3d"
 artifact = "libphy"
 member = "phy_debug.o"
 symbol = "phy_reg_check"
-code = "ce2c73960913c2fe10c362347d7921d34623bdbae5c1be0b9c83242e6f374ceb"
+code = "c1f074d32a32ff9d88ff9d4b164b9d8db64636db0985d550949db92152120b35"
 
 [[function]]
 artifact = "libphy"
@@ -1352,19 +1352,19 @@ code = "a8f886556cb6cbce00cca44c1318363bceb023def1f13bb9bf64f09268e74878"
 artifact = "libphy"
 member = "phy_i2c.o"
 symbol = "phy_i2c_init2"
-code = "23c3cdbd4dae896aecfc5250f638f2d2f6373e4286231987b6d9a60f761266a0"
+code = "b4c59d38adf9bc745bf226bec1de7ffb52a9d33a1e92a7a9d281e629ffb198ba"
 
 [[function]]
 artifact = "libphy"
 member = "phy_i2c.o"
 symbol = "phy_i2c_master_cmd_mem_init"
-code = "1b0b06a91714845bd962a13c5d47e7c238af13b15def70f83d0b3d67548b5c61"
+code = "feed5fb32785f3bed9164acf042e0f9ddcc05d2258dbaf705159e0a5e4dd87c0"
 
 [[function]]
 artifact = "libphy"
 member = "phy_init.o"
 symbol = "phy_bb_init"
-code = "b502aef8f869923dda5841e939e3596b5ae7cb3f50f43fc456e062e237fc36da"
+code = "44641626c7b71d97065c918c987f4d43fe86f6383c4d39cab1daca488f15ba80"
 
 [[function]]
 artifact = "libphy"
@@ -1376,7 +1376,7 @@ code = "a0669eea2d497b142884804ce8788520a9d15ef85f698d10a59dedfc652ff884"
 artifact = "libphy"
 member = "phy_init.o"
 symbol = "phy_close_rf"
-code = "403d4a8f00da99a3a7e29d670e9dd5d253b1cd16776d860c56aed8e4a3e4c777"
+code = "b3cc0ee522993b472db7e20083550103658eeb71a15e4d87ae555f9d129855c4"
 
 [[function]]
 artifact = "libphy"
@@ -1394,13 +1394,13 @@ code = "f433fde2d3dd3b61dd34f58f3c1ccb139d5020f64ad728b43c7e2e7371b5ca7f"
 artifact = "libphy"
 member = "phy_init.o"
 symbol = "phy_reg_update_new"
-code = "27d7cc4dd6f1b0a7bd47917cbc4b962de3fc39f79208dabacc65084b306006fe"
+code = "e1ac02c29a8a146f403845254a5b45cb7ab02a228b52b52ee3e2b3dd854f0432"
 
 [[function]]
 artifact = "libphy"
 member = "phy_init.o"
 symbol = "phy_rf_init"
-code = "952ae2d68e182725dcc07c18bc33427ad452b261674c832818b3a45595e6b9aa"
+code = "5585f5375484055e0146750b7869c20efb932a7c40a2e53f4b2912a5275b3b72"
 
 [[function]]
 artifact = "libphy"
@@ -1484,19 +1484,25 @@ code = "d145f91d193d8bc88186fe69c2a42d670ad8336c8d24c25a20426649b547fdd0"
 artifact = "libphy"
 member = "phy_reg.o"
 symbol = "phy_start_tx_tone_step_new"
-code = "67102c55fdeb0cba326e22ec19eaa64959fe63f7b4db702ea65e05307aaf571a"
+code = "bdcf81751df96963f65eac4f2c2226242ccb18c84d75e350bf5f19d68b5ab6ef"
 
 [[function]]
 artifact = "libphy"
 member = "phy_reg.o"
 symbol = "phy_txgain_comp_pacfg_new"
-code = "e9d16cd98257bdb6dbc1f8568f025a64838313c6a9da7fc67b7d1646162de9cc"
+code = "c7c55da7a8d15710e3f56a70fccc19467062da9e29ce15c1613f8f23c7a10ff8"
 
 [[function]]
 artifact = "libphy"
 member = "phy_rfpll.o"
 symbol = "phy_chip_set_chan"
-code = "149bdf9ec150a00a0f5c11dfdbefaaceda154c7c7c5029ee1b496d867acd787e"
+code = "03066d6e320d5d2bb571f7c4c235cfbf9b1f57e7043b4d75324e9d6cad53b943"
+
+[[function]]
+artifact = "libphy"
+member = "phy_rfpll.o"
+symbol = "phy_set_rf_freq_offset_new"
+code = "f01e57354d4409535b6d25c1ff47289d175ef935706882fa5abac96285862dac"
 
 [[function]]
 artifact = "libphy"
@@ -1508,7 +1514,13 @@ code = "c08a8492e58fb4dee8d2598c281648fa6fd155ce4d9ef8892d3a796c82e43a8d"
 artifact = "libphy"
 member = "phy_rx_cal.o"
 symbol = "phy_xtal_duty_cal"
-code = "bcbb86c66d00ff79d12bcd5e48e57bfff8261108018c7cd8ba96cf5d77ae2541"
+code = "9f8b456588e28bfd5f6560269f52c6f25d14e188e5203c6e3b53abb9b68de9c0"
+
+[[function]]
+artifact = "libphy"
+member = "phy_rx_cal.o"
+symbol = "phy_xtal_duty_cal_init"
+code = "cc1150a67486e4dda929100d48fce6122174a4ae758d09c4f35e1487cf79d75d"
 
 [[function]]
 artifact = "libphy"
@@ -1520,7 +1532,7 @@ code = "ca32107c01e0627d647b3439152603a0ab198021631ccf5eea582c7f8209cc5e"
 artifact = "libphy"
 member = "phy_rx_gain.o"
 symbol = "phy_set_rx_gain_table"
-code = "de8605229be85a81897ec5f6ba3e0744a49e77833f0f44173d1fed260cb4436f"
+code = "3071cc75af53b35afc8c083870e67ecb4baa134ffcdeae27358990b18e19fcb6"
 
 [[function]]
 artifact = "libphy"
@@ -1562,7 +1574,7 @@ code = "60874028704c8cadaaf293923adda597d3087d93a1a9aafa75469564169a90ad"
 artifact = "libphy"
 member = "phy_tx_cal.o"
 symbol = "phy_txdc_cal_pwdet_init"
-code = "1bca103aab8be37a3435b405e79e499f1605b939785227b4dcd5bac552ebda42"
+code = "6c776ed44719786390bcde3b2e22e0a554fac6b134c51fa6f9d40cdba8f99f44"
 
 [[function]]
 artifact = "libphy"

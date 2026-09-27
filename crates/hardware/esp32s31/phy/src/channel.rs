@@ -1,7 +1,7 @@
 //! Rust-owned ESP32-S31 channel-programming transition.
 //!
 //! The pinned root is `libphy.a[phy_rfpll.o]::phy_chip_set_chan`, size
-//! `0x10e`.  Its qualified Wi-Fi AP/STA path reaches only channels 1 through
+//! `0x122`.  Its qualified Wi-Fi AP/STA path reaches only channels 1 through
 //! 13.  The two vendor PHY-I2C critical-section callbacks are single `ret`
 //! instructions in the final image and are intentionally absent: the unique
 //! Rust radio owner serializes the complete transition.

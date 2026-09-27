@@ -13,6 +13,7 @@ use std::path::PathBuf;
 mod capture;
 mod compare;
 mod production;
+mod registers;
 mod vendor;
 
 // The shared relation also names offsets only the tracking scenario seeds.

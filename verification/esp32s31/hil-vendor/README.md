@@ -13,4 +13,4 @@ image.
 
 | Project | Behavior |
 | --- | --- |
-| `calibration` | Enables the PHY once with full calibration and no stored calibration data, then prints each reported vendor object as `oer-vendor-calibration <object> <hex bytes>` and `oer-vendor-calibration-end` on the USB-Serial/JTAG console. The reported objects and their sizes come from the pinned archives that define them (`main/CMakeLists.txt`); today the object is `phy_param` of `libphy.a`. The [calibration cross-check](../hardware/calibration/README.md) consumes the report. |
+| `calibration` | Enables the PHY once with full calibration and no stored calibration data, then prints each reported vendor object as `oer-vendor-calibration <object> <hex bytes>` and `oer-vendor-calibration-end` on the USB-Serial/JTAG console. The reported objects and their sizes come from the pinned archives that define them (`main/CMakeLists.txt`); today the object is `phy_param` of `libphy.a`. It then answers `r <hex address>` requests with `oer-vendor-calibration-register <address> <value>`; the host chooses the registers. The [calibration cross-check](../hardware/calibration/README.md) consumes both. |

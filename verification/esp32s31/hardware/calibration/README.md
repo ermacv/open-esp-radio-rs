@@ -23,7 +23,12 @@ board journal. For each of `--boots` rounds (ten by default) it takes these
 steps:
 
 1. Flash the [vendor calibration firmware](../../hil-vendor/README.md) into
-   `ota_0`, reset the board and keep the boot's `phy_param` report.
+   `ota_0`, reset the board and keep the boot's `phy_param` report. Then
+   request every readable register of the published radio-PHY ownership
+   partition (`RadioPhyPeripherals` of `registers/esp32s31/policy/api.toml`,
+   registers from the published SVD). A read that resets the chip, such as
+   a register whose clock domain the Wi-Fi calibration leaves off, is
+   recorded as unreadable and the reads continue after the new boot.
 2. Flash the production image class (`--production-image`, `correctness` by
    default) and prepare one reset with a fresh startup artifact path, so the
    boot calibrates fully and publishes its retained calibration.
@@ -63,7 +68,10 @@ It records:
 - both images;
 - each field's margin and its vendor and production ranges;
 - the excluded fields with their reasons;
-- the vendor byte ranges no compared field covers.
+- the vendor byte ranges no compared field covers;
+- the vendor register state: registers read, unreadable, and varying
+  between vendor boots. Production does not publish its register state
+  yet, so registers are not compared.
 
 ## Limitations
 

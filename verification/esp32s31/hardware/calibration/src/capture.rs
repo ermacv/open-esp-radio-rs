@@ -31,6 +31,11 @@ const VENDOR_BOOT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Serial read poll interval; the USB-Serial/JTAG console ignores the rate.
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
 const BAUD_RATE: u32 = 115_200;
+/// Console characters an unanswered register read reports.
+const CONSOLE_TAIL_CHARS: usize = 2000;
+/// Extensions of the per-boot vendor consoles and register replies.
+pub const CONSOLE_EXTENSION: &str = "log";
+pub const REGISTER_EXTENSION: &str = "registers";
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -115,8 +120,9 @@ fn journal(root: &Path, image: &str, application: &Path, port: &Path) -> Result<
     Ok(())
 }
 
-/// The console of one reset vendor boot, up to its closed report.
-fn vendor_boot(port: &Path) -> Result<String> {
+/// The console of one reset vendor boot, up to its closed report, and the
+/// open port the firmware keeps answering on.
+fn vendor_boot(port: &Path) -> Result<(String, Box<dyn serialport::SerialPort>)> {
     let mut serial = serialport::new(port.to_string_lossy(), BAUD_RATE)
         .timeout(READ_TIMEOUT)
         .open()?;
@@ -132,7 +138,7 @@ fn vendor_boot(port: &Path) -> Result<String> {
         }
         let text = String::from_utf8_lossy(&console);
         if vendor::complete(&text) {
-            return Ok(text.into_owned());
+            return Ok((text.into_owned(), serial));
         }
     }
     Err(format!(
@@ -140,6 +146,51 @@ fn vendor_boot(port: &Path) -> Result<String> {
         String::from_utf8_lossy(&console)
     )
     .into())
+}
+
+/// The vendor firmware's replies to reads of `registers`. A read that
+/// resets the chip, such as a register whose clock domain the calibration
+/// leaves off, shows as a new boot report instead of a reply: the register
+/// is recorded as unreadable in this state and the reads continue once the
+/// new boot reports.
+fn vendor_registers(
+    serial: &mut dyn serialport::SerialPort,
+    registers: &[crate::registers::Register],
+) -> Result<String> {
+    let mut replies = String::new();
+    let mut buffer = [0; 256];
+    for register in registers {
+        serial.write_all(vendor::register_request(register.address).as_bytes())?;
+        let boots = vendor::reports(&replies);
+        let started = Instant::now();
+        loop {
+            if vendor::registers(&replies)?.contains_key(&register.address) {
+                break;
+            }
+            if vendor::reports(&replies) > boots {
+                replies.push_str(&vendor::unreadable_line(register.address));
+                break;
+            }
+            if started.elapsed() > VENDOR_BOOT_TIMEOUT {
+                let tail = replies
+                    .char_indices()
+                    .rev()
+                    .nth(CONSOLE_TAIL_CHARS)
+                    .map_or(replies.as_str(), |(start, _)| &replies[start..]);
+                return Err(format!(
+                    "no reply for {} ({:#010x}); console tail:\n{tail}",
+                    register.name, register.address
+                )
+                .into());
+            }
+            match serial.read(&mut buffer) {
+                Ok(read) => replies.push_str(&String::from_utf8_lossy(&buffer[..read])),
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    Ok(replies)
 }
 
 /// One cold production boot publishing its retained calibration to
@@ -178,6 +229,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             .join("build.json"),
     )?)?;
     let (production, production_sha256) = build_production(&root, &arguments.production_image)?;
+    let registers = crate::registers::partition(&root, crate::registers::PARTITION)?;
     if let Some(parent) = arguments.output.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -198,12 +250,16 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             &port,
         )?;
         journal(&root, &journal_name, &vendor_build.application, &port)?;
-        let console = vendor_boot(&port)?;
-        std::fs::write(
-            output.join(format!("{VENDOR_PREFIX}{boot:02}.log")),
-            console,
-        )?;
-        println!("vendor boot {boot}: report captured");
+        let (console, mut serial) = vendor_boot(&port)?;
+        let replies = vendor_registers(&mut *serial, &registers)?;
+        drop(serial);
+        let stem = format!("{VENDOR_PREFIX}{boot:02}");
+        std::fs::write(output.join(format!("{stem}.{CONSOLE_EXTENSION}")), console)?;
+        std::fs::write(output.join(format!("{stem}.{REGISTER_EXTENSION}")), replies)?;
+        println!(
+            "vendor boot {boot}: report and {} registers captured",
+            registers.len()
+        );
 
         oer_hil_runner_core::device::flash_application(
             &root,

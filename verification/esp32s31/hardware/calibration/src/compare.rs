@@ -10,7 +10,9 @@
 //! it describes the environment rather than calibration and is excluded. A
 //! field without a review leaves the comparison INCOMPLETE; reviews naming
 //! no compared field are rejected.
-use crate::capture::{Capture, PRODUCTION_PREFIX, VENDOR_PREFIX};
+use crate::capture::{
+    CONSOLE_EXTENSION, Capture, PRODUCTION_PREFIX, REGISTER_EXTENSION, VENDOR_PREFIX,
+};
 use crate::committed::{
     CALIBRATION, CALIBRATION_BYTES, OutputField, PARENT, PARENT_BYTES, TRACKING_PROGRESS_FIELD,
     VENDOR_OBJECT, committed,
@@ -29,6 +31,8 @@ const TOLERANCES: &str = "tolerances.toml";
 /// Tracked summary, relative to the repository root.
 const SUMMARY: &str = "verification/esp32s31/evidence/hardware/calibration.json";
 const SECONDS_PER_DAY: u64 = 86_400;
+/// Extension of the captured production artifacts.
+const ARTIFACT_EXTENSION: &str = "bin";
 
 #[derive(clap::Args)]
 pub struct Arguments {
@@ -91,6 +95,42 @@ struct Summary {
     excluded: Vec<Excluded>,
     /// Vendor object byte ranges no compared field covers, `[start, end)`.
     uncovered: Vec<[usize; 2]>,
+    /// The vendor boots' calibrated register state, until production
+    /// publishes its own.
+    vendor_registers: VendorRegisters,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct VendorRegisters {
+    /// Registers every vendor boot answered.
+    read: usize,
+    /// Registers whose read reset the chip in the calibrated state.
+    unreadable: Vec<String>,
+    /// Registers whose value differed between vendor boots.
+    varying: Vec<String>,
+}
+
+/// The vendor register state of the boots' register replies.
+fn vendor_registers(replies: &[String]) -> Result<VendorRegisters> {
+    let mut values: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    let mut unreadable = std::collections::BTreeSet::new();
+    for text in replies {
+        for (address, value) in vendor::registers(text)? {
+            values.entry(address).or_default().push(value);
+        }
+        unreadable.extend(vendor::unreadable(text)?);
+    }
+    let format = |address: &u32| format!("{address:#010x}");
+    Ok(VendorRegisters {
+        read: values.len(),
+        varying: values
+            .iter()
+            .filter(|(_, v)| v.windows(2).any(|w| w[0] != w[1]))
+            .map(|(a, _)| format(a))
+            .collect(),
+        unreadable: unreadable.iter().map(format).collect(),
+    })
 }
 
 #[derive(Serialize)]
@@ -253,14 +293,17 @@ fn utc_date(unix_seconds: u64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-fn numbered(directory: &Path, prefix: &str) -> Result<Vec<PathBuf>> {
+fn numbered(directory: &Path, prefix: &str, extension: &str) -> Result<Vec<PathBuf>> {
     let mut paths = std::fs::read_dir(directory)?
         .map(|entry| Ok(entry?.path()))
         .collect::<Result<Vec<_>>>()?;
     paths.retain(|path| {
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with(prefix))
+        path.is_file()
+            && path.extension().and_then(|e| e.to_str()) == Some(extension)
+            && path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(prefix))
     });
     paths.sort();
     Ok(paths)
@@ -287,7 +330,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let capture: Capture = serde_json::from_slice(&std::fs::read(
         arguments.captures.join(crate::capture::RECORD),
     )?)?;
-    let vendor = numbered(&arguments.captures, VENDOR_PREFIX)?
+    let vendor = numbered(&arguments.captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
         .iter()
         .map(|path| {
             let mut objects = vendor::parse(&std::fs::read_to_string(path)?)?;
@@ -296,7 +339,11 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
                 .ok_or_else(|| format!("{} lacks {VENDOR_OBJECT}", path.display()).into())
         })
         .collect::<Result<Vec<_>>>()?;
-    let production = numbered(&arguments.captures, PRODUCTION_PREFIX)?
+    let register_replies = numbered(&arguments.captures, VENDOR_PREFIX, REGISTER_EXTENSION)?
+        .iter()
+        .map(|path| Ok(std::fs::read_to_string(path)?))
+        .collect::<Result<Vec<_>>>()?;
+    let production = numbered(&arguments.captures, PRODUCTION_PREFIX, ARTIFACT_EXTENSION)?
         .iter()
         .map(|path| production::output(&std::fs::read(path)?))
         .collect::<Result<Vec<_>>>()?;
@@ -354,6 +401,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         fields: summaries,
         excluded,
         uncovered: uncovered(length, &fields),
+        vendor_registers: vendor_registers(&register_replies)?,
     };
     let output = arguments
         .output
@@ -432,6 +480,21 @@ mod tests {
     fn uncovered_ranges_are_the_gaps_between_fields() {
         let fields = [field("a", 2, 0, 2, 1), field("b", 5, 0, 1, 1)];
         assert_eq!(uncovered(7, &fields), [[0, 2], [4, 5], [6, 7]]);
+    }
+
+    #[test]
+    fn vendor_registers_report_varying_and_unreadable_addresses() {
+        let boot = |value: u32| {
+            format!(
+                "oer-vendor-calibration-register 00000010 {value:08x}\n\
+                 oer-vendor-calibration-register 00000014 00000001\n{}",
+                vendor::unreadable_line(0x18)
+            )
+        };
+        let registers = vendor_registers(&[boot(1), boot(2)]).unwrap();
+        assert_eq!(registers.read, 2);
+        assert_eq!(registers.varying, ["0x00000010"]);
+        assert_eq!(registers.unreadable, ["0x00000018"]);
     }
 
     #[test]

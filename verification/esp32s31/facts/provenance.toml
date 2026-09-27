@@ -157,6 +157,12 @@ code = "62b61bb36c82611087bd594b2c7489ee1887172c88492a6a004e6cfd1ad02cfe"
 [[function]]
 artifact = "libble_app"
 member = "ble_6.o"
+symbol = "r_sym_ble_M0sTWGzdUqAUyXoK849F"
+code = "03e9bd56a73d22b101d75d2eb14cb231ef4b949abec9ee79260c5d188937166e"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_6.o"
 symbol = "r_sym_ble_aQLjUHo25zeoHGKf9dby"
 code = "f0c8b0893a7fbae878defa8958cb83c98cbdd1a68887010f74d5bb7846356ad8"
 
@@ -393,6 +399,24 @@ artifact = "libble_app"
 member = "coexIso.c.o_1.o"
 symbol = "r_sym_coexIso_rZmnVfOeuJbHu47VyZ7H"
 code = "ef508920f7e5f27a32be1e4989807d2c28534b268db69b9547f994b83302c8ce"
+
+[[function]]
+artifact = "libble_app"
+member = "coexScan.c.o_1.o"
+symbol = "r_sym_coexScan_FGUQNnreeyQiPkw2qTYu"
+code = "4572678c027196f974dc86bee78a98528e2214d70c5f5e7a2ca11abd4b0c1e58"
+
+[[function]]
+artifact = "libble_app"
+member = "coexScan.c.o_1.o"
+symbol = "r_sym_coexScan_s7w1EV32meG8f6y0sPBq"
+code = "9bcdeba684225814ffdc6b39cfb4c3ba4b2e55f3383e7abe1090dda7f56a115a"
+
+[[function]]
+artifact = "libble_app"
+member = "coexScan.c.o_1.o"
+symbol = "r_sym_coexScan_wNFqQvVjWMhmRY8ZGk4o"
+code = "6e7b0738dc3e5f6878169df520ce0db23d77b9ebc5dd53aee696fb6a263a8064"
 
 [[function]]
 artifact = "libble_app"

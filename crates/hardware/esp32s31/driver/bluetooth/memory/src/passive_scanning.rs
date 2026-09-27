@@ -14,6 +14,7 @@ use oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime;
 use vcell::VolatileCell;
 
 use crate::{
+    coexistence::{LANES_MASK, PassiveScanCoexistencePriorities, lanes_image},
     le_rx_chain::{LeRxChain, LeRxSource, LeRxTag},
     passive_scanning_event_image::{
         BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, PassiveScanLinkStateImage,
@@ -47,12 +48,11 @@ const SCHEDULER_ITEM_WORD_14: usize = 0x14 / 4;
 const SCHEDULER_ITEM_WORD_18: usize = 0x18 / 4;
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_WORD: usize = 0x1c / 4;
 const SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD: usize = 0x20 / 4;
-const SCHEDULER_ITEM_POSITIONAL_24_WORD: usize = 0x24 / 4;
+const SCHEDULER_ITEM_COEX_PRIORITIES_WORD: usize = 0x24 / 4;
 const SCHEDULER_ITEM_EVENT_CLASS_WORD: usize = 0x2c / 4;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x00c0_0000;
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0x0fdf_ffff;
-const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
 const SCHEDULER_ITEM_EVENT_CLASS_IMAGE: u32 = 1;
 
 /// Scanner link state.
@@ -141,7 +141,6 @@ impl ItemStorage {
             .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image());
         self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_WORD].set(SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE);
         self.words[SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD].set(u32::from(number));
-        self.words[SCHEDULER_ITEM_POSITIONAL_24_WORD].set(SCHEDULER_ITEM_POSITIONAL_24_IMAGE);
         self.words[SCHEDULER_ITEM_EVENT_CLASS_WORD].set(SCHEDULER_ITEM_EVENT_CLASS_IMAGE);
     }
 
@@ -327,7 +326,8 @@ impl<const N: usize> PassiveScanPool<N> {
         Ok(())
     }
 
-    /// Lower one passive window into the free head item.
+    /// Lower one passive window into the free head item with its
+    /// coexistence lanes.
     pub fn prepare_event(
         &mut self,
         instance: &SchedulerRoleInstance,
@@ -335,6 +335,7 @@ impl<const N: usize> PassiveScanPool<N> {
         window: PassiveScanSchedulerWindow,
         start_selection: PassiveScanStartSelection,
         controller_time: BluetoothControllerLatchedTime,
+        coexistence: PassiveScanCoexistencePriorities,
     ) -> Result<PassiveScanEvent, PassiveScanError> {
         let cpu = self.cpu(instance).map_err(PassiveScanError::Pool)?;
         if !matches!(cpu.state, PassiveScanState::Reset { event: None }) {
@@ -365,6 +366,8 @@ impl<const N: usize> PassiveScanPool<N> {
             window,
             start_selection,
         ));
+        let lanes = &item.words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD];
+        lanes.set((lanes.get() & !LANES_MASK) | lanes_image(&coexistence.lanes));
         // Detach the item from the free chain before the executor links it.
         item.header().link_hardware_next(None);
         link_state.set_free_head(next_free);

@@ -333,7 +333,8 @@ than exposing the positional flag or reproducing the vendor timing policy.
 
 The allocation-time item prefix is mandatory before that event transform.
 The complete common scheduler allocator supplies `+0x1c` with its bit-21
-default cleared and the fixed positional `+0x24` image. The complete scanner
+default cleared and a positional `+0x24` lane image that the coexistence
+lanes below replace. The complete scanner
 allocator then clears the high nibble of `+0x1c`, derives each item's low
 twelve bits at `+0x20` from the public extended-advertising-instance and
 connection limits plus one and the zero-based item index, and writes one at
@@ -341,6 +342,20 @@ connection limits plus one and the zero-based item index, and writes one at
 the additional extended-scan-only `+0x1c` transform is absent. These fields
 are installed by the private graph codec from a checked semantic allocation
 configuration; callers cannot provide any positional word.
+
+Item `+0x24` holds four five-bit coexistence priority lanes in bits 19:0. The
+open graph writes them for every window instead of keeping the allocator's
+image. With another radio on the antenna it applies the vendor's dynamic
+priority control. `coexScan.c.o_1.o` `r_sym_coexScan_FGUQNnreeyQiPkw2qTYu`
+installs the dynamic table `04 04 04 04 04 04 0b 0b 0b 0b 0d 0d ...` and the
+default bytes `04 04 04 04 04 0d 0d 0d`. The scan PTI initializer
+`r_sym_coexScan_s7w1EV32meG8f6y0sPBq` then gives a passive scanner (scan type
+zero at the selected PHY's `+0x04`) default lanes `4, 4, 0, 0`. For each
+window, `r_ble_lll_scan_restart` calls `r_sym_coexScan_wNFqQvVjWMhmRY8ZGk4o`.
+On a primary channel that call sets lane zero to 4 and lane one to 11, so a
+shared window carries `4, 11, 0, 0`. Its time-based state only selects between
+equal table columns and so does not change the lanes. Alone on the antenna,
+every lane requests 15; this equal standalone policy is a product choice.
 
 The selected-item ownership edge is also explicit. `r_ble_lll_scan_restart`
 loads the full scheduler free head from link state `+0x64`, derives its

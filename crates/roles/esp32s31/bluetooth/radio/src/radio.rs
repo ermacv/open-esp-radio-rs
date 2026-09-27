@@ -1122,6 +1122,7 @@ impl<
                     .expect("admission checked the window"),
                 PassiveScanStartSelection::Requested,
                 latched,
+                coexistence::passive_scan_priorities(self.coexistence),
             )
             .map_err(|_| RequestError::Unsupported)?;
         let id = self

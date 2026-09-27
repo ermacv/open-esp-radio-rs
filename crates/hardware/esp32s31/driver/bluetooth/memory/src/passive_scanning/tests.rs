@@ -4,11 +4,13 @@ use oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime;
 
 use super::{
     LINK_STATE_RX_CLASS_WORD, PassiveScanError, PassiveScanPool, PassiveScanStorage,
-    SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD,
+    SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD, SCHEDULER_ITEM_COEX_PRIORITIES_WORD,
 };
 use crate::{
-    PassiveScanDefaultTxPowerDbm, PassiveScanPrimaryChannel, PassiveScanResetConfig,
-    PassiveScanSchedulerWindow, PassiveScanStartSelection,
+    PassiveScanCoexistencePriorities, PassiveScanDefaultTxPowerDbm, PassiveScanPrimaryChannel,
+    PassiveScanResetConfig, PassiveScanSchedulerWindow, PassiveScanStartSelection,
+    SchedulerItemCoexistencePriority,
+    coexistence::lanes_image,
     le_phy_packet::{LeAccessAddress, LeCrcInit},
     le_rx_chain::{LeRxChain, LeRxChainModelAddress, LeRxChainStorage},
     passive_scanning_event_image::PassiveScanRxHeadProjection,
@@ -60,6 +62,12 @@ fn reset(pool: &mut PassiveScanPool<1>) -> SchedulerRoleInstance {
     instance
 }
 
+fn priorities(lanes: [u8; 4]) -> PassiveScanCoexistencePriorities {
+    PassiveScanCoexistencePriorities {
+        lanes: lanes.map(|lane| SchedulerItemCoexistencePriority::new(lane).unwrap()),
+    }
+}
+
 fn prepare(
     pool: &mut PassiveScanPool<1>,
     instance: &SchedulerRoleInstance,
@@ -70,6 +78,7 @@ fn prepare(
         window(),
         PassiveScanStartSelection::Requested,
         BluetoothControllerLatchedTime::from_bits(0x5555),
+        priorities([4, 11, 0, 0]),
     )
     .unwrap()
 }
@@ -126,6 +135,11 @@ fn a_window_takes_the_free_head_and_finishing_returns_it() {
             binding.items[1].controller_address().address()
         );
         assert_eq!(graph.link_state.image().controller_time(), 0x5555);
+        // The window's item carries its coexistence lanes.
+        assert_eq!(
+            graph.items[2].words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD].get() & 0x000f_ffff,
+            lanes_image(&priorities([4, 11, 0, 0]).lanes)
+        );
         assert_eq!(
             (
                 graph.items[2].header().raw_start(),
@@ -182,6 +196,7 @@ fn a_non_scanning_chain_is_refused() {
             window(),
             PassiveScanStartSelection::Requested,
             BluetoothControllerLatchedTime::from_bits(0),
+            priorities([15; 4]),
         ),
         Err(PassiveScanError::State)
     );

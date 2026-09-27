@@ -46,7 +46,8 @@ mod sram_link;
 
 pub use coexistence::{
     AdvertisingCoexistencePriorities, ConnectionCoexistencePriorities,
-    PeripheralConnectionCoexistenceProtection, SchedulerItemCoexistencePriority,
+    PassiveScanCoexistencePriorities, PeripheralConnectionCoexistenceProtection,
+    SchedulerItemCoexistencePriority,
 };
 pub use scheduler_item::{SCHEDULER_ITEM_UNEXECUTED, SchedulerItemCompletionStatus};
 

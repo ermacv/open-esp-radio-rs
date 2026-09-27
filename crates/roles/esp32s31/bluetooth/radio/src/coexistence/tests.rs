@@ -2,6 +2,7 @@ use oer_bluetooth_radio::CoexistenceLevel;
 
 use super::{
     CoexistenceProfile, advertising_priorities, connection_priorities, connection_protection,
+    passive_scan_priorities,
 };
 
 fn values<const N: usize>(
@@ -51,5 +52,17 @@ fn a_shared_connection_is_protected_for_eight_slots_in_256_us_units() {
     assert_eq!(
         connection_protection(CoexistenceProfile::Shared).map(|protection| protection.value()),
         Some(20)
+    );
+}
+
+#[test]
+fn a_passive_scan_window_is_equal_alone_and_takes_the_vendor_lanes_when_shared() {
+    assert_eq!(
+        values(passive_scan_priorities(CoexistenceProfile::Standalone).lanes),
+        [15; 4]
+    );
+    assert_eq!(
+        values(passive_scan_priorities(CoexistenceProfile::Shared).lanes),
+        [4, 11, 0, 0]
     );
 }

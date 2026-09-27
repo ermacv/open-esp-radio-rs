@@ -9,7 +9,8 @@
 use oer_bluetooth_radio::CoexistenceLevel;
 use oer_esp32s31_bluetooth_memory::{
     AdvertisingCoexistencePriorities, ConnectionCoexistencePriorities,
-    PeripheralConnectionCoexistenceProtection, SchedulerItemCoexistencePriority,
+    PassiveScanCoexistencePriorities, PeripheralConnectionCoexistenceProtection,
+    SchedulerItemCoexistencePriority,
 };
 
 /// How the radio shares the antenna.
@@ -46,6 +47,27 @@ const LEGACY_ADVERTISING_EVENT: [u8; 3] = [4, 9, 11];
 /// two and three the two bytes of `sym_coexAdv_6kaAR6zMjkyNvhAbQULQ` =
 /// `0d 0d`.
 const LEGACY_ADVERTISING_LANES: [u8; 4] = [4, 0, 13, 13];
+
+/// The passive scan window's lanes.
+///
+/// SOURCE: pinned `libble_app.a` `coexScan.c.o_1.o`. The scan install
+/// `r_sym_coexScan_FGUQNnreeyQiPkw2qTYu`, called when the stack initializes
+/// with dynamic control enabled, points the dynamic table at
+/// `sym_coexScan_ptmWrd4ifytw4hAMsVqa` = `04 04 04 04 04 04 0b 0b 0b 0b 0d
+/// 0d ...` and copies `sym_coexScan_8YO4r7UIOrnwAQvzje9T` = `04 04 04 04 04
+/// 0d` and `sym_coexScan_RNzbZGAqNFVVa0WpBKWj` = `0d 0d` into bytes 7..15 of
+/// the default table `sym_coexCommonDpc_RBSOWgxUegzIb4MrpZ6q`.
+/// `r_sym_coexScan_s7w1EV32meG8f6y0sPBq` (the
+/// `r_ble_lll_ext_scan_coex_pti_init` role) gives a passive scanner, scan
+/// type 0 as HCI LE Set Scan Parameters stores it, lanes zero and one from
+/// default bytes 7 and 10 and clears lanes two and three.
+/// `r_sym_ble_M0sTWGzdUqAUyXoK849F` (`r_ble_lll_scan_restart`) then calls
+/// `r_sym_coexScan_wNFqQvVjWMhmRY8ZGk4o` (`r_ble_lll_ext_scan_coex_dpc_process`)
+/// for each window: on a primary channel lane zero takes dynamic byte 0 or
+/// 1 and lane one byte 6 or 7, the column chosen by the scan's time-based
+/// state. Both columns of the pinned table are equal, so the lanes do not
+/// depend on that state.
+const PASSIVE_SCAN_LANES: [u8; 4] = [4, 11, 0, 0];
 
 /// The connection event lane at each level.
 ///
@@ -110,6 +132,24 @@ pub(crate) const fn advertising_priorities(
                 ],
             }
         }
+    }
+}
+
+/// The lanes of one passive scan window.
+pub(crate) const fn passive_scan_priorities(
+    profile: CoexistenceProfile,
+) -> PassiveScanCoexistencePriorities {
+    let lanes = match profile {
+        CoexistenceProfile::Standalone => [STANDALONE; 4],
+        CoexistenceProfile::Shared => PASSIVE_SCAN_LANES,
+    };
+    PassiveScanCoexistencePriorities {
+        lanes: [
+            lane(lanes[0]),
+            lane(lanes[1]),
+            lane(lanes[2]),
+            lane(lanes[3]),
+        ],
     }
 }
 

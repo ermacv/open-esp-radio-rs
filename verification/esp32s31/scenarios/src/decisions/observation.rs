@@ -337,6 +337,40 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
+        reason: "`CoexCore` bookkeeping of a released timer, its active request and its \
+            uncertain bit: vendor `coex_core_release` keeps no such state, and the probe's \
+            fresh core is discarded after the compared disable, whose register effects and \
+            return compare",
+        places: &[
+            (
+                "driver/coex/src/core.rs",
+                "self.uncertain_timers |= timer_bit(index);",
+            ),
+            (
+                "driver/coex/src/core.rs",
+                "self.active[usize::from(index.value())] = None;",
+            ),
+            (
+                "driver/coex/src/core.rs",
+                "self.uncertain_timers &= !timer_bit(index);",
+            ),
+            ("driver/coex/src/core.rs", "1 << index.value()"),
+        ],
+    },
+    Decision {
+        reason: "release of the probe's validation lease of the radio arbiter: its held flag \
+            belongs to the production arbiter, which the vendor serializes with a critical \
+            section instead, and the lease-release fence it orders is compared as a reviewed \
+            effect",
+        places: &[
+            (
+                "hal/src/shared_radio.rs",
+                "self.radio.held.store(false, Ordering::Release);",
+            ),
+            ("driver/coex/src/validation.rs", "}"),
+        ],
+    },
+    Decision {
         reason: "validation-only construction of the isolated arbiter lease and Wi-Fi clock \
             proof in the probe image: they carry no data the compared leaf reads, and its \
             register effects and return compare",

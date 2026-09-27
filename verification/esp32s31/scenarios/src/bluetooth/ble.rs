@@ -10,8 +10,7 @@
 use crate::harness::Result;
 use crate::mac::{
     Domain, Leaf, Objects, Replacement, Suite, Vendor, in_archive, leaf, objects, ordered, prefix,
-    tail_prefix,
-    quiet, released, replaced,
+    quiet, released, replaced, tail_prefix,
 };
 
 /// Session inputs of the second to fourth suite archives.

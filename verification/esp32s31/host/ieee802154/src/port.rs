@@ -14,7 +14,7 @@ use oer_esp32s31_hal::coex::CoexPti;
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154CcaMode, Ieee802154Channel, Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels,
     ll::{
-        Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
+        Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
         Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
         Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStateCode,
         Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
@@ -416,6 +416,15 @@ impl Ieee802154LowLevel for PortLl {
     }
     fn cca_busy(&mut self) -> bool {
         self.ll("ieee802154_ll_is_cca_busy", &[]) != 0
+    }
+    // The pinned vendor build here has no `CONFIG_IEEE802154_TXRX_STATISTIC`,
+    // so its driver never reads the diagnostic counters, and the stand never
+    // asks the engine to collect statistics.
+    fn debug_counter(&mut self, counter: Ieee802154DebugCounter) -> u16 {
+        unreachable!("diagnostic counter {counter:?} read without TX/RX statistics")
+    }
+    fn clear_debug_counter(&mut self, counter: Ieee802154DebugCounter) {
+        unreachable!("diagnostic counter {counter:?} cleared without TX/RX statistics")
     }
     fn set_ed_duration(&mut self, symbols: u16) {
         self.value("ieee802154_ll_set_ed_duration", u64::from(symbols));

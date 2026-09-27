@@ -41,11 +41,11 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/driver/ieee802154",
-      "sha256": "1bb99f2c203cff6240caa9bf636634c3ff9b4c5b9d0bca533696a463e583b7e6"
+      "sha256": "5c88db6f228aef16db35cbcf62692a72c720bfea45a3f836d3b3089aff4a6e31"
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "4ebb430cb5c9909150febe5abd28d4efd85a9ac2608746e12dd4528e77c3f858"
+      "sha256": "164679406cb66a54c44dd9688dce2e4287fa8fb4bb2bb328c262616f730b80f8"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -61,11 +61,11 @@
     },
     {
       "path": "crates/protocols/ieee802154",
-      "sha256": "3458d7c72a98e52a2ae9ff8340b13287695f5ec216f5bbdc9baf170c052112cb"
+      "sha256": "c8fd7ddc8102f31c1b4f407487843bf454bb7ab5928d94af3c7073028a2cad7f"
     },
     {
       "path": "verification/esp32s31/host/ieee802154",
-      "sha256": "48f2c1cb8cf707918e7575eca6d1ce9694bf56cb1f24db33e6b69fb2d0c48116"
+      "sha256": "99e51b7b9400f5a308a0eb7bf0f1b09e6d24fc728f37c76e7e075c75b9f3ffd3"
     },
     {
       "path": "verification/schema",

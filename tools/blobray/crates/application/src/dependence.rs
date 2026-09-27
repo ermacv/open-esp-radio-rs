@@ -60,6 +60,10 @@ pub struct ObservedInstructions {
     pub effect: BTreeSet<u32>,
     /// Instructions the memory state at a case end depends on.
     pub state: BTreeSet<u32>,
+    /// Bytes of ordinary memory the executed instructions read, as
+    /// `(address, width)`: the data a result depends on, which evidence
+    /// digests by content.
+    pub reads: BTreeSet<(u32, u8)>,
 }
 
 use blobray_analysis::closure::CodeMemory as Code;
@@ -717,6 +721,9 @@ impl<'x> Analyzer<'x> {
                 } => {
                     if forward.current.is_some() {
                         forward.reads.push((address, width, device));
+                        if !device {
+                            result.reads.insert((address, width));
+                        }
                     }
                 }
                 StepEntry::Write {

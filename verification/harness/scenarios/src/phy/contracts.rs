@@ -29,6 +29,8 @@ fn word(selector: fn(u32) -> EffectSelector, address: u32) -> EffectPattern {
     EffectPattern {
         selector: selector(address),
         value: EffectValue::Any,
+        preceded_by: None,
+        occurrence: None,
         followed_by: None,
     }
 }
@@ -76,6 +78,8 @@ pub fn omitted_read_before(
     let pattern = EffectPattern {
         selector: read(address),
         value: EffectValue::Any,
+        preceded_by: None,
+        occurrence: None,
         followed_by: Some(read(successor)),
     };
     EffectRule {
@@ -137,6 +141,8 @@ pub fn plumbing(wait_status: &[u32], maximum: u32) -> Vec<EffectRule> {
                     micros: Some(POLL_DELAY_MICROS),
                 },
                 value: EffectValue::Any,
+                preceded_by: None,
+                occurrence: None,
                 followed_by: Some(read(address)),
             },
             maximum,

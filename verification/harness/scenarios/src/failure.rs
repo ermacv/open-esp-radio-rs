@@ -263,6 +263,8 @@ mod tests {
                 width: 4,
             },
             value: EffectValue::Any,
+            preceded_by: None,
+            occurrence: None,
             followed_by: None,
         };
         let id = ArtifactId::of_bytes(b"failure fixture");

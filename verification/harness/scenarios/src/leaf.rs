@@ -707,6 +707,8 @@ impl LeafRun {
         let write = |(address, value): (u32, u32)| EffectPattern {
             selector: EffectSelector::MmioWrite { address, width: 4 },
             value: EffectValue::Exact { value },
+            preceded_by: None,
+            occurrence: None,
             followed_by: None,
         };
         let mut rules: Vec<EffectRule> = leaf
@@ -729,6 +731,8 @@ impl LeafRun {
                     width: 4,
                 },
                 value: EffectValue::Any,
+                preceded_by: None,
+                occurrence: None,
                 followed_by: None,
             };
             rules.push(EffectRule {
@@ -754,6 +758,8 @@ impl LeafRun {
                         successor: RELEASE_FENCE.1,
                     },
                     value: EffectValue::Any,
+                    preceded_by: None,
+                    occurrence: None,
                     followed_by: None,
                 }),
                 disposition: EffectDisposition::Added,
@@ -788,6 +794,8 @@ impl LeafRun {
                     successor: FULL_FENCE,
                 },
                 value: EffectValue::Any,
+                preceded_by: None,
+                occurrence: None,
                 followed_by: None,
             }),
             disposition: EffectDisposition::Added,

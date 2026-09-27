@@ -180,8 +180,6 @@ const UNITS: &[u32] = &[1, 2];
 /// (`fence r, rw`) and release (`fence rw, w`) fences of atomics.
 const FULL_FENCE: u8 = 0xf;
 const ACQUIRE_FENCE: (u8, u8) = (2, 3);
-/// Samples of one cursor register: the release proof and the settle.
-const CURSOR_SAMPLES: u32 = 2;
 const RELEASE_FENCE: (u8, u8) = (3, 1);
 /// Guest events one append may record.
 const APPEND_EVENTS: u32 = 1 << 12;
@@ -446,25 +444,26 @@ fn registers(
     models
 }
 
-/// The walker's cursor register `address`: the vendor samples it once to
-/// settle the doorbell, production also for its release proof. The device
-/// models supply every sample in order, and what the samples decide, the
-/// doorbell, the base repair and the rearmed ring, compares exactly.
-fn cursor(name: &str, address: u32, minimum: u32) -> EffectRule {
-    let read = EffectPattern {
-        selector: EffectSelector::MmioRead { address, width: 4 },
-        value: EffectValue::Any,
-        followed_by: None,
-    };
+/// Production's first sample of the walker's cursor register `address`, its
+/// proof that the unit's link is released before rearming it. Every later
+/// sample settles the doorbell as the vendor's does and compares exactly.
+fn release_proof(name: &str, address: u32) -> EffectRule {
     EffectRule {
         name: name.into(),
-        vendor: Some(read),
-        replacement: Some(read),
-        disposition: EffectDisposition::Ignored,
-        min_occurrences: minimum,
-        max_occurrences: CURSOR_SAMPLES,
-        reason: "production samples the walker's cursor for its release proof as well as \
-            to settle the doorbell; the vendor only settles it"
+        vendor: None,
+        replacement: Some(EffectPattern {
+            selector: EffectSelector::MmioRead { address, width: 4 },
+            value: EffectValue::Any,
+            preceded_by: None,
+            occurrence: Some(1),
+            followed_by: None,
+        }),
+        disposition: EffectDisposition::Added,
+        min_occurrences: 1,
+        max_occurrences: 1,
+        reason: "production samples the walker's LAST and NEXT to prove the unit released \
+            before rearming it; the vendor's caller leaves the unit to the walker without that \
+            proof"
             .into(),
     }
 }
@@ -487,6 +486,8 @@ fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
             width: 4,
         },
         value: EffectValue::Any,
+        preceded_by: None,
+        occurrence: None,
         followed_by: None,
     };
     let rules = vec![
@@ -510,10 +511,9 @@ fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
                     width: 4,
                 },
                 value: EffectValue::Any,
-                followed_by: Some(EffectSelector::MmioRead {
-                    address: RX_LAST,
-                    width: 4,
-                }),
+                preceded_by: None,
+                occurrence: Some(1),
+                followed_by: None,
             }),
             disposition: EffectDisposition::Added,
             min_occurrences: 1,
@@ -523,8 +523,8 @@ fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
                 poll before returning and leaves the unit to the walker without that proof"
                 .into(),
         },
-        cursor("walker-next", RX_NEXT, 0),
-        cursor("walker-last", RX_LAST, 0),
+        release_proof("release-proof-last", RX_LAST),
+        release_proof("release-proof-next", RX_NEXT),
         EffectRule {
             name: "atomic-ordering-fence".into(),
             vendor: None,
@@ -534,6 +534,8 @@ fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
                     successor: ACQUIRE_FENCE.1,
                 },
                 value: EffectValue::Any,
+                preceded_by: None,
+                occurrence: None,
                 followed_by: None,
             }),
             disposition: EffectDisposition::Added,
@@ -550,6 +552,8 @@ fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
                     successor: RELEASE_FENCE.1,
                 },
                 value: EffectValue::Any,
+                preceded_by: None,
+                occurrence: None,
                 followed_by: None,
             }),
             disposition: EffectDisposition::Added,
@@ -566,6 +570,8 @@ fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
                     successor: FULL_FENCE,
                 },
                 value: EffectValue::Any,
+                preceded_by: None,
+                occurrence: None,
                 followed_by: None,
             }),
             disposition: EffectDisposition::Added,

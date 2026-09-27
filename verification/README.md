@@ -46,7 +46,9 @@ of the evidence index with `--index`; qualification treats a shard as stale
 when any source it records changed. CI does not rerun the vendor scenarios,
 because the `local-build` pins of `esp32s31/artifacts.toml` cannot be
 downloaded: Blobray's periodic local `cargo xtask evidence --chip <chip>
---check` is the gate. The [ESP32-S31 project](esp32s31/README.md)
+--check` is the gate. Only that check's owner regenerates the shards, in
+commits of their own after each check; other changes, including rebases over a
+shard, leave `evidence/scenarios` untouched, so shards never conflict. The [ESP32-S31 project](esp32s31/README.md)
 describes the scenarios, their inputs and their reviewed decisions; the
 [vendor contract reference](../docs/vendor/esp32s31/README.md) explains the
 vendor behavior they cover.

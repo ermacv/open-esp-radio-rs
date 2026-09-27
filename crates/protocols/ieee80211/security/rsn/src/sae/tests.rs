@@ -205,3 +205,79 @@ fn an_h2e_commit_admits_only_a_rejected_groups_element_without_19() {
         Err(SaeError::Malformed)
     );
 }
+
+#[test]
+fn an_access_point_parses_the_commit_a_station_writes() {
+    let token = [0x5a; SAE_ANTI_CLOGGING_TOKEN_LEN];
+    let peer = SaeCommitValues::parse(&hex::<SAE_COMMIT_LEN>(PEER_COMMIT), false).unwrap();
+    let mut body = [0; SAE_COMMIT_LEN + SAE_ANTI_CLOGGING_TOKEN_LEN + 3];
+
+    let len = peer.encode(None, false, &mut body).unwrap();
+    let received = SaeReceivedCommit::parse(&body[..len], false).unwrap();
+    assert_eq!(received.values, peer);
+    assert_eq!(received.token, None);
+
+    let len = peer.encode(Some(&token), false, &mut body).unwrap();
+    let received = SaeReceivedCommit::parse(&body[..len], false).unwrap();
+    assert_eq!(received.values, peer);
+    assert_eq!(received.token, Some(&token[..]));
+
+    let len = peer.encode(Some(&token), true, &mut body).unwrap();
+    let received = SaeReceivedCommit::parse(&body[..len], true).unwrap();
+    assert_eq!(received.values, peer);
+    assert_eq!(received.token, Some(&token[..]));
+    assert!(!received.rejects_offered_group());
+}
+
+#[test]
+fn an_access_point_reads_rejected_groups_and_refuses_bad_commits() {
+    let peer = hex::<SAE_COMMIT_LEN>(PEER_COMMIT);
+    let mut body = [0; SAE_COMMIT_LEN + 7];
+    body[..SAE_COMMIT_LEN].copy_from_slice(&peer);
+    body[SAE_COMMIT_LEN..].copy_from_slice(&[255, 5, 92, 20, 0, 19, 0]);
+    let received = SaeReceivedCommit::parse(&body, true).unwrap();
+    assert_eq!(received.rejected_groups, Some(&[20, 0, 19, 0][..]));
+    assert!(received.rejects_offered_group());
+
+    let mut other_group = peer;
+    other_group[0] = 20;
+    assert_eq!(
+        SaeReceivedCommit::parse(&other_group, false),
+        Err(SaeCommitRefusal::UnsupportedGroup)
+    );
+    let mut zero_scalar = peer;
+    zero_scalar[2..34].fill(0);
+    assert_eq!(
+        SaeReceivedCommit::parse(&zero_scalar, false),
+        Err(SaeCommitRefusal::Unspecified)
+    );
+    let mut off_curve = peer;
+    off_curve[SAE_COMMIT_LEN - 1] ^= 1;
+    assert_eq!(
+        SaeReceivedCommit::parse(&off_curve, false),
+        Err(SaeCommitRefusal::Unspecified)
+    );
+    assert_eq!(
+        SaeReceivedCommit::parse(&peer[..SAE_COMMIT_LEN - 1], false),
+        Err(SaeCommitRefusal::Unspecified)
+    );
+}
+
+#[test]
+fn a_comeback_token_is_bound_to_its_station_and_used_once() {
+    let station = [2, 0, 0, 0, 0, 7];
+    let mut tokens = SaeComebackTokens::new();
+    let token = tokens.issue(station, 1_000, || [0x42; 32]);
+    assert_eq!(token[..2], [0, 1]);
+    assert_eq!(tokens.issue(station, 2_000, || unreachable!()), token);
+    assert!(!tokens.check([2, 0, 0, 0, 0, 8], &token));
+    let mut forged = token;
+    forged[31] ^= 1;
+    assert!(!tokens.check(station, &forged));
+    assert!(tokens.check(station, &token));
+    assert!(!tokens.check(station, &token));
+
+    let reissued = tokens.issue(station, 70_000_000, || [0x43; 32]);
+    assert_ne!(reissued, token);
+    assert!(tokens.check(station, &reissued));
+}

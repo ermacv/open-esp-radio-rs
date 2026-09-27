@@ -53,6 +53,10 @@ const EXTENSION_ELEMENT_ID: u8 = 255;
 const REJECTED_GROUPS_ELEMENT: u8 = 92;
 /// Element ID Extension of the Anti-Clogging Token Container element.
 const ANTI_CLOGGING_TOKEN_ELEMENT: u8 = 93;
+/// Element ID Extension of the Password Identifier element.
+const PASSWORD_IDENTIFIER_ELEMENT: u8 = 33;
+/// Octets of an anti-clogging token: its index and an HMAC-SHA256 tail.
+pub const SAE_ANTI_CLOGGING_TOKEN_LEN: usize = 32;
 
 /// The minimum hunting-and-pecking iterations of an ECC group.
 const MINIMUM_PWE_ITERATIONS: u8 = 40;
@@ -414,6 +418,217 @@ impl SaeCommitValues {
     }
 }
 
+/// Why an access point refuses a station's commit before any computation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SaeCommitRefusal {
+    /// A group other than 19: status 77.
+    UnsupportedGroup,
+    /// A truncated body, a scalar outside 1 < scalar < r, an element off the
+    /// curve or a malformed trailing element: status 1.
+    Unspecified,
+}
+
+/// A station's commit as the access point receives it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SaeReceivedCommit<'a> {
+    pub values: SaeCommitValues,
+    /// The anti-clogging token the station echoed.
+    pub token: Option<&'a [u8]>,
+    /// The station named a password identifier.
+    pub password_identifier: bool,
+    /// The Rejected Groups payload of an H2E commit: little-endian groups.
+    pub rejected_groups: Option<&'a [u8]>,
+}
+
+impl<'a> SaeReceivedCommit<'a> {
+    /// Parse a station's group-19 commit as the vendor's `sae_parse_commit`
+    /// does: under hunting and pecking, octets between the group and the
+    /// scalar and element are the anti-clogging token when at least 32;
+    /// under H2E, a Password Identifier, a Rejected Groups element and an
+    /// Anti-Clogging Token Container may follow the element. The scalar must
+    /// satisfy 1 < scalar < r and the element must be a curve point.
+    pub fn parse(body: &'a [u8], h2e: bool) -> Result<Self, SaeCommitRefusal> {
+        let [group_low, group_high, ref rest @ ..] = *body else {
+            return Err(SaeCommitRefusal::Unspecified);
+        };
+        if u16::from_le_bytes([group_low, group_high]) != SAE_GROUP_P256 {
+            return Err(SaeCommitRefusal::UnsupportedGroup);
+        }
+        let values_len = 3 * SAE_PRIME_LEN;
+        let mut token = None;
+        let mut rest = rest;
+        if !h2e && rest.len() > values_len && rest.len() - values_len >= SAE_ANTI_CLOGGING_TOKEN_LEN
+        {
+            let (echoed, tail) = rest.split_at(rest.len() - values_len);
+            token = Some(echoed);
+            rest = tail;
+        }
+        let values_bytes = rest
+            .get(..values_len)
+            .ok_or(SaeCommitRefusal::Unspecified)?;
+        let mut values = SaeCommitValues {
+            scalar: [0; SAE_PRIME_LEN],
+            element: [0; 2 * SAE_PRIME_LEN],
+        };
+        values
+            .scalar
+            .copy_from_slice(&values_bytes[..SAE_PRIME_LEN]);
+        values
+            .element
+            .copy_from_slice(&values_bytes[SAE_PRIME_LEN..]);
+        let scalar = scalar_from(&values.scalar).ok_or(SaeCommitRefusal::Unspecified)?;
+        if bool::from(scalar.is_zero() | scalar.ct_eq(&Scalar::ONE)) {
+            return Err(SaeCommitRefusal::Unspecified);
+        }
+        if peer_element(&values.element).is_none() {
+            return Err(SaeCommitRefusal::Unspecified);
+        }
+        let mut commit = Self {
+            values,
+            token,
+            password_identifier: false,
+            rejected_groups: None,
+        };
+        let mut rest = &rest[values_len..];
+        if let Some((_, tail)) = extension_element(rest, PASSWORD_IDENTIFIER_ELEMENT, 1) {
+            commit.password_identifier = true;
+            rest = tail;
+        }
+        if h2e {
+            if let Some((value, tail)) = extension_element(rest, REJECTED_GROUPS_ELEMENT, 2) {
+                if !value.len().is_multiple_of(2) {
+                    return Err(SaeCommitRefusal::Unspecified);
+                }
+                commit.rejected_groups = Some(value);
+                rest = tail;
+            }
+            if let Some((value, _)) = extension_element(rest, ANTI_CLOGGING_TOKEN_ELEMENT, 1) {
+                commit.token = Some(value);
+            }
+        }
+        Ok(commit)
+    }
+
+    /// Whether the station rejected group 19, the only group this access
+    /// point offers.
+    pub fn rejects_offered_group(&self) -> bool {
+        self.rejected_groups.is_some_and(|groups| {
+            groups
+                .chunks_exact(2)
+                .any(|group| group == SAE_GROUP_P256.to_le_bytes())
+        })
+    }
+}
+
+/// Seconds an access point keeps one comeback-token key.
+const COMEBACK_KEY_LIFETIME_MICROS: u64 = 60_000_000;
+
+/// The anti-clogging tokens an access point issues and checks.
+///
+/// A token is a big-endian index followed by the tail of
+/// HMAC-SHA256(key, station address || index); a table indexed by the first
+/// octet of HMAC-SHA256(key, station address) holds each station's pending
+/// index, and a checked token invalidates it. The key is redrawn when a token
+/// is issued more than 60 seconds after the last draw. The vendor passes its
+/// index counter by value, so its counter never advances and every newly
+/// pending index is 1.
+///
+/// SOURCE: ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+/// `components/wpa_supplicant/src/ap/comeback_token.c`
+/// (`auth_build_token_req`, `check_comeback_token`, `comeback_token_hash`).
+pub struct SaeComebackTokens {
+    key: [u8; 32],
+    key_drawn_micros: Option<u64>,
+    pending: [u16; 256],
+}
+
+impl SaeComebackTokens {
+    pub const fn new() -> Self {
+        Self {
+            key: [0; 32],
+            key_drawn_micros: None,
+            pending: [0; 256],
+        }
+    }
+
+    /// The token requested from `station`, drawing a fresh key with
+    /// `draw_key` when the current one is missing or older than 60 seconds.
+    pub fn issue(
+        &mut self,
+        station: [u8; 6],
+        now_micros: u64,
+        draw_key: impl FnOnce() -> [u8; 32],
+    ) -> [u8; SAE_ANTI_CLOGGING_TOKEN_LEN] {
+        let expired = self
+            .key_drawn_micros
+            .is_none_or(|drawn| now_micros.saturating_sub(drawn) > COMEBACK_KEY_LIFETIME_MICROS);
+        if expired {
+            self.key = draw_key();
+            self.key_drawn_micros = Some(now_micros);
+            self.pending = [0; 256];
+        }
+        let slot = usize::from(hmac_sha256(&self.key, &[&station])[0]);
+        if self.pending[slot] == 0 {
+            self.pending[slot] = 1;
+        }
+        let index = self.pending[slot].to_be_bytes();
+        let mut token = hmac_sha256(&self.key, &[&station, &index]);
+        token[..2].copy_from_slice(&index);
+        token
+    }
+
+    /// Whether `token` is the one pending for `station`; a valid token is
+    /// consumed.
+    pub fn check(&mut self, station: [u8; 6], token: &[u8]) -> bool {
+        if token.len() != SAE_ANTI_CLOGGING_TOKEN_LEN {
+            return false;
+        }
+        let slot = usize::from(hmac_sha256(&self.key, &[&station])[0]);
+        let index = self.pending[slot];
+        if index == 0 || index.to_be_bytes() != token[..2] {
+            return false;
+        }
+        let mac = hmac_sha256(&self.key, &[&station, &token[..2]]);
+        if !bool::from(mac[2..].ct_eq(&token[2..])) {
+            return false;
+        }
+        self.pending[slot] = 0;
+        true
+    }
+}
+
+impl Default for SaeComebackTokens {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The extension element `extension` at the start of `bytes`, whose length
+/// field is at least `minimum_length`, and the bytes after it; `None` when
+/// another element or nothing starts there.
+fn extension_element(bytes: &[u8], extension: u8, minimum_length: u8) -> Option<(&[u8], &[u8])> {
+    match *bytes {
+        [EXTENSION_ELEMENT_ID, length, id, ..]
+            if id == extension
+                && length >= minimum_length
+                && usize::from(length) <= bytes.len() - 2 =>
+        {
+            let end = 2 + usize::from(length);
+            Some((&bytes[3..end], &bytes[end..]))
+        }
+        _ => None,
+    }
+}
+
+fn peer_element(element: &[u8; 2 * SAE_PRIME_LEN]) -> Option<AffinePoint> {
+    let mut encoded = [0_u8; 1 + 2 * SAE_PRIME_LEN];
+    encoded[0] = 4;
+    encoded[1..].copy_from_slice(element);
+    EncodedPoint::from_bytes(encoded)
+        .ok()
+        .and_then(|point| Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&point)))
+}
+
 /// The anti-clogging token of a commit refused with status 76: after the
 /// group under hunting and pecking, inside its container element under H2E.
 pub fn anti_clogging_token(body: &[u8], h2e: bool) -> Result<&[u8], SaeError> {
@@ -500,13 +715,7 @@ impl SaeCommit {
         if bool::from(peer_scalar.is_zero() | peer_scalar.ct_eq(&Scalar::ONE)) {
             return Err(SaeError::InvalidScalar);
         }
-        let mut encoded = [0_u8; 1 + 2 * SAE_PRIME_LEN];
-        encoded[0] = 4;
-        encoded[1..].copy_from_slice(&peer.element);
-        let peer_element = EncodedPoint::from_bytes(encoded)
-            .ok()
-            .and_then(|point| Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&point)))
-            .ok_or(SaeError::InvalidElement)?;
+        let peer_element = peer_element(&peer.element).ok_or(SaeError::InvalidElement)?;
         if peer == self.own {
             return Err(SaeError::Reflection);
         }

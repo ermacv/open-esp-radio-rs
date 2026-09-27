@@ -45,6 +45,23 @@ const RX_POLICY_NONE: Claim = (
     "open_wifi_sta_ap_trace_disable_all_role_receive",
 );
 
+const LOW_POWER_CLOCK_SELECT: Claim = (
+    "modem_clock_select_lp_clock_source",
+    "open_bluetooth_trace_select_low_power_clock",
+);
+const LOW_POWER_CLOCK_DESELECT: Claim = (
+    "modem_clock_deselect_lp_clock_source",
+    "open_bluetooth_trace_deselect_low_power_clock",
+);
+/// `modem_clock_context_t` of ESP-IDF `esp_hw_support/modem`: the `dev` and
+/// `icg_config` pointers, and the Bluetooth entry of `lpclk_src`.
+const MODEM_CLOCK_CONTEXT: &str = "modem_clock_context.7";
+const MODEM_CLOCK_POINTERS: (u32, u32) = (12, 20);
+const MODEM_CLOCK_BLUETOOTH_SOURCE: (u32, u32) = (24, 28);
+/// The flags of the I2C-master entry of the ESP32-S31 modem device context.
+const MODEM_CLOCK_DEVICES: &str = "dev.4";
+const MODEM_CLOCK_I2C_MASTER_FLAGS: (u32, u32) = (18, 20);
+
 const RETRY_CTS: Claim = ("lmacProcessCtsTimeout", "open_libpp_tx_retry_trace_step");
 const RETRY_COLLISION: Claim = ("lmacProcessCollision", "open_libpp_tx_retry_trace_step");
 const RETRY_ACK: Claim = ("lmacProcessAckTimeout", "open_libpp_tx_retry_trace_step");
@@ -218,6 +235,61 @@ pub const DECISIONS: &[Decision] = &[
         places: &[
             place(EXTERNAL_MODE, ".bss.s_external_coex_is_slv_mode", 0, 1),
             place(EXTERNAL_PARAMS, ".bss.s_external_coex_is_slv_mode", 0, 1),
+        ],
+    },
+    Decision {
+        reason: "lazy initialization of the ESP-IDF modem clock singleton on its first call \
+            (`MODEM_CLOCK_instance` stores the `dev` and `icg_config` pointers, and \
+            `modem_clock_device_context` clears the reference-count flag of the I2C master \
+            device): production owns the modem clock registers through typed owners \
+            constructed at boot and has no lazily built context",
+        places: &[
+            place(
+                LOW_POWER_CLOCK_SELECT,
+                MODEM_CLOCK_CONTEXT,
+                MODEM_CLOCK_POINTERS.0,
+                MODEM_CLOCK_POINTERS.1,
+            ),
+            place(
+                LOW_POWER_CLOCK_SELECT,
+                MODEM_CLOCK_DEVICES,
+                MODEM_CLOCK_I2C_MASTER_FLAGS.0,
+                MODEM_CLOCK_I2C_MASTER_FLAGS.1,
+            ),
+            place(
+                LOW_POWER_CLOCK_DESELECT,
+                MODEM_CLOCK_CONTEXT,
+                MODEM_CLOCK_POINTERS.0,
+                MODEM_CLOCK_POINTERS.1,
+            ),
+            place(
+                LOW_POWER_CLOCK_DESELECT,
+                MODEM_CLOCK_DEVICES,
+                MODEM_CLOCK_I2C_MASTER_FLAGS.0,
+                MODEM_CLOCK_I2C_MASTER_FLAGS.1,
+            ),
+        ],
+    },
+    Decision {
+        reason: "the vendor's record of the Bluetooth low-power clock source, kept for the \
+            light-sleep power-domain configuration (`esp_sleep_pd_config`, answered without \
+            effect) and the next deselect: production records the selection as the shared \
+            radio's `bluetooth_low_power_clock` flag, which refuses a second select, and has \
+            no light-sleep domain management; the compared register effects select and \
+            deselect the same source",
+        places: &[
+            place(
+                LOW_POWER_CLOCK_SELECT,
+                MODEM_CLOCK_CONTEXT,
+                MODEM_CLOCK_BLUETOOTH_SOURCE.0,
+                MODEM_CLOCK_BLUETOOTH_SOURCE.1,
+            ),
+            place(
+                LOW_POWER_CLOCK_DESELECT,
+                MODEM_CLOCK_CONTEXT,
+                MODEM_CLOCK_BLUETOOTH_SOURCE.0,
+                MODEM_CLOCK_BLUETOOTH_SOURCE.1,
+            ),
         ],
     },
 ];

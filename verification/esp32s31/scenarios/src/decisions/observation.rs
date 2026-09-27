@@ -25,9 +25,12 @@ pub const DECISIONS: &[Decision] = &[
         places: &[("hal/src/validation.rs", "owner()")],
     },
     Decision {
-        reason: "device-ordering fences the MAC and power event clears and the ordinary \
-            transmit publication add around their register edge: each reviewed contract \
-            requires exactly that many, counted but not paired with a vendor effect",
+        reason: "device-ordering fences the MAC and power event clears, the ordinary \
+            transmit publication and the Bluetooth leaves declared `ordered` (baseband v2 \
+            initialization, BLE PHY register initialization, NRT interrupt acknowledge, \
+            memory-list pointers, scheduler list heads) add around their register edge: each \
+            reviewed contract requires exactly that many, counted but not paired with a \
+            vendor effect",
         places: &[
             (
                 "pac/raw/src/lib.rs",
@@ -36,6 +39,15 @@ pub const DECISIONS: &[Decision] = &[
             ("pac/src/ownership.rs", "svd::device_access::fence();"),
             ("pac/src/wifi/mac/interrupt.rs", "device_fence();"),
             ("pac/src/wifi/mac/tx.rs", "device_fence();"),
+            (
+                "pac/src/bluetooth/baseband.rs",
+                "port.order_device_accesses();",
+            ),
+            ("pac/src/bluetooth/baseband.rs", "device_fence();"),
+            ("pac/src/bluetooth/interrupt.rs", "device_fence();"),
+            ("pac/src/bluetooth/memory_lists.rs", "device_fence();"),
+            ("pac/src/bluetooth/phy.rs", "device_fence();"),
+            ("pac/src/bluetooth/scheduler.rs", "device_fence();"),
         ],
     },
     Decision {
@@ -384,5 +396,12 @@ pub const DECISIONS: &[Decision] = &[
             is always taken to its post-dominating return and no executed step depends on it; \
             the disabled arm is compared at the inlined sites that pass `false`",
         places: &[("pac/src/phy/baseband.rs", "if !enabled {")],
+    },
+    Decision {
+        reason: "constructor default of the filter-DCAP parameters in a fresh PHY state: \
+            nothing a compared effect or final state depends on reads it, since the \
+            calibration that uses the parameters and the retained-state rebuild write them \
+            first",
+        places: &[("phy/src/state.rs", "filter_dcap: [0; 5],")],
     },
 ];

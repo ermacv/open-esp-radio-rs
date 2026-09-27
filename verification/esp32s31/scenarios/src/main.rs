@@ -1078,6 +1078,16 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
         unobserved.len(),
         unobserved.len() - effect - state,
     );
+    for line in &unobserved {
+        let kind = if lines.effect.contains(line) {
+            "reaches uncompared effects"
+        } else if lines.state.contains(line) {
+            "only final state"
+        } else {
+            "nothing"
+        };
+        println!("  untriaged line {}:{} ({kind})", line.0.display(), line.1);
+    }
     for (name, seconds) in &elapsed {
         println!("{name} {seconds:.1}s");
     }
@@ -1088,6 +1098,7 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
     // without comparing it.
     state::check(decisions::state::DECISIONS, &unprojected)?;
     let (mut reviewed_state, mut untriaged_state) = (0, std::collections::BTreeSet::new());
+    let mut untriaged_claims = std::collections::BTreeMap::<_, Vec<_>>::new();
     for (root, production, byte) in &unprojected {
         let (reviewed, untriaged) = state::classify(
             decisions::state::DECISIONS,
@@ -1095,6 +1106,12 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
             &std::collections::BTreeSet::from([byte.clone()]),
         );
         reviewed_state += reviewed.len();
+        for byte in &untriaged {
+            untriaged_claims
+                .entry(byte.clone())
+                .or_default()
+                .push(format!("{root} -> {production}"));
+        }
         untriaged_state.extend(untriaged);
     }
     let unprojected = untriaged_state;
@@ -1102,6 +1119,14 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
         "{reviewed_state} unprojected vendor state bytes reviewed, {} untriaged",
         unprojected.len()
     );
+    for (byte, claims) in &untriaged_claims {
+        println!(
+            "  untriaged state {}+{} in {}",
+            byte.symbol,
+            byte.offset,
+            claims.join(", ")
+        );
+    }
     if let Some(directory) = &common.index {
         for (name, claims) in &passed {
             let production = if *name == "bluetooth" {

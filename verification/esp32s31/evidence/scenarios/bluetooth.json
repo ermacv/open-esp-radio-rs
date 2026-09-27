@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "4ce3a907bc1c1c4398313a2e65fee95a5bac2b306fd025682d3c161091daaf48",
+    "input-2": "d71d94d8559b170e9b9f03d8460b5fbe2365441e28b480b0be659ba2357c896a",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "input-5": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
@@ -16,15 +16,15 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth",
-      "sha256": "7ed981c092659c3ed5315139bea4205ab74db8edb2f6a5df92cfecf24cec6921"
+      "sha256": "43defb99a63d3ae01d4cffb3d724e47e88ac46d54a1a080b06733894591b2456"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory",
-      "sha256": "fef7dc8584b857c7257a2a0db2e18dd860c26e335abfc7c79a214a180d8df8f7"
+      "sha256": "0f5bb55bbf650aa0bb57cbb1e1e2c4616b772dfe75c71a8ad11d79d76322f0e4"
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "c00d4fd470b8968227dabccf73a5063195a5065330456fc69f86e8416c4fbe5e"
+      "sha256": "1f3ed1d765a3dce8da48348932b7c642c8200f0142e9454e16cac5a1cc4319ef"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -36,7 +36,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "ec0ba44fbebcd109498c3071e6ecc4f6d0a110e4b2716b35b043739ff1edbfcc"
+      "sha256": "a6dd09f7210b11998187d697f002404b5a66509e914db0d726daed101cfc361c"
     },
     {
       "path": "crates/hardware/ieee802154/engine",
@@ -100,7 +100,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "daab9e9cb13fe1bebc276b6c5e35a181a907f4e80307f72e3cab009f719f1e07"
+      "sha256": "4d42db44cf503e2a7cedb8d65bbb3c893b3f5d974c198f0e8bfe636ca0f1dfad"
     },
     {
       "path": "verification/harness/codegen",
@@ -146,8 +146,8 @@
       "observation": {
         "executed": 16,
         "observed": 13,
-        "reviewed": 2,
-        "untriaged": 1
+        "reviewed": 3,
+        "untriaged": 0
       },
       "state": {
         "written": 0,
@@ -182,8 +182,8 @@
       "observation": {
         "executed": 16,
         "observed": 13,
-        "reviewed": 2,
-        "untriaged": 1
+        "reviewed": 3,
+        "untriaged": 0
       },
       "state": {
         "written": 0,
@@ -218,8 +218,8 @@
       "observation": {
         "executed": 20,
         "observed": 17,
-        "reviewed": 2,
-        "untriaged": 1
+        "reviewed": 3,
+        "untriaged": 0
       },
       "state": {
         "written": 0,
@@ -254,8 +254,8 @@
       "observation": {
         "executed": 20,
         "observed": 17,
-        "reviewed": 2,
-        "untriaged": 1
+        "reviewed": 3,
+        "untriaged": 0
       },
       "state": {
         "written": 0,
@@ -324,8 +324,8 @@
       "observation": {
         "executed": 744,
         "observed": 740,
-        "reviewed": 2,
-        "untriaged": 2
+        "reviewed": 4,
+        "untriaged": 0
       },
       "state": {
         "written": 0,
@@ -360,8 +360,8 @@
       "observation": {
         "executed": 193,
         "observed": 185,
-        "reviewed": 2,
-        "untriaged": 6
+        "reviewed": 3,
+        "untriaged": 5
       },
       "state": {
         "written": 0,
@@ -402,8 +402,8 @@
       "state": {
         "written": 14,
         "compared": 0,
-        "reviewed": 0,
-        "untriaged": 14
+        "reviewed": 14,
+        "untriaged": 0
       }
     },
     {
@@ -438,8 +438,8 @@
       "state": {
         "written": 14,
         "compared": 0,
-        "reviewed": 0,
-        "untriaged": 14
+        "reviewed": 14,
+        "untriaged": 0
       }
     }
   ],
@@ -1782,32 +1782,8 @@
       "line": 1188
     },
     {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
-      "line": 49
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
-      "line": 71
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/interrupt.rs",
-      "line": 564
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/memory_lists.rs",
-      "line": 238
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 367
-    },
-    {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/runtime.rs",
       "line": 358
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler.rs",
-      "line": 397
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/validation.rs",
@@ -5856,21 +5832,5 @@
       "line": 230
     }
   ],
-  "unprojected": [
-    {
-      "symbol": "dev.4",
-      "offset": 18,
-      "length": 2
-    },
-    {
-      "symbol": "modem_clock_context.7",
-      "offset": 12,
-      "length": 8
-    },
-    {
-      "symbol": "modem_clock_context.7",
-      "offset": 24,
-      "length": 4
-    }
-  ]
+  "unprojected": []
 }

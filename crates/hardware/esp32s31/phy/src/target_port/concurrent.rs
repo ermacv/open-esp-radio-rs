@@ -193,8 +193,8 @@ where
 /// `PHY` modem clock module.
 ///
 /// This is the last `esp_phy_disable`: the temperature preflight and
-/// `phy_close_rf` run as on every route, then the common PHY clock is
-/// released. The registered calibration epoch is retained for
+/// `phy_close_rf` run as on every route, the temperature sensor powers down
+/// (`phy_xpd_tsens`), then the common PHY clock is released. The registered calibration epoch is retained for
 /// [`wake_concurrent_rf`].
 ///
 /// # Errors
@@ -236,6 +236,13 @@ where
     .await
     {
         Ok(()) => radio_lifecycle::execute_rf_close_with_hal::<D>(&mut registers)
+            .map(|()| {
+                // `esp_phy_disable` powers the temperature sensor down after
+                // `phy_close_rf` (`phy_xpd_tsens`); the retained wake powers it
+                // up again. Its SAR2 analog block is then reset like every
+                // other powered-down analog block.
+                oer_esp32s31_hal::phy::temperature::power_down(&mut registers);
+            })
             .map_err(PhyRfCloseTemperatureFailure::HardwareAmbiguous),
         Err(failure) => Err(failure),
     };

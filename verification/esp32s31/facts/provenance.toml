@@ -43,8 +43,20 @@ code = "de67520442045fd5fac9da18d10ae447fb289208d2e6b22126eeb4d56a434f33"
 [[function]]
 artifact = "libble_app"
 member = "ble_2.o"
+symbol = "r_sym_ble_GlcyfUkkhUzGUt8un0d8"
+code = "fd14b7f0315340e7f06e9a90ad5cc183559d195e429bd4ad4cd797659b6b1cc3"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_2.o"
 symbol = "r_sym_ble_VTHfF9d12DSYglVnHRqM"
 code = "4d8c636bdecbe157b4b044e4e13b37f2b37b22fa153def11ebf6245a86edbb45"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_2.o"
+symbol = "r_sym_ble_eNifqLwR78cnxeKb1y6t"
+code = "54ab0a06b50907e0ff03ef15605107f79c916e3d0cc3b1f241151249b97fad23"
 
 [[function]]
 artifact = "libble_app"
@@ -73,6 +85,12 @@ code = "64345ccdbb40a79f303e526bd2ba37c91b8b5f4977d4870dc288a590ce8ffa52"
 [[function]]
 artifact = "libble_app"
 member = "ble_3.o"
+symbol = "r_sym_ble_rsCCyH2B22gdYkN4LOOJ"
+code = "3ff5446677f6e32a3afaa096765ddcf2f0058cc5ea4644d2bcafe67d70f94a7c"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_3.o"
 symbol = "r_sym_ble_tPr7egUaNHmqfcieCA5O"
 code = "c00750a1d3026c76199a35a3836cc5f7071811a4a24d1ff1bfdefba47a3cf291"
 
@@ -81,6 +99,12 @@ artifact = "libble_app"
 member = "ble_38.o"
 symbol = "r_sym_ble_K9RI7JxM1NMxwdTUJ82J"
 code = "503794cce50efed06f3b3316a15f0c4e8e31894e1ecb49b6f1aa130caa5d8b3b"
+
+[[function]]
+artifact = "libble_app"
+member = "ble_46.o"
+symbol = "sym_ble_J4xWLLnJTN2yd1WPJrtH"
+code = "e312ae6f8526900563e05e69e613004c5bccadfef5b18a76684906eb09c489bd"
 
 [[function]]
 artifact = "libble_app"
@@ -516,6 +540,12 @@ code = "3392de95fa3d24a1e4209cef121335c55bf491bd05e03e976a32067ced76dddb"
 
 [[function]]
 artifact = "libble_app"
+member = "internalTest_1.o"
+symbol = "api_internalTest_hci_procVsCmds"
+code = "a614a0ca5a9b13ff48761ff7553e1a48c6264922b8c6032f5c7de7406d5f86b0"
+
+[[function]]
+artifact = "libble_app"
 member = "memMgmt_2.o"
 symbol = "r_sym_memMgmt_rys45AxT1geyo5W0TUT5"
 code = "5a548722b53309554045cfef2c109ac7b44db4543893b865cb205ff608ab9135"
@@ -657,6 +687,78 @@ artifact = "libbredr_app"
 member = "btdm_common_sched.c.o"
 symbol = "btdm_common_sched_bredr_on_sched_hw_list_done"
 code = "3392de95fa3d24a1e4209cef121335c55bf491bd05e03e976a32067ced76dddb"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_driver_common.c.o"
+symbol = "r_obd_capture_btlc_timer"
+code = "a34a58ebfca141a863426aba3c991653765b817a88cbdeba6b50d323df41502c"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_driver_common.c.o"
+symbol = "r_obd_update_btlc_timer"
+code = "f8892ebebc1b421a1cba539f0fec51fbcdd936bb5749c36d79805d2ae9aaa0f4"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_btlc_fre_get"
+code = "8bc0edb54eaa9173413ddf4b199db0b2f6f0bc21ff67595dc6aa2344f7cfa4ce"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_btlc_fre_set"
+code = "c51097b9a2c9907995030bedff150e8a427a2f7e7b24ccfdbf36254f851d90e6"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_btlc_timer_cc_set"
+code = "5e4dacd967fd8ee23688945cbdb24085a7dff6c1917d3c5bcb928c9b275c758f"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_current_rxlinkptr_get"
+code = "ec1ce34c20d249f8fb8987807768203c4dcb7222d0c6abac83ec2133c7a7280d"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_current_txlinkptr_get"
+code = "a29e6e28d73c7679c3b49895054aa6a7d1bce5ec7b8d642b73a74a2029a663d4"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_global_rxlink_curr_ptr_set"
+code = "3d191cc78a4c0b350cca0c4b794338d0818e8d82fe8451c2994fbcdc6205b23b"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_global_rxlink_next_ptr_set"
+code = "eaa143a049327a7aabb5c06e578071ee8bad6f76bc4c52eb75e292516d80cbe1"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_global_rxvalid_set"
+code = "d8b4343ac0b539cd3c14b95fb06dddb32205bc7a7607c825a6cae9d702f2857f"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_gpio_diag_set"
+code = "2c1a7a259268429dce898a6358c73a13374b87fb52d7719bb86237ac8746c260"
+
+[[function]]
+artifact = "libbredr_app"
+member = "orca_bt_hal_link.c.o"
+symbol = "r_obh_link_wdt_config"
+code = "d8ee46ecfaef9f9d66756afddae0bff77c4ed499e6cc5ec041db73c621ad0118"
 
 [[function]]
 artifact = "libbtbb"

@@ -1979,6 +1979,13 @@ pub(crate) async fn run_connected<'state, 'security>(
                     "open-radio: connected exit control last_tx_failure={:?}",
                     control.last_tx_failure(),
                 );
+                let power = control.power_management();
+                diagnostics_event!(
+                    "open-radio: connected exit power state={:?} started={} in_slice={}",
+                    power.state(),
+                    power.is_started(),
+                    power.in_slice(),
+                );
                 diagnostics_event!(
                     "open-radio: connected exit hardware_beacon_frontier={:?}",
                     control.hardware_beacon_monitor_frontier(),

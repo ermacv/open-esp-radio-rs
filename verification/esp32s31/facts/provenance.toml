@@ -3247,6 +3247,18 @@ code = "5adb9aa1f970158dfcf5fd8651ada417adbf8b89972d5e90034d25a736e8e796"
 [[function]]
 artifact = "libpp"
 member = "pm_coex.o"
+symbol = "pm_coex_reconnect_policy"
+code = "d8104bf7a06cb718a640483a606199e53bb81c4dd6a9bd6a200fcca2049f5c98"
+
+[[function]]
+artifact = "libpp"
+member = "pm_coex.o"
+symbol = "pm_coex_set_reconnect_policy"
+code = "8280c97c5ffd74de116b576140d2cb3da645da23fc8283aa3e46e937cecd7eda"
+
+[[function]]
+artifact = "libpp"
+member = "pm_coex.o"
 symbol = "pm_coex_update_rx_beacon_pti"
 code = "691a63dcd367cda33f4f8541075dda8bd69a481effcfa611d3b86a5f7fd705eb"
 
@@ -3267,6 +3279,12 @@ artifact = "libpp"
 member = "pp.o"
 symbol = "ppCheckTxAMPDUlength"
 code = "b8a2bc2641b9235ee8f25ce2c5e634fa3563f4c9180b6adaa54c969f6e0b506a"
+
+[[function]]
+artifact = "libpp"
+member = "pp.o"
+symbol = "ppProcessTxQ"
+code = "7c64459d3c9c4f13bac49564ebcea30032121c9e1716b9f86e486200536ca5f9"
 
 [[function]]
 artifact = "libpp"
@@ -3297,6 +3315,12 @@ artifact = "libpp"
 member = "pp.o"
 symbol = "ppTxqUpdateBitmap"
 code = "e9ecc5e52f91a32b03f4200666df470eabe6793025e3f9fed5d5fae618212c43"
+
+[[function]]
+artifact = "libpp"
+member = "pp.o"
+symbol = "pp_coex_tx_request"
+code = "d15f672747892b744c792e14b2decc1e719cb9a5085d2d642b5f714f09ea1972"
 
 [[function]]
 artifact = "libpp"
@@ -4939,6 +4963,12 @@ code = "3a13a16b586bb00b693521360c7118acee2010701b5d1ac7ec081e252a75a712"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "ppProcessTxQ"
+code = "11971620bcfe1d85b7b26c9c61322ea149c842e06271d6a3e67d758cae1b6bb5"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "ppResortTxAMPDU"
 code = "c71cdedd654ae3be5472c7af1446e18178abbd4a3c7f544b2f24691937bf2557"
 
@@ -4965,6 +4995,12 @@ artifact = "rom"
 member = ""
 symbol = "ppTxqUpdateBitmap"
 code = "c1d90d143cd53406157fcc48bb1d0fc9f352a48daf84963ce6cdd253d414ebfd"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pp_coex_tx_request"
+code = "89c5c572812e05611379e350fa82c87994bc2d294c6574462faa2848b98f069c"
 
 [[function]]
 artifact = "rom"

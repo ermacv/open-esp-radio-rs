@@ -1062,6 +1062,12 @@ code = "6339da312b4b89894abea013e3999e432b3fa0ee9a5b322b651bacfe50e6e949"
 
 [[function]]
 artifact = "libcoexist"
+member = "coexist_scheme.o"
+symbol = "coex_wifi_channel_set"
+code = "cabc0a1e044a5ce3d49ef11bf03b2b125d317ed9aa01b1c2b47d2195bc6a6716"
+
+[[function]]
+artifact = "libcoexist"
 member = "hal_external_coexist.o"
 symbol = "hal_disable_extern_coex"
 code = "cb0c1f7e1f107b8cc90263a694c6376647c024bde2d3688182d655ccdaeb1406"

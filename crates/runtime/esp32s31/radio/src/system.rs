@@ -1,9 +1,10 @@
 //! The arbiter, its shared resources, the periodic tracking timer and the
 //! coexistence schedule's phase timer.
 
+use core::cell::Cell;
 use core::{future::Future, task::Poll};
 use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex,
+    blocking_mutex::{Mutex as BlockingMutex, raw::CriticalSectionRawMutex},
     mutex::{Mutex, MutexGuard},
     signal::Signal,
 };
@@ -11,8 +12,8 @@ use embassy_sync::{
 use embassy_time::{Instant, Timer};
 use oer_esp32s31_coex::{
     CoexArbiterPorts, CoexClientRequest, CoexCore, CoexError, CoexEventId, CoexExpiry, CoexPhase,
-    CoexPhaseChange, CoexPhaseTimer, CoexSchedule, CoexScheduleExecutor, CoexStatusType,
-    CoexTimerIndex,
+    CoexPhaseChange, CoexPhaseTimer, CoexPti, CoexPtiTable, CoexSchedule, CoexScheduleExecutor,
+    CoexStatusType, CoexTimerIndex,
 };
 use oer_esp32s31_hal::{
     ieee80211::client::WifiClocksOn,
@@ -46,6 +47,19 @@ use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 /// (`coex_schm_status_bit_set/clear(4, 1)`).
 const IEEE802154_COEX_STATUS: u16 = 0x01;
 
+/// The event whose priority Wi-Fi's power management reads (`coex_pti_get(0)`).
+const BEACON_EVENT: CoexEventId = match CoexEventId::new(0) {
+    Some(event) => event,
+    None => unreachable!(),
+};
+
+/// The share of the schedule's first phase, or zero without one.
+fn first_share(schedule: &CoexSchedule) -> u8 {
+    schedule
+        .phase_by_index(0)
+        .map_or(0, |phase| phase.share_percent())
+}
+
 /// Retry period while another holder owns the arbiter lease.
 const LEASE_RETRY_MICROS: u64 = 100;
 
@@ -76,6 +90,43 @@ pub struct CoexWifiChannel {
     pub secondary: u8,
 }
 
+/// The coexistence values Wi-Fi's power management reads on every beacon
+/// and slice, as the vendor reads them live: `coex_status_get(WIFI)`, the
+/// schedule's current and flexible period, its interval, the share of its
+/// first phase and the priority of event 0.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiCoexView {
+    /// [`RadioGuard::coex_active_for`] of Wi-Fi.
+    pub active: bool,
+    /// `coex_schm_curr_period_get`.
+    pub current_period: u8,
+    /// `coex_schm_flexible_period_get`.
+    pub flexible_period: u8,
+    /// `coex_schm_interval_get`.
+    pub interval: u32,
+    /// The share of `coex_schm_get_phase_by_idx(0)`, or zero without one.
+    pub first_phase_share_percent: u8,
+    /// `coex_pti_get(0)`.
+    pub beacon_pti: CoexPti,
+}
+
+/// The latest [`WifiCoexView`], readable without the arbiter lease.
+///
+/// Every [`RadioGuard`] refreshes it when it is dropped, so it reflects each
+/// completed coexistence change.
+pub struct WifiCoexViewCell(BlockingMutex<CriticalSectionRawMutex, Cell<WifiCoexView>>);
+
+impl WifiCoexViewCell {
+    /// The view after the last released guard.
+    pub fn get(&self) -> WifiCoexView {
+        self.0.lock(Cell::get)
+    }
+
+    fn set(&self, view: WifiCoexView) {
+        self.0.lock(|cell| cell.set(view));
+    }
+}
+
 /// When a Bluetooth preemption ends, as `coex_iso_end_int_handle` reports it
 /// to Wi-Fi.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -96,10 +147,11 @@ struct CoexSignals {
     bluetooth_started: Signal<CriticalSectionRawMutex, bool>,
     wifi_channel: Signal<CriticalSectionRawMutex, CoexWifiChannel>,
     preemption_end: Signal<CriticalSectionRawMutex, CoexPreemptionEnd>,
+    wifi_view: WifiCoexViewCell,
 }
 
 impl CoexSignals {
-    const fn new() -> Self {
+    fn new() -> Self {
         Self {
             timer: Signal::new(),
             wifi: Signal::new(),
@@ -108,6 +160,14 @@ impl CoexSignals {
             bluetooth_started: Signal::new(),
             wifi_channel: Signal::new(),
             preemption_end: Signal::new(),
+            wifi_view: WifiCoexViewCell(BlockingMutex::new(Cell::new(WifiCoexView {
+                active: false,
+                current_period: CoexSchedule::new().current_period(),
+                flexible_period: 0,
+                interval: 0,
+                first_phase_share_percent: first_share(&CoexSchedule::new()),
+                beacon_pti: CoexPtiTable::VENDOR.pti(BEACON_EVENT),
+            }))),
         }
     }
 
@@ -424,6 +484,12 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
         }
     }
 
+    /// The coexistence values Wi-Fi reads without the arbiter lease; the
+    /// cell borrows no generic of the system.
+    pub fn wifi_coex_view(&self) -> &WifiCoexViewCell {
+        &self.coex.wifi_view
+    }
+
     /// The next coexistence phase that notifies Wi-Fi, as the vendor phase
     /// change calls Wi-Fi's phase handler. A phase published while nobody
     /// waits is kept until the next wait; a later one replaces it.
@@ -532,6 +598,21 @@ enum CoexTimerEvent {
     Stop,
     Command(CoexPhaseTimer),
     Expired,
+}
+
+impl<P, C> Drop for RadioGuard<'_, P, C> {
+    fn drop(&mut self) {
+        let schedule = self.resources.schedule.schedule();
+        self.coex.wifi_view.set(WifiCoexView {
+            active: self.resources.coex_clients >= 2
+                && schedule.status().others_publish(CoexStatusType::Wifi),
+            current_period: schedule.current_period(),
+            flexible_period: schedule.flexible_period(),
+            interval: schedule.interval(),
+            first_phase_share_percent: first_share(schedule),
+            beacon_pti: self.lease.coex_pti(BEACON_EVENT),
+        });
+    }
 }
 
 impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {

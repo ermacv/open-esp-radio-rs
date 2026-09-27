@@ -16,6 +16,11 @@ the device runs as a synchronized sleepy end device instead: its receiver
 is off when idle and it samples its parent's channel once per CSL period
 in windows its radio schedules; the parent must support CSL.
 
+On every role change the device sets its IEEE 802.15.4 coexistence level
+as ESP-IDF's `handle_ot_role_change` does with software coexistence:
+immediate transmission and reception at the low level while its receiver
+stays on when idle, at the middle level as a sleepy device.
+
 The IEEE EUI-64 is derived as ESP-IDF's `esp_read_mac(ESP_MAC_IEEE802154)`
 derives it from the base MAC and the eFuse MAC extension. Entropy comes from
 the hardware TRNG. Settings live in RAM and are lost on reset.

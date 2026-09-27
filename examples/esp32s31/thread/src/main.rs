@@ -26,6 +26,7 @@ use oer_esp32s31_hal::root::RadioHardware;
 use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
 use oer_esp32s31_ieee802154_openthread::{
     OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+    frames::role_coex_config,
 };
 use oer_esp32s31_ieee802154_system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154Parked, Ieee802154System, start,
@@ -196,7 +197,7 @@ async fn thread_task(
         },
     );
     spawner.spawn(openthread_task(ot.clone(), thread_radio).expect("OpenThread task storage"));
-    spawner.spawn(role_task(ot.clone()).expect("role task storage"));
+    spawner.spawn(role_task(ot.clone(), system, radio).expect("role task storage"));
 
     if THREAD_DATASET.is_empty() {
         error!("build with THREAD_DATASET set to the active operational dataset TLV hex");
@@ -258,12 +259,27 @@ async fn openthread_task(ot: OpenThread<'static>, radio: ThreadRadio) -> ! {
     pin!(ot.run(radio)).await
 }
 
-/// Log the device's role and addresses when OpenThread's state changes.
+/// Log the device's role and addresses when OpenThread's state changes, and
+/// set the IEEE 802.15.4 coexistence level of a role change as ESP-IDF's
+/// `handle_ot_role_change` does.
 #[embassy_executor::task]
-async fn role_task(ot: OpenThread<'static>) -> ! {
+async fn role_task(
+    ot: OpenThread<'static>,
+    system: &'static mut Ieee802154System,
+    radio: &'static Radio,
+) -> ! {
+    let mut role = None;
     loop {
         ot.wait_changed().await;
-        info!("role {:?}, rloc16 {:#06x}", ot.device_role(), ot.rloc16());
+        let current = ot.device_role();
+        if role != Some(current) {
+            role = Some(current);
+            let config = role_coex_config(system.coex_config(), ot.rx_on_when_idle());
+            if system.update_coexistence(radio, config).await.is_err() {
+                error!("the coexistence level of role {current:?} was not applied");
+            }
+        }
+        info!("role {:?}, rloc16 {:#06x}", current, ot.rloc16());
         let _ = ot.ipv6_addrs(|address| {
             if let Some((address, prefix)) = address {
                 info!("address {address}/{prefix}");

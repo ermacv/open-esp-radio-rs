@@ -74,6 +74,12 @@ pub use validation::{
         Ieee802154EventStatusProbeConfig, Ieee802154EventStatusProbeEvidence,
         Ieee802154EventStatusProbeIsolation, Ieee802154EventStatusProbeStop,
     },
+    route_retrigger::{
+        Ieee802154PolledSameBit, Ieee802154RouteProbeAction, Ieee802154RouteProbeConfig,
+        Ieee802154RouteProbeEntry, Ieee802154RouteProbeRegisters, Ieee802154RouteProbeStop,
+        Ieee802154SameBitOutcome, Ieee802154TimerEvents, finish_route_probe, route_probe_entry,
+        run_polled_same_bit, start_route_probe_phase,
+    },
 };
 
 pub use role::{

@@ -57,6 +57,17 @@ pub(super) async fn heartbeat_task() {
     }
 }
 
+/// The heartbeat of the core 1 network executor, logged once a second.
+#[embassy_executor::task]
+pub(super) async fn network_core_heartbeat_task() {
+    let mut seconds = 0_u32;
+    loop {
+        embassy_time::Timer::after_secs(1).await;
+        seconds += 1;
+        log::info!("hil-hang: network core alive seconds={seconds}");
+    }
+}
+
 #[esp_hal::handler(priority = Priority::max())]
 #[allow(
     unsafe_code,

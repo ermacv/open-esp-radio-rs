@@ -1170,6 +1170,11 @@ async fn network_config_task(iface: Iface<'static>, network_interface: WifiNetwo
 /// CPU1-local network composition used by the production split topology.
 #[embassy_executor::task]
 pub(crate) async fn secondary_network_task(spawner: Spawner) {
+    #[cfg(feature = "wifi-ble-coex")]
+    spawner.spawn(
+        crate::hang_sentinel::network_core_heartbeat_task()
+            .expect("network core heartbeat must allocate once"),
+    );
     run_network_composition(spawner, APP_NETWORK_START.receive().await).await
 }
 

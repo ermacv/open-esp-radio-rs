@@ -135,7 +135,16 @@ pub struct ConnectedControl<'resources, M: RawMutex, const CAPACITY: usize> {
     power: Option<&'resources StationPowerLink<M>>,
     hardware_beacon_monitor: Option<StationHardwareBeaconMonitorEpoch>,
     unverified_management: u32,
+    /// Consecutive steps that asked the scheduler to run control again.
+    #[cfg(feature = "diagnostics")]
+    more_streak: u32,
 }
+
+/// Consecutive `More` steps after which control is taken to spin: the
+/// scheduler runs control again without awaiting, so a step that never
+/// consumes its input starves every task of its executor.
+#[cfg(feature = "diagnostics")]
+const CONTROL_SPIN_STEPS: u32 = 200_000;
 
 /// Robust management input one association dropped.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -201,6 +210,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             power: None,
             hardware_beacon_monitor: None,
             unverified_management: 0,
+            #[cfg(feature = "diagnostics")]
+            more_streak: 0,
         }
     }
 
@@ -221,6 +232,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             power: None,
             hardware_beacon_monitor: None,
             unverified_management: 0,
+            #[cfg(feature = "diagnostics")]
+            more_streak: 0,
         }
     }
 
@@ -704,6 +717,50 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     }
 
     pub async fn service_with_context<'a, H, X>(
+        &'a mut self,
+        hardware: &'a mut H,
+        tx: &'a mut X,
+        context: DatapathControlContext,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware + 'a,
+        X: ConnectedControlTx + 'a,
+    {
+        let progress = self.service_step(hardware, tx, context).await;
+        #[cfg(feature = "diagnostics")]
+        self.observe_spin(&progress, tx.now_micros());
+        progress
+    }
+
+    #[cfg(feature = "diagnostics")]
+    fn observe_spin(
+        &mut self,
+        progress: &Result<
+            DatapathControlProgress<ConnectedDisconnectReason>,
+            ConnectedControlError,
+        >,
+        now_micros: u64,
+    ) {
+        if !matches!(progress, Ok(DatapathControlProgress::More)) {
+            self.more_streak = 0;
+            return;
+        }
+        self.more_streak += 1;
+        if self.more_streak == CONTROL_SPIN_STEPS {
+            panic!(
+                "station control spins: now={} deferred={:?} mailbox_empty={} core_tx={} \
+                 outstanding={} power={:?}",
+                now_micros,
+                self.deferred_control_event,
+                self.receiver.is_empty(),
+                self.core.tx_in_flight(),
+                self.power.is_some_and(StationPowerLink::outstanding),
+                self.core.power_debug(),
+            );
+        }
+    }
+
+    async fn service_step<'a, H, X>(
         &'a mut self,
         hardware: &'a mut H,
         tx: &'a mut X,

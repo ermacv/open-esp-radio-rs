@@ -95,6 +95,7 @@ const fn timer_index(timer: PmTimer) -> usize {
 }
 
 /// Power management of one association and the inputs waiting for it.
+#[derive(Debug)]
 pub(super) struct ConnectedPower {
     pub(super) engine: ModemSleep,
     /// The join beacon of an association whose power management has not
@@ -237,6 +238,12 @@ impl ConnectedControlCore {
     /// The station's power management.
     pub const fn power_management(&self) -> &ModemSleep {
         &self.power.engine
+    }
+
+    /// Power management with its pending inputs, timers and commands, for
+    /// diagnostics.
+    pub fn power_debug(&self) -> &dyn core::fmt::Debug {
+        &self.power
     }
 
     /// Whether data frames of the access point matter to power management:

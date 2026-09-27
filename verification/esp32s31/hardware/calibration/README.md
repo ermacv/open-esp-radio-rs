@@ -74,14 +74,17 @@ these parts:
 - whether its elements are signed;
 - which bits the relation models (`mask`);
 - whether it describes the environment rather than calibration (`excluded`);
+- the one lifecycle point it applies to (`lifecycle`), when the difference
+  comes from the point rather than the state;
 - the reason.
 
 A field without a review leaves the verdict INCOMPLETE.
 
 The summary of a `cold` capture goes to
-[`evidence/hardware/calibration.json`](../../evidence/hardware/calibration.json);
-the summary of another lifecycle point stays in its capture directory as
-`summary.json` unless `--output` names a path. It records:
+[`evidence/hardware/calibration.json`](../../evidence/hardware/calibration.json),
+that of a `restart` capture to
+[`evidence/hardware/calibration-restart.json`](../../evidence/hardware/calibration-restart.json),
+unless `--output` names a path. It records:
 
 - the capture date, lifecycle point and verdict;
 - both images;

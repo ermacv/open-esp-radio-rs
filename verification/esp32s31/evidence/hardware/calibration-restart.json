@@ -1,8 +1,8 @@
 {
   "schema": 3,
   "date": "2026-09-27",
-  "lifecycle": "cold",
-  "verdict": "match",
+  "lifecycle": "restart",
+  "verdict": "diff",
   "vendor-object": "phy_param",
   "vendor-application-sha256": "ee3b4fb1f7041c98aede6ad19da4803ac680163eecfd7801057d7837be850efc",
   "vendor-idf-revision": "4d59230ddff16327812782151ef0afef202dc6d7",
@@ -13,31 +13,31 @@
   "fields": [
     {
       "name": "common-reference",
-      "verdict": "match",
-      "margin": 3,
+      "verdict": "diff",
+      "margin": 1,
       "reason": "temperature the common calibration commits as its tracking reference",
       "vendor": [
         [
-          24,
-          27
+          25,
+          26
         ]
       ],
       "production": [
         [
-          26,
-          27
+          27,
+          28
         ]
       ]
     },
     {
       "name": "transmit-reference",
-      "verdict": "match",
-      "margin": 3,
+      "verdict": "diff",
+      "margin": 1,
       "reason": "temperature the TX calibration commits as its tracking reference",
       "vendor": [
         [
-          20,
-          23
+          21,
+          22
         ]
       ],
       "production": [
@@ -90,28 +90,12 @@
       "reason": "Wi-Fi TX DC calibration codes",
       "vendor": [
         [
-          242,
-          245
-        ],
-        [
-          264,
-          266
-        ],
-        [
-          257,
-          259
-        ],
-        [
-          255,
-          256
-        ],
-        [
           243,
           245
         ],
         [
-          263,
-          264
+          265,
+          267
         ],
         [
           257,
@@ -123,11 +107,27 @@
         ],
         [
           243,
+          244
+        ],
+        [
+          262,
+          265
+        ],
+        [
+          258,
+          259
+        ],
+        [
+          253,
+          256
+        ],
+        [
+          243,
           245
         ],
         [
           261,
-          262
+          263
         ],
         [
           257,
@@ -144,28 +144,12 @@
           245
         ],
         [
-          263,
-          265
+          265,
+          266
         ],
         [
-          258,
-          258
-        ],
-        [
-          254,
-          256
-        ],
-        [
-          243,
-          246
-        ],
-        [
-          262,
-          264
-        ],
-        [
-          256,
-          260
+          257,
+          259
         ],
         [
           254,
@@ -173,11 +157,11 @@
         ],
         [
           244,
-          245
+          246
         ],
         [
-          260,
-          262
+          262,
+          263
         ],
         [
           257,
@@ -186,6 +170,22 @@
         [
           254,
           256
+        ],
+        [
+          244,
+          245
+        ],
+        [
+          259,
+          262
+        ],
+        [
+          256,
+          259
+        ],
+        [
+          253,
+          257
         ]
       ]
     },
@@ -197,19 +197,19 @@
       "vendor": [
         [
           260,
-          260
+          261
         ],
         [
           258,
           259
         ],
         [
-          256,
-          257
+          252,
+          258
         ],
         [
           251,
-          257
+          258
         ],
         [
           259,
@@ -217,14 +217,14 @@
         ],
         [
           258,
-          258
+          259
         ],
         [
           252,
           260
         ],
         [
-          252,
+          247,
           254
         ],
         [
@@ -237,7 +237,7 @@
         ],
         [
           254,
-          256
+          257
         ],
         [
           247,
@@ -246,19 +246,19 @@
       ],
       "production": [
         [
-          260,
-          260
+          259,
+          261
         ],
         [
           258,
           259
         ],
         [
-          256,
-          258
+          251,
+          262
         ],
         [
-          251,
+          250,
           257
         ],
         [
@@ -275,7 +275,7 @@
         ],
         [
           251,
-          258
+          259
         ],
         [
           259,
@@ -290,23 +290,23 @@
           257
         ],
         [
-          246,
-          255
+          247,
+          257
         ]
       ]
     },
     {
       "name": "wifi-rx-dc",
       "verdict": "match",
-      "margin": 13,
+      "margin": 15,
       "reason": "Wi-Fi per-gain RX DC codes and the phy_rxdc_fine_cal pairs",
       "vendor": [
         [
-          259,
+          260,
           262
         ],
         [
-          303,
+          302,
           304
         ],
         [
@@ -315,10 +315,10 @@
         ],
         [
           303,
-          305
+          304
         ],
         [
-          258,
+          259,
           260
         ],
         [
@@ -327,19 +327,11 @@
         ],
         [
           258,
-          260
-        ],
-        [
-          303,
-          305
-        ],
-        [
-          259,
           261
         ],
         [
-          304,
-          305
+          303,
+          306
         ],
         [
           260,
@@ -347,26 +339,34 @@
         ],
         [
           303,
-          304
+          305
         ],
         [
-          261,
-          262
-        ],
-        [
-          301,
-          302
-        ],
-        [
-          259,
+          260,
           261
         ],
         [
-          303,
+          302,
+          303
+        ],
+        [
+          260,
+          263
+        ],
+        [
+          300,
+          302
+        ],
+        [
+          260,
+          262
+        ],
+        [
+          302,
           304
         ],
         [
-          276,
+          277,
           279
         ],
         [
@@ -374,7 +374,7 @@
           249
         ],
         [
-          276,
+          277,
           279
         ],
         [
@@ -382,28 +382,28 @@
           249
         ],
         [
-          276,
+          277,
           279
         ],
         [
           246,
-          249
+          256
         ],
         [
-          268,
-          279
+          271,
+          278
         ],
         [
           246,
-          258
+          261
         ],
         [
-          265,
-          272
+          264,
+          273
         ],
         [
           249,
-          262
+          264
         ]
       ],
       "production": [
@@ -424,8 +424,8 @@
           304
         ],
         [
-          259,
-          260
+          258,
+          261
         ],
         [
           302,
@@ -433,18 +433,18 @@
         ],
         [
           258,
-          261
+          260
         ],
         [
           303,
-          305
+          304
         ],
         [
           260,
-          263
+          261
         ],
         [
-          303,
+          302,
           304
         ],
         [
@@ -452,15 +452,15 @@
           262
         ],
         [
-          303,
+          302,
           304
         ],
         [
           260,
-          263
+          262
         ],
         [
-          299,
+          300,
           302
         ],
         [
@@ -468,31 +468,31 @@
           261
         ],
         [
-          303,
-          305
+          302,
+          304
         ],
         [
-          275,
+          276,
           279
         ],
         [
-          246,
+          245,
           249
         ],
         [
-          275,
+          276,
           279
         ],
         [
-          246,
+          245,
           249
         ],
         [
-          275,
-          284
+          276,
+          285
         ],
         [
-          246,
+          245,
           249
         ],
         [
@@ -505,11 +505,11 @@
         ],
         [
           261,
-          273
+          274
         ],
         [
           252,
-          262
+          264
         ]
       ]
     },
@@ -552,8 +552,16 @@
           289
         ],
         [
-          241,
-          242
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          242,
+          243
         ],
         [
           288,
@@ -573,27 +581,19 @@
         ],
         [
           288,
-          289
+          288
         ],
         [
           242,
-          242
-        ],
-        [
-          287,
-          289
-        ],
-        [
-          242,
-          242
+          243
         ],
         [
           288,
           289
         ],
         [
-          228,
-          229
+          229,
+          230
         ],
         [
           282,
@@ -605,7 +605,7 @@
         ],
         [
           302,
-          304
+          303
         ]
       ],
       "production": [
@@ -635,7 +635,7 @@
         ],
         [
           242,
-          243
+          242
         ],
         [
           288,
@@ -690,7 +690,7 @@
           283
         ],
         [
-          257,
+          258,
           260
         ],
         [
@@ -701,13 +701,13 @@
     },
     {
       "name": "power-temperature",
-      "verdict": "match",
-      "margin": 3,
+      "verdict": "diff",
+      "margin": 1,
       "reason": "temperature the TX power calibration commits as its power tracking reference",
       "vendor": [
         [
-          20,
-          23
+          21,
+          22
         ]
       ],
       "production": [
@@ -809,13 +809,13 @@
     },
     {
       "name": "rfpll-reference",
-      "verdict": "match",
-      "margin": 3,
+      "verdict": "diff",
+      "margin": 1,
       "reason": "temperature the RFPLL calibration commits as its tracking reference",
       "vendor": [
         [
-          20,
-          23
+          21,
+          22
         ]
       ],
       "production": [
@@ -1048,8 +1048,8 @@
   ],
   "registers": {
     "verdict": "match",
-    "compared": 155,
-    "matched": 155,
+    "compared": 156,
+    "matched": 156,
     "differing": [],
     "excluded": [
       {
@@ -1079,10 +1079,6 @@
       {
         "name": "PHY_AGC_RECOVERED_GAPS.RSSI_STATUS_OPAQUE",
         "reason": "live state: AGC RSSI status"
-      },
-      {
-        "name": "PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL",
-        "reason": "lifecycle: the last writer is phy_reg_update_new after cold registration and phy_bb_agc_reg_update after an RF wake or RX table init; the vendor read follows the RF wake of its Wi-Fi start, production's read its cold registration, and production's wake keeps the vendor order"
       },
       {
         "name": "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL",
@@ -1175,30 +1171,26 @@
     "not-read": []
   },
   "analog": {
-    "verdict": "match",
-    "compared": 35,
-    "matched": 35,
-    "differing": [],
-    "excluded": [
+    "verdict": "diff",
+    "compared": 39,
+    "matched": 38,
+    "differing": [
       {
         "name": "PhyI2cField.69.04",
-        "reason": "lifecycle: cold phy_rf_init runs rc_cal_set(3, 1, 9), phy_rc_cal and sar2_init_code(1400); phy_wakeup_init repeats none of them, and the RF close powers the 0x6b and 0x69 blocks down to their defaults. The vendor read follows the RF wake of its Wi-Fi start, production's read its cold registration; after a restart both sides are woken"
-      },
+        "vendor": [
+          96,
+          96
+        ],
+        "production": [
+          101,
+          101
+        ]
+      }
+    ],
+    "excluded": [
       {
         "name": "PhyI2cField.6b.02",
         "reason": "live state: the I2C command memory holds both TX capacitor-bank images (0xc2 and 0x73), and the hardware sequencer publishes one on each RF event, so the byte shows the last event"
-      },
-      {
-        "name": "PhyI2cField.6b.11",
-        "reason": "lifecycle: cold phy_rf_init runs rc_cal_set(3, 1, 9), phy_rc_cal and sar2_init_code(1400); phy_wakeup_init repeats none of them, and the RF close powers the 0x6b and 0x69 blocks down to their defaults. The vendor read follows the RF wake of its Wi-Fi start, production's read its cold registration; after a restart both sides are woken"
-      },
-      {
-        "name": "PhyI2cField.6b.13",
-        "reason": "lifecycle: cold phy_rf_init runs rc_cal_set(3, 1, 9), phy_rc_cal and sar2_init_code(1400); phy_wakeup_init repeats none of them, and the RF close powers the 0x6b and 0x69 blocks down to their defaults. The vendor read follows the RF wake of its Wi-Fi start, production's read its cold registration; after a restart both sides are woken"
-      },
-      {
-        "name": "PhyI2cField.6b.14",
-        "reason": "lifecycle: cold phy_rf_init runs rc_cal_set(3, 1, 9), phy_rc_cal and sar2_init_code(1400); phy_wakeup_init repeats none of them, and the RF close powers the 0x6b and 0x69 blocks down to their defaults. The vendor read follows the RF wake of its Wi-Fi start, production's read its cold registration; after a restart both sides are woken"
       }
     ],
     "unreadable": [],

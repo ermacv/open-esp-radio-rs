@@ -30,10 +30,10 @@ const SCHEMA: u16 = 3;
 const TOLERANCE_SCHEMA: u16 = 2;
 /// Reviewed tolerances, relative to this package.
 const TOLERANCES: &str = "tolerances.toml";
-/// Tracked summary, relative to the repository root.
+/// Tracked summaries of the lifecycle points, relative to the repository
+/// root.
 const SUMMARY: &str = "verification/esp32s31/evidence/hardware/calibration.json";
-/// Summary of another lifecycle point, in its capture directory.
-const UNTRACKED_SUMMARY: &str = "summary.json";
+const RESTART_SUMMARY: &str = "verification/esp32s31/evidence/hardware/calibration-restart.json";
 const SECONDS_PER_DAY: u64 = 86_400;
 /// Extension of the captured production artifacts.
 const ARTIFACT_EXTENSION: &str = "bin";
@@ -73,7 +73,23 @@ struct Tolerance {
     /// The field describes the environment rather than calibration.
     #[serde(default)]
     excluded: bool,
+    /// The only lifecycle point the review applies to; every point when
+    /// absent.
+    #[serde(default)]
+    lifecycle: Option<Lifecycle>,
     reason: String,
+}
+
+impl Tolerances {
+    /// The reviews that apply at `lifecycle`.
+    fn at(mut self, lifecycle: Lifecycle) -> Self {
+        let applies = |_: &String, review: &mut Tolerance| {
+            review.lifecycle.is_none_or(|point| point == lifecycle)
+        };
+        self.fields.retain(applies);
+        self.registers.retain(applies);
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -428,6 +444,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let capture: Capture = serde_json::from_slice(&std::fs::read(
         arguments.captures.join(crate::capture::RECORD),
     )?)?;
+    let tolerances = tolerances.at(capture.lifecycle);
     let vendor = numbered(&arguments.captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
         .iter()
         .map(|path| {
@@ -532,7 +549,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         .clone()
         .unwrap_or_else(|| match capture.lifecycle {
             Lifecycle::Cold => root.join(SUMMARY),
-            Lifecycle::Restart => arguments.captures.join(UNTRACKED_SUMMARY),
+            Lifecycle::Restart => root.join(RESTART_SUMMARY),
         });
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;
@@ -673,5 +690,18 @@ mod tests {
             fields().len(),
             CALIBRATION.len() + PARENT.len() + committed(0).len() - 1
         );
+    }
+
+    #[test]
+    fn a_review_scoped_to_a_lifecycle_point_applies_only_there() {
+        let tolerances: Tolerances = toml::from_str(
+            "schema = 2\n\
+             [registers.A]\nexcluded = true\nlifecycle = \"cold\"\nreason = \"cold only\"\n\
+             [registers.B]\nexcluded = true\nreason = \"always\"\n",
+        )
+        .unwrap();
+        let restart = tolerances.at(Lifecycle::Restart);
+        assert!(!restart.registers.contains_key("A"));
+        assert!(restart.registers.contains_key("B"));
     }
 }

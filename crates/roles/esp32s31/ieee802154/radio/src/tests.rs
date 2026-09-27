@@ -195,6 +195,7 @@ impl Bench {
             max_frame_retries: 0,
             security: Default::default(),
             interface: Interface::PRIMARY,
+            time_sync: None,
         }))
     }
 
@@ -757,6 +758,7 @@ impl Bench {
             max_frame_retries: retries,
             security: Default::default(),
             interface: Interface::PRIMARY,
+            time_sync: None,
         }))
         .unwrap();
     }
@@ -946,6 +948,7 @@ impl Bench {
             max_frame_retries: 0,
             security,
             interface: Interface::PRIMARY,
+            time_sync: None,
         }))
         .unwrap();
     }
@@ -1485,6 +1488,7 @@ fn a_transmission_is_secured_by_its_interface() {
             max_frame_retries: 0,
             security: TxSecurity::Radio,
             interface: Interface::new(1),
+            time_sync: None,
         }))
         .unwrap();
     assert!(bench.hw.transmit_security);
@@ -1535,4 +1539,39 @@ fn an_enhanced_ack_to_a_probing_initiator_carries_its_link_metrics() {
     bench.interrupt(&[Ieee802154Event::RxDone]);
     let ack = bench.transmit_image();
     assert!(!ack.windows(3).any(|window| window == [0x9b, 0xb8, 0xea]));
+}
+
+/// A frame with a Time IE gets the time sync sequence and the network time
+/// - the radio clock plus the offset - when its SFD goes out, as the port's
+/// `ot_radio_transmit_sfd_done` writes them.
+#[test]
+fn the_time_ie_gets_the_network_time_at_the_sfd() {
+    use oer_ieee802154::TimeSync;
+    let mut bench = Bench::enabled();
+    // A data frame with room for the Time IE content after its header.
+    let mut mac = [0; 20];
+    mac[..3].copy_from_slice(&[0x41, 0x88, 0x2a]);
+    bench
+        .submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(3),
+            frame: FrameView::new(&mac).unwrap(),
+            channel: channel(11),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+            max_frame_retries: 0,
+            security: TxSecurity::Radio,
+            interface: Interface::PRIMARY,
+            time_sync: Some(TimeSync {
+                ie_offset: 5,
+                sequence: 9,
+                network_time_offset: 1_000,
+            }),
+        }))
+        .unwrap();
+    bench.interrupt(&[Ieee802154Event::TxSfdDone]);
+    let image = bench.transmit_image();
+    // The PHR precedes the MAC bytes; the clock reads 42.
+    assert_eq!(image[1 + 5], 9);
+    assert_eq!(image[1 + 6..1 + 14], 1_042_u64.to_le_bytes());
+    assert_eq!(image[1..4], [0x41, 0x88, 0x2a]);
 }

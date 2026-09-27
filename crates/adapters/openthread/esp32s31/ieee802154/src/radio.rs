@@ -10,7 +10,7 @@ use oer_esp32s31_ieee802154_runtime::{
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView, Interface,
     LinkMetrics, PendingTableHalf, RadioCommand, RadioState, RadioTimestamp, RequestId,
-    ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
+    ScheduledReceiveRequest, TimeSync, TxMode, TxRequest, TxSecurity,
 };
 use openthread::{
     AckSecurity, Capabilities, Config, CslConfig, EnhAckProbingConfig, FrameCounterUpdate,
@@ -83,6 +83,8 @@ struct Outgoing<'a> {
     /// The start time in the low 32 bits of the radio clock.
     tx_at: Option<u32>,
     security: TxSecurity,
+    /// The Time IE the radio fills at the SFD.
+    time_sync: Option<TimeSync>,
 }
 
 /// The terminal event of one operation.
@@ -230,6 +232,7 @@ where
             cca_threshold,
             tx_at,
             security,
+            time_sync,
         } = outgoing;
         self.settle().await;
         let channel = match channel(number) {
@@ -264,6 +267,7 @@ where
             max_frame_retries: 0,
             security,
             interface: Interface::PRIMARY,
+            time_sync,
         })) {
             return (Err(error), None);
         }
@@ -458,6 +462,7 @@ where
             cca_threshold,
             tx_at: None,
             security,
+            time_sync: None,
         };
         self.send(outgoing, ack_psdu_buf).await.0
     }
@@ -476,6 +481,11 @@ where
                     power: frame.power,
                     cca_threshold: frame.cca_threshold,
                     tx_at: frame.tx_at,
+                    time_sync: frame.time_sync.map(|ie| TimeSync {
+                        ie_offset: ie.ie_offset,
+                        sequence: ie.sequence,
+                        network_time_offset: ie.network_time_offset,
+                    }),
                     security,
                 },
                 ack_psdu_buf,

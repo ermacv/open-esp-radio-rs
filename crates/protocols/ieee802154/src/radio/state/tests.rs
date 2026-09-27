@@ -85,6 +85,7 @@ fn transmit_correlates_completion_and_restores_receive() {
         max_frame_retries: 0,
         security: Default::default(),
         interface: Interface::PRIMARY,
+        time_sync: None,
     };
     machine.admit(RadioCommand::Transmit(request)).unwrap();
     assert_eq!(
@@ -155,6 +156,7 @@ fn acknowledgement_capability_is_derived_only_from_the_fcf() {
             max_frame_retries: 0,
             security: Default::default(),
             interface: Interface::PRIMARY,
+            time_sync: None,
         }))
         .unwrap();
 
@@ -170,6 +172,7 @@ fn acknowledgement_capability_is_derived_only_from_the_fcf() {
             max_frame_retries: 0,
             security: Default::default(),
             interface: Interface::PRIMARY,
+            time_sync: None,
         })),
         Err(CommandError::Unsupported {
             command: CommandKind::Transmit,
@@ -252,6 +255,7 @@ fn failed_transmit_cannot_publish_an_acknowledgement() {
             max_frame_retries: 0,
             security: Default::default(),
             interface: Interface::PRIMARY,
+            time_sync: None,
         }))
         .unwrap();
     let ack_bytes = [2];
@@ -336,6 +340,7 @@ fn a_transmission_from_receive_mode_accepts_frames_on_its_channel() {
                 max_frame_retries: 0,
                 security: Default::default(),
                 interface: Interface::PRIMARY,
+                time_sync: None,
             }))
             .unwrap();
     };
@@ -377,6 +382,7 @@ fn frame_retries_require_the_retry_capability() {
             max_frame_retries,
             security: Default::default(),
             interface: Interface::PRIMARY,
+            time_sync: None,
         })
     };
     let mut machine = enabled(RadioCapabilities::NONE);
@@ -569,6 +575,7 @@ fn a_transmission_names_an_existing_interface() {
             max_frame_retries: 0,
             security: Default::default(),
             interface: Interface::new(interface),
+            time_sync: None,
         })
     };
     let mut single = enabled(RadioCapabilities::NONE);
@@ -584,4 +591,35 @@ fn a_transmission_names_an_existing_interface() {
     let mut machine = RadioStateMachine::with_interfaces(RadioCapabilities::MULTI_PAN, 2);
     machine.admit(RadioCommand::Enable { id: ID }).unwrap();
     machine.admit(request(1)).unwrap();
+}
+
+/// A transmission with a Time IE needs the time-sync capability.
+#[test]
+fn a_time_ie_needs_the_time_sync_capability() {
+    let bytes = [0x41, 0x88, 0x2a];
+    let request = RadioCommand::Transmit(TxRequest {
+        id: ID,
+        frame: FrameView::new(&bytes).unwrap(),
+        channel: channel(20),
+        mode: TxMode::Direct,
+        transmit_power_dbm: None,
+        max_frame_retries: 0,
+        security: Default::default(),
+        interface: Interface::PRIMARY,
+        time_sync: Some(crate::TimeSync {
+            ie_offset: 0,
+            sequence: 1,
+            network_time_offset: 0,
+        }),
+    });
+    assert_eq!(
+        enabled(RadioCapabilities::NONE).admit(request),
+        Err(CommandError::Unsupported {
+            command: CommandKind::Transmit,
+            required: RadioCapabilities::TIME_SYNC,
+        })
+    );
+    enabled(RadioCapabilities::TIME_SYNC)
+        .admit(request)
+        .unwrap();
 }

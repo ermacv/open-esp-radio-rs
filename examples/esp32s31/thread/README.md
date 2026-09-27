@@ -20,6 +20,9 @@ It is also built with Thread Link Metrics (the `link-metrics-subject` and
 `link-metrics-initiator` features, as ESP-IDF's
 `CONFIG_OPENTHREAD_LINK_METRICS`): a neighbor can probe it with enhanced
 ACKs, which then carry the Thread probing IE with the frame's metrics.
+Thread network time synchronization is built in too (the `time-sync`
+feature, as `CONFIG_OPENTHREAD_TIME_SYNC`): the radio writes the network
+time into each frame's Time IE when the frame goes out.
 
 On every role change the device sets its IEEE 802.15.4 coexistence level
 as ESP-IDF's `handle_ot_role_change` does with software coexistence:

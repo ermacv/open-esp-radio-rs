@@ -32,11 +32,11 @@ use oer_esp32s31_ieee802154::engine::{
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CcaMode, Channel,
     CommandError, Configuration, CsmaCa, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing, FcsStatus,
-    FramePending, FrameRetries, FrameVersion, FrameView, Interface, InterfaceSetting, KeyIdMode,
-    MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent, RadioFault,
-    RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId, RestingState,
-    RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TxMode, TxSecurity, TxStatus,
-    csl_phase, generate_enhanced_ack, write_csl_ie,
+    FramePending, FrameRetries, FrameType, FrameVersion, FrameView, Interface, InterfaceSetting,
+    KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent,
+    RadioFault, RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId,
+    RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TimeSync, TxMode,
+    TxSecurity, TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
 };
 
 /// The portable capabilities the role implements over any engine.
@@ -57,7 +57,8 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
     .union(RadioCapabilities::PROMISCUOUS)
     .union(RadioCapabilities::RECEIVE_TIMESTAMP)
     .union(RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT)
-    .union(RadioCapabilities::SOURCE_MATCH);
+    .union(RadioCapabilities::SOURCE_MATCH)
+    .union(RadioCapabilities::TIME_SYNC);
 
 /// Header IE bytes an enhanced ACK carries at most (OpenThread
 /// `OT_ACK_IE_MAX_SIZE`).
@@ -469,6 +470,8 @@ struct RadioSecurity {
     interfaces: [InterfaceSecurity; Ieee802154MultipanIndex::COUNT as usize],
     /// The CSL receiver state.
     csl: Ieee802154Csl,
+    /// The Time IE of the running transmission.
+    time_sync: Option<TimeSync>,
 }
 
 type Notifications = [Option<Notification>; NOTIFICATIONS];
@@ -539,13 +542,22 @@ impl Ieee802154Environment for Collector<'_> {
 
     /// `ot_radio_transmit_sfd_done`: with CSL, the CSL IE of the frame or
     /// enhanced ACK going out gets the period and the phase to the next
-    /// sample time, from the radio clock at its SFD.
+    /// sample time, from the radio clock at its SFD; the Time IE of a
+    /// transmitted frame - never of an enhanced ACK - gets the time sync
+    /// sequence and the network time.
     fn transmit_sfd_done(&mut self, frame: &mut [u8; FRAME_SIZE]) {
         let csl = self.security.csl;
-        let now = (self.platform.now_micros)() as u32;
-        if let Some(phase) = csl_phase(now, csl.sample_time, csl.period) {
-            let length = usize::from(frame[0] & 0x7f) + 1;
+        let now_micros = (self.platform.now_micros)();
+        let length = usize::from(frame[0] & 0x7f) + 1;
+        if let Some(phase) = csl_phase(now_micros as u32, csl.sample_time, csl.period) {
             write_csl_ie(&mut frame[..length], csl.period, phase);
+        }
+        // The port writes the Time IE only into its transmit frame; the
+        // radio's only other frame, the enhanced ACK, is an ACK frame.
+        if let Some(sync) = self.security.time_sync
+            && PhrFrame::new(&frame[..]).frame_type() != FrameType::Ack
+        {
+            sync.write(&mut frame[1..length], now_micros);
         }
     }
 
@@ -772,6 +784,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                     period: 0,
                     sample_time: 0,
                 },
+                time_sync: None,
             },
         }
     }
@@ -987,6 +1000,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                         .expect("the state machine admits only the engine's interfaces"),
                     phase: Phase::Attempting,
                 };
+                collector.security.time_sync = request.time_sync;
                 transmission.start_access(engine, ll, &mut collector);
                 self.transmission = Some(transmission);
             }
@@ -1312,6 +1326,7 @@ impl<'storage> Ieee802154Radio<'storage> {
         sink: &mut S,
     ) -> Follow {
         self.transmission = None;
+        self.security.time_sync = None;
         let operation_channel = self.engine.pib().channel();
         if self.machine.observe(event).is_err() {
             self.fault(sink);
@@ -1330,6 +1345,7 @@ impl<'storage> Ieee802154Radio<'storage> {
 
     fn fault<S: Ieee802154RadioSink + ?Sized>(&mut self, sink: &mut S) {
         self.transmission = None;
+        self.security.time_sync = None;
         let id: Option<RequestId> = match self.machine.state() {
             RadioState::Transmitting { id, .. }
             | RadioState::EnergyScanning { id, .. }

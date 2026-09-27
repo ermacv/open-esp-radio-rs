@@ -4,6 +4,7 @@ use super::{RadioTimestamp, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
 use crate::mac::header::FrameAddress;
 use crate::mac::pending::AutoPendingMode;
+use crate::mac::time_sync::TimeSync;
 
 /// Portable Host-to-radio operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -174,6 +175,9 @@ pub struct TxRequest<'frame> {
     /// ESP-IDF's multi-instance OpenThread port secures each instance's
     /// frames. [`Interface::PRIMARY`] on a radio without multi-PAN.
     pub interface: Interface,
+    /// The Time IE the radio fills with the network time when the frame's
+    /// SFD goes out; `None` for a frame without one.
+    pub time_sync: Option<TimeSync>,
 }
 
 /// One scheduled receive window (`otPlatRadioReceiveAt`).

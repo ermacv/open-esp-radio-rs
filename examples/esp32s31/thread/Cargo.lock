@@ -1658,7 +1658,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 [[package]]
 name = "openthread"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=e7e5332fbf3837957eb6b3e29d2efccf5d5316b2#e7e5332fbf3837957eb6b3e29d2efccf5d5316b2"
+source = "git+https://github.com/ermacv/openthread?rev=7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125#7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125"
 dependencies = [
  "bitflags 2.13.2",
  "embassy-futures",
@@ -1673,7 +1673,7 @@ dependencies = [
 [[package]]
 name = "openthread-sys"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=e7e5332fbf3837957eb6b3e29d2efccf5d5316b2#e7e5332fbf3837957eb6b3e29d2efccf5d5316b2"
+source = "git+https://github.com/ermacv/openthread?rev=7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125#7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125"
 dependencies = [
  "anyhow",
  "bindgen",

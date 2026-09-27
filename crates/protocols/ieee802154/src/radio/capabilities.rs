@@ -52,8 +52,11 @@ impl RadioCapabilities {
     /// More than one addressing interface
     /// ([`Configuration::Interface`], [`TxRequest::interface`](crate::TxRequest::interface)).
     pub const MULTI_PAN: Self = Self(1 << 13);
+    /// Network time written into a transmitted frame's Time IE at its SFD
+    /// ([`TxRequest::time_sync`](crate::TxRequest::time_sync)).
+    pub const TIME_SYNC: Self = Self(1 << 14);
 
-    const KNOWN: u16 = (1 << 14) - 1;
+    const KNOWN: u16 = (1 << 15) - 1;
 
     /// Validate a serialized capability image.
     pub const fn from_bits(bits: u16) -> Result<Self, CapabilityBitsError> {

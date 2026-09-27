@@ -24,7 +24,7 @@ oer-esp32s31-ieee802154-system = { path = "../../../crates/composition/esp32s31/
 oer-esp32s31-phy = { path = "../../../crates/hardware/esp32s31/phy" }
 oer-esp32s31-radio-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 oer-esp32s31-radio-runtime = { path = "../../../crates/runtime/esp32s31/radio" }
-openthread = { git = "https://github.com/ermacv/openthread", rev = "e7e5332fbf3837957eb6b3e29d2efccf5d5316b2", default-features = false, features = ["isupper", "csl", "link-metrics-subject", "link-metrics-initiator"] }
+openthread = { git = "https://github.com/ermacv/openthread", rev = "7c0aeaddcbbf7d55fcfb1a3483ef020a738a3125", default-features = false, features = ["isupper", "csl", "link-metrics-subject", "link-metrics-initiator", "time-sync"] }
 static_cell = "2.1.1"
 # The C library functions OpenThread links beyond what the Rust core provides.
 tinyrlibc = { version = "0.5", default-features = false, features = ["utoa", "strtoul"] }

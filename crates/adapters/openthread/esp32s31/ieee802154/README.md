@@ -20,7 +20,8 @@ before the instance is built (`OtResources::set_radio_caps`) and, with its
 receiver state (`Radio::set_csl`), delayed transmission (`TxFrame::tx_at`)
 and receive SFD times (`PsduMeta::timestamp`), and, with its
 `link-metrics-subject` feature, the enhanced-ACK probing initiators of a
-Link Metrics subject (`Radio::set_enh_ack_probing`).
+Link Metrics subject (`Radio::set_enh_ack_probing`), and, with its
+`time-sync` feature, the Time IE of each frame (`TxFrame::time_sync`).
 
 ## Use
 
@@ -88,6 +89,11 @@ probing IE with the frame's metrics, as the port's generator adds
 `otLinkMetricsEnhAckGenData`. Link margins are measured from the receive
 sensitivity the radio reports; ESP-IDF's port never sets the noise floor
 of its `link_metrics.cpp` utility, so its margins are zero.
+
+With Thread network time synchronization, a frame's Time IE gets the time
+sync sequence and the radio clock plus OpenThread's network time offset
+when its SFD goes out, as the port's `ot_radio_transmit_sfd_done` writes
+them; OpenThread reads the same clock (`otPlatTimeGet`).
 
 Frames that arrive during a transmission or energy scan wait in a bounded
 queue for `receive`; a full queue drops the newest. A transmission whose

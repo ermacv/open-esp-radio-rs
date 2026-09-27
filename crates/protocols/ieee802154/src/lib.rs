@@ -41,6 +41,8 @@ pub mod mac {
     pub mod retransmission;
     /// MAC keys, frame counter and transmit security of the radio.
     pub mod security;
+    /// Thread network time in the Time IE of transmitted frames.
+    pub mod time_sync;
 }
 
 /// Hardware-independent radio command/event and state contracts.
@@ -60,6 +62,7 @@ pub use mac::link_metrics::{
 pub use mac::pending::{AckPending, AutoPendingMode, PendingTable, PendingTableFull, ack_pending};
 pub use mac::retransmission::{AttemptFailure, FrameRetries, RetryStart};
 pub use mac::security::{MacKeys, TransmitSecurity};
+pub use mac::time_sync::TimeSync;
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
 pub use radio::command::{

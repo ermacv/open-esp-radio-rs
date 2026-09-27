@@ -300,6 +300,14 @@ impl RadioStateMachine {
                     });
                 }
                 self.require_interface(request.interface)?;
+                if request.time_sync.is_some()
+                    && !self.capabilities.contains(RadioCapabilities::TIME_SYNC)
+                {
+                    return Err(CommandError::Unsupported {
+                        command: kind,
+                        required: RadioCapabilities::TIME_SYNC,
+                    });
+                }
                 if request.transmit_power_dbm.is_some()
                     && !self
                         .capabilities

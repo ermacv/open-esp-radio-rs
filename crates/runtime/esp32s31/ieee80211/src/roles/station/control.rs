@@ -42,6 +42,7 @@ pub use oer_esp32s31_ieee80211_sta::{
         ConnectedHeControlRuntimeEvidence, ConnectedHeControlRuntimeOutcome,
         ConnectedHeControlRuntimeRejection, ConnectedIndividualTwtRuntimeEvidence,
         ConnectedIndividualTwtRuntimeOutcome, HeNdpaRuntimeRequest, HeTriggerRuntimeRequest,
+        JoinBeacon,
     },
     ftm::{
         StationFtmFrontierStatus, StationFtmHardwareError, StationFtmHardwareFrontier,
@@ -335,7 +336,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     pub fn enable_power_management(
         &mut self,
         sleep_type: SleepType,
-        join_beacon: PmBeacon,
+        join_beacon: JoinBeacon,
         binding: StationPowerBinding<'resources, M>,
     ) {
         let coex = binding

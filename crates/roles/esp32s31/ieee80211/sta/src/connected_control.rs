@@ -1254,7 +1254,23 @@ impl ConnectedControlCore {
             self.apply_power_actions(hardware, tx, actions)?;
             return Ok(DatapathControlProgress::More);
         }
-        if let ConnectedRxControlEvent::Beacon(observation) = event {
+        if let ConnectedRxControlEvent::Beacon(beacon) = event {
+            let observation = beacon.observation;
+            // The station follows the access point's TSF from each beacon,
+            // so the TBTT schedule, which is in that TSF, stays reachable.
+            //
+            // SOURCE: complete pinned `libnet80211.a[ieee80211_sta.o]::
+            // sta_recv_mgmt` calls `ic_update_sta_tsf` with a beacon of the
+            // associated BSS; it also tests a flag at byte 0x94 of a
+            // structure this port does not model, and updates here for every
+            // such beacon.
+            if let Some(received_at) = beacon.received_at_micros {
+                hardware.set_station_tsf(access_point_tsf_at(
+                    observation.timestamp_tsf,
+                    received_at,
+                    tx.now_micros(),
+                ));
+            }
             self.beacon_probe_attempts = 0;
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {
@@ -1901,7 +1917,8 @@ use sa_query::{SaQueryStep, StationSaQuery};
 
 use power::{ConnectedPower, power_clock};
 pub use power::{
-    ConnectedPowerCommand, NetworkTxPowerReport, POWER_COMMAND_CAPACITY, PowerCoexSnapshot,
+    ConnectedPowerCommand, JoinBeacon, NetworkTxPowerReport, POWER_COMMAND_CAPACITY,
+    PowerCoexSnapshot, access_point_tsf_at,
 };
 
 #[cfg(test)]

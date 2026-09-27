@@ -112,16 +112,16 @@ fn table_deduplicates_by_bssid_and_retains_latest_record() {
     frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
     frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     assert_eq!(
-        table.observe_management(&frame, 1, -70),
+        table.observe_management(&frame, 1, -70, 0),
         ScanObservation::Inserted { index: 0 }
     );
     assert_eq!(
-        table.observe_management(&frame, 1, -30),
+        table.observe_management(&frame, 1, -30, 0),
         ScanObservation::Updated { index: 0 }
     );
     assert_eq!(table.records()[0].rssi, -30);
     assert_eq!(
-        table.observe_management(&frame, 1, -60),
+        table.observe_management(&frame, 1, -60, 0),
         ScanObservation::Updated { index: 0 }
     );
     assert_eq!(table.records()[0].rssi, -60);
@@ -141,14 +141,14 @@ fn weaker_latest_beacon_replaces_stale_ht_protection() {
     ]);
 
     assert_eq!(
-        table.observe_management(&frame, 11, -30),
+        table.observe_management(&frame, 11, -30, 0),
         ScanObservation::Inserted { index: 0 }
     );
     assert_eq!(table.records()[0].ht_operation_ie[4] & 0x03, 1);
 
     frame[49] = 0;
     assert_eq!(
-        table.observe_management(&frame, 11, -60),
+        table.observe_management(&frame, 11, -60, 0),
         ScanObservation::Updated { index: 0 }
     );
     assert_eq!(table.records()[0].ht_operation_ie[4] & 0x03, 0);
@@ -163,7 +163,7 @@ fn latest_hidden_beacon_preserves_probe_response_ssid() {
     probe[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
     probe[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     assert_eq!(
-        table.observe_management(&probe, 1, -40),
+        table.observe_management(&probe, 1, -40, 0),
         ScanObservation::Inserted { index: 0 }
     );
 
@@ -172,7 +172,7 @@ fn latest_hidden_beacon_preserves_probe_response_ssid() {
     beacon[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
     beacon[36..38].copy_from_slice(&[0, 0]);
     assert_eq!(
-        table.observe_management(&beacon, 1, -55),
+        table.observe_management(&beacon, 1, -55, 0),
         ScanObservation::Updated { index: 0 }
     );
     assert_eq!(table.records()[0].ssid_bytes(), b"test");

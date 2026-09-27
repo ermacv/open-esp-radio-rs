@@ -77,7 +77,12 @@ impl<'a, O, const RECORDS: usize> ScanObservationContext<'a, O, RECORDS> {
     where
         O: ScanFrameObserver,
     {
-        let outcome = self.table.observe_management(frame, self.channel, rssi);
+        let outcome = self.table.observe_management(
+            frame,
+            self.channel,
+            rssi,
+            embassy_time::Instant::now().as_micros(),
+        );
         self.observer.observe(frame, rssi, outcome);
         outcome
     }
@@ -190,10 +195,12 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
                         progress.parsed_management_frames =
                             progress.parsed_management_frames.saturating_add(1);
                         let frame = &context.frame[..frame.length];
-                        let outcome =
-                            context
-                                .table
-                                .observe_management(frame, context.channel, rssi);
+                        let outcome = context.table.observe_management(
+                            frame,
+                            context.channel,
+                            rssi,
+                            embassy_time::Instant::now().as_micros(),
+                        );
                         context.observer.observe(frame, rssi, outcome);
                         match outcome {
                             ScanObservation::Inserted { .. } => {

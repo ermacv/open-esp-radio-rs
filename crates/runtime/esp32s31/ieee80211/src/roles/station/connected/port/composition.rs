@@ -326,10 +326,13 @@ impl ConnectedStaPort {
         if let Some(binding) = resources.power {
             control.enable_power_management(
                 plan.config.power.into(),
-                PmBeacon {
-                    timestamp_tsf: plan.link.beacon_timestamp_tsf,
-                    interval_tu: plan.link.beacon_interval_tu,
-                    tim: None,
+                JoinBeacon {
+                    beacon: PmBeacon {
+                        timestamp_tsf: plan.link.beacon_timestamp_tsf,
+                        interval_tu: plan.link.beacon_interval_tu,
+                        tim: None,
+                    },
+                    received_at_micros: plan.link.beacon_received_at_micros,
                 },
                 binding,
             );

@@ -56,6 +56,9 @@ pub trait ConnectedControlHardware:
 {
     fn station_tsf(&mut self) -> u64;
 
+    /// Replace the station TSF with the access point's.
+    fn set_station_tsf(&mut self, value: u64);
+
     /// Close interface-zero RX admission while its descriptor ring is still
     /// live. This is a lifecycle edge, not control cleanup: callers must
     /// perform it before interrupt quiescence or DMA walker stop.
@@ -160,6 +163,10 @@ pub trait ConnectedControlHardware:
 impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
     fn station_tsf(&mut self) -> u64 {
         CooperativeRadioHardware::station_tsf(self)
+    }
+
+    fn set_station_tsf(&mut self, value: u64) {
+        CooperativeRadioHardware::set_station_tsf(self, value);
     }
 
     fn disable_station_receive_policy(&mut self) {

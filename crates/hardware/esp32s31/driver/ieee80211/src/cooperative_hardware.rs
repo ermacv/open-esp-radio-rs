@@ -515,6 +515,16 @@ impl CooperativeRadioHardware<'_> {
         self.wifi_mac_hal().station_tsf()
     }
 
+    /// Replace the station TSF.
+    pub fn set_station_tsf(&mut self, value: u64) {
+        self.wifi_mac_hal().set_station_tsf(value);
+    }
+
+    /// Start the station TSF.
+    pub fn enable_station_tsf(&mut self) {
+        self.wifi_mac_hal().enable_station_tsf();
+    }
+
     /// Program the station TBTT schedule of power management.
     pub fn start_station_tbtt(&mut self, schedule: oer_esp32s31_hal::types::StaTbttSchedule) {
         self.station_wake_hal().start_station_tbtt(schedule);

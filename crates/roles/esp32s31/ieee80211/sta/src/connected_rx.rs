@@ -1047,6 +1047,8 @@ pub enum ConnectedRxEvent<'frame> {
     Beacon {
         observation: StaBeaconObservation,
         metadata: MacRxMetadata<RxPhyInfo>,
+        /// The runtime's monotonic time of the frame's reception.
+        received_at_micros: Option<u64>,
     },
     ProbeResponse,
     Trigger {
@@ -1114,6 +1116,14 @@ pub enum ConnectedRxEvent<'frame> {
     },
 }
 
+/// A beacon of the associated access point and the runtime's monotonic time
+/// of its reception.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReceivedBeacon {
+    pub observation: StaBeaconObservation,
+    pub received_at_micros: Option<u64>,
+}
+
 /// Owned connected-station event that may cross the lifetime of one staged
 /// RX frame.
 ///
@@ -1123,7 +1133,7 @@ pub enum ConnectedRxEvent<'frame> {
 /// body or C-style context pointer needs to survive dispatch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedRxControlEvent {
-    Beacon(StaBeaconObservation),
+    Beacon(ReceivedBeacon),
     ProbeResponse,
     Trigger {
         identity: AssociatedHeControlIdentity,
@@ -1163,7 +1173,14 @@ impl ConnectedRxEvent<'_> {
     /// staged RX allocation.
     pub const fn control(self) -> Option<ConnectedRxControlEvent> {
         match self {
-            Self::Beacon { observation, .. } => Some(ConnectedRxControlEvent::Beacon(observation)),
+            Self::Beacon {
+                observation,
+                received_at_micros,
+                ..
+            } => Some(ConnectedRxControlEvent::Beacon(ReceivedBeacon {
+                observation,
+                received_at_micros,
+            })),
             Self::ProbeResponse => Some(ConnectedRxControlEvent::ProbeResponse),
             Self::Trigger {
                 identity,
@@ -1678,6 +1695,7 @@ impl ConnectedRxDispatcher {
                 sink.publish(ConnectedRxEvent::Beacon {
                     observation,
                     metadata,
+                    received_at_micros: runtime_received_at_micros,
                 });
                 ConnectedRxDispatch::Beacon
             }

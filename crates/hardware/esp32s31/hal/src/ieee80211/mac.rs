@@ -739,6 +739,17 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().station_tsf()
     }
 
+    /// Replace the station TSF, as the vendor does from an access point's
+    /// timestamp.
+    pub fn set_station_tsf(&mut self, value: u64) {
+        self.pac_mut().set_station_tsf(value);
+    }
+
+    /// Start the station TSF, as the vendor does when the station starts.
+    pub fn enable_station_tsf(&mut self) {
+        self.pac_mut().enable_station_tsf();
+    }
+
     pub fn program_rx_block_ack_entry(
         &mut self,
         index: MacRxBlockAckEntryIndex,

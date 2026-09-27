@@ -94,13 +94,49 @@ const fn timer_index(timer: PmTimer) -> usize {
     }
 }
 
+/// The access point's beacon or probe response a station joined from, with
+/// the station's monotonic time of its reception.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JoinBeacon {
+    pub beacon: PmBeacon,
+    pub received_at_micros: u64,
+}
+
+impl JoinBeacon {
+    /// The access point's TSF at `now_micros`: its timestamp advanced by the
+    /// time since the frame arrived.
+    ///
+    /// SOURCE: complete pinned `libpp.a[if_hwctrl.o]::ic_update_sta_tsf`
+    /// adds the difference of a free-running microsecond counter between now
+    /// and the frame's reception to the node's timestamp and passes the sum
+    /// to `hal_set_sta_tsf`; `libnet80211.a[ieee80211_sta.o]::
+    /// sta_recv_assoc` calls it with the joined node's timestamp.
+    pub const fn access_point_tsf_at(self, now_micros: u64) -> u64 {
+        access_point_tsf_at(
+            self.beacon.timestamp_tsf,
+            self.received_at_micros,
+            now_micros,
+        )
+    }
+}
+
+/// The access point TSF `timestamp_tsf`, received at `received_at_micros`,
+/// advanced to `now_micros`.
+pub const fn access_point_tsf_at(
+    timestamp_tsf: u64,
+    received_at_micros: u64,
+    now_micros: u64,
+) -> u64 {
+    timestamp_tsf.wrapping_add(now_micros.saturating_sub(received_at_micros))
+}
+
 /// Power management of one association and the inputs waiting for it.
 #[derive(Debug)]
 pub(super) struct ConnectedPower {
     pub(super) engine: ModemSleep,
     /// The join beacon of an association whose power management has not
     /// started yet.
-    start: Option<PmBeacon>,
+    start: Option<JoinBeacon>,
     /// The coexistence snapshot of a started association.
     coex: Option<PowerCoexSnapshot>,
     deadlines: [Option<u64>; 5],
@@ -142,7 +178,7 @@ impl ConnectedPower {
 
     /// Start a new association in place, without a temporary of the whole
     /// state on the caller's stack.
-    fn restart(&mut self, sleep_type: SleepType, join_beacon: PmBeacon, coex: PowerCoexSnapshot) {
+    fn restart(&mut self, sleep_type: SleepType, join_beacon: JoinBeacon, coex: PowerCoexSnapshot) {
         self.engine = ModemSleep::new(sleep_type);
         self.start = Some(join_beacon);
         self.coex = Some(coex);
@@ -225,11 +261,12 @@ impl ConnectedPower {
 impl ConnectedControlCore {
     /// Start power management for this association. `join_beacon` is the
     /// access point's last beacon or probe response before it; the next
-    /// control step places the TBTT schedule from its timestamp.
+    /// control step sets the station TSF from its timestamp and places the
+    /// TBTT schedule from it.
     pub fn enable_power_management(
         &mut self,
         sleep_type: SleepType,
-        join_beacon: PmBeacon,
+        join_beacon: JoinBeacon,
         coex: PowerCoexSnapshot,
     ) {
         self.power.restart(sleep_type, join_beacon, coex);
@@ -332,8 +369,12 @@ impl ConnectedControlCore {
         let traffic = self.power_traffic(context, control_event_pending);
         let clock = power_clock(tx);
         let mut actions = PmActions::new();
-        if let Some(join_beacon) = self.power.start.take() {
-            self.power.engine.start(join_beacon, coex, &mut actions);
+        if let Some(join) = self.power.start.take() {
+            // The TBTT schedule is in the access point's TSF, so the station
+            // takes it before power management places its first TBTT, as the
+            // vendor does on the Association Response.
+            hardware.set_station_tsf(join.access_point_tsf_at(clock.now_micros));
+            self.power.engine.start(join.beacon, coex, &mut actions);
         } else if let Some(power_save) = self.power.nulls[0] {
             self.power.nulls = [self.power.nulls[1], None];
             return self.start_null(hardware, tx, power_save).map(Some);

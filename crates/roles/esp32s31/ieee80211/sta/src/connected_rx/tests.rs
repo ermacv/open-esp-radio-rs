@@ -397,6 +397,7 @@ impl ConnectedRxSink for RecordingSink {
             ConnectedRxEvent::Beacon {
                 observation,
                 metadata,
+                ..
             } => {
                 self.beacons.push(observation);
                 self.beacon_metadata.push(metadata);

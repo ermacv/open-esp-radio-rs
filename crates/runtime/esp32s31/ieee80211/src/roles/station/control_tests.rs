@@ -315,6 +315,10 @@ impl ConnectedControlHardware for Hardware {
         self.station_tsf
     }
 
+    fn set_station_tsf(&mut self, value: u64) {
+        self.station_tsf = value;
+    }
+
     fn station_beacon_monitor_readback(&mut self) -> Option<MacStaReceivePolicySnapshot> {
         self.station_policy
     }
@@ -546,6 +550,7 @@ fn beacon_event(observation: StaBeaconObservation) -> ConnectedRxEvent<'static> 
     ConnectedRxEvent::Beacon {
         observation,
         metadata: MacRxMetadata::unavailable(),
+        received_at_micros: None,
     }
 }
 
@@ -573,11 +578,14 @@ impl crate::roles::station::power::PowerCoexSource for SharedCoex {
     }
 }
 
-fn join_beacon() -> PmBeacon {
-    PmBeacon {
-        timestamp_tsf: 1_000_000,
-        interval_tu: 100,
-        tim: None,
+fn join_beacon() -> JoinBeacon {
+    JoinBeacon {
+        beacon: PmBeacon {
+            timestamp_tsf: 1_000_000,
+            interval_tu: 100,
+            tim: None,
+        },
+        received_at_micros: 0,
     }
 }
 
@@ -2265,4 +2273,64 @@ fn a_forged_protected_frame_is_counted_and_keeps_the_association() {
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(DatapathControlProgress::Idle)
     );
+}
+
+#[test]
+fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let (mut publisher, receiver) = resources.split();
+    let link = StationPowerLink::<NoopRawMutex>::new();
+    let mut control = ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    // The join beacon arrived 5 ms before power management starts.
+    control.enable_power_management(
+        SleepType::None,
+        JoinBeacon {
+            received_at_micros: 1_000,
+            ..join_beacon()
+        },
+        link.bind(&SharedCoex),
+    );
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        station_tsf: 7,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    embassy_futures::block_on(tx.wait_until_micros(6_000));
+    let mut performed = std::vec::Vec::new();
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
+    );
+    assert_eq!(hardware.station_tsf, 1_000_000 + 5_000);
+
+    // A beacon received at 10 ms and handled at 12 ms carries its own TSF.
+    embassy_futures::block_on(tx.wait_until_micros(12_000));
+    publisher.publish(ConnectedRxEvent::Beacon {
+        observation: StaBeaconObservation {
+            timestamp_tsf: 2_000_000,
+            ..idle_beacon()
+        },
+        metadata: MacRxMetadata::unavailable(),
+        received_at_micros: Some(10_000),
+    });
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
+    );
+    assert_eq!(hardware.station_tsf, 2_000_000 + 2_000);
 }

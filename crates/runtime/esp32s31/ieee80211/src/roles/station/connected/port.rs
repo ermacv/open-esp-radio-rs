@@ -29,6 +29,7 @@ use oer_esp32s31_ieee80211_mac::{
 };
 
 use oer_esp32s31_ieee80211_sta::{
+    connected_control::JoinBeacon,
     connected_rx::{ConnectedRxConfig, StaCcmpRxReplayRxEndpoint},
     control_tx::ControlTransmitter,
     modem_sleep::PmBeacon,

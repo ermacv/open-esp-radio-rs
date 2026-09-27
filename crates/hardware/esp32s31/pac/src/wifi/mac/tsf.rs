@@ -57,15 +57,12 @@ impl WifiRadioRegisters {
         u64::from(low) | (u64::from(high) << 32)
     }
 
-    /// Publish a station TSF value and enable the station TSF scheduler.
+    /// Publish a station TSF value.
     ///
     /// SOURCE: complete `libpp.a[hal_tsf.o]`: `hal_set_sta_tsf`
     /// writes the low word, writes the high word and then asserts bit four at
-    /// `0x2010_d814` through a fresh-read RMW. Complete
-    /// `hal_enable_sta_tsf` performs two further fresh-read RMWs at
-    /// `0x2010_d858`: first it sets bits 27 and 31, then it replaces bits
-    /// 22:19 with one.
-    pub fn start_station_tsf(&mut self, value: u64) {
+    /// `0x2010_d814` through a fresh-read RMW.
+    pub fn set_station_tsf(&mut self, value: u64) {
         let load = &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
         crate::generated::station_tsf_value_low(
             load,
@@ -76,7 +73,15 @@ impl WifiRadioRegisters {
             crate::generated::StationTsfHighWord::new((value >> 32) as u32),
         );
         load.control().modify(|_, w| w.load_station_tsf().set_bit());
+        device_fence();
+    }
 
+    /// Enable the station TSF scheduler.
+    ///
+    /// SOURCE: complete `libpp.a[hal_tsf.o]`: `hal_enable_sta_tsf`
+    /// performs two fresh-read RMWs at `0x2010_d858`: first it sets bits 27
+    /// and 31, then it replaces bits 22:19 with one.
+    pub fn enable_station_tsf(&mut self) {
         let control = self
             .peripherals
             .wifi_mac
